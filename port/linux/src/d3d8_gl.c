@@ -56,6 +56,7 @@ and entry points used below that ES lacks */
 /* what the context supports (gl_initialize) */
 struct xgpu_capabilities xgpu_capabilities;
 #endif
+struct gpu_capabilities device_capabilities;
 
 /* ---------- the screen's width
 
@@ -740,16 +741,6 @@ static GLuint compile_shader(GLenum type, const char *source, const char *what)
 	return shader;
 }
 
-#ifndef HALO_ILP32
-static void GLAPIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
-	GLsizei length, const GLchar *message, const void *user)
-{
-	(void)source; (void)id; (void)length; (void)user;
-	if (severity != GL_DEBUG_SEVERITY_NOTIFICATION)
-		platform_log("GL %s: %s", type == GL_DEBUG_TYPE_ERROR ? "error" : "debug", message);
-}
-#endif
-
 /* ---------- render targets */
 
 static void surface_dimensions(const D3DSurface *surface, unsigned long *width, unsigned long *height, BOOL *depth)
@@ -1010,55 +1001,16 @@ static void shader_replay(const char *directory)
 
 static void gl_initialize(void)
 {
-	GLint major = 0, minor = 0;
 	int index;
 
-	glGetIntegerv(GL_MAJOR_VERSION, &major);
-	glGetIntegerv(GL_MINOR_VERSION, &minor);
-	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &screen_maximum_texture_size);
+	gpu_initialize(&device_capabilities);
+	screen_maximum_texture_size = (GLint)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */
 	(void)halo_screen_width();
 	screen_mode_choose(&screen_width, screen_scale);
 	platform_log("iOS render target: %.0fx%.0f (logical %ldx%d)",
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
-#endif
-#ifdef HALO_ILP32
-	{
-		BOOL es32 = major > 3 || (major == 3 && minor >= 2);
-
-		/* clip control is emulated in the vertex shader (nv2a_vsh.c) */
-		xgpu_capabilities.copy_image = es32 || host_gl_has_extension("GL_EXT_copy_image") ||
-			host_gl_has_extension("GL_OES_copy_image");
-		xgpu_capabilities.border_clamp = es32 || host_gl_has_extension("GL_EXT_texture_border_clamp") ||
-			host_gl_has_extension("GL_OES_texture_border_clamp");
-		xgpu_capabilities.anisotropy = host_gl_has_extension("GL_EXT_texture_filter_anisotropic");
-		xgpu_capabilities.base_vertex = es32;
-		xgpu_capabilities.shading_language = major > 3 || (major == 3 && minor >= 1) ? "310 es" : "300 es";
-		if (major > 3 || (major == 3 && minor >= 1))
-		{
-			GLint counters = 0;
-
-			glGetIntegerv(GL_MAX_FRAGMENT_ATOMIC_COUNTERS, &counters);
-			xgpu_capabilities.atomic_counters = counters > 0;
-		}
-		xgpu_capabilities.s3tc = host_gl_has_extension("GL_EXT_texture_compression_s3tc") ||
-			(host_gl_has_extension("GL_EXT_texture_compression_dxt1") &&
-			host_gl_has_extension("GL_ANGLE_texture_compression_dxt3") &&
-			host_gl_has_extension("GL_ANGLE_texture_compression_dxt5"));
-		platform_log("OpenGL ES %d.%d: copy image %d, border clamp %d, anisotropy %d, S3TC %d, sample counting %d",
-			(int)major, (int)minor, xgpu_capabilities.copy_image, xgpu_capabilities.border_clamp,
-			xgpu_capabilities.anisotropy, xgpu_capabilities.s3tc, xgpu_capabilities.atomic_counters);
-	}
-#else
-	if (config_boolean("debug.gl_debug"))
-	{
-		glEnable(GL_DEBUG_OUTPUT);
-		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-		glDebugMessageCallback(gl_debug_callback, NULL);
-	}
-	glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE);
-	glEnable(GL_PROGRAM_POINT_SIZE);
 #endif
 	glGenVertexArrays(1, &device.vertex_array);
 	glBindVertexArray(device.vertex_array);

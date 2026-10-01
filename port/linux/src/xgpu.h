@@ -12,6 +12,7 @@ device itself (d3d8_gl.c).
 
 #include "platform.h"
 #include "gl.h"
+#include "gpu.h"
 
 #ifdef HALO_ILP32
 /* OpenGL ES features that are optional (d3d8_gl.c gl_initialize) */
@@ -38,6 +39,9 @@ void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int
 void host_gl_fence_frame(unsigned int slot);
 void host_gl_wait_frame(unsigned int slot);
 #endif
+
+/* what the GPU backend can do (gpu_initialize, d3d8_gl.c) */
+extern struct gpu_capabilities device_capabilities;
 
 /* ---------- GL state
 
