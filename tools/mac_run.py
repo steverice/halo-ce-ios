@@ -239,6 +239,8 @@ LAUNCH = """tell application "{xcode}"
 		end try
 		delay 1
 	end repeat
+	-- unguarded: a destination that never appeared fails here, not later
+	set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")
 	run doc
 end tell
 """
