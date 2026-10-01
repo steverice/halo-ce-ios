@@ -87,6 +87,10 @@ struct nv2a_dialect
 	unsigned char debug_flat;
 };
 
+/* the uniform declarations of one stage (GPU_UNIFORM_VERTEX or
+GPU_UNIFORM_PIXEL, gpu_uniforms.h) for a dialect */
+void nv2a_uniform_declarations(struct xgpu_text *text, const struct nv2a_dialect *dialect, int stage);
+
 /* ---------- vertex shaders */
 
 #define XGPU_VERTEX_ATTRIBUTE_COUNT 16
@@ -133,20 +137,6 @@ struct nv2a_pixel_shader_key
 };
 
 char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const struct nv2a_pixel_shader_key *key);
-
-/* the combiner registers that live in uniforms rather than in the program:
-C0/C1 of each stage and the final combiner, and texture constants */
-#define XGPU_PIXEL_UNIFORMS \
-	"uniform vec4 ps_c0[8];\n" \
-	"uniform vec4 ps_c1[8];\n" \
-	"uniform vec4 ps_final_c0;\n" \
-	"uniform vec4 ps_final_c1;\n" \
-	"uniform vec4 fog_color;\n" \
-	"uniform vec4 fog_parameters;\n" \
-	"uniform float alpha_reference;\n" \
-	"uniform vec4 bump_matrix[4];\n" \
-	"uniform vec4 bump_luminance[4];\n" \
-	"uniform vec4 texture_scale[4];\n"
 
 /* ---------- textures */
 

@@ -18,6 +18,7 @@ clip-space position again.
 */
 
 #include "xgpu.h"
+#include "gpu_uniforms.h"
 
 #include <stdlib.h>
 
@@ -139,13 +140,23 @@ static void operand(struct xgpu_text *text, const DWORD *instruction, char which
 		swizzle_names[swizzle[0]], swizzle_names[swizzle[1]], swizzle_names[swizzle[2]], swizzle_names[swizzle[3]]);
 }
 
+/* ---------- uniforms */
+
+void nv2a_uniform_declarations(struct xgpu_text *text, const struct nv2a_dialect *dialect, int stage)
+{
+#define DECLARE_UNIFORM(name, glsl_type, count, uniform_stage) \
+	if ((uniform_stage) == stage || \
+		((uniform_stage) == GPU_UNIFORM_PIXEL_LOD_BIAS && stage == GPU_UNIFORM_PIXEL && dialect->shader_lod_bias)) \
+	{ \
+		if ((count) > 1) \
+			xgpu_text_append(text, "uniform " #glsl_type " " #name "[%d];\n", (int)(count)); \
+		else \
+			xgpu_text_append(text, "uniform " #glsl_type " " #name ";\n"); \
+	}
+	GPU_UNIFORMS(DECLARE_UNIFORM)
+#undef DECLARE_UNIFORM
+}
 static const char shader_prologue[] =
-	"uniform vec4 c[192];\n"
-	"uniform vec4 viewport_scale;\n"
-	"uniform vec4 viewport_offset;\n"
-	"uniform float point_size;\n"
-	/* columns the menus shift by to center on a wide screen (d3d8_gl.c) */
-	"uniform float screen_offset;\n"
 	"out vec4 xD0;\n"
 	"out vec4 xD1;\n"
 	"out vec4 xB0;\n"
@@ -203,6 +214,7 @@ char *nv2a_vertex_shader_translate(const struct nv2a_dialect *dialect, const DWO
 		xgpu_text_append(&text, "#version %u es\nprecision highp float;\nprecision highp int;\n", (unsigned)dialect->version);
 	else
 		xgpu_text_append(&text, "#version %u core\n", (unsigned)dialect->version);
+	nv2a_uniform_declarations(&text, dialect, GPU_UNIFORM_VERTEX);
 	xgpu_text_append(&text, "%s", shader_prologue);
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{

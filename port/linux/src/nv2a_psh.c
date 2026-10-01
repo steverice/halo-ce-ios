@@ -16,6 +16,7 @@ Register values are clamped to [-1, 1] between stages, as on the hardware.
 */
 
 #include "xgpu.h"
+#include "gpu_uniforms.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -545,10 +546,8 @@ char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const stru
 		"in vec4 xT2;\n"
 		"in vec4 xT3;\n"
 		"in float xFog;\n"
-		"layout(location = 0) out vec4 fragment_color;\n"
-		XGPU_PIXEL_UNIFORMS);
-	if (dialect->shader_lod_bias)
-		xgpu_text_append(&text, "uniform vec4 texture_lod_bias;\n");
+		"layout(location = 0) out vec4 fragment_color;\n");
+	nv2a_uniform_declarations(&text, dialect, GPU_UNIFORM_PIXEL);
 	for (stage = 0; stage < 4; stage++)
 		xgpu_text_append(&text, "uniform %s tex%d;\n", sampler_declaration(key->sampler_type[stage]), stage);
 	xgpu_text_append(&text,
