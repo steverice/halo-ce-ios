@@ -51,16 +51,17 @@ GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth);
 cache (gpu_gl.c) */
 void gpu_gl_state_framebuffer(GLuint framebuffer);
 void gpu_gl_state_element_array_buffer(GLuint buffer);
-void gpu_gl_state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
-	BOOL integer, GLsizei stride, unsigned long offset);
-void gpu_gl_state_attribute_value(GLuint index, const float *value);
 /* until sub-step e-4's gpu_draw: the front end applies the packet's raster
-state and texture stages (gpu_gl.c) */
+state, texture stages and vertex attributes (gpu_gl.c) */
 void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct gpu_rect *scissor,
 	const struct gpu_depth_stencil_state *depth_stencil, const struct gpu_blend_state *blend,
 	const struct gpu_raster_state *raster);
 void gpu_gl_apply_stage(int stage, const struct gpu_stage *packet_stage);
-/* until step 3e's gpu_draw: the front end drives a program (gpu_gl.c) */
+/* stream is read when attribute->stream is 0-15, value when it is
+GPU_STREAM_CONSTANT (and not for NORMPACKED3, which reads the integer zero) */
+void gpu_gl_apply_attribute(uint32_t index, const struct gpu_vertex_attribute *attribute,
+	const struct gpu_vertex_stream *stream, const float *value);
+/* until sub-step e-4's gpu_draw: the front end drives a program (gpu_gl.c) */
 struct gpu_gl_program;
 struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex, gpu_shader pixel);
 void gpu_gl_program_use(struct gpu_gl_program *program);

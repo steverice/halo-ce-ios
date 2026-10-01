@@ -2487,7 +2487,7 @@ static void index_extent(const WORD *indices, unsigned long count, unsigned long
 
 static unsigned long stream_upload(const void *data, unsigned long size, gpu_buffer *buffer)
 {
-	return gpu_stream(GPU_STREAM_VERTEX, data, (uint32_t)size, buffer);
+	return gpu_stream(GPU_STREAM_KIND_VERTEX, data, (uint32_t)size, buffer);
 }
 
 /* stream_upload, with the D3DCOLOR elements of the stream turned from BGRA
@@ -2535,34 +2535,34 @@ static unsigned long index_upload(const void *data, unsigned long size)
 	gpu_buffer buffer;
 
 	/* the draw packet carries the buffer from step 3e on */
-	return gpu_stream(GPU_STREAM_INDEX, data, (uint32_t)size, &buffer);
+	return gpu_stream(GPU_STREAM_KIND_INDEX, data, (uint32_t)size, &buffer);
 }
 
-static void attribute_format(const struct vertex_element *element, GLint *size, GLenum *type, GLboolean *normalized)
+/* the GPU_ATTRIBUTE_* format of a declaration element */
+static uint8_t attribute_format(const struct vertex_element *element)
 {
-	*normalized = GL_FALSE;
 	switch (element->type)
 	{
-	case D3DVSDT_FLOAT1: *size = 1; *type = GL_FLOAT; break;
-	case D3DVSDT_FLOAT2: *size = 2; *type = GL_FLOAT; break;
-	case D3DVSDT_FLOAT3: case D3DVSDT_FLOAT2H: *size = 3; *type = GL_FLOAT; break;
-	case D3DVSDT_FLOAT4: *size = 4; *type = GL_FLOAT; break;
+	case D3DVSDT_FLOAT1: return GPU_ATTRIBUTE_FLOAT1;
+	case D3DVSDT_FLOAT2: return GPU_ATTRIBUTE_FLOAT2;
+	case D3DVSDT_FLOAT3: case D3DVSDT_FLOAT2H: return GPU_ATTRIBUTE_FLOAT3;
+	case D3DVSDT_FLOAT4: return GPU_ATTRIBUTE_FLOAT4;
 	/* without BGRA attributes, stream_upload_swizzled swaps the bytes */
-	case D3DVSDT_D3DCOLOR: *size = device_capabilities.vertex_bgra ? GL_BGRA : 4; *type = GL_UNSIGNED_BYTE;
-		*normalized = GL_TRUE; break;
-	case D3DVSDT_SHORT1: *size = 1; *type = GL_SHORT; break;
-	case D3DVSDT_SHORT2: *size = 2; *type = GL_SHORT; break;
-	case D3DVSDT_SHORT3: *size = 3; *type = GL_SHORT; break;
-	case D3DVSDT_SHORT4: *size = 4; *type = GL_SHORT; break;
-	case D3DVSDT_NORMSHORT1: *size = 1; *type = GL_SHORT; *normalized = GL_TRUE; break;
-	case D3DVSDT_NORMSHORT2: *size = 2; *type = GL_SHORT; *normalized = GL_TRUE; break;
-	case D3DVSDT_NORMSHORT3: *size = 3; *type = GL_SHORT; *normalized = GL_TRUE; break;
-	case D3DVSDT_NORMSHORT4: *size = 4; *type = GL_SHORT; *normalized = GL_TRUE; break;
-	case D3DVSDT_PBYTE1: *size = 1; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
-	case D3DVSDT_PBYTE2: *size = 2; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
-	case D3DVSDT_PBYTE3: *size = 3; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
-	case D3DVSDT_PBYTE4: *size = 4; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
-	default: *size = 4; *type = GL_FLOAT; break;
+	case D3DVSDT_D3DCOLOR: return device_capabilities.vertex_bgra ? GPU_ATTRIBUTE_BGRA8 : GPU_ATTRIBUTE_RGBA8;
+	case D3DVSDT_SHORT1: return GPU_ATTRIBUTE_SHORT1;
+	case D3DVSDT_SHORT2: return GPU_ATTRIBUTE_SHORT2;
+	case D3DVSDT_SHORT3: return GPU_ATTRIBUTE_SHORT3;
+	case D3DVSDT_SHORT4: return GPU_ATTRIBUTE_SHORT4;
+	case D3DVSDT_NORMSHORT1: return GPU_ATTRIBUTE_NORMSHORT1;
+	case D3DVSDT_NORMSHORT2: return GPU_ATTRIBUTE_NORMSHORT2;
+	case D3DVSDT_NORMSHORT3: return GPU_ATTRIBUTE_NORMSHORT3;
+	case D3DVSDT_NORMSHORT4: return GPU_ATTRIBUTE_NORMSHORT4;
+	case D3DVSDT_PBYTE1: return GPU_ATTRIBUTE_UBYTE1;
+	case D3DVSDT_PBYTE2: return GPU_ATTRIBUTE_UBYTE2;
+	case D3DVSDT_PBYTE3: return GPU_ATTRIBUTE_UBYTE3;
+	case D3DVSDT_PBYTE4: return GPU_ATTRIBUTE_UBYTE4;
+	case D3DVSDT_NORMPACKED3: return GPU_ATTRIBUTE_NORMPACKED3;
+	default: return GPU_ATTRIBUTE_FLOAT4;
 	}
 }
 
@@ -2586,8 +2586,8 @@ static BOOL stream_has_colors(const struct vertex_shader_object *declaration, un
 static void setup_streams(unsigned long first, unsigned long count)
 {
 	struct vertex_shader_object *declaration = device.vertex_shader;
-	gpu_buffer stream_buffers[16];
-	unsigned long stream_offsets[16];
+	struct gpu_vertex_stream streams[16];
+	struct gpu_vertex_attribute attribute;
 	BOOL placed[16] = { FALSE };
 	BOOL enabled[XGPU_VERTEX_ATTRIBUTE_COUNT] = { FALSE };
 	unsigned long index, total = 0;
@@ -2599,17 +2599,21 @@ static void setup_streams(unsigned long first, unsigned long count)
 		unsigned long stream = element->stream;
 		unsigned long stride = device.streams[stream].stride;
 		unsigned long bytes = stride ? stride * count : 64;
-		unsigned long base;
+		unsigned long base, offset;
 
 		if (!device.streams[stream].data || element->type == D3DVSDT_NONE || placed[stream])
 			continue;
 		placed[stream] = TRUE;
-		stream_buffers[stream] = 0;
+		streams[stream].buffer = 0;
+		streams[stream].stride = (uint32_t)stride;
 		base = (unsigned long)PLATFORM_PHYSICAL_TO_VIRTUAL(device.streams[stream].data) + first * stride;
 		if ((device_capabilities.vertex_bgra || !stream_has_colors(declaration, stream)) &&
-			mirror_range(base, bytes, &stream_buffers[stream], &stream_offsets[stream], NULL))
+			mirror_range(base, bytes, &streams[stream].buffer, &offset, NULL))
+		{
+			streams[stream].offset = (uint32_t)offset;
 			continue;
-		stream_buffers[stream] = 0;
+		}
+		streams[stream].buffer = 0;
 		total += (bytes + 15) & ~15UL;
 	}
 	gpu_stream_reserve((uint32_t)total, 0);
@@ -2618,39 +2622,35 @@ static void setup_streams(unsigned long first, unsigned long count)
 		const struct vertex_element *element = &declaration->elements[index];
 		unsigned long stream = element->stream;
 		unsigned long stride = device.streams[stream].stride;
-		GLint size;
-		GLenum type;
-		GLboolean normalized;
 
 		if (!device.streams[stream].data || element->type == D3DVSDT_NONE)
 			continue;
-		if (!stream_buffers[stream])
+		if (!streams[stream].buffer)
 		{
 			const unsigned char *base = PLATFORM_PHYSICAL_TO_VIRTUAL(device.streams[stream].data);
 			unsigned long bytes = stride ? stride * count : 64;
 
-			stream_offsets[stream] = device_capabilities.vertex_bgra ?
-				stream_upload(base + first * stride, bytes, &stream_buffers[stream]) :
-				stream_upload_swizzled(declaration, stream, base + first * stride, bytes, stride, &stream_buffers[stream]);
+			streams[stream].offset = (uint32_t)(device_capabilities.vertex_bgra ?
+				stream_upload(base + first * stride, bytes, &streams[stream].buffer) :
+				stream_upload_swizzled(declaration, stream, base + first * stride, bytes, stride, &streams[stream].buffer));
 			stats.streamed_bytes += bytes;
 		}
-		if (element->type == D3DVSDT_NORMPACKED3)
-		{
-			gpu_gl_state_attribute_pointer(element->reg, stream_buffers[stream], 1, GL_UNSIGNED_INT, GL_FALSE, TRUE,
-				(GLsizei)stride, stream_offsets[stream] + element->offset);
-		}
-		else
-		{
-			attribute_format(element, &size, &type, &normalized);
-			gpu_gl_state_attribute_pointer(element->reg, stream_buffers[stream], size, type, normalized, FALSE,
-				(GLsizei)stride, stream_offsets[stream] + element->offset);
-		}
+		attribute.format = attribute_format(element);
+		attribute.stream = (uint8_t)stream;
+		attribute.offset = element->offset;
+		gpu_gl_apply_attribute(element->reg, &attribute, &streams[stream], NULL);
 		enabled[element->reg] = TRUE;
 	}
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
 		if (!enabled[index])
-			gpu_gl_state_attribute_value(index, declaration->packed_mask & (1UL << index) ? NULL : device.attributes[index]);
+		{
+			/* a packed attribute reads the integer zero, any other its current value */
+			attribute.format = declaration->packed_mask & (1UL << index) ? GPU_ATTRIBUTE_NORMPACKED3 : GPU_ATTRIBUTE_FLOAT4;
+			attribute.stream = GPU_STREAM_CONSTANT;
+			attribute.offset = 0;
+			gpu_gl_apply_attribute(index, &attribute, NULL, device.attributes[index]);
+		}
 	}
 }
 
@@ -2807,19 +2807,23 @@ static void immediate_emit(void)
 void WINAPI D3DDevice_End(void)
 {
 	unsigned long stride = XGPU_VERTEX_ATTRIBUTE_COUNT * 4 * sizeof(float);
-	unsigned long offset, index, count = device.immediate_count;
+	unsigned long index, count = device.immediate_count;
 	D3DPRIMITIVETYPE type = device.immediate_type;
-	gpu_buffer buffer;
+	struct gpu_vertex_stream stream;
+	struct gpu_vertex_attribute attribute;
 
 	device.immediate_active = FALSE;
 	if (!count || !prepare_draw(TRUE))
 		return;
 	trace_draw("immediate", type, count, device.immediate_vertices);
-	offset = stream_upload(device.immediate_vertices, count * stride, &buffer);
+	stream.offset = (uint32_t)stream_upload(device.immediate_vertices, count * stride, &stream.buffer);
+	stream.stride = (uint32_t)stride;
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
-		gpu_gl_state_attribute_pointer(index, buffer, 4, GL_FLOAT, GL_FALSE, FALSE, (GLsizei)stride,
-			offset + index * 4 * sizeof(float));
+		attribute.format = GPU_ATTRIBUTE_FLOAT4;
+		attribute.stream = 0;
+		attribute.offset = (uint16_t)(index * 4 * sizeof(float));
+		gpu_gl_apply_attribute(index, &attribute, &stream, NULL);
 	}
 	if (type == D3DPT_QUADLIST)
 	{

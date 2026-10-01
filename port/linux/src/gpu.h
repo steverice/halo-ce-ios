@@ -115,7 +115,7 @@ void gpu_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const v
 /* ---------- per-frame transient data */
 
 /* gpu_stream kinds */
-enum { GPU_STREAM_VERTEX = 1, GPU_STREAM_INDEX };
+enum { GPU_STREAM_KIND_VERTEX = 1, GPU_STREAM_KIND_INDEX };
 
 /* room for what one draw streams, before its first gpu_stream: starting a
 new buffer between two of a draw's streams would leave the earlier ones
@@ -276,6 +276,37 @@ struct gpu_stage
 	uint8_t type;
 	uint8_t pad[3];
 	struct gpu_sampler_state sampler;
+};
+
+/* vertex attribute formats: the GL backend reads UBYTE and NORMSHORT
+normalized, SHORT as plain integers converted to float, and NORMPACKED3 as
+one unsigned integer the shader unpacks; BGRA8 only with vertex_bgra */
+enum
+{
+	GPU_ATTRIBUTE_FLOAT1 = 1, GPU_ATTRIBUTE_FLOAT2, GPU_ATTRIBUTE_FLOAT3, GPU_ATTRIBUTE_FLOAT4,
+	GPU_ATTRIBUTE_BGRA8, GPU_ATTRIBUTE_RGBA8,
+	GPU_ATTRIBUTE_SHORT1, GPU_ATTRIBUTE_SHORT2, GPU_ATTRIBUTE_SHORT3, GPU_ATTRIBUTE_SHORT4,
+	GPU_ATTRIBUTE_NORMSHORT1, GPU_ATTRIBUTE_NORMSHORT2, GPU_ATTRIBUTE_NORMSHORT3, GPU_ATTRIBUTE_NORMSHORT4,
+	GPU_ATTRIBUTE_UBYTE1, GPU_ATTRIBUTE_UBYTE2, GPU_ATTRIBUTE_UBYTE3, GPU_ATTRIBUTE_UBYTE4,
+	GPU_ATTRIBUTE_NORMPACKED3,
+};
+
+/* an attribute's source besides streams 0-15: a constant value, or nothing */
+enum { GPU_STREAM_CONSTANT = 16, GPU_STREAM_NONE = 255 };
+
+struct gpu_vertex_stream
+{
+	gpu_buffer buffer;
+	uint32_t offset;
+	uint32_t stride;
+};
+
+struct gpu_vertex_attribute
+{
+	uint8_t format;
+	uint8_t stream;
+	/* bytes from the start of the stream's vertex */
+	uint16_t offset;
 };
 
 /* probe the context, which must be current, and set it up */

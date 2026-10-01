@@ -196,14 +196,14 @@ static void state_element_array_buffer(GLuint buffer)
 	}
 }
 
-/* until sub-step e-3 moves the vertex streams: the front end binds the
-index buffer through the cache */
+/* until sub-step e-4's gpu_draw: the front end binds the index buffer
+through the cache */
 void gpu_gl_state_element_array_buffer(GLuint buffer)
 {
 	state_element_array_buffer(buffer);
 }
 
-void gpu_gl_state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
+static void state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
 	BOOL integer, GLsizei stride, unsigned long offset)
 {
 	struct attribute_pointer *pointer = &gl_state.attribute_pointers[index];
@@ -234,7 +234,7 @@ void gpu_gl_state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLe
 }
 
 /* disables the attribute, which then reads value, or the integer zero */
-void gpu_gl_state_attribute_value(GLuint index, const float *value)
+static void state_attribute_value(GLuint index, const float *value)
 {
 	unsigned char kind = value ? 0 : 1;
 
@@ -258,6 +258,53 @@ void gpu_gl_state_attribute_value(GLuint index, const float *value)
 	{
 		glVertexAttribI4ui(index, 0, 0, 0, 0);
 	}
+}
+
+/* the GL size, type and normalization of an attribute format */
+static void gl_attribute_format(uint32_t format, GLint *size, GLenum *type, GLboolean *normalized)
+{
+	*normalized = GL_FALSE;
+	switch (format)
+	{
+	case GPU_ATTRIBUTE_FLOAT1: *size = 1; *type = GL_FLOAT; break;
+	case GPU_ATTRIBUTE_FLOAT2: *size = 2; *type = GL_FLOAT; break;
+	case GPU_ATTRIBUTE_FLOAT3: *size = 3; *type = GL_FLOAT; break;
+	case GPU_ATTRIBUTE_BGRA8: *size = GL_BGRA; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_RGBA8: *size = 4; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_SHORT1: *size = 1; *type = GL_SHORT; break;
+	case GPU_ATTRIBUTE_SHORT2: *size = 2; *type = GL_SHORT; break;
+	case GPU_ATTRIBUTE_SHORT3: *size = 3; *type = GL_SHORT; break;
+	case GPU_ATTRIBUTE_SHORT4: *size = 4; *type = GL_SHORT; break;
+	case GPU_ATTRIBUTE_NORMSHORT1: *size = 1; *type = GL_SHORT; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_NORMSHORT2: *size = 2; *type = GL_SHORT; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_NORMSHORT3: *size = 3; *type = GL_SHORT; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_NORMSHORT4: *size = 4; *type = GL_SHORT; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_UBYTE1: *size = 1; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_UBYTE2: *size = 2; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_UBYTE3: *size = 3; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_UBYTE4: *size = 4; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
+	case GPU_ATTRIBUTE_NORMPACKED3: *size = 1; *type = GL_UNSIGNED_INT; break;
+	case GPU_ATTRIBUTE_FLOAT4: default: *size = 4; *type = GL_FLOAT; break;
+	}
+}
+
+void gpu_gl_apply_attribute(uint32_t index, const struct gpu_vertex_attribute *attribute,
+	const struct gpu_vertex_stream *stream, const float *value)
+{
+	GLint size;
+	GLenum type;
+	GLboolean normalized;
+
+	if (attribute->stream == GPU_STREAM_CONSTANT)
+	{
+		/* a packed attribute reads the integer zero */
+		state_attribute_value(index, attribute->format == GPU_ATTRIBUTE_NORMPACKED3 ? NULL : value);
+		return;
+	}
+	gl_attribute_format(attribute->format, &size, &type, &normalized);
+	state_attribute_pointer(index, stream->buffer, size, type, normalized,
+		attribute->format == GPU_ATTRIBUTE_NORMPACKED3, (GLsizei)stream->stride,
+		(unsigned long)stream->offset + attribute->offset);
 }
 
 /* ---------- raster state
@@ -986,7 +1033,7 @@ uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *
 	unsigned long offset;
 
 	size = (size + 15) & ~15U;
-	if (kind == GPU_STREAM_INDEX)
+	if (kind == GPU_STREAM_KIND_INDEX)
 	{
 		/* the index buffer makes room as each range comes */
 		state_element_array_buffer(streams.index_buffer);
