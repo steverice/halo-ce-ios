@@ -192,3 +192,10 @@ def test_reset_settings_restore_defaults_an_earlier_set_may_have_changed(tmp_pat
     assert settings["debug.gpu_trace_frame"] == "-1"
     assert settings["display.interpolation"] == "true"
     assert settings["display.render_height"] == "0"
+
+
+def test_launch_script_waits_for_xcode_to_open_the_project():
+    """open -a returns before Xcode has the project open when it wasn't already"""
+    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner")
+    wait = script.index('exists (first workspace document whose path contains "mac-runner/HaloRunner.xcodeproj")')
+    assert wait < script.index("set doc to")

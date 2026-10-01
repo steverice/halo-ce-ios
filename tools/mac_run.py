@@ -219,13 +219,25 @@ schemes:
       debugEnabled: false
 """
 
+# open -a returns before a cold Xcode has the project open, and a freshly
+# loaded project lists its run destinations a little later still
 LAUNCH = """tell application "{xcode}"
+	repeat 120 times
+		if exists (first workspace document whose path contains "mac-runner/{target}.xcodeproj") then exit repeat
+		delay 1
+	end repeat
 	set doc to first workspace document whose path contains "mac-runner/{target}.xcodeproj"
 	repeat 120 times
 		if loaded of doc then exit repeat
 		delay 1
 	end repeat
-	set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")
+	repeat 60 times
+		try
+			set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")
+			exit repeat
+		end try
+		delay 1
+	end repeat
 	run doc
 end tell
 """
