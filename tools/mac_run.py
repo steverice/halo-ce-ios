@@ -59,6 +59,7 @@ DEFAULTS = {
     "display.interpolation": "true",
     "debug.null_renderer": "false",
     "debug.gl_debug": "false",
+    "debug.fixed_timestep": "false",
     "debug.gpu_stats": "false",
     "debug.gpu_trace_frame": "-1",
     "debug.gpu_trace_constants": "false",

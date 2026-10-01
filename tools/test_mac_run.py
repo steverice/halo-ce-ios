@@ -199,3 +199,9 @@ def test_launch_script_waits_for_xcode_to_open_the_project():
     script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner")
     wait = script.index('exists (first workspace document whose path contains "mac-runner/HaloRunner.xcodeproj")')
     assert wait < script.index("set doc to")
+
+
+def test_reset_settings_turn_off_the_fixed_timestep(tmp_path):
+    """a run that doesn't ask for the virtual clock must get the real one"""
+    settings = mac_run.reset_settings(tmp_path, screenshot_every=0, dump_shaders=False, replay=False)
+    assert settings["debug.fixed_timestep"] == "false"
