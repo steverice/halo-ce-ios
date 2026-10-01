@@ -146,6 +146,7 @@ void nv2a_uniform_declarations(struct xgpu_text *text, const struct nv2a_dialect
 {
 #define DECLARE_UNIFORM(name, glsl_type, count, uniform_stage) \
 	if ((uniform_stage) == stage || \
+		((uniform_stage) == GPU_UNIFORM_VERTEX_CONSTANTS && stage == GPU_UNIFORM_VERTEX) || \
 		((uniform_stage) == GPU_UNIFORM_PIXEL_LOD_BIAS && stage == GPU_UNIFORM_PIXEL && dialect->shader_lod_bias)) \
 	{ \
 		if ((count) > 1) \

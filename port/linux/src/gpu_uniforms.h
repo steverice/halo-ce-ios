@@ -19,6 +19,8 @@ enum
 	GPU_UNIFORM_PIXEL,
 	/* pixel shaders whose samplers have no LOD bias of their own */
 	GPU_UNIFORM_PIXEL_LOD_BIAS,
+	/* c: the vertex constants, which live in struct gpu_constant_store */
+	GPU_UNIFORM_VERTEX_CONSTANTS,
 };
 
 /* screen_offset: columns the menus shift by to center on a wide screen
@@ -26,7 +28,7 @@ enum
 uniforms rather than in the program (C0/C1 of each stage and the final
 combiner) and texture constants. texture_lod_bias: one component per stage. */
 #define GPU_UNIFORMS(X) \
-	X(c, vec4, 192, GPU_UNIFORM_VERTEX) \
+	X(c, vec4, 192, GPU_UNIFORM_VERTEX_CONSTANTS) \
 	X(viewport_scale, vec4, 1, GPU_UNIFORM_VERTEX) \
 	X(viewport_offset, vec4, 1, GPU_UNIFORM_VERTEX) \
 	X(point_size, float, 1, GPU_UNIFORM_VERTEX) \
@@ -42,5 +44,14 @@ combiner) and texture constants. texture_lod_bias: one component per stage. */
 	X(bump_luminance, vec4, 4, GPU_UNIFORM_PIXEL) \
 	X(texture_scale, vec4, 4, GPU_UNIFORM_PIXEL) \
 	X(texture_lod_bias, vec4, 1, GPU_UNIFORM_PIXEL_LOD_BIAS)
+
+/* the fields of struct gpu_uniforms (gpu.h): every row but c, each a vec4
+array (a scalar is a vec4 whose x holds it), so every field starts on a
+16-byte boundary */
+#define GPU_UNIFORM_FIELD_GPU_UNIFORM_VERTEX(name, count) float name[count][4];
+#define GPU_UNIFORM_FIELD_GPU_UNIFORM_PIXEL(name, count) float name[count][4];
+#define GPU_UNIFORM_FIELD_GPU_UNIFORM_PIXEL_LOD_BIAS(name, count) float name[count][4];
+#define GPU_UNIFORM_FIELD_GPU_UNIFORM_VERTEX_CONSTANTS(name, count)
+#define GPU_UNIFORM_FIELD(name, glsl_type, count, stage) GPU_UNIFORM_FIELD_##stage(name, count)
 
 #endif

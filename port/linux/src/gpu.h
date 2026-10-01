@@ -6,14 +6,15 @@ and a GPU backend (gpu_gl.c; Metal in Phase 1). It is filled in one
 sub-step at a time (renderer split design, step 3).
 
 It compiles on the 64-bit iOS host as well as in the 32-bit guest, so it
-includes only <stdint.h> and its structs use fixed-width fields alone: the
-two ABIs lay them out the same way.
+includes only <stdint.h> and gpu_uniforms.h (which includes nothing), and its
+structs use fixed-width fields alone: the two ABIs lay them out the same way.
 */
 
 #ifndef __HALO_GPU_H
 #define __HALO_GPU_H
 
 #include <stdint.h>
+#include "gpu_uniforms.h"
 
 /* 0 is none */
 typedef uint32_t gpu_texture, gpu_buffer, gpu_shader;
@@ -147,6 +148,16 @@ struct gpu_constant_store
 	uint32_t serials[GPU_CONSTANT_COUNT];
 	uint32_t serial;
 	uint8_t log[GPU_CONSTANT_LOG_SIZE];
+};
+
+/* ---------- uniforms (gpu_uniforms.h): what the shaders read besides the
+vertex constants, and serial, which changes whenever any of them does */
+
+struct gpu_uniforms
+{
+	GPU_UNIFORMS(GPU_UNIFORM_FIELD)
+	uint32_t serial;
+	uint32_t pad[3];
 };
 
 /* probe the context, which must be current, and set it up */

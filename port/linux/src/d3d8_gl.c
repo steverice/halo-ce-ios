@@ -198,26 +198,6 @@ struct fragment_entry
 	gpu_shader shader;
 };
 
-/* the uniforms a draw sets besides the vertex constants */
-struct draw_uniforms
-{
-	float viewport_scale[4];
-	float viewport_offset[4];
-	float point_size;
-	float ps_c0[8][4];
-	float ps_c1[8][4];
-	float ps_final_c0[4];
-	float ps_final_c1[4];
-	float fog_color[4];
-	float fog_parameters[4];
-	float alpha_reference;
-	float bump_matrix[4][4];
-	float bump_luminance[4][4];
-	float texture_scale[4][4];
-	float screen_offset;
-	float texture_lod_bias[4];
-};
-
 struct program_entry
 {
 	struct program_entry *next;
@@ -240,10 +220,10 @@ struct program_entry
 	BOOL constants_consecutive;
 	/* constants_serial at the program's last constant upload (constants_store) */
 	uint32_t constants_serial;
-	/* draw_uniforms_serial when the uniforms below were brought up to date */
-	unsigned long uniforms_serial;
+	/* draw_uniforms.serial when the uniforms below were brought up to date */
+	uint32_t uniforms_serial;
 	/* what the program's other uniforms hold (all ones: unknown) */
-	struct draw_uniforms uniforms;
+	struct gpu_uniforms uniforms;
 };
 
 #define FRAGMENT_BUCKETS 1024
@@ -2447,8 +2427,7 @@ counts the conversions */
 #define DRAW_UNIFORM_INPUT_COUNT (4 + 4 + 16 + 1 + 16 + 2 + 4 + 1 + 1 + 7 * D3DTSS_MAXSTAGES)
 
 static DWORD draw_uniform_inputs[DRAW_UNIFORM_INPUT_COUNT];
-static struct draw_uniforms draw_uniforms;
-static unsigned long draw_uniforms_serial;
+static struct gpu_uniforms draw_uniforms;
 
 /* sets a program's uniform unless it already holds value */
 static void uniform_vec4(GLint location, float *shadow, const float *value, int count)
@@ -2472,7 +2451,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	struct vertex_shader_object *program = current_program();
 	struct nv2a_pixel_shader_key key;
 	struct program_entry *entry;
-	struct draw_uniforms uniforms;
+	float texture_scale[4][4];
 	BOOL has_depth = FALSE;
 	int stage;
 
@@ -2507,7 +2486,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	key.combiner_state[D3DRS_PSFINALCOMBINERCONSTANT0] = 0;
 	key.combiner_state[D3DRS_PSFINALCOMBINERCONSTANT1] = 0;
 	key.texture_modes = D3D__RenderState[D3DRS_PSTEXTUREMODES];
-	bind_textures(&key, uniforms.texture_scale);
+	bind_textures(&key, texture_scale);
 	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
 	{
 		key.alpha_kill[stage] = D3D__TextureState[stage][D3DTSS_ALPHAKILL] == D3DTALPHAKILL_ENABLE;
@@ -2589,7 +2568,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 		count += 4;
 		memcpy(&inputs[count], device.viewport_offset, sizeof(device.viewport_offset));
 		count += 4;
-		memcpy(&inputs[count], uniforms.texture_scale, sizeof(uniforms.texture_scale));
+		memcpy(&inputs[count], texture_scale, sizeof(texture_scale));
 		count += 16;
 		inputs[count++] = D3D__RenderState[D3DRS_POINTSIZE];
 		for (stage = 0; stage < 8; stage++)
@@ -2617,30 +2596,30 @@ static struct program_entry *prepare_draw(BOOL immediate)
 			inputs[count++] = state[D3DTSS_BUMPENVLOFFSET];
 			inputs[count++] = state[D3DTSS_MIPMAPLODBIAS];
 		}
-		if (!draw_uniforms_serial || memcmp(inputs, draw_uniform_inputs, sizeof(inputs)))
+		if (!draw_uniforms.serial || memcmp(inputs, draw_uniform_inputs, sizeof(inputs)))
 		{
-			struct draw_uniforms *converted = &draw_uniforms;
+			struct gpu_uniforms *converted = &draw_uniforms;
 
 			memcpy(draw_uniform_inputs, inputs, sizeof(inputs));
-			draw_uniforms_serial++;
-			memcpy(converted->viewport_scale, device.viewport_scale, sizeof(converted->viewport_scale));
-			memcpy(converted->viewport_offset, device.viewport_offset, sizeof(converted->viewport_offset));
-			memcpy(converted->texture_scale, uniforms.texture_scale, sizeof(converted->texture_scale));
-			converted->point_size = D3D__RenderState[D3DRS_POINTSIZE] ?
+			draw_uniforms.serial++;
+			memcpy(converted->viewport_scale[0], device.viewport_scale, sizeof(converted->viewport_scale));
+			memcpy(converted->viewport_offset[0], device.viewport_offset, sizeof(converted->viewport_offset));
+			memcpy(converted->texture_scale, texture_scale, sizeof(converted->texture_scale));
+			converted->point_size[0][0] = D3D__RenderState[D3DRS_POINTSIZE] ?
 				dword_to_float(D3D__RenderState[D3DRS_POINTSIZE]) : 1.0f;
 			for (stage = 0; stage < 8; stage++)
 			{
 				color_to_vec4(D3D__RenderState[D3DRS_PSCONSTANT0_0 + stage], converted->ps_c0[stage]);
 				color_to_vec4(D3D__RenderState[D3DRS_PSCONSTANT1_0 + stage], converted->ps_c1[stage]);
 			}
-			color_to_vec4(D3D__RenderState[D3DRS_PSFINALCOMBINERCONSTANT0], converted->ps_final_c0);
-			color_to_vec4(D3D__RenderState[D3DRS_PSFINALCOMBINERCONSTANT1], converted->ps_final_c1);
-			color_to_vec4(D3D__RenderState[D3DRS_FOGCOLOR], converted->fog_color);
-			converted->fog_parameters[0] = dword_to_float(D3D__RenderState[D3DRS_FOGSTART]);
-			converted->fog_parameters[1] = dword_to_float(D3D__RenderState[D3DRS_FOGEND]);
-			converted->fog_parameters[2] = dword_to_float(D3D__RenderState[D3DRS_FOGDENSITY]);
-			converted->fog_parameters[3] = 0.0f;
-			converted->alpha_reference = (float)(D3D__RenderState[D3DRS_ALPHAREF] & 0xff);
+			color_to_vec4(D3D__RenderState[D3DRS_PSFINALCOMBINERCONSTANT0], converted->ps_final_c0[0]);
+			color_to_vec4(D3D__RenderState[D3DRS_PSFINALCOMBINERCONSTANT1], converted->ps_final_c1[0]);
+			color_to_vec4(D3D__RenderState[D3DRS_FOGCOLOR], converted->fog_color[0]);
+			converted->fog_parameters[0][0] = dword_to_float(D3D__RenderState[D3DRS_FOGSTART]);
+			converted->fog_parameters[0][1] = dword_to_float(D3D__RenderState[D3DRS_FOGEND]);
+			converted->fog_parameters[0][2] = dword_to_float(D3D__RenderState[D3DRS_FOGDENSITY]);
+			converted->fog_parameters[0][3] = 0.0f;
+			converted->alpha_reference[0][0] = (float)(D3D__RenderState[D3DRS_ALPHAREF] & 0xff);
 			for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
 			{
 				DWORD *state = D3D__TextureState[stage];
@@ -2652,30 +2631,30 @@ static struct program_entry *prepare_draw(BOOL immediate)
 				converted->bump_luminance[stage][0] = dword_to_float(state[D3DTSS_BUMPENVLSCALE]);
 				converted->bump_luminance[stage][1] = dword_to_float(state[D3DTSS_BUMPENVLOFFSET]);
 				converted->bump_luminance[stage][2] = converted->bump_luminance[stage][3] = 0.0f;
-				converted->texture_lod_bias[stage] = dword_to_float(state[D3DTSS_MIPMAPLODBIAS]);
+				converted->texture_lod_bias[0][stage] = dword_to_float(state[D3DTSS_MIPMAPLODBIAS]);
 			}
-			converted->screen_offset = (float)UI_OFFSET;
+			converted->screen_offset[0][0] = (float)UI_OFFSET;
 		}
 	}
 	/* and a program that has had them since needs none of them */
-	if (entry->uniforms_serial == draw_uniforms_serial)
+	if (entry->uniforms_serial == draw_uniforms.serial)
 		return entry;
-	entry->uniforms_serial = draw_uniforms_serial;
-	uniform_vec4(entry->viewport_scale, entry->uniforms.viewport_scale, draw_uniforms.viewport_scale, 1);
-	uniform_vec4(entry->viewport_offset, entry->uniforms.viewport_offset, draw_uniforms.viewport_offset, 1);
-	uniform_float(entry->point_size, &entry->uniforms.point_size, draw_uniforms.point_size);
+	entry->uniforms_serial = draw_uniforms.serial;
+	uniform_vec4(entry->viewport_scale, entry->uniforms.viewport_scale[0], draw_uniforms.viewport_scale[0], 1);
+	uniform_vec4(entry->viewport_offset, entry->uniforms.viewport_offset[0], draw_uniforms.viewport_offset[0], 1);
+	uniform_float(entry->point_size, &entry->uniforms.point_size[0][0], draw_uniforms.point_size[0][0]);
 	uniform_vec4(entry->ps_c0, entry->uniforms.ps_c0[0], draw_uniforms.ps_c0[0], 8);
 	uniform_vec4(entry->ps_c1, entry->uniforms.ps_c1[0], draw_uniforms.ps_c1[0], 8);
-	uniform_vec4(entry->ps_final_c0, entry->uniforms.ps_final_c0, draw_uniforms.ps_final_c0, 1);
-	uniform_vec4(entry->ps_final_c1, entry->uniforms.ps_final_c1, draw_uniforms.ps_final_c1, 1);
-	uniform_vec4(entry->fog_color, entry->uniforms.fog_color, draw_uniforms.fog_color, 1);
-	uniform_vec4(entry->fog_parameters, entry->uniforms.fog_parameters, draw_uniforms.fog_parameters, 1);
-	uniform_float(entry->alpha_reference, &entry->uniforms.alpha_reference, draw_uniforms.alpha_reference);
+	uniform_vec4(entry->ps_final_c0, entry->uniforms.ps_final_c0[0], draw_uniforms.ps_final_c0[0], 1);
+	uniform_vec4(entry->ps_final_c1, entry->uniforms.ps_final_c1[0], draw_uniforms.ps_final_c1[0], 1);
+	uniform_vec4(entry->fog_color, entry->uniforms.fog_color[0], draw_uniforms.fog_color[0], 1);
+	uniform_vec4(entry->fog_parameters, entry->uniforms.fog_parameters[0], draw_uniforms.fog_parameters[0], 1);
+	uniform_float(entry->alpha_reference, &entry->uniforms.alpha_reference[0][0], draw_uniforms.alpha_reference[0][0]);
 	uniform_vec4(entry->bump_matrix, entry->uniforms.bump_matrix[0], draw_uniforms.bump_matrix[0], 4);
 	uniform_vec4(entry->bump_luminance, entry->uniforms.bump_luminance[0], draw_uniforms.bump_luminance[0], 4);
 	uniform_vec4(entry->texture_scale, entry->uniforms.texture_scale[0], draw_uniforms.texture_scale[0], 4);
-	uniform_float(entry->screen_offset, &entry->uniforms.screen_offset, draw_uniforms.screen_offset);
-	uniform_vec4(entry->texture_lod_bias, entry->uniforms.texture_lod_bias, draw_uniforms.texture_lod_bias, 1);
+	uniform_float(entry->screen_offset, &entry->uniforms.screen_offset[0][0], draw_uniforms.screen_offset[0][0]);
+	uniform_vec4(entry->texture_lod_bias, entry->uniforms.texture_lod_bias[0], draw_uniforms.texture_lod_bias[0], 1);
 	return entry;
 }
 
