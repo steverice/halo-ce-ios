@@ -17,6 +17,16 @@ for now it probes the context.
 /* OpenGL ES 3 has no BGRA upload format; d3d8_gl.c defines the same alias */
 #define GL_BGRA GL_RGBA
 #define glDepthRange glDepthRangef
+/* the sampler extensions' enumerants, for ES headers without them */
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84fe
+#endif
+#ifndef GL_TEXTURE_BORDER_COLOR
+#define GL_TEXTURE_BORDER_COLOR 0x1004
+#endif
+#ifndef GL_CLAMP_TO_BORDER
+#define GL_CLAMP_TO_BORDER 0x812d
+#endif
 #endif
 
 /* ---------- streams */
@@ -144,7 +154,7 @@ void gpu_gl_state_framebuffer(GLuint framebuffer)
 	}
 }
 
-void gpu_gl_state_texture(int unit, GLenum target, GLuint texture)
+static void state_texture(int unit, GLenum target, GLuint texture)
 {
 	int slot = target == GL_TEXTURE_CUBE_MAP ? 1 : target == GL_TEXTURE_3D ? 2 : 0;
 
@@ -159,7 +169,7 @@ void gpu_gl_state_texture(int unit, GLenum target, GLuint texture)
 	glBindTexture(target, texture);
 }
 
-void gpu_gl_state_sampler(int unit, GLuint sampler)
+static void state_sampler(int unit, GLuint sampler)
 {
 	if (gl_state.samplers[unit] != sampler)
 	{
@@ -499,6 +509,86 @@ void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct
 	}
 }
 
+/* ---------- texture stages
+
+gpu_gl_apply_stage binds a packet stage's texture and sampler object and
+configures the sampler when the stage's sampler state changed, until
+sub-step e-4's gpu_draw applies the whole packet. */
+
+/* one sampler object per texture stage, and the state each was last
+configured with (not part of gl_state: a sampler object keeps its
+parameters whatever GL state changes behind the cache) */
+static GLuint samplers[D3DTSS_MAXSTAGES];
+static struct gpu_sampler_state configured[D3DTSS_MAXSTAGES];
+static BOOL configured_valid[D3DTSS_MAXSTAGES];
+/* gpu_capabilities.border_clamp: without it BORDER addressing clamps to the
+edge */
+static BOOL border_clamp;
+
+static GLenum gl_address(uint32_t mode)
+{
+	switch (mode)
+	{
+	case GPU_ADDRESS_MIRROR: return GL_MIRRORED_REPEAT;
+	case GPU_ADDRESS_CLAMP:
+	case GPU_ADDRESS_CLAMP_TO_EDGE: return GL_CLAMP_TO_EDGE;
+	case GPU_ADDRESS_BORDER: return border_clamp ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE;
+	default: return GL_REPEAT;
+	}
+}
+
+void gpu_gl_apply_stage(int stage, const struct gpu_stage *packet_stage)
+{
+	const struct gpu_sampler_state *state = &packet_stage->sampler;
+	GLuint sampler = samplers[stage];
+	GLenum minification;
+	float border[4];
+
+	if (!packet_stage->type)
+	{
+		state_texture(stage, GL_TEXTURE_2D, 0);
+		return;
+	}
+	state_texture(stage, gpu_gl_texture_target(packet_stage->type), packet_stage->texture);
+	state_sampler(stage, sampler);
+	if (configured_valid[stage] && !memcmp(&configured[stage], state, sizeof(*state)))
+		return;
+	configured[stage] = *state;
+	configured_valid[stage] = TRUE;
+
+	if (state->min_filter == GPU_FILTER_POINT)
+		minification = state->mip_filter == GPU_FILTER_NONE ? GL_NEAREST :
+			state->mip_filter == GPU_FILTER_POINT ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_LINEAR;
+	else
+		minification = state->mip_filter == GPU_FILTER_NONE ? GL_LINEAR :
+			state->mip_filter == GPU_FILTER_POINT ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR;
+	glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, (GLint)minification);
+	glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, state->mag_filter == GPU_FILTER_POINT ? GL_NEAREST : GL_LINEAR);
+	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, (GLint)gl_address(state->address_u));
+	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, (GLint)gl_address(state->address_v));
+	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, (GLint)gl_address(state->address_w));
+#ifdef HALO_ILP32
+	/* ES has no sampler LOD bias; the pixel shader applies it
+	(texture_lod_bias) */
+	glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, (float)state->max_mip_level);
+	if (xgpu_capabilities.anisotropy)
+		glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+			(state->min_filter == GPU_FILTER_ANISOTROPIC && state->max_anisotropy > 1) ? (float)state->max_anisotropy : 1.0f);
+	if (border_clamp)
+	{
+		color_to_vec4(state->border_color, border);
+		glSamplerParameterfv(sampler, GL_TEXTURE_BORDER_COLOR, border);
+	}
+#else
+	glSamplerParameterf(sampler, GL_TEXTURE_LOD_BIAS, state->lod_bias);
+	glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, (float)state->max_mip_level);
+	glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY,
+		(state->min_filter == GPU_FILTER_ANISOTROPIC && state->max_anisotropy > 1) ? (float)state->max_anisotropy : 1.0f);
+	color_to_vec4(state->border_color, border);
+	glSamplerParameterfv(sampler, GL_TEXTURE_BORDER_COLOR, border);
+#endif
+}
+
 #ifndef HALO_ILP32
 static void GLAPIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
 	GLsizei length, const GLchar *message, const void *user)
@@ -604,6 +694,8 @@ void gpu_initialize(struct gpu_capabilities *capabilities)
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, streams.index_buffer);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
 #endif
+	border_clamp = capabilities->border_clamp ? TRUE : FALSE;
+	glGenSamplers(D3DTSS_MAXSTAGES, samplers);
 }
 
 /* ---------- textures

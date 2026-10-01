@@ -43,15 +43,6 @@ and entry points used below that ES lacks */
 #define GL_BGRA GL_RGBA
 #define glDepthRange glDepthRangef
 #define glClearDepth glClearDepthf
-#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
-#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84fe
-#endif
-#ifndef GL_TEXTURE_BORDER_COLOR
-#define GL_TEXTURE_BORDER_COLOR 0x1004
-#endif
-#ifndef GL_CLAMP_TO_BORDER
-#define GL_CLAMP_TO_BORDER 0x812d
-#endif
 
 /* what the context supports (gl_initialize) */
 struct xgpu_capabilities xgpu_capabilities;
@@ -273,8 +264,6 @@ struct gl_device
 	float *immediate_vertices;
 	unsigned long immediate_count;
 	unsigned long immediate_capacity;
-
-	GLuint samplers[D3DTSS_MAXSTAGES];
 
 	GLuint queries[VISIBILITY_TEST_SLOTS];
 	BOOL query_pending[VISIBILITY_TEST_SLOTS];
@@ -693,7 +682,6 @@ static void gl_initialize(void)
 	platform_log("iOS render target: %.0fx%.0f (logical %ldx%d)",
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
 #endif
-	glGenSamplers(D3DTSS_MAXSTAGES, device.samplers);
 	glGenQueries(VISIBILITY_TEST_SLOTS, device.queries);
 #ifndef HALO_ILP32
 	glGenBuffers(1, &device.visibility_results_buffer);
@@ -1659,79 +1647,48 @@ static unsigned long stage_texture_mode(int stage)
 	return (D3D__RenderState[D3DRS_PSTEXTUREMODES] >> (5 * stage)) & 0x1f;
 }
 
-static GLenum address_mode(DWORD mode)
+static uint8_t gpu_filter(DWORD filter)
+{
+	switch (filter)
+	{
+	case D3DTEXF_POINT: return GPU_FILTER_POINT;
+	case D3DTEXF_LINEAR: return GPU_FILTER_LINEAR;
+	case D3DTEXF_ANISOTROPIC: return GPU_FILTER_ANISOTROPIC;
+	case D3DTEXF_QUINCUNX: return GPU_FILTER_QUINCUNX;
+	case D3DTEXF_GAUSSIANCUBIC: return GPU_FILTER_GAUSSIAN_CUBIC;
+	default: return GPU_FILTER_NONE;
+	}
+}
+
+static uint8_t gpu_address(DWORD mode)
 {
 	switch (mode)
 	{
-	case D3DTADDRESS_MIRROR: return GL_MIRRORED_REPEAT;
-	case D3DTADDRESS_CLAMP: return GL_CLAMP_TO_EDGE;
-	case D3DTADDRESS_BORDER: return device_capabilities.border_clamp ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE;
-	case D3DTADDRESS_CLAMPTOEDGE: return GL_CLAMP_TO_EDGE;
-	default: return GL_REPEAT;
+	case D3DTADDRESS_MIRROR: return GPU_ADDRESS_MIRROR;
+	case D3DTADDRESS_CLAMP: return GPU_ADDRESS_CLAMP;
+	case D3DTADDRESS_BORDER: return GPU_ADDRESS_BORDER;
+	case D3DTADDRESS_CLAMPTOEDGE: return GPU_ADDRESS_CLAMP_TO_EDGE;
+	default: return GPU_ADDRESS_WRAP;
 	}
 }
 
-static void configure_sampler(int stage, BOOL mipmapped)
+/* the sampler state of a stage; without mipmaps the mip filter is none */
+static void sampler_state_fill(int stage, BOOL mipmapped, struct gpu_sampler_state *sampler)
 {
-	/* the texture stage state each sampler was last configured from */
-	static DWORD configured[D3DTSS_MAXSTAGES][10];
-	static BOOL configured_valid[D3DTSS_MAXSTAGES];
-	GLuint sampler = device.samplers[stage];
 	DWORD *state = D3D__TextureState[stage];
-	DWORD min_filter = state[D3DTSS_MINFILTER];
-	DWORD mip_filter = mipmapped ? state[D3DTSS_MIPFILTER] : D3DTEXF_NONE;
-	GLenum minification;
-	float border[4];
-	DWORD inputs[10];
 
-	inputs[0] = min_filter;
-	inputs[1] = mip_filter;
-	inputs[2] = state[D3DTSS_MAGFILTER];
-	inputs[3] = state[D3DTSS_ADDRESSU];
-	inputs[4] = state[D3DTSS_ADDRESSV];
-	inputs[5] = state[D3DTSS_ADDRESSW];
-	inputs[6] = state[D3DTSS_MIPMAPLODBIAS];
-	inputs[7] = state[D3DTSS_MAXMIPLEVEL];
-	inputs[8] = state[D3DTSS_MAXANISOTROPY];
-	inputs[9] = state[D3DTSS_BORDERCOLOR];
-	if (configured_valid[stage] && !memcmp(configured[stage], inputs, sizeof(inputs)))
-		return;
-	memcpy(configured[stage], inputs, sizeof(inputs));
-	configured_valid[stage] = TRUE;
-
-	if (min_filter == D3DTEXF_POINT)
-		minification = mip_filter == D3DTEXF_NONE ? GL_NEAREST :
-			mip_filter == D3DTEXF_POINT ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_LINEAR;
-	else
-		minification = mip_filter == D3DTEXF_NONE ? GL_LINEAR :
-			mip_filter == D3DTEXF_POINT ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR_MIPMAP_LINEAR;
-	glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, (GLint)minification);
-	glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, state[D3DTSS_MAGFILTER] == D3DTEXF_POINT ? GL_NEAREST : GL_LINEAR);
-	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, (GLint)address_mode(state[D3DTSS_ADDRESSU]));
-	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, (GLint)address_mode(state[D3DTSS_ADDRESSV]));
-	glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, (GLint)address_mode(state[D3DTSS_ADDRESSW]));
-#ifdef HALO_ILP32
-	/* ES has no sampler LOD bias; the pixel shader applies it
-	(texture_lod_bias) */
-	glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, (float)state[D3DTSS_MAXMIPLEVEL]);
-	if (xgpu_capabilities.anisotropy)
-		glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY_EXT,
-			(min_filter == D3DTEXF_ANISOTROPIC && state[D3DTSS_MAXANISOTROPY] > 1) ? (float)state[D3DTSS_MAXANISOTROPY] : 1.0f);
-	if (xgpu_capabilities.border_clamp)
-	{
-		color_to_vec4(state[D3DTSS_BORDERCOLOR], border);
-		glSamplerParameterfv(sampler, GL_TEXTURE_BORDER_COLOR, border);
-	}
-#else
-	glSamplerParameterf(sampler, GL_TEXTURE_LOD_BIAS, dword_to_float(state[D3DTSS_MIPMAPLODBIAS]));
-	glSamplerParameterf(sampler, GL_TEXTURE_MIN_LOD, (float)state[D3DTSS_MAXMIPLEVEL]);
-	glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY,
-		(min_filter == D3DTEXF_ANISOTROPIC && state[D3DTSS_MAXANISOTROPY] > 1) ? (float)state[D3DTSS_MAXANISOTROPY] : 1.0f);
-	color_to_vec4(state[D3DTSS_BORDERCOLOR], border);
-	glSamplerParameterfv(sampler, GL_TEXTURE_BORDER_COLOR, border);
-#endif
+	memset(sampler, 0, sizeof(*sampler));
+	sampler->min_filter = gpu_filter(state[D3DTSS_MINFILTER]);
+	sampler->mip_filter = mipmapped ? gpu_filter(state[D3DTSS_MIPFILTER]) : GPU_FILTER_NONE;
+	sampler->mag_filter = gpu_filter(state[D3DTSS_MAGFILTER]);
+	sampler->address_u = gpu_address(state[D3DTSS_ADDRESSU]);
+	sampler->address_v = gpu_address(state[D3DTSS_ADDRESSV]);
+	sampler->address_w = gpu_address(state[D3DTSS_ADDRESSW]);
+	sampler->max_mip_level = (uint32_t)state[D3DTSS_MAXMIPLEVEL];
+	sampler->max_anisotropy = (uint32_t)state[D3DTSS_MAXANISOTROPY];
+	sampler->lod_bias = dword_to_float(state[D3DTSS_MIPMAPLODBIAS]);
+	sampler->border_color = (uint32_t)state[D3DTSS_BORDERCOLOR];
 }
-
 
 /* ---------- render targets sampled with their mip chain
 
@@ -1820,12 +1777,14 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 	{
 		D3DBaseTexture *texture = device.textures[stage];
 		unsigned long mode = stage_texture_mode(stage);
+		struct gpu_stage packet_stage;
 
 		texture_scale[stage][0] = texture_scale[stage][1] = 1.0f;
 		texture_scale[stage][2] = texture_scale[stage][3] = 1.0f;
+		memset(&packet_stage, 0, sizeof(packet_stage));
 		if (!texture || !texture->Data || mode == 0 || mode == 0x04 || mode == 0x05 || mode == 0x11)
 		{
-			gpu_gl_state_texture(stage, GL_TEXTURE_2D, 0);
+			gpu_gl_apply_stage(stage, &packet_stage);
 			key->sampler_type[stage] = mode == 0x11 ? _xgpu_sampler_2d : _xgpu_sampler_none;
 			continue;
 		}
@@ -1863,9 +1822,10 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 					texture_scale[stage][1] = 1.0f / (float)description.height;
 				}
 			}
-			gpu_gl_state_texture(stage, gpu_gl_texture_target(type), handle);
-			gpu_gl_state_sampler(stage, device.samplers[stage]);
-			configure_sampler(stage, description.levels > 1);
+			packet_stage.texture = handle;
+			packet_stage.type = (uint8_t)type;
+			sampler_state_fill(stage, description.levels > 1, &packet_stage.sampler);
+			gpu_gl_apply_stage(stage, &packet_stage);
 			key->sampler_type[stage] = type == GPU_TEXTURE_CUBE ? _xgpu_sampler_cube :
 				type == GPU_TEXTURE_3D ? _xgpu_sampler_3d : _xgpu_sampler_2d;
 		}

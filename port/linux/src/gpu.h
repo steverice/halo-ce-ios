@@ -239,6 +239,45 @@ struct gpu_raster_state
 	float depth_bias_constant;
 };
 
+/* texture filters (D3DTSS_MINFILTER, MAGFILTER, MIPFILTER); the GL backend
+treats every one but POINT as linear, and ANISOTROPIC also enables
+anisotropy. They keep D3D's distinctions so that a change between two of
+them is still a change of state (the backend's sampler cache) */
+enum
+{
+	GPU_FILTER_NONE, GPU_FILTER_POINT, GPU_FILTER_LINEAR, GPU_FILTER_ANISOTROPIC,
+	GPU_FILTER_QUINCUNX, GPU_FILTER_GAUSSIAN_CUBIC,
+};
+
+/* texture addressing (D3DTSS_ADDRESSU, V, W); CLAMP and CLAMP_TO_EDGE sample
+alike but stay distinct, as the filters do */
+enum { GPU_ADDRESS_WRAP, GPU_ADDRESS_MIRROR, GPU_ADDRESS_CLAMP, GPU_ADDRESS_BORDER, GPU_ADDRESS_CLAMP_TO_EDGE };
+
+struct gpu_sampler_state
+{
+	uint8_t min_filter, mag_filter, mip_filter;
+	uint8_t address_u, address_v, address_w;
+	uint8_t pad[2];
+	/* the D3D values: the first level sampled, and the anisotropy an
+	ANISOTROPIC min filter uses */
+	uint32_t max_mip_level;
+	uint32_t max_anisotropy;
+	/* the D3D bias; the shader applies it without sampler_lod_bias */
+	float lod_bias;
+	/* ARGB, as D3DCOLOR; BORDER addressing without border_clamp becomes
+	CLAMP_TO_EDGE in the backend */
+	uint32_t border_color;
+};
+
+struct gpu_stage
+{
+	gpu_texture texture;
+	/* 0: the stage is off; else GPU_TEXTURE_* */
+	uint8_t type;
+	uint8_t pad[3];
+	struct gpu_sampler_state sampler;
+};
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 
