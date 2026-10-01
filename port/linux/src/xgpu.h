@@ -51,6 +51,14 @@ GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth);
 gpu_gl.c's streams (d3d8_gl.c) */
 void xgpu_gl_bind_array_buffer(GLuint buffer);
 void xgpu_gl_bind_element_array_buffer(GLuint buffer);
+/* and the cache's program binding, for gpu_gl.c's programs (d3d8_gl.c) */
+void xgpu_gl_use_program(GLuint program);
+/* until step 3e's gpu_draw: the front end drives a program (gpu_gl.c) */
+struct gpu_gl_program;
+struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex, gpu_shader pixel);
+void gpu_gl_program_use(struct gpu_gl_program *program);
+void gpu_gl_program_constants(struct gpu_gl_program *program, const struct gpu_constant_store *constants);
+void gpu_gl_program_uniforms(struct gpu_gl_program *program, const struct gpu_uniforms *uniforms);
 /* until step 3f's gpu_present: advances the stream buffers after a frame (gpu_gl.c) */
 void gpu_gl_stream_frame(void);
 

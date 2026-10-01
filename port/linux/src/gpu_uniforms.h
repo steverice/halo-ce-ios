@@ -3,11 +3,11 @@ GPU_UNIFORMS.H
 
 The uniforms the translated shaders declare, in declaration order: name, GLSL
 type, array count (1: not an array), stage. The translators emit their
-declarations from it (nv2a_uniform_declarations, nv2a_vsh.c); the GL
-backend's location list and the uniform struct will come from it too.
+declarations from it (nv2a_uniform_declarations, nv2a_vsh.c), gpu.h builds
+struct gpu_uniforms from it, and the GL backend (gpu_gl.c) its uniform
+locations, uploads and shadows.
 
-The order is the GLSL declaration order the shaders have always had, which
-is not the order of d3d8_gl.c's struct draw_uniforms.
+The order is the GLSL declaration order the shaders have always had.
 */
 
 #ifndef __HALO_GPU_UNIFORMS_H
@@ -53,5 +53,12 @@ array (a scalar is a vec4 whose x holds it), so every field starts on a
 #define GPU_UNIFORM_FIELD_GPU_UNIFORM_PIXEL_LOD_BIAS(name, count) float name[count][4];
 #define GPU_UNIFORM_FIELD_GPU_UNIFORM_VERTEX_CONSTANTS(name, count)
 #define GPU_UNIFORM_FIELD(name, glsl_type, count, stage) GPU_UNIFORM_FIELD_##stage(name, count)
+
+/* the GL backend's uniform locations, uploads and shadows (gpu_gl.c): every
+row but c, in table order */
+#define GPU_UNIFORM_IF_NOT_CONSTANTS_GPU_UNIFORM_VERTEX(x) x
+#define GPU_UNIFORM_IF_NOT_CONSTANTS_GPU_UNIFORM_PIXEL(x) x
+#define GPU_UNIFORM_IF_NOT_CONSTANTS_GPU_UNIFORM_PIXEL_LOD_BIAS(x) x
+#define GPU_UNIFORM_IF_NOT_CONSTANTS_GPU_UNIFORM_VERTEX_CONSTANTS(x)
 
 #endif

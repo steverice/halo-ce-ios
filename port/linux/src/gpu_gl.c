@@ -9,6 +9,7 @@ for now it probes the context.
 #include "xgpu.h"
 #include "port_config.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -521,4 +522,205 @@ gpu_shader gpu_shader_create(uint32_t stage, const char *source)
 {
 	return stage == GPU_SHADER_VERTEX ? compile_shader(GL_VERTEX_SHADER, source, "vertex") :
 		compile_shader(GL_FRAGMENT_SHADER, source, "pixel");
+}
+
+/* ---------- programs */
+
+struct gpu_gl_program
+{
+	struct gpu_gl_program *next;
+	GLuint vertex_shader;
+	GLuint fragment_shader;
+	GLuint program;
+	GLint constants;
+#define GPU_GL_LOCATION(name, glsl_type, count, stage) GPU_UNIFORM_IF_NOT_CONSTANTS_##stage(GLint name;)
+	GPU_UNIFORMS(GPU_GL_LOCATION)
+#undef GPU_GL_LOCATION
+	/* the vertex constants c[0..constant_count) the program uses; with
+	consecutive locations, a changed range is uploaded by itself */
+	unsigned long constant_count;
+	BOOL constants_consecutive;
+	/* gpu_constant_store.serial at the program's last constant upload */
+	uint32_t constants_serial;
+	/* gpu_uniforms.serial when the uniforms below were brought up to date */
+	uint32_t uniforms_serial;
+	/* what the program's other uniforms hold (all ones: unknown) */
+	struct gpu_uniforms uniforms;
+};
+
+#define PROGRAM_BUCKETS 1024
+
+static struct gpu_gl_program *program_buckets[PROGRAM_BUCKETS];
+
+struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex_shader, gpu_shader fragment_shader)
+{
+	static struct gpu_gl_program *last;
+	unsigned long hash = (vertex_shader * 2654435761UL) ^ fragment_shader;
+	struct gpu_gl_program **bucket = &program_buckets[hash % PROGRAM_BUCKETS];
+	struct gpu_gl_program *entry;
+	GLint status = 0;
+	int stage;
+
+	if (last && last->vertex_shader == vertex_shader && last->fragment_shader == fragment_shader)
+		return last;
+	for (entry = *bucket; entry; entry = entry->next)
+	{
+		if (entry->vertex_shader == vertex_shader && entry->fragment_shader == fragment_shader)
+		{
+			if (!entry->program)
+				return NULL;
+			last = entry;
+			return entry;
+		}
+	}
+	entry = calloc(1, sizeof(*entry));
+	entry->vertex_shader = vertex_shader;
+	entry->fragment_shader = fragment_shader;
+	memset(&entry->uniforms, 0xff, sizeof(entry->uniforms));
+	entry->next = *bucket;
+	*bucket = entry;
+	if (!vertex_shader || !fragment_shader)
+		return NULL;
+
+	entry->program = glCreateProgram();
+	glAttachShader(entry->program, vertex_shader);
+	glAttachShader(entry->program, fragment_shader);
+	glLinkProgram(entry->program);
+	glGetProgramiv(entry->program, GL_LINK_STATUS, &status);
+	if (!status)
+	{
+		char log[4096];
+
+		glGetProgramInfoLog(entry->program, sizeof(log), NULL, log);
+		platform_log("cannot link a shader program: %s", log);
+		entry->program = 0;
+		return NULL;
+	}
+	xgpu_gl_use_program(entry->program);
+	entry->constants = glGetUniformLocation(entry->program, "c");
+	entry->constant_count = XGPU_VERTEX_CONSTANT_COUNT;
+	if (entry->constants >= 0)
+	{
+		unsigned long index;
+
+		/* c[i] is usually at c's location plus i, and the compiler may
+		drop registers past the last one the program reads */
+		entry->constants_consecutive = TRUE;
+		for (index = 1; index < XGPU_VERTEX_CONSTANT_COUNT; index++)
+		{
+			char name[16];
+			GLint location;
+
+			snprintf(name, sizeof(name), "c[%lu]", index);
+			location = glGetUniformLocation(entry->program, name);
+			if (location < 0)
+			{
+				entry->constant_count = index;
+				break;
+			}
+			if (location != entry->constants + (GLint)index)
+			{
+				entry->constants_consecutive = FALSE;
+				entry->constant_count = XGPU_VERTEX_CONSTANT_COUNT;
+				break;
+			}
+		}
+	}
+#define GPU_GL_LOCATE(name, glsl_type, count, stage) \
+	GPU_UNIFORM_IF_NOT_CONSTANTS_##stage(entry->name = glGetUniformLocation(entry->program, #name);)
+	GPU_UNIFORMS(GPU_GL_LOCATE)
+#undef GPU_GL_LOCATE
+	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
+	{
+		char name[8];
+
+		snprintf(name, sizeof(name), "tex%d", stage);
+		glUniform1i(glGetUniformLocation(entry->program, name), stage);
+	}
+	last = entry;
+	return entry;
+}
+
+/* sets a program's uniform unless it already holds value */
+static void uniform_vec4(GLint location, float *shadow, const float *value, int count)
+{
+	if (location < 0 || !memcmp(shadow, value, (size_t)count * 4 * sizeof(float)))
+		return;
+	memcpy(shadow, value, (size_t)count * 4 * sizeof(float));
+	glUniform4fv(location, count, value);
+}
+
+static void uniform_float(GLint location, float *shadow, float value)
+{
+	if (location < 0 || !memcmp(shadow, &value, sizeof(value)))
+		return;
+	*shadow = value;
+	glUniform1f(location, value);
+}
+
+void gpu_gl_program_use(struct gpu_gl_program *program)
+{
+	xgpu_gl_use_program(program->program);
+}
+
+void gpu_gl_program_constants(struct gpu_gl_program *entry, const struct gpu_constant_store *store)
+{
+	if (entry->constants >= 0 && entry->constants_serial != store->serial)
+	{
+		unsigned long first = entry->constant_count, last = 0, index;
+
+		if (store->serial - entry->constants_serial <= XGPU_VERTEX_CONSTANT_COUNT)
+		{
+			uint32_t serial;
+
+			for (serial = entry->constants_serial + 1; serial <= store->serial; serial++)
+			{
+				index = store->log[serial % GPU_CONSTANT_LOG_SIZE];
+				if (index >= entry->constant_count)
+					continue;
+				if (first > index)
+					first = index;
+				if (last < index)
+					last = index;
+			}
+		}
+		else
+		{
+			for (index = 0; index < entry->constant_count; index++)
+			{
+				if (store->serials[index] > entry->constants_serial)
+				{
+					if (first > index)
+						first = index;
+					last = index;
+				}
+			}
+		}
+		if (first < entry->constant_count)
+		{
+			if (entry->constants_consecutive)
+				glUniform4fv(entry->constants + (GLint)first, (GLsizei)(last - first + 1), store->c[first]);
+			else
+				glUniform4fv(entry->constants, XGPU_VERTEX_CONSTANT_COUNT, &store->c[0][0]);
+		}
+		entry->constants_serial = store->serial;
+	}
+}
+
+void gpu_gl_program_uniforms(struct gpu_gl_program *entry, const struct gpu_uniforms *uniforms)
+{
+	/* a program that has had these uniforms since needs none of them */
+	if (entry->uniforms_serial == uniforms->serial)
+		return;
+	entry->uniforms_serial = uniforms->serial;
+#define GPU_GL_UPLOAD_vec4(name, count) \
+	uniform_vec4(entry->name, entry->uniforms.name[0], uniforms->name[0], count);
+#define GPU_GL_UPLOAD_float(name, count) \
+	uniform_float(entry->name, &entry->uniforms.name[0][0], uniforms->name[0][0]);
+#define GPU_GL_UPLOAD(name, glsl_type, count, stage) \
+	GPU_UNIFORM_IF_NOT_CONSTANTS_##stage(GPU_GL_UPLOAD_##glsl_type(name, count))
+	GPU_UNIFORMS(GPU_GL_UPLOAD)
+#undef GPU_GL_UPLOAD
+#undef GPU_GL_UPLOAD_float
+#undef GPU_GL_UPLOAD_vec4
 }

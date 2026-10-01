@@ -198,39 +198,9 @@ struct fragment_entry
 	gpu_shader shader;
 };
 
-struct program_entry
-{
-	struct program_entry *next;
-	GLuint vertex_shader;
-	GLuint fragment_shader;
-	GLuint program;
-	GLint constants;
-	GLint viewport_scale;
-	GLint viewport_offset;
-	GLint point_size;
-	GLint ps_c0, ps_c1, ps_final_c0, ps_final_c1;
-	GLint fog_color, fog_parameters, alpha_reference;
-	GLint bump_matrix, bump_luminance, texture_scale;
-	GLint texture_lod_bias;
-	GLint screen_offset;
-
-	/* the vertex constants c[0..constant_count) the program uses; with
-	consecutive locations, a changed range is uploaded by itself */
-	unsigned long constant_count;
-	BOOL constants_consecutive;
-	/* constants_serial at the program's last constant upload (constants_store) */
-	uint32_t constants_serial;
-	/* draw_uniforms.serial when the uniforms below were brought up to date */
-	uint32_t uniforms_serial;
-	/* what the program's other uniforms hold (all ones: unknown) */
-	struct gpu_uniforms uniforms;
-};
-
 #define FRAGMENT_BUCKETS 1024
-#define PROGRAM_BUCKETS 1024
 
 static struct fragment_entry *fragment_buckets[FRAGMENT_BUCKETS];
-static struct program_entry *program_buckets[PROGRAM_BUCKETS];
 
 /* ---------- render targets */
 
@@ -461,6 +431,13 @@ static void state_program(GLuint program)
 		gl_state.program = program;
 		glUseProgram(program);
 	}
+}
+
+/* the cache's program binding, for gpu_gl.c's programs until step 3e moves
+the GL state cache into the backend */
+void xgpu_gl_use_program(GLuint program)
+{
+	state_program(program);
 }
 
 static void state_framebuffer(GLuint framebuffer)
@@ -1884,105 +1861,6 @@ static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	return entry->shader;
 }
 
-static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_shader)
-{
-	static struct program_entry *last;
-	unsigned long hash = (vertex_shader * 2654435761UL) ^ fragment_shader;
-	struct program_entry **bucket = &program_buckets[hash % PROGRAM_BUCKETS];
-	struct program_entry *entry;
-	GLint status = 0;
-	int stage;
-
-	if (last && last->vertex_shader == vertex_shader && last->fragment_shader == fragment_shader)
-		return last;
-	for (entry = *bucket; entry; entry = entry->next)
-	{
-		if (entry->vertex_shader == vertex_shader && entry->fragment_shader == fragment_shader)
-		{
-			if (!entry->program)
-				return NULL;
-			last = entry;
-			return entry;
-		}
-	}
-	entry = calloc(1, sizeof(*entry));
-	entry->vertex_shader = vertex_shader;
-	entry->fragment_shader = fragment_shader;
-	memset(&entry->uniforms, 0xff, sizeof(entry->uniforms));
-	entry->next = *bucket;
-	*bucket = entry;
-	if (!vertex_shader || !fragment_shader)
-		return NULL;
-
-	entry->program = glCreateProgram();
-	glAttachShader(entry->program, vertex_shader);
-	glAttachShader(entry->program, fragment_shader);
-	glLinkProgram(entry->program);
-	glGetProgramiv(entry->program, GL_LINK_STATUS, &status);
-	if (!status)
-	{
-		char log[4096];
-
-		glGetProgramInfoLog(entry->program, sizeof(log), NULL, log);
-		platform_log("cannot link a shader program: %s", log);
-		entry->program = 0;
-		return NULL;
-	}
-	state_program(entry->program);
-	entry->constants = glGetUniformLocation(entry->program, "c");
-	entry->constant_count = XGPU_VERTEX_CONSTANT_COUNT;
-	if (entry->constants >= 0)
-	{
-		unsigned long index;
-
-		/* c[i] is usually at c's location plus i, and the compiler may
-		drop registers past the last one the program reads */
-		entry->constants_consecutive = TRUE;
-		for (index = 1; index < XGPU_VERTEX_CONSTANT_COUNT; index++)
-		{
-			char name[16];
-			GLint location;
-
-			snprintf(name, sizeof(name), "c[%lu]", index);
-			location = glGetUniformLocation(entry->program, name);
-			if (location < 0)
-			{
-				entry->constant_count = index;
-				break;
-			}
-			if (location != entry->constants + (GLint)index)
-			{
-				entry->constants_consecutive = FALSE;
-				entry->constant_count = XGPU_VERTEX_CONSTANT_COUNT;
-				break;
-			}
-		}
-	}
-	entry->viewport_scale = glGetUniformLocation(entry->program, "viewport_scale");
-	entry->viewport_offset = glGetUniformLocation(entry->program, "viewport_offset");
-	entry->point_size = glGetUniformLocation(entry->program, "point_size");
-	entry->ps_c0 = glGetUniformLocation(entry->program, "ps_c0");
-	entry->ps_c1 = glGetUniformLocation(entry->program, "ps_c1");
-	entry->ps_final_c0 = glGetUniformLocation(entry->program, "ps_final_c0");
-	entry->ps_final_c1 = glGetUniformLocation(entry->program, "ps_final_c1");
-	entry->fog_color = glGetUniformLocation(entry->program, "fog_color");
-	entry->fog_parameters = glGetUniformLocation(entry->program, "fog_parameters");
-	entry->alpha_reference = glGetUniformLocation(entry->program, "alpha_reference");
-	entry->bump_matrix = glGetUniformLocation(entry->program, "bump_matrix");
-	entry->bump_luminance = glGetUniformLocation(entry->program, "bump_luminance");
-	entry->texture_scale = glGetUniformLocation(entry->program, "texture_scale");
-	entry->texture_lod_bias = glGetUniformLocation(entry->program, "texture_lod_bias");
-	entry->screen_offset = glGetUniformLocation(entry->program, "screen_offset");
-	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
-	{
-		char name[8];
-
-		snprintf(name, sizeof(name), "tex%d", stage);
-		glUniform1i(glGetUniformLocation(entry->program, name), stage);
-	}
-	last = entry;
-	return entry;
-}
 
 /* ---------- per-draw state */
 
@@ -2429,28 +2307,11 @@ counts the conversions */
 static DWORD draw_uniform_inputs[DRAW_UNIFORM_INPUT_COUNT];
 static struct gpu_uniforms draw_uniforms;
 
-/* sets a program's uniform unless it already holds value */
-static void uniform_vec4(GLint location, float *shadow, const float *value, int count)
-{
-	if (location < 0 || !memcmp(shadow, value, (size_t)count * 4 * sizeof(float)))
-		return;
-	memcpy(shadow, value, (size_t)count * 4 * sizeof(float));
-	glUniform4fv(location, count, value);
-}
-
-static void uniform_float(GLint location, float *shadow, float value)
-{
-	if (location < 0 || !memcmp(shadow, &value, sizeof(value)))
-		return;
-	*shadow = value;
-	glUniform1f(location, value);
-}
-
-static struct program_entry *prepare_draw(BOOL immediate)
+static struct gpu_gl_program *prepare_draw(BOOL immediate)
 {
 	struct vertex_shader_object *program = current_program();
 	struct nv2a_pixel_shader_key key;
-	struct program_entry *entry;
+	struct gpu_gl_program *entry;
 	float texture_scale[4][4];
 	BOOL has_depth = FALSE;
 	int stage;
@@ -2498,7 +2359,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	key.count_samples = device.visibility_test_active &&
 		device_capabilities.occlusion_mode == GPU_OCCLUSION_SHADER_COUNTER;
 
-	entry = program_get(vertex_shader_get(program, immediate), fragment_shader_get(&key));
+	entry = gpu_gl_program_get(vertex_shader_get(program, immediate), fragment_shader_get(&key));
 	if (!entry)
 	{
 		stats.skipped_link++;
@@ -2510,53 +2371,14 @@ static struct program_entry *prepare_draw(BOOL immediate)
 		stats.immediate_draws++;
 	else
 		stats.draws++;
-	state_program(entry->program);
+	gpu_gl_program_use(entry);
 #ifdef HALO_ILP32
 	if (key.count_samples)
 		glBindBufferRange(GL_ATOMIC_COUNTER_BUFFER, 0, device.visibility_counters,
 			(GLintptr)(device.counter_active * sizeof(GLuint)), sizeof(GLuint));
 #endif
 
-	if (entry->constants >= 0 && entry->constants_serial != constant_store.serial)
-	{
-		unsigned long first = entry->constant_count, last = 0, index;
-
-		if (constant_store.serial - entry->constants_serial <= XGPU_VERTEX_CONSTANT_COUNT)
-		{
-			uint32_t serial;
-
-			for (serial = entry->constants_serial + 1; serial <= constant_store.serial; serial++)
-			{
-				index = constant_store.log[serial % GPU_CONSTANT_LOG_SIZE];
-				if (index >= entry->constant_count)
-					continue;
-				if (first > index)
-					first = index;
-				if (last < index)
-					last = index;
-			}
-		}
-		else
-		{
-			for (index = 0; index < entry->constant_count; index++)
-			{
-				if (constant_store.serials[index] > entry->constants_serial)
-				{
-					if (first > index)
-						first = index;
-					last = index;
-				}
-			}
-		}
-		if (first < entry->constant_count)
-		{
-			if (entry->constants_consecutive)
-				glUniform4fv(entry->constants + (GLint)first, (GLsizei)(last - first + 1), constant_store.c[first]);
-			else
-				glUniform4fv(entry->constants, XGPU_VERTEX_CONSTANT_COUNT, &constant_store.c[0][0]);
-		}
-		entry->constants_serial = constant_store.serial;
-	}
+	gpu_gl_program_constants(entry, &constant_store);
 
 	/* the state the other uniforms come from: most draws share it with the
 	draw before them, and so share its uniforms */
@@ -2636,25 +2458,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 			converted->screen_offset[0][0] = (float)UI_OFFSET;
 		}
 	}
-	/* and a program that has had them since needs none of them */
-	if (entry->uniforms_serial == draw_uniforms.serial)
-		return entry;
-	entry->uniforms_serial = draw_uniforms.serial;
-	uniform_vec4(entry->viewport_scale, entry->uniforms.viewport_scale[0], draw_uniforms.viewport_scale[0], 1);
-	uniform_vec4(entry->viewport_offset, entry->uniforms.viewport_offset[0], draw_uniforms.viewport_offset[0], 1);
-	uniform_float(entry->point_size, &entry->uniforms.point_size[0][0], draw_uniforms.point_size[0][0]);
-	uniform_vec4(entry->ps_c0, entry->uniforms.ps_c0[0], draw_uniforms.ps_c0[0], 8);
-	uniform_vec4(entry->ps_c1, entry->uniforms.ps_c1[0], draw_uniforms.ps_c1[0], 8);
-	uniform_vec4(entry->ps_final_c0, entry->uniforms.ps_final_c0[0], draw_uniforms.ps_final_c0[0], 1);
-	uniform_vec4(entry->ps_final_c1, entry->uniforms.ps_final_c1[0], draw_uniforms.ps_final_c1[0], 1);
-	uniform_vec4(entry->fog_color, entry->uniforms.fog_color[0], draw_uniforms.fog_color[0], 1);
-	uniform_vec4(entry->fog_parameters, entry->uniforms.fog_parameters[0], draw_uniforms.fog_parameters[0], 1);
-	uniform_float(entry->alpha_reference, &entry->uniforms.alpha_reference[0][0], draw_uniforms.alpha_reference[0][0]);
-	uniform_vec4(entry->bump_matrix, entry->uniforms.bump_matrix[0], draw_uniforms.bump_matrix[0], 4);
-	uniform_vec4(entry->bump_luminance, entry->uniforms.bump_luminance[0], draw_uniforms.bump_luminance[0], 4);
-	uniform_vec4(entry->texture_scale, entry->uniforms.texture_scale[0], draw_uniforms.texture_scale[0], 4);
-	uniform_float(entry->screen_offset, &entry->uniforms.screen_offset[0][0], draw_uniforms.screen_offset[0][0]);
-	uniform_vec4(entry->texture_lod_bias, entry->uniforms.texture_lod_bias[0], draw_uniforms.texture_lod_bias[0], 1);
+	gpu_gl_program_uniforms(entry, &draw_uniforms);
 	return entry;
 }
 
