@@ -2115,11 +2115,7 @@ static GLenum address_mode(DWORD mode)
 	{
 	case D3DTADDRESS_MIRROR: return GL_MIRRORED_REPEAT;
 	case D3DTADDRESS_CLAMP: return GL_CLAMP_TO_EDGE;
-#ifdef HALO_ILP32
-	case D3DTADDRESS_BORDER: return xgpu_capabilities.border_clamp ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE;
-#else
-	case D3DTADDRESS_BORDER: return GL_CLAMP_TO_BORDER;
-#endif
+	case D3DTADDRESS_BORDER: return device_capabilities.border_clamp ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE;
 	case D3DTADDRESS_CLAMPTOEDGE: return GL_CLAMP_TO_EDGE;
 	default: return GL_REPEAT;
 	}
@@ -2643,9 +2639,8 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	key.alpha_test_function = D3D__RenderState[D3DRS_ALPHATESTENABLE] ? D3D__RenderState[D3DRS_ALPHAFUNC] : 0;
 	key.fog_enable = D3D__RenderState[D3DRS_FOGENABLE] != 0;
 	key.fog_table_mode = (unsigned char)D3D__RenderState[D3DRS_FOGTABLEMODE];
-#ifdef HALO_ILP32
-	key.count_samples = device.visibility_test_active && xgpu_capabilities.atomic_counters;
-#endif
+	key.count_samples = device.visibility_test_active &&
+		device_capabilities.occlusion_mode == GPU_OCCLUSION_SHADER_COUNTER;
 
 	entry = program_get(vertex_shader_get(program, immediate), fragment_shader_get(&key));
 	if (!entry)
@@ -3457,10 +3452,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	if (!vertex_count || !index_data || !prepare_draw(FALSE))
 		return;
 	/* quads are drawn as triangles, from indices made for the draw */
-	mirrored = primitive_type != D3DPT_QUADLIST &&
-#ifdef HALO_ILP32
-		xgpu_capabilities.base_vertex &&
-#endif
+	mirrored = primitive_type != D3DPT_QUADLIST && device_capabilities.base_vertex &&
 		mirror_range((unsigned long)index_data, vertex_count * sizeof(WORD), &index_buffer, &index_offset, &generation);
 	index_extent(index_data, vertex_count, generation, mirrored, &minimum, &maximum);
 	trace_draw("indexed", primitive_type, vertex_count, NULL);
@@ -3481,8 +3473,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 		indices = quad_indices(index_data, vertex_count, &count);
 		source = indices;
 	}
-#ifdef HALO_ILP32
-	if (!xgpu_capabilities.base_vertex)
+	if (!device_capabilities.base_vertex)
 	{
 		/* the indices are copied anyway: rebase them */
 		WORD *rebased = malloc(count * sizeof(WORD) + 2);
@@ -3495,8 +3486,6 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 		free(indices);
 		return;
 	}
-#endif
-	(void)index;
 	glDrawElementsBaseVertex(primitive_mode(primitive_type), (GLsizei)count, GL_UNSIGNED_SHORT,
 		(const void *)index_upload(source, count * sizeof(WORD)), -(GLint)minimum);
 	free(indices);
