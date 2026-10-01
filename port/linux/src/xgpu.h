@@ -134,13 +134,6 @@ struct nv2a_pixel_shader_key
 
 char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const struct nv2a_pixel_shader_key *key);
 
-#ifdef HALO_ILP32
-/* ES samplers have no LOD bias of their own */
-#define XGPU_PIXEL_UNIFORMS_ES "uniform vec4 texture_lod_bias;\n"
-#else
-#define XGPU_PIXEL_UNIFORMS_ES ""
-#endif
-
 /* the combiner registers that live in uniforms rather than in the program:
 C0/C1 of each stage and the final combiner, and texture constants */
 #define XGPU_PIXEL_UNIFORMS \
@@ -153,8 +146,7 @@ C0/C1 of each stage and the final combiner, and texture constants */
 	"uniform float alpha_reference;\n" \
 	"uniform vec4 bump_matrix[4];\n" \
 	"uniform vec4 bump_luminance[4];\n" \
-	"uniform vec4 texture_scale[4];\n" \
-	XGPU_PIXEL_UNIFORMS_ES
+	"uniform vec4 texture_scale[4];\n"
 
 /* ---------- textures */
 

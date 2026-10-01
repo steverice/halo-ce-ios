@@ -2026,8 +2026,8 @@ static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	entry->hash = hash;
 	entry->key = *key;
 	source = nv2a_pixel_shader_translate(&shader_dialect, key);
-	entry->shader = compile_shader(GL_FRAGMENT_SHADER, source, "pixel");
-	if (debug_settings.dump_shaders)
+	entry->shader = source ? compile_shader(GL_FRAGMENT_SHADER, source, "pixel") : 0;
+	if (source && debug_settings.dump_shaders)
 	{
 		char path[512];
 		FILE *file;
