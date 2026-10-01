@@ -3175,9 +3175,8 @@ static unsigned long stream_upload(const void *data, unsigned long size)
 	return offset;
 }
 
-#ifdef HALO_ILP32
 /* stream_upload, with the D3DCOLOR elements of the stream turned from BGRA
-into the RGBA byte order ES reads */
+into the RGBA byte order a backend without vertex_bgra reads */
 static unsigned long stream_upload_swizzled(const struct vertex_shader_object *declaration, unsigned long stream,
 	const unsigned char *data, unsigned long size, unsigned long stride)
 {
@@ -3215,7 +3214,6 @@ static unsigned long stream_upload_swizzled(const struct vertex_shader_object *d
 	}
 	return stream_upload(scratch, size);
 }
-#endif
 
 static unsigned long index_upload(const void *data, unsigned long size)
 {
@@ -3247,12 +3245,9 @@ static void attribute_format(const struct vertex_element *element, GLint *size, 
 	case D3DVSDT_FLOAT2: *size = 2; *type = GL_FLOAT; break;
 	case D3DVSDT_FLOAT3: case D3DVSDT_FLOAT2H: *size = 3; *type = GL_FLOAT; break;
 	case D3DVSDT_FLOAT4: *size = 4; *type = GL_FLOAT; break;
-#ifdef HALO_ILP32
-	/* ES has no BGRA attributes: stream_upload_swizzled swaps the bytes */
-	case D3DVSDT_D3DCOLOR: *size = 4; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
-#else
-	case D3DVSDT_D3DCOLOR: *size = GL_BGRA; *type = GL_UNSIGNED_BYTE; *normalized = GL_TRUE; break;
-#endif
+	/* without BGRA attributes, stream_upload_swizzled swaps the bytes */
+	case D3DVSDT_D3DCOLOR: *size = device_capabilities.vertex_bgra ? GL_BGRA : 4; *type = GL_UNSIGNED_BYTE;
+		*normalized = GL_TRUE; break;
 	case D3DVSDT_SHORT1: *size = 1; *type = GL_SHORT; break;
 	case D3DVSDT_SHORT2: *size = 2; *type = GL_SHORT; break;
 	case D3DVSDT_SHORT3: *size = 3; *type = GL_SHORT; break;
@@ -3272,9 +3267,8 @@ static void attribute_format(const struct vertex_element *element, GLint *size, 
 /* upload vertices [first, first + count) of every stream the declaration
 uses and point the attributes at them; attribute data then starts at
 vertex 0 of the uploaded range */
-#ifdef HALO_ILP32
-/* ES has no BGRA attributes, so a stream with colours is swizzled as it is
-uploaded (stream_upload_swizzled) and cannot come from the mirror */
+/* without vertex_bgra a stream with colors is swizzled as it is uploaded
+(stream_upload_swizzled) and cannot come from the mirror */
 static BOOL stream_has_colors(const struct vertex_shader_object *declaration, unsigned long stream)
 {
 	unsigned long index;
@@ -3286,7 +3280,6 @@ static BOOL stream_has_colors(const struct vertex_shader_object *declaration, un
 	}
 	return FALSE;
 }
-#endif
 
 static void setup_streams(unsigned long first, unsigned long count)
 {
@@ -3311,10 +3304,8 @@ static void setup_streams(unsigned long first, unsigned long count)
 		placed[stream] = TRUE;
 		stream_buffers[stream] = 0;
 		base = (unsigned long)PLATFORM_PHYSICAL_TO_VIRTUAL(device.streams[stream].data) + first * stride;
-#ifdef HALO_ILP32
-		if (!stream_has_colors(declaration, stream))
-#endif
-		if (mirror_range(base, bytes, &stream_buffers[stream], &stream_offsets[stream], NULL))
+		if ((device_capabilities.vertex_bgra || !stream_has_colors(declaration, stream)) &&
+			mirror_range(base, bytes, &stream_buffers[stream], &stream_offsets[stream], NULL))
 			continue;
 		stream_buffers[stream] = 0;
 		total += (bytes + 15) & ~15UL;
@@ -3336,11 +3327,9 @@ static void setup_streams(unsigned long first, unsigned long count)
 			const unsigned char *base = PLATFORM_PHYSICAL_TO_VIRTUAL(device.streams[stream].data);
 			unsigned long bytes = stride ? stride * count : 64;
 
-#ifdef HALO_ILP32
-			stream_offsets[stream] = stream_upload_swizzled(declaration, stream, base + first * stride, bytes, stride);
-#else
-			stream_offsets[stream] = stream_upload(base + first * stride, bytes);
-#endif
+			stream_offsets[stream] = device_capabilities.vertex_bgra ?
+				stream_upload(base + first * stride, bytes) :
+				stream_upload_swizzled(declaration, stream, base + first * stride, bytes, stride);
 			stream_buffers[stream] = device.stream_buffer;
 			stats.streamed_bytes += bytes;
 		}
