@@ -2871,7 +2871,7 @@ enum
 
 static struct
 {
-	GLuint buffers[MIRROR_SEGMENT_COUNT];
+	gpu_buffer buffers[MIRROR_SEGMENT_COUNT];
 	unsigned char state[MIRROR_PAGE_COUNT];
 	unsigned char rewrites[MIRROR_PAGE_COUNT];
 	/* the page's memory_watch generation when it was uploaded */
@@ -2956,28 +2956,10 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 			mirror.state[page] = _mirror_page_present;
 		}
 		if (!mirror.buffers[segment])
-		{
-			glGenBuffers(1, &mirror.buffers[segment]);
-			glBindBuffer(GL_COPY_WRITE_BUFFER, mirror.buffers[segment]);
-			glBufferData(GL_COPY_WRITE_BUFFER, MIRROR_SEGMENT_SIZE, NULL, GL_DYNAMIC_DRAW);
-		}
-		glBindBuffer(GL_COPY_WRITE_BUFFER, mirror.buffers[segment]);
-#ifdef HALO_ILP32
-		/* Mali copies the whole buffer for a glBufferSubData that queued
-		draws might read (see STREAM_BUFFER_RING); unused pages can be
-		written without waiting for them */
-		if (unused)
-		{
-			host_gl_buffer_write(GL_COPY_WRITE_BUFFER,
-				(unsigned int)(address - PLATFORM_CONTIGUOUS_BASE - segment * MIRROR_SEGMENT_SIZE),
-				(unsigned int)size, (const void *)address);
-			continue;
-		}
-#else
-		(void)unused;
-#endif
-		glBufferSubData(GL_COPY_WRITE_BUFFER, (GLintptr)(address - PLATFORM_CONTIGUOUS_BASE - segment * MIRROR_SEGMENT_SIZE),
-			(GLsizeiptr)size, (const void *)address);
+			mirror.buffers[segment] = gpu_buffer_create(MIRROR_SEGMENT_SIZE);
+		gpu_buffer_write(mirror.buffers[segment],
+			(uint32_t)(address - PLATFORM_CONTIGUOUS_BASE - segment * MIRROR_SEGMENT_SIZE),
+			(uint32_t)size, (const void *)address, unused ? GPU_WRITE_UNUSED : 0);
 	}
 	return TRUE;
 }
@@ -2986,7 +2968,7 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 that holds it, the range's offset in that buffer and the newest upload
 generation of its pages (which changes whenever its contents do); FALSE if
 the range is outside the window, spans two segments or is volatile */
-static BOOL mirror_range(unsigned long address, unsigned long size, GLuint *buffer, unsigned long *offset,
+static BOOL mirror_range(unsigned long address, unsigned long size, gpu_buffer *buffer, unsigned long *offset,
 	unsigned long *generation)
 {
 	unsigned long start = address - PLATFORM_CONTIGUOUS_BASE;
@@ -3226,7 +3208,7 @@ static BOOL stream_has_colors(const struct vertex_shader_object *declaration, un
 static void setup_streams(unsigned long first, unsigned long count)
 {
 	struct vertex_shader_object *declaration = device.vertex_shader;
-	GLuint stream_buffers[16];
+	gpu_buffer stream_buffers[16];
 	unsigned long stream_offsets[16];
 	BOOL placed[16] = { FALSE };
 	BOOL enabled[XGPU_VERTEX_ATTRIBUTE_COUNT] = { FALSE };
@@ -3377,7 +3359,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	unsigned long minimum, maximum, index, count, generation = 0, index_offset = 0;
 	WORD *indices = NULL;
 	const WORD *source = index_data;
-	GLuint index_buffer = 0;
+	gpu_buffer index_buffer = 0;
 	BOOL mirrored;
 
 	if (!vertex_count || !index_data || !prepare_draw(FALSE))

@@ -102,6 +102,28 @@ void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_
 void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
 void gpu_texture_destroy(gpu_texture texture);
 
+/* ---------- buffers: the vertex mirror's segments */
+
+/* gpu_buffer_write flags: no queued draw reads the range (pages uploaded for
+the first time), so the backend needn't wait for the GPU */
+enum { GPU_WRITE_UNUSED = 1 };
+
+gpu_buffer gpu_buffer_create(uint32_t size);
+void gpu_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags);
+
+/* ---------- per-frame transient data */
+
+/* gpu_stream kinds */
+enum { GPU_STREAM_VERTEX = 1, GPU_STREAM_INDEX };
+
+/* room for what one draw streams, before its first gpu_stream: starting a
+new buffer between two of a draw's streams would leave the earlier ones
+pointing at discarded storage */
+void gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes);
+/* copies data into the frame's stream or index buffer; returns its offset
+and sets *buffer */
+uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *buffer);
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 

@@ -326,3 +326,35 @@ void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 	xgpu_gl_state_invalidate();
 }
+
+/* ---------- buffers
+
+A gpu_buffer is the GL buffer name. */
+
+gpu_buffer gpu_buffer_create(uint32_t size)
+{
+	GLuint name = 0;
+
+	glGenBuffers(1, &name);
+	glBindBuffer(GL_COPY_WRITE_BUFFER, name);
+	glBufferData(GL_COPY_WRITE_BUFFER, (GLsizeiptr)size, NULL, GL_DYNAMIC_DRAW);
+	return name;
+}
+
+void gpu_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags)
+{
+	glBindBuffer(GL_COPY_WRITE_BUFFER, buffer);
+#ifdef HALO_ILP32
+	/* Mali copies the whole buffer for a glBufferSubData that queued draws
+	might read (see STREAM_BUFFER_RING); unused ranges can be written without
+	waiting for them */
+	if (flags & GPU_WRITE_UNUSED)
+	{
+		host_gl_buffer_write(GL_COPY_WRITE_BUFFER, offset, size, data);
+		return;
+	}
+#else
+	(void)flags;
+#endif
+	glBufferSubData(GL_COPY_WRITE_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
+}
