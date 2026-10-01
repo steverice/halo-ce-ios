@@ -196,8 +196,8 @@ def test_reset_settings_restore_defaults_an_earlier_set_may_have_changed(tmp_pat
 
 def test_launch_script_waits_for_xcode_to_open_the_project():
     """open -a returns before Xcode has the project open when it wasn't already"""
-    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner")
-    wait = script.index('exists (first workspace document whose path contains "mac-runner/HaloRunner.xcodeproj")')
+    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project="/p/HaloRunner.xcodeproj")
+    wait = script.index('exists (first workspace document whose path is "/p/HaloRunner.xcodeproj")')
     assert wait < script.index("set doc to")
 
 
@@ -209,7 +209,7 @@ def test_reset_settings_turn_off_the_fixed_timestep(tmp_path):
 
 def test_launch_script_fails_when_the_ipad_destination_never_appears():
     """after the retries, a last unguarded attempt raises instead of running on another destination"""
-    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner")
+    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project="/p/HaloRunner.xcodeproj")
     retries_end = script.index("end repeat", script.index("end try"))
     final = 'set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")'
     assert script.index(final, retries_end) < script.index("run doc")
@@ -231,3 +231,13 @@ def test_started_sees_a_run_that_already_finished(tmp_path):
     assert mac_run.started(tmp_path, lambda: False)
     assert mac_run.started(None, lambda: True)
     assert not mac_run.started(None, lambda: False)
+
+
+def test_launch_script_drives_this_checkout_s_project_only(tmp_path):
+    """Xcode keeps one project named HaloRunner open: another worktree's would be driven instead"""
+    project = tmp_path / "build/mac-runner/HaloRunner.xcodeproj"
+    close = mac_run.CLOSE_OTHERS.format(xcode="/Applications/Xcode.app", target="HaloRunner", project=project)
+    assert f'whose name is "HaloRunner.xcodeproj" and path is not "{project}"' in close
+    launch = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project=project)
+    assert "whose path contains" not in launch
+    assert launch.count(f'whose path is "{project}"') == 2

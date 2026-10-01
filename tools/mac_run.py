@@ -222,12 +222,19 @@ schemes:
 
 # open -a returns before a cold Xcode has the project open, and a freshly
 # loaded project lists its run destinations a little later still
+# Xcode keeps one project of a name open: another checkout's runner project would
+# block this one from opening, and be driven in its place
+CLOSE_OTHERS = """tell application "{xcode}"
+	close (every workspace document whose name is "{target}.xcodeproj" and path is not "{project}") saving no
+end tell
+"""
+
 LAUNCH = """tell application "{xcode}"
 	repeat 120 times
-		if exists (first workspace document whose path contains "mac-runner/{target}.xcodeproj") then exit repeat
+		if exists (first workspace document whose path is "{project}") then exit repeat
 		delay 1
 	end repeat
-	set doc to first workspace document whose path contains "mac-runner/{target}.xcodeproj"
+	set doc to first workspace document whose path is "{project}"
 	repeat 120 times
 		if loaded of doc then exit repeat
 		delay 1
@@ -290,8 +297,10 @@ def launch(documents=None):
     """install and start the wrapper through Xcode (the only way macOS accepts); documents
     is the container's Documents folder, once one exists"""
     xcode = xcode_app()
-    run_command("open", "-a", xcode, RUNNER / f"{TARGET}.xcodeproj")
-    run_command("osascript", input=LAUNCH.format(xcode=xcode, target=TARGET), text=True)
+    project = RUNNER / f"{TARGET}.xcodeproj"
+    run_command("osascript", input=CLOSE_OTHERS.format(xcode=xcode, target=TARGET, project=project), text=True)
+    run_command("open", "-a", xcode, project)
+    run_command("osascript", input=LAUNCH.format(xcode=xcode, target=TARGET, project=project), text=True)
     if not wait_for(lambda: started(documents, running), 300):
         sys.exit(f"{TARGET} did not start within 300 seconds; see Xcode's report navigator")
 
