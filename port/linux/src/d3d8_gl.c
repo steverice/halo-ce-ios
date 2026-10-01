@@ -185,7 +185,7 @@ struct vertex_shader_object
 	unsigned long element_count;
 	unsigned long packed_mask;
 	/* [0] streams per the declaration, [1] immediate mode (all floats) */
-	GLuint shader[2];
+	gpu_shader shader[2];
 };
 
 /* ---------- programs */
@@ -195,7 +195,7 @@ struct fragment_entry
 	struct fragment_entry *next;
 	unsigned long hash;
 	struct nv2a_pixel_shader_key key;
-	GLuint shader;
+	gpu_shader shader;
 };
 
 /* the uniforms a draw sets besides the vertex constants */
@@ -697,28 +697,6 @@ void WINAPI D3DDevice_BlockUntilVerticalBlank(void)
 	while (vertical_blank_count == count)
 		pthread_cond_wait(&vertical_blank_condition, &vertical_blank_lock);
 	pthread_mutex_unlock(&vertical_blank_lock);
-}
-
-/* ---------- GL helpers */
-
-static GLuint compile_shader(GLenum type, const char *source, const char *what)
-{
-	GLuint shader = glCreateShader(type);
-	GLint status = 0;
-
-	glShaderSource(shader, 1, &source, NULL);
-	glCompileShader(shader);
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
-	if (!status)
-	{
-		char log[4096];
-
-		glGetShaderInfoLog(shader, sizeof(log), NULL, log);
-		platform_log("cannot compile the %s shader:\n%s\n%s", what, log, source);
-		glDeleteShader(shader);
-		return 0;
-	}
-	return shader;
 }
 
 /* ---------- render targets */
@@ -1848,7 +1826,7 @@ static void dump_file(const char *directory, const char *name, const void *data,
 	fclose(file);
 }
 
-static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immediate)
+static gpu_shader vertex_shader_get(struct vertex_shader_object *program, BOOL immediate)
 {
 	int variant = immediate ? 1 : 0;
 
@@ -1857,7 +1835,7 @@ static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immed
 		unsigned long packed_mask = immediate ? 0 : device.vertex_shader->packed_mask;
 		char *source = nv2a_vertex_shader_translate(&shader_dialect, program->instructions, program->instruction_count, packed_mask);
 
-		program->shader[variant] = source ? compile_shader(GL_VERTEX_SHADER, source, "vertex") : 0;
+		program->shader[variant] = source ? gpu_shader_create(GPU_SHADER_VERTEX, source) : 0;
 		if (source && debug_settings.dump_shaders)
 		{
 			char path[512];
@@ -1883,7 +1861,7 @@ static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immed
 
 typedef char pixel_shader_key_size_assert[sizeof(struct nv2a_pixel_shader_key) % 4 == 0 ? 1 : -1];
 
-static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
+static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 {
 	/* consecutive draws mostly use the same pixel shader */
 	static struct fragment_entry *last;
@@ -1908,7 +1886,7 @@ static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	entry->hash = hash;
 	entry->key = *key;
 	source = nv2a_pixel_shader_translate(&shader_dialect, key);
-	entry->shader = source ? compile_shader(GL_FRAGMENT_SHADER, source, "pixel") : 0;
+	entry->shader = source ? gpu_shader_create(GPU_SHADER_PIXEL, source) : 0;
 	if (source && debug_settings.dump_shaders)
 	{
 		char path[512];

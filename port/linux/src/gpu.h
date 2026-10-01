@@ -124,6 +124,14 @@ void gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes);
 and sets *buffer */
 uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *buffer);
 
+/* ---------- shaders */
+
+enum { GPU_SHADER_VERTEX = 1, GPU_SHADER_PIXEL };
+
+/* source is in the dialect gpu_capabilities.shader_language names; 0 if it
+doesn't compile */
+gpu_shader gpu_shader_create(uint32_t stage, const char *source);
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 

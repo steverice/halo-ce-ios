@@ -494,3 +494,31 @@ void gpu_gl_stream_frame(void)
 	streams.index_offset = INDEX_BUFFER_SIZE;
 #endif
 }
+
+/* ---------- shaders */
+
+static GLuint compile_shader(GLenum type, const char *source, const char *what)
+{
+	GLuint shader = glCreateShader(type);
+	GLint status = 0;
+
+	glShaderSource(shader, 1, &source, NULL);
+	glCompileShader(shader);
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+	if (!status)
+	{
+		char log[4096];
+
+		glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+		platform_log("cannot compile the %s shader:\n%s\n%s", what, log, source);
+		glDeleteShader(shader);
+		return 0;
+	}
+	return shader;
+}
+
+gpu_shader gpu_shader_create(uint32_t stage, const char *source)
+{
+	return stage == GPU_SHADER_VERTEX ? compile_shader(GL_VERTEX_SHADER, source, "vertex") :
+		compile_shader(GL_FRAGMENT_SHADER, source, "pixel");
+}
