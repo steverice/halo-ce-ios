@@ -239,7 +239,7 @@ struct program_entry
 	unsigned long constant_count;
 	BOOL constants_consecutive;
 	/* constants_serial at the program's last constant upload (constants_store) */
-	unsigned long constants_serial;
+	uint32_t constants_serial;
 	/* draw_uniforms_serial when the uniforms below were brought up to date */
 	unsigned long uniforms_serial;
 	/* what the program's other uniforms hold (all ones: unknown) */
@@ -303,7 +303,6 @@ struct gl_device
 	struct vertex_shader_object *vertex_shader;
 	struct vertex_shader_object *program_slots[VERTEX_PROGRAM_SLOTS];
 	unsigned long program_address;
-	float constants[XGPU_VERTEX_CONSTANT_COUNT][4];
 	float viewport_scale[4];
 	float viewport_offset[4];
 
@@ -999,15 +998,12 @@ void WINAPI Direct3D_SetPushBufferSize(DWORD push_buffer_size, DWORD segment_cou
 	(void)segment_count;
 }
 
-/* each vertex constant register's serial is the value constants_serial took
-when the register last changed; a program's registers are current up to
-the serial it recorded when it last uploaded them */
-static unsigned long constant_serials[XGPU_VERTEX_CONSTANT_COUNT];
-static unsigned long constants_serial;
-/* the register each of the latest serials changed, so a program that is
-only a little behind finds its changed registers without a full scan */
-#define CONSTANT_LOG_SIZE 1024
-static unsigned char constant_log[CONSTANT_LOG_SIZE];
+/* the vertex constants, each register's serial (the value serial took when
+the register last changed; a program's registers are current up to the
+serial it recorded when it last uploaded them) and the register each of the
+latest serials changed, so a program that is only a little behind finds its
+changed registers without a full scan */
+static struct gpu_constant_store constant_store;
 
 static void constants_store(unsigned long first, const void *data, unsigned long count)
 {
@@ -1016,11 +1012,11 @@ static void constants_store(unsigned long first, const void *data, unsigned long
 
 	for (index = 0; index < count; index++)
 	{
-		if (memcmp(device.constants[first + index], values[index], sizeof(device.constants[0])))
+		if (memcmp(constant_store.c[first + index], values[index], sizeof(constant_store.c[0])))
 		{
-			memcpy(device.constants[first + index], values[index], sizeof(device.constants[0]));
-			constant_serials[first + index] = ++constants_serial;
-			constant_log[constants_serial % CONSTANT_LOG_SIZE] = (unsigned char)(first + index);
+			memcpy(constant_store.c[first + index], values[index], sizeof(constant_store.c[0]));
+			constant_store.serials[first + index] = ++constant_store.serial;
+			constant_store.log[constant_store.serial % GPU_CONSTANT_LOG_SIZE] = (unsigned char)(first + index);
 		}
 	}
 }
@@ -2542,17 +2538,17 @@ static struct program_entry *prepare_draw(BOOL immediate)
 			(GLintptr)(device.counter_active * sizeof(GLuint)), sizeof(GLuint));
 #endif
 
-	if (entry->constants >= 0 && entry->constants_serial != constants_serial)
+	if (entry->constants >= 0 && entry->constants_serial != constant_store.serial)
 	{
 		unsigned long first = entry->constant_count, last = 0, index;
 
-		if (constants_serial - entry->constants_serial <= XGPU_VERTEX_CONSTANT_COUNT)
+		if (constant_store.serial - entry->constants_serial <= XGPU_VERTEX_CONSTANT_COUNT)
 		{
-			unsigned long serial;
+			uint32_t serial;
 
-			for (serial = entry->constants_serial + 1; serial <= constants_serial; serial++)
+			for (serial = entry->constants_serial + 1; serial <= constant_store.serial; serial++)
 			{
-				index = constant_log[serial % CONSTANT_LOG_SIZE];
+				index = constant_store.log[serial % GPU_CONSTANT_LOG_SIZE];
 				if (index >= entry->constant_count)
 					continue;
 				if (first > index)
@@ -2565,7 +2561,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 		{
 			for (index = 0; index < entry->constant_count; index++)
 			{
-				if (constant_serials[index] > entry->constants_serial)
+				if (constant_store.serials[index] > entry->constants_serial)
 				{
 					if (first > index)
 						first = index;
@@ -2576,11 +2572,11 @@ static struct program_entry *prepare_draw(BOOL immediate)
 		if (first < entry->constant_count)
 		{
 			if (entry->constants_consecutive)
-				glUniform4fv(entry->constants + (GLint)first, (GLsizei)(last - first + 1), device.constants[first]);
+				glUniform4fv(entry->constants + (GLint)first, (GLsizei)(last - first + 1), constant_store.c[first]);
 			else
-				glUniform4fv(entry->constants, XGPU_VERTEX_CONSTANT_COUNT, &device.constants[0][0]);
+				glUniform4fv(entry->constants, XGPU_VERTEX_CONSTANT_COUNT, &constant_store.c[0][0]);
 		}
-		entry->constants_serial = constants_serial;
+		entry->constants_serial = constant_store.serial;
 	}
 
 	/* the state the other uniforms come from: most draws share it with the
@@ -2739,7 +2735,7 @@ static void trace_draw(const char *kind, D3DPRIMITIVETYPE type, unsigned long co
 
 		for (constant = 0; constant < XGPU_VERTEX_CONSTANT_COUNT; constant++)
 		{
-			const float *value = device.constants[constant];
+			const float *value = constant_store.c[constant];
 
 			if (value[0] || value[1] || value[2] || value[3])
 				platform_log("    c[%d] = %g %g %g %g", constant, value[0], value[1], value[2], value[3]);

@@ -132,6 +132,23 @@ enum { GPU_SHADER_VERTEX = 1, GPU_SHADER_PIXEL };
 doesn't compile */
 gpu_shader gpu_shader_create(uint32_t stage, const char *source);
 
+/* ---------- vertex constants
+
+The front end's store of the 192 vertex constant registers. Each register's
+serial is the value serial took when it last changed, and log holds the
+index of the register that changed at each serial, modulo its size: a
+backend that saw serial s can upload just what changed since. */
+
+enum { GPU_CONSTANT_COUNT = 192, GPU_CONSTANT_LOG_SIZE = 1024 };
+
+struct gpu_constant_store
+{
+	float c[GPU_CONSTANT_COUNT][4];
+	uint32_t serials[GPU_CONSTANT_COUNT];
+	uint32_t serial;
+	uint8_t log[GPU_CONSTANT_LOG_SIZE];
+};
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 
