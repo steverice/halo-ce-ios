@@ -257,3 +257,12 @@ def test_launch_script_fails_with_the_reason_after_three_attempts():
     assert "on error message_of_error" in script
     assert 'error "run failed after 3 attempts: " & last_error' in script
     assert script.index("end repeat", script.index("repeat 3 times")) < script.index('error "run failed after 3 attempts')
+
+
+def test_compare_can_ignore_only_the_gl_call_total(tmp_path):
+    a = _result(tmp_path / "a", {}, {}, "frame 60: 5 draws, 2 immediate; 10 KB streamed, 400 GL calls\n")
+    b = _result(tmp_path / "b", {}, {}, "frame 60: 5 draws, 2 immediate; 10 KB streamed, 391 GL calls\n")
+    c = _result(tmp_path / "c", {}, {}, "frame 60: 6 draws, 2 immediate; 10 KB streamed, 391 GL calls\n")
+    assert any("gpu_stats" in p for p in mac_run.compare(a, b, tolerance=0))
+    assert mac_run.compare(a, b, tolerance=0, ignore_gl_calls=True) == []
+    assert any("gpu_stats" in p for p in mac_run.compare(a, c, tolerance=0, ignore_gl_calls=True))

@@ -24,6 +24,8 @@ from pathlib import Path
 
 # a debug.gpu_stats summary (d3d8_gl.c), after platform_log's prefix
 STATS = re.compile(r"frame \d+: (.*)$")
+# the GL call total at the end of a debug.gpu_stats summary
+GL_CALLS = re.compile(r",? \d+ GL calls$")
 
 
 def merge_config(text, settings):
@@ -147,9 +149,10 @@ def _files(folder, pattern):
     return {path.name: path for path in folder.glob(pattern)} if folder.is_dir() else {}
 
 
-def compare(a, b, tolerance):
+def compare(a, b, tolerance, ignore_gl_calls=False):
     """the differences between two result folders (empty: they match); a frame
-    matches when no more than tolerance pixels differ"""
+    matches when no more than tolerance pixels differ; with ignore_gl_calls the
+    gpu_stats lines are compared without their GL call totals"""
     a, b = Path(a), Path(b)
     problems = []
     for folder in ("runner/shaders", "runner/replay/replay"):
@@ -176,6 +179,8 @@ def compare(a, b, tolerance):
         problems += [f"{log} missing" for log in missing]
     else:
         stats_a, stats_b = (stats_lines(log.read_text(errors="replace")) for log in logs)
+        if ignore_gl_calls:
+            stats_a, stats_b = ([GL_CALLS.sub("", line) for line in lines] for lines in (stats_a, stats_b))
         if stats_a != stats_b:
             problems.append(f"gpu_stats differ:\n  {a}: {stats_a}\n  {b}: {stats_b}")
     return problems
@@ -424,11 +429,13 @@ def main():
     compare_parser.add_argument("a", type=Path)
     compare_parser.add_argument("b", type=Path)
     compare_parser.add_argument("--tolerance", type=int, default=0, help="pixels a frame may differ by")
+    compare_parser.add_argument("--ignore-gl-calls", action="store_true",
+                                help="compare gpu_stats without the GL call totals")
     args = parser.parse_args()
     if args.command == "run":
         run(args)
     else:
-        problems = compare(args.a, args.b, args.tolerance)
+        problems = compare(args.a, args.b, args.tolerance, args.ignore_gl_calls)
         print("\n".join(problems) if problems else "match")
         sys.exit(1 if problems else 0)
 
