@@ -791,16 +791,18 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 	entry->target.scale[1] = scale[1];
 	entry->target.gl_width = (unsigned long)(width * scale[0] + 0.5f);
 	entry->target.gl_height = (unsigned long)(height * scale[1] + 0.5f);
-	glGenTextures(1, &entry->target.texture);
-	glBindTexture(GL_TEXTURE_2D, entry->target.texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-	if (depth)
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, (GLsizei)entry->target.gl_width,
-			(GLsizei)entry->target.gl_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
-	else
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)entry->target.gl_width, (GLsizei)entry->target.gl_height,
-			0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-	xgpu_gl_state_invalidate();
+	{
+		struct gpu_texture_description texture = { 0 };
+
+		texture.type = GPU_TEXTURE_2D;
+		texture.format = depth ? GPU_FORMAT_DEPTH_STENCIL : GPU_FORMAT_BGRA8;
+		texture.usage = GPU_USAGE_RENDER_TARGET;
+		texture.width = (uint32_t)entry->target.gl_width;
+		texture.height = (uint32_t)entry->target.gl_height;
+		texture.depth = 1;
+		texture.levels = 1;
+		entry->target.texture = gpu_texture_create(&texture);
+	}
 	entry->next = render_targets;
 	render_targets = entry;
 	entry->next_in_bucket = *render_target_bucket(entry->target.data);

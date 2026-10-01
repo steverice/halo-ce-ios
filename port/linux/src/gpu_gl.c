@@ -9,7 +9,13 @@ for now it probes the context.
 #include "xgpu.h"
 #include "port_config.h"
 
+#include <stdlib.h>
 #include <string.h>
+
+#ifdef HALO_ILP32
+/* OpenGL ES 3 has no BGRA upload format; d3d8_gl.c defines the same alias */
+#define GL_BGRA GL_RGBA
+#endif
 
 #ifndef HALO_ILP32
 static void GLAPIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
@@ -89,4 +95,79 @@ void gpu_initialize(struct gpu_capabilities *capabilities)
 	capabilities->border_clamp = 1;
 	capabilities->shader_language = 450;
 #endif
+}
+
+/* ---------- textures
+
+In this backend a gpu_texture is the GL texture name, so the framebuffer
+cache and the traces keep their keys. Each name has a record of what it was
+created as. */
+
+struct texture_record
+{
+	struct gpu_texture_description description;
+	GLenum target;
+};
+
+static struct texture_record *texture_records;
+static unsigned long texture_record_count;
+
+static struct texture_record *texture_record(gpu_texture texture)
+{
+	if (texture >= texture_record_count)
+	{
+		unsigned long count = texture_record_count ? texture_record_count : 256;
+
+		while (count <= texture)
+			count *= 2;
+		/* (allocation failure crashes, like the calloc calls elsewhere) */
+		texture_records = realloc(texture_records, count * sizeof(*texture_records));
+		memset(texture_records + texture_record_count, 0, (count - texture_record_count) * sizeof(*texture_records));
+		texture_record_count = count;
+	}
+	return &texture_records[texture];
+}
+
+static GLsizei texture_level_dimension(uint32_t size, uint32_t level)
+{
+	return (GLsizei)(size >> level ? size >> level : 1);
+}
+
+GLenum gpu_gl_texture_target(uint32_t type)
+{
+	return type == GPU_TEXTURE_CUBE ? GL_TEXTURE_CUBE_MAP : type == GPU_TEXTURE_3D ? GL_TEXTURE_3D : GL_TEXTURE_2D;
+}
+
+gpu_texture gpu_texture_create(const struct gpu_texture_description *description)
+{
+	struct texture_record *record;
+	GLuint name = 0;
+	uint32_t level;
+
+	glGenTextures(1, &name);
+	record = texture_record(name);
+	record->description = *description;
+	record->target = gpu_gl_texture_target(description->type);
+	/* upload textures get their storage from each refresh's uploads */
+	if (description->usage != GPU_USAGE_RENDER_TARGET)
+		return name;
+	glBindTexture(GL_TEXTURE_2D, name);
+	if (description->levels > 1)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)description->levels - 1);
+	for (level = 0; level < description->levels; level++)
+	{
+		GLsizei width = texture_level_dimension(description->width, level);
+		GLsizei height = texture_level_dimension(description->height, level);
+
+		if (description->format == GPU_FORMAT_DEPTH_STENCIL)
+			glTexImage2D(GL_TEXTURE_2D, (GLint)level, GL_DEPTH24_STENCIL8, width, height, 0, GL_DEPTH_STENCIL,
+				GL_UNSIGNED_INT_24_8, NULL);
+		else
+			glTexImage2D(GL_TEXTURE_2D, (GLint)level, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	}
+	/* (mip composites didn't reset here before; mip_composite_get always
+	resets before the draw goes on, so nothing changes) */
+	xgpu_gl_state_invalidate();
+	return name;
 }

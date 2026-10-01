@@ -58,6 +58,50 @@ struct gpu_capabilities
 	uint32_t max_texture_size;
 };
 
+/* ---------- textures, render targets included */
+
+/* gpu_texture_description.type */
+enum { GPU_TEXTURE_2D = 1, GPU_TEXTURE_3D, GPU_TEXTURE_CUBE };
+
+/* gpu_texture_description.format: BGRA8 texels are 32-bit ARGB words in
+memory; BC1-3 are DXT1, 3 and 5 */
+enum
+{
+	GPU_FORMAT_BGRA8 = 1,
+	GPU_FORMAT_BC1,
+	GPU_FORMAT_BC2,
+	GPU_FORMAT_BC3,
+	GPU_FORMAT_DEPTH_STENCIL,
+};
+
+/* gpu_texture_description.usage */
+enum
+{
+	/* filled by gpu_texture_upload */
+	GPU_USAGE_UPLOAD = 1,
+	/* drawn into, or filled from render targets (mip composites) */
+	GPU_USAGE_RENDER_TARGET,
+};
+
+struct gpu_texture_description
+{
+	uint8_t type;
+	uint8_t format;
+	uint8_t usage;
+	uint8_t pad;
+	uint32_t width, height, depth, levels;
+};
+
+gpu_texture gpu_texture_create(const struct gpu_texture_description *description);
+/* one face (0 unless a cube) and level; a refresh uploads every face and
+level in order, starting from face 0, level 0 */
+void gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size);
+/* level 0 of source into level of destination (mip composites) */
+void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level);
+/* the levels after base_level from base_level */
+void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
+void gpu_texture_destroy(gpu_texture texture);
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 

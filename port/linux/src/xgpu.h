@@ -43,6 +43,10 @@ void host_gl_wait_frame(unsigned int slot);
 /* what the GPU backend can do (gpu_initialize, d3d8_gl.c) */
 extern struct gpu_capabilities device_capabilities;
 
+/* GL backend internals the front end still uses until step 3e moves the draw
+state (gpu_gl.c) */
+GLenum gpu_gl_texture_target(uint32_t type);
+
 /* ---------- GL state
 
 The device caches the GL state it sets for draws (d3d8_gl.c); code that
@@ -173,7 +177,7 @@ struct xgpu_render_target
 	unsigned long data;  /* physical address */
 	unsigned long width, height;
 	BOOL depth;
-	GLuint texture;
+	gpu_texture texture;
 	/* pixels per unit of width and height: more than 1 for the screen's
 	targets when the game draws at the display's resolution (d3d8_gl.c) */
 	float scale[2];
