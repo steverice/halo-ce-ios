@@ -43,31 +43,11 @@ void host_gl_wait_frame(unsigned int slot);
 /* what the GPU backend can do (gpu_initialize, d3d8_gl.c) */
 extern struct gpu_capabilities device_capabilities;
 
-/* GL backend internals the front end still uses until step 3e moves the draw
-state (gpu_gl.c) */
-GLenum gpu_gl_texture_target(uint32_t type);
+/* until sub-step f's clear, readback and present: the framebuffer for a
+pair of target textures, bound through the GL state cache (gpu_gl.c) */
 GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth);
-/* until sub-step e's draw packet: the front end binds through the GL state
-cache (gpu_gl.c) */
 void gpu_gl_state_framebuffer(GLuint framebuffer);
-void gpu_gl_state_element_array_buffer(GLuint buffer);
-/* until sub-step e-4's gpu_draw: the front end applies the packet's raster
-state, texture stages and vertex attributes (gpu_gl.c) */
-void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct gpu_rect *scissor,
-	const struct gpu_depth_stencil_state *depth_stencil, const struct gpu_blend_state *blend,
-	const struct gpu_raster_state *raster);
-void gpu_gl_apply_stage(int stage, const struct gpu_stage *packet_stage);
-/* stream is read when attribute->stream is 0-15, value when it is
-GPU_STREAM_CONSTANT (and not for NORMPACKED3, which reads the integer zero) */
-void gpu_gl_apply_attribute(uint32_t index, const struct gpu_vertex_attribute *attribute,
-	const struct gpu_vertex_stream *stream, const float *value);
-/* until sub-step e-4's gpu_draw: the front end drives a program (gpu_gl.c) */
-struct gpu_gl_program;
-struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex, gpu_shader pixel);
-void gpu_gl_program_use(struct gpu_gl_program *program);
-void gpu_gl_program_constants(struct gpu_gl_program *program, const struct gpu_constant_store *constants);
-void gpu_gl_program_uniforms(struct gpu_gl_program *program, const struct gpu_uniforms *uniforms);
-/* until step 3f's gpu_present: advances the stream buffers after a frame (gpu_gl.c) */
+/* until sub-step f's gpu_present: advances the stream buffers after a frame (gpu_gl.c) */
 void gpu_gl_stream_frame(void);
 
 /* ---------- GL state

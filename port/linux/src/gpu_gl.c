@@ -196,13 +196,6 @@ static void state_element_array_buffer(GLuint buffer)
 	}
 }
 
-/* until sub-step e-4's gpu_draw: the front end binds the index buffer
-through the cache */
-void gpu_gl_state_element_array_buffer(GLuint buffer)
-{
-	state_element_array_buffer(buffer);
-}
-
 static void state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
 	BOOL integer, GLsizei stride, unsigned long offset)
 {
@@ -288,7 +281,9 @@ static void gl_attribute_format(uint32_t format, GLint *size, GLenum *type, GLbo
 	}
 }
 
-void gpu_gl_apply_attribute(uint32_t index, const struct gpu_vertex_attribute *attribute,
+/* stream is read when attribute->stream is 0-15, value when it is
+GPU_STREAM_CONSTANT (and not for NORMPACKED3, which reads the integer zero) */
+static void apply_attribute(uint32_t index, const struct gpu_vertex_attribute *attribute,
 	const struct gpu_vertex_stream *stream, const float *value)
 {
 	GLint size;
@@ -307,11 +302,8 @@ void gpu_gl_apply_attribute(uint32_t index, const struct gpu_vertex_attribute *a
 		(unsigned long)stream->offset + attribute->offset);
 }
 
-/* ---------- raster state
-
-gpu_gl_apply_raster_state applies the packet's viewport, scissor, depth and
-stencil, blend and raster state through the cache, until sub-step e-4's
-gpu_draw applies the whole packet. */
+/* ---------- raster state: the packet's viewport, scissor, depth and
+stencil, blend and raster state, applied through the cache */
 
 /* a D3DCOLOR's channels as floats, the arithmetic the front end used, so
 the cache's floats compare equal */
@@ -387,7 +379,7 @@ static GLenum gl_blend_equation(uint32_t operation)
 	}
 }
 
-void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct gpu_rect *scissor,
+static void apply_raster_state(const struct gpu_viewport *viewport, const struct gpu_rect *scissor,
 	const struct gpu_depth_stencil_state *depth_stencil, const struct gpu_blend_state *blend,
 	const struct gpu_raster_state *raster)
 {
@@ -556,11 +548,8 @@ void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct
 	}
 }
 
-/* ---------- texture stages
-
-gpu_gl_apply_stage binds a packet stage's texture and sampler object and
-configures the sampler when the stage's sampler state changed, until
-sub-step e-4's gpu_draw applies the whole packet. */
+/* ---------- texture stages: a packet stage's texture and sampler object are
+bound, and the sampler configured when the stage's sampler state changed */
 
 /* one sampler object per texture stage, and the state each was last
 configured with (not part of gl_state: a sampler object keeps its
@@ -571,6 +560,14 @@ static BOOL configured_valid[D3DTSS_MAXSTAGES];
 /* gpu_capabilities.border_clamp: without it BORDER addressing clamps to the
 edge */
 static BOOL border_clamp;
+/* gpu_capabilities.base_vertex: indexed draws take a base vertex */
+static BOOL base_vertex;
+
+/* the GL target of a GPU_TEXTURE_* type */
+static GLenum texture_target(uint32_t type)
+{
+	return type == GPU_TEXTURE_CUBE ? GL_TEXTURE_CUBE_MAP : type == GPU_TEXTURE_3D ? GL_TEXTURE_3D : GL_TEXTURE_2D;
+}
 
 static GLenum gl_address(uint32_t mode)
 {
@@ -584,7 +581,7 @@ static GLenum gl_address(uint32_t mode)
 	}
 }
 
-void gpu_gl_apply_stage(int stage, const struct gpu_stage *packet_stage)
+static void apply_stage(int stage, const struct gpu_stage *packet_stage)
 {
 	const struct gpu_sampler_state *state = &packet_stage->sampler;
 	GLuint sampler = samplers[stage];
@@ -596,7 +593,7 @@ void gpu_gl_apply_stage(int stage, const struct gpu_stage *packet_stage)
 		state_texture(stage, GL_TEXTURE_2D, 0);
 		return;
 	}
-	state_texture(stage, gpu_gl_texture_target(packet_stage->type), packet_stage->texture);
+	state_texture(stage, texture_target(packet_stage->type), packet_stage->texture);
 	state_sampler(stage, sampler);
 	if (configured_valid[stage] && !memcmp(&configured[stage], state, sizeof(*state)))
 		return;
@@ -742,6 +739,7 @@ void gpu_initialize(struct gpu_capabilities *capabilities)
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
 #endif
 	border_clamp = capabilities->border_clamp ? TRUE : FALSE;
+	base_vertex = capabilities->base_vertex ? TRUE : FALSE;
 	glGenSamplers(D3DTSS_MAXSTAGES, samplers);
 }
 
@@ -781,11 +779,6 @@ static GLsizei texture_level_dimension(uint32_t size, uint32_t level)
 	return (GLsizei)(size >> level ? size >> level : 1);
 }
 
-GLenum gpu_gl_texture_target(uint32_t type)
-{
-	return type == GPU_TEXTURE_CUBE ? GL_TEXTURE_CUBE_MAP : type == GPU_TEXTURE_3D ? GL_TEXTURE_3D : GL_TEXTURE_2D;
-}
-
 gpu_texture gpu_texture_create(const struct gpu_texture_description *description)
 {
 	struct texture_record *record;
@@ -795,7 +788,7 @@ gpu_texture gpu_texture_create(const struct gpu_texture_description *description
 	glGenTextures(1, &name);
 	record = texture_record(name);
 	record->description = *description;
-	record->target = gpu_gl_texture_target(description->type);
+	record->target = texture_target(description->type);
 	/* upload textures get their storage from each refresh's uploads */
 	if (description->usage != GPU_USAGE_RENDER_TARGET)
 		return name;
@@ -1139,7 +1132,7 @@ struct gpu_gl_program
 
 static struct gpu_gl_program *program_buckets[PROGRAM_BUCKETS];
 
-struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex_shader, gpu_shader fragment_shader)
+static struct gpu_gl_program *program_get(gpu_shader vertex_shader, gpu_shader fragment_shader)
 {
 	static struct gpu_gl_program *last;
 	unsigned long hash = (vertex_shader * 2654435761UL) ^ fragment_shader;
@@ -1245,12 +1238,12 @@ static void uniform_float(GLint location, float *shadow, float value)
 	glUniform1f(location, value);
 }
 
-void gpu_gl_program_use(struct gpu_gl_program *program)
+static void program_use(struct gpu_gl_program *program)
 {
 	state_program(program->program);
 }
 
-void gpu_gl_program_constants(struct gpu_gl_program *entry, const struct gpu_constant_store *store)
+static void program_constants(struct gpu_gl_program *entry, const struct gpu_constant_store *store)
 {
 	if (entry->constants >= 0 && entry->constants_serial != store->serial)
 	{
@@ -1294,7 +1287,7 @@ void gpu_gl_program_constants(struct gpu_gl_program *entry, const struct gpu_con
 	}
 }
 
-void gpu_gl_program_uniforms(struct gpu_gl_program *entry, const struct gpu_uniforms *uniforms)
+static void program_uniforms(struct gpu_gl_program *entry, const struct gpu_uniforms *uniforms)
 {
 	/* a program that has had these uniforms since needs none of them */
 	if (entry->uniforms_serial == uniforms->serial)
@@ -1310,4 +1303,58 @@ void gpu_gl_program_uniforms(struct gpu_gl_program *entry, const struct gpu_unif
 #undef GPU_GL_UPLOAD
 #undef GPU_GL_UPLOAD_float
 #undef GPU_GL_UPLOAD_vec4
+}
+
+/* ---------- drawing */
+
+static GLenum gl_primitive(uint32_t primitive)
+{
+	switch (primitive)
+	{
+	case GPU_PRIMITIVE_POINTS: return GL_POINTS;
+	case GPU_PRIMITIVE_LINES: return GL_LINES;
+	case GPU_PRIMITIVE_LINE_LOOP: return GL_LINE_LOOP;
+	case GPU_PRIMITIVE_LINE_STRIP: return GL_LINE_STRIP;
+	case GPU_PRIMITIVE_TRIANGLE_STRIP: return GL_TRIANGLE_STRIP;
+	case GPU_PRIMITIVE_TRIANGLE_FAN: return GL_TRIANGLE_FAN;
+	default: return GL_TRIANGLES;
+	}
+}
+
+uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *constants,
+	const struct gpu_uniforms *uniforms)
+{
+	struct gpu_gl_program *program = program_get(draw->vertex_shader, draw->pixel_shader);
+	GLenum mode = gl_primitive(draw->primitive);
+	uint32_t index;
+	int stage;
+
+	if (!program)
+		return 0;
+	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(draw->color_target, draw->depth_target));
+	apply_raster_state(&draw->viewport, &draw->scissor, &draw->depth_stencil, &draw->blend, &draw->raster);
+	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
+		apply_stage(stage, &draw->stages[stage]);
+	program_use(program);
+	program_constants(program, constants);
+	program_uniforms(program, uniforms);
+	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
+	{
+		const struct gpu_vertex_attribute *attribute = &draw->attributes[index];
+
+		apply_attribute(index, attribute, attribute->stream < 16 ? &draw->streams[attribute->stream] : NULL,
+			draw->constant_values[index]);
+	}
+	if (!draw->index_buffer)
+	{
+		glDrawArrays(mode, 0, (GLsizei)draw->count);
+		return 1;
+	}
+	state_element_array_buffer(draw->index_buffer);
+	if (base_vertex)
+		glDrawElementsBaseVertex(mode, (GLsizei)draw->count, GL_UNSIGNED_SHORT,
+			(const void *)(unsigned long)draw->index_offset, draw->base_vertex);
+	else
+		glDrawElements(mode, (GLsizei)draw->count, GL_UNSIGNED_SHORT, (const void *)(unsigned long)draw->index_offset);
+	return 1;
 }

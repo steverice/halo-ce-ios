@@ -309,6 +309,43 @@ struct gpu_vertex_attribute
 	uint16_t offset;
 };
 
+/* primitives; TRIANGLE_FAN and LINE_LOOP only with triangle_fans and line_loops */
+enum
+{
+	GPU_PRIMITIVE_POINTS, GPU_PRIMITIVE_LINES, GPU_PRIMITIVE_LINE_LOOP, GPU_PRIMITIVE_LINE_STRIP,
+	GPU_PRIMITIVE_TRIANGLES, GPU_PRIMITIVE_TRIANGLE_STRIP, GPU_PRIMITIVE_TRIANGLE_FAN,
+};
+
+/* one draw, complete: the backend applies the whole packet without reference
+to any draw before it */
+struct gpu_draw
+{
+	gpu_texture color_target;     /* 0: depth-only draw */
+	gpu_texture depth_target;     /* 0: none */
+	gpu_shader vertex_shader;
+	gpu_shader pixel_shader;
+	struct gpu_viewport viewport;
+	struct gpu_rect scissor;
+	struct gpu_depth_stencil_state depth_stencil;
+	struct gpu_blend_state blend;
+	struct gpu_raster_state raster;
+	struct gpu_stage stages[4];
+	struct gpu_vertex_stream streams[16];
+	struct gpu_vertex_attribute attributes[16];
+	float constant_values[16][4]; /* for GPU_STREAM_CONSTANT attributes */
+	gpu_buffer index_buffer;      /* 0: not indexed; 16-bit indices */
+	uint32_t index_offset;
+	uint32_t primitive;
+	uint32_t count;
+	int32_t base_vertex;
+};
+
+/* ---------- drawing */
+
+/* draws; returns 0 if the draw was skipped because its program failed to link */
+uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *constants,
+	const struct gpu_uniforms *uniforms);
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 

@@ -525,9 +525,8 @@ static GLint target_pixel(float coordinate, int axis)
 	return (GLint)floorf(coordinate * target_scale[axis] + 0.5f);
 }
 
-/* binds the framebuffer for the current targets; returns FALSE if there is
-nothing to draw into */
-static BOOL bind_targets(BOOL *has_depth)
+/* the textures the current targets render to; FALSE when there are none */
+static BOOL draw_targets(gpu_texture *color_texture, gpu_texture *depth_texture)
 {
 	struct render_target_entry *color = render_target_get(device.render_target);
 	struct render_target_entry *depth = render_target_get(device.depth_stencil);
@@ -541,8 +540,20 @@ static BOOL bind_targets(BOOL *has_depth)
 	/* viewports and clears are in the targets' units (render_target_get) */
 	target_scale[0] = color ? color->target.scale[0] : depth->target.scale[0];
 	target_scale[1] = color ? color->target.scale[1] : depth->target.scale[1];
-	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(color ? color->target.texture : 0, depth ? depth->target.texture : 0));
-	*has_depth = depth != NULL;
+	*color_texture = color ? color->target.texture : 0;
+	*depth_texture = depth ? depth->target.texture : 0;
+	return TRUE;
+}
+
+/* until sub-step f's gpu_clear: D3DDevice_Clear binds the targets itself */
+static BOOL bind_targets(BOOL *has_depth)
+{
+	gpu_texture color, depth;
+
+	if (!draw_targets(&color, &depth))
+		return FALSE;
+	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(color, depth));
+	*has_depth = depth != 0;
 	return TRUE;
 }
 
@@ -1756,20 +1767,13 @@ static gpu_texture mip_composite_get(const struct xgpu_texture_description *desc
 	}
 	/* levels the game did not render come from the ones it did */
 	if (rendered_levels < description->levels)
-	{
 		gpu_texture_generate_mipmaps(composite->texture, rendered_levels ? (uint32_t)rendered_levels - 1 : 0);
-	}
-	else
-	{
-		/* today's re-bind of a complete composite; step 3e drops it with
-		the other cache resets */
-		glBindTexture(GL_TEXTURE_2D, composite->texture);
-		xgpu_gl_state_invalidate();
-	}
 	return composite->texture;
 }
 
-static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale[4][4])
+/* fills the packet's stages from the texture stages, uploading textures and
+composing mips as it goes, and the key's sampler types */
+static void stages_fill(struct nv2a_pixel_shader_key *key, float texture_scale[4][4], struct gpu_stage stages[4])
 {
 	int stage;
 
@@ -1777,14 +1781,13 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 	{
 		D3DBaseTexture *texture = device.textures[stage];
 		unsigned long mode = stage_texture_mode(stage);
-		struct gpu_stage packet_stage;
+		struct gpu_stage *packet_stage = &stages[stage];
 
 		texture_scale[stage][0] = texture_scale[stage][1] = 1.0f;
 		texture_scale[stage][2] = texture_scale[stage][3] = 1.0f;
-		memset(&packet_stage, 0, sizeof(packet_stage));
+		memset(packet_stage, 0, sizeof(*packet_stage));
 		if (!texture || !texture->Data || mode == 0 || mode == 0x04 || mode == 0x05 || mode == 0x11)
 		{
-			gpu_gl_apply_stage(stage, &packet_stage);
 			key->sampler_type[stage] = mode == 0x11 ? _xgpu_sampler_2d : _xgpu_sampler_none;
 			continue;
 		}
@@ -1822,10 +1825,9 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 					texture_scale[stage][1] = 1.0f / (float)description.height;
 				}
 			}
-			packet_stage.texture = handle;
-			packet_stage.type = (uint8_t)type;
-			sampler_state_fill(stage, description.levels > 1, &packet_stage.sampler);
-			gpu_gl_apply_stage(stage, &packet_stage);
+			packet_stage->texture = handle;
+			packet_stage->type = (uint8_t)type;
+			sampler_state_fill(stage, description.levels > 1, &packet_stage->sampler);
 			key->sampler_type[stage] = type == GPU_TEXTURE_CUBE ? _xgpu_sampler_cube :
 				type == GPU_TEXTURE_3D ? _xgpu_sampler_3d : _xgpu_sampler_2d;
 		}
@@ -1998,11 +2000,13 @@ counts the conversions */
 static DWORD draw_uniform_inputs[DRAW_UNIFORM_INPUT_COUNT];
 static struct gpu_uniforms draw_uniforms;
 
-static struct gpu_gl_program *prepare_draw(BOOL immediate)
+/* fills a draw's packet but for its streams, attributes, indices and
+primitive, and brings the draw uniforms up to date; FALSE when the draw is
+skipped */
+static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 {
 	struct vertex_shader_object *program = current_program();
 	struct nv2a_pixel_shader_key key;
-	struct gpu_gl_program *entry;
 	float texture_scale[4][4];
 	BOOL has_depth = FALSE;
 	int stage;
@@ -2010,7 +2014,7 @@ static struct gpu_gl_program *prepare_draw(BOOL immediate)
 	if (!device.gl_ready || !program || !device.vertex_shader || !program->instructions)
 	{
 		stats.skipped_no_program++;
-		return NULL;
+		return FALSE;
 	}
 	{
 		const char *skip = debug_settings.skip_vertex_shaders;
@@ -2018,27 +2022,20 @@ static struct gpu_gl_program *prepare_draw(BOOL immediate)
 		while (skip && *skip)
 		{
 			if ((unsigned long)atol(skip) == program->id)
-				return NULL;
+				return FALSE;
 			skip = strchr(skip, ',');
 			if (skip)
 				skip++;
 		}
 	}
-	if (!bind_targets(&has_depth))
+	memset(draw, 0, sizeof(*draw));
+	if (!draw_targets(&draw->color_target, &draw->depth_target))
 	{
 		stats.skipped_no_target++;
-		return NULL;
+		return FALSE;
 	}
-	{
-		struct gpu_viewport viewport;
-		struct gpu_rect scissor;
-		struct gpu_depth_stencil_state depth_stencil;
-		struct gpu_blend_state blend;
-		struct gpu_raster_state raster;
-
-		raster_state_fill(has_depth, &viewport, &scissor, &depth_stencil, &blend, &raster);
-		gpu_gl_apply_raster_state(&viewport, &scissor, &depth_stencil, &blend, &raster);
-	}
+	has_depth = draw->depth_target != 0;
+	raster_state_fill(has_depth, &draw->viewport, &draw->scissor, &draw->depth_stencil, &draw->blend, &draw->raster);
 
 	memset(&key, 0, sizeof(key));
 	memcpy(key.combiner_state, D3D__RenderState, sizeof(key.combiner_state));
@@ -2047,7 +2044,7 @@ static struct gpu_gl_program *prepare_draw(BOOL immediate)
 	key.combiner_state[D3DRS_PSFINALCOMBINERCONSTANT0] = 0;
 	key.combiner_state[D3DRS_PSFINALCOMBINERCONSTANT1] = 0;
 	key.texture_modes = D3D__RenderState[D3DRS_PSTEXTUREMODES];
-	bind_textures(&key, texture_scale);
+	stages_fill(&key, texture_scale, draw->stages);
 	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
 	{
 		key.alpha_kill[stage] = D3D__TextureState[stage][D3DTSS_ALPHAKILL] == D3DTALPHAKILL_ENABLE;
@@ -2059,26 +2056,14 @@ static struct gpu_gl_program *prepare_draw(BOOL immediate)
 	key.count_samples = device.visibility_test_active &&
 		device_capabilities.occlusion_mode == GPU_OCCLUSION_SHADER_COUNTER;
 
-	entry = gpu_gl_program_get(vertex_shader_get(program, immediate), fragment_shader_get(&key));
-	if (!entry)
-	{
-		stats.skipped_link++;
-		gl_check_errors("program");
-		return NULL;
-	}
-	gl_check_errors("state");
-	if (immediate)
-		stats.immediate_draws++;
-	else
-		stats.draws++;
-	gpu_gl_program_use(entry);
+	draw->vertex_shader = vertex_shader_get(program, immediate);
+	draw->pixel_shader = fragment_shader_get(&key);
 #ifdef HALO_ILP32
+	/* until sub-step g: the counter this visibility test adds to */
 	if (key.count_samples)
 		glBindBufferRange(GL_ATOMIC_COUNTER_BUFFER, 0, device.visibility_counters,
 			(GLintptr)(device.counter_active * sizeof(GLuint)), sizeof(GLuint));
 #endif
-
-	gpu_gl_program_constants(entry, &constant_store);
 
 	/* the state the other uniforms come from: most draws share it with the
 	draw before them, and so share its uniforms */
@@ -2158,8 +2143,25 @@ static struct gpu_gl_program *prepare_draw(BOOL immediate)
 			converted->screen_offset[0][0] = (float)UI_OFFSET;
 		}
 	}
-	gpu_gl_program_uniforms(entry, &draw_uniforms);
-	return entry;
+	return TRUE;
+}
+
+/* the packet prepare_draw and the draw function built */
+static struct gpu_draw draw_packet;
+
+static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
+{
+	if (!gpu_draw(draw, &constant_store, &draw_uniforms))
+	{
+		stats.skipped_link++;
+		gl_check_errors("program");
+		return;
+	}
+	if (immediate)
+		stats.immediate_draws++;
+	else
+		stats.draws++;
+	gl_check_errors("draw");
 }
 
 /* ---------- tracing (debug.gpu_trace_frame) */
@@ -2530,12 +2532,9 @@ static unsigned long stream_upload_swizzled(const struct vertex_shader_object *d
 	return stream_upload(scratch, size, buffer);
 }
 
-static unsigned long index_upload(const void *data, unsigned long size)
+static uint32_t index_upload(const void *data, unsigned long size, gpu_buffer *buffer)
 {
-	gpu_buffer buffer;
-
-	/* the draw packet carries the buffer from step 3e on */
-	return gpu_stream(GPU_STREAM_KIND_INDEX, data, (uint32_t)size, &buffer);
+	return gpu_stream(GPU_STREAM_KIND_INDEX, data, (uint32_t)size, buffer);
 }
 
 /* the GPU_ATTRIBUTE_* format of a declaration element */
@@ -2566,9 +2565,6 @@ static uint8_t attribute_format(const struct vertex_element *element)
 	}
 }
 
-/* upload vertices [first, first + count) of every stream the declaration
-uses and point the attributes at them; attribute data then starts at
-vertex 0 of the uploaded range */
 /* without vertex_bgra a stream with colors is swizzled as it is uploaded
 (stream_upload_swizzled) and cannot come from the mirror */
 static BOOL stream_has_colors(const struct vertex_shader_object *declaration, unsigned long stream)
@@ -2583,10 +2579,13 @@ static BOOL stream_has_colors(const struct vertex_shader_object *declaration, un
 	return FALSE;
 }
 
-static void setup_streams(unsigned long first, unsigned long count)
+/* upload vertices [first, first + count) of every stream the declaration
+uses into the packet's streams and point its attributes at them; attribute
+data then starts at vertex 0 of the uploaded range */
+static void setup_streams(struct gpu_draw *draw, unsigned long first, unsigned long count)
 {
 	struct vertex_shader_object *declaration = device.vertex_shader;
-	struct gpu_vertex_stream streams[16];
+	struct gpu_vertex_stream *streams = draw->streams;
 	struct gpu_vertex_attribute attribute;
 	BOOL placed[16] = { FALSE };
 	BOOL enabled[XGPU_VERTEX_ATTRIBUTE_COUNT] = { FALSE };
@@ -2638,7 +2637,7 @@ static void setup_streams(unsigned long first, unsigned long count)
 		attribute.format = attribute_format(element);
 		attribute.stream = (uint8_t)stream;
 		attribute.offset = element->offset;
-		gpu_gl_apply_attribute(element->reg, &attribute, &streams[stream], NULL);
+		draw->attributes[element->reg] = attribute;
 		enabled[element->reg] = TRUE;
 	}
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
@@ -2649,24 +2648,27 @@ static void setup_streams(unsigned long first, unsigned long count)
 			attribute.format = declaration->packed_mask & (1UL << index) ? GPU_ATTRIBUTE_NORMPACKED3 : GPU_ATTRIBUTE_FLOAT4;
 			attribute.stream = GPU_STREAM_CONSTANT;
 			attribute.offset = 0;
-			gpu_gl_apply_attribute(index, &attribute, NULL, device.attributes[index]);
+			draw->attributes[index] = attribute;
+			memcpy(draw->constant_values[index], device.attributes[index], sizeof(draw->constant_values[index]));
 		}
 	}
 }
 
-static GLenum primitive_mode(D3DPRIMITIVETYPE type)
+/* the packet's primitive for a D3D one (quad lists become triangle lists
+with indices of their own, quad_indices) */
+static uint32_t packet_primitive(D3DPRIMITIVETYPE type)
 {
 	switch (type)
 	{
-	case D3DPT_POINTLIST: return GL_POINTS;
-	case D3DPT_LINELIST: return GL_LINES;
-	case D3DPT_LINELOOP: return GL_LINE_LOOP;
-	case D3DPT_LINESTRIP: return GL_LINE_STRIP;
+	case D3DPT_POINTLIST: return GPU_PRIMITIVE_POINTS;
+	case D3DPT_LINELIST: return GPU_PRIMITIVE_LINES;
+	case D3DPT_LINELOOP: return GPU_PRIMITIVE_LINE_LOOP;
+	case D3DPT_LINESTRIP: return GPU_PRIMITIVE_LINE_STRIP;
 	case D3DPT_TRIANGLESTRIP:
-	case D3DPT_QUADSTRIP: return GL_TRIANGLE_STRIP;
+	case D3DPT_QUADSTRIP: return GPU_PRIMITIVE_TRIANGLE_STRIP;
 	case D3DPT_TRIANGLEFAN:
-	case D3DPT_POLYGON: return GL_TRIANGLE_FAN;
-	default: return GL_TRIANGLES;
+	case D3DPT_POLYGON: return GPU_PRIMITIVE_TRIANGLE_FAN;
+	default: return GPU_PRIMITIVE_TRIANGLES;
 	}
 }
 
@@ -2711,49 +2713,55 @@ void WINAPI D3DDevice_SetIndices(D3DIndexBuffer *index_data, UINT base_vertex_in
 
 void WINAPI D3DDevice_DrawVertices(D3DPRIMITIVETYPE primitive_type, UINT start_vertex, UINT vertex_count)
 {
-	if (!vertex_count || !prepare_draw(FALSE))
+	struct gpu_draw *draw = &draw_packet;
+
+	if (!vertex_count || !prepare_draw(draw, FALSE))
 		return;
 	trace_draw("draw", primitive_type, vertex_count, NULL);
-	setup_streams(start_vertex, vertex_count);
+	setup_streams(draw, start_vertex, vertex_count);
 	if (primitive_type == D3DPT_QUADLIST)
 	{
 		unsigned long count;
 		WORD *indices = quad_indices(NULL, vertex_count, &count);
 
-		glDrawElements(GL_TRIANGLES, (GLsizei)count, GL_UNSIGNED_SHORT,
-			(const void *)index_upload(indices, count * sizeof(WORD)));
+		draw->index_offset = index_upload(indices, count * sizeof(WORD), &draw->index_buffer);
 		free(indices);
+		draw->primitive = GPU_PRIMITIVE_TRIANGLES;
+		draw->count = (uint32_t)count;
 	}
 	else
 	{
-		glDrawArrays(primitive_mode(primitive_type), 0, (GLsizei)vertex_count);
+		draw->primitive = packet_primitive(primitive_type);
+		draw->count = vertex_count;
 	}
-	gl_check_errors("draw");
+	submit_draw(draw, FALSE);
 }
 
 void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT vertex_count, CONST WORD *index_data)
 {
+	struct gpu_draw *draw = &draw_packet;
 	unsigned long minimum, maximum, index, count, generation = 0, index_offset = 0;
 	WORD *indices = NULL;
 	const WORD *source = index_data;
-	gpu_buffer index_buffer = 0;
 	BOOL mirrored;
 
-	if (!vertex_count || !index_data || !prepare_draw(FALSE))
+	if (!vertex_count || !index_data || !prepare_draw(draw, FALSE))
 		return;
 	/* quads are drawn as triangles, from indices made for the draw */
 	mirrored = primitive_type != D3DPT_QUADLIST && device_capabilities.base_vertex &&
-		mirror_range((unsigned long)index_data, vertex_count * sizeof(WORD), &index_buffer, &index_offset, &generation);
+		mirror_range((unsigned long)index_data, vertex_count * sizeof(WORD), &draw->index_buffer, &index_offset, &generation);
 	index_extent(index_data, vertex_count, generation, mirrored, &minimum, &maximum);
 	trace_draw("indexed", primitive_type, vertex_count, NULL);
 	/* (the streams from the base vertex on: index i is vertex base + i) */
-	setup_streams(device.base_vertex_index + minimum, maximum - minimum + 1);
+	setup_streams(draw, device.base_vertex_index + minimum, maximum - minimum + 1);
+	draw->primitive = packet_primitive(primitive_type);
 	if (mirrored)
 	{
 		/* the attributes start at vertex minimum */
-		gpu_gl_state_element_array_buffer(index_buffer);
-		glDrawElementsBaseVertex(primitive_mode(primitive_type), (GLsizei)vertex_count, GL_UNSIGNED_SHORT,
-			(const void *)index_offset, -(GLint)minimum);
+		draw->index_offset = (uint32_t)index_offset;
+		draw->count = vertex_count;
+		draw->base_vertex = -(int32_t)minimum;
+		submit_draw(draw, FALSE);
 		return;
 	}
 	stats.streamed_bytes += vertex_count * sizeof(WORD);
@@ -2762,6 +2770,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	{
 		indices = quad_indices(index_data, vertex_count, &count);
 		source = indices;
+		draw->primitive = GPU_PRIMITIVE_TRIANGLES;
 	}
 	if (!device_capabilities.base_vertex)
 	{
@@ -2770,14 +2779,17 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 
 		for (index = 0; index < count; index++)
 			rebased[index] = (WORD)(source[index] - minimum);
-		glDrawElements(primitive_mode(primitive_type), (GLsizei)count, GL_UNSIGNED_SHORT,
-			(const void *)index_upload(rebased, count * sizeof(WORD)));
+		draw->index_offset = index_upload(rebased, count * sizeof(WORD), &draw->index_buffer);
+		draw->count = (uint32_t)count;
 		free(rebased);
 		free(indices);
+		submit_draw(draw, FALSE);
 		return;
 	}
-	glDrawElementsBaseVertex(primitive_mode(primitive_type), (GLsizei)count, GL_UNSIGNED_SHORT,
-		(const void *)index_upload(source, count * sizeof(WORD)), -(GLint)minimum);
+	draw->index_offset = index_upload(source, count * sizeof(WORD), &draw->index_buffer);
+	draw->count = (uint32_t)count;
+	draw->base_vertex = -(int32_t)minimum;
+	submit_draw(draw, FALSE);
 	free(indices);
 }
 
@@ -2806,39 +2818,40 @@ static void immediate_emit(void)
 
 void WINAPI D3DDevice_End(void)
 {
+	struct gpu_draw *draw = &draw_packet;
 	unsigned long stride = XGPU_VERTEX_ATTRIBUTE_COUNT * 4 * sizeof(float);
 	unsigned long index, count = device.immediate_count;
 	D3DPRIMITIVETYPE type = device.immediate_type;
-	struct gpu_vertex_stream stream;
-	struct gpu_vertex_attribute attribute;
 
 	device.immediate_active = FALSE;
-	if (!count || !prepare_draw(TRUE))
+	if (!count || !prepare_draw(draw, TRUE))
 		return;
 	trace_draw("immediate", type, count, device.immediate_vertices);
-	stream.offset = (uint32_t)stream_upload(device.immediate_vertices, count * stride, &stream.buffer);
-	stream.stride = (uint32_t)stride;
+	/* every attribute, as a float4, from stream 0 */
+	draw->streams[0].offset = (uint32_t)stream_upload(device.immediate_vertices, count * stride, &draw->streams[0].buffer);
+	draw->streams[0].stride = (uint32_t)stride;
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
-		attribute.format = GPU_ATTRIBUTE_FLOAT4;
-		attribute.stream = 0;
-		attribute.offset = (uint16_t)(index * 4 * sizeof(float));
-		gpu_gl_apply_attribute(index, &attribute, &stream, NULL);
+		draw->attributes[index].format = GPU_ATTRIBUTE_FLOAT4;
+		draw->attributes[index].stream = 0;
+		draw->attributes[index].offset = (uint16_t)(index * 4 * sizeof(float));
 	}
 	if (type == D3DPT_QUADLIST)
 	{
 		unsigned long index_count;
 		WORD *indices = quad_indices(NULL, count, &index_count);
 
-		glDrawElements(GL_TRIANGLES, (GLsizei)index_count, GL_UNSIGNED_SHORT,
-			(const void *)index_upload(indices, index_count * sizeof(WORD)));
+		draw->index_offset = index_upload(indices, index_count * sizeof(WORD), &draw->index_buffer);
 		free(indices);
+		draw->primitive = GPU_PRIMITIVE_TRIANGLES;
+		draw->count = (uint32_t)index_count;
 	}
 	else
 	{
-		glDrawArrays(primitive_mode(type), 0, (GLsizei)count);
+		draw->primitive = packet_primitive(type);
+		draw->count = (uint32_t)count;
 	}
-	gl_check_errors("immediate draw");
+	submit_draw(draw, TRUE);
 }
 
 static void set_attribute(INT reg, float a, float b, float c, float d)
