@@ -14,6 +14,11 @@ Run-time resolution of the OpenGL entry points listed in gl.h.
 GL_FUNCTIONS(GL_DEFINE_FUNCTION)
 unsigned long halo_gl_call_count;
 
+void halo_gl_count_call(void)
+{
+	halo_gl_call_count++;
+}
+
 int gl_functions_load(void)
 {
 	int success = TRUE;

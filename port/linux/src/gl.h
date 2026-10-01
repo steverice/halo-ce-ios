@@ -244,7 +244,10 @@ GL_FUNCTIONS(GL_DECLARE_FUNCTION)
 /* every GL call made through the aliases below is counted, for
 debug.gpu_stats (d3d8_gl.c): the renderer's refactors must not add calls */
 extern unsigned long halo_gl_call_count;
-#define HALO_GL_COUNTED(function) (halo_gl_call_count++, function)
+/* a function, not ++ in the macro: one counted call nested in another's
+arguments would make two unsequenced increments of the counter */
+void halo_gl_count_call(void);
+#define HALO_GL_COUNTED(function) (halo_gl_count_call(), function)
 
 /* call sites use the ordinary names; gl_functions.c, which defines the
 pointers, sees the declarations without these aliases */
