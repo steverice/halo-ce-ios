@@ -76,7 +76,7 @@ def find_container(root, bundle_id):
 
 def read_bmp(data):
     """(width, height, BGRA rows) of a 32-bit BMP as write_screenshot (d3d8_gl.c) writes it"""
-    if data[:2] != b"BM":
+    if len(data) < 30 or data[:2] != b"BM":
         raise ValueError("not a BMP")
     (offset,) = struct.unpack_from("<I", data, 10)
     width, height = struct.unpack_from("<ii", data, 18)
@@ -84,6 +84,8 @@ def read_bmp(data):
     if bits != 32:
         raise ValueError(f"{bits}-bit BMP; expected 32")
     height = abs(height)
+    if len(data) < offset + width * height * 4:
+        raise ValueError(f"truncated: {len(data)} bytes")
     return width, height, data[offset:offset + width * height * 4]
 
 
@@ -135,7 +137,11 @@ def compare(a, b, tolerance):
     for name in sorted(shots_a.keys() ^ shots_b.keys()):
         problems.append(f"{name} only in {a if name in shots_a else b}")
     for name in sorted(shots_a.keys() & shots_b.keys()):
-        differing, largest = bmp_difference(shots_a[name].read_bytes(), shots_b[name].read_bytes())
+        try:
+            differing, largest = bmp_difference(shots_a[name].read_bytes(), shots_b[name].read_bytes())
+        except ValueError as error:
+            problems.append(f"{name}: unreadable ({error})")
+            continue
         if differing > tolerance:
             problems.append(f"{name}: {differing} pixels differ, by up to {largest}")
     logs = [folder / "stderr.log" for folder in (a, b)]

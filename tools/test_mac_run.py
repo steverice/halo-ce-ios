@@ -171,3 +171,14 @@ def test_prepare_creates_the_requested_output_folders(tmp_path):
     assert (tmp_path / "runner/shots").is_dir()
     assert (tmp_path / "runner/shaders").is_dir()
     assert (tmp_path / "stderr.log").is_file()
+
+
+def test_compare_reports_truncated_and_empty_frames(tmp_path):
+    """a run killed mid-write leaves a partial BMP behind"""
+    image = _bmp(2, 2, bytes(16))
+    a = _result(tmp_path / "a", {}, {"frame00300.bmp": image, "frame00600.bmp": image}, "")
+    b = _result(tmp_path / "b", {}, {"frame00300.bmp": image[:60], "frame00600.bmp": b""}, "")
+    problems = mac_run.compare(a, b, tolerance=0)
+    assert any("frame00300.bmp: unreadable" in p for p in problems)
+    assert any("frame00600.bmp: unreadable" in p for p in problems)
+
