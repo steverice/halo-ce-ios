@@ -274,16 +274,8 @@ static struct render_target_entry **render_target_bucket(unsigned long data)
 	return &render_target_buckets[((data >> 12) ^ (data >> 20)) % RENDER_TARGET_BUCKET_COUNT];
 }
 
-struct framebuffer_entry
-{
-	struct framebuffer_entry *next;
-	GLuint color;
-	GLuint depth;
-	GLuint framebuffer;
-};
 
 static struct render_target_entry *render_targets;
-static struct framebuffer_entry *framebuffers;
 
 /* ---------- the device */
 
@@ -822,33 +814,6 @@ struct xgpu_render_target *xgpu_render_target_find(unsigned long data)
 	return best ? &best->target : NULL;
 }
 
-static GLuint framebuffer_get(GLuint color, GLuint depth)
-{
-	struct framebuffer_entry *entry;
-	GLenum draw_buffer = color ? GL_COLOR_ATTACHMENT0 : GL_NONE;
-
-	for (entry = framebuffers; entry; entry = entry->next)
-	{
-		if (entry->color == color && entry->depth == depth)
-			return entry->framebuffer;
-	}
-	entry = calloc(1, sizeof(*entry));
-	entry->color = color;
-	entry->depth = depth;
-	glGenFramebuffers(1, &entry->framebuffer);
-	glBindFramebuffer(GL_FRAMEBUFFER, entry->framebuffer);
-	if (color)
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
-	if (depth)
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depth, 0);
-	glDrawBuffers(1, &draw_buffer);
-	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-		platform_log("framebuffer %u/%u is incomplete", color, depth);
-	xgpu_gl_state_invalidate();
-	entry->next = framebuffers;
-	framebuffers = entry;
-	return entry->framebuffer;
-}
 
 /* the pixels per unit of the bound targets (render_target_get) */
 static float target_scale[2] = { 1.0f, 1.0f };
@@ -875,7 +840,7 @@ static BOOL bind_targets(BOOL *has_depth)
 	/* viewports and clears are in the targets' units (render_target_get) */
 	target_scale[0] = color ? color->target.scale[0] : depth->target.scale[0];
 	target_scale[1] = color ? color->target.scale[1] : depth->target.scale[1];
-	state_framebuffer(framebuffer_get(color ? color->target.texture : 0, depth ? depth->target.texture : 0));
+	state_framebuffer(gpu_gl_framebuffer_get(color ? color->target.texture : 0, depth ? depth->target.texture : 0));
 	*has_depth = depth != NULL;
 	return TRUE;
 }
@@ -2196,33 +2161,12 @@ struct mip_composite
 {
 	struct mip_composite *next;
 	unsigned long data, width, height, levels;
-	GLuint texture;
+	gpu_texture texture;
 };
 
 static struct mip_composite *mip_composites;
 
-#ifdef HALO_ILP32
-static GLuint framebuffer_get(GLuint color, GLuint depth);
-
-/* glCopyImageSubData for ES 3.0/3.1 contexts without the extension */
-static void copy_level_by_blit(GLuint source, GLuint destination, GLint level, GLsizei width, GLsizei height)
-{
-	static GLuint draw_framebuffer;
-
-	if (!draw_framebuffer)
-		glGenFramebuffers(1, &draw_framebuffer);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(source, 0));
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destination, level);
-	glDisable(GL_SCISSOR_TEST);
-	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	/* the blit bypasses the cached state, so the next draw must re-apply it */
-	xgpu_gl_state_invalidate();
-}
-#endif
-
-static GLuint mip_composite_get(const struct xgpu_texture_description *description, unsigned long data)
+static gpu_texture mip_composite_get(const struct xgpu_texture_description *description, unsigned long data)
 {
 	struct mip_composite *composite;
 	unsigned long level, rendered_levels = 0;
@@ -2242,16 +2186,17 @@ static GLuint mip_composite_get(const struct xgpu_texture_description *descripti
 		composite->width = description->width;
 		composite->height = description->height;
 		composite->levels = description->levels;
-		glGenTextures(1, &composite->texture);
-		glBindTexture(GL_TEXTURE_2D, composite->texture);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)description->levels - 1);
-		for (level = 0; level < description->levels; level++)
 		{
-			GLsizei width = (GLsizei)(description->width >> level ? description->width >> level : 1);
-			GLsizei height = (GLsizei)(description->height >> level ? description->height >> level : 1);
+			struct gpu_texture_description texture = { 0 };
 
-			glTexImage2D(GL_TEXTURE_2D, (GLint)level, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+			texture.type = GPU_TEXTURE_2D;
+			texture.format = GPU_FORMAT_BGRA8;
+			texture.usage = GPU_USAGE_RENDER_TARGET;
+			texture.width = (uint32_t)description->width;
+			texture.height = (uint32_t)description->height;
+			texture.depth = 1;
+			texture.levels = (uint32_t)description->levels;
+			composite->texture = gpu_texture_create(&texture);
 		}
 		composite->next = mip_composites;
 		mip_composites = composite;
@@ -2266,26 +2211,21 @@ static GLuint mip_composite_get(const struct xgpu_texture_description *descripti
 		if (!target || target->width != width || target->height != height ||
 			target->gl_width != width || target->gl_height != height)
 			break;
-#ifdef HALO_ILP32
-		if (!xgpu_capabilities.copy_image)
-		{
-			copy_level_by_blit(target->texture, composite->texture, (GLint)level, (GLsizei)width, (GLsizei)height);
-		}
-		else
-#endif
-		glCopyImageSubData(target->texture, GL_TEXTURE_2D, 0, 0, 0, 0,
-			composite->texture, GL_TEXTURE_2D, (GLint)level, 0, 0, 0, (GLsizei)width, (GLsizei)height, 1);
+		gpu_texture_copy_level(target->texture, composite->texture, (uint32_t)level);
 		rendered_levels++;
 	}
-	glBindTexture(GL_TEXTURE_2D, composite->texture);
 	/* levels the game did not render come from the ones it did */
 	if (rendered_levels < description->levels)
 	{
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, rendered_levels ? (GLint)rendered_levels - 1 : 0);
-		glGenerateMipmap(GL_TEXTURE_2D);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+		gpu_texture_generate_mipmaps(composite->texture, rendered_levels ? (uint32_t)rendered_levels - 1 : 0);
 	}
-	xgpu_gl_state_invalidate();
+	else
+	{
+		/* today's re-bind of a complete composite; step 3e drops it with
+		the other cache resets */
+		glBindTexture(GL_TEXTURE_2D, composite->texture);
+		xgpu_gl_state_invalidate();
+	}
 	return composite->texture;
 }
 
@@ -3681,7 +3621,7 @@ static void write_screenshot(struct render_target_entry *target)
 	if (!directory)
 		return;
 	pixels = malloc(image_size);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(target->target.texture, 0));
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, gpu_gl_framebuffer_get(target->target.texture, 0));
 	glReadPixels(0, 0, (GLsizei)width, (GLsizei)height, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
 	/* the display ignores destination alpha, which the game uses as scratch;
 	image viewers would show it as transparency */
@@ -3754,7 +3694,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(back_buffer->target.texture, 0));
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, gpu_gl_framebuffer_get(back_buffer->target.texture, 0));
 		/* row 0 of the render target is the top of the picture */
 		glBlitFramebuffer(0, 0, (GLint)back_buffer->target.gl_width, (GLint)back_buffer->target.gl_height,
 			x, y + height, x + width, y, GL_COLOR_BUFFER_BIT, GL_LINEAR);

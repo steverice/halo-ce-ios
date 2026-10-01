@@ -46,6 +46,7 @@ extern struct gpu_capabilities device_capabilities;
 /* GL backend internals the front end still uses until step 3e moves the draw
 state (gpu_gl.c) */
 GLenum gpu_gl_texture_target(uint32_t type);
+GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth);
 
 /* ---------- GL state
 

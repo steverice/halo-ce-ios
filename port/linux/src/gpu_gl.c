@@ -171,3 +171,88 @@ gpu_texture gpu_texture_create(const struct gpu_texture_description *description
 	xgpu_gl_state_invalidate();
 	return name;
 }
+
+/* ---------- framebuffers, cached by attachment */
+
+struct framebuffer_entry
+{
+	struct framebuffer_entry *next;
+	GLuint color;
+	GLuint depth;
+	GLuint framebuffer;
+};
+
+static struct framebuffer_entry *framebuffers;
+
+GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth)
+{
+	struct framebuffer_entry *entry;
+	GLenum draw_buffer = color ? GL_COLOR_ATTACHMENT0 : GL_NONE;
+
+	for (entry = framebuffers; entry; entry = entry->next)
+	{
+		if (entry->color == color && entry->depth == depth)
+			return entry->framebuffer;
+	}
+	entry = calloc(1, sizeof(*entry));
+	entry->color = color;
+	entry->depth = depth;
+	glGenFramebuffers(1, &entry->framebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, entry->framebuffer);
+	if (color)
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+	if (depth)
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depth, 0);
+	glDrawBuffers(1, &draw_buffer);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		platform_log("framebuffer %u/%u is incomplete", color, depth);
+	xgpu_gl_state_invalidate();
+	entry->next = framebuffers;
+	framebuffers = entry;
+	return entry->framebuffer;
+}
+
+#ifdef HALO_ILP32
+/* glCopyImageSubData for ES 3.0/3.1 contexts without the extension */
+static void copy_level_by_blit(GLuint source, GLuint destination, GLint level, GLsizei width, GLsizei height)
+{
+	static GLuint draw_framebuffer;
+
+	if (!draw_framebuffer)
+		glGenFramebuffers(1, &draw_framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, gpu_gl_framebuffer_get(source, 0));
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destination, level);
+	glDisable(GL_SCISSOR_TEST);
+	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	/* the blit bypasses the cached state, so the next draw must re-apply it */
+	xgpu_gl_state_invalidate();
+}
+#endif
+
+void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level)
+{
+	const struct gpu_texture_description *description = &texture_record(destination)->description;
+	GLsizei width = texture_level_dimension(description->width, level);
+	GLsizei height = texture_level_dimension(description->height, level);
+
+#ifdef HALO_ILP32
+	if (!xgpu_capabilities.copy_image)
+	{
+		copy_level_by_blit(source, destination, (GLint)level, width, height);
+		return;
+	}
+#endif
+	glCopyImageSubData(source, GL_TEXTURE_2D, 0, 0, 0, 0,
+		destination, GL_TEXTURE_2D, (GLint)level, 0, 0, 0, width, height, 1);
+}
+
+void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
+{
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, (GLint)base_level);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	xgpu_gl_state_invalidate();
+}
