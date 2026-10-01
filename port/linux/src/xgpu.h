@@ -47,6 +47,12 @@ extern struct gpu_capabilities device_capabilities;
 state (gpu_gl.c) */
 GLenum gpu_gl_texture_target(uint32_t type);
 GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth);
+/* until step 3e moves the GL state cache: the cache's buffer bindings, for
+gpu_gl.c's streams (d3d8_gl.c) */
+void xgpu_gl_bind_array_buffer(GLuint buffer);
+void xgpu_gl_bind_element_array_buffer(GLuint buffer);
+/* until step 3f's gpu_present: advances the stream buffers after a frame (gpu_gl.c) */
+void gpu_gl_stream_frame(void);
 
 /* ---------- GL state
 

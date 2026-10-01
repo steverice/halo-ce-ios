@@ -17,6 +17,39 @@ for now it probes the context.
 #define GL_BGRA GL_RGBA
 #endif
 
+/* ---------- streams */
+
+#ifdef HALO_ILP32
+/* Mobile drivers (Mali) keep every orphaned copy of a buffer until the GPU
+is done with it, so a large buffer orphaned each frame costs its size per
+frame in flight and more. Instead each frame streams into the next of a few
+smaller buffers, reusing one only once the GPU has finished the frame that
+last used it (host_gl_wait_frame). A busy frame streams about 5 MB of
+vertices. */
+#define STREAM_BUFFER_SIZE (16 * 1024 * 1024)
+#define INDEX_BUFFER_SIZE (2 * 1024 * 1024)
+#define STREAM_BUFFER_RING 3
+#else
+#define STREAM_BUFFER_SIZE (32 * 1024 * 1024)
+#define INDEX_BUFFER_SIZE (8 * 1024 * 1024)
+#endif
+
+/* the vertex array and the per-frame stream and index buffers (on ES a ring
+of them, one per frame in flight; desktop GL orphans one) */
+static struct
+{
+	GLuint vertex_array;
+	GLuint stream_buffer;
+#ifdef HALO_ILP32
+	GLuint stream_buffers[STREAM_BUFFER_RING];
+	GLuint index_buffers[STREAM_BUFFER_RING];
+	unsigned long buffer_ring;
+#endif
+	unsigned long stream_offset;
+	GLuint index_buffer;
+	unsigned long index_offset;
+} streams;
+
 #ifndef HALO_ILP32
 static void GLAPIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
 	GLsizei length, const GLchar *message, const void *user)
@@ -94,6 +127,33 @@ void gpu_initialize(struct gpu_capabilities *capabilities)
 	capabilities->s3tc = 1;
 	capabilities->border_clamp = 1;
 	capabilities->shader_language = 450;
+#endif
+	glGenVertexArrays(1, &streams.vertex_array);
+	glBindVertexArray(streams.vertex_array);
+#ifdef HALO_ILP32
+	{
+		int ring;
+
+		glGenBuffers(STREAM_BUFFER_RING, streams.stream_buffers);
+		glGenBuffers(STREAM_BUFFER_RING, streams.index_buffers);
+		for (ring = 0; ring < STREAM_BUFFER_RING; ring++)
+		{
+			glBindBuffer(GL_ARRAY_BUFFER, streams.stream_buffers[ring]);
+			glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, streams.index_buffers[ring]);
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
+		}
+		streams.stream_buffer = streams.stream_buffers[0];
+		streams.index_buffer = streams.index_buffers[0];
+	}
+#endif
+#ifndef HALO_ILP32
+	glGenBuffers(1, &streams.stream_buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, streams.stream_buffer);
+	glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
+	glGenBuffers(1, &streams.index_buffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, streams.index_buffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
 #endif
 }
 
@@ -357,4 +417,80 @@ void gpu_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const v
 	(void)flags;
 #endif
 	glBufferSubData(GL_COPY_WRITE_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
+}
+
+void gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes)
+{
+	if (streams.stream_offset + vertex_bytes > STREAM_BUFFER_SIZE)
+	{
+		/* orphan the buffer and start again */
+		xgpu_gl_bind_array_buffer(streams.stream_buffer);
+		glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
+		streams.stream_offset = 0;
+	}
+	/* step 3's front end passes 0: today the index buffer makes room as each
+	range is uploaded (gpu_stream), which keeps the GL call order; a backend
+	that needs a draw's index bytes up front gets them from the draw packet
+	(sub-step e) */
+	if (index_bytes && streams.index_offset + index_bytes > INDEX_BUFFER_SIZE)
+	{
+		xgpu_gl_bind_element_array_buffer(streams.index_buffer);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
+		streams.index_offset = 0;
+	}
+}
+
+uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *buffer)
+{
+	unsigned long offset;
+
+	size = (size + 15) & ~15U;
+	if (kind == GPU_STREAM_INDEX)
+	{
+		/* the index buffer makes room as each range comes */
+		xgpu_gl_bind_element_array_buffer(streams.index_buffer);
+		if (streams.index_offset + size > INDEX_BUFFER_SIZE)
+		{
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
+			streams.index_offset = 0;
+		}
+		offset = streams.index_offset;
+#ifdef HALO_ILP32
+		host_gl_buffer_write(GL_ELEMENT_ARRAY_BUFFER, (unsigned int)offset, (unsigned int)size, data);
+#else
+		glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
+#endif
+		streams.index_offset += size;
+		*buffer = streams.index_buffer;
+		return (uint32_t)offset;
+	}
+	gpu_stream_reserve(size, 0);
+	offset = streams.stream_offset;
+	xgpu_gl_bind_array_buffer(streams.stream_buffer);
+#ifdef HALO_ILP32
+	host_gl_buffer_write(GL_ARRAY_BUFFER, (unsigned int)offset, (unsigned int)size, data);
+#else
+	glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
+#endif
+	streams.stream_offset += size;
+	*buffer = streams.stream_buffer;
+	return (uint32_t)offset;
+}
+
+/* the frame is presented: on ES, fence this ring slot and wait for the next
+one's frame to finish; on desktop GL, orphan both buffers at the next use */
+void gpu_gl_stream_frame(void)
+{
+#ifdef HALO_ILP32
+	host_gl_fence_frame((unsigned int)streams.buffer_ring);
+	streams.buffer_ring = (streams.buffer_ring + 1) % STREAM_BUFFER_RING;
+	host_gl_wait_frame((unsigned int)streams.buffer_ring);
+	streams.stream_buffer = streams.stream_buffers[streams.buffer_ring];
+	streams.index_buffer = streams.index_buffers[streams.buffer_ring];
+	streams.stream_offset = 0;
+	streams.index_offset = 0;
+#else
+	streams.stream_offset = STREAM_BUFFER_SIZE;
+	streams.index_offset = INDEX_BUFFER_SIZE;
+#endif
 }

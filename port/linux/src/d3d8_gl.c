@@ -279,20 +279,6 @@ static struct render_target_entry *render_targets;
 
 /* ---------- the device */
 
-#ifdef HALO_ILP32
-/* Mobile drivers (Mali) keep every orphaned copy of a buffer until the GPU
-is done with it, so a large buffer orphaned each frame costs its size per
-frame in flight and more. Instead each frame streams into the next of a few
-smaller buffers, reusing one only once the GPU has finished the frame that
-last used it (host_gl_wait_frame). A busy frame streams about 5 MB of
-vertices. */
-#define STREAM_BUFFER_SIZE (16 * 1024 * 1024)
-#define INDEX_BUFFER_SIZE (2 * 1024 * 1024)
-#define STREAM_BUFFER_RING 3
-#else
-#define STREAM_BUFFER_SIZE (32 * 1024 * 1024)
-#define INDEX_BUFFER_SIZE (8 * 1024 * 1024)
-#endif
 #define VISIBILITY_TEST_SLOTS 4096
 #ifdef HALO_ILP32
 #define VISIBILITY_QUERY GL_ANY_SAMPLES_PASSED
@@ -339,16 +325,6 @@ struct gl_device
 	unsigned long immediate_count;
 	unsigned long immediate_capacity;
 
-	GLuint vertex_array;
-	GLuint stream_buffer;
-#ifdef HALO_ILP32
-	GLuint stream_buffers[STREAM_BUFFER_RING];
-	GLuint index_buffers[STREAM_BUFFER_RING];
-	unsigned long buffer_ring;
-#endif
-	unsigned long stream_offset;
-	GLuint index_buffer;
-	unsigned long index_offset;
 	GLuint samplers[D3DTSS_MAXSTAGES];
 
 	GLuint queries[VISIBILITY_TEST_SLOTS];
@@ -557,6 +533,18 @@ static void state_element_array_buffer(GLuint buffer)
 		gl_state.element_array_buffer = buffer;
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer);
 	}
+}
+
+/* the cache's buffer bindings, for gpu_gl.c's streams until step 3e moves
+the GL state cache into the backend */
+void xgpu_gl_bind_array_buffer(GLuint buffer)
+{
+	state_array_buffer(buffer);
+}
+
+void xgpu_gl_bind_element_array_buffer(GLuint buffer)
+{
+	state_element_array_buffer(buffer);
 }
 
 static void state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
@@ -980,33 +968,6 @@ static void gl_initialize(void)
 	screen_mode_choose(&screen_width, screen_scale);
 	platform_log("iOS render target: %.0fx%.0f (logical %ldx%d)",
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
-#endif
-	glGenVertexArrays(1, &device.vertex_array);
-	glBindVertexArray(device.vertex_array);
-#ifdef HALO_ILP32
-	{
-		int ring;
-
-		glGenBuffers(STREAM_BUFFER_RING, device.stream_buffers);
-		glGenBuffers(STREAM_BUFFER_RING, device.index_buffers);
-		for (ring = 0; ring < STREAM_BUFFER_RING; ring++)
-		{
-			glBindBuffer(GL_ARRAY_BUFFER, device.stream_buffers[ring]);
-			glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, device.index_buffers[ring]);
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
-		}
-		device.stream_buffer = device.stream_buffers[0];
-		device.index_buffer = device.index_buffers[0];
-	}
-#endif
-#ifndef HALO_ILP32
-	glGenBuffers(1, &device.stream_buffer);
-	glBindBuffer(GL_ARRAY_BUFFER, device.stream_buffer);
-	glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
-	glGenBuffers(1, &device.index_buffer);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, device.index_buffer);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
 #endif
 	glGenSamplers(D3DTSS_MAXSTAGES, device.samplers);
 	glGenQueries(VISIBILITY_TEST_SLOTS, device.queries);
@@ -3067,42 +3028,15 @@ static void index_extent(const WORD *indices, unsigned long count, unsigned long
 
 /* ---------- vertex data */
 
-/* makes room for size bytes of uploads, orphaning the stream buffer if it
-is full. A draw reserves room for all of its streams at once: orphaning
-between two of them would leave the attributes already pointed at the
-buffer reading its new, empty storage. */
-static void stream_reserve(unsigned long size)
+static unsigned long stream_upload(const void *data, unsigned long size, gpu_buffer *buffer)
 {
-	if (device.stream_offset + size > STREAM_BUFFER_SIZE)
-	{
-		/* orphan the buffer and start again */
-		state_array_buffer(device.stream_buffer);
-		glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
-		device.stream_offset = 0;
-	}
-}
-
-static unsigned long stream_upload(const void *data, unsigned long size)
-{
-	unsigned long offset;
-
-	size = (size + 15) & ~15UL;
-	stream_reserve(size);
-	offset = device.stream_offset;
-	state_array_buffer(device.stream_buffer);
-#ifdef HALO_ILP32
-	host_gl_buffer_write(GL_ARRAY_BUFFER, (unsigned int)offset, (unsigned int)size, data);
-#else
-	glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
-#endif
-	device.stream_offset += size;
-	return offset;
+	return gpu_stream(GPU_STREAM_VERTEX, data, (uint32_t)size, buffer);
 }
 
 /* stream_upload, with the D3DCOLOR elements of the stream turned from BGRA
 into the RGBA byte order a backend without vertex_bgra reads */
 static unsigned long stream_upload_swizzled(const struct vertex_shader_object *declaration, unsigned long stream,
-	const unsigned char *data, unsigned long size, unsigned long stride)
+	const unsigned char *data, unsigned long size, unsigned long stride, gpu_buffer *buffer)
 {
 	static unsigned char *scratch;
 	static unsigned long scratch_size;
@@ -3117,7 +3051,7 @@ static unsigned long stream_upload_swizzled(const struct vertex_shader_object *d
 			offsets[count++] = element->offset;
 	}
 	if (!count || !stride)
-		return stream_upload(data, size);
+		return stream_upload(data, size, buffer);
 	if (scratch_size < size)
 	{
 		free(scratch);
@@ -3136,28 +3070,15 @@ static unsigned long stream_upload_swizzled(const struct vertex_shader_object *d
 			color[2] = blue;
 		}
 	}
-	return stream_upload(scratch, size);
+	return stream_upload(scratch, size, buffer);
 }
 
 static unsigned long index_upload(const void *data, unsigned long size)
 {
-	unsigned long offset;
+	gpu_buffer buffer;
 
-	size = (size + 15) & ~15UL;
-	state_element_array_buffer(device.index_buffer);
-	if (device.index_offset + size > INDEX_BUFFER_SIZE)
-	{
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
-		device.index_offset = 0;
-	}
-	offset = device.index_offset;
-#ifdef HALO_ILP32
-	host_gl_buffer_write(GL_ELEMENT_ARRAY_BUFFER, (unsigned int)offset, (unsigned int)size, data);
-#else
-	glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)offset, (GLsizeiptr)size, data);
-#endif
-	device.index_offset += size;
-	return offset;
+	/* the draw packet carries the buffer from step 3e on */
+	return gpu_stream(GPU_STREAM_INDEX, data, (uint32_t)size, &buffer);
 }
 
 static void attribute_format(const struct vertex_element *element, GLint *size, GLenum *type, GLboolean *normalized)
@@ -3234,7 +3155,7 @@ static void setup_streams(unsigned long first, unsigned long count)
 		stream_buffers[stream] = 0;
 		total += (bytes + 15) & ~15UL;
 	}
-	stream_reserve(total);
+	gpu_stream_reserve((uint32_t)total, 0);
 	for (index = 0; index < declaration->element_count; index++)
 	{
 		const struct vertex_element *element = &declaration->elements[index];
@@ -3252,9 +3173,8 @@ static void setup_streams(unsigned long first, unsigned long count)
 			unsigned long bytes = stride ? stride * count : 64;
 
 			stream_offsets[stream] = device_capabilities.vertex_bgra ?
-				stream_upload(base + first * stride, bytes) :
-				stream_upload_swizzled(declaration, stream, base + first * stride, bytes, stride);
-			stream_buffers[stream] = device.stream_buffer;
+				stream_upload(base + first * stride, bytes, &stream_buffers[stream]) :
+				stream_upload_swizzled(declaration, stream, base + first * stride, bytes, stride, &stream_buffers[stream]);
 			stats.streamed_bytes += bytes;
 		}
 		if (element->type == D3DVSDT_NORMPACKED3)
@@ -3432,15 +3352,16 @@ void WINAPI D3DDevice_End(void)
 	unsigned long stride = XGPU_VERTEX_ATTRIBUTE_COUNT * 4 * sizeof(float);
 	unsigned long offset, index, count = device.immediate_count;
 	D3DPRIMITIVETYPE type = device.immediate_type;
+	gpu_buffer buffer;
 
 	device.immediate_active = FALSE;
 	if (!count || !prepare_draw(TRUE))
 		return;
 	trace_draw("immediate", type, count, device.immediate_vertices);
-	offset = stream_upload(device.immediate_vertices, count * stride);
+	offset = stream_upload(device.immediate_vertices, count * stride, &buffer);
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
-		state_attribute_pointer(index, device.stream_buffer, 4, GL_FLOAT, GL_FALSE, FALSE, (GLsizei)stride,
+		state_attribute_pointer(index, buffer, 4, GL_FLOAT, GL_FALSE, FALSE, (GLsizei)stride,
 			offset + index * 4 * sizeof(float));
 	}
 	if (type == D3DPT_QUADLIST)
@@ -3683,18 +3604,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		platform_video_swap();
 		xgpu_gl_state_invalidate();
 		xgpu_texture_cache_begin_frame();
-#ifdef HALO_ILP32
-		host_gl_fence_frame((unsigned int)device.buffer_ring);
-		device.buffer_ring = (device.buffer_ring + 1) % STREAM_BUFFER_RING;
-		host_gl_wait_frame((unsigned int)device.buffer_ring);
-		device.stream_buffer = device.stream_buffers[device.buffer_ring];
-		device.index_buffer = device.index_buffers[device.buffer_ring];
-		device.stream_offset = 0;
-		device.index_offset = 0;
-#else
-		device.stream_offset = STREAM_BUFFER_SIZE; /* orphan next frame */
-		device.index_offset = INDEX_BUFFER_SIZE;
-#endif
+		gpu_gl_stream_frame();
 	}
 	device.frame++;
 	/* debug.fixed_timestep: a frame ends once the workers are idle */
