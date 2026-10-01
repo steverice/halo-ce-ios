@@ -789,8 +789,7 @@ void xgpu_texture_cache_begin_frame(void)
 			if (texture_frame - entry->last_used_frame > TEXTURE_IDLE_FRAMES)
 			{
 				*link = entry->next;
-				glDeleteTextures(1, &entry->texture);
-				xgpu_gl_state_invalidate();
+				gpu_texture_destroy(entry->texture);
 				texture_drop_serial++;
 				free(entry);
 			}

@@ -231,6 +231,17 @@ void gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, cons
 	}
 }
 
+void gpu_texture_destroy(gpu_texture texture)
+{
+	GLuint name = texture;
+
+	glDeleteTextures(1, &name);
+	/* deleting a bound texture unbinds it */
+	xgpu_gl_state_invalidate();
+	/* GL may hand the name out again */
+	memset(texture_record(texture), 0, sizeof(struct texture_record));
+}
+
 /* ---------- framebuffers, cached by attachment */
 
 struct framebuffer_entry
