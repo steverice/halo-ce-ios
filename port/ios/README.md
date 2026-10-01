@@ -244,6 +244,25 @@ The manual copy command assumes `Documents/maps` does not yet exist; avoid nesti
 second `maps` directory. Simulator graphics are slow; validate performance on
 a physical device.
 
+### Running on a Mac
+
+`tools/mac_run.py` runs the device build on an Apple-silicon Mac as a "Designed
+for iPad" app, renders with the GPU, and collects the results:
+
+```sh
+python3 tools/ios_build.py --team TEAM
+python3 tools/mac_run.py run --team TEAM --xiso ~/Downloads/halo.iso --exit-after 60 \
+  --screenshot-every 300 --dump-shaders --out results/menu
+python3 tools/mac_run.py compare results/menu results/menu-again
+```
+
+The first run imports the XISO into the app's container. `--init 'map_name a10'`
+loads a level without input. The runner wraps the CMake-built executable in a
+small `xcodegen` project because macOS kills the app the CMake project signs. It
+runs without a debugger because `memory_watch.c`'s deliberate page faults would
+stop one; to debug, use `process handle SIGSEGV SIGBUS --stop false --pass true`
+in LLDB.
+
 ## Troubleshooting
 
 - **Signing fails:** check the Apple account in Xcode, team ID, unique bundle

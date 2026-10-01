@@ -161,3 +161,13 @@ def test_compare_reports_stats_differences_and_missing_logs(tmp_path):
     assert any("gpu_stats" in p for p in mac_run.compare(a, b, tolerance=0))
     (b / "stderr.log").unlink()
     assert any("stderr.log missing" in p for p in mac_run.compare(a, b, tolerance=0))
+
+
+def test_prepare_creates_the_requested_output_folders(tmp_path):
+    """the game writes into these folders but does not create them"""
+    args = mac_run.argparse.Namespace(xiso=None, replay=None, screenshot_every=300, dump_shaders=True,
+                                      exit_after=10.0, set=[], init=[])
+    mac_run.prepare(args, tmp_path)
+    assert (tmp_path / "runner/shots").is_dir()
+    assert (tmp_path / "runner/shaders").is_dir()
+    assert (tmp_path / "stderr.log").is_file()
