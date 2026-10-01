@@ -5,6 +5,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,6 +52,9 @@ int main(int argc,char **argv) {
         snprintf(save_root,sizeof(save_root),"%s/save",data_root);mkdir(save_root,0755);
         chdir(data_root);
         log_file=fopen("ios-runtime.log","w");setvbuf(stderr,NULL,_IONBF,0);
+        /* Tools (tools/mac_run.py) create stderr.log to keep the guest's own log, platform_log
+           and debug.gpu_stats among it, which otherwise only a debugger's console shows. */
+        if(access("stderr.log",F_OK)==0){int fd=open("stderr.log",O_WRONLY|O_APPEND);if(fd>=0){dup2(fd,2);close(fd);}}
         host_logf(HOST_LOG_INFO,"Halo iOS native guest starting");
         UIApplication.sharedApplication.idleTimerDisabled=YES;
         host_ios_prepare_assets(data_root);
