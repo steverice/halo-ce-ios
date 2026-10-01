@@ -165,9 +165,9 @@ unsigned long xgpu_texture_face_size(const struct xgpu_texture_description *desc
 unsigned long xgpu_texture_level_offset(const struct xgpu_texture_description *description, unsigned long level);
 unsigned long xgpu_texture_level_pitch(const struct xgpu_texture_description *description, unsigned long level);
 
-/* the GL texture for an Xbox texture header, uploading or refreshing it
-from guest memory as needed; *target receives GL_TEXTURE_2D etc. */
-GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *target,
+/* the texture for an Xbox texture header, uploading or refreshing it from
+guest memory as needed; *type receives a GPU_TEXTURE_* */
+gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uint32_t *type,
 	struct xgpu_texture_description *description);
 void xgpu_texture_cache_begin_frame(void);
 

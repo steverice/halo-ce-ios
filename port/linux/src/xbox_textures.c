@@ -24,12 +24,6 @@ memory_watch.c detects that by write-protecting the pages.
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
-#define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83f1
-#define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83f2
-#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83f3
-#endif
-
 /* ---------- formats */
 
 enum texel_kind
@@ -518,24 +512,14 @@ static void dxt_decode_level(unsigned char kind, const unsigned char *source, un
 	}
 }
 
-static GLenum compressed_format(unsigned char kind)
-{
-	switch (kind)
-	{
-	case _texel_dxt1: return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-	case _texel_dxt3: return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-	default: return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
-	}
-}
-
 /* ---------- upload */
 
 /* debug.texture_dump_directory writes level 0 of every upload as a TGA, read back from GL */
-static void texture_dump(GLenum target, const struct xgpu_texture_description *description)
+static void texture_dump(uint32_t type, const struct xgpu_texture_description *description)
 {
 #ifdef HALO_ILP32
 	/* ES cannot read textures back */
-	(void)target;
+	(void)type;
 	(void)description;
 }
 #else
@@ -548,7 +532,7 @@ static void texture_dump(GLenum target, const struct xgpu_texture_description *d
 	char path[512];
 	FILE *file;
 
-	if (!directory || target != GL_TEXTURE_2D)
+	if (!directory || type != GPU_TEXTURE_2D)
 		return;
 	pixels = malloc(width * height * 4);
 	glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
@@ -570,66 +554,41 @@ static void texture_dump(GLenum target, const struct xgpu_texture_description *d
 }
 #endif
 
-static void upload(GLuint texture, GLenum target, const struct xgpu_texture_description *description,
+static void upload(gpu_texture texture, uint32_t type, const struct xgpu_texture_description *description,
 	const unsigned char *base, const D3DCOLOR *palette)
 {
 	struct format_information information = format_information(description->format);
 	unsigned long face_count = description->cube_map ? 6 : 1;
 	unsigned long face_size = xgpu_texture_face_size(description);
 	unsigned long largest = description->width * description->height * description->depth;
-	BOOL decode_compressed = FALSE;
-	unsigned long *converted;
+	BOOL decode_compressed = description->compressed && !device_capabilities.s3tc;
+	unsigned long *converted = description->compressed && !decode_compressed ? NULL :
+		malloc(largest * sizeof(unsigned long));
 	unsigned long face, level;
 
-	decode_compressed = description->compressed && !device_capabilities.s3tc;
-	converted = description->compressed && !decode_compressed ? NULL : malloc(largest * sizeof(unsigned long));
-	glBindTexture(target, texture);
-	xgpu_gl_state_invalidate();
-#ifdef HALO_ILP32
-	/* converted texels are BGRA in memory (32-bit ARGB words); ES takes
-	RGBA */
-	glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, converted ? GL_BLUE : GL_RED);
-	glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, converted ? GL_RED : GL_BLUE);
-#endif
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexParameteri(target, GL_TEXTURE_BASE_LEVEL, 0);
-	glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, (GLint)description->levels - 1);
 	for (face = 0; face < face_count; face++)
 	{
-		GLenum image_target = description->cube_map ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + face : target;
-
 		for (level = 0; level < description->levels; level++)
 		{
 			const unsigned char *source = base + face * face_size + xgpu_texture_level_offset(description, level);
-			GLsizei width = (GLsizei)level_dimension(description->width, level);
-			GLsizei height = (GLsizei)level_dimension(description->height, level);
-			GLsizei depth = (GLsizei)level_dimension(description->depth, level);
+			unsigned long width = level_dimension(description->width, level);
+			unsigned long height = level_dimension(description->height, level);
+			unsigned long depth = level_dimension(description->depth, level);
 
 			if (description->compressed && !decode_compressed)
 			{
-				if (target == GL_TEXTURE_3D)
-					glCompressedTexImage3D(image_target, (GLint)level, compressed_format(information.kind), width, height, depth, 0,
-						(GLsizei)level_bytes(description, level), source);
-				else
-					glCompressedTexImage2D(image_target, (GLint)level, compressed_format(information.kind), width, height, 0,
-						(GLsizei)level_bytes(description, level), source);
+				gpu_texture_upload(texture, (uint32_t)face, (uint32_t)level, source, (uint32_t)level_bytes(description, level));
+				continue;
 			}
+			if (decode_compressed)
+				dxt_decode_level(information.kind, source, width, height, depth, converted);
 			else
-			{
-				if (decode_compressed)
-					dxt_decode_level(information.kind, source, (unsigned long)width, (unsigned long)height,
-						(unsigned long)depth, converted);
-				else
 				decode_level(description, level, source, palette, converted);
-				if (target == GL_TEXTURE_3D)
-					glTexImage3D(image_target, (GLint)level, GL_RGBA8, width, height, depth, 0, GL_BGRA, GL_UNSIGNED_BYTE, converted);
-				else
-					glTexImage2D(image_target, (GLint)level, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, converted);
-			}
+			gpu_texture_upload(texture, (uint32_t)face, (uint32_t)level, converted, (uint32_t)(width * height * depth * 4));
 		}
 	}
 	free(converted);
-	texture_dump(target, description);
+	texture_dump(type, description);
 }
 
 /* ---------- cache */
@@ -639,8 +598,8 @@ struct texture_entry
 	struct texture_entry *next;
 	DWORD data, format_word, size_word;
 	unsigned long palette_hash;
-	GLuint texture;
-	GLenum target;
+	gpu_texture texture;
+	uint32_t type;
 	struct xgpu_texture_description description;
 	unsigned long address, size;
 	unsigned long generation;
@@ -687,7 +646,7 @@ static unsigned long palette_hash(const D3DCOLOR *palette)
 	return hash ? hash : 1;
 }
 
-GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *target,
+gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uint32_t *type,
 	struct xgpu_texture_description *description)
 {
 	DWORD data = resource[1], format_word = resource[3], size_word = resource[4];
@@ -710,7 +669,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 	{
 		entry = recent_textures[recent].entry;
 		entry->last_used_frame = texture_frame;
-		*target = entry->target;
+		*type = entry->type;
 		*description = entry->description;
 		return entry->texture;
 	}
@@ -741,12 +700,26 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		entry->size_word = size_word;
 		entry->palette_hash = hash;
 		xgpu_texture_describe(format_word, size_word, &entry->description);
-		entry->target = entry->description.cube_map ? GL_TEXTURE_CUBE_MAP :
-			entry->description.depth > 1 ? GL_TEXTURE_3D : GL_TEXTURE_2D;
+		entry->type = entry->description.cube_map ? GPU_TEXTURE_CUBE :
+			entry->description.depth > 1 ? GPU_TEXTURE_3D : GPU_TEXTURE_2D;
 		entry->address = (unsigned long)PLATFORM_PHYSICAL_TO_VIRTUAL(data);
 		entry->size = xgpu_texture_face_size(&entry->description) * (entry->description.cube_map ? 6 : 1);
 		entry->generation = 0;
-		glGenTextures(1, &entry->texture);
+		{
+			struct gpu_texture_description texture = { 0 };
+			struct format_information information = format_information(entry->description.format);
+
+			texture.type = (uint8_t)entry->type;
+			texture.format = !entry->description.compressed || !device_capabilities.s3tc ? GPU_FORMAT_BGRA8 :
+				information.kind == _texel_dxt1 ? GPU_FORMAT_BC1 :
+				information.kind == _texel_dxt3 ? GPU_FORMAT_BC2 : GPU_FORMAT_BC3;
+			texture.usage = GPU_USAGE_UPLOAD;
+			texture.width = (uint32_t)entry->description.width;
+			texture.height = (uint32_t)entry->description.height;
+			texture.depth = (uint32_t)entry->description.depth;
+			texture.levels = (uint32_t)entry->description.levels;
+			entry->texture = gpu_texture_create(&texture);
+		}
 		entry->next = *bucket;
 		*bucket = entry;
 	}
@@ -779,7 +752,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 					entry->description.height, entry->size, entry->generation,
 					ones * 100 / entry->size, zeros * 100 / entry->size);
 			}
-			upload(entry->texture, entry->target, &entry->description, (const unsigned char *)entry->address, palette);
+			upload(entry->texture, entry->type, &entry->description, (const unsigned char *)entry->address, palette);
 		}
 	}
 	entry->last_used_frame = texture_frame;
@@ -792,7 +765,7 @@ GLuint xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, GLenum *
 		recent_textures[recent].watch_serial = watch_serial;
 		recent_textures[recent].drop_serial = texture_drop_serial;
 	}
-	*target = entry->target;
+	*type = entry->type;
 	*description = entry->description;
 	return entry->texture;
 }

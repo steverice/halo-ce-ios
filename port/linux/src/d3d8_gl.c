@@ -2249,14 +2249,14 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 		{
 			struct xgpu_render_target *target = xgpu_render_target_find(texture->Data);
 			struct xgpu_texture_description description;
-			GLenum gl_target;
-			GLuint gl_texture;
+			uint32_t type;
+			gpu_texture handle;
 
 			if (target)
 			{
 				xgpu_texture_describe(texture->Format, texture->Size, &description);
-				gl_texture = target->texture;
-				gl_target = GL_TEXTURE_2D;
+				handle = target->texture;
+				type = GPU_TEXTURE_2D;
 				if (description.linear)
 				{
 					texture_scale[stage][0] = 1.0f / (float)target->width;
@@ -2264,7 +2264,7 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 				}
 				if (!description.linear && !description.cube_map && description.levels > 1 &&
 					target->width == description.width && target->height == description.height)
-					gl_texture = mip_composite_get(&description, texture->Data);
+					handle = mip_composite_get(&description, texture->Data);
 				else
 					description.levels = 1;
 			}
@@ -2273,18 +2273,18 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 				const D3DCOLOR *palette = device.palettes[stage] && device.palettes[stage]->Data ?
 					(const D3DCOLOR *)PLATFORM_PHYSICAL_TO_VIRTUAL(device.palettes[stage]->Data) : NULL;
 
-				gl_texture = xgpu_texture_get((const DWORD *)texture, palette, &gl_target, &description);
+				handle = xgpu_texture_get((const DWORD *)texture, palette, &type, &description);
 				if (description.linear)
 				{
 					texture_scale[stage][0] = 1.0f / (float)description.width;
 					texture_scale[stage][1] = 1.0f / (float)description.height;
 				}
 			}
-			state_texture(stage, gl_target, gl_texture);
+			state_texture(stage, gpu_gl_texture_target(type), handle);
 			state_sampler(stage, device.samplers[stage]);
 			configure_sampler(stage, description.levels > 1);
-			key->sampler_type[stage] = gl_target == GL_TEXTURE_CUBE_MAP ? _xgpu_sampler_cube :
-				gl_target == GL_TEXTURE_3D ? _xgpu_sampler_3d : _xgpu_sampler_2d;
+			key->sampler_type[stage] = type == GPU_TEXTURE_CUBE ? _xgpu_sampler_cube :
+				type == GPU_TEXTURE_3D ? _xgpu_sampler_3d : _xgpu_sampler_2d;
 		}
 	}
 }

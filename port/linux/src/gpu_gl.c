@@ -172,6 +172,65 @@ gpu_texture gpu_texture_create(const struct gpu_texture_description *description
 	return name;
 }
 
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83f1
+#define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83f2
+#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83f3
+#endif
+
+static GLenum compressed_format(uint32_t format)
+{
+	switch (format)
+	{
+	case GPU_FORMAT_BC1: return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+	case GPU_FORMAT_BC2: return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
+	default: return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+	}
+}
+
+void gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size)
+{
+	struct texture_record *record = texture_record(texture);
+	const struct gpu_texture_description *description = &record->description;
+	BOOL compressed = description->format >= GPU_FORMAT_BC1 && description->format <= GPU_FORMAT_BC3;
+	GLenum image_target = description->type == GPU_TEXTURE_CUBE ? GL_TEXTURE_CUBE_MAP_POSITIVE_X + face : record->target;
+	GLsizei width = texture_level_dimension(description->width, level);
+	GLsizei height = texture_level_dimension(description->height, level);
+	GLsizei depth = texture_level_dimension(description->depth, level);
+
+	/* once per refresh, before its first face and level */
+	if (face == 0 && level == 0)
+	{
+		glBindTexture(record->target, texture);
+		xgpu_gl_state_invalidate();
+#ifdef HALO_ILP32
+		/* BGRA8 texels are 32-bit ARGB words in memory; ES takes RGBA */
+		glTexParameteri(record->target, GL_TEXTURE_SWIZZLE_R, compressed ? GL_RED : GL_BLUE);
+		glTexParameteri(record->target, GL_TEXTURE_SWIZZLE_B, compressed ? GL_BLUE : GL_RED);
+#endif
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		glTexParameteri(record->target, GL_TEXTURE_BASE_LEVEL, 0);
+		glTexParameteri(record->target, GL_TEXTURE_MAX_LEVEL, (GLint)description->levels - 1);
+	}
+	if (compressed)
+	{
+		if (record->target == GL_TEXTURE_3D)
+			glCompressedTexImage3D(image_target, (GLint)level, compressed_format(description->format), width, height, depth, 0,
+				(GLsizei)size, data);
+		else
+			glCompressedTexImage2D(image_target, (GLint)level, compressed_format(description->format), width, height, 0,
+				(GLsizei)size, data);
+	}
+	else if (record->target == GL_TEXTURE_3D)
+	{
+		glTexImage3D(image_target, (GLint)level, GL_RGBA8, width, height, depth, 0, GL_BGRA, GL_UNSIGNED_BYTE, data);
+	}
+	else
+	{
+		glTexImage2D(image_target, (GLint)level, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, data);
+	}
+}
+
 /* ---------- framebuffers, cached by attachment */
 
 struct framebuffer_entry
