@@ -8,7 +8,7 @@ Each instruction is four little-endian words. Word 1 to 3 hold a MAC
 (vector) operation and an ILU (scalar) operation that execute in parallel
 on the same three operands A, B and C, and the destinations of both; the
 bit positions of every field are spelled out in operand() and in
-nv2a_vertex_shader_to_glsl(). When both units run, the ILU result goes to
+nv2a_vertex_shader_translate(). When both units run, the ILU result goes to
 temporary r1, whatever the instruction's temporary register field says.
 
 Xbox vertex programs finish by converting their clip-space position to
@@ -194,11 +194,13 @@ static const char shader_prologue[] =
 	"	return vec4(1.0, max(s.x, 0.0), specular, 1.0);\n"
 	"}\n";
 
-char *nv2a_vertex_shader_to_glsl(const DWORD *instructions, unsigned long instruction_count,
-	unsigned long packed_attribute_mask)
+char *nv2a_vertex_shader_translate(const struct nv2a_dialect *dialect, const DWORD *instructions,
+	unsigned long instruction_count, unsigned long packed_attribute_mask)
 {
 	struct xgpu_text text = { 0 };
 	unsigned long index;
+
+	(void)dialect;
 
 #ifdef HALO_ILP32
 	xgpu_text_append(&text, "#version %s\n", xgpu_capabilities.shading_language);

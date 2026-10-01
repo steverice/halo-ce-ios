@@ -518,7 +518,7 @@ static const char *comparison_operator(unsigned long function)
 	}
 }
 
-char *nv2a_pixel_shader_to_glsl(const struct nv2a_pixel_shader_key *key)
+char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const struct nv2a_pixel_shader_key *key)
 {
 	const DWORD *state = key->combiner_state;
 	struct xgpu_text text = { 0 };
@@ -527,6 +527,7 @@ char *nv2a_pixel_shader_to_glsl(const struct nv2a_pixel_shader_key *key)
 	DWORD final_efg = state[D3DRS_PSFINALCOMBINERINPUTSEFG];
 	int stage;
 
+	(void)dialect;
 	if (combiner_count > 8)
 		combiner_count = 8;
 

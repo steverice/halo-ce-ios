@@ -58,6 +58,35 @@ struct xgpu_text
 
 void xgpu_text_append(struct xgpu_text *text, const char *format, ...) __attribute__((format(printf, 2, 3)));
 
+/* ---------- shader dialects
+
+What the translators (nv2a_vsh.c, nv2a_psh.c) emit, filled from the
+context's capabilities (d3d8_gl.c). GLSL only; Metal Shading Language joins
+in Phase 1. */
+
+struct nv2a_dialect
+{
+	/* OpenGL ES: precision statements and an "es" #version */
+	unsigned char es;
+	/* the #version number: 450, 300 or 310 */
+	unsigned short version;
+	/* emulate glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE): rows from the top
+	(which also flips the winding, d3d8_gl.c), depth from 0..1 to -1..1 */
+	unsigned char clip_y_flip;
+	unsigned char clip_z_remap;
+	/* keep the clip-space position the screen-space conversion divides, and
+	undo the conversion without dividing (the mobile precision workaround,
+	nv2a_vsh.c) */
+	unsigned char clip_capture;
+	/* samplers have no LOD bias of their own: pass texture_lod_bias to each
+	lookup */
+	unsigned char shader_lod_bias;
+	/* debug.gpu_debug_expression, _texture0 and _flat (port_config.c) */
+	const char *debug_expression;
+	unsigned char debug_texture0;
+	unsigned char debug_flat;
+};
+
 /* ---------- vertex shaders */
 
 #define XGPU_VERTEX_ATTRIBUTE_COUNT 16
@@ -69,8 +98,8 @@ void xgpu_text_append(struct xgpu_text *text, const char *format, ...) __attribu
 header). Attributes whose bit is set in packed_attribute_mask are fed as
 NORMPACKED3 32-bit integers and unpacked in the shader. Returns a malloc'd
 string. */
-char *nv2a_vertex_shader_to_glsl(const DWORD *instructions, unsigned long instruction_count,
-	unsigned long packed_attribute_mask);
+char *nv2a_vertex_shader_translate(const struct nv2a_dialect *dialect, const DWORD *instructions,
+	unsigned long instruction_count, unsigned long packed_attribute_mask);
 
 /* ---------- pixel shaders */
 
@@ -103,7 +132,7 @@ struct nv2a_pixel_shader_key
 	unsigned char pad;
 };
 
-char *nv2a_pixel_shader_to_glsl(const struct nv2a_pixel_shader_key *key);
+char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const struct nv2a_pixel_shader_key *key);
 
 #ifdef HALO_ILP32
 /* ES samplers have no LOD bias of their own */

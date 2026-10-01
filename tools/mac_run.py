@@ -64,6 +64,7 @@ DEFAULTS = {
     "debug.gpu_trace_frame": "-1",
     "debug.gpu_trace_constants": "false",
     "debug.gpu_skip_vertex_shaders": '""',
+    "debug.gpu_shader_replay_dialect": '""',
     "debug.gpu_debug_expression": '""',
     "debug.gpu_debug_texture0": "false",
     "debug.gpu_debug_flat": "false",

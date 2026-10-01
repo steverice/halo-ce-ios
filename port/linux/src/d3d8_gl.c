@@ -887,6 +887,34 @@ static BOOL bind_targets(BOOL *has_depth)
 	return TRUE;
 }
 
+/* what the shader translators emit for this context */
+static struct nv2a_dialect shader_dialect;
+
+static void shader_dialect_initialize(struct nv2a_dialect *dialect, BOOL desktop)
+{
+	memset(dialect, 0, sizeof(*dialect));
+	if (desktop)
+	{
+		dialect->version = 450;
+	}
+	else
+	{
+#ifdef HALO_ILP32
+		dialect->es = 1;
+		dialect->version = strcmp(xgpu_capabilities.shading_language, "310 es") ? 300 : 310;
+		dialect->clip_y_flip = 1;
+		dialect->clip_z_remap = 1;
+		dialect->clip_capture = 1;
+		dialect->shader_lod_bias = 1;
+#else
+		dialect->version = 450;
+#endif
+	}
+	dialect->debug_expression = config_string("debug.gpu_debug_expression");
+	dialect->debug_texture0 = config_boolean("debug.gpu_debug_texture0") != 0;
+	dialect->debug_flat = config_boolean("debug.gpu_debug_flat") != 0;
+}
+
 /* ---------- shader replay (debug.gpu_shader_replay)
 
 Translates every recorded shader input in a folder into its replay folder,
@@ -920,6 +948,7 @@ static void shader_replay(const char *directory)
 	void *listing = posix_directory_open(directory);
 	char name[256], path[512], output[512];
 	unsigned long translated = 0, skipped = 0;
+	struct nv2a_dialect dialect;
 
 	if (!listing)
 	{
@@ -928,6 +957,9 @@ static void shader_replay(const char *directory)
 	}
 	snprintf(output, sizeof(output), "%s/replay", directory);
 	posix_make_directory(output);
+	/* debug.gpu_shader_replay_dialect "450" replays through the desktop
+	dialect, which this build doesn't otherwise run */
+	shader_dialect_initialize(&dialect, !strcmp(config_string("debug.gpu_shader_replay_dialect"), "450"));
 	while (posix_directory_next(listing, name, sizeof(name)))
 	{
 		size_t length = strlen(name);
@@ -948,11 +980,11 @@ static void shader_replay(const char *directory)
 			/* (divided, not multiplied: a corrupt count must not wrap around) */
 			if ((size - 2 * sizeof(DWORD)) % (4 * sizeof(DWORD)) == 0 &&
 				(size - 2 * sizeof(DWORD)) / (4 * sizeof(DWORD)) == header[0])
-				source = nv2a_vertex_shader_to_glsl(header + 2, header[0], header[1]);
+				source = nv2a_vertex_shader_translate(&dialect, header + 2, header[0], header[1]);
 		}
 		else if (pixel && data && size == sizeof(struct nv2a_pixel_shader_key))
 		{
-			source = nv2a_pixel_shader_to_glsl((const struct nv2a_pixel_shader_key *)data);
+			source = nv2a_pixel_shader_translate(&dialect, (const struct nv2a_pixel_shader_key *)data);
 		}
 		free(data);
 		if (!source)
@@ -1086,6 +1118,7 @@ static void gl_initialize(void)
 	debug_settings.dump_shaders = *config_string("debug.gpu_dump_shaders") ?
 		config_string("debug.gpu_dump_shaders") : NULL;
 	debug_settings.statistics = config_boolean("debug.gpu_stats");
+	shader_dialect_initialize(&shader_dialect, FALSE);
 	debug_settings.shader_replay = *config_string("debug.gpu_shader_replay") ?
 		config_string("debug.gpu_shader_replay") : NULL;
 	if (debug_settings.shader_replay)
@@ -1940,7 +1973,7 @@ static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immed
 	if (!program->shader[variant])
 	{
 		unsigned long packed_mask = immediate ? 0 : device.vertex_shader->packed_mask;
-		char *source = nv2a_vertex_shader_to_glsl(program->instructions, program->instruction_count, packed_mask);
+		char *source = nv2a_vertex_shader_translate(&shader_dialect, program->instructions, program->instruction_count, packed_mask);
 
 		program->shader[variant] = compile_shader(GL_VERTEX_SHADER, source, "vertex");
 		if (debug_settings.dump_shaders)
@@ -1992,7 +2025,7 @@ static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	entry = calloc(1, sizeof(*entry));
 	entry->hash = hash;
 	entry->key = *key;
-	source = nv2a_pixel_shader_to_glsl(key);
+	source = nv2a_pixel_shader_translate(&shader_dialect, key);
 	entry->shader = compile_shader(GL_FRAGMENT_SHADER, source, "pixel");
 	if (debug_settings.dump_shaders)
 	{
