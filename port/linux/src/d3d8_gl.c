@@ -1975,8 +1975,8 @@ static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immed
 		unsigned long packed_mask = immediate ? 0 : device.vertex_shader->packed_mask;
 		char *source = nv2a_vertex_shader_translate(&shader_dialect, program->instructions, program->instruction_count, packed_mask);
 
-		program->shader[variant] = compile_shader(GL_VERTEX_SHADER, source, "vertex");
-		if (debug_settings.dump_shaders)
+		program->shader[variant] = source ? compile_shader(GL_VERTEX_SHADER, source, "vertex") : 0;
+		if (source && debug_settings.dump_shaders)
 		{
 			char path[512];
 			FILE *file;
