@@ -164,6 +164,9 @@ static const struct config_setting config_settings[] =
 		"Comma-separated ids of vertex shaders not to draw with." },
 	{ "debug.gpu_dump_shaders", _config_string, "\"\"", "HALO_GPU_DUMP_SHADERS", _environment_value, _platform_all,
 		"A folder to write the generated GLSL to; empty none." },
+	{ "debug.gpu_shader_replay", _config_string, "\"\"", "HALO_GPU_SHADER_REPLAY", _environment_value, _platform_all,
+		"A folder of shader inputs (.vsh, .key) that gpu_dump_shaders recorded:\n"
+		"translate each at startup into its replay folder; empty none." },
 	{ "debug.gpu_debug_expression", _config_string, "\"\"", "HALO_GPU_DEBUG_EXPR", _environment_value, _platform_all,
 		"A GLSL expression every pixel shader shows instead of its result." },
 	{ "debug.gpu_debug_texture0", _config_boolean, "false", "HALO_GPU_DEBUG_T0", _environment_set_is_true, _platform_all,

@@ -26,6 +26,7 @@ Conventions carried over from the Xbox:
 #include "halo_ui_pointer.h"
 #include "port_config.h"
 #include "halo_display.h"
+#include "posix.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -427,6 +428,7 @@ static struct
 	shader, for finding which pass produces something (port_config.c) */
 	const char *skip_vertex_shaders;
 	const char *dump_shaders;
+	const char *shader_replay;
 	BOOL statistics;
 } debug_settings;
 
@@ -885,6 +887,93 @@ static BOOL bind_targets(BOOL *has_depth)
 	return TRUE;
 }
 
+/* ---------- shader replay (debug.gpu_shader_replay)
+
+Translates every recorded shader input in a folder into its replay folder,
+so the translators' output can be compared byte for byte across changes
+without playing to the scenes that first produced them. */
+
+static char *read_whole_file(const char *path, unsigned long *size)
+{
+	FILE *file = fopen(path, "rb");
+	char *data;
+	long length;
+
+	if (!file)
+		return NULL;
+	fseek(file, 0, SEEK_END);
+	length = ftell(file);
+	fseek(file, 0, SEEK_SET);
+	data = length > 0 ? malloc((size_t)length) : NULL;
+	if (data && fread(data, 1, (size_t)length, file) != (size_t)length)
+	{
+		free(data);
+		data = NULL;
+	}
+	fclose(file);
+	*size = data ? (unsigned long)length : 0;
+	return data;
+}
+
+static void shader_replay(const char *directory)
+{
+	void *listing = posix_directory_open(directory);
+	char name[256], path[512], output[512];
+	unsigned long translated = 0, skipped = 0;
+
+	if (!listing)
+	{
+		platform_log("shader replay: cannot open %s", directory);
+		return;
+	}
+	snprintf(output, sizeof(output), "%s/replay", directory);
+	posix_make_directory(output);
+	while (posix_directory_next(listing, name, sizeof(name)))
+	{
+		size_t length = strlen(name);
+		BOOL vertex = length > 4 && !strcmp(name + length - 4, ".vsh");
+		BOOL pixel = length > 4 && !strcmp(name + length - 4, ".key");
+		unsigned long size = 0;
+		char *data, *source = NULL;
+		FILE *file;
+
+		if (!vertex && !pixel)
+			continue;
+		snprintf(path, sizeof(path), "%s/%s", directory, name);
+		data = read_whole_file(path, &size);
+		if (vertex && data && size >= 2 * sizeof(DWORD))
+		{
+			const DWORD *header = (const DWORD *)data;
+
+			/* (divided, not multiplied: a corrupt count must not wrap around) */
+			if ((size - 2 * sizeof(DWORD)) % (4 * sizeof(DWORD)) == 0 &&
+				(size - 2 * sizeof(DWORD)) / (4 * sizeof(DWORD)) == header[0])
+				source = nv2a_vertex_shader_to_glsl(header + 2, header[0], header[1]);
+		}
+		else if (pixel && data && size == sizeof(struct nv2a_pixel_shader_key))
+		{
+			source = nv2a_pixel_shader_to_glsl((const struct nv2a_pixel_shader_key *)data);
+		}
+		free(data);
+		if (!source)
+		{
+			platform_log("shader replay: skipping %s (%lu bytes, malformed)", name, size);
+			skipped++;
+			continue;
+		}
+		snprintf(path, sizeof(path), "%s/%.*s.glsl", output, (int)(length - 4), name);
+		if ((file = fopen(path, "w")) != NULL)
+		{
+			fputs(source, file);
+			fclose(file);
+		}
+		free(source);
+		translated++;
+	}
+	posix_directory_close(listing);
+	platform_log("shader replay: %lu translated, %lu skipped", translated, skipped);
+}
+
 /* ---------- device creation */
 
 static void gl_initialize(void)
@@ -997,6 +1086,10 @@ static void gl_initialize(void)
 	debug_settings.dump_shaders = *config_string("debug.gpu_dump_shaders") ?
 		config_string("debug.gpu_dump_shaders") : NULL;
 	debug_settings.statistics = config_boolean("debug.gpu_stats");
+	debug_settings.shader_replay = *config_string("debug.gpu_shader_replay") ?
+		config_string("debug.gpu_shader_replay") : NULL;
+	if (debug_settings.shader_replay)
+		shader_replay(debug_settings.shader_replay);
 	xgpu_gl_state_invalidate();
 	device.gl_ready = TRUE;
 }
@@ -1823,20 +1916,38 @@ static unsigned long hash_words(const void *data, unsigned long size)
 	return hash;
 }
 
+/* writes the bytes of data, then those of more, to directory/name
+(debug.gpu_dump_shaders) */
+static void dump_file(const char *directory, const char *name, const void *data, unsigned long size,
+	const void *more, unsigned long more_size)
+{
+	char path[512];
+	FILE *file;
+
+	snprintf(path, sizeof(path), "%s/%s", directory, name);
+	if ((file = fopen(path, "wb")) == NULL)
+		return;
+	fwrite(data, 1, size, file);
+	if (more)
+		fwrite(more, 1, more_size, file);
+	fclose(file);
+}
+
 static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immediate)
 {
 	int variant = immediate ? 1 : 0;
 
 	if (!program->shader[variant])
 	{
-		char *source = nv2a_vertex_shader_to_glsl(program->instructions, program->instruction_count,
-			immediate ? 0 : device.vertex_shader->packed_mask);
+		unsigned long packed_mask = immediate ? 0 : device.vertex_shader->packed_mask;
+		char *source = nv2a_vertex_shader_to_glsl(program->instructions, program->instruction_count, packed_mask);
 
 		program->shader[variant] = compile_shader(GL_VERTEX_SHADER, source, "vertex");
 		if (debug_settings.dump_shaders)
 		{
 			char path[512];
 			FILE *file;
+			DWORD header[2];
 
 			snprintf(path, sizeof(path), "%s/vs%03lu_%d.glsl", debug_settings.dump_shaders, program->id, variant);
 			if ((file = fopen(path, "w")) != NULL)
@@ -1844,6 +1955,11 @@ static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immed
 				fputs(source, file);
 				fclose(file);
 			}
+			header[0] = (DWORD)program->instruction_count;
+			header[1] = (DWORD)packed_mask;
+			snprintf(path, sizeof(path), "vs%03lu_%d.vsh", program->id, variant);
+			dump_file(debug_settings.dump_shaders, path, header, sizeof(header),
+				program->instructions, program->instruction_count * 4 * sizeof(DWORD));
 		}
 		free(source);
 	}
@@ -1889,6 +2005,8 @@ static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 			fputs(source, file);
 			fclose(file);
 		}
+		snprintf(path, sizeof(path), "ps_%08lx.key", hash);
+		dump_file(debug_settings.dump_shaders, path, key, sizeof(*key), NULL, 0);
 	}
 	free(source);
 	entry->next = *bucket;
