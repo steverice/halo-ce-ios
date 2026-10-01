@@ -241,3 +241,11 @@ def test_launch_script_drives_this_checkout_s_project_only(tmp_path):
     launch = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project=project)
     assert "whose path contains" not in launch
     assert launch.count(f'whose path is "{project}"') == 2
+
+
+def test_launch_script_retries_when_xcode_cannot_run():
+    """Xcode sometimes answers a run with "Cannot run 'HaloRunner'" right after opening the project"""
+    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project="/p/HaloRunner.xcodeproj")
+    assert "set result_of_run to run doc" in script
+    assert '(status of result_of_run as text) is not "error occurred" then exit repeat' in script
+    assert script.index("repeat 3 times") < script.index("set result_of_run to run doc")

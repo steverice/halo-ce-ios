@@ -249,7 +249,23 @@ LAUNCH = """tell application "{xcode}"
 	end repeat
 	-- unguarded: a destination that never appeared fails here, not later
 	set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")
-	run doc
+	-- right after opening or reloading the project Xcode sometimes answers "Cannot
+	-- run", or is still loading it: wait for it, and try again
+	repeat 3 times
+		repeat 120 times
+			if loaded of doc then exit repeat
+			delay 1
+		end repeat
+		try
+			set result_of_run to run doc
+			repeat 120 times
+				if (status of result_of_run as text) is not "not yet started" then exit repeat
+				delay 1
+			end repeat
+			if (status of result_of_run as text) is not "error occurred" then exit repeat
+		end try
+		delay 5
+	end repeat
 end tell
 """
 
