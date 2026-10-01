@@ -1480,7 +1480,13 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 #endif
 	glGetQueryObjectuiv(device.queries[index], GL_QUERY_RESULT_AVAILABLE, &available);
 	if (!available)
+	{
+		/* the game spins on an incomplete test (lens flares), so how often
+		this runs depends on the GPU's timing: keep debug.gpu_stats' call
+		count comparable between runs */
+		halo_gl_call_count--;
 		return D3DERR_TESTINCOMPLETE;
+	}
 	glGetQueryObjectuiv(device.queries[index], GL_QUERY_RESULT, &samples);
 #ifdef HALO_ILP32
 	/* ES only says whether any sample passed. The game divides the count by
@@ -3691,11 +3697,13 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	if (debug_settings.statistics && device.frame % 60 == 0)
 	{
 		platform_log("frame %lu: %lu draws, %lu immediate, %lu clears, %lu target changes; skipped %lu no program, %lu no target, %lu link; "
-			"%lu KB mirrored, %lu KB streamed",
+			"%lu KB mirrored, %lu KB streamed, %lu GL calls",
 			device.frame, stats.draws / stats.presents, stats.immediate_draws / stats.presents, stats.clears / stats.presents,
 			stats.target_changes / stats.presents, stats.skipped_no_program, stats.skipped_no_target, stats.skipped_link,
-			stats.mirrored_bytes / stats.presents / 1024, stats.streamed_bytes / stats.presents / 1024);
+			stats.mirrored_bytes / stats.presents / 1024, stats.streamed_bytes / stats.presents / 1024,
+			halo_gl_call_count / stats.presents);
 		memset(&stats, 0, sizeof(stats));
+		halo_gl_call_count = 0;
 	}
 	platform_pump_events();
 
