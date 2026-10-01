@@ -247,5 +247,13 @@ def test_launch_script_retries_when_xcode_cannot_run():
     """Xcode sometimes answers a run with "Cannot run 'HaloRunner'" right after opening the project"""
     script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project="/p/HaloRunner.xcodeproj")
     assert "set result_of_run to run doc" in script
-    assert '(status of result_of_run as text) is not "error occurred" then exit repeat' in script
+    assert '(status of result_of_run as text) is not "error occurred" then' in script
     assert script.index("repeat 3 times") < script.index("set result_of_run to run doc")
+
+
+def test_launch_script_fails_with_the_reason_after_three_attempts():
+    """giving up quietly left the runner waiting 300 s with the cause lost"""
+    script = mac_run.LAUNCH.format(xcode="/Applications/Xcode.app", target="HaloRunner", project="/p/HaloRunner.xcodeproj")
+    assert "on error message_of_error" in script
+    assert 'error "run failed after 3 attempts: " & last_error' in script
+    assert script.index("end repeat", script.index("repeat 3 times")) < script.index('error "run failed after 3 attempts')

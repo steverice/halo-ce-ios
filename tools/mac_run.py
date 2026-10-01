@@ -251,6 +251,8 @@ LAUNCH = """tell application "{xcode}"
 	set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")
 	-- right after opening or reloading the project Xcode sometimes answers "Cannot
 	-- run", or is still loading it: wait for it, and try again
+	set last_error to "Xcode did not report a run"
+	set started_run to false
 	repeat 3 times
 		repeat 120 times
 			if loaded of doc then exit repeat
@@ -262,10 +264,17 @@ LAUNCH = """tell application "{xcode}"
 				if (status of result_of_run as text) is not "not yet started" then exit repeat
 				delay 1
 			end repeat
-			if (status of result_of_run as text) is not "error occurred" then exit repeat
+			if (status of result_of_run as text) is not "error occurred" then
+				set started_run to true
+				exit repeat
+			end if
+			set last_error to (error message of result_of_run as text)
+		on error message_of_error
+			set last_error to message_of_error
 		end try
 		delay 5
 	end repeat
+	if not started_run then error "run failed after 3 attempts: " & last_error
 end tell
 """
 
