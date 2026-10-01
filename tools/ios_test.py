@@ -35,6 +35,9 @@ run(BUILD/'audio-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/display_probe.c', '-o', BUILD/'display-probe')
 run(BUILD/'display-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/virtual_clock_probe.c', '-o', BUILD/'virtual-clock-probe')
+run(BUILD/'virtual-clock-probe')
 
 # Parse untrusted XISO metadata and exercise extraction/cancellation under sanitizers.
 run('python3', 'tools/ios_xiso_test.py')
