@@ -881,29 +881,28 @@ static BOOL bind_targets(BOOL *has_depth)
 /* what the shader translators emit for this context */
 static struct nv2a_dialect shader_dialect;
 
-static void shader_dialect_initialize(struct nv2a_dialect *dialect, BOOL desktop)
+static void shader_dialect_initialize(struct nv2a_dialect *dialect, const struct gpu_capabilities *capabilities)
 {
 	memset(dialect, 0, sizeof(*dialect));
-	if (desktop)
-	{
-		dialect->version = 450;
-	}
-	else
-	{
-#ifdef HALO_ILP32
-		dialect->es = 1;
-		dialect->version = strcmp(xgpu_capabilities.shading_language, "310 es") ? 300 : 310;
-		dialect->clip_y_flip = 1;
-		dialect->clip_z_remap = 1;
-		dialect->clip_capture = 1;
-		dialect->shader_lod_bias = 1;
-#else
-		dialect->version = 450;
-#endif
-	}
+	dialect->es = capabilities->shader_es;
+	dialect->version = capabilities->shader_language;
+	dialect->clip_y_flip = capabilities->clip_y_flip;
+	dialect->clip_z_remap = capabilities->clip_z_remap;
+	/* the mobile GPUs' precision workaround goes with OpenGL ES */
+	dialect->clip_capture = capabilities->shader_es;
+	dialect->shader_lod_bias = !capabilities->sampler_lod_bias;
 	dialect->debug_expression = config_string("debug.gpu_debug_expression");
 	dialect->debug_texture0 = config_boolean("debug.gpu_debug_texture0") != 0;
 	dialect->debug_flat = config_boolean("debug.gpu_debug_flat") != 0;
+}
+
+/* the capabilities of desktop OpenGL 4.5, for replaying shaders through its
+dialect (debug.gpu_shader_replay_dialect) on a context that isn't */
+static void desktop_capabilities(struct gpu_capabilities *capabilities)
+{
+	memset(capabilities, 0, sizeof(*capabilities));
+	capabilities->sampler_lod_bias = 1;
+	capabilities->shader_language = 450;
 }
 
 /* ---------- shader replay (debug.gpu_shader_replay)
@@ -940,6 +939,7 @@ static void shader_replay(const char *directory)
 	char name[256], path[512], output[512];
 	unsigned long translated = 0, skipped = 0;
 	struct nv2a_dialect dialect;
+	struct gpu_capabilities desktop;
 
 	if (!listing)
 	{
@@ -950,7 +950,9 @@ static void shader_replay(const char *directory)
 	posix_make_directory(output);
 	/* debug.gpu_shader_replay_dialect "450" replays through the desktop
 	dialect, which this build doesn't otherwise run */
-	shader_dialect_initialize(&dialect, !strcmp(config_string("debug.gpu_shader_replay_dialect"), "450"));
+	desktop_capabilities(&desktop);
+	shader_dialect_initialize(&dialect, !strcmp(config_string("debug.gpu_shader_replay_dialect"), "450") ?
+		&desktop : &device_capabilities);
 	while (posix_directory_next(listing, name, sizeof(name)))
 	{
 		size_t length = strlen(name);
@@ -1070,7 +1072,7 @@ static void gl_initialize(void)
 	debug_settings.dump_shaders = *config_string("debug.gpu_dump_shaders") ?
 		config_string("debug.gpu_dump_shaders") : NULL;
 	debug_settings.statistics = config_boolean("debug.gpu_stats");
-	shader_dialect_initialize(&shader_dialect, FALSE);
+	shader_dialect_initialize(&shader_dialect, &device_capabilities);
 	debug_settings.shader_replay = *config_string("debug.gpu_shader_replay") ?
 		config_string("debug.gpu_shader_replay") : NULL;
 	if (debug_settings.shader_replay)
