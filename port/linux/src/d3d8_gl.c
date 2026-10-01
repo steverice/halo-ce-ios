@@ -3841,6 +3841,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 #endif
 	}
 	device.frame++;
+	/* debug.fixed_timestep: a frame ends once the workers are idle */
+	platform_quiescence_wait();
 	platform_clock_frame();
 	stats.presents++;
 	if (debug_settings.statistics && device.frame % 60 == 0)

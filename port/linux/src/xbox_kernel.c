@@ -96,6 +96,8 @@ DWORD platform_set_last_error_from_errno(int error_number)
 
 /* ---------- handles */
 
+static void waiters_wake(struct platform_handle *handle);
+
 struct platform_handle *platform_handle_new(long type, void *data,
 	void (*destroy)(struct platform_handle *handle))
 {
@@ -135,6 +137,7 @@ void platform_handle_signal(struct platform_handle *handle)
 {
 	pthread_mutex_lock(&handle->lock);
 	handle->signaled = TRUE;
+	waiters_wake(handle);
 	pthread_cond_broadcast(&handle->condition);
 	pthread_mutex_unlock(&handle->lock);
 }
@@ -222,6 +225,117 @@ static void deadline_from_milliseconds(DWORD milliseconds, struct timespec *dead
 	}
 }
 
+/* ---------- the load barrier (debug.fixed_timestep)
+
+Game worker threads (made by CreateThread) count as busy while they run or
+have been woken, and as parked while they block in a wait or sleep. With
+debug.fixed_timestep the presenting thread waits each frame, and in place of
+its own sleeps, until none is busy: a map's decompression then takes the same
+number of frames in every run, however fast the machine is. A signal marks
+the handle's waiters busy at once, so a woken thread that hasn't run yet still
+holds the barrier. */
+
+static pthread_mutex_t quiescence_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t quiescence_condition = PTHREAD_COND_INITIALIZER;
+static long busy_workers;
+static __thread BOOL thread_is_worker;
+static pthread_t presenting_thread;
+static int presenting_thread_known;
+
+static void workers_add(long delta)
+{
+	pthread_mutex_lock(&quiescence_lock);
+	busy_workers += delta;
+	if (busy_workers <= 0)
+		pthread_cond_broadcast(&quiescence_condition);
+	pthread_mutex_unlock(&quiescence_lock);
+}
+
+/* with handle->lock held */
+static void waiter_park(struct platform_handle *handle, struct platform_waiter *waiter)
+{
+	waiter->parked = TRUE;
+	waiter->next = handle->waiters;
+	handle->waiters = waiter;
+	workers_add(-1);
+}
+
+/* with handle->lock held; a waiter a signal already unparked stays counted */
+static void waiter_unpark(struct platform_handle *handle, struct platform_waiter *waiter)
+{
+	struct platform_waiter **link;
+
+	for (link = &handle->waiters; *link; link = &(*link)->next)
+	{
+		if (*link == waiter)
+		{
+			*link = waiter->next;
+			break;
+		}
+	}
+	if (waiter->parked)
+	{
+		waiter->parked = FALSE;
+		workers_add(1);
+	}
+}
+
+/* with handle->lock held, before waking the handle's waiters */
+static void waiters_wake(struct platform_handle *handle)
+{
+	struct platform_waiter *waiter;
+	long woken = 0;
+
+	for (waiter = handle->waiters; waiter; waiter = waiter->next)
+	{
+		if (waiter->parked)
+		{
+			waiter->parked = FALSE;
+			woken++;
+		}
+	}
+	if (woken)
+		workers_add(woken);
+}
+
+static BOOL is_presenting_thread(void)
+{
+	return __atomic_load_n(&presenting_thread_known, __ATOMIC_ACQUIRE) &&
+		pthread_equal(presenting_thread, pthread_self());
+}
+
+void platform_quiescence_wait(void)
+{
+	static time_t last_report;
+	struct timespec deadline;
+
+	if (!platform_fixed_timestep())
+		return;
+	if (!presenting_thread_known)
+	{
+		presenting_thread = pthread_self();
+		__atomic_store_n(&presenting_thread_known, 1, __ATOMIC_RELEASE);
+	}
+	deadline_from_milliseconds(20000, &deadline);
+	pthread_mutex_lock(&quiescence_lock);
+	while (busy_workers > 0)
+	{
+		if (pthread_cond_timedwait(&quiescence_condition, &quiescence_lock, &deadline) == ETIMEDOUT)
+		{
+			struct timespec now;
+
+			clock_gettime(CLOCK_REALTIME, &now);
+			if (now.tv_sec != last_report)
+			{
+				last_report = now.tv_sec;
+				platform_log("quiescence: gave up waiting for %ld busy worker threads", busy_workers);
+			}
+			break;
+		}
+	}
+	pthread_mutex_unlock(&quiescence_lock);
+}
+
 static BOOL handle_try_acquire(struct platform_handle *handle)
 {
 	if (handle->type == _platform_handle_mutex)
@@ -246,6 +360,8 @@ DWORD WINAPI WaitForSingleObjectEx(HANDLE object, DWORD milliseconds, BOOL alert
 	struct platform_handle *handle;
 	struct timespec deadline;
 	DWORD result = WAIT_OBJECT_0;
+	struct platform_waiter waiter;
+	BOOL tracked = thread_is_worker && platform_fixed_timestep();
 
 	if (alertable && platform_run_apcs())
 		return WAIT_IO_COMPLETION;
@@ -267,16 +383,22 @@ DWORD WINAPI WaitForSingleObjectEx(HANDLE object, DWORD milliseconds, BOOL alert
 	pthread_mutex_lock(&handle->lock);
 	while (!handle_try_acquire(handle))
 	{
+		int status = 0;
+
 		if (milliseconds == 0)
 		{
 			result = WAIT_TIMEOUT;
 			break;
 		}
+		if (tracked)
+			waiter_park(handle, &waiter);
 		if (milliseconds == INFINITE)
-		{
 			pthread_cond_wait(&handle->condition, &handle->lock);
-		}
-		else if (pthread_cond_timedwait(&handle->condition, &handle->lock, &deadline) == ETIMEDOUT)
+		else
+			status = pthread_cond_timedwait(&handle->condition, &handle->lock, &deadline);
+		if (tracked)
+			waiter_unpark(handle, &waiter);
+		if (status == ETIMEDOUT)
 		{
 			if (!handle_try_acquire(handle))
 				result = WAIT_TIMEOUT;
@@ -366,7 +488,10 @@ BOOL WINAPI ReleaseMutex(HANDLE mutex)
 	if (handle->recursion > 0 && pthread_equal(handle->owner, pthread_self()))
 	{
 		if (--handle->recursion == 0)
+		{
+			waiters_wake(handle);
 			pthread_cond_broadcast(&handle->condition);
+		}
 		result = TRUE;
 	}
 	else
@@ -501,15 +626,19 @@ static void *thread_main(void *context)
 		pthread_cond_wait(&handle->condition, &handle->lock);
 	pthread_mutex_unlock(&handle->lock);
 
+	thread_is_worker = TRUE;
 	exit_code = thread->start(thread->parameter);
 
 	pthread_mutex_lock(&handle->lock);
 	thread->exit_code = exit_code;
 	thread->finished = TRUE;
 	handle->signaled = TRUE;
+	waiters_wake(handle);
 	pthread_cond_broadcast(&handle->condition);
 	free_now = thread->closed;
 	pthread_mutex_unlock(&handle->lock);
+	if (platform_fixed_timestep())
+		workers_add(-1);
 	if (free_now)
 	{
 		handle->signature = 0;
@@ -552,8 +681,13 @@ HANDLE WINAPI CreateThread(LPSECURITY_ATTRIBUTES attributes, DWORD stack_size,
 	pthread_attr_setdetachstate(&thread_attributes, PTHREAD_CREATE_DETACHED);
 	/* Xbox stacks are small; give the host a comfortable minimum */
 	pthread_attr_setstacksize(&thread_attributes, stack_size > 0x100000 ? stack_size : 0x100000);
+	/* a new worker is busy from now (debug.fixed_timestep), unless suspended */
+	if (platform_fixed_timestep() && !thread->suspended)
+		workers_add(1);
 	if (pthread_create(&thread->thread, &thread_attributes, thread_main, thread) != 0)
 	{
+		if (platform_fixed_timestep() && !thread->suspended)
+			workers_add(-1);
 		pthread_attr_destroy(&thread_attributes);
 		free(thread);
 		free(handle);
@@ -577,6 +711,8 @@ DWORD WINAPI ResumeThread(HANDLE object)
 	thread = handle->data;
 	pthread_mutex_lock(&handle->lock);
 	previous = thread->suspended ? 1 : 0;
+	if (thread->suspended && platform_fixed_timestep())
+		workers_add(1);
 	thread->suspended = FALSE;
 	pthread_cond_broadcast(&handle->condition);
 	pthread_mutex_unlock(&handle->lock);
@@ -607,21 +743,37 @@ BOOL WINAPI GetExitCodeThread(HANDLE object, LPDWORD exit_code)
 
 BOOL WINAPI SwitchToThread(void)
 {
-	sched_yield();
+	/* the presenting thread spins on a worker's result: let it finish */
+	if (platform_fixed_timestep() && is_presenting_thread())
+		platform_quiescence_wait();
+	else
+		sched_yield();
 	return TRUE;
 }
 
 DWORD WINAPI SleepEx(DWORD milliseconds, BOOL alertable)
 {
 	struct timespec duration;
+	BOOL park = thread_is_worker && milliseconds != 0 && platform_fixed_timestep();
 
 	if (alertable && platform_run_apcs())
 		return WAIT_IO_COMPLETION;
+	/* with debug.fixed_timestep the presenting thread's sleeps wait for the
+	workers instead of for real time (the loading loop's Sleep(16)) */
+	if (milliseconds != INFINITE && platform_fixed_timestep() && is_presenting_thread())
+	{
+		platform_quiescence_wait();
+		if (alertable && platform_run_apcs())
+			return WAIT_IO_COMPLETION;
+		return 0;
+	}
 	if (milliseconds == 0)
 	{
 		sched_yield();
 		return 0;
 	}
+	if (park)
+		workers_add(-1);
 	if (milliseconds == INFINITE)
 	{
 		for (;;)
@@ -631,6 +783,8 @@ DWORD WINAPI SleepEx(DWORD milliseconds, BOOL alertable)
 	duration.tv_nsec = (long)(milliseconds % 1000) * 1000000L;
 	while (nanosleep(&duration, &duration) == -1 && errno == EINTR)
 		;
+	if (park)
+		workers_add(1);
 	if (alertable && platform_run_apcs())
 		return WAIT_IO_COMPLETION;
 	return 0;

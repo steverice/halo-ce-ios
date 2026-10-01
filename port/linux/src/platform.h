@@ -59,6 +59,14 @@ enum platform_handle_type
 	_platform_handle_other,
 };
 
+/* a thread blocked on a handle, for debug.fixed_timestep's load barrier
+(xbox_kernel.c): signaling the handle marks its waiters busy at once */
+struct platform_waiter
+{
+	struct platform_waiter *next;
+	BOOL parked;
+};
+
 /* Every HANDLE the layer returns points at one of these. Waitable objects
 (events, mutexes, threads) share the embedded lock and condition. */
 struct platform_handle
@@ -69,6 +77,8 @@ struct platform_handle
 	pthread_cond_t condition;
 	BOOL signaled;
 	BOOL manual_reset;
+	/* game worker threads waiting on this handle (debug.fixed_timestep) */
+	struct platform_waiter *waiters;
 	/* mutexes */
 	pthread_t owner;
 	long recursion;
@@ -149,6 +159,10 @@ D3DDevice_Present advances (halo_virtual_clock.h) */
 int platform_fixed_timestep(void);
 unsigned long platform_clock_frames(void);
 void platform_clock_frame(void);
+/* with debug.fixed_timestep: wait until no game worker thread (made by
+CreateThread) is running or about to run, so a load takes the same number
+of frames every run */
+void platform_quiescence_wait(void);
 /* game code's time() (halo_linux_source_fixups.h) */
 time_t halo_platform_time(time_t *timer);
 
