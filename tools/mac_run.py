@@ -260,6 +260,12 @@ def running():
     return subprocess.run(["pgrep", "-x", TARGET], capture_output=True).returncode == 0
 
 
+def started(documents, is_running):
+    """whether the launched game is running or has run: a short run (debug.fixed_timestep
+    makes one take seconds) can start and quit between two polls, leaving only its log"""
+    return is_running() or (documents is not None and (documents / "ios-runtime.log").exists())
+
+
 def wait_for(condition, seconds):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -280,12 +286,13 @@ def build_wrapper(args):
                 stdout=subprocess.DEVNULL)
 
 
-def launch():
-    """install and start the wrapper through Xcode (the only way macOS accepts)"""
+def launch(documents=None):
+    """install and start the wrapper through Xcode (the only way macOS accepts); documents
+    is the container's Documents folder, once one exists"""
     xcode = xcode_app()
     run_command("open", "-a", xcode, RUNNER / f"{TARGET}.xcodeproj")
     run_command("osascript", input=LAUNCH.format(xcode=xcode, target=TARGET), text=True)
-    if not wait_for(running, 300):
+    if not wait_for(lambda: started(documents, running), 300):
         sys.exit(f"{TARGET} did not start within 300 seconds; see Xcode's report navigator")
 
 
@@ -329,7 +336,7 @@ def prepare(args, documents):
         init.write_text("\n".join(args.init) + "\n")
     elif init.exists():
         init.unlink()
-    for name in ("stderr.log", "debug.txt"):
+    for name in ("stderr.log", "debug.txt", "ios-runtime.log"):
         (documents / name).unlink(missing_ok=True)
     (documents / "stderr.log").touch()
 
@@ -349,7 +356,7 @@ def run(args):
     build_wrapper(args)
     documents = container_documents(args)
     prepare(args, documents)
-    launch()
+    launch(documents)
     finished = wait_for(lambda: not running(), args.exit_after + 120)
     if not finished:
         subprocess.run(["pkill", "-x", TARGET])

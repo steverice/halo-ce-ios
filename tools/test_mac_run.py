@@ -214,3 +214,20 @@ def test_launch_script_fails_when_the_ipad_destination_never_appears():
     final = 'set active run destination of doc to (first run destination of doc whose name is "My Mac (Designed for iPad)")'
     assert script.index(final, retries_end) < script.index("run doc")
 
+
+def test_prepare_removes_the_previous_runtime_log(tmp_path):
+    """a fresh ios-runtime.log is how a run that ends between polls is seen to have started"""
+    (tmp_path / "ios-runtime.log").write_text("game exit 0\n")
+    args = mac_run.argparse.Namespace(xiso=None, replay=None, screenshot_every=0, dump_shaders=False,
+                                      exit_after=10.0, set=[], init=[])
+    mac_run.prepare(args, tmp_path)
+    assert not (tmp_path / "ios-runtime.log").exists()
+
+
+def test_started_sees_a_run_that_already_finished(tmp_path):
+    assert not mac_run.started(tmp_path, lambda: False)
+    assert mac_run.started(tmp_path, lambda: True)
+    (tmp_path / "ios-runtime.log").write_text("game exit 0\n")
+    assert mac_run.started(tmp_path, lambda: False)
+    assert mac_run.started(None, lambda: True)
+    assert not mac_run.started(None, lambda: False)
