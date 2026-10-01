@@ -182,3 +182,13 @@ def test_compare_reports_truncated_and_empty_frames(tmp_path):
     assert any("frame00300.bmp: unreadable" in p for p in problems)
     assert any("frame00600.bmp: unreadable" in p for p in problems)
 
+
+def test_reset_settings_restore_defaults_an_earlier_set_may_have_changed(tmp_path):
+    """--set writes into the container's config.toml, which the next run reuses"""
+    settings = mac_run.reset_settings(tmp_path, screenshot_every=0, dump_shaders=False, replay=False)
+    assert settings["debug.gpu_stats"] == "false"
+    assert settings["debug.gpu_debug_flat"] == "false"
+    assert settings["debug.gpu_skip_vertex_shaders"] == '""'
+    assert settings["debug.gpu_trace_frame"] == "-1"
+    assert settings["display.interpolation"] == "true"
+    assert settings["display.render_height"] == "0"

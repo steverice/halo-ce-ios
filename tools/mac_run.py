@@ -50,10 +50,34 @@ def merge_config(text, settings):
     return "\n".join(lines) + "\n"
 
 
+# what port_config.c defaults these to: a run that doesn't --set one gets
+# the default, not whatever an earlier run's --set left in config.toml
+DEFAULTS = {
+    "display.screen_width": "0",
+    "display.render_height": "0",
+    "display.vsync": "true",
+    "display.interpolation": "true",
+    "debug.null_renderer": "false",
+    "debug.gl_debug": "false",
+    "debug.gpu_stats": "false",
+    "debug.gpu_trace_frame": "-1",
+    "debug.gpu_trace_constants": "false",
+    "debug.gpu_skip_vertex_shaders": '""',
+    "debug.gpu_debug_expression": '""',
+    "debug.gpu_debug_texture0": "false",
+    "debug.gpu_debug_flat": "false",
+    "debug.texture_dump_directory": '""',
+    "debug.texture_log": "false",
+    "debug.texture_no_cache": "false",
+}
+
+
 def reset_settings(documents, screenshot_every, dump_shaders, replay):
-    """the output settings of a run: requested outputs go into runner/, the rest are off"""
+    """the settings of a run before its --set ones: requested outputs go into
+    runner/, the rest are off, and everything else is at its default"""
     runner = Path(documents) / "runner"
     return {
+        **DEFAULTS,
         "debug.screenshot_every": str(screenshot_every),
         "debug.screenshot_directory": f'"{runner}/shots"' if screenshot_every else '""',
         "debug.gpu_dump_shaders": f'"{runner}/shaders"' if dump_shaders else '""',
