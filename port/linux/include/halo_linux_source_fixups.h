@@ -45,4 +45,10 @@ void halo_screen_ui_offset(unsigned char centered);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"
 
+/* game code's time() reads debug.fixed_timestep's virtual clock when that is
+on (port/linux/src/xbox_kernel.c); the platform layer keeps the C library's */
+#include <time.h>
+time_t halo_platform_time(time_t *timer);
+#define time(timer) halo_platform_time(timer)
+
 #endif

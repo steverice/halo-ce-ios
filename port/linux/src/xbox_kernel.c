@@ -6,6 +6,8 @@ threads, asynchronous procedure calls, time, memory and debug output.
 */
 
 #include "platform.h"
+#include "port_config.h"
+#include "halo_virtual_clock.h"
 
 #include <errno.h>
 #include <sched.h>
@@ -639,12 +641,44 @@ VOID WINAPI Sleep(DWORD milliseconds)
 	SleepEx(milliseconds, FALSE);
 }
 
-/* ---------- time */
+/* ---------- time
+
+With debug.fixed_timestep, every clock the game reads (GetTickCount,
+QueryPerformanceCounter, time) is a virtual one that advances 1/30 s per
+presented frame (halo_virtual_clock.h), so two runs show the same game time
+on the same frame and tools/mac_run.py can compare their screenshots. */
+
+static unsigned long clock_frames;
+
+int platform_fixed_timestep(void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+	{
+		enabled = config_boolean("debug.fixed_timestep");
+		if (enabled)
+			platform_log("debug.fixed_timestep: the clock advances 1/30 s per presented frame");
+	}
+	return enabled;
+}
+
+unsigned long platform_clock_frames(void)
+{
+	return __atomic_load_n(&clock_frames, __ATOMIC_RELAXED);
+}
+
+void platform_clock_frame(void)
+{
+	__atomic_add_fetch(&clock_frames, 1, __ATOMIC_RELAXED);
+}
 
 DWORD WINAPI GetTickCount(void)
 {
 	struct timespec now;
 
+	if (platform_fixed_timestep())
+		return (DWORD)halo_virtual_clock_milliseconds(platform_clock_frames());
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	return (DWORD)((unsigned long long)now.tv_sec * 1000ULL + (unsigned long long)now.tv_nsec / 1000000ULL);
 }
@@ -658,6 +692,11 @@ BOOL WINAPI QueryPerformanceCounter(LARGE_INTEGER *count)
 {
 	struct timespec now;
 
+	if (platform_fixed_timestep())
+	{
+		count->QuadPart = (LONGLONG)halo_virtual_clock_counter(platform_clock_frames());
+		return TRUE;
+	}
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	count->QuadPart = (LONGLONG)((unsigned long long)now.tv_sec * PLATFORM_PERFORMANCE_FREQUENCY +
 		(unsigned long long)now.tv_nsec / (1000000000ULL / PLATFORM_PERFORMANCE_FREQUENCY));
@@ -666,8 +705,21 @@ BOOL WINAPI QueryPerformanceCounter(LARGE_INTEGER *count)
 
 BOOL WINAPI QueryPerformanceFrequency(LARGE_INTEGER *frequency)
 {
-	frequency->QuadPart = (LONGLONG)PLATFORM_PERFORMANCE_FREQUENCY;
+	frequency->QuadPart = platform_fixed_timestep() ? (LONGLONG)HALO_VIRTUAL_CLOCK_RATE :
+		(LONGLONG)PLATFORM_PERFORMANCE_FREQUENCY;
 	return TRUE;
+}
+
+/* time() for game code (halo_linux_source_fixups.h): system_seconds, the
+random seeds and the error log's timestamps */
+time_t halo_platform_time(time_t *timer)
+{
+	time_t now = platform_fixed_timestep() ?
+		(time_t)halo_virtual_clock_seconds(platform_clock_frames()) : time(NULL);
+
+	if (timer)
+		*timer = now;
+	return now;
 }
 
 /* seconds between 1601-01-01 and 1970-01-01 */

@@ -18,6 +18,7 @@ the SDK headers are read, exactly as game code sees them. */
 #include <stdlib.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <time.h>
 
 /* as cseries_windows.h does, so xtl.h also declares the debug keyboard */
 #define DEBUG_KEYBOARD
@@ -142,5 +143,13 @@ void memory_watch_forget(void *address, unsigned long size);
 /* 100 ns intervals since 1601-01-01, as FILETIME uses */
 void platform_unix_time_to_filetime(unsigned long seconds, unsigned long nanoseconds, FILETIME *file_time);
 void platform_filetime_to_unix_time(const FILETIME *file_time, unsigned long *seconds, unsigned long *nanoseconds);
+
+/* debug.fixed_timestep: the clocks below read a frame counter that
+D3DDevice_Present advances (halo_virtual_clock.h) */
+int platform_fixed_timestep(void);
+unsigned long platform_clock_frames(void);
+void platform_clock_frame(void);
+/* game code's time() (halo_linux_source_fixups.h) */
+time_t halo_platform_time(time_t *timer);
 
 #endif

@@ -13,6 +13,7 @@ and the debug keyboard that the game's console reads.
 #include "sdl_platform.h"
 #include "gl.h"
 #include "port_config.h"
+#include "halo_virtual_clock.h"
 #include "p2p.h"
 
 #include <SDL3/SDL.h>
@@ -382,8 +383,10 @@ static void platform_invite_clipboard(BOOL look)
 void platform_pump_events(void)
 {
 	/* debug.exit_after (seconds) ends the game that long after the window
-	opens, as closing it does (tools/pgo_train.py) */
+	opens, as closing it does (tools/pgo_train.py); with debug.fixed_timestep,
+	that many seconds of frames after the first, so runs end on the same frame */
 	static Uint64 exit_ticks = (Uint64)-1;
+	static unsigned long exit_frame;
 	SDL_Event event;
 	static BOOL looked_at_clipboard;
 	BOOL look_at_clipboard = !looked_at_clipboard;
@@ -395,8 +398,12 @@ void platform_pump_events(void)
 		double seconds = config_real("debug.exit_after");
 
 		exit_ticks = seconds > 0.0 ? SDL_GetTicks() + (Uint64)(seconds * 1000.0) : 0;
+		exit_frame = halo_virtual_clock_exit_frame(seconds);
+		if (exit_frame)
+			exit_frame += platform_clock_frames();
 	}
-	if (exit_ticks && SDL_GetTicks() >= exit_ticks)
+	if (platform_fixed_timestep() ? exit_frame && platform_clock_frames() >= exit_frame :
+		exit_ticks && SDL_GetTicks() >= exit_ticks)
 	{
 		platform_log("exiting after debug.exit_after");
 		exit(EXIT_SUCCESS);
