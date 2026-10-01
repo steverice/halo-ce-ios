@@ -395,8 +395,7 @@ static void decode_level(const struct xgpu_texture_description *description, uns
 	}
 }
 
-#ifdef HALO_ILP32
-/* ---------- DXT decoding, for ES drivers without S3TC (Mali) */
+/* ---------- DXT decoding, for drivers without S3TC (gpu_capabilities.s3tc) */
 
 static unsigned long color565(unsigned long value)
 {
@@ -518,7 +517,6 @@ static void dxt_decode_level(unsigned char kind, const unsigned char *source, un
 		}
 	}
 }
-#endif
 
 static GLenum compressed_format(unsigned char kind)
 {
@@ -583,9 +581,7 @@ static void upload(GLuint texture, GLenum target, const struct xgpu_texture_desc
 	unsigned long *converted;
 	unsigned long face, level;
 
-#ifdef HALO_ILP32
-	decode_compressed = description->compressed && !xgpu_capabilities.s3tc;
-#endif
+	decode_compressed = description->compressed && !device_capabilities.s3tc;
 	converted = description->compressed && !decode_compressed ? NULL : malloc(largest * sizeof(unsigned long));
 	glBindTexture(target, texture);
 	xgpu_gl_state_invalidate();
@@ -620,12 +616,10 @@ static void upload(GLuint texture, GLenum target, const struct xgpu_texture_desc
 			}
 			else
 			{
-#ifdef HALO_ILP32
 				if (decode_compressed)
 					dxt_decode_level(information.kind, source, (unsigned long)width, (unsigned long)height,
 						(unsigned long)depth, converted);
 				else
-#endif
 				decode_level(description, level, source, palette, converted);
 				if (target == GL_TEXTURE_3D)
 					glTexImage3D(image_target, (GLint)level, GL_RGBA8, width, height, depth, 0, GL_BGRA, GL_UNSIGNED_BYTE, converted);
