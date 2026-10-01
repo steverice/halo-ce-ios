@@ -51,6 +51,160 @@ static struct
 	unsigned long index_offset;
 } streams;
 
+/* ---------- GL state cache
+
+Consecutive draws share most of their state, but each sets all of it: the
+setters here skip the call when GL already holds the value. Code that
+changes GL state behind the cache's back (clears, presentation, texture
+uploads, render target and framebuffer creation) calls
+xgpu_gl_state_invalidate, after which every value is set again. Unknown
+values are all ones, which no real value matches (floats become NaN, which
+compares unequal to everything). */
+
+struct gpu_gl_state gl_state;
+
+void xgpu_gl_state_invalidate(void)
+{
+	memset(&gl_state, 0xff, sizeof(gl_state));
+}
+
+void gpu_gl_state_enable(unsigned char *shadow, GLenum capability, BOOL enabled)
+{
+	unsigned char value = enabled ? 1 : 0;
+
+	if (*shadow == value)
+		return;
+	*shadow = value;
+	if (value)
+		glEnable(capability);
+	else
+		glDisable(capability);
+}
+
+static void state_program(GLuint program)
+{
+	if (gl_state.program != program)
+	{
+		gl_state.program = program;
+		glUseProgram(program);
+	}
+}
+
+void gpu_gl_state_framebuffer(GLuint framebuffer)
+{
+	if (gl_state.framebuffer != framebuffer)
+	{
+		gl_state.framebuffer = framebuffer;
+		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+	}
+}
+
+void gpu_gl_state_texture(int unit, GLenum target, GLuint texture)
+{
+	int slot = target == GL_TEXTURE_CUBE_MAP ? 1 : target == GL_TEXTURE_3D ? 2 : 0;
+
+	if (gl_state.textures[unit][slot] == texture)
+		return;
+	if (gl_state.active_texture != GL_TEXTURE0 + (GLenum)unit)
+	{
+		gl_state.active_texture = GL_TEXTURE0 + (GLenum)unit;
+		glActiveTexture(gl_state.active_texture);
+	}
+	gl_state.textures[unit][slot] = texture;
+	glBindTexture(target, texture);
+}
+
+void gpu_gl_state_sampler(int unit, GLuint sampler)
+{
+	if (gl_state.samplers[unit] != sampler)
+	{
+		gl_state.samplers[unit] = sampler;
+		glBindSampler((GLuint)unit, sampler);
+	}
+}
+
+static void state_array_buffer(GLuint buffer)
+{
+	if (gl_state.array_buffer != buffer)
+	{
+		gl_state.array_buffer = buffer;
+		glBindBuffer(GL_ARRAY_BUFFER, buffer);
+	}
+}
+
+static void state_element_array_buffer(GLuint buffer)
+{
+	if (gl_state.element_array_buffer != buffer)
+	{
+		gl_state.element_array_buffer = buffer;
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer);
+	}
+}
+
+/* until sub-step e-3 moves the vertex streams: the front end binds the
+index buffer through the cache */
+void gpu_gl_state_element_array_buffer(GLuint buffer)
+{
+	state_element_array_buffer(buffer);
+}
+
+void gpu_gl_state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
+	BOOL integer, GLsizei stride, unsigned long offset)
+{
+	struct attribute_pointer *pointer = &gl_state.attribute_pointers[index];
+
+	if (gl_state.attribute_enabled[index] != 1)
+	{
+		gl_state.attribute_enabled[index] = 1;
+		glEnableVertexAttribArray(index);
+	}
+	if (pointer->buffer == buffer && pointer->size == size && pointer->type == type &&
+		pointer->normalized == normalized && pointer->integer == (integer ? GL_TRUE : GL_FALSE) &&
+		pointer->stride == stride && pointer->offset == offset)
+	{
+		return;
+	}
+	state_array_buffer(buffer);
+	if (integer)
+		glVertexAttribIPointer(index, size, type, stride, (const void *)offset);
+	else
+		glVertexAttribPointer(index, size, type, normalized, stride, (const void *)offset);
+	pointer->buffer = buffer;
+	pointer->size = size;
+	pointer->type = type;
+	pointer->normalized = normalized;
+	pointer->integer = integer ? GL_TRUE : GL_FALSE;
+	pointer->stride = stride;
+	pointer->offset = offset;
+}
+
+/* disables the attribute, which then reads value, or the integer zero */
+void gpu_gl_state_attribute_value(GLuint index, const float *value)
+{
+	unsigned char kind = value ? 0 : 1;
+
+	if (gl_state.attribute_enabled[index] != 0)
+	{
+		gl_state.attribute_enabled[index] = 0;
+		glDisableVertexAttribArray(index);
+	}
+	if (gl_state.attribute_value_kind[index] == kind &&
+		(!value || !memcmp(gl_state.attribute_values[index], value, sizeof(gl_state.attribute_values[index]))))
+	{
+		return;
+	}
+	gl_state.attribute_value_kind[index] = kind;
+	if (value)
+	{
+		memcpy(gl_state.attribute_values[index], value, sizeof(gl_state.attribute_values[index]));
+		glVertexAttrib4fv(index, value);
+	}
+	else
+	{
+		glVertexAttribI4ui(index, 0, 0, 0, 0);
+	}
+}
+
 #ifndef HALO_ILP32
 static void GLAPIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
 	GLsizei length, const GLchar *message, const void *user)
@@ -425,7 +579,7 @@ void gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes)
 	if (streams.stream_offset + vertex_bytes > STREAM_BUFFER_SIZE)
 	{
 		/* orphan the buffer and start again */
-		xgpu_gl_bind_array_buffer(streams.stream_buffer);
+		state_array_buffer(streams.stream_buffer);
 		glBufferData(GL_ARRAY_BUFFER, STREAM_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
 		streams.stream_offset = 0;
 	}
@@ -435,7 +589,7 @@ void gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes)
 	(sub-step e) */
 	if (index_bytes && streams.index_offset + index_bytes > INDEX_BUFFER_SIZE)
 	{
-		xgpu_gl_bind_element_array_buffer(streams.index_buffer);
+		state_element_array_buffer(streams.index_buffer);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
 		streams.index_offset = 0;
 	}
@@ -449,7 +603,7 @@ uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *
 	if (kind == GPU_STREAM_INDEX)
 	{
 		/* the index buffer makes room as each range comes */
-		xgpu_gl_bind_element_array_buffer(streams.index_buffer);
+		state_element_array_buffer(streams.index_buffer);
 		if (streams.index_offset + size > INDEX_BUFFER_SIZE)
 		{
 			glBufferData(GL_ELEMENT_ARRAY_BUFFER, INDEX_BUFFER_SIZE, NULL, GL_STREAM_DRAW);
@@ -467,7 +621,7 @@ uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *
 	}
 	gpu_stream_reserve(size, 0);
 	offset = streams.stream_offset;
-	xgpu_gl_bind_array_buffer(streams.stream_buffer);
+	state_array_buffer(streams.stream_buffer);
 #ifdef HALO_ILP32
 	host_gl_buffer_write(GL_ARRAY_BUFFER, (unsigned int)offset, (unsigned int)size, data);
 #else
@@ -596,7 +750,7 @@ struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex_shader, gpu_shader f
 		entry->program = 0;
 		return NULL;
 	}
-	xgpu_gl_use_program(entry->program);
+	state_program(entry->program);
 	entry->constants = glGetUniformLocation(entry->program, "c");
 	entry->constant_count = XGPU_VERTEX_CONSTANT_COUNT;
 	if (entry->constants >= 0)
@@ -660,7 +814,7 @@ static void uniform_float(GLint location, float *shadow, float value)
 
 void gpu_gl_program_use(struct gpu_gl_program *program)
 {
-	xgpu_gl_use_program(program->program);
+	state_program(program->program);
 }
 
 void gpu_gl_program_constants(struct gpu_gl_program *entry, const struct gpu_constant_store *store)

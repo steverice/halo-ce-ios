@@ -350,216 +350,6 @@ static struct
 	BOOL statistics;
 } debug_settings;
 
-/* ---------- GL state cache
-
-Consecutive draws share most of their state, but each sets all of it: the
-setters here skip the call when GL already holds the value. Code that
-changes GL state behind the cache's back (clears, presentation, texture
-uploads, render target and framebuffer creation) calls
-xgpu_gl_state_invalidate, after which every value is set again. Unknown
-values are all ones, which no real value matches (floats become NaN, which
-compares unequal to everything). */
-
-struct attribute_pointer
-{
-	GLuint buffer;
-	GLint size;
-	GLenum type;
-	GLboolean normalized;
-	GLboolean integer;
-	GLsizei stride;
-	unsigned long offset;
-};
-
-static struct
-{
-	GLuint program;
-	GLuint framebuffer;
-	GLint viewport[4];
-	GLint scissor[4];
-	float depth_range[2];
-	unsigned char depth_test, stencil_test, blend, cull_face, offset_fill, offset_line;
-	unsigned char scissor_test;
-	GLenum depth_function;
-	unsigned char depth_mask;
-	GLenum stencil_function;
-	GLint stencil_reference;
-	GLuint stencil_value_mask;
-	GLenum stencil_operations[3];
-	GLuint stencil_write_mask;
-	GLenum blend_source, blend_destination, blend_equation;
-	float blend_color[4];
-	unsigned char color_mask;
-	GLenum front_face, cull_mode, polygon_mode;
-	float polygon_offset[2];
-	GLenum active_texture;
-	/* per unit: the GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP and GL_TEXTURE_3D
-	bindings */
-	GLuint textures[D3DTSS_MAXSTAGES][3];
-	GLuint samplers[D3DTSS_MAXSTAGES];
-	GLuint array_buffer;
-	GLuint element_array_buffer;
-	unsigned char attribute_enabled[XGPU_VERTEX_ATTRIBUTE_COUNT];
-	struct attribute_pointer attribute_pointers[XGPU_VERTEX_ATTRIBUTE_COUNT];
-	/* a disabled attribute's value; kind 1 is the integer zero */
-	unsigned char attribute_value_kind[XGPU_VERTEX_ATTRIBUTE_COUNT];
-	float attribute_values[XGPU_VERTEX_ATTRIBUTE_COUNT][4];
-} gl_state;
-
-void xgpu_gl_state_invalidate(void)
-{
-	memset(&gl_state, 0xff, sizeof(gl_state));
-}
-
-static void state_enable(unsigned char *shadow, GLenum capability, BOOL enabled)
-{
-	unsigned char value = enabled ? 1 : 0;
-
-	if (*shadow == value)
-		return;
-	*shadow = value;
-	if (value)
-		glEnable(capability);
-	else
-		glDisable(capability);
-}
-
-static void state_program(GLuint program)
-{
-	if (gl_state.program != program)
-	{
-		gl_state.program = program;
-		glUseProgram(program);
-	}
-}
-
-/* the cache's program binding, for gpu_gl.c's programs until step 3e moves
-the GL state cache into the backend */
-void xgpu_gl_use_program(GLuint program)
-{
-	state_program(program);
-}
-
-static void state_framebuffer(GLuint framebuffer)
-{
-	if (gl_state.framebuffer != framebuffer)
-	{
-		gl_state.framebuffer = framebuffer;
-		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-	}
-}
-
-static void state_texture(int unit, GLenum target, GLuint texture)
-{
-	int slot = target == GL_TEXTURE_CUBE_MAP ? 1 : target == GL_TEXTURE_3D ? 2 : 0;
-
-	if (gl_state.textures[unit][slot] == texture)
-		return;
-	if (gl_state.active_texture != GL_TEXTURE0 + (GLenum)unit)
-	{
-		gl_state.active_texture = GL_TEXTURE0 + (GLenum)unit;
-		glActiveTexture(gl_state.active_texture);
-	}
-	gl_state.textures[unit][slot] = texture;
-	glBindTexture(target, texture);
-}
-
-static void state_sampler(int unit, GLuint sampler)
-{
-	if (gl_state.samplers[unit] != sampler)
-	{
-		gl_state.samplers[unit] = sampler;
-		glBindSampler((GLuint)unit, sampler);
-	}
-}
-
-static void state_array_buffer(GLuint buffer)
-{
-	if (gl_state.array_buffer != buffer)
-	{
-		gl_state.array_buffer = buffer;
-		glBindBuffer(GL_ARRAY_BUFFER, buffer);
-	}
-}
-
-static void state_element_array_buffer(GLuint buffer)
-{
-	if (gl_state.element_array_buffer != buffer)
-	{
-		gl_state.element_array_buffer = buffer;
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer);
-	}
-}
-
-/* the cache's buffer bindings, for gpu_gl.c's streams until step 3e moves
-the GL state cache into the backend */
-void xgpu_gl_bind_array_buffer(GLuint buffer)
-{
-	state_array_buffer(buffer);
-}
-
-void xgpu_gl_bind_element_array_buffer(GLuint buffer)
-{
-	state_element_array_buffer(buffer);
-}
-
-static void state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
-	BOOL integer, GLsizei stride, unsigned long offset)
-{
-	struct attribute_pointer *pointer = &gl_state.attribute_pointers[index];
-
-	if (gl_state.attribute_enabled[index] != 1)
-	{
-		gl_state.attribute_enabled[index] = 1;
-		glEnableVertexAttribArray(index);
-	}
-	if (pointer->buffer == buffer && pointer->size == size && pointer->type == type &&
-		pointer->normalized == normalized && pointer->integer == (integer ? GL_TRUE : GL_FALSE) &&
-		pointer->stride == stride && pointer->offset == offset)
-	{
-		return;
-	}
-	state_array_buffer(buffer);
-	if (integer)
-		glVertexAttribIPointer(index, size, type, stride, (const void *)offset);
-	else
-		glVertexAttribPointer(index, size, type, normalized, stride, (const void *)offset);
-	pointer->buffer = buffer;
-	pointer->size = size;
-	pointer->type = type;
-	pointer->normalized = normalized;
-	pointer->integer = integer ? GL_TRUE : GL_FALSE;
-	pointer->stride = stride;
-	pointer->offset = offset;
-}
-
-/* disables the attribute, which then reads value, or the integer zero */
-static void state_attribute_value(GLuint index, const float *value)
-{
-	unsigned char kind = value ? 0 : 1;
-
-	if (gl_state.attribute_enabled[index] != 0)
-	{
-		gl_state.attribute_enabled[index] = 0;
-		glDisableVertexAttribArray(index);
-	}
-	if (gl_state.attribute_value_kind[index] == kind &&
-		(!value || !memcmp(gl_state.attribute_values[index], value, sizeof(gl_state.attribute_values[index]))))
-	{
-		return;
-	}
-	gl_state.attribute_value_kind[index] = kind;
-	if (value)
-	{
-		memcpy(gl_state.attribute_values[index], value, sizeof(gl_state.attribute_values[index]));
-		glVertexAttrib4fv(index, value);
-	}
-	else
-	{
-		glVertexAttribI4ui(index, 0, 0, 0, 0);
-	}
-}
-
 /* ---------- vertical blank emulation */
 
 #define VERTICAL_BLANK_NANOSECONDS (1000000000L / 60)
@@ -762,7 +552,7 @@ static BOOL bind_targets(BOOL *has_depth)
 	/* viewports and clears are in the targets' units (render_target_get) */
 	target_scale[0] = color ? color->target.scale[0] : depth->target.scale[0];
 	target_scale[1] = color ? color->target.scale[1] : depth->target.scale[1];
-	state_framebuffer(gpu_gl_framebuffer_get(color ? color->target.texture : 0, depth ? depth->target.texture : 0));
+	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(color ? color->target.texture : 0, depth ? depth->target.texture : 0));
 	*has_depth = depth != NULL;
 	return TRUE;
 }
@@ -2035,7 +1825,7 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 		texture_scale[stage][2] = texture_scale[stage][3] = 1.0f;
 		if (!texture || !texture->Data || mode == 0 || mode == 0x04 || mode == 0x05 || mode == 0x11)
 		{
-			state_texture(stage, GL_TEXTURE_2D, 0);
+			gpu_gl_state_texture(stage, GL_TEXTURE_2D, 0);
 			key->sampler_type[stage] = mode == 0x11 ? _xgpu_sampler_2d : _xgpu_sampler_none;
 			continue;
 		}
@@ -2073,8 +1863,8 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 					texture_scale[stage][1] = 1.0f / (float)description.height;
 				}
 			}
-			state_texture(stage, gpu_gl_texture_target(type), handle);
-			state_sampler(stage, device.samplers[stage]);
+			gpu_gl_state_texture(stage, gpu_gl_texture_target(type), handle);
+			gpu_gl_state_sampler(stage, device.samplers[stage]);
 			configure_sampler(stage, description.levels > 1);
 			key->sampler_type[stage] = type == GPU_TEXTURE_CUBE ? _xgpu_sampler_cube :
 				type == GPU_TEXTURE_3D ? _xgpu_sampler_3d : _xgpu_sampler_2d;
@@ -2130,7 +1920,7 @@ static void apply_raster_state(BOOL has_depth)
 		memcpy(gl_state.scissor, scissor, sizeof(scissor));
 		glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
 	}
-	state_enable(&gl_state.scissor_test, GL_SCISSOR_TEST, scissor[2] > 0 && scissor[3] > 0);
+	gpu_gl_state_enable(&gl_state.scissor_test, GL_SCISSOR_TEST, scissor[2] > 0 && scissor[3] > 0);
 	depth_range[0] = device.viewport.MinZ;
 	depth_range[1] = device.viewport.MaxZ;
 	if (memcmp(gl_state.depth_range, depth_range, sizeof(depth_range)))
@@ -2139,7 +1929,7 @@ static void apply_raster_state(BOOL has_depth)
 		glDepthRange(depth_range[0], depth_range[1]);
 	}
 
-	state_enable(&gl_state.depth_test, GL_DEPTH_TEST, depth_test);
+	gpu_gl_state_enable(&gl_state.depth_test, GL_DEPTH_TEST, depth_test);
 	if (depth_test)
 	{
 		GLenum function = rs[D3DRS_ZFUNC] ? (GLenum)rs[D3DRS_ZFUNC] : GL_NEVER;
@@ -2160,7 +1950,7 @@ static void apply_raster_state(BOOL has_depth)
 		}
 	}
 
-	state_enable(&gl_state.stencil_test, GL_STENCIL_TEST, has_depth && rs[D3DRS_STENCILENABLE]);
+	gpu_gl_state_enable(&gl_state.stencil_test, GL_STENCIL_TEST, has_depth && rs[D3DRS_STENCILENABLE]);
 	if (has_depth && rs[D3DRS_STENCILENABLE])
 	{
 		GLenum function = rs[D3DRS_STENCILFUNC] ? (GLenum)rs[D3DRS_STENCILFUNC] : GL_NEVER;
@@ -2189,7 +1979,7 @@ static void apply_raster_state(BOOL has_depth)
 		}
 	}
 
-	state_enable(&gl_state.blend, GL_BLEND, rs[D3DRS_ALPHABLENDENABLE] != 0);
+	gpu_gl_state_enable(&gl_state.blend, GL_BLEND, rs[D3DRS_ALPHABLENDENABLE] != 0);
 	if (rs[D3DRS_ALPHABLENDENABLE])
 	{
 		GLenum equation = blend_equation(rs[D3DRS_BLENDOP]);
@@ -2224,7 +2014,7 @@ static void apply_raster_state(BOOL has_depth)
 
 	/* the cull mode names the winding to discard; FRONTFACE names the
 	front winding */
-	state_enable(&gl_state.cull_face, GL_CULL_FACE, rs[D3DRS_CULLMODE] != D3DCULL_NONE);
+	gpu_gl_state_enable(&gl_state.cull_face, GL_CULL_FACE, rs[D3DRS_CULLMODE] != D3DCULL_NONE);
 	if (rs[D3DRS_CULLMODE] != D3DCULL_NONE)
 	{
 		/* a vertex shader that flips y in clip space (clip_y_flip, unlike
@@ -2259,9 +2049,9 @@ static void apply_raster_state(BOOL has_depth)
 #endif
 
 	/* D3DRS_ZBIAS is expressed in these states (D3DDevice_SetRenderState_ZBias) */
-	state_enable(&gl_state.offset_fill, GL_POLYGON_OFFSET_FILL, rs[D3DRS_SOLIDOFFSETENABLE] != 0);
+	gpu_gl_state_enable(&gl_state.offset_fill, GL_POLYGON_OFFSET_FILL, rs[D3DRS_SOLIDOFFSETENABLE] != 0);
 #ifndef HALO_ILP32
-	state_enable(&gl_state.offset_line, GL_POLYGON_OFFSET_LINE, rs[D3DRS_SOLIDOFFSETENABLE] != 0);
+	gpu_gl_state_enable(&gl_state.offset_line, GL_POLYGON_OFFSET_LINE, rs[D3DRS_SOLIDOFFSETENABLE] != 0);
 #endif
 	if (rs[D3DRS_SOLIDOFFSETENABLE])
 	{
@@ -2936,13 +2726,13 @@ static void setup_streams(unsigned long first, unsigned long count)
 		}
 		if (element->type == D3DVSDT_NORMPACKED3)
 		{
-			state_attribute_pointer(element->reg, stream_buffers[stream], 1, GL_UNSIGNED_INT, GL_FALSE, TRUE,
+			gpu_gl_state_attribute_pointer(element->reg, stream_buffers[stream], 1, GL_UNSIGNED_INT, GL_FALSE, TRUE,
 				(GLsizei)stride, stream_offsets[stream] + element->offset);
 		}
 		else
 		{
 			attribute_format(element, &size, &type, &normalized);
-			state_attribute_pointer(element->reg, stream_buffers[stream], size, type, normalized, FALSE,
+			gpu_gl_state_attribute_pointer(element->reg, stream_buffers[stream], size, type, normalized, FALSE,
 				(GLsizei)stride, stream_offsets[stream] + element->offset);
 		}
 		enabled[element->reg] = TRUE;
@@ -2950,7 +2740,7 @@ static void setup_streams(unsigned long first, unsigned long count)
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
 		if (!enabled[index])
-			state_attribute_value(index, declaration->packed_mask & (1UL << index) ? NULL : device.attributes[index]);
+			gpu_gl_state_attribute_value(index, declaration->packed_mask & (1UL << index) ? NULL : device.attributes[index]);
 	}
 }
 
@@ -3051,7 +2841,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	if (mirrored)
 	{
 		/* the attributes start at vertex minimum */
-		state_element_array_buffer(index_buffer);
+		gpu_gl_state_element_array_buffer(index_buffer);
 		glDrawElementsBaseVertex(primitive_mode(primitive_type), (GLsizei)vertex_count, GL_UNSIGNED_SHORT,
 			(const void *)index_offset, -(GLint)minimum);
 		return;
@@ -3118,7 +2908,7 @@ void WINAPI D3DDevice_End(void)
 	offset = stream_upload(device.immediate_vertices, count * stride, &buffer);
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
-		state_attribute_pointer(index, buffer, 4, GL_FLOAT, GL_FALSE, FALSE, (GLsizei)stride,
+		gpu_gl_state_attribute_pointer(index, buffer, 4, GL_FLOAT, GL_FALSE, FALSE, (GLsizei)stride,
 			offset + index * 4 * sizeof(float));
 	}
 	if (type == D3DPT_QUADLIST)
