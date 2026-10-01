@@ -56,6 +56,11 @@ void gpu_gl_state_element_array_buffer(GLuint buffer);
 void gpu_gl_state_attribute_pointer(GLuint index, GLuint buffer, GLint size, GLenum type, GLboolean normalized,
 	BOOL integer, GLsizei stride, unsigned long offset);
 void gpu_gl_state_attribute_value(GLuint index, const float *value);
+/* until sub-step e-4's gpu_draw: the front end applies the packet's raster
+state (gpu_gl.c) */
+void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct gpu_rect *scissor,
+	const struct gpu_depth_stencil_state *depth_stencil, const struct gpu_blend_state *blend,
+	const struct gpu_raster_state *raster);
 /* until step 3e's gpu_draw: the front end drives a program (gpu_gl.c) */
 struct gpu_gl_program;
 struct gpu_gl_program *gpu_gl_program_get(gpu_shader vertex, gpu_shader pixel);
@@ -123,56 +128,6 @@ void nv2a_uniform_declarations(struct xgpu_text *text, const struct nv2a_dialect
 #define XGPU_VERTEX_CONSTANT_COUNT 192
 /* D3D constant register -96 is hardware register 0 */
 #define XGPU_VERTEX_CONSTANT_BIAS 96
-
-/* until Task 3 of sub-step e-1 moves the raster state: the cache itself,
-for apply_raster_state (gpu_gl.c) */
-struct attribute_pointer
-{
-	GLuint buffer;
-	GLint size;
-	GLenum type;
-	GLboolean normalized;
-	GLboolean integer;
-	GLsizei stride;
-	unsigned long offset;
-};
-
-struct gpu_gl_state
-{
-	GLuint program;
-	GLuint framebuffer;
-	GLint viewport[4];
-	GLint scissor[4];
-	float depth_range[2];
-	unsigned char depth_test, stencil_test, blend, cull_face, offset_fill, offset_line;
-	unsigned char scissor_test;
-	GLenum depth_function;
-	unsigned char depth_mask;
-	GLenum stencil_function;
-	GLint stencil_reference;
-	GLuint stencil_value_mask;
-	GLenum stencil_operations[3];
-	GLuint stencil_write_mask;
-	GLenum blend_source, blend_destination, blend_equation;
-	float blend_color[4];
-	unsigned char color_mask;
-	GLenum front_face, cull_mode, polygon_mode;
-	float polygon_offset[2];
-	GLenum active_texture;
-	/* per unit: the GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP and GL_TEXTURE_3D
-	bindings */
-	GLuint textures[D3DTSS_MAXSTAGES][3];
-	GLuint samplers[D3DTSS_MAXSTAGES];
-	GLuint array_buffer;
-	GLuint element_array_buffer;
-	unsigned char attribute_enabled[XGPU_VERTEX_ATTRIBUTE_COUNT];
-	struct attribute_pointer attribute_pointers[XGPU_VERTEX_ATTRIBUTE_COUNT];
-	/* a disabled attribute's value; kind 1 is the integer zero */
-	unsigned char attribute_value_kind[XGPU_VERTEX_ATTRIBUTE_COUNT];
-	float attribute_values[XGPU_VERTEX_ATTRIBUTE_COUNT][4];
-};
-extern struct gpu_gl_state gl_state;
-void gpu_gl_state_enable(unsigned char *shadow, GLenum capability, BOOL enabled);
 
 /* GLSL for an NV2A vertex program (the instruction words after the program
 header). Attributes whose bit is set in packed_attribute_mask are fed as

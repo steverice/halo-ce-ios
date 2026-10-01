@@ -16,6 +16,7 @@ for now it probes the context.
 #ifdef HALO_ILP32
 /* OpenGL ES 3 has no BGRA upload format; d3d8_gl.c defines the same alias */
 #define GL_BGRA GL_RGBA
+#define glDepthRange glDepthRangef
 #endif
 
 /* ---------- streams */
@@ -61,14 +62,58 @@ xgpu_gl_state_invalidate, after which every value is set again. Unknown
 values are all ones, which no real value matches (floats become NaN, which
 compares unequal to everything). */
 
-struct gpu_gl_state gl_state;
+struct attribute_pointer
+{
+	GLuint buffer;
+	GLint size;
+	GLenum type;
+	GLboolean normalized;
+	GLboolean integer;
+	GLsizei stride;
+	unsigned long offset;
+};
+
+static struct gpu_gl_state
+{
+	GLuint program;
+	GLuint framebuffer;
+	GLint viewport[4];
+	GLint scissor[4];
+	float depth_range[2];
+	unsigned char depth_test, stencil_test, blend, cull_face, offset_fill, offset_line;
+	unsigned char scissor_test;
+	GLenum depth_function;
+	unsigned char depth_mask;
+	GLenum stencil_function;
+	GLint stencil_reference;
+	GLuint stencil_value_mask;
+	GLenum stencil_operations[3];
+	GLuint stencil_write_mask;
+	GLenum blend_source, blend_destination, blend_equation;
+	float blend_color[4];
+	unsigned char color_mask;
+	GLenum front_face, cull_mode, polygon_mode;
+	float polygon_offset[2];
+	GLenum active_texture;
+	/* per unit: the GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP and GL_TEXTURE_3D
+	bindings */
+	GLuint textures[D3DTSS_MAXSTAGES][3];
+	GLuint samplers[D3DTSS_MAXSTAGES];
+	GLuint array_buffer;
+	GLuint element_array_buffer;
+	unsigned char attribute_enabled[XGPU_VERTEX_ATTRIBUTE_COUNT];
+	struct attribute_pointer attribute_pointers[XGPU_VERTEX_ATTRIBUTE_COUNT];
+	/* a disabled attribute's value; kind 1 is the integer zero */
+	unsigned char attribute_value_kind[XGPU_VERTEX_ATTRIBUTE_COUNT];
+	float attribute_values[XGPU_VERTEX_ATTRIBUTE_COUNT][4];
+} gl_state;
 
 void xgpu_gl_state_invalidate(void)
 {
 	memset(&gl_state, 0xff, sizeof(gl_state));
 }
 
-void gpu_gl_state_enable(unsigned char *shadow, GLenum capability, BOOL enabled)
+static void state_enable(unsigned char *shadow, GLenum capability, BOOL enabled)
 {
 	unsigned char value = enabled ? 1 : 0;
 
@@ -202,6 +247,255 @@ void gpu_gl_state_attribute_value(GLuint index, const float *value)
 	else
 	{
 		glVertexAttribI4ui(index, 0, 0, 0, 0);
+	}
+}
+
+/* ---------- raster state
+
+gpu_gl_apply_raster_state applies the packet's viewport, scissor, depth and
+stencil, blend and raster state through the cache, until sub-step e-4's
+gpu_draw applies the whole packet. */
+
+/* a D3DCOLOR's channels as floats, the arithmetic the front end used, so
+the cache's floats compare equal */
+static void color_to_vec4(uint32_t color, float *out)
+{
+	out[0] = ((color >> 16) & 0xff) / 255.0f;
+	out[1] = ((color >> 8) & 0xff) / 255.0f;
+	out[2] = (color & 0xff) / 255.0f;
+	out[3] = ((color >> 24) & 0xff) / 255.0f;
+}
+
+static GLenum gl_compare(uint32_t function)
+{
+	switch (function)
+	{
+	case GPU_COMPARE_LESS: return GL_LESS;
+	case GPU_COMPARE_EQUAL: return GL_EQUAL;
+	case GPU_COMPARE_LESS_EQUAL: return GL_LEQUAL;
+	case GPU_COMPARE_GREATER: return GL_GREATER;
+	case GPU_COMPARE_NOT_EQUAL: return GL_NOTEQUAL;
+	case GPU_COMPARE_GREATER_EQUAL: return GL_GEQUAL;
+	case GPU_COMPARE_ALWAYS: return GL_ALWAYS;
+	default: return GL_NEVER;
+	}
+}
+
+static GLenum gl_stencil_operation(uint32_t operation)
+{
+	switch (operation)
+	{
+	case GPU_STENCIL_ZERO: return GL_ZERO;
+	case GPU_STENCIL_REPLACE: return GL_REPLACE;
+	case GPU_STENCIL_INCREMENT_CLAMP: return GL_INCR;
+	case GPU_STENCIL_DECREMENT_CLAMP: return GL_DECR;
+	case GPU_STENCIL_INVERT: return GL_INVERT;
+	case GPU_STENCIL_INCREMENT_WRAP: return GL_INCR_WRAP;
+	case GPU_STENCIL_DECREMENT_WRAP: return GL_DECR_WRAP;
+	default: return GL_KEEP;
+	}
+}
+
+static GLenum gl_blend_factor(uint32_t factor)
+{
+	switch (factor)
+	{
+	case GPU_BLEND_ONE: return GL_ONE;
+	case GPU_BLEND_SOURCE_COLOR: return GL_SRC_COLOR;
+	case GPU_BLEND_ONE_MINUS_SOURCE_COLOR: return GL_ONE_MINUS_SRC_COLOR;
+	case GPU_BLEND_SOURCE_ALPHA: return GL_SRC_ALPHA;
+	case GPU_BLEND_ONE_MINUS_SOURCE_ALPHA: return GL_ONE_MINUS_SRC_ALPHA;
+	case GPU_BLEND_DESTINATION_ALPHA: return GL_DST_ALPHA;
+	case GPU_BLEND_ONE_MINUS_DESTINATION_ALPHA: return GL_ONE_MINUS_DST_ALPHA;
+	case GPU_BLEND_DESTINATION_COLOR: return GL_DST_COLOR;
+	case GPU_BLEND_ONE_MINUS_DESTINATION_COLOR: return GL_ONE_MINUS_DST_COLOR;
+	case GPU_BLEND_SOURCE_ALPHA_SATURATE: return GL_SRC_ALPHA_SATURATE;
+	case GPU_BLEND_CONSTANT_COLOR: return GL_CONSTANT_COLOR;
+	case GPU_BLEND_ONE_MINUS_CONSTANT_COLOR: return GL_ONE_MINUS_CONSTANT_COLOR;
+	case GPU_BLEND_CONSTANT_ALPHA: return GL_CONSTANT_ALPHA;
+	case GPU_BLEND_ONE_MINUS_CONSTANT_ALPHA: return GL_ONE_MINUS_CONSTANT_ALPHA;
+	default: return GL_ZERO;
+	}
+}
+
+static GLenum gl_blend_equation(uint32_t operation)
+{
+	switch (operation)
+	{
+	case GPU_BLEND_OP_SUBTRACT: return GL_FUNC_SUBTRACT;
+	case GPU_BLEND_OP_REVERSE_SUBTRACT: return GL_FUNC_REVERSE_SUBTRACT;
+	case GPU_BLEND_OP_MIN: return GL_MIN;
+	case GPU_BLEND_OP_MAX: return GL_MAX;
+	default: return GL_FUNC_ADD;
+	}
+}
+
+void gpu_gl_apply_raster_state(const struct gpu_viewport *viewport, const struct gpu_rect *scissor,
+	const struct gpu_depth_stencil_state *depth_stencil, const struct gpu_blend_state *blend,
+	const struct gpu_raster_state *raster)
+{
+	GLint viewport_box[4];
+	GLint scissor_box[4];
+	float depth_range[2];
+
+	viewport_box[0] = viewport->x;
+	viewport_box[1] = viewport->y;
+	viewport_box[2] = viewport->width;
+	viewport_box[3] = viewport->height;
+	if (memcmp(gl_state.viewport, viewport_box, sizeof(viewport_box)))
+	{
+		memcpy(gl_state.viewport, viewport_box, sizeof(viewport_box));
+		glViewport(viewport_box[0], viewport_box[1], viewport_box[2], viewport_box[3]);
+	}
+	/* (glScissor takes the corner and the size, as glViewport does) */
+	scissor_box[0] = scissor->x;
+	scissor_box[1] = scissor->y;
+	scissor_box[2] = scissor->width;
+	scissor_box[3] = scissor->height;
+	if (memcmp(gl_state.scissor, scissor_box, sizeof(scissor_box)))
+	{
+		memcpy(gl_state.scissor, scissor_box, sizeof(scissor_box));
+		glScissor(scissor_box[0], scissor_box[1], scissor_box[2], scissor_box[3]);
+	}
+	state_enable(&gl_state.scissor_test, GL_SCISSOR_TEST, scissor_box[2] > 0 && scissor_box[3] > 0);
+	depth_range[0] = viewport->min_z;
+	depth_range[1] = viewport->max_z;
+	if (memcmp(gl_state.depth_range, depth_range, sizeof(depth_range)))
+	{
+		memcpy(gl_state.depth_range, depth_range, sizeof(depth_range));
+		glDepthRange(depth_range[0], depth_range[1]);
+	}
+
+	state_enable(&gl_state.depth_test, GL_DEPTH_TEST, depth_stencil->depth_test);
+	if (depth_stencil->depth_test)
+	{
+		GLenum function = gl_compare(depth_stencil->depth_function);
+
+		if (gl_state.depth_function != function)
+		{
+			gl_state.depth_function = function;
+			glDepthFunc(function);
+		}
+	}
+	{
+		unsigned char mask = depth_stencil->depth_write ? 1 : 0;
+
+		if (gl_state.depth_mask != mask)
+		{
+			gl_state.depth_mask = mask;
+			glDepthMask(mask ? GL_TRUE : GL_FALSE);
+		}
+	}
+
+	state_enable(&gl_state.stencil_test, GL_STENCIL_TEST, depth_stencil->stencil_test);
+	if (depth_stencil->stencil_test)
+	{
+		GLenum function = gl_compare(depth_stencil->stencil_function);
+		GLint reference = (GLint)depth_stencil->stencil_reference;
+		GLenum operations[3];
+
+		if (gl_state.stencil_function != function || gl_state.stencil_reference != reference ||
+			gl_state.stencil_value_mask != depth_stencil->stencil_read_mask)
+		{
+			gl_state.stencil_function = function;
+			gl_state.stencil_reference = reference;
+			gl_state.stencil_value_mask = depth_stencil->stencil_read_mask;
+			glStencilFunc(function, reference, depth_stencil->stencil_read_mask);
+		}
+		operations[0] = gl_stencil_operation(depth_stencil->stencil_fail);
+		operations[1] = gl_stencil_operation(depth_stencil->stencil_depth_fail);
+		operations[2] = gl_stencil_operation(depth_stencil->stencil_pass);
+		if (memcmp(gl_state.stencil_operations, operations, sizeof(operations)))
+		{
+			memcpy(gl_state.stencil_operations, operations, sizeof(operations));
+			glStencilOp(operations[0], operations[1], operations[2]);
+		}
+		if (gl_state.stencil_write_mask != depth_stencil->stencil_write_mask)
+		{
+			gl_state.stencil_write_mask = depth_stencil->stencil_write_mask;
+			glStencilMask(depth_stencil->stencil_write_mask);
+		}
+	}
+
+	state_enable(&gl_state.blend, GL_BLEND, blend->enable);
+	if (blend->enable)
+	{
+		GLenum source = gl_blend_factor(blend->source);
+		GLenum destination = gl_blend_factor(blend->destination);
+		GLenum equation = gl_blend_equation(blend->operation);
+		float blend_color[4];
+
+		if (gl_state.blend_source != source || gl_state.blend_destination != destination)
+		{
+			gl_state.blend_source = source;
+			gl_state.blend_destination = destination;
+			glBlendFunc(source, destination);
+		}
+		if (gl_state.blend_equation != equation)
+		{
+			gl_state.blend_equation = equation;
+			glBlendEquation(equation);
+		}
+		color_to_vec4(blend->color, blend_color);
+		if (memcmp(gl_state.blend_color, blend_color, sizeof(blend_color)))
+		{
+			memcpy(gl_state.blend_color, blend_color, sizeof(blend_color));
+			glBlendColor(blend_color[0], blend_color[1], blend_color[2], blend_color[3]);
+		}
+	}
+	if (gl_state.color_mask != blend->color_write_mask)
+	{
+		gl_state.color_mask = blend->color_write_mask;
+		glColorMask((blend->color_write_mask & 1) != 0, (blend->color_write_mask & 2) != 0,
+			(blend->color_write_mask & 4) != 0, (blend->color_write_mask & 8) != 0);
+	}
+
+	state_enable(&gl_state.cull_face, GL_CULL_FACE, raster->cull_mode != GPU_CULL_NONE);
+	if (raster->cull_mode != GPU_CULL_NONE)
+	{
+		GLenum front_face = raster->front_face == GPU_FRONT_COUNTER_CLOCKWISE ? GL_CCW : GL_CW;
+		GLenum cull_mode = raster->cull_mode == GPU_CULL_FRONT ? GL_FRONT : GL_BACK;
+
+		if (gl_state.front_face != front_face)
+		{
+			gl_state.front_face = front_face;
+			glFrontFace(front_face);
+		}
+		if (gl_state.cull_mode != cull_mode)
+		{
+			gl_state.cull_mode = cull_mode;
+			glCullFace(cull_mode);
+		}
+	}
+#ifndef HALO_ILP32
+	/* ES draws filled polygons only (wireframe is a debug mode) */
+	{
+		GLenum polygon_mode = raster->fill_mode == GPU_FILL_LINE ? GL_LINE :
+			raster->fill_mode == GPU_FILL_POINT ? GL_POINT : GL_FILL;
+
+		if (gl_state.polygon_mode != polygon_mode)
+		{
+			gl_state.polygon_mode = polygon_mode;
+			glPolygonMode(GL_FRONT_AND_BACK, polygon_mode);
+		}
+	}
+#endif
+
+	state_enable(&gl_state.offset_fill, GL_POLYGON_OFFSET_FILL, raster->depth_bias_enable);
+#ifndef HALO_ILP32
+	state_enable(&gl_state.offset_line, GL_POLYGON_OFFSET_LINE, raster->depth_bias_enable);
+#endif
+	if (raster->depth_bias_enable)
+	{
+		float offset[2];
+
+		offset[0] = raster->depth_bias_slope;
+		offset[1] = raster->depth_bias_constant;
+		if (memcmp(gl_state.polygon_offset, offset, sizeof(offset)))
+		{
+			memcpy(gl_state.polygon_offset, offset, sizeof(offset));
+			glPolygonOffset(offset[0], offset[1]);
+		}
 	}
 }
 

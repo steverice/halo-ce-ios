@@ -160,6 +160,85 @@ struct gpu_uniforms
 	uint32_t pad[3];
 };
 
+/* ---------- draw state (the spec's draw packet, filled in sub-step e) */
+
+/* compare functions: depth and stencil tests */
+enum
+{
+	GPU_COMPARE_NEVER, GPU_COMPARE_LESS, GPU_COMPARE_EQUAL, GPU_COMPARE_LESS_EQUAL,
+	GPU_COMPARE_GREATER, GPU_COMPARE_NOT_EQUAL, GPU_COMPARE_GREATER_EQUAL, GPU_COMPARE_ALWAYS,
+};
+
+enum
+{
+	GPU_STENCIL_KEEP, GPU_STENCIL_ZERO, GPU_STENCIL_REPLACE, GPU_STENCIL_INCREMENT_CLAMP,
+	GPU_STENCIL_DECREMENT_CLAMP, GPU_STENCIL_INVERT, GPU_STENCIL_INCREMENT_WRAP, GPU_STENCIL_DECREMENT_WRAP,
+};
+
+enum
+{
+	GPU_BLEND_ZERO, GPU_BLEND_ONE,
+	GPU_BLEND_SOURCE_COLOR, GPU_BLEND_ONE_MINUS_SOURCE_COLOR,
+	GPU_BLEND_SOURCE_ALPHA, GPU_BLEND_ONE_MINUS_SOURCE_ALPHA,
+	GPU_BLEND_DESTINATION_ALPHA, GPU_BLEND_ONE_MINUS_DESTINATION_ALPHA,
+	GPU_BLEND_DESTINATION_COLOR, GPU_BLEND_ONE_MINUS_DESTINATION_COLOR,
+	GPU_BLEND_SOURCE_ALPHA_SATURATE,
+	GPU_BLEND_CONSTANT_COLOR, GPU_BLEND_ONE_MINUS_CONSTANT_COLOR,
+	GPU_BLEND_CONSTANT_ALPHA, GPU_BLEND_ONE_MINUS_CONSTANT_ALPHA,
+};
+
+enum { GPU_BLEND_OP_ADD, GPU_BLEND_OP_SUBTRACT, GPU_BLEND_OP_REVERSE_SUBTRACT, GPU_BLEND_OP_MIN, GPU_BLEND_OP_MAX };
+
+/* which faces to discard */
+enum { GPU_CULL_NONE, GPU_CULL_FRONT, GPU_CULL_BACK };
+enum { GPU_FRONT_CLOCKWISE, GPU_FRONT_COUNTER_CLOCKWISE };
+enum { GPU_FILL_SOLID, GPU_FILL_LINE, GPU_FILL_POINT };
+
+/* in target pixels */
+struct gpu_viewport
+{
+	int32_t x, y, width, height;
+	float min_z, max_z;
+};
+
+/* in target pixels; width or height 0: the scissor test is off */
+struct gpu_rect
+{
+	int32_t x, y, width, height;
+};
+
+struct gpu_depth_stencil_state
+{
+	uint8_t depth_test;
+	uint8_t depth_write;
+	uint8_t depth_function;
+	uint8_t stencil_test;
+	uint8_t stencil_function;
+	uint8_t stencil_fail, stencil_depth_fail, stencil_pass;
+	uint32_t stencil_reference, stencil_read_mask, stencil_write_mask;
+};
+
+struct gpu_blend_state
+{
+	uint8_t enable;
+	uint8_t source, destination, operation;
+	/* ARGB, as D3DCOLOR */
+	uint32_t color;
+	/* bit 0 red, 1 green, 2 blue, 3 alpha */
+	uint8_t color_write_mask;
+	uint8_t pad[3];
+};
+
+struct gpu_raster_state
+{
+	uint8_t cull_mode;
+	uint8_t front_face;
+	uint8_t fill_mode;
+	uint8_t depth_bias_enable;
+	float depth_bias_slope;
+	float depth_bias_constant;
+};
+
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);
 

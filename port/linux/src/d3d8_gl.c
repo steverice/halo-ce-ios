@@ -1872,199 +1872,140 @@ static void bind_textures(struct nv2a_pixel_shader_key *key, float texture_scale
 	}
 }
 
-static GLenum stencil_operation(DWORD operation)
+/* ---------- raster state: D3D render states as the draw packet's structs */
+
+static uint8_t gpu_compare(DWORD function)
 {
-	/* Xbox stencil operations are the GL enumerants, plus 0 for ZERO */
-	return operation ? (GLenum)operation : GL_ZERO;
+	switch (function)
+	{
+	case D3DCMP_LESS: return GPU_COMPARE_LESS;
+	case D3DCMP_EQUAL: return GPU_COMPARE_EQUAL;
+	case D3DCMP_LESSEQUAL: return GPU_COMPARE_LESS_EQUAL;
+	case D3DCMP_GREATER: return GPU_COMPARE_GREATER;
+	case D3DCMP_NOTEQUAL: return GPU_COMPARE_NOT_EQUAL;
+	case D3DCMP_GREATEREQUAL: return GPU_COMPARE_GREATER_EQUAL;
+	case D3DCMP_ALWAYS: return GPU_COMPARE_ALWAYS;
+	/* D3DCMP_NEVER, and 0 (an unset render state) */
+	default: return GPU_COMPARE_NEVER;
+	}
 }
 
-static GLenum blend_equation(DWORD operation)
+static uint8_t gpu_stencil_operation(DWORD operation)
 {
 	switch (operation)
 	{
-	case D3DBLENDOP_SUBTRACT: return GL_FUNC_SUBTRACT;
-	case D3DBLENDOP_REVSUBTRACT:
-	case D3DBLENDOP_REVSUBTRACTSIGNED: return GL_FUNC_REVERSE_SUBTRACT;
-	case D3DBLENDOP_MIN: return GL_MIN;
-	case D3DBLENDOP_MAX: return GL_MAX;
-	default: return GL_FUNC_ADD;
+	case D3DSTENCILOP_KEEP: return GPU_STENCIL_KEEP;
+	case D3DSTENCILOP_REPLACE: return GPU_STENCIL_REPLACE;
+	case D3DSTENCILOP_INCRSAT: return GPU_STENCIL_INCREMENT_CLAMP;
+	case D3DSTENCILOP_DECRSAT: return GPU_STENCIL_DECREMENT_CLAMP;
+	case D3DSTENCILOP_INVERT: return GPU_STENCIL_INVERT;
+	case D3DSTENCILOP_INCR: return GPU_STENCIL_INCREMENT_WRAP;
+	case D3DSTENCILOP_DECR: return GPU_STENCIL_DECREMENT_WRAP;
+	/* D3DSTENCILOP_ZERO is 0 */
+	default: return GPU_STENCIL_ZERO;
 	}
 }
 
-static void apply_raster_state(BOOL has_depth)
+static uint8_t gpu_blend_factor(DWORD factor)
+{
+	switch (factor)
+	{
+	case D3DBLEND_ONE: return GPU_BLEND_ONE;
+	case D3DBLEND_SRCCOLOR: return GPU_BLEND_SOURCE_COLOR;
+	case D3DBLEND_INVSRCCOLOR: return GPU_BLEND_ONE_MINUS_SOURCE_COLOR;
+	case D3DBLEND_SRCALPHA: return GPU_BLEND_SOURCE_ALPHA;
+	case D3DBLEND_INVSRCALPHA: return GPU_BLEND_ONE_MINUS_SOURCE_ALPHA;
+	case D3DBLEND_DESTALPHA: return GPU_BLEND_DESTINATION_ALPHA;
+	case D3DBLEND_INVDESTALPHA: return GPU_BLEND_ONE_MINUS_DESTINATION_ALPHA;
+	case D3DBLEND_DESTCOLOR: return GPU_BLEND_DESTINATION_COLOR;
+	case D3DBLEND_INVDESTCOLOR: return GPU_BLEND_ONE_MINUS_DESTINATION_COLOR;
+	case D3DBLEND_SRCALPHASAT: return GPU_BLEND_SOURCE_ALPHA_SATURATE;
+	case D3DBLEND_CONSTANTCOLOR: return GPU_BLEND_CONSTANT_COLOR;
+	case D3DBLEND_INVCONSTANTCOLOR: return GPU_BLEND_ONE_MINUS_CONSTANT_COLOR;
+	case D3DBLEND_CONSTANTALPHA: return GPU_BLEND_CONSTANT_ALPHA;
+	case D3DBLEND_INVCONSTANTALPHA: return GPU_BLEND_ONE_MINUS_CONSTANT_ALPHA;
+	/* D3DBLEND_ZERO is 0 */
+	default: return GPU_BLEND_ZERO;
+	}
+}
+
+static uint8_t gpu_blend_operation(DWORD operation)
+{
+	switch (operation)
+	{
+	case D3DBLENDOP_SUBTRACT: return GPU_BLEND_OP_SUBTRACT;
+	case D3DBLENDOP_REVSUBTRACT:
+	case D3DBLENDOP_REVSUBTRACTSIGNED: return GPU_BLEND_OP_REVERSE_SUBTRACT;
+	case D3DBLENDOP_MIN: return GPU_BLEND_OP_MIN;
+	case D3DBLENDOP_MAX: return GPU_BLEND_OP_MAX;
+	/* D3DBLENDOP_ADD, and ADDSIGNED (the NV2A's signed add, whose bias is
+	dropped, as before) */
+	default: return GPU_BLEND_OP_ADD;
+	}
+}
+
+/* fills the packet's raster state from the render states and the viewport */
+static void raster_state_fill(BOOL has_depth, struct gpu_viewport *viewport, struct gpu_rect *scissor,
+	struct gpu_depth_stencil_state *depth_stencil, struct gpu_blend_state *blend, struct gpu_raster_state *raster)
 {
 	DWORD *rs = D3D__RenderState;
 	DWORD write = rs[D3DRS_COLORWRITEENABLE];
-	GLint viewport[4];
-	GLint scissor[4];
-	float depth_range[2];
-	unsigned char color_mask;
-	BOOL depth_test = has_depth && rs[D3DRS_ZENABLE];
 
-	viewport[0] = target_pixel((float)device.viewport.X, 0);
-	viewport[1] = target_pixel((float)device.viewport.Y, 1);
-	viewport[2] = target_pixel((float)(device.viewport.X + device.viewport.Width), 0) - viewport[0];
-	viewport[3] = target_pixel((float)(device.viewport.Y + device.viewport.Height), 1) - viewport[1];
-	if (memcmp(gl_state.viewport, viewport, sizeof(viewport)))
-	{
-		memcpy(gl_state.viewport, viewport, sizeof(viewport));
-		glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-	}
+	memset(viewport, 0, sizeof(*viewport));
+	memset(scissor, 0, sizeof(*scissor));
+	memset(depth_stencil, 0, sizeof(*depth_stencil));
+	memset(blend, 0, sizeof(*blend));
+	memset(raster, 0, sizeof(*raster));
+
+	viewport->x = target_pixel((float)device.viewport.X, 0);
+	viewport->y = target_pixel((float)device.viewport.Y, 1);
+	viewport->width = target_pixel((float)(device.viewport.X + device.viewport.Width), 0) - viewport->x;
+	viewport->height = target_pixel((float)(device.viewport.Y + device.viewport.Height), 1) - viewport->y;
+	viewport->min_z = device.viewport.MinZ;
+	viewport->max_z = device.viewport.MaxZ;
 	/* the game never issues a scissor rectangle, and the NV2A scissor register
 	defaults to the viewport, so fragment clipping follows the viewport: this is
 	what keeps a split-screen window's geometry from bleeding across the divider */
-	/* (glScissor takes the corner and the size, as glViewport does) */
-	memcpy(scissor, viewport, sizeof(scissor));
-	if (memcmp(gl_state.scissor, scissor, sizeof(scissor)))
-	{
-		memcpy(gl_state.scissor, scissor, sizeof(scissor));
-		glScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
-	}
-	gpu_gl_state_enable(&gl_state.scissor_test, GL_SCISSOR_TEST, scissor[2] > 0 && scissor[3] > 0);
-	depth_range[0] = device.viewport.MinZ;
-	depth_range[1] = device.viewport.MaxZ;
-	if (memcmp(gl_state.depth_range, depth_range, sizeof(depth_range)))
-	{
-		memcpy(gl_state.depth_range, depth_range, sizeof(depth_range));
-		glDepthRange(depth_range[0], depth_range[1]);
-	}
+	scissor->x = viewport->x;
+	scissor->y = viewport->y;
+	scissor->width = viewport->width;
+	scissor->height = viewport->height;
 
-	gpu_gl_state_enable(&gl_state.depth_test, GL_DEPTH_TEST, depth_test);
-	if (depth_test)
-	{
-		GLenum function = rs[D3DRS_ZFUNC] ? (GLenum)rs[D3DRS_ZFUNC] : GL_NEVER;
+	depth_stencil->depth_test = has_depth && rs[D3DRS_ZENABLE];
+	depth_stencil->depth_write = depth_stencil->depth_test && rs[D3DRS_ZWRITEENABLE];
+	depth_stencil->depth_function = gpu_compare(rs[D3DRS_ZFUNC]);
+	depth_stencil->stencil_test = has_depth && rs[D3DRS_STENCILENABLE];
+	depth_stencil->stencil_function = gpu_compare(rs[D3DRS_STENCILFUNC]);
+	depth_stencil->stencil_fail = gpu_stencil_operation(rs[D3DRS_STENCILFAIL]);
+	depth_stencil->stencil_depth_fail = gpu_stencil_operation(rs[D3DRS_STENCILZFAIL]);
+	depth_stencil->stencil_pass = gpu_stencil_operation(rs[D3DRS_STENCILPASS]);
+	depth_stencil->stencil_reference = (uint32_t)rs[D3DRS_STENCILREF];
+	depth_stencil->stencil_read_mask = (uint32_t)rs[D3DRS_STENCILMASK];
+	depth_stencil->stencil_write_mask = (uint32_t)rs[D3DRS_STENCILWRITEMASK];
 
-		if (gl_state.depth_function != function)
-		{
-			gl_state.depth_function = function;
-			glDepthFunc(function);
-		}
-	}
-	{
-		unsigned char mask = depth_test && rs[D3DRS_ZWRITEENABLE] ? 1 : 0;
-
-		if (gl_state.depth_mask != mask)
-		{
-			gl_state.depth_mask = mask;
-			glDepthMask(mask ? GL_TRUE : GL_FALSE);
-		}
-	}
-
-	gpu_gl_state_enable(&gl_state.stencil_test, GL_STENCIL_TEST, has_depth && rs[D3DRS_STENCILENABLE]);
-	if (has_depth && rs[D3DRS_STENCILENABLE])
-	{
-		GLenum function = rs[D3DRS_STENCILFUNC] ? (GLenum)rs[D3DRS_STENCILFUNC] : GL_NEVER;
-		GLenum operations[3];
-
-		if (gl_state.stencil_function != function || gl_state.stencil_reference != (GLint)rs[D3DRS_STENCILREF] ||
-			gl_state.stencil_value_mask != rs[D3DRS_STENCILMASK])
-		{
-			gl_state.stencil_function = function;
-			gl_state.stencil_reference = (GLint)rs[D3DRS_STENCILREF];
-			gl_state.stencil_value_mask = rs[D3DRS_STENCILMASK];
-			glStencilFunc(function, (GLint)rs[D3DRS_STENCILREF], rs[D3DRS_STENCILMASK]);
-		}
-		operations[0] = stencil_operation(rs[D3DRS_STENCILFAIL]);
-		operations[1] = stencil_operation(rs[D3DRS_STENCILZFAIL]);
-		operations[2] = stencil_operation(rs[D3DRS_STENCILPASS]);
-		if (memcmp(gl_state.stencil_operations, operations, sizeof(operations)))
-		{
-			memcpy(gl_state.stencil_operations, operations, sizeof(operations));
-			glStencilOp(operations[0], operations[1], operations[2]);
-		}
-		if (gl_state.stencil_write_mask != rs[D3DRS_STENCILWRITEMASK])
-		{
-			gl_state.stencil_write_mask = rs[D3DRS_STENCILWRITEMASK];
-			glStencilMask(rs[D3DRS_STENCILWRITEMASK]);
-		}
-	}
-
-	gpu_gl_state_enable(&gl_state.blend, GL_BLEND, rs[D3DRS_ALPHABLENDENABLE] != 0);
-	if (rs[D3DRS_ALPHABLENDENABLE])
-	{
-		GLenum equation = blend_equation(rs[D3DRS_BLENDOP]);
-		float blend_color[4];
-
-		if (gl_state.blend_source != (GLenum)rs[D3DRS_SRCBLEND] ||
-			gl_state.blend_destination != (GLenum)rs[D3DRS_DESTBLEND])
-		{
-			gl_state.blend_source = (GLenum)rs[D3DRS_SRCBLEND];
-			gl_state.blend_destination = (GLenum)rs[D3DRS_DESTBLEND];
-			glBlendFunc(gl_state.blend_source, gl_state.blend_destination);
-		}
-		if (gl_state.blend_equation != equation)
-		{
-			gl_state.blend_equation = equation;
-			glBlendEquation(equation);
-		}
-		color_to_vec4(rs[D3DRS_BLENDCOLOR], blend_color);
-		if (memcmp(gl_state.blend_color, blend_color, sizeof(blend_color)))
-		{
-			memcpy(gl_state.blend_color, blend_color, sizeof(blend_color));
-			glBlendColor(blend_color[0], blend_color[1], blend_color[2], blend_color[3]);
-		}
-	}
-	color_mask = (unsigned char)(((write & D3DCOLORWRITEENABLE_RED) ? 1 : 0) | ((write & D3DCOLORWRITEENABLE_GREEN) ? 2 : 0) |
-		((write & D3DCOLORWRITEENABLE_BLUE) ? 4 : 0) | ((write & D3DCOLORWRITEENABLE_ALPHA) ? 8 : 0));
-	if (gl_state.color_mask != color_mask)
-	{
-		gl_state.color_mask = color_mask;
-		glColorMask((color_mask & 1) != 0, (color_mask & 2) != 0, (color_mask & 4) != 0, (color_mask & 8) != 0);
-	}
+	blend->enable = rs[D3DRS_ALPHABLENDENABLE] != 0;
+	blend->source = gpu_blend_factor(rs[D3DRS_SRCBLEND]);
+	blend->destination = gpu_blend_factor(rs[D3DRS_DESTBLEND]);
+	blend->operation = gpu_blend_operation(rs[D3DRS_BLENDOP]);
+	blend->color = (uint32_t)rs[D3DRS_BLENDCOLOR];
+	blend->color_write_mask = (uint8_t)(((write & D3DCOLORWRITEENABLE_RED) ? 1 : 0) |
+		((write & D3DCOLORWRITEENABLE_GREEN) ? 2 : 0) | ((write & D3DCOLORWRITEENABLE_BLUE) ? 4 : 0) |
+		((write & D3DCOLORWRITEENABLE_ALPHA) ? 8 : 0));
 
 	/* the cull mode names the winding to discard; FRONTFACE names the
 	front winding */
-	gpu_gl_state_enable(&gl_state.cull_face, GL_CULL_FACE, rs[D3DRS_CULLMODE] != D3DCULL_NONE);
-	if (rs[D3DRS_CULLMODE] != D3DCULL_NONE)
-	{
-		/* a vertex shader that flips y in clip space (clip_y_flip, unlike
-		desktop GL's upper-left clip origin) also flips the winding */
-		GLenum front_face = (rs[D3DRS_FRONTFACE] == D3DFRONT_CCW) != (shader_dialect.clip_y_flip != 0) ?
-			GL_CCW : GL_CW;
-		GLenum cull_mode = rs[D3DRS_CULLMODE] == rs[D3DRS_FRONTFACE] ? GL_FRONT : GL_BACK;
-
-		if (gl_state.front_face != front_face)
-		{
-			gl_state.front_face = front_face;
-			glFrontFace(front_face);
-		}
-		if (gl_state.cull_mode != cull_mode)
-		{
-			gl_state.cull_mode = cull_mode;
-			glCullFace(cull_mode);
-		}
-	}
-#ifndef HALO_ILP32
-	/* ES draws filled polygons only (wireframe is a debug mode) */
-	{
-		GLenum polygon_mode = rs[D3DRS_FILLMODE] == D3DFILL_WIREFRAME ? GL_LINE :
-			rs[D3DRS_FILLMODE] == D3DFILL_POINT ? GL_POINT : GL_FILL;
-
-		if (gl_state.polygon_mode != polygon_mode)
-		{
-			gl_state.polygon_mode = polygon_mode;
-			glPolygonMode(GL_FRONT_AND_BACK, polygon_mode);
-		}
-	}
-#endif
-
+	raster->cull_mode = rs[D3DRS_CULLMODE] == D3DCULL_NONE ? GPU_CULL_NONE :
+		rs[D3DRS_CULLMODE] == rs[D3DRS_FRONTFACE] ? GPU_CULL_FRONT : GPU_CULL_BACK;
+	/* a vertex shader that flips y in clip space (clip_y_flip, unlike
+	desktop GL's upper-left clip origin) also flips the winding */
+	raster->front_face = (rs[D3DRS_FRONTFACE] == D3DFRONT_CCW) != (shader_dialect.clip_y_flip != 0) ?
+		GPU_FRONT_COUNTER_CLOCKWISE : GPU_FRONT_CLOCKWISE;
+	raster->fill_mode = rs[D3DRS_FILLMODE] == D3DFILL_WIREFRAME ? GPU_FILL_LINE :
+		rs[D3DRS_FILLMODE] == D3DFILL_POINT ? GPU_FILL_POINT : GPU_FILL_SOLID;
 	/* D3DRS_ZBIAS is expressed in these states (D3DDevice_SetRenderState_ZBias) */
-	gpu_gl_state_enable(&gl_state.offset_fill, GL_POLYGON_OFFSET_FILL, rs[D3DRS_SOLIDOFFSETENABLE] != 0);
-#ifndef HALO_ILP32
-	gpu_gl_state_enable(&gl_state.offset_line, GL_POLYGON_OFFSET_LINE, rs[D3DRS_SOLIDOFFSETENABLE] != 0);
-#endif
-	if (rs[D3DRS_SOLIDOFFSETENABLE])
-	{
-		float offset[2];
-
-		offset[0] = dword_to_float(rs[D3DRS_POLYGONOFFSETZSLOPESCALE]);
-		offset[1] = dword_to_float(rs[D3DRS_POLYGONOFFSETZOFFSET]);
-		if (memcmp(gl_state.polygon_offset, offset, sizeof(offset)))
-		{
-			memcpy(gl_state.polygon_offset, offset, sizeof(offset));
-			glPolygonOffset(offset[0], offset[1]);
-		}
-	}
+	raster->depth_bias_enable = rs[D3DRS_SOLIDOFFSETENABLE] != 0;
+	raster->depth_bias_slope = dword_to_float(rs[D3DRS_POLYGONOFFSETZSLOPESCALE]);
+	raster->depth_bias_constant = dword_to_float(rs[D3DRS_POLYGONOFFSETZOFFSET]);
 }
 
 #ifdef HALO_ILP32
@@ -2128,7 +2069,16 @@ static struct gpu_gl_program *prepare_draw(BOOL immediate)
 		stats.skipped_no_target++;
 		return NULL;
 	}
-	apply_raster_state(has_depth);
+	{
+		struct gpu_viewport viewport;
+		struct gpu_rect scissor;
+		struct gpu_depth_stencil_state depth_stencil;
+		struct gpu_blend_state blend;
+		struct gpu_raster_state raster;
+
+		raster_state_fill(has_depth, &viewport, &scissor, &depth_stencil, &blend, &raster);
+		gpu_gl_apply_raster_state(&viewport, &scissor, &depth_stencil, &blend, &raster);
+	}
 
 	memset(&key, 0, sizeof(key));
 	memcpy(key.combiner_state, D3D__RenderState, sizeof(key.combiner_state));
