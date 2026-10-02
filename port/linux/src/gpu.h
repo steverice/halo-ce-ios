@@ -342,6 +342,27 @@ struct gpu_draw
 
 /* ---------- drawing */
 
+/* gpu_clear.flags: the buffers cleared */
+enum { GPU_CLEAR_COLOR = 1, GPU_CLEAR_DEPTH = 2, GPU_CLEAR_STENCIL = 4 };
+/* gpu_clear.channel_mask: the color channels cleared */
+enum { GPU_CHANNEL_RED = 1, GPU_CHANNEL_GREEN = 2, GPU_CHANNEL_BLUE = 4, GPU_CHANNEL_ALPHA = 8 };
+
+struct gpu_clear
+{
+	gpu_texture color_target;   /* 0: none */
+	gpu_texture depth_target;   /* 0: none; then no depth or stencil flags */
+	uint32_t flags;
+	uint32_t channel_mask;
+	uint32_t color;             /* ARGB */
+	float depth;
+	uint32_t stencil;
+};
+
+/* clears each rectangle (in target pixels, as gpu_rect is everywhere) of the
+requested buffers; depth and stencil are written whatever the draw-time write
+masks are */
+void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles, uint32_t count);
+
 /* draws; returns 0 if the draw was skipped because its program failed to link */
 uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *constants,
 	const struct gpu_uniforms *uniforms);

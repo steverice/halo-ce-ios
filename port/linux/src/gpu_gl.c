@@ -17,6 +17,7 @@ for now it probes the context.
 /* OpenGL ES 3 has no BGRA upload format; d3d8_gl.c defines the same alias */
 #define GL_BGRA GL_RGBA
 #define glDepthRange glDepthRangef
+#define glClearDepth glClearDepthf
 /* the sampler extensions' enumerants, for ES headers without them */
 #ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84fe
@@ -1357,4 +1358,44 @@ uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *
 	else
 		glDrawElements(mode, (GLsizei)draw->count, GL_UNSIGNED_SHORT, (const void *)(unsigned long)draw->index_offset);
 	return 1;
+}
+
+void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles, uint32_t count)
+{
+	float rgba[4];
+	GLbitfield mask = 0;
+	uint32_t index;
+
+	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(clear->color_target, clear->depth_target));
+	if (clear->flags & GPU_CLEAR_COLOR)
+	{
+		color_to_vec4(clear->color, rgba);
+		glColorMask((clear->channel_mask & GPU_CHANNEL_RED) != 0, (clear->channel_mask & GPU_CHANNEL_GREEN) != 0,
+			(clear->channel_mask & GPU_CHANNEL_BLUE) != 0, (clear->channel_mask & GPU_CHANNEL_ALPHA) != 0);
+		glClearColor(rgba[0], rgba[1], rgba[2], rgba[3]);
+		mask |= GL_COLOR_BUFFER_BIT;
+	}
+	if (clear->flags & GPU_CLEAR_DEPTH)
+	{
+		glDepthMask(GL_TRUE);
+		glClearDepth(clear->depth);
+		mask |= GL_DEPTH_BUFFER_BIT;
+	}
+	if (clear->flags & GPU_CLEAR_STENCIL)
+	{
+		glStencilMask(0xff);
+		glClearStencil((GLint)clear->stencil);
+		mask |= GL_STENCIL_BUFFER_BIT;
+	}
+	if (!mask)
+		return;
+	glEnable(GL_SCISSOR_TEST);
+	for (index = 0; index < count; index++)
+	{
+		glScissor(rectangles[index].x, rectangles[index].y, rectangles[index].width, rectangles[index].height);
+		glClear(mask);
+	}
+	glDisable(GL_SCISSOR_TEST);
+	/* the masks and the scissor bypassed the cached state */
+	xgpu_gl_state_invalidate();
 }

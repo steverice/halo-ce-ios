@@ -545,18 +545,6 @@ static BOOL draw_targets(gpu_texture *color_texture, gpu_texture *depth_texture)
 	return TRUE;
 }
 
-/* until sub-step f's gpu_clear: D3DDevice_Clear binds the targets itself */
-static BOOL bind_targets(BOOL *has_depth)
-{
-	gpu_texture color, depth;
-
-	if (!draw_targets(&color, &depth))
-		return FALSE;
-	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(color, depth));
-	*has_depth = depth != 0;
-	return TRUE;
-}
-
 /* what the shader translators emit for this context */
 static struct nv2a_dialect shader_dialect;
 
@@ -2906,12 +2894,13 @@ void WINAPI D3DDevice_SetVertexDataColor(INT reg, D3DCOLOR color)
 
 void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 {
-	float rgba[4];
-	GLbitfield mask = 0;
-	BOOL has_depth = FALSE;
+	struct gpu_clear clear;
+	struct gpu_rect *list;
+	uint32_t listed = 0;
 	DWORD index;
 
-	if (!device.gl_ready || !bind_targets(&has_depth))
+	memset(&clear, 0, sizeof(clear));
+	if (!device.gl_ready || !draw_targets(&clear.color_target, &clear.depth_target))
 		return;
 	if (trace_frame())
 		platform_log("clear flags %lx color %08lx z %g count %lu target %08lx depth %08lx", (unsigned long)flags,
@@ -2919,66 +2908,66 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 			device.render_target ? (unsigned long)device.render_target->Data : 0,
 			device.depth_stencil ? (unsigned long)device.depth_stencil->Data : 0);
 	stats.clears++;
-	color_to_vec4(color, rgba);
 	if (flags & D3DCLEAR_TARGET)
 	{
 		/* the Xbox clears the channels named (D3DCLEAR_TARGET_R, _G, _B, _A):
 		the fog screen clears only alpha, leaving the picture under the fog */
-		glColorMask((flags & D3DCLEAR_TARGET_R) != 0, (flags & D3DCLEAR_TARGET_G) != 0,
-			(flags & D3DCLEAR_TARGET_B) != 0, (flags & D3DCLEAR_TARGET_A) != 0);
-		glClearColor(rgba[0], rgba[1], rgba[2], rgba[3]);
-		mask |= GL_COLOR_BUFFER_BIT;
+		clear.flags |= GPU_CLEAR_COLOR;
+		clear.channel_mask = ((flags & D3DCLEAR_TARGET_R) ? GPU_CHANNEL_RED : 0) |
+			((flags & D3DCLEAR_TARGET_G) ? GPU_CHANNEL_GREEN : 0) |
+			((flags & D3DCLEAR_TARGET_B) ? GPU_CHANNEL_BLUE : 0) |
+			((flags & D3DCLEAR_TARGET_A) ? GPU_CHANNEL_ALPHA : 0);
+		clear.color = (uint32_t)color;
 	}
-	if (has_depth && (flags & D3DCLEAR_ZBUFFER))
+	if (clear.depth_target && (flags & D3DCLEAR_ZBUFFER))
 	{
-		glDepthMask(GL_TRUE);
-		glClearDepth(z);
-		mask |= GL_DEPTH_BUFFER_BIT;
+		clear.flags |= GPU_CLEAR_DEPTH;
+		clear.depth = z;
 	}
-	if (has_depth && (flags & D3DCLEAR_STENCIL))
+	if (clear.depth_target && (flags & D3DCLEAR_STENCIL))
 	{
-		glStencilMask(0xff);
-		glClearStencil((GLint)stencil);
-		mask |= GL_STENCIL_BUFFER_BIT;
+		clear.flags |= GPU_CLEAR_STENCIL;
+		clear.stencil = (uint32_t)stencil;
 	}
-	if (!mask)
-		return;
+	list = malloc(sizeof(*list) * (count && rectangles ? count : 1));
 	if (!count || !rectangles)
 	{
 		/* the NV2A clips a viewport-less clear to the viewport, which is what
 		keeps a split-screen window's clear from wiping the other window */
-		GLint x0 = target_pixel((float)device.viewport.X, 0);
-		GLint y0 = target_pixel((float)device.viewport.Y, 1);
+		int32_t x0 = target_pixel((float)device.viewport.X, 0);
+		int32_t y0 = target_pixel((float)device.viewport.Y, 1);
 
-		glEnable(GL_SCISSOR_TEST);
-		glScissor(x0, y0, target_pixel((float)(device.viewport.X + device.viewport.Width), 0) - x0,
-			target_pixel((float)(device.viewport.Y + device.viewport.Height), 1) - y0);
-		glClear(mask);
-		glDisable(GL_SCISSOR_TEST);
-		xgpu_gl_state_invalidate();
-		return;
+		list[0].x = x0;
+		list[0].y = y0;
+		list[0].width = target_pixel((float)(device.viewport.X + device.viewport.Width), 0) - x0;
+		list[0].height = target_pixel((float)(device.viewport.Y + device.viewport.Height), 1) - y0;
+		listed = 1;
 	}
-	glEnable(GL_SCISSOR_TEST);
-	for (index = 0; index < count; index++)
+	else
 	{
-		INT left = rectangles[index].x1 > device.viewport.X ? rectangles[index].x1 : device.viewport.X;
-		INT top = rectangles[index].y1 > device.viewport.Y ? rectangles[index].y1 : device.viewport.Y;
-		INT right = rectangles[index].x2 < device.viewport.X + device.viewport.Width ?
-			rectangles[index].x2 : device.viewport.X + device.viewport.Width;
-		INT bottom = rectangles[index].y2 < device.viewport.Y + device.viewport.Height ?
-			rectangles[index].y2 : device.viewport.Y + device.viewport.Height;
-		GLint x0, y0;
+		for (index = 0; index < count; index++)
+		{
+			INT left = rectangles[index].x1 > device.viewport.X ? rectangles[index].x1 : device.viewport.X;
+			INT top = rectangles[index].y1 > device.viewport.Y ? rectangles[index].y1 : device.viewport.Y;
+			INT right = rectangles[index].x2 < device.viewport.X + device.viewport.Width ?
+				rectangles[index].x2 : device.viewport.X + device.viewport.Width;
+			INT bottom = rectangles[index].y2 < device.viewport.Y + device.viewport.Height ?
+				rectangles[index].y2 : device.viewport.Y + device.viewport.Height;
+			int32_t x0, y0;
 
-		if (left >= right || top >= bottom)
-			continue;
-		x0 = target_pixel((float)(left + UI_OFFSET), 0);
-		y0 = target_pixel((float)top, 1);
-		glScissor(x0, y0, target_pixel((float)(right + UI_OFFSET), 0) - x0,
-			target_pixel((float)bottom, 1) - y0);
-		glClear(mask);
+			if (left >= right || top >= bottom)
+				continue;
+			x0 = target_pixel((float)(left + UI_OFFSET), 0);
+			y0 = target_pixel((float)top, 1);
+			list[listed].x = x0;
+			list[listed].y = y0;
+			list[listed].width = target_pixel((float)(right + UI_OFFSET), 0) - x0;
+			list[listed].height = target_pixel((float)bottom, 1) - y0;
+			listed++;
+		}
 	}
-	glDisable(GL_SCISSOR_TEST);
-	xgpu_gl_state_invalidate();
+	gpu_clear(&clear, list, listed);
+	free(list);
 }
 
 /* ---------- presentation */
