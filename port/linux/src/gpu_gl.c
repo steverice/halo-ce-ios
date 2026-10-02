@@ -991,9 +991,15 @@ uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size)
 		glReadPixels(0, 0, (GLsizei)width, (GLsizei)height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 #else
-		/* bound through the cache, so the read is right wherever it is called
-		from and the cache stays right afterwards */
+		/* bound on unit 0 through the cache, so the cache stays right; and
+		unit 0 made active even when the cache already had the texture there,
+		since glGetTexImage reads the active unit's binding */
 		state_texture(0, GL_TEXTURE_2D, texture);
+		if (gl_state.active_texture != GL_TEXTURE0)
+		{
+			gl_state.active_texture = GL_TEXTURE0;
+			glActiveTexture(GL_TEXTURE0);
+		}
 		glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
 #endif
 		return 1;
