@@ -22,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-# a debug.gpu_stats summary (d3d8_gl.c), after platform_log's prefix
+# a debug.gpu_stats summary (d3d8_device.c), after platform_log's prefix
 STATS = re.compile(r"frame \d+: (.*)$")
 # the GL call total at the end of a debug.gpu_stats summary
 GL_CALLS = re.compile(r",? \d+ GL calls$")
@@ -103,7 +103,7 @@ def find_container(root, bundle_id):
 
 
 def read_bmp(data):
-    """(width, height, BGRA rows) of a 32-bit BMP as write_screenshot (d3d8_gl.c) writes it"""
+    """(width, height, BGRA rows) of a 32-bit BMP as write_screenshot (d3d8_device.c) writes it"""
     if len(data) < 30 or data[:2] != b"BM":
         raise ValueError("not a BMP")
     (offset,) = struct.unpack_from("<I", data, 10)

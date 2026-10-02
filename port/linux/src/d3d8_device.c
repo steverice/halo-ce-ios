@@ -1,23 +1,26 @@
 /*
-D3D8_GL.C
+D3D8_DEVICE.C
 
-The Xbox Direct3D 8 device, implemented with OpenGL 4.5.
+The Xbox Direct3D 8 device: the front end of the renderer. It keeps
+everything with Xbox or D3D meaning and makes every GPU call through gpu.h
+to a backend (gpu_gl.c: OpenGL 4.5 core, or OpenGL ES 3 on iOS).
 
 The game drives the device through the XDK's inline functions, which keep
 the "simple" render states in D3D__RenderState and call into this file for
 everything else. At each draw the full state is read back from there and
 translated: the vertex program into GLSL once per shader (nv2a_vsh.c), the
 pixel shader - texture stages and register combiners, 57 render states -
-into GLSL once per combination (nv2a_psh.c), and the rest into GL state.
+into GLSL once per combination (nv2a_psh.c), and the rest into a gpu_draw
+packet the backend applies.
 
 Conventions carried over from the Xbox:
-- Clip space is D3D's (depth 0..1, y down in window space). glClipControl
-  (GL_UPPER_LEFT, GL_ZERO_TO_ONE) makes GL agree, so viewports, scissors and
-  texture rows line up with D3D's top-left origin; the window blit at
-  Present flips the image back for display.
+- Clip space is D3D's (depth 0..1, y down in window space). The backend
+  makes the GPU agree (glClipControl on desktop GL, the vertex shader's
+  epilogue on ES), so viewports, scissors and texture rows line up with
+  D3D's top-left origin; the present blit flips the image back for display.
 - Render targets and textures are identified by the physical address in
-  their Data field. A texture whose data is a render target samples the GL
-  render target directly (render-to-texture).
+  their Data field. A texture whose data is a render target samples the
+  backend's render target directly (render-to-texture).
 - Vertex data is read from guest memory at draw time.
 */
 

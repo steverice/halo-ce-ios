@@ -78,7 +78,7 @@ def test_find_container_returns_none_when_absent(tmp_path):
 
 
 def _bmp(width: int, height: int, pixels: bytes) -> bytes:
-    """a 32-bit top-down BMP laid out as write_screenshot (d3d8_gl.c) writes it"""
+    """a 32-bit top-down BMP laid out as write_screenshot (d3d8_device.c) writes it"""
     header = bytearray(54)
     header[0:2] = b"BM"
     struct.pack_into("<I", header, 2, 54 + len(pixels))

@@ -24,7 +24,7 @@ enum
 };
 
 /* screen_offset: columns the menus shift by to center on a wide screen
-(d3d8_gl.c). ps_c0 through texture_scale: the combiner registers that live in
+(d3d8_device.c). ps_c0 through texture_scale: the combiner registers that live in
 uniforms rather than in the program (C0/C1 of each stage and the final
 combiner) and texture constants. texture_lod_bias: one component per stage. */
 #define GPU_UNIFORMS(X) \

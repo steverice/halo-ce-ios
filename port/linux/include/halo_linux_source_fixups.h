@@ -36,7 +36,7 @@ void render_interpolation_first_person(short local_player_index, struct real_mat
 float render_interpolation_game_time_sec(long ticks);
 
 /* the width of the screen the game draws, 480 lines tall: the device's or
-the display's shape, or 640 (port/linux/src/d3d8_gl.c) */
+the display's shape, or 640 (port/linux/src/d3d8_device.c) */
 long halo_screen_width(void);
 /* takes up a new width between frames (F11); returns the width */
 long halo_screen_commit(void);

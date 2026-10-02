@@ -1,7 +1,7 @@
 /*
 GPU.H
 
-The interface between the Direct3D front end (d3d8_gl.c, xbox_textures.c)
+The interface between the Direct3D front end (d3d8_device.c, xbox_textures.c)
 and a GPU backend (gpu_gl.c; Metal in Phase 1). It is filled in one
 sub-step at a time (renderer split design, step 3).
 

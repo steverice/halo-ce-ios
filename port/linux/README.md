@@ -272,7 +272,7 @@ people the host invites; requests to join are not answered.
 | Area | Status |
 | --- | --- |
 | Game code | All 466 C translation units of the game project, unmodified apart from the edits listed below. |
-| Graphics | Direct3D 8 on OpenGL 4.5 core through SDL3 (`src/d3d8_gl.c`): NV2A vertex shader microcode and register combiner pixel shaders are translated to GLSL, Xbox textures (swizzled, linear, DXT, palettized, cube and volume) are decoded and cached with page-protection write tracking, vertex and index buffers are drawn from a copy of the Xbox's contiguous memory in GL buffers kept current the same way, GL state is set only when it changes, render targets are framebuffer objects, and the picture is presented letterboxed in a resizable window. |
+| Graphics | Direct3D 8 on a GPU backend behind `src/gpu.h` (`src/gpu_gl.c`: OpenGL 4.5 core through SDL3, or OpenGL ES 3 on iOS), with the device in `src/d3d8_device.c`: NV2A vertex shader microcode and register combiner pixel shaders are translated to GLSL, Xbox textures (swizzled, linear, DXT, palettized, cube and volume) are decoded and cached with page-protection write tracking, vertex and index buffers are drawn from a copy of the Xbox's contiguous memory in GPU buffers kept current the same way, GPU state is set only when it changes, render targets are framebuffer objects, and the picture is presented letterboxed in a resizable window. |
 | Sound | Xbox DirectSound over SDL3 audio (`src/dsound_sdl.c`): PCM and Xbox ADPCM streams mixed at 48 kHz with volume, pitch, mix bins, distance rolloff, stereo panning and I3DL2 occlusion/obstruction levels. Doppler, cones and reverb are not modelled. |
 | Input | XInput over SDL3 (`src/xinput_sdl.c`): keyboard and mouse as controller 1, SDL gamepads with rumble, and the debug keyboard for the console. |
 | Files | Win32 file API over POSIX (`CreateFile`, overlapped/`ReadFileEx` with completion APCs, find, attributes, times, free space), MSVC `fopen`/`open`/`_stat` families with Xbox path translation. |
@@ -345,7 +345,7 @@ reconstructed, plus stand-ins for `fast_ftol_C` and `main_crash`. Being
 weak, each gives way automatically once the real definition exists.
 
 `main/d3d_intimacy.cpp`, which reads the Xbox Direct3D runtime's private
-device structure, is left out of the Linux build; `src/d3d8_gl.c` provides
+device structure, is left out of the Linux build; `src/d3d8_device.c` provides
 `d3d_find_flipcount` from its 60 Hz vertical blank thread.
 
 Small structures and unions are returned in registers

@@ -1,10 +1,10 @@
 /*
 XGPU.H
 
-Internals shared by the OpenGL implementation of the Xbox Direct3D API:
-the NV2A shader translators (nv2a_vsh.c, nv2a_psh.c), texture decoding
-(xbox_textures.c), guest memory write tracking (memory_watch.c) and the
-device itself (d3d8_gl.c).
+Internals shared by the Direct3D front end of the renderer: the NV2A shader
+translators (nv2a_vsh.c, nv2a_psh.c), texture decoding (xbox_textures.c),
+guest memory write tracking (memory_watch.c) and the device itself
+(d3d8_device.c).
 */
 
 #ifndef __HALO_LINUX_XGPU_H
@@ -13,7 +13,7 @@ device itself (d3d8_gl.c).
 #include "platform.h"
 #include "gpu.h"
 
-/* what the GPU backend can do (gpu_initialize, d3d8_gl.c) */
+/* what the GPU backend can do (gpu_initialize, d3d8_device.c) */
 extern struct gpu_capabilities device_capabilities;
 
 /* ---------- generated source text */
@@ -30,7 +30,7 @@ void xgpu_text_append(struct xgpu_text *text, const char *format, ...) __attribu
 /* ---------- shader dialects
 
 What the translators (nv2a_vsh.c, nv2a_psh.c) emit, filled from the
-context's capabilities (d3d8_gl.c). GLSL only; Metal Shading Language joins
+context's capabilities (d3d8_device.c). GLSL only; Metal Shading Language joins
 in Phase 1. */
 
 struct nv2a_dialect
@@ -40,7 +40,7 @@ struct nv2a_dialect
 	/* the #version number: 450, 300 or 310 */
 	unsigned short version;
 	/* emulate glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE): rows from the top
-	(which also flips the winding, d3d8_gl.c), depth from 0..1 to -1..1 */
+	(which also flips the winding, d3d8_device.c), depth from 0..1 to -1..1 */
 	unsigned char clip_y_flip;
 	unsigned char clip_z_remap;
 	/* keep the clip-space position the screen-space conversion divides, and
@@ -140,7 +140,7 @@ struct xgpu_render_target
 	BOOL depth;
 	gpu_texture texture;
 	/* pixels per unit of width and height: more than 1 for the screen's
-	targets when the game draws at the display's resolution (d3d8_gl.c) */
+	targets when the game draws at the display's resolution (d3d8_device.c) */
 	float scale[2];
 	unsigned long gl_width, gl_height;
 };

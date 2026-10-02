@@ -3,7 +3,7 @@ SDL_PLATFORM.C
 
 The SDL3 window, OpenGL context and event loop behind the Linux build.
 
-The window is created with the Direct3D device (d3d8_gl.c) on the game's
+The window is created with the Direct3D device (d3d8_device.c) on the game's
 main thread, which is also the only thread that pumps events. Keyboard and
 mouse state gathered here feeds the controller emulation in xinput_sdl.c
 and the debug keyboard that the game's console reads.
@@ -86,7 +86,7 @@ static BOOL platform_fullscreen_setting(void)
 }
 
 /* whether the game is, or is to be, fullscreen, and if so the size in
-pixels of the display it fills (d3d8_gl.c draws at that resolution) */
+pixels of the display it fills (d3d8_device.c draws at that resolution) */
 BOOL platform_screen_mode(long *width, long *height)
 {
 	SDL_DisplayID display;
@@ -147,7 +147,7 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 #else
 	/* fullscreen at the desktop's resolution unless display.fullscreen is
 	false, where the game draws the display's shape at its resolution
-	(d3d8_gl.c); the window size is the windowed mode F11 switches to and
+	(d3d8_device.c); the window size is the windowed mode F11 switches to and
 	from, where it draws 640x480 */
 	platform_window = SDL_CreateWindow("Halo", (int)(width * scale), (int)(height * scale),
 		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
@@ -531,7 +531,7 @@ void platform_pump_events(void)
 
 /* While a menu is up the mouse is released, its pointer shows (centered when
 the menu opens) and its motion, clicks and wheel go to the menus
-(halo_ui_pointer_update, d3d8_gl.c) instead of the controller and the aim. */
+(halo_ui_pointer_update, d3d8_device.c) instead of the controller and the aim. */
 void platform_ui_pointer_set_active(BOOL active)
 {
 	if (!platform_window || (active != FALSE) == (input_state.ui_pointer != FALSE))

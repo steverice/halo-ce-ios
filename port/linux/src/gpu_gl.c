@@ -1,9 +1,9 @@
 /*
 GPU_GL.C
 
-The OpenGL and OpenGL ES backend of gpu.h. Step 3 of the renderer split moves
-the GL calls of d3d8_gl.c and xbox_textures.c here one group at a time;
-for now it probes the context.
+The OpenGL and OpenGL ES backend of gpu.h: every GL call the Direct3D front
+end (d3d8_device.c, xbox_textures.c) needs, behind the handles and packets
+gpu.h declares.
 */
 
 #include "xgpu.h"
