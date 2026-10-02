@@ -214,12 +214,8 @@ static struct render_target_entry *render_targets;
 
 /* ---------- the device */
 
-#define VISIBILITY_TEST_SLOTS 4096
 #ifdef HALO_ILP32
-#define VISIBILITY_QUERY GL_ANY_SAMPLES_PASSED
 #define VISIBILITY_ALL_SAMPLES 1000000
-#else
-#define VISIBILITY_QUERY GL_SAMPLES_PASSED
 #endif
 
 struct gl_device
@@ -259,28 +255,11 @@ struct gl_device
 	unsigned long immediate_count;
 	unsigned long immediate_capacity;
 
-	GLuint queries[VISIBILITY_TEST_SLOTS];
-	BOOL query_pending[VISIBILITY_TEST_SLOTS];
+	BOOL query_pending[GPU_VISIBILITY_SLOTS];
 	/* the pixels each of the game's pixels covered in the test's target
 	(render_target_get), which its count is divided by */
-	float query_area[VISIBILITY_TEST_SLOTS];
-	GLuint active_query;
+	float query_area[GPU_VISIBILITY_SLOTS];
 	BOOL visibility_test_active;
-#ifdef HALO_ILP32
-	/* with atomic counters: one counter per test, used as a ring; the
-	counter a test ended in, per result slot */
-	GLuint visibility_counters;
-	unsigned long counter_next;
-	unsigned long counter_active;
-	unsigned long counter_of_slot[VISIBILITY_TEST_SLOTS];
-#else
-	/* each test's latest result, which the GPU writes (as a query buffer)
-	when the test's draws are done: the game waits for results at the start
-	of the next frame, and a query would stop the CPU there until the GPU
-	had caught up */
-	GLuint visibility_results_buffer;
-	volatile GLuint *visibility_results;
-#endif
 
 	unsigned long frame;
 	unsigned long next_vertex_shader_id;
@@ -675,26 +654,6 @@ static void gl_initialize(void)
 	platform_log("iOS render target: %.0fx%.0f (logical %ldx%d)",
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
 #endif
-	glGenQueries(VISIBILITY_TEST_SLOTS, device.queries);
-#ifndef HALO_ILP32
-	glGenBuffers(1, &device.visibility_results_buffer);
-	glBindBuffer(GL_QUERY_BUFFER, device.visibility_results_buffer);
-	glBufferStorage(GL_QUERY_BUFFER, VISIBILITY_TEST_SLOTS * sizeof(GLuint), NULL,
-		GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
-	device.visibility_results = glMapBufferRange(GL_QUERY_BUFFER, 0, VISIBILITY_TEST_SLOTS * sizeof(GLuint),
-		GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
-	if (!device.visibility_results)
-		platform_log("cannot map the visibility test results; tests wait for the GPU");
-#endif
-#ifdef HALO_ILP32
-	if (xgpu_capabilities.atomic_counters)
-	{
-		glGenBuffers(1, &device.visibility_counters);
-		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, device.visibility_counters);
-		glBufferData(GL_ATOMIC_COUNTER_BUFFER, VISIBILITY_TEST_SLOTS * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW);
-		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
-	}
-#endif
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
 	{
 		device.attributes[index][3] = 1.0f;
@@ -1065,7 +1024,7 @@ BOOL WINAPI D3DDevice_IsBusy(void)
 void WINAPI D3DDevice_KickPushBuffer(void)
 {
 	if (device.gl_ready)
-		glFlush();
+		gpu_flush();
 }
 
 void WINAPI D3DDevice_InsertCallback(D3DCALLBACKTYPE type, D3DCALLBACK callback, DWORD context)
@@ -1082,83 +1041,44 @@ void WINAPI D3DDevice_BeginVisibilityTest(void)
 {
 	if (!device.gl_ready || device.visibility_test_active)
 		return;
-	/* the query object is chosen when the test ends; use a scratch one */
+	/* the slot is chosen when the test ends */
 	device.visibility_test_active = TRUE;
-#ifdef HALO_ILP32
-	if (xgpu_capabilities.atomic_counters)
-	{
-		const GLuint zero = 0;
-
-		device.counter_next = (device.counter_next + 1) % VISIBILITY_TEST_SLOTS;
-		device.counter_active = device.counter_next;
-		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, device.visibility_counters);
-		host_gl_buffer_write(GL_ATOMIC_COUNTER_BUFFER, (unsigned int)(device.counter_active * sizeof(GLuint)),
-			sizeof(zero), &zero);
-		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
-		return;
-	}
-#endif
-	glBeginQuery(VISIBILITY_QUERY, device.queries[0]);
+	gpu_visibility_begin();
 }
 
 HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 {
-	GLuint scratch;
-
 	if (!device.gl_ready || !device.visibility_test_active)
 		return S_OK;
 	device.visibility_test_active = FALSE;
-	index %= VISIBILITY_TEST_SLOTS;
+	index %= GPU_VISIBILITY_SLOTS;
 	if (!index)
 		index = 1;
-#ifdef HALO_ILP32
-	if (xgpu_capabilities.atomic_counters)
-	{
-		device.counter_of_slot[index] = device.counter_active;
-		device.query_pending[index] = TRUE;
-		return S_OK;
-	}
-#endif
-	glEndQuery(VISIBILITY_QUERY);
 	/* the target's pixels to a game pixel: the result is a count of the
 	game's pixels (visibility_unscaled), which the game divides by its own
 	test's area (lens flares, rasterizer_lights.c), a split-screen window's
 	or the screen's alike */
 	device.query_area[index] = target_scale[0] * target_scale[1];
-	/* swap the scratch query into the requested slot */
-	scratch = device.queries[0];
-	device.queries[0] = device.queries[index];
-	device.queries[index] = scratch;
 	device.query_pending[index] = TRUE;
-#ifndef HALO_ILP32
-	if (device.visibility_results)
-	{
-		/* the GPU writes the count into the slot once it is known */
-		glBindBuffer(GL_QUERY_BUFFER, device.visibility_results_buffer);
-		glGetQueryObjectuiv(device.queries[index], GL_QUERY_RESULT, (GLuint *)(index * sizeof(GLuint)));
-		glBindBuffer(GL_QUERY_BUFFER, 0);
-	}
-#endif
+	gpu_visibility_end((uint32_t)index);
 	return S_OK;
 }
 
-#ifndef HALO_ILP32
-/* a count of pixels in the game's pixels */
-static GLuint visibility_unscaled(GLuint samples, DWORD index)
+/* a count of samples in the game's pixels */
+static uint32_t visibility_unscaled(uint32_t samples, DWORD index)
 {
 	float area = device.query_area[index];
 
-	return area > 1.0f ? (GLuint)(samples / area + 0.5f) : samples;
+	return area > 1.0f ? (uint32_t)(samples / area + 0.5f) : samples;
 }
 
-#endif
 HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULONGLONG *time_stamp)
 {
-	GLuint available = 0, samples = 0;
+	uint32_t samples = 0;
 
 	if (time_stamp)
 		*time_stamp = 0;
-	index %= VISIBILITY_TEST_SLOTS;
+	index %= GPU_VISIBILITY_SLOTS;
 	if (!index)
 		index = 1;
 	if (!device.gl_ready || !device.query_pending[index])
@@ -1167,46 +1087,26 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 			*result = 0;
 		return S_OK;
 	}
-#ifdef HALO_ILP32
-	if (xgpu_capabilities.atomic_counters)
-	{
-		/* reading the buffer waits for the draws that counted */
-		samples = host_gl_read_buffer_word(device.visibility_counters,
-			(unsigned int)(device.counter_of_slot[index] * sizeof(GLuint)));
-		if (result)
-			*result = samples;
-		return S_OK;
-	}
-#endif
-#ifndef HALO_ILP32
-	if (device.visibility_results)
-	{
-		/* the latest count the GPU has written: from this test, or while
-		the GPU is still behind, from the slot's earlier ones */
-		if (result)
-			*result = visibility_unscaled(device.visibility_results[index], index);
-		return S_OK;
-	}
-#endif
-	glGetQueryObjectuiv(device.queries[index], GL_QUERY_RESULT_AVAILABLE, &available);
-	if (!available)
-	{
-		/* the game spins on an incomplete test (lens flares), so how often
-		this runs depends on the GPU's timing: keep debug.gpu_stats' call
-		count comparable between runs */
-		halo_gl_call_count--;
+	if (!gpu_visibility_result((uint32_t)index, &samples))
 		return D3DERR_TESTINCOMPLETE;
-	}
-	glGetQueryObjectuiv(device.queries[index], GL_QUERY_RESULT, &samples);
+	switch (device_capabilities.occlusion_mode)
+	{
+	case GPU_OCCLUSION_EXACT:
+		samples = visibility_unscaled(samples, index);
+		break;
 #ifdef HALO_ILP32
-	/* ES only says whether any sample passed. The game divides the count by
-	the test's area (lens flare brightness, rasterizer_lights.c): report
-	more than any test covers, well below what would overflow there. */
-	if (samples)
-		samples = VISIBILITY_ALL_SAMPLES;
-#else
-	samples = visibility_unscaled(samples, index);
+	case GPU_OCCLUSION_ANY_SAMPLE:
+		/* ES only says whether any sample passed. The game divides the count by
+		the test's area (lens flare brightness, rasterizer_lights.c): report
+		more than any test covers, well below what would overflow there. */
+		if (samples)
+			samples = VISIBILITY_ALL_SAMPLES;
+		break;
 #endif
+	default:
+		/* the shader counter's count is returned as counted */
+		break;
+	}
 	if (result)
 		*result = samples;
 	return S_OK;
@@ -2040,12 +1940,6 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 
 	draw->vertex_shader = vertex_shader_get(program, immediate);
 	draw->pixel_shader = fragment_shader_get(&key);
-#ifdef HALO_ILP32
-	/* until sub-step g: the counter this visibility test adds to */
-	if (key.count_samples)
-		glBindBufferRange(GL_ATOMIC_COUNTER_BUFFER, 0, device.visibility_counters,
-			(GLintptr)(device.counter_active * sizeof(GLuint)), sizeof(GLuint));
-#endif
 
 	/* the state the other uniforms come from: most draws share it with the
 	draw before them, and so share its uniforms */

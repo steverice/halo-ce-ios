@@ -371,8 +371,22 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *constants,
 	const struct gpu_uniforms *uniforms);
 
+/* ---------- visibility (occlusion) tests */
+
+/* slots a test's result is kept in; slot 0 is the backend's */
+enum { GPU_VISIBILITY_SLOTS = 4096 };
+
+/* the draws until gpu_visibility_end count their samples */
+void gpu_visibility_begin(void);
+/* the count goes to slot (1 to GPU_VISIBILITY_SLOTS - 1) */
+void gpu_visibility_end(uint32_t slot);
+/* 1 and the raw count (as occlusion_mode counts) once it is known, else 0 */
+uint32_t gpu_visibility_result(uint32_t slot, uint32_t *samples);
+
 /* ---------- frames */
 
+/* submits the work queued so far */
+void gpu_flush(void);
 /* letterboxes the back buffer into the drawable, swaps, and starts the next
 frame's transient buffers */
 void gpu_present(gpu_texture back_buffer);

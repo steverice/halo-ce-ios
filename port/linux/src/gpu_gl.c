@@ -636,6 +636,37 @@ static void apply_stage(int stage, const struct gpu_stage *packet_stage)
 #endif
 }
 
+/* ---------- visibility tests
+
+A test runs on the scratch query (slot 0), which swaps into its slot when the
+test ends. On ES with atomic counters the pixel shader counts instead, into a
+ring of counters; on desktop GL the GPU writes each count into a mapped
+buffer, so a result never waits. */
+
+/* created by gpu_initialize, read by gpu_draw and the functions after gpu_clear */
+
+#ifdef HALO_ILP32
+#define VISIBILITY_QUERY GL_ANY_SAMPLES_PASSED
+#else
+#define VISIBILITY_QUERY GL_SAMPLES_PASSED
+#endif
+
+static struct
+{
+	GLuint queries[GPU_VISIBILITY_SLOTS];
+	BOOL active;
+#ifdef HALO_ILP32
+	BOOL counters;                  /* GPU_OCCLUSION_SHADER_COUNTER */
+	GLuint counter_buffer;
+	unsigned long counter_next;
+	unsigned long counter_active;
+	unsigned long counter_of_slot[GPU_VISIBILITY_SLOTS];
+#else
+	GLuint results_buffer;
+	volatile GLuint *results;
+#endif
+} visibility;
+
 #ifndef HALO_ILP32
 static void GLAPIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity,
 	GLsizei length, const GLchar *message, const void *user)
@@ -744,6 +775,27 @@ void gpu_initialize(struct gpu_capabilities *capabilities)
 	border_clamp = capabilities->border_clamp ? TRUE : FALSE;
 	base_vertex = capabilities->base_vertex ? TRUE : FALSE;
 	glGenSamplers(D3DTSS_MAXSTAGES, samplers);
+	glGenQueries(GPU_VISIBILITY_SLOTS, visibility.queries);
+#ifndef HALO_ILP32
+	glGenBuffers(1, &visibility.results_buffer);
+	glBindBuffer(GL_QUERY_BUFFER, visibility.results_buffer);
+	glBufferStorage(GL_QUERY_BUFFER, GPU_VISIBILITY_SLOTS * sizeof(GLuint), NULL,
+		GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+	visibility.results = glMapBufferRange(GL_QUERY_BUFFER, 0, GPU_VISIBILITY_SLOTS * sizeof(GLuint),
+		GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+	if (!visibility.results)
+		platform_log("cannot map the visibility test results; tests wait for the GPU");
+#endif
+#ifdef HALO_ILP32
+	visibility.counters = xgpu_capabilities.atomic_counters;
+	if (visibility.counters)
+	{
+		glGenBuffers(1, &visibility.counter_buffer);
+		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, visibility.counter_buffer);
+		glBufferData(GL_ATOMIC_COUNTER_BUFFER, GPU_VISIBILITY_SLOTS * sizeof(GLuint), NULL, GL_DYNAMIC_DRAW);
+		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
+	}
+#endif
 }
 
 /* ---------- textures
@@ -1390,11 +1442,19 @@ static GLenum gl_primitive(uint32_t primitive)
 uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *constants,
 	const struct gpu_uniforms *uniforms)
 {
-	struct gpu_gl_program *program = program_get(draw->vertex_shader, draw->pixel_shader);
+	struct gpu_gl_program *program;
 	GLenum mode = gl_primitive(draw->primitive);
 	uint32_t index;
 	int stage;
 
+#ifdef HALO_ILP32
+	/* the counter the active visibility test adds to, bound before
+	program_get, which may link a program */
+	if (visibility.active && visibility.counters)
+		glBindBufferRange(GL_ATOMIC_COUNTER_BUFFER, 0, visibility.counter_buffer,
+			(GLintptr)(visibility.counter_active * sizeof(GLuint)), sizeof(GLuint));
+#endif
+	program = program_get(draw->vertex_shader, draw->pixel_shader);
 	if (!program)
 		return 0;
 	state_framebuffer(framebuffer_get(draw->color_target, draw->depth_target));
@@ -1465,7 +1525,96 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 	xgpu_gl_state_invalidate();
 }
 
+/* ---------- visibility tests (the state is declared before gpu_initialize) */
+
+void gpu_visibility_begin(void)
+{
+	visibility.active = TRUE;
+#ifdef HALO_ILP32
+	if (visibility.counters)
+	{
+		const GLuint zero = 0;
+
+		visibility.counter_next = (visibility.counter_next + 1) % GPU_VISIBILITY_SLOTS;
+		visibility.counter_active = visibility.counter_next;
+		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, visibility.counter_buffer);
+		host_gl_buffer_write(GL_ATOMIC_COUNTER_BUFFER, (unsigned int)(visibility.counter_active * sizeof(GLuint)),
+			sizeof(zero), &zero);
+		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
+		return;
+	}
+#endif
+	glBeginQuery(VISIBILITY_QUERY, visibility.queries[0]);
+}
+
+void gpu_visibility_end(uint32_t slot)
+{
+	GLuint scratch;
+
+	visibility.active = FALSE;
+#ifdef HALO_ILP32
+	if (visibility.counters)
+	{
+		visibility.counter_of_slot[slot] = visibility.counter_active;
+		return;
+	}
+#endif
+	glEndQuery(VISIBILITY_QUERY);
+	scratch = visibility.queries[0];
+	visibility.queries[0] = visibility.queries[slot];
+	visibility.queries[slot] = scratch;
+#ifndef HALO_ILP32
+	if (visibility.results)
+	{
+		/* the GPU writes the count into the slot once it is known */
+		glBindBuffer(GL_QUERY_BUFFER, visibility.results_buffer);
+		glGetQueryObjectuiv(visibility.queries[slot], GL_QUERY_RESULT, (GLuint *)(slot * sizeof(GLuint)));
+		glBindBuffer(GL_QUERY_BUFFER, 0);
+	}
+#endif
+}
+
+uint32_t gpu_visibility_result(uint32_t slot, uint32_t *samples)
+{
+	GLuint available = 0, count = 0;
+
+#ifdef HALO_ILP32
+	if (visibility.counters)
+	{
+		/* reading the buffer waits for the draws that counted */
+		*samples = host_gl_read_buffer_word(visibility.counter_buffer,
+			(unsigned int)(visibility.counter_of_slot[slot] * sizeof(GLuint)));
+		return 1;
+	}
+#else
+	if (visibility.results)
+	{
+		/* the latest count the GPU has written: from this test, or while
+		the GPU is still behind, from the slot's earlier ones */
+		*samples = visibility.results[slot];
+		return 1;
+	}
+#endif
+	glGetQueryObjectuiv(visibility.queries[slot], GL_QUERY_RESULT_AVAILABLE, &available);
+	if (!available)
+	{
+		/* the game spins on an incomplete test (lens flares), so how often
+		this runs depends on the GPU's timing: keep debug.gpu_stats' call
+		count comparable between runs */
+		halo_gl_call_count--;
+		return 0;
+	}
+	glGetQueryObjectuiv(visibility.queries[slot], GL_QUERY_RESULT, &count);
+	*samples = count;
+	return 1;
+}
+
 /* ---------- frames */
+
+void gpu_flush(void)
+{
+	glFlush();
+}
 
 void gpu_present(gpu_texture back_buffer)
 {
