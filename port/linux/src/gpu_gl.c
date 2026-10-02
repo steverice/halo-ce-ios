@@ -7,6 +7,7 @@ for now it probes the context.
 */
 
 #include "xgpu.h"
+#include "gl.h"
 #include "sdl_platform.h"
 #include "port_config.h"
 
@@ -30,6 +31,31 @@ points used below that ES lacks */
 #ifndef GL_CLAMP_TO_BORDER
 #define GL_CLAMP_TO_BORDER 0x812d
 #endif
+
+/* OpenGL ES features that are optional (gpu_initialize) */
+struct xgpu_capabilities
+{
+	BOOL copy_image;
+	BOOL border_clamp;
+	BOOL anisotropy;
+	BOOL s3tc;
+	/* ES 3.2: glDrawElementsBaseVertex */
+	BOOL base_vertex;
+	/* ES 3.1 with fragment atomic counters: exact visibility test counts */
+	BOOL atomic_counters;
+	/* "300 es" or "310 es" */
+	const char *shading_language;
+};
+
+/* what the context supports (gpu_initialize) */
+static struct xgpu_capabilities xgpu_capabilities;
+
+/* port/runtime/guest/runtime/guest_host.h */
+int host_gl_has_extension(const char *name);
+unsigned int host_gl_read_buffer_word(unsigned int buffer, unsigned int offset);
+void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int size, const void *data);
+void host_gl_fence_frame(unsigned int slot);
+void host_gl_wait_frame(unsigned int slot);
 #endif
 
 /* ---------- streams */
@@ -71,7 +97,7 @@ Consecutive draws share most of their state, but each sets all of it: the
 setters here skip the call when GL already holds the value. Code that
 changes GL state behind the cache's back (clears, presentation, texture
 uploads, render target and framebuffer creation) calls
-xgpu_gl_state_invalidate, after which every value is set again. Unknown
+state_invalidate, after which every value is set again. Unknown
 values are all ones, which no real value matches (floats become NaN, which
 compares unequal to everything). */
 
@@ -121,7 +147,7 @@ static struct gpu_gl_state
 	float attribute_values[XGPU_VERTEX_ATTRIBUTE_COUNT][4];
 } gl_state;
 
-void xgpu_gl_state_invalidate(void)
+static void state_invalidate(void)
 {
 	memset(&gl_state, 0xff, sizeof(gl_state));
 }
@@ -796,6 +822,16 @@ void gpu_initialize(struct gpu_capabilities *capabilities)
 		glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, 0);
 	}
 #endif
+	{
+		/* every attribute starts as (0, 0, 0, 1), as the front end's
+		device.attributes do */
+		static const float initial[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+		GLuint index;
+
+		for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
+			glVertexAttrib4fv(index, initial);
+	}
+	state_invalidate();
 }
 
 /* ---------- textures
@@ -864,7 +900,7 @@ gpu_texture gpu_texture_create(const struct gpu_texture_description *description
 	}
 	/* (mip composites didn't reset here before; mip_composite_get always
 	resets before the draw goes on, so nothing changes) */
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 	return name;
 }
 
@@ -898,7 +934,7 @@ void gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, cons
 	if (face == 0 && level == 0)
 	{
 		glBindTexture(record->target, texture);
-		xgpu_gl_state_invalidate();
+		state_invalidate();
 #ifdef HALO_ILP32
 		/* BGRA8 texels are 32-bit ARGB words in memory; ES takes RGBA */
 		glTexParameteri(record->target, GL_TEXTURE_SWIZZLE_R, compressed ? GL_RED : GL_BLUE);
@@ -933,7 +969,7 @@ void gpu_texture_destroy(gpu_texture texture)
 
 	glDeleteTextures(1, &name);
 	/* deleting a bound texture unbinds it */
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 	/* GL may hand the name out again */
 	memset(texture_record(texture), 0, sizeof(struct texture_record));
 }
@@ -972,7 +1008,7 @@ static GLuint framebuffer_get(GLuint color, GLuint depth)
 	glDrawBuffers(1, &draw_buffer);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		platform_log("framebuffer %u/%u is incomplete", color, depth);
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 	entry->next = framebuffers;
 	framebuffers = entry;
 	return entry->framebuffer;
@@ -993,7 +1029,7 @@ static void copy_level_by_blit(GLuint source, GLuint destination, GLint level, G
 	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	/* the blit bypasses the cached state, so the next draw must re-apply it */
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 }
 #endif
 
@@ -1083,7 +1119,7 @@ void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, (GLint)base_level);
 	glGenerateMipmap(GL_TEXTURE_2D);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 }
 
 /* ---------- buffers
@@ -1425,6 +1461,32 @@ static void program_uniforms(struct gpu_gl_program *entry, const struct gpu_unif
 
 /* ---------- drawing */
 
+/* presents so far (gpu_present), for check_errors' log line */
+static unsigned long frames;
+
+#ifdef HALO_ILP32
+/* ES has no debug callback in 3.0; debug.gl_debug polls glGetError around
+each draw instead, reporting each distinct error a few times */
+static void check_errors(const char *where)
+{
+	static int enabled = -1;
+	static unsigned long reports;
+	GLenum error;
+
+	if (enabled < 0)
+		enabled = config_boolean("debug.gl_debug");
+	if (!enabled)
+		return;
+	while ((error = glGetError()) != GL_NO_ERROR)
+	{
+		if (reports++ < 200)
+			platform_log("GL error %04x at %s (frame %lu)", (unsigned)error, where, frames);
+	}
+}
+#else
+#define check_errors(where) ((void)0)
+#endif
+
 static GLenum gl_primitive(uint32_t primitive)
 {
 	switch (primitive)
@@ -1456,7 +1518,10 @@ uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *
 #endif
 	program = program_get(draw->vertex_shader, draw->pixel_shader);
 	if (!program)
+	{
+		check_errors("program");
 		return 0;
+	}
 	state_framebuffer(framebuffer_get(draw->color_target, draw->depth_target));
 	apply_raster_state(&draw->viewport, &draw->scissor, &draw->depth_stencil, &draw->blend, &draw->raster);
 	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
@@ -1474,6 +1539,7 @@ uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *
 	if (!draw->index_buffer)
 	{
 		glDrawArrays(mode, 0, (GLsizei)draw->count);
+		check_errors("draw");
 		return 1;
 	}
 	state_element_array_buffer(draw->index_buffer);
@@ -1482,6 +1548,7 @@ uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *
 			(const void *)(unsigned long)draw->index_offset, draw->base_vertex);
 	else
 		glDrawElements(mode, (GLsizei)draw->count, GL_UNSIGNED_SHORT, (const void *)(unsigned long)draw->index_offset);
+	check_errors("draw");
 	return 1;
 }
 
@@ -1522,7 +1589,7 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 	}
 	glDisable(GL_SCISSOR_TEST);
 	/* the masks and the scissor bypassed the cached state */
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 }
 
 /* ---------- visibility tests (the state is declared before gpu_initialize) */
@@ -1643,6 +1710,15 @@ void gpu_present(gpu_texture back_buffer)
 		x, y + height, x + width, y, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	platform_video_swap();
 	/* the blit bypassed the cached state */
-	xgpu_gl_state_invalidate();
+	state_invalidate();
 	stream_frame();
+	frames++;
+}
+
+uint32_t gpu_call_count_take(void)
+{
+	uint32_t count = (uint32_t)halo_gl_call_count;
+
+	halo_gl_call_count = 0;
+	return count;
 }

@@ -11,45 +11,10 @@ device itself (d3d8_gl.c).
 #define __HALO_LINUX_XGPU_H
 
 #include "platform.h"
-#include "gl.h"
 #include "gpu.h"
-
-#ifdef HALO_ILP32
-/* OpenGL ES features that are optional (d3d8_gl.c gl_initialize) */
-struct xgpu_capabilities
-{
-	BOOL copy_image;
-	BOOL border_clamp;
-	BOOL anisotropy;
-	BOOL s3tc;
-	/* ES 3.2: glDrawElementsBaseVertex */
-	BOOL base_vertex;
-	/* ES 3.1 with fragment atomic counters: exact visibility test counts */
-	BOOL atomic_counters;
-	/* "300 es" or "310 es" */
-	const char *shading_language;
-};
-
-extern struct xgpu_capabilities xgpu_capabilities;
-
-/* port/runtime/guest/runtime/guest_host.h */
-int host_gl_has_extension(const char *name);
-unsigned int host_gl_read_buffer_word(unsigned int buffer, unsigned int offset);
-void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int size, const void *data);
-void host_gl_fence_frame(unsigned int slot);
-void host_gl_wait_frame(unsigned int slot);
-#endif
 
 /* what the GPU backend can do (gpu_initialize, d3d8_gl.c) */
 extern struct gpu_capabilities device_capabilities;
-
-/* ---------- GL state
-
-The backend caches the GL state it sets for draws (gpu_gl.c); code that
-changes GL state behind it (binding a texture to upload it, deleting one)
-must call this afterwards. */
-
-void xgpu_gl_state_invalidate(void);
 
 /* ---------- generated source text */
 

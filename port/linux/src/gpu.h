@@ -390,6 +390,9 @@ void gpu_flush(void);
 /* letterboxes the back buffer into the drawable, swaps, and starts the next
 frame's transient buffers */
 void gpu_present(gpu_texture back_buffer);
+/* the GL calls (a backend's commands) issued since the last call, for
+debug.gpu_stats */
+uint32_t gpu_call_count_take(void);
 
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);

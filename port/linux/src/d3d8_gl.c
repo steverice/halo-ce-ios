@@ -37,10 +37,6 @@ Conventions carried over from the Xbox:
 void d3d8_surface_initialize(D3DSurface *surface, D3DFORMAT format, unsigned long width, unsigned long height);
 void d3d8_surface_resize(D3DSurface *surface, D3DFORMAT format, unsigned long width, unsigned long height);
 
-#ifdef HALO_ILP32
-/* what the context supports (gl_initialize) */
-struct xgpu_capabilities xgpu_capabilities;
-#endif
 struct gpu_capabilities device_capabilities;
 
 /* ---------- the screen's width
@@ -69,8 +65,8 @@ render target the size of the screen has per unit of it */
 static long screen_width;
 static float screen_scale[2] = { 1.0f, 1.0f };
 static long ui_offset;
-static GLint screen_maximum_texture_size = 8192;
-#define UI_OFFSET ((GLint)ui_offset)
+static int32_t screen_maximum_texture_size = 8192;
+#define UI_OFFSET ((int32_t)ui_offset)
 
 static void screen_mode_choose(long *width, float scale[2])
 {
@@ -493,9 +489,9 @@ struct xgpu_render_target *xgpu_render_target_find(unsigned long data)
 static float target_scale[2] = { 1.0f, 1.0f };
 
 /* the pixel edge of a coordinate in the bound targets' units */
-static GLint target_pixel(float coordinate, int axis)
+static int32_t target_pixel(float coordinate, int axis)
 {
-	return (GLint)floorf(coordinate * target_scale[axis] + 0.5f);
+	return (int32_t)floorf(coordinate * target_scale[axis] + 0.5f);
 }
 
 /* the textures the current targets render to; FALSE when there are none */
@@ -646,7 +642,7 @@ static void gl_initialize(void)
 	int index;
 
 	gpu_initialize(&device_capabilities);
-	screen_maximum_texture_size = (GLint)device_capabilities.max_texture_size;
+	screen_maximum_texture_size = (int32_t)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */
 	(void)halo_screen_width();
@@ -655,10 +651,7 @@ static void gl_initialize(void)
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
 #endif
 	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
-	{
 		device.attributes[index][3] = 1.0f;
-		glVertexAttrib4fv(index, device.attributes[index]);
-	}
 	memory_watch_initialize();
 	debug_settings.skip_vertex_shaders = config_string("debug.gpu_skip_vertex_shaders");
 	debug_settings.dump_shaders = *config_string("debug.gpu_dump_shaders") ?
@@ -669,7 +662,6 @@ static void gl_initialize(void)
 		config_string("debug.gpu_shader_replay") : NULL;
 	if (debug_settings.shader_replay)
 		shader_replay(debug_settings.shader_replay);
-	xgpu_gl_state_invalidate();
 	device.gl_ready = TRUE;
 }
 
@@ -1852,29 +1844,6 @@ static void raster_state_fill(BOOL has_depth, struct gpu_viewport *viewport, str
 	raster->depth_bias_constant = dword_to_float(rs[D3DRS_POLYGONOFFSETZOFFSET]);
 }
 
-#ifdef HALO_ILP32
-/* ES has no debug callback in 3.0; debug.gl_debug polls glGetError around
-each draw instead, reporting each distinct error a few times */
-static void gl_check_errors(const char *where)
-{
-	static int enabled = -1;
-	static unsigned long reports;
-	GLenum error;
-
-	if (enabled < 0)
-		enabled = config_boolean("debug.gl_debug");
-	if (!enabled)
-		return;
-	while ((error = glGetError()) != GL_NO_ERROR)
-	{
-		if (reports++ < 200)
-			platform_log("GL error %04x at %s (frame %lu)", (unsigned)error, where, device.frame);
-	}
-}
-#else
-#define gl_check_errors(where) ((void)0)
-#endif
-
 /* the uniforms of the latest draws, converted from these inputs; the serial
 counts the conversions */
 #define DRAW_UNIFORM_INPUT_COUNT (4 + 4 + 16 + 1 + 16 + 2 + 4 + 1 + 1 + 7 * D3DTSS_MAXSTAGES)
@@ -2030,14 +1999,12 @@ static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 	if (!gpu_draw(draw, &constant_store, &draw_uniforms))
 	{
 		stats.skipped_link++;
-		gl_check_errors("program");
 		return;
 	}
 	if (immediate)
 		stats.immediate_draws++;
 	else
 		stats.draws++;
-	gl_check_errors("draw");
 }
 
 /* ---------- tracing (debug.gpu_trace_frame) */
@@ -2935,14 +2902,15 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	stats.presents++;
 	if (debug_settings.statistics && device.frame % 60 == 0)
 	{
+		unsigned long calls = gpu_call_count_take();
+
 		platform_log("frame %lu: %lu draws, %lu immediate, %lu clears, %lu target changes; skipped %lu no program, %lu no target, %lu link; "
 			"%lu KB mirrored, %lu KB streamed, %lu GL calls",
 			device.frame, stats.draws / stats.presents, stats.immediate_draws / stats.presents, stats.clears / stats.presents,
 			stats.target_changes / stats.presents, stats.skipped_no_program, stats.skipped_no_target, stats.skipped_link,
 			stats.mirrored_bytes / stats.presents / 1024, stats.streamed_bytes / stats.presents / 1024,
-			halo_gl_call_count / stats.presents);
+			calls / stats.presents);
 		memset(&stats, 0, sizeof(stats));
-		halo_gl_call_count = 0;
 	}
 	platform_pump_events();
 
