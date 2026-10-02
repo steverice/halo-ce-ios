@@ -102,6 +102,10 @@ void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_
 /* the levels after base_level from base_level */
 void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
 void gpu_texture_destroy(gpu_texture texture);
+/* level 0 of a 2D color texture as BGRA8 rows from the top; returns 0 and
+writes nothing if size is short of width * height * 4 or the backend cannot
+read the texture (ES: block-compressed textures) */
+uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size);
 
 /* ---------- buffers: the vertex mirror's segments */
 
@@ -366,6 +370,12 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 /* draws; returns 0 if the draw was skipped because its program failed to link */
 uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *constants,
 	const struct gpu_uniforms *uniforms);
+
+/* ---------- frames */
+
+/* letterboxes the back buffer into the drawable, swaps, and starts the next
+frame's transient buffers */
+void gpu_present(gpu_texture back_buffer);
 
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(struct gpu_capabilities *capabilities);

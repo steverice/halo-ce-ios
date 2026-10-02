@@ -7,6 +7,7 @@ for now it probes the context.
 */
 
 #include "xgpu.h"
+#include "sdl_platform.h"
 #include "port_config.h"
 
 #include <stdio.h>
@@ -14,7 +15,8 @@ for now it probes the context.
 #include <string.h>
 
 #ifdef HALO_ILP32
-/* OpenGL ES 3 has no BGRA upload format; d3d8_gl.c defines the same alias */
+/* OpenGL ES 3 (port/ios/README.md): the desktop format, enumerants and entry
+points used below that ES lacks */
 #define GL_BGRA GL_RGBA
 #define glDepthRange glDepthRangef
 #define glClearDepth glClearDepthf
@@ -146,7 +148,7 @@ static void state_program(GLuint program)
 	}
 }
 
-void gpu_gl_state_framebuffer(GLuint framebuffer)
+static void state_framebuffer(GLuint framebuffer)
 {
 	if (gl_state.framebuffer != framebuffer)
 	{
@@ -896,7 +898,7 @@ struct framebuffer_entry
 
 static struct framebuffer_entry *framebuffers;
 
-GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth)
+static GLuint framebuffer_get(GLuint color, GLuint depth)
 {
 	struct framebuffer_entry *entry;
 	GLenum draw_buffer = color ? GL_COLOR_ATTACHMENT0 : GL_NONE;
@@ -932,7 +934,7 @@ static void copy_level_by_blit(GLuint source, GLuint destination, GLint level, G
 
 	if (!draw_framebuffer)
 		glGenFramebuffers(1, &draw_framebuffer);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, gpu_gl_framebuffer_get(source, 0));
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(source, 0));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
 	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destination, level);
 	glDisable(GL_SCISSOR_TEST);
@@ -958,6 +960,63 @@ void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_
 #endif
 	glCopyImageSubData(source, GL_TEXTURE_2D, 0, 0, 0, 0,
 		destination, GL_TEXTURE_2D, (GLint)level, 0, 0, 0, width, height, 1);
+}
+
+uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size)
+{
+	const struct gpu_texture_description *description = &texture_record(texture)->description;
+	uint32_t width = description->width, height = description->height;
+
+	if (description->type != GPU_TEXTURE_2D || description->format == GPU_FORMAT_DEPTH_STENCIL ||
+		size < width * height * 4)
+	{
+		return 0;
+	}
+	if (description->usage != GPU_USAGE_RENDER_TARGET)
+	{
+#ifdef HALO_ILP32
+		static GLuint read_framebuffer;
+
+		/* ES cannot read a block-compressed texture back */
+		if (description->format != GPU_FORMAT_BGRA8)
+			return 0;
+		/* through a framebuffer of its own, not framebuffer_get's cache: that
+		is keyed by texture name, and GL reuses the names of destroyed upload
+		textures. The read sees the stored bytes, not the sampling swizzle, and
+		an upload's stored bytes are already BGRA */
+		if (!read_framebuffer)
+			glGenFramebuffers(1, &read_framebuffer);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer);
+		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+		glReadPixels(0, 0, (GLsizei)width, (GLsizei)height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+#else
+		/* bound through the cache, so the read is right wherever it is called
+		from and the cache stays right afterwards */
+		state_texture(0, GL_TEXTURE_2D, texture);
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+#endif
+		return 1;
+	}
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(texture, 0));
+	glReadPixels(0, 0, (GLsizei)width, (GLsizei)height, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+#ifdef HALO_ILP32
+	{
+		/* a render target is RGBA8, and ES reads it as RGBA (GL_BGRA is an
+		alias here) */
+		unsigned char *bytes = pixels;
+		uint32_t pixel;
+
+		for (pixel = 0; pixel < width * height; pixel++)
+		{
+			unsigned char red = bytes[pixel * 4];
+
+			bytes[pixel * 4] = bytes[pixel * 4 + 2];
+			bytes[pixel * 4 + 2] = red;
+		}
+	}
+#endif
+	return 1;
 }
 
 void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
@@ -1061,7 +1120,7 @@ uint32_t gpu_stream(uint32_t kind, const void *data, uint32_t size, gpu_buffer *
 
 /* the frame is presented: on ES, fence this ring slot and wait for the next
 one's frame to finish; on desktop GL, orphan both buffers at the next use */
-void gpu_gl_stream_frame(void)
+static void stream_frame(void)
 {
 #ifdef HALO_ILP32
 	host_gl_fence_frame((unsigned int)streams.buffer_ring);
@@ -1332,7 +1391,7 @@ uint32_t gpu_draw(const struct gpu_draw *draw, const struct gpu_constant_store *
 
 	if (!program)
 		return 0;
-	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(draw->color_target, draw->depth_target));
+	state_framebuffer(framebuffer_get(draw->color_target, draw->depth_target));
 	apply_raster_state(&draw->viewport, &draw->scissor, &draw->depth_stencil, &draw->blend, &draw->raster);
 	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
 		apply_stage(stage, &draw->stages[stage]);
@@ -1366,7 +1425,7 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 	GLbitfield mask = 0;
 	uint32_t index;
 
-	gpu_gl_state_framebuffer(gpu_gl_framebuffer_get(clear->color_target, clear->depth_target));
+	state_framebuffer(framebuffer_get(clear->color_target, clear->depth_target));
 	if (clear->flags & GPU_CLEAR_COLOR)
 	{
 		color_to_vec4(clear->color, rgba);
@@ -1398,4 +1457,37 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 	glDisable(GL_SCISSOR_TEST);
 	/* the masks and the scissor bypassed the cached state */
 	xgpu_gl_state_invalidate();
+}
+
+/* ---------- frames */
+
+void gpu_present(gpu_texture back_buffer)
+{
+	const struct gpu_texture_description *description = &texture_record(back_buffer)->description;
+	int window_width, window_height, width, height, x, y;
+
+	platform_video_drawable_size(&window_width, &window_height);
+	/* letterbox to the back buffer's aspect ratio */
+	width = window_width;
+	height = (int)((long)window_width * description->height / description->width);
+	if (height > window_height)
+	{
+		height = window_height;
+		width = (int)((long)window_height * description->width / description->height);
+	}
+	x = (window_width - width) / 2;
+	y = (window_height - height) / 2;
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	glDisable(GL_SCISSOR_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(back_buffer, 0));
+	/* row 0 of the render target is the top of the picture */
+	glBlitFramebuffer(0, 0, (GLint)description->width, (GLint)description->height,
+		x, y + height, x + width, y, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	platform_video_swap();
+	/* the blit bypassed the cached state */
+	xgpu_gl_state_invalidate();
+	stream_frame();
 }

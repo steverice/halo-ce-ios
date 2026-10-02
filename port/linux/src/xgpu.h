@@ -43,13 +43,6 @@ void host_gl_wait_frame(unsigned int slot);
 /* what the GPU backend can do (gpu_initialize, d3d8_gl.c) */
 extern struct gpu_capabilities device_capabilities;
 
-/* until sub-step f's clear, readback and present: the framebuffer for a
-pair of target textures, bound through the GL state cache (gpu_gl.c) */
-GLuint gpu_gl_framebuffer_get(GLuint color, GLuint depth);
-void gpu_gl_state_framebuffer(GLuint framebuffer);
-/* until sub-step f's gpu_present: advances the stream buffers after a frame (gpu_gl.c) */
-void gpu_gl_stream_frame(void);
-
 /* ---------- GL state
 
 The backend caches the GL state it sets for draws (gpu_gl.c); code that

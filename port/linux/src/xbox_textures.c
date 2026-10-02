@@ -18,9 +18,6 @@ memory_watch.c detects that by write-protecting the pages.
 #include "port_config.h"
 
 #include <stdio.h>
-#ifdef HALO_ILP32
-#define GL_BGRA GL_RGBA
-#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -514,15 +511,10 @@ static void dxt_decode_level(unsigned char kind, const unsigned char *source, un
 
 /* ---------- upload */
 
-/* debug.texture_dump_directory writes level 0 of every upload as a TGA, read back from GL */
-static void texture_dump(uint32_t type, const struct xgpu_texture_description *description)
+/* debug.texture_dump_directory writes level 0 of every upload as a TGA, read
+back through gpu_texture_read (on ES, uncompressed textures only) */
+static void texture_dump(gpu_texture texture, uint32_t type, const struct xgpu_texture_description *description)
 {
-#ifdef HALO_ILP32
-	/* ES cannot read textures back */
-	(void)type;
-	(void)description;
-}
-#else
 	static unsigned long dump_index = 0;
 	const char *directory = *config_string("debug.texture_dump_directory") ?
 		config_string("debug.texture_dump_directory") : NULL;
@@ -535,7 +527,11 @@ static void texture_dump(uint32_t type, const struct xgpu_texture_description *d
 	if (!directory || type != GPU_TEXTURE_2D)
 		return;
 	pixels = malloc(width * height * 4);
-	glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+	if (!gpu_texture_read(texture, pixels, (uint32_t)(width * height * 4)))
+	{
+		free(pixels);
+		return;
+	}
 	snprintf(path, sizeof(path), "%s/tex%05lu_fmt%02x_%lux%lu.tga", directory, dump_index++,
 		(unsigned)description->format, width, height);
 	file = fopen(path, "wb");
@@ -552,7 +548,6 @@ static void texture_dump(uint32_t type, const struct xgpu_texture_description *d
 	}
 	free(pixels);
 }
-#endif
 
 static void upload(gpu_texture texture, uint32_t type, const struct xgpu_texture_description *description,
 	const unsigned char *base, const D3DCOLOR *palette)
@@ -588,7 +583,7 @@ static void upload(gpu_texture texture, uint32_t type, const struct xgpu_texture
 		}
 	}
 	free(converted);
-	texture_dump(type, description);
+	texture_dump(texture, type, description);
 }
 
 /* ---------- cache */

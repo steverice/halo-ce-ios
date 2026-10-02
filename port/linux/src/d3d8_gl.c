@@ -38,12 +38,6 @@ void d3d8_surface_initialize(D3DSurface *surface, D3DFORMAT format, unsigned lon
 void d3d8_surface_resize(D3DSurface *surface, D3DFORMAT format, unsigned long width, unsigned long height);
 
 #ifdef HALO_ILP32
-/* OpenGL ES 3 (port/ios/README.md): the desktop formats, enumerants
-and entry points used below that ES lacks */
-#define GL_BGRA GL_RGBA
-#define glDepthRange glDepthRangef
-#define glClearDepth glClearDepthf
-
 /* what the context supports (gl_initialize) */
 struct xgpu_capabilities xgpu_capabilities;
 #endif
@@ -2987,20 +2981,15 @@ static void write_screenshot(struct render_target_entry *target)
 	if (!directory)
 		return;
 	pixels = malloc(image_size);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, gpu_gl_framebuffer_get(target->target.texture, 0));
-	glReadPixels(0, 0, (GLsizei)width, (GLsizei)height, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+	if (!gpu_texture_read(target->target.texture, pixels, (uint32_t)image_size))
+	{
+		free(pixels);
+		return;
+	}
 	/* the display ignores destination alpha, which the game uses as scratch;
 	image viewers would show it as transparency */
 	for (row = 0; row < width * height; row++)
-	{
-#ifdef HALO_ILP32
-		unsigned char red = pixels[row * 4];
-
-		pixels[row * 4] = pixels[row * 4 + 2];
-		pixels[row * 4 + 2] = red;
-#endif
 		pixels[row * 4 + 3] = 0xff;
-	}
 	snprintf(path, sizeof(path), "%s/frame%05lu.bmp", directory, device.frame);
 	file = fopen(path, "wb");
 	if (file)
@@ -3036,38 +3025,14 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	if (device.gl_ready)
 	{
 		struct render_target_entry *back_buffer = render_target_get(&device.back_buffer);
-		int window_width, window_height, width, height, x, y;
 
 		if (trace_frame())
 			platform_log("present back buffer %08lx texture %u", (unsigned long)device.back_buffer.Data,
 				back_buffer->target.texture);
 		if (screenshot_every > 0 && device.frame % (unsigned long)screenshot_every == 0)
 			write_screenshot(back_buffer);
-
-		platform_video_drawable_size(&window_width, &window_height);
-		/* letterbox to the back buffer's aspect ratio */
-		width = window_width;
-		height = (int)((long)window_width * back_buffer->target.gl_height / back_buffer->target.gl_width);
-		if (height > window_height)
-		{
-			height = window_height;
-			width = (int)((long)window_height * back_buffer->target.gl_width / back_buffer->target.gl_height);
-		}
-		x = (window_width - width) / 2;
-		y = (window_height - height) / 2;
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-		glDisable(GL_SCISSOR_TEST);
-		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, gpu_gl_framebuffer_get(back_buffer->target.texture, 0));
-		/* row 0 of the render target is the top of the picture */
-		glBlitFramebuffer(0, 0, (GLint)back_buffer->target.gl_width, (GLint)back_buffer->target.gl_height,
-			x, y + height, x + width, y, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-		platform_video_swap();
-		xgpu_gl_state_invalidate();
+		gpu_present(back_buffer->target.texture);
 		xgpu_texture_cache_begin_frame();
-		gpu_gl_stream_frame();
 	}
 	device.frame++;
 	/* debug.fixed_timestep: a frame ends once the workers are idle */
