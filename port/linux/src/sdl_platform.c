@@ -1141,8 +1141,9 @@ static void platform_link_consent(void)
 	Uint64 now = SDL_GetTicks();
 	FILE *file;
 	size_t size = 0;
+	int joined;
 
-	if (config_boolean("network.online") || p2p_running() || (looked_ms && now - looked_ms < 1000))
+	if ((looked_ms && now - looked_ms < 1000) || config_boolean("network.online") || p2p_running())
 		return;
 	looked_ms = now;
 	snprintf(path, sizeof(path), "%s/join_link.txt", platform_data_root());
@@ -1168,6 +1169,10 @@ static void platform_link_consent(void)
 		return;
 	}
 	config_write_boolean("network.online", 1);
+	/* asked for before p2p starts: a newer link the host wrote during the
+	question is then taken by p2p's first pass (poll_invite_file) after this
+	one, and replaces it. Newest wins, whichever thread looks first */
+	joined = p2p_join_invite_starting(invite);
 	xnet_start_internet_play();
 	if (!p2p_running())
 	{
@@ -1176,17 +1181,7 @@ static void platform_link_consent(void)
 		return;
 	}
 	platform_log("link: internet play turned on");
-	/* a newer link the host wrote during the question: p2p's first pass
-	takes it (poll_invite_file) within moments, and joining this one now
-	could land after it and replace it. Newest wins: leave it to p2p */
-	file = fopen(path, "rb");
-	if (file)
-	{
-		fclose(file);
-		platform_log("link: a newer link waits; internet play joins that one");
-		return;
-	}
-	if (p2p_join_invite(invite))
+	if (joined)
 		menu_invite_taken();
 }
 #endif

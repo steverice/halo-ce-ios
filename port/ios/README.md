@@ -282,7 +282,7 @@ With internet play on (`network.online = true` in `config.toml`), opening a
 `halo://join/...` invite link (tapped where it shows as a link, or pasted into
 Safari's address bar; chat apps such as Discord may not make it tappable; on the
 Mac, `open 'halo://join/...'` in Terminal) opens the app and joins the invite,
-as pasting it into Join Game > Direct Link does. With internet play off, the app asks "Join this game over the internet?" first; Join turns internet play on (in `config.toml` too) and joins, Cancel drops the link. The app registers the `halo` URL scheme on iPhone, iPad, Apple Vision Pro, Apple TV and
+as pasting it into Join Game > Direct Link does. With internet play off, the app asks "Join this game over the internet?" first; Join turns internet play on (in `config.toml` too) and joins, Cancel drops the link. Unlike the desktop, Apple builds start a new internet game as PRIVATE (`network.host_public = false`): only players with its invite link can join, until Server Setup's LISTING makes it public. The app registers the `halo` URL scheme on iPhone, iPad, Apple Vision Pro, Apple TV and
 the Mac. The link is taken in any state of the game: internet play reaches the
 invite's host in the background, and the host's game then appears in Direct
 Link's list. A link that opens the app cold, with internet play on, waits until internet play starts.

@@ -25,6 +25,10 @@ int p2p_hand_off_invite(void);
 /* joins the game an invite link or code leads to; text may hold other
 words around it. Returns nonzero if it held an invite */
 int p2p_join_invite(const char *text);
+/* the same, for internet play about to start (p2p_initialize next, on this
+thread): without p2p_join_invite's "internet play is off" line. The join
+waits for p2p's thread, as one asked for at any time does */
+int p2p_join_invite_starting(const char *text);
 
 /* whether internet play runs (p2p_initialize started its thread). The main
 thread's: p2p_initialize sets it there, from WSAStartup or

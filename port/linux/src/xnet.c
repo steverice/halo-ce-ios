@@ -440,6 +440,9 @@ void xnet_start_internet_play(void)
 	unsigned long local;
 	int index, told = 0;
 
+	/* (on again in the same run: p2p has its sockets already) */
+	if (p2p_running())
+		return;
 	p2p_initialize(local_address_setting(&local) ? local : loopback_address());
 	/* (a copy: note_socket_port remembers again, which takes the lock) */
 	pthread_mutex_lock(&noted_sockets_lock);

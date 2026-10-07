@@ -2640,7 +2640,7 @@ static int join_invite(const char *text)
 	return 1;
 }
 
-int p2p_join_invite(const char *text)
+static int join_invite_locked(const char *text)
 {
 	int result;
 
@@ -2648,12 +2648,24 @@ int p2p_join_invite(const char *text)
 	pthread_mutex_lock(&p2p_lock);
 	result = join_invite(text);
 	pthread_mutex_unlock(&p2p_lock);
+	return result;
+}
+
+int p2p_join_invite(const char *text)
+{
+	int result = join_invite_locked(text);
+
 	if (result > 0 && !p2p.running)
 		platform_log("Internet play is off (network.online in config.toml): the invite is ignored");
 	return result > 0;
 }
 
 static int look_up_code(const char *text);
+int p2p_join_invite_starting(const char *text)
+{
+	return join_invite_locked(text) > 0;
+}
+
 int p2p_running(void)
 {
 	return p2p.running;
