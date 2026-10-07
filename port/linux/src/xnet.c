@@ -303,8 +303,10 @@ static unsigned short socket_port(SOCKET socket)
 }
 
 /* the game's listening sockets (halo_ws_listen), which hold this machine's
-discovery up while it hosts */
+discovery up while it hosts; a failed connection's thread closes its socket
+too (transport_endpoint_winsock.c), so they are only touched under the lock */
 static struct halo_lan_listeners lan_listeners;
+static pthread_mutex_t lan_listeners_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* the addresses to send a broadcast to (halo_lan_targets.h): network.broadcast's
 list, the real broadcast where this machine may send one, and the machines
@@ -400,9 +402,13 @@ int WSAAPI halo_ws_closesocket(SOCKET socket)
 {
 	int type = SOCK_STREAM;
 	int type_length = sizeof(type);
+	int last_listener;
 
 	posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
-	if (halo_lan_listener_remove(&lan_listeners, (int)socket) && !lan_listeners.count)
+	pthread_mutex_lock(&lan_listeners_lock);
+	last_listener = halo_lan_listener_remove(&lan_listeners, (int)socket) && !lan_listeners.count;
+	pthread_mutex_unlock(&lan_listeners_lock);
+	if (last_listener)
 		posix_lan_discovery(0, 0, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 	p2p_socket_closed((int)socket, type == SOCK_DGRAM ? socket_port(socket) : 0);
 	delayed_closed((int)socket);
@@ -491,7 +497,9 @@ int WSAAPI halo_ws_listen(SOCKET socket, int backlog)
 	{
 		note_socket_port(socket, 1);
 		/* (hosting: discovery stays up while it listens) */
+		pthread_mutex_lock(&lan_listeners_lock);
 		halo_lan_listener_add(&lan_listeners, (int)socket);
+		pthread_mutex_unlock(&lan_listeners_lock);
 		posix_lan_discovery(1, 0, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 	}
 	return winsock_result(result);
@@ -533,10 +541,14 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		unsigned short ports[P2P_BROADCAST_PEERS];
 		int target_count = broadcast_targets(targets, MAXIMUM_BROADCAST_TARGETS);
 		int peer_count;
+		int hosting;
 		int index;
 
 		/* (a search or an advertisement: discovery stays up 10 seconds more) */
-		posix_lan_discovery(lan_listeners.count > 0, 1, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
+		pthread_mutex_lock(&lan_listeners_lock);
+		hosting = lan_listeners.count > 0;
+		pthread_mutex_unlock(&lan_listeners_lock);
+		posix_lan_discovery(hosting, 1, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 		/* one datagram per target; the broadcast counts as sent if any is */
 		memcpy(&target, address, sizeof(target));
 		if (target_count > 0)
@@ -566,8 +578,10 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		/* (the broadcast's own error, which what follows would overwrite) */
 		send_error = result < 0 ? posix_socket_last_error() : 0;
 		/* and to every internet play peer (after the send above, which binds
-		the socket if it was not): onto the tunnel at once, else through the
-		stand-ins */
+		the socket if it was not; with nothing on the LAN to send to there was
+		no send, and a socket still unbound reaches the peers through the
+		stand-ins, whose sends bind it): onto the tunnel at once, else through
+		the stand-ins */
 		if (!source_port)
 		{
 			source_port = socket_port(socket);

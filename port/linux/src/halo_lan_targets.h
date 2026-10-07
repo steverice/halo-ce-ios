@@ -63,7 +63,8 @@ static inline int halo_lan_targets(const unsigned long *list, int list_count, in
 }
 
 /* the game's listening sockets (a host's): discovery stays registered while
-there is one */
+there is one. Sixteen is deliberate: the game listens on one socket, and a
+listener past the cap is not tracked (the others still hold discovery up) */
 struct halo_lan_listeners
 {
 	int sockets[16];
