@@ -223,6 +223,10 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-D
     'port/ios/host/posix_net.c', 'port/ios/host/host_socket_revival.c', '-Wl,-dead_strip',
     f'--output={BUILD / "posix-net-probe"}')
 run(BUILD/'posix-net-probe')
+# where a system link broadcast goes, and the listening sockets that hold discovery up (halo_lan_targets.h)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
+    'port/ios/tests/lan_targets_probe.c', f'--output={BUILD / "lan-targets-probe"}')
+run(BUILD/'lan-targets-probe')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',

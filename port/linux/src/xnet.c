@@ -30,7 +30,11 @@ addressing:
   do not: other loopback addresses, or machines across a VPN (listing
   255.255.255.255 too still broadcasts). A socket bound to one address
   receives no broadcasts, so machines with an address find each
-  other only through these lists: each must list the others.
+  other only through these lists: each must list the others. On Apple
+  devices the machines Bonjour found (port/ios/host/host_bonjour.m) are
+  added to a broadcast's addresses, after the list and the real
+  broadcast; an iPhone without the multicast entitlement sends no real
+  broadcast (network.lan_broadcast).
 
 Both are read once, when the game starts its networking; a value that is
 not an IPv4 address is reported and ignored.
@@ -49,6 +53,8 @@ alone peers reach.
 #include "posix.h"
 #include "port_config.h"
 #include "p2p.h"
+#include "halo_lan_targets.h"
+#include "halo_port_limits.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -296,17 +302,31 @@ static unsigned short socket_port(SOCKET socket)
 	return bound.sin_port;
 }
 
-/* the addresses to send broadcasts to instead, if network.broadcast is
-set (255.255.255.255 among them sends a real broadcast too); returns their
-count */
+/* the game's listening sockets (halo_ws_listen), which hold this machine's
+discovery up while it hosts */
+static struct halo_lan_listeners lan_listeners;
+
+/* the addresses to send a broadcast to (halo_lan_targets.h): network.broadcast's
+list, the real broadcast where this machine may send one, and the machines
+discovery found (Bonjour, on Apple devices); HALO_LAN_SEND_ORIGINAL to send
+it as given */
 static int broadcast_targets(unsigned long *targets, int maximum_count)
 {
-	int count;
+	posix_ulong found[HALO_LAN_MAXIMUM_PEERS];
+	unsigned long peers[HALO_LAN_MAXIMUM_PEERS];
+	int status = posix_lan_status();
+	int peer_count = posix_lan_peers(found, HALO_LAN_MAXIMUM_PEERS);
+	int list_count;
+	int index;
 
 	net_settings_read();
-	count = net_settings.broadcast_count < maximum_count ? net_settings.broadcast_count : maximum_count;
-	memcpy(targets, net_settings.broadcast_targets, (size_t)count * sizeof(*targets));
-	return count;
+	list_count = net_settings.broadcast_count < MAXIMUM_BROADCAST_TARGETS ? net_settings.broadcast_count :
+		MAXIMUM_BROADCAST_TARGETS;
+	for (index = 0; index < peer_count; index++)
+		peers[index] = found[index];
+	return halo_lan_targets(net_settings.broadcast_targets, list_count, (status & _posix_lan_broadcast) != 0,
+		(status & _posix_lan_broadcast) ? posix_lan_broadcast_address() : HALO_LAN_BROADCAST, peers, peer_count,
+		targets, maximum_count);
 }
 
 /* ---------- Winsock */
@@ -382,6 +402,8 @@ int WSAAPI halo_ws_closesocket(SOCKET socket)
 	int type_length = sizeof(type);
 
 	posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
+	if (halo_lan_listener_remove(&lan_listeners, (int)socket) && !lan_listeners.count)
+		posix_lan_discovery(0, 0, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 	p2p_socket_closed((int)socket, type == SOCK_DGRAM ? socket_port(socket) : 0);
 	delayed_closed((int)socket);
 	return winsock_result(posix_socket_close((int)socket));
@@ -466,7 +488,12 @@ int WSAAPI halo_ws_listen(SOCKET socket, int backlog)
 
 	/* (and it listens for connections while it hosts) */
 	if (result == 0)
+	{
 		note_socket_port(socket, 1);
+		/* (hosting: discovery stays up while it listens) */
+		halo_lan_listener_add(&lan_listeners, (int)socket);
+		posix_lan_discovery(1, 0, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
+	}
 	return winsock_result(result);
 }
 
@@ -508,9 +535,11 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		int peer_count;
 		int index;
 
+		/* (a search or an advertisement: discovery stays up 10 seconds more) */
+		posix_lan_discovery(lan_listeners.count > 0, 1, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 		/* one datagram per target; the broadcast counts as sent if any is */
 		memcpy(&target, address, sizeof(target));
-		if (target_count)
+		if (target_count > 0)
 		{
 			result = 0;
 			for (index = 0; index < target_count; index++)
@@ -522,6 +551,13 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 				if (sent >= 0 || index == 0)
 					result = sent;
 			}
+		}
+		else if (target_count == 0)
+		{
+			/* nothing on the LAN to send to (an iPhone without broadcasts that
+			has found no one yet): the broadcast counts as sent, and internet
+			play's part below still runs */
+			result = length;
 		}
 		else
 		{
