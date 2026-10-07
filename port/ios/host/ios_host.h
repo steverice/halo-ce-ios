@@ -50,6 +50,8 @@ int host_ios_gamepad_type(struct SDL_Gamepad *pad);
 int host_ios_gamepad_axis(struct SDL_Gamepad *pad, int axis);
 int host_ios_gamepad_button(struct SDL_Gamepad *pad, int button);
 int host_linux_errno(int native_errno);
+/* posix_net.c: the system link interface's address and netmask, network byte order; 0 if none */
+int host_ranked_interface(uint32_t *address, uint32_t *netmask);
 void host_install_signal_handlers(void);
 uint32_t host_guest_invoke(uintptr_t function, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uintptr_t arena);
 uint32_t host_guest_on_stack(uintptr_t function, uint32_t argument, uintptr_t arena, void *stack_top);

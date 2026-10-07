@@ -411,6 +411,10 @@ if '"display.foveation": "true",' not in mac_run_text or '"debug.foveation_eye_p
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/ios/host',
     'port/ios/tests/host_lan_probe.c', 'port/ios/host/host_lan.c', f'--output={BUILD / "host-lan-probe"}')
 run(BUILD/'host-lan-probe')
+# which interface supplies the system link address (halo_interface_rank.h)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
+    'port/ios/tests/interface_rank_probe.c', f'--output={BUILD / "interface-rank-probe"}')
+run(BUILD/'interface-rank-probe')
 
 # The menus' platform attribute: "quit" is for the desktop ports and the Mac app (the host sets HALO_APP_CAN_QUIT), not
 # for an iPhone, an iPad, an Apple TV or a Vision Pro (menu_platform.h)
