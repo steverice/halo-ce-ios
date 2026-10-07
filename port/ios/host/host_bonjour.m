@@ -139,6 +139,38 @@ static void allowed(void)
 	atomic_store(&refused, 0);
 }
 
+/* any other error from a running browse or registration, above all
+kDNSServiceErr_ServiceNotRunning or DefunctConnection after mDNSResponder
+restarts: the references are dead, so start again in 2 seconds (not a
+denial: the count stays) */
+static void failed(const char *what, DNSServiceErrorType error)
+{
+	host_logf(HOST_LOG_INFO, "bonjour: %s failed (%d), starting again", what, (int)error);
+	stop();
+	retry_seconds = 2;
+}
+
+/* the name the registration got: DNS-SD renames it on a conflict ("Halo
+<identifier> (2)"), and the table must not list this machine under the new
+name; any entry already found under it goes */
+static void registered_as(const char *name)
+{
+	struct host_lan_peer gone[HOST_LAN_MAXIMUM_PEERS];
+	int slot, count = 0, index;
+
+	if (!strcmp(name, self_name))
+		return;
+	snprintf(self_name, sizeof(self_name), "%s", name);
+	os_unfair_lock_lock(&lock);
+	snprintf(table.self, sizeof(table.self), "%s", name);
+	for (slot = 0; slot < HOST_LAN_MAXIMUM_PEERS; slot++)
+		if (table.peers[slot].used && !strcmp(table.peers[slot].name, name))
+			count += host_lan_peer_remove(&table, name, table.peers[slot].interface_index, &gone[count]);
+	os_unfair_lock_unlock(&lock);
+	for (index = 0; index < count; index++)
+		release_peer(&gone[index]);
+}
+
 static void DNSSD_API address_reply(DNSServiceRef ref, DNSServiceFlags flags, uint32_t interface_index,
 	DNSServiceErrorType error, const char *hostname, const struct sockaddr *address, uint32_t ttl, void *context)
 {
@@ -229,7 +261,7 @@ static void DNSSD_API browse_reply(DNSServiceRef ref, DNSServiceFlags flags, uin
 	}
 	if (error != kDNSServiceErr_NoError)
 	{
-		host_logf(HOST_LOG_INFO, "bonjour: browsing failed (%d)", (int)error);
+		failed("browsing", error);
 		return;
 	}
 	allowed();
@@ -282,13 +314,14 @@ static void DNSSD_API register_reply(DNSServiceRef ref, DNSServiceFlags flags, D
 		refuse();
 		return;
 	}
-	if (error == kDNSServiceErr_NoError)
+	if (error != kDNSServiceErr_NoError)
 	{
-		allowed();
-		host_logf(HOST_LOG_INFO, "bonjour: registered %s", name);
+		failed("registering", error);
+		return;
 	}
-	else
-		host_logf(HOST_LOG_INFO, "bonjour: registering failed (%d)", (int)error);
+	allowed();
+	registered_as(name);
+	host_logf(HOST_LOG_INFO, "bonjour: registered %s", name);
 }
 
 static void start(void)
