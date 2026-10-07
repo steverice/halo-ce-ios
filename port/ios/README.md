@@ -293,7 +293,10 @@ looking for the host's game, connecting to it) and, as soon as it is known,
 what went wrong: the servers can't be reached, the host's game wasn't found
 or has ended, the invite is old, the host is on another network version,
 or the two networks can't connect directly. With internet play off, it says
-so. `ios-runtime.log` has each step with its time (`Internet play:` lines).
+so. Once a link opens, the game's own log goes to `stderr.log` in Documents
+(created if needed; started anew past 4 MB at launch), with each step and its
+time (`Internet play:` lines); `ios-runtime.log`, which each launch starts
+anew, has the link itself (`join link:` lines).
 Internet play reaches the brokers and the host over the internet, which
 needs no Local Network permission; only a host on the same network as the
 device is reached through it, and the join keeps trying for 90 seconds,

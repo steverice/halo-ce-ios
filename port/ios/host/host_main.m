@@ -266,8 +266,10 @@ int main(int argc,char **argv) {
                 host_logf(HOST_LOG_ERROR,"cannot write brokers.txt from the app bundle");
         }
         /* Tools (tools/mac_run.py) create stderr.log to keep the guest's own log, platform_log
-           and debug.gpu_stats among it, which otherwise only a debugger's console shows. */
-        if(access("stderr.log",F_OK)==0){int fd=open("stderr.log",O_WRONLY|O_APPEND);if(fd>=0){dup2(fd,2);close(fd);}}
+           and debug.gpu_stats among it, which otherwise only a debugger's console shows; so does
+           opening a join link (host_join_link.c). Past 4 MB it starts anew. */
+        if(access("stderr.log",F_OK)==0){struct stat st;int big=stat("stderr.log",&st)==0&&st.st_size>(4L<<20);
+            int fd=open("stderr.log",O_WRONLY|O_APPEND|(big?O_TRUNC:0));if(fd>=0){dup2(fd,2);close(fd);}}
         host_logf(HOST_LOG_INFO,"Halo iOS native guest starting");
         /* names the exact game image a result folder came from (tools/mac_run.py compare-inputs) */
         host_logf(HOST_LOG_INFO,"guest image sha256 %s",HALO_GUEST_SHA256);

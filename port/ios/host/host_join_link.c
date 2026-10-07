@@ -10,15 +10,47 @@ reaches the invite's host in the background, and the host's game is then in
 Join Game > Direct Link's list, as on the desktop. With internet play off, the
 game takes the file itself and asks to turn internet play on (sdl_platform.c's
 platform_link_consent); on a cold launch with it on, the file waits until
-internet play starts. */
+internet play starts. Internet play tells how the join
+goes in the game's own log (stderr), which the app keeps only in stderr.log:
+from a link on, it goes there whether or not the file was made before launch. */
 #include "host_join_link.h"
 #include "host_config.h"
 #include "ios_host.h"
 #include <SDL3/SDL.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-static char link_path[1100], temporary_path[1100];
+static char link_path[1100], temporary_path[1100], game_log_path[1100];
+
+/* the game's log (its stderr: internet play's lines among it) kept in
+stderr.log from here, unless it already is (the file was there at launch,
+which host_main.m looks for: made by hand, a tool, or an earlier link) */
+static void keep_game_log(void)
+{
+	static int kept;
+	struct stat status;
+	int existed = stat(game_log_path, &status) == 0;
+	int descriptor;
+
+	if (kept)
+		return;
+	kept = 1;
+	if (existed)
+		return;
+	descriptor = open(game_log_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (descriptor < 0 || dup2(descriptor, 2) < 0)
+	{
+		host_logf(HOST_LOG_WARN, "join link: cannot keep the game's log in stderr.log");
+		if (descriptor >= 0)
+			close(descriptor);
+		return;
+	}
+	close(descriptor);
+	host_logf(HOST_LOG_INFO, "join link: the game's log (internet play's steps) goes to stderr.log from here");
+}
 
 /* a halo: link that is not a join link, waiting to be told to the player
 (host_join_link_poll). The main thread's alone: SDL calls the event watch
@@ -38,6 +70,7 @@ void host_join_link_install(const char *data_root)
 {
 	snprintf(link_path, sizeof(link_path), "%s/join_link.txt", data_root);
 	snprintf(temporary_path, sizeof(temporary_path), "%s/join_link.new", data_root);
+	snprintf(game_log_path, sizeof(game_log_path), "%s/stderr.log", data_root);
 	/* a link from a run that ended before internet play took it is not one
 	the player just opened */
 	if (remove(link_path) == 0)
@@ -87,6 +120,7 @@ void host_join_link_open(const char *url)
 		return;
 	}
 	host_logf(HOST_LOG_INFO, "join link: opened with %s, for the game to take", invite);
+	keep_game_log();
 }
 
 /* shown between the guest's frames, never from the event watch: the watch
