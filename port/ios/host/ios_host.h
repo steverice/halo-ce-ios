@@ -17,6 +17,8 @@ int host_sdl_show_simple_message_box(unsigned int flags, const char *title, cons
 /* a message with one or two buttons over the game, theater mode too
 (host_share.m): the index pressed, or -1 with no window scene; waits */
 int host_alert(const char *title, const char *message, const char *first, const char *second);
+/* a share sheet is up over the game (host_share.m): the game's input waits */
+int host_window_up(void);
 #ifdef __OBJC__
 @class UIWindow;
 /* a window of its own at the alert level on the game's scene, shown */

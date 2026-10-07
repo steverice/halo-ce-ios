@@ -71,16 +71,20 @@ int host_alert(const char *title, const char *message, const char *first, const 
 	return answer;
 }
 
-#if !TARGET_OS_TV
-/* puts away a window of host_present_window's once what it presented is
-gone */
-static void host_dismiss_window(UIWindow *window)
+/* the window of the share sheet that is up, else nil. While it is set the
+game's input waits (host_window_up) and posix_share_link offers no second
+sheet; host_dismiss_window clears it on every way a sheet goes: chosen,
+canceled, or its scene going to the background */
+static UIWindow *sheet_window;
+
+int host_window_up(void)
 {
-	window.hidden = YES;
+	return sheet_window != nil;
 }
 
-/* the game's controllers are ignored while the sheet is up, as when its
-window loses focus (sdl_platform.c's input_state.focused) */
+#if !TARGET_OS_TV
+/* the game's keys and mouse buttons let go while the sheet is up, as when its
+window loses focus (sdl_platform.c); host_sdl.c holds back the rest */
 static void game_focus(int focused)
 {
 	SDL_Event event;
@@ -89,6 +93,40 @@ static void game_focus(int focused)
 	event.type = focused ? SDL_EVENT_WINDOW_FOCUS_GAINED : SDL_EVENT_WINDOW_FOCUS_LOST;
 	event.window.windowID = SDL_GetWindowID(host_sdl_window());
 	SDL_PushEvent(&event);
+}
+
+/* puts away a window of host_present_window's once what it presented is
+gone; the sheet's gives the game its input back. Again for the same window
+does nothing more */
+static void host_dismiss_window(UIWindow *window)
+{
+	window.hidden = YES;
+	if (window == sheet_window)
+	{
+		sheet_window = nil;
+		game_focus(1);
+	}
+}
+
+/* the sheet, put away when its scene goes to the background (the app's, or
+on visionOS the game's window closed): the system would keep it up, and the
+game's input with it, for the return */
+static void watch_background(void)
+{
+	static id observer;
+
+	if (observer)
+		return;
+	observer = [NSNotificationCenter.defaultCenter addObserverForName:UISceneDidEnterBackgroundNotification object:nil
+		queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+			UIWindow *window = sheet_window;
+
+			if (!window || note.object != window.windowScene)
+				return;
+			[window.rootViewController dismissViewControllerAnimated:NO completion:nil];
+			host_dismiss_window(window);
+			host_logf(HOST_LOG_INFO, "share: the share sheet put away for the background");
+		}];
 }
 #endif
 
@@ -102,23 +140,39 @@ int posix_share_link(const char *link)
 	UIWindow *window;
 	UIActivityViewController *sheet;
 
-	if (!url || !(window = host_present_window()))
+	if (!url)
 		return 0;
+	/* (one sheet at a time) */
+	if (sheet_window)
+	{
+		host_logf(HOST_LOG_INFO, "share: a share sheet is already up");
+		return 0;
+	}
+	if (!(window = host_present_window()))
+		return 0;
+	watch_background();
 	sheet = [[UIActivityViewController alloc] initWithActivityItems:@[ url ] applicationActivities:nil];
 	/* an iPad's is a popover: from the middle of the screen */
 	sheet.popoverPresentationController.sourceView = window.rootViewController.view;
 	sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(window.bounds), CGRectGetMidY(window.bounds), 0, 0);
 	sheet.popoverPresentationController.permittedArrowDirections = 0;
+	/* (chosen or canceled) */
 	sheet.completionWithItemsHandler = ^(UIActivityType type, BOOL completed, NSArray *items, NSError *error) {
 		(void)type;
 		(void)completed;
 		(void)items;
 		(void)error;
 		host_dismiss_window(window);
-		game_focus(1);
 	};
+	sheet_window = window;
 	game_focus(0);
 	[window.rootViewController presentViewController:sheet animated:YES completion:nil];
+	/* (a sheet UIKit did not present never calls its completion: a second
+	later, with nothing presented, the game has its input back) */
+	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+		if (window == sheet_window && !window.rootViewController.presentedViewController)
+			host_dismiss_window(window);
+	});
 	host_logf(HOST_LOG_INFO, "share: the invite link in the share sheet");
 	return 1;
 #endif
