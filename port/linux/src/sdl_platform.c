@@ -1136,9 +1136,8 @@ play does not run: taken here, as poll_invite_file would take it, and the
 player asked to turn internet play on (spec D3); with network.online on but
 p2p unable to start (p2p_start_failed), taken and the player told why it
 is dropped. Only while p2p does not run, seen on this thread, where p2p
-starts: so
-poll_invite_file, which runs only once p2p does, never takes the file at the
-same time. Renamed before it is read, so a link the host writes meanwhile is
+starts: so poll_invite_file, which runs only once p2p does, never takes the
+file at the same time. Renamed before it is read, so a link the host writes meanwhile is
 a new join_link.txt for the next look. Joined here, not put back: putting
 it back would overwrite a newer one. In a network game or its lobby the
 question would stop the game for everyone (spec section 3: a link in a game
@@ -1245,7 +1244,7 @@ static void platform_invite_clipboard(BOOL look)
 	/* (one poll_invite_file took, on the p2p thread) */
 	if (p2p_take_invite_taken())
 		menu_invite_taken();
-	/* (one p2p's thread gave up on) */
+	/* (a join p2p's thread gave up on) */
 	if (p2p_take_join_failed())
 		menu_join_failed();
 	menu_invite_poll();
