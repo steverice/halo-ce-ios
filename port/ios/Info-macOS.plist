@@ -34,7 +34,7 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>VISR uses Bluetooth only to connect game controllers.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Halo uses your local network to find and join system link games on this Wi-Fi network, and to host games for nearby players.</string>
+	<string>VISR uses your local network to find and join system link games on this Wi-Fi network, and to host games for nearby players.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_halo-ce._udp</string>
