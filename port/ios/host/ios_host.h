@@ -14,6 +14,14 @@ struct SDL_Window *host_sdl_window(void);
 /* a message box over the game (host_sdl.c; the guest's SDL_ShowSimpleMessageBox
 comes here too) */
 int host_sdl_show_simple_message_box(unsigned int flags, const char *title, const char *message);
+/* a message with one or two buttons over the game, theater mode too
+(host_share.m): the index pressed, or -1 with no window scene; waits */
+int host_alert(const char *title, const char *message, const char *first, const char *second);
+#ifdef __OBJC__
+@class UIWindow;
+/* a window of its own at the alert level on the game's scene, shown */
+UIWindow *host_present_window(void);
+#endif
 /* the CAMetalLayer of a Metal window's view (host_sdl.c), or NULL */
 void *host_sdl_metal_layer(void);
 void host_ios_touch_initialize(void);

@@ -644,12 +644,15 @@ int host_sdl_show_toast(const char *message, int duration, int gravity, int x, i
 
 int host_sdl_show_simple_message_box(unsigned int flags, const char *title, const char *message)
 {
+	if (host_alert(title, message, "OK", NULL) >= 0)
+		return 1;
 	return SDL_ShowSimpleMessageBox((SDL_MessageBoxFlags)flags, title, message, host_sdl_window());
 }
 
 int host_sdl_show_message_box(unsigned int flags, const char *title, const char *message, const char *first,
 	const char *second)
 {
+	int shown = host_alert(title, message, first, second);
 	SDL_MessageBoxButtonData buttons[2] = {
 		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 0, first },
 		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 1, second },
@@ -658,5 +661,7 @@ int host_sdl_show_message_box(unsigned int flags, const char *title, const char 
 		buttons, NULL };
 	int answer = -1;
 
+	if (shown >= 0)
+		return shown;
 	return SDL_ShowMessageBox(&data, &answer) ? answer : -1;
 }

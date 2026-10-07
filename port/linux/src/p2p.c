@@ -2661,6 +2661,7 @@ int p2p_join_invite(const char *text)
 }
 
 static int look_up_code(const char *text);
+
 int p2p_join_invite_starting(const char *text)
 {
 	return join_invite_locked(text) > 0;
