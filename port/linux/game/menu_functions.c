@@ -5865,6 +5865,10 @@ static void invite_jump(struct widget_instance *screen)
 	boolean deleted = FALSE;
 
 	multiplayer.invite_jump = FALSE;
+	/* (from Join Game's Server Browser, whose browsing "gamespy screen
+	dispose" would otherwise end only when the screen goes) */
+	if (multiplayer.mode == _multiplayer_mode_server_browser)
+		lobby_browser_end();
 	multiplayer.mode = _multiplayer_mode_direct_link;
 	multiplayer.game_chosen = 0;
 	/* (as Multiplayer's "mp type menu initialize", which this skips: one
