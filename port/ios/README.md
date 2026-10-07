@@ -286,8 +286,8 @@ as pasting it into Join Game > Direct Link does. The app registers the `halo` UR
 the Mac. The link is taken in any state of the game: internet play reaches the
 invite's host in the background, and the host's game then appears in Direct
 Link's list. A link that opens the app cold waits until internet play starts.
-Only a join link's 64 hex digits are used; any other `halo:` link is ignored
-with a line in `ios-runtime.log`, as is a link while internet play is off.
+Only a join link's 64 hex digits are used; any other `halo:` link is refused
+with a message, and a line in `ios-runtime.log`.
 
 ## How the port works
 

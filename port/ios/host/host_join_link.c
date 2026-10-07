@@ -18,6 +18,12 @@ waits until internet play starts. */
 
 static char link_path[1100], temporary_path[1100];
 
+/* a halo: link that is not a join link, waiting to be told to the player
+(host_join_link_poll). The main thread's alone: SDL calls the event watch
+where the drop event is posted, inside UIKit's callbacks on the main
+thread, and the guest polls events on the main thread too */
+static int refused_waiting;
+
 static bool SDLCALL join_link_event(void *userdata, SDL_Event *event)
 {
 	(void)userdata;
@@ -55,6 +61,7 @@ void host_join_link_open(const char *url)
 	if (parsed < 0)
 	{
 		host_logf(HOST_LOG_WARN, "join link: ignored a halo: link that is not a join link (%.80s)", url);
+		refused_waiting = 1;
 		return;
 	}
 	/* (off by default on iOS; written to the file only when it is on, so that
@@ -79,4 +86,29 @@ void host_join_link_open(const char *url)
 		return;
 	}
 	host_logf(HOST_LOG_INFO, "join link: opened with %s; internet play joins it", invite);
+}
+
+/* shown between the guest's frames, never from the event watch: the watch
+runs inside SDL_PumpEvents or a UIKit callback, and a message box spins the
+run loop until it is answered. (The guest polls with its input_lock held,
+platform_pump_events: nothing the box runs takes that lock, and the p2p
+thread never does, so the box cannot deadlock; the game's input simply
+waits for the answer.) */
+void host_join_link_poll(void)
+{
+	char null_renderer[16];
+
+	if (!refused_waiting)
+		return;
+	refused_waiting = 0;
+	/* (a run nobody watches, as platform_show_message skips its box) */
+	host_config_string("debug.null_renderer", "false", null_renderer, sizeof(null_renderer));
+	if (!strcmp(null_renderer, "true"))
+	{
+		host_logf(HOST_LOG_INFO, "join link: no message for it (debug.null_renderer)");
+		return;
+	}
+	host_logf(HOST_LOG_INFO, "join link: told the player a halo: link is not a join link");
+	host_sdl_show_simple_message_box(SDL_MESSAGEBOX_INFORMATION, "Halo",
+		"That link isn't a Halo invite, or it's from an older version of the game.");
 }

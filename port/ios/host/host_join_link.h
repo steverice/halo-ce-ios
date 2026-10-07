@@ -70,3 +70,6 @@ static inline int host_join_link_parse(const char *url, char *invite)
 void host_join_link_install(const char *data_root);
 /* a URL the app was opened with (SDL's drop event, or a scene of the host's own) */
 void host_join_link_open(const char *url);
+/* from the guest's event poll (host_sdl_poll_event): tells the player about a
+halo: link that was not a join link, once, if one came since the last poll */
+void host_join_link_poll(void);

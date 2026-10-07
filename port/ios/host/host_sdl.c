@@ -23,6 +23,7 @@ so the audio callback is handed to a thread that has one.
 #include <pthread.h>
 #include <string.h>
 #include "ios_host.h"
+#include "host_join_link.h"
 
 #define HANDLE_COUNT 256
 
@@ -287,6 +288,8 @@ int host_sdl_poll_event(void *event)
 	(void)polls;
 #endif
 	text_input_update();
+	/* (a malformed join link's message, between frames: host_join_link.c) */
+	host_join_link_poll();
 	if (!SDL_PollEvent(&host_event))
 		return 0;
 	/* the layouts agree except for the pointers of text, drop and user
