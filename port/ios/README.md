@@ -288,6 +288,16 @@ invite's host in the background, and the host's game then appears in Direct
 Link's list. A link that opens the app cold, with internet play on, waits until internet play starts.
 Only a join link's 64 hex digits are used; any other `halo:` link is refused
 with a message, and a line in `ios-runtime.log`.
+Direct Link shows how the join goes (reaching the matchmaking servers,
+looking for the host's game, connecting to it) and, as soon as it is known,
+what went wrong: the servers can't be reached, the host's game wasn't found
+or has ended, the invite is old, the host is on another network version,
+or the two networks can't connect directly. With internet play off, it says
+so. `ios-runtime.log` has each step with its time (`Internet play:` lines).
+Internet play reaches the brokers and the host over the internet, which
+needs no Local Network permission; only a host on the same network as the
+device is reached through it, and the join keeps trying for 90 seconds,
+so a permission given during the attempt is used.
 
 ## How the port works
 

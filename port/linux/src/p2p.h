@@ -43,6 +43,38 @@ WSAStartup ran with network.online off, then the ports of the game's
 sockets already open, which it would otherwise never learn */
 void xnet_start_internet_play(void);
 
+/* how joining the latest invite goes, which Join Game > Direct Link shows:
+reaching the brokers, asking the host through them, reaching it directly,
+reached; or what went wrong, as soon as it is known (joining goes on
+until it gives up, so a stage can still pass) */
+enum
+{
+	P2P_JOIN_NONE,
+	P2P_JOIN_STARTING,
+	P2P_JOIN_ASKING,
+	P2P_JOIN_REACHING,
+	P2P_JOIN_CONNECTED,
+	/* no broker reached */
+	P2P_JOIN_NO_SERVER,
+	/* brokers reached, but no answer from the host: its game ended, or it
+	quit (the brokers cannot tell which, or whether it was ever there) */
+	P2P_JOIN_NOT_FOUND,
+	/* the host's listing (a public game's) says its game ended */
+	P2P_JOIN_ENDED,
+	/* ... holds another invite: this one is old */
+	P2P_JOIN_NEW_INVITE,
+	/* ... has another network version */
+	P2P_JOIN_VERSION,
+	/* the host answered, but no packet got through either way */
+	P2P_JOIN_NO_DIRECT,
+	/* ... and this machine was refused sending to the host's local address
+	(on Apple's systems: the Local Network permission, off or not given yet) */
+	P2P_JOIN_LOCAL_NETWORK,
+};
+/* the stage (P2P_JOIN_*), the seconds since the invite came, whether
+joining has given up, and (P2P_JOIN_VERSION) the host's network version */
+int p2p_join_status(int *seconds, int *over, int *host_version);
+
 /* this machine's identifier, which its XNADDR carries (6 bytes) */
 const unsigned char *p2p_identifier(void);
 /* the address the game reaches the machine with this identifier at, if it

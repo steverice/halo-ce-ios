@@ -413,6 +413,24 @@ def test_network_format_is_the_recorded_one():
     assert not problems, "\n".join(problems)
 
 
+def test_direct_link_join_lines_fit():
+    """Direct Link's lines for an invite being joined (menu_functions.c's
+    direct_link_status), with two-digit numbers, are no longer than the line
+    the page already shows ("Copy an invite link and PASTE LINK, ..."), and
+    there is one for each of p2p.h's stages"""
+    root = MENUS.parent.parent.parent
+    functions = (root / "port/linux/game/menu_functions.c").read_text()
+    body = functions[functions.index("static void direct_link_status("):]
+    body = body[:body.index("\n}\n")]
+    lines = re.findall(r'L"([^"]*)"', body)
+    longest = len("Copy an invite link and PASTE LINK, or accept a Discord invite")
+    assert len(lines) >= 12
+    for line in lines:
+        assert len(line.replace("%d", "00")) <= longest, line
+    stages = re.findall(r"^\t(P2P_JOIN_[A-Z_]+),", (root / "port/linux/src/p2p.h").read_text(), re.M)
+    assert set(stages) - {"P2P_JOIN_NONE"} == set(re.findall(r"case (P2P_JOIN_[A-Z_]+):", body))
+
+
 # ---------- the tag validator (port/linux/game/tag_validate.c)
 
 RETAIL_MAPS = Path("assets/maps")

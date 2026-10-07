@@ -3189,6 +3189,53 @@ static boolean server_start(void)
 	return global_network_game_server_get() != NULL;
 }
 
+/* Direct Link's line for an invite being joined (p2p_join_status) */
+static void direct_link_status(wchar_t *text, short size, int stage, int seconds, int version)
+{
+	switch (stage)
+	{
+	case P2P_JOIN_STARTING:
+		usnprintf(text, size - 1, L"Joining: reaching the matchmaking servers...");
+		break;
+	case P2P_JOIN_ASKING:
+		usnprintf(text, size - 1, L"Joining: looking for the host's game... (%ds)", seconds);
+		break;
+	case P2P_JOIN_REACHING:
+		usnprintf(text, size - 1, L"Found the host: connecting directly... (%ds)", seconds);
+		break;
+	case P2P_JOIN_CONNECTED:
+		usnprintf(text, size - 1, L"Connected to the host: waiting for its game...");
+		break;
+	case P2P_JOIN_NO_SERVER:
+		usnprintf(text, size - 1, L"Can't reach the matchmaking servers: check your internet");
+		break;
+	case P2P_JOIN_NOT_FOUND:
+		usnprintf(text, size - 1, L"The host's game wasn't found: it may have ended");
+		break;
+	case P2P_JOIN_ENDED:
+		usnprintf(text, size - 1, L"The host's game has ended");
+		break;
+	case P2P_JOIN_NEW_INVITE:
+		usnprintf(text, size - 1, L"This invite is old: ask the host for its new link");
+		break;
+	case P2P_JOIN_VERSION:
+		usnprintf(text, size - 1, version > HALO_PORT_NETWORK_VERSION ?
+			L"The host is on version %d, you on %d: update this game" :
+			L"The host is on version %d, you on %d: the host must update", version, HALO_PORT_NETWORK_VERSION);
+		break;
+	case P2P_JOIN_NO_DIRECT:
+		usnprintf(text, size - 1, L"Found the host, but your networks can't connect directly");
+		break;
+	case P2P_JOIN_LOCAL_NETWORK:
+		usnprintf(text, size - 1, L"Found the host: allow Local Network access in Settings");
+		break;
+	default:
+		text[0] = 0;
+		break;
+	}
+	text[size - 1] = 0;
+}
+
 /* ---- the browser (Join Game > Server Browser, LAN, Direct Link): the
 games found on the LAN, or (Direct Link) from internet play's peers
 (reached by an invite link, the clipboard, or Discord) */
@@ -3985,9 +4032,19 @@ static void browser_update(struct widget_instance *list)
 	}
 	{
 		wchar_t text[ROW_TEXT_LENGTH * 2];
+		int seconds = 0, over = 0, version = 0;
+		int stage = multiplayer.mode == _multiplayer_mode_direct_link ? p2p_join_status(&seconds, &over, &version) :
+			P2P_JOIN_NONE;
 
 		if (multiplayer.mode == _multiplayer_mode_server_browser)
 			text[0] = 0;
+		else if (multiplayer.mode == _multiplayer_mode_direct_link && !config_boolean("network.online"))
+			usnprintf(text, NUMBEROF(text) - 1, L"Internet play is off (Settings)");
+		/* the invite being joined: how it goes, or what went wrong (a game in
+		the list is shown instead, unless the invite's host is known to have
+		another version) */
+		else if (stage != P2P_JOIN_NONE && (!multiplayer.game_count || stage == P2P_JOIN_VERSION))
+			direct_link_status(text, NUMBEROF(text), stage, seconds, version);
 		else if (!multiplayer.game_count)
 		{
 			int code_status = p2p_join_code_status();

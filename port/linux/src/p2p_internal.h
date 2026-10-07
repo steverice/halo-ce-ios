@@ -188,6 +188,9 @@ int p2p_signal_connected(void);
 stopped (the process was suspended, or the machine slept), the old ones
 may carry nothing, and would be noticed only at their silence timeout */
 void p2p_signal_reconnect(void);
+/* the brokers there are; returns those that failed (tried, and not
+reached since) */
+int p2p_signal_brokers_failed(int *count);
 /* the server browser's topics: the own slot and the queries (a listed
 game), and every slot (browsing) */
 void p2p_signal_lobby_topics(int listed, int browsing);
@@ -380,6 +383,60 @@ written to the brokers at once; under p2p_lock */
 void p2p_lobby_quit(void);
 /* a key hash's slot */
 void p2p_lobby_slot_topic(const unsigned char *key_hash, char *topic, int size);
+/* the host of an invite being joined (its key hash and token; NULL: none):
+its slot's listing, if it has one (a public game's), is checked as it
+comes (p2p_signal.c subscribes to the slot while joining) */
+void p2p_lobby_watch(const unsigned char *key_hash, const unsigned char *token);
+enum
+{
+	/* nothing heard (a private game, or none) */
+	P2P_WATCH_NONE,
+	/* a listing of this invite's game, of the host's network version */
+	P2P_WATCH_LISTED,
+	/* a tombstone: the game ended */
+	P2P_WATCH_ENDED,
+	/* a listing of another invite (the host made a new one) */
+	P2P_WATCH_NEW_INVITE,
+};
+/* what the watched host's slot held (P2P_WATCH_*), and its listing's
+network version (0 if none heard) */
+int p2p_lobby_watched(int *version);
+
+/* what is known of an invite being joined (p2p.c), from which
+p2p_join_stage tells the stage Direct Link shows (p2p.h's P2P_JOIN_*) */
+struct p2p_join_facts
+{
+	/* milliseconds since the invite came; whether joining gave up */
+	unsigned long elapsed;
+	int over;
+	/* the brokers there are, those that failed (tried and not reached
+	since), and whether one was reached while joining */
+	int brokers;
+	int brokers_failed;
+	int broker_reached;
+	/* milliseconds since one was first reached */
+	unsigned long since_broker;
+	/* the host answered; its punch failed this many times (each try's
+	PUNCH_TIMEOUT); a send to its local address was refused; reached */
+	int answered;
+	int punch_failures;
+	int local_refused;
+	int connected;
+	/* p2p_lobby_watched's, and this machine's network version */
+	int watched;
+	int host_version;
+	int version;
+};
+enum
+{
+	/* milliseconds: no broker reached in this long is P2P_JOIN_NO_SERVER
+	(a broker's connection times out in 10 seconds), and no answer this long
+	after one was is P2P_JOIN_NOT_FOUND (a host answers in a second or two;
+	a joiner asks anew after 20) */
+	P2P_JOIN_BROKER_WAIT = 12000,
+	P2P_JOIN_ANSWER_WAIT = 20000,
+};
+int p2p_join_stage(const struct p2p_join_facts *facts);
 
 /* ---------- p2p_discord.c: rich presence and invites through the Discord
 desktop client */
