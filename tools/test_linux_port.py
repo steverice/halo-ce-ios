@@ -482,3 +482,33 @@ def test_custom_edition_loader_and_validator_survive_damaged_maps():
     result = subprocess.run([str(MAP_VALIDATE), "--fuzz", "100", "--seed", "1", *map(str, chosen)],
                             capture_output=True, text=True, timeout=3600)
     assert result.returncode == 0, (result.stdout + result.stderr)[-6000:]
+
+
+# ---------- the port's posix.h functions
+
+# the functions posix.h has for Apple builds' needs; every platform defines
+# them: the iOS host in port/ios/host, Linux and Windows as stubs
+PORT_POSIX_FUNCTIONS = (
+    "posix_lan_discovery",
+    "posix_lan_peers",
+    "posix_lan_status",
+    "posix_lan_broadcast_address",
+)
+
+
+def _defines(name, paths):
+    pattern = re.compile(r"^[A-Za-z_][\w \*]*?\b" + name + r"\s*\([^;{]*\)\s*\{", re.M)
+    return any(pattern.search(path.read_text(errors="replace")) for path in paths)
+
+
+def test_port_posix_functions_are_defined_everywhere():
+    """each of PORT_POSIX_FUNCTIONS is declared in posix.h and defined in
+    posix_net.c (Linux), win32_net.c (Windows) and the iOS host"""
+    root = Path(__file__).resolve().parents[1]
+    header = (root / "port/linux/src/posix.h").read_text()
+    host = sorted((root / "port/ios/host").glob("*.[cm]"))
+    for name in PORT_POSIX_FUNCTIONS:
+        assert re.search(r"\b" + name + r"\s*\(", header), f"posix.h does not declare {name}"
+        assert _defines(name, [root / "port/linux/src/posix_net.c"]), f"posix_net.c does not define {name}"
+        assert _defines(name, [root / "port/windows/src/win32_net.c"]), f"win32_net.c does not define {name}"
+        assert _defines(name, host), f"port/ios/host does not define {name}"

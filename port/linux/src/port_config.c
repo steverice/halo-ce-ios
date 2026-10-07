@@ -592,6 +592,11 @@ static const struct config_setting config_settings[] =
 		"Comma-separated IPv4 addresses system link sends its announcements to\n"
 		"instead of the local network's broadcast address (for VPNs); empty for\n"
 		"the local network." },
+	{ "network.lan_broadcast", _config_string, "\"auto\"", "HALO_NET_LAN_BROADCAST", _environment_value, _platform_ios,
+		"System link by broadcast, which finds games of every system: \"auto\" where\n"
+		"this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's\n"
+		"multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices\n"
+		"either way." },
 	{ "network.online", _config_boolean, DEFAULT_INTERNET_PLAY, "HALO_NET_ONLINE", _environment_value, _platform_all,
 		"Internet play: hosting makes an invite link (logged, and put on the\n"
 		"clipboard) that lets whoever has it join over the internet; opening a\n"

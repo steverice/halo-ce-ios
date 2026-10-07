@@ -220,4 +220,28 @@ or -1 if the connection closed */
 int posix_discord_read(int handle, void *buffer, int length);
 void posix_discord_close(int handle);
 
+/* ---------- LAN discovery (Bonjour on Apple builds; nothing elsewhere) */
+
+enum
+{
+	/* this machine may send and receive real broadcasts (not on iOS and
+	visionOS without the multicast entitlement) */
+	_posix_lan_broadcast = 1 << 0,
+	/* the user refused local network access */
+	_posix_lan_refused = 1 << 1,
+};
+
+/* this machine's discovery: hosting holds registration and browsing while
+nonzero (the game listens); searching refreshes a 10-second hold; version
+and fork go in the TXT record */
+void posix_lan_discovery(int hosting, int searching, unsigned short version, posix_ulong fork);
+/* the IPv4 addresses (network byte order) of the machines discovery has
+found, at most maximum_count; returns the count */
+int posix_lan_peers(posix_ulong *addresses, int maximum_count);
+/* _posix_lan_* bits */
+int posix_lan_status(void);
+/* where a real broadcast goes (network byte order): 255.255.255.255, or on
+an entitled iOS or visionOS device the Wi-Fi subnet's broadcast address */
+posix_ulong posix_lan_broadcast_address(void);
+
 #endif
