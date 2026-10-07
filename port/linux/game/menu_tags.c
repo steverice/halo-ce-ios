@@ -376,6 +376,8 @@ static char const *const port_function_names[] =
 	"new campaign decision",
 	/* (Direct Link's ENTER CODE screen: a join code or an invite link) */
 	"port code open", "port code init", "port code edit", "port code join", "port code back",
+	/* (the lobby's Y: the invite link in the share sheet, Apple builds) */
+	"port lobby share",
 };
 
 /* the PC version's game data functions that the Xbox's have not, from

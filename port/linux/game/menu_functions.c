@@ -3144,7 +3144,25 @@ static boolean invite_copy(void)
 	if (!p2p_invite_link(link, sizeof(link)))
 		return campaign_fail();
 	platform_clipboard_set(link);
+#ifdef HALO_IOS
+	/* (Apple builds) and the share sheet, the clipboard copy kept */
+	posix_share_link(link);
+#endif
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
+	return TRUE;
+}
+
+/* "port lobby share" (the lobby's Y, Apple builds): the invite link in the
+share sheet; nothing elsewhere */
+static boolean lobby_share(void)
+{
+#ifdef HALO_IOS
+	char link[TEXT_FIELD_LENGTH];
+
+	if (!global_network_game_server_get() || !p2p_invite_link(link, sizeof(link)) || !posix_share_link(link))
+		return campaign_fail();
+	ui_play_audio_feedback_sound(SOUND_FORWARD);
+#endif
 	return TRUE;
 }
 
@@ -5599,6 +5617,10 @@ boolean pc_menu_event_function_invoke(
 		else if (!strcmp(name, "ss copy invite"))
 		{
 			return invite_copy();
+		}
+		else if (!strcmp(name, "port lobby share"))
+		{
+			return lobby_share();
 		}
 		else if (!strcmp(name, "ss start game"))
 		{

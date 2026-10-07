@@ -244,4 +244,10 @@ int posix_lan_status(void);
 an entitled iOS or visionOS device the Wi-Fi subnet's broadcast address */
 posix_ulong posix_lan_broadcast_address(void);
 
+/* ---------- sharing (iOS and visionOS: the system's share sheet; 0 elsewhere) */
+
+/* offers link in the share sheet over the game, without waiting; 0 where
+there is none */
+int posix_share_link(const char *link);
+
 #endif

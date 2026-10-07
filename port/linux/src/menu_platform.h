@@ -10,7 +10,8 @@ HALO_APP_CAN_QUIT. An iPhone, an iPad, an Apple TV and a Vision Pro leave to
 the system, and a Quit there only asked a question whose OK did nothing.
 "mac_app" is the Apple host's Mac app alone, which says so by setting
 HALO_HOST_MAC: the one Apple build with a setting the others ignore
-(display.frame_rate). Returns -1 for a value that is none of these. A header
+(display.frame_rate). "apple" is every Apple host build (HALO_IOS): the
+lobby's Y, which shares the invite link. Returns -1 for a value that is none of these. A header
 of its own so that tools/ios_test.py can build the three cases.
 */
 
@@ -38,6 +39,14 @@ static int menu_platform_matches(char const *platform)
 		char const *mac = getenv("HALO_HOST_MAC");
 
 		return mac && *mac == '1';
+#else
+		return 0;
+#endif
+	}
+	if (!strcmp(platform, "apple"))
+	{
+#if defined(HALO_IOS)
+		return 1;
 #else
 		return 0;
 #endif

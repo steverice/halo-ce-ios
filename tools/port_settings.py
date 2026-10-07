@@ -971,6 +971,8 @@ def _lobby() -> list:
                      '<on event="created" run="net server allow start"/>',
                      '<on event="b" run="port lobby leave" back="true"/>',
                      '<on event="back" run="port lobby leave" back="true"/>',
+                     # (the invite link in the share sheet: Apple builds alone)
+                     '<on event="y" run="port lobby share" platform="apple"/>',
                      f'<on event="start" run="port lobby join" open="{base}/player_profile_screen" branch="true"/>',
                      '<child widget="main_menu/new_select/sel_list_desc_bkd"/>',
                      f'<child widget="{base}/lobby_list"/>',

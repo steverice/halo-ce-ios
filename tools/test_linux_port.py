@@ -241,7 +241,7 @@ def test_menus_are_well_formed():
             where = f"{path.name}: <{element.tag} {element.get('name', '')}>"
             assert element.tag in MENU_ATTRIBUTES, where
             assert set(element.attrib) <= MENU_ATTRIBUTES[element.tag], where
-            assert element.get("platform") in (None, "desktop", "android", "quit", "mac_app"), where
+            assert element.get("platform") in (None, "desktop", "android", "apple", "quit", "mac_app"), where
             # (menu_files.c's whole numbers, which the tags keep in shorts,
             # its true/false attributes, and no text but whitespace outside
             # <string>s)
@@ -493,6 +493,7 @@ PORT_POSIX_FUNCTIONS = (
     "posix_lan_peers",
     "posix_lan_status",
     "posix_lan_broadcast_address",
+    "posix_share_link",
 )
 
 
