@@ -2651,6 +2651,10 @@ int p2p_join_invite(const char *text)
 }
 
 static int look_up_code(const char *text);
+int p2p_running(void)
+{
+	return p2p.running;
+}
 
 void p2p_invite_received(const char *text)
 {

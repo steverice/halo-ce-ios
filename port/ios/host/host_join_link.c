@@ -7,8 +7,10 @@ data folder, which internet play's thread looks for every second
 as Direct Link's PASTE LINK does (p2p_invite_received). So a link is taken
 whatever the game is doing: in a menu, loading or mid-campaign, internet play
 reaches the invite's host in the background, and the host's game is then in
-Join Game > Direct Link's list, as on the desktop. On a cold launch the file
-waits until internet play starts. */
+Join Game > Direct Link's list, as on the desktop. With internet play off, the
+game takes the file itself and asks to turn internet play on (sdl_platform.c's
+platform_link_consent); on a cold launch with it on, the file waits until
+internet play starts. */
 #include "host_join_link.h"
 #include "host_config.h"
 #include "ios_host.h"
@@ -42,6 +44,14 @@ void host_join_link_install(const char *data_root)
 		host_logf(HOST_LOG_INFO, "join link: removed one a previous run did not take");
 	/* (and half a write, should a run have ended in the middle of one) */
 	remove(temporary_path);
+	/* (and a link the game was asking about when a run ended: sdl_platform.c's
+	platform_link_consent) */
+	{
+		char asked_path[1100];
+
+		snprintf(asked_path, sizeof(asked_path), "%s/join_link.asked", data_root);
+		remove(asked_path);
+	}
 	/* SDL drops a URL that arrives before its event queue is up, and the XISO
 	import screen spins the run loop before SDL_Init */
 	if (!SDL_InitSubSystem(SDL_INIT_EVENTS) || !SDL_AddEventWatch(join_link_event, NULL))
@@ -51,7 +61,7 @@ void host_join_link_install(const char *data_root)
 
 void host_join_link_open(const char *url)
 {
-	char invite[HOST_JOIN_LINK_SIZE], online[16];
+	char invite[HOST_JOIN_LINK_SIZE];
 	FILE *file;
 	int parsed = host_join_link_parse(url, invite);
 	int written;
@@ -62,15 +72,6 @@ void host_join_link_open(const char *url)
 	{
 		host_logf(HOST_LOG_WARN, "join link: ignored a halo: link that is not a join link (%.80s)", url);
 		refused_waiting = 1;
-		return;
-	}
-	/* (off by default on iOS; written to the file only when it is on, so that
-	the link does not wait there to be joined whenever it is turned on) */
-	host_config_string("network.online", "false", online, sizeof(online));
-	if (strcmp(online, "true"))
-	{
-		host_logf(HOST_LOG_WARN, "join link: internet play is off (network.online in config.toml); ignored %s",
-			invite);
 		return;
 	}
 	/* written whole, then renamed into place: the game takes the file by
@@ -85,7 +86,7 @@ void host_join_link_open(const char *url)
 		host_logf(HOST_LOG_ERROR, "join link: cannot write %s for the game", link_path);
 		return;
 	}
-	host_logf(HOST_LOG_INFO, "join link: opened with %s; internet play joins it", invite);
+	host_logf(HOST_LOG_INFO, "join link: opened with %s, for the game to take", invite);
 }
 
 /* shown between the guest's frames, never from the event watch: the watch

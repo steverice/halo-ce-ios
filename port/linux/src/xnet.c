@@ -246,6 +246,55 @@ static int peer_outgoing_address(int stream, int connecting, const struct sockad
 	return 1;
 }
 
+/* the game's sockets with ports (note_socket_port), told again to internet
+play when it starts late (xnet_start_internet_play) */
+#define MAXIMUM_NOTED_SOCKETS 64
+struct noted_socket
+{
+	int socket_plus_one;
+	int listening;
+};
+/* (the game's network threads bind, connect, listen and close; the main
+thread replays: under noted_sockets_lock, as the delayed queue is under
+delayed_lock) */
+static pthread_mutex_t noted_sockets_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct noted_socket noted_sockets[MAXIMUM_NOTED_SOCKETS];
+
+static void noted_socket_remember(SOCKET socket, int listening)
+{
+	int index, free_index = -1;
+
+	pthread_mutex_lock(&noted_sockets_lock);
+	for (index = 0; index < MAXIMUM_NOTED_SOCKETS; index++)
+	{
+		if (noted_sockets[index].socket_plus_one == (int)socket + 1)
+		{
+			noted_sockets[index].listening |= listening;
+			free_index = -2;
+			break;
+		}
+		if (!noted_sockets[index].socket_plus_one && free_index < 0)
+			free_index = index;
+	}
+	if (free_index >= 0)
+	{
+		noted_sockets[free_index].socket_plus_one = (int)socket + 1;
+		noted_sockets[free_index].listening = listening;
+	}
+	pthread_mutex_unlock(&noted_sockets_lock);
+}
+
+static void noted_socket_forget(SOCKET socket)
+{
+	int index;
+
+	pthread_mutex_lock(&noted_sockets_lock);
+	for (index = 0; index < MAXIMUM_NOTED_SOCKETS; index++)
+		if (noted_sockets[index].socket_plus_one == (int)socket + 1)
+			noted_sockets[index].socket_plus_one = 0;
+	pthread_mutex_unlock(&noted_sockets_lock);
+}
+
 /* tells internet play the local port the game's socket has (bound, given
 one by a connection or a send, or listening) */
 static void note_socket_port(SOCKET socket, int listening)
@@ -260,6 +309,7 @@ static void note_socket_port(SOCKET socket, int listening)
 	{
 		return;
 	}
+	noted_socket_remember(socket, listening);
 	posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
 	/* (one bound to this machine alone, as the telnet console's, is not for
 	peers to reach, and is not hosting; its port is still no stand-in's) */
@@ -378,6 +428,28 @@ int WSAAPI WSAStartup(WORD version_requested, LPWSADATA data)
 	return 0;
 }
 
+void xnet_start_internet_play(void)
+{
+	struct noted_socket noted[MAXIMUM_NOTED_SOCKETS];
+	unsigned long local;
+	int index, told = 0;
+
+	p2p_initialize(local_address_setting(&local) ? local : loopback_address());
+	/* (a copy: note_socket_port remembers again, which takes the lock) */
+	pthread_mutex_lock(&noted_sockets_lock);
+	memcpy(noted, noted_sockets, sizeof(noted));
+	pthread_mutex_unlock(&noted_sockets_lock);
+	for (index = 0; index < MAXIMUM_NOTED_SOCKETS; index++)
+	{
+		if (noted[index].socket_plus_one)
+		{
+			note_socket_port((SOCKET)(noted[index].socket_plus_one - 1), noted[index].listening);
+			told++;
+		}
+	}
+	platform_log("Internet play: started late; %d of the game's sockets told", told);
+}
+
 int WSAAPI WSACleanup(void)
 {
 	return 0;
@@ -412,6 +484,7 @@ int WSAAPI halo_ws_closesocket(SOCKET socket)
 		posix_lan_discovery(0, 0, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 	p2p_socket_closed((int)socket, type == SOCK_DGRAM ? socket_port(socket) : 0);
 	delayed_closed((int)socket);
+	noted_socket_forget(socket);
 	return winsock_result(posix_socket_close((int)socket));
 }
 

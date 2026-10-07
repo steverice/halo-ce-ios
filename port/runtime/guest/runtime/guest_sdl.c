@@ -104,6 +104,21 @@ bool SDL_ShowSimpleMessageBox(SDL_MessageBoxFlags flags, const char *title, cons
 	return host_sdl_show_simple_message_box((unsigned int)flags, title, message) != 0;
 }
 
+bool SDL_ShowMessageBox(const SDL_MessageBoxData *data, int *buttonid)
+{
+	int answer;
+
+	if (!data || data->numbuttons < 1 || data->numbuttons > 2)
+		return false;
+	answer = host_sdl_show_message_box((unsigned int)data->flags, data->title, data->message, data->buttons[0].text,
+		data->numbuttons > 1 ? data->buttons[1].text : NULL);
+	if (answer < 0 || answer >= data->numbuttons)
+		return false;
+	if (buttonid)
+		*buttonid = data->buttons[answer].buttonID;
+	return true;
+}
+
 void SDL_Delay(Uint32 milliseconds)
 {
 	struct timespec duration;

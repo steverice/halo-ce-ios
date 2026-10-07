@@ -181,6 +181,7 @@ DEFAULTS = {
     "network.broadcast": '""',
     "network.online": "false",
     "network.lan_broadcast": '"auto"',
+    "debug.link_consent_answer": '""',
     "input.stick_dead_zone": "0.27",
     "debug.null_renderer": "false",
     "debug.gl_debug": "false",

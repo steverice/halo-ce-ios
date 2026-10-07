@@ -1103,6 +1103,88 @@ void platform_clipboard_set(const char *text)
 	SDL_SetClipboardText(text);
 }
 
+#ifdef HALO_IOS
+/* a question with two answers; nonzero for yes (debug.link_consent_answer
+answers it in tests, as debug.update_answer does the updater's) */
+static BOOL platform_ask(const char *title, const char *message, const char *yes, const char *no)
+{
+	const SDL_MessageBoxButtonData buttons[] = {
+		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, yes },
+		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, no },
+	};
+	SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, title, message, 2, buttons, NULL };
+	const char *forced = config_string("debug.link_consent_answer");
+	int answer = 0;
+
+	if (forced && *forced)
+		return !strcmp(forced, "join");
+	return SDL_ShowMessageBox(&question, &answer) && answer == 1;
+}
+
+/* (Apple builds) a join link the host wrote (host_join_link.c) while internet
+play does not run: taken here, as poll_invite_file would take it, and the
+player asked to turn internet play on (spec D3). Only while network.online
+is off and p2p does not run, both seen on this thread, where p2p starts: so
+poll_invite_file, which runs only once p2p does, never takes the file at the
+same time. Renamed before it is read, so a link the host writes meanwhile is
+a new join_link.txt for the next look. Joined here, not put back: putting
+it back would overwrite a newer one. */
+static void platform_link_consent(void)
+{
+	static Uint64 looked_ms;
+	char path[512], asked[512], invite[256];
+	Uint64 now = SDL_GetTicks();
+	FILE *file;
+	size_t size = 0;
+
+	if (config_boolean("network.online") || p2p_running() || (looked_ms && now - looked_ms < 1000))
+		return;
+	looked_ms = now;
+	snprintf(path, sizeof(path), "%s/join_link.txt", platform_data_root());
+	snprintf(asked, sizeof(asked), "%s/join_link.asked", platform_data_root());
+	if (rename(path, asked) != 0)
+		return;
+	file = fopen(asked, "rb");
+	if (file)
+	{
+		size = fread(invite, 1, sizeof(invite) - 1, file);
+		fclose(file);
+	}
+	remove(asked);
+	/* (unreadable after the rename: nothing to ask about) */
+	if (!size)
+		return;
+	invite[size] = 0;
+	platform_log("link: %s opened with internet play off", invite);
+	if (!platform_ask("Join this game over the internet?",
+		"Halo will turn on Internet Play, which connects to public servers to reach the host.", "Join", "Cancel"))
+	{
+		platform_log("link: not joined (Cancel)");
+		return;
+	}
+	config_write_boolean("network.online", 1);
+	xnet_start_internet_play();
+	if (!p2p_running())
+	{
+		/* (p2p_initialize logged why: its socket, most often) */
+		platform_log("link: internet play did not start; %s is dropped", invite);
+		return;
+	}
+	platform_log("link: internet play turned on");
+	/* a newer link the host wrote during the question: p2p's first pass
+	takes it (poll_invite_file) within moments, and joining this one now
+	could land after it and replace it. Newest wins: leave it to p2p */
+	file = fopen(path, "rb");
+	if (file)
+	{
+		fclose(file);
+		platform_log("link: a newer link waits; internet play joins that one");
+		return;
+	}
+	p2p_join_invite(invite);
+}
+#endif
+
 /* puts a new invite on the clipboard, and joins one found there when the
 game comes to the front */
 static void platform_invite_clipboard(BOOL look)
@@ -1111,6 +1193,9 @@ static void platform_invite_clipboard(BOOL look)
 	static char seen[256];
 	const char *invite = p2p_take_clipboard_text();
 
+#ifdef HALO_IOS
+	platform_link_consent();
+#endif
 	if (invite)
 	{
 		SDL_SetClipboardText(invite);

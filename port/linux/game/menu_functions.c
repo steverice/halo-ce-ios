@@ -94,6 +94,7 @@ their handlers open opens.
 
 /* the platform layer's (port/linux/src) */
 void platform_log(char const *format, ...);
+void platform_show_message(char const *title, char const *message);
 void platform_request_quit(void);
 char const *pc_menu_function_name(long function_index);
 char const *pc_menu_game_data_input_name(long function_index);
@@ -1454,6 +1455,17 @@ static boolean setting_changed_save(struct widget_instance *spinner, struct pc_m
 		return FALSE;
 	}
 	platform_log("menus: %s = %s", setting->setting, setting->values[index]);
+#ifdef HALO_IOS
+	/* (Apple builds) internet play turned on starts now; turned off, it stops
+	at the next start (p2p has no stop) */
+	if (!strcmp(setting->setting, "network.online"))
+	{
+		if (!strcmp(setting->values[index], "true"))
+			xnet_start_internet_play();
+		else
+			platform_show_message("Internet Play", "Internet Play turns off the next time Halo starts.");
+	}
+#endif
 	setting->loaded_index = index;
 	return TRUE;
 }

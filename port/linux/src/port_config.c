@@ -85,11 +85,13 @@ builds until it asks first) */
 /* (helping send a map opens a listening port, TCP 5153, to any address, and
 uploads unasked: off on Apple builds, a player's choice there) */
 #define DEFAULT_MAP_SEED "false"
+#define DEFAULT_HOST_PUBLIC "false"
 #else
 #define DEFAULT_MAP_DOWNLOAD "true"
 #define DEFAULT_MAP_SEED "true"
 #define DEFAULT_INTERNET_PLAY "true"
 #define DEFAULT_CLIPBOARD_JOIN "true"
+#define DEFAULT_HOST_PUBLIC "true"
 #endif
 
 static const struct config_setting config_settings[] =
@@ -622,7 +624,7 @@ static const struct config_setting config_settings[] =
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
 		"game of this machine's and shows none." },
-	{ "network.host_public", _config_boolean, "true", "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
+	{ "network.host_public", _config_boolean, DEFAULT_HOST_PUBLIC, "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
 		"Whether a new game of Create Game > Internet starts as PUBLIC (listed\n"
 		"in everyone's server browser: anyone can see and join it) or, false,\n"
 		"PRIVATE (only players with its invite link can join). Server Setup's\n"
@@ -864,6 +866,9 @@ static const struct config_setting config_settings[] =
 	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
+	{ "debug.link_consent_answer", _config_string, "\"\"", "HALO_LINK_CONSENT_ANSWER", _environment_value, _platform_ios,
+		"The answer to \"Join this game over the internet?\" for automated tests:\n"
+		"\"join\" or \"cancel\"; empty asks." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens (of game time under\n"
 		"debug.fixed_timestep); 0 never." },

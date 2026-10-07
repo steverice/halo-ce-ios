@@ -26,6 +26,16 @@ int p2p_hand_off_invite(void);
 words around it. Returns nonzero if it held an invite */
 int p2p_join_invite(const char *text);
 
+/* whether internet play runs (p2p_initialize started its thread). The main
+thread's: p2p_initialize sets it there, from WSAStartup or
+xnet_start_internet_play */
+int p2p_running(void);
+
+/* (xnet.c) internet play turned on while the game runs: p2p_initialize, which
+WSAStartup ran with network.online off, then the ports of the game's
+sockets already open, which it would otherwise never learn */
+void xnet_start_internet_play(void);
+
 /* this machine's identifier, which its XNADDR carries (6 bytes) */
 const unsigned char *p2p_identifier(void);
 /* the address the game reaches the machine with this identifier at, if it
