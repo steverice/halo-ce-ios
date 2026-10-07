@@ -167,6 +167,10 @@ short ui_widget_spinner_own_item_count(
 short ui_widget_spinner_extra_description(
 	struct widget_instance *spinner,
 	short item_index);
+/* port: the screen a local player's menus show, or NULL in play
+(menu_functions.c's invite jump) */
+struct widget_instance *ui_widget_port_active_screen(
+	short local_player_index);
 void ui_widget_delete(
 	struct widget_instance *widget);
 void ui_widgets_close_all(

@@ -405,6 +405,9 @@ static struct
 
 	char clipboard[P2P_LINK_SIZE];
 	int has_clipboard;
+	/* an invite from elsewhere (join_link.txt, the hand-off) was taken: for
+	the menus (p2p_take_invite_taken) */
+	int invite_taken;
 
 	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
 	the router; the port it forwards here, when it was last asked, how soon
@@ -2658,11 +2661,13 @@ int p2p_running(void)
 
 void p2p_invite_received(const char *text)
 {
+	int result = join_invite(text);
+
 	/* (an older version's is logged as such; a join code handed over as a
 	link is, the app's or another copy's, is looked up) */
-	if (join_invite(text))
-		return;
-	if (!look_up_code(text))
+	if (result > 0)
+		p2p.invite_taken = 1;
+	else if (!result && !look_up_code(text))
 		platform_log("Internet play: that is not an invite");
 }
 
@@ -3423,6 +3428,19 @@ const char *p2p_take_clipboard_text(void)
 	}
 	pthread_mutex_unlock(&p2p_lock);
 	return result;
+}
+
+int p2p_take_invite_taken(void)
+{
+	int taken;
+
+	if (!p2p.running)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	taken = p2p.invite_taken;
+	p2p.invite_taken = 0;
+	pthread_mutex_unlock(&p2p_lock);
+	return taken;
 }
 
 /* ---------- invites from elsewhere */

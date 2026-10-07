@@ -2307,6 +2307,10 @@ static struct
 	/* Server Setup's LISTING: PRIVATE (each new game starts with
 	network.host_public's choice: PUBLIC unless set otherwise) */
 	boolean game_private;
+	/* (Apple builds) an invite was taken: Direct Link says it connects until its game comes */
+	boolean invite_pending;
+	/* (Apple builds) and opens once the main menu is up (a link that launched the app) */
+	boolean invite_jump;
 	/* Server Setup's PASSWORD (a public internet game's; empty: none), kept
 	while the game runs, never written down */
 	char game_password[PASSWORD_LENGTH + 1];
@@ -2475,6 +2479,7 @@ static void multiplayer_mode_set(struct widget_instance *widget)
 		strstr(name, "create_lan") ? _multiplayer_mode_host_lan :
 		strstr(name, "join_lan") ? _multiplayer_mode_lan :
 		strstr(name, "join_direct") ? _multiplayer_mode_direct_link : _multiplayer_mode_server_browser;
+	multiplayer.invite_pending = FALSE;
 }
 
 /* player 1's profile for the controller's player in a network game */
@@ -3208,6 +3213,8 @@ static void browser_games_read(void)
 			}
 		}
 	}
+	if (multiplayer.game_count && multiplayer.mode == _multiplayer_mode_direct_link)
+		multiplayer.invite_pending = FALSE;
 	if (multiplayer.game_chosen >= multiplayer.game_count)
 		multiplayer.game_chosen = (short)MAX(0, multiplayer.game_count - 1);
 	/* (Direct Link's games, and the LAN's the client also found, logged as
@@ -3968,6 +3975,7 @@ static void browser_update(struct widget_instance *list)
 			int code_status = p2p_join_code_status();
 			wchar_t const *empty = multiplayer.mode != _multiplayer_mode_direct_link ?
 				L"Looking for games on your LAN..." :
+				multiplayer.invite_pending ? L"Connecting to the host..." :
 				code_status == P2P_CODE_LOOKING ? L"Looking up the join code..." :
 				code_status == P2P_CODE_FOUND ? L"Found the game: connecting to its host..." :
 				code_status == P2P_CODE_REACHED ? L"Reached the host: waiting for its game..." :
@@ -5801,3 +5809,92 @@ void pc_menu_game_data_function_invoke(
 	else if (!strcmp(name, "port gamepad layout preview"))
 		profile_gamepad_layout(widget);
 }
+
+#ifdef HALO_IOS
+#define JOIN_GAME_SCREEN "pc\\main_menu\\multiplayer_type_select\\join_game\\join_game_screen"
+
+boolean main_port_main_menu_loaded(void);
+boolean game_map_loaded(void);
+void console_warning(const char *format, ...);
+
+/* whether the main menu has been up since the app started: before that, a
+link is the one the app was launched with */
+static boolean menus_seen;
+
+/* in a game, or in a game's lobby, where leaving on a tap would be worse */
+static boolean invite_waits(void)
+{
+	void *client = global_network_game_client_get();
+
+	return !main_port_main_menu_loaded() || global_network_game_server_get() ||
+		(client && network_game_client_get_state(client, NULL) != _client_state_searching);
+}
+
+/* Join Game > Direct Link from the menus' current screen */
+static void invite_jump(struct widget_instance *screen)
+{
+	boolean deleted = FALSE;
+
+	multiplayer.invite_jump = FALSE;
+	multiplayer.mode = _multiplayer_mode_direct_link;
+	multiplayer.game_chosen = 0;
+	/* (as Multiplayer's "mp type menu initialize", which this skips: one
+	player, as co-op's setup may have left two) */
+	player_spawn_count = 1;
+	player_ui_reset_single_player_local_player_controllers();
+	if (!strstr(screen->name, "join_game_screen"))
+		ui_widget_port_open(screen, JOIN_GAME_SCREEN, &deleted);
+	else
+	{
+		/* (Join Game already, maybe LAN's: Direct Link's title and parts) */
+		browser_initialize(screen, NULL, &deleted);
+	}
+}
+
+/* (Apple builds; sdl_platform.c, on the main thread) an invite was just
+taken (spec D4): in the menus, Join Game > Direct Link opens and says it
+connects until the host's game comes; at launch, once the main menu is up;
+in a game or a lobby, a notice says where to find it afterwards */
+void menu_invite_taken(void)
+{
+	struct widget_instance *screen = ui_widget_port_active_screen(0);
+
+	multiplayer.invite_pending = TRUE;
+	/* (a map up that is not the main menu's, before it ever was: a game
+	started from init.txt, which gets the notice) */
+	if (!menus_seen && !(game_map_loaded() && !main_port_main_menu_loaded()))
+	{
+		/* (the main menu is still loading: menu_invite_poll opens it) */
+		platform_log("menus: an invite was taken; Direct Link opens once the main menu is up");
+		multiplayer.invite_jump = TRUE;
+		return;
+	}
+	if (!screen || invite_waits())
+	{
+		platform_log("menus: an invite was taken in a game or a lobby; told the player");
+		console_warning("Invite received: open Join Game > Direct Link after this game");
+		return;
+	}
+	platform_log("menus: an invite was taken; Direct Link opens");
+	invite_jump(screen);
+}
+
+/* (Apple builds; every pump, sdl_platform.c) the jump a link at launch is
+waiting for, once the main menu's screen is up */
+void menu_invite_poll(void)
+{
+	struct widget_instance *screen;
+
+	if (!main_port_main_menu_loaded())
+		return;
+	menus_seen = TRUE;
+	if (!multiplayer.invite_jump)
+		return;
+	screen = ui_widget_port_active_screen(0);
+	if (screen && !invite_waits())
+	{
+		platform_log("menus: the main menu is up; Direct Link opens for the invite");
+		invite_jump(screen);
+	}
+}
+#endif

@@ -1104,6 +1104,11 @@ void platform_clipboard_set(const char *text)
 }
 
 #ifdef HALO_IOS
+/* (menu_functions.c) an invite was just taken: Direct Link, or a notice in a game */
+void menu_invite_taken(void);
+/* (menu_functions.c) the jump a link that launched the app waits for, once the main menu is up */
+void menu_invite_poll(void);
+
 /* a question with two answers; nonzero for yes (debug.link_consent_answer
 answers it in tests, as debug.update_answer does the updater's) */
 static BOOL platform_ask(const char *title, const char *message, const char *yes, const char *no)
@@ -1181,7 +1186,8 @@ static void platform_link_consent(void)
 		platform_log("link: a newer link waits; internet play joins that one");
 		return;
 	}
-	p2p_join_invite(invite);
+	if (p2p_join_invite(invite))
+		menu_invite_taken();
 }
 #endif
 
@@ -1195,6 +1201,10 @@ static void platform_invite_clipboard(BOOL look)
 
 #ifdef HALO_IOS
 	platform_link_consent();
+	/* (one poll_invite_file took, on the p2p thread) */
+	if (p2p_take_invite_taken())
+		menu_invite_taken();
+	menu_invite_poll();
 #endif
 	if (invite)
 	{

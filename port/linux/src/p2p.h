@@ -80,6 +80,10 @@ void p2p_socket_closed(int socket, unsigned short datagram_port);
 /* text for the clipboard (a new invite link), once; NULL if none. Called
 from the main thread */
 const char *p2p_take_clipboard_text(void);
+/* nonzero once after an invite from elsewhere (join_link.txt on Apple
+builds and Android, the hand-off on the desktop) was taken. Called from
+the main thread */
+int p2p_take_invite_taken(void);
 
 /* whether a game this machine hosts may be joined from the internet (an
 invite, Discord): the PC menus' Create Game > Internet (the default), not

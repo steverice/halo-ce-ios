@@ -683,11 +683,12 @@ void game_initialize_for_new_map(
 }
 
 /* port: whether a map is loaded, the main menu's too: game_in_progress()
-is not, once game_time_end() stops its clock */
+is not, once game_time_end() stops its clock (FALSE before game_initialize:
+menu_functions.c asks while the app starts) */
 boolean game_map_loaded(
 	void)
 {
-	return game_globals->map_loaded;
+	return game_globals && game_globals->map_loaded;
 }
 
 boolean game_map_loading_in_progress(
