@@ -83,6 +83,10 @@ their handlers open opens.
 #include "custom_edition_maps.h"
 /* (internet play's server browser: the platform layer's) */
 #include "../src/p2p.h"
+#ifdef HALO_IOS
+#include "../src/halo_lan_targets.h"
+#include "../src/posix.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -3950,14 +3954,32 @@ static void browser_update(struct widget_instance *list)
 		else if (!multiplayer.game_count)
 		{
 			int code_status = p2p_join_code_status();
-
-			usnprintf(text, NUMBEROF(text) - 1, L"%s", multiplayer.mode != _multiplayer_mode_direct_link ?
+			wchar_t const *empty = multiplayer.mode != _multiplayer_mode_direct_link ?
 				L"Looking for games on your LAN..." :
 				code_status == P2P_CODE_LOOKING ? L"Looking up the join code..." :
 				code_status == P2P_CODE_FOUND ? L"Found the game: connecting to its host..." :
 				code_status == P2P_CODE_REACHED ? L"Reached the host: waiting for its game..." :
 				code_status == P2P_CODE_NOT_FOUND ? L"No game has that join code. ENTER CODE to try again" :
-				L"ENTER CODE: a friend's join code or invite link");
+				L"ENTER CODE: a friend's join code or invite link";
+
+#ifdef HALO_IOS
+			/* Apple devices find each other by Bonjour; without the multicast
+			entitlement, nothing else */
+			if (multiplayer.mode != _multiplayer_mode_direct_link)
+			{
+				switch (halo_lan_empty_text(posix_lan_status()))
+				{
+				case HALO_LAN_TEXT_REFUSED:
+					empty = L"Local network access is off for VISR in\r\nSettings > Privacy & Security > Local Network.";
+					break;
+				case HALO_LAN_TEXT_APPLE_ONLY:
+					empty = L"Looking for games from other iPhones, iPads and Vision Pros on your Wi-Fi network.\r\n"
+						L"For other systems, use an invite link.";
+					break;
+				}
+			}
+#endif
+			usnprintf(text, NUMBEROF(text) - 1, L"%s", empty);
 		}
 		else
 		{

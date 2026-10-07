@@ -105,4 +105,21 @@ static inline unsigned long halo_lan_subnet_broadcast(unsigned long address, uns
 	return ((address & netmask) | ~netmask) & HALO_LAN_BROADCAST;
 }
 
+/* the LAN list's text while it has no games (menu_functions.c, Apple builds) */
+enum
+{
+	HALO_LAN_TEXT_LOOKING,
+	HALO_LAN_TEXT_APPLE_ONLY,
+	HALO_LAN_TEXT_REFUSED,
+};
+
+static inline int halo_lan_empty_text(int status)
+{
+	if (status & HALO_LAN_STATUS_REFUSED)
+		return HALO_LAN_TEXT_REFUSED;
+	if (!(status & HALO_LAN_STATUS_BROADCAST))
+		return HALO_LAN_TEXT_APPLE_ONLY;
+	return HALO_LAN_TEXT_LOOKING;
+}
+
 #endif

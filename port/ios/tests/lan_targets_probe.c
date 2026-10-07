@@ -81,6 +81,11 @@ int main(void)
 	/* a subnet's broadcast address, in network byte order */
 	assert(halo_lan_subnet_broadcast(0x1400000AUL, 0x00FFFFFFUL) == SUBNET);
 	assert(halo_lan_subnet_broadcast(0x0500000AUL, 0x0000FFFFUL) == 0xFFFF000AUL);
-	puts("PASS: broadcast targets (Linux unchanged, peers added, unentitled, entitled), listeners, subnet broadcast");
+	/* the LAN list's empty text: refused first, then Apple devices only */
+	assert(halo_lan_empty_text(HALO_LAN_STATUS_BROADCAST) == HALO_LAN_TEXT_LOOKING);
+	assert(halo_lan_empty_text(0) == HALO_LAN_TEXT_APPLE_ONLY);
+	assert(halo_lan_empty_text(HALO_LAN_STATUS_REFUSED) == HALO_LAN_TEXT_REFUSED);
+	assert(halo_lan_empty_text(HALO_LAN_STATUS_BROADCAST | HALO_LAN_STATUS_REFUSED) == HALO_LAN_TEXT_REFUSED);
+	puts("PASS: broadcast targets (Linux unchanged, peers added, unentitled, entitled), listeners, subnet broadcast, empty-list text");
 	return 0;
 }
