@@ -1133,8 +1133,10 @@ static BOOL platform_ask(const char *title, const char *message, const char *yes
 
 /* (Apple builds) a join link the host wrote (host_join_link.c) while internet
 play does not run: taken here, as poll_invite_file would take it, and the
-player asked to turn internet play on (spec D3). Only while network.online
-is off and p2p does not run, both seen on this thread, where p2p starts: so
+player asked to turn internet play on (spec D3); with network.online on but
+p2p unable to start (p2p_start_failed), taken and the player told why it
+is dropped. Only while p2p does not run, seen on this thread, where p2p
+starts: so
 poll_invite_file, which runs only once p2p does, never takes the file at the
 same time. Renamed before it is read, so a link the host writes meanwhile is
 a new join_link.txt for the next look. Joined here, not put back: putting
@@ -1154,11 +1156,25 @@ static void platform_link_consent(void)
 	size_t size = 0;
 	int joined;
 
-	if ((looked_ms && now - looked_ms < 1000) || config_boolean("network.online") || p2p_running())
+	if ((looked_ms && now - looked_ms < 1000) || p2p_running() ||
+		(config_boolean("network.online") && !p2p_start_failed()))
+	{
 		return;
+	}
 	looked_ms = now;
 	snprintf(path, sizeof(path), "%s/join_link.txt", platform_data_root());
 	snprintf(asked, sizeof(asked), "%s/join_link.asked", platform_data_root());
+	/* internet play is on but could not start: nothing else takes the link */
+	if (config_boolean("network.online"))
+	{
+		if (rename(path, asked) == 0)
+		{
+			remove(asked);
+			platform_log("link: opened, but internet play could not start; dropped");
+			console_notice("Internet play could not start, so VISR cannot join the invite");
+		}
+		return;
+	}
 	if (menu_in_network_game())
 	{
 		/* (read, not taken: the host renames each link into place whole) */
@@ -1207,6 +1223,7 @@ static void platform_link_consent(void)
 	{
 		/* (p2p_initialize logged why: its socket, most often) */
 		platform_log("link: internet play did not start; %s is dropped", invite);
+		console_notice("Internet play could not start, so VISR cannot join the invite");
 		return;
 	}
 	platform_log("link: internet play turned on");

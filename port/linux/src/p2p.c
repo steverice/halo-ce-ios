@@ -411,6 +411,9 @@ static struct
 	/* the invite's host never answered (JOIN_TIMEOUT): for the menus
 	(p2p_take_join_failed) */
 	int join_failed;
+	/* p2p_initialize was asked to start internet play and could not
+	(p2p_start_failed) */
+	int start_failed;
 
 	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
 	the router; the port it forwards here, when it was last asked, how soon
@@ -2677,6 +2680,21 @@ int p2p_running(void)
 	return p2p.running;
 }
 
+int p2p_start_failed(void)
+{
+	return p2p.start_failed && !p2p.running;
+}
+
+/* p2p_initialize could not start: a join asked for meanwhile (a link's,
+platform_link_consent) is dropped, not left for a later start to run */
+static void start_failed(void)
+{
+	p2p.start_failed = 1;
+	pthread_mutex_lock(&p2p_lock);
+	p2p.join_requested = 0;
+	pthread_mutex_unlock(&p2p_lock);
+}
+
 void p2p_invite_received(const char *text)
 {
 	int result = join_invite(text);
@@ -3876,6 +3894,7 @@ void p2p_initialize(unsigned long local_address)
 	{
 		platform_log("Internet play: cannot open its socket (network.tunnel_port %ld in use?); it is off",
 			tunnel_port);
+		start_failed();
 		return;
 	}
 #ifndef HALO_ILP32
@@ -3890,9 +3909,11 @@ void p2p_initialize(unsigned long local_address)
 	{
 		close_socket(&p2p.tunnel_socket);
 		close_socket(&p2p.handoff_socket);
+		start_failed();
 		return;
 	}
 	pthread_detach(thread);
+	p2p.start_failed = 0;
 	p2p.running = 1;
 	if (command_line_invite(invite, sizeof(invite)))
 		p2p_join_invite(invite);

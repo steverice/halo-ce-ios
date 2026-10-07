@@ -34,6 +34,9 @@ int p2p_join_invite_starting(const char *text);
 thread's: p2p_initialize sets it there, from WSAStartup or
 xnet_start_internet_play */
 int p2p_running(void);
+/* whether network.online asked for internet play and p2p_initialize could
+not start it (its socket, most often). The main thread's, as p2p_running */
+int p2p_start_failed(void);
 
 /* (xnet.c) internet play turned on while the game runs: p2p_initialize, which
 WSAStartup ran with network.online off, then the ports of the game's
