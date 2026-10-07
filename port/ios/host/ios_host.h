@@ -15,14 +15,17 @@ struct SDL_Window *host_sdl_window(void);
 comes here too) */
 int host_sdl_show_simple_message_box(unsigned int flags, const char *title, const char *message);
 /* a message with one or two buttons over the game, theater mode too
-(host_share.m): the index pressed, or -1 with no window scene; waits */
+(host_share.m): the index pressed, or -1 with no window scene or off the main
+thread (the caller then shows SDL's box); waits */
 int host_alert(const char *title, const char *message, const char *first, const char *second);
 /* a share sheet is up over the game (host_share.m): the game's input waits */
 int host_window_up(void);
 #ifdef __OBJC__
 @class UIWindow;
-/* a window of its own at the alert level on the game's scene, shown */
+/* a window of its own at the alert level on the game's scene, shown and key */
 UIWindow *host_present_window(void);
+/* nonzero for a window of host_present_window's (theater mode leaves those be) */
+int host_is_present_window(UIWindow *window);
 #endif
 /* the CAMetalLayer of a Metal window's view (host_sdl.c), or NULL */
 void *host_sdl_metal_layer(void);

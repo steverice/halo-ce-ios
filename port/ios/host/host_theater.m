@@ -18,6 +18,7 @@ to read the eyes' poses and presents it full view. */
 #include "host_theater.h"
 #include "host_stereo.h"
 #include "host.h"
+#include "ios_host.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdatomic.h>
@@ -201,7 +202,10 @@ id<MTLRasterizationRateMap> host_theater_view_rate_map(cp_drawable_t drawable, c
 }
 
 /* hides or shows the game's window (SDL's), which would stand in front of
-the screen while the space is open: its frames go to the screen meanwhile */
+the screen while the space is open: its frames go to the screen meanwhile.
+An alert or share sheet's window (host_share.m) is left as it is: the space
+can open while one is up, waiting for the player, and one put away stays
+hidden */
 static void window_hidden(BOOL hidden)
 {
 	for (UIScene *scene in UIApplication.sharedApplication.connectedScenes)
@@ -209,7 +213,8 @@ static void window_hidden(BOOL hidden)
 		if (![scene isKindOfClass:UIWindowScene.class])
 			continue;
 		for (UIWindow *window in ((UIWindowScene *)scene).windows)
-			window.hidden = hidden;
+			if (!host_is_present_window(window))
+				window.hidden = hidden;
 	}
 }
 
