@@ -335,3 +335,13 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
         XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
 endif()
+# The multicast entitlement (spec section 2): with it in the chosen
+# entitlements file, iOS and visionOS may broadcast, and network.lan_broadcast
+# = "auto" does (host/host_bonjour.m)
+if(HALO_ENTITLEMENTS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_ENTITLEMENTS}" HALO_ENTITLEMENTS_TEXT)
+    if(HALO_ENTITLEMENTS_TEXT MATCHES "com\\.apple\\.developer\\.networking\\.multicast")
+        target_compile_definitions(VISR PRIVATE HALO_MULTICAST_ENTITLED=1)
+        message(STATUS "the entitlements include multicast: broadcasts on")
+    endif()
+endif()

@@ -39,6 +39,10 @@
 	<string>VISR uses Bluetooth only to connect game controllers.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to other Halo players and share benchmark reports on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_halo-ce._udp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
