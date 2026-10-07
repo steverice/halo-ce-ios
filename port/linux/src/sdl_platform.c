@@ -1157,7 +1157,7 @@ static void platform_link_consent(void)
 	invite[size] = 0;
 	platform_log("link: %s opened with internet play off", invite);
 	if (!platform_ask("Join this game over the internet?",
-		"Halo will turn on Internet Play, which connects to public servers to reach the host.", "Join", "Cancel"))
+		"VISR will turn on Internet Play, which connects to public servers to reach the host.", "Join", "Cancel"))
 	{
 		platform_log("link: not joined (Cancel)");
 		return;

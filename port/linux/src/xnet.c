@@ -246,8 +246,9 @@ static int peer_outgoing_address(int stream, int connecting, const struct sockad
 	return 1;
 }
 
-/* the game's sockets with ports (note_socket_port), told again to internet
-play when it starts late (xnet_start_internet_play) */
+#ifdef HALO_IOS
+/* (Apple builds) the game's sockets with ports (note_socket_port), told again
+to internet play when it starts late (xnet_start_internet_play) */
 #define MAXIMUM_NOTED_SOCKETS 64
 struct noted_socket
 {
@@ -294,6 +295,7 @@ static void noted_socket_forget(SOCKET socket)
 			noted_sockets[index].socket_plus_one = 0;
 	pthread_mutex_unlock(&noted_sockets_lock);
 }
+#endif
 
 /* tells internet play the local port the game's socket has (bound, given
 one by a connection or a send, or listening) */
@@ -309,7 +311,9 @@ static void note_socket_port(SOCKET socket, int listening)
 	{
 		return;
 	}
+#ifdef HALO_IOS
 	noted_socket_remember(socket, listening);
+#endif
 	posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
 	/* (one bound to this machine alone, as the telnet console's, is not for
 	peers to reach, and is not hosting; its port is still no stand-in's) */
@@ -428,8 +432,10 @@ int WSAAPI WSAStartup(WORD version_requested, LPWSADATA data)
 	return 0;
 }
 
+/* (called only on Apple builds; elsewhere it does nothing) */
 void xnet_start_internet_play(void)
 {
+#ifdef HALO_IOS
 	struct noted_socket noted[MAXIMUM_NOTED_SOCKETS];
 	unsigned long local;
 	int index, told = 0;
@@ -448,6 +454,7 @@ void xnet_start_internet_play(void)
 		}
 	}
 	platform_log("Internet play: started late; %d of the game's sockets told", told);
+#endif
 }
 
 int WSAAPI WSACleanup(void)
@@ -484,7 +491,9 @@ int WSAAPI halo_ws_closesocket(SOCKET socket)
 		posix_lan_discovery(0, 0, HALO_PORT_NETWORK_VERSION, HALO_LAN_FORK_TAG);
 	p2p_socket_closed((int)socket, type == SOCK_DGRAM ? socket_port(socket) : 0);
 	delayed_closed((int)socket);
+#ifdef HALO_IOS
 	noted_socket_forget(socket);
+#endif
 	return winsock_result(posix_socket_close((int)socket));
 }
 

@@ -1463,7 +1463,7 @@ static boolean setting_changed_save(struct widget_instance *spinner, struct pc_m
 		if (!strcmp(setting->values[index], "true"))
 			xnet_start_internet_play();
 		else
-			platform_show_message("Internet Play", "Internet Play turns off the next time Halo starts.");
+			platform_show_message("Internet Play", "Internet Play turns off the next time VISR starts.");
 	}
 #endif
 	setting->loaded_index = index;
