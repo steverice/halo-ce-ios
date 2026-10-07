@@ -5843,13 +5843,20 @@ void console_notice(const char *format, ...);
 link is the one the app was launched with */
 static boolean menus_seen;
 
-/* in a game, or in a game's lobby, where leaving on a tap would be worse */
-static boolean invite_waits(void)
+/* (Apple builds; sdl_platform.c too) in a network game or its lobby: a
+server, or a client past searching for games */
+int menu_in_network_game(void)
 {
 	void *client = global_network_game_client_get();
 
-	return !main_port_main_menu_loaded() || global_network_game_server_get() ||
+	return global_network_game_server_get() ||
 		(client && network_game_client_get_state(client, NULL) != _client_state_searching);
+}
+
+/* in a game, or in a game's lobby, where leaving on a tap would be worse */
+static boolean invite_waits(void)
+{
+	return !main_port_main_menu_loaded() || menu_in_network_game();
 }
 
 /* Join Game > Direct Link from the menus' current screen */

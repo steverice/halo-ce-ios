@@ -1108,6 +1108,9 @@ void platform_clipboard_set(const char *text)
 void menu_invite_taken(void);
 /* (menu_functions.c) the jump a link that launched the app waits for, once the main menu is up */
 void menu_invite_poll(void);
+/* (menu_functions.c) in a network game or its lobby */
+int menu_in_network_game(void);
+void console_notice(const char *format, ...);
 
 /* a question with two answers; nonzero for yes (debug.link_consent_answer
 answers it in tests, as debug.update_answer does the updater's) */
@@ -1133,10 +1136,16 @@ is off and p2p does not run, both seen on this thread, where p2p starts: so
 poll_invite_file, which runs only once p2p does, never takes the file at the
 same time. Renamed before it is read, so a link the host writes meanwhile is
 a new join_link.txt for the next look. Joined here, not put back: putting
-it back would overwrite a newer one. */
+it back would overwrite a newer one. In a network game or its lobby the
+question would stop the game for everyone (spec section 3: a link in a game
+waits), so the file is left where it is, the newest link the host wrote
+winning, and the player is told once per link; the question comes after
+the game. */
 static void platform_link_consent(void)
 {
 	static Uint64 looked_ms;
+	/* the waiting link the player was last told about */
+	static char told[256];
 	char path[512], asked[512], invite[256];
 	Uint64 now = SDL_GetTicks();
 	FILE *file;
@@ -1148,6 +1157,24 @@ static void platform_link_consent(void)
 	looked_ms = now;
 	snprintf(path, sizeof(path), "%s/join_link.txt", platform_data_root());
 	snprintf(asked, sizeof(asked), "%s/join_link.asked", platform_data_root());
+	if (menu_in_network_game())
+	{
+		/* (read, not taken: the host renames each link into place whole) */
+		file = fopen(path, "rb");
+		if (!file)
+			return;
+		size = fread(invite, 1, sizeof(invite) - 1, file);
+		fclose(file);
+		invite[size] = 0;
+		if (size && strcmp(invite, told))
+		{
+			snprintf(told, sizeof(told), "%s", invite);
+			platform_log("link: %s opened with internet play off in a network game; asked after it", invite);
+			console_notice("Invite received: VISR will ask about it after this game");
+		}
+		return;
+	}
+	told[0] = 0;
 	if (rename(path, asked) != 0)
 		return;
 	file = fopen(asked, "rb");
