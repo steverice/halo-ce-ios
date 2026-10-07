@@ -1014,6 +1014,43 @@ void texture_upscale_map_loaded(void)
 			texture_upscale_state_enabled(&texture_upscale) ? "on" : "off");
 }
 
+/* source/render/render_debug.c: text the frame's debug pass draws */
+void render_debug_string(unsigned char immediate, const char *string);
+/* xbox_kernel.c */
+double halo_frame_trace_milliseconds(void);
+/* when the toggle was last pressed, for its readout */
+static double texture_upscale_toggled_milliseconds = -1.0;
+
+/* debug.upscaled_textures_toggle (xinput_sdl.c: hold Back and press the D-pad
+up): the level's originals drawn in place of its upscaled textures, or back,
+from the next draw; display.upscaled_textures is not changed */
+void halo_texture_upscale_toggle(void)
+{
+	int toggled = texture_upscale_state_toggle(&texture_upscale);
+
+	texture_upscale_toggled_milliseconds = halo_frame_trace_milliseconds();
+	platform_log("textures: %s%s", texture_upscale_state_show_original(&texture_upscale) || !toggled ?
+		"original" : "upscaled", toggled ? "" : " (none for this level)");
+}
+
+/* which textures are drawn, on screen for two seconds after the toggle;
+called as each frame begins (render_interpolation.c), like the render
+scale's readout */
+void halo_texture_upscale_overlay(void)
+{
+	if (texture_upscale_toggled_milliseconds < 0.0 ||
+		halo_frame_trace_milliseconds() - texture_upscale_toggled_milliseconds > 2000.0)
+		return;
+	if (!texture_upscale_state_enabled(&texture_upscale))
+		render_debug_string(0, "Textures: original (none for this level)");
+	else if (texture_upscale_state_show_original(&texture_upscale))
+		render_debug_string(0, "Textures: original");
+	else if (texture_upscale.replaced)
+		render_debug_string(0, "Textures: upscaled");
+	else
+		render_debug_string(0, "Textures: upscaled (none loaded yet)");
+}
+
 /* after an upload: the override standing for the pixels now at the entry's
 address (the game's texture cache reuses that memory for other bitmaps). 2D
 textures only: not linear ones, and P8 ones only with the bump maps' palette */
@@ -1045,6 +1082,8 @@ static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *
 	if (*directory)
 		entry->texture_override = texture_override_find(directory, hash, description->width, description->height,
 			&entry->texture_override_levels);
+	if (entry->texture_override)
+		texture_upscale_state_replaced(&texture_upscale);
 	if (logging)
 		platform_log("texture override %016llx at %08lx fmt %02lx %lux%lu: %s", (unsigned long long)hash,
 			(unsigned long)entry->data, (unsigned long)description->format, description->width, description->height,
@@ -1214,7 +1253,9 @@ static gpu_texture texture_entry_result_uncached(struct texture_entry *entry, ui
 			return texture;
 		}
 	}
-	if (entry->texture_override)
+	/* (debug.upscaled_textures_toggle: the original, entry->texture, is
+	always uploaded too, so the toggle only picks which one is drawn) */
+	if (entry->texture_override && !texture_upscale_state_show_original(&texture_upscale))
 	{
 		/* (debug.texture_override_directory: its own levels, sampled as the
 		game samples the texture; never hires) */

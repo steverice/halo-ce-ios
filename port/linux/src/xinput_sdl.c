@@ -64,6 +64,8 @@ extern unsigned char console_is_active(void);
 void input_replay_filter(XINPUT_GAMEPAD *pad);
 /* d3d8_device.c */
 void halo_render_scale_step(int direction);
+/* xbox_textures.c */
+void halo_texture_upscale_toggle(void);
 
 /* d3d8_device.c */
 void halo_anti_aliasing_toggle(void);
@@ -125,17 +127,22 @@ static void external_mode_chord(XINPUT_GAMEPAD *pad)
 }
 #endif
 
-/* debug.render_scale_dpad: while Back is held, the D-pad's left and right
-step the render scale down and up, and the game doesn't see the D-pad */
-static void render_scale_dpad(XINPUT_GAMEPAD *pad)
+/* While Back is held: debug.render_scale_dpad's D-pad left and right step
+the render scale down and up, debug.upscaled_textures_toggle's D-pad up
+switches between the level's upscaled and original textures, and with
+either on the game doesn't see the D-pad */
+static void back_dpad(XINPUT_GAMEPAD *pad)
 {
-	static int enabled = -1;
+	static int render_scale = -1, upscaled_textures;
 	static WORD previous;
 	WORD pressed;
 
-	if (enabled < 0)
-		enabled = config_boolean("debug.render_scale_dpad");
-	if (!enabled)
+	if (render_scale < 0)
+	{
+		render_scale = config_boolean("debug.render_scale_dpad");
+		upscaled_textures = config_boolean("debug.upscaled_textures_toggle");
+	}
+	if (!render_scale && !upscaled_textures)
 		return;
 	if (!(pad->wButtons & XINPUT_GAMEPAD_BACK))
 	{
@@ -144,10 +151,12 @@ static void render_scale_dpad(XINPUT_GAMEPAD *pad)
 	}
 	pressed = pad->wButtons & ~previous;
 	previous = pad->wButtons;
-	if (pressed & XINPUT_GAMEPAD_DPAD_LEFT)
+	if (render_scale && (pressed & XINPUT_GAMEPAD_DPAD_LEFT))
 		halo_render_scale_step(-1);
-	if (pressed & XINPUT_GAMEPAD_DPAD_RIGHT)
+	if (render_scale && (pressed & XINPUT_GAMEPAD_DPAD_RIGHT))
 		halo_render_scale_step(1);
+	if (upscaled_textures && (pressed & XINPUT_GAMEPAD_DPAD_UP))
+		halo_texture_upscale_toggle();
 	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT |
 		XINPUT_GAMEPAD_DPAD_RIGHT);
 }
@@ -215,8 +224,8 @@ debug.sense_tuning_chord: while a hand aims and Back is held (the Sense controll
 pushed past PITCH_CHORD_PUSH up or down (and let back inside
 PITCH_CHORD_RELEASE before the next), or the D-pad's up or down (a
 DualSense's), steps it by a degree, down tilting the barrel further down.
-render_scale_dpad runs first, so with debug.render_scale_dpad or
-debug.hud_distance_cycle on the D-pad is theirs and only the stick steps it.
+back_dpad runs first, so with debug.render_scale_dpad,
+debug.upscaled_textures_toggle or debug.hud_distance_cycle on the D-pad is theirs and only the stick steps it.
 The same chord with the right stick pushed right or left steps the hand's
 aim assist (input.aim_assist) up or down by half, and a click of the right
 stick cycles on-target steadying (input.aim_steady) off, default and strong,
@@ -1526,7 +1535,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 #ifdef HALO_IOS
 		external_mode_chord(&state->Gamepad);
 #endif
-		render_scale_dpad(&state->Gamepad);
+		back_dpad(&state->Gamepad);
 		aim_pitch_offset_chord(&state->Gamepad);
 		anti_aliasing_chord(&state->Gamepad);
 

@@ -195,6 +195,11 @@ it enters the background, so Settings shows what the session built; the textures
 level needs them. Apple TV has no per-app Settings page. The code is in
 `host/host_texture_settings.m`.
 
+To compare upscaled and original textures in game, set
+`upscaled_textures_toggle = true` in the `[debug]` section of `config.toml`:
+then, while you hold Back on a controller, D-pad up switches the level's
+textures between upscaled and original at once, with a two-second readout.
+
 ## Controls
 
 ### Resolution

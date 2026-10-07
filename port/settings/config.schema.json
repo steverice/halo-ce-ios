@@ -1535,6 +1535,16 @@
             "apple"
           ]
         },
+        "upscaled_textures_toggle": {
+          "type": "boolean",
+          "default": false,
+          "description": "While Back is held, the D-pad's up switches all of the level's textures between upscaled (and debug.texture_override_directory's) and original, shown on screen for two seconds; each level starts upscaled, and display.upscaled_textures is not changed. The game doesn't see the D-pad meanwhile.",
+          "x-environment": "HALO_UPSCALED_TEXTURES_TOGGLE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "input_record": {
           "type": "string",
           "default": "",

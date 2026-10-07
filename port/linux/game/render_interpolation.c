@@ -563,10 +563,13 @@ static real fraction_for_display(real fraction)
 
 /* d3d8_device.c: debug.render_scale_dpad's readout */
 void halo_render_scale_overlay(void);
+/* xbox_textures.c: debug.upscaled_textures_toggle's readout */
+void halo_texture_upscale_overlay(void);
 
 void render_interpolation_frame_begin(void)
 {
 	halo_render_scale_overlay();
+	halo_texture_upscale_overlay();
 	interpolation_rendering = halo_interpolation_enabled();
 	interpolation_frame++;
 	interpolation_fraction = fraction_for_display(game_time_get_tick_fraction());

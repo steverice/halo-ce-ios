@@ -1121,6 +1121,13 @@ static const struct config_setting config_settings[] =
 		"arms tuning as the game runs (laser mode, aim assist, steadying, pitch offset,\n"
 		"origin raise, reticle easing, arms, gun smoothing), and the game sees neither\n"
 		"stick meanwhile. Off, Back with those buttons is ordinary game input." },
+	{ "debug.upscaled_textures_toggle", _config_boolean, "false", "HALO_UPSCALED_TEXTURES_TOGGLE", _environment_value,
+		_platform_ios,
+		"While Back is held, the D-pad's up switches all of the level's textures\n"
+		"between upscaled (and debug.texture_override_directory's) and original,\n"
+		"shown on screen for two seconds; each level starts upscaled, and\n"
+		"display.upscaled_textures is not changed. The game doesn't see the D-pad\n"
+		"meanwhile." },
 	{ "debug.input_record", _config_string, "\"\"", "HALO_INPUT_RECORD", _environment_value, _platform_all,
 		"Record controller 1 while a map plays, to <name>.input in the data folder\n"
 		"(port/linux/src/input_replay.c); empty records nothing." },
