@@ -6135,6 +6135,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			present.cut_covered = halo_stereo_cut_covered();
 			/* and whether the full view is held black over a seat's exit glide */
 			present.cut_requested = halo_stereo_cut_requested();
+			/* and how far a seat's look fade veils it */
+			halo_stereo_seat_look_fade(&present.seat_look_dim, &present.seat_look_blur);
 			/* input.comfort_vignette, while the stick turns the look */
 			present.vignette = halo_stereo_vignette();
 			/* HEAD mode's UI: in the full view, the UI layer on the UI's

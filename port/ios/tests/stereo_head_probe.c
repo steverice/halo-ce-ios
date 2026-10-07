@@ -40,6 +40,7 @@ head-driven look, no 3D film, no screen framing. */
 #include "host_stereo_head.h"
 #include "host_stereo_vignette.h"
 #include "halo_stereo_window.h"
+#include "halo_stereo_veil.h"
 
 /* the eye shader's vignette mask, as C */
 HOST_STEREO_VIGNETTE_SOURCE
@@ -102,6 +103,10 @@ double config_real(const char *name)
 		return 1.0;
 	if (!strcmp(name, "debug.screen_lean"))
 		return 0.0;
+	if (!strcmp(name, "display.seat_look_fade_start"))
+		return 5.0;
+	if (!strcmp(name, "display.seat_look_fade_black"))
+		return 45.0;
 	return setting_snap_angle;
 }
 int config_boolean(const char *name) { return !strcmp(name, "input.comfort_vignette") && setting_comfort_vignette; }
@@ -359,6 +364,9 @@ static void restart(const char *turn, double snap_angle, double smooth_turn_spee
 	seat_cut_requested = 0;
 	camera_held_facing = 0;
 	fold_wait_frames = 0;
+	seat_limited = 0;
+	seat_look_fade_now = 0.0f;
+	seat_look_fade_logged = 0;
 	set_pose(0.0f, 0.0f, 0.0f);
 	/* a frame with the Compositor's eyes: the head drives the view */
 	halo_stereo_frame_begin();
@@ -2886,6 +2894,111 @@ static void immersive_cutscene(void)
 		cutscene_frame();
 }
 
+/* display.seat_look_fade: the seat's 45 degree limit, the fade from 5
+degrees past it to black at 45 (the defaults); the world keeps following the
+head throughout (seat_yaw_limit checks that with the fade off, and the fade
+changes nothing the eye cameras do) */
+static void seat_look_fade(void)
+{
+	struct seat_run run;
+	float head = 0.0f, dim, blur, last, worst_step = 0.0f, body0, expected;
+	int frame, held = 1;
+
+	printf("a seat's look fade (display.seat_look_fade, 5 to 45 deg past the limit):\n");
+	seat_start(&run, "snap");
+	seat_look_fade_setting = 1;
+	seat_look_fade_blur_setting = 1;
+	seat_look_fade_start = 5.0f * DEGREES;
+	seat_look_fade_black = 45.0f * DEGREES;
+	seat_hold(&run, head, 3);
+	body0 = run.body;
+	seat_turn_to(&run, &head, 48.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  3 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(dim == 0.0f && blur == 0.0f, "inside the fade's start the view is clear");
+	seat_turn_to(&run, &head, 70.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  25 deg past: dim %.3f, blur %.3f, the body %.4f deg from its start\n", dim, blur,
+		remainderf(run.body - body0, 360.0f));
+	check(fabsf(dim - 0.5f) < 1e-3f && blur > 0.998f, "half way to black: half dimmed, fully blurred");
+	check(fabsf(remainderf(run.body - body0, 360.0f)) < 0.01f, "and the world still holds still in the room");
+	seat_turn_to(&run, &head, 100.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  55 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(dim == 1.0f, "past the black angle the view is black");
+	/* paused: neither the look nor the clamp runs; the head turns further */
+	for (frame = 0; frame < 30; frame++) {
+		set_pose((100.0f + (float)frame) * DEGREES, 0.0f, 0.0f);
+		halo_stereo_frame_begin();
+		halo_stereo_seat_look_fade(&dim, &blur);
+		held &= dim == 1.0f;
+	}
+	set_pose(100.0f * DEGREES, 0.0f, 0.0f);
+	halo_stereo_frame_begin();
+	check(held, "paused in the seat, the fade holds");
+	seat_look_fade_blur_setting = 0;
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 1.0f && blur == 0.0f, "display.seat_look_fade_blur false: dimmed, never blurred");
+	seat_look_fade_blur_setting = 1;
+	/* back inside the limit at once: eased out, never a flash */
+	last = 1.0f;
+	for (frame = 0; frame < 30; frame++) {
+		seat_step(&run, 0.0f, 0.0f);
+		halo_stereo_seat_look_fade(&dim, &blur);
+		worst_step = fmaxf(worst_step, fabsf(dim - last));
+		last = dim;
+	}
+	printf("  the head back to 0 in a frame: the fade's largest change a frame %.3f, now %.3f\n", worst_step, dim);
+	check(worst_step <= SEAT_LOOK_FADE_RATE / 30.0f + 1e-4f && dim == 0.0f,
+		"a jump in the head's angle eases the fade (at most 1 in 0.25 s), down to clear");
+	/* a smoothstep in between */
+	expected = halo_stereo_seat_look_fade_ease(0.0f, 15.0f * DEGREES, 5.0f * DEGREES, 45.0f * DEGREES, 10.0f);
+	check(fabsf(expected - 0.15625f) < 1e-4f, "10 deg into the 40 deg ramp: a smoothstep's 0.156");
+	/* leaving the seat with the head past the limit: the fade goes */
+	head = 0.0f;
+	seat_turn_to(&run, &head, 80.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	seated = 0;
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  out of the seat: dim %.3f\n", dim);
+	check(dim == 0.0f, "out of the seat (no clamp) the view is clear");
+	/* the setting off */
+	seat_start(&run, "snap");
+	seat_look_fade_setting = 0;
+	head = 0.0f;
+	seat_turn_to(&run, &head, 120.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && blur == 0.0f, "display.seat_look_fade false: never faded");
+	seated = 0;
+	/* the presenter's veil (halo_stereo_veil.h): fully blurred, it's the
+	immersive cutscene's dimmed outside; nothing blurred or dimmed, the
+	picture; dim 1, black */
+	{
+		const float sharp[3] = { 0.8f, 0.4f, 0.1f }, blurred[3] = { 0.3f, 0.6f, 0.9f };
+		float dimmed[3], worst = 0.0f, sharp_luma = halo_stereo_veil_luma(sharp[0], sharp[1], sharp[2]);
+		float blurred_luma = halo_stereo_veil_luma(blurred[0], blurred[1], blurred[2]);
+		int channel;
+
+		halo_stereo_cutscene_dimmed(blurred, 0.6f, dimmed);
+		for (channel = 0; channel < 3; channel++) {
+			worst = fmaxf(worst, fabsf(halo_stereo_veil(sharp[channel], blurred[channel], sharp_luma, blurred_luma,
+				1.0f, 0.6f) - dimmed[channel]));
+			worst = fmaxf(worst, fabsf(halo_stereo_veil(sharp[channel], blurred[channel], sharp_luma, blurred_luma,
+				0.0f, 0.0f) - sharp[channel]));
+			worst = fmaxf(worst, fabsf(halo_stereo_veil(sharp[channel], blurred[channel], sharp_luma, blurred_luma,
+				0.5f, 1.0f)));
+		}
+		check(worst < 1e-6f, "the veil: the cutscene's dimmed outside fully blurred, the picture unveiled, black at "
+			"dim 1");
+	}
+	seat_look_fade_setting = 0;
+}
+
 int main(void)
 {
 	pole_crossing();
@@ -2909,6 +3022,7 @@ int main(void)
 	glide();
 	seat_yaw_limit();
 	seat_leftover_kept();
+	seat_look_fade();
 	third_person_ends();
 	first_person_cutscenes();
 	released_cutscene();

@@ -43,6 +43,7 @@ Elsewhere host_stereo_frame leaves the frame mono. */
 #include "host_stereo_hud.h"
 #include "halo_stereo_window.h"
 #include "halo_stereo_cutscene.h"
+#include "halo_stereo_veil.h"
 
 /* one world unit in meters */
 #define METERS_PER_UNIT 3.048f
@@ -154,7 +155,18 @@ static NSString *const shader_source =
 	"struct eye_uniforms { uint decode_srgb; float depth_scale; float depth_floor; float brightness; float vignette;\n"
 	"	float4 tangents; float vignette_inner; float vignette_outer; uint expanding; float bars; float4 window;\n"
 	"	float4 tint; float tint_depth; float4x4 screen_from_view; uint cutscene; float4 frame;\n"
-	"	float4x4 frame_from_view; };\n"
+	"	float4x4 frame_from_view; float4 look; };\n"
+	/* the eyes' veil (halo_stereo_veil.h): the picture toward its blur by
+	share, then desaturated and darkened by dim, for whatever veils it */
+	HALO_STEREO_VEIL_STRING(HALO_STEREO_VEIL_SOURCE) "\n"
+	"static float3 eye_veil(float3 color, float3 blur, float share, float dim)\n"
+	"{\n"
+	"	float sharp_luma = halo_stereo_veil_luma(color.r, color.g, color.b);\n"
+	"	float blurred_luma = halo_stereo_veil_luma(blur.r, blur.g, blur.b);\n"
+	"	return float3(halo_stereo_veil(color.r, blur.r, sharp_luma, blurred_luma, share, dim),\n"
+	"		halo_stereo_veil(color.g, blur.g, sharp_luma, blurred_luma, share, dim),\n"
+	"		halo_stereo_veil(color.b, blur.b, sharp_luma, blurred_luma, share, dim));\n"
+	"}\n"
 	/* Task 12k's immersive cutscene (halo_stereo_cutscene.h): 0 inside the
 	director's frame to 1 outside it, at the view's coordinate */
 	HALO_STEREO_CUTSCENE_STRING(HALO_STEREO_CUTSCENE_SOURCE) "\n"
@@ -207,6 +219,11 @@ static NSString *const shader_source =
 	"		float keep = 1.0 - u.frame.w;\n"
 	"		color = mix(color, (luma + (blur - luma) * keep) * keep, outside);\n"
 	"	}\n"
+	/* a seat's look fade (display.seat_look_fade): the whole view veiled,
+	look.x the dim and look.y the blur's share (0 where no blur is read) */
+	"	if (u.look.x > 0.0 || u.look.y > 0.0)\n"
+	"		color = eye_veil(color, u.look.y > 0.0 ? blurred.sample(linear, coordinate).rgb : color, u.look.y,\n"
+	"			u.look.x);\n"
 	"	if (u.decode_srgb)\n"
 	"		color = select(pow((color + 0.055) / 1.055, 2.4), color / 12.92, color <= 0.04045);\n"
 	"	float edge = u.vignette > 0.0 ? host_stereo_vignette_edge(coordinate.x, coordinate.y, u.tangents.x,\n"
@@ -699,6 +716,9 @@ struct eye_uniforms
 	uint32_t cutscene;
 	simd_float4 frame;
 	simd_float4x4 frame_from_view;
+	/* a seat's look fade: the dim and the blur's share (0 without the
+	blur); the rest unused */
+	simd_float4 look;
 };
 
 /* blur_fragment's: one tap's step (normalized), the taps each side, sigma */
@@ -1919,7 +1939,8 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 	const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
 	float far_meters, float brightness, float vignette, float ui_dim, int expanding, float expansion,
 	float expansion_bars, const float fade[4], int cutscene, const float cutscene_forward[3],
-	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim)
+	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim, float look_dim,
+	float look_blur)
 {
 	id<MTLTexture> hud = hud_layers[HOST_STEREO_HUD_LAYER_HUD];
 	/* the HUD's pieces need its layer or the UI's (a pause can leave the
@@ -1999,8 +2020,14 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 		if (cutscene && hud && !hud_ui)
 			quad_count = cutscene_hud_quad(cutscene_forward, cutscene_up, cutscene_tangents, hud_placement()->distance,
 				quads);
-		/* and its blur, once a frame for both eyes, before the views */
-		int cutscene_blurred = cutscene && cutscene_blur(queue, left, right);
+		/* a seat's look fade (display.seat_look_fade): the dim and the
+		blur's share */
+		look_dim = fmaxf(0.0f, fminf(1.0f, look_dim));
+		look_blur = fmaxf(0.0f, fminf(1.0f, look_blur));
+		/* and the blur, once a frame for both eyes, before the views: the
+		immersive cutscene's outside, or a seat's look fade */
+		int eyes_blurred = (cutscene || look_blur > 0.0f) && cutscene_blur(queue, left, right);
+		int cutscene_blurred = cutscene && eyes_blurred;
 		/* while the cutscene window expands, the HUD's pieces and the
 		crosshairs wait for it to cover the view (they would hang over the
 		room outside it); a menu's UI quad shows, as the eyes darken for it */
@@ -2136,6 +2163,9 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 					brightness * (decode_srgb ? powf(ui_keep, 2.2f) : ui_keep),
 					fmaxf(0.0f, fminf(1.0f, vignette)), view_tangents(drawable, view_index),
 					HOST_STEREO_VIGNETTE_CLEAR_SHARE * vignette_outer, vignette_outer };
+				/* a seat's look fade darkens the HUD's pieces and the zoomed
+				picture as the eyes', in linear light on an sRGB target */
+				float look_keep = decode_srgb ? powf(1.0f - look_dim, 2.2f) : 1.0f - look_dim;
 				simd_float4x4 projection = cp_drawable_compute_projection(drawable,
 					cp_axis_direction_convention_right_up_back, view_index);
 
@@ -2155,6 +2185,7 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 						HALO_STEREO_CUTSCENE_SOFT_EDGE, fmaxf(0.0f, fminf(1.0f, cutscene_dim)) };
 					eye_uniforms.frame_from_view = simd_mul(frame_from_device, device_from_view);
 				}
+				eye_uniforms.look = (simd_float4){ look_dim, eyes_blurred ? look_blur : 0.0f, 0.0f, 0.0f };
 				/* the window this frame: from the screen as this eye sees it
 				toward the end, never smaller than its last frame's */
 				if (expanding)
@@ -2235,7 +2266,7 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 					[encoder setFragmentTexture:colors[eye] atIndex:0];
 					[encoder setFragmentTexture:depths[eye] atIndex:1];
 					/* (the eye's own picture where no blur is read) */
-					[encoder setFragmentTexture:cutscene_blurred ? blur_targets[eye][0] : colors[eye] atIndex:2];
+					[encoder setFragmentTexture:eyes_blurred ? blur_targets[eye][0] : colors[eye] atIndex:2];
 					[encoder setFragmentSamplerState:linear_sampler atIndex:0];
 					[encoder setFragmentSamplerState:nearest_sampler atIndex:1];
 					[encoder setFragmentBytes:&eye_uniforms length:sizeof(eye_uniforms) atIndex:0];
@@ -2249,18 +2280,26 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 				{
 					simd_float4x4 clip_from_device = simd_mul(projection, simd_inverse(cp_view_get_transform(view)));
 
-					/* (dimmed as the eye's picture would be: the cut's fade and the
-					widgets' dim, eye_uniforms.brightness) */
+					/* (dimmed as the eye's picture would be: the cut's fade, the
+					widgets' dim and a seat's look fade, eye_uniforms.brightness) */
 					if (zoom_shown)
 					{
 						__unsafe_unretained id<MTLTexture> zoom_layers[1] = { zoom };
 
 						hud_draw(encoder, zoom_layers, 1, &zoom_quad, 1, clip_from_device, level, decode_srgb,
-							eye_uniforms.brightness, 1);
+							eye_uniforms.brightness * look_keep, 1);
 					}
-					if (quad_count > 0)
-						hud_draw(encoder, hud_layers, HOST_STEREO_HUD_LAYER_COUNT, quads, quad_count, clip_from_device,
-							level, decode_srgb, brightness, 0);
+					/* the HUD's pieces and the crosshair fade with a seat's look
+					fade; a menu's UI quad, last, never does */
+					int faded = quad_count;
+					while (faded > 0 && quads[faded - 1].layer == HOST_STEREO_HUD_LAYER_UI)
+						faded--;
+					if (faded > 0)
+						hud_draw(encoder, hud_layers, HOST_STEREO_HUD_LAYER_COUNT, quads, faded, clip_from_device,
+							level, decode_srgb, brightness * look_keep, 0);
+					if (quad_count > faded)
+						hud_draw(encoder, hud_layers, HOST_STEREO_HUD_LAYER_COUNT, quads + faded, quad_count - faded,
+							clip_from_device, level, decode_srgb, brightness, 0);
 				}
 				[encoder endEncoding];
 			}
@@ -2279,6 +2318,8 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 	(void)cutscene_up;
 	(void)cutscene_tangents;
 	(void)cutscene_dim;
+	(void)look_dim;
+	(void)look_blur;
 	(void)expanding;
 	(void)expansion;
 	(void)expansion_bars;

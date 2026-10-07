@@ -336,6 +336,18 @@ float halo_stereo_vignette(void);
 120 degrees per second (0 to 1, more is full) and the time since, in seconds: it eases
 toward the share, in over 0.1 s and out over 0.2 s */
 float halo_stereo_vignette_ease(float strength, float turn_fraction, float time_delta);
+/* display.seat_look_fade: in HEAD mode's full view, in a first-person seat
+whose limit holds the aim back from the head (halo_stereo_seat_yaw_clamp),
+how far the presenter veils the eyes (halo_stereo_veil.h) and the HUD's
+pieces this frame: dim (0 to 1, 1 black) and blur (0 to 1, toward the
+eyes' blur; 0 with display.seat_look_fade_blur off); both 0 elsewhere. The
+world keeps following the head: only the picture fades */
+void halo_stereo_seat_look_fade(float *dim, float *blur);
+/* the fade's next value from its value now, how far the head is past the
+seat's limit (radians, 0 or more), the fade's start and black angles past
+it (radians) and the time since (seconds): it eases toward a smoothstep of
+the angle from start to black, at most 1 in 0.25 s either way */
+float halo_stereo_seat_look_fade_ease(float fade, float past, float start, float black, float time_delta);
 /* HEAD mode's render (source/render/render.c): gives a camera the head's yaw
 at render time (the game camera's yaw less the head yaw it holds,
 halo_stereo_camera_head_yaw, plus the head's yaw now: what the look took

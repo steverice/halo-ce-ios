@@ -254,6 +254,25 @@ static const struct config_setting config_settings[] =
 		"With display.stereo = \"head\": how far your eyes sit above the game's\n"
 		"camera, in world units (-0.1 to 0.1; 0.03 is about 9 cm), for trying a\n"
 		"taller eye height. Not in cutscenes. Read at start." },
+	{ "display.seat_look_fade", _config_boolean, "true", "HALO_SEAT_LOOK_FADE", _environment_value, _platform_ios,
+		"With display.stereo = \"head\": in a first-person seat whose aim has a\n"
+		"limit (a Warthog's passenger seat, the Pelican's bench, a10's cryo pod),\n"
+		"looking past the limit fades the view and the HUD toward black as the\n"
+		"head turns on, while the world still moves with the head. False lets the\n"
+		"head look all the way around. Read at start." },
+	{ "display.seat_look_fade_start", _config_real, "5.0", "HALO_SEAT_LOOK_FADE_START", _environment_value,
+		_platform_ios,
+		"With display.seat_look_fade: how many degrees past the seat's limit the\n"
+		"fade begins (0 to 90). Read at start." },
+	{ "display.seat_look_fade_black", _config_real, "45.0", "HALO_SEAT_LOOK_FADE_BLACK", _environment_value,
+		_platform_ios,
+		"With display.seat_look_fade: how many degrees past the seat's limit the\n"
+		"view is black (1 to 180, past display.seat_look_fade_start). Read at\n"
+		"start." },
+	{ "display.seat_look_fade_blur", _config_boolean, "true", "HALO_SEAT_LOOK_FADE_BLUR", _environment_value,
+		_platform_ios,
+		"With display.seat_look_fade: blur the view as it fades, the blur full\n"
+		"half way to black; false only dims it. Read at start." },
 	{ "display.film_depth_share", _config_real, "0.25", "HALO_FILM_DEPTH_SHARE", _environment_value, _platform_ios,
 		"With display.stereo: how deep a cutscene (a 3D film on the screen) looks:\n"
 		"how far behind the screen the far distance sits, as a share of your eye\n"

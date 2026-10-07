@@ -5957,7 +5957,7 @@ static uint32_t gpu_metal_present_stereo(const struct gpu_stereo_present *presen
 				present->expanding, present->cut_requested),
 				present->vignette, present->ui_dim, present->expanding, present->expansion, present->expansion_bars,
 				present->fade, present->cutscene, present->cutscene_forward, present->cutscene_up,
-				present->cutscene_tangents, present->cutscene_dim);
+				present->cutscene_tangents, present->cutscene_dim, present->seat_look_dim, present->seat_look_blur);
 			frames++;
 			pacing.work_started = CACurrentMediaTime();
 			return 0;
