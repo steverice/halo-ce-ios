@@ -14,6 +14,7 @@ to read the eyes' poses and presents it full view. */
 #import <Metal/Metal.h>
 #import <UIKit/UIKit.h>
 #include <simd/simd.h>
+#include <SDL3/SDL.h>
 #include "host_config.h"
 #include "host_theater.h"
 #include "host_stereo.h"
@@ -205,17 +206,30 @@ id<MTLRasterizationRateMap> host_theater_view_rate_map(cp_drawable_t drawable, c
 the screen while the space is open: its frames go to the screen meanwhile.
 An alert or share sheet's window (host_share.m) is left as it is: the space
 can open while one is up, waiting for the player, and one put away stays
-hidden */
+hidden. Shown again, the game's window becomes the key window unless an
+alert or sheet is still up: one put away while it was hidden could not give
+it back (host_dismiss_window), and without a key window a keyboard's keys
+go nowhere */
 static void window_hidden(BOOL hidden)
 {
+	BOOL present_up = NO;
+	UIWindow *game = (__bridge UIWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(host_sdl_window()),
+		SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, NULL);
+
 	for (UIScene *scene in UIApplication.sharedApplication.connectedScenes)
 	{
 		if (![scene isKindOfClass:UIWindowScene.class])
 			continue;
 		for (UIWindow *window in ((UIWindowScene *)scene).windows)
+		{
 			if (!host_is_present_window(window))
 				window.hidden = hidden;
+			else if (!window.hidden)
+				present_up = YES;
+		}
 	}
+	if (!hidden && !present_up && game && !game.isKeyWindow)
+		[game makeKeyWindow];
 }
 
 void host_theater_load_settings(void)
