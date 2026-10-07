@@ -23,6 +23,9 @@ void console_close(void);
 boolean console_is_active(void);
 void console_printf(boolean clear, const char *format, ...);
 void console_warning(const char *format, ...);
+/* port: a red line meant for the player, as console_warning, which Apple
+builds draw though they keep the rest of the console off the picture */
+void console_notice(const char *format, ...);
 void console_startup(void);
 void console_dispose(void);
 boolean console_update(void);

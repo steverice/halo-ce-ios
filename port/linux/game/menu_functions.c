@@ -5815,7 +5815,7 @@ void pc_menu_game_data_function_invoke(
 
 boolean main_port_main_menu_loaded(void);
 boolean game_map_loaded(void);
-void console_warning(const char *format, ...);
+void console_notice(const char *format, ...);
 
 /* whether the main menu has been up since the app started: before that, a
 link is the one the app was launched with */
@@ -5872,7 +5872,7 @@ void menu_invite_taken(void)
 	if (!screen || invite_waits())
 	{
 		platform_log("menus: an invite was taken in a game or a lobby; told the player");
-		console_warning("Invite received: open Join Game > Direct Link after this game");
+		console_notice("Invite received: open Join Game > Direct Link after this game");
 		return;
 	}
 	platform_log("menus: an invite was taken; Direct Link opens");
