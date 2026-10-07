@@ -408,6 +408,9 @@ static struct
 	/* an invite from elsewhere (join_link.txt, the hand-off) was taken: for
 	the menus (p2p_take_invite_taken) */
 	int invite_taken;
+	/* the invite's host never answered (JOIN_TIMEOUT): for the menus
+	(p2p_take_join_failed) */
+	int join_failed;
 
 	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
 	the router; the port it forwards here, when it was last asked, how soon
@@ -2637,6 +2640,8 @@ static int join_invite(const char *text)
 	memcpy(p2p.join_host_hash, hash, sizeof(hash));
 	memcpy(p2p.join_token, token, sizeof(token));
 	p2p.join_requested = 1;
+	/* (a new join: an earlier one's failure is no longer news) */
+	p2p.join_failed = 0;
 	return 1;
 }
 
@@ -2709,6 +2714,7 @@ static void update_joining(void)
 	{
 		p2p.joining = 0;
 		p2p_signal_stop_joining();
+		p2p.join_failed = 1;
 		platform_log("Internet play: no answer from the invite's host; it may have stopped hosting or quit");
 	}
 }
@@ -3454,6 +3460,19 @@ int p2p_take_invite_taken(void)
 	p2p.invite_taken = 0;
 	pthread_mutex_unlock(&p2p_lock);
 	return taken;
+}
+
+int p2p_take_join_failed(void)
+{
+	int failed;
+
+	if (!p2p.running)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	failed = p2p.join_failed;
+	p2p.join_failed = 0;
+	pthread_mutex_unlock(&p2p_lock);
+	return failed;
 }
 
 /* ---------- invites from elsewhere */

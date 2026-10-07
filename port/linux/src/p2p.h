@@ -88,6 +88,9 @@ const char *p2p_take_clipboard_text(void);
 builds and Android, the hand-off on the desktop) was taken. Called from
 the main thread */
 int p2p_take_invite_taken(void);
+/* nonzero once after a join's host never answered (it gave up after 90
+seconds). Called from the main thread */
+int p2p_take_join_failed(void);
 
 /* whether a game this machine hosts may be joined from the internet (an
 invite, Discord): the PC menus' Create Game > Internet (the default), not

@@ -5908,6 +5908,16 @@ void menu_invite_taken(void)
 	invite_jump(screen);
 }
 
+/* (Apple builds; sdl_platform.c, on the main thread) the invite's host never
+answered (p2p.c's JOIN_TIMEOUT): Direct Link stops saying it connects and
+shows its PASTE LINK line again, and the player is told */
+void menu_join_failed(void)
+{
+	multiplayer.invite_pending = FALSE;
+	platform_log("menus: the invite's host never answered; told the player");
+	console_notice("Could not reach the host");
+}
+
 /* (Apple builds; every pump, sdl_platform.c) the jump a link at launch is
 waiting for, once the main menu's screen is up */
 void menu_invite_poll(void)

@@ -1110,6 +1110,8 @@ void menu_invite_taken(void);
 void menu_invite_poll(void);
 /* (menu_functions.c) in a network game or its lobby */
 int menu_in_network_game(void);
+/* (menu_functions.c) an invite's host never answered */
+void menu_join_failed(void);
 void console_notice(const char *format, ...);
 
 /* a question with two answers; nonzero for yes (debug.link_consent_answer
@@ -1226,6 +1228,9 @@ static void platform_invite_clipboard(BOOL look)
 	/* (one poll_invite_file took, on the p2p thread) */
 	if (p2p_take_invite_taken())
 		menu_invite_taken();
+	/* (one p2p's thread gave up on) */
+	if (p2p_take_join_failed())
+		menu_join_failed();
 	menu_invite_poll();
 #endif
 	if (invite)
