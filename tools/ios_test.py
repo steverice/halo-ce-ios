@@ -408,6 +408,9 @@ if '{ "display.foveation", _config_boolean, "true"' not in (ROOT / 'port/linux/s
 mac_run_text = (ROOT / 'tools/mac_run.py').read_text()
 if '"display.foveation": "true",' not in mac_run_text or '"debug.foveation_eye_passes": "true",' not in mac_run_text:
     raise SystemExit("mac_run.py: DEFAULTS must follow port_config.c's foveation defaults")
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/ios/host',
+    'port/ios/tests/host_lan_probe.c', 'port/ios/host/host_lan.c', f'--output={BUILD / "host-lan-probe"}')
+run(BUILD/'host-lan-probe')
 
 # The menus' platform attribute: "quit" is for the desktop ports and the Mac app (the host sets HALO_APP_CAN_QUIT), not
 # for an iPhone, an iPad, an Apple TV or a Vision Pro (menu_platform.h)
