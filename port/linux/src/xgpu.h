@@ -29,11 +29,6 @@ void xgpu_gl_state_invalidate(void);
 may give its name to a new texture (call before glDeleteTextures) */
 void xgpu_gl_texture_deleted(unsigned int texture);
 
-/* a compiled shader, or a linked program of two, or 0 with the log
-written */
-GLuint xgpu_compile_shader(GLenum type, const char *code, const char *what);
-GLuint xgpu_link_program(GLuint vertex_shader, GLuint fragment_shader, const char *what);
-
 /* ---------- the shading language
 
 The translators write the GLSL of the context the device has: desktop GL
