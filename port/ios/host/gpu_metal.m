@@ -1073,6 +1073,10 @@ static struct metal_hold window_hold;
 #define HOLD_LIMIT 30
 /* gpu_metal_present held this frame (async_frame_end counts it) */
 static BOOL frame_held;
+/* when the backend started (the launch's lines), and the frames in a row
+with skipped draws */
+static CFTimeInterval compile_started;
+static unsigned long skipping_frames;
 
 static const char *compile_kind_name(int kind)
 {
@@ -3787,19 +3791,32 @@ waited for). After it, a line every 600 frames when more draws were skipped
 (a map's load, a new effect) */
 static void async_frame_end(void)
 {
-	unsigned long skipped;
+	static int reports;
+	unsigned long skipped, outstanding;
 	int broken;
 
 	if (!async_compiles)
 		return;
 	skipped = metal_skip_frame_end(&skip_frame, &broken);
-	if (metal_compile_frame_end(&compile_totals, skipped, frame_held, atomic_load(&compiles_outstanding)))
+	outstanding = atomic_load(&compiles_outstanding);
+	/* (a few lines while draws keep skipping, a frame in every 300) */
+	skipping_frames = skipped ? skipping_frames + 1 : 0;
+	if (skipping_frames % 300 == 299 && reports < 6)
+	{
+		reports++;
+		platform_log("Metal: async shaders: frame %lu, %.1f s in: %lu frames in a row have skipped draws (%lu in this "
+			"one); %lu compiles running, %zu pipelines claimed and not yet made", frames,
+			CACurrentMediaTime() - compile_started, skipping_frames, skipped, outstanding,
+			metal_compile_pending(&pipeline_table));
+	}
+	if (metal_compile_frame_end(&compile_totals, skipped, frame_held, outstanding))
 	{
 		pthread_mutex_lock(&compile_totals.lock);
-		platform_log("Metal: async shaders: the first compiles are done at frame %lu: %lu draws skipped in %lu frames "
-			"(%lu held in the window) while %lu compiles ran on workers; the slowest, a %s, took %.0f ms", frames,
-			compile_totals.draws_skipped, compile_totals.frames_skipping, compile_totals.frames_held,
-			compile_totals.compiles, compile_kind_name(compile_totals.slowest_kind), compile_totals.slowest * 1e3);
+		platform_log("Metal: async shaders: the first compiles are done at frame %lu, %.1f s in: %lu draws skipped in "
+			"%lu frames (%lu held in the window) while %lu compiles ran on workers; the slowest, a %s, took %.0f ms",
+			frames, CACurrentMediaTime() - compile_started, compile_totals.draws_skipped, compile_totals.frames_skipping,
+			compile_totals.frames_held, compile_totals.compiles, compile_kind_name(compile_totals.slowest_kind),
+			compile_totals.slowest * 1e3);
 		pthread_mutex_unlock(&compile_totals.lock);
 	}
 	else if (frames % 600 == 599)
@@ -3878,6 +3895,18 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
 		waited = CACurrentMediaTime();
 		drawable = frame_held ? nil : [layer nextDrawable];
+		/* (a held frame waits a refresh, as the drawable would have, so the
+		game doesn't spin through frames of skipped draws, taking a core from
+		the compiles) */
+		if (frame_held)
+		{
+			CFTimeInterval period;
+
+			os_unfair_lock_lock(&pacing_lock);
+			period = refresh_period;
+			os_unfair_lock_unlock(&pacing_lock);
+			usleep((useconds_t)((period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 1.0 / 60.0) * 1e6));
+		}
 		pacing_waited += CACurrentMediaTime() - waited;
 		/* nil in the background (or held): the frame still commits, so its
 		slot is freed */
@@ -4240,6 +4269,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		metal_state_initialize(&state_cache, !(flags & GPU_INITIALIZE_NO_STATE_CACHE));
 		specialize_off = (flags & GPU_INITIALIZE_NO_SPECIALIZE) != 0;
 		async_compiles = (flags & GPU_INITIALIZE_ASYNC_SHADERS) != 0;
+		compile_started = CACurrentMediaTime();
 		metal_compile_totals_initialize(&compile_totals);
 		built_during_play = [NSMutableData data];
 		platform_log(async_compiles ? "Metal: shaders and pipelines compile on worker threads (display.async_shaders); "
