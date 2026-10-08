@@ -2,11 +2,13 @@
 GPU_GL.C
 
 The OpenGL backend (gpu.h): OpenGL 4.5 on the desktop, OpenGL ES 3 on
-Android. A gpu_texture is the GL texture's name.
+Android and the web, and the only file but its anti-aliasing passes (gpu_gl_post.c) that
+makes GL calls, besides the context's creation (sdl_platform.c). A
+gpu_texture, gpu_buffer or gpu_shader is the GL object's name.
 
 Render targets are textures. With multisampling, draws go to a multisampled
 renderbuffer of the target's instead, whose pixels are resolved into the
-texture before anything reads it (gpu_gl_resolve).
+texture before anything reads it (texture_resolve).
 */
 
 #include "gpu_gl.h"
@@ -162,7 +164,7 @@ void xgpu_gl_state_invalidate(void)
 /* (a unit the shadows still said had it would never be bound to a new
 texture GL gives its name to; and a stage no draw samples keeps what was
 bound to it: bind_textures) */
-void xgpu_gl_texture_deleted(unsigned int texture)
+static void texture_deleted(GLuint texture)
 {
 	int unit, slot;
 
@@ -702,9 +704,12 @@ void gpu_texture_destroy(gpu_texture texture)
 			glDeleteRenderbuffers(1, &record->multisample);
 		}
 	}
+	/* (a render target's framebuffers may be the bound ones) */
+	if (record->description.usage == GPU_USAGE_RENDER_TARGET)
+		xgpu_gl_state_invalidate();
 	memset(record, 0, sizeof(*record));
+	texture_deleted(texture);
 	glDeleteTextures(1, &texture);
-	xgpu_gl_state_invalidate();
 }
 
 uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size)
@@ -2659,7 +2664,7 @@ void gpu_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles,
 	clear_state_forget();
 }
 
-/* ---------- the anti-aliasing passes (xgpu_post.c) */
+/* ---------- the anti-aliasing passes (gpu_gl_post.c) */
 
 uint32_t gpu_anti_alias_prepare(uint32_t pass)
 {

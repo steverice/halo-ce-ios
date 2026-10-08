@@ -93,7 +93,7 @@ def test_the_platform_layer_leaves_out_what_a_browser_has_not():
     compile_flags(text, "port/android/host/host_watch_hash.c")
     # the C library's side keeps its own ABI (no MSVC semantics header)
     assert "msvc_semantics" not in compile_flags(text, "port/web/src/web_net.c")
-    assert "platform_msvc_semantics.h" in compile_flags(text, "port/linux/src/d3d8_gl.c")
+    assert "platform_msvc_semantics.h" in compile_flags(text, "port/linux/src/d3d8_device.c")
 
 
 def test_the_link_makes_the_memory_the_window_needs():

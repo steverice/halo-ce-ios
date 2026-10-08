@@ -65,13 +65,13 @@ unsigned int hud_hires_override_texture(long asset, unsigned long *levels);
 /* a GL texture drawn from an 8-bit RGBA PNG (as the tools write them), with
 all its mip levels, and their number; 0 if it could not be */
 unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned long *levels);
-/* whether its green is its coverage (d3d8_gl.c, nv2a_psh.c: coverage_alpha) */
+/* whether its green is its coverage (d3d8_device.c, nv2a_psh.c: coverage_alpha) */
 int hud_hires_override_coverage(long asset);
-/* the GL texture of the texture drawn for some of a bitmap's sprites whose
+/* the texture drawn for some of a bitmap's sprites whose
 placeholder's D3D texture has this Data, and the number of its mip levels;
 0 if data is no placeholder's */
 unsigned int hud_hires_placeholder_texture(unsigned long data, unsigned long *levels);
-/* whether its red holds exact segment thresholds, read unfiltered (d3d8_gl.c,
+/* whether its red holds exact segment thresholds, read unfiltered (d3d8_device.c,
 nv2a_psh.c: point_threshold) */
 int hud_hires_override_point_threshold(long asset);
 

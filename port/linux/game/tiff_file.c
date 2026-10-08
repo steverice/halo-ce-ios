@@ -8,7 +8,7 @@ called by main.c's screenshot_record: for the Xbox's movie recorder
 screenshot_size globals (screenshot_render). Those read the back buffer's
 memory, which the port draws into with OpenGL, never the CPU, so they never
 had the picture; the port's screenshots are its own (the Screenshot key,
-controls.screenshot, and debug.screenshot_every: d3d8_gl.c).
+controls.screenshot, and debug.screenshot_every: d3d8_device.c).
 */
 
 #include "cseries/cseries.h"

@@ -2,7 +2,7 @@
 GPU_GL.H
 
 The OpenGL backend's own declarations (gpu_gl.c), shared with its
-anti-aliasing passes (xgpu_post.c).
+anti-aliasing passes (gpu_gl_post.c).
 */
 
 #ifndef __HALO_LINUX_GPU_GL_H
@@ -13,7 +13,7 @@ anti-aliasing passes (xgpu_post.c).
 #include "gpu.h"
 
 #ifdef HALO_GLES
-/* OpenGL ES 3 (port/android/README.md): the desktop formats, enumerants
+/* OpenGL ES 3 (port/android/README.md, port/web/README.md): the desktop formats, enumerants
 and entry points used that ES lacks */
 #define GL_BGRA GL_RGBA
 #define glDepthRange glDepthRangef
@@ -49,7 +49,7 @@ extern struct xgpu_capabilities xgpu_capabilities;
 is reused only once the GPU has finished the frame that last used it */
 #define GPU_GL_FRAME_RING 3
 
-/* port/android/guest/runtime/guest_host.h */
+/* port/android/guest/runtime/guest_host.h (the web's: port/web/src/web_gl_host.c) */
 int host_gl_has_extension(const char *name);
 void host_gl_read_buffer(unsigned int buffer, unsigned int offset, unsigned int size, void *data);
 void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int size, const void *data);
@@ -74,7 +74,7 @@ GLuint xgpu_link_program(GLuint vertex_shader, GLuint fragment_shader, const cha
 
 /* ---------- anti-aliasing
 
-display.anti_aliasing's passes (xgpu_post.c): FXAA or SMAA antialias each
+display.anti_aliasing's passes (gpu_gl_post.c): FXAA or SMAA antialias each
 window's 3D view in place before the HUD and menus are drawn over it, so
 that their text stays sharp (gpu_anti_alias). */
 

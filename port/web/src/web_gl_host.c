@@ -60,7 +60,7 @@ void host_gl_read_buffer(unsigned int buffer, unsigned int offset, unsigned int 
 /* A WebGL buffer write is a copy the browser orders with the draws around
 it: a draw already made reads what it was given. (WebGL on Metal waits for
 the GPU first when a queued draw reads the buffer, so the renderer writes
-each draw's uploads into a buffer of their own: web_chunk_get, d3d8_gl.c.) */
+each draw's uploads into a buffer of their own: web_chunk_get, gpu_gl.c.) */
 void host_gl_buffer_write(unsigned int target, unsigned int offset, unsigned int size, const void *data)
 {
 	glBufferSubData((GLenum)target, (GLintptr)offset, (GLsizeiptr)size, data);

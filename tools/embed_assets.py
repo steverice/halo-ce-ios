@@ -15,7 +15,7 @@ port/assets/titles/titles.json and port/assets/buttons/buttons.json), the
 fonts and their tags from port/assets/fonts/fonts.json, the menu files
 listed in port/assets/menus/menus.json, and SMAA's shader and lookup
 textures, as port/linux/src/hud_hires.h, text_hires.h, menu_files.h and
-xgpu_post.c declare them. The builds generate it
+gpu_gl_post.c declare them. The builds generate it
 (hud_assets_build, called by tools/linux_build.py, windows_build.py and
 android_build.py), so the assets are the committed source and Android needs
 no files beside its guest image.
@@ -42,7 +42,7 @@ FONT_ASSETS = Path("port/assets/fonts")
 FONT_LIST = FONT_ASSETS / "fonts.json"
 MENU_ASSETS = Path("port/assets/menus")
 MENU_LIST = MENU_ASSETS / "menus.json"
-# SMAA's files and the names port/linux/src/xgpu_post.c declares them by
+# SMAA's files and the names port/linux/src/gpu_gl_post.c declares them by
 SMAA_ASSETS = Path("port/third_party/smaa")
 SMAA_FILES = (("SMAA.hlsl", "xgpu_smaa_shader"), ("area_tex.zlib", "xgpu_smaa_area_texture"),
               ("search_tex.zlib", "xgpu_smaa_search_texture"))
@@ -224,7 +224,7 @@ def main() -> None:
     lines.append(f"const unsigned int menu_files_embedded_count = {len(menus)};")
     lines.append("")
     # SMAA's shader, as text a GLSL compiler takes (ASCII, ending in a NUL),
-    # and its lookup textures (xgpu_post.c); each of size 0 that the
+    # and its lookup textures (gpu_gl_post.c); each of size 0 that the
     # checkout does not have. The OpenGL ES renderer has no SMAA.
     lines.append("#ifndef HALO_GLES")
     present = dict(smaa_files())

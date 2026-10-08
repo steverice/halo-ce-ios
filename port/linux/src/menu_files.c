@@ -1059,10 +1059,7 @@ void halo_menus_art_register(void const *texture, char const *png)
 	{
 		free(art[index].png);
 		if (art[index].texture)
-		{
-			xgpu_gl_texture_deleted(art[index].texture);
-			glDeleteTextures(1, &art[index].texture);
-		}
+			gpu_texture_destroy(art[index].texture);
 	}
 	memset(&art[index], 0, sizeof(art[index]));
 	art[index].data = data;
@@ -1077,10 +1074,7 @@ void halo_menus_art_forget(void)
 	{
 		free(art[index].png);
 		if (art[index].texture)
-		{
-			xgpu_gl_texture_deleted(art[index].texture);
-			glDeleteTextures(1, &art[index].texture);
-		}
+			gpu_texture_destroy(art[index].texture);
 	}
 	art_count = 0;
 }

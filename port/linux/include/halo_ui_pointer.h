@@ -6,7 +6,7 @@ of the Android build. While a menu is up, the mouse is released and its
 pointer shows (port/linux/src/sdl_platform.c), or taps and drags go to the
 menus (port/linux/src/touch_input.c); each frame the menus
 (source/interface/ui_widget.c) ask where the pointer is, in their own 640x480
-coordinates (port/linux/src/d3d8_gl.c undoes the letterbox, the scale and the
+coordinates (port/linux/src/d3d8_device.c undoes the letterbox, the scale and the
 widescreen centering), and what it did since.
 */
 

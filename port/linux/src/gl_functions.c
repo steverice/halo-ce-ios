@@ -24,7 +24,7 @@ int gl_functions_load(void)
 /* WebGL 2 is OpenGL ES 3.0: the 3.1 and 3.2 functions it lacks
 (glCopyImageSubData, glDrawElementsBaseVertex, glMemoryBarrier) stay NULL,
 and the renderer calls them only where its capabilities say the context
-has them (xgpu_capabilities, d3d8_gl.c) */
+has them (xgpu_capabilities, gpu_gl.c) */
 #define GL_MISSING_FAILS 0
 #else
 #define GL_MISSING_FAILS 1
@@ -41,7 +41,7 @@ has them (xgpu_capabilities, d3d8_gl.c) */
 #undef GL_LOAD_FUNCTION
 #if defined(HALO_GLES) && !defined(HALO_WEB)
 	/* a missing one is no failure: the renderer uses each only where the
-	context lists its extension (gl_initialize, d3d8_gl.c). WebGL has none of
+	context lists its extension (gpu_initialize, gpu_gl.c). WebGL has none of
 	these, and its table is not asked */
 #define GL_LOAD_OPTIONAL_FUNCTION(name) \
 	halo_##name = (__typeof__(halo_##name))SDL_GL_GetProcAddress(#name);

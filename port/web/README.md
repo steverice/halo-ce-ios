@@ -260,7 +260,7 @@ multiply-adds). `tools/web_build.py` writes the graph.
   - A vertex stride of at most 255 bytes: an immediate-mode draw uploads
     only the registers written since `Begin` (as every build does), and one
     that writes all sixteen (256 bytes a vertex) is drawn from an array for
-    each attribute (`d3d8_gl.c`).
+    each attribute (`d3d8_device.c`).
   - No feedback loops: a draw that samples the target it draws into samples
     a copy of it.
   - No blend of a constant color factor with a constant alpha one (the
@@ -270,11 +270,11 @@ multiply-adds). `tools/web_build.py` writes the graph.
   - No `glCopyImageSubData`, `glDrawElementsBaseVertex` or
     `glMemoryBarrier`: the ES renderer's blits and rebased indices. An
     index array drawn twice the same is kept rebased in a buffer of its own
-    and drawn from there, not uploaded at each draw (`d3d8_gl.c`'s index
+    and drawn from there, not uploaded at each draw (`d3d8_device.c`'s index
     cache).
   - Each call into WebGL costs a crossing from WebAssembly into the
     browser, so draws whose streams all come from the mirror bind a vertex
-    array made for those places once (`d3d8_gl.c`'s vertex array cache),
+    array made for those places once (`gpu_gl.c`'s vertex array cache),
     rather than pointing each attribute again. The renderer draws only from
     buffers, so Emscripten's emulation of client-side arrays (`FULL_ES3`),
     which wrapped every draw, is not linked.
@@ -284,7 +284,7 @@ multiply-adds). `tools/web_build.py` writes the graph.
     So each draw's vertices and indices go into a buffer that no queued
     draw reads: one of a pool for each frame of the ring, in sizes of 4 KB
     to 32 MB, written again only when that frame comes round again
-    (`web_chunk_get` in `d3d8_gl.c`). Written after each draw into one
+    (`web_chunk_get` in `gpu_gl.c`). Written after each draw into one
     buffer, as before, the frames waited for the GPU some 2000 times each.
 - **Memory watch.** WebAssembly cannot protect pages, so the textures'
   memory is watched by hashing it once a frame, as the Android host does
