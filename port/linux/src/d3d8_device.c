@@ -67,6 +67,34 @@ static uint32_t frame_pacing_flags(void)
 	return GPU_INITIALIZE_PACING_OFF;
 }
 
+/* display.async_shaders as a gpu_initialize flag: "auto" (the default)
+compiles off the game thread except in a run that must draw the same frames
+every time (fixed timestep, an input replay or benchmark, a timed runner
+run, screenshots), which compiles at each pipeline's first draw as before;
+"on" and "off" force it either way */
+static uint32_t async_shader_flags(void)
+{
+	const char *mode = config_string("display.async_shaders");
+	const char *reason = platform_fixed_timestep() ? "debug.fixed_timestep" :
+		*config_string("debug.input_replay") ? "debug.input_replay" :
+		config_boolean("debug.benchmark") ? "debug.benchmark" :
+		config_real("debug.exit_after") > 0.0 ? "debug.exit_after" :
+		config_integer("debug.screenshot_every") > 0 ? "debug.screenshot_every" : NULL;
+
+	if (!strcmp(mode, "on"))
+		return GPU_INITIALIZE_ASYNC_SHADERS;
+	if (!strcmp(mode, "off"))
+		return 0;
+	if (strcmp(mode, "auto"))
+		platform_log("display.async_shaders: unknown value \"%s\"; using \"auto\"", mode);
+	if (reason)
+	{
+		platform_log("display.async_shaders: a deterministic run (%s): shaders compile at their first draw", reason);
+		return 0;
+	}
+	return GPU_INITIALIZE_ASYNC_SHADERS;
+}
+
 /* ---------- the screen's width
 
 The Xbox screen is 640x480. The native ports can draw a wider one: 480
@@ -1253,7 +1281,8 @@ static void gl_initialize(void)
 		(config_boolean("display.immersive") ? GPU_INITIALIZE_IMMERSIVE : 0) |
 		(config_boolean("debug.metal_state_cache") ? 0 : GPU_INITIALIZE_NO_STATE_CACHE) |
 		(config_boolean("debug.metal_specialize") ? 0 : GPU_INITIALIZE_NO_SPECIALIZE) |
-		(config_boolean("debug.metal_pipeline_archive") ? 0 : GPU_INITIALIZE_NO_PIPELINE_ARCHIVE), &device_capabilities);
+		(config_boolean("debug.metal_pipeline_archive") ? 0 : GPU_INITIALIZE_NO_PIPELINE_ARCHIVE) |
+		async_shader_flags(), &device_capabilities);
 	screen_maximum_texture_size = (int32_t)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */

@@ -572,6 +572,10 @@ enum
 	/* debug.metal_pipeline_archive = false: the Metal backend neither loads
 	nor saves its pipeline archive (archive_open) */
 	GPU_INITIALIZE_NO_PIPELINE_ARCHIVE = 2048,
+	/* display.async_shaders, outside a deterministic run: the Metal backend
+	compiles shaders and pipelines on worker threads, and skips a draw
+	whose pipeline isn't ready rather than wait for it (gpu_metal.m) */
+	GPU_INITIALIZE_ASYNC_SHADERS = 4096,
 };
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);

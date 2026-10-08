@@ -20,6 +20,7 @@ to read the eyes' poses and presents it full view. */
 #include "host.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 
 /* about what the Vision Pro's displays resolve at the center of the view: a
@@ -681,6 +682,82 @@ void host_theater_frame_end(void)
 	frame_drop();
 }
 
+void host_theater_frame_end_empty(id<MTLCommandQueue> queue, size_t first)
+{
+	for (size_t index = first; open_frame && index < open_count; index++)
+	{
+		cp_drawable_t drawable = open_drawables[index];
+		id<MTLCommandBuffer> commands = [queue commandBuffer];
+
+		for (size_t texture = 0; texture < cp_drawable_get_texture_count(drawable); texture++)
+		{
+			MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+			id<MTLTexture> color = cp_drawable_get_color_texture(drawable, texture);
+			id<MTLTexture> depth = cp_drawable_get_depth_texture(drawable, texture);
+
+			pass.colorAttachments[0].texture = color;
+			pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+			pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+			pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+			pass.depthAttachment.texture = depth;
+			pass.depthAttachment.loadAction = MTLLoadActionClear;
+			pass.depthAttachment.storeAction = MTLStoreActionStore;
+			pass.depthAttachment.clearDepth = 0.0;
+			if (depth.pixelFormat == MTLPixelFormatDepth32Float_Stencil8)
+			{
+				pass.stencilAttachment.texture = depth;
+				pass.stencilAttachment.loadAction = MTLLoadActionClear;
+				pass.stencilAttachment.storeAction = MTLStoreActionDontCare;
+			}
+			/* (a layered drawable's views are its slices) */
+			if (color.textureType == MTLTextureType2DArray)
+				pass.renderTargetArrayLength = color.arrayLength;
+			[[commands renderCommandEncoderWithDescriptor:pass] endEncoding];
+		}
+		cp_drawable_encode_present(drawable, commands);
+		[commands commit];
+	}
+	host_theater_frame_end();
+}
+
+/* prepare, without the game thread waiting on Metal's compiler while
+shaders compile off it (gpu_metal_async_compiles): the first call for a
+pair of formats builds the pipelines on a worker, and until they're ready
+the frame presents empty (host_theater_frame_end_empty). Nothing reads the
+pipelines while prepare_building is set, and the worker clears it last. 1
+ready, 0 failed (a failure isn't retried for the same formats), -1 building */
+static _Atomic int prepare_building;
+static BOOL prepare_failed;
+static MTLPixelFormat prepare_failed_color, prepare_failed_depth;
+
+static int prepare_ready(id<MTLDevice> device, MTLPixelFormat color, MTLPixelFormat depth)
+{
+	if (atomic_load(&prepare_building))
+		return -1;
+	if (!gpu_metal_async_compiles() || (pipeline && pipeline_color == color && pipeline_depth == depth))
+		return prepare(device, color, depth) ? 1 : 0;
+	if (prepare_failed && prepare_failed_color == color && prepare_failed_depth == depth)
+		return 0;
+	atomic_store(&prepare_building, 1);
+	host_logf(HOST_LOG_INFO, "theater: building the screen's pipelines on a worker; empty frames until they're ready");
+	dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^
+	{
+		@autoreleasepool
+		{
+			CFTimeInterval started = CACurrentMediaTime();
+			BOOL built = prepare(device, color, depth);
+
+			prepare_failed = !built;
+			prepare_failed_color = color;
+			prepare_failed_depth = depth;
+			host_logf(HOST_LOG_INFO, "theater: the screen's pipelines %s after %.0f ms", built ? "are ready" : "failed",
+				(CACurrentMediaTime() - started) * 1e3);
+			atomic_store(&prepare_building, 0);
+		}
+	});
+	return -1;
+}
+
 /* the script fade's tint for a target, premultiplied, with the intensity in
 alpha; zero without a fade. Over the room (passthrough) it is the fade's
 color (display-encoded, as the game's; decoded for an sRGB target) times its
@@ -737,6 +814,12 @@ static void present_pictures(id<MTLCommandQueue> queue, id<MTLTexture> left, id<
 		this frame presents mono after all: a menu, a load), or the next one */
 		if (!host_theater_frame_begin(0) || !host_theater_frame_ready())
 			return;
+		/* (the pipelines building on a worker: prepare_ready) */
+		if (atomic_load(&prepare_building))
+		{
+			host_theater_frame_end_empty(queue, 0);
+			return;
+		}
 		size_t count = open_count;
 		for (size_t index = 0; index < count; index++)
 		{
@@ -747,10 +830,15 @@ static void present_pictures(id<MTLCommandQueue> queue, id<MTLTexture> left, id<
 			begin, to put the eyes' frusta through it */
 			screen_pose(index);
 			id<MTLTexture> first = cp_drawable_get_color_texture(drawable, 0);
-			if (!prepare(queue.device, first.pixelFormat, cp_drawable_get_depth_texture(drawable, 0).pixelFormat))
+			int ready = prepare_ready(queue.device, first.pixelFormat,
+				cp_drawable_get_depth_texture(drawable, 0).pixelFormat);
+			if (ready <= 0)
 			{
 				/* the submission has started: end it, as host_stereo_present does */
-				host_theater_frame_end();
+				if (ready < 0)
+					host_theater_frame_end_empty(queue, index);
+				else
+					host_theater_frame_end();
 				return;
 			}
 			id<MTLCommandBuffer> commands = [queue commandBuffer];

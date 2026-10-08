@@ -111,6 +111,8 @@ DEFAULTS = {
     "display.effect_resolution": "false",
     "display.compressed_textures": "false",
     "display.frame_pacing": '"off"',
+    # (a runner run sets debug.exit_after, so "auto" compiles at each first draw, as before)
+    "display.async_shaders": '"auto"',
     "display.render_scale": "1.0",
     "display.upscaler": '"bilinear"',
     "display.high_res_hud": "true",

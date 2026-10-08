@@ -181,6 +181,7 @@ anisotropic_filtering = 16   # 1 (as on the Xbox) to 16
 shadow_map_size = 512        # 128 (as on the Xbox) to 2048
 effect_resolution = true     # Active camouflage at the screen's resolution, not 320x240
 frame_pacing = "off"         # Experimental: "tick" or "refresh" hold every frame for whole refreshes
+async_shaders = "auto"       # Compile shaders off the game thread, skipping a draw until it's ready ("off": wait)
 direct_camera = true         # On foot, the view follows the stick every frame
 ```
 

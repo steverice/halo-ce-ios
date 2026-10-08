@@ -68,6 +68,14 @@ run(BUILD/'join-link-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
 run(BUILD/'metal-state-probe')
+# the Metal backend's pipelines compiled off the game thread (metal_compile_async.h): its table
+# under the thread sanitizer, then everything under the address and undefined-behavior ones
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=thread', '-Iport/ios/host',
+    'port/ios/tests/metal_compile_probe.c', '-o', BUILD/'metal-compile-probe-thread')
+run(BUILD/'metal-compile-probe-thread')
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/metal_compile_probe.c', '-o', BUILD/'metal-compile-probe')
+run(BUILD/'metal-compile-probe')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',

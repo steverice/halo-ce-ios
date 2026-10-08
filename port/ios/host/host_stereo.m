@@ -803,6 +803,45 @@ static BOOL prepare(id<MTLDevice> device, MTLPixelFormat color, MTLPixelFormat d
 	return YES;
 }
 
+/* prepare, without the game thread waiting on Metal's compiler while
+shaders compile off it (gpu_metal_async_compiles): the first call for a
+pair of formats builds the pipelines on a worker, and until they're ready
+the frame presents empty (host_theater_frame_end_empty). Nothing reads the
+pipelines (nor the blur's and the HUD depth's) while prepare_building is
+set: the presents check it first, and the worker clears it last. 1 ready, 0
+failed (a failure isn't retried for the same formats), -1 building */
+static _Atomic int prepare_building;
+static BOOL prepare_failed;
+static MTLPixelFormat prepare_failed_color, prepare_failed_depth;
+
+static int prepare_ready(id<MTLDevice> device, MTLPixelFormat color, MTLPixelFormat depth)
+{
+	if (atomic_load(&prepare_building))
+		return -1;
+	if (!gpu_metal_async_compiles() || (eye_pipeline && pipeline_color == color && pipeline_depth == depth))
+		return prepare(device, color, depth) ? 1 : 0;
+	if (prepare_failed && prepare_failed_color == color && prepare_failed_depth == depth)
+		return 0;
+	atomic_store(&prepare_building, 1);
+	host_logf(HOST_LOG_INFO, "stereo: building the presenter's pipelines on a worker; empty frames until they're ready");
+	dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^
+	{
+		@autoreleasepool
+		{
+			NSTimeInterval started = [NSProcessInfo processInfo].systemUptime;
+			BOOL built = prepare(device, color, depth);
+
+			prepare_failed = !built;
+			prepare_failed_color = color;
+			prepare_failed_depth = depth;
+			host_logf(HOST_LOG_INFO, "stereo: the presenter's pipelines %s after %.0f ms", built ? "are ready" : "failed",
+				([NSProcessInfo processInfo].systemUptime - started) * 1e3);
+			atomic_store(&prepare_building, 0);
+		}
+	});
+	return -1;
+}
+
 /* The drawable's depth range for the game's planes, and the factor its depth
 takes. Reverse-Z depth with a far plane f is n (f - z) / (z (f - n)): for a
 near plane the Compositor allows, n' (no nearer than the layer's minimum,
@@ -1890,6 +1929,12 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 #if TARGET_OS_VISION
 	if (@available(visionOS 26.0, *))
 	{
+		/* (the pipelines building on a worker: prepare_ready) */
+		if (atomic_load(&prepare_building))
+		{
+			host_theater_frame_end_empty(queue, 0);
+			return;
+		}
 		id<MTLTexture> colors[2] = { left, right }, depths[2] = { left_depth, right_depth };
 		size_t count = host_theater_drawable_count();
 		float depth_scale, depth_floor;
@@ -2021,10 +2066,14 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 			/* reverse-Z: far first; the projections follow it */
 			if (depth_range.x > 0.0f)
 				cp_drawable_set_depth_range(drawable, depth_range);
-			if (!prepare(queue.device, cp_drawable_get_color_texture(drawable, 0).pixelFormat,
-				cp_drawable_get_depth_texture(drawable, 0).pixelFormat))
+			int ready = prepare_ready(queue.device, cp_drawable_get_color_texture(drawable, 0).pixelFormat,
+				cp_drawable_get_depth_texture(drawable, 0).pixelFormat);
+			if (ready <= 0)
 			{
-				host_theater_frame_end();
+				if (ready < 0)
+					host_theater_frame_end_empty(queue, index);
+				else
+					host_theater_frame_end();
 				return;
 			}
 			commands = [queue commandBuffer];
@@ -2268,6 +2317,11 @@ void host_stereo_present_ui(id<MTLCommandQueue> queue, id<MTLTexture> picture, i
 #if TARGET_OS_VISION
 	if (@available(visionOS 26.0, *))
 	{
+		if (atomic_load(&prepare_building))
+		{
+			host_theater_frame_end_empty(queue, 0);
+			return;
+		}
 		size_t count = host_theater_drawable_count();
 		struct host_stereo_hud_quad quad;
 		BOOL dark = host_theater_dark();
@@ -2286,10 +2340,14 @@ void host_stereo_present_ui(id<MTLCommandQueue> queue, id<MTLTexture> picture, i
 			id<MTLCommandBuffer> commands;
 			size_t views;
 
-			if (!prepare(queue.device, cp_drawable_get_color_texture(drawable, 0).pixelFormat,
-				cp_drawable_get_depth_texture(drawable, 0).pixelFormat))
+			int ready = prepare_ready(queue.device, cp_drawable_get_color_texture(drawable, 0).pixelFormat,
+				cp_drawable_get_depth_texture(drawable, 0).pixelFormat);
+			if (ready <= 0)
 			{
-				host_theater_frame_end();
+				if (ready < 0)
+					host_theater_frame_end_empty(queue, index);
+				else
+					host_theater_frame_end();
 				return;
 			}
 			commands = [queue commandBuffer];

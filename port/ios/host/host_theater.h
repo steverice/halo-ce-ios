@@ -20,6 +20,9 @@ void host_theater_present_eyes(id<MTLCommandQueue> queue, id<MTLTexture> left, i
 /* gpu_metal.m: counts a presenter's command buffer's GPU time with the
 game's (pacing_gpu_nanoseconds), before it commits */
 void gpu_metal_count_gpu_time(id<MTLCommandBuffer> commands);
+/* gpu_metal.m: 1 while shaders and pipelines compile off the game thread
+(display.async_shaders), when the presenters build theirs on a worker too */
+int gpu_metal_async_compiles(void);
 #endif
 
 #if defined(__OBJC__) && !defined(__swift__)
@@ -41,6 +44,10 @@ size_t host_theater_drawable_count(void);
 anchored) and whether ARKit placed it; either pointer may be NULL */
 cp_drawable_t host_theater_drawable(size_t index, simd_float4x4 *origin_from_device, int *anchored);
 void host_theater_frame_end(void);
+/* ends the open frame with its drawables from first on presented empty,
+cleared to nothing (depth 0, transparent): while a presenter's pipelines are
+still building on a worker, rather than wait for Metal's compiler */
+void host_theater_frame_end_empty(id<MTLCommandQueue> queue, size_t first);
 /* the rate map a drawable's view renders through (map is the view's texture
 map), or nil when the layer isn't foveated: the map at the view's texture
 index (dedicated: one per view), else the first (layered: one map whose

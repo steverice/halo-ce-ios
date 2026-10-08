@@ -23,6 +23,7 @@ but never returns to its run loop, which would otherwise drain them.
 #include "gpu.h"
 #include "ios_host.h"
 #include "metal_state_cache.h"
+#include "metal_compile_async.h"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -95,6 +96,12 @@ Handles index tables of these; 0 is none. */
 	of attribute kinds it is drawn with (vertex_function) */
 	id<MTLLibrary> library;
 	NSMutableDictionary<NSData *, id<MTLFunction>> *specialized;
+	/* entered while its library compiles on a worker thread (warming, or
+	display.async_shaders): a pipeline that needs it is built once it's
+	empty (pipeline_request). The worker writes the fields above before it
+	leaves. Specializations and variants are made under @synchronized on
+	the record, since workers make them too */
+	dispatch_group_t compiled;
 }
 @end
 @implementation MetalShader
@@ -475,6 +482,8 @@ static void pass_end(void)
 	pass_finish(NO);
 }
 
+static void async_frame_end(void);
+
 /* commits the open command buffer; the frame's last one (at Present) also
 frees its frame slot when it completes */
 static void commit(BOOL frame_end)
@@ -532,6 +541,7 @@ static void commit(BOOL frame_end)
 	{
 		frame_started = 0;
 		frame_slot = (frame_slot + 1) % FRAMES;
+		async_frame_end();
 	}
 }
 
@@ -1011,26 +1021,75 @@ static struct
 	/* made while drawing, outside warming (the map's list missed them) */
 	unsigned long during_play[COMPILE_KINDS];
 } compile_stats;
+/* (workers count their compiles too, under display.async_shaders) */
+static os_unfair_lock compile_stats_lock = OS_UNFAIR_LOCK_INIT;
 
-static void compile_count(int kind, CFTimeInterval started)
+/* play: made for a draw, outside warming */
+static void compile_count(int kind, CFTimeInterval started, int play)
 {
 	double seconds = CACurrentMediaTime() - started;
 
+	os_unfair_lock_lock(&compile_stats_lock);
 	compile_stats.count[kind]++;
 	compile_stats.seconds[kind] += seconds;
 	if (seconds > compile_stats.longest[kind])
 		compile_stats.longest[kind] = seconds;
 	compile_stats.total_count[kind]++;
 	compile_stats.total_seconds[kind] += seconds;
+	if (play)
+		compile_stats.during_play[kind]++;
+	os_unfair_lock_unlock(&compile_stats_lock);
 }
 
 /* compiling at map load (gpu_warm_begin to gpu_warm_end): shaders compile
 in parallel, joining warm_group until they are done, and the pipelines the
 map's list names wait in warm_list for warm_end, which builds them in
-parallel too */
+parallel too (or, under display.async_shaders, starts them building and
+returns) */
 static BOOL warming;
 static dispatch_group_t warm_group;
 static NSMutableData *warm_list;
+
+/* display.async_shaders (GPU_INITIALIZE_ASYNC_SHADERS, which the front end
+leaves off in a deterministic run: the runners, check-metal, an input
+replay, a benchmark): nothing the game thread does waits on Metal's
+compiler. On visionOS the game thread is the main thread, and a cold
+launch's compiles there held it long enough for the system to end the app.
+Shader libraries compile on worker threads; a pipeline is claimed by the
+first draw that needs it (or the map's list at warm_end) and built on a
+worker once its shaders are compiled (pipeline_request), then published to
+pipeline_table; until then its draws are skipped (gpu_metal_draw) and the
+window may show its last whole frame again (metal_hold_frame). Without it
+everything compiles on the game thread at its first use, as before, so
+those runs draw exactly the same frames. */
+static BOOL async_compiles;
+/* shaders and pipelines still compiling on workers */
+static _Atomic unsigned long compiles_outstanding;
+/* the launch's totals and this frame's skips (metal_compile_async.h) */
+static struct metal_compile_totals compile_totals;
+static struct metal_skip_frame skip_frame;
+static struct metal_hold window_hold;
+/* the window's frames held in a row at most: half a second at 60 Hz */
+#define HOLD_LIMIT 30
+/* gpu_metal_present held this frame (async_frame_end counts it) */
+static BOOL frame_held;
+
+static const char *compile_kind_name(int kind)
+{
+	return kind == COMPILE_LIBRARY ? "shader library" : kind == COMPILE_SPECIALIZE ? "vertex specialization" :
+		"pipeline";
+}
+
+/* the workers' queue: a draw's compiles ahead of a map list's */
+static dispatch_queue_t compile_queue(int play)
+{
+	return dispatch_get_global_queue(play ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_USER_INITIATED, 0);
+}
+
+int gpu_metal_async_compiles(void)
+{
+	return async_compiles;
+}
 
 /* a shader's library made into its record: its function (a vertex shader's
 unspecialized one) and what later specializations or variants compile from;
@@ -1069,9 +1128,9 @@ static BOOL shader_finish(MetalShader *record, uint32_t stage, NSString *text, i
 
 /* the translators' MSL (nv2a_msl.c); 0 if it doesn't compile, which the front
 end counts as a draw skipped for its program, as under GL. While warming,
-the handle comes back at once and the shader compiles in the background; one
-that fails then has no function, and its draws are skipped as a pipeline
-that can't be made (draw_pipeline) */
+the handle comes back at once and the shader compiles in the background (and
+so under display.async_shaders); one that fails then has no function, and
+its draws are skipped as a pipeline that can't be made (draw_pipeline) */
 static gpu_shader gpu_metal_shader_create(uint32_t stage, const char *source)
 {
 	@autoreleasepool
@@ -1083,28 +1142,43 @@ static gpu_shader gpu_metal_shader_create(uint32_t stage, const char *source)
 		CFTimeInterval started;
 		id<MTLLibrary> library;
 
+		record->compiled = dispatch_group_create();
 		/* (each on a worker thread, compiled synchronously there: not with
 		newLibraryWithSource's completion handler, which runs on Metal's
 		compiler queue, where shader_finish's newFunctionWithName waits on
 		that same queue and libdispatch traps) */
-		if (warming)
+		if (warming || async_compiles)
 		{
-			dispatch_group_async(warm_group, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^
+			BOOL play = !warming;
+			dispatch_group_t group = warming ? warm_group : nil;
+
+			dispatch_group_enter(record->compiled);
+			if (group)
+				dispatch_group_enter(group);
+			atomic_fetch_add(&compiles_outstanding, 1);
+			dispatch_async(compile_queue(play), ^
 			{
 				@autoreleasepool
 				{
 					NSError *failure = nil;
+					CFTimeInterval begun = CACurrentMediaTime();
 					id<MTLLibrary> compiled = [device newLibraryWithSource:text options:options error:&failure];
 
+					if (play)
+						compile_count(COMPILE_LIBRARY, begun, 1);
+					metal_compile_finished(&compile_totals, COMPILE_LIBRARY, CACurrentMediaTime() - begun);
 					shader_finish(record, stage, text, compiled, failure);
+					atomic_fetch_sub(&compiles_outstanding, 1);
+					dispatch_group_leave(record->compiled);
+					if (group)
+						dispatch_group_leave(group);
 				}
 			});
 			return [shaders add:record];
 		}
 		started = CACurrentMediaTime();
 		library = [device newLibraryWithSource:text options:options error:&error];
-		compile_count(COMPILE_LIBRARY, started);
-		compile_stats.during_play[COMPILE_LIBRARY]++;
+		compile_count(COMPILE_LIBRARY, started, 1);
 		if (!shader_finish(record, stage, text, library, error))
 			return 0;
 		return [shaders add:record];
@@ -1114,29 +1188,33 @@ static gpu_shader gpu_metal_shader_create(uint32_t stage, const char *source)
 /* a pixel shader's function for a draw whose stages in exact (a mask of
 exact_borders) rebuild their border colors: the shader compiled again with
 EXACT_BORDERS on the first draw that asks for that mask. nil if it doesn't
-compile (logged once), and the draw then samples the plain way. */
+compile (logged once), and the draw then samples the plain way. (Workers
+building pipelines call it too, hence the lock on the record.) */
 static id<MTLFunction> pixel_function(MetalShader *pixel, unsigned exact)
 {
 	if (!exact)
 		return pixel->function;
-	if (!(pixel->exact_tried & (1u << exact)) && pixel->source)
+	@synchronized (pixel)
 	{
-		@autoreleasepool
+		if (!(pixel->exact_tried & (1u << exact)) && pixel->source)
 		{
-			NSError *error = nil;
-			NSString *text = [NSString stringWithFormat:@"#define EXACT_BORDERS %u\n%@", exact, pixel->source];
-			/* relaxed, as the plain variant (gpu_metal_initialize) */
-			id<MTLLibrary> library = [device newLibraryWithSource:text options:pixel_compile_options error:&error];
+			@autoreleasepool
+			{
+				NSError *error = nil;
+				NSString *text = [NSString stringWithFormat:@"#define EXACT_BORDERS %u\n%@", exact, pixel->source];
+				/* relaxed, as the plain variant (gpu_metal_initialize) */
+				id<MTLLibrary> library = [device newLibraryWithSource:text options:pixel_compile_options error:&error];
 
-			pixel->exact_tried |= 1u << exact;
-			if (library)
-				pixel->exact[exact] = [library newFunctionWithName:@"fragment_main"];
-			if (!pixel->exact[exact])
-				platform_log("cannot compile the pixel shader with exact border colors (stages %#x): %s", exact,
-					library ? "no entry point" : error.localizedDescription.UTF8String);
+				pixel->exact_tried |= 1u << exact;
+				if (library)
+					pixel->exact[exact] = [library newFunctionWithName:@"fragment_main"];
+				if (!pixel->exact[exact])
+					platform_log("cannot compile the pixel shader with exact border colors (stages %#x): %s", exact,
+						library ? "no entry point" : error.localizedDescription.UTF8String);
+			}
 		}
+		return pixel->exact[exact];
 	}
-	return pixel->exact[exact];
 }
 
 /* ---------- foveation (Task 10)
@@ -1723,7 +1801,10 @@ static void front_cache_put(struct front_cache *cache, const void *key, size_t l
 	cache->entries[index].object = object;
 }
 
-static NSMutableDictionary<NSData *, id> *pipelines;
+/* every pipeline made, by its pipeline_key: the object, or NSNull for one
+that can't be made, retained for good (pipeline_publish). Draws claim the
+keys they miss, and workers publish them under display.async_shaders */
+static struct metal_compile_table pipeline_table;
 static NSMutableDictionary<NSData *, id<MTLDepthStencilState>> *depth_states;
 static NSMutableDictionary<NSData *, id<MTLSamplerState>> *samplers;
 /* bound where a draw has nothing: black textures of each type (as GL samples
@@ -1742,7 +1823,7 @@ static struct
 	uint32_t offset;
 	BOOL valid;
 } snapshot;
-static BOOL layout_checked;
+static _Atomic BOOL layout_checked;
 
 static MTLBlendFactor blend_factor(uint8_t factor)
 {
@@ -1889,43 +1970,47 @@ static void draw_attributes_decide(const struct gpu_draw *draw, struct draw_attr
 /* a vertex shader's function specialized for these attribute kinds, which
 folds its fetches' format switches away; made with the pipeline, so once
 for each pair. The unspecialized function if it can't be made (logged
-once): it reads the same kinds from the attribute table. */
-static id<MTLFunction> vertex_function(MetalShader *vertex, const uint8_t kinds[GPU_ATTRIBUTE_COUNT])
+once): it reads the same kinds from the attribute table. play: made for a
+draw, not a map's list. (Workers building pipelines call it too, hence the
+lock on the record.) */
+static id<MTLFunction> vertex_function(MetalShader *vertex, const uint8_t kinds[GPU_ATTRIBUTE_COUNT], int play)
 {
 	NSData *name = [NSData dataWithBytes:kinds length:GPU_ATTRIBUTE_COUNT];
 	id<MTLFunction> function;
 
 	if (!vertex->library || specialize_off)
 		return vertex->function;
-	if (!vertex->specialized)
-		vertex->specialized = [NSMutableDictionary dictionary];
-	function = vertex->specialized[name];
-	if (!function)
+	@synchronized (vertex)
 	{
-		MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
-		NSError *error = nil;
-		NSUInteger index;
-		CFTimeInterval started;
-
-		for (index = 0; index < GPU_ATTRIBUTE_COUNT; index++)
-		{
-			uint32_t kind = kinds[index];
-
-			[values setConstantValue:&kind type:MTLDataTypeUInt atIndex:index];
-		}
-		started = CACurrentMediaTime();
-		function = [vertex->library newFunctionWithName:@"vertex_main" constantValues:values error:&error];
-		compile_count(COMPILE_SPECIALIZE, started);
-		compile_stats.during_play[COMPILE_SPECIALIZE]++;
+		if (!vertex->specialized)
+			vertex->specialized = [NSMutableDictionary dictionary];
+		function = vertex->specialized[name];
 		if (!function)
 		{
-			/* (once for each shader and set of kinds, which the dictionary
-			then keeps with the fallback) */
-			platform_log("Metal: cannot specialize vertex shader %p for its attributes, which it then reads per draw: %s",
-				(__bridge void *)vertex, error.localizedDescription.UTF8String);
-			function = vertex->function;
+			MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
+			NSError *error = nil;
+			NSUInteger index;
+			CFTimeInterval started;
+
+			for (index = 0; index < GPU_ATTRIBUTE_COUNT; index++)
+			{
+				uint32_t kind = kinds[index];
+
+				[values setConstantValue:&kind type:MTLDataTypeUInt atIndex:index];
+			}
+			started = CACurrentMediaTime();
+			function = [vertex->library newFunctionWithName:@"vertex_main" constantValues:values error:&error];
+			compile_count(COMPILE_SPECIALIZE, started, play);
+			if (!function)
+			{
+				/* (once for each shader and set of kinds, which the dictionary
+				then keeps with the fallback) */
+				platform_log("Metal: cannot specialize vertex shader %p for its attributes, which it then reads per draw: %s",
+					(__bridge void *)vertex, error.localizedDescription.UTF8String);
+				function = vertex->function;
+			}
+			vertex->specialized[name] = function;
 		}
-		vertex->specialized[name] = function;
 	}
 	return function;
 }
@@ -1933,12 +2018,12 @@ static id<MTLFunction> vertex_function(MetalShader *vertex, const uint8_t kinds[
 /* a pipeline's descriptor, its functions made first (vertex_function,
 pixel_function), which may compile */
 static MTLRenderPipelineDescriptor *pipeline_descriptor(const struct pipeline_key *key, MetalShader *vertex,
-	MetalShader *pixel)
+	MetalShader *pixel, int play)
 {
 	MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
 	MTLRenderPipelineColorAttachmentDescriptor *attachment = descriptor.colorAttachments[0];
 
-	descriptor.vertexFunction = vertex_function(vertex, key->attribute_kinds);
+	descriptor.vertexFunction = vertex_function(vertex, key->attribute_kinds, play);
 	descriptor.fragmentFunction = pixel_function(pixel, key->exact_borders) ?: pixel->function;
 	attachment.pixelFormat = (MTLPixelFormat)key->color_format;
 	attachment.writeMask = write_mask(key->write_mask);
@@ -2026,15 +2111,21 @@ static void archive_open(void)
 	platform_log("Metal: pipeline archive %s", archive_url.lastPathComponent.UTF8String);
 }
 
-/* writes the archive out if pipelines were added since */
+/* writes the archive out if pipelines were added since (on a worker, under
+display.async_shaders, while others may add to it) */
 static void archive_save(void)
 {
 	NSError *error = nil;
 	CFTimeInterval started = CACurrentMediaTime();
 
-	if (!archive || !archive_dirty)
+	if (!archive)
 		return;
 	pthread_rwlock_wrlock(&archive_lock);
+	if (!archive_dirty)
+	{
+		pthread_rwlock_unlock(&archive_lock);
+		return;
+	}
 	if ([archive serializeToURL:archive_url error:&error])
 	{
 		platform_log("Metal: wrote the pipeline archive in %.0f ms", (CACurrentMediaTime() - started) * 1e3);
@@ -2177,14 +2268,85 @@ hands to the front end to log and record (shader_list.c), oldest first */
 static NSMutableData *built_during_play;
 static unsigned long built_taken;
 
-/* the pipeline for a draw, or nil if it can't be made (cached either way) */
+/* a pipeline built on this thread (the game thread, or a worker): its
+descriptor, whose functions may compile first, then the pipeline; the first
+under debug.gl_debug also checks the uniform layout. play: for a draw */
+static id pipeline_build(const struct pipeline_key *key, MetalShader *vertex, MetalShader *pixel, int play)
+{
+	MTLRenderPipelineDescriptor *descriptor = pipeline_descriptor(key, vertex, pixel, play);
+	CFTimeInterval started = CACurrentMediaTime();
+	id pipeline = nil;
+
+	if (metal_debug && !atomic_load(&layout_checked) && descriptor.vertexFunction && descriptor.fragmentFunction)
+	{
+		MTLRenderPipelineReflection *reflection = nil;
+
+		pipeline = [device newRenderPipelineStateWithDescriptor:descriptor
+			options:MTLPipelineOptionBindingInfo | MTLPipelineOptionBufferTypeInfo reflection:&reflection error:nil];
+		if (pipeline && !atomic_exchange(&layout_checked, YES))
+			check_uniform_layout(reflection);
+	}
+	if (!pipeline)
+		pipeline = pipeline_make(descriptor);
+	if (play)
+		compile_count(COMPILE_PIPELINE, started, 1);
+	return pipeline;
+}
+
+/* files a key's pipeline (or NSNull) in pipeline_table, which keeps it for
+good; returns what the table holds for the key (the first, if another got
+there before), nil if it couldn't be filed */
+static id pipeline_publish(const struct pipeline_key *key, id pipeline)
+{
+	void *extra = metal_compile_publish(&pipeline_table, key, sizeof(*key), (__bridge_retained void *)pipeline);
+
+	if (!extra)
+		return pipeline;
+	CFBridgingRelease(extra);
+	return (__bridge id)metal_compile_lookup(&pipeline_table, key, sizeof(*key));
+}
+
+/* builds a claimed key's pipeline on a worker once both shaders are
+compiled (their groups empty), and publishes it; joins group, if any, until
+then */
+static void pipeline_request(const struct pipeline_key *key, MetalShader *vertex, MetalShader *pixel,
+	dispatch_group_t group, int play)
+{
+	struct pipeline_key copy = *key;
+	dispatch_queue_t queue = compile_queue(play);
+
+	atomic_fetch_add(&compiles_outstanding, 1);
+	if (group)
+		dispatch_group_enter(group);
+	dispatch_group_notify(vertex->compiled, queue, ^
+	{
+		dispatch_group_notify(pixel->compiled, queue, ^
+		{
+			@autoreleasepool
+			{
+				CFTimeInterval begun = CACurrentMediaTime();
+				id pipeline = pipeline_build(&copy, vertex, pixel, play);
+
+				metal_compile_finished(&compile_totals, COMPILE_PIPELINE, CACurrentMediaTime() - begun);
+				pipeline_publish(&copy, pipeline);
+				atomic_fetch_sub(&compiles_outstanding, 1);
+				if (group)
+					dispatch_group_leave(group);
+			}
+		});
+	});
+}
+
+/* the pipeline for a draw, or nil if it can't be made (cached either way)
+or, with pending set, isn't made yet (display.async_shaders: it's building) */
 static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, const struct draw_attributes *attributes,
-	MetalShader *vertex, MetalShader *pixel, unsigned exact, MTLPixelFormat color, MTLPixelFormat depth)
+	MetalShader *vertex, MetalShader *pixel, unsigned exact, MTLPixelFormat color, MTLPixelFormat depth, BOOL *pending)
 {
 	struct pipeline_key key;
-	NSData *name;
+	void *found;
 	id pipeline;
 
+	*pending = NO;
 	memset(&key, 0, sizeof(key));
 	key.vertex_shader = draw->vertex_shader;
 	key.pixel_shader = draw->pixel_shader;
@@ -2204,38 +2366,33 @@ static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, con
 	key.depth_format = (uint32_t)depth;
 	memcpy(key.attribute_kinds, attributes->kinds, sizeof(key.attribute_kinds));
 	_Static_assert(sizeof(key) <= FRONT_CACHE_KEY, "pipeline_key fits the front cache");
+	_Static_assert(sizeof(key) <= METAL_COMPILE_KEY_BYTES, "pipeline_key fits the pipeline table");
 	if ((pipeline = front_cache_get(&pipeline_cache, &key, sizeof(key))))
 		return pipeline == [NSNull null] ? nil : pipeline;
-	name = [NSData dataWithBytes:&key length:sizeof(key)];
-	pipeline = pipelines[name];
-	if (!pipeline)
+	switch (metal_compile_claim(&pipeline_table, &key, sizeof(key), &found))
 	{
-		MTLRenderPipelineDescriptor *descriptor = pipeline_descriptor(&key, vertex, pixel);
-		CFTimeInterval started = CACurrentMediaTime();
+	case METAL_CLAIM_PENDING:
+		*pending = YES;
+		return nil;
+	case METAL_CLAIM_READY:
+		pipeline = (__bridge id)found;
+		break;
+	default:
+	{
+		struct gpu_pipeline_description built;
 
-		if (metal_debug && !layout_checked && descriptor.vertexFunction && descriptor.fragmentFunction)
+		pipeline_describe(&key, &built);
+		[built_during_play appendBytes:&built length:sizeof(built)];
+		if (async_compiles)
 		{
-			MTLRenderPipelineReflection *reflection = nil;
-
-			pipeline = [device newRenderPipelineStateWithDescriptor:descriptor
-				options:MTLPipelineOptionBindingInfo | MTLPipelineOptionBufferTypeInfo reflection:&reflection error:nil];
-			if (pipeline)
-			{
-				check_uniform_layout(reflection);
-				layout_checked = YES;
-			}
+			pipeline_request(&key, vertex, pixel, nil, 1);
+			*pending = YES;
+			return nil;
 		}
+		pipeline = pipeline_publish(&key, pipeline_build(&key, vertex, pixel, 1));
 		if (!pipeline)
-			pipeline = pipeline_make(descriptor);
-		compile_count(COMPILE_PIPELINE, started);
-		compile_stats.during_play[COMPILE_PIPELINE]++;
-		pipelines[name] = pipeline;
-		{
-			struct gpu_pipeline_description built;
-
-			pipeline_describe(&key, &built);
-			[built_during_play appendBytes:&built length:sizeof(built)];
-		}
+			return nil;
+	}
 	}
 	front_cache_put(&pipeline_cache, &key, sizeof(key), pipeline);
 	return pipeline == [NSNull null] ? nil : pipeline;
@@ -2286,9 +2443,55 @@ static void gpu_metal_pipeline_warm(const struct gpu_pipeline_description *descr
 		[warm_list appendBytes:description length:sizeof(*description)];
 }
 
+/* display.async_shaders: claims the listed pipelines and starts them
+building on workers, each once its shaders are compiled (their
+specializations and variants with it), and returns at once: a draw that
+needs one first skips until it's published. The archive is written once
+they're all done */
+static void warm_end_background(void)
+{
+	const struct gpu_pipeline_description *list = warm_list.bytes;
+	unsigned long count = warm_list.length / sizeof(*list), index, requested = 0;
+	dispatch_group_t shaders_compiled = warm_group, pipelines_built = dispatch_group_create();
+	CFTimeInterval started = CACurrentMediaTime();
+
+	warming = NO;
+	for (index = 0; index < count; index++)
+	{
+		struct pipeline_key key;
+		MetalShader *vertex, *pixel;
+		void *found;
+
+		pipeline_key_from_description(&list[index], &key);
+		vertex = table_get(shaders, key.vertex_shader);
+		pixel = table_get(shaders, key.pixel_shader);
+		if (!vertex || !pixel || metal_compile_claim(&pipeline_table, &key, sizeof(key), &found) != METAL_CLAIM_NEW)
+			continue;
+		pipeline_request(&key, vertex, pixel, pipelines_built, 0);
+		requested++;
+	}
+	warm_list = nil;
+	warm_group = nil;
+	/* (the shaders no listed pipeline uses too) */
+	dispatch_group_notify(pipelines_built, compile_queue(0), ^
+	{
+		dispatch_group_notify(shaders_compiled, compile_queue(0), ^
+		{
+			@autoreleasepool
+			{
+				archive_save();
+				platform_log("Metal: warmed %lu pipelines (%lu listed) in the background, done %.0f ms after the load "
+					"started them", requested, count, (CACurrentMediaTime() - started) * 1e3);
+			}
+		});
+	});
+	platform_log("Metal: %lu listed pipelines building in the background; the load goes on", requested);
+}
+
 /* waits for the shaders, then builds the listed pipelines: the vertex
 functions' specializations and the pipelines themselves in parallel, the
-bookkeeping (dictionaries, which aren't thread-safe) on this thread */
+bookkeeping (dictionaries, which aren't thread-safe) on this thread (or,
+under display.async_shaders, warm_end_background) */
 static void gpu_metal_warm_end(void)
 {
 	@autoreleasepool
@@ -2304,6 +2507,11 @@ static void gpu_metal_warm_end(void)
 
 		if (!warming)
 			return;
+		if (async_compiles)
+		{
+			warm_end_background();
+			return;
+		}
 		dispatch_group_wait(warm_group, DISPATCH_TIME_FOREVER);
 		warming = NO;
 		shaders_done = CACurrentMediaTime();
@@ -2444,11 +2652,12 @@ static void gpu_metal_warm_end(void)
 			name = [NSData dataWithBytes:&key length:sizeof(key)];
 			vertex = table_get(shaders, key.vertex_shader);
 			pixel = table_get(shaders, key.pixel_shader);
-			if (pipelines[name] || [named containsObject:name] || !vertex || !pixel)
+			if (metal_compile_lookup(&pipeline_table, &key, sizeof(key)) || [named containsObject:name] || !vertex ||
+				!pixel)
 				continue;
 			[names addObject:name];
 			[named addObject:name];
-			[descriptors addObject:pipeline_descriptor(&key, vertex, pixel)];
+			[descriptors addObject:pipeline_descriptor(&key, vertex, pixel, 0)];
 		}
 		made = [NSMutableArray arrayWithCapacity:names.count];
 		for (index = 0; index < names.count; index++)
@@ -2463,7 +2672,7 @@ static void gpu_metal_warm_end(void)
 			}
 		});
 		for (index = 0; index < names.count; index++)
-			pipelines[names[index]] = made[index];
+			pipeline_publish(((NSData *)names[index]).bytes, made[index]);
 		warm_list = nil;
 		warm_group = nil;
 		archive_save();
@@ -2891,13 +3100,26 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 		MTLPrimitiveType type;
 		unsigned exact = exact_borders(draw);
 		struct draw_attributes attributes;
+		BOOL pending;
 
 		/* as GL's program_get: no program, no draw */
 		if (!vertex || !pixel)
 			return 0;
 		draw_attributes_decide(draw, &attributes);
 		pipeline = draw_pipeline(draw, &attributes, vertex, pixel, exact, MTLPixelFormatBGRA8Unorm,
-			depth && depth->texture ? depth->texture.pixelFormat : MTLPixelFormatInvalid);
+			depth && depth->texture ? depth->texture.pixelFormat : MTLPixelFormatInvalid, &pending);
+		/* display.async_shaders: a draw whose pipeline is still building is
+		skipped this frame, as one that can't be made is; the runs of draws
+		to each pair of targets tell whether a whole pass drew nothing */
+		if (async_compiles && (pipeline || pending))
+		{
+			static int logged;
+
+			metal_skip_draw(&skip_frame, (uint64_t)draw->depth_target << 32 | draw->color_target, pending);
+			if (pending && !logged++)
+				platform_log("Metal: frame %lu: a draw's pipeline is still compiling; such draws are skipped until "
+					"theirs are ready", frames);
+		}
 		if (!pipeline)
 			return 0;
 		if (!pass_begin(draw->color_target, draw->depth_target, NULL))
@@ -3557,6 +3779,45 @@ static id<MTLTexture> foveation_picture(MetalTexture *record)
 	return resolved ? resolved : record->texture;
 }
 
+/* display.async_shaders, at each frame's last commit: the frame's skipped
+draws into the launch's totals, and the launch's line once its first
+compiles are done (no frame waited for any of them: these are what the
+draws skipped meanwhile, and the slowest compile, which a frame would have
+waited for). After it, a line every 600 frames when more draws were skipped
+(a map's load, a new effect) */
+static void async_frame_end(void)
+{
+	unsigned long skipped;
+	int broken;
+
+	if (!async_compiles)
+		return;
+	skipped = metal_skip_frame_end(&skip_frame, &broken);
+	if (metal_compile_frame_end(&compile_totals, skipped, frame_held, atomic_load(&compiles_outstanding)))
+	{
+		pthread_mutex_lock(&compile_totals.lock);
+		platform_log("Metal: async shaders: the first compiles are done at frame %lu: %lu draws skipped in %lu frames "
+			"(%lu held in the window) while %lu compiles ran on workers; the slowest, a %s, took %.0f ms", frames,
+			compile_totals.draws_skipped, compile_totals.frames_skipping, compile_totals.frames_held,
+			compile_totals.compiles, compile_kind_name(compile_totals.slowest_kind), compile_totals.slowest * 1e3);
+		pthread_mutex_unlock(&compile_totals.lock);
+	}
+	else if (frames % 600 == 599)
+	{
+		pthread_mutex_lock(&compile_totals.lock);
+		if (compile_totals.summarized && compile_totals.draws_skipped != compile_totals.reported_skips)
+		{
+			platform_log("Metal: async shaders: so far %lu draws skipped in %lu frames (%lu held in the window), %lu "
+				"compiles on workers; the slowest, a %s, took %.0f ms", compile_totals.draws_skipped,
+				compile_totals.frames_skipping, compile_totals.frames_held, compile_totals.compiles,
+				compile_kind_name(compile_totals.slowest_kind), compile_totals.slowest * 1e3);
+			compile_totals.reported_skips = compile_totals.draws_skipped;
+		}
+		pthread_mutex_unlock(&compile_totals.lock);
+	}
+	frame_held = NO;
+}
+
 static uint32_t gpu_metal_present(gpu_texture back_buffer)
 {
 	@autoreleasepool
@@ -3611,11 +3872,15 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			return 0;
 		}
 #endif
+		/* display.async_shaders: a frame with a pass that drew nothing (its
+		pipelines all still compiling) isn't shown; the window keeps the last
+		whole one (metal_hold_frame) */
+		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
 		waited = CACurrentMediaTime();
-		drawable = [layer nextDrawable];
+		drawable = frame_held ? nil : [layer nextDrawable];
 		pacing_waited += CACurrentMediaTime() - waited;
-		/* nil in the background: the frame still commits, so its slot is
-		freed */
+		/* nil in the background (or held): the frame still commits, so its
+		slot is freed */
 		if (drawable && record && record->texture)
 		{
 			MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -3666,6 +3931,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		}
 		drawable = nil;
 		commit(YES);
+		os_unfair_lock_lock(&compile_stats_lock);
 		if (metal_debug && (compile_stats.count[COMPILE_LIBRARY] || compile_stats.count[COMPILE_SPECIALIZE] ||
 			compile_stats.count[COMPILE_PIPELINE]))
 			platform_log("Metal: frame %lu compiled %lu libraries (%.1f ms, longest %.1f), specialized %lu vertex "
@@ -3678,6 +3944,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		memset(compile_stats.count, 0, sizeof(compile_stats.count));
 		memset(compile_stats.seconds, 0, sizeof(compile_stats.seconds));
 		memset(compile_stats.longest, 0, sizeof(compile_stats.longest));
+		os_unfair_lock_unlock(&compile_stats_lock);
 		frames++;
 		if (pass_log)
 		{
@@ -3700,6 +3967,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				platform_log("Metal: %.1f pipeline changes a frame, %.1f of them with the same shaders",
 					(double)pipeline_changes.changes / 600.0, (double)pipeline_changes.same_shaders / 600.0);
 			pipeline_changes.changes = pipeline_changes.same_shaders = 0;
+			os_unfair_lock_lock(&compile_stats_lock);
 			if (metal_debug)
 				platform_log("Metal: so far %lu shader libraries (%.0f ms), %lu vertex specializations (%.0f ms), "
 					"%lu pipelines (%.0f ms) made while drawing; outside a map's list: %lu libraries, %lu "
@@ -3708,6 +3976,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					compile_stats.total_seconds[COMPILE_SPECIALIZE] * 1e3, compile_stats.total_count[COMPILE_PIPELINE],
 					compile_stats.total_seconds[COMPILE_PIPELINE] * 1e3, compile_stats.during_play[COMPILE_LIBRARY],
 					compile_stats.during_play[COMPILE_SPECIALIZE], compile_stats.during_play[COMPILE_PIPELINE]);
+			os_unfair_lock_unlock(&compile_stats_lock);
 			metal_state_take_counts(&state_cache);
 		}
 		if (frames % 600 == 0)
@@ -3970,7 +4239,12 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		metalfx_wanted = (flags & GPU_INITIALIZE_METALFX) != 0;
 		metal_state_initialize(&state_cache, !(flags & GPU_INITIALIZE_NO_STATE_CACHE));
 		specialize_off = (flags & GPU_INITIALIZE_NO_SPECIALIZE) != 0;
+		async_compiles = (flags & GPU_INITIALIZE_ASYNC_SHADERS) != 0;
+		metal_compile_totals_initialize(&compile_totals);
 		built_during_play = [NSMutableData data];
+		platform_log(async_compiles ? "Metal: shaders and pipelines compile on worker threads (display.async_shaders); "
+			"a draw whose pipeline isn't ready is skipped" : "Metal: shaders and pipelines compile on the game thread at "
+			"their first use");
 		if (specialize_off)
 			platform_log("Metal: vertex shaders are not specialized (debug.metal_specialize)");
 #ifndef HAVE_METALFX
@@ -4021,7 +4295,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		linear.minFilter = MTLSamplerMinMagFilterLinear;
 		linear.magFilter = MTLSamplerMinMagFilterLinear;
 		present_sampler = [device newSamplerStateWithDescriptor:linear];
-		pipelines = [NSMutableDictionary dictionary];
+		metal_compile_table_initialize(&pipeline_table);
 		depth_states = [NSMutableDictionary dictionary];
 		samplers = [NSMutableDictionary dictionary];
 		scratch_colors = [NSMutableDictionary dictionary];

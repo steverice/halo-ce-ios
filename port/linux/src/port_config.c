@@ -319,6 +319,14 @@ static const struct config_setting config_settings[] =
 		"rate when frames take too long; \"refresh\" allows any whole number of\n"
 		"refreshes (45 at 90 Hz). Experimental: in a visionOS window the pacing\n"
 		"can't yet see when frames show." },
+	{ "display.async_shaders", _config_string, "\"auto\"", "HALO_ASYNC_SHADERS", _environment_value, _platform_ios,
+		"How the Metal renderer compiles shaders: \"auto\" (default) on worker\n"
+		"threads, skipping a draw for the frames until its pipeline is ready, so\n"
+		"the game never waits on the compiler (on Apple Vision Pro a long wait\n"
+		"ends the app); a run that must draw the same frames every time (fixed\n"
+		"timestep, an input replay or benchmark, debug.exit_after, screenshots)\n"
+		"compiles each at its first draw instead. \"on\" or \"off\" forces either.\n"
+		"Changes apply on relaunch." },
 	{ "display.vsync", _config_boolean, "true", "HALO_NO_VSYNC", _environment_set_is_false, _platform_all,
 		"Wait for the display between frames; false draws as fast as possible." },
 	{ "display.max_fps", _config_integer, "0", "HALO_MAX_FPS", _environment_value, _platform_desktop,
