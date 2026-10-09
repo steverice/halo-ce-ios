@@ -11,6 +11,8 @@ struct texture_upscale_state
 	/* debug.upscaled_textures_toggle: draw the originals this level; textures replaced since the map loaded */
 	int show_original;
 	unsigned long replaced;
+	/* Resolution comparison replaces the original/upscaled debug cycle. */
+	int compare, higher, fallback;
 };
 
 /* at every map load: the switch's value now, and whether piece 3 asked for originals (a skip, low storage, a failed
@@ -22,6 +24,7 @@ static inline void texture_upscale_state_map_loaded(struct texture_upscale_state
 	s->original_requested = 0;
 	s->show_original = 0;   /* each level starts upscaled */
 	s->replaced = 0;
+	s->compare = s->higher = s->fallback = 0;
 }
 
 static inline void texture_upscale_state_request_original(struct texture_upscale_state *s)
@@ -47,7 +50,13 @@ static inline int texture_upscale_state_toggle(struct texture_upscale_state *s)
 {
 	if (!s->level_enabled)
 		return 0;
-	s->show_original = !s->show_original;
+	if (s->compare)
+	{
+		s->higher = !s->higher;
+		s->fallback = 0;
+	}
+	else
+		s->show_original = !s->show_original;
 	return 1;
 }
 
@@ -55,4 +64,19 @@ static inline int texture_upscale_state_toggle(struct texture_upscale_state *s)
 static inline int texture_upscale_state_show_original(const struct texture_upscale_state *s)
 {
 	return s->show_original;
+}
+
+/* A configured alternate set starts on the approved current set each map.
+The same D-pad cycle must never select originals in comparison mode. */
+static inline void texture_upscale_state_compare(struct texture_upscale_state *s, int configured)
+{
+	s->compare = configured && s->level_enabled;
+	s->higher = s->fallback = s->show_original = 0;
+}
+static inline const char *texture_upscale_state_compare_label(const struct texture_upscale_state *s)
+{
+	if (!s->higher) return "Textures: APPROVED CURRENT";
+	if (s->fallback > 1) return "Textures: HIGHER (CURRENT unavailable; ORIGINAL fallback)";
+	if (s->fallback) return "Textures: HIGHER (missing replacements; APPROVED CURRENT fallback)";
+	return "Textures: HIGHER (2x current dimensions)";
 }

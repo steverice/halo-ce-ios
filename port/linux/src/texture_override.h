@@ -19,6 +19,7 @@ it; these are the parts that need no game.
 
 #define TEXTURE_OVERRIDE_HEADER_SIZE 12
 #define TEXTURE_OVERRIDE_MAXIMUM_LEVELS 14
+#define TEXTURE_OVERRIDE_MAXIMUM_DIMENSION 8192
 
 struct texture_override_layout
 {
@@ -56,13 +57,18 @@ static inline const char *texture_override_check(const unsigned char *file, size
 	layout->width = texture_override_word(file);
 	layout->height = texture_override_word(file + 4);
 	layout->levels = texture_override_word(file + 8);
-	for (factor = 1; factor <= 4; factor *= 2)
+	if (!layout->width || !layout->height || layout->width > TEXTURE_OVERRIDE_MAXIMUM_DIMENSION ||
+		layout->height > TEXTURE_OVERRIDE_MAXIMUM_DIMENSION)
+		return "outside the supported texture dimensions";
+	for (factor = 1; factor <= 8; factor *= 2)
 	{
-		if (original_width && layout->width == original_width * factor && layout->height == original_height * factor)
+		if (original_width && original_height && original_width <= TEXTURE_OVERRIDE_MAXIMUM_DIMENSION / factor &&
+			original_height <= TEXTURE_OVERRIDE_MAXIMUM_DIMENSION / factor &&
+			layout->width == original_width * factor && layout->height == original_height * factor)
 			break;
 	}
-	if (factor > 4)
-		return "not 1, 2 or 4 times the size of the texture";
+	if (factor > 8)
+		return "not 1, 2, 4 or 8 times the size of the texture";
 	largest = layout->width > layout->height ? layout->width : layout->height;
 	if (layout->levels < 1 || layout->levels > TEXTURE_OVERRIDE_MAXIMUM_LEVELS || !(largest >> (layout->levels - 1)))
 		return "more levels than halving its size gives";

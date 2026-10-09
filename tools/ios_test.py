@@ -568,6 +568,11 @@ if 'menu_internet_screen_opened();' not in body_of(menu_source, 'multiplayer_mod
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/texture_override_probe.c', '-o', BUILD/'texture-override-probe')
 run(BUILD/'texture-override-probe')
+# selected-set loading and retirement, with tiny real files and GPU boundary stubs
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/texture_compare_probe.c', 'port/linux/src/texture_override_cache.c',
+    '-o', BUILD/'texture-compare-probe')
+run(BUILD/'texture-compare-probe')
 # the texture upscale policy's device classifier (port/runtime/texture_policy.c)
 run('python3', 'tools/embed_texture_policy.py', 'port/assets/texture-policy.json', BUILD/'texture_policy_table.c')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/runtime', '-Iport/linux/src',

@@ -234,6 +234,7 @@ DEFAULTS = {
     "debug.gpu_debug_flat": "false",
     "debug.texture_dump_directory": '""',
     "debug.texture_override_directory": '""',
+    "debug.texture_compare_directory": '""',
     "debug.upscaled_textures_toggle": "false",
     "debug.texture_log": "false",
     "debug.texture_no_cache": "false",

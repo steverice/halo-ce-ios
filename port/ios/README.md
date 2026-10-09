@@ -200,6 +200,15 @@ To compare upscaled and original textures in game, set
 then, while you hold Back on a controller, D-pad up switches the level's
 textures between upscaled and original at once, with a two-second readout.
 
+For a live resolution comparison, also set `debug.texture_compare_directory`
+to a replacement folder with twice the width and height of the approved
+textures in `debug.texture_override_directory`. The same control switches
+between **APPROVED CURRENT** and **HIGHER**, with a persistent readout.
+Each map starts on approved current. The selected set uploads on demand;
+switching can briefly hitch while it loads. A missing or invalid higher
+replacement uses the approved current texture and shows a fallback label.
+Only hashes in the approved set are compared, preserving its texture policy.
+
 ## Controls
 
 ### Resolution

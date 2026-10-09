@@ -2537,6 +2537,17 @@
             "desktop"
           ]
         },
+        "texture_compare_directory": {
+          "type": "string",
+          "default": "",
+          "description": "A folder with twice the dimensions of texture_override_directory's approved textures. With upscaled_textures_toggle, Back + D-pad up switches APPROVED CURRENT and HIGHER live, retiring the old set and uploading the selected set on demand. Missing higher textures fall back to current and are shown in the comparison readout; empty keeps the original/upscaled comparison.",
+          "x-environment": "HALO_TEXTURE_COMPARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "texture_log": {
           "type": "boolean",
           "default": false,

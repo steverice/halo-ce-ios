@@ -1478,6 +1478,12 @@ static const struct config_setting config_settings[] =
 	{ "debug.texture_override_directory", _config_string, "\"\"", "HALO_TEXTURE_OVERRIDE", _environment_value, _platform_all,
 		"A folder of replacement textures, <hash>.rgba (step-tools/texture-upscale.py),\n"
 		"each drawn in place of the texture whose first mip level hashes to <hash>; empty none." },
+	{ "debug.texture_compare_directory", _config_string, "\"\"", "HALO_TEXTURE_COMPARE", _environment_value, _platform_all,
+		"A folder with twice the dimensions of texture_override_directory's approved textures.\n"
+		"With upscaled_textures_toggle, Back + D-pad up switches APPROVED CURRENT and HIGHER\n"
+		"live, retiring the old set and uploading the selected set on demand. Missing higher\n"
+		"textures fall back to current and are shown in the comparison readout; empty keeps\n"
+		"the original/upscaled comparison." },
 	{ "debug.texture_log", _config_boolean, "false", "HALO_TEXTURE_LOG", _environment_set_is_true, _platform_all,
 		"Log texture uploads." },
 	{ "debug.texture_no_cache", _config_boolean, "false", "HALO_TEXTURE_NO_CACHE", _environment_set_is_true, _platform_all,

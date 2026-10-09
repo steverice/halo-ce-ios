@@ -616,6 +616,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.texture_astc_sync` | boolean | `false` | apple | `HALO_TEXTURE_ASTC_SYNC` | Wait for ASTC map preparation before loading, for screenshot validation only. |
 | `debug.texture_dump_directory` | string | `""` | apple, desktop | `HALO_TEXTURE_DUMP` | A folder to write every texture to as it is uploaded; empty none. |
 | `debug.texture_override_directory` | string | `""` | apple, desktop | `HALO_TEXTURE_OVERRIDE` | A folder of replacement textures, <hash>.rgba (step-tools/texture-upscale.py), each drawn in place of the texture whose first mip level hashes to <hash>; empty none. |
+| `debug.texture_compare_directory` | string | `""` | apple, desktop | `HALO_TEXTURE_COMPARE` | A folder with twice the dimensions of texture_override_directory's approved textures. |
 | `debug.texture_log` | boolean | `false` | apple, desktop | `HALO_TEXTURE_LOG` | Log texture uploads. |
 | `debug.texture_no_cache` | boolean | `false` | apple, desktop | `HALO_TEXTURE_NO_CACHE` | Upload textures again every time they are used. |
 | `debug.device_profile` | string | `""` | apple | `HALO_DEVICE_PROFILE` | Which device profile (profiles/ in the app) sets this device's graphics settings: empty chooses by the device; "none" uses the built-in defaults; a model identifier ("AppleTV5,3") or a Mac's chip name chooses as that device, for trying its profile elsewhere. |
