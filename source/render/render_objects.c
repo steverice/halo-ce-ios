@@ -385,6 +385,10 @@ void render_objects(
 	return;
 }
 
+/* port: port/linux/game/first_person_legs.c */
+boolean first_person_legs_wanted(long object_index);
+real_matrix4x3 const *first_person_legs_node_matrices(long object_index, real_matrix4x3 const *nodes);
+
 void render_object_shadows(
 	void)
 {
@@ -489,9 +493,17 @@ static void render_object_list(
 		(port/linux/game/first_person_body.c), on foot or in a vehicle's
 		first-person seat */
 		boolean first_person_body = halo_first_person_body(object_index) && !render.camera.mirrored;
+		/* port: the player's own legs, seen looking down in first person
+		(port/linux/game/first_person_legs.c): its body drawn from the waist
+		down, nothing it carries; never while display.first_person_body draws
+		the same unit */
+		boolean legs = !first_person_body && !data->shadow && !render.camera.mirrored &&
+			object_is_first_person_camera(object_index) && first_person_legs_wanted(object_index);
+		real_matrix4x3 const *legs_node_matrices = legs ?
+			first_person_legs_node_matrices(object_index, object_get_node_matrices(object_index)) : NULL;
 
 		if (!object_is_first_person_camera(object_index) || render.camera.mirrored ||
-			(first_person_body && (data->shadow || first_person_body_pass)))
+			(first_person_body && (data->shadow || first_person_body_pass)) || (legs && legs_node_matrices))
 		{
 			struct render_model_effect model_effect;
 
@@ -527,7 +539,7 @@ static void render_object_list(
 				real level_of_detail_pixels = object_get_level_of_detail_pixels(object_index);
 				/* port: the first-person body's are a render-only copy, and its
 				shadow's another, both set back along the facing */
-				real_matrix4x3 const *node_matrices = object_get_node_matrices(object_index);
+				real_matrix4x3 const *node_matrices = legs ? legs_node_matrices : object_get_node_matrices(object_index);
 
 				if (first_person_body && definition->object.model.index != NONE)
 				{
@@ -698,7 +710,7 @@ static void render_object_list(
 
 			/* port: the body's widgets and children (the third-person weapon)
 			go with its hidden torso */
-			if (!data->shadow && object->object.first_widget_index != NONE && !first_person_body)
+			if (!data->shadow && !legs && object->object.first_widget_index != NONE && !first_person_body)
 			{
 				struct render_animation animation;
 
@@ -707,7 +719,7 @@ static void render_object_list(
 				widgets_render(object_index, data->lighting, &animation);
 			}
 
-			if (object->object.first_child_object_index != NONE && !first_person_body)
+			if (object->object.first_child_object_index != NONE && !first_person_body && !legs)
 			{
 				render_object_list(
 					data,
