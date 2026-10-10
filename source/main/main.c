@@ -385,6 +385,10 @@ symbols in this file:
 #include "map_share.h" /* port: port/linux/game/map_share.c */
 #include "network_away.h" /* port: port/linux/game/network_away.c */
 #include "network_aim_assist.h" /* port: port/linux/game/network_aim_assist.c */
+#include "cseries/profile_sections.h"
+#ifdef HALO_PROFILE
+#include "profile_trace.h"
+#endif
 #include "camera/director.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
@@ -1487,6 +1491,16 @@ short main_get_window_count(
 		mp_benchmark_probe_active());
 }
 
+#ifdef HALO_PROFILE
+/* port: whether the main menu's map is the one loaded (profile_console.c: a
+recording of debug.profile_record_when = "game" waits for another) */
+boolean main_menu_is_loaded(
+	void)
+{
+	return main_globals.main_menu_scenario_loaded;
+}
+#endif
+
 static void main_new_map(
 	struct game_options *options)
 {
@@ -2580,6 +2594,9 @@ void main_set_map_name(
 static void main_exit(
 	void)
 {
+#ifdef HALO_PROFILE
+	profile_trace_shutdown();
+#endif
 	switch (main_globals.connection)
 	{
 	case _game_connection_network_server:
@@ -3558,6 +3575,18 @@ static void main_game_render(
 	return;
 }
 
+/* port: the main loop's steps, timed in the profiling build */
+PROFILE_SECTION(main_input_section, "input")
+PROFILE_SECTION(main_platform_events_section, "platform_events")
+PROFILE_SECTION(main_network_start_frame_section, "network_start_frame")
+PROFILE_SECTION(main_update_time_section, "main_update_time")
+PROFILE_SECTION(main_ui_update_section, "ui_update")
+PROFILE_SECTION(main_network_end_frame_section, "network_end_frame")
+PROFILE_SECTION(main_game_time_update_section, "game_time_update")
+PROFILE_SECTION(main_non_deterministic_update_section, "non_deterministic_update")
+PROFILE_SECTION(main_throttle_section, "throttle")
+PROFILE_SECTION(main_present_section, "present")
+
 void main_loop(
 	void)
 {
@@ -3695,6 +3724,7 @@ void main_loop(
 		}
 
 		profile_frame_start();
+		profile_scope_enter(main_input_section)
 		input_frame_begin();
 		input_update();
 		input_abstraction_update();
@@ -3705,9 +3735,12 @@ void main_loop(
 			benchmark_suite_mainloop_update();
 		}
 #endif
+		profile_scope_exit(main_input_section)
+		profile_scope_enter(main_platform_events_section)
 		shell_idle();
 		event_manager_update();
 		telnet_console_process();
+		profile_scope_exit(main_platform_events_section)
 
 		if (!shell_application_is_paused())
 		{
@@ -3721,6 +3754,7 @@ void main_loop(
 			network_away_update(main_globals.main_menu_scenario_loaded);
 			/* port: apply and replicate the host's mouse aim-assist policy. */
 			network_aim_assist_update();
+			profile_scope_enter(main_network_start_frame_section)
 			connection = main_globals.connection;
 			MAIN_CPU_PHASE(5, 0); /* port: network work has its own CPU span. */
 			if (connection==_game_connection_network_client)
@@ -3755,13 +3789,17 @@ void main_loop(
 			else if (connection==_game_connection_film_playback)
 			{
 				MAIN_CPU_PHASE(6, 0);
+				profile_scope_exit(main_network_start_frame_section)
 				break;
 			}
 			MAIN_CPU_PHASE(6, 0);
+			profile_scope_exit(main_network_start_frame_section)
 
-			main_update_time();
+			profile_scope(main_update_time_section, main_update_time();)
+			profile_scope_enter(main_ui_update_section)
 			process_ui_widgets();
 			bink_playback_update();
+			profile_scope_exit(main_ui_update_section)
 
 			if ((!game_in_editor() && (input_key_is_down(_key_end) || input_key_is_down(_key_escape))) || editor_should_exit())
 			{
@@ -3785,19 +3823,22 @@ void main_loop(
 
 					connection = main_globals.connection;
 					MAIN_CPU_PHASE(5, 0);
+					profile_scope_enter(main_network_end_frame_section)
 					if (connection>_game_connection_local && connection<=_game_connection_network_server && !network_game_client_end_frame())
 					{
 						display_error_when_main_menu_loaded(1);
 						MAIN_CPU_PHASE(8, 14); /* port: retain short disconnected segments. */
 						network_game_abort();
 					}
+					profile_scope_exit(main_network_end_frame_section)
 
 					MAIN_CPU_PHASE(6, 0);
 					{
 						long ticks_before = game_time_get(); /* port: the benchmark's CPU split */
 
 						MAIN_CPU_PHASE(0, 0);
-						game_time_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
+						profile_scope(main_game_time_update_section,
+							game_time_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);)
 						MAIN_CPU_PHASE(1, (int)(game_time_get() - ticks_before));
 					}
 
@@ -3809,11 +3850,13 @@ void main_loop(
 						render_frame = main_globals.main_menu_scenario_loaded || main_globals.halt_time_scale;
 					render_frame &= !game_engine_running() || game_time_get()>=3;
 
+					profile_scope_enter(main_non_deterministic_update_section)
 					collision_log_continue_period(1);
 					director_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 					observer_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 					collision_log_end_period();
 					game_engine_update_non_deterministic((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
+					profile_scope_exit(main_non_deterministic_update_section)
 				}
 
 				/* (after each tick instead, while a take is recorded or replayed: main_tick_end) */
@@ -3870,11 +3913,11 @@ void main_loop(
 				profile_render_end();
 			}
 
-			main_rasterizer_throttle();
+			profile_scope(main_throttle_section, main_rasterizer_throttle();)
 
 			if (render_frame && !debug_no_drawing)
 			{
-				main_present_frame();
+				profile_scope(main_present_section, main_present_frame();)
 			}
 			else
 			{

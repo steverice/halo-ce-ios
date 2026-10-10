@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from tools import ninja_syntax
 from tools.ios_guest_build import generate_ios_guest_build, ios_guest_configure_inputs
-from tools.linux_build import generate_linux_build, linux_configure_inputs
+from tools.linux_build import check_profile_options, generate_linux_build, linux_configure_inputs
 from tools.windows_build import generate_windows_build, windows_configure_inputs
 
 # arguments
@@ -38,6 +38,12 @@ parser.add_argument(
     action="store_true",
     help="debug and profiling builds: time and count the collision functions' use for the on-screen collision log "
     "(source/physics/collision_usage.c); without it the clock reads and counters are compiled out",
+)
+parser.add_argument(
+    "--profile",
+    action="store_true",
+    help="profiling builds (Linux, Windows, Android): CPU scopes recorded on a "
+    "console command or launch setting (README, \"Profiling builds\"); not with --pgo=train",
 )
 parser.add_argument(
     "--lto",
@@ -79,6 +85,10 @@ parser.add_argument(
     "(tools/ios_build.py --render-validation; port/linux/src/gpu_validate.h)",
 )
 args = parser.parse_args()
+try:
+    check_profile_options(args.profile, args.pgo)
+except ValueError as error:
+    parser.error(str(error))
 
 # the settings the builds read
 sln = SimpleNamespace(
@@ -87,6 +97,7 @@ sln = SimpleNamespace(
     compiler_launcher=args.compiler_launcher,
     port_release=args.release,
     port_collision_log=args.collision_log,
+    port_profile=args.profile,
     port_lto=args.lto,
     port_portable=args.portable,
     port_pgo=args.pgo,
