@@ -94,6 +94,10 @@ add_executable(VISR MACOSX_BUNDLE
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
     "${ROOT}/build/ios/embedded")
+# WebRTC peers use DTLS in the host; generated posix bridges translate guest buffers.
+file(GLOB HALO_MBEDTLS_SOURCES CONFIGURE_DEPENDS "${ROOT}/port/third_party/mbedtls/library/*.c")
+target_sources(VISR PRIVATE "${ROOT}/port/linux/src/posix_dtls.c" ${HALO_MBEDTLS_SOURCES})
+target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/mbedtls/include")
 target_compile_definitions(VISR PRIVATE HALO_IOS=1 st_mtim=st_mtimespec st_atim=st_atimespec st_ctim=st_ctimespec)
 target_compile_options(VISR PRIVATE "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:-Wno-deprecated-declarations>")
 if(NOT HALO_VISIONOS)
