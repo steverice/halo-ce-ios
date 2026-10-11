@@ -104,6 +104,7 @@ symbols in this file:
 #include "text/draw_string.h"
 #include "units/unit_definitions.h"
 #include "units/units.h"
+#include "map_share.h" /* port: port/linux/game/map_share.c */
 
 /* ---------- constants */
 
@@ -386,6 +387,8 @@ void interface_draw_fullscreen_overlays(
 	cinematic_render();
 	interface_splitscreen_render();
 	hud_render_timer();
+	/* port: a map's download (port/linux/game/map_share.c) */
+	map_share_render();
 #ifndef HALO_IOS
 	/* Keep developer console output and performance counters off the iOS
 	   game picture. Diagnostics remain available in the log files. */

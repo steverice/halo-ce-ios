@@ -380,6 +380,7 @@ symbols in this file:
 #include "networking/network_game_manager.h"
 #include "networking/network_server_manager.h" /* port: a co-op game's level won */
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
+#include "map_share.h" /* port: port/linux/game/map_share.c */
 #include "camera/director.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
@@ -3464,6 +3465,8 @@ void main_loop(
 
 			/* automated system link tests (port/linux/game/network_test.c) */
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
+			/* port: map sharing, in the lobby and in game (port/linux/game/map_share.c) */
+			map_share_update();
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
 			{

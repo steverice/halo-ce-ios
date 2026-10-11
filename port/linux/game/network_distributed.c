@@ -64,6 +64,7 @@ machine (their datum identifiers need not be).
 #include "main/main.h"
 #include "game/player_queues_new.h"
 #include "networking/network_game_globals.h"
+#include "networking/network_connection.h"
 #include "objects/objects.h"
 #include "objects/damage.h"
 #include "scenario/scenario.h"
@@ -74,6 +75,7 @@ machine (their datum identifiers need not be).
 #include "units/bipeds.h"
 #include "network_coop.h"
 #include "network_distributed.h"
+#include "map_share.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -3904,6 +3906,14 @@ void network_distributed_handle_message(
 	short index;
 	word entry_size;
 
+	/* (map sharing's, in the lobby too, over the host's connection alone:
+	map_share.c) */
+	if (map_share_handles_message(message, size))
+	{
+		map_share_handle_message(machine_index, message, size, machine_index != NONE ?
+			distributed_handling_stream_message : !network_connection_last_read_was_unreliable());
+		return;
+	}
 	/* (none between games: loading, or in the menus) */
 	if (size < sizeof(header) || !game_in_progress())
 		return;
@@ -3976,6 +3986,10 @@ void network_distributed_handle_message(
 	{
 		return;
 	}
+	/* (the votes to kick and voice chat, which this port has not imported:
+	their numbers are kept for the machines that send them, and dropped) */
+	if (header.type >= _distributed_message_votekick && header.type <= _distributed_message_voice_config)
+		return;
 	/* (the kinds whose handlers read one entry: not without it) */
 	switch (header.type)
 	{
