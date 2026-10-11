@@ -381,7 +381,7 @@ def test_system_link_bots_messages_are_the_games():
                           for kind, count in re.findall(r"_data_packet_field_(\w+), (\d+)", fields))
 
     sent = []
-    machine = bots.Machine(1, "127.0.0.2", "127.0.0.1", print)
+    machine = bots.Machine(1, "127.0.0.1", "127.0.0.1", print)
     machine.udp.close()
     machine.send = sent.append
     machine.udp = types.SimpleNamespace(sendto=lambda data, address: sent.append(data))
