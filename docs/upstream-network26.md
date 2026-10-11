@@ -28,7 +28,12 @@ Viewmodel FOV, legs/shield effects, replacement reticles, menu layout/input chan
 - Actual-source elevator, stale-player, audio flush/transition/lifecycle probes: **98 passed**, including negative controls, compiled natively on macOS. This validates behavior; the guest build validates ILP32 compilation. The upstream harness's default `-m32` cannot link on Apple Silicon, so a temporary compiler wrapper removed that flag for these fake-world tests.
 - Native WebRTC with Chromium: **320/320** messages round-trip without loss; with 10% UDP loss the channel stays open and **705/960** datagrams return (loss is expected).
 - Actual-C network light regression passed.
-- iOS/visionOS application builds, `ios_test.py` and Metal parity checks: pending.
+- Final unsigned iOS and visionOS application builds passed; both bundles contain `MbedTLS-Apache-2.0.txt`.
+- `ios_test.py`: all host probes and 15/15 tests passed; network-light probe passed.
+- Bot message sizes/types against the real network schema: passed.
+- Metal: menu matches GL and records; 140 shader and 54 fixture translations compile, and 257 + 108 `xcrun metal` compilations pass. a10 screenshots and calls match records; Metal differences stay in existing accepted bounds (1,308 pixels at frame1200, immediate draws up to3), zero Metal errors. The script exits1 solely for the previously documented Oct8 health-meter shader name/content difference (`ps_92143490` in stale records, `ps_6c143490` in main and this branch). No new game-state or rendering discrepancy found.
+
+Device tests remain: native/invite/browser multiplayer joins at version26, co-op elevators, five-or-more-player respawn placement, and the a10 opening music.
 
 ## a10 intro music
 
