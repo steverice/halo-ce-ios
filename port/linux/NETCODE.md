@@ -606,3 +606,12 @@ The host logs to `debug.txt` when a player on another machine presses the
 action button where the host has nothing for them to pick up, with where it
 has them and the nearest item: a client that sees a pickup the host does
 not.
+
+## Apple port: version 26
+
+Version 26 adds WebRTC capabilities and certificate fingerprints to sealed
+internet-play signaling. Native peers keep UDP; browser peers use ICE-lite,
+DTLS 1.2 and an unordered SCTP data channel on the existing tunnel socket.
+The Apple host compiles Mbed TLS and `posix_dtls.c`; the ILP32 guest calls
+its scalar handles and buffer arguments through generated posix bridges.
+Version 25 peers fail the existing version gate.
