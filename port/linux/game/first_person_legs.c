@@ -19,6 +19,7 @@ keep their place and size at any field of view.
 #include "objects/objects.h"
 #include "models/model_definitions.h"
 #include "units/units.h"
+#include "units/unit_definitions.h"
 #include "render/render.h"
 #include "rasterizer/rasterizer.h"
 #include <xtl.h>
@@ -27,6 +28,7 @@ keep their place and size at any field of view.
 #include "object_mesh.h"
 
 
+#include <math.h>
 #include <string.h>
 
 /* port/linux/src/port_config.c */
@@ -51,6 +53,17 @@ chest closes the waist as a low lid, flush with the belt (the body's model is
 a hollow shell: folded higher, it stood up as a cone before the eye; lower,
 it sank into a funnel) */
 #define FIRST_PERSON_LEGS_LID_UP 0.01f
+/* in a vehicle's seat, the farthest the hips may sit from the camera, level
+(world units: a Warthog passenger's sit about 0.22 from it), and the farthest
+ahead of it along the way the body faces (a passenger's are behind it; hips
+ahead of the eye would stand the legs in front of it) */
+#define FIRST_PERSON_LEGS_SEAT_HIPS_MAXIMUM 0.3f
+#define FIRST_PERSON_LEGS_SEAT_HIPS_AHEAD_MAXIMUM 0.05f
+/* the seat flag "allows weapons" (unit_definitions.h names its neighbors, not
+it): the rider keeps the weapon in hand and the first-person view of it, as
+a Warthog's passenger and a Pelican's riders do. A seat without it is one a
+script puts the unit in, like the cryo tube */
+#define FIRST_PERSON_LEGS_SEAT_ALLOWS_WEAPONS_BIT 5
 
 static real_matrix4x3 first_person_legs_matrices[FIRST_PERSON_LEGS_MAXIMUM_NODES];
 /* the body's shadow: its whole pose, set back as the legs last were, so the
@@ -72,7 +85,35 @@ static boolean first_person_legs_enabled(
 	return enabled;
 }
 
-/* the player's own unit, seen from inside it: its legs drawn (on foot,
+/* whether a unit rides in a seat that shows its legs: a vehicle's seat
+whose camera is the rider's own eyes (not one on the gun or behind the
+vehicle) and that lets the rider keep the weapon out (a seat the player
+takes, not one a script holds the unit in), once it sits (not while it
+climbs in or out, when the body swings through the camera) */
+static boolean first_person_legs_seated(
+	long object_index)
+{
+	struct object_datum *object = object_get(object_index);
+	struct object_datum *parent = object_try_and_get(object->object.parent_object_index);
+	struct unit_datum *unit = unit_get(object_index);
+	struct unit_definition *definition;
+	struct unit_seat const *seat;
+
+	if (!parent || parent->object.type != _object_type_vehicle || unit->unit.parent_seat_index == NONE)
+		return FALSE;
+	definition = unit_definition_get(parent->definition_index);
+	if (!definition || !VALID_INDEX(unit->unit.parent_seat_index, definition->unit.seats.count))
+		return FALSE;
+	seat = TAG_BLOCK_GET_ELEMENT(&definition->unit.seats, unit->unit.parent_seat_index, struct unit_seat);
+	return TEST_FLAG(seat->flags, FIRST_PERSON_LEGS_SEAT_ALLOWS_WEAPONS_BIT) &&
+		!TEST_FLAG(seat->flags, _unit_seat_third_person_camera_bit) &&
+		!TEST_FLAG(seat->flags, _unit_seat_first_person_camera_bit) &&
+		unit->unit.animation.state != _unit_state_entering_seat &&
+		unit->unit.animation.state != _unit_state_exiting_seat;
+}
+
+/* the player's own unit, seen from inside it: its legs drawn (on foot or in a
+seat that shows them,
 alive, not hidden, and not while a script plays an animation on it: a
 cutscene that keeps the camera in the unit's eyes poses the body for the
 camera, not for a view from the waist) */
@@ -82,7 +123,7 @@ boolean first_person_legs_wanted(
 	struct object_datum *object = object_try_and_get(object_index);
 
 	return first_person_legs_enabled() && object && object->object.type == _object_type_biped &&
-		object->object.parent_object_index == NONE &&
+		(object->object.parent_object_index == NONE || first_person_legs_seated(object_index)) &&
 		!TEST_FLAG(object->object.damage_flags, _object_dead_bit) &&
 		!TEST_FLAG(object->object.flags, _object_invisible_bit) &&
 		!unit_is_playing_custom_animation(object_index);
@@ -266,11 +307,39 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 	if (normalize3d(&back) <= 0.f)
 		back = *global_zero_vector3d;
 
+	/* (in a seat the body stays where it sits: set back, the legs would
+	pass through the seat. Only with the hips under the camera, as a
+	rider's are) */
+	if (object->object.parent_object_index != NONE)
+	{
+		real_vector3d facing;
+		real_vector3d hips;
+		real level;
+
+		hips.i = nodes[pelvis].position.x - global_window_parameters.camera.position.x;
+		hips.j = nodes[pelvis].position.y - global_window_parameters.camera.position.y;
+		hips.k = 0.f;
+		if (hips.i * hips.i + hips.j * hips.j >
+			FIRST_PERSON_LEGS_SEAT_HIPS_MAXIMUM * FIRST_PERSON_LEGS_SEAT_HIPS_MAXIMUM)
+		{
+			return NULL;
+		}
+		object_get_orientation(object_index, &facing, NULL);
+		level = facing.i * facing.i + facing.j * facing.j;
+		if (level > 0.0001f &&
+			(hips.i * facing.i + hips.j * facing.j) / (real)sqrt(level) > FIRST_PERSON_LEGS_SEAT_HIPS_AHEAD_MAXIMUM)
+		{
+			return NULL;
+		}
+		back = *global_zero_vector3d;
+	}
+
 	/* (as far back as keeps the waist's rim out of the bottom of the view,
 	as Halo 2 keeps its first person body's open top out of it: looking
 	ahead, the least; looking down, the legs stand behind the eye, the
 	thighs, knees and feet seen as they swing forward) */
 	set_back = FIRST_PERSON_LEGS_SET_BACK;
+	if (object->object.parent_object_index == NONE)
 	{
 		real_plane3d const *bottom = &global_window_parameters.frustum.world_planes[2];
 		real toward = dot_product3d(&bottom->n, &back);
