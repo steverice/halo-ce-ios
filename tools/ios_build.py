@@ -49,6 +49,14 @@ def host_pgo_flags(mode):
     return ['-DHALO_HOST_PGO=off', '-DHALO_HOST_PROFILE=']
 
 
+def drop_stale_ffmpeg_license(build, bink):
+    """a build folder that last built an app with FFmpeg still holds its license in the app bundle, which
+    Xcode does not remove when the file leaves the project: remove it before an app without FFmpeg is built"""
+    if bink == 'off':
+        for stale in Path(build).glob('*/VISR.app/**/FFmpeg-LGPL-2.1.txt'):
+            stale.unlink()
+
+
 def run(*args):
     print('+', ' '.join(str(a) for a in args), flush=True)
     subprocess.run([str(a) for a in args], cwd=ROOT, check=True)
@@ -270,6 +278,7 @@ def main():
     product = build/f'Release-{sdk}/VISR.app'
     if product.is_symlink():
         product.unlink()
+    drop_stale_ffmpeg_license(build, args.bink)
     command=['cmake','--build',build,'--config','Release','--target','VISR','--','-quiet']
     if args.simulator or args.unsigned:command.append('CODE_SIGNING_ALLOWED=NO')
     else:
@@ -456,6 +465,7 @@ def build_mac(args, cloud, data_packs=()):
     # Mac profile (and the Mac itself registered with the team, which a Mac profile lists as its device)
     signing=(['-allowProvisioningUpdates','-allowProvisioningDeviceRegistration'] if args.cloud_saves or args.benchmark_upload else
              ['CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM='])
+    drop_stale_ffmpeg_license(build, args.bink)
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',
         '-sdk','macosx','SDK_VARIANT=iosmac','SUPPORTS_MACCATALYST=YES','DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER=NO',
         *signing)
