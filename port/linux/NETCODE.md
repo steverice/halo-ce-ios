@@ -203,7 +203,11 @@ version 26 has each machine say its WebRTC in internet play's signalling (a
 native build's certificate, a browser's ICE credentials too), so that
 browsers play (port/linux/README.md, "Browsers"); version 27 shares Custom
 Edition maps (below, "Map sharing"): a client asks the host for a map it
-lacks, and the game's players reach each other to send it.
+lacks, and the game's players reach each other to send it; version 28 holds
+the players of a machine still downloading the map out of the game until it
+has the map, keeps a multiplayer map's first scripted BSP, leaves dynamic
+lights and the flashlight on past the Xbox game's player and vehicle limits,
+and readies a second weapon picked up while firing.
 
 `port/linux/network_format.txt` records the wire format of the current
 version (`tools/network_format.py`): `test_linux_port.py` fails when the
