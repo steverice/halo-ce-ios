@@ -245,9 +245,18 @@ for name, calls in (('update_joining', ('p2p.stun_started = 1;', 'p2p_signal_sta
                     ('p2p_thread', ('if (p2p_lobby_browsing())\n\t\t\tp2p_signal_start();',))):
     if any(call not in body_of(p2p_source, name) for call in calls):
         raise SystemExit(f'p2p.c: {name} must begin signalling (and STUN) itself')
-if p2p_source.count('p2p_signal_start();') != 3 or p2p_source.count('p2p.stun_started = 1;') != 2:
-    raise SystemExit('p2p.c: only a join, a hosted internet game and the server browser may begin signalling, '
-                     'and only the first two STUN')
+# ... and, since network version 27, where a machine already in an internet game asks that game's other players
+# for a map or answers them (map sharing): both only while the tunnel reaches the host of the game it joined, so
+# after one of the three above
+for name, gate in (('update_answering', 'int want = p2p.answer_players && !p2p.hosting && joined_host() != NULL;'),
+                   ('update_reaching', '|| !joined_host())')):
+    body = body_of(p2p_source, name)
+    if gate not in body or body.count('p2p_signal_start();') != 1:
+        raise SystemExit(f'p2p.c: {name} may begin signalling only while this machine is in the game of a host '
+                         'it joined (joined_host)')
+if p2p_source.count('p2p_signal_start();') != 5 or p2p_source.count('p2p.stun_started = 1;') != 2:
+    raise SystemExit('p2p.c: only a join, a hosted internet game, the server browser and map sharing inside a '
+                     'joined game may begin signalling, and only the first two STUN')
 if 'if (!p2p.stun_started)\n\t\treturn;' not in body_of(p2p_source, 'stun_update'):
     raise SystemExit('p2p.c: stun_update must do nothing, its lookups included, until STUN is begun')
 # an Apple build turns network.online on only from a question that says what internet play reaches: a join
