@@ -265,6 +265,11 @@ config_source = (ROOT / 'port/linux/src/port_config.c').read_text()
 if not re.search(r'#ifdef HALO_IOS\n#define DEFAULT_INTERNET_PLAY "false"\n', config_source):
     raise SystemExit('port_config.c: network.online stays off by default on Apple builds; internet play on by '
                      'default is DEFAULT_ONLINE_ASK "true", which asks before any server is reached')
+# ... and does not download a Custom Edition map from a game's players unless the player turned that on
+if not re.search(r'#ifdef HALO_IOS\n(?:.*\n)*?#define DEFAULT_MAP_DOWNLOAD "false"\n(?:.*\n)*?#else', config_source) or \
+        '{ "network.map_download", _config_boolean, DEFAULT_MAP_DOWNLOAD,' not in config_source:
+    raise SystemExit('port_config.c: network.map_download stays off by default on Apple builds until a download '
+                     'asks first')
 platform_source = (ROOT / 'port/linux/src/sdl_platform.c').read_text()
 for name, question in (('platform_link_consent', 'platform_ask(HALO_INTERNET_LINK_TITLE, HALO_INTERNET_LINK_MESSAGE,'),
                        ('platform_internet_play_ask', 'platform_ask(HALO_INTERNET_ASK_TITLE, HALO_INTERNET_DISCLOSURE,')):
