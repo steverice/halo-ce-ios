@@ -109,6 +109,14 @@ run(BUILD/'metal-compile-probe-thread')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_compile_probe.c', '-o', BUILD/'metal-compile-probe')
 run(BUILD/'metal-compile-probe')
+# the Apple host's socket adapter: every address it returns is laid out as the game reads it (a datagram's
+# source read with recvmsg was not, so a host took an internet play joiner's datagrams for its own machine's)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Dst_mtim=st_mtimespec',
+    '-Dst_atim=st_atimespec', '-Dst_ctim=st_ctimespec', '--include-directory=port/linux/src',
+    '--include-directory=port/ios/host', '--include-directory=port/runtime/include',
+    '--include-directory=port/runtime/guest/runtime', 'port/ios/tests/posix_net_probe.c',
+    'port/ios/host/posix_net.c', '-Wl,-dead_strip', f'--output={BUILD / "posix-net-probe"}')
+run(BUILD/'posix-net-probe')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',

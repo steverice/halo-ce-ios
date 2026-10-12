@@ -55,6 +55,14 @@ static ssize_t ios_sendto(int fd,const void *p,size_t n,int flags,const void *ad
 static ssize_t ios_recvfrom(int fd,void *p,size_t n,int flags,void *address,socklen_t *size) {
     ssize_t out=recvfrom(fd,p,n,flags,address,size);if(out>=0 && size)sockaddr_outward(address,*size);return out;
 }
+/* (posix_socket_recvfrom reads with recvmsg, for MSG_TRUNC: its source address is Darwin's too.
+Left as it came, its family read 0x0210, xnet.c took it for no IPv4 address and rewrote nothing, and
+a datagram from an internet play peer's stand-in reached the game as 127.0.0.1's, the host's own) */
+static ssize_t ios_recvmsg(int fd,struct msghdr *message,int flags) {
+    ssize_t out=recvmsg(fd,message,flags);
+    if(out>=0 && message && message->msg_name)sockaddr_outward(message->msg_name,message->msg_namelen);
+    return out;
+}
 static int ios_getsockname(int fd,void *p,socklen_t *n) {int r=getsockname(fd,p,n);if(!r)sockaddr_outward(p,*n);return r;}
 static int ios_getpeername(int fd,void *p,socklen_t *n) {int r=getpeername(fd,p,n);if(!r)sockaddr_outward(p,*n);return r;}
 static ssize_t ios_getrandom(void *p,size_t size,unsigned flags) {(void)flags;arc4random_buf(p,size);return size;}
@@ -64,6 +72,7 @@ static ssize_t ios_getrandom(void *p,size_t size,unsigned flags) {(void)flags;ar
 #define accept4 ios_accept4
 #define sendto ios_sendto
 #define recvfrom ios_recvfrom
+#define recvmsg ios_recvmsg
 #define getsockname ios_getsockname
 #define getpeername ios_getpeername
 #define getrandom ios_getrandom
