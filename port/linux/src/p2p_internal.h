@@ -191,6 +191,10 @@ void p2p_signal_reconnect(void);
 /* the brokers there are; returns those that failed (tried, and not
 reached since) */
 int p2p_signal_brokers_failed(int *count);
+/* whether the brokers can be reached (halo_internet.h's
+HALO_INTERNET_SERVERS_*): none contacted yet, trying, one reached, or none
+reached in HALO_INTERNET_SERVERS_WAIT */
+int p2p_signal_status(void);
 /* the server browser's topics: the own slot and the queries (a listed
 game), and every slot (browsing) */
 void p2p_signal_lobby_topics(int listed, int browsing);

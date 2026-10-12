@@ -227,6 +227,28 @@ run(BUILD/'posix-net-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
     'port/ios/tests/lan_targets_probe.c', f'--output={BUILD / "lan-targets-probe"}')
 run(BUILD/'lan-targets-probe')
+# internet play: whether its brokers can be reached, and the server browser's empty list (halo_internet.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
+    'port/ios/tests/internet_probe.c', f'--output={BUILD / "internet-probe"}')
+run(BUILD/'internet-probe')
+# and what the probe can't see. Nothing reaches a server before the player hosts for the internet, joins an
+# invite or opens the server browser: p2p.c begins signalling in those three places and STUN in the first two
+p2p_source = (ROOT / 'port/linux/src/p2p.c').read_text()
+def body_of(source, name):
+    match = re.search(r'\n(?:static )?\w[\w \*]*\b' + name + r'\([^)]*\)\n\{\n(.*?)\n\}\n', source, re.S)
+    if not match:
+        raise SystemExit(f'no function {name}')
+    return match.group(1)
+for name, calls in (('update_joining', ('p2p.stun_started = 1;', 'p2p_signal_start();')),
+                    ('update_hosting', ('p2p.stun_started = 1;', 'p2p_signal_start();')),
+                    ('p2p_thread', ('if (p2p_lobby_browsing())\n\t\t\tp2p_signal_start();',))):
+    if any(call not in body_of(p2p_source, name) for call in calls):
+        raise SystemExit(f'p2p.c: {name} must begin signalling (and STUN) itself')
+if p2p_source.count('p2p_signal_start();') != 3 or p2p_source.count('p2p.stun_started = 1;') != 2:
+    raise SystemExit('p2p.c: only a join, a hosted internet game and the server browser may begin signalling, '
+                     'and only the first two STUN')
+if 'if (!p2p.stun_started)\n\t\treturn;' not in body_of(p2p_source, 'stun_update'):
+    raise SystemExit('p2p.c: stun_update must do nothing, its lookups included, until STUN is begun')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',

@@ -72,6 +72,7 @@ answered it in a while.
 #include "posix.h"
 #include "port_config.h"
 #include "p2p_internal.h"
+#include "halo_internet.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -334,6 +335,9 @@ struct used_request
 static struct
 {
 	int started;
+	/* when a broker was last reached, or signalling began if none has been
+	(p2p_signal_status) */
+	unsigned long reached_time;
 	struct broker brokers[MAXIMUM_BROKERS];
 	int broker_count;
 	char client_identifier[24];
@@ -1881,6 +1885,7 @@ void p2p_signal_start(void)
 	if (signalling.started)
 		return;
 	signalling.started = 1;
+	signalling.reached_time = p2p_now();
 	posix_random_bytes(random, sizeof(random));
 	p2p_hex(random, sizeof(random), hex);
 	snprintf(signalling.client_identifier, sizeof(signalling.client_identifier), "hceu-%s", hex);
@@ -2063,6 +2068,20 @@ int p2p_signal_brokers_failed(int *count)
 		failed += signalling.brokers[index].failures > 0;
 	*count = signalling.broker_count;
 	return failed;
+}
+
+int p2p_signal_status(void)
+{
+	int count, failed, connected;
+
+	if (!signalling.started)
+		return HALO_INTERNET_SERVERS_NONE;
+	connected = p2p_signal_connected();
+	if (connected)
+		signalling.reached_time = p2p_now();
+	failed = p2p_signal_brokers_failed(&count);
+	return halo_internet_servers(1, count, failed, connected,
+		(unsigned long)(unsigned int)(p2p_now() - signalling.reached_time));
 }
 
 static void sync_all_topics(void)

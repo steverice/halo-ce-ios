@@ -71,6 +71,12 @@ enum
 	(on Apple's systems: the Local Network permission, off or not given yet) */
 	P2P_JOIN_LOCAL_NETWORK,
 };
+/* whether the signalling brokers, which invites and the server browser go
+through, can be reached (halo_internet.h's HALO_INTERNET_SERVERS_*): none
+is contacted before a game is hosted for the internet, an invite is joined
+or the server browser is opened */
+int p2p_servers_status(void);
+
 /* the stage (P2P_JOIN_*), the seconds since the invite came, whether
 joining has given up, and (P2P_JOIN_VERSION) the host's network version */
 int p2p_join_status(int *seconds, int *over, int *host_version);
@@ -238,6 +244,11 @@ struct p2p_listing
 /* a copy of the public games found, in the order shown (the most players
 first; then those not failed, the open ones, by name); returns their count */
 int p2p_lobby_games(struct p2p_listing *games, int maximum_count);
+/* the public games heard while browsing that the list leaves out, since
+their network version is not this build's: those of a newer one, and of an
+older one (their listings' signatures are not checked: a count to tell the
+player with, no more) */
+void p2p_lobby_other_versions(int *newer, int *older);
 /* a game the browser could not join: kept, marked failed, for this run */
 void p2p_lobby_mark_failed(const unsigned char *identifier);
 /* a locked game's invite (into its invite), if the password is its own:

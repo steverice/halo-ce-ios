@@ -60,6 +60,7 @@ only look up and create stand-ins.
 #include "p2p_internal.h"
 #include "p2p_code.h"
 #include "p2p_away.h"
+#include "halo_internet.h"
 #include "halo_port_limits.h"
 #include "ikcp.h"
 
@@ -428,6 +429,9 @@ static struct
 	/* p2p_initialize was asked to start internet play and could not
 	(p2p_start_failed) */
 	int start_failed;
+	/* whether the signalling brokers can be reached, as last seen
+	(p2p_servers_status) */
+	int servers_status;
 
 	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
 	the router; the port it forwards here, when it was last asked, how soon
@@ -3072,6 +3076,29 @@ int p2p_peer_away(unsigned long address)
 	return away;
 }
 
+/* whether the brokers can be reached, for the menus, and in the log each
+time it changes for the worse or back */
+static void update_servers(void)
+{
+	int status = p2p_signal_status();
+
+	if (status == p2p.servers_status)
+		return;
+	if (status == HALO_INTERNET_SERVERS_UNREACHABLE)
+	{
+		platform_log("Internet play: no signalling broker can be reached (network.brokers_file; the network or a "
+			"firewall may block TCP to them): invites and the server browser cannot work until one is");
+	}
+	else if (status == HALO_INTERNET_SERVERS_REACHED && p2p.servers_status == HALO_INTERNET_SERVERS_UNREACHABLE)
+		platform_log("Internet play: a signalling broker is reached again");
+	p2p.servers_status = status;
+}
+
+int p2p_servers_status(void)
+{
+	return p2p.servers_status;
+}
+
 static int connected_player_count(void)
 {
 	int count = 0;
@@ -4018,6 +4045,7 @@ static void *p2p_thread(void *unused)
 		update_code_joining();
 		update_answering();
 		update_reaching();
+		update_servers();
 		update_upnp();
 		update_away();
 		p2p_discord_update();

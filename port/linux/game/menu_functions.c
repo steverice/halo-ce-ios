@@ -83,6 +83,7 @@ their handlers open opens.
 #include "custom_edition_maps.h"
 /* (internet play's server browser: the platform layer's) */
 #include "../src/p2p.h"
+#include "../src/halo_internet.h"
 #ifdef HALO_IOS
 #include "../src/halo_lan_targets.h"
 #include "../src/posix.h"
@@ -2985,6 +2986,9 @@ static void server_settings_update(struct widget_instance *list)
 		snprintf(text, sizeof(text), "NONE: A LAN GAME");
 	else if (!config_boolean("network.online"))
 		snprintf(text, sizeof(text), "INTERNET PLAY IS OFF (SETTINGS)");
+	/* (an invite reaches no one without a broker) */
+	else if (p2p_servers_status() == HALO_INTERNET_SERVERS_UNREACHABLE)
+		snprintf(text, sizeof(text), "CAN'T REACH THE MATCHMAKING SERVERS");
 	else if (!p2p_host_code(text, sizeof(text)))
 		snprintf(text, sizeof(text), "MADE WHEN THE GAME STARTS");
 	else
@@ -3768,8 +3772,31 @@ static void lobby_browser_update(struct widget_instance *list)
 		}
 		else if (!lobby_browser.count)
 		{
-			usnprintf(text, NUMBEROF(text) - 1, L"%s", now - lobby_browser.begin_time < LOBBY_BROWSER_LOOK_TIME ?
-				L"Looking for public games..." : L"No public games found");
+			int newer, older;
+
+			p2p_lobby_other_versions(&newer, &older);
+			switch (halo_internet_browser_empty(p2p_servers_status(),
+				now - lobby_browser.begin_time < LOBBY_BROWSER_LOOK_TIME, newer, older))
+			{
+			case HALO_INTERNET_BROWSER_LOOKING:
+				usnprintf(text, NUMBEROF(text) - 1, L"Looking for public games...");
+				break;
+			case HALO_INTERNET_BROWSER_NO_SERVERS:
+				usnprintf(text, NUMBEROF(text) - 1, L"Can't reach the matchmaking servers: check your internet");
+				break;
+			/* (the list shows only this build's network version) */
+			case HALO_INTERNET_BROWSER_NEWER_ONLY:
+				usnprintf(text, NUMBEROF(text) - 1, L"No games on version %d: %d on newer ones (update this game)",
+					HALO_PORT_NETWORK_VERSION, newer);
+				break;
+			case HALO_INTERNET_BROWSER_OLDER_ONLY:
+				usnprintf(text, NUMBEROF(text) - 1, L"No games on version %d: %d on older ones",
+					HALO_PORT_NETWORK_VERSION, older);
+				break;
+			default:
+				usnprintf(text, NUMBEROF(text) - 1, L"No public games found");
+				break;
+			}
 		}
 		else if (chosen < lobby_browser.count)
 		{
@@ -4607,8 +4634,16 @@ static void lobby_update(struct widget_instance *list)
 		on a line of its own: after "Join code: " the panel cuts its last
 		character off, and it has room for two lines after the countdown's.
 		The invite link is still on the clipboard where there is one, but an
-		Apple TV has none to paste from) */
-		if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)))
+		Apple TV has none to paste from. An invite reaches no one without a
+		broker: said in the same two lines, until one is reached) */
+		if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)) &&
+			p2p_servers_status() == HALO_INTERNET_SERVERS_UNREACHABLE)
+		{
+			size_t length = ustrlen(text);
+
+			usnprintf(text + length, NUMBEROF(text) - 1 - length, L"\r\nNo matchmaking servers:\r\ninvites won't work");
+		}
+		else if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)))
 		{
 			size_t length = ustrlen(text);
 
