@@ -277,14 +277,22 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         f"-isystem {libc_include}", f"-isystem {arch}", f"-isystem {MUSL_DIR}/arch/generic",
         f"-isystem {MUSL_DIR}/include",
     ]
-    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []))
-    guest_code = " ".join(GUEST_CODE_FLAGS)
-    tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
     # profile-guided optimisation with the Linux build's profile (committed,
     # or trained by the Linux build with --pgo=train): the game and platform
     # code are the same, and functions that differ simply go without
     profile = pgo_profile(sln, LINUX_PROFILE if pgo_mode(sln) == "train" else None, [LINUX_PROFILE], guest_cc)
     profile_flags = " ".join(profile_use_flags(profile))
+    # The converter turns each memory access and indirect branch into three
+    # instructions (tools/ios_asm_convert.py), so a conditional branch that
+    # LLVM placed within reach can end up out of it once a profile makes the
+    # functions larger ("fixup value out of range"). With a profile, LLVM
+    # relaxes those branches at a quarter of their reach instead. Without
+    # one the flags stay out, so a --pgo=off build is the code it always was.
+    branch_ranges = ["-mllvm", "-aarch64-tbz-offset-bits=12", "-mllvm", "-aarch64-cbz-offset-bits=17",
+                     "-mllvm", "-aarch64-bcc-offset-bits=17"] if profile else []
+    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + branch_ranges + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []))
+    guest_code = " ".join(GUEST_CODE_FLAGS)
+    tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
     if profile:
         tool_implicit.append(profile)
 
