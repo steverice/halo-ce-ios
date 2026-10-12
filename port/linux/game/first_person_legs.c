@@ -68,7 +68,9 @@ static boolean first_person_legs_enabled(
 }
 
 /* the player's own unit, seen from inside it: its legs drawn (on foot,
-alive, not hidden) */
+alive, not hidden, and not while a script plays an animation on it: a
+cutscene that keeps the camera in the unit's eyes poses the body for the
+camera, not for a view from the waist) */
 boolean first_person_legs_wanted(
 	long object_index)
 {
@@ -77,7 +79,8 @@ boolean first_person_legs_wanted(
 	return first_person_legs_enabled() && object && object->object.type == _object_type_biped &&
 		object->object.parent_object_index == NONE &&
 		!TEST_FLAG(object->object.damage_flags, _object_dead_bit) &&
-		!TEST_FLAG(object->object.flags, _object_invisible_bit);
+		!TEST_FLAG(object->object.flags, _object_invisible_bit) &&
+		!unit_is_playing_custom_animation(object_index);
 }
 
 /* whether a node's name has part in it, whatever its case (the game's
