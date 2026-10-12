@@ -1283,6 +1283,7 @@ static void gl_initialize(void)
 		(config_boolean("debug.metal_specialize") ? 0 : GPU_INITIALIZE_NO_SPECIALIZE) |
 		(config_boolean("debug.metal_pipeline_archive") ? 0 : GPU_INITIALIZE_NO_PIPELINE_ARCHIVE) |
 		(config_boolean("debug.metal_vertex_bgra") ? 0 : GPU_INITIALIZE_NO_VERTEX_BGRA) |
+		(config_boolean("debug.metal_base_vertex") ? 0 : GPU_INITIALIZE_NO_BASE_VERTEX) |
 		async_shader_flags(), &device_capabilities);
 	screen_maximum_texture_size = (int32_t)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32

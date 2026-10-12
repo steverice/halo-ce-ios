@@ -3233,9 +3233,12 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			gpu_buffer indices;
 			uint32_t offset, count = convert_primitive(draw, &type, &indices, &offset);
 
+			/* (the converted indices are the draw's own, so its base vertex
+			still applies; 0 for a draw without indices) */
 			if (count)
 				[encoder drawIndexedPrimitives:type indexCount:count indexType:MTLIndexTypeUInt32
-					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset];
+					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset instanceCount:1
+					baseVertex:draw->base_vertex baseInstance:0];
 			return 1;
 		}
 		case GPU_PRIMITIVE_POINTS: type = MTLPrimitiveTypePoint; break;
@@ -3251,9 +3254,12 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			if (!record)
 				return 1;
 			use_buffer(record);
-			/* the base vertex is ignored, as on Apple's GL (base_vertex is 0) */
+			/* the vertex shaders' vertex_id, which their fetches index the
+			streams with (nv2a_msl.c), is the index plus the base vertex; the
+			front end leaves it 0 without gpu_capabilities.base_vertex */
 			[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
-				indexBuffer:record->buffer indexBufferOffset:draw->index_offset];
+				indexBuffer:record->buffer indexBufferOffset:draw->index_offset instanceCount:1
+				baseVertex:draw->base_vertex baseInstance:0];
 		}
 		else
 		{
@@ -4396,9 +4402,12 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		swizzle colored streams as it uploads them and can draw them from the
 		mirror; debug.metal_vertex_bgra = false reports what GL does */
 		capabilities->vertex_bgra = (flags & GPU_INITIALIZE_NO_VERTEX_BGRA) ? 0 : 1;
+		/* indexed draws take the packet's base vertex (gpu_metal_draw), so the
+		front end needn't rebase a draw's indices and can draw them from the
+		mirror; debug.metal_base_vertex = false reports what GL does */
+		capabilities->base_vertex = (flags & GPU_INITIALIZE_NO_BASE_VERTEX) ? 0 : 1;
 		/* the rest is what GL reports on Apple's OpenGL ES 3.0 (gpu_gl.c's
 		gpu_gl_initialize), so the front end behaves as it does under GL */
-		capabilities->base_vertex = 0;
 		capabilities->triangle_fans = 1;
 		capabilities->line_loops = 1;
 		capabilities->sampler_lod_bias = 0;
