@@ -127,6 +127,7 @@ DEFAULTS = {
     "display.frame_rate": '"display"',
     # (a runner run sets debug.exit_after, so "auto" compiles at each first draw, as before)
     "display.async_shaders": '"auto"',
+    "display.movies": '"auto"',
     "display.render_scale": "1.0",
     "display.upscaler": '"bilinear"',
     "display.native_hud": "true",

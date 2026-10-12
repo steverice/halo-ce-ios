@@ -403,6 +403,13 @@ static const struct config_setting config_settings[] =
 		"timestep, an input replay or benchmark, debug.exit_after, screenshots)\n"
 		"compiles each at its first draw instead. \"on\" or \"off\" forces either.\n"
 		"Changes apply on relaunch." },
+	{ "display.movies", _config_string, "\"auto\"", "HALO_MOVIES", _environment_value, _platform_ios,
+		"The game's intro and credits movies (bink/intro.bik and bink/credits.bik\n"
+		"beside maps/, imported from the disc image with the maps): \"auto\"\n"
+		"(default) plays them, except in a run that must draw the same frames\n"
+		"every time (fixed timestep, an input replay or benchmark,\n"
+		"debug.exit_after, screenshots); \"on\" plays them there too; \"off\" skips\n"
+		"them. A build without the movie decoder always skips them." },
 	{ "display.vsync", _config_boolean, "true", "HALO_NO_VSYNC", _environment_set_is_false, _platform_all,
 		"Wait for the display between frames; false draws as fast as possible." },
 	{ "display.max_fps", _config_integer, "0", "HALO_MAX_FPS", _environment_value, _platform_desktop,

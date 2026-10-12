@@ -839,7 +839,10 @@ static void render_player_frame_stereo(
 		halo_stereo_set_ui_span(FALSE);
 		halo_screen_ui_offset(FALSE);
 	}
+	/* port: a movie (the intro, the credits) goes on the UI's quad, as a menu does */
+	halo_stereo_set_ui_span(TRUE);
 	bink_playback_render();
+	halo_stereo_set_ui_span(FALSE);
 	rasterizer_window_end();
 	halo_stereo_layer(HALO_STEREO_LAYER_MONO);
 	render_stereo_eyes_drawn = TRUE;

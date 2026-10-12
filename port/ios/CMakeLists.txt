@@ -11,6 +11,10 @@ option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
 # tools/ios_build.py --render-validation: every call into the GPU backend is checked first
 # (port/linux/src/gpu_validate.h). Off, the app's code is what it is without the option.
 option(HALO_RENDER_VALIDATION "Check every call into the GPU backend (debug.render_validation)" OFF)
+# The intro and credits movies, decoded with FFmpeg's Bink decoders (port/third_party/ffmpeg-bink,
+# LGPL 2.1 or later). OFF leaves every FFmpeg file out of the build: the game then skips its
+# movies, as it did before there was a decoder (tools/ios_build.py --bink off).
+option(HALO_BINK "Play the game's Bink movies with the vendored FFmpeg decoders (LGPL)" ON)
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
 # iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
 # On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
@@ -104,7 +108,7 @@ add_executable(VISR MACOSX_BUNDLE
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
-    host/host_join_link.c host/host_config.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
+    host/host_join_link.c host/host_config.c host/host_bink.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
@@ -152,6 +156,27 @@ if(NOT HALO_VISIONOS)
         # SDL's -framework OpenGLES resolves to the macCatalyst stub here
         target_link_options(VISR PRIVATE "-F${HALO_GLES_FRAMEWORKS}")
     endif()
+endif()
+if(HALO_BINK)
+    # FFmpeg's files as its own build compiles them, a static library for each of its libraries
+    # (their BUILDING_ macros differ); the list is port/third_party/ffmpeg-bink/SOURCES.txt
+    set(HALO_FFMPEG "${ROOT}/port/third_party/ffmpeg-bink")
+    file(STRINGS "${HALO_FFMPEG}/SOURCES.txt" HALO_FFMPEG_SOURCES)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${HALO_FFMPEG}/SOURCES.txt")
+    foreach(library avformat avcodec avutil)
+        set(sources ${HALO_FFMPEG_SOURCES})
+        list(FILTER sources INCLUDE REGEX "^lib${library}/")
+        list(TRANSFORM sources PREPEND "${HALO_FFMPEG}/")
+        add_library(ffmpeg_bink_${library} STATIC ${sources})
+        target_include_directories(ffmpeg_bink_${library} PRIVATE "${HALO_FFMPEG}")
+        target_compile_definitions(ffmpeg_bink_${library} PRIVATE HAVE_AV_CONFIG_H _ISOC11_SOURCE BUILDING_${library})
+        target_compile_options(ffmpeg_bink_${library} PRIVATE -std=c17 -w -fno-math-errno -fno-signed-zeros)
+        target_link_libraries(VISR PRIVATE ffmpeg_bink_${library})
+    endforeach()
+    target_sources(VISR PRIVATE "${ROOT}/port/runtime/bink_decoder.c")
+    set_source_files_properties("${ROOT}/port/runtime/bink_decoder.c" PROPERTIES
+        INCLUDE_DIRECTORIES "${HALO_FFMPEG}")
+    target_compile_definitions(VISR PRIVATE HALO_BINK=1)
 endif()
 target_compile_options(VISR PRIVATE "$<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>")
 # Profile-guided optimization of the host and SDL (tools/ios_build.py --host-pgo): "use" compiles with the

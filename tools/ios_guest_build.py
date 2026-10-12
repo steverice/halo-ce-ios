@@ -386,8 +386,9 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         f"-I{ZLIB_DIR}", "-Isource -Isource/cseries",
         f"-I{SDL_DIR}/include", *libc_includes, f"-idirafter {XDK_INCLUDE}",
     ])
-    # memory_watch.c is replaced by guest_memory_watch.c; the GPU backend runs in the host (step 4)
-    guest_host_only = {"memory_watch.c", "gpu_gl.c", "gl_functions.c"}
+    # memory_watch.c is replaced by guest_memory_watch.c and bink_null.c by guest_bink.c; the GPU
+    # backend runs in the host (step 4)
+    guest_host_only = {"memory_watch.c", "bink_null.c", "gpu_gl.c", "gl_functions.c"}
     for source in sorted((LINUX_DIR / "src").glob("*.c")):
         if source.name.startswith("posix_") or source.name in guest_host_only:
             continue
@@ -432,7 +433,7 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     for source in sorted(runtime_dir.glob("*.c")):
         if source.name in ("guest_thread.c", "guest_start.c"):
             objects.append(guest_object(source, runtime_internal_cflags))
-        elif source.name == "guest_memory_watch.c":
+        elif source.name in ("guest_memory_watch.c", "guest_bink.c"):
             objects.append(guest_object(source, platform_cflags))
         else:
             objects.append(guest_object(source, runtime_cflags))

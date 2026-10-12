@@ -84,5 +84,12 @@ host_gpu_compiles_outstanding
 host_gpu_initialize
 # stereo (halo_stereo.h)
 host_stereo_frame
+# Bink movies (guest_bink.c)
+host_bink_open
+host_bink_close
+host_bink_decode_frame
+host_bink_copy_frame
+host_bink_audio_read
+host_bink_audio_skip
 
 host_errno

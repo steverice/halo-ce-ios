@@ -91,6 +91,10 @@ def main():
                         help='let the device benchmark send its report, when its tester agrees, to the public database '
                              'of the iCloud container (--cloud-container, or the project\'s own). Signs with the iCloud '
                              'entitlement as --cloud-saves does, without turning cloud saves on')
+    parser.add_argument('--bink', choices=('on', 'off'), default='on',
+                        help='play the intro and credits movies with the vendored FFmpeg Bink decoders '
+                             '(port/third_party/ffmpeg-bink, LGPL); off builds an app with no FFmpeg code, '
+                             'which skips the movies (default on)')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
     parser.add_argument('--tester', action='store_true',
                         help='a tester build: the Run benchmark row at launch, and the privacy manifest that declares '
@@ -228,6 +232,12 @@ def main():
         ('port/third_party/smaa/LICENSE', 'SMAA.txt'),
     ):
         shutil.copyfile(ROOT/source, notices/name)
+    # FFmpeg's license goes into the apps that contain FFmpeg, and no others
+    ffmpeg_license = notices/'FFmpeg-LGPL-2.1.txt'
+    if args.bink == 'on':
+        shutil.copyfile(ROOT/'port/third_party/ffmpeg-bink/COPYING.LGPLv2.1', ffmpeg_license)
+    else:
+        ffmpeg_license.unlink(missing_ok=True)
     if args.mac:
         build_mac(args, cloud, data_packs)
         return
@@ -241,7 +251,7 @@ def main():
     command=['cmake','-S','port/ios','-B',build,'-G','Xcode',f'-DCMAKE_SYSTEM_NAME={system}',
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
-             f'-DHALO_RENDER_HEIGHT={args.render_height}',
+             f'-DHALO_RENDER_HEIGHT={args.render_height}', f'-DHALO_BINK={args.bink.upper()}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
@@ -437,7 +447,7 @@ def build_mac(args, cloud, data_packs=()):
     import time
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
-        f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
+        f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',f'-DHALO_BINK={args.bink.upper()}',
         f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
         *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,*data_packs,
