@@ -3571,6 +3571,37 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	return hold;
 }
 
+/* display.frame_rate in the Mac app (host_gpu_dispatch.c): the layer stops
+waiting for the display's refresh, so nextDrawable returns as soon as a
+drawable is free, when the setting is "unlimited" or a cap above the
+display's rate; a cap at or under it keeps the wait, so those frames don't
+tear, and host_frame_rate_limit holds the cap. The display's rate is the
+pacing clock's, which starts a few frames in (not at all with
+debug.fixed_timestep, where only "unlimited" lifts the wait). */
+static void frame_rate_sync(void)
+{
+#if TARGET_OS_MACCATALYST
+	double cap = host_frame_rate_cap();
+	CFTimeInterval period;
+	BOOL sync;
+
+	if (!host_frame_rate_unlimited() && cap == 0.0)
+		return;
+	os_unfair_lock_lock(&pacing_lock);
+	period = refresh_period;
+	os_unfair_lock_unlock(&pacing_lock);
+	sync = !host_frame_rate_unlimited() && !(period > 0.0 && cap > 1.0 / period + 0.5);
+	if (@available(macCatalyst 13.1, *))
+	{
+		if (layer.displaySyncEnabled != sync)
+		{
+			layer.displaySyncEnabled = sync;
+			platform_log("Metal: frames %s the display's refresh (display.frame_rate)", sync ? "wait for" : "no longer wait for");
+		}
+	}
+#endif
+}
+
 /* ---------- frames */
 
 /* the game's KickPushBuffer: committing here would split render passes */
@@ -3893,7 +3924,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		pipelines all still compiling) isn't shown; the window keeps the last
 		whole one (metal_hold_frame) */
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
+		frame_rate_sync();
 		waited = CACurrentMediaTime();
+		/* display.frame_rate's cap; its sleep counts as waiting, not as the
+		frame's CPU time */
+		host_frame_rate_limit();
 		drawable = frame_held ? nil : [layer nextDrawable];
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from

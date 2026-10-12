@@ -319,6 +319,15 @@ static const struct config_setting config_settings[] =
 		"rate when frames take too long; \"refresh\" allows any whole number of\n"
 		"refreshes (45 at 90 Hz). Experimental: in a visionOS window the pacing\n"
 		"can't yet see when frames show." },
+	{ "display.frame_rate", _config_string, "\"display\"", "HALO_FRAME_RATE", _environment_value, _platform_ios,
+		"The most frames a second, in the Mac app: \"display\" (default) draws one\n"
+		"frame for each refresh of the display; a number (\"60\", \"240\") holds that\n"
+		"rate; \"unlimited\" draws as fast as it can. Above the display's refresh\n"
+		"rate, and with \"unlimited\", frames no longer wait for the display, so the\n"
+		"picture can tear and the Mac uses more power. The game still runs at 30\n"
+		"ticks a second whatever is drawn, and with display.interpolation off it\n"
+		"draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro\n"
+		"the system paces frames and this is ignored." },
 	{ "display.async_shaders", _config_string, "\"auto\"", "HALO_ASYNC_SHADERS", _environment_value, _platform_ios,
 		"How the Metal renderer compiles shaders: \"auto\" (default) on worker\n"
 		"threads, skipping a draw for the frames until its pipeline is ready, so\n"

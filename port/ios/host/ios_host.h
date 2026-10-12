@@ -31,6 +31,13 @@ void host_lifecycle_hold(void);
 void host_sdl_audio_pause(int paused);
 /* the runner's pinned display (HALO_HOST_DISPLAY, host_main.m): the drawable size the guest is told */
 void host_sdl_pin_window_pixels(int width, int height);
+/* display.frame_rate (host_gpu_dispatch.c), which only the Mac app honors:
+whether frames come as fast as they are drawn; the cap, 0 for none; and the
+wait that holds the cap, called once a frame before it is shown, which
+returns the seconds it slept */
+int host_frame_rate_unlimited(void);
+double host_frame_rate_cap(void);
+double host_frame_rate_limit(void);
 void host_frame_counter_start(int fixed_timestep, int metal);
 void host_frame_counter_show(unsigned long frame);
 int host_ios_gamepads(uint32_t *out, int capacity);
