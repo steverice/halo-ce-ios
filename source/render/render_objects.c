@@ -495,10 +495,12 @@ static void render_object_list(
 		boolean first_person_body = halo_first_person_body(object_index) && !render.camera.mirrored;
 		/* port: the player's own legs, seen looking down in first person
 		(port/linux/game/first_person_legs.c): its body drawn from the waist
-		down, nothing it carries; never while display.first_person_body draws
-		the same unit */
+		down, nothing it carries. On a flat view only
+		(port/linux/game/first_person_view.c): a stereo frame draws
+		display.first_person_body instead, and the two never draw together */
 		boolean legs = !first_person_body && !data->shadow && !render.camera.mirrored &&
-			object_is_first_person_camera(object_index) && first_person_legs_wanted(object_index);
+			object_is_first_person_camera(object_index) && halo_first_person_legs_apply() &&
+			first_person_legs_wanted(object_index);
 		real_matrix4x3 const *legs_node_matrices = legs ?
 			first_person_legs_node_matrices(object_index, object_get_node_matrices(object_index)) : NULL;
 
