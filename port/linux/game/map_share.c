@@ -154,6 +154,8 @@ enum
 	have its players fill their disks */
 	MAXIMUM_MAP_BYTES = 0x30000000,
 	MAXIMUM_RESOURCE_MAP_BYTES = 0x20000000,
+	/* port: what must stay free beside a download (download_offered) */
+	DOWNLOAD_FREE_SPACE_MARGIN = 0x10000000,
 
 	/* the kilobytes a second a machine sends, at least and at most */
 	MINIMUM_UPLOAD_KILOBYTES = 16,
@@ -1553,6 +1555,30 @@ static void download_offered(
 			return;
 		}
 		download->total_bytes += file->size;
+	}
+	/* port (this port's, not upstream's): not without room for it. The files'
+	sizes and a margin must be free where custom_maps is; a part file already
+	there is not counted for, so a download taken up again asks for the whole
+	once more. A file system that does not say is not held against it */
+	{
+		ULARGE_INTEGER available;
+
+		if (GetDiskFreeSpaceExA(CUSTOM_EDITION_MAP_DIRECTORY, &available, NULL, NULL))
+		{
+			unsigned long long free_bytes = ((unsigned long long)available.HighPart << 32) | available.LowPart;
+			unsigned long long needed = (unsigned long long)download->total_bytes + DOWNLOAD_FREE_SPACE_MARGIN;
+
+			if (free_bytes < needed)
+			{
+				static char reason[160];
+
+				snprintf(reason, sizeof(reason),
+					"There is not enough free space for it: it needs %lu MB and %lu MB are free.",
+					(unsigned long)((needed + 0xFFFFF) >> 20), (unsigned long)(free_bytes >> 20));
+				download_fail(reason);
+				return;
+			}
+		}
 	}
 	/* (the hashes come first: no piece can be checked without them) */
 	for (index = 0; index < download->file_count; index++)
