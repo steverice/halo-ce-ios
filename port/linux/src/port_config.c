@@ -324,7 +324,8 @@ static const struct config_setting config_settings[] =
 		"frame for each refresh of the display; a number (\"60\", \"240\") holds that\n"
 		"rate; \"unlimited\" draws as fast as it can. Above the display's refresh\n"
 		"rate, and with \"unlimited\", frames no longer wait for the display, so the\n"
-		"picture can tear and the Mac uses more power. The game still runs at 30\n"
+		"picture can tear and the Mac uses more power; a frame the display isn't\n"
+		"ready for is drawn and not shown. The game still runs at 30\n"
 		"ticks a second whatever is drawn, and with display.interpolation off it\n"
 		"draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro\n"
 		"the system paces frames and this is ignored." },
