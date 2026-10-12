@@ -53,6 +53,11 @@ it sank into a funnel) */
 #define FIRST_PERSON_LEGS_LID_UP 0.01f
 
 static real_matrix4x3 first_person_legs_matrices[FIRST_PERSON_LEGS_MAXIMUM_NODES];
+/* the body's shadow: its whole pose, set back as the legs last were, so the
+shadow lies under the legs that are drawn; and whose legs those were */
+static real_matrix4x3 first_person_legs_shadow_matrices[FIRST_PERSON_LEGS_MAXIMUM_NODES];
+static real_vector3d first_person_legs_last_set_back = { 0.f, 0.f, 0.f };
+static long first_person_legs_last_object = NONE;
 static boolean first_person_legs_enabled(
 	void)
 {
@@ -131,6 +136,7 @@ void first_person_legs_reset(
 	first_person_legs_waist_key = NONE;
 	first_person_legs_waist_model = NONE;
 	first_person_legs_rim_count = 0;
+	first_person_legs_last_object = NONE;
 	object_mesh_reset();
 }
 
@@ -292,6 +298,11 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 			set_back = FIRST_PERSON_LEGS_SET_BACK_MAXIMUM;
 	}
 
+	first_person_legs_last_set_back.i = back.i * set_back;
+	first_person_legs_last_set_back.j = back.j * set_back;
+	first_person_legs_last_set_back.k = back.k * set_back;
+	first_person_legs_last_object = object_index;
+
 	for (index = 0; index < count; index++)
 	{
 		struct model_node const *node = TAG_BLOCK_GET_ELEMENT(&model->nodes, index, struct model_node);
@@ -309,4 +320,33 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 		matrix->position.z += back.k * set_back;
 	}
 	return first_person_legs_matrices;
+}
+
+/* the pose to draw the body's shadow with, after its legs were drawn in the
+same view: the whole body (the head and arms too: the ground shows the
+shadow of all of it), set back as the legs were; NULL: none (no legs were
+drawn for this body) */
+real_matrix4x3 const *first_person_legs_shadow_node_matrices(
+	long object_index,
+	real_matrix4x3 const *nodes)
+{
+	struct object_datum *object = object_try_and_get(object_index);
+	long count;
+	short index;
+
+	if (!object || !nodes || object_index != first_person_legs_last_object)
+		return NULL;
+	count = object->object.node_matrices.size / (long)sizeof(real_matrix4x3);
+	if (count <= 0 || count > FIRST_PERSON_LEGS_MAXIMUM_NODES)
+		return NULL;
+	for (index = 0; index < count; index++)
+	{
+		real_matrix4x3 *matrix = &first_person_legs_shadow_matrices[index];
+
+		*matrix = nodes[index];
+		matrix->position.x += first_person_legs_last_set_back.i;
+		matrix->position.y += first_person_legs_last_set_back.j;
+		matrix->position.z += first_person_legs_last_set_back.k;
+	}
+	return first_person_legs_shadow_matrices;
 }
