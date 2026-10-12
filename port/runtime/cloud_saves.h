@@ -185,6 +185,10 @@ int cloud_local_slot_count(const char *save_root);
 /* The game removed a slot's directory (an explicit delete, not a purge): written at once to a
    journal beside the state file, which the engine's next pass takes. Safe from any thread. */
 void cloud_note_local_delete(const char *state_path, const char *slot);
+/* A hash of the slots' file names, sizes and times (and of a deletion waiting in the journal):
+   unchanged since a pass that ended idle means a running pass has nothing to send, so the host
+   can skip it and the network request it starts with. */
+void cloud_local_signature(const char *save_root, const char *state_path, char hash[CLOUD_HASH_SIZE]);
 /* path is a slot's directory under save_root: writes its id and returns 1 */
 int cloud_slot_of_path(const char *save_root, const char *path, char *slot);
 

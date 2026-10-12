@@ -1382,6 +1382,23 @@ static void test_files_must_be_still(void)
 	CHECK(running(&a) == CLOUD_STATE_PENDING && cloud.count == 0);
 	clock_now += 2;
 	CHECK(running(&a) == CLOUD_STATE_IDLE && cloud.count == 2);
+	{
+		/* what tells the host that a running pass has nothing to send */
+		char before[CLOUD_HASH_SIZE], after[CLOUD_HASH_SIZE];
+
+		cloud_local_signature(a.save_root, a.state_path, before);
+		cloud_local_signature(a.save_root, a.state_path, after);
+		CHECK(!strcmp(before, after));
+		put_saved_game(&a, SLOT, "a30", 1, 1);       /* the same bytes, written again */
+		cloud_local_signature(a.save_root, a.state_path, after);
+		CHECK(strcmp(before, after));
+		cloud_local_signature(a.save_root, a.state_path, before);
+		cloud_note_local_delete(a.state_path, SLOT2);
+		cloud_local_signature(a.save_root, a.state_path, after);
+		CHECK(strcmp(before, after));
+		clock_now += 5;
+		CHECK(running(&a) == CLOUD_STATE_IDLE);
+	}
 	/* as the app leaves, the game has stopped writing: no wait */
 	put_profile(&a, SLOT, "Chief", 3, 1, 0);
 	a.game_started = 1;

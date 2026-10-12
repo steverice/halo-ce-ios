@@ -1055,6 +1055,51 @@ int cloud_local_slot_count(const char *save_root)
 	return found;
 }
 
+void cloud_local_signature(const char *save_root, const char *state_path, char hash[CLOUD_HASH_SIZE])
+{
+	char ids[CLOUD_MAX_SLOTS][CLOUD_SLOT_ID_SIZE], directory[1100], path[1400], line[1500];
+	int count = local_slot_ids(save_root, ids, CLOUD_MAX_SLOTS), i;
+	struct sha256 sha;
+	uint8_t digest[32];
+	struct stat st;
+
+	sha256_begin(&sha);
+	for (i = 0; i < count; i++)
+	{
+		struct dirent *entry;
+		DIR *dir;
+
+		slot_directory(save_root, ids[i], directory, sizeof(directory));
+		dir = opendir(directory);
+		if (!dir)
+			continue;
+		if (stat(directory, &st) == 0)
+		{
+			snprintf(line, sizeof(line), "%s %lld.%ld\n", ids[i], (long long)st.st_mtimespec.tv_sec, (long)st.st_mtimespec.tv_nsec);
+			sha256_add(&sha, line, strlen(line));
+		}
+		while ((entry = readdir(dir)) != NULL)
+		{
+			snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
+			if (entry->d_name[0] == '.' || stat(path, &st) != 0)
+				continue;
+			/* (the directory's order is not sorted, and need not be: it is the same until something changes) */
+			snprintf(line, sizeof(line), "%s/%s %lld %lld.%ld\n", ids[i], entry->d_name, (long long)st.st_size,
+				(long long)st.st_mtimespec.tv_sec, (long)st.st_mtimespec.tv_nsec);
+			sha256_add(&sha, line, strlen(line));
+		}
+		closedir(dir);
+	}
+	snprintf(path, sizeof(path), "%s.deleted", state_path);
+	if (stat(path, &st) == 0)
+	{
+		snprintf(line, sizeof(line), "deleted %lld\n", (long long)st.st_size);
+		sha256_add(&sha, line, strlen(line));
+	}
+	sha256_end(&sha, digest);
+	hex_of(digest, 32, hash);
+}
+
 int cloud_slot_of_path(const char *save_root, const char *path, char *slot)
 {
 	char directory[1100];
