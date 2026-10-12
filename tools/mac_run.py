@@ -1181,6 +1181,15 @@ def seed_native_data(args, data):
     (data / SEED_MARKER).write_text(note + "\n")
 
 
+def seed_native_movies(args, data):
+    """clone the intro and credits movies into the data folder when --maps has a bink folder beside it
+    (an import's Documents) and the data folder has none; display.movies "auto" still skips them in
+    a timed run"""
+    movies = Path(args.maps).parent / "bink" if args.maps else None
+    if movies and movies.is_dir() and not (data / "bink").exists():
+        run_command("cp", "-c", "-R", movies, data / "bink")
+
+
 def run_native(args):
     args.app = args.app or native_app_default()
     if not (args.app / NATIVE_EXECUTABLE).is_file():
@@ -1197,6 +1206,7 @@ def run_native(args):
     data = native_data_folder(bundle_id)
     if not (data / SEED_MARKER).is_file():
         seed_native_data(args, data)
+    seed_native_movies(args, data)
     prepare(args, data, rewrite=True)
     limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     environment = validation_environment(args.metal_validation, args.metal_shader_validation)
