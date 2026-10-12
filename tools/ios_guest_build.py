@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .embed_assets import hud_assets_build
-from .linux_build import (LINUX_PROFILE, MUSL_MATH_DIR, XDK_INCLUDE, compile_launcher, game_defines_and_includes,
+from .linux_build import (LINUX_PROFILE, MUSL_MATH_DIR, STB_VORBIS_SOURCE, XDK_INCLUDE, compile_launcher,
+                          game_defines_and_includes,
                           game_sources, musl_math_cflags, musl_math_sources, pgo_mode, pgo_profile, profile_use_flags,
                           xdk_headers)
 from .ninja_syntax import Writer
@@ -341,6 +342,8 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         objects.append(guest_object(source, cflags))
     for source in sorted(Path(config["game_sources"]).glob("*.c")):
         objects.append(guest_object(source, game_cflags))
+    # (the Custom Edition maps' Ogg Vorbis decoder, as upstream's builds)
+    objects.append(guest_object(STB_VORBIS_SOURCE, game_cflags))
 
     # the platform layer shared with Linux, and the guest runtime
     platform_cflags = " ".join([
