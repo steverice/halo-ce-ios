@@ -24,10 +24,17 @@
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
 #endif
+/* (an address is Linux's when the guest made it: a 16-bit family, whose second byte is 0 for every
+family the game uses. One posix_net.c made itself is Darwin's already, a length byte and then the
+family: posix_local_ipv4_address's route probe. Read as Linux's, its family came out 0, the probe's
+connect did nothing, and the address was always the first interface's, not the default route's) */
 static struct sockaddr_storage sockaddr_inward(const void *input,socklen_t size) {
     struct sockaddr_storage address={0};
     if(size>sizeof(address))size=sizeof(address);
-    if(input && size>=2){memcpy(&address,input,size);uint16_t family;memcpy(&family,input,2);address.ss_len=size;address.ss_family=family;}
+    if(input && size>=2){
+        const unsigned char *bytes=input;
+        memcpy(&address,input,size);address.ss_len=size;address.ss_family=bytes[1]?bytes[1]:bytes[0];
+    }
     return address;
 }
 static void sockaddr_outward(void *address,socklen_t size) {
