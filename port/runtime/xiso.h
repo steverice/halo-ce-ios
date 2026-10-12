@@ -11,7 +11,10 @@ int xiso_maps_ready(const char *maps, char *error, size_t error_size);
 
 /* Extract into a new <destination>/maps, staging in maps.partial first.
    destination must be a private, existing directory. Existing files are never
-   replaced. On failure the caller removes its private staging directory. */
+   replaced. On failure the caller removes its private staging directory.
+   Built with HALO_BINK, the disc's intro and credits movies (bink/intro*.bik,
+   bink/credits*.bik), when it has them, also go into a new <destination>/bink,
+   and xiso_plan below includes their bytes. */
 int xiso_extract_maps(const char *image_path, const char *destination,
     xiso_progress_proc progress, void *context, char *error, size_t error_size);
 

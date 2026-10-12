@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect and extract Halo map files from a user's Xbox XISO without changing them."""
+"""Inspect and extract Halo map files, and the intro and credits movies, from a user's Xbox XISO without changing them."""
 import argparse
 import hashlib
 import json
@@ -7,8 +7,13 @@ import struct
 from pathlib import Path
 
 
+def is_movie(path):
+    """the intro and the credits, in any language (the attract movies are not played)"""
+    return path.parts[0].lower()=='bink' and path.suffix.lower()=='.bik' and path.name.lower().startswith(('intro','credits'))
+
+
 def map_entries(image):
-    """Read bounded XDVDFS directory trees and return map file extents."""
+    """Read bounded XDVDFS directory trees and return map and movie file extents."""
     length=image.seek(0,2)
     for base in (0,0xFD90000,0x2080000):
         image.seek(base+32*2048);header=image.read(2048)
@@ -32,7 +37,7 @@ def map_entries(image):
             path=prefix/name
             if attr&16:
                 yield from directory(sector,size,path)
-            elif path.parts[0].lower()=='maps' and path.suffix.lower()=='.map':
+            elif (path.parts[0].lower()=='maps' and path.suffix.lower()=='.map') or is_movie(path):
                 start=base+sector*2048
                 if start+size>length:raise ValueError('Map extends beyond image')
                 yield path,start,size
@@ -42,7 +47,7 @@ def map_entries(image):
 
 
 def main():
-    """Report exact cache build IDs; optionally copy the maps unchanged."""
+    """Report exact cache build IDs; optionally copy the maps and the movies unchanged."""
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('image',type=Path)
     parser.add_argument('--output',type=Path,help='new output directory; existing files are never replaced')
@@ -50,10 +55,14 @@ def main():
     with args.image.open('rb') as image:
         for path,start,size in map_entries(image):
             image.seek(start);header=image.read(2048)
-            if header[:4]!=b'daeh' or header[-4:]!=b'toof':raise ValueError(f'Invalid Halo cache header: {path}')
-            build=header[64:96].split(b'\0',1)[0].decode('ascii')
-            entry={'path':str(path),'bytes':size,'build':build,'version':struct.unpack_from('<I',header,4)[0]}
-            print(f'{path}: {build}, {size:,} bytes',flush=True)
+            if is_movie(path):
+                entry={'path':str(path),'bytes':size}
+                print(f'{path}: movie, {size:,} bytes',flush=True)
+            else:
+                if header[:4]!=b'daeh' or header[-4:]!=b'toof':raise ValueError(f'Invalid Halo cache header: {path}')
+                build=header[64:96].split(b'\0',1)[0].decode('ascii')
+                entry={'path':str(path),'bytes':size,'build':build,'version':struct.unpack_from('<I',header,4)[0]}
+                print(f'{path}: {build}, {size:,} bytes',flush=True)
             if args.output:
                 target=args.output/path;target.parent.mkdir(parents=True,exist_ok=True)
                 digest=hashlib.sha256();image.seek(start);remaining=size
@@ -66,7 +75,7 @@ def main():
             manifest.append(entry)
     if args.output:
         (args.output/'asset-manifest.json').write_text(json.dumps({'source':args.image.name,'maps':manifest},indent=2)+'\n')
-    if any(m['build'] not in ('01.01.14.2342','01.10.12.2276') for m in manifest):
+    if any(m['build'] not in ('01.01.14.2342','01.10.12.2276') for m in manifest if 'build' in m):
         print('Unsupported map build: the iOS port accepts PAL and NTSC-US only. No headers were changed.')
 
 if __name__=='__main__':main()

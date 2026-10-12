@@ -18,6 +18,10 @@ put the game partition further in, at one of the offsets below.
 The native importer validates the complete map set, then writes to a private
 staging directory. A failed or cancelled extraction never publishes maps.
 
+Builds that play the game's movies (HALO_BINK) also copy the intro and the
+credits out of the disc's bink folder, into <destination>/bink. The attract
+movies (436 MB) are left on the disc: the port does not play them.
+
 Some parts of this code are copyright in@fishtank.com. This product
 includes software developed by in <in@fishtank.com>.
 
@@ -124,8 +128,16 @@ int xiso_maps_ready(const char *maps, char *error, size_t error_size) {
     }
     return 1;
 }
+/* what a directory walk collects: the maps folder's .map files, the root's
+folders, or the bink folder's intro and credits (in any language) */
+enum { WALK_MAPS, WALK_DIRECTORIES, WALK_MOVIES };
 struct walk { struct image *image; const unsigned char *table; unsigned char *visited;
     uint32_t size; struct entry *files; int count, directories; const char *exact; };
+static int wanted(int kind, const char *name, unsigned count) {
+    if (kind==WALK_DIRECTORIES) return 1;
+    if (kind==WALK_MAPS) return count>4 && !strcmp(name+count-4,".map");
+    return count>4 && !strcmp(name+count-4,".bik") && (!strncmp(name,"intro",5) || !strncmp(name,"credits",7));
+}
 static int walk_tree(struct walk *walk, uint32_t offset, unsigned depth) {
     if (depth>64 || offset+14>walk->size || (offset&3) || walk->visited[offset/4])
         return fail(walk->image,"The disc image has a damaged directory tree.");
@@ -135,7 +147,7 @@ static int walk_tree(struct walk *walk, uint32_t offset, unsigned depth) {
     if (left==0xffff) return 1;
     if (!count || offset+14+count>walk->size) return fail(walk->image,"The disc image has a damaged filename.");
     if (left && !walk_tree(walk,left*4,depth+1)) return 0;
-    if (!!(p[12]&16)==walk->directories) {
+    if (!!(p[12]&16)==(walk->directories==WALK_DIRECTORIES)) {
         char name[256];
         for (unsigned i=0;i<count;i++) {
             unsigned char c=p[14+i];
@@ -145,7 +157,7 @@ static int walk_tree(struct walk *walk, uint32_t offset, unsigned depth) {
         }
         name[count]=0;
         if (!strcmp(name,".") || !strcmp(name,"..")) return fail(walk->image,"The disc image contains an unsafe filename.");
-        if (walk->exact ? !strcmp(name,walk->exact) : walk->directories || (count>4 && !strcmp(name+count-4,".map"))) {
+        if (walk->exact ? !strcmp(name,walk->exact) : wanted(walk->directories,name,count)) {
             if (walk->count>=MAX_FILES) return fail(walk->image,"The disc image has too many map files.");
             for (int i=0;i<walk->count;i++) if (!strcmp(walk->files[i].name,name))
                 return fail(walk->image,"The disc image contains duplicate filenames.");
@@ -212,10 +224,15 @@ int xiso_plan(const char *image_path, uint64_t received, uint64_t total, struct 
             image.partition=partitions[i];root_sector=u32(header+20);root_size=u32(header+24);found=1;
         }
     }
-    if (!found || !directory(&image,root_sector,root_size,1,files,&count)) goto done;
+    if (!found || !directory(&image,root_sector,root_size,WALK_DIRECTORIES,files,&count)) goto done;
+#ifdef HALO_BINK
+    /* the movies the extraction copies (when their directory has arrived; a disc without them plans none) */
+    uint32_t bink_sector=0,bink_size=0;
+    for (int i=0;i<count;i++) if (!strcmp(files[i].name,"bink")) {bink_sector=files[i].sector;bink_size=files[i].size;break;}
+#endif
     found=0;
     for (int i=0;i<count;i++) if (!strcmp(files[i].name,"maps")) {maps_sector=files[i].sector;maps_size=files[i].size;found=1;break;}
-    if (!found || !directory(&image,maps_sector,maps_size,0,files,&count) || count+3>maximum) goto done;
+    if (!found || !directory(&image,maps_sector,maps_size,WALK_MAPS,files,&count) || count+3>maximum) goto done;
     ranges[planned++]=(struct xiso_range){image.partition+0x10000,image.partition+0x10000+2048};
     ranges[planned++]=(struct xiso_range){image.partition+(uint64_t)root_sector*SECTOR,image.partition+(uint64_t)root_sector*SECTOR+root_size};
     ranges[planned++]=(struct xiso_range){image.partition+(uint64_t)maps_sector*SECTOR,image.partition+(uint64_t)maps_sector*SECTOR+maps_size};
@@ -223,6 +240,19 @@ int xiso_plan(const char *image_path, uint64_t received, uint64_t total, struct 
         uint64_t start=image.partition+(uint64_t)files[i].sector*SECTOR;
         ranges[planned++]=(struct xiso_range){start,start+files[i].size};
     }
+#ifdef HALO_BINK
+    if (bink_size) {
+        /* no plan until the bink directory has arrived too (one that never reads, damaged, leaves the
+        receiver keeping the whole image, which still imports) */
+        int movie_count=0;
+        if (!directory(&image,bink_sector,bink_size,WALK_MOVIES,files,&movie_count) || planned+1+movie_count>maximum) {planned=0;goto done;}
+        ranges[planned++]=(struct xiso_range){image.partition+(uint64_t)bink_sector*SECTOR,image.partition+(uint64_t)bink_sector*SECTOR+bink_size};
+        for (int i=0;i<movie_count;i++) {
+            uint64_t start=image.partition+(uint64_t)files[i].sector*SECTOR;
+            ranges[planned++]=(struct xiso_range){start,start+files[i].size};
+        }
+    }
+#endif
     qsort(ranges,(size_t)planned,sizeof(*ranges),compare_ranges);
     for (int i=1;i<planned;i++) {
         if (ranges[i].start<=ranges[merged].end) {if (ranges[i].end>ranges[merged].end) ranges[merged].end=ranges[i].end;}
@@ -268,6 +298,42 @@ static void import_loading_picture(struct image *image, uint32_t root_sector, ui
 done:
     free(data); free(pixels); free(file);
 }
+/* copies the listed files out of the image into folder, which exists; done counts the bytes
+copied, of total, for progress; consume frees each file's bytes in the image once it is saved */
+static int copy_files(struct image *image, const struct entry *files, int count, const char *folder,
+    unsigned char *buffer, xiso_progress_proc progress, void *context, uint64_t *done, uint64_t total, int consume) {
+    char path[2400];
+    for (int i=0;i<count;i++) {
+        if (progress && !progress(context,files[i].name,*done,total)) return fail(image,"Import cancelled.");
+        snprintf(path,sizeof(path),"%s/%s",folder,files[i].name);
+        int output=open(path,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+        if (output<0) return fail(image,"Could not write %s. Check available storage.",files[i].name);
+        uint64_t start=image->partition+(uint64_t)files[i].sector*SECTOR, remaining=files[i].size;
+        int copied=1;
+        while (remaining && copied) {
+            size_t chunk=remaining>COPY_SIZE?COPY_SIZE:(size_t)remaining;
+            if (!read_at(image,start,buffer,chunk)) {fail(image,"Could not read %s. The image may be incomplete.",files[i].name);copied=0;break;}
+            size_t written=0;
+            while (written<chunk) {
+                ssize_t n=write(output,buffer+written,chunk-written);
+                if (n<0 && errno==EINTR) continue;
+                if (n<=0) {fail(image,"Could not write %s. Check available storage.",files[i].name);copied=0;break;}
+                written+=(size_t)n;
+            }
+            start+=chunk;remaining-=chunk;*done+=chunk;
+            if (copied && progress && !progress(context,files[i].name,*done,total)) {fail(image,"Import cancelled.");copied=0;}
+        }
+        if (copied && fsync(output)) {fail(image,"Could not save %s. Check available storage.",files[i].name);copied=0;}
+        if (close(output) && copied) {fail(image,"Could not finish saving %s.",files[i].name);copied=0;}
+        if (!copied) return 0;
+        /* (the file is saved: its bytes in the image, which is the caller's to use up, are no longer needed) */
+        if (consume) {
+            uint64_t from=image->partition+(uint64_t)files[i].sector*SECTOR;
+            xiso_free_range(image->fd,from,from+files[i].size);
+        }
+    }
+    return 1;
+}
 int xiso_extract_maps(const char *image_path, const char *destination,
     xiso_progress_proc progress, void *context, char *error, size_t error_size) {
     return extract_maps(image_path,destination,progress,context,error,error_size,0);
@@ -279,12 +345,13 @@ int xiso_extract_maps_consuming(const char *image_path, const char *destination,
 static int extract_maps(const char *image_path, const char *destination,
     xiso_progress_proc progress, void *context, char *error, size_t error_size, int consume) {
     struct image image={.fd=-1,.error=error,.error_size=error_size};
-    struct entry *files=calloc(MAX_FILES,sizeof(*files));
+    struct entry *files=calloc(MAX_FILES,sizeof(*files)), *movies=calloc(MAX_FILES,sizeof(*movies));
     unsigned char *buffer=NULL, header[2048];
-    char partial[2048], final[2048], path[2400], expected[33]={0};
-    struct stat st; int ok=0,count=0,found=0;
+    char partial[2048], final[2048], expected[33]={0};
+    struct stat st; int ok=0,count=0,found=0,movie_count=0;
     uint32_t root_sector=0,root_size=0,disc_sector=0,disc_size=0; uint64_t total=0,done=0;
-    if (!files) {fail(&image,"Not enough memory to import the disc image.");goto cleanup;}
+    if (!files || !movies) {fail(&image,"Not enough memory to import the disc image.");goto cleanup;}
+    (void)movie_count;
     image.fd=open(image_path,consume?O_RDWR:O_RDONLY);
     if (image.fd<0 || fstat(image.fd,&st) || !S_ISREG(st.st_mode)) {
         fail(&image,"Could not open the disc image. Download it in Files first, then try again.");goto cleanup;
@@ -297,12 +364,21 @@ static int extract_maps(const char *image_path, const char *destination,
         }
     }
     if (!found) {fail(&image,"This is not an Xbox XISO. Choose an uncompressed Halo: Combat Evolved .iso or .xiso file.");goto cleanup;}
-    if (!directory(&image,root_sector,root_size,1,files,&count)) goto cleanup;
+    if (!directory(&image,root_sector,root_size,WALK_DIRECTORIES,files,&count)) goto cleanup;
     disc_sector=root_sector; disc_size=root_size;
+#ifdef HALO_BINK
+    /* the movies are optional: a disc image without them still imports */
+    for (int i=0;i<count;i++) if (!strcmp(files[i].name,"bink")) {
+        if (!files[i].size || !directory(&image,files[i].sector,files[i].size,WALK_MOVIES,movies,&movie_count)) movie_count=0;
+        if (image.error && image.error_size) image.error[0]=0;
+        break;
+    }
+    for (int i=0;i<movie_count;i++) total+=movies[i].size;
+#endif
     found=0;
     for (int i=0;i<count;i++) if (!strcmp(files[i].name,"maps")) {root_sector=files[i].sector;root_size=files[i].size;found=1;break;}
     if (!found) {fail(&image,"This disc image has no Halo maps folder.");goto cleanup;}
-    if (!directory(&image,root_sector,root_size,0,files,&count)) goto cleanup;
+    if (!directory(&image,root_sector,root_size,WALK_MAPS,files,&count)) goto cleanup;
     for (size_t r=0;r<sizeof(required)/sizeof(*required);r++) {
         found=0;for (int i=0;i<count;i++) if (!strcmp(files[i].name,required[r])) found=1;
         if (!found) {fail(&image,"This is not a complete Halo: Combat Evolved disc: %s is missing.",required[r]);goto cleanup;}
@@ -327,39 +403,22 @@ static int extract_maps(const char *image_path, const char *destination,
     if (mkdir(partial,0700)) {fail(&image,"Could not create the import folder.");goto cleanup;}
     buffer=malloc(COPY_SIZE);
     if (!buffer) {fail(&image,"Not enough memory to copy the game maps.");goto cleanup;}
-    for (int i=0;i<count;i++) {
-        if (progress && !progress(context,files[i].name,done,total)) {fail(&image,"Import cancelled.");goto cleanup;}
-        snprintf(path,sizeof(path),"%s/%s",partial,files[i].name);
-        int output=open(path,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
-        if (output<0) {fail(&image,"Could not write %s. Check available storage.",files[i].name);goto cleanup;}
-        uint64_t start=image.partition+(uint64_t)files[i].sector*SECTOR, remaining=files[i].size;
-        int copied=1;
-        while (remaining && copied) {
-            size_t chunk=remaining>COPY_SIZE?COPY_SIZE:(size_t)remaining;
-            if (!read_at(&image,start,buffer,chunk)) {fail(&image,"Could not read %s. The image may be incomplete.",files[i].name);copied=0;break;}
-            size_t written=0;
-            while (written<chunk) {
-                ssize_t n=write(output,buffer+written,chunk-written);
-                if (n<0 && errno==EINTR) continue;
-                if (n<=0) {fail(&image,"Could not write %s. Check available storage.",files[i].name);copied=0;break;}
-                written+=(size_t)n;
-            }
-            start+=chunk;remaining-=chunk;done+=chunk;
-            if (copied && progress && !progress(context,files[i].name,done,total)) {fail(&image,"Import cancelled.");copied=0;}
+    if (!copy_files(&image,files,count,partial,buffer,progress,context,&done,total,consume)) goto cleanup;
+#ifdef HALO_BINK
+    if (movie_count) {
+        char path[2400], movies_final[2400];
+        if (snprintf(path,sizeof(path),"%s/bink.partial",destination)>=(int)sizeof(path) || mkdir(path,0700)) {
+            fail(&image,"Could not create the import folder.");goto cleanup;
         }
-        if (copied && fsync(output)) {fail(&image,"Could not save %s. Check available storage.",files[i].name);copied=0;}
-        if (close(output) && copied) {fail(&image,"Could not finish saving %s.",files[i].name);copied=0;}
-        if (!copied) goto cleanup;
-        /* (the map is saved: its bytes in the image, which is the caller's to use up, are no longer needed) */
-        if (consume) {
-            uint64_t from=image.partition+(uint64_t)files[i].sector*SECTOR;
-            xiso_free_range(image.fd,from,from+files[i].size);
-        }
+        if (!copy_files(&image,movies,movie_count,path,buffer,progress,context,&done,total,consume)) goto cleanup;
+        snprintf(movies_final,sizeof(movies_final),"%s/bink",destination);
+        if (rename(path,movies_final)) {fail(&image,"Could not finish the game import.");goto cleanup;}
     }
+#endif
     import_loading_picture(&image,disc_sector,disc_size,root_sector,root_size,partial);
     if (rename(partial,final)) {fail(&image,"Could not finish the game import.");goto cleanup;}
     ok=1;
 cleanup:
     if (image.fd>=0) close(image.fd);
-    free(buffer);free(files);return ok;
+    free(buffer);free(files);free(movies);return ok;
 }

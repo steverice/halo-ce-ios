@@ -16,11 +16,16 @@ PROBE=BUILD/'probe'
 subprocess.run(['xcrun','clang','-std=c11','-Wall','-Wextra','-Werror','-g',
     '-fsanitize=address,undefined','-Iport/runtime','port/runtime/xiso.c',
     'port/ios/tests/xiso_probe.c','-o',str(PROBE)],cwd=ROOT,check=True)
+# the same importer as the builds that play the game's movies compile it
+MOVIE_PROBE=BUILD/'probe-movies'
+subprocess.run(['xcrun','clang','-std=c11','-Wall','-Wextra','-Werror','-g','-DHALO_BINK=1',
+    '-fsanitize=address,undefined','-Iport/runtime','port/runtime/xiso.c',
+    'port/ios/tests/xiso_probe.c','-o',str(MOVIE_PROBE)],cwd=ROOT,check=True)
 NAMES=['ui.map','a10.map','a30.map','a50.map','b30.map','b40.map','c10.map','c20.map','c40.map','d20.map','d40.map']
 MAGIC=b'MICROSOFT*XBOX*MEDIA'
 
 
-def fixture(path, build='01.10.12.2276', names=None, partition=0):
+def fixture(path, build='01.10.12.2276', names=None, partition=0, movies=None):
     names=NAMES if names is None else names
     entries=bytearray(2048);payloads={}
     with path.open('wb') as image:
@@ -28,6 +33,18 @@ def fixture(path, build='01.10.12.2276', names=None, partition=0):
         struct.pack_into('<II',header,20,40,2048)
         image.seek(partition+0x10000);image.write(header)
         root=bytearray(2048);struct.pack_into('<HHIIBB',root,0,0,0,41,2048,16,4);root[14:18]=b'maps'
+        if movies is not None:
+            # a second root entry, the bink folder, to the right of maps; its files from sector 200
+            struct.pack_into('<H',root,2,5)
+            struct.pack_into('<HHIIBB',root,20,0,0,42,2048,16,4);root[34:38]=b'bink'
+            table=bytearray(2048)
+            for i,name in enumerate(movies):
+                data=bytes([0x40+i])*(3000+i)
+                payloads['bink/'+name.lower()]=data
+                image.seek(partition+(200+i*2)*2048);image.write(data)
+                struct.pack_into('<HHIIBB',table,i*64,0,(i+1)*16 if i+1<len(movies) else 0,200+i*2,len(data),0,len(name))
+                table[i*64+14:i*64+14+len(name)]=name.encode()
+            image.seek(partition+42*2048);image.write(table)
         image.seek(partition+40*2048);image.write(root)
         for i,name in enumerate(names):
             sector=64+i*2
@@ -46,8 +63,9 @@ class ImportTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
         self.image=self.root/'halo.xiso';self.dest=self.root/'out';self.dest.mkdir()
     def tearDown(self):self.temp.cleanup()
+    probe=PROBE
     def invoke(self, *args):
-        result=subprocess.run([str(PROBE),*map(str,args)],text=True,capture_output=True,
+        result=subprocess.run([str(self.probe),*map(str,args)],text=True,capture_output=True,
                               env={**os.environ,'ASAN_OPTIONS':'detect_leaks=0'},timeout=10)
         self.assertNotIn('Sanitizer',result.stderr,result.stderr)
         self.assertNotIn('runtime error:',result.stderr,result.stderr)
@@ -173,5 +191,50 @@ class ImportTests(unittest.TestCase):
             offset=41*2048+rng.randrange(len(NAMES))*64+rng.randrange(14)
             data[offset]=rng.randrange(256);self.image.write_bytes(data)
             dest=self.root/f'fuzz-{n}';dest.mkdir();self.invoke('extract',self.image,dest)
+
+
+
+class MovieImportTests(ImportTests):
+    """every import test again as a build with movies runs it, and the movies themselves"""
+    probe=MOVIE_PROBE
+    MOVIES=['intro.bik','credits.bik','attract1.bik','attract2.bik','Intro_DE.bik','credits.txt','other.bik']
+    def test_intro_and_credits_only(self):
+        payloads=fixture(self.image,movies=self.MOVIES);self.extract()
+        self.assertEqual(sorted(path.name for path in (self.dest/'bink').iterdir()),['credits.bik','intro.bik','intro_de.bik'])
+        for name in ('intro.bik','credits.bik','intro_de.bik'):
+            self.assertEqual(payloads['bink/'+name],(self.dest/'bink'/name).read_bytes())
+        self.assertFalse((self.dest/'bink.partial').exists())
+        self.assertEqual(self.invoke('ready',self.dest/'maps').returncode,0)
+    def test_no_movies_without_the_decoder(self):
+        fixture(self.image,movies=self.MOVIES);self.probe=PROBE;self.extract()
+        self.assertFalse((self.dest/'bink').exists())
+    def test_disc_without_movies(self):
+        fixture(self.image,movies=[]);self.extract()
+        self.assertFalse((self.dest/'bink').exists())
+        fixture(self.image,movies=['attract1.bik']);self.dest=self.root/'attract';self.dest.mkdir();self.extract()
+        self.assertFalse((self.dest/'bink').exists())
+    def test_plan_keeps_the_movies(self):
+        """the Apple TV's upload with movies: no plan until the bink directory has arrived; then the plan keeps the
+        intro and credits, and an image holding only the plan imports them"""
+        payloads=fixture(self.image,movies=self.MOVIES)
+        whole=self.image.read_bytes()
+        self.assertEqual(self.plan(42*2048),[])
+        ranges=self.plan(43*2048)
+        self.assertTrue(ranges)
+        sparse=bytearray(len(whole))
+        for a,b in ranges:sparse[a:b]=whole[a:b]
+        self.image.write_bytes(sparse)
+        result=self.invoke('consume',self.image,self.dest)
+        self.assertEqual(result.returncode,0,result.stdout)
+        self.assertEqual(sorted(path.name for path in (self.dest/'bink').iterdir()),['credits.bik','intro.bik','intro_de.bik'])
+        for name in ('intro.bik','credits.bik','intro_de.bik'):
+            self.assertEqual(payloads['bink/'+name],(self.dest/'bink'/name).read_bytes())
+        for name in NAMES:self.assertEqual(payloads[name],(self.dest/'maps'/name).read_bytes())
+    def test_damaged_movie_folder_still_imports(self):
+        fixture(self.image,movies=self.MOVIES);self.patch(42*2048+13,b'\0');self.extract()
+        self.assertFalse((self.dest/'bink').exists())
+    def test_cancelled_movies_publish_nothing(self):
+        fixture(self.image,movies=self.MOVIES);self.extract('cancelled',cancel=3072*len(NAMES)+1)
+        self.assertFalse((self.dest/'bink').exists())
 
 if __name__=='__main__':unittest.main()
