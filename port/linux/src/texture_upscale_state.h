@@ -11,7 +11,8 @@ struct texture_upscale_state
 	/* debug.upscaled_textures_toggle: draw the originals this level; textures replaced since the map loaded */
 	int show_original;
 	unsigned long replaced;
-	/* Resolution comparison replaces the original/upscaled debug cycle. */
+	/* debug.texture_compare_directory: a comparison of two sets replaces the original/upscaled cycle. higher: the
+	   second set is drawn; fallback: the first set stood in for a texture the second has no file for */
 	int compare, higher, fallback;
 };
 
@@ -66,17 +67,10 @@ static inline int texture_upscale_state_show_original(const struct texture_upsca
 	return s->show_original;
 }
 
-/* A configured alternate set starts on the approved current set each map.
-The same D-pad cycle must never select originals in comparison mode. */
+/* A second set, if configured: each map starts on the first, and the D-pad cycle then switches between the two sets,
+never to the originals. */
 static inline void texture_upscale_state_compare(struct texture_upscale_state *s, int configured)
 {
 	s->compare = configured && s->level_enabled;
 	s->higher = s->fallback = s->show_original = 0;
-}
-static inline const char *texture_upscale_state_compare_label(const struct texture_upscale_state *s)
-{
-	if (!s->higher) return "Textures: APPROVED CURRENT";
-	if (s->fallback > 1) return "Textures: HIGHER (CURRENT unavailable; ORIGINAL fallback)";
-	if (s->fallback) return "Textures: HIGHER (missing replacements; APPROVED CURRENT fallback)";
-	return "Textures: HIGHER (2x current dimensions)";
 }

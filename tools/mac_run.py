@@ -143,6 +143,7 @@ DEFAULTS = {
     "display.high_res_text": "true",
     "display.upscaled_textures": "true",
     "display.anti_aliasing": '"off"',  # the recorded references have no smoothing pass
+    "display.upscaled_textures_memory": "0",
     "display.immersive": "false",
     "display.model_lod": '"auto"',  # the recorded references were made with the original LOD
     "display.lod_scale": "1.0",
@@ -236,8 +237,12 @@ DEFAULTS = {
     "debug.texture_override_directory": '""',
     "debug.texture_compare_directory": '""',
     "debug.upscaled_textures_toggle": "false",
+    "debug.upscaled_textures_toggle_every": "0",
+    "debug.texture_override_name": '""',
+    "debug.texture_compare_name": '""',
     "debug.texture_log": "false",
     "debug.texture_no_cache": "false",
+    "debug.texture_replacement_stats": "false",
     "debug.terminal_on_screen": "false",
     "debug.render_scale_dpad": "false",
     "debug.sense_tuning_chord": "false",

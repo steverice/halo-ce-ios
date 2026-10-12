@@ -79,9 +79,16 @@ typedef unsigned long DWORD;
 typedef uint32_t D3DCOLOR;
 struct xgpu_texture_description { unsigned long levels; int hires; int hires_coverage; int hires_point_threshold; };
 struct texture_entry { DWORD data; uint32_t type; struct xgpu_texture_description description;
-    int override; gpu_texture texture_override; unsigned long texture_override_levels; gpu_texture texture;
-    int result_valid, result_replacement; unsigned long result_menu_generation; gpu_texture result_texture;
+    int override; int texture_override_eligible; gpu_texture texture;
+    int result_valid; unsigned long result_menu_generation; gpu_texture result_texture;
     uint32_t result_type; struct xgpu_texture_description result_description; };
+struct texture_upscale_state { int enabled, show_original; };
+static struct texture_upscale_state texture_upscale = { 1, 0 };
+static int texture_upscale_state_enabled(const struct texture_upscale_state *s) { return s->enabled; }
+static int texture_upscale_state_show_original(const struct texture_upscale_state *s) { return s->show_original; }
+static gpu_texture replacement_texture; static unsigned long replacement_levels; static int replacement_lookups;
+static gpu_texture texture_entry_replacement(struct texture_entry *entry, unsigned long *levels) {
+    (void)entry; replacement_lookups++; *levels=replacement_levels; return replacement_texture; }
 static int graphics_window_open;
 static unsigned long long texture_replacement_selections;
 static unsigned long menu_generation;
@@ -103,28 +110,33 @@ int main(void) {
     assert(texture_entry_result(&entry,&type,&description)==1 && texture_replacement_selections==0);
     assert(menu_queries==1);
     assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==1);
-    entry.texture_override=2; entry.texture_override_levels=3; entry.result_valid=FALSE;
+    entry.texture_override_eligible=1; replacement_texture=2; replacement_levels=3;
     assert(texture_entry_result(&entry,&type,&description)==2 && texture_replacement_selections==0);
+    /* (the replacement is looked up at every bind, so the budget sees it drawn) */
+    assert(replacement_lookups==1 && menu_queries==1);
     graphics_window_open=1;
     assert(texture_entry_result(&entry,&type,&description)==2 && texture_replacement_selections==1);
     assert(description.levels==3);
     texture_replacement_selections=9007199254740991ULL;
     assert(texture_entry_result(&entry,&type,&description)==2 && texture_replacement_selections==9007199254740991ULL);
-    texture_replacement_selections=0; entry.texture_override=0; entry.result_valid=FALSE;
+    texture_upscale.show_original=1;
+    assert(texture_entry_result(&entry,&type,&description)==1 && description.levels==0);
+    texture_upscale.show_original=0;
+    texture_replacement_selections=0; replacement_texture=0; entry.result_valid=FALSE;
     assert(texture_entry_result(&entry,&type,&description)==1 && texture_replacement_selections==0);
-    assert(menu_queries==3);
-    menu_texture=4; menu_generation++;
+    assert(menu_queries==2);
+    menu_texture=4; menu_generation++; replacement_texture=2;
     assert(texture_entry_result(&entry,&type,&description)==4 && description.levels==5);
-    assert(description.hires==TRUE && menu_queries==4);
-    assert(texture_entry_result(&entry,&type,&description)==4 && menu_queries==4);
-    menu_texture=0; menu_generation++;
-    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==5);
+    assert(description.hires==TRUE && menu_queries==3);
+    assert(texture_entry_result(&entry,&type,&description)==4 && menu_queries==3);
+    menu_texture=0; menu_generation++; replacement_texture=0;
+    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==4);
     atlas_texture=7;
     assert(texture_entry_result(&entry,&type,&description)==7 && description.levels==1);
     int previous_binds=atlas_binds;
     assert(texture_entry_result(&entry,&type,&description)==7 && atlas_binds==previous_binds+1);
-    assert(menu_queries==5);
+    assert(menu_queries==4);
     atlas_texture=0;
-    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==5);
+    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==4);
 }
 ''')

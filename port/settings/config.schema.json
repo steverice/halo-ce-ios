@@ -854,6 +854,17 @@
             "desktop"
           ]
         },
+        "upscaled_textures_memory": {
+          "type": "integer",
+          "default": 0,
+          "description": "The most memory the upscaled textures may take, in MB; 0 (default) picks it from the device's memory. Past it, the ones drawn longest ago make room, and a texture with no room is drawn as the map has it.",
+          "x-environment": "HALO_UPSCALED_TEXTURES_MEMORY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "menus": {
           "type": "string",
           "default": "pc",
@@ -1540,6 +1551,16 @@
           "default": false,
           "description": "While Back is held, the D-pad's up switches all of the level's textures between upscaled (and debug.texture_override_directory's) and original, shown on screen for two seconds; each level starts upscaled, and display.upscaled_textures is not changed. The game doesn't see the D-pad meanwhile.",
           "x-environment": "HALO_UPSCALED_TEXTURES_TOGGLE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "upscaled_textures_toggle_every": {
+          "type": "integer",
+          "default": 0,
+          "description": "With upscaled_textures_toggle: press its toggle every this many frames, for a test run with no controller; 0 never.",
+          "x-environment": "HALO_UPSCALED_TEXTURES_TOGGLE_EVERY",
           "x-environment-style": "value",
           "x-platforms": [
             "apple"
@@ -2540,8 +2561,30 @@
         "texture_compare_directory": {
           "type": "string",
           "default": "",
-          "description": "A folder with twice the dimensions of texture_override_directory's approved textures. With upscaled_textures_toggle, Back + D-pad up switches APPROVED CURRENT and HIGHER live, retiring the old set and uploading the selected set on demand. Missing higher textures fall back to current and are shown in the comparison readout; empty keeps the original/upscaled comparison.",
+          "description": "A second folder of replacement textures to compare texture_override_directory's with. With upscaled_textures_toggle, Back + D-pad up switches between the two sets as the game runs; each level starts on the first. Both stay in memory while display.upscaled_textures_memory has room, else the set left is read again. A texture the second set has no file for is drawn from the first, and the readout says so; empty keeps the original/upscaled comparison.",
           "x-environment": "HALO_TEXTURE_COMPARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_override_name": {
+          "type": "string",
+          "default": "",
+          "description": "What the comparison's readout calls texture_override_directory's set; empty \"SET A\".",
+          "x-environment": "HALO_TEXTURE_OVERRIDE_NAME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_compare_name": {
+          "type": "string",
+          "default": "",
+          "description": "What the comparison's readout calls texture_compare_directory's set; empty \"SET B\".",
+          "x-environment": "HALO_TEXTURE_COMPARE_NAME",
           "x-environment-style": "value",
           "x-platforms": [
             "apple",
@@ -2565,6 +2608,17 @@
           "description": "Upload textures again every time they are used.",
           "x-environment": "HALO_TEXTURE_NO_CACHE",
           "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_replacement_stats": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log the upscaled textures' memory (\"texture replacements, now: ...\") every 300 frames, as well as at each level load.",
+          "x-environment": "HALO_TEXTURE_REPLACEMENT_STATS",
+          "x-environment-style": "value",
           "x-platforms": [
             "apple",
             "desktop"

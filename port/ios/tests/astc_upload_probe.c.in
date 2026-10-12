@@ -10,6 +10,7 @@
 #include "gpu.h"
 #include "astc_store.h"
 #include "astc_policy.h"
+#include "texture_override_cache.h"
 #define HALO_IOS 1
 
 typedef uint32_t DWORD, D3DCOLOR;
@@ -117,7 +118,14 @@ static gpu_texture hud_hires_override_texture(long index, unsigned long *levels)
 }
 static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *palette)
 {
-	(void)palette; entry->texture_override = fixture_override ? 998 : 0;
+	(void)palette; entry->texture_override_eligible = fixture_override ? 1 : 0;
+}
+static struct { int unused; } texture_upscale;
+static int texture_upscale_state_enabled(const void *state) { (void)state; return 1; }
+static int texture_upscale_state_show_original(const void *state) { (void)state; return 0; }
+static gpu_texture texture_entry_replacement(struct texture_entry *entry, unsigned long *levels)
+{
+	*levels = 1; return entry->texture_override_eligible ? 998 : 0;
 }
 static gpu_texture text_hires_atlas_texture(DWORD data)
 {

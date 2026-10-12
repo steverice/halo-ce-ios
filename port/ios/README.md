@@ -200,14 +200,43 @@ To compare upscaled and original textures in game, set
 then, while you hold Back on a controller, D-pad up switches the level's
 textures between upscaled and original at once, with a two-second readout.
 
-For a live resolution comparison, also set `debug.texture_compare_directory`
-to a replacement folder with twice the width and height of the approved
-textures in `debug.texture_override_directory`. The same control switches
-between **APPROVED CURRENT** and **HIGHER**, with a persistent readout.
-Each map starts on approved current. The selected set uploads on demand;
-switching can briefly hitch while it loads. A missing or invalid higher
-replacement uses the approved current texture and shows a fallback label.
-Only hashes in the approved set are compared, preserving its texture policy.
+To compare two sets of replacement textures, also set
+`debug.texture_compare_directory` to the second set's folder
+(`debug.texture_override_directory` names the first). The same control then
+switches between the two sets, and the readout stays on screen: **SET A** and
+**SET B**, or the names in `debug.texture_override_name` and
+`debug.texture_compare_name`. Each map starts on the first set. A set is read
+as its textures are first drawn, so the first switch to the second set can
+hitch; after that both sets stay in memory and a switch reads nothing, as long
+as the memory limit below has room for both. A texture the second set has no
+usable file for is drawn from the first set, and the readout says so.
+
+### The upscaled textures' memory
+
+Upscaled textures are uncompressed: one that replaces a 512x512 bitmap at four
+times the size takes about 21 MB. `display.upscaled_textures_memory` in
+`config.toml` is the most they may take together, in MB. The default, `0`, is a
+quarter of the memory the system still lets the app take when the first one
+loads (about 1.9 GB on an Apple Vision Pro, 1.3 GB on an iPad Pro and 850 MB on
+an iPhone, going by earlier runs' logs), and an eighth of the Mac's memory on a
+Mac, never under 64 MB or over 2 GB. The log says which:
+`texture replacements: 1900 MB of memory at most (...)`.
+
+- When a new texture does not fit, the textures drawn longest ago go first,
+  but never one drawn in the last 60 frames. If that leaves too little room,
+  the bitmap is drawn as the map has it, and the game tries again 300 frames
+  later.
+- A texture that went is read from its file again the next time it is drawn.
+- A level's textures stay through the next level's load. 600 frames into the
+  new level, the ones it has not drawn go.
+- When the system sends the app a memory warning, every texture the last two
+  frames did not draw goes, and the limit is halved until the app quits.
+
+At each level load the log has a line like `texture replacements, at the
+level's end: 412.3 of 1900.0 MB in use by 207 textures, 498.0 MB at most; 231
+read, 4 read again, 28 evictions, 0 without room`; `debug.texture_replacement_stats`
+logs it every 300 frames too. The code is in
+`port/linux/src/texture_replacement_cache.h` and `texture_override_cache.c`.
 
 ## Controls
 

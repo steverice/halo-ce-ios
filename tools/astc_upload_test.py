@@ -56,7 +56,8 @@ def main():
     for token, value in {
         'DESCRIPTION': description, 'FORMATS': formats, 'LAYOUT': layout,
         'CACHE': cache, 'HELPERS': helpers,
-        'RESULT': function(source, 'texture_entry_result_uncached') + function(source, 'texture_entry_result'),
+        'RESULT': function(source, 'texture_entry_result_uncached') + function(source, 'texture_entry_result') +
+        function(source, 'texture_entry_replaced'),
         'GET': function(source, 'xgpu_texture_get'), 'INITIALIZATION': initialization,
     }.items():
         fixture = fixture.replace('@' + token + '@', value)

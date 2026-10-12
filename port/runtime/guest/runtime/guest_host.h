@@ -108,6 +108,14 @@ int host_thread_create(unsigned int thread, unsigned int stack_size);
 /* lowers only the calling speculative worker to background QoS */
 void host_thread_background(void);
 
+/* ---------- the app's memory (port/ios/host/host_memory.c)
+
+For the replacement textures' budget (port/linux/src/texture_replacement_cache.h). */
+
+/* the device's memory, in MB; 0 where the system doesn't say (the memory left
+to the app is host_memory_available_megabytes, above) */
+unsigned int host_memory_physical_megabytes(void);
+
 /* ---------- memory write tracking (port/linux/src/memory_watch.c) */
 
 void host_memory_watch_initialize(void);

@@ -40,6 +40,9 @@ build configured with it (gpu_validate.h); nothing otherwise */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined(HALO_IOS) && !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 /* ---------- formats */
 
@@ -808,13 +811,13 @@ struct texture_entry
 	unsigned long last_used_frame;
 	/* the high-res HUD texture drawn in its place (hud_hires.h), or -1 */
 	long override;
-	/* debug.texture_override_directory's texture drawn in its place, or 0,
-	and its level count (texture_override.h) */
-	gpu_texture texture_override;
-	unsigned long texture_override_levels;
-	uint64_t texture_override_hash;
-	unsigned long texture_override_serial;
+	/* debug.texture_override_directory's texture drawn in its place
+	(texture_override.h): whether the bitmap here may have one, the hash of
+	its first level, and where the replacement cache has it
+	(texture_override_cache.h) */
 	int texture_override_eligible;
+	uint64_t texture_override_hash;
+	struct texture_override_reference texture_override_reference;
 	/* the newest generation of its pages (memory_watch_generation) as of the
 	memory watch serial read before it was found: the same while no watched
 	page has been written since (0: never found) */
@@ -823,7 +826,7 @@ struct texture_entry
 	S3TC, or the texels were once in a Custom Edition channel order */
 	BOOL decoded;
 	/* Menu registration can replace a handle without changing the bitmap. */
-	BOOL result_valid, result_replacement;
+	BOOL result_valid;
 	unsigned long result_menu_generation;
 	gpu_texture result_texture;
 	uint32_t result_type;
@@ -903,19 +906,106 @@ static unsigned long palette_hash(const D3DCOLOR *palette)
 /* source/bitmaps/bitmaps.c: the palette the game draws every P8 bump map with */
 extern D3DCOLOR global_vector_palette[256];
 
+/* ---------- the replacements' memory (texture_override_cache.h) */
+
+#ifdef HALO_IOS
+/* port/ios/host (guest_host.h): the device's memory, in MB (0: not known);
+host_memory_available_megabytes is declared above */
+unsigned int host_memory_physical_megabytes(void);
+#endif
+
+static double replacement_megabytes(uint64_t bytes)
+{
+	return (double)bytes / (1024.0 * 1024.0);
+}
+
+/* makes the replacement cache with display.upscaled_textures_memory's budget,
+or one from the device's memory (texture_replacement_default_budget) */
+static void texture_replacements_start(void)
+{
+	long megabytes = config_integer("display.upscaled_textures_memory");
+	uint64_t available = 0, physical = 0, budget;
+
+	if (texture_override_cache())
+		return;
+#ifdef HALO_IOS
+	{
+		int left = host_memory_available_megabytes();
+
+		available = left > 0 ? (uint64_t)left << 20 : 0;
+	}
+	physical = (uint64_t)host_memory_physical_megabytes() << 20;
+#elif defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+	{
+		long pages = sysconf(_SC_PHYS_PAGES), page = sysconf(_SC_PAGESIZE);
+
+		if (pages > 0 && page > 0)
+			physical = (uint64_t)pages * (uint64_t)page;
+	}
+#endif
+	budget = megabytes > 0 ? (uint64_t)megabytes << 20 : texture_replacement_default_budget(available, physical);
+	texture_override_cache_start(budget);
+	if (megabytes > 0)
+		platform_log("texture replacements: %.0f MB of memory at most (display.upscaled_textures_memory)",
+			replacement_megabytes(budget));
+	else
+		platform_log("texture replacements: %.0f MB of memory at most (%.0f MB left to the game, %.0f MB in the device)",
+			replacement_megabytes(budget), replacement_megabytes(available), replacement_megabytes(physical));
+}
+
+/* "texture replacements, WHEN: ...", in the manner of texture_cache_debug.c's line */
+static void texture_replacements_log(const char *when)
+{
+	const struct texture_replacement_cache *cache = texture_override_cache();
+
+	if (!cache)
+		return;
+	platform_log("texture replacements, %s: %.1f of %.1f MB in use by %lu textures, %.1f MB at most; %lu read, "
+		"%lu read again, %lu evictions, %lu without room", when, replacement_megabytes(cache->bytes),
+		replacement_megabytes(cache->budget), cache->resident, replacement_megabytes(cache->statistics.peak_bytes),
+		cache->statistics.loads, cache->statistics.reloads, cache->statistics.evictions, cache->statistics.refusals);
+}
+
 /* ---------- upscaled textures, per level (texture_upscale_state.h) */
 static struct texture_upscale_state texture_upscale;
 
+/* the two sets' names in the comparison's readout and log lines
+(debug.texture_override_name, debug.texture_compare_name) */
+static const char *texture_set_name(int second)
+{
+	const char *name = config_string(second ? "debug.texture_compare_name" : "debug.texture_override_name");
+
+	return *name ? name : second ? "SET B" : "SET A";
+}
+
+/* "Textures: NAME", and what stands in where the second set has no file */
+static const char *texture_compare_label(void)
+{
+	static char label[160];
+
+	if (texture_upscale.higher && texture_upscale.fallback)
+		snprintf(label, sizeof(label), "Textures: %s (%s where it has none)", texture_set_name(1), texture_set_name(0));
+	else
+		snprintf(label, sizeof(label), "Textures: %s", texture_set_name(texture_upscale.higher));
+	return label;
+}
+
 /* port: called from cache_files.c when a map has loaded, before its textures upload; the switch is read again
-   from config.toml here (the Settings app may have changed it), so it takes effect at a level load only */
+   from config.toml here (the Settings app may have changed it), so it takes effect at a level load only. The
+   replacements the level before drew stay until the new one has shown which of them it draws
+   (texture_replacement_cache.h) */
 void texture_upscale_map_loaded(void)
 {
 	texture_upscale_state_map_loaded(&texture_upscale, config_reload_boolean("display.upscaled_textures"));
 	texture_upscale_state_compare(&texture_upscale, *config_string("debug.texture_override_directory") &&
 		*config_string("debug.texture_compare_directory"));
-	texture_override_cache_clear();
+	texture_override_cache_directories(config_string("debug.texture_override_directory"),
+		config_string("debug.texture_compare_directory"));
+	texture_replacements_log("at the level's end");
+	texture_override_cache_map_loaded(texture_upscale_state_enabled(&texture_upscale));
 	if (texture_upscale.compare)
-		platform_log("texture comparison: APPROVED CURRENT; higher uploads lazily when selected");
+		platform_log("texture comparison: %s; %s is read as it is drawn once selected", texture_compare_label(),
+			texture_set_name(1));
 	if (config_boolean("debug.texture_log"))
 		platform_log("textures: upscaled textures %s for this level",
 			texture_upscale_state_enabled(&texture_upscale) ? "on" : "off");
@@ -930,14 +1020,23 @@ static double texture_upscale_toggled_milliseconds = -1.0;
 
 /* debug.upscaled_textures_toggle (xinput_sdl.c: hold Back and press the D-pad
 up): the level's originals drawn in place of its upscaled textures, or back,
-from the next draw; display.upscaled_textures is not changed */
+from the next draw; display.upscaled_textures is not changed. With
+debug.texture_compare_directory, the two sets instead: both stay in memory
+while the budget has room, so a switch back reads nothing */
 void halo_texture_upscale_toggle(void)
 {
 	int toggled = texture_upscale_state_toggle(&texture_upscale);
+
 	if (texture_upscale.compare)
 	{
-		if (toggled) texture_override_cache_clear();
-		platform_log("%s; selected textures upload on demand", texture_upscale_state_compare_label(&texture_upscale));
+		unsigned long reads;
+		double milliseconds = texture_override_cache_take_read_milliseconds(&reads);
+
+		if (toggled)
+			texture_override_cache_select(texture_upscale.higher);
+		platform_log("%s; since the last switch %lu textures read in %.0f ms", texture_compare_label(), reads,
+			milliseconds);
+		texture_replacements_log("at the switch");
 		return;
 	}
 
@@ -946,14 +1045,14 @@ void halo_texture_upscale_toggle(void)
 		"original" : "upscaled", toggled ? "" : " (none for this level)");
 }
 
-/* which textures are drawn, on screen for two seconds after the toggle;
-called as each frame begins (render_interpolation.c), like the render
-scale's readout */
+/* which textures are drawn, on screen for two seconds after the toggle (all
+the time in a comparison of two sets); called as each frame begins
+(render_interpolation.c), like the render scale's readout */
 void halo_texture_upscale_overlay(void)
 {
 	if (texture_upscale.compare)
 	{
-		render_debug_string(0, texture_upscale_state_compare_label(&texture_upscale));
+		render_debug_string(0, texture_compare_label());
 		return;
 	}
 	if (texture_upscale_toggled_milliseconds < 0.0 ||
@@ -969,21 +1068,31 @@ void halo_texture_upscale_overlay(void)
 		render_debug_string(0, "Textures: upscaled (none loaded yet)");
 }
 
-/* Entry aliases are invalid after a comparison switch, including recent
-lookup hits. Resolve lazily using the saved source hash, never rehashing
-memory that the game's cache may already have reused. */
-static void texture_override_assign(struct texture_entry *entry)
+/* an entry's replacement from the selected set and its level count, or 0 to
+draw the entry's own texture: there is no file, or the replacement was
+dropped and there is no room to read it again (texture_override_cache.h).
+Found by the saved hash, never by rehashing memory that the game's cache may
+have reused since */
+static gpu_texture texture_entry_replacement(struct texture_entry *entry, unsigned long *levels)
 {
-	int fallback = 0;
-	entry->texture_override = texture_override_cache_find(config_string("debug.texture_override_directory"),
-		config_string("debug.texture_compare_directory"), texture_upscale.compare && texture_upscale.higher,
-		entry->texture_override_hash, entry->description.width, entry->description.height,
-		&entry->texture_override_levels, &fallback);
-	entry->texture_override_serial = texture_override_cache_serial();
+	int fallback;
+	gpu_texture texture;
+
+	texture_replacements_start();
+	texture = texture_override_cache_find(&entry->texture_override_reference, entry->texture_override_hash,
+		entry->description.width, entry->description.height, levels, &fallback);
 	if (fallback > texture_upscale.fallback)
 		texture_upscale.fallback = fallback;
-	if (entry->texture_override)
-		texture_upscale_state_replaced(&texture_upscale);
+	return texture;
+}
+
+/* whether the entry is drawn as its replacement now (texture_entry_result) */
+static BOOL texture_entry_replaced(struct texture_entry *entry)
+{
+	unsigned long levels;
+
+	return entry->texture_override_eligible && texture_upscale_state_enabled(&texture_upscale) &&
+		!texture_upscale_state_show_original(&texture_upscale) && texture_entry_replacement(entry, &levels) != 0;
 }
 
 /* after an upload: the override standing for the pixels now at the entry's
@@ -995,8 +1104,9 @@ static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *
 	static unsigned long vector_palette_hash;
 	const char *directory = config_string("debug.texture_override_directory");
 	const struct xgpu_texture_description *description = &entry->description;
-	unsigned long level0_size;
+	unsigned long level0_size, levels;
 	uint64_t hash;
+	BOOL applied = FALSE;
 
 	if (!texture_upscale_state_enabled(&texture_upscale))
 		directory = "";   /* this level plays original; logging still shows each hash */
@@ -1018,12 +1128,15 @@ static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *
 	{
 		entry->texture_override_hash = hash;
 		entry->texture_override_eligible = 1;
-		texture_override_assign(entry);
+		memset(&entry->texture_override_reference, 0, sizeof(entry->texture_override_reference));
+		applied = texture_entry_replacement(entry, &levels) != 0;
+		if (applied)
+			texture_upscale_state_replaced(&texture_upscale);
 	}
 	if (logging)
 		platform_log("texture override %016llx at %08lx fmt %02lx %lux%lu: %s", (unsigned long long)hash,
 			(unsigned long)entry->data, (unsigned long)description->format, description->width, description->height,
-			entry->texture_override ? "applied" : "none");
+			applied ? "applied" : "none");
 }
 
 /* A format change replaces the object, because Metal fixes its format at creation. */
@@ -1162,7 +1275,6 @@ static gpu_texture texture_entry_result_uncached(struct texture_entry *entry, ui
 {
 	*type = entry->type;
 	*description = entry->description;
-	entry->result_replacement = FALSE;
 	/* (a menu's bitmap: menu_files.h) */
 	{
 		unsigned long levels;
@@ -1188,20 +1300,6 @@ static gpu_texture texture_entry_result_uncached(struct texture_entry *entry, ui
 			description->hires_point_threshold = hud_hires_override_point_threshold(entry->override);
 			return texture;
 		}
-	}
-	/* (debug.upscaled_textures_toggle: the original, entry->texture, is
-	always uploaded too, so the toggle only picks which one is drawn) */
-	if (entry->texture_override_eligible && texture_upscale_state_enabled(&texture_upscale) &&
-		entry->texture_override_serial != texture_override_cache_serial())
-		texture_override_assign(entry);
-	if (texture_upscale_state_enabled(&texture_upscale) && entry->texture_override &&
-		!texture_upscale_state_show_original(&texture_upscale))
-	{
-		/* (debug.texture_override_directory: its own levels, sampled as the
-		game samples the texture; never hires) */
-		entry->result_replacement = TRUE;
-		description->levels = entry->texture_override_levels;
-		return entry->texture_override;
 	}
 	return entry->texture;
 }
@@ -1230,14 +1328,32 @@ static gpu_texture texture_entry_result(struct texture_entry *entry, uint32_t *t
 	}
 	*type = entry->result_type;
 	*description = entry->result_description;
-#ifdef HALO_IOS
-	if (entry->result_replacement)
+	/* The replacement is looked up at every bind, cached result or not: the
+	lookup marks it drawn, which keeps texture_replacement_cache.h from
+	dropping it, and a dropped one is read again here when there is room.
+	(debug.upscaled_textures_toggle: the original, entry->texture, is always
+	uploaded too, so the toggle only picks which one is drawn.) */
+	if (entry->result_texture == entry->texture && entry->texture_override_eligible &&
+		texture_upscale_state_enabled(&texture_upscale) && !texture_upscale_state_show_original(&texture_upscale))
 	{
-		/* Count selections on every bind, including cached results. */
-		extern void benchmark_graphics_texture_replacement_selected(void);
-		benchmark_graphics_texture_replacement_selected();
-	}
+		unsigned long levels;
+		gpu_texture replacement = texture_entry_replacement(entry, &levels);
+
+		/* (debug.texture_override_directory: its own levels, sampled as the
+		game samples the texture; never hires. Dropped for room, with none to
+		read it again: the bitmap as the map has it) */
+		if (replacement)
+		{
+#ifdef HALO_IOS
+			/* (counted at every bind, cached result or not) */
+			extern void benchmark_graphics_texture_replacement_selected(void);
+			benchmark_graphics_texture_replacement_selected();
 #endif
+			*type = GPU_TEXTURE_2D;
+			description->levels = levels;
+			return replacement;
+		}
+	}
 	return entry->result_texture;
 }
 
@@ -1371,7 +1487,6 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 			entry->generation = 1;
 		/* (which bitmap is here may have changed with the pixels) */
 		entry->override = -1;
-		entry->texture_override = 0;
 		entry->texture_override_eligible = 0;
 		if (entry->size && !palettized && !entry->description.cube_map && entry->description.depth == 1)
 		{
@@ -1399,7 +1514,8 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 				!(resource[0] & D3DCOMMON_D3DCREATED) && channel_order == _custom_edition_channels_xbox &&
 				!*config_string("debug.texture_dump_directory") &&
 				!text_hires_atlas_texture(entry->data) &&
-				texture_entry_result_uncached(entry, &result_type, &result_description) == entry->texture;
+				texture_entry_result_uncached(entry, &result_type, &result_description) == entry->texture &&
+				!texture_entry_replaced(entry);
 			if (eligible)
 			{
 #ifdef HALO_IOS
@@ -1585,6 +1701,15 @@ static void texture_trim_if_requested(void)
 	if (!texture_trim_requested)
 		return;
 	texture_trim_requested = 0;
+	if (texture_override_cache())
+	{
+		/* (the replacements drop what the last two frames did not draw, and
+		their budget halves) */
+		uint64_t freed = texture_override_cache_memory_warning();
+
+		platform_log("texture replacements: the system warned of low memory; %.1f MB dropped, %.1f MB at most "
+			"from now on", replacement_megabytes(freed), replacement_megabytes(texture_override_cache()->budget));
+	}
 #ifdef HALO_IOS
 	before = host_memory_available_megabytes();
 #endif
@@ -1623,6 +1748,24 @@ void xgpu_texture_cache_begin_frame(void)
 	texture_astc_swap_ready();
 #endif
 	texture_frame++;
+	if (texture_override_cache())
+	{
+		static long toggle_every = -1;
+		uint64_t freed;
+		unsigned long count = texture_override_cache_begin_frame(&freed);
+
+		if (count)
+			platform_log("texture replacements: %lu the level has not drawn dropped, %.1f MB", count,
+				replacement_megabytes(freed));
+		if (texture_frame % 300 == 0 && config_boolean("debug.texture_replacement_stats"))
+			texture_replacements_log("now");
+		/* debug.upscaled_textures_toggle_every: the toggle's press, for a run with no controller */
+		if (toggle_every < 0)
+			toggle_every = config_boolean("debug.upscaled_textures_toggle") ?
+				config_integer("debug.upscaled_textures_toggle_every") : 0;
+		if (toggle_every > 0 && texture_frame % (unsigned long)toggle_every == 0)
+			halo_texture_upscale_toggle();
+	}
 	now = SDL_GetTicks();
 	if (now >= texture_trim_next)
 	{

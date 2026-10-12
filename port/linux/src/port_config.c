@@ -758,6 +758,11 @@ static const struct config_setting config_settings[] =
 		"Draw upscaled textures (made on this device from your copy of the game)\n"
 		"where they exist; false draws the maps' own. Takes effect at the next\n"
 		"level load." },
+	{ "display.upscaled_textures_memory", _config_integer, "0", "HALO_UPSCALED_TEXTURES_MEMORY", _environment_value,
+		_platform_all,
+		"The most memory the upscaled textures may take, in MB; 0 (default) picks\n"
+		"it from the device's memory. Past it, the ones drawn longest ago make\n"
+		"room, and a texture with no room is drawn as the map has it." },
 	{ "display.menus", _config_string, "\"pc\"", "HALO_MENUS", _environment_value, _platform_all,
 		"The menus: \"pc\" for the PC version's main menu (port/assets/menus,\n"
 		"and a menus folder here for your own), \"xbox\" for the Xbox's." },
@@ -1128,6 +1133,10 @@ static const struct config_setting config_settings[] =
 		"shown on screen for two seconds; each level starts upscaled, and\n"
 		"display.upscaled_textures is not changed. The game doesn't see the D-pad\n"
 		"meanwhile." },
+	{ "debug.upscaled_textures_toggle_every", _config_integer, "0", "HALO_UPSCALED_TEXTURES_TOGGLE_EVERY",
+		_environment_value, _platform_ios,
+		"With upscaled_textures_toggle: press its toggle every this many frames,\n"
+		"for a test run with no controller; 0 never." },
 	{ "debug.input_record", _config_string, "\"\"", "HALO_INPUT_RECORD", _environment_value, _platform_all,
 		"Record controller 1 while a map plays, to <name>.input in the data folder\n"
 		"(port/linux/src/input_replay.c); empty records nothing." },
@@ -1479,15 +1488,24 @@ static const struct config_setting config_settings[] =
 		"A folder of replacement textures, <hash>.rgba (step-tools/texture-upscale.py),\n"
 		"each drawn in place of the texture whose first mip level hashes to <hash>; empty none." },
 	{ "debug.texture_compare_directory", _config_string, "\"\"", "HALO_TEXTURE_COMPARE", _environment_value, _platform_all,
-		"A folder with twice the dimensions of texture_override_directory's approved textures.\n"
-		"With upscaled_textures_toggle, Back + D-pad up switches APPROVED CURRENT and HIGHER\n"
-		"live, retiring the old set and uploading the selected set on demand. Missing higher\n"
-		"textures fall back to current and are shown in the comparison readout; empty keeps\n"
-		"the original/upscaled comparison." },
+		"A second folder of replacement textures to compare texture_override_directory's\n"
+		"with. With upscaled_textures_toggle, Back + D-pad up switches between the two sets\n"
+		"as the game runs; each level starts on the first. Both stay in memory while\n"
+		"display.upscaled_textures_memory has room, else the set left is read again. A\n"
+		"texture the second set has no file for is drawn from the first, and the readout\n"
+		"says so; empty keeps the original/upscaled comparison." },
+	{ "debug.texture_override_name", _config_string, "\"\"", "HALO_TEXTURE_OVERRIDE_NAME", _environment_value, _platform_all,
+		"What the comparison's readout calls texture_override_directory's set; empty \"SET A\"." },
+	{ "debug.texture_compare_name", _config_string, "\"\"", "HALO_TEXTURE_COMPARE_NAME", _environment_value, _platform_all,
+		"What the comparison's readout calls texture_compare_directory's set; empty \"SET B\"." },
 	{ "debug.texture_log", _config_boolean, "false", "HALO_TEXTURE_LOG", _environment_set_is_true, _platform_all,
 		"Log texture uploads." },
 	{ "debug.texture_no_cache", _config_boolean, "false", "HALO_TEXTURE_NO_CACHE", _environment_set_is_true, _platform_all,
 		"Upload textures again every time they are used." },
+	{ "debug.texture_replacement_stats", _config_boolean, "false", "HALO_TEXTURE_REPLACEMENT_STATS", _environment_value,
+		_platform_all,
+		"Log the upscaled textures' memory (\"texture replacements, now: ...\") every 300\n"
+		"frames, as well as at each level load." },
 	{ "debug.device_profile", _config_string, "\"\"", "HALO_DEVICE_PROFILE", _environment_value, _platform_ios,
 		"Which device profile (profiles/ in the app) sets this device's graphics\n"
 		"settings: empty chooses by the device; \"none\" uses the built-in\n"

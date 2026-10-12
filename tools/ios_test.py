@@ -568,7 +568,12 @@ if 'menu_internet_screen_opened();' not in body_of(menu_source, 'multiplayer_mod
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/texture_override_probe.c', '-o', BUILD/'texture-override-probe')
 run(BUILD/'texture-override-probe')
-# selected-set loading and retirement, with tiny real files and GPU boundary stubs
+# the replacement textures' byte budget: what makes room, the reload of a dropped one, the purge after a map load,
+# the two sets and the memory warning (port/linux/src/texture_replacement_cache.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/texture_replacement_probe.c', '-o', BUILD/'texture-replacement-probe')
+run(BUILD/'texture-replacement-probe')
+# the two sets' files read under the budget, with tiny real files and GPU boundary stubs
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/texture_compare_probe.c', 'port/linux/src/texture_override_cache.c',
     '-o', BUILD/'texture-compare-probe')

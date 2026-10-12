@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 #define PAGE 0x4000u
@@ -103,6 +104,14 @@ static long low_map_fixed(uint32_t p,size_t size,long taken) {
     if (mmap(host_pointer(p),pages*PAGE,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANON|MAP_FIXED,-1,0)!=host_pointer(p)) { pthread_mutex_unlock(&lock); return -12; }
     memset(allocated+first,1,pages);
     pthread_mutex_unlock(&lock); return 0;
+}
+/* For the replacement textures' budget (port/linux/src/texture_replacement_cache.h):
+   the device's memory, in MB (0: not known). host_memory_pressure.m says what the
+   system still lets the app take. */
+uint32_t host_memory_physical_megabytes(void) {
+    uint64_t memory=0; size_t size=sizeof(memory);
+    if (sysctlbyname("hw.memsize",&memory,&size,NULL,0)) return 0;
+    return (uint32_t)(memory>>20);
 }
 int host_low_owns(uintptr_t p,size_t n) {
     return host_arena && p>=host_arena && p-host_arena+n<=0x100000000ull;

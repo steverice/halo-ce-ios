@@ -129,8 +129,11 @@ static void external_mode_chord(XINPUT_GAMEPAD *pad)
 
 /* While Back is held: debug.render_scale_dpad's D-pad left and right step
 the render scale down and up, debug.upscaled_textures_toggle's D-pad up
-switches between the level's upscaled and original textures, and with
-either on the game doesn't see the D-pad */
+switches between the level's upscaled and original textures (or its two
+sets), and with either on the game doesn't see the D-pad. Each press acts
+only for the setting that is on. The D-pad's up belongs to the texture toggle
+whenever that is on: anything else debug.render_scale_dpad puts on it must
+give way then, so one press never does both */
 static void back_dpad(XINPUT_GAMEPAD *pad)
 {
 	static int render_scale = -1, upscaled_textures;
@@ -155,8 +158,11 @@ static void back_dpad(XINPUT_GAMEPAD *pad)
 		halo_render_scale_step(-1);
 	if (render_scale && (pressed & XINPUT_GAMEPAD_DPAD_RIGHT))
 		halo_render_scale_step(1);
-	if (upscaled_textures && (pressed & XINPUT_GAMEPAD_DPAD_UP))
-		halo_texture_upscale_toggle();
+	if (pressed & XINPUT_GAMEPAD_DPAD_UP)
+	{
+		if (upscaled_textures)
+			halo_texture_upscale_toggle();
+	}
 	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT |
 		XINPUT_GAMEPAD_DPAD_RIGHT);
 }

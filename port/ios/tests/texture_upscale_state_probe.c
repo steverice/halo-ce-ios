@@ -40,13 +40,8 @@ int main(void)
 	texture_upscale_state_map_loaded(&s, 1);
 	texture_upscale_state_compare(&s, 1);
 	assert(s.compare && !s.higher && !s.show_original);
-	assert(!strcmp(texture_upscale_state_compare_label(&s), "Textures: APPROVED CURRENT"));
 	assert(texture_upscale_state_toggle(&s) && s.higher && !s.show_original);
-	assert(!strcmp(texture_upscale_state_compare_label(&s), "Textures: HIGHER (2x current dimensions)"));
-	s.fallback = 1;
-	assert(strstr(texture_upscale_state_compare_label(&s), "APPROVED CURRENT fallback"));
-	s.fallback = 2;
-	assert(strstr(texture_upscale_state_compare_label(&s), "ORIGINAL fallback"));
+	s.fallback = 1;                                      /* a switch starts the fallback note again */
 	assert(texture_upscale_state_toggle(&s) && !s.higher && !s.show_original && !s.fallback);
 	texture_upscale_state_map_loaded(&s, 1);
 	texture_upscale_state_compare(&s, 1);
