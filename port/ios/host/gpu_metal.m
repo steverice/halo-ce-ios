@@ -4391,9 +4391,13 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 				"are decoded (this GPU has no BC formats)");
 		}
 
-		/* what GL reports on Apple's OpenGL ES 3.0 (gpu_gl.c's gpu_gl_initialize),
-		so the front end behaves exactly as it does under GL */
-		capabilities->vertex_bgra = 0;
+		/* the vertex shaders fetch their own attributes (nv2a_msl.c's
+		fetch_attribute), BGRA8 as readily as RGBA8, so the front end needn't
+		swizzle colored streams as it uploads them and can draw them from the
+		mirror; debug.metal_vertex_bgra = false reports what GL does */
+		capabilities->vertex_bgra = (flags & GPU_INITIALIZE_NO_VERTEX_BGRA) ? 0 : 1;
+		/* the rest is what GL reports on Apple's OpenGL ES 3.0 (gpu_gl.c's
+		gpu_gl_initialize), so the front end behaves as it does under GL */
 		capabilities->base_vertex = 0;
 		capabilities->triangle_fans = 1;
 		capabilities->line_loops = 1;

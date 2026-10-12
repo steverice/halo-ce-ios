@@ -169,6 +169,7 @@ DEFAULTS = {
     "debug.gl_debug": "false",
     "debug.metal_state_cache": "true",
     "debug.metal_specialize": "true",
+    "debug.metal_vertex_bgra": "true",
     "debug.metal_pipeline_archive": "false",
     "debug.shader_list_warm": "true",
     "debug.shader_list_record": '"shader-lists-missed"',

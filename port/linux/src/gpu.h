@@ -576,13 +576,18 @@ enum
 	compiles shaders and pipelines on worker threads, and skips a draw
 	whose pipeline isn't ready rather than wait for it (gpu_metal.m) */
 	GPU_INITIALIZE_ASYNC_SHADERS = 4096,
+	/* debug.metal_vertex_bgra = false: the Metal backend reports no BGRA
+	vertex attributes (gpu_capabilities.vertex_bgra), as Apple's OpenGL ES
+	does, so the front end swizzles vertex colors as it uploads them */
+	GPU_INITIALIZE_NO_VERTEX_BGRA = 8192,
 };
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 
 /* the line every backend logs at the end of gpu_initialize: the capabilities
 that change what the front end does, which a GL run and a Metal run of the
-same build must agree on (tools/mac_run.py compare --across-backends) */
+same build must agree on (tools/mac_run.py compare --across-backends),
+apart from those Metal has and Apple's OpenGL ES lacks (vertex BGRA) */
 #define GPU_CAPABILITIES_LOG(log, capabilities) \
 	log("GPU capabilities: vertex BGRA %u, base vertex %u, triangle fans %u, line loops %u, sampler LOD bias %u, " \
 		"occlusion %u, S3TC %u, border clamp %u, max texture size %u", (unsigned)(capabilities)->vertex_bgra, \
