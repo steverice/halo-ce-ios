@@ -28,7 +28,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>6</string>
+	<string>$(HALO_BUILD_NUMBER)</string>
 	<key>HaloRenderHeight</key>
 	<string>$(HALO_RENDER_HEIGHT)</string>
 	<key>LSRequiresIPhoneOS</key>
@@ -43,7 +43,11 @@
 	<key>GCSupportsControllerUserInteraction</key>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Connect to other Halo players on your local network.</string>
+	<string>VISR uses your local network to receive your copy of the game from a phone or computer, to find and join system link games on this network, and to host games for nearby players.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_halo-ce._udp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

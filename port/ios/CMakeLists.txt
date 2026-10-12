@@ -35,8 +35,8 @@ if(HALO_MAC)
     target_compile_options(SDL3-static PRIVATE "-F${HALO_GLES_FRAMEWORKS}")
     target_compile_definitions(SDL3-static PRIVATE GLES_SILENCE_DEPRECATION=1)
 endif()
-# iPhone and visionOS: each build a new CFBundleVersion (tools/ios_build.py), so
-# installing over the app replaces it and keeps its Documents (the imported game)
+# Each build a new CFBundleVersion (tools/ios_build.py), so installing over the
+# app replaces it and keeps its Documents, or on tvOS its Caches (the imported game)
 set(HALO_BUILD_NUMBER 6 CACHE STRING "CFBundleVersion")
 if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # Controllers only, no Files app: the XISO arrives from a browser
