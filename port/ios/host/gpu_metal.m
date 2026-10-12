@@ -2076,6 +2076,13 @@ static void archive_open(void)
 	NSError *error = nil;
 	NSUInteger index;
 
+	/* binary archives need GPU family Apple3 (an A9) or a Mac */
+	if (![device supportsFamily:MTLGPUFamilyApple3] && ![device supportsFamily:MTLGPUFamilyMac2])
+	{
+		platform_log("Metal: no pipeline archive (this GPU has no binary archives); every launch compiles its pipelines");
+		return;
+	}
+
 	/* a file name: letters, digits, dots and dashes */
 	for (index = 0; index < name.length; index++)
 	{
@@ -4354,8 +4361,15 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		18 the only other choice is fast math, which also drops infinities and
 		NaNs, so there pixel shaders keep the vertex shaders' options. */
 		pixel_compile_options = [compile_options copy];
+		/* (relaxed math needs GPU family Apple4, an A11, or a Mac: an A8 or A9
+		keeps the vertex shaders' options) */
 		if (@available(iOS 18.0, tvOS 18.0, visionOS 2.0, *))
-			pixel_compile_options.mathMode = MTLMathModeRelaxed;
+		{
+			if ([device supportsFamily:MTLGPUFamilyApple4] || [device supportsFamily:MTLGPUFamilyMac2])
+				pixel_compile_options.mathMode = MTLMathModeRelaxed;
+			else
+				platform_log("Metal: this GPU has no relaxed math; pixel shaders compile with safe math");
+		}
 		{
 			static const uint8_t black[4] = { 0, 0, 0, 0xff };
 			MTLTextureType types[4] = { MTLTextureType2D, MTLTextureType2D, MTLTextureType3D, MTLTextureTypeCube };
@@ -4404,7 +4418,9 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		border_clamp, and a GL run and a Metal run report the same line */
 		border_colors = [device supportsFamily:MTLGPUFamilyApple7] || [device supportsFamily:MTLGPUFamilyMac2];
 		capabilities->border_clamp = 0;
-		capabilities->max_texture_size = 16384;
+		/* 8192 on an A8 (the Apple TV HD), the one Apple GPU family below Apple3 that still runs */
+		capabilities->max_texture_size = [device supportsFamily:MTLGPUFamilyApple3] ||
+			[device supportsFamily:MTLGPUFamilyMac2] ? 16384 : 8192;
 		capabilities->shader_language = GPU_SHADER_LANGUAGE_MSL;
 		capabilities->shader_es = 0;
 		capabilities->clip_y_flip = 0;
