@@ -18,6 +18,7 @@ and the debug keyboard that the game's console reads.
 #include "port_config.h"
 #include "halo_virtual_clock.h"
 #include "p2p.h"
+#include "halo_internet.h"
 #include "xiso.h"
 
 #include <SDL3/SDL.h>
@@ -1112,6 +1113,8 @@ void menu_invite_poll(void);
 int menu_in_network_game(void);
 /* (menu_functions.c) an invite's host never answered */
 void menu_join_failed(void);
+/* (menu_functions.c) internet play was just turned on from the menus' question */
+void menu_internet_play_on(void);
 void console_notice(const char *format, ...);
 
 /* a question with two answers; nonzero for yes (debug.link_consent_answer
@@ -1206,8 +1209,11 @@ static void platform_link_consent(void)
 		return;
 	invite[size] = 0;
 	platform_log("link: %s opened with internet play off", invite);
-	if (!platform_ask("Join this game over the internet?",
-		"VISR will turn on Internet Play, which connects to public servers to reach the host.", "Join", "Cancel"))
+	/* (the player is told here what internet play reaches: the first
+	internet screen's question, network.online_ask, is not owed after it) */
+	if (config_boolean("network.online_ask"))
+		config_write_boolean("network.online_ask", 0);
+	if (!platform_ask(HALO_INTERNET_LINK_TITLE, HALO_INTERNET_LINK_MESSAGE, "Join", "Cancel"))
 	{
 		platform_log("link: not joined (Cancel)");
 		return;
@@ -1229,6 +1235,51 @@ static void platform_link_consent(void)
 	if (joined)
 		menu_invite_taken();
 }
+
+/* the menus want the player asked whether to turn internet play on
+(platform_internet_play_request) */
+static BOOL internet_play_ask_pending;
+
+/* (Apple builds; menu_functions.c, on the main thread) the player turned
+INTERNET PLAY on in Settings, or opened an internet screen with it off and
+network.online_ask still owing the question: asked at the next pump, where
+a join link's question is asked too, not inside the menus' event */
+void platform_internet_play_request(void)
+{
+	internet_play_ask_pending = TRUE;
+}
+
+/* the question, and what its answer does: Turn On writes network.online
+and starts internet play at once, as a join link's Join does; Not Now
+leaves it off. Either way network.online_ask is written false: the screens
+ask once */
+static void platform_internet_play_ask(void)
+{
+	if (!internet_play_ask_pending)
+		return;
+	internet_play_ask_pending = FALSE;
+	/* (turned on meanwhile: a link's question, answered Join) */
+	if (config_boolean("network.online") || p2p_running())
+		return;
+	if (config_boolean("network.online_ask"))
+		config_write_boolean("network.online_ask", 0);
+	if (!platform_ask(HALO_INTERNET_ASK_TITLE, HALO_INTERNET_DISCLOSURE, HALO_INTERNET_ASK_YES, HALO_INTERNET_ASK_NO))
+	{
+		platform_log("internet play: asked to turn it on; left off (" HALO_INTERNET_ASK_NO ")");
+		return;
+	}
+	config_write_boolean("network.online", 1);
+	xnet_start_internet_play();
+	if (!p2p_running())
+	{
+		/* (p2p_initialize logged why: its socket, most often) */
+		platform_log("internet play: asked to turn it on; it did not start");
+		console_notice("Internet play could not start");
+		return;
+	}
+	platform_log("internet play: asked to turn it on; turned on (" HALO_INTERNET_ASK_YES ")");
+	menu_internet_play_on();
+}
 #endif
 
 /* puts a new invite on the clipboard, and joins one found there when the
@@ -1241,6 +1292,7 @@ static void platform_invite_clipboard(BOOL look)
 
 #ifdef HALO_IOS
 	platform_link_consent();
+	platform_internet_play_ask();
 	/* (one poll_invite_file took, on the p2p thread) */
 	if (p2p_take_invite_taken())
 		menu_invite_taken();

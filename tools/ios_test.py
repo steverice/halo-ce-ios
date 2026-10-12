@@ -227,7 +227,8 @@ run(BUILD/'posix-net-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
     'port/ios/tests/lan_targets_probe.c', f'--output={BUILD / "lan-targets-probe"}')
 run(BUILD/'lan-targets-probe')
-# internet play: whether its brokers can be reached, and the server browser's empty list (halo_internet.h)
+# internet play: whether its brokers can be reached, the server browser's empty list and the question
+# an Apple build asks before turning it on (halo_internet.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
     'port/ios/tests/internet_probe.c', f'--output={BUILD / "internet-probe"}')
 run(BUILD/'internet-probe')
@@ -249,6 +250,29 @@ if p2p_source.count('p2p_signal_start();') != 3 or p2p_source.count('p2p.stun_st
                      'and only the first two STUN')
 if 'if (!p2p.stun_started)\n\t\treturn;' not in body_of(p2p_source, 'stun_update'):
     raise SystemExit('p2p.c: stun_update must do nothing, its lookups included, until STUN is begun')
+# an Apple build turns network.online on only from a question that says what internet play reaches: a join
+# link's, or the one the Settings switch and the first internet screen ask for
+config_source = (ROOT / 'port/linux/src/port_config.c').read_text()
+if not re.search(r'#ifdef HALO_IOS\n#define DEFAULT_INTERNET_PLAY "false"\n', config_source):
+    raise SystemExit('port_config.c: network.online stays off by default on Apple builds; internet play on by '
+                     'default is DEFAULT_ONLINE_ASK "true", which asks before any server is reached')
+platform_source = (ROOT / 'port/linux/src/sdl_platform.c').read_text()
+for name, question in (('platform_link_consent', 'platform_ask(HALO_INTERNET_LINK_TITLE, HALO_INTERNET_LINK_MESSAGE,'),
+                       ('platform_internet_play_ask', 'platform_ask(HALO_INTERNET_ASK_TITLE, HALO_INTERNET_DISCLOSURE,')):
+    body = body_of(platform_source, name)
+    asked, written = body.find(question), body.find('config_write_boolean("network.online", 1);')
+    if asked < 0 or written < asked:
+        raise SystemExit(f'sdl_platform.c: {name} must ask before it writes network.online')
+if platform_source.count('config_write_boolean("network.online", 1);') != 2:
+    raise SystemExit('sdl_platform.c: network.online is turned on only after one of the two questions')
+menu_source = (ROOT / 'port/linux/game/menu_functions.c').read_text()
+save = body_of(menu_source, 'setting_changed_save')
+if not 0 <= save.find('platform_internet_play_request();') < save.find('setting_write(setting->setting'):
+    raise SystemExit("menu_functions.c: the Settings switch must ask before network.online is written true")
+if 'menu_internet_screen_opened();' not in body_of(menu_source, 'multiplayer_mode_set') or \
+        'platform_internet_play_request();' not in body_of(menu_source, 'menu_internet_screen_opened'):
+    raise SystemExit('menu_functions.c: choosing an internet screen must go through menu_internet_screen_opened, '
+                     "which asks for the question where network.online_ask owes it")
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',

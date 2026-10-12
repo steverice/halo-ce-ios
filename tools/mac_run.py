@@ -180,6 +180,7 @@ DEFAULTS = {
     "network.address": '""',
     "network.broadcast": '""',
     "network.online": "false",
+    "network.online_ask": "false",
     "network.lan_broadcast": '"auto"',
     "debug.link_consent_answer": '""',
     "input.stick_dead_zone": "0.27",

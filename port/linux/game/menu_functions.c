@@ -96,6 +96,12 @@ their handlers open opens.
 /* the platform layer's (port/linux/src) */
 void platform_log(char const *format, ...);
 void platform_show_message(char const *title, char const *message);
+#ifdef HALO_IOS
+/* (sdl_platform.c) ask the player, at the next pump, whether to turn
+internet play on */
+void platform_internet_play_request(void);
+int menu_in_network_game(void);
+#endif
 void platform_request_quit(void);
 char const *pc_menu_function_name(long function_index);
 char const *pc_menu_game_data_input_name(long function_index);
@@ -1450,6 +1456,20 @@ static boolean setting_changed_save(struct widget_instance *spinner, struct pc_m
 
 	if (index < 0 || index >= setting->value_count || index == setting->loaded_index)
 		return TRUE;
+#ifdef HALO_IOS
+	/* (Apple builds) internet play turned on: the player is first told what
+	it reaches and asked (halo_internet.h), and the answer writes the
+	setting, so the switch shows off again until then (menu_internet_play_on
+	shows it on). Not asked when it already runs: turned off earlier this
+	time, which only takes effect at the next start */
+	if (!strcmp(setting->setting, "network.online") && !strcmp(setting->values[index], "true") && !p2p_running())
+	{
+		platform_log("menus: network.online = true wanted; asking first");
+		spinner->parameters.list.selected_index = setting->loaded_index;
+		platform_internet_play_request();
+		return TRUE;
+	}
+#endif
 	if (!setting_write(setting->setting, setting->values[index]))
 	{
 		platform_log("menus: could not set %s", setting->setting);
@@ -2468,6 +2488,25 @@ static void text_field_show(struct widget_instance *value, char const *text, boo
 
 /* ---- the menu */
 
+#ifdef HALO_IOS
+/* (Apple builds; network_test.c's host too) an internet screen is opened
+(Create Game > Internet, Join Game > Server Browser or Direct Link): with
+internet play off, the player is asked once whether to turn it on, where
+network.online_ask says the question is owed (halo_internet.h). Asked at
+the next pump, so the screen opens first, and what it shows follows the
+answer */
+void menu_internet_screen_opened(void)
+{
+	if (!halo_internet_should_ask(config_boolean("network.online"), p2p_running(),
+		config_boolean("network.online_ask"), menu_in_network_game()))
+	{
+		return;
+	}
+	platform_log("menus: an internet screen opened with internet play off; asking");
+	platform_internet_play_request();
+}
+#endif
+
 /* "mp type set mode": the item's (by its name) */
 static void multiplayer_mode_set(struct widget_instance *widget)
 {
@@ -2481,6 +2520,13 @@ static void multiplayer_mode_set(struct widget_instance *widget)
 		strstr(name, "join_lan") ? _multiplayer_mode_lan :
 		strstr(name, "join_direct") ? _multiplayer_mode_direct_link : _multiplayer_mode_server_browser;
 	multiplayer.invite_pending = FALSE;
+#ifdef HALO_IOS
+	if (multiplayer.mode == _multiplayer_mode_host_internet || multiplayer.mode == _multiplayer_mode_direct_link ||
+		multiplayer.mode == _multiplayer_mode_server_browser)
+	{
+		menu_internet_screen_opened();
+	}
+#endif
 }
 
 /* player 1's profile for the controller's player in a network game */
@@ -6002,6 +6048,24 @@ void menu_invite_taken(void)
 	}
 	platform_log("menus: an invite was taken; Direct Link opens");
 	invite_jump(screen);
+}
+
+static boolean setting_online_reload(struct widget_instance *spinner, struct pc_menu_setting *setting)
+{
+	if (!strcmp(setting->setting, "network.online"))
+		setting_load(spinner);
+	return TRUE;
+}
+
+/* (Apple builds; sdl_platform.c, on the main thread) the player answered
+the question with Turn On, and internet play runs: Settings' INTERNET PLAY
+switch, if its screen is up, shows it */
+void menu_internet_play_on(void)
+{
+	struct widget_instance *screen = ui_widget_port_active_screen(0);
+
+	if (screen)
+		settings_each(screen, setting_online_reload);
 }
 
 /* (Apple builds; sdl_platform.c, on the main thread) the invite's host never

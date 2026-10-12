@@ -93,6 +93,10 @@ uploads unasked: off on Apple builds, a player's choice there) */
 #define DEFAULT_CLIPBOARD_JOIN "true"
 #define DEFAULT_HOST_PUBLIC "true"
 #endif
+/* (Apple builds' network.online_ask) "true" is internet play on by default,
+as far as an Apple build goes: the first internet screen opened asks, and
+nothing reaches a server before the player agrees (halo_internet.h) */
+#define DEFAULT_ONLINE_ASK "false"
 
 static const struct config_setting config_settings[] =
 {
@@ -604,6 +608,11 @@ static const struct config_setting config_settings[] =
 		"clipboard) that lets whoever has it join over the internet; opening a\n"
 		"link (or copying one before switching to the game) joins. Only people\n"
 		"with the invite can join. Off keeps system link to the local network." },
+	{ "network.online_ask", _config_boolean, DEFAULT_ONLINE_ASK, "HALO_NET_ONLINE_ASK", _environment_value, _platform_ios,
+		"While network.online is false: ask whether to turn Internet Play on the\n"
+		"first time Create Game > Internet, Join Game > Server Browser or Direct\n"
+		"Link is opened, saying which servers it reaches and what they see. Asked\n"
+		"once: either answer, and a join link's question, writes false here." },
 	{ "network.join_from_clipboard", _config_boolean, DEFAULT_CLIPBOARD_JOIN, "HALO_NET_JOIN_FROM_CLIPBOARD", _environment_value,
 		_platform_all,
 		"Join the game of an invite link found on the clipboard when the game\n"
@@ -867,8 +876,9 @@ static const struct config_setting config_settings[] =
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
 	{ "debug.link_consent_answer", _config_string, "\"\"", "HALO_LINK_CONSENT_ANSWER", _environment_value, _platform_ios,
-		"The answer to \"Join this game over the internet?\" for automated tests:\n"
-		"\"join\" or \"cancel\"; empty asks." },
+		"The answer to \"Join this game over the internet?\" and to \"Turn on\n"
+		"Internet Play?\" for automated tests: \"join\" (Join, Turn On) or\n"
+		"\"cancel\"; empty asks." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens (of game time under\n"
 		"debug.fixed_timestep); 0 never." },
