@@ -718,3 +718,44 @@ DTLS 1.2 and an unordered SCTP data channel on the existing tunnel socket.
 The Apple host compiles Mbed TLS and `posix_dtls.c`; the ILP32 guest calls
 its scalar handles and buffer arguments through generated posix bridges.
 Version 25 peers fail the existing version gate.
+
+## Apple port: versions 27 and 28
+
+Version 27's map sharing and version 28's rules are upstream's code, compiled
+into the guest unchanged. What differs on Apple platforms:
+
+- **Voice chat and votes to kick are not here.** Their message numbers (78 to
+  82) are kept, and `network_distributed_handle_message` drops them, so a
+  host or a client of upstream's build plays with this one without them. The
+  wire format record (`port/linux/network_format.txt`) is upstream's at
+  version 28 less their five structs.
+- **Where a download goes.** `custom_maps` is `d:\custom_maps`, which
+  `platform_translate_path` puts under the data root: the app's
+  `Documents/custom_maps` on iOS, iPadOS and visionOS (Files shows it under
+  On My iPhone > VISR), `Caches/Halo/custom_maps` on tvOS, and on the Mac
+  `HALO_DATA_ROOT/custom_maps` (a runner's data folder) or
+  `~/Library/Application Support/<bundle ID>/custom_maps`. All are writable
+  by the app. A download is written there as `<name>.map.part` and renamed
+  when whole; the resource maps a map needs (`bitmaps.map`, `sounds.map`,
+  `loc.map`) land in the same folder.
+- **Sockets.** Map sharing's connections are TCP, made with the game's
+  Winsock calls (`socket`, `connect`, `listen`, `accept`, `select`, `send`,
+  `recv`), which reach `port/linux/src/posix_net.c` through `xnet.c`. The
+  Apple host's adapter (`port/ios/host/posix_net.c`) converts every address
+  those calls pass in or hand back. A machine listens on TCP port 5153 only
+  in a game on a Custom Edition map, while it shares (`network.map_share`,
+  `network.map_seed`) or downloads.
+- **Settings.** DOWNLOAD MAPS, HELP SEND MAPS and MAP UPLOAD LIMIT are rows
+  of Settings > Network Setup, and SHARE MAPS a row of Server Setup; the
+  host's upload limit is `network.map_share_upload` in `config.toml`.
+
+What a machine checks of a download, all of it upstream's: the map's name
+has no path separator, drive colon, control character or leading dot, is
+not a Windows device name, and ends with the first eight digits of the hash
+the host offers; each file is at most 768 MB (the map) or 512 MB (a resource
+map), so a download is at most about 2.3 GB; every 256 KiB piece is checked
+against its BLAKE2b hash, and the pieces' hashes against the file's. The
+host's word is the root of that: a host can offer any file it likes under a
+map's name, and the map loader then reads it. There is no check of free
+disk space and no question before a download starts
+(`network.map_download`, on by default).
