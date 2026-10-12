@@ -70,7 +70,11 @@ struct config_setting
 #ifdef HALO_IOS
 #define DEFAULT_INTERNET_PLAY "false"
 #define DEFAULT_CLIPBOARD_JOIN "false"
+/* (a download of up to about 2.3 GB starts without a question: off on Apple
+builds until it asks first) */
+#define DEFAULT_MAP_DOWNLOAD "false"
 #else
+#define DEFAULT_MAP_DOWNLOAD "true"
 #define DEFAULT_INTERNET_PLAY "true"
 #define DEFAULT_CLIPBOARD_JOIN "true"
 #endif
@@ -534,11 +538,15 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"Playing in another's game: the most kilobytes a second this machine\n"
 		"sends of maps to other players (16 to 65536)." },
-	{ "network.map_download", _config_boolean, "true", "HALO_NET_MAP_DOWNLOAD", _environment_value, _platform_all,
+	{ "network.map_download", _config_boolean, DEFAULT_MAP_DOWNLOAD, "HALO_NET_MAP_DOWNLOAD", _environment_value,
+		_platform_all,
 		"Joining a game on a Custom Edition map this machine does not have:\n"
-		"download it (and the resource maps it needs) from the game's players\n"
-		"into custom_maps, if its host shares it (network.map_share); false\n"
-		"leaves the game, saying which map is missing." },
+		"download it (and the resource maps it needs, up to about 2.3 GB) from\n"
+		"the game's players into custom_maps, if its host shares it\n"
+		"(network.map_share); false leaves the game, saying which map is missing\n"
+		"and that downloads are off. Off by default on Apple builds. It governs\n"
+		"receiving only: sending maps to others is network.map_share (a host)\n"
+		"and network.map_seed (a player in another's game)." },
 	{ "network.coop_public", _config_boolean, "false", "HALO_NET_COOP_PUBLIC", _environment_value, _platform_all,
 		"Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER\n"
 		"map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in\n"

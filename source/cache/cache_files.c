@@ -1073,6 +1073,8 @@ boolean cache_files_map_present(
 	unsigned long version)
 {
 	void platform_log(char const *format, ...);
+	int config_boolean(const char *name); /* port/linux/src/port_config.c's */
+	struct network_game_client *global_network_game_client_get(void);
 	wchar_t error_text[512];
 	char const *name = tag_name_strip_path(map_name);
 	char message[512];
@@ -1114,6 +1116,16 @@ boolean cache_files_map_present(
 			snprintf(message, sizeof(message), "You don't have the map %.64s.map. If you have it, copy it into maps.",
 				name);
 		}
+	}
+	/* port: a Custom Edition map that could have been downloaded, were
+	downloads on (network.map_download: off by default on Apple builds) */
+	if (custom_edition_level_name(map_name) && global_network_game_client_get() &&
+		!config_boolean("network.map_download"))
+	{
+		long length = (long)csstrlen(message);
+
+		snprintf(message + length, sizeof(message) - (unsigned long)length,
+			" Map downloads are off: DOWNLOAD MAPS in Settings > Network Setup turns them on.");
 	}
 	platform_log("map missing: %s", message);
 	for (index = 0; message[index] && index < NUMBEROF(error_text) - 1; index++)

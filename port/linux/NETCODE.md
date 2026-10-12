@@ -757,5 +757,10 @@ map), so a download is at most about 2.3 GB; every 256 KiB piece is checked
 against its BLAKE2b hash, and the pieces' hashes against the file's. The
 host's word is the root of that: a host can offer any file it likes under a
 map's name, and the map loader then reads it. There is no check of free
-disk space and no question before a download starts
-(`network.map_download`, on by default).
+disk space and no question before a download starts, so
+`network.map_download` is off by default on Apple builds: joining a game on
+a map the device lacks then leaves the game, and the main menu says which
+map is missing and that DOWNLOAD MAPS in Settings > Network Setup turns
+downloads on. The switch governs receiving only; `network.map_share` (a
+host) and `network.map_seed` (a player in another's game) govern sending,
+and stay on.
