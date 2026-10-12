@@ -43,6 +43,13 @@ def main():
     parser.add_argument('--extended-virtual-addressing', action='store_true',
                         help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
                              'in case the device refuses the 4 GB guest arena')
+    parser.add_argument('--cloud-saves', action='store_true',
+                        help='sync saves through the player\'s private iCloud database (docs/cloud-saves.md). The App ID '
+                             'needs the iCloud capability with CloudKit and the container; a signed build with this '
+                             'option lets Xcode add them to your developer account')
+    parser.add_argument('--cloud-container',
+                        help='--cloud-saves: the iCloud container (default iCloud.org.steverice.visr for the '
+                             'org.steverice.visr bundle IDs; required with any other bundle ID)')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
     parser.add_argument('--llvm', default='/opt/homebrew/opt/llvm')
     parser.add_argument('--lld', default='/opt/homebrew/opt/lld/bin/ld.lld')
@@ -62,8 +69,17 @@ def main():
         parser.error('--extended-virtual-addressing is for --visionos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
     args.bundle_id = args.bundle_id or ('org.steverice.visr' if platform_name == 'ios' else f'org.steverice.visr.{platform_name}')
-    if args.mac and (args.simulator or args.unsigned or args.team):
+    if args.mac and (args.simulator or args.unsigned or (args.team and not args.cloud_saves)):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
+    try:
+        cloud = cloud_definitions(args.bundle_id, args.cloud_saves, args.cloud_container)
+    except ValueError as error:
+        parser.error(str(error))
+    if args.mac and args.cloud_saves and not args.team:
+        parser.error('--mac --cloud-saves needs --team: macOS does not run an ad hoc signed app with iCloud entitlements')
+    if args.cloud_saves and args.team:
+        print(f'iCloud saves: this signed build lets Xcode enable the iCloud capability and the container '
+              f'{cloud[1].split("=", 1)[1]} on the App ID {args.bundle_id} and make a new profile', flush=True)
     if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', args.bundle_id):
         parser.error('--bundle-id must be a reverse-DNS identifier (e.g. com.example.halo)')
     if args.jobs < 1:
@@ -100,7 +116,7 @@ def main():
     ):
         shutil.copyfile(ROOT/source, notices/name)
     if args.mac:
-        build_mac(args)
+        build_mac(args, cloud)
         return
     build=ROOT/'build'/platform_name/('app-simulator' if args.simulator else
                 'app-unsigned' if args.unsigned else 'app-device')
@@ -113,7 +129,7 @@ def main():
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
-             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}']
+             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud]
     if not args.tvos:
         # a new CFBundleVersion each build, so an install over the app replaces it
         import time
@@ -168,6 +184,23 @@ def opengles_framework(folder):
     return folder
 
 
+def cloud_definitions(bundle_id, cloud_saves, cloud_container):
+    """the CMake definitions for --cloud-saves: off unless asked for, and then with a container, which only
+    the project's own bundle IDs have a default for (a container belongs to one developer team)"""
+    if not cloud_saves:
+        if cloud_container:
+            raise ValueError('--cloud-container is for --cloud-saves builds')
+        return ['-DHALO_CLOUD_SAVES=OFF']
+    if not cloud_container:
+        if bundle_id != 'org.steverice.visr' and not bundle_id.startswith('org.steverice.visr.'):
+            raise ValueError(f'--cloud-saves with the bundle ID {bundle_id} needs --cloud-container '
+                             '(an iCloud container of your own team, e.g. iCloud.com.yourname.visr)')
+        cloud_container = 'iCloud.org.steverice.visr'
+    if not re.fullmatch(r'iCloud\.[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', cloud_container):
+        raise ValueError('--cloud-container must look like iCloud.com.yourname.visr')
+    return ['-DHALO_CLOUD_SAVES=ON', f'-DHALO_CLOUD_CONTAINER={cloud_container}']
+
+
 def mac_build_folder(environment=None):
     """where the Catalyst build goes: build/mac/app in the checkout, or, on a host that runs developer-built
     apps only from one folder (HALO_MAC_BUILD, set by that host's job runner), a folder per
@@ -178,18 +211,22 @@ def mac_build_folder(environment=None):
     return ROOT / 'build/mac/app'
 
 
-def build_mac(args):
+def build_mac(args, cloud):
     """The iOS project built for Mac Catalyst: configured as iOS, built with the macOS SDK"""
     build=mac_build_folder()
     frameworks=opengles_framework(ROOT/'build/mac/frameworks')
     import time
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
-        '-DHALO_DEVELOPMENT_TEAM=','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
-        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
+        f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
+        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',*cloud)
+    # ad hoc, except with --cloud-saves: iCloud entitlements need a development signature and a Mac profile
+    # (and the Mac itself registered with the team, which a Mac profile lists as its device)
+    signing=(['-allowProvisioningUpdates','-allowProvisioningDeviceRegistration'] if args.cloud_saves else
+             ['CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM='])
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',
         '-sdk','macosx','SDK_VARIANT=iosmac','SUPPORTS_MACCATALYST=YES','DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER=NO',
-        'CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM=')
+        *signing)
     print(f'App: {build}/Release-maccatalyst/VISR.app')
 
 

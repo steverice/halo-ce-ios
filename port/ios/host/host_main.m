@@ -5,6 +5,7 @@
 #include "guest_image.h"
 #include "host_display_pin.h"
 #include "host_join_link.h"
+#include "host_cloud_saves.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
 #endif
@@ -37,7 +38,12 @@ void host_fatal(const char *format,...) {
     if(!getenv("HALO_RUNNER"))SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"VISR",text,NULL);exit(1);
 }
 void host_abort(const char *reason) { host_logf(HOST_LOG_ERROR,"guest abort: %s",reason);abort(); }
-void host_exit(int code) {host_logf(HOST_LOG_INFO,"game exit %d",code);exit(code);}
+void host_exit(int code) {
+    host_logf(HOST_LOG_INFO,"game exit %d",code);
+    /* a save made just before the app is left still goes up (nothing without HALO_CLOUD_SAVES) */
+    host_cloud_saves_leaving(3);
+    exit(code);
+}
 int host_errno(void) {return host_linux_errno(errno);}
 void host_debug_thread_started(void) {}
 void host_debug_thread_exited(void) {}
@@ -252,6 +258,9 @@ int main(int argc,char **argv) {
                 host_exit(0);}];
 #endif
         UIApplication.sharedApplication.idleTimerDisabled=YES;
+        /* iCloud saves (nothing without HALO_CLOUD_SAVES): begun before the import screen, whose
+           time on a new or purged device is also the time the saves take to come back */
+        host_cloud_saves_start(data_root,save_root);
 #if TARGET_OS_MACCATALYST
         /* a runner's run (tools/mac_run.py sets HALO_RUNNER) must not slow down when its window is covered
            or minimized: App Nap would throttle its timers and drawable presentation */
@@ -330,6 +339,8 @@ int main(int argc,char **argv) {
         size_t stack_size=16*1024*1024;
         void *stack=host_low_map(stack_size+0x4000,PROT_READ|PROT_WRITE);
         if(!stack)host_fatal("could not allocate game stack");mprotect(stack,0x4000,PROT_NONE);
+        /* the saves are compared with iCloud's before the game reads them, and not replaced after */
+        host_cloud_saves_before_game();
         host_logf(HOST_LOG_INFO,"entering guest at %08x, data %s",host_image.header->start,data_root);
         host_guest_on_stack((uintptr_t)host_pointer(host_image.header->start),guest_pointer(boot),host_arena,(char *)stack+stack_size+0x4000);
     }

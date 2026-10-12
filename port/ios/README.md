@@ -133,6 +133,16 @@ Keep `maps` directly inside Documents. `config.toml`, `debug.txt`, and
 `ios-runtime.log` are available there for diagnostics. Back up `Documents/save`
 before uninstalling or changing bundle IDs.
 
+### iCloud saves
+
+`tools/ios_build.py --cloud-saves` builds an app that syncs profiles, finished
+levels, the Save and Quit checkpoint and custom game types through the
+player's private iCloud database. It needs a paid developer team and an iCloud
+container, and the first signed build with it changes the App ID's
+capabilities. [docs/cloud-saves.md](../../docs/cloud-saves.md) has the
+behavior, the Settings rows, the privacy notes and the build steps. Without
+the option the app has none of it.
+
 ### Upscaled textures in the Settings app
 
 On iPhone, iPad and Apple Vision Pro, the app's page in the system Settings app
