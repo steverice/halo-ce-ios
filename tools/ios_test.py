@@ -70,6 +70,12 @@ run(BUILD/'join-link-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/frame_pacer_probe.c', '-o', BUILD/'frame-pacer-probe')
 run(BUILD/'frame-pacer-probe')
+# the device benchmark's metrics, plan and journal (port/runtime/benchmark_*.c): percentiles of made-up frames,
+# the sweep walked with made-up devices, and the journal cut at every byte and after every write
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
+    'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
+run(BUILD/'benchmark-probe')
 # the Metal backend's redundant-state filter (metal_state_cache.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
