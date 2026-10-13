@@ -1771,17 +1771,31 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 	test's area (lens flares, rasterizer_lights.c), a split-screen window's
 	or the screen's alike */
 	device.query_area[index] = target_scale[0] * target_scale[1];
+	/* A frame with stereo's eyes keeps the yes-or-no answer (0: see
+	visibility_unscaled): a test's draws go to both eyes, whose counts would
+	add, an eye's foveated target has fewer pixels where the rate map thins
+	it, and one eye can see a light the other can't. */
+	if (halo_stereo_frame()->eye_count == 2)
+		device.query_area[index] = 0.0f;
 	device.query_pending[index] = TRUE;
 	gpu_visibility_end((uint32_t)index);
 	return S_OK;
 }
 
-/* a count of samples in the game's pixels */
+/* a count of samples in the game's pixels: the target's pixels over how
+many of them make one game pixel, more than one at a higher render
+resolution and fewer under the render-size cap. An area of 0 marks a test
+that only says whether anything passed (stereo, D3DDevice_EndVisibilityTest):
+more than any test covers, as GPU_OCCLUSION_ANY_SAMPLE reports. */
 static uint32_t visibility_unscaled(uint32_t samples, DWORD index)
 {
 	float area = device.query_area[index];
 
-	return area > 1.0f ? (uint32_t)(samples / area + 0.5f) : samples;
+	if (area <= 0.0f)
+		return samples ? VISIBILITY_ALL_SAMPLES : 0;
+	if (area == 1.0f)
+		return samples;
+	return (uint32_t)(samples / area + 0.5f);
 }
 
 HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULONGLONG *time_stamp)

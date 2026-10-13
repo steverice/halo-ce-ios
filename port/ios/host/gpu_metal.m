@@ -202,6 +202,14 @@ function, its fallback when specializing fails */
 static BOOL specialize_off;
 /* debug.fixed_timestep: visibility answers wait for the GPU (visibility_result) */
 static BOOL visibility_wait;
+/* visibility tests count the samples that passed (MTLVisibilityResultModeCounting,
+GPU_OCCLUSION_EXACT) where the GPU can: from the A9's family (Apple3) and on
+every Mac. An A8 only says whether any passed (GPU_OCCLUSION_ANY_SAMPLE). */
+static BOOL visibility_counts;
+/* an answer: the serial of the command buffer that gave it over the count
+(or the yes-or-no), which fits a 4K frame's pixels three times over */
+#define VISIBILITY_COUNT_BITS 25
+#define VISIBILITY_COUNT_MAXIMUM ((1ull << VISIBILITY_COUNT_BITS) - 1)
 
 /* the open command buffer and render pass */
 static id<MTLCommandBuffer> commands;
@@ -511,16 +519,21 @@ static void commit(BOOL frame_end)
 			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
 		for (test = 0; test < pending.length / sizeof(*tests); test++)
 		{
-			uint8_t answer = 0;
+			/* the samples its draws passed, added up (a yes-or-no test's
+			entries are 0 or not, and any that isn't makes the answer 1) */
+			uint64_t answer = 0;
 
 			for (entry = 0; entry < tests[test].count; entry++)
-				if (entries[(tests[test].first + entry) % VISIBILITY_ENTRIES])
-					answer = 1;
+				answer += entries[(tests[test].first + entry) % VISIBILITY_ENTRIES];
+			if (!visibility_counts)
+				answer = answer != 0;
+			else if (answer > VISIBILITY_COUNT_MAXIMUM)
+				answer = VISIBILITY_COUNT_MAXIMUM;
 			{
-				uint64_t value = (serial << 1) | answer;
+				uint64_t value = (serial << VISIBILITY_COUNT_BITS) | answer;
 				uint64_t seen = atomic_load(&visibility_answers[tests[test].slot]);
 
-				while (seen >> 1 <= serial &&
+				while (seen >> VISIBILITY_COUNT_BITS <= serial &&
 					!atomic_compare_exchange_weak(&visibility_answers[tests[test].slot], &seen, value))
 					;
 			}
@@ -3155,7 +3168,8 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			visibility.count++;
 			visibility.entry_open = 1;
 			((uint64_t *)visibility_buffer.contents)[entry] = 0;
-			[encoder setVisibilityResultMode:MTLVisibilityResultModeBoolean offset:entry * sizeof(uint64_t)];
+			[encoder setVisibilityResultMode:visibility_counts ? MTLVisibilityResultModeCounting : MTLVisibilityResultModeBoolean
+				offset:entry * sizeof(uint64_t)];
 			metal_state_always(&state_cache);
 		}
 		if (metal_state_object(&state_cache, METAL_STATE_PIPELINE, (__bridge void *)pipeline, 0))
@@ -3290,7 +3304,8 @@ static void gpu_metal_visibility_end(uint32_t slot)
 	}
 }
 
-/* whether any sample passed (GPU_OCCLUSION_ANY_SAMPLE). With the fixed
+/* how many samples passed (GPU_OCCLUSION_EXACT), or on a GPU that can't
+count, whether any did (GPU_OCCLUSION_ANY_SAMPLE). With the fixed
 timestep, a result the GPU hasn't written yet is waited for, committing the
 open command buffer if it writes it: the game asks again until it has an
 answer (lens flares), so an answer now keeps runs repeatable, as a wait under
@@ -3307,7 +3322,7 @@ static uint32_t gpu_metal_visibility_result(uint32_t slot, uint32_t *samples)
 			return 1;
 		if (!visibility_wait)
 		{
-			*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & 1);
+			*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & VISIBILITY_COUNT_MAXIMUM);
 			return 1;
 		}
 		if (visibility.slots[slot].serial == current_serial)
@@ -3315,9 +3330,9 @@ static uint32_t gpu_metal_visibility_result(uint32_t slot, uint32_t *samples)
 		/* wait for the answer itself: waitUntilCompleted can return before
 		the completion handler has run, and a later command buffer's handler
 		can raise completed_serial before this one's has written the answer */
-		while ((atomic_load(&visibility_answers[slot]) >> 1) < visibility.slots[slot].serial)
+		while ((atomic_load(&visibility_answers[slot]) >> VISIBILITY_COUNT_BITS) < visibility.slots[slot].serial)
 			[last_committed waitUntilCompleted];
-		*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & 1);
+		*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & VISIBILITY_COUNT_MAXIMUM);
 		return 1;
 	}
 }
@@ -4664,7 +4679,16 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
 		system_frames_start();
 #endif
-		capabilities->occlusion_mode = GPU_OCCLUSION_ANY_SAMPLE;
+		visibility_counts = [device supportsFamily:MTLGPUFamilyApple3] || [device supportsFamily:MTLGPUFamilyMac2];
+		{
+			/* debug.visibility_any_sample: the yes-or-no answer everywhere, to compare */
+			char value[8];
+
+			host_config_string("debug.visibility_any_sample", "false", value, sizeof(value));
+			if (!strcmp(value, "true"))
+				visibility_counts = NO;
+		}
+		capabilities->occlusion_mode = visibility_counts ? GPU_OCCLUSION_EXACT : GPU_OCCLUSION_ANY_SAMPLE;
 		capabilities->s3tc = compressed_textures ? 1 : 0;
 		/* border colors stay inside the backend: the front end doesn't read
 		border_clamp, and a GL run and a Metal run report the same line */

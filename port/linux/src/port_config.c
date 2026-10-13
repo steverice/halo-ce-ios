@@ -788,6 +788,10 @@ static const struct config_setting config_settings[] =
 		"Log when each frame reached the display and how long after its work began\n"
 		"(the frame pacer, with the Metal renderer; not a Vision Pro or a\n"
 		"simulator), to see how evenly and how late frames are shown." },
+	{ "debug.visibility_any_sample", _config_boolean, "false", "HALO_VISIBILITY_ANY_SAMPLE", _environment_set_is_true, _platform_ios,
+		"The Metal renderer's visibility tests (lens flares) only say whether\n"
+		"anything was visible, as before they counted how much: a light that is\n"
+		"mostly hidden then flares at full strength. For comparing." },
 	{ "debug.frame_load_cpu", _config_real, "0.0", "HALO_FRAME_LOAD_CPU", _environment_value, _platform_ios,
 		"Milliseconds of made-up CPU work added to every frame (the frame pacer),\n"
 		"to see what display.frames_in_flight does when frames don't fit in a\n"
