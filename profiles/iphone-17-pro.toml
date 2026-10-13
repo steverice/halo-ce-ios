@@ -1,0 +1,20 @@
+schema = 1
+name = "iPhone 17 Pro"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPhone18,1"]
+
+[display]
+anisotropic_filtering = 16
+shadow_map_size = 512
+
+[evidence."display.anisotropic_filtering"]
+basis = "assumed"
+why = "Free on the iPad Pro (M1); this phone's one benchmark ran a10 at 119 frames a second at its native 2622x1206 with 16x on (GPU 5.7 ms)."
+
+[evidence."display.shadow_map_size"]
+basis = "assumed"
+why = "The default. The phone's settings sweeps were stopped because it ran hot; nothing but the one benchmark is measured."

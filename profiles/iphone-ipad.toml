@@ -1,0 +1,10 @@
+# Every iPhone and iPad without a profile of its own: the built-in defaults.
+# Split this class by GPU family when a measurement on an older device shows it needs different values.
+
+schema = 1
+name = "iPhone and iPad"
+kind = "class"
+
+[match]
+platform = "ios"
+gpu_family = [1, 0]

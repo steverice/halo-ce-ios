@@ -1,0 +1,21 @@
+schema = 1
+name = "Mac (M2 Max)"
+kind = "model"
+
+[match]
+platform = "mac"
+chips = ["Apple M2 Max"]
+
+[display]
+model_lod = "max"
+compressed_textures = true
+
+[evidence."display.model_lod"]
+basis = "measured"
+why = "Full detail against the game's own choice: 0.633 against 0.626 ms of GPU time at 1920x1440, CPU 3.86 against 3.89 ms. No measurable cost."
+source = "Mac benchmark, a10 intro, 2026-10-06"
+
+[evidence."display.compressed_textures"]
+basis = "measured"
+why = "Compressed against decoded: 0.636 against 0.602 ms of GPU time. No speed difference, and a quarter to an eighth of the texture memory."
+source = "Mac benchmark, a10 intro, 2026-10-05"

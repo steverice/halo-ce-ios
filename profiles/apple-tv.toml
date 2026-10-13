@@ -1,0 +1,27 @@
+# Every Apple TV. The Apple TV HD's own values are in apple-tv-hd.toml.
+
+schema = 1
+name = "Apple TV"
+kind = "class"
+
+[match]
+platform = "tvos"
+gpu_family = [1, 0]
+
+[display]
+renderer = "metal"
+render_height = 1080
+upscaled_textures = false
+
+[evidence."display.renderer"]
+basis = "measured"
+why = "An Apple TV has no Files app or Settings page to choose a renderer with, and its OpenGL ES lacks S3TC, border clamp and base vertex. Metal ran the menu, a10 and b30 on an Apple TV HD with no Metal error."
+source = "Apple TV HD runs, 2026-10-12 and 2026-10-13"
+
+[evidence."display.render_height"]
+basis = "inherited"
+why = "What tvOS builds rendered at before profiles: the build's default, chosen upstream because 4K fill rate is the limit in heavy fights on an Apple TV 4K (3rd generation). Not yet run on an Apple TV 4K here."
+
+[evidence."display.upscaled_textures"]
+basis = "assumed"
+why = "Nothing on an Apple TV makes upscaled textures, and the smallest model has 2 GB of memory."

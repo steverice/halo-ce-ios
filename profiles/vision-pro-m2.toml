@@ -1,0 +1,21 @@
+schema = 1
+name = "Apple Vision Pro (M2)"
+kind = "model"
+
+[match]
+platform = "visionos"
+models = ["RealityDevice14,1"]
+
+[display]
+foveation = true
+render_quality = 0.6
+
+[evidence."display.foveation"]
+basis = "measured"
+why = "Unfoveated, a10 ran at 44.8 frames a second (median frame 22.2 ms) against 90 foveated."
+source = "Headset foveation sweep, a10 benchmark, 2026-10-07"
+
+[evidence."display.render_quality"]
+basis = "measured"
+why = "Every quality from 0.4 to 0.8 had a median frame of 11.1 ms; the 99th percentile was 13.7 ms at 0.6, 14.6 at 0.7, 14.4 at 0.8 and 22.4 at 0.9."
+source = "Headset foveation sweep, a10 benchmark, 2026-10-07"
