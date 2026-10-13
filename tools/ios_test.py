@@ -64,6 +64,10 @@ run(BUILD/'virtual-clock-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')
 run(BUILD/'join-link-probe')
+# the frame pacer's rules (frame_pacer.h), with made-up refreshes and presented times
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/frame_pacer_probe.c', '-o', BUILD/'frame-pacer-probe')
+run(BUILD/'frame-pacer-probe')
 # the Metal backend's redundant-state filter (metal_state_cache.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')

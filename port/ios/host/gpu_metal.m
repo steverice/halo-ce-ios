@@ -182,6 +182,7 @@ static float reversed_depth(float depth);
 static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *physical);
 static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, NSUInteger height);
 #include "host_config.h"
+#include "host_frame_pacer.h"
 #include "host_stereo.h"
 #if TARGET_OS_VISION
 #include "host_theater.h"
@@ -3370,6 +3371,8 @@ static CFTimeInterval refresh_period; /* CACurrentMediaTime's clock */
 	os_unfair_lock_lock(&pacing_lock);
 	refresh_period = link.targetTimestamp - link.timestamp;
 	os_unfair_lock_unlock(&pacing_lock);
+	/* (the pacer's clock: host_frame_pacer.h) */
+	frame_pacer_refresh(link.timestamp, link.targetTimestamp - link.timestamp);
 }
 @end
 
@@ -3664,6 +3667,131 @@ static BOOL frame_rate_sync(void)
 	return NO;
 }
 
+/* the display's 60 Hz blank for the game's vertical blank thread
+(d3d8_device.c), which the pacer keeps from the display link's refreshes */
+static uint32_t gpu_metal_vertical_blank_wait(void)
+{
+	return frame_pacer_vertical_blank_wait();
+}
+
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+/* display.frame_source = "system" (host_frame_pacer.h): the system's own
+pacer, a CAMetalDisplayLink (iOS 17, tvOS 17, macOS 14), hands over one
+drawable for each refresh, on a thread of its own since the game's thread
+never returns to a run loop, and Present takes the latest. One the game
+was too late for is let go when the next comes. The pacer asks for the
+delay it keeps (preferredFrameLatency) and has no rules of its own here. */
+static struct
+{
+	BOOL active;
+	dispatch_semaphore_t came;
+	/* a retained id<CAMetalDrawable>, or NULL */
+	_Atomic(void *) ready;
+} system_frames;
+
+API_AVAILABLE(ios(17.0), tvos(17.0), macCatalyst(17.0))
+@interface SystemFrames : NSObject <CAMetalDisplayLinkDelegate>
+@end
+
+@implementation SystemFrames
+- (void)metalDisplayLink:(CAMetalDisplayLink *)link needsUpdate:(CAMetalDisplayLinkUpdate *)update
+{
+	void *stale = atomic_exchange(&system_frames.ready, (__bridge_retained void *)update.drawable);
+
+	(void)link;
+	if (stale)
+		(void)(__bridge_transfer id<CAMetalDrawable>)stale;
+	else
+		dispatch_semaphore_signal(system_frames.came);
+}
+@end
+
+static void system_frames_start(void)
+{
+	if (!frame_pacer_wants_system_source())
+		return;
+	if (@available(iOS 17.0, tvOS 17.0, macCatalyst 17.0, *))
+	{
+		int latency = frame_pacer_in_flight();
+		NSThread *thread;
+
+		system_frames.came = dispatch_semaphore_create(0);
+		thread = [[NSThread alloc] initWithBlock:^{
+			CAMetalDisplayLink *link = [[CAMetalDisplayLink alloc] initWithMetalLayer:layer];
+			SystemFrames *frames_delegate = [SystemFrames new];
+
+			link.delegate = frames_delegate;
+			if (latency)
+				link.preferredFrameLatency = (float)latency;
+			link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+			[link addToRunLoop:NSRunLoop.currentRunLoop forMode:NSDefaultRunLoopMode];
+			for (;;)
+				[NSRunLoop.currentRunLoop run];
+		}];
+		thread.name = @"Metal system frames";
+		thread.qualityOfService = NSQualityOfServiceUserInteractive;
+		[thread start];
+		system_frames.active = YES;
+		frame_pacer_system_source();
+	}
+	else
+		platform_log("Metal: display.frame_source \"system\" needs iOS 17, tvOS 17 or macOS 14; using \"clock\"");
+}
+
+/* the system's next drawable, waited for 100 ms at most (nil in the
+background, where none come) */
+static id<CAMetalDrawable> system_frame_take(void)
+{
+	void *taken;
+
+	if (dispatch_semaphore_wait(system_frames.came, dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC)))
+		return nil;
+	taken = atomic_exchange(&system_frames.ready, NULL);
+	return taken ? (__bridge_transfer id<CAMetalDrawable>)taken : nil;
+}
+#endif
+
+#if HALO_FRAME_PACING
+/* debug.frame_load_gpu: a made-up GPU load, that many extra full-size
+draws of the frame's picture into a scratch texture before it is presented,
+to see what the pacer's settings do when a frame's work doesn't fit in a
+refresh (debug.frame_load_cpu is the pacer's own, host_frame_pacer.c) */
+static long frame_load_passes;
+static id<MTLTexture> frame_load_target;
+
+static void frame_load_draw(id<MTLTexture> picture)
+{
+	long index;
+
+	if (frame_load_passes <= 0 || !picture)
+		return;
+	if (!frame_load_target)
+	{
+		MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:layer.pixelFormat
+			width:4096 height:4096 mipmapped:NO];
+
+		descriptor.usage = MTLTextureUsageRenderTarget;
+		descriptor.storageMode = MTLStorageModePrivate;
+		frame_load_target = [device newTextureWithDescriptor:descriptor];
+	}
+	for (index = 0; index < frame_load_passes; index++)
+	{
+		MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+		id<MTLRenderCommandEncoder> load;
+
+		pass.colorAttachments[0].texture = frame_load_target;
+		pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+		pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+		load = [commands renderCommandEncoderWithDescriptor:pass];
+		[load setRenderPipelineState:present_pipeline];
+		[load setFragmentTexture:picture atIndex:0];
+		[load setFragmentSamplerState:present_sampler atIndex:0];
+		[load drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		[load endEncoding];
+	}
+}
+#endif
+
 /* ---------- frames */
 
 /* the game's KickPushBuffer: committing here would split render passes */
@@ -3937,6 +4065,9 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
 		BOOL unsynced;
+		/* the frame's dealings with the pacer (host_frame_pacer.h), which
+		decides when it may start toward the display and how long it stays */
+		struct frame_pacer_frame paced;
 
 		command_buffer();
 		pass_finish(YES);
@@ -3993,6 +4124,12 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		frame's CPU time */
 		host_frame_rate_limit();
 		/* (unsynchronized, a frame with no drawable ready isn't shown) */
+		frame_pacer_frame_begin(&paced, frames, pacing.work_started, !frame_held && !unsynced);
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+		if (system_frames.active)
+			drawable = frame_held ? nil : system_frame_take();
+		else
+#endif
 		drawable = frame_held ? nil : unsynced ? free_drawable_take(YES) : (free_drawable_take(NO) ?: [layer nextDrawable]);
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from
@@ -4032,6 +4169,9 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			pass.colorAttachments[0].loadAction = MTLLoadActionClear;
 			pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 			pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+#if HALO_FRAME_PACING
+			frame_load_draw(picture);
+#endif
 			present = [commands renderCommandEncoderWithDescriptor:pass];
 			if (metal_debug)
 				present.label = @"present";
@@ -4050,6 +4190,20 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			{
 				CFTimeInterval hold = pacing_schedule(drawable, &next_frame_due);
 
+				/* (display.frame_pacing's own holds are whole refreshes
+				already; otherwise the pacer says) */
+				if (hold == 0.0)
+					hold = frame_pacer_present(&paced);
+				if (frame_pacer_watches(&paced))
+				{
+					struct frame_pacer_frame shown_frame = paced;
+
+					[drawable addPresentedHandler:^(id<MTLDrawable> shown)
+					{
+						frame_pacer_presented(&shown_frame, shown.presentedTime);
+					}];
+					paced.slot = 0;
+				}
 #if TARGET_OS_SIMULATOR
 				(void)hold;
 				[commands presentDrawable:drawable];
@@ -4061,6 +4215,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 #endif
 			}
 		}
+		/* (a frame with nothing to show: its slot goes back now) */
+		frame_pacer_frame_dropped(&paced);
 		drawable = nil;
 		commit(YES);
 		os_unfair_lock_lock(&compile_stats_lock);
@@ -4386,6 +4542,10 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		metalfx_wanted = NO;
 #endif
 		pacing_start(flags);
+		frame_pacer_start((flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0);
+#if HALO_FRAME_PACING
+		frame_load_passes = (long)host_config_real("debug.frame_load_gpu", 0.0);
+#endif
 		layer = (__bridge CAMetalLayer *)host_sdl_metal_layer();
 		device = MTLCreateSystemDefaultDevice();
 		if (!layer || !device)
@@ -4501,6 +4661,9 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		capabilities->triangle_fans = 1;
 		capabilities->line_loops = 1;
 		capabilities->sampler_lod_bias = 0;
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+		system_frames_start();
+#endif
 		capabilities->occlusion_mode = GPU_OCCLUSION_ANY_SAMPLE;
 		capabilities->s3tc = compressed_textures ? 1 : 0;
 		/* border colors stay inside the backend: the front end doesn't read

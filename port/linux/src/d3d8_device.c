@@ -560,6 +560,7 @@ static BOOL vertical_blank_thread_started = FALSE;
 static void *vertical_blank_thread(void *unused)
 {
 	struct timespec next;
+	BOOL followed = FALSE;
 
 	(void)unused;
 	clock_gettime(CLOCK_MONOTONIC, &next);
@@ -567,13 +568,27 @@ static void *vertical_blank_thread(void *unused)
 	{
 		D3DCALLBACK callback;
 
-		next.tv_nsec += VERTICAL_BLANK_NANOSECONDS;
-		if (next.tv_nsec >= 1000000000L)
+		/* the display's own blank where the backend follows one (Metal's
+		display link: a timer here drifts against the refresh, and frames
+		paced by the blank then bunch), else this timer, restarted from now
+		after a spell of the display's */
+		if (device.gl_ready && gpu_vertical_blank_wait())
 		{
-			next.tv_nsec -= 1000000000L;
-			next.tv_sec++;
+			followed = TRUE;
 		}
-		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+		else
+		{
+			if (followed)
+				clock_gettime(CLOCK_MONOTONIC, &next);
+			followed = FALSE;
+			next.tv_nsec += VERTICAL_BLANK_NANOSECONDS;
+			if (next.tv_nsec >= 1000000000L)
+			{
+				next.tv_nsec -= 1000000000L;
+				next.tv_sec++;
+			}
+			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+		}
 
 		pthread_mutex_lock(&vertical_blank_lock);
 		vertical_blank_count++;
