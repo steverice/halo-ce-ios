@@ -527,6 +527,25 @@ fraction (render.c sets it before the eyes; zero until then), which the
 host's room tint takes as well, so the two move in step */
 void halo_stereo_set_fade(const float rgb_intensity[4]);
 void halo_stereo_fade(float rgb_intensity[4]);
+/* 1 while the eyes are held black at a level's start: in HEAD mode (and the
+side-by-side view), from a map's load until its first three ticks have run
+(halo_level_first_tick_pending, cinematic_screen.c) or the film takes the
+view, so the frames drawn before the level's script can start its opening
+cutscene never show the level from the player's start: a tenth of a second
+of black after the load on a level that opens on the player. render.c draws the hold as an opaque black
+script fade. At most HALO_STEREO_LEVEL_START_HOLD_FRAMES frames, so a game
+whose time never leaves 0 still shows */
+#define HALO_STEREO_LEVEL_START_HOLD_FRAMES 300
+int halo_stereo_level_start_hold(void);
+int halo_level_first_tick_pending(void);
+/* the same hold on a flat screen (and in HEAD mode without eyes): 1 for a
+campaign level's frames before its first three ticks. render.c draws nothing
+but the cleared target for them (a flash can miss a frame while its pipeline
+compiles), which follows the loading screen's fade to black, so no frame of
+the player's start shows */
+int halo_level_start_hold_flat(void);
+/* 1 while a campaign level is the running game (cinematic_screen.c) */
+int halo_level_start_campaign(void);
 /* The film's and the 3D TV's one mapping (stereo.c has the math): from
 the depth share (infinity's parallax as a share of the viewer's eye
 separation), the convergence (meters ahead of the camera on the screen's

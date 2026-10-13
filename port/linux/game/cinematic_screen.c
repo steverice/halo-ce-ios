@@ -25,6 +25,8 @@ picture.
 #include "units/units.h"
 #include "effects/player_effects.h"
 #include "game/game.h"
+#include "scenario/scenario.h"
+#include "scenario/scenario_definitions.h"
 #include "main/console.h"
 #include "math/periodic_functions.h"
 #include "math/real_math.h"
@@ -200,6 +202,23 @@ int halo_screen_fade(float tick_fraction, float rgb_intensity[4])
 	return 1;
 }
 
+/* 1 from a map's load until HALO_LEVEL_START_TICKS of its ticks have run: the
+level's opening script needs them to start its cutscene (a30 and a10 put up
+the cutscene's camera on the third tick, their fade a tick before it), and
+until then the camera shows the player's start, which the level never meant
+to show (a30's beach before the dropship ride). stereo.c holds the eyes
+black over it (halo_stereo_level_start_hold) */
+#define HALO_LEVEL_START_TICKS 3
+int halo_level_first_tick_pending(void)
+{
+	return game_time_get() < HALO_LEVEL_START_TICKS;
+}
+
+int halo_level_start_campaign(void)
+{
+	return game_in_progress() && global_scenario_index != NONE && global_scenario_get()->type == _scenario_type_solo;
+}
+
 /* The zoom's magnification for the local player's zoomed pass (render.c), as the
 HUD reads it for the aim assist's range (hud.c): the current weapon of the
 unit that aims (a gunner's seat's too) at the player's zoom level; 1 when
@@ -222,3 +241,4 @@ float halo_zoom_magnification(short local_player_index)
 		return 1.0f;
 	return weapon_get_zoom_magnification(weapon_index, zoom_level);
 }
+
