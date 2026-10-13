@@ -94,8 +94,9 @@ static inline int frame_pacer_watches(const struct frame_pacer_frame *frame)
 	return frame->watched;
 }
 
-/* the display showed the frame at this time (0 or less: it was never
-shown); any thread */
+/* the display showed the frame at this time (a drawable's presentedTime; 0
+or less when the system doesn't say, as on a virtual display, and the time
+of this call stands in for it, a little late); any thread */
 void frame_pacer_presented(const struct frame_pacer_frame *frame, double at);
 
 /* the frame had nothing to show (no drawable, in the background) */

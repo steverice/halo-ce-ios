@@ -174,7 +174,11 @@ void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
 	double interval, period;
 	unsigned long frames = 0, intervals = 0, late = 0;
 	double longest = 0.0;
+	int noticed = at <= 0.0;
 
+	/* (no time from the system: when it told us) */
+	if (noticed)
+		at = now_seconds();
 	pthread_mutex_lock(&pacer.lock);
 	if (frame->slot)
 	{
@@ -196,11 +200,9 @@ void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
 	pthread_mutex_unlock(&pacer.lock);
 	if (pacer.times)
 	{
-		if (at > 0.0)
-			platform_log("present time: frame %lu at %.3f ms, %.3f ms after the one before, %.3f ms after it began",
-				frame->number, at * 1e3, interval * 1e3, frame->began > 0.0 ? (at - frame->began) * 1e3 : 0.0);
-		else
-			platform_log("present time: frame %lu was not shown", frame->number);
+		platform_log("present time: frame %lu at %.3f ms, %.3f ms after the one before, %.3f ms after it began%s",
+			frame->number, at * 1e3, interval * 1e3, frame->began > 0.0 ? (at - frame->began) * 1e3 : 0.0,
+			noticed ? " (noticed: the system gave no time)" : "");
 	}
 	if (frames)
 		platform_log("frame pacer: of the last %lu frames shown, %lu came over 1.5 times their share of the display after the "
