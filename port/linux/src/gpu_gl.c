@@ -9,6 +9,7 @@ gpu.h declares.
 #include "gpu.h"
 #include "gl.h"
 #include "halo_stereo.h"
+#include "halo_display.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -1023,6 +1024,7 @@ static void gpu_gl_initialize(uint32_t flags, struct gpu_capabilities *capabilit
 			glVertexAttrib4fv(index, initial);
 	}
 	state_invalidate();
+	capabilities->upscale = 1;
 	GPU_CAPABILITIES_LOG(platform_log, capabilities);
 	draw_flush_initialize();
 }
@@ -1899,19 +1901,40 @@ static void gpu_gl_flush(void)
 	glFlush();
 }
 
+/* display.native_hud (gpu.h): the scene's picture stretched over the
+display-sized back buffer with the filter gpu_gl_present's blit uses, inside
+area */
+static void gpu_gl_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area)
+{
+	const struct gpu_texture_description *from = &texture_record(source)->description;
+	const struct gpu_texture_description *to = &texture_record(destination)->description;
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(source, 0));
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer_get(destination, 0));
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glEnable(GL_SCISSOR_TEST);
+	glScissor(area->x, area->y, area->width, area->height);
+	glBlitFramebuffer(0, 0, (GLint)from->width, (GLint)from->height, 0, 0, (GLint)to->width, (GLint)to->height,
+		GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	glDisable(GL_SCISSOR_TEST);
+	/* the blit bypassed the cached state */
+	state_invalidate();
+}
+
 static uint32_t gpu_gl_present(gpu_texture back_buffer)
 {
 	const struct gpu_texture_description *description = &texture_record(back_buffer)->description;
 	int window_width, window_height, width, height, x, y;
 
 	platform_video_drawable_size(&window_width, &window_height);
-	/* letterbox to the back buffer's aspect ratio */
-	width = window_width;
-	height = (int)((long)window_width * description->height / description->width);
-	if (height > window_height)
+	/* letterbox to the back buffer's aspect ratio (a picture within a pixel
+	of its place at its own size: halo_display.h) */
 	{
-		height = window_height;
-		width = (int)((long)window_height * description->width / description->height);
+		struct halo_display_size place = halo_display_present_size(window_width, window_height,
+			(long)description->width, (long)description->height);
+
+		width = (int)place.width;
+		height = (int)place.height;
 	}
 	x = (window_width - width) / 2;
 	y = (window_height - height) / 2;

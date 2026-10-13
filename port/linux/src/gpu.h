@@ -62,7 +62,11 @@ struct gpu_capabilities
 	depth from 0..1 to -1..1 */
 	uint8_t clip_y_flip;
 	uint8_t clip_z_remap;
-	uint8_t pad[3];
+	/* gpu_upscale works here, so the front end may draw the HUD and menus at
+	the display's size over a smaller scene (display.native_hud,
+	d3d8_device.c); 0 on visionOS, whose presenters place the HUD themselves */
+	uint8_t upscale;
+	uint8_t pad[2];
 	uint32_t max_texture_size;
 };
 
@@ -506,6 +510,14 @@ struct gpu_stereo_present
 	int32_t cut_requested;
 };
 
+/* display.native_hud: source, a render target, drawn over the whole of
+destination, a larger one, with the filter gpu_present scales a picture by
+(display.upscaler's MetalFX where the area is the whole target), all four
+channels, inside area (destination's pixels) only. What destination held
+outside area stays. The front end calls it when a view's scene is drawn and
+its HUD is next (halo_render_scene_end) */
+void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area);
+
 /* presents a stereo frame as gpu_present does a mono one (and returns the
 same). The GL backend's debug view puts eye 0 in the left half of the window,
 eye 1 in the right (or, zoomed, the zoomed picture in both), and the HUD over
@@ -639,6 +651,7 @@ its own functions. */
 	P(visibility_end, (uint32_t slot), (slot)) \
 	F(uint32_t, visibility_result, (uint32_t slot, uint32_t *samples), (slot, samples)) \
 	P(flush, (void), ()) \
+	P(upscale, (gpu_texture source, gpu_texture destination, const struct gpu_rect *area), (source, destination, area)) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \
 	F(uint32_t, call_count_take, (void), ()) \

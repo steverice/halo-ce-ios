@@ -95,6 +95,11 @@ void gpu_flush(void)
 	host_gpu_flush();
 }
 
+void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area)
+{
+	host_gpu_upscale(source, destination, area);
+}
+
 uint32_t gpu_present(gpu_texture back_buffer)
 {
 	return host_gpu_present(back_buffer);

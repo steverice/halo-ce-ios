@@ -34,6 +34,11 @@ enum
 	quad shows this layer whole, and the HUD's own draws stay in their
 	pieces */
 	HALO_STEREO_LAYER_UI = 5,
+	/* not stereo's: d3d8_device.c's key for the mono back buffer at the
+	display's own size, where the HUD and menus draw over a smaller scene
+	(display.native_hud). Never the game's current layer, and never made in
+	a stereo frame */
+	HALO_STEREO_LAYER_NATIVE = 6,
 	/* d3d8_device.c's key for a HUD group's own target: this plus the group
 	(enum halo_hud_group). The game's layer stays HALO_STEREO_LAYER_HUD; the
 	device keys the HUD layer's color target by the current group, and the

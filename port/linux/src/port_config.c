@@ -144,6 +144,12 @@ static const struct config_setting config_settings[] =
 		"Render at this fraction of the display's pixels each way (0.25 to 1.0;\n"
 		"0.67 draws under half the pixels), scaled back up by display.upscaler.\n"
 		"display.render_height, when set, caps the result." },
+	{ "display.native_hud", _config_boolean, "true", "HALO_NATIVE_HUD", _environment_value, _platform_ios,
+		"When the scene renders below the display's size (display.render_height,\n"
+		"display.render_scale, or a build that sets a render height), draw the HUD,\n"
+		"menus, text and letterbox bars at the display's own resolution over the\n"
+		"scaled-up scene. false scales them up with the scene. No effect, and no\n"
+		"cost, at native resolution or on Apple Vision Pro." },
 	{ "display.upscaler", _config_string, "\"bilinear\"", "HALO_UPSCALER", _environment_value, _platform_ios,
 		"How a picture rendered below the display's size is scaled up: \"bilinear\"\n"
 		"(default), or \"metalfx\" (Metal renderer, on a device: MetalFX's spatial\n"

@@ -24,6 +24,7 @@ but never returns to its run loop, which would otherwise drain them.
 #include "ios_host.h"
 #include "metal_state_cache.h"
 #include "metal_compile_async.h"
+#include "halo_display.h"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -455,10 +456,106 @@ static const char *store_name(MTLStoreAction store)
 	return store == MTLStoreActionStore ? "store" : store == MTLStoreActionDontCare ? "dontcare" : "unknown";
 }
 
+/* display.native_hud: the pass on the display-sized back buffer, which
+gpu_metal_upscale opens in a command buffer of its own (the frame's earlier
+passes are committed first) and the HUD's draws continue. The HUD leaves it
+for a moment to draw into a small target of its own (the motion tracker's
+blips) and comes back to draw that target over the scene; ending the pass
+there and opening it again would store the whole back buffer and load it
+back, every frame. So a pass that interrupts it is encoded in another command
+buffer, with the display-sized pass's encoder set aside still open (parked),
+and that buffer is committed first when the draws come back: Metal runs
+command buffers in the order they are committed, so the interrupting pass
+runs after the scene and before the whole display-sized pass, the draws made
+before it included. That is the order the game asked for only if the
+interrupting pass neither reads what those earlier draws wrote nor writes
+what they read, which is checked: it may not sample the back buffer
+(gpu_metal_draw), and its targets may not have been used in the display-sized
+pass's command buffer (native_side_allowed). Otherwise the pass ends and
+reopens, in order. */
+static struct
+{
+	/* the back buffer whose pass is open or parked; 0: none */
+	gpu_texture color;
+	BOOL parked;
+	/* parked: the pass's command buffer, encoder and encoder state */
+	id<MTLCommandBuffer> commands;
+	id<MTLRenderCommandEncoder> encoder;
+	struct metal_state_cache cache;
+	int depth_clamp, entry_open;
+	unsigned long pass_commands;
+	/* since the last frame's log line */
+	unsigned long parks, in_order;
+} native_pass;
+
+static void pass_finish_open(BOOL frame_end);
+
+static void native_park(void)
+{
+	native_pass.commands = commands;
+	native_pass.encoder = encoder;
+	native_pass.cache = state_cache;
+	native_pass.depth_clamp = encoder_depth_clamp;
+	native_pass.entry_open = visibility.entry_open;
+	native_pass.pass_commands = pass_commands;
+	native_pass.parked = YES;
+	native_pass.parks++;
+	commands = nil;
+	encoder = nil;
+	metal_state_reset(&state_cache);
+	encoder_depth_clamp = 0;
+	visibility.entry_open = 0;
+	pass_color = pass_depth = 0;
+	pass_commands = 0;
+	if (pass_log)
+		[pass_log appendString:@"; parked for"];
+}
+
+/* ends the interrupting pass, commits its command buffer ahead of the
+display-sized pass's, and makes that pass the open one again */
+static void native_unpark(void)
+{
+	pass_finish_open(NO);
+	if (commands)
+	{
+		[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
+		{
+			if (completed.status == MTLCommandBufferStatusError)
+				platform_log("Metal: a command buffer ahead of the HUD's failed: %s", completed.error.description.UTF8String);
+			if (completed.GPUEndTime > completed.GPUStartTime)
+				gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+		}];
+		[commands commit];
+	}
+	commands = native_pass.commands;
+	encoder = native_pass.encoder;
+	state_cache = native_pass.cache;
+	encoder_depth_clamp = native_pass.depth_clamp;
+	visibility.entry_open = native_pass.entry_open;
+	pass_commands = native_pass.pass_commands;
+	pass_color = native_pass.color;
+	pass_depth = 0;
+	native_pass.commands = nil;
+	native_pass.encoder = nil;
+	native_pass.parked = NO;
+	if (pass_log)
+		[pass_log appendString:@"\n  the display-sized pass continues"];
+}
+
 /* ends the open pass. The depth-stencil target is stored, unless the pass
 ends the frame (Present): nothing reads the screen's depth after it, and at
 the display's size it's tens of megabytes of writes a frame */
 static void pass_finish(BOOL frame_end)
+{
+	/* display.native_hud: with its pass parked, the pass that ends is that
+	one, after the interrupting pass ahead of it */
+	if (native_pass.parked)
+		native_unpark();
+	native_pass.color = 0;
+	pass_finish_open(frame_end);
+}
+
+static void pass_finish_open(BOOL frame_end)
 {
 	if (encoder && pass_depth_texture)
 	{
@@ -1442,6 +1539,15 @@ static void pass_traffic_count(MTLRenderPassDescriptor *pass)
 		pass.stencilAttachment.storeAction, 1.0);
 }
 
+/* display.native_hud (native_pass): a pass on these targets may run ahead
+of the display-sized pass: nothing in that pass's command buffer has used
+them yet (a draw made before this one that sampled one would see what this
+pass draws) */
+static BOOL native_side_allowed(MetalTexture *color, MetalTexture *depth)
+{
+	return !(color && color->used == current_serial) && !(depth && depth->used == current_serial);
+}
+
 static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_clear *clear)
 {
 	MetalTexture *color_record = texture_record(color), *depth_record = texture_record(depth);
@@ -1452,7 +1558,27 @@ static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_cl
 	if ((color && (!color_record || !color_record->texture)) || (depth && (!depth_record || !depth_record->texture)) ||
 		(!color && !depth))
 		return NO;
-	pass_end();
+	/* display.native_hud (native_pass): the draws come back to the parked
+	pass; or leave it for a pass that may run ahead of it; or neither */
+	if (native_pass.parked && color == native_pass.color && !depth && !clear)
+	{
+		native_unpark();
+		return YES;
+	}
+	if (native_pass.color && color != native_pass.color && native_side_allowed(color_record, depth_record) &&
+		(native_pass.parked || (encoder && pass_color == native_pass.color && !pass_depth)))
+	{
+		if (native_pass.parked)
+			pass_finish_open(NO);
+		else
+			native_park();
+	}
+	else
+	{
+		if (native_pass.color && encoder)
+			native_pass.in_order++;
+		pass_end();
+	}
 	pass = [MTLRenderPassDescriptor renderPassDescriptor];
 	pass.visibilityResultBuffer = visibility_buffer;
 	/* a foveated eye's targets render through its map; both attachments are
@@ -1545,6 +1671,8 @@ static id<MTLTexture> upscaled;
 
 static id<MTLFunction> clear_vertex, clear_fragment, present_vertex, present_fragment;
 static id<MTLRenderPipelineState> present_pipeline;
+/* gpu_upscale's: the present quad into a BGRA8 render target with no depth */
+static id<MTLRenderPipelineState> upscale_pipeline;
 static id<MTLSamplerState> present_sampler;
 
 static NSString *const utility_source =
@@ -1571,6 +1699,12 @@ static NSString *const utility_source =
 	"\tsampler linear [[sampler(0)]])\n"
 	"{\n"
 	"\treturn float4(picture.sample(linear, in.coordinates).rgb, 1.0);\n"
+	"}\n"
+	/* gpu_upscale: alpha too, which the game's later draws may read */
+	"fragment float4 upscale_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
+	"\tsampler linear [[sampler(0)]])\n"
+	"{\n"
+	"\treturn picture.sample(linear, in.coordinates);\n"
 	"}\n";
 
 static id<MTLRenderPipelineState> clear_pipeline(MTLPixelFormat color, MTLPixelFormat depth, uint32_t mask)
@@ -3131,6 +3265,21 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 		}
 		if (!pipeline)
 			return 0;
+		/* display.native_hud (native_pass): a draw outside the display-sized
+		pass that samples the back buffer must follow that pass's draws so
+		far, so the pass ends here and the frame goes on in order */
+		if (native_pass.color && draw->color_target != native_pass.color)
+		{
+			int stage;
+
+			for (stage = 0; stage < GPU_STAGE_COUNT; stage++)
+				if (draw->stages[stage].texture == native_pass.color)
+				{
+					native_pass.in_order++;
+					pass_end();
+					break;
+				}
+		}
 		if (!pass_begin(draw->color_target, draw->depth_target, NULL))
 			return 1;
 		target_size(draw->color_target, draw->depth_target, &width, &height);
@@ -3693,7 +3842,16 @@ static void gpu_metal_flush(void)
 
 /* the back buffer scaled to width x height by MetalFX when it's smaller and
 display.upscaler asks for it, else the back buffer itself */
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output);
+
 static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long height)
+{
+	return upscale_into(back_buffer, width, height, nil);
+}
+
+/* (output: a texture of that size to scale into in place of the scaler's
+own, if its usage allows; the result says which was written) */
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output)
 {
 #ifdef HAVE_METALFX
 	if (@available(iOS 16.0, tvOS 16.0, visionOS 1.0, *))
@@ -3729,16 +3887,20 @@ static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long heigh
 			platform_log("Metal: MetalFX scales %lux%lu up to %ldx%ld", (unsigned long)back_buffer.width,
 				(unsigned long)back_buffer.height, width, height);
 		}
+		if (!output || (output.usage & upscaler.outputTextureUsage) != upscaler.outputTextureUsage ||
+			output.pixelFormat != upscaled.pixelFormat || (long)output.width != width || (long)output.height != height)
+			output = upscaled;
 		upscaler.colorTexture = back_buffer;
-		upscaler.outputTexture = upscaled;
+		upscaler.outputTexture = output;
 		upscaler.inputContentWidth = back_buffer.width;
 		upscaler.inputContentHeight = back_buffer.height;
 		[upscaler encodeToCommandBuffer:commands];
-		return upscaled;
+		return output;
 	}
 #endif
 	(void)width;
 	(void)height;
+	(void)output;
 	return back_buffer;
 }
 
@@ -3948,6 +4110,87 @@ static void async_frame_end(void)
 	frame_held = NO;
 }
 
+/* display.native_hud (gpu.h): the scene's picture into the display-sized
+back buffer, where the HUD draws next. The quad goes in the pass the HUD's
+draws then continue (pass_begin finds it open), so the two cost one pass; an
+area that is the whole target makes the pass's load action a clear. The
+scene's pass ends here, and its depth and stencil are not stored: the draws
+that follow bind none, and the next scene clears its own. */
+static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area)
+{
+	@autoreleasepool
+	{
+		MetalTexture *source_record = texture_record(source), *destination_record = texture_record(destination);
+		id<MTLTexture> picture, target;
+		MTLScissorRect scissor;
+		struct gpu_clear whole_clear;
+		BOOL whole;
+
+		frame_begin();
+		if (!source_record || !source_record->texture || !destination_record || !destination_record->texture)
+			return;
+		picture = source_record->texture;
+		target = destination_record->texture;
+		if (!clamp_rect(area, target.width, target.height, &scissor))
+			return;
+		whole = scissor.x == 0 && scissor.y == 0 && scissor.width == target.width && scissor.height == target.height;
+		command_buffer();
+		/* (only the scene's own pass: another target's depth is its own affair) */
+		if (encoder && pass_color == source)
+			pass_finish(YES);
+		else
+			pass_end();
+		use_texture(source_record);
+		/* display.upscaler = "metalfx", which scales whole pictures only:
+		straight into the target if it can be the scaler's output, else into
+		the scaler's own texture, which the quad copies */
+		if (whole)
+		{
+			picture = upscale_into(picture, (long)target.width, (long)target.height, target);
+			if (pass_log && picture != source_record->texture)
+				[pass_log appendFormat:@"\n  upscale: MetalFX, texture %u %lux%lu into %s %lux%lu", source,
+					(unsigned long)source_record->texture.width, (unsigned long)source_record->texture.height,
+					picture == target ? "the target" : "its own texture", (unsigned long)target.width,
+					(unsigned long)target.height];
+			if (picture == target)
+			{
+				use_texture(destination_record);
+				return;
+			}
+		}
+		/* the frame so far is committed, so that a pass that interrupts the
+		one opened here can run between the two (native_pass) */
+		commit(NO);
+		/* (again, for the new command buffer: this marks the scene as used
+		in it, so the next view's scene is never taken for a pass that may
+		run ahead) */
+		use_texture(source_record);
+		memset(&whole_clear, 0, sizeof(whole_clear));
+		whole_clear.flags = GPU_CLEAR_COLOR;
+		if (!pass_begin(destination, 0, whole ? &whole_clear : NULL))
+			return;
+		native_pass.color = destination;
+		if (pass_log)
+			[pass_log appendFormat:@"; upscale: texture %u %lux%lu into %lux%lu at %lu,%lu", source,
+				(unsigned long)picture.width, (unsigned long)picture.height, (unsigned long)scissor.width,
+				(unsigned long)scissor.height, (unsigned long)scissor.x, (unsigned long)scissor.y];
+		[encoder setRenderPipelineState:upscale_pipeline];
+		[encoder setCullMode:MTLCullModeNone];
+		[encoder setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
+		[encoder setViewport:(MTLViewport){ 0.0, 0.0, (double)target.width, (double)target.height, 0.0, 1.0 }];
+		[encoder setScissorRect:scissor];
+		[encoder setFragmentTexture:picture atIndex:0];
+		[encoder setFragmentSamplerState:present_sampler atIndex:0];
+		if (visibility.entry_open)
+			[encoder setVisibilityResultMode:MTLVisibilityResultModeDisabled offset:0];
+		[encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		pass_commands++;
+		visibility.entry_open = 0;
+		/* the next draw sets everything again */
+		metal_state_reset(&state_cache);
+	}
+}
+
 static uint32_t gpu_metal_present(gpu_texture back_buffer)
 {
 	@autoreleasepool
@@ -4046,6 +4289,17 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				height = window_height;
 				width = window_height * (long)record->description.width / (long)record->description.height;
 			}
+#if !TARGET_OS_VISION
+			{
+				/* (a picture within a pixel of its place is copied, not
+				resampled: display.native_hud's back buffer, halo_display.h) */
+				struct halo_display_size place = halo_display_present_size(window_width, window_height,
+					(long)record->description.width, (long)record->description.height);
+
+				width = place.width;
+				height = place.height;
+			}
+#endif
 			/* (debug.rate_map_test: the back buffer resolved first) */
 			picture = upscale(foveation_picture(record), width, height);
 			pass.colorAttachments[0].texture = drawable.texture;
@@ -4136,6 +4390,10 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			platform_log("Metal: a frame has %.1f render passes, which load %.0f MB and store %.0f MB",
 				(double)pass_traffic.passes / 600.0, pass_traffic.loaded / 600.0 / 1e6, pass_traffic.stored / 600.0 / 1e6);
 			memset(&pass_traffic, 0, sizeof(pass_traffic));
+			if (native_pass.parks || native_pass.in_order)
+				platform_log("Metal: the HUD's display-sized pass was left %.1f times a frame for a pass that ran ahead of "
+					"it, and ended early %.1f times a frame", native_pass.parks / 600.0, native_pass.in_order / 600.0);
+			native_pass.parks = native_pass.in_order = 0;
 		}
 		pacing.work_started = CACurrentMediaTime();
 		return next_frame_due;
@@ -4445,6 +4703,11 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		present_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
 		if (!present_pipeline)
 			host_fatal("Metal: cannot create the present pipeline: %s", error.description.UTF8String);
+		present_descriptor.fragmentFunction = [utilities newFunctionWithName:@"upscale_fragment"];
+		present_descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+		upscale_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
+		if (!upscale_pipeline)
+			host_fatal("Metal: cannot create the upscale pipeline: %s", error.description.UTF8String);
 		linear.minFilter = MTLSamplerMinMagFilterLinear;
 		linear.magFilter = MTLSamplerMinMagFilterLinear;
 		present_sampler = [device newSamplerStateWithDescriptor:linear];
@@ -4547,6 +4810,11 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		capabilities->shader_language = GPU_SHADER_LANGUAGE_MSL;
 		capabilities->shader_es = 0;
 		capabilities->clip_y_flip = 0;
+#if !TARGET_OS_VISION
+		/* (not on visionOS: the theater screen, the UI's quad and the
+		Compositor's presenters place and scale the HUD themselves) */
+		capabilities->upscale = 1;
+#endif
 		capabilities->clip_z_remap = 0;
 		GPU_CAPABILITIES_LOG(platform_log, capabilities);
 	}

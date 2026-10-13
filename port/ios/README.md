@@ -163,7 +163,19 @@ For a lower GPU workload, edit the existing `[display]` section of
 ```toml
 render_height = 0 # Native (default); 1080, 720, or 480 render fewer pixels
 screen_width = 0  # Fit the display; 640 selects original 4:3
+native_hud = true # Below native: the HUD and menus stay at the display's resolution
 ```
+
+When the scene renders below the display's size (`render_height`,
+`render_scale`, or a build made with `--render-height`: 1080 by default on
+iPhone, iPad, Mac and Apple TV), `native_hud` draws the HUD, the menus and
+the pause screen, their text, loading screens, movies and the letterbox bars
+at the display's own resolution, over the scaled-up scene. The weapon's screen
+effects (a scope's blur, night vision) stay with the scene. It costs one
+render target the size of the display and one pass over it a frame;
+`native_hud = false` scales the HUD up with the scene, as before. At native
+resolution it does nothing and costs nothing. It works with both renderers and
+is not used on Apple Vision Pro, which places the HUD itself.
 
 The renderer preserves the selected aspect ratio and caps the render size to
 the drawable and GPU texture limit. Existing configuration files without
@@ -203,8 +215,10 @@ renderer only caps under the display's rate hold. On iPhone, iPad, Apple TV
 and Vision Pro the system paces frames and the setting is ignored.
 
 `render_scale = 0.67` with `upscaler = "metalfx"` draws under half the
-pixels and scales them back up with sharper edges than a plain stretch; the
-HUD is scaled with the rest. The simulators have no MetalFX.
+pixels and scales them back up with sharper edges than a plain stretch. With
+`native_hud` (the default) MetalFX scales the scene alone and the HUD is drawn
+over it at full size; without it the HUD is scaled with the rest. The
+simulators have no MetalFX.
 
 ### Touch and controller input
 

@@ -70,6 +70,13 @@ before interface_draw_screen): where a post-process pass over the view goes
 union rectangle2d;
 void halo_render_before_hud(short local_player_index, short rasterizer_target,
 	union rectangle2d const *viewport_bounds);
+/* display.native_hud (port/linux/src/d3d8_device.c): render_window marks the
+part of a view that is its scene, from before the window begins to after the
+weapon's screen effects. What the frame draws into the back buffer outside
+these spans (the HUD, the flash, menus, bars, loading screens, movies) is
+drawn at the display's size when the scene's is smaller */
+void halo_render_scene_begin(short rasterizer_target, long x0, long y0, long x1, long y1);
+void halo_render_scene_end(void);
 /* a map has loaded and its first frame is next (main_new_map): the shaders
 and pipelines its list names are compiled now, under the loading screen
 (port/linux/src/d3d8_device.c) */

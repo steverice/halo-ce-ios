@@ -61,6 +61,7 @@ host_gpu_visibility_begin
 host_gpu_visibility_end
 host_gpu_visibility_result
 host_gpu_flush
+host_gpu_upscale
 host_gpu_present
 host_gpu_present_stereo
 host_gpu_call_count_take

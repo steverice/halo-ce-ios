@@ -121,6 +121,7 @@ DEFAULTS = {
     "display.async_shaders": '"auto"',
     "display.render_scale": "1.0",
     "display.upscaler": '"bilinear"',
+    "display.native_hud": "true",
     "display.high_res_hud": "true",
     "display.high_res_text": "true",
     "display.upscaled_textures": "true",
