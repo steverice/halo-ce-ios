@@ -2,7 +2,12 @@
 import gzip
 import struct
 
-from tools import gpu_interface_hash, render_replay
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools import gpu_interface_hash, render_replay  # noqa: E402
 
 
 def capture_bytes(interface_hash=0x11, front_end_hash=0x22, shader_language=1, first=600, count=30, label=b"metal a10"):
@@ -77,3 +82,12 @@ def test_compare_frames(tmp_path):
     (b / "frames.txt").write_text("frame00600 2x1 00000000000000aa\n")
     assert "2 frames expected, 1 drawn" in render_replay.compare_frames(a, b)[0]
     assert render_replay.compare_frames(tmp_path / "missing", b) == [f"no frames.txt in {tmp_path / 'missing'}"]
+
+
+if __name__ == "__main__":
+    # tools/ios_test.py runs this file as a script: the job hosts' python has no pytest
+    for name, test in sorted(globals().items()):
+        if name.startswith("test_"):
+            with tempfile.TemporaryDirectory() as folder:
+                test(Path(folder)) if test.__code__.co_argcount else test()
+    print("render replay tool tests passed")

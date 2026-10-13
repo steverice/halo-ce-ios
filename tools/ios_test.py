@@ -96,7 +96,7 @@ for source in ('gpu_capture.c', 'gpu_replay.c'):
     symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(BUILD/'gpu-capture-off.o')], text=True, cwd=ROOT)
     if symbols.strip():
         raise SystemExit(f'{source} defines symbols without HALO_RENDER_VALIDATION:\n{symbols}')
-run('python3', '-m', 'pytest', '-q', 'tools/test_render_replay.py')
+run('python3', 'tools/test_render_replay.py')
 # the Metal backend's pipelines compiled off the game thread (metal_compile_async.h): its table
 # under the thread sanitizer, then everything under the address and undefined-behavior ones
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=thread', '-Iport/ios/host',
