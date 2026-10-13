@@ -108,7 +108,7 @@ def main():
     for name in scenes:
         level, seconds, settings = SCENES[name]
         command = [sys.executable, "tools/mac_run.py", "run", "--runner", "native", "--exit-after", seconds,
-                   "--time-limit", 1800, "--set", "debug.fixed_timestep=true", "--out", RUNS / name]
+                   "--time-limit", seconds + 420, "--set", "debug.fixed_timestep=true", "--out", RUNS / name]
         if args.maps:
             command += ["--maps", args.maps]
         if args.bundle_id:
