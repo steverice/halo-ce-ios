@@ -43,7 +43,10 @@ The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
 compiles the guest, embeds it into signed application text, and builds the host.
 Specify `--llvm` and `--lld` for non-default toolchain locations.
 Game assertions remain enabled. An Xcode `Release` host configuration does not
-disable the game's assertions. PGO and LTO are disabled for this initial port.
+disable the game's assertions. The game code is link-time optimized: the game,
+the platform layer and the bundled libraries are compiled to bitcode and
+optimized as one module before the assembly conversion (`tools/ios_guest_lto.py`);
+`--lto=off` compiles each file alone. PGO is disabled.
 
 Outputs:
 

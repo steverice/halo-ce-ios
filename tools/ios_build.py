@@ -44,6 +44,9 @@ def main():
                         help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
                              'in case the device refuses the 4 GB guest arena')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
+    parser.add_argument('--lto', choices=('full', 'off'), default='full',
+                        help='link-time optimization of the game code: full (the default) optimizes the game, the '
+                             'platform layer and the bundled libraries as one module, off compiles each file alone')
     parser.add_argument('--llvm', default='/opt/homebrew/opt/llvm')
     parser.add_argument('--lld', default='/opt/homebrew/opt/lld/bin/ld.lld')
     parser.add_argument('--jobs', type=int, default=min(12,os.cpu_count() or 4))
@@ -75,7 +78,7 @@ def main():
         url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
         data=urllib.request.urlopen(url,timeout=30).read()
         if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
-    run(sys.executable,'configure.py','--ios','--pgo=off','--lto=off','--ios-llvm',args.llvm,'--ios-lld',args.lld)
+    run(sys.executable,'configure.py','--ios','--pgo=off',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld)
     run('ninja','ios_guest','-j',args.jobs)
     run(sys.executable,'tools/ios_bridges.py')
     run(sys.executable,'tools/ios_embed_guest.py','build/ios/halo_guest.elf','build/ios/embedded')
