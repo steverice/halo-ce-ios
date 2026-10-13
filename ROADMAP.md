@@ -38,6 +38,9 @@
 - [x] The Compositor paces stereo frames (`display.frame_repeat`)
 - [x] A frame rate cap, or no cap, in the Mac app (`display.frame_rate`: `"display"`, a number or `"unlimited"`; set in `config.toml`, not yet a row in the settings screens)
 - [x] Shader and pipeline warm-up at map load
+- [x] Device profiles: graphics settings chosen per device model or class, with the main menu and cutscenes budgeted apart from play (`profiles/`, `debug.device_profile`)
+- [ ] Profile knobs still to build: a shadow budget, a level-of-detail bias outside stereo, anti-aliasing, a frame-rate target for a scene class, pixel math as a setting
+- [ ] A profiling suite testers can run, whose report a profile is derived from
 - [ ] A recent render-target cache (a port of upstream's `197c1994`)
 
 ## Graphics
