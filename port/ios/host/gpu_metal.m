@@ -4225,6 +4225,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			{
 				CFTimeInterval hold = pacing_schedule(drawable, &next_frame_due);
 
+#if HALO_FRAME_PACING
 				/* (display.frame_pacing's own holds are whole refreshes
 				already; otherwise the pacer says) */
 				if (hold == 0.0)
@@ -4239,6 +4240,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					}];
 					paced.slot = 0;
 				}
+#endif
 #if TARGET_OS_SIMULATOR
 				(void)hold;
 				[commands presentDrawable:drawable];
