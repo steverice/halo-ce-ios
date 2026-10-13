@@ -239,16 +239,23 @@ cryotube's 3000 */
 const char *config_string(const char *name);
 
 /* port: display.model_lod is "max" (the default) rather than "auto". It is read on
-first use and kept, since the config never reloads. */
+first use and kept, since the config never reloads; halo_model_lod_set replaces
+it while the game runs (the device benchmark, between its runs): 1 for "max",
+0 for "auto", negative to read the setting again. */
+static int model_lod_setting = -1;
+
+void halo_model_lod_set(int is_max)
+{
+	model_lod_setting = is_max<0 ? -1 : is_max!=0;
+}
+
 static boolean model_lod_is_max(void)
 {
-	static int is_max = -1;
-
-	if (is_max<0)
+	if (model_lod_setting<0)
 	{
-		is_max = strcmp(config_string("display.model_lod"), "auto")!=0;
+		model_lod_setting = strcmp(config_string("display.model_lod"), "auto")!=0;
 	}
-	return is_max;
+	return model_lod_setting;
 }
 
 /* port: debug.gpu_stats' model counts (d3d8_device.c logs them every 60
