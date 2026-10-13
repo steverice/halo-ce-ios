@@ -48,7 +48,14 @@ the platform layer and the bundled libraries are compiled to bitcode and
 optimized as one module before the assembly conversion (`tools/ios_guest_lto.py`);
 `--lto=off` compiles each file alone. It is also built with profile-guided
 optimization from `pgo/halo_linux.profdata`, the profile the Linux build
-records; `--pgo=off` builds it without.
+records; `--pgo=off` builds it without. The host (the app, the Metal and OpenGL
+backends, SDL) is built with profile-guided optimization from
+`pgo/visr_host.profdata`, which `tools/host_pgo_train.py` records by playing
+the Mac app; `--host-pgo=off` builds without it. That profile holds only the
+functions that ran in the recording, so code only a device reaches is compiled
+as without a profile. Record it again after large changes to `port/ios/host`,
+`gpu_gl.c` or SDL: a function that changed since no longer matches and goes
+without.
 
 Outputs:
 
