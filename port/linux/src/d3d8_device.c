@@ -67,6 +67,24 @@ static uint32_t frame_pacing_flags(void)
 	return GPU_INITIALIZE_PACING_OFF;
 }
 
+/* display.frame_rate in gpu_initialize's flags (GPU_INITIALIZE_FRAME_RATE_SHIFT) */
+static uint32_t frame_rate_flags(void)
+{
+	const char *rate = config_string("display.frame_rate");
+	char *end;
+	long cap;
+
+	if (!strcmp(rate, "display"))
+		return 0;
+	if (!strcmp(rate, "unlimited"))
+		return (uint32_t)GPU_INITIALIZE_FRAME_RATE_UNLIMITED << GPU_INITIALIZE_FRAME_RATE_SHIFT;
+	cap = strtol(rate, &end, 10);
+	if (*rate && !*end && cap >= 1 && cap <= 1000)
+		return (uint32_t)cap << GPU_INITIALIZE_FRAME_RATE_SHIFT;
+	platform_log("display.frame_rate: unknown value \"%s\" (\"display\", \"unlimited\" or 1 to 1000); using \"display\"", rate);
+	return 0;
+}
+
 /* display.async_shaders as a gpu_initialize flag: "auto" (the default)
 compiles off the game thread except in a run that must draw the same frames
 every time (fixed timestep, an input replay or benchmark, a timed runner
@@ -1282,7 +1300,7 @@ static void gl_initialize(void)
 		(config_boolean("debug.metal_state_cache") ? 0 : GPU_INITIALIZE_NO_STATE_CACHE) |
 		(config_boolean("debug.metal_specialize") ? 0 : GPU_INITIALIZE_NO_SPECIALIZE) |
 		(config_boolean("debug.metal_pipeline_archive") ? 0 : GPU_INITIALIZE_NO_PIPELINE_ARCHIVE) |
-		async_shader_flags(), &device_capabilities);
+		async_shader_flags() | frame_rate_flags(), &device_capabilities);
 	screen_maximum_texture_size = (int32_t)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */

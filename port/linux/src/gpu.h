@@ -576,6 +576,12 @@ enum
 	compiles shaders and pipelines on worker threads, and skips a draw
 	whose pipeline isn't ready rather than wait for it (gpu_metal.m) */
 	GPU_INITIALIZE_ASYNC_SHADERS = 4096,
+	/* display.frame_rate: bits 16-31 hold the most frames a second the Mac
+	app shows (port/ios/host/host_gpu_dispatch.c): 0 for the display's
+	refresh, as every host paces without it; GPU_INITIALIZE_FRAME_RATE_UNLIMITED
+	for no cap and no wait for the display; any other number, a cap */
+	GPU_INITIALIZE_FRAME_RATE_SHIFT = 16,
+	GPU_INITIALIZE_FRAME_RATE_UNLIMITED = 0xffff,
 };
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);

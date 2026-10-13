@@ -36,6 +36,7 @@
 - [x] CPU savings in the Metal draw path, and visibility tests that don't wait for the GPU
 - [x] Relaxed-math pixel shaders
 - [x] The Compositor paces stereo frames (`display.frame_repeat`)
+- [x] A frame rate cap, or no cap, in the Mac app (`display.frame_rate`: `"display"`, a number or `"unlimited"`; set in `config.toml`, not yet a row in the settings screens)
 - [x] Shader and pipeline warm-up at map load
 - [ ] A recent render-target cache (a port of upstream's `197c1994`)
 
