@@ -107,6 +107,14 @@ double config_real(const char *name)
 		return 5.0;
 	if (!strcmp(name, "display.seat_look_fade_black"))
 		return 45.0;
+	if (!strcmp(name, "display.pod_look_fade_start"))
+		return 15.0;
+	if (!strcmp(name, "display.pod_look_fade_end"))
+		return 70.0;
+	if (!strcmp(name, "display.pod_look_fade_dim"))
+		return 0.85;
+	if (!strcmp(name, "display.hud_distance"))
+		return 2.0;
 	return setting_snap_angle;
 }
 int config_boolean(const char *name) { return !strcmp(name, "input.comfort_vignette") && setting_comfort_vignette; }
@@ -134,6 +142,8 @@ int halo_scripted_camera(void) { return game_scripted_camera; }
 int halo_scripted_director_camera(void) { return 0; }
 int halo_level_first_tick_pending(void) { return 0; }
 int halo_level_start_campaign(void) { return 0; }
+static int game_cryo_pod;
+int halo_seat_cryo_pod(void) { return game_cryo_pod; }
 int platform_fixed_timestep(void) { return 1; }
 /* the frame clock (debug.fixed_timestep: 1/30 s a frame), a frame each
 time stereo.c reads it (once a frame) */
@@ -367,6 +377,8 @@ static void restart(const char *turn, double snap_angle, double smooth_turn_spee
 	seat_limited = 0;
 	seat_look_fade_now = 0.0f;
 	seat_look_fade_logged = 0;
+	seat_look_fade_pod = 0;
+	game_cryo_pod = 0;
 	set_pose(0.0f, 0.0f, 0.0f);
 	/* a frame with the Compositor's eyes: the head drives the view */
 	halo_stereo_frame_begin();
@@ -2966,6 +2978,33 @@ static void seat_look_fade(void)
 	halo_stereo_seat_look_fade(&dim, &blur);
 	printf("  out of the seat: dim %.3f\n", dim);
 	check(dim == 0.0f, "out of the seat (no clamp) the view is clear");
+	/* a10's cryo pod: its own angles (15 to 70 degrees past the limit), and
+	never black: 0.85 at the most, the blur full */
+	seat_start(&run, "snap");
+	game_cryo_pod = 1;
+	pod_look_fade_start = 15.0f * DEGREES;
+	pod_look_fade_end = 70.0f * DEGREES;
+	pod_look_fade_dim = 0.85f;
+	head = 0.0f;
+	seat_turn_to(&run, &head, 58.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  the pod, 13 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(dim == 0.0f && blur == 0.0f, "the pod: clear inside 15 degrees past the limit (a seat fades from 5)");
+	seat_turn_to(&run, &head, 87.5f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  the pod, 42.5 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(fabsf(dim - 0.425f) < 2e-3f && blur > 0.998f, "the pod: half way, half of 0.85 and fully blurred");
+	seat_turn_to(&run, &head, 160.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  the pod, 115 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(fabsf(dim - 0.85f) < 1e-4f && blur == 1.0f, "the pod: never darker than 0.85, however far the head turns");
+	game_cryo_pod = 0;
+	seat_look_fade_pod = 0;
+	seated = 0;
+	seat_hold(&run, head, 30);
 	/* the setting off */
 	seat_start(&run, "snap");
 	seat_look_fade_setting = 0;

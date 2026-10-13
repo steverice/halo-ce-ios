@@ -269,6 +269,18 @@ static const struct config_setting config_settings[] =
 		"With display.seat_look_fade: how many degrees past the seat's limit the\n"
 		"view is black (1 to 180, past display.seat_look_fade_start). Read at\n"
 		"start." },
+	{ "display.pod_look_fade_start", _config_real, "15.0", "HALO_POD_LOOK_FADE_START", _environment_value,
+		_platform_ios,
+		"As display.seat_look_fade_start, for a10's cryo pod alone: how many\n"
+		"degrees past the pod's limit the fade begins (0 to 90). Read at start." },
+	{ "display.pod_look_fade_end", _config_real, "70.0", "HALO_POD_LOOK_FADE_END", _environment_value,
+		_platform_ios,
+		"In a10's cryo pod: how many degrees past the pod's limit the fade is at\n"
+		"its darkest (1 to 180, past display.pod_look_fade_start). Read at start." },
+	{ "display.pod_look_fade_dim", _config_real, "0.85", "HALO_POD_LOOK_FADE_DIM", _environment_value,
+		_platform_ios,
+		"In a10's cryo pod: the most the view darkens past the limit, 0.0 to 1.0\n"
+		"(1.0 is black). The blur still reaches full. Read at start." },
 	{ "display.seat_look_fade_blur", _config_boolean, "true", "HALO_SEAT_LOOK_FADE_BLUR", _environment_value,
 		_platform_ios,
 		"With display.seat_look_fade: blur the view as it fades, the blur full\n"

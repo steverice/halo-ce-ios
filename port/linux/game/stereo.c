@@ -240,6 +240,14 @@ static float seat_look_fade_start = 0.08726646f, seat_look_fade_black = 0.785398
 static int seat_limited;
 static float seat_look_fade_now;
 static int seat_look_fade_logged;
+/* a10's cryo pod (halo_seat_cryo_pod) has the fade's own angles and never
+goes black: display.pod_look_fade_start and _end (radians past the limit),
+and display.pod_look_fade_dim, the most the view darkens there, the blur
+still reaching full. A black view in the pod, before the player has moved
+at all, read as the game having stopped (headset session, 2026-10-12).
+seat_look_fade_pod: this frame's limited seat is the pod */
+static float pod_look_fade_start = 0.2617994f, pod_look_fade_end = 1.2217305f, pod_look_fade_dim = 0.85f;
+static int seat_look_fade_pod;
 /* the fade moves at most this much a second (1 in 0.25 s): a step in the
 angle (a fold, a seat's first frame) never flashes the view */
 #define SEAT_LOOK_FADE_RATE 4.0f
@@ -602,6 +610,17 @@ static void mapping_settings(void)
 		seat_look_fade_start, seat_look_fade_black);
 	seat_look_fade_start *= TWO_PI / 360.0f;
 	seat_look_fade_black *= TWO_PI / 360.0f;
+	pod_look_fade_start = clamped_setting("display.pod_look_fade_start",
+		(float)config_real("display.pod_look_fade_start"), 0.0f, 90.0f, "degrees past the pod's limit");
+	pod_look_fade_end = clamped_setting("display.pod_look_fade_end",
+		(float)config_real("display.pod_look_fade_end"), fminf(pod_look_fade_start + 1.0f, 180.0f), 180.0f,
+		"degrees past the pod's limit");
+	pod_look_fade_dim = clamped_setting("display.pod_look_fade_dim", (float)config_real("display.pod_look_fade_dim"),
+		0.0f, 1.0f, "of black");
+	platform_log("stereo: in a10's cryo pod the fade runs from %.1f to %.1f degrees past the limit, to %.2f of black",
+		pod_look_fade_start, pod_look_fade_end, pod_look_fade_dim);
+	pod_look_fade_start *= TWO_PI / 360.0f;
+	pod_look_fade_end *= TWO_PI / 360.0f;
 	stereo_stats = config_boolean("debug.gpu_stats") != 0;
 	head_yaw_log = config_boolean("debug.head_yaw_log") != 0;
 	lod_scale_setting = clamped_setting("display.lod_scale", (float)config_real("display.lod_scale"),
@@ -960,17 +979,22 @@ static void seat_look_fade_update(int head_look_frame, float time_delta)
 	float past = 0.0f;
 	int stage;
 
-	if (seat_look_fade_setting && head_look_frame && seat_limited)
+	if (seat_look_fade_setting && head_look_frame && seat_limited) {
 		past = fabsf(remainderf(head_seat_leftover + head_pending_yaw, TWO_PI));
-	seat_look_fade_now = halo_stereo_seat_look_fade_ease(seat_look_fade_now, past, seat_look_fade_start,
-		seat_look_fade_black, time_delta);
+		/* (kept while the fade eases out after the seat is left) */
+		seat_look_fade_pod = halo_seat_cryo_pod();
+	}
+	seat_look_fade_now = halo_stereo_seat_look_fade_ease(seat_look_fade_now, past,
+		seat_look_fade_pod ? pod_look_fade_start : seat_look_fade_start,
+		seat_look_fade_pod ? pod_look_fade_end : seat_look_fade_black, time_delta);
 	/* (without the full view it's gone at once: nothing to ease) */
 	if (!head_look_frame)
 		seat_look_fade_now = 0.0f;
 	stage = seat_look_fade_now >= 1.0f ? 2 : seat_look_fade_now > 0.0f ? 1 : 0;
 	if (stage != seat_look_fade_logged) {
-		platform_log("stereo: a seat's look fade: %s, the head %.1f degrees past the aim",
-			stage == 2 ? "black" : stage == 1 ? "fading" : "clear", past * RADIANS_TO_DEGREES);
+		platform_log("stereo: a seat's look fade: %s, the head %.1f degrees past the aim%s",
+			stage == 2 ? (seat_look_fade_pod ? "darkest" : "black") : stage == 1 ? "fading" : "clear",
+			past * RADIANS_TO_DEGREES, seat_look_fade_pod ? " (the cryo pod)" : "");
 		seat_look_fade_logged = stage;
 	}
 }
@@ -979,7 +1003,8 @@ void halo_stereo_seat_look_fade(float *dim, float *blur)
 {
 	float fade = stereo_frame.mode == HALO_STEREO_HEAD && stereo_frame.eye_count == 2 ? seat_look_fade_now : 0.0f;
 
-	*dim = fade;
+	/* (the pod's fade stops short of black) */
+	*dim = seat_look_fade_pod ? fade * pod_look_fade_dim : fade;
 	/* the blur full half way to black, so the picture softens before it
 	darkens */
 	*blur = seat_look_fade_blur_setting ? fminf(1.0f, 2.0f * fade) : 0.0f;

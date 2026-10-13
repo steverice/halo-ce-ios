@@ -343,6 +343,10 @@ pieces this frame: dim (0 to 1, 1 black) and blur (0 to 1, toward the
 eyes' blur; 0 with display.seat_look_fade_blur off); both 0 elsewhere. The
 world keeps following the head: only the picture fades */
 void halo_stereo_seat_look_fade(float *dim, float *blur);
+/* cinematic_screen.c: 1 while local player 0 sits in a10's cryo pod (the
+seat's own unit is the level's cryotube), whose look fade has its own angles
+and stops short of black (display.pod_look_fade_start, _end and _dim) */
+int halo_seat_cryo_pod(void);
 /* the fade's next value from its value now, how far the head is past the
 seat's limit (radians, 0 or more), the fade's start and black angles past
 it (radians) and the time since (seconds): it eases toward a smoothstep of

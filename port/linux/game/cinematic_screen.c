@@ -16,6 +16,7 @@ picture.
 */
 
 #include "cseries.h"
+#include <string.h>
 #include "camera/camera_scripting.h"
 #include "camera/director.h"
 #include "coop_spectate.h"
@@ -24,6 +25,8 @@ picture.
 #include "game/players.h"
 #include "items/weapons.h"
 #include "units/units.h"
+#include "objects/objects.h"
+#include "tag_files/tag_files.h"
 #include "effects/player_effects.h"
 #include "game/game.h"
 #include "scenario/scenario.h"
@@ -229,6 +232,27 @@ int halo_level_first_tick_pending(void)
 int halo_level_start_campaign(void)
 {
 	return game_in_progress() && global_scenario_index != NONE && global_scenario_get()->type == _scenario_type_solo;
+}
+
+/* 1 while local player 0 sits in a10's cryo pod: the unit the player rides
+(its ultimate parent, not itself) is the level's cryotube, by its tag's name.
+For the pod's own look fade (stereo.c) */
+int halo_seat_cryo_pod(void)
+{
+	long player_index = local_player_get_player_index(0);
+	long unit_index, parent_index;
+	const char *name;
+
+	if (player_index == NONE)
+		return 0;
+	unit_index = player_get(player_index)->unit_index;
+	if (unit_index == NONE)
+		return 0;
+	parent_index = object_get_ultimate_parent(unit_index);
+	if (parent_index == NONE || parent_index == unit_index)
+		return 0;
+	name = tag_get_name(object_get(parent_index)->definition_index);
+	return name && strstr(name, "cryotube") != NULL;
 }
 
 /* The zoom's magnification for the local player's zoomed pass (render.c), as the
