@@ -1496,6 +1496,13 @@ static void validate_flush(void)
 	validation.backend.flush();
 }
 
+/* (from the front end's vertical blank thread, not the game's: nothing of
+the validator's is touched) */
+static uint32_t validate_vertical_blank_wait(void)
+{
+	return validation.backend.vertical_blank_wait();
+}
+
 static void frame_end(void)
 {
 	validation.frame++;
