@@ -3182,6 +3182,19 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 				"skipped", draw->vertex_shader, draw->pixel_shader);
 			return 0;
 		}
+#if HALO_RENDER_VALIDATION
+		/* a GPU without border colors (below Apple7): BORDER addressing clamps to the edge */
+		if (!border_colors)
+		{
+			int stage;
+
+			for (stage = 0; stage < GPU_STAGE_COUNT; stage++)
+				if (draw->stages[stage].type && (draw->stages[stage].sampler.address_u == GPU_ADDRESS_BORDER ||
+					draw->stages[stage].sampler.address_v == GPU_ADDRESS_BORDER))
+					GPU_VALIDATION_REPORT(GPU_VALIDATION_BORDER_UNSUPPORTED, 1, "Metal: stage %d: this GPU has no border colors; "
+						"BORDER addressing clamps to the edge", stage);
+		}
+#endif
 		draw_attributes_decide(draw, &attributes);
 		pipeline = draw_pipeline(draw, &attributes, vertex, pixel, exact, MTLPixelFormatBGRA8Unorm,
 			depth && depth->texture ? depth->texture.pixelFormat : MTLPixelFormatInvalid, &pending);
