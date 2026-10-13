@@ -354,6 +354,13 @@ int main(int argc,char **argv) {
         static char env_profile[sizeof("HALO_DEVICE_PROFILE_VALUES=")+HOST_PROFILE_MAXIMUM_VALUES*216];
         snprintf(env_profile,sizeof(env_profile),"HALO_DEVICE_PROFILE_VALUES=%s",host_device_profile_install(data_root));
         env[env_count++]=env_profile;
+        /* the build, for what the game writes beside a recording (input_replay.c), and the folder its automatic
+           takes go to */
+        static char env_build[96];
+        snprintf(env_build,sizeof(env_build),"HALO_APP_BUILD=%s",
+            [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String?:"");
+        env[env_count++]=env_build;
+        mkdir("recordings",0755);
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's
            display.renderer. The aspect is pinned to 16:9, since a visionOS

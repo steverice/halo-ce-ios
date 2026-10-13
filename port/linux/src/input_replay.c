@@ -63,6 +63,7 @@ extern unsigned char game_time_get_paused(void);
 /* port/linux/game/input_replay_scenario.c */
 extern unsigned char input_replay_main_menu_loaded(void);
 extern void input_replay_skip_cinematic(void);
+extern void input_replay_level(char *map, unsigned int size, long *difficulty, long *players, unsigned long *seed);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 
@@ -242,13 +243,165 @@ static void replay_load(void)
 		replay.replay_finished = TRUE;
 }
 
+/* ---------- automatic takes
+
+debug.input_record = "auto": every level played is recorded from its load,
+with nothing for the player to do. A take is three files in the data
+folder's recordings folder (the host makes it), named for the map and the
+moment of the load in UTC:
+
+	recordings/take-a10-20261014-031502.input     the controller, as above
+	recordings/take-a10-20261014-031502.actions   each tick's action, as above
+	recordings/take-a10-20261014-031502.route     what a replay needs to start alike, as "key = value" lines
+
+The .route is written when the take opens (the map, the difficulty, the
+first tick, the random seed, the players, the build and the device
+profile's settings in force) and gets its last lines when it closes
+(closed_by, segments, last_tick, seconds). A take opens at a level's first
+tick of game time and closes when another map loads, the same map starts
+over (the game time back under a second), or the menu returns. Dying does
+not close it: the revert to a checkpoint is a new segment, as in any
+recording. Quitting the app or the system suspending it closes nothing, so
+such a take's .route has no closed_by; its other two files are whole at
+every moment, each line being flushed as written.
+
+A take whose first_tick is not the level's start (a saved game continued)
+replays nowhere else: entered says "saved" and tools leave it out. One
+shorter than TAKE_MINIMUM_TICKS is deleted when it closes. */
+
+#define TAKE_MINIMUM_TICKS (30 * 30)
+/* a level's own start, against a saved game's first tick */
+#define TAKE_START_TICKS 30
+
+static struct
+{
+	BOOL automatic, open;
+	char map[32], base[256];
+	long first_tick, last_tick;
+} take;
+
+static void take_close(const char *why)
+{
+	char path[512];
+	FILE *route;
+
+	if (!take.open)
+		return;
+	take.open = FALSE;
+	if (replay.record_file)
+		fclose(replay.record_file);
+	if (replay.actions_file)
+		fclose(replay.actions_file);
+	replay.record_file = replay.actions_file = NULL;
+	replay.record_path[0] = replay.record_actions_path[0] = 0;
+	if (take.last_tick - take.first_tick < TAKE_MINIMUM_TICKS)
+	{
+		static const char *const extensions[] = { "input", "actions", "route" };
+		int index;
+
+		for (index = 0; index < 3; index++)
+		{
+			snprintf(path, sizeof(path), "%s.%s", take.base, extensions[index]);
+			remove(path);
+		}
+		platform_log("debug.input_record: take %s was %ld ticks (%s): too short to keep", take.base,
+			take.last_tick - take.first_tick, why);
+		return;
+	}
+	snprintf(path, sizeof(path), "%s.route", take.base);
+	route = fopen(path, "a");
+	if (route)
+	{
+		fprintf(route, "closed_by = %s\nsegments = %ld\nlast_tick = %ld\nseconds = %.1f\n", why, replay.segment + 1,
+			take.last_tick, (double)(take.last_tick - take.first_tick) / 30.0);
+		fclose(route);
+	}
+	platform_log("debug.input_record: take %s closed (%s): %ld ticks, %ld segment%s", take.base, why,
+		take.last_tick - take.first_tick, replay.segment + 1, replay.segment ? "s" : "");
+}
+
+static void take_open(const char *map, long tick, long difficulty, long players, unsigned long seed)
+{
+	static const char *const difficulties[] = { "easy", "normal", "hard", "impossible" };
+	char path[512], settings[2048];
+	const char *build = getenv("HALO_APP_BUILD");
+	time_t now = time(NULL);
+	struct tm utc;
+	FILE *route;
+
+	gmtime_r(&now, &utc);
+	snprintf(take.map, sizeof(take.map), "%s", map);
+	snprintf(take.base, sizeof(take.base), "recordings/take-%s-%04d%02d%02d-%02d%02d%02d", map, utc.tm_year + 1900,
+		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec);
+	take.first_tick = take.last_tick = tick;
+	/* a recording of its own: its time and its segments begin here */
+	replay.record_ended = FALSE;
+	replay.segment = 0;
+	replay.last_action_tick = 0;
+	replay.timeline_offset = 0.0;
+	replay.last_game_ticks = 0.0;
+	snprintf(replay.record_path, sizeof(replay.record_path), "%s.input", take.base);
+	snprintf(replay.record_actions_path, sizeof(replay.record_actions_path), "%s.actions", take.base);
+	snprintf(path, sizeof(path), "%s.route", take.base);
+	route = fopen(path, "w");
+	if (!route)
+	{
+		platform_log("debug.input_record: cannot write %s; this level is not recorded", path);
+		replay.record_path[0] = replay.record_actions_path[0] = 0;
+		return;
+	}
+	take.open = TRUE;
+	config_profile_settings_text(settings, sizeof(settings));
+	fprintf(route, "map = %s\ndifficulty = %s\nentered = %s\nfirst_tick = %ld\nrandom_seed = %08lx\nplayers = %ld\n"
+		"stereo = %s\nversion = %s\nrecorded = %04d-%02d-%02dT%02d:%02d:%02dZ\n%s", map,
+		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick <= TAKE_START_TICKS ? "start" : "saved",
+		tick, seed, players, config_string("display.stereo"), build && *build ? build : "unknown", utc.tm_year + 1900,
+		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec, settings);
+	fclose(route);
+	platform_log("debug.input_record: take %s: %s on %s from tick %ld%s", take.base, map,
+		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick,
+		tick <= TAKE_START_TICKS ? "" : " (a saved game: this take replays nowhere else)");
+}
+
+/* at each poll of the controller and each tick: the take for the level being played */
+static void take_update(void)
+{
+	char map[32];
+	long difficulty, players, tick;
+	unsigned long seed;
+
+	if (!take.automatic)
+		return;
+	if (!game_time_initialized() || input_replay_main_menu_loaded())
+	{
+		take_close("menu");
+		return;
+	}
+	input_replay_level(map, sizeof(map), &difficulty, &players, &seed);
+	tick = game_time_get();
+	if (take.open && strcmp(map, take.map))
+		take_close("level_change");
+	else if (take.open && tick < take.last_tick && tick <= TAKE_START_TICKS)
+		take_close("restart");
+	if (!take.open)
+		take_open(map, tick, difficulty, players, seed);
+	if (take.open)
+		take.last_tick = tick;
+}
+
 static void configure(void)
 {
 	const char *record = config_string("debug.input_record");
 	const char *replay_name = config_string("debug.input_replay");
 
 	replay.configured = TRUE;
-	if (*record)
+	if (!strcmp(record, "auto") && !*replay_name)
+	{
+		take.automatic = TRUE;
+		platform_log("debug.input_record: every level is recorded from its load, to recordings/take-<map>-<time> in the "
+			"data folder");
+	}
+	else if (*record)
 	{
 		recording_path(record, replay.record_path, sizeof(replay.record_path));
 		actions_path(replay.record_path, replay.record_actions_path, sizeof(replay.record_actions_path));
@@ -384,12 +537,13 @@ void input_replay_filter(XINPUT_GAMEPAD *pad)
 
 	if (!replay.configured)
 		configure();
+	take_update();
 	if (!*replay.record_path && !*replay.replay_path)
 		return;
 	ticks = game_ticks();
 	if (ticks < 0.0)
 		return;
-	if (*replay.record_path && !replay.record_ended &&
+	if (*replay.record_path && !replay.record_ended && !take.automatic &&
 		(pad->wButtons & (XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START)) == (XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START))
 	{
 		/* Back and Start together end a recording, so it doesn't need trimming
@@ -423,6 +577,7 @@ void input_replay_tick_action(void *action)
 
 	if (!replay.configured)
 		configure();
+	take_update();
 	if (!*replay.record_actions_path && !*replay.replay_actions_path)
 		return;
 	if (!game_time_initialized() || input_replay_main_menu_loaded())

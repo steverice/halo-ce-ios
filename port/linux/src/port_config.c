@@ -2508,6 +2508,31 @@ const char *config_scene_name(int scene)
 	return scene >= 0 && scene < NUMBER_OF_CONFIG_SCENES ? config_scene_names[scene] : "";
 }
 
+void config_profile_settings_text(char *text, size_t size)
+{
+	size_t index, length = 0;
+
+	(void)config_boolean("debug.settings_dump");   /* the first load */
+	if (size)
+		text[0] = 0;
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		char literal[600];
+		int written;
+
+		if (!config_is_profile_setting(index) || !(config_settings[index].platforms & CONFIG_PLATFORM))
+			continue;
+		config_literal(config_settings[index].type, &config_values[index], literal, sizeof(literal));
+		written = snprintf(text + length, size - length, "%s = %s\n", config_settings[index].name, literal);
+		if (written < 0 || (size_t)written >= size - length)
+		{
+			text[length] = 0;
+			break;
+		}
+		length += (size_t)written;
+	}
+}
+
 int config_scene_describe(int scene, char *text, size_t size)
 {
 	size_t index, length = 0;
