@@ -130,7 +130,8 @@ static void frames_draw(struct gpu_backend *gpu, int frames)
 	static unsigned char texels[32 * 32 * 4];
 	struct gpu_texture_description color_description = { GPU_TEXTURE_2D, GPU_FORMAT_BGRA8, GPU_USAGE_RENDER_TARGET, 0, 320, 240, 1, 1 };
 	struct gpu_texture_description depth_description = { GPU_TEXTURE_2D, GPU_FORMAT_DEPTH_STENCIL, GPU_USAGE_RENDER_TARGET, 0, 320, 240, 1, 1 };
-	struct gpu_texture_description texture_description = { GPU_TEXTURE_2D, GPU_FORMAT_BGRA8, GPU_USAGE_UPLOAD, 0, 32, 32, 1, 1 };
+	/* one level uploaded, the rest generated, before the window: the file must generate them too */
+	struct gpu_texture_description texture_description = { GPU_TEXTURE_2D, GPU_FORMAT_BGRA8, GPU_USAGE_UPLOAD, 0, 32, 32, 1, 6 };
 	gpu_texture color, depth, texture, unused;
 	gpu_shader vertex, pixel;
 	gpu_buffer mirror;
@@ -145,6 +146,7 @@ static void frames_draw(struct gpu_backend *gpu, int frames)
 	depth = gpu->texture_create(&depth_description);
 	texture = gpu->texture_create(&texture_description);
 	gpu->texture_upload(texture, 0, 0, texels, sizeof(texels));
+	gpu->texture_generate_mipmaps(texture, 0);
 	/* a texture no draw uses: it must not reach the file */
 	unused = gpu->texture_create(&texture_description);
 	gpu->texture_upload(unused, 0, 0, texels, sizeof(texels));
@@ -173,7 +175,7 @@ static void frames_draw(struct gpu_backend *gpu, int frames)
 		draw.blend.color_write_mask = 15;
 		draw.stages[0].texture = texture;
 		draw.stages[0].type = GPU_TEXTURE_2D;
-		draw.stages[0].sampler.min_filter = draw.stages[0].sampler.mag_filter = GPU_FILTER_LINEAR;
+		draw.stages[0].sampler.min_filter = draw.stages[0].sampler.mag_filter = draw.stages[0].sampler.mip_filter = GPU_FILTER_LINEAR;
 		for (index = 0; index < GPU_ATTRIBUTE_COUNT; index++)
 		{
 			draw.attributes[index].format = GPU_ATTRIBUTE_FLOAT4;
@@ -319,7 +321,7 @@ int main(void)
 			size_t length = (size_t)(end - line) + 1;
 
 			if (strncmp(line, "texture_create", 14) && strncmp(line, "texture_upload", 14) && strncmp(line, "buffer_", 7) &&
-				strncmp(line, "shader_create", 13))
+				strncmp(line, "shader_create", 13) && strncmp(line, "mipmaps", 7))
 				strncat(all, line, length);
 			line = end + 1;
 		}
@@ -338,6 +340,7 @@ int main(void)
 		for (line = notes; (line = strstr(line, "buffer_write")) != NULL; line++) writes++;
 		for (line = notes; (line = strstr(line, "shader_create")) != NULL; line++) shaders++;
 		EXPECT(creates == 3 && uploads == 1 && shaders == 2 && writes == 1, "the file holds only what its frames use");
+		EXPECT(strstr(notes, "mipmaps 00000000") != NULL, "mipmaps generated before the window are generated in the replay");
 		{
 			char wanted[64];
 

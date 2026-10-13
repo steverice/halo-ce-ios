@@ -159,6 +159,28 @@ def compare_frames(expected, got, channel_tolerance=0, fraction=0.0):
     return problems
 
 
+OPERATIONS = ("", "end", "texture create", "texture upload", "copy level", "mipmaps", "texture destroy", "buffer create",
+              "buffer write", "stream reserve", "stream", "shader create", "constants", "uniforms", "clear", "draw",
+              "visibility begin", "visibility end", "visibility result", "flush", "present", "stereo present")
+
+
+def record_counts(path):
+    """{operation name: (records, payload bytes)} of a capture"""
+    counts = {}
+    with gzip.open(path, "rb") as file:
+        file.read(HEADER.size)
+        while True:
+            head = file.read(8)
+            if len(head) < 8:
+                break
+            operation, size = struct.unpack("<II", head)
+            file.seek(size, 1)
+            name = OPERATIONS[operation] if operation < len(OPERATIONS) else f"operation {operation}"
+            records, total = counts.get(name, (0, 0))
+            counts[name] = (records + 1, total + size)
+    return counts
+
+
 def command_info(args):
     hashes = build_hashes()
     for path in args.captures:
@@ -172,6 +194,9 @@ def command_info(args):
               f"{header['first_frame'] + header['frame_count'] - 1}, label \"{header['label']}\", "
               f"{Path(path).stat().st_size / 1048576:.1f} MB, gpu.h {header['interface_hash']:08x}, front end "
               f"{header['front_end_hash']:08x}" + (f"; STALE ({stale} changed)" if stale else "; current"))
+        if args.records:
+            for name, (records, total) in sorted(record_counts(path).items(), key=lambda item: -item[1][1]):
+                print(f"    {records:8d} {name}: {total / 1048576:.2f} MB uncompressed")
 
 
 def command_replay(args):
@@ -277,6 +302,7 @@ def main():
 
     info = commands.add_parser("info")
     info.add_argument("captures", nargs="+", type=Path)
+    info.add_argument("--records", action="store_true", help="also each kind of record's count and size")
     info.set_defaults(function=command_info)
     one = commands.add_parser("replay")
     one.add_argument("capture", type=Path)

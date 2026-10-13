@@ -34,6 +34,9 @@ struct texture_entry
 	struct gpu_texture_description description;
 	uint8_t *data[6][LEVELS];
 	uint32_t size[6][LEVELS];
+	/* the level its mipmaps were last generated from, plus one; 0 for never
+	(the high-res HUD and text upload one level and generate the rest) */
+	uint32_t mipmaps_from;
 };
 
 struct buffer_entry
@@ -329,6 +332,12 @@ static void ensure_texture(gpu_texture handle)
 		for (level = 0; level < LEVELS; level++)
 			if (entry->data[face][level])
 				put_upload(handle, face, level, entry->data[face][level], entry->size[face][level]);
+	if (entry->mipmaps_from && entry->description.usage == GPU_USAGE_UPLOAD)
+	{
+		uint32_t words[2] = { handle, entry->mipmaps_from - 1 };
+
+		put(GPU_CAPTURE_TEXTURE_MIPMAPS, words, 2, NULL, 0, NULL, 0);
+	}
 }
 
 static void ensure_shader(gpu_shader handle)
@@ -547,6 +556,10 @@ static void capture_texture_copy_level(gpu_texture source, gpu_texture destinati
 
 static void capture_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 {
+	struct texture_entry *entry = texture_entry(texture);
+
+	if (entry)
+		entry->mipmaps_from = base_level + 1;
 	if (capture.file)
 	{
 		uint32_t words[2] = { texture, base_level };
