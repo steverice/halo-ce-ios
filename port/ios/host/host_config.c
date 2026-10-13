@@ -79,11 +79,20 @@ static int config_value(const char *name, char *value, size_t size)
 	return found;
 }
 
+static int (*profile_value)(const char *name, char *text, size_t size);
+
+void host_config_set_profile(int (*value)(const char *name, char *text, size_t size))
+{
+	profile_value = value;
+}
+
 double host_config_real(const char *name, double fallback)
 {
 	char value[64];
 
-	return config_value(name, value, sizeof(value)) ? atof(value) : fallback;
+	if (config_value(name, value, sizeof(value)) || (profile_value && profile_value(name, value, sizeof(value))))
+		return atof(value);
+	return fallback;
 }
 
 void host_config_string(const char *name, const char *fallback, char *out, size_t size)
@@ -92,7 +101,9 @@ void host_config_string(const char *name, const char *fallback, char *out, size_
 
 	if (!config_value(name, value, sizeof(value)))
 	{
-		snprintf(out, size, "%s", fallback);
+		/* (a profile's string has no quotes) */
+		if (!profile_value || !profile_value(name, out, size))
+			snprintf(out, size, "%s", fallback);
 		return;
 	}
 	if (value[0] == '"')

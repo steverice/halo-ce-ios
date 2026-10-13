@@ -4,6 +4,7 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_display_pin.h"
+#include "host_profile.h"
 #include "host_join_link.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
@@ -305,9 +306,15 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[12];size_t env_count=0;
+        const char *env[14];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
+        /* This device's profile (profiles/, host_profile.h): its values go to the game as one variable, which
+           port_config.c lays under config.toml. Not as the settings' own HALO_ variables, which win over the
+           file: a profile never outranks what the player chose. */
+        static char env_profile[sizeof("HALO_DEVICE_PROFILE_VALUES=")+HOST_PROFILE_MAXIMUM_VALUES*216];
+        snprintf(env_profile,sizeof(env_profile),"HALO_DEVICE_PROFILE_VALUES=%s",host_device_profile_install(data_root));
+        env[env_count++]=env_profile;
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's
            display.renderer. The aspect is pinned to 16:9, since a visionOS
@@ -318,7 +325,8 @@ int main(int argc,char **argv) {
 #endif
 #if TARGET_OS_TV || TARGET_OS_VISION
         char env_render[64];
-        /* The build chooses the render height (tools/ios_build.py --render-height). */
+        /* A build made with tools/ios_build.py --render-height N draws at N whatever the device's profile says
+           (0, the default: the profile's display.render_height and display.render_scale). */
         int render_height=[[NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRenderHeight"] intValue];
         if(render_height>0){snprintf(env_render,sizeof(env_render),"HALO_RENDER_HEIGHT=%d",render_height);env[env_count++]=env_render;}
 #endif
