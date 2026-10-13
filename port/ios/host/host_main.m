@@ -7,8 +7,8 @@
 #include "host_join_link.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
-#include "../../linux/include/halo_port_limits.h" /* HALO_PORT_NETWORK_VERSION, for the log */
 #endif
+#include "../../linux/include/halo_port_limits.h" /* HALO_PORT_NETWORK_VERSION, for the log */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #if TARGET_OS_MACCATALYST
