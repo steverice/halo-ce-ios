@@ -1449,12 +1449,22 @@ HRESULT WINAPI IDirectSoundBuffer_SetBufferData(LPDIRECTSOUNDBUFFER buffer, LPVO
 
 HRESULT WINAPI IDirectSoundBuffer_Play(LPDIRECTSOUNDBUFFER buffer, DWORD reserved1, DWORD reserved2, DWORD flags)
 {
+	struct sound_buffer *record = (struct sound_buffer *)buffer;
+	static BOOL logged;
+
 	(void)reserved1;
 	(void)reserved2;
 	(void)flags;
 	pthread_mutex_lock(&mixer_lock);
-	((struct sound_buffer *)buffer)->playing = TRUE;
+	record->playing = TRUE;
 	pthread_mutex_unlock(&mixer_lock);
+	/* (once a launch: the loading screen's tone is in the mix) */
+	if (record->samples && !logged)
+	{
+		logged = TRUE;
+		platform_log("DirectSound: a looping buffer plays: %lu frames of mono ADPCM (the loading screen's tone)",
+			record->frames);
+	}
 	return DS_OK;
 }
 
