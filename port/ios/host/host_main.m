@@ -1,6 +1,7 @@
 /* Start the statically compiled guest on the iOS UI thread and persist its log. */
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <Metal/Metal.h>
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_display_pin.h"
@@ -373,6 +374,17 @@ int main(int argc,char **argv) {
         /* The build chooses the render height (tools/ios_build.py --render-height). */
         int render_height=[[NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRenderHeight"] intValue];
 #if TARGET_OS_TV
+        /* An Apple TV HD (A8, GPU family Apple2, the only tvOS device below
+           Apple3) draws open scenes at 12 to 18 frames a second at 1080 and in
+           the mid-20s at 540: the build's default of 1080 becomes 540 there. A
+           build made with another --render-height keeps its own. */
+        if(render_height==1080){
+            id<MTLDevice> gpu=MTLCreateSystemDefaultDevice();
+            if(gpu&&![gpu supportsFamily:MTLGPUFamilyApple3]){
+                render_height=540;
+                host_logf(HOST_LOG_INFO,"tvOS: render height 540 on this GPU (%s, below family Apple3)",gpu.name.UTF8String);
+            }
+        }
         /* a launch's own HALO_RENDER_HEIGHT, to measure another height without a rebuild */
         if(getenv("HALO_RENDER_HEIGHT")&&atoi(getenv("HALO_RENDER_HEIGHT"))>0)render_height=atoi(getenv("HALO_RENDER_HEIGHT"));
 #endif
