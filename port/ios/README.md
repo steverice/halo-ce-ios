@@ -43,7 +43,14 @@ The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
 compiles the guest, embeds it into signed application text, and builds the host.
 Specify `--llvm` and `--lld` for non-default toolchain locations.
 Game assertions remain enabled. An Xcode `Release` host configuration does not
-disable the game's assertions. PGO and LTO are disabled for this initial port.
+disable the game's assertions. PGO and LTO are disabled for the game code in
+this initial port. The host (the app, the Metal and OpenGL backends, SDL) is
+built with profile-guided optimization from `pgo/visr_host.profdata`, which
+`tools/host_pgo_train.py` records by playing the Mac app; `--host-pgo=off`
+builds without it. The profile holds only the functions that ran in the
+recording, so code only a device reaches is compiled as without a profile.
+Record it again after large changes to `port/ios/host`, `gpu_gl.c` or SDL: a
+function that changed since no longer matches and goes without.
 
 Outputs:
 
