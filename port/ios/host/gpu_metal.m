@@ -199,6 +199,11 @@ static BOOL compressed_textures;
 /* debug.metal_specialize = false: vertex_function returns the unspecialized
 function, its fallback when specializing fails */
 static BOOL specialize_off;
+/* gpu_capabilities.base_vertex: indexed draws pass their base vertex, which
+needs GPU family Apple3 (an A9) or a Mac; an A8 (the Apple TV HD) has no
+base vertex drawing, so there, and with debug.metal_base_vertex = false, the
+front end rebases each draw's indices and the draws take none */
+static BOOL base_vertex_draws;
 /* debug.fixed_timestep: visibility answers wait for the GPU (visibility_result) */
 static BOOL visibility_wait;
 
@@ -3235,10 +3240,13 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 
 			/* (the converted indices are the draw's own, so its base vertex
 			still applies; 0 for a draw without indices) */
-			if (count)
+			if (count && base_vertex_draws)
 				[encoder drawIndexedPrimitives:type indexCount:count indexType:MTLIndexTypeUInt32
 					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset instanceCount:1
 					baseVertex:draw->base_vertex baseInstance:0];
+			else if (count)
+				[encoder drawIndexedPrimitives:type indexCount:count indexType:MTLIndexTypeUInt32
+					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset];
 			return 1;
 		}
 		case GPU_PRIMITIVE_POINTS: type = MTLPrimitiveTypePoint; break;
@@ -3255,11 +3263,17 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 				return 1;
 			use_buffer(record);
 			/* the vertex shaders' vertex_id, which their fetches index the
-			streams with (nv2a_msl.c), is the index plus the base vertex; the
-			front end leaves it 0 without gpu_capabilities.base_vertex */
-			[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
-				indexBuffer:record->buffer indexBufferOffset:draw->index_offset instanceCount:1
-				baseVertex:draw->base_vertex baseInstance:0];
+			streams with (nv2a_msl.c), is the index plus the base vertex.
+			Without gpu_capabilities.base_vertex the front end leaves it 0,
+			and the call that takes one isn't made: a GPU below family Apple3
+			doesn't have it */
+			if (base_vertex_draws)
+				[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
+					indexBuffer:record->buffer indexBufferOffset:draw->index_offset instanceCount:1
+					baseVertex:draw->base_vertex baseInstance:0];
+			else
+				[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
+					indexBuffer:record->buffer indexBufferOffset:draw->index_offset];
 		}
 		else
 		{
@@ -4404,8 +4418,17 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		capabilities->vertex_bgra = (flags & GPU_INITIALIZE_NO_VERTEX_BGRA) ? 0 : 1;
 		/* indexed draws take the packet's base vertex (gpu_metal_draw), so the
 		front end needn't rebase a draw's indices and can draw them from the
-		mirror; debug.metal_base_vertex = false reports what GL does */
-		capabilities->base_vertex = (flags & GPU_INITIALIZE_NO_BASE_VERTEX) ? 0 : 1;
+		mirror, on a GPU that has base vertex drawing: family Apple3 (an A9)
+		and later, and every Mac. An A8 (the Apple TV HD, family Apple2)
+		doesn't, and nor does a simulator that reports no such family;
+		there, and with debug.metal_base_vertex = false, this reports what
+		GL does. (vertex_bgra needs no such test: it is the shaders' own
+		fetch, not a vertex descriptor's format.) */
+		base_vertex_draws = !(flags & GPU_INITIALIZE_NO_BASE_VERTEX) &&
+			([device supportsFamily:MTLGPUFamilyApple3] || [device supportsFamily:MTLGPUFamilyMac2]);
+		if (!base_vertex_draws && !(flags & GPU_INITIALIZE_NO_BASE_VERTEX))
+			platform_log("Metal: this GPU has no base vertex drawing (below family Apple3); indices are rebased per draw");
+		capabilities->base_vertex = base_vertex_draws ? 1 : 0;
 		/* the rest is what GL reports on Apple's OpenGL ES 3.0 (gpu_gl.c's
 		gpu_gl_initialize), so the front end behaves as it does under GL */
 		capabilities->triangle_fans = 1;
