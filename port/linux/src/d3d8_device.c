@@ -1300,6 +1300,8 @@ static void gl_initialize(void)
 		(config_boolean("debug.metal_state_cache") ? 0 : GPU_INITIALIZE_NO_STATE_CACHE) |
 		(config_boolean("debug.metal_specialize") ? 0 : GPU_INITIALIZE_NO_SPECIALIZE) |
 		(config_boolean("debug.metal_pipeline_archive") ? 0 : GPU_INITIALIZE_NO_PIPELINE_ARCHIVE) |
+		(config_boolean("debug.metal_vertex_bgra") ? 0 : GPU_INITIALIZE_NO_VERTEX_BGRA) |
+		(config_boolean("debug.metal_base_vertex") ? 0 : GPU_INITIALIZE_NO_BASE_VERTEX) |
 		async_shader_flags() | frame_rate_flags(), &device_capabilities);
 	screen_maximum_texture_size = (int32_t)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32
@@ -2670,7 +2672,7 @@ void halo_shader_list_warm(char const *map_name)
 				char kinds[64];
 				struct vertex_shader_object *program = NULL;
 				BOOL used = FALSE;
-				int fields;
+				int fields, attribute;
 
 				memset(&description, 0, sizeof(description));
 				fields = sscanf(line, "pipeline %llx.%u.%lx %llx %u %u %u %u %u %u %u %63s %u %u", &vertex_hash, &variant,
@@ -2689,6 +2691,15 @@ void halo_shader_list_warm(char const *map_name)
 				{
 					missing++;
 					continue;
+				}
+				/* a color attribute's kind follows vertex_bgra (attribute_format):
+				a list recorded with either reads as the one this run draws with */
+				for (attribute = 0; attribute < GPU_ATTRIBUTE_COUNT; attribute++)
+				{
+					if (description.attribute_kinds[attribute] == GPU_ATTRIBUTE_BGRA8 ||
+						description.attribute_kinds[attribute] == GPU_ATTRIBUTE_RGBA8)
+						description.attribute_kinds[attribute] = device_capabilities.vertex_bgra ? GPU_ATTRIBUTE_BGRA8 :
+							GPU_ATTRIBUTE_RGBA8;
 				}
 				description.blend = (uint8_t)values[0];
 				description.source = (uint8_t)values[1];
