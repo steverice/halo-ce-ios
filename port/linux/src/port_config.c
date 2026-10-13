@@ -2053,7 +2053,13 @@ static void config_dump(void)
 		if (!config_is_profile_setting(index) || !(setting->platforms & CONFIG_PLATFORM))
 			continue;
 		if (!dump_all && state->source == _source_default && !state->profile_count)
-			continue;
+		{
+			/* (nothing set it; a scene class's value alone still has its line) */
+			for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && !state->scene[scene].text; scene++)
+				;
+			if (scene == NUMBER_OF_CONFIG_SCENES)
+				continue;
+		}
 		config_literal(setting->type, &config_values[index], literal, sizeof(literal));
 		snprintf(piece, sizeof(piece), "settings: %s = %s", setting->name, literal);
 		config_append(&line, piece);
