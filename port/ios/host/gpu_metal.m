@@ -3392,9 +3392,12 @@ static os_unfair_lock pacing_lock = OS_UNFAIR_LOCK_INIT;
 /* the frames a report's percentiles can cover (reports come every 600) */
 #define PACING_TIMED_FRAMES 1024
 static CFTimeInterval refresh_period; /* CACurrentMediaTime's clock */
+/* how many refreshes the display link has called for (frame_context_wait counts them) */
+static _Atomic unsigned long refresh_count;
 @implementation PacingClock
 - (void)refresh:(CADisplayLink *)link
 {
+	atomic_fetch_add(&refresh_count, 1);
 	os_unfair_lock_lock(&pacing_lock);
 	refresh_period = link.targetTimestamp - link.timestamp;
 	os_unfair_lock_unlock(&pacing_lock);
@@ -3698,31 +3701,32 @@ static long frame_context_refreshes(CFTimeInterval period)
 	return refreshes < 1.0 ? 1 : refreshes > 8.0 ? 8 : (long)refreshes;
 }
 
-/* Holding a frame up for the scene class's refreshes (presentDrawable:afterMinimumDuration:) keeps
-the frames even but does not by itself slow the game: on an Apple TV HD the layer took a frame every
-refresh for a whole cutscene while each was asked to stay up two. So a Present under a frame rate
-also waits here until the one before it is that many refreshes old, less a part of a refresh, so
-that it lands on the refresh it is meant for. */
+/* Holding a frame up for the scene class's refreshes (presentDrawable:afterMinimumDuration:) does
+not by itself slow the game: on an Apple TV HD the layer took a frame every refresh for a whole
+cutscene while each was asked to stay up two, and a wait measured from the last Present landed
+some frames one refresh after the last and some two (35 frames a second for 30). So a Present under
+a frame rate waits for the display itself: until the display link has called for as many refreshes
+since the last Present as a frame stays up. Presented right after that call, the frame shows at the
+next refresh, that many after the one before. A frame that is already late goes at once. */
 static void frame_context_wait(void)
 {
-	CFTimeInterval period, wait;
+	static unsigned long presented_at;
+	CFTimeInterval period, began = CACurrentMediaTime();
 	long refreshes;
 
 	os_unfair_lock_lock(&pacing_lock);
 	period = refresh_period;
 	os_unfair_lock_unlock(&pacing_lock);
 	refreshes = frame_context_refreshes(period);
-	if (refreshes <= 1 || pacing.last_present <= 0.0)
-		return;
-	wait = pacing.last_present + period * ((double)refreshes - 0.35) - CACurrentMediaTime();
-	if (wait > 0.0 && wait < 0.25)
+	if (refreshes > 1)
 	{
-		CFTimeInterval began = CACurrentMediaTime();
-
-		usleep((useconds_t)(wait * 1e6));
+		/* (a quarter second at most: a display link that stopped must not stop the game) */
+		while (atomic_load(&refresh_count) < presented_at + (unsigned long)refreshes && CACurrentMediaTime() - began < 0.25)
+			usleep(500);
 		/* (not the frame's work: the CPU times in the log leave it out) */
 		pacing_waited += CACurrentMediaTime() - began;
 	}
+	presented_at = atomic_load(&refresh_count);
 }
 
 static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *next_frame_due)
