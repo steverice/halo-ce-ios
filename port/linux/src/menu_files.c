@@ -399,10 +399,23 @@ static int for_this_platform(struct reader *reader, const XML_Char **attributes)
 		{
 			const char *platform = attributes[index + 1];
 
-			if (strcmp(platform, "desktop") && strcmp(platform, "android"))
+			if (strcmp(platform, "desktop") && strcmp(platform, "android") && strcmp(platform, "mac_app"))
 			{
-				reader_error(reader, "platform=\"%s\" is not \"desktop\" or \"android\"", platform);
+				reader_error(reader, "platform=\"%s\" is not \"desktop\", \"android\" or \"mac_app\"", platform);
 				return 1;
+			}
+			/* "mac_app": the Apple host's Mac app alone, which says so in the
+			environment (HALO_HOST_MAC, port/ios/host/host_main.m): the one
+			Apple build with a setting the others ignore (display.frame_rate) */
+			if (!strcmp(platform, "mac_app"))
+			{
+#ifdef HALO_ILP32
+				const char *mac = getenv("HALO_HOST_MAC");
+
+				return mac && *mac == '1';
+#else
+				return 0;
+#endif
 			}
 			/* (iOS, iPadOS and visionOS take the "android" elements: a
 			fullscreen app the system closes, with no window or Quit) */

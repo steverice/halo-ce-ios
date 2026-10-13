@@ -305,9 +305,18 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[12];size_t env_count=0;
+        const char *env[14];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
+#if TARGET_OS_MACCATALYST
+        /* The Mac app alone honors display.frame_rate, so its menus alone show
+           the Frame Rate row (platform="mac_app", port/linux/src/menu_files.c),
+           with the display's own highest rate among its choices
+           (port/linux/game/menu_tags.c). */
+        char env_max_fps[48];
+        snprintf(env_max_fps,sizeof(env_max_fps),"HALO_DISPLAY_MAX_FPS=%ld",(long)UIScreen.mainScreen.maximumFramesPerSecond);
+        env[env_count++]="HALO_HOST_MAC=1";env[env_count++]=env_max_fps;
+#endif
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's
            display.renderer. The aspect is pinned to 16:9, since a visionOS
