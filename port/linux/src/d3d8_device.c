@@ -2605,6 +2605,9 @@ void halo_shader_list_warm(char const *map_name)
 	unsigned long vertex_count = 0, pixel_count = 0, pipeline_count = 0, missing = 0;
 	double started;
 	int pass;
+	char recorded_path[512];
+	FILE *recorded = NULL;
+	uint32_t recorded_size = 0;
 
 	for (cursor = map_name; *cursor; cursor++)
 	{
@@ -2612,16 +2615,47 @@ void halo_shader_list_warm(char const *map_name)
 			base = cursor + 1;
 	}
 	snprintf(shader_list.map, sizeof(shader_list.map), "%s", base);
-	if (!device.gl_ready || !config_boolean("debug.shader_list_warm") ||
-		!(size = gpu_warm_list_read(shader_list.map, NULL, 0)))
+	if (!device.gl_ready || !config_boolean("debug.shader_list_warm"))
 		return;
-	text = malloc(size + 1);
-	if (!text || gpu_warm_list_read(shader_list.map, text, size) != size)
+	size = gpu_warm_list_read(shader_list.map, NULL, 0);
+	/* what earlier sessions on this device still had to make while drawing
+	(shader_list_made's record) is warmed with the list, so a device stops
+	hitching on a shader the second time it meets it, without a new build */
+	if (*config_string("debug.shader_list_record"))
 	{
-		free(text);
+		snprintf(recorded_path, sizeof(recorded_path), "%s/%s.txt", config_string("debug.shader_list_record"),
+			shader_list.map);
+		if ((recorded = fopen(recorded_path, "r")) != NULL)
+		{
+			if (!fseek(recorded, 0, SEEK_END) && ftell(recorded) > 0)
+				recorded_size = (uint32_t)ftell(recorded);
+			rewind(recorded);
+		}
+	}
+	if (!size && !recorded_size)
+	{
+		if (recorded)
+			fclose(recorded);
 		return;
 	}
-	text[size] = 0;
+	text = malloc(size + 1 + recorded_size + 1);
+	if (!text || (size && gpu_warm_list_read(shader_list.map, text, size) != size))
+	{
+		free(text);
+		if (recorded)
+			fclose(recorded);
+		return;
+	}
+	text[size] = '\n';
+	if (recorded)
+	{
+		recorded_size = (uint32_t)fread(text + size + 1, 1, recorded_size, recorded);
+		fclose(recorded);
+	}
+	text[size + 1 + recorded_size] = 0;
+	if (recorded_size)
+		platform_log("shader list %s: with %u bytes recorded on this device (%s)", shader_list.map,
+			(unsigned int)recorded_size, recorded_path);
 	started = halo_frame_trace_milliseconds();
 	shader_list_warming = TRUE;
 	gpu_warm_begin();
