@@ -323,6 +323,13 @@ static const struct config_setting config_settings[] =
 		"rate when frames take too long; \"refresh\" allows any whole number of\n"
 		"refreshes (45 at 90 Hz). Experimental: in a visionOS window the pacing\n"
 		"can't yet see when frames show." },
+	{ "display.stereo_flare_counting", _config_boolean, "false", "HALO_STEREO_FLARE_COUNTING", _environment_value, _platform_ios,
+		"On a Vision Pro in stereo, dim each eye's lens flares by how much of the\n"
+		"light that eye can see, as the flat screen does, each eye for itself.\n"
+		"Off (default), a light either flares fully or not at all, the same in\n"
+		"both eyes. With foveation, flares toward the edge of the view come out\n"
+		"dimmer than they should; to be compared in the headset. Changes apply on\n"
+		"relaunch." },
 	{ "display.frame_source", _config_string, "\"\"", "HALO_FRAME_SOURCE", _environment_value, _platform_ios,
 		"Where the Metal renderer's frames get their place on the display:\n"
 		"\"clock\" asks for one when a frame is ready and applies\n"

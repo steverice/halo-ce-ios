@@ -1751,6 +1751,49 @@ void WINAPI D3DDevice_InsertCallback(D3DCALLBACKTYPE type, D3DCALLBACK callback,
 
 /* ---------- visibility (occlusion) tests */
 
+/* display.stereo_flare_counting: with stereo's two eyes, each eye counts
+its own visibility tests and reads its own answers.
+
+The eyes are two passes over the frame, and the game gives a light's test the
+same number in both, so in one set of slots the second eye's test replaces
+the first's and both eyes read whichever came last. That is harmless for a
+yes-or-no answer and wrong for a count: a light one eye sees whole and the
+other sees half hidden would flare alike in both. With the setting, the slots
+are split in two halves, one an eye, so each eye's flare follows what that
+eye sees, as two real eyes would.
+
+It is off by default because one thing is not corrected and can't be judged
+off the headset: under foveation an eye's target has fewer pixels toward
+its edges (the rate map), a test there passes fewer samples than the game's
+area for it, and the flare would dim toward the edge of the view. The count
+is exact where the rate is 1, at the middle of the view. Off, stereo keeps
+the yes-or-no answer it always had. */
+static BOOL stereo_flare_counting(void)
+{
+	static int setting = -1;
+
+	if (setting < 0)
+		setting = config_boolean("display.stereo_flare_counting") ? 1 : 0;
+	return setting != 0;
+}
+
+/* the slot a visibility test's number names: the number itself, or in an
+eye's pass with display.stereo_flare_counting, the eye's half of the slots */
+static DWORD visibility_slot(DWORD index)
+{
+	if (halo_stereo_frame()->eye_count == 2 && stereo_flare_counting())
+	{
+		int layer = halo_stereo_current_layer();
+
+		index %= GPU_VISIBILITY_SLOTS / 2;
+		if (!index)
+			index = 1;
+		return layer == 1 ? index + GPU_VISIBILITY_SLOTS / 2 : index;
+	}
+	index %= GPU_VISIBILITY_SLOTS;
+	return index ? index : 1;
+}
+
 void WINAPI D3DDevice_BeginVisibilityTest(void)
 {
 	if (!device.gl_ready || device.visibility_test_active)
@@ -1765,19 +1808,16 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 	if (!device.gl_ready || !device.visibility_test_active)
 		return S_OK;
 	device.visibility_test_active = FALSE;
-	index %= GPU_VISIBILITY_SLOTS;
-	if (!index)
-		index = 1;
+	index = visibility_slot(index);
 	/* the target's pixels to a game pixel: the result is a count of the
 	game's pixels (visibility_unscaled), which the game divides by its own
 	test's area (lens flares, rasterizer_lights.c), a split-screen window's
 	or the screen's alike */
 	device.query_area[index] = target_scale[0] * target_scale[1];
 	/* A frame with stereo's eyes keeps the yes-or-no answer (0: see
-	visibility_unscaled): a test's draws go to both eyes, whose counts would
-	add, an eye's foveated target has fewer pixels where the rate map thins
-	it, and one eye can see a light the other can't. */
-	if (halo_stereo_frame()->eye_count == 2)
+	visibility_unscaled) unless display.stereo_flare_counting is on
+	(visibility_slot). */
+	if (halo_stereo_frame()->eye_count == 2 && !stereo_flare_counting())
 		device.query_area[index] = 0.0f;
 	device.query_pending[index] = TRUE;
 	gpu_visibility_end((uint32_t)index);
@@ -1806,9 +1846,7 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 
 	if (time_stamp)
 		*time_stamp = 0;
-	index %= GPU_VISIBILITY_SLOTS;
-	if (!index)
-		index = 1;
+	index = visibility_slot(index);
 	if (!device.gl_ready || !device.query_pending[index])
 	{
 		if (result)
