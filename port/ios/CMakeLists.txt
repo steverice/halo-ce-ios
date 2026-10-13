@@ -35,8 +35,8 @@ if(HALO_MAC)
     target_compile_options(SDL3-static PRIVATE "-F${HALO_GLES_FRAMEWORKS}")
     target_compile_definitions(SDL3-static PRIVATE GLES_SILENCE_DEPRECATION=1)
 endif()
-# iPhone and visionOS: each build a new CFBundleVersion (tools/ios_build.py), so
-# installing over the app replaces it and keeps its Documents (the imported game)
+# Each build a new CFBundleVersion (tools/ios_build.py), so installing over the
+# app replaces it and keeps its Documents, or on tvOS its Caches (the imported game)
 set(HALO_BUILD_NUMBER 6 CACHE STRING "CFBundleVersion")
 if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # Controllers only, no Files app: the XISO arrives from a browser
@@ -49,6 +49,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     set(HALO_PLATFORM_SOURCES Assets-tvOS.xcassets host/host_tv.m host/host_tv_import.m)
     set(HALO_INFO_PLIST Info-tvOS.plist)
     set(HALO_DEVICE_FAMILY 3)
+    option(HALO_EXTENDED_VIRTUAL_ADDRESSING "Sign with the extended virtual addressing entitlement" OFF)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
     # A window, played with a game controller (host/host_tv.m's input), the
     # game imported through Files or the Documents folder (host/host_import.m).
@@ -136,6 +137,13 @@ endif()
 if(HALO_TVOS)
     target_link_libraries(VISR PRIVATE "-framework Network" "-framework CoreImage")
     set_source_files_properties(Assets-tvOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    # An Apple TV HD (A8, 2 GB) has no free 4 GB at a multiple of 4 GB for the
+    # guest arena; the entitlement asks for a larger address space
+    # (tools/ios_build.py --tvos --extended-virtual-addressing)
+    if(HALO_EXTENDED_VIRTUAL_ADDRESSING)
+        set_target_properties(VISR PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/VISR-tvOS-extended.entitlements")
+    endif()
 elseif(HALO_VISIONOS)
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers" "-framework CompositorServices"
         "-framework ARKit" "-framework SwiftUI")

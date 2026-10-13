@@ -29,13 +29,38 @@ static int in_window(uint32_t p, uint64_t n) {
     return p >= HALO_GUEST_WINDOW_BASE && (uint64_t)p+n <= (uint64_t)HALO_GUEST_WINDOW_BASE+HALO_GUEST_WINDOW_SIZE;
 }
 
+/* The arena was refused (first seen on an Apple TV HD: A8, 2 GB): log what the
+   process's address space does have, since that decides what could replace a
+   4 GB region at a multiple of 4 GB. */
+static void arena_report(void) {
+    task_vm_info_data_t info;mach_msg_type_number_t count=TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(),TASK_VM_INFO,(task_info_t)&info,&count)==KERN_SUCCESS)
+        host_logf(HOST_LOG_ERROR,"address space: %llx to %llx (%llu MB), %llu MB of it mapped",
+            (unsigned long long)info.min_address,(unsigned long long)info.max_address,
+            (unsigned long long)(info.max_address-info.min_address)>>20,(unsigned long long)info.virtual_size>>20);
+    static const unsigned megabytes[]={4096,3584,3072,2560,2048,1536,1024,512};
+    for (size_t i=0;i<sizeof(megabytes)/sizeof(*megabytes);i++) {
+        vm_address_t probe=0;vm_size_t size=(vm_size_t)megabytes[i]<<20;
+        kern_return_t result=vm_map(mach_task_self(),&probe,size,0,VM_FLAGS_ANYWHERE,MACH_PORT_NULL,0,FALSE,
+            VM_PROT_NONE,VM_PROT_ALL,VM_INHERIT_NONE);
+        if (result==KERN_SUCCESS) {
+            host_logf(HOST_LOG_ERROR,"address space: %u MB at any address fits, at %llx",megabytes[i],(unsigned long long)probe);
+            vm_deallocate(mach_task_self(),probe,size);
+            break;
+        }
+        host_logf(HOST_LOG_ERROR,"address space: %u MB at any address is refused too (%d)",megabytes[i],result);
+    }
+}
+
 int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
     (void)image_base; (void)image_size;
     vm_address_t arena = 0;
     kern_return_t result = vm_map(mach_task_self(), &arena, 0x100000000ull, 0xffffffffull,
         VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE);
     if (result != KERN_SUCCESS || (arena & 0xffffffffull)) {
-        host_logf(HOST_LOG_ERROR,"cannot reserve aligned guest arena: %d",result); return -1;
+        host_logf(HOST_LOG_ERROR,"cannot reserve aligned guest arena: %d",result);
+        arena_report();
+        return -1;
     }
     host_arena = arena;
     if (mprotect(host_pointer(HALO_GUEST_WINDOW_BASE),HALO_GUEST_WINDOW_SIZE,PROT_READ|PROT_WRITE)) return -1;

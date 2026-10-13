@@ -1,6 +1,7 @@
 /* Start the statically compiled guest on the iOS UI thread and persist its log. */
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <Metal/Metal.h>
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_display_pin.h"
@@ -14,6 +15,8 @@
 #if TARGET_OS_MACCATALYST
 #include <objc/message.h>
 #endif
+#include <mach/mach.h>
+#include <os/proc.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -39,6 +42,31 @@ void host_fatal(const char *format,...) {
 }
 void host_abort(const char *reason) { host_logf(HOST_LOG_ERROR,"guest abort: %s",reason);abort(); }
 void host_exit(int code) {host_logf(HOST_LOG_INFO,"game exit %d",code);exit(code);}
+
+/* What the system counts against the app, every ten seconds: tvOS ends an app
+   well under the device's memory (2 GB on an Apple TV HD), and the log is the
+   only place to see how close a level comes. Always on tvOS; elsewhere when
+   HALO_MEMORY_LOG is set in the app's environment or the data folder has a
+   file named memory-log (as tools make stderr.log). */
+static void memory_log_start(void) {
+    static dispatch_source_t timer;
+    host_logf(HOST_LOG_INFO,"memory: the device has %llu MB",NSProcessInfo.processInfo.physicalMemory>>20);
+    timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_global_queue(QOS_CLASS_UTILITY,0));
+    dispatch_source_set_timer(timer,dispatch_time(DISPATCH_TIME_NOW,0),10*NSEC_PER_SEC,NSEC_PER_SEC);
+    dispatch_source_set_event_handler(timer,^{
+        task_vm_info_data_t info;mach_msg_type_number_t count=TASK_VM_INFO_COUNT;
+        if(task_info(mach_task_self(),TASK_VM_INFO,(task_info_t)&info,&count)!=KERN_SUCCESS)return;
+#if TARGET_OS_MACCATALYST
+        host_logf(HOST_LOG_INFO,"memory: footprint %llu MB, peak %llu MB",
+            (unsigned long long)info.phys_footprint>>20,(unsigned long long)info.ledger_phys_footprint_peak>>20);
+#else
+        host_logf(HOST_LOG_INFO,"memory: footprint %llu MB, peak %llu MB, %llu MB left before the system's limit",
+            (unsigned long long)info.phys_footprint>>20,(unsigned long long)info.ledger_phys_footprint_peak>>20,
+            (unsigned long long)os_proc_available_memory()>>20);
+#endif
+    });
+    dispatch_resume(timer);
+}
 int host_errno(void) {return host_linux_errno(errno);}
 void host_debug_thread_started(void) {}
 void host_debug_thread_exited(void) {}
@@ -230,6 +258,11 @@ int main(int argc,char **argv) {
         host_logf(HOST_LOG_INFO,"Halo iOS native guest starting");
         /* names the exact game image a result folder came from (tools/mac_run.py compare-inputs) */
         host_logf(HOST_LOG_INFO,"guest image sha256 %s",HALO_GUEST_SHA256);
+#if TARGET_OS_TV
+        memory_log_start();
+#else
+        if(getenv("HALO_MEMORY_LOG")||access("memory-log",F_OK)==0)memory_log_start();
+#endif
         /* halo://join links (host_join_link.c): before the import screen can spin the run loop,
            which is when SDL's scene delegate passes on the link the app was launched with */
         host_join_link_install(data_root);
@@ -269,8 +302,14 @@ int main(int argc,char **argv) {
         host_texture_settings_observe(data_root);
 #endif
         /* the arena is the step a device can refuse (visionOS: see port/ios/README.md) */
+#if TARGET_OS_TV
+        /* (no Files app on an Apple TV; and a message box would hold a test run open) */
+        if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image.":
+            "This Apple TV cannot give the game the 4 GB of address space it needs.");
+#else
         if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image. See ios-runtime.log in Files.":
             "Could not reserve the game's 4 GB memory arena. See ios-runtime.log in Files.");
+#endif
         host_install_signal_handlers();
         SDL_SetHint(SDL_HINT_ORIENTATIONS,"LandscapeLeft LandscapeRight");
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
@@ -305,7 +344,7 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[12];size_t env_count=0;
+        const char *env[16];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
 #if TARGET_OS_VISION
@@ -316,10 +355,40 @@ int main(int argc,char **argv) {
         env[env_count++]="HALO_RENDERER=metal";
         env[env_count++]="HALO_SCREEN_WIDTH=852";
 #endif
+#if TARGET_OS_TV
+        /* Metal unless the launch says otherwise. An Apple TV has no Files app
+           and no Settings page, so nobody can edit config.toml's
+           display.renderer there, and its OpenGL ES has no S3TC, border clamp
+           or base vertex. HALO_RENDERER in the app's own environment (devicectl's
+           DEVICECTL_CHILD_HALO_RENDERER=gl, simctl's SIMCTL_CHILD_) still
+           chooses, for a comparison run. Nothing on an Apple TV makes upscaled
+           textures, and the smallest one has 2 GB of memory: they stay off. */
+        char env_renderer[32];
+        const char *launch_renderer=getenv("HALO_RENDERER");
+        snprintf(env_renderer,sizeof(env_renderer),"HALO_RENDERER=%s",launch_renderer&&!strcmp(launch_renderer,"gl")?"gl":"metal");
+        env[env_count++]=env_renderer;
+        env[env_count++]="HALO_UPSCALED_TEXTURES=false";
+        host_logf(HOST_LOG_INFO,"tvOS: %s, upscaled textures off",env_renderer);
+#endif
 #if TARGET_OS_TV || TARGET_OS_VISION
         char env_render[64];
         /* The build chooses the render height (tools/ios_build.py --render-height). */
         int render_height=[[NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRenderHeight"] intValue];
+#if TARGET_OS_TV
+        /* An Apple TV HD (A8, GPU family Apple2, the only tvOS device below
+           Apple3) draws open scenes at 12 to 18 frames a second at 1080 and in
+           the mid-20s at 540: the build's default of 1080 becomes 540 there. A
+           build made with another --render-height keeps its own. */
+        if(render_height==1080){
+            id<MTLDevice> gpu=MTLCreateSystemDefaultDevice();
+            if(gpu&&![gpu supportsFamily:MTLGPUFamilyApple3]){
+                render_height=540;
+                host_logf(HOST_LOG_INFO,"tvOS: render height 540 on this GPU (%s, below family Apple3)",gpu.name.UTF8String);
+            }
+        }
+        /* a launch's own HALO_RENDER_HEIGHT, to measure another height without a rebuild */
+        if(getenv("HALO_RENDER_HEIGHT")&&atoi(getenv("HALO_RENDER_HEIGHT"))>0)render_height=atoi(getenv("HALO_RENDER_HEIGHT"));
+#endif
         if(render_height>0){snprintf(env_render,sizeof(env_render),"HALO_RENDER_HEIGHT=%d",render_height);env[env_count++]=env_render;}
 #endif
         env[env_count++]="TZ=UTC0";env[env_count++]=NULL;
