@@ -66,8 +66,10 @@ units (0.67 m) behind the eye, so looking down showed the footwell and the
 waist somewhere behind you. The seated body is drawn moved ahead, along the
 way it faces, by display.first_person_legs_seat_shift (0 to 1) of the way
 that brings the hips under the eye, and never by more than this (world
-units), which keeps the knees and the feet short of the dash */
-#define FIRST_PERSON_LEGS_SEAT_SHIFT_MAXIMUM 0.2f
+units, 0.37 m): a Warthog passenger rides with the right knee up, and moved
+0.2 that knee stood in the dash's side panel, while at 0.11 the thighs come
+into the bottom of the view and nothing meets the dash */
+#define FIRST_PERSON_LEGS_SEAT_SHIFT_MAXIMUM 0.12f
 /* the seat flag "allows weapons" (unit_definitions.h names its neighbors, not
 it): the rider keeps the weapon in hand and the first-person view of it, as
 a Warthog's passenger and a Pelican's riders do. A seat without it is one a

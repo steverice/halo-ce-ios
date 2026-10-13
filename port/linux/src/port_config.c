@@ -482,8 +482,8 @@ static const struct config_setting config_settings[] =
 		"With display.first_person_legs, in a vehicle seat seen through your own\n"
 		"eyes (a Warthog's passenger seat): how far your seated body is drawn\n"
 		"moved ahead so the waist sits under the view, 0.0 (where the game seats\n"
-		"it, well behind the eye) to 1.0 (under the eye, default), never more\n"
-		"than about 0.6 m so the knees stay short of the dash." },
+		"it, well behind the eye) to 1.0 (toward the eye, default), never more\n"
+		"than about 0.37 m so the knees stay short of the dash." },
 
 	{ "paths.data", _config_string, "\"\"", "HALO_DATA_ROOT", _environment_value, _platform_desktop,
 		"The folder holding the game data's maps folder; empty looks in the\n"
