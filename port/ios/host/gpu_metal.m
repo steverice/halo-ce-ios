@@ -24,6 +24,7 @@ but never returns to its run loop, which would otherwise drain them.
 #include "ios_host.h"
 #include "metal_state_cache.h"
 #include "metal_compile_async.h"
+#include "host_benchmark.h"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -1048,6 +1049,7 @@ static void compile_count(int kind, CFTimeInterval started, int play)
 {
 	double seconds = CACurrentMediaTime() - started;
 
+	host_benchmark_compile(seconds);
 	os_unfair_lock_lock(&compile_stats_lock);
 	compile_stats.count[kind]++;
 	compile_stats.seconds[kind] += seconds;
@@ -3545,6 +3547,8 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	os_unfair_lock_lock(&pacing_lock);
 	period = refresh_period;
 	os_unfair_lock_unlock(&pacing_lock);
+	/* the device benchmark (host_benchmark.m): every presented frame while a run's window is open */
+	host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0);
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 		return 0.0;
 	if (!pacing_allowed(pacing.refreshes, period))

@@ -4,6 +4,10 @@ host_syscall
 host_log
 host_abort
 host_exit
+host_benchmark_start
+host_benchmark_next
+host_benchmark_window
+host_benchmark_end
 host_get_tp
 host_set_tp
 host_thread_create

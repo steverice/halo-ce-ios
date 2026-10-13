@@ -47,6 +47,8 @@ void d3d8_surface_resize(D3DSurface *surface, D3DFORMAT format, unsigned long wi
 void render_interpolation_next_frame_due(unsigned long microseconds);
 /* input_replay.c */
 void input_replay_frame(long width, long height);
+/* benchmark_suite.c: the device benchmark's suite, once a presented frame */
+void benchmark_suite_frame(long width, long height);
 /* source/models/models.c: models drawn at each detail level (0 the lowest, 4
 the highest) and models the size cull dropped since the last call */
 void halo_model_counts_take(unsigned long drawn[5], unsigned long *culled);
@@ -153,6 +155,18 @@ static int32_t screen_maximum_texture_size = 8192;
 first changed */
 static double render_scale_live = -1.0;
 
+/* The device benchmark (benchmark_suite.c) sets these between its runs, in place of the settings: the render
+height in lines (the next frame's halo_screen_commit draws at it, as a render scale step does), the shadow maps'
+size and the anisotropy; 0 leaves the setting in force */
+static long benchmark_render_lines, benchmark_shadow_size, benchmark_anisotropy;
+
+void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy)
+{
+	benchmark_render_lines = render_lines;
+	benchmark_shadow_size = shadow_size;
+	benchmark_anisotropy = anisotropy;
+}
+
 /* source/render/render_debug.c: text the frame's debug pass draws */
 void render_debug_string(unsigned char immediate, const char *string);
 /* xbox_kernel.c */
@@ -226,6 +240,8 @@ static void screen_mode_choose(long *width, float scale[2])
 		takes the scale's place */
 		double render_scale = render_scale_live >= 0.0 ? render_scale_live : config_real("display.render_scale");
 
+		if (benchmark_render_lines > 0)
+			render_scale = 1.0;
 		if (render_scale >= 0.25 && render_scale < 1.0 && !(head_eyes_frame() && halo_stereo_frame()->foveated))
 		{
 			drawable_width = (int)lround(drawable_width * render_scale);
@@ -233,7 +249,8 @@ static void screen_mode_choose(long *width, float scale[2])
 		}
 	}
 	pixels = halo_display_render_size(drawable_width, drawable_height, *width,
-		requested_width, config_integer("display.render_height"), screen_maximum_texture_size);
+		requested_width, benchmark_render_lines > 0 ? benchmark_render_lines : config_integer("display.render_height"),
+		screen_maximum_texture_size);
 	{
 		/* head-tracked stereo: the screen's targets are the eyes' pictures,
 		each view's size and shape times display.render_scale, which needn't
@@ -712,7 +729,7 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 		effect_factor = !strcmp(config_string("display.mirror_resolution"), "full") ? 2.0f : 1.0f;
 	}
 	if (width == 128 && height == 128 && (format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
-		scale[0] = scale[1] = (float)shadow_size / 128.0f;
+		scale[0] = scale[1] = (float)(benchmark_shadow_size > 0 ? benchmark_shadow_size : shadow_size) / 128.0f;
 	else if (width == 320 && height == 240 && effect_resolution)
 	{
 		float dense[2];
@@ -2869,6 +2886,8 @@ static void sampler_state_fill(int stage, BOOL mipmapped, BOOL hires, struct gpu
 			anisotropy = config_integer("display.anisotropic_filtering");
 			anisotropy = anisotropy < 1 ? 1 : anisotropy > 16 ? 16 : anisotropy;
 		}
+		if (benchmark_anisotropy > 0)
+			anisotropy = benchmark_anisotropy;
 		if (anisotropy > 1 && sampler->min_filter == GPU_FILTER_LINEAR && sampler->mip_filter != GPU_FILTER_NONE)
 		{
 			sampler->min_filter = GPU_FILTER_ANISOTROPIC;
@@ -5148,6 +5167,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	}
 	device.frame++;
 	input_replay_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
+	benchmark_suite_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
 	/* debug.fixed_timestep: a frame ends once the workers are idle */
 	platform_quiescence_wait();
 	platform_clock_frame();

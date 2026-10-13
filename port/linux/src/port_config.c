@@ -657,6 +657,11 @@ static const struct config_setting config_settings[] =
 	{ "debug.benchmark", _config_boolean, "false", "HALO_BENCHMARK", _environment_value, _platform_all,
 		"With debug.input_replay: time every frame of the replay, write\n"
 		"benchmark-<name>-<time>.txt and quit when the replay ends." },
+	{ "debug.benchmark_suite", _config_string, "\"\"", "HALO_BENCHMARK_SUITE", _environment_value, _platform_ios,
+		"\"quick\" or \"full\" runs the device benchmark and quits: the suite's\n"
+		"scenes, several times over at different settings, with a report in\n"
+		"the data folder's benchmark folder (port/linux/src/benchmark_suite.c);\n"
+		"empty for none." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"

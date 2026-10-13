@@ -6,6 +6,7 @@
 #include "guest_image.h"
 #include "host_display_pin.h"
 #include "host_join_link.h"
+#include "host_benchmark.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
 #endif
@@ -297,6 +298,12 @@ int main(int argc,char **argv) {
         }
 #endif
         host_ios_prepare_assets(data_root);
+        /* the device benchmark: debug.benchmark_suite's value through the launch's environment, or in a tester
+           build the choice made on its first screen */
+        const char *benchmark_suite=getenv("HALO_BENCHMARK_SUITE");
+#ifdef HALO_TESTER_BUILD
+        if(!benchmark_suite&&!getenv("HALO_RUNNER"))benchmark_suite=host_benchmark_menu();
+#endif
 #if !TARGET_OS_TV
         /* the Settings app's texture pane: acted on now and at every return to the foreground */
         host_texture_settings_observe(data_root);
@@ -310,6 +317,8 @@ int main(int argc,char **argv) {
         if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image. See ios-runtime.log in Files.":
             "Could not reserve the game's 4 GB memory arena. See ios-runtime.log in Files.");
 #endif
+        /* the device benchmark's crash marker goes under the memory watch's handlers, which pass on what is not theirs */
+        host_benchmark_install();
         host_install_signal_handlers();
         SDL_SetHint(SDL_HINT_ORIENTATIONS,"LandscapeLeft LandscapeRight");
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
@@ -391,6 +400,11 @@ int main(int argc,char **argv) {
 #endif
         if(render_height>0){snprintf(env_render,sizeof(env_render),"HALO_RENDER_HEIGHT=%d",render_height);env[env_count++]=env_render;}
 #endif
+        char env_benchmark[48];
+        if(benchmark_suite&&*benchmark_suite){
+            snprintf(env_benchmark,sizeof(env_benchmark),"HALO_BENCHMARK_SUITE=%s",benchmark_suite);
+            env[env_count++]=env_benchmark;
+        }
         env[env_count++]="TZ=UTC0";env[env_count++]=NULL;
         uint32_t *environment=host_low_map(sizeof(uint32_t)*env_count,PROT_READ|PROT_WRITE);
         for(size_t i=0;i<env_count-1;i++)environment[i]=copy_string(env[i]);environment[env_count-1]=0;

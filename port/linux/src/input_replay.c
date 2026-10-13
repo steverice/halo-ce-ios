@@ -101,6 +101,13 @@ static struct
 	XINPUT_GAMEPAD replay_pad;
 	BOOL replay_finished;
 	BOOL benchmark;
+	/* the device benchmark's suite (benchmark_suite.c) owns the replays: several in one launch, started with
+	input_replay_begin; it times the frames itself, and the real controller is ignored throughout */
+	BOOL suite;
+	/* a replay begun while another level still plays waits for the next level: until the game time is seen to go
+	back, nothing is replayed and no segment is counted */
+	BOOL await_level;
+	double await_ticks;
 	double *frame_milliseconds;
 	long frame_count, frame_capacity;
 	double previous_frame;
@@ -268,6 +275,79 @@ static void configure(void)
 	}
 }
 
+/* The device benchmark's suite: replays NAME (a path ending in ".input", or NULL or "" for none) from the next
+level's first tick, in place of whatever was replaying. From the first call on, the real controller is ignored
+while a level's game time runs. 1 if there is nothing to load or the recording loaded with at least one state */
+int input_replay_begin(const char *name)
+{
+	replay.configured = TRUE;
+	free(replay.states);
+	free(replay.actions);
+	if (replay.record_file)
+		fclose(replay.record_file);
+	if (replay.actions_file)
+		fclose(replay.actions_file);
+	memset(&replay, 0, sizeof(replay));
+	replay.configured = replay.suite = TRUE;
+	if (game_time_initialized() && !input_replay_main_menu_loaded())
+	{
+		replay.await_level = TRUE;
+		replay.await_ticks = (double)game_time_get();
+	}
+	if (!name || !*name)
+		return 1;
+	{
+		const char *base = strrchr(name, '/');
+
+		snprintf(replay.replay_name, sizeof(replay.replay_name), "%s", base ? base + 1 : name);
+	}
+	recording_path(name, replay.replay_path, sizeof(replay.replay_path));
+	actions_path(replay.replay_path, replay.replay_actions_path, sizeof(replay.replay_actions_path));
+	replay_load();
+	actions_load();
+	return replay.state_count > 0;
+}
+
+/* whether the replay begun last has played to its end (or never loaded) */
+int input_replay_ended(void)
+{
+	return !*replay.replay_path || replay.replay_finished;
+}
+
+/* how many times the game time has gone back during this replay, and the recorded length in ticks */
+long input_replay_segment(void)
+{
+	return replay.segment;
+}
+
+double input_replay_length_ticks(void)
+{
+	return replay.state_count ? replay.states[replay.state_count - 1].ticks : 0.0;
+}
+
+static double game_ticks(void);
+
+/* whether a replay begun during another level is still waiting for its own (input_replay_begin) */
+static BOOL awaiting_level(double ticks)
+{
+	if (!replay.await_level)
+		return FALSE;
+	if (ticks + 1.0 < replay.await_ticks)
+	{
+		replay.await_level = FALSE;
+		return FALSE;
+	}
+	replay.await_ticks = ticks;
+	return TRUE;
+}
+
+/* the recorded time now: ticks of game time since the level loaded, which never goes back; negative while no
+level's game time runs */
+double input_replay_timeline(void)
+{
+	return game_ticks();
+}
+
 /* the recorded time: the game time in ticks, with the fraction into the
 next, carried on across the game time going back (a checkpoint revert or
 the next level); or a negative number while no level's game time runs (the
@@ -279,6 +359,8 @@ static double game_ticks(void)
 	if (!game_time_initialized() || input_replay_main_menu_loaded())
 		return -1.0;
 	ticks = (double)game_time_get() + (double)game_time_get_tick_fraction();
+	if (awaiting_level(ticks))
+		return -1.0;
 	if (replay.last_game_ticks > 0.0 && ticks + 1.0 < replay.last_game_ticks)
 	{
 		/* resume at the next whole tick after the last seen, so recording
@@ -384,11 +466,17 @@ void input_replay_filter(XINPUT_GAMEPAD *pad)
 
 	if (!replay.configured)
 		configure();
-	if (!*replay.record_path && !*replay.replay_path)
+	if (!*replay.record_path && !*replay.replay_path && !replay.suite)
 		return;
 	ticks = game_ticks();
 	if (ticks < 0.0)
 		return;
+	/* the suite: nobody plays; a scene with no recording stands still */
+	if (replay.suite && (!*replay.replay_path || replay.replay_finished))
+	{
+		memset(pad, 0, sizeof(*pad));
+		return;
+	}
 	if (*replay.record_path && !replay.record_ended &&
 		(pad->wButtons & (XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START)) == (XINPUT_GAMEPAD_BACK | XINPUT_GAMEPAD_START))
 	{
@@ -428,6 +516,8 @@ void input_replay_tick_action(void *action)
 	if (!game_time_initialized() || input_replay_main_menu_loaded())
 		return;
 	tick = game_time_get();
+	if (awaiting_level((double)tick))
+		return;
 	if (replay.last_action_tick > 0 && tick < replay.last_action_tick)
 		replay.segment++;
 	replay.last_action_tick = tick;
@@ -556,11 +646,13 @@ void input_replay_frame(long width, long height)
 {
 	double now;
 
-	if (!replay.benchmark)
+	if (!replay.benchmark && !(replay.suite && *replay.replay_path))
 		return;
 	now = halo_frame_trace_milliseconds();
 	if (replay.replay_finished)
 	{
+		if (replay.suite)
+			return;
 		benchmark_report(width, height);
 		platform_log("debug.benchmark: the replay ended; quitting");
 		exit(EXIT_SUCCESS);
@@ -586,7 +678,7 @@ void input_replay_frame(long width, long height)
 			return;
 		}
 	}
-	if (replay.next_state == 0)
+	if (replay.next_state == 0 || replay.suite)
 		return;
 	if (replay.previous_frame > 0.0)
 	{

@@ -45,3 +45,16 @@ def test_the_catalyst_build_goes_in_the_checkout_by_default():
 
 def test_a_host_s_designated_folder_takes_the_catalyst_build(tmp_path):
     assert ios_build.mac_build_folder({"HALO_MAC_BUILD": str(tmp_path)}) == tmp_path / ios_build.ROOT.name / "app"
+
+
+def test_an_app_store_package_is_archived_then_exported_and_uploads_only_when_asked(tmp_path):
+    import plistlib
+    archive, export = ios_build.app_store_commands(tmp_path / "build", "tvOS", "TEAM123456", tmp_path / "out", False)
+    assert archive[0] == "xcodebuild" and archive[-1] == "archive" and "generic/platform=tvOS" in archive
+    assert "-allowProvisioningUpdates" in archive and "-exportArchive" in export
+    options = plistlib.loads((tmp_path / "out" / "ExportOptions.plist").read_bytes())
+    assert options["method"] == "app-store-connect" and options["destination"] == "export" and options["teamID"] == "TEAM123456"
+    # the build stamps its own version: Xcode must not renumber it
+    assert options["manageAppVersionAndBuildNumber"] is False
+    ios_build.app_store_commands(tmp_path / "build", "tvOS", "TEAM123456", tmp_path / "out", True)
+    assert plistlib.loads((tmp_path / "out" / "ExportOptions.plist").read_bytes())["destination"] == "upload"

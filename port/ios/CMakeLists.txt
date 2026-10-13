@@ -89,6 +89,8 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
     host/host_join_link.c host/host_config.c
+    host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
+    "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
     "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
@@ -129,7 +131,7 @@ if(NOT HALO_VISIONOS)
 endif()
 target_compile_options(VISR PRIVATE "$<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>")
 target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "-framework UIKit"
-    "-framework Metal" "-framework QuartzCore" z)
+    "-framework Metal" "-framework QuartzCore" "-framework Network" "-framework CoreImage" z)
 # display.upscaler = "metalfx" (gpu_metal.m); the simulators have no MetalFX
 if(NOT CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
     target_link_libraries(VISR PRIVATE "-weak_framework MetalFX")
@@ -179,6 +181,18 @@ set_source_files_properties("${ROOT}/port/assets/network/brokers.txt" PROPERTIES
 file(GLOB HALO_LICENSES "${ROOT}/build/ios/licenses/*.txt")
 target_sources(VISR PRIVATE ${HALO_LICENSES})
 set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
+# The privacy manifest (port/ios/privacy): a tester build, whose benchmark can send a report when its tester
+# agrees, declares that; every other build sends nothing and declares nothing collected
+option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
+if(HALO_TESTER_BUILD)
+    target_sources(VISR PRIVATE host/host_benchmark_menu.m)
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
+    target_compile_definitions(VISR PRIVATE HALO_TESTER_BUILD=1)
+else()
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/plain/PrivacyInfo.xcprivacy")
+endif()
+target_sources(VISR PRIVATE "${HALO_PRIVACY_MANIFEST}")
+set_source_files_properties("${HALO_PRIVACY_MANIFEST}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 # the maps' shader lists, compiled at map load (d3d8_device.c's halo_shader_list_warm)
 file(GLOB HALO_SHADER_LISTS CONFIGURE_DEPENDS "${ROOT}/port/shader-lists/*.txt")
 target_sources(VISR PRIVATE ${HALO_SHADER_LISTS})

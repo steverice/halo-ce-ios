@@ -29,6 +29,24 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 void host_log(int priority, const char *text);
 void host_abort(const char *reason) __attribute__((noreturn));
 void host_exit(int code) __attribute__((noreturn));
+
+/* ---------- the device benchmark (port/ios/host/host_benchmark.m; the guest's
+side is port/linux/src/benchmark_suite.c) */
+
+/* starts a suite ("quick" or "full"), or carries on the one the journal says
+was cut off, on a device whose display has drawable_lines lines and whose
+settings in force are the rest; 0 if the benchmark cannot run now (the log
+says why) */
+int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
+	int model_lod_max);
+/* the next run as text ("scene=a10-crew map=a10 difficulty=hard recording=a10-bench
+lead=0 seconds=0 lines=540 anisotropy=4 shadow=256 lod=1"), after the pause
+between runs; 0 once the suite is over and its report written */
+int host_benchmark_next(char *text, unsigned int size);
+/* the measured window opens (1) or closes (0); the render size it drew at */
+void host_benchmark_window(int open, int width, int height);
+/* the run is over: a status by name (benchmark_plan.h) and a note for the report */
+void host_benchmark_end(const char *status, const char *note);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 
