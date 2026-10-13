@@ -294,6 +294,24 @@ int main(void)
 {
 	check_written_file();
 	check_folding();
+#ifdef HALO_IOS
+	/* an Apple build's defaults: a fresh install neither downloads maps from
+	a game's players nor helps send them (port_config.c's DEFAULT_MAP_*) */
+	{
+		char *text = config_default_text();
+
+		assert(strstr(text, "\nmap_download = false\n") && strstr(text, "\nmap_seed = false\n"));
+		assert(strstr(text, "\nmap_share = true\n"));
+		puts("PASS: an Apple build's config.toml starts with map_download and map_seed off");
+		return 0;
+	}
+#elif !defined(HALO_ILP32)
+	{
+		char *text = config_default_text();
+
+		assert(strstr(text, "\nmap_download = true\n") && strstr(text, "\nmap_seed = true\n"));
+	}
+#endif
 #ifdef HALO_ILP32
 	check_reading();
 	puts("PASS: config.toml written with each table once (iOS and visionOS settings), and repeats read as the first");

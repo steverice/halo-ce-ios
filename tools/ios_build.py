@@ -43,6 +43,9 @@ def main():
     parser.add_argument('--extended-virtual-addressing', action='store_true',
                         help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
                              'in case the device refuses the 4 GB guest arena')
+    parser.add_argument('--frame-pacing', choices=('on','off'),
+                        help="compile in the Metal renderer's presentation pacing (HALO_FRAME_PACING; "
+                             'default on, off for --visionos, whose frames the Compositor paces)')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
     parser.add_argument('--render-validation', choices=('on', 'off'),
                         default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
@@ -123,6 +126,8 @@ def main():
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}',
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}']
+    if args.frame_pacing:
+        command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     if not args.tvos:
         # a new CFBundleVersion each build, so an install over the app replaces it
         import time
@@ -196,7 +201,8 @@ def build_mac(args):
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         '-DHALO_DEVELOPMENT_TEAM=','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
         f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
-        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
+        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
+        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []))
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',
         '-sdk','macosx','SDK_VARIANT=iosmac','SUPPORTS_MACCATALYST=YES','DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER=NO',
         'CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM=')

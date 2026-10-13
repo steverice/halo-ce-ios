@@ -762,5 +762,9 @@ disk space and no question before a download starts, so
 a map the device lacks then leaves the game, and the main menu says which
 map is missing and that DOWNLOAD MAPS in Settings > Network Setup turns
 downloads on. The switch governs receiving only; `network.map_share` (a
-host) and `network.map_seed` (a player in another's game) govern sending,
-and stay on.
+host) and `network.map_seed` (a player in another's game) govern sending.
+`network.map_seed` is off by default on Apple builds too (HELP SEND MAPS in
+Settings > Network Setup turns it on): a player's device then opens no
+listening port and sends no map to other players. `network.map_share` stays
+on: a host on a Custom Edition map listens on TCP port 5153 for its own
+game's machines and sends them the map when they ask.
