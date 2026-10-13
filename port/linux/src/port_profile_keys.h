@@ -18,7 +18,11 @@ An X-macro list, included with the four macros defined:
 
 PROFILE_SCENE names a setting above that a profile may also set for one
 scene class ([scene.menu.display], [scene.cutscene.display]): the ones the
-game can change between frames while it runs.
+game can change between frames while it runs. display.frame_rate as a
+scene class's value is the most frames a second while the scene is that
+class, on every device: each frame stays up the whole number of refreshes
+that gives it ("30" at 60 Hz: two). The setting itself is still the Mac
+app's cap.
 
 choices is the accepted values separated by '|'; "#" among them accepts a
 whole number from 30 to 1000 (a frame rate: a profile cannot hold the game
@@ -53,3 +57,4 @@ PROFILE_STRING("display.async_shaders", "auto|on|off")
 PROFILE_BOOLEAN("display.interpolation")
 
 PROFILE_SCENE("display.render_scale")
+PROFILE_SCENE("display.frame_rate")

@@ -450,6 +450,16 @@ static void check_scenes(void)
 	/* a drop-in file's scene value over the model's */
 	launch(TV_MODEL "display.render_scale\t1\tDROP-IN FILE\tmenu\n");
 	assert(config_scene_real("display.render_scale", CONFIG_SCENE_MENU) == 1.0);
+	/* a scene class's frame rate: the class's own value only, since the setting itself is the Mac app's cap */
+	launch(TV_MODEL "display.frame_rate\t30\tmodel Apple TV HD\tcutscene\n");
+	assert(config_scene_string("display.frame_rate", CONFIG_SCENE_CUTSCENE, text, sizeof(text)) && !strcmp(text, "30"));
+	assert(!config_scene_string("display.frame_rate", CONFIG_SCENE_MENU, text, sizeof(text)) && !strcmp(text, "display"));
+	assert(!config_scene_string("display.frame_rate", CONFIG_SCENE_GAMEPLAY, text, sizeof(text)));
+	assert(config_scene_describe(CONFIG_SCENE_CUTSCENE, text, sizeof(text)) &&
+		!strcmp(text, "display.render_scale 0.5 [model Apple TV HD], display.frame_rate \"30\" [model Apple TV HD]"));
+	/* (one the player set is the rate everywhere: no class's value applies) */
+	assert(config_write("display.frame_rate", "120"));
+	assert(!config_scene_string("display.frame_rate", CONFIG_SCENE_CUTSCENE, text, sizeof(text)) && !strcmp(text, "120"));
 	/* no profile: no scene values */
 	launch("");
 	assert(config_scene_real("display.render_scale", CONFIG_SCENE_MENU) == 1.0);

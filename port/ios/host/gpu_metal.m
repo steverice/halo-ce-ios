@@ -44,6 +44,7 @@ but never returns to its run loop, which would otherwise drain them.
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <mach/mach.h>
 
 /* the platform layer's (host_gpu.c) */
 void platform_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -3432,11 +3433,14 @@ static void pacing_percentiles(double *times, unsigned long count, double *media
 	*high = times[count * 95 / 100] * 1000.0;
 }
 
+static void frame_log_start(void);
+
 static void pacing_start(uint32_t flags)
 {
 	pacing.off = (flags & (GPU_INITIALIZE_PACING_OFF | GPU_INITIALIZE_FIXED_TIMESTEP)) != 0;
 	pacing.any_rate = (flags & GPU_INITIALIZE_PACING_ANY_RATE) != 0;
 	pacing.refreshes = 1;
+	frame_log_start();
 	if (flags & GPU_INITIALIZE_FIXED_TIMESTEP)
 		return;
 	NSThread *thread = [[NSThread alloc] initWithBlock:^{
@@ -3503,9 +3507,195 @@ drawable's presented handler never reports a time (a visionOS window, the
 simulators). The next frame is due a frame's refreshes after this one, or a
 frame's refreshes from now when the game ran late; only how much that lead
 varies from frame to frame matters to the blend (render_interpolation.c). */
+/* ---------- the frames' context, and the frame log
+
+gpu_frame_context (port/linux/game/scene_class.c): the scene class of the
+frames from now on, the most frames a second the device's profile wants for
+it (0: every refresh) and the map. The rate is kept by holding each frame up
+for the whole number of refreshes that gives it (30 at 60 Hz: two), with
+the pacing's own number when that is more.
+
+debug.frame_log ("auto": on an Apple TV, where nothing else can show how a
+session went; "on", "off") appends a line to frame-log.txt in the data
+folder every FRAME_LOG_SECONDS and whenever the context changes, so a
+hand-played session can be read afterwards (tools/frame_log.py):
+
+	frames time=125.0 scene=cutscene level=a10 frames=150 fps=30.0 mean_ms=33.4 p95_ms=33.5 p99_ms=50.1
+		late=1 gaps=0 size=1280x720 cap=30 hz=59.9 footprint_mb=512 peak_mb=660 thermal=nominal
+
+time is seconds since the game started drawing; a frame's time is from its
+Present to the next; late counts frames that stayed up more refreshes than
+asked (one, or the cap's); gaps are waits of a quarter second or more (a
+load, the background), which are no frame and are left out of the rest. A
+"session" line opens each launch. The cost is one comparison and one stored
+number a frame. */
+
+#define FRAME_LOG_SECONDS 5.0
+#define FRAME_LOG_TIMES 2048
+
+static struct
+{
+	uint32_t scene_class, rate;
+	char level[32];
+} frame_context;
+
+static struct
+{
+	int on;
+	FILE *file;
+	CFTimeInterval started, window_started;
+	unsigned long frames, late, gaps;
+	double seconds;
+	float times[FRAME_LOG_TIMES];
+	unsigned width, height;
+} frame_log;
+
+static int frame_time_compare(const void *left, const void *right)
+{
+	float a = *(const float *)left, b = *(const float *)right;
+
+	return a < b ? -1 : a > b;
+}
+
+/* the window so far as a line, and a new one begun */
+static void frame_log_flush(CFTimeInterval now, CFTimeInterval period)
+{
+	static const char *const scenes[] = { "gameplay", "menu", "cutscene" };
+
+	if (frame_log.file && frame_log.frames)
+	{
+		unsigned long kept = frame_log.frames < FRAME_LOG_TIMES ? frame_log.frames : FRAME_LOG_TIMES;
+		task_vm_info_data_t info;
+		mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+		unsigned long long footprint = 0, peak = 0;
+		NSProcessInfoThermalState thermal = NSProcessInfo.processInfo.thermalState;
+
+		if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) == KERN_SUCCESS)
+		{
+			footprint = (unsigned long long)info.phys_footprint >> 20;
+			peak = (unsigned long long)info.ledger_phys_footprint_peak >> 20;
+		}
+		qsort(frame_log.times, kept, sizeof(frame_log.times[0]), frame_time_compare);
+		fprintf(frame_log.file, "frames time=%.1f scene=%s level=%s frames=%lu fps=%.1f mean_ms=%.1f p95_ms=%.1f p99_ms=%.1f "
+			"late=%lu gaps=%lu size=%ux%u cap=%u hz=%.1f footprint_mb=%llu peak_mb=%llu thermal=%s\n",
+			now - frame_log.started, frame_context.scene_class < 3 ? scenes[frame_context.scene_class] : "other",
+			frame_context.level[0] ? frame_context.level : "none", frame_log.frames,
+			frame_log.seconds > 0.0 ? (double)frame_log.frames / frame_log.seconds : 0.0,
+			frame_log.seconds * 1000.0 / (double)frame_log.frames, (double)frame_log.times[kept * 95 / 100] * 1000.0,
+			(double)frame_log.times[kept * 99 / 100] * 1000.0, frame_log.late, frame_log.gaps, frame_log.width,
+			frame_log.height, (unsigned)frame_context.rate, period > 0.0 ? 1.0 / period : 0.0, footprint, peak,
+			thermal == NSProcessInfoThermalStateNominal ? "nominal" : thermal == NSProcessInfoThermalStateFair ? "fair" :
+			thermal == NSProcessInfoThermalStateSerious ? "serious" : "critical");
+		fflush(frame_log.file);
+	}
+	frame_log.frames = frame_log.late = frame_log.gaps = 0;
+	frame_log.seconds = 0.0;
+	frame_log.window_started = now;
+}
+
+static void frame_log_start(void)
+{
+	char setting[16];
+
+	host_config_string("debug.frame_log", "auto", setting, sizeof(setting));
+#if TARGET_OS_TV
+	frame_log.on = strcmp(setting, "off") != 0;
+#else
+	frame_log.on = !strcmp(setting, "on");
+#endif
+	if (!frame_log.on)
+		return;
+	/* (the working directory is the data folder) */
+	frame_log.file = fopen("frame-log.txt", "a");
+	if (!frame_log.file)
+	{
+		platform_log("debug.frame_log: cannot open frame-log.txt; no frame log");
+		frame_log.on = 0;
+		return;
+	}
+	@autoreleasepool
+	{
+		NSDateFormatter *format = [[NSDateFormatter alloc] init];
+
+		format.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZ";
+		fprintf(frame_log.file, "session start=%s build=%s version=%s gpu=\"%s\"\n",
+			[format stringFromDate:NSDate.date].UTF8String,
+			[[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String ?: "?",
+			[[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] description].UTF8String ?: "?",
+			device.name.UTF8String ?: "?");
+		fflush(frame_log.file);
+	}
+	frame_log.started = frame_log.window_started = CACurrentMediaTime();
+	platform_log("debug.frame_log: frame-log.txt in the data folder, a line every %.0f s and at each change of scene class",
+		FRAME_LOG_SECONDS);
+}
+
+/* one frame: how long the one before it stayed up, in seconds and refreshes
+(0: no frame, a wait), against the refreshes asked */
+static void frame_log_frame(CFTimeInterval now, CFTimeInterval interval, long up, long asked, CFTimeInterval period)
+{
+	if (!frame_log.on)
+		return;
+	if (up <= 0)
+	{
+		if (interval >= 0.25)
+			frame_log.gaps++;
+	}
+	else
+	{
+		if (frame_log.frames < FRAME_LOG_TIMES)
+			frame_log.times[frame_log.frames] = (float)interval;
+		frame_log.frames++;
+		frame_log.seconds += interval;
+		if (up > asked)
+			frame_log.late++;
+	}
+	if (now - frame_log.window_started >= FRAME_LOG_SECONDS)
+		frame_log_flush(now, period);
+}
+
+static void gpu_metal_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level)
+{
+	CFTimeInterval period;
+
+	if (scene_class == frame_context.scene_class && frame_rate == frame_context.rate &&
+		!strncmp(frame_context.level, level ? level : "", sizeof(frame_context.level) - 1))
+		return;
+	os_unfair_lock_lock(&pacing_lock);
+	period = refresh_period;
+	os_unfair_lock_unlock(&pacing_lock);
+	/* (the frames so far were the old context's) */
+	if (frame_log.on)
+		frame_log_flush(CACurrentMediaTime(), period);
+	if (frame_rate != frame_context.rate)
+	{
+		if (frame_rate)
+			platform_log("Metal: at most %u frames a second from here (the device profile's rate for this scene class)",
+				(unsigned)frame_rate);
+		else
+			platform_log("Metal: a frame every refresh again");
+	}
+	frame_context.scene_class = scene_class;
+	frame_context.rate = frame_rate;
+	snprintf(frame_context.level, sizeof(frame_context.level), "%s", level ? level : "");
+}
+
+/* the refreshes a frame stays up to keep the context's frame rate: 2 for 30
+at 60 Hz, 3 at 90; 1 without a rate or when the display is no faster */
+static long frame_context_refreshes(CFTimeInterval period)
+{
+	double refreshes;
+
+	if (!frame_context.rate || period <= 0.0)
+		return 1;
+	refreshes = ceil(1.0 / (period * (double)frame_context.rate) - 0.05);
+	return refreshes < 1.0 ? 1 : refreshes > 8.0 ? 8 : (long)refreshes;
+}
+
 static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *next_frame_due)
 {
 	CFTimeInterval now = CACurrentMediaTime(), period, hold, interval;
+	long context_refreshes;
 	uint64_t gpu_total = atomic_load(&pacing_gpu_nanoseconds);
 	double cpu, gpu;
 	long lower, up;
@@ -3525,9 +3715,15 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	if (!pacing_allowed(pacing.refreshes, period))
 		pacing.refreshes = 1;
 	hold = pacing.off ? 0.0 : period * (double)pacing.refreshes;
+	/* the scene class's frame rate, when it asks for more refreshes a frame than the pacing does */
+	context_refreshes = frame_context_refreshes(period);
+	if (context_refreshes > 1 && hold < period * (double)context_refreshes)
+		hold = period * (double)context_refreshes;
 	/* how many refreshes the frame before this one stayed up; a quarter
 	second or more is a load or the background, not a frame */
 	up = interval > 0.0 && interval < 0.25 ? lround(interval / period) : 0;
+	frame_log_frame(now, interval, up, context_refreshes > (pacing.off ? 1 : pacing.refreshes) ? context_refreshes :
+		pacing.off ? 1 : pacing.refreshes, period);
 	if (up > 0)
 	{
 		pacing.shown[up > 5 ? 5 : up]++;
@@ -4068,7 +4264,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			[present endEncoding];
 			use_texture(record);
 			{
-				CFTimeInterval hold = pacing_schedule(drawable, &next_frame_due);
+				CFTimeInterval hold;
+
+				frame_log.width = (unsigned)picture.width;
+				frame_log.height = (unsigned)picture.height;
+				hold = pacing_schedule(drawable, &next_frame_due);
 
 #if TARGET_OS_SIMULATOR
 				(void)hold;

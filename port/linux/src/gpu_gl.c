@@ -2199,6 +2199,14 @@ static uint32_t gpu_gl_pipeline_built_take(struct gpu_pipeline_description *desc
 	return 0;
 }
 
+/* (frames here are paced by the swap interval, and nothing logs them) */
+static void gpu_gl_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level)
+{
+	(void)scene_class;
+	(void)frame_rate;
+	(void)level;
+}
+
 /* ---------- the backend */
 
 #define GPU_GL_FUNCTION(type, name, parameters, arguments) .name = gpu_gl_##name,

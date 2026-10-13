@@ -135,6 +135,11 @@ uint32_t gpu_pipeline_built_take(struct gpu_pipeline_description *description)
 	return host_gpu_pipeline_built_take(description);
 }
 
+void gpu_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level)
+{
+	host_gpu_frame_context(scene_class, frame_rate, level);
+}
+
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 	host_gpu_initialize(flags, capabilities);

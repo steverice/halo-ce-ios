@@ -863,6 +863,13 @@ static const struct config_setting config_settings[] =
 		"settings: empty chooses by the device; \"none\" uses the built-in\n"
 		"defaults; a model identifier (\"AppleTV5,3\") or a Mac's chip name chooses\n"
 		"as that device, for trying its profile elsewhere." },
+	{ "debug.frame_log", _config_string, "\"auto\"", "HALO_FRAME_LOG", _environment_value, _platform_ios,
+		"With the Metal renderer: append to frame-log.txt, in this folder, a line\n"
+		"every 5 seconds and at each change of scene class with the frames drawn,\n"
+		"frames a second, the 95th and 99th percentile frame times, late frames,\n"
+		"the render size, the scene class, the map, memory and thermal state, so a\n"
+		"session played by hand can be read afterwards (tools/frame_log.py).\n"
+		"\"auto\" (default) logs on an Apple TV only; \"on\" and \"off\" force it." },
 	{ "debug.settings_dump", _config_boolean, "false", "HALO_SETTINGS_DUMP", _environment_set_is_true, _platform_ios,
 		"Log every setting a device profile may set at start, with the layer each\n"
 		"value came from; false logs only those something set." },
@@ -2485,6 +2492,15 @@ double config_scene_real(const char *name, int scene)
 int config_scene_boolean(const char *name, int scene)
 {
 	return config_scene_value(name, _config_boolean, scene)->boolean;
+}
+
+int config_scene_string(const char *name, int scene, char *text, size_t size)
+{
+	const struct config_value *value = config_scene_value(name, _config_string, scene);
+	long index = config_setting_index(name);
+
+	snprintf(text, size, "%s", value->string ? value->string : "");
+	return index >= 0 && value == &config_states[index].scene_value[scene < 0 || scene >= NUMBER_OF_CONFIG_SCENES ? 0 : scene];
 }
 
 const char *config_scene_name(int scene)

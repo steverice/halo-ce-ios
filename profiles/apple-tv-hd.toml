@@ -55,10 +55,15 @@ basis = "measured"
 why = "The menu held 60 frames a second at 1080 for a minute: 2,997 of 2,999 frames shown for one refresh, GPU 12.4 to 14.5 ms a frame of the 16.7 available (10 to 11 ms at 720, 5 to 8 at 540), peak memory 555 MB against 533 at 540. The margin is about 2 ms: if a longer sitting shows dropped frames, 0.667 (720) has 6."
 source = "Apple TV HD menu runs at 540, 720 and 1080, 60 s each, 2026-10-13"
 
-# Cutscenes: as gameplay for now.
+# Cutscenes: 720 lines at 30 frames a second, as the original played them.
 [scene.cutscene.display]
-render_scale = 0.5
+render_scale = 0.667
+frame_rate = "30"
 
 [evidence."scene.cutscene.display.render_scale"]
 basis = "assumed"
-why = "a10's opening cutscene already takes 10 to 15 ms of GPU time a frame at 540, so more pixels would not hold 60. Decided for this device: 0.667 (720) at 30 frames a second, as the original played its cutscenes, once the game has a frame-rate target for a scene class; until then a cutscene keeps gameplay's value."
+why = "a10's opening cutscene takes 10 to 15 ms of GPU time a frame at 540; 720 has 1.8 times the pixels, so about 18 to 27 ms, inside the 33 ms of a frame held for two refreshes. Not yet timed at 720 with the hold."
+
+[evidence."scene.cutscene.display.frame_rate"]
+basis = "assumed"
+why = "Decided for this device: a cutscene's cost is scripted, and at 540 it already uses most of a 60 Hz frame, so the sharper picture is bought with the original's 30 frames a second. Each frame stays up two refreshes."
