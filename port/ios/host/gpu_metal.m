@@ -3571,6 +3571,99 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	return hold;
 }
 
+/* display.frame_rate in the Mac app (host_gpu_dispatch.c): when the setting
+is "unlimited" or a cap above the display's rate, frames stop waiting for the
+display. The layer no longer holds a drawable back for the refresh
+(displaySyncEnabled), and Present no longer waits in nextDrawable at all: the
+window server still hands drawables out at its own pace (two a refresh
+behind a locked screen), so a thread of its own asks for the next one, and
+a frame that finds none ready is drawn and not shown (free_drawable_take). A
+cap at or under the display's rate keeps both waits, so those frames don't
+tear, and host_frame_rate_limit holds the cap. The display's rate is the
+pacing clock's, which starts a few frames in (not at all with
+debug.fixed_timestep, where only "unlimited" lifts the wait). Returns
+whether frames go unsynchronized. */
+#if TARGET_OS_MACCATALYST
+static struct
+{
+	dispatch_semaphore_t wanted;
+	/* a retained id<CAMetalDrawable>, or NULL while the thread waits for one */
+	_Atomic(void *) ready;
+} free_drawables;
+#endif
+
+/* the drawable the thread has waited for, or nil if none has come; again:
+the thread then asks for the next one. (With again NO it hands back one
+left over from before frames went back to waiting for the display.) */
+static id<CAMetalDrawable> free_drawable_take(BOOL again)
+{
+#if TARGET_OS_MACCATALYST
+	void *taken;
+
+	if (!free_drawables.wanted)
+	{
+		NSThread *thread;
+
+		if (!again)
+			return nil;
+		free_drawables.wanted = dispatch_semaphore_create(1);
+		thread = [[NSThread alloc] initWithBlock:^{
+			for (;;)
+			{
+				dispatch_semaphore_wait(free_drawables.wanted, DISPATCH_TIME_FOREVER);
+				@autoreleasepool
+				{
+					id<CAMetalDrawable> next;
+
+					/* (nil in the background, or after its one-second timeout) */
+					while (!(next = [layer nextDrawable]))
+						usleep(5000);
+					atomic_store(&free_drawables.ready, (__bridge_retained void *)next);
+				}
+			}
+		}];
+		thread.name = @"Metal drawables";
+		thread.qualityOfService = NSQualityOfServiceUserInteractive;
+		[thread start];
+	}
+	taken = atomic_exchange(&free_drawables.ready, NULL);
+	if (!taken)
+		return nil;
+	if (again)
+		dispatch_semaphore_signal(free_drawables.wanted);
+	return (__bridge_transfer id<CAMetalDrawable>)taken;
+#else
+	(void)again;
+	return nil;
+#endif
+}
+
+static BOOL frame_rate_sync(void)
+{
+#if TARGET_OS_MACCATALYST
+	double cap = host_frame_rate_cap();
+	CFTimeInterval period;
+	BOOL sync;
+
+	if (!host_frame_rate_unlimited() && cap == 0.0)
+		return NO;
+	os_unfair_lock_lock(&pacing_lock);
+	period = refresh_period;
+	os_unfair_lock_unlock(&pacing_lock);
+	sync = !host_frame_rate_unlimited() && !(period > 0.0 && cap > 1.0 / period + 0.5);
+	if (@available(macCatalyst 13.1, *))
+	{
+		if (layer.displaySyncEnabled != sync)
+		{
+			layer.displaySyncEnabled = sync;
+			platform_log("Metal: frames %s the display's refresh (display.frame_rate)", sync ? "wait for" : "no longer wait for");
+		}
+		return !sync;
+	}
+#endif
+	return NO;
+}
+
 /* ---------- frames */
 
 /* the game's KickPushBuffer: committing here would split render passes */
@@ -3843,6 +3936,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		id<CAMetalDrawable> drawable;
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
+		BOOL unsynced;
 
 		command_buffer();
 		pass_finish(YES);
@@ -3893,8 +3987,13 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		pipelines all still compiling) isn't shown; the window keeps the last
 		whole one (metal_hold_frame) */
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
+		unsynced = frame_rate_sync();
 		waited = CACurrentMediaTime();
-		drawable = frame_held ? nil : [layer nextDrawable];
+		/* display.frame_rate's cap; its sleep counts as waiting, not as the
+		frame's CPU time */
+		host_frame_rate_limit();
+		/* (unsynchronized, a frame with no drawable ready isn't shown) */
+		drawable = frame_held ? nil : unsynced ? free_drawable_take(YES) : (free_drawable_take(NO) ?: [layer nextDrawable]);
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from
 		the compiles) */
@@ -3908,8 +4007,12 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			usleep((useconds_t)((period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 1.0 / 60.0) * 1e6));
 		}
 		pacing_waited += CACurrentMediaTime() - waited;
-		/* nil in the background (or held): the frame still commits, so its
-		slot is freed */
+		/* (a frame not shown isn't scheduled, so its waits aren't taken up
+		there: they mustn't count against the next frame that is) */
+		if (unsynced && !drawable)
+			pacing_waited = 0.0;
+		/* nil in the background (or held, or unsynchronized with none ready):
+		the frame still commits, so its slot is freed */
 		if (drawable && record && record->texture)
 		{
 			MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
