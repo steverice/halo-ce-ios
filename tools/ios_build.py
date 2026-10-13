@@ -41,8 +41,8 @@ def main():
                         help='tvOS and visionOS: internal render height in pixels, 0 for native '
                              '(default 1080 on tvOS; native on visionOS, which follows the window\'s size)')
     parser.add_argument('--extended-virtual-addressing', action='store_true',
-                        help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
-                             'in case the device refuses the 4 GB guest arena')
+                        help='visionOS and tvOS: sign with the extended virtual addressing entitlement (paid developer '
+                             'teams), in case the device refuses the 4 GB guest arena')
     parser.add_argument('--register-device', metavar='UDID',
                         help='signed device builds: build for this one device and let Xcode register it with the team '
                              '(-allowProvisioningDeviceRegistration). Off by default: a build never registers a device unasked')
@@ -63,8 +63,8 @@ def main():
         parser.error('--ipa requires a device build')
     if args.render_height is None:
         args.render_height = 0 if args.visionos else 1080
-    if args.extended_virtual_addressing and not args.visionos:
-        parser.error('--extended-virtual-addressing is for --visionos builds')
+    if args.extended_virtual_addressing and not (args.visionos or args.tvos):
+        parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
     args.bundle_id = args.bundle_id or ('org.steverice.visr' if platform_name == 'ios' else f'org.steverice.visr.{platform_name}')
     if args.mac and (args.simulator or args.unsigned or args.team):
