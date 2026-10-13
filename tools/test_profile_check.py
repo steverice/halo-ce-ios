@@ -61,7 +61,7 @@ refused(GOOD.replace('platform = "tvos"', 'platform = "android"'), "match.platfo
 refused(GOOD.replace('models = ["Box1,1"]\n', ""), "needs match.models or match.chips")
 refused(GOOD.replace('kind = "model"', 'kind = "class"'), "a class needs match.gpu_family")
 refused(GOOD.replace('name = "Box"', 'name = "Box\nkind'), "does not parse")
-refused(GOOD + "[quality.performance.display]\nrender_height = 480\n", "[quality] is reserved")
+refused(GOOD + "[quality.performance]\nrender_height = 480\n", "quality.performance is not a setting")
 assert problems(GOOD.replace('models = ["Box1,1"]\n', ""), "device-profile.toml")[0] == []
 # scene classes: the classes a build reads, and only the settings that can change while the game runs
 SCENE = GOOD + '''[scene.menu.display]

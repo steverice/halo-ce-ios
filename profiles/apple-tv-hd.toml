@@ -61,4 +61,4 @@ render_scale = 0.5
 
 [evidence."scene.cutscene.display.render_scale"]
 basis = "assumed"
-why = "a10's opening cutscene already takes 10 to 15 ms of GPU time a frame at 540, so more pixels would not hold 60. The candidate is 0.667 (720) at 30 frames a second, as the original played its cutscenes, once the game has a frame-rate target for a scene class; until then a cutscene keeps gameplay's value."
+why = "a10's opening cutscene already takes 10 to 15 ms of GPU time a frame at 540, so more pixels would not hold 60. Decided for this device: 0.667 (720) at 30 frames a second, as the original played its cutscenes, once the game has a frame-rate target for a scene class; until then a cutscene keeps gameplay's value."

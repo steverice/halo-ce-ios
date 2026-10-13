@@ -200,7 +200,7 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 		}
 		/* (the file's own fields and tables: tools/profile_check.py checks those) */
 		if (section.type != TOML_TABLE || !strcmp(section_name, "match") || !strcmp(section_name, "evidence") ||
-			!strcmp(section_name, "quality") || !strcmp(section_name, "scene"))
+			!strcmp(section_name, "scene"))
 			continue;
 		for (key_index = 0; key_index < section.u.tab.size; key_index++)
 		{

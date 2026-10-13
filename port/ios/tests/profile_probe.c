@@ -213,6 +213,8 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("tvos", "AppleTV5,3", "", 2), NULL, "");
 	assert(has(&profile, "display.renderer", "metal") && has(&profile, "display.render_height", "1080"));
 	assert(has(&profile, "display.render_scale", "0.5") && has(&profile, "display.upscaled_textures", "false"));
+	assert(has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.model_lod", "auto") &&
+		has(&profile, "display.shadow_map_size", "256"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "\tmodel Apple TV HD\tmenu\n") && strstr(encoded, "\tmodel Apple TV HD\tcutscene\n"));
 	/* an Apple TV 4K, and the tvOS simulator: what the build's default was */

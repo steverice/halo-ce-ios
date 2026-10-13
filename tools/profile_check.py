@@ -18,10 +18,8 @@ KEYS = ROOT / "port/linux/src/port_profile_keys.h"
 PLATFORMS = ("ios", "tvos", "visionos", "mac")
 BASES = ("measured", "assumed", "inherited")
 STATUSES = ("tested", "provisional")
-# what a profile's top level may hold besides its settings' sections ("quality" and "scene" are reserved for
-# the quality choice and per-scene values, which no build reads yet)
+# what a profile's top level may hold besides its settings' sections
 FIELDS = {"schema", "name", "kind", "status", "match", "evidence", "scene"}
-RESERVED = {"quality"}
 # the scene classes a build reads; "gameplay" is the profile's own values, and a class keyed to a level or a
 # cutscene ("cutscene@a10") is reserved
 SCENES = ("menu", "cutscene")
@@ -154,9 +152,6 @@ def check_profile(path, keys, drop_in=False, scenes=None):
         first and "scene.menu.display.x" for the second"""
         for section, values in sections.items():
             if scene is None and section in FIELDS:
-                continue
-            if scene is None and section in RESERVED:
-                problems.append(f"[{section}] is reserved: no build reads it yet")
                 continue
             if not isinstance(values, dict):
                 problems.append(f"unknown field {section}")
