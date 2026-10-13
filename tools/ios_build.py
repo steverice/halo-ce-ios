@@ -41,8 +41,11 @@ def main():
                         help='tvOS and visionOS: internal render height in pixels, 0 for native '
                              '(default 1080 on tvOS; native on visionOS, which follows the window\'s size)')
     parser.add_argument('--extended-virtual-addressing', action='store_true',
-                        help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
-                             'in case the device refuses the 4 GB guest arena')
+                        help='visionOS and tvOS: sign with the extended virtual addressing entitlement (paid developer '
+                             'teams), in case the device refuses the 4 GB guest arena')
+    parser.add_argument('--register-device', metavar='UDID',
+                        help='signed device builds: build for this one device and let Xcode register it with the team '
+                             '(-allowProvisioningDeviceRegistration). Off by default: a build never registers a device unasked')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
     parser.add_argument('--llvm', default='/opt/homebrew/opt/llvm')
     parser.add_argument('--lld', default='/opt/homebrew/opt/lld/bin/ld.lld')
@@ -54,13 +57,15 @@ def main():
         parser.error('use --team YOUR_TEAM_ID to sign, or --unsigned to sign later')
     if args.team and (args.unsigned or args.simulator):
         parser.error('--team is only used for signed device builds')
+    if args.register_device and not args.team:
+        parser.error('--register-device is for signed device builds (--team)')
     if args.ipa and args.simulator:
         parser.error('--ipa requires a device build')
     if args.render_height is None:
         # 0: the device profile's (profiles/); a number here overrides every profile
         args.render_height = 0
-    if args.extended_virtual_addressing and not args.visionos:
-        parser.error('--extended-virtual-addressing is for --visionos builds')
+    if args.extended_virtual_addressing and not (args.visionos or args.tvos):
+        parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
     args.bundle_id = args.bundle_id or ('org.steverice.visr' if platform_name == 'ios' else f'org.steverice.visr.{platform_name}')
     if args.mac and (args.simulator or args.unsigned or args.team):
@@ -115,14 +120,21 @@ def main():
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}']
-    if not args.tvos:
-        # a new CFBundleVersion each build, so an install over the app replaces it
-        import time
-        command.append(f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
+    # a new CFBundleVersion each build, so an install over the app replaces it (on an Apple TV that keeps
+    # the imported maps: an uninstall would take them, and the upload with them)
+    import time
+    command.append(f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
     run(*command)
     command=['cmake','--build',build,'--config','Release','--target','VISR','--','-quiet']
     if args.simulator or args.unsigned:command.append('CODE_SIGNING_ALLOWED=NO')
-    else:command.append('-allowProvisioningUpdates')
+    else:
+        command.append('-allowProvisioningUpdates')
+        if args.register_device:
+            # xcodebuild ignores a destination without a scheme, so this build names the scheme itself
+            # (CMake's Xcode generator makes one per target) and keeps the products where the other builds put them
+            command=['xcodebuild','-project',build/'VISR.xcodeproj','-scheme','VISR','-configuration','Release',
+                     '-destination',f'platform={system},id={args.register_device}','-quiet',
+                     '-allowProvisioningUpdates','-allowProvisioningDeviceRegistration',f'SYMROOT={build}','build']
     run(*command)
     app = build/f'Release-{sdk}/VISR.app'
     print(f'App: {app}')

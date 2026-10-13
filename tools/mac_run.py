@@ -942,14 +942,16 @@ def run_simulator(args):
     if not (app / "VISR").is_file():
         sys.exit(f"no simulator app at {app}; run tools/ios_build.py --simulator (--visionos) first")
     with (app / "Info.plist").open("rb") as file:
-        bundle_id = plistlib.load(file)["CFBundleIdentifier"]
+        info = plistlib.load(file)
+    bundle_id = info["CFBundleIdentifier"]
     # boots the simulator if it isn't, and waits until it has
     run_command("xcrun", "simctl", "bootstatus", udid, "-b", stdout=subprocess.DEVNULL)
     subprocess.run(["xcrun", "simctl", "terminate", udid, bundle_id], capture_output=True)
     run_command("xcrun", "simctl", "install", udid, app)
     container = subprocess.run(["xcrun", "simctl", "get_app_container", udid, bundle_id, "data"],
                                capture_output=True, text=True, check=True).stdout.strip()
-    documents = Path(container) / "Documents"
+    # an Apple TV app may write only to Caches, and keeps everything in Caches/Halo (host_main.m)
+    documents = Path(container) / ("Library/Caches/Halo" if info.get("DTPlatformName") == "appletvsimulator" else "Documents")
     if args.maps and not (documents / "maps").is_dir():
         documents.mkdir(parents=True, exist_ok=True)
         run_command("cp", "-c", "-R", args.maps, documents / "maps")
@@ -1210,7 +1212,8 @@ def main():
                                  "native: checked against the app's own")
     run_parser.add_argument("--app", type=Path,
                             help="the CMake-built device app (tools/ios_build.py --team ...; the default), or "
-                                 "with --simulator the simulator app (default: the visionOS one)")
+                                 "with --simulator the simulator app (default: the visionOS one; an Apple TV "
+                                 "simulator takes build/tvos/app-simulator/Release-appletvsimulator/VISR.app)")
     run_parser.add_argument("--simulator", metavar="UDID",
                             help="run the simulator app in this simulator (xcrun simctl list devices)")
     run_parser.add_argument("--maps", type=Path,
