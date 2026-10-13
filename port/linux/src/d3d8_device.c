@@ -2596,6 +2596,10 @@ static struct vertex_shader_object *shader_list_program(struct vertex_shader_obj
 	return NULL;
 }
 
+/* the most of a device's own record (debug.shader_list_record) warmed with a
+map's list: a10's whole list is under half a megabyte */
+#define SHADER_LIST_RECORD_MAXIMUM (4L * 1024 * 1024)
+
 void halo_shader_list_warm(char const *map_name)
 {
 	const char *base = map_name;
@@ -2621,14 +2625,26 @@ void halo_shader_list_warm(char const *map_name)
 	/* what earlier sessions on this device still had to make while drawing
 	(shader_list_made's record) is warmed with the list, so a device stops
 	hitching on a shader the second time it meets it, without a new build */
-	if (*config_string("debug.shader_list_record"))
+	/* (only where the record is made, shader_list_made: under a backend that
+	has no lists, GL, a record left by a Metal run in the same data folder
+	would compile shaders at load that GL compiles as it draws. And only a
+	record of a sane size: it is a file in the data folder) */
+	if (shader_dialect.msl && *config_string("debug.shader_list_record"))
 	{
+		long length;
+
 		snprintf(recorded_path, sizeof(recorded_path), "%s/%s.txt", config_string("debug.shader_list_record"),
 			shader_list.map);
 		if ((recorded = fopen(recorded_path, "r")) != NULL)
 		{
-			if (!fseek(recorded, 0, SEEK_END) && ftell(recorded) > 0)
-				recorded_size = (uint32_t)ftell(recorded);
+			if (!fseek(recorded, 0, SEEK_END) && (length = ftell(recorded)) > 0)
+			{
+				if (length <= SHADER_LIST_RECORD_MAXIMUM)
+					recorded_size = (uint32_t)length;
+				else
+					platform_log("shader list %s: %s is %ld bytes, more than a record holds; not warmed", shader_list.map,
+						recorded_path, length);
+			}
 			rewind(recorded);
 		}
 	}
