@@ -35,8 +35,32 @@ void config_folder(char *path, size_t size);
 /* a whole file (a UTF-8 path), NUL terminated, or NULL; free() it (the Android
 guest has no SDL_LoadFile) */
 char *config_file_read(const char *path, size_t *size);
-/* a setting's default, as text; 0 if there is no such setting */
+/* a setting's value when nobody has set it, as text: its default with the
+device's profile (profiles/) over it; 0 if there is no such setting */
 int config_default(const char *name, char *text, size_t size);
+
+/* The scene classes a device profile may give some settings their own
+values for ([scene.menu.display] in a profile; port/linux/game/scene_class.c
+says which one a frame is). */
+enum
+{
+	CONFIG_SCENE_GAMEPLAY,
+	CONFIG_SCENE_MENU,
+	CONFIG_SCENE_CUTSCENE,
+	NUMBER_OF_CONFIG_SCENES
+};
+
+/* a setting's value in a scene class: the profile's value for that class
+while the setting's own value comes from its default or the profile; else
+(the player or the environment set it, or the profile has none) as
+config_real and config_boolean */
+double config_scene_real(const char *name, int scene);
+int config_scene_boolean(const char *name, int scene);
+/* "gameplay", "menu", "cutscene" */
+const char *config_scene_name(int scene);
+/* what the scene class changes, for the log ("display.render_scale 0.667
+[model Apple TV HD]"); 0 if nothing */
+int config_scene_describe(int scene, char *text, size_t size);
 /* how many times config_write has changed a setting: what keeps one reads
 it again when this moves */
 unsigned long config_changes(void);
