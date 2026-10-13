@@ -13,11 +13,15 @@ from play.
 - A cutscene is a cinematic the scripts bracket (cinematic_start to
   cinematic_stop: cinematic_in_progress) or the letterbox being in
   (cinematic_show_letterbox, which our stereo path takes for the film:
-  cinematic_screen.c). Either turns it on at once. It ends when both have
-  been off for SCENE_CUTSCENE_HOLD_TICKS: a10 drops its letterbox for two
-  ticks in the middle of a cutscene, and a class that flickered would resize
-  the screen's targets twice. A camera the script holds without either (the
-  look-around in a10's cryo pod) is play: it costs what play costs.
+  cinematic_screen.c), while the script also has the camera
+  (halo_scripted_camera: the director's scripted camera, or the player's
+  look taken away). Both together turn it on at once. It ends when that
+  has not held for SCENE_CUTSCENE_HOLD_TICKS: a10 drops its letterbox for
+  two ticks in the middle of a cutscene, and a class that flickered would
+  resize the screen's targets twice. A cinematic in which the player looks
+  around (a10's cryo pod, measured on an Apple TV HD: the script keeps the
+  cinematic flag for the whole look test) is play: a profile's cutscene
+  frame rate there would be felt in the stick.
 
 Asked once a frame, before the frame's targets are chosen
 (d3d8_device.c, screen_mode_choose), so a frame is one class throughout. A
@@ -34,6 +38,7 @@ frame_rate = "30"), which it holds frames for and names in its frame log
 #include "scenario/scenario_definitions.h"
 #include "main/main.h"
 #include "../src/gpu.h"
+#include "../src/halo_stereo.h"
 #include "../src/port_config.h"
 
 #include <stdlib.h>
@@ -48,7 +53,9 @@ void platform_log(const char *format, ...);
 /* the map's name without its folders ("levels\\a10\\a10": "a10"), "" before a map */
 static void scene_level(char *level, size_t size)
 {
-	const char *name = global_scenario ? main_get_map_name() : NULL;
+	/* (the menu's own map: main_get_map_name still names the level before it) */
+	const char *name = !global_scenario ? NULL : global_scenario->type == _scenario_type_main_menu ? "ui" :
+		main_get_map_name();
 	const char *cursor;
 
 	for (cursor = name; cursor && *cursor; cursor++)
@@ -98,7 +105,8 @@ int halo_scene_class(void)
 	{
 		long tick = game_time_get();
 
-		if (cinematic_globals && (cinematic_globals->in_progress || cinematic_globals->show_letterbox))
+		if (cinematic_globals && (cinematic_globals->in_progress || cinematic_globals->show_letterbox) &&
+			halo_scripted_camera())
 			cutscene_last_tick = tick;
 		/* (a tick before the last cutscene's: a new game or a reverted one) */
 		if (cutscene_last_tick >= 0 && tick >= cutscene_last_tick && tick - cutscene_last_tick <= SCENE_CUTSCENE_HOLD_TICKS)

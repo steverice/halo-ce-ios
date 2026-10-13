@@ -57,7 +57,7 @@ source = "Apple TV HD menu runs at 540, 720 and 1080, 60 s each, 2026-10-13"
 
 # Cutscenes: 720 lines at 30 frames a second, as the original played them.
 [scene.cutscene.display]
-render_scale = 0.667
+render_scale = 0.6667
 frame_rate = "30"
 
 [evidence."scene.cutscene.display.render_scale"]

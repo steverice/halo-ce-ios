@@ -3625,11 +3625,10 @@ static void frame_log_start(void)
 		NSDateFormatter *format = [[NSDateFormatter alloc] init];
 
 		format.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZ";
-		fprintf(frame_log.file, "session start=%s build=%s version=%s gpu=\"%s\"\n",
+		fprintf(frame_log.file, "session start=%s build=%s version=%s\n",
 			[format stringFromDate:NSDate.date].UTF8String,
 			[[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String ?: "?",
-			[[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] description].UTF8String ?: "?",
-			device.name.UTF8String ?: "?");
+			[[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] description].UTF8String ?: "?");
 		fflush(frame_log.file);
 	}
 	frame_log.started = frame_log.window_started = CACurrentMediaTime();
@@ -3697,6 +3696,33 @@ static long frame_context_refreshes(CFTimeInterval period)
 		return 1;
 	refreshes = ceil(1.0 / (period * (double)frame_context.rate) - 0.05);
 	return refreshes < 1.0 ? 1 : refreshes > 8.0 ? 8 : (long)refreshes;
+}
+
+/* Holding a frame up for the scene class's refreshes (presentDrawable:afterMinimumDuration:) keeps
+the frames even but does not by itself slow the game: on an Apple TV HD the layer took a frame every
+refresh for a whole cutscene while each was asked to stay up two. So a Present under a frame rate
+also waits here until the one before it is that many refreshes old, less a part of a refresh, so
+that it lands on the refresh it is meant for. */
+static void frame_context_wait(void)
+{
+	CFTimeInterval period, wait;
+	long refreshes;
+
+	os_unfair_lock_lock(&pacing_lock);
+	period = refresh_period;
+	os_unfair_lock_unlock(&pacing_lock);
+	refreshes = frame_context_refreshes(period);
+	if (refreshes <= 1 || pacing.last_present <= 0.0)
+		return;
+	wait = pacing.last_present + period * ((double)refreshes - 0.35) - CACurrentMediaTime();
+	if (wait > 0.0 && wait < 0.25)
+	{
+		CFTimeInterval began = CACurrentMediaTime();
+
+		usleep((useconds_t)(wait * 1e6));
+		/* (not the frame's work: the CPU times in the log leave it out) */
+		pacing_waited += CACurrentMediaTime() - began;
+	}
 }
 
 static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *next_frame_due)
@@ -4275,6 +4301,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 
 				frame_log.width = (unsigned)picture.width;
 				frame_log.height = (unsigned)picture.height;
+				frame_context_wait();
 				hold = pacing_schedule(drawable, &next_frame_due);
 
 #if TARGET_OS_SIMULATOR
