@@ -4368,7 +4368,17 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 			if ([device supportsFamily:MTLGPUFamilyApple4] || [device supportsFamily:MTLGPUFamilyMac2])
 				pixel_compile_options.mathMode = MTLMathModeRelaxed;
 			else
-				platform_log("Metal: this GPU has no relaxed math; pixel shaders compile with safe math");
+			{
+				/* HALO_METAL_PIXEL_MATH=fast in the app's environment: fast math
+				there, which also drops infinities and NaNs, to measure what safe
+				math costs such a GPU */
+				const char *math = getenv("HALO_METAL_PIXEL_MATH");
+
+				if (math && !strcmp(math, "fast"))
+					pixel_compile_options.mathMode = MTLMathModeFast;
+				platform_log("Metal: this GPU has no relaxed math; pixel shaders compile with %s math",
+					pixel_compile_options.mathMode == MTLMathModeFast ? "fast" : "safe");
+			}
 		}
 		{
 			static const uint8_t black[4] = { 0, 0, 0, 0xff };
