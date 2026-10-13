@@ -1095,6 +1095,39 @@ static int controller_port(HANDLE device)
 	return -1;
 }
 
+/* display.late_look (port/linux/game/render_interpolation.c): the right
+stick as the game was last given it for player one, and when; and the stick
+as it is now, read again without the game hearing of it. 0 when there is no
+controller to read, or the input is a test's or a replay's, which must play
+the same every time. */
+static struct
+{
+	Uint64 read_ns;
+	float x, y;
+	int valid;
+} look_read;
+
+int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds)
+{
+	SDL_Gamepad *gamepads[PORT_COUNT];
+	SDL_Gamepad *gamepad;
+	int count;
+
+	if (!look_read.valid)
+		return 0;
+	platform_pump_events();
+	count = sdl_gamepads(gamepads);
+	gamepad = port_gamepad(gamepads, count, 0);
+	if (!gamepad)
+		return 0;
+	*read_x = look_read.x;
+	*read_y = look_read.y;
+	*now_x = (float)stick(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX), FALSE) / 32767.0f;
+	*now_y = (float)stick(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY), TRUE) / 32767.0f;
+	*age_seconds = (float)((double)(SDL_GetTicksNS() - look_read.read_ns) / 1e9);
+	return 1;
+}
+
 DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 {
 	int port = controller_port(device);
@@ -1137,6 +1170,14 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		}
 		render_scale_dpad(&state->Gamepad);
 		anti_aliasing_chord(&state->Gamepad);
+
+		/* (display.late_look: what the stick was when the game read it; not
+		a test's or a replay's input) */
+		look_read.valid = port_gamepad(gamepads, count, 0) != NULL && !platform_fixed_timestep() &&
+			!config_string("debug.test_input")[0] && !config_string("debug.input_replay")[0];
+		look_read.x = (float)state->Gamepad.sThumbRX / 32767.0f;
+		look_read.y = (float)state->Gamepad.sThumbRY / 32767.0f;
+		look_read.read_ns = SDL_GetTicksNS();
 		input_replay_filter(&state->Gamepad);
 	}
 	else if (port < config_integer("debug.network_test_players"))

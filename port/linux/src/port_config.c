@@ -363,6 +363,12 @@ static const struct config_setting config_settings[] =
 		"both eyes. With foveation, flares toward the edge of the view come out\n"
 		"dimmer than they should; to be compared in the headset. Changes apply on\n"
 		"relaunch." },
+	{ "display.late_look", _config_boolean, "false", "HALO_LATE_LOOK", _environment_value, _platform_all,
+		"Read the controller's look stick again just before a frame's camera is\n"
+		"built and turn the first-person view by what it has done since the game\n"
+		"read it, a few milliseconds on the frames that run a game tick. Only the\n"
+		"picture moves; aim and shots are the game's as before. Off by default;\n"
+		"F9 switches it while playing. Player one's controller, on foot." },
 	{ "display.late_start", _config_string, "\"\"", "HALO_LATE_START", _environment_value, _platform_ios,
 		"Start each frame's work as late as it can be and still be done for the\n"
 		"next refresh of the display, so the controller is read later and what you\n"
