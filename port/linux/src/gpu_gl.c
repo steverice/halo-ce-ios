@@ -2199,6 +2199,11 @@ static uint32_t gpu_gl_pipeline_built_take(struct gpu_pipeline_description *desc
 	return 0;
 }
 
+static uint32_t gpu_gl_compiles_outstanding(void)
+{
+	return 0;
+}
+
 /* ---------- the backend */
 
 #define GPU_GL_FUNCTION(type, name, parameters, arguments) .name = gpu_gl_##name,

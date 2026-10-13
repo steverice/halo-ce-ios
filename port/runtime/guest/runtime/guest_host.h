@@ -120,6 +120,7 @@ void host_gpu_warm_begin(void);
 void host_gpu_pipeline_warm(const struct gpu_pipeline_description *description);
 void host_gpu_warm_end(void);
 uint32_t host_gpu_pipeline_built_take(struct gpu_pipeline_description *description);
+uint32_t host_gpu_compiles_outstanding(void);
 void host_gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 
 /* ---------- stereo (port/linux/game/stereo.c; the host's port/ios/host/host_stereo.m)

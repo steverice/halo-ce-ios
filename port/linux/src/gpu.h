@@ -535,6 +535,8 @@ void gpu_warm_end(void);
 /* a pipeline a draw built outside warming, since the last call: 1 and its
 description, or 0 when there are no more */
 uint32_t gpu_pipeline_built_take(struct gpu_pipeline_description *description);
+/* the shaders and pipelines still compiling off the game thread */
+uint32_t gpu_compiles_outstanding(void);
 
 /* gpu_initialize flags */
 enum
@@ -653,7 +655,11 @@ its own functions. */
 	P(warm_end, (void), ()) \
 	/* a pipeline built for a draw, outside warming, since the last call: 1 \
 	and its description, or 0 when there are no more */ \
-	F(uint32_t, pipeline_built_take, (struct gpu_pipeline_description *description), (description))
+	F(uint32_t, pipeline_built_take, (struct gpu_pipeline_description *description), (description)) \
+	/* the shaders and pipelines still compiling off the game thread \
+	(display.async_shaders); 0 from a backend that compiles none there. The \
+	loading screen stays up until it is 0 (port/linux/game/loading_screen.c) */ \
+	F(uint32_t, compiles_outstanding, (void), ())
 
 #define GPU_FUNCTIONS(F, P) \
 	GPU_OPERATIONS(F, P) \
