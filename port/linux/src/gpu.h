@@ -581,6 +581,14 @@ enum
 	compiles shaders and pipelines on worker threads, and skips a draw
 	whose pipeline isn't ready rather than wait for it (gpu_metal.m) */
 	GPU_INITIALIZE_ASYNC_SHADERS = 4096,
+	/* debug.metal_vertex_bgra = false: the Metal backend reports no BGRA
+	vertex attributes (gpu_capabilities.vertex_bgra), as Apple's OpenGL ES
+	does, so the front end swizzles vertex colors as it uploads them */
+	GPU_INITIALIZE_NO_VERTEX_BGRA = 8192,
+	/* debug.metal_base_vertex = false: the Metal backend reports no base
+	vertex on indexed draws (gpu_capabilities.base_vertex), as Apple's
+	OpenGL ES does, so the front end copies and rebases every draw's indices */
+	GPU_INITIALIZE_NO_BASE_VERTEX = 16384,
 	/* display.frame_rate: bits 16-31 hold the most frames a second the Mac
 	app shows (port/ios/host/host_gpu_dispatch.c): 0 for the display's
 	refresh, as every host paces without it; GPU_INITIALIZE_FRAME_RATE_UNLIMITED
@@ -593,7 +601,9 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 
 /* the line every backend logs at the end of gpu_initialize: the capabilities
 that change what the front end does, which a GL run and a Metal run of the
-same build must agree on (tools/mac_run.py compare --across-backends) */
+same build must agree on (tools/mac_run.py compare --across-backends),
+apart from those Metal has and Apple's OpenGL ES lacks (vertex BGRA, base
+vertex) */
 #define GPU_CAPABILITIES_LOG(log, capabilities) \
 	log("GPU capabilities: vertex BGRA %u, base vertex %u, triangle fans %u, line loops %u, sampler LOD bias %u, " \
 		"occlusion %u, S3TC %u, border clamp %u, max texture size %u", (unsigned)(capabilities)->vertex_bgra, \

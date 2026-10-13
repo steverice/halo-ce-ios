@@ -836,6 +836,15 @@ static const struct config_setting config_settings[] =
 		"With the Metal renderer, specialize each pipeline's vertex shader for its\n"
 		"attribute formats; false uses the unspecialized shaders, which read the\n"
 		"formats per draw (the fallback when specializing fails), to compare." },
+	{ "debug.metal_vertex_bgra", _config_boolean, "true", "HALO_METAL_VERTEX_BGRA", _environment_value, _platform_ios,
+		"With the Metal renderer, the vertex shaders read vertex colors in the\n"
+		"game's own byte order (BGRA); false swaps the bytes of every colored\n"
+		"vertex on the CPU as it is uploaded, as the OpenGL ES renderer has to, to\n"
+		"compare." },
+	{ "debug.metal_base_vertex", _config_boolean, "true", "HALO_METAL_BASE_VERTEX", _environment_value, _platform_ios,
+		"With the Metal renderer, indexed draws take a base vertex, so their\n"
+		"indices are drawn as the game holds them; false copies and rebases every\n"
+		"draw's indices on the CPU, as the OpenGL ES renderer has to, to compare." },
 	{ "debug.menu_open", _config_string, "\"\"", "HALO_MENU_OPEN", _environment_value, _platform_all,
 		"Start on this screen of the menus (port/assets/menus) instead of the main\n"
 		"menu, a player profile being edited; empty for the main menu." },
