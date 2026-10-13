@@ -17,7 +17,7 @@ PROFILES = ROOT / "profiles"
 KEYS = ROOT / "port/linux/src/port_profile_keys.h"
 PLATFORMS = ("ios", "tvos", "visionos", "mac")
 BASES = ("measured", "assumed", "inherited")
-STATUSES = ("tested", "provisional")
+STATUSES = ("tested", "provisional", "below target")
 # what a profile's top level may hold besides its settings' sections
 FIELDS = {"schema", "name", "kind", "status", "match", "evidence", "scene"}
 # the scene classes a build reads; "gameplay" is the profile's own values, and a class keyed to a level or a
