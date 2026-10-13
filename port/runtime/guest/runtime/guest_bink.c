@@ -261,6 +261,9 @@ void __stdcall BinkClose(HBINK bink)
 	}
 	host_bink_close();
 	movie.open = FALSE;
+	/* (a movie closed before its first wait has no start) */
+	platform_log("Bink: closed at frame %lu of %lu, %.1f s after its first frame", movie.bink.FrameNum,
+		movie.bink.Frames, movie.start ? (double)(real_nanoseconds() - movie.start) / 1e9 : 0.0);
 }
 
 /* decodes frame FrameNum (numbered from 1) */
