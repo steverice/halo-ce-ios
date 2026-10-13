@@ -152,6 +152,94 @@ int main(void)
 		CHECK(shown.late == 1 && shown.intervals == 62 && near(shown.longest, 2.0 * period));
 	}
 
+	/* a late start: steady 4 ms frames at 60 Hz wait, and aim for the next refresh */
+	{
+		struct frame_pacer_late late = { { 0 } };
+		double period = 1.0 / 60.0, aim, wait;
+		int index;
+
+		/* nothing until there is some history */
+		CHECK(frame_pacer_late_wait(&late, 10.0, 10.0, period, &aim) == 0.0 && aim == 0.0);
+		for (index = 0; index < FRAME_PACER_LATE_HISTORY; index++)
+			frame_pacer_late_cost(&late, 0.004);
+		/* just after a refresh at 10.0: start so that 4 ms of work and the 3 ms lead end at the next */
+		wait = frame_pacer_late_wait(&late, 10.001, 10.0, period, &aim);
+		CHECK(near(aim, 10.0 + period));
+		CHECK(near(wait, period - 0.001 - 0.007));
+		CHECK(near(late.allowed, 0.004));
+		/* too late for that refresh: aim for the one after, never a negative wait */
+		wait = frame_pacer_late_wait(&late, 10.0 + period - 0.002, 10.0, period, &aim);
+		CHECK(near(aim, 10.0 + 2.0 * period));
+		CHECK(wait > 0.0 && wait < period);
+		/* a refresh time from long ago works the same (the display link's latest may be a few back) */
+		wait = frame_pacer_late_wait(&late, 10.001, 10.0 - 7.0 * period, period, &aim);
+		CHECK(near(aim, 10.0 + period));
+		/* shown on time: nothing changes */
+		frame_pacer_late_shown(&late, aim, aim + 0.001, period);
+		CHECK(late.misses == 0 && late.holdoff == 0);
+	}
+	/* a fight begins: one frame costs more than was allowed for, and late starts stop for a while */
+	{
+		struct frame_pacer_late late = { { 0 } };
+		double period = 1.0 / 60.0, aim;
+		int index, waited = 0;
+
+		for (index = 0; index < FRAME_PACER_LATE_WINDOW; index++)
+			frame_pacer_late_cost(&late, 0.004);
+		CHECK(frame_pacer_late_wait(&late, 20.001, 20.0, period, &aim) > 0.0);
+		frame_pacer_late_cost(&late, 0.011);
+		CHECK(late.jumps == 1 && late.holdoff == FRAME_PACER_LATE_HOLDOFF);
+		for (index = 0; index < FRAME_PACER_LATE_HOLDOFF; index++)
+		{
+			CHECK(frame_pacer_late_wait(&late, 21.0 + index * period + 0.001, 20.0, period, &aim) == 0.0);
+			frame_pacer_late_cost(&late, 0.011);
+		}
+		/* afterward the window holds only the new cost: 11 ms and the lead don't fit in three quarters of a refresh */
+		CHECK(frame_pacer_late_wait(&late, 30.001, 20.0, period, &aim) == 0.0);
+		/* the fight ends: once the window holds only light frames again, late starts come back */
+		for (index = 0; index < FRAME_PACER_LATE_WINDOW; index++)
+		{
+			waited += frame_pacer_late_wait(&late, 31.0 + index * period + 0.001, 20.0, period, &aim) > 0.0;
+			frame_pacer_late_cost(&late, 0.004);
+		}
+		CHECK(waited == 0);
+		CHECK(frame_pacer_late_wait(&late, 40.001, 20.0, period, &aim) > 0.0);
+	}
+	/* a frame shown late: the lead grows, late starts stop for a while, and calm frames shrink it again slowly */
+	{
+		struct frame_pacer_late late = { { 0 } };
+		double period = 1.0 / 60.0, aim;
+		int index;
+
+		for (index = 0; index < FRAME_PACER_LATE_WINDOW; index++)
+			frame_pacer_late_cost(&late, 0.004);
+		(void)frame_pacer_late_wait(&late, 50.001, 50.0, period, &aim);
+		frame_pacer_late_shown(&late, aim, aim + period, period);
+		CHECK(late.misses == 1 && late.holdoff == FRAME_PACER_LATE_HOLDOFF);
+		CHECK(near(frame_pacer_late_lead(&late), FRAME_PACER_LATE_LEAD + FRAME_PACER_LATE_LEAD_STEP));
+		for (index = 0; index < FRAME_PACER_LATE_CALM; index++)
+			frame_pacer_late_shown(&late, aim, aim, period);
+		CHECK(near(frame_pacer_late_lead(&late), FRAME_PACER_LATE_LEAD + 0.75 * FRAME_PACER_LATE_LEAD_STEP));
+		/* the lead never passes half a refresh, however many misses */
+		for (index = 0; index < 50; index++)
+			frame_pacer_late_shown(&late, aim, aim + period, period);
+		CHECK(frame_pacer_late_lead(&late) <= 0.5 * period + 1e-12);
+	}
+	/* frames that vary: the worst of the window decides, not the average */
+	{
+		struct frame_pacer_late late = { { 0 } };
+		double period = 1.0 / 120.0, aim;
+		int index;
+
+		for (index = 0; index < FRAME_PACER_LATE_WINDOW; index++)
+			frame_pacer_late_cost(&late, index % 8 == 0 ? 0.005 : 0.002);
+		/* 5 ms and the lead are over three quarters of a 120 Hz refresh: at once */
+		CHECK(frame_pacer_late_wait(&late, 60.0005, 60.0, period, &aim) == 0.0);
+		/* a load (a quarter second) is not a frame's cost */
+		frame_pacer_late_cost(&late, 0.5);
+		CHECK(near(frame_pacer_late_worst(&late), 0.005));
+	}
+
 	if (failures)
 		return 1;
 	printf("frame_pacer_probe: ok\n");

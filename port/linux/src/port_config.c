@@ -363,6 +363,14 @@ static const struct config_setting config_settings[] =
 		"both eyes. With foveation, flares toward the edge of the view come out\n"
 		"dimmer than they should; to be compared in the headset. Changes apply on\n"
 		"relaunch." },
+	{ "display.late_start", _config_string, "\"\"", "HALO_LATE_START", _environment_value, _platform_ios,
+		"Start each frame's work as late as it can be and still be done for the\n"
+		"next refresh of the display, so the controller is read later and what you\n"
+		"do reaches the screen sooner (the Metal renderer's frame pacer). It backs\n"
+		"off to starting at once whenever frames take too long or vary. \"true\" or\n"
+		"\"false\"; empty (default): on in the Mac app, off on an iPhone, iPad or\n"
+		"Apple TV. The Mac app's F8 switches it while playing. Not on a Vision Pro,\n"
+		"and not when frames don't wait for the display (display.frame_rate)." },
 	{ "display.frame_source", _config_string, "\"\"", "HALO_FRAME_SOURCE", _environment_value, _platform_ios,
 		"Where the Metal renderer's frames get their place on the display:\n"
 		"\"clock\" asks for one when a frame is ready and applies\n"
@@ -888,6 +896,9 @@ static const struct config_setting config_settings[] =
 		"Milliseconds of made-up CPU work added to every frame (the frame pacer),\n"
 		"to see what display.frames_in_flight does when frames don't fit in a\n"
 		"refresh. 0 (default): none." },
+	{ "debug.frame_load_every", _config_real, "0.0", "HALO_FRAME_LOAD_EVERY", _environment_value, _platform_ios,
+		"With debug.frame_load_cpu: the made-up work comes and goes, on in every\n"
+		"other span of this many seconds, as a fight would. 0 (default): always." },
 	{ "debug.frame_load_gpu", _config_integer, "0", "HALO_FRAME_LOAD_GPU", _environment_value, _platform_ios,
 		"Made-up GPU work added to every frame: that many extra full-size draws\n"
 		"(the Metal renderer), with debug.frame_load_cpu. 0 (default): none." },

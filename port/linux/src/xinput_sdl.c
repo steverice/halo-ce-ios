@@ -1101,6 +1101,9 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 	SDL_Gamepad *gamepads[PORT_COUNT];
 	int count;
 
+	/* the first read after a Present starts a frame: the frame pacer may
+	wait here, before anything is read (d3d8_device.c, halo_frame_start) */
+	halo_frame_start();
 	memset(state, 0, sizeof(*state));
 	if (port < 0)
 		return ERROR_DEVICE_NOT_CONNECTED;

@@ -83,6 +83,9 @@ void platform_video_swap(void);
 /* frames between the 30 Hz ticks at the display's refresh rate, unless
 display.interpolation is false (port/linux/game/render_interpolation.c) */
 int halo_interpolation_enabled(void);
+/* d3d8_device.c: the start of a frame, for the backend's frame pacer; the
+controller read calls it (xinput_sdl.c) */
+void halo_frame_start(void);
 void platform_mouse_capture(BOOL capture);
 
 /* main thread only; a no-op elsewhere */
