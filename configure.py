@@ -66,6 +66,12 @@ parser.add_argument(
 parser.add_argument("--ios", action="store_true", help="build the native iOS, tvOS and visionOS guest (`ninja ios_guest`)")
 parser.add_argument("--ios-llvm", default="/opt/homebrew/opt/llvm", help="LLVM installation with arm64_32 clang")
 parser.add_argument("--ios-lld", default="/opt/homebrew/opt/lld/bin/ld.lld", help="ELF linker for the iOS guest")
+parser.add_argument(
+    "--render-validation",
+    action="store_true",
+    help="iOS guest: send each draw's identity and the front end's fallbacks to the host's render validation "
+    "(tools/ios_build.py --render-validation; port/linux/src/gpu_validate.h)",
+)
 args = parser.parse_args()
 
 # the settings the builds read
@@ -81,6 +87,7 @@ sln = SimpleNamespace(
     ios=args.ios,
     ios_llvm=args.ios_llvm,
     ios_lld=args.ios_lld,
+    render_validation=args.render_validation,
 )
 
 

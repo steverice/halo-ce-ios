@@ -250,8 +250,10 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         command=f"{python} tools/guest_imports.py --host-table {host_table_c} {imports_s} $in",
         description="IOS IMPORTS",
     )
+    # render validation's two imports exist only in a build configured with it (gpu_validate.h)
+    validation = bool(getattr(sln, "render_validation", False))
     n.build(outputs=[imports_s, host_table_c], rule="guest_imports",
-            inputs=[host_imports_list, posix_imports],
+            inputs=[host_imports_list, posix_imports] + ([PORT_DIR / "host_imports_validation.list"] if validation else []),
             implicit=[Path("tools/guest_imports.py")])
 
     generated_headers = [*xdk_headers(), alltypes, syscall_h, version_h,
@@ -278,7 +280,7 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         f"-isystem {libc_include}", f"-isystem {arch}", f"-isystem {MUSL_DIR}/arch/generic",
         f"-isystem {MUSL_DIR}/include",
     ]
-    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []))
+    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []) + (["-DHALO_RENDER_VALIDATION=1"] if validation else []))
     guest_code = " ".join(GUEST_CODE_FLAGS)
     tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
     # profile-guided optimisation with the Linux build's profile (committed,

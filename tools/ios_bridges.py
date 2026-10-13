@@ -59,12 +59,19 @@ def bridge(ret,name,params):
             +('    ' if ret=='void' else '    return ')+call+';\n}')
     return imported,source
 
-def main():
+def main(arguments=None):
+    import sys
+    # render validation's two imports (port/linux/src/gpu_validate.h), in a build configured with it
+    validation='--render-validation' in (sys.argv[1:] if arguments is None else arguments)
     OUT.mkdir(parents=True,exist_ok=True)
     lines=['/* Generated typed bridges. */','#include "ios_host.h"','#include "guest_host.h"','#include "posix.h"',
            '#include <SDL3/SDL.h>','#include <string.h>']
+    headers=[(ROOT/'port/runtime/guest/runtime/guest_host.h',r'host_\w+'),(ROOT/'port/linux/src/posix.h',r'posix_\w+')]
+    if validation:
+        lines.append('#include "guest_host_validation.h"')
+        headers.append((ROOT/'port/runtime/guest/runtime/guest_host_validation.h',r'host_\w+'))
     table=[]
-    for header,pattern in [(ROOT/'port/runtime/guest/runtime/guest_host.h',r'host_\w+'),(ROOT/'port/linux/src/posix.h',r'posix_\w+')]:
+    for header,pattern in headers:
         for ret,name,params in declarations(header,pattern):
             imported,source=bridge(ret,name,params)
             lines.append(source)

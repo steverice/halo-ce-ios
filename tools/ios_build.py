@@ -44,6 +44,12 @@ def main():
                         help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
                              'in case the device refuses the 4 GB guest arena')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
+    parser.add_argument('--render-validation', choices=('on', 'off'),
+                        default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
+                        help='check every call into the GPU backend before it is made, and name every fallback '
+                             '(debug.render_validation: off, log or strict; log unless set). Off by default: a build '
+                             'without it has no trace of it. For test builds, never for a release or a benchmark. '
+                             'HALO_RENDER_VALIDATION_BUILD=1 in the environment turns it on for tools that build for you')
     parser.add_argument('--llvm', default='/opt/homebrew/opt/llvm')
     parser.add_argument('--lld', default='/opt/homebrew/opt/lld/bin/ld.lld')
     parser.add_argument('--jobs', type=int, default=min(12,os.cpu_count() or 4))
@@ -75,9 +81,11 @@ def main():
         url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
         data=urllib.request.urlopen(url,timeout=30).read()
         if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
-    run(sys.executable,'configure.py','--ios','--pgo=off','--lto=off','--ios-llvm',args.llvm,'--ios-lld',args.lld)
+    validation = args.render_validation == 'on'
+    run(sys.executable,'configure.py','--ios','--pgo=off','--lto=off','--ios-llvm',args.llvm,'--ios-lld',args.lld,
+        *(['--render-validation'] if validation else []))
     run('ninja','ios_guest','-j',args.jobs)
-    run(sys.executable,'tools/ios_bridges.py')
+    run(sys.executable,'tools/ios_bridges.py',*(['--render-validation'] if validation else []))
     run(sys.executable,'tools/ios_embed_guest.py','build/ios/halo_guest.elf','build/ios/embedded')
     notices = ROOT/'build/ios/licenses'
     notices.mkdir(parents=True, exist_ok=True)
@@ -113,7 +121,8 @@ def main():
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
-             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}']
+             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}',
+             f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}']
     if not args.tvos:
         # a new CFBundleVersion each build, so an install over the app replaces it
         import time
@@ -186,6 +195,7 @@ def build_mac(args):
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         '-DHALO_DEVELOPMENT_TEAM=','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
+        f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',
         '-sdk','macosx','SDK_VARIANT=iosmac','SUPPORTS_MACCATALYST=YES','DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER=NO',
