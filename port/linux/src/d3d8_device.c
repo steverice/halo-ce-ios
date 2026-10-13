@@ -192,6 +192,19 @@ void halo_render_scale_step(int direction)
 
 static int head_eyes_frame(void);
 
+#ifdef HALO_ILP32
+/* port/linux/game/scene_class.c */
+int halo_scene_class(void);
+
+/* display.render_scale for the frame about to be drawn: the D-pad's live
+value if there is one, else the setting's, which a device profile may give
+the menu and cutscenes their own value for (config_scene_real) */
+static double render_scale_now(void)
+{
+	return render_scale_live >= 0.0 ? render_scale_live : config_scene_real("display.render_scale", halo_scene_class());
+}
+#endif
+
 static void screen_mode_choose(long *width, float scale[2])
 {
 #ifdef HALO_ILP32
@@ -224,7 +237,7 @@ static void screen_mode_choose(long *width, float scale[2])
 		(display.upscaler scales the picture back up). Not for foveated eyes:
 		the Compositor's rate map sets their size, at the render quality, which
 		takes the scale's place */
-		double render_scale = render_scale_live >= 0.0 ? render_scale_live : config_real("display.render_scale");
+		double render_scale = render_scale_now();
 
 		if (render_scale >= 0.25 && render_scale < 1.0 && !(head_eyes_frame() && halo_stereo_frame()->foveated))
 		{
