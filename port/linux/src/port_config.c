@@ -73,8 +73,12 @@ struct config_setting
 /* (a download of up to about 2.3 GB starts without a question: off on Apple
 builds until it asks first) */
 #define DEFAULT_MAP_DOWNLOAD "false"
+/* (helping send a map opens a listening port, TCP 5153, to any address, and
+uploads unasked: off on Apple builds, a player's choice there) */
+#define DEFAULT_MAP_SEED "false"
 #else
 #define DEFAULT_MAP_DOWNLOAD "true"
+#define DEFAULT_MAP_SEED "true"
 #define DEFAULT_INTERNET_PLAY "true"
 #define DEFAULT_CLIPBOARD_JOIN "true"
 #endif
@@ -540,10 +544,12 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"Hosting: the most kilobytes a second the host sends of maps (16 to\n"
 		"65536), so that the game's own traffic keeps the rest of the upload." },
-	{ "network.map_seed", _config_boolean, "true", "HALO_NET_MAP_SEED", _environment_value, _platform_all,
+	{ "network.map_seed", _config_boolean, DEFAULT_MAP_SEED, "HALO_NET_MAP_SEED", _environment_value, _platform_all,
 		"Playing in another's game: help send its map to players who join\n"
 		"without it, as a torrent's peers do (the pieces this machine has, at\n"
-		"most network.map_seed_upload)." },
+		"most network.map_seed_upload). While it does, in a game on a Custom\n"
+		"Edition map, this machine takes connections on TCP port 5153. Off by\n"
+		"default on Apple builds." },
 	{ "network.map_seed_upload", _config_integer, "256", "HALO_NET_MAP_SEED_UPLOAD", _environment_value,
 		_platform_all,
 		"Playing in another's game: the most kilobytes a second this machine\n"
