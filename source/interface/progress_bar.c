@@ -1483,6 +1483,66 @@ struct progress_bar_mode progress_bar_mode= {0};
 real last_t= 0.f;
 static real wobble_phase= 0.f;
 
+/* port: the picture the screen showed last frame, which each frame draws
+again, blurred and a little larger, under the new light. The Xbox sampled its
+front buffer for this (GetBackBuffer(-1)) while it drew into the back buffer;
+here there is one back buffer and it can't be sampled while it is drawn into,
+so each frame's picture is kept in a target of its own (progress_bar_keep_frame).
+It is as wide as the screen (halo_screen_width), which the picture's 640
+columns are centered on. */
+static IDirect3DTexture8 *previous_frame_texture= NULL;
+static IDirect3DSurface8 *previous_frame_surface= NULL;
+static long previous_frame_width= 0;
+static struct pixel_shader_definition copy_shader;
+
+static void progress_bar_keep_frame(
+	boolean black);
+
+/* port: the screen's draws name vertex shader 0, Direct3D's fixed function,
+with identity world and view transforms and a projection that leaves x and y
+alone. The port's device has no fixed function (the game draws everything
+else with vertex programs), so those draws ran whatever program the last
+draw had left, which took their positions for pixels, and nothing showed.
+This is the same transform as a vertex program: the position (already in
+clip space) to the screen with Direct3D's viewport constants, the diffuse
+color and four texture coordinates passed on. */
+#define PASS_SWIZZLE 0x1b /* xyzw */
+#define PASS_INPUT(reg) ((unsigned long)(reg)<<9 | PASS_SWIZZLE)
+#define PASS_OPERANDS(a_mux, a_index, b_mux, c_mux) \
+	((unsigned long)(a_index)<<28 | (unsigned long)(a_mux)<<26 | PASS_SWIZZLE<<17 | (unsigned long)(b_mux)<<11 | \
+		PASS_SWIZZLE<<2), ((unsigned long)(c_mux)<<28)
+#define PASS_MOVE(reg, output) \
+	0, 1UL<<21 | PASS_INPUT(reg), PASS_OPERANDS(2, 0, 2, 2) | 0xfUL<<12 | 1UL<<11 | (unsigned long)(output)<<3
+static unsigned long pass_through_program[]=
+{
+	/* the header: a vertex program of eight instructions */
+	0x2078 | 8UL<<16,
+	/* r0= v0*c[-38] */
+	0, 2UL<<21 | 58UL<<13 | PASS_INPUT(0), PASS_OPERANDS(2, 0, 3, 2) | 0xfUL<<24 | 0UL<<20,
+	/* oPos.xyz= r0 + c[-37] */
+	0, 3UL<<21 | 59UL<<13 | PASS_INPUT(0), PASS_OPERANDS(1, 0, 2, 3) | 0xeUL<<12 | 1UL<<11 | 0UL<<3,
+	/* oPos.w= v0.w */
+	0, 1UL<<21 | PASS_INPUT(0), PASS_OPERANDS(2, 0, 2, 2) | 0x1UL<<12 | 1UL<<11 | 0UL<<3,
+	/* oD0= v3 (diffuse); oT0 to oT3= v9 to v12 */
+	PASS_MOVE(3, 3),
+	PASS_MOVE(9, 9),
+	PASS_MOVE(10, 10),
+	PASS_MOVE(11, 11),
+	PASS_MOVE(12, 12) | 1,
+};
+static unsigned long pass_through_shader= 0;
+
+static void progress_bar_set_fixed_function(
+	void)
+{
+	if (!pass_through_shader)
+		IDirect3DDevice8_CreateVertexShader(global_d3d_device, NULL, pass_through_program, &pass_through_shader, 0);
+	if (pass_through_shader)
+		IDirect3DDevice8_SetVertexShader(global_d3d_device, pass_through_shader);
+
+	return;
+}
+
 /* ---------- public code */
 
 void tgaLoadHeader(
@@ -1583,6 +1643,10 @@ void progress_bar_begin(
 	boolean skip_frame_capture)
 {
 	progress_bar_mode.capture_frame= !skip_frame_capture;
+	/* port: the screen starts from the last frame shown, or from black when
+	there was none (no map loaded), as the Xbox's front buffer had it */
+	if (!progress_bar_mode.active)
+		progress_bar_keep_frame(!skip_frame_capture);
 	progress_bar_mode.active= TRUE;
 	SetThreadPriority((void *)-2, 2);
 
@@ -1873,6 +1937,9 @@ static void draw_layer_int(
 	real mask_position;
 
 	generate_gravy_rect(layer, &rect);
+	/* port: the picture keeps its 640 columns, centered on a wider screen */
+	rect.x0*= 640.f/(real)halo_screen_width();
+	rect.x1*= 640.f/(real)halo_screen_width();
 	IDirect3DDevice8_Begin(global_d3d_device, D3DPT_TRIANGLEFAN);
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_DIFFUSE,
 		color->red, color->green, color->blue, alpha);
@@ -1941,18 +2008,21 @@ static void draw_fade_layer(
 	real alpha)
 {
 	real left, right, top, bottom;
+	/* port: across the screen's width, not the Xbox's 640 columns */
+	real width= (real)halo_screen_width();
 
 	IDirect3DDevice8_Begin(global_d3d_device, D3DPT_TRIANGLEFAN);
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_DIFFUSE,
 		254.f/255.f, 254.f/255.f, 1.f, alpha);
+
 	do_convoluation_coords(3.f, 0.f);
 	top= 1.f + (1.f - y_offset)/128.f;
 	left= (-1.f - x_offset)/128.f - 1.f;
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, left, top, 0.5f, 1.f);
-	do_convoluation_coords(637.f, 0.f);
+	do_convoluation_coords(width - 3.f, 0.f);
 	right= 1.f + (1.f - x_offset)/128.f;
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, right, top, 0.5f, 1.f);
-	do_convoluation_coords(637.f, 480.f);
+	do_convoluation_coords(width - 3.f, 480.f);
 	bottom= (-1.f - y_offset)/128.f - 1.f;
 	IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, right, bottom, 0.5f, 1.f);
 	do_convoluation_coords(3.f, 480.f);
@@ -2054,9 +2124,12 @@ static void progress_bar_render(
 	IDirect3DDevice8_SetTexture(global_d3d_device, 0, (D3DBaseTexture *)progress_bar_mode.texture0);
 	IDirect3DDevice8_Clear(global_d3d_device, 0, NULL, 0xf0, 0, 1.f, 0);
 	IDirect3DDevice8_SetVertexShader(global_d3d_device, 0);
+	progress_bar_set_fixed_function(); /* port */
 	IDirect3DDevice8_SetPixelShaderProgram(global_d3d_device, (D3DPIXELSHADERDEF *)&blur_shader);
-	IDirect3DDevice8_GetBackBuffer(global_d3d_device, -1, 0, &back_buffer);
-	this_is_awful(&back_buffer_texture, back_buffer);
+	/* port: the last frame's picture is the kept one (previous_frame_texture),
+	not the front buffer */
+	(void)back_buffer;
+	(void)back_buffer_texture;
 	for (stage= 0; stage<4; stage++)
 	{
 		IDirect3DDevice8_SetTextureStageState(global_d3d_device, stage, D3DTSS_MINFILTER, D3DTEXF_LINEAR);
@@ -2064,7 +2137,7 @@ static void progress_bar_render(
 		IDirect3DDevice8_SetTextureStageState(global_d3d_device, stage, D3DTSS_MIPFILTER, D3DTEXF_POINT);
 		IDirect3DDevice8_SetTextureStageState(global_d3d_device, stage, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
 		IDirect3DDevice8_SetTextureStageState(global_d3d_device, stage, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-		IDirect3DDevice8_SetTexture(global_d3d_device, stage, &back_buffer_texture);
+		IDirect3DDevice8_SetTexture(global_d3d_device, stage, (D3DBaseTexture *)previous_frame_texture);
 	}
 
 	if (progress<0.9f)
@@ -2080,10 +2153,111 @@ static void progress_bar_render(
 	draw_initial_layer(&color, progress);
 	for (stage= 0; stage<4; stage++)
 		IDirect3DDevice8_SetTexture(global_d3d_device, stage, NULL);
+	/* port: this frame's picture, for the next */
+	progress_bar_keep_frame(FALSE);
 	IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_WORLD, &progress_bar_globals.saved_world);
 	IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_VIEW, &progress_bar_globals.saved_view);
 	IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_PROJECTION, &progress_bar_globals.saved_projection);
 	IDirect3DDevice8_BlockUntilVerticalBlank(global_d3d_device);
+
+	return;
+}
+
+/* port: copies the back buffer's picture into the kept frame (or clears the
+kept frame to black), making its target the first time and when the screen's
+width changes. Leaves the back buffer and its depth buffer bound. */
+static void progress_bar_keep_frame(
+	boolean black)
+{
+	D3DBaseTexture back_buffer_texture;
+	IDirect3DSurface8 *back_buffer;
+	IDirect3DSurface8 *depth_buffer= NULL;
+	long width= halo_screen_width();
+	long stage;
+
+	if (previous_frame_texture && previous_frame_width!=width)
+	{
+		IDirect3DSurface8_Release(previous_frame_surface);
+		IDirect3DTexture8_Release(previous_frame_texture);
+		previous_frame_surface= NULL;
+		previous_frame_texture= NULL;
+	}
+	if (!previous_frame_texture)
+	{
+		if (IDirect3DDevice8_CreateTexture(global_d3d_device, width, 480, 1, D3DUSAGE_RENDERTARGET,
+			D3DFMT_LIN_A8R8G8B8, D3DPOOL_DEFAULT, &previous_frame_texture)<0 || !previous_frame_texture)
+		{
+			previous_frame_texture= NULL;
+			return;
+		}
+		IDirect3DTexture8_GetSurfaceLevel(previous_frame_texture, 0, &previous_frame_surface);
+		previous_frame_width= width;
+	}
+
+	IDirect3DDevice8_GetBackBuffer(global_d3d_device, 0, 0, &back_buffer);
+	IDirect3DDevice8_GetDepthStencilSurface(global_d3d_device, &depth_buffer);
+	IDirect3DDevice8_SetRenderTarget(global_d3d_device, previous_frame_surface, NULL);
+	if (black)
+	{
+		IDirect3DDevice8_Clear(global_d3d_device, 0, NULL, 0xf0, 0, 1.f, 0);
+	}
+	else
+	{
+		D3DXMATRIX saved_world, saved_view, saved_projection, identity;
+
+		csmemset(&copy_shader, 0, sizeof(struct pixel_shader_definition));
+		copy_shader.texture_modes= 0x1;
+		copy_shader.combiner_count= 1;
+		copy_shader.rgb_inputs[0]= 0x08200000;
+		copy_shader.rgb_outputs[0]= 0x000000c0;
+		copy_shader.alpha_inputs[0]= 0x18300000;
+		copy_shader.alpha_outputs[0]= 0x000000c0;
+		copy_shader.final_combiner_inputs_abcd= 0x200c0000;
+		copy_shader.final_combiner_inputs_efg= 0x00001c00;
+
+		this_is_awful(&back_buffer_texture, back_buffer);
+		D3DXMatrixIdentity(&identity);
+		IDirect3DDevice8_GetTransform(global_d3d_device, D3DTS_WORLD, &saved_world);
+		IDirect3DDevice8_GetTransform(global_d3d_device, D3DTS_VIEW, &saved_view);
+		IDirect3DDevice8_GetTransform(global_d3d_device, D3DTS_PROJECTION, &saved_projection);
+		IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_WORLD, &identity);
+		IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_VIEW, &identity);
+		IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_PROJECTION, &identity);
+		IDirect3DDevice8_SetRenderState(global_d3d_device, D3DRS_ALPHABLENDENABLE, FALSE);
+		IDirect3DDevice8_SetRenderState(global_d3d_device, D3DRS_CULLMODE, D3DCULL_NONE);
+		IDirect3DDevice8_SetRenderState(global_d3d_device, D3DRS_ZENABLE, FALSE);
+		IDirect3DDevice8_SetRenderState(global_d3d_device, D3DRS_LIGHTING, FALSE);
+		progress_bar_set_fixed_function();
+		IDirect3DDevice8_SetPixelShaderProgram(global_d3d_device, (D3DPIXELSHADERDEF *)&copy_shader);
+		IDirect3DDevice8_SetTextureStageState(global_d3d_device, 0, D3DTSS_MINFILTER, D3DTEXF_POINT);
+		IDirect3DDevice8_SetTextureStageState(global_d3d_device, 0, D3DTSS_MAGFILTER, D3DTEXF_POINT);
+		IDirect3DDevice8_SetTextureStageState(global_d3d_device, 0, D3DTSS_MIPFILTER, D3DTEXF_POINT);
+		IDirect3DDevice8_SetTextureStageState(global_d3d_device, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
+		IDirect3DDevice8_SetTextureStageState(global_d3d_device, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+		IDirect3DDevice8_SetTexture(global_d3d_device, 0, &back_buffer_texture);
+		for (stage= 1; stage<4; stage++)
+			IDirect3DDevice8_SetTexture(global_d3d_device, stage, NULL);
+		IDirect3DDevice8_Begin(global_d3d_device, D3DPT_TRIANGLEFAN);
+		IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_DIFFUSE, 1.f, 1.f, 1.f, 1.f);
+		IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, 0.f, 0.f);
+		IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, -1.f, 1.f, 0.5f, 1.f);
+		IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, (real)width, 0.f);
+		IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, 1.f, 1.f, 0.5f, 1.f);
+		IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, (real)width, 480.f);
+		IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, 1.f, -1.f, 0.5f, 1.f);
+		IDirect3DDevice8_SetVertexData2f(global_d3d_device, D3DVSDE_TEXCOORD0, 0.f, 480.f);
+		IDirect3DDevice8_SetVertexData4f(global_d3d_device, D3DVSDE_VERTEX, -1.f, -1.f, 0.5f, 1.f);
+		IDirect3DDevice8_End(global_d3d_device);
+		IDirect3DDevice8_SetTexture(global_d3d_device, 0, NULL);
+		IDirect3DDevice8_SetRenderState(global_d3d_device, D3DRS_ALPHABLENDENABLE, TRUE);
+		IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_WORLD, &saved_world);
+		IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_VIEW, &saved_view);
+		IDirect3DDevice8_SetTransform(global_d3d_device, D3DTS_PROJECTION, &saved_projection);
+	}
+	IDirect3DDevice8_SetRenderTarget(global_d3d_device, back_buffer, depth_buffer);
+	IDirect3DSurface8_Release(back_buffer);
+	if (depth_buffer)
+		IDirect3DSurface8_Release(depth_buffer);
 
 	return;
 }

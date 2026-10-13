@@ -276,7 +276,9 @@ void render_frame_pregame(
 
 	{
 		real progress;
-		if (game_map_loading_in_progress(&progress))
+		/* port: the loading screen's own progress while it holds a level's
+		load (port/linux/game/loading_screen.c) */
+		if (halo_loading_screen_progress(&progress) || game_map_loading_in_progress(&progress))
 		{
 			progress_bar_display(progress);
 		}

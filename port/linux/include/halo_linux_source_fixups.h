@@ -74,6 +74,15 @@ void halo_render_before_hud(short local_player_index, short rasterizer_target,
 and pipelines its list names are compiled now, under the loading screen
 (port/linux/src/d3d8_device.c) */
 void halo_shader_list_warm(char const *map_name);
+/* the loading screen, held over a campaign level's load and the compiles
+after it (port/linux/game/loading_screen.c): begun as the map changes,
+finished at the end of main_new_map; its progress for render_frame_pregame,
+and whether a loaded level waits behind it */
+void halo_loading_screen_begin(char const *map_name);
+void halo_loading_screen_finish(void);
+unsigned char halo_loading_screen_progress(float *progress);
+unsigned char halo_loading_screen_holding(void);
+void halo_main_time_restart(void);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"
 /* the frame's stereo state: source/render/render.c renders each eye and the
