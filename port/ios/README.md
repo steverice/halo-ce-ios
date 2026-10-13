@@ -43,7 +43,9 @@ The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
 compiles the guest, embeds it into signed application text, and builds the host.
 Specify `--llvm` and `--lld` for non-default toolchain locations.
 Game assertions remain enabled. An Xcode `Release` host configuration does not
-disable the game's assertions. PGO and LTO are disabled for this initial port.
+disable the game's assertions. The game code is built with profile-guided
+optimization from `pgo/halo_linux.profdata`, the profile the Linux build
+records; `--pgo=off` builds it without. LTO is disabled.
 
 Outputs:
 
