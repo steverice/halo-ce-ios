@@ -4365,20 +4365,41 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		keeps the vertex shaders' options) */
 		if (@available(iOS 18.0, tvOS 18.0, visionOS 2.0, *))
 		{
-			if ([device supportsFamily:MTLGPUFamilyApple4] || [device supportsFamily:MTLGPUFamilyMac2])
-				pixel_compile_options.mathMode = MTLMathModeRelaxed;
-			else
-			{
-				/* HALO_METAL_PIXEL_MATH=fast in the app's environment: fast math
-				there, which also drops infinities and NaNs, to measure what safe
-				math costs such a GPU */
-				const char *math = getenv("HALO_METAL_PIXEL_MATH");
+			/* HALO_METAL_PIXEL_MATH in the app's environment, or a file named
+			metal-pixel-math in the data folder (as tools make stderr.log), names
+			the mode for one run: safe, relaxed or fast. For comparing pictures
+			and measuring; a GPU without relaxed math compiles relaxed as safe. */
+			BOOL relaxed_available = [device supportsFamily:MTLGPUFamilyApple4] || [device supportsFamily:MTLGPUFamilyMac2];
+			char wanted[16] = "";
+			const char *math = getenv("HALO_METAL_PIXEL_MATH");
+			FILE *file = math ? NULL : fopen("metal-pixel-math", "r");
 
-				if (math && !strcmp(math, "fast"))
-					pixel_compile_options.mathMode = MTLMathModeFast;
-				platform_log("Metal: this GPU has no relaxed math; pixel shaders compile with %s math",
-					pixel_compile_options.mathMode == MTLMathModeFast ? "fast" : "safe");
+			if (math)
+				snprintf(wanted, sizeof(wanted), "%s", math);
+			else if (file)
+			{
+				if (fscanf(file, "%15s", wanted) != 1)
+					wanted[0] = 0;
+				fclose(file);
 			}
+			if (!strcmp(wanted, "fast"))
+				pixel_compile_options.mathMode = MTLMathModeFast;
+			else if (!strcmp(wanted, "safe"))
+				pixel_compile_options.mathMode = MTLMathModeSafe;
+			else if (relaxed_available)
+				pixel_compile_options.mathMode = MTLMathModeRelaxed;
+			/* An A8 (below family Apple3; the Apple TV HD) is bound by its GPU:
+			fast math took b30 from 26 to 31 frames a second at a 540 render
+			height there, and its frames differ from safe math's by one or two
+			levels in under 7% of the pixels (three pixels of 518,400 by more),
+			as they do on a Mac. An A9 or A10 keeps safe math until measured. */
+			else if (![device supportsFamily:MTLGPUFamilyApple3])
+				pixel_compile_options.mathMode = MTLMathModeFast;
+			if (wanted[0] || !relaxed_available)
+				platform_log("Metal: pixel shaders compile with %s math%s",
+					pixel_compile_options.mathMode == MTLMathModeFast ? "fast" :
+					pixel_compile_options.mathMode == MTLMathModeRelaxed ? "relaxed" : "safe",
+					relaxed_available ? "" : " (this GPU has no relaxed math)");
 		}
 		{
 			static const uint8_t black[4] = { 0, 0, 0, 0xff };
