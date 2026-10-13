@@ -1256,7 +1256,11 @@ static void check_stages(const struct gpu_draw *draw, const struct shader_entry 
 		if (sampler->min_filter == GPU_FILTER_ANISOTROPIC && sampler->max_anisotropy > 16)
 			REPORT(ANISOTROPY_CLAMPED, sampler->max_anisotropy, "stage %d: anisotropy %u is sampled as 16", stage,
 				sampler->max_anisotropy);
-		if (!validation.capabilities.border_clamp && (sampler->address_u == GPU_ADDRESS_BORDER ||
+		/* (the Metal backend reports no border clamp, so that its line of
+		capabilities reads as OpenGL ES's, and samples borders all the same
+		where the GPU has them: it says so itself where it has not) */
+		if (!validation.capabilities.border_clamp && validation.capabilities.shader_language != GPU_SHADER_LANGUAGE_MSL &&
+			(sampler->address_u == GPU_ADDRESS_BORDER ||
 			sampler->address_v == GPU_ADDRESS_BORDER || (packet->type == GPU_TEXTURE_3D && sampler->address_w == GPU_ADDRESS_BORDER)))
 			REPORT(BORDER_UNSUPPORTED, 0, "stage %d: BORDER addressing clamps to the edge on this GPU", stage);
 		if (sampler->max_mip_level >= texture->levels && sampler->max_mip_level)
@@ -1432,6 +1436,18 @@ static uint32_t validate_draw(const struct gpu_draw *draw, const struct gpu_cons
 		vertex = NULL;
 	if (pixel && pixel->stage != GPU_SHADER_PIXEL)
 		pixel = NULL;
+	/* a depth target larger than the color target is tested pixel for
+	pixel: the draw compares against the depth target's top left corner */
+	if (draw->color_target && draw->depth_target && (draw->depth_stencil.depth_test || draw->depth_stencil.stencil_test))
+	{
+		const struct texture_entry *color = texture_entry(draw->color_target), *depth = texture_entry(draw->depth_target);
+
+		if (color && depth && (depth->description.width > color->description.width || depth->description.height > color->description.height))
+			REPORT(DEPTH_TARGET_LARGER, 1ull << 63 | (uint64_t)color->description.width << 32 | depth->description.width,
+				"the draw tests depth (test %u, write %u, stencil %u) in a %ux%u color target against the top left of a %ux%u depth "
+				"target", draw->depth_stencil.depth_test, draw->depth_stencil.depth_write, draw->depth_stencil.stencil_test,
+				color->description.width, color->description.height, depth->description.width, depth->description.height);
+	}
 	check_state(draw, width, height);
 	check_stages(draw, pixel);
 	check_numbers(vertex, constants, uniforms);
