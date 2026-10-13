@@ -193,6 +193,11 @@ else()
 endif()
 target_sources(VISR PRIVATE "${HALO_PRIVACY_MANIFEST}")
 set_source_files_properties("${HALO_PRIVACY_MANIFEST}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+# the device benchmark's recordings (port/benchmark/README.md), copied into the data folder when a suite starts
+file(GLOB HALO_BENCHMARK_RECORDINGS CONFIGURE_DEPENDS "${ROOT}/port/benchmark/recordings/*.input"
+    "${ROOT}/port/benchmark/recordings/*.actions")
+target_sources(VISR PRIVATE ${HALO_BENCHMARK_RECORDINGS})
+set_source_files_properties(${HALO_BENCHMARK_RECORDINGS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/benchmark-recordings)
 # the maps' shader lists, compiled at map load (d3d8_device.c's halo_shader_list_warm)
 file(GLOB HALO_SHADER_LISTS CONFIGURE_DEPENDS "${ROOT}/port/shader-lists/*.txt")
 target_sources(VISR PRIVATE ${HALO_SHADER_LISTS})

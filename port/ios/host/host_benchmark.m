@@ -321,6 +321,18 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         return 0;
     }
     mkdir(FOLDER, 0755);
+    /* the app's recordings, where the game reads them (benchmark_suite.c); the app's own always replace a copy */
+    {
+        NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
+
+        mkdir(FOLDER "/recordings", 0755);
+        for (NSString *name in [files contentsOfDirectoryAtPath:bundled error:nil]) {
+            NSString *target = [@FOLDER "/recordings" stringByAppendingPathComponent:name];
+
+            [files removeItemAtPath:target error:nil];
+            [files copyItemAtPath:[bundled stringByAppendingPathComponent:name] toPath:target error:nil];
+        }
+    }
     flags = [NSMutableArray array];
     started = NSDate.date;
     plan.mode = !strcmp(mode, "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
