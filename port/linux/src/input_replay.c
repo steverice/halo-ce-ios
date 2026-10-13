@@ -275,9 +275,9 @@ shorter than TAKE_MINIMUM_TICKS is deleted when it closes. */
 
 static struct
 {
-	BOOL automatic, open;
+	BOOL automatic, open, players_written, paused;
 	char map[32], base[256];
-	long first_tick, last_tick;
+	long first_tick, last_tick, pauses;
 } take;
 
 static void take_close(const char *why)
@@ -312,8 +312,8 @@ static void take_close(const char *why)
 	route = fopen(path, "a");
 	if (route)
 	{
-		fprintf(route, "closed_by = %s\nsegments = %ld\nlast_tick = %ld\nseconds = %.1f\n", why, replay.segment + 1,
-			take.last_tick, (double)(take.last_tick - take.first_tick) / 30.0);
+		fprintf(route, "closed_by = %s\nsegments = %ld\npauses = %ld\nlast_tick = %ld\nseconds = %.1f\n", why,
+			replay.segment + 1, take.pauses, take.last_tick, (double)(take.last_tick - take.first_tick) / 30.0);
 		fclose(route);
 	}
 	platform_log("debug.input_record: take %s closed (%s): %ld ticks, %ld segment%s", take.base, why,
@@ -334,6 +334,8 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	snprintf(take.base, sizeof(take.base), "recordings/take-%s-%04d%02d%02d-%02d%02d%02d", map, utc.tm_year + 1900,
 		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec);
 	take.first_tick = take.last_tick = tick;
+	take.players_written = take.paused = FALSE;
+	take.pauses = 0;
 	/* a recording of its own: its time and its segments begin here */
 	replay.record_ended = FALSE;
 	replay.segment = 0;
@@ -352,10 +354,11 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	}
 	take.open = TRUE;
 	config_profile_settings_text(settings, sizeof(settings));
-	fprintf(route, "map = %s\ndifficulty = %s\nentered = %s\nfirst_tick = %ld\nrandom_seed = %08lx\nplayers = %ld\n"
+	(void)players;   /* (none yet at a level's first tick: written once the game has made them, take_update) */
+	fprintf(route, "map = %s\ndifficulty = %s\nentered = %s\nfirst_tick = %ld\nrandom_seed = %08lx\n"
 		"stereo = %s\nversion = %s\nrecorded = %04d-%02d-%02dT%02d:%02d:%02dZ\n%s", map,
 		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick <= TAKE_START_TICKS ? "start" : "saved",
-		tick, seed, players, config_string("display.stereo"), build && *build ? build : "unknown", utc.tm_year + 1900,
+		tick, seed, config_string("display.stereo"), build && *build ? build : "unknown", utc.tm_year + 1900,
 		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec, settings);
 	fclose(route);
 	platform_log("debug.input_record: take %s: %s on %s from tick %ld%s", take.base, map,
@@ -386,7 +389,28 @@ static void take_update(void)
 	if (!take.open)
 		take_open(map, tick, difficulty, players, seed);
 	if (take.open)
+	{
+		BOOL paused = game_time_get_paused() != 0;
+
 		take.last_tick = tick;
+		/* a pause stops the game time, so the take simply has no ticks for it; counted for the take's listing */
+		if (paused && !take.paused)
+			take.pauses++;
+		take.paused = paused;
+		if (!take.players_written && players > 0)
+		{
+			char path[512];
+			FILE *route;
+
+			snprintf(path, sizeof(path), "%s.route", take.base);
+			if ((route = fopen(path, "a")))
+			{
+				fprintf(route, "players = %ld\n", players);
+				fclose(route);
+			}
+			take.players_written = TRUE;
+		}
+	}
 }
 
 static void configure(void)
