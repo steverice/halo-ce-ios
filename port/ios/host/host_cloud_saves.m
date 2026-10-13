@@ -185,6 +185,7 @@ void host_cloud_saves_start(const char *data_root, const char *save_root) {
         .save_root = cloud_save_root, .state_path = cloud_state_path, .device = device.UTF8String,
         .platform = TARGET_OS_TV ? "tvOS" : TARGET_OS_VISION ? "visionOS" : TARGET_OS_MACCATALYST ? "macOS" : "iOS",
         .app = app.UTF8String, .image = HALO_GUEST_SHA256, .state_size = HALO_PORT_GAME_STATE_SIZE,
+        .saved_game_version = HALO_PORT_SAVED_GAME_VERSION,
         .network_version = HALO_PORT_NETWORK_VERSION, .now = cloud_now, .log = cloud_log,
         .local_write_begin = cloud_write_begin, .local_write_end = cloud_write_end, .random = cloud_random,
     };

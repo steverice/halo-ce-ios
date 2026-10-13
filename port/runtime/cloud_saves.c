@@ -344,6 +344,7 @@ enum
 	HEADER_BUILD = 0x104,
 	HEADER_BUILD_SIZE = 32,
 	HEADER_DIFFICULTY = 0x126,
+	HEADER_MAP_CHECKSUM = 0x128,
 	HEADER_CHECKSUM = 0x148,
 	HEADER_SIZE = 0x14c,
 };
@@ -370,10 +371,14 @@ int cloud_checkpoint_check(const uint8_t *data, size_t size)
 	return 0;
 }
 
-/* a valid saved game's key (which builds can load it) and summary */
-static void checkpoint_describe(const uint8_t *data, size_t size, char key[CLOUD_KEY_SIZE], struct cloud_summary *summary)
+/* A valid saved game's summary, and its key: what the game requires of a saved game before it
+   loads it (the disc's build, the game state's layout checksum and size, the map file's checksum:
+   game_state_header_valid), and the version this build gives the contents, which nothing in the
+   file says. Saved games with different keys are different records and never replace each other. */
+static void checkpoint_describe(const uint8_t *data, size_t size, int version, char key[CLOUD_KEY_SIZE],
+	struct cloud_summary *summary)
 {
-	char text[HEADER_BUILD_SIZE + 64], hash[CLOUD_HASH_SIZE];
+	char text[HEADER_BUILD_SIZE + 96], hash[CLOUD_HASH_SIZE];
 
 	memcpy(summary->checkpoint_map, data + HEADER_MAP, sizeof(summary->checkpoint_map) - 1);
 	summary->checkpoint_map[sizeof(summary->checkpoint_map) - 1] = 0;
@@ -384,7 +389,8 @@ static void checkpoint_describe(const uint8_t *data, size_t size, char key[CLOUD
 	summary->difficulty = (int16_t)(data[HEADER_DIFFICULTY] | data[HEADER_DIFFICULTY + 1] << 8);
 	summary->state_layout = read_u32(data + HEADER_LAYOUT);
 	summary->state_size = (long long)size;
-	snprintf(text, sizeof(text), "%s|%08lx|%zu", summary->game_build, summary->state_layout, size);
+	snprintf(text, sizeof(text), "%s|%08lx|%zu|%08lx|%d", summary->game_build, summary->state_layout, size,
+		(unsigned long)read_u32(data + HEADER_MAP_CHECKSUM), version);
 	cloud_sha256_hex((const uint8_t *)text, strlen(text), hash);
 	memcpy(key, hash, 12);
 	key[12] = 0;
@@ -922,7 +928,7 @@ static void local_read(struct cloud_engine *engine, const char *id, int settle, 
 					copy_text(one.files[0].name, CLOUD_NAME_SIZE, CHECKPOINT_FILE);
 					one.files[0].data = data; one.files[0].size = size;
 					files_hash(&one, cache->hash);
-					checkpoint_describe(data, size, cache->key, &cache->summary);
+					checkpoint_describe(data, size, engine->config.saved_game_version, cache->key, &cache->summary);
 					cache->summary.modified = (long long)read_at.st_mtimespec.tv_sec;
 				}
 				free(data);
@@ -1717,6 +1723,7 @@ static void record_fill(struct cloud_engine *engine, struct cloud_record *record
 	meta_add(record->meta, "app", engine->app);
 	meta_add(record->meta, "image", engine->image);
 	meta_add_number(record->meta, "net", engine->config.network_version);
+	meta_add_number(record->meta, "savedGameVersion", engine->config.saved_game_version);
 }
 
 static void copy_name(const char *unit, const char *hash, char *name, size_t size)

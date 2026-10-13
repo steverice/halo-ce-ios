@@ -290,6 +290,7 @@ struct snapshot_file
 struct device
 {
 	char label[32], root[256], save_root[300], state_path[300], image[32];
+	int saved_game_version;
 	struct cloud_engine *engine;
 	int game_started, random;
 	struct snapshot_file before[64];
@@ -423,6 +424,7 @@ static void device_start(struct device *device)
 	config.app = "1.0 (1)";
 	config.image = device->image;
 	config.state_size = STATE_SIZE;
+	config.saved_game_version = device->saved_game_version;
 	config.network_version = 26;
 	config.context = device;
 	config.now = device_now;
@@ -448,6 +450,7 @@ static void device_make(struct device *device, const char *label)
 	memset(device, 0, sizeof(*device));
 	snprintf(device->label, sizeof(device->label), "%s", label);
 	snprintf(device->image, sizeof(device->image), "image-one");
+	device->saved_game_version = 1;
 	assert(mkdtemp(template));
 	snprintf(device->root, sizeof(device->root), "%s", template);
 	snprintf(device->save_root, sizeof(device->save_root), "%s/save", device->root);
@@ -1459,6 +1462,23 @@ static void test_layouts_keep_their_own_saved_games(void)
 	device_purge(&c);
 	snprintf(c.image, sizeof(c.image), "image-three");
 	CHECK(launch(&c) == CLOUD_STATE_IDLE && file_variation(&c, SLOT, "savegame.bin") == 8);   /* nothing remembered: the newest */
+	/* a build whose saved games mean something else in the same layout (the version raised by hand),
+	   and one whose map file is another: records of their own too */
+	b.saved_game_version = 2;
+	device_restart(&b);
+	CHECK(cloud_engine_sync(b.engine, CLOUD_PASS_LAUNCH) == CLOUD_STATE_IDLE && saved_game_records(SLOT) == 3);
+	{
+		uint8_t game[STATE_SIZE];
+		uint32_t crc;
+
+		make_saved_game(game, sizeof(game), "a30", 0x11111111, 3);
+		game[0x128] = 0x77;                             /* the map file's checksum */
+		memset(game + 0x148, 0, 4);
+		crc = crc_of(0xFFFFFFFFu, game, sizeof(game));
+		memcpy(game + 0x148, &crc, 4);
+		put_file(&a, SLOT, "savegame.bin", game, sizeof(game), 5);
+		CHECK(launch(&a) == CLOUD_STATE_IDLE && saved_game_records(SLOT) == 4 && !cloud_copies(saved_game_unit(SLOT)));
+	}
 	device_end(&a); device_end(&b); device_end(&c);
 }
 

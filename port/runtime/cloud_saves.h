@@ -103,6 +103,7 @@ struct cloud_config
 	const char *app;           /* version, for diagnosis */
 	const char *image;         /* identifies the game build: a saved game written by the same image is known to load */
 	long long state_size;      /* the size of this build's saved game file, 0 when unknown */
+	int saved_game_version;    /* HALO_PORT_SAVED_GAME_VERSION: what this build's saved games mean, beyond their layout */
 	int network_version;       /* for diagnosis */
 	void *context;
 	long long (*now)(void *context);                        /* seconds since 1970 */

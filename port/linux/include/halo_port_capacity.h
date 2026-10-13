@@ -35,6 +35,15 @@ layout: saved games of builds before it no longer load. */
 #define HALO_PORT_GAME_STATE_GPU_SIZE 0x40000 /* (0x40000) */
 #define HALO_PORT_GAME_STATE_SIZE (HALO_PORT_GAME_STATE_CPU_SIZE+HALO_PORT_GAME_STATE_GPU_SIZE)
 
+/* What a saved game's contents mean, beyond what the game checks before loading one (the map,
+the allocation sizes, the map file's checksum, each allocation's place and shape). RAISE THIS when a
+change gives a structure in the game state another meaning without changing a size: a field
+reordered, reused or reinterpreted. The game cannot tell such a saved game from its own and would
+load it wrong. Cloud saves (port/runtime/cloud_saves.c) keep saved games of different versions in
+separate records, so a device on the other side of the change never receives one. Only the host
+reads it. */
+#define HALO_PORT_SAVED_GAME_VERSION 1
+
 /* ---------- textures
 
 The texture cache holds the textures being drawn in 16 KB pages, 22 MB of

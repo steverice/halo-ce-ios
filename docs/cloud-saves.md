@@ -16,7 +16,7 @@ On disk these are the folders under `save/u/UDATA`. A profile is half a kilobyte
 - **At launch**, before the game starts, VISR compares the saves on the device with the ones in iCloud. Missing ones are restored and newer ones downloaded. It waits up to 8 seconds for iCloud, or 20 on a device that has no saves; after that the game starts with what is on the device.
 - **While you play**, saves are uploaded within about 15 seconds of the game writing them, again when the app leaves the screen, and once more as it exits. Nothing is downloaded during play, so another device's progress shows up at the next launch.
 - **If two devices were played separately**, the save that is further along is kept: for a profile, the one with more levels finished; for a checkpoint, the one on the later level; otherwise the more recent. The other is set aside in iCloud, and the next launch says which was kept and offers **Use the other one**. The five most recent set-aside copies of each profile and checkpoint are kept.
-- **Checkpoints belong to a version of the game.** A checkpoint only loads in the build that wrote it or one with the same saved-game layout and disc region. Each layout has its own checkpoint in iCloud, so an older build on one device does not replace a newer build's checkpoint on another. Profiles and finished levels are shared by all of them.
+- **Checkpoints belong to a version of the game and to its map files.** A checkpoint only loads in a build with the same saved-game layout, against the same map file. Each combination has its own checkpoint in iCloud, so an older build on one device does not replace a newer build's checkpoint on another, and a device with a different disc import or replacement maps keeps its own. On such a device you see the profile and its finished levels, and no checkpoint to continue until you make one there. Profiles and finished levels are shared by all of them.
 - **Deleting a profile** in the game deletes it on your other devices at their next launch, unless one of them has played it since. The deleted profile stays in iCloud and can be restored.
 - **Signed out of iCloud, or offline**: the game plays from the saves on the device and catches up later. Nothing on the device is deleted because iCloud is empty or unreachable.
 - **A different iCloud account** on the device, or VISR's data deleted from iCloud: VISR asks once at launch what to do and moves nothing until you answer.
@@ -79,6 +79,8 @@ Record type `SaveSlot` in zone `Saves`:
 | `contentHash` | String | SHA-256 of the unit's files |
 | `meta` | String, encrypted | `key=value` lines: device, profile name, levels finished, checkpoint level, and so on |
 | `payload` | Asset | The files, deflated |
+
+A checkpoint's `<key>` is a hash of what the game requires before it loads one (the disc build, the game state's layout checksum and size, the map file's checksum) and of `HALO_PORT_SAVED_GAME_VERSION` in `port/linux/include/halo_port_capacity.h`. **Raise that number when a change gives a structure in the game state another meaning without changing a size** (a field reordered, reused or reinterpreted): the game cannot tell such a checkpoint from its own, and the number is what keeps one from reaching a device on the other side of the change.
 
 The local bookkeeping is `cloud-saves/state` in the app's data folder; it is left out of device backups. Every decision is logged to `ios-runtime.log` with the prefix `cloud saves:`.
 
