@@ -264,7 +264,8 @@ void benchmark_suite_frame(long width, long height)
 			suite.state = suite_off;
 			return;
 		}
-		if (strcmp(mode, "quick") && strcmp(mode, "full"))
+		/* ("quick:a10-crew,c40-bridge" runs only the named scenes: for trying a route, not for a report to act on) */
+		if (strncmp(mode, "quick", 5) && strncmp(mode, "full", 4))
 		{
 			platform_log("debug.benchmark_suite: unknown value \"%s\" (\"quick\" or \"full\"); no benchmark", mode);
 			suite.state = suite_off;

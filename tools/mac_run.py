@@ -1246,7 +1246,7 @@ def main():
                                  "(600 = 18,000 frames), which validation slows")
     run_parser.add_argument("--set", action="append", default=[], metavar="SECTION.KEY=VALUE",
                             help="a config.toml setting, value in TOML syntax (repeatable)")
-    run_parser.add_argument("--benchmark-suite", choices=("quick", "full"),
+    run_parser.add_argument("--benchmark-suite", metavar="MODE",
                             help="run the device benchmark's suite (debug.benchmark_suite) in place of a timed run: "
                                  "the game quits when the suite is over (--exit-after is ignored; --time-limit bounds "
                                  "it, 90 minutes by default) and its journal, runs and report.json land in OUT/benchmark")

@@ -335,7 +335,9 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     }
     flags = [NSMutableArray array];
     started = NSDate.date;
-    plan.mode = !strcmp(mode, "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
+    plan.mode = !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
+    /* "quick:a10-crew,c40-bridge": only the scenes named after the colon */
+    NSArray<NSString *> *only = strchr(mode, ':') ? [@(strchr(mode, ':') + 1) componentsSeparatedByString:@","] : nil;
     {
         /* the scenes: the ones that play by themselves, then one for each recorded route the app carries, by name */
         static struct benchmark_scene scenes[BENCHMARK_SCENES_MAXIMUM];
@@ -343,14 +345,16 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
         int count = 0, route_count = 0;
 
-        for (index = 0; index < benchmark_suite_scene_count; index++) scenes[count++] = benchmark_suite_scenes[index];
+        for (index = 0; index < benchmark_suite_scene_count; index++)
+            if (!only || [only containsObject:@(benchmark_suite_scenes[index].id)]) scenes[count++] = benchmark_suite_scenes[index];
         for (NSString *name in [[files contentsOfDirectoryAtPath:bundled error:nil] sortedArrayUsingSelector:@selector(compare:)]) {
             NSString *text;
 
             if (![name.pathExtension isEqualToString:@"route"] || count >= BENCHMARK_SCENES_MAXIMUM) continue;
             text = [NSString stringWithContentsOfFile:[bundled stringByAppendingPathComponent:name] encoding:NSUTF8StringEncoding error:nil];
-            if (text && benchmark_scene_from_route(text.UTF8String, name.stringByDeletingPathExtension.UTF8String, &routes[route_count]))
-                scenes[count++] = routes[route_count++].scene;
+            if (text && benchmark_scene_from_route(text.UTF8String, name.stringByDeletingPathExtension.UTF8String, &routes[route_count])) {
+                if (!only || [only containsObject:@(routes[route_count].id)]) scenes[count++] = routes[route_count++].scene;
+            }
             else host_logf(HOST_LOG_INFO, "benchmark: %s is not a route this suite can use", name.UTF8String);
         }
         plan.scenes = scenes;
@@ -411,6 +415,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         if (process.thermalState > NSProcessInfoThermalStateNominal) flag(@"warm_at_start");
     }
     if (UIScreen.mainScreen.maximumFramesPerSecond != 60) flag(@"refresh_not_60");
+    if (only) flag(@"scenes_filtered");
 #if TARGET_OS_SIMULATOR
     flag(@"simulator");
 #endif
