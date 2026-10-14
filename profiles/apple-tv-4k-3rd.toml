@@ -1,9 +1,10 @@
 # Apple TV 4K, 3rd generation (2022, models A2737 and A2843): A15 Bionic, 4 GB, GPU family Apple8.
 # Play values measured by a tester's device benchmark report (H7C78EJ8): three easy scenes nobody played
 # (b30's beach on Easy, the main menu, a10's opening), so nothing here is evidence about fights.
-# Shadows (512) and model detail (the highest) are the built-in defaults, unmeasured on this model; the menu
-# is at the play height and cutscenes have no values of their own. Still to sweep: 1440 in play, and a menu at
-# the display's own height (2160 on a 4K output).
+# A second report (NHC5Z2D5, Full suite) swept play at 1080, 1440 and 2160, filtering, shadows and model detail
+# on the same beach: 1440 held 60 with 1 ms more GPU time than 1080, 2160 missed 60 and throttled the device
+# within a minute, and filtering (2x to 16x), shadows (128 to 512) and model detail changed nothing. Play stays
+# at 1080 until a fight is measured; the menu and cutscenes go to the display's own height.
 
 schema = 1
 name = "Apple TV 4K (3rd generation)"
@@ -27,3 +28,27 @@ source = "device benchmark report H7C78EJ8 (a tester's Apple TV 4K, 3rd generati
 basis = "measured"
 why = "16x, the highest, held the same numbers as the render height's (b30 beach 59.9 frames a second, all on time, GPU 95th percentile 15.0 ms). The only value tried; three easy scenes only."
 source = "device benchmark report H7C78EJ8 (a tester's Apple TV 4K, 3rd generation), 2026-10-14"
+
+# The main menu at the display's own height (2160 on a 4K output; on a smaller output the cap does nothing).
+[scene.menu.display]
+render_height = 2160
+
+[evidence."scene.menu.display.render_height"]
+basis = "measured"
+why = "At 2160 the still menu held 59.9 frames a second with every frame on time, GPU 9.3 ms a frame (10.0 at worst); at 1440 it took 5.0 ms. A still menu only: nobody moved through the menus."
+source = "device benchmark report NHC5Z2D5 (a tester's Apple TV 4K, 3rd generation, Full suite), 2026-10-14"
+
+# Cutscenes at the display's own height, at 30 frames a second as the original played them.
+[scene.cutscene.display]
+render_height = 2160
+frame_rate = "30"
+
+[evidence."scene.cutscene.display.render_height"]
+basis = "measured"
+why = "a10's opening at 2160 with no cap ran 59.8 frames a second, GPU 11.4 ms a frame (15.8 at the 95th percentile, 32.2 at worst); capped at 30 it has more than twice that time. One cutscene only."
+source = "device benchmark report NHC5Z2D5 (a tester's Apple TV 4K, 3rd generation, Full suite), 2026-10-14"
+
+[evidence."scene.cutscene.display.frame_rate"]
+basis = "assumed"
+why = "Decided for every Apple TV: cutscenes play at the original's 30 frames a second, and the pixel budget that frees goes to resolution."
+source = "the user's decision of 2026-10-13: 60 or more in play, 30 in cutscenes"
