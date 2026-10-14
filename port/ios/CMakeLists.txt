@@ -189,6 +189,10 @@ else()
     set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon")
+# An archive (tools/ios_build.py --app-store-package) holds only what its targets install. CMake's targets skip the
+# install step, which leaves an archive with no app in it that no distribution method accepts; the app alone is
+# installed, so the archive is an app archive and not one with a static library beside the app.
+set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_SKIP_INSTALL NO XCODE_ATTRIBUTE_INSTALL_PATH "/Applications")
 # internet play's MQTT brokers (network.brokers_file): host_main.m writes them
 # beside config.toml at each start, as upstream's Android app does
 target_sources(VISR PRIVATE "${ROOT}/port/assets/network/brokers.txt")
