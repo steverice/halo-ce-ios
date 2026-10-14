@@ -104,6 +104,26 @@ run(BUILD/'socket-revival-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/natpmp_probe.c', 'port/ios/host/host_natpmp_packets.c', '-o', BUILD/'natpmp-probe')
 run(BUILD/'natpmp-probe')
+# internet play's away notice (p2p_away.h): the packet an app in the background sends its peers and when a wait is up
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/away_probe.c', '-o', BUILD/'away-probe')
+run(BUILD/'away-probe')
+# and the call sites the probe can't see: the tunnel waits for a peer that said it is away instead of timing it out,
+# the game's server and connections wait for it too, the app asks the system for its background time, and the
+# game's loop shows the notices and joins a lost game again
+def required(path, *needles):
+    text = (ROOT / path).read_text()
+    for needle in needles:
+        if needle not in text:
+            raise SystemExit(f'{path}: missing `{needle}`')
+required('port/linux/src/p2p.c', '#include "p2p_away.h"', 'peer->away && p2p_away_wait_over(p2p_now(), peer->away_until)',
+         '!peer->away && elapsed(peer->heard_time, PEER_TIMEOUT)', 'p2p_away_packet_make(inner, _packet_away, away, grace);')
+required('source/networking/network_server_manager.c',
+         'if (network_game_server_client_machine_away(machine))\n\t\treturn FALSE;')
+required('source/networking/network_connection.c', '!network_connection_peer_away(connection))\n\t\t\t{')
+required('port/ios/host/host_lifecycle.m', 'beginBackgroundTaskWithName', 'background_task_end();')
+required('source/main/main.c', 'network_away_update(main_globals.main_menu_loaded_placeholder)'.replace('main_globals.main_menu_loaded_placeholder', 'main_globals.main_menu_scenario_loaded'),
+         'network_away_game_lost();\n\t\t\t\t\tnetwork_game_abort();')
 # halo://join links the app is opened with (host_join_link.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')
