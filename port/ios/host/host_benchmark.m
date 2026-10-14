@@ -329,7 +329,13 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 
         [files removeItemAtPath:@FOLDER "/recordings" error:nil];
         mkdir(FOLDER "/recordings", 0755);
+#ifdef HALO_BENCHMARK_NO_ROUTES
+        /* a build without recorded routes: the folder stays empty, so the suite has only its own scenes */
+        (void)bundled;
+        for (NSString *source in @[])
+#else
         for (NSString *source in @[ bundled, @FOLDER "/local-routes" ])
+#endif
             for (NSString *name in [files contentsOfDirectoryAtPath:source error:nil]) {
                 NSString *target = [@FOLDER "/recordings" stringByAppendingPathComponent:name];
 

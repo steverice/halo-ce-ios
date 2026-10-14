@@ -208,12 +208,19 @@ else()
 endif()
 target_sources(VISR PRIVATE "${HALO_PRIVACY_MANIFEST}")
 set_source_files_properties("${HALO_PRIVACY_MANIFEST}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-# the device benchmark's recordings (port/benchmark/README.md), copied into the data folder when a suite starts
-file(GLOB HALO_BENCHMARK_RECORDINGS CONFIGURE_DEPENDS "${ROOT}/port/benchmark/recordings/*.input"
-    "${ROOT}/port/benchmark/recordings/*.actions" "${ROOT}/port/benchmark/recordings/*.route"
-    "${ROOT}/port/benchmark/recordings/*.checks" "${ROOT}/port/benchmark/recordings/*.seeds")
-target_sources(VISR PRIVATE ${HALO_BENCHMARK_RECORDINGS})
-set_source_files_properties(${HALO_BENCHMARK_RECORDINGS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/benchmark-recordings)
+# The device benchmark's recorded routes (port/benchmark/README.md), copied into the data folder when a suite
+# starts. Off, the suite has only the scenes that play by themselves and the app carries no recording: the first
+# tester builds are made so, until recorded routes are shown to hold on other devices
+option(HALO_BENCHMARK_ROUTES "Bundle the device benchmark's recorded routes and run them as scenes" ON)
+if(HALO_BENCHMARK_ROUTES)
+    file(GLOB HALO_BENCHMARK_RECORDINGS CONFIGURE_DEPENDS "${ROOT}/port/benchmark/recordings/*.input"
+        "${ROOT}/port/benchmark/recordings/*.actions" "${ROOT}/port/benchmark/recordings/*.route"
+        "${ROOT}/port/benchmark/recordings/*.checks" "${ROOT}/port/benchmark/recordings/*.seeds")
+    target_sources(VISR PRIVATE ${HALO_BENCHMARK_RECORDINGS})
+    set_source_files_properties(${HALO_BENCHMARK_RECORDINGS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/benchmark-recordings)
+else()
+    target_compile_definitions(VISR PRIVATE HALO_BENCHMARK_NO_ROUTES=1)
+endif()
 # the device profiles (profiles/README.md): host/host_profile.c picks this device's at start
 file(GLOB HALO_DEVICE_PROFILES CONFIGURE_DEPENDS "${ROOT}/profiles/*.toml")
 list(FILTER HALO_DEVICE_PROFILES EXCLUDE REGEX "TEMPLATE\\.toml$")

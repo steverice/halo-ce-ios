@@ -64,6 +64,13 @@ def main():
     parser.add_argument('--tester', action='store_true',
                         help='a tester build: the Run benchmark row at launch, and the privacy manifest that declares '
                              'the benchmark report (port/ios/privacy)')
+    parser.add_argument('--benchmark-routes', choices=('on','off'),
+                        help="bundle the device benchmark's recorded routes and run them as scenes (default on; off "
+                             'for --tester, whose suite has only the scenes that play by themselves until recorded '
+                             'routes are shown to hold on other devices)')
+    parser.add_argument('--archive-only', action='store_true',
+                        help='with --app-store-package: stop after the archive. The export that follows is what '
+                             'makes the distribution certificate and App Store profile')
     parser.add_argument('--app-store-package', type=Path, metavar='FOLDER',
                         help='signed device builds: also archive the app and export an App Store Connect package '
                              '(for TestFlight) into this folder. Xcode makes the team\'s distribution certificate and '
@@ -89,6 +96,8 @@ def main():
         parser.error('--app-store-package is for signed device builds (--team)')
     if args.upload and not args.app_store_package:
         parser.error('--upload needs --app-store-package')
+    if args.archive_only and (not args.app_store_package or args.upload):
+        parser.error('--archive-only goes with --app-store-package and without --upload')
     if args.tester and args.mac:
         parser.error('--tester is for device and simulator builds')
     if args.benchmark_upload and (args.simulator or args.unsigned):
@@ -165,6 +174,8 @@ def main():
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     command.append(f'-DHALO_TESTER_BUILD={"ON" if args.tester else "OFF"}')
+    routes = args.benchmark_routes or ('off' if args.tester else 'on')
+    command.append(f'-DHALO_BENCHMARK_ROUTES={routes.upper()}')
     # a new CFBundleVersion each build, so an install over the app replaces it (on an Apple TV that keeps
     # the imported maps: an uninstall would take them, and the upload with them)
     import time
@@ -188,9 +199,11 @@ def main():
         if args.unsigned: command.append('--require-unsigned')
         run(*command)
     if args.app_store_package:
-        for command in app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload):
+        commands = app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload)
+        for command in commands[:1] if args.archive_only else commands:
             run(*command)
-        print(f'App Store Connect package: {args.app_store_package}' + (' (uploaded)' if args.upload else ''))
+        print(f'App Store Connect package: {args.app_store_package}' +
+              (' (archive only: not exported)' if args.archive_only else ' (uploaded)' if args.upload else ''))
 
 
 def app_store_options(team, upload):
