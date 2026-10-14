@@ -57,4 +57,5 @@ PROFILE_STRING("display.async_shaders", "auto|on|off")
 PROFILE_BOOLEAN("display.interpolation")
 
 PROFILE_SCENE("display.render_scale")
+PROFILE_SCENE("display.render_height")
 PROFILE_SCENE("display.frame_rate")
