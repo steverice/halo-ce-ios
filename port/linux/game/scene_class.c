@@ -112,6 +112,23 @@ int halo_scene_class(void)
 	{
 		long tick = game_time_get();
 
+		/* debug.test_win_level: the level is won after that many seconds of its game time, once, as when the
+		player reaches its end, so a run nobody plays goes through the change to the next level
+		(game_precache_new_map presents frames between the two) */
+		{
+			static double win_after = -1.0;
+			static int won;
+
+			if (win_after < 0.0)
+				win_after = config_real("debug.test_win_level");
+			if (win_after > 0.0 && !won && tick >= (long)(win_after * 30.0))
+			{
+				won = 1;
+				platform_log("debug.test_win_level: winning the level at tick %ld", tick);
+				main_won_map();
+			}
+		}
+
 		if (cinematic_globals && (cinematic_globals->in_progress || cinematic_globals->show_letterbox) &&
 			halo_scripted_camera())
 			cutscene_last_tick = tick;
