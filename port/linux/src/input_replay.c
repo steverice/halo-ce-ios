@@ -541,7 +541,12 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	time_t now = time(NULL);
 	struct tm utc;
 
+#ifdef _WIN32
+	/* (the Windows C library has gmtime_s, its arguments the other way around) */
+	gmtime_s(&utc, &now);
+#else
 	gmtime_r(&now, &utc);
+#endif
 	snprintf(take.map, sizeof(take.map), "%s", map);
 	snprintf(take.base, sizeof(take.base), "recordings/take-%s-%04d%02d%02d-%02d%02d%02d", map, utc.tm_year + 1900,
 		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec);
