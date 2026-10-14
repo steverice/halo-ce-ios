@@ -62,8 +62,9 @@ render_scale = 0.6
 frame_rate = "30"
 
 [evidence."scene.cutscene.display.render_scale"]
-basis = "assumed"
-why = "At 720 a10's cutscenes held 29.3 to 29.9 frames a second overall, but their heaviest windows ran 26.9 to 28.9 with 50 ms frames; at 486 lines the same windows held 29.6. 1152x648 has 81 percent of 720's pixels: expected to hold 30 throughout, not yet measured."
+basis = "measured"
+why = "At 720 a10's cutscenes held 29.3 to 29.9 frames a second overall, but their heaviest windows ran 26.9 to 28.9 with 50 ms frames. At 1152x648 a played session's cutscenes held 29.9 overall, the slowest 5-second window 27.8."
+source = "Apple TV HD replays of a played take at 720, 2026-10-13; the hand-played session of 2026-10-13 (21:39) at 648, build 20261013.205745"
 
 [evidence."scene.cutscene.display.frame_rate"]
 basis = "measured"

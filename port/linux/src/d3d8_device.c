@@ -2705,6 +2705,14 @@ void halo_shader_list_warm(char const *map_name)
 	snprintf(shader_list.map, sizeof(shader_list.map), "%s", base);
 	if (!device.gl_ready || !config_boolean("debug.shader_list_warm"))
 		return;
+	/* a run that dumps its shaders (debug.gpu_dump_shaders: check-metal's) compiles each at its first draw, as
+	GL does, so the dump holds the shaders the run drew: the lists now carry shaders recorded in played sessions,
+	which a check's scene never draws */
+	if (*config_string("debug.gpu_dump_shaders"))
+	{
+		platform_log("shader list %s: not warmed: debug.gpu_dump_shaders dumps the shaders this run draws", shader_list.map);
+		return;
+	}
 	size = gpu_warm_list_read(shader_list.map, NULL, 0);
 	/* what earlier sessions on this device still had to make while drawing
 	(shader_list_made's record) is warmed with the list, so a device stops
