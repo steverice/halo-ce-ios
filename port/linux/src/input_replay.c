@@ -120,7 +120,7 @@ static struct
 	long actions_written;
 	/* a replayed take's .route: the seed each of its segments began with, and whether the take began after the
 	level's opening was skipped (its first tick is past 0), which the replay must do first */
-	struct { long segment; unsigned long seed; } segment_seeds[32];
+	struct { long segment, tick; unsigned long seed; BOOL applied; } segment_seeds[32];
 	int segment_seed_count;
 	BOOL preroll, preroll_timeline;
 	/* the game time's jumps back seen frame by frame (the ticks' own
@@ -218,16 +218,28 @@ static void route_load(void)
 			first_tick = tick;
 		else if (sscanf(line, "random_seed = %lx", &seed) == 1 && replay.segment_seed_count < 32)
 		{
+			/* (the take's own: noted at its first tick, which a first_tick line before or after this one gives) */
 			replay.segment_seeds[replay.segment_seed_count].segment = 0;
+			replay.segment_seeds[replay.segment_seed_count].tick = -1;
 			replay.segment_seeds[replay.segment_seed_count++].seed = seed;
 		}
 		else if (sscanf(line, "segment_seed = %ld %ld %lx", &segment, &tick, &seed) == 3 && replay.segment_seed_count < 32)
 		{
 			replay.segment_seeds[replay.segment_seed_count].segment = segment;
+			replay.segment_seeds[replay.segment_seed_count].tick = tick;
 			replay.segment_seeds[replay.segment_seed_count++].seed = seed;
 		}
 	}
 	fclose(file);
+	{
+		int index;
+
+		for (index = 0; index < replay.segment_seed_count; index++)
+		{
+			if (replay.segment_seeds[index].tick < 0)
+				replay.segment_seeds[index].tick = first_tick;
+		}
+	}
 	if (first_tick > 0)
 	{
 		replay.preroll = replay.preroll_timeline = TRUE;
@@ -238,22 +250,34 @@ static void route_load(void)
 		"skipped (first_tick past 0), so the replay skips it first" : "");
 }
 
-/* a replay's segment begins (the game time went back): with the seed the recording's began with */
-static void replay_segment_began(long tick)
+/* A replay's tick, before its action: when the recording noted the random seed at this segment and
+tick (a take's first tick, and each segment's first after a revert), the game continues from that seed.
+At the tick itself and not at the revert: a revert can land a tick before the one the recording noted
+(a take that began at tick 1 replayed from a revert to tick 0), and that tick's own random numbers
+would leave the seed elsewhere. */
+static void replay_seed(long tick)
 {
 	int index;
 
-	if (!replay.action_count)
-		return;
 	for (index = 0; index < replay.segment_seed_count; index++)
 	{
-		if (replay.segment_seeds[index].segment == replay.segment)
+		if (!replay.segment_seeds[index].applied && replay.segment_seeds[index].segment == replay.segment &&
+			tick >= replay.segment_seeds[index].tick)
 		{
+			replay.segment_seeds[index].applied = TRUE;
 			input_replay_random_seed(&replay.segment_seeds[index].seed);
-			platform_log("debug.input_replay: segment %ld begins at tick %ld with the recording's seed %08lx", replay.segment,
-				tick, replay.segment_seeds[index].seed);
+			platform_log("debug.input_replay: segment %ld, tick %ld: the recording's seed %08lx (noted at tick %ld)",
+				replay.segment, tick, replay.segment_seeds[index].seed, replay.segment_seeds[index].tick);
 		}
 	}
+}
+
+/* a replay's segment begins (the game time went back) */
+static void replay_segment_began(long tick)
+{
+	(void)tick;
+	if (!replay.action_count)
+		return;
 	if (replay.preroll && replay.segment == 0)
 	{
 		/* the take's own time begins here: its controller states are timed from this revert (game_ticks
@@ -762,6 +786,7 @@ void input_replay_tick_action(void *action)
 	}
 	if (replay.action_count)
 	{
+		replay_seed(tick);
 		while (replay.next_action < replay.action_count &&
 			compare_action_keys(&replay.actions[replay.next_action], replay.segment, tick) < 0)
 			replay.next_action++;
