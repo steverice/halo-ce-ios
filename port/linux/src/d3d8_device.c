@@ -4743,6 +4743,86 @@ void WINAPI D3DDevice_DrawVertices(D3DPRIMITIVETYPE primitive_type, UINT start_v
 	submit_draw(draw, FALSE);
 }
 
+/* port: a run of quad lists from the current stream that differ only in one
+constant attribute (the decals of a texture, rasterizer_xbox_decals.c, each
+with its own color in register 9), as one draw: the ranges' quads in order,
+indexed from the lowest range, with the attribute given per vertex from a
+stream of its own, at the float value set_attribute would have set. The
+picture is the same: the quads blend in the order the separate draws had.
+colors holds a red, green, blue and alpha byte for each range. */
+void halo_draw_quad_ranges(const UINT *first_vertex, const UINT *quad_count, const BYTE (*colors)[4], UINT count,
+	INT color_reg)
+{
+	struct gpu_draw *draw = &draw_packet;
+	static float *values = NULL;
+	static unsigned long value_capacity = 0;
+	unsigned long low = ~0UL, high = 0, span, index_count = 0, range, vertex, offset;
+	WORD *indices;
+	int stream;
+
+	if (!count || color_reg < 0 || color_reg >= XGPU_VERTEX_ATTRIBUTE_COUNT)
+		return;
+	for (range = 0; range < count; range++)
+	{
+		if (first_vertex[range] < low)
+			low = first_vertex[range];
+		if (first_vertex[range] + quad_count[range] * 4 > high)
+			high = first_vertex[range] + quad_count[range] * 4;
+		index_count += quad_count[range] * 6;
+	}
+	span = high - low;
+	if (!index_count || span > 65535 || !prepare_draw(draw, FALSE))
+		return;
+	if (target_hud_measured)
+		hud_draw_extent(NULL, 0);
+	trace_draw("quad ranges", D3DPT_QUADLIST, span, NULL);
+	setup_streams(draw, low, span);
+	/* a stream the declaration leaves free */
+	for (stream = 15; stream > 0 && device.streams[stream].data; stream--)
+		;
+	if (span * 4 > value_capacity)
+	{
+		value_capacity = span * 4;
+		free(values);
+		values = malloc(value_capacity * sizeof(float));
+	}
+	indices = index_scratch(_index_scratch_quads, index_count);
+	index_count = 0;
+	for (range = 0; range < count; range++)
+	{
+		unsigned long first = first_vertex[range] - low, quad;
+
+		for (vertex = first; vertex < first + quad_count[range] * 4; vertex++)
+		{
+			values[vertex * 4 + 0] = colors[range][0] / 255.0f;
+			values[vertex * 4 + 1] = colors[range][1] / 255.0f;
+			values[vertex * 4 + 2] = colors[range][2] / 255.0f;
+			values[vertex * 4 + 3] = colors[range][3] / 255.0f;
+		}
+		for (quad = 0; quad < quad_count[range]; quad++)
+		{
+			WORD v0 = (WORD)(first + quad * 4);
+
+			indices[index_count++] = v0;
+			indices[index_count++] = (WORD)(v0 + 1);
+			indices[index_count++] = (WORD)(v0 + 2);
+			indices[index_count++] = v0;
+			indices[index_count++] = (WORD)(v0 + 2);
+			indices[index_count++] = (WORD)(v0 + 3);
+		}
+	}
+	offset = stream_upload(values, span * 4 * sizeof(float), &draw->streams[stream].buffer);
+	draw->streams[stream].offset = (uint32_t)offset;
+	draw->streams[stream].stride = 4 * sizeof(float);
+	draw->attributes[color_reg].format = GPU_ATTRIBUTE_FLOAT4;
+	draw->attributes[color_reg].stream = (uint8_t)stream;
+	draw->attributes[color_reg].offset = 0;
+	draw->index_offset = index_upload(indices, index_count * sizeof(WORD), &draw->index_buffer);
+	draw->primitive = GPU_PRIMITIVE_TRIANGLES;
+	draw->count = (uint32_t)index_count;
+	submit_draw(draw, FALSE);
+}
+
 void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT vertex_count, CONST WORD *index_data)
 {
 	struct gpu_draw *draw = &draw_packet;

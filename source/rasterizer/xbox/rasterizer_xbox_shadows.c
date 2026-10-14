@@ -191,6 +191,37 @@ static struct rasterizer_model_begin_parameters const *local_parameters = NULL;
 static boolean shadow_setup = FALSE;
 static boolean shadow_used = FALSE;
 
+/* port: deferred object shadows (render_object_shadows). While a window's
+shadows are generated, each is drawn and blurred into a pair of targets of
+its own (rasterizer_shadow_slot_select, rasterizer_xbox.c) and remembered;
+then all of them are applied to the picture in one stretch, so the
+picture's pass is not ended and begun again around every shadow. A shadow
+the frame already generated for the same object with the same matrix (the
+other eye's, or a mirror's window) is applied again from its targets
+rather than drawn again. A frame with more shadows than slots generates
+the rest the game's own way, in the apply stretch. */
+#define DEFERRED_SHADOW_ENTRIES 95
+
+struct deferred_shadow
+{
+	long object_index;
+	real_matrix4x3 matrix;
+	real_rgb_color color;
+	real radius;
+};
+
+static struct deferred_shadow deferred_shadows[DEFERRED_SHADOW_ENTRIES];
+static short deferred_shadow_count = 0;
+static unsigned __int64 deferred_shadow_frame = 0;
+static boolean deferred_shadows_generating = FALSE;
+static boolean deferred_shadows_drawn = FALSE;
+static boolean deferred_shadow_applying = FALSE;
+static boolean deferred_shadow_reused = FALSE;
+static short deferred_shadow_current = NONE;
+
+boolean rasterizer_shadow_slot_select(short slot);
+short rasterizer_shadow_slot_count(void);
+
 /* ---------- public code */
 
 void _rasterizer_environment_shadows_begin(
@@ -217,6 +248,50 @@ boolean _rasterizer_environment_shadow_begin(
 		147,
 		global_d3d_device);
 
+	deferred_shadow_reused = FALSE;
+	deferred_shadow_current = NONE;
+	if (deferred_shadows_generating)
+	{
+		short index;
+
+		for (index = 0; index < deferred_shadow_count; index++)
+		{
+			struct deferred_shadow *entry = &deferred_shadows[index];
+
+			if (entry->object_index == object_index && entry->radius == object_bounding_radius &&
+				!csmemcmp(&entry->matrix, shadow_matrix, sizeof(entry->matrix)))
+			{
+				break;
+			}
+		}
+		if (index < deferred_shadow_count)
+		{
+			/* generated already this frame: only this window's color */
+			deferred_shadows[index].color = *shadow_color;
+			deferred_shadow_current = index;
+			deferred_shadow_reused = TRUE;
+			if (shadow_volume_bounding_radius)
+				*shadow_volume_bounding_radius = object_bounding_radius;
+			return TRUE;
+		}
+		if (deferred_shadow_count < DEFERRED_SHADOW_ENTRIES && rasterizer_shadow_slot_select(deferred_shadow_count + 1))
+		{
+			struct deferred_shadow *entry = &deferred_shadows[deferred_shadow_count];
+
+			entry->object_index = object_index;
+			entry->matrix = *shadow_matrix;
+			entry->color = *shadow_color;
+			entry->radius = object_bounding_radius;
+			deferred_shadow_current = deferred_shadow_count++;
+			deferred_shadows_drawn = TRUE;
+		}
+		else
+		{
+			/* no slot: the game's own way, when the shadows are applied */
+			rasterizer_shadow_slot_select(0);
+			return FALSE;
+		}
+	}
 	if (global_window_parameters.rasterizer_target ==
 			_rasterizer_target_render_primary &&
 		rasterizer_debug_options.draw_environment_shadows)
@@ -576,7 +651,8 @@ void _rasterizer_environment_shadow_draw(
 	{
 		if (!shadow_setup)
 		{
-			if (rasterizer_debug_options.shadow_convolution_enabled)
+			/* port: (a deferred shadow was blurred when it was generated) */
+			if (rasterizer_debug_options.shadow_convolution_enabled && !deferred_shadow_applying)
 			{
 				rasterizer_shadow_convolve();
 			}
@@ -841,6 +917,107 @@ void _rasterizer_environment_shadows_end(
 	rasterizer_profile_end(_rasterizer_profile_environment_shadows);
 
 	return;
+}
+
+/* port: deferred object shadows (see deferred_shadows above) */
+boolean rasterizer_environment_shadows_defer_begin(
+	void)
+{
+	deferred_shadows_generating = FALSE;
+	deferred_shadows_drawn = FALSE;
+	if (global_window_parameters.rasterizer_target != _rasterizer_target_render_primary ||
+		!rasterizer_debug_options.draw_environment_shadows || rasterizer_shadow_slot_count() < 2)
+	{
+		return FALSE;
+	}
+	if (deferred_shadow_frame != rasterizer_globals.fps_accumulation_frame_index)
+	{
+		deferred_shadow_frame = rasterizer_globals.fps_accumulation_frame_index;
+		deferred_shadow_count = 0;
+	}
+	deferred_shadows_generating = TRUE;
+	return TRUE;
+}
+
+/* the shadow begun last: whether it was reused, and its handle */
+boolean rasterizer_environment_shadow_reused(
+	void)
+{
+	return deferred_shadows_generating && deferred_shadow_reused;
+}
+
+short rasterizer_environment_shadow_handle(
+	void)
+{
+	return deferred_shadows_generating ? deferred_shadow_current : NONE;
+}
+
+/* a generated shadow's models are drawn: blur it into its slot's second
+target now, as the first apply draw would have */
+void rasterizer_environment_shadow_generate_end(
+	void)
+{
+	if (deferred_shadow_current != NONE && !deferred_shadow_reused)
+	{
+		if (!shadow_used)
+		{
+			error(_error_silent, "### WARNING empty shadow has been cast");
+		}
+		if (rasterizer_debug_options.shadow_convolution_enabled)
+		{
+			rasterizer_shadow_convolve();
+		}
+	}
+	deferred_shadow_current = NONE;
+	deferred_shadow_reused = FALSE;
+}
+
+/* the window's shadows are generated: back to the picture, once */
+void rasterizer_environment_shadows_defer_end(
+	void)
+{
+	deferred_shadows_generating = FALSE;
+	rasterizer_shadow_slot_select(0);
+	if (deferred_shadows_drawn)
+	{
+		rasterizer_set_target(
+			global_window_parameters.rasterizer_target,
+			FALSE,
+			FALSE,
+			FALSE,
+			TRUE);
+	}
+	deferred_shadows_drawn = FALSE;
+}
+
+/* applies a generated shadow: its slot's blurred target, its matrix, its
+color and its radius, as rasterizer_environment_shadow_begin and the
+first apply draw left them; then structure_render_shadow draws it and
+rasterizer_environment_shadow_end ends it, as the game does */
+void rasterizer_environment_shadow_apply_begin(
+	short handle)
+{
+	struct deferred_shadow *entry;
+
+	if (handle < 0 || handle >= deferred_shadow_count)
+		return;
+	entry = &deferred_shadows[handle];
+	rasterizer_shadow_slot_select(handle + 1);
+	local_shadow_matrix = entry->matrix;
+	local_shadow_color = entry->color;
+	local_object_bounding_radius = entry->radius;
+	local_parameters = NULL;
+	shadow_setup = FALSE;
+	shadow_used = TRUE;
+	shadow_restored = TRUE;
+	deferred_shadow_applying = TRUE;
+}
+
+void rasterizer_environment_shadows_apply_end(
+	void)
+{
+	deferred_shadow_applying = FALSE;
+	rasterizer_shadow_slot_select(0);
 }
 
 /* ---------- private code */
