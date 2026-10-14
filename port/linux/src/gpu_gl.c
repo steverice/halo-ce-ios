@@ -1192,13 +1192,20 @@ static struct framebuffer_entry *framebuffers;
 
 static GLuint framebuffer_get(GLuint color, GLuint depth)
 {
-	struct framebuffer_entry *entry;
+	struct framebuffer_entry *entry, **link;
 	GLenum draw_buffer = color ? GL_COLOR_ATTACHMENT0 : GL_NONE;
 
-	for (entry = framebuffers; entry; entry = entry->next)
+	/* (found, it moves to the front: each draw asks again for the one the
+	draw before it did; after upstream's 197c1994) */
+	for (link = &framebuffers; (entry = *link) != NULL; link = &entry->next)
 	{
 		if (entry->color == color && entry->depth == depth)
+		{
+			*link = entry->next;
+			entry->next = framebuffers;
+			framebuffers = entry;
 			return entry->framebuffer;
+		}
 	}
 	entry = calloc(1, sizeof(*entry));
 	entry->color = color;
