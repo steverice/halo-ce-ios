@@ -55,6 +55,21 @@ typedef char p2p_listing_invite_size_assert[P2P_LISTING_INVITE_SIZE == P2P_LINK_
 topic of queries (p2p_lobby.c) */
 #define P2P_LOBBY_SLOT_PREFIX "hceu/3/lobby/s/"
 #define P2P_LOBBY_QUERY_TOPIC "hceu/3/lobby/q"
+/* join codes' records (p2p.c, "join codes"): a topic each, the prefix and
+32 hex digits of a hash of the code */
+#define P2P_CODE_TOPIC_PREFIX "hceu/3/code/"
+enum
+{
+	P2P_CODE_TOPIC_SIZE = 12 + 32 + 1,
+};
+/* (p2p.c) a retained record heard on the code topic being looked up, with
+the lock held */
+void p2p_code_heard(const unsigned char *payload, int size);
+/* (p2p_signal.c) the code record to keep retained at the brokers (NULL:
+none, and the last one cleared), and the code topic to subscribe to (NULL:
+none) */
+void p2p_signal_code_publish(const char *topic, const unsigned char *record, int size);
+void p2p_signal_code_join(const char *topic);
 
 /* internet play's state (p2p.c), which the game's threads and the p2p
 thread share */
@@ -184,6 +199,9 @@ enum
 	P2P_TAG_SIZE = 16,
 	/* what p2p_seal adds: a random nonce and the tag */
 	P2P_SEAL_OVERHEAD = P2P_NONCE_SIZE + P2P_TAG_SIZE,
+	/* a join code's record (p2p.c): "HC", the format, and the invite's
+	host key hash and token sealed */
+	P2P_CODE_RECORD_SIZE = 3 + P2P_SEAL_OVERHEAD + 32,
 };
 
 void p2p_sha256(const void *data, int size, unsigned char *digest);

@@ -2158,6 +2158,8 @@ Xbox's networking, run by the engine's port entry points
 /* the server browser's password screen (tools/port_settings.py), and the
 longest password */
 #define PASSWORD_NAME "pc\\main_menu\\multiplayer_type_select\\join_game\\password\\password_screen"
+/* Direct Link's ENTER CODE screen (a join code or an invite link typed) */
+#define CODE_NAME "pc\\main_menu\\multiplayer_type_select\\join_game\\code\\code_screen"
 #define PASSWORD_LENGTH 32
 /* the lobby's panel's lines (the gametype, the players, the countdown, the
 invite) */
@@ -2931,8 +2933,17 @@ static void server_settings_update(struct widget_instance *list)
 		snprintf(text, sizeof(text), "NONE: A LAN GAME");
 	else if (!config_boolean("network.online"))
 		snprintf(text, sizeof(text), "INTERNET PLAY IS OFF (SETTINGS)");
-	else if (!p2p_invite_link(text, sizeof(text)))
+	else if (!p2p_host_code(text, sizeof(text)))
 		snprintf(text, sizeof(text), "MADE WHEN THE GAME STARTS");
+	else
+	{
+		/* (the join code, which Direct Link's ENTER CODE takes; Enter still
+		copies the whole link) */
+		char code[16];
+
+		snprintf(code, sizeof(code), "%s", text);
+		snprintf(text, sizeof(text), "JOIN CODE %s", code);
+	}
 	text_field_show(named(list, "invite_value", 0), text, FALSE);
 	{
 		wchar_t type[ROW_TEXT_LENGTH];
@@ -3890,9 +3901,14 @@ static void browser_update(struct widget_instance *list)
 			text[0] = 0;
 		else if (!multiplayer.game_count)
 		{
-			usnprintf(text, NUMBEROF(text) - 1, L"%s", multiplayer.mode == _multiplayer_mode_direct_link ?
-				L"Copy an invite link and PASTE LINK, or accept a Discord invite" :
-				L"Looking for games on your LAN...");
+			int code_status = p2p_join_code_status();
+
+			usnprintf(text, NUMBEROF(text) - 1, L"%s", multiplayer.mode != _multiplayer_mode_direct_link ?
+				L"Looking for games on your LAN..." :
+				code_status == P2P_CODE_LOOKING ? L"Looking up the join code..." :
+				code_status == P2P_CODE_FOUND ? L"Found the game: connecting to its host..." :
+				code_status == P2P_CODE_NOT_FOUND ? L"No game has that join code. ENTER CODE to try again" :
+				L"ENTER CODE: a friend's join code or invite link");
 		}
 		else
 		{
@@ -3927,8 +3943,95 @@ static void browser_update(struct widget_instance *list)
 	browser_focus(list);
 }
 
-/* "direct ip connect go" (Direct Link's PASTE LINK): the invite
-link on the clipboard reached, its game then in the list */
+/* Direct Link's ENTER CODE screen: a join code (p2p_code.h) or an invite
+link typed or pasted; JOIN GAME looks it up and goes back to Direct Link,
+whose list has the game once its host is reached */
+enum
+{
+	_code_help_ask = 1,
+	_code_help_not_one,
+};
+
+static struct
+{
+	char text[TEXT_FIELD_LENGTH];
+	short help;
+} code_screen;
+
+static void code_screen_done(char const *text)
+{
+	snprintf(code_screen.text, sizeof(code_screen.text), "%s", text);
+}
+
+/* "port code init": typing begins at once, with an invite link already on
+the clipboard (where there is one) in the field */
+static boolean code_screen_initialize(struct widget_instance *list)
+{
+	struct widget_instance *row = named(list, "op_code", 0);
+	char clipboard[TEXT_FIELD_LENGTH];
+
+	code_screen.text[0] = 0;
+	if (platform_clipboard_get(clipboard, sizeof(clipboard)) && strstr(clipboard, "halo://join/"))
+		snprintf(code_screen.text, sizeof(code_screen.text), "%s", clipboard);
+	code_screen.help = _code_help_ask;
+	if (row)
+		text_field_begin(row, code_screen.text, TEXT_FIELD_LENGTH - 1, code_screen_done);
+	return TRUE;
+}
+
+/* "port code update" */
+static void code_screen_update(struct widget_instance *list)
+{
+	struct widget_instance *help = list->parameters.list.extended_description;
+
+	text_field_show(named(list, "code_value", 0), code_screen.text, text_field_editing(named(list, "op_code", 0)));
+	if (help)
+		help->parameters.text_box.string_list_index = code_screen.help;
+}
+
+/* "port code join" (JOIN GAME, and Enter: code_screen_edit) */
+static boolean code_screen_join(struct widget_instance *widget, boolean *widget_deleted)
+{
+	struct widget_instance *row = named(screen_of(widget), "op_code", 0);
+
+	if (text_field_editing(NULL))
+		text_field_end(TRUE);
+	if (!p2p_join_code(code_screen.text))
+	{
+		platform_log("menus: that is neither a join code nor an invite link");
+		code_screen.help = _code_help_not_one;
+		if (row)
+			text_field_begin(row, code_screen.text, TEXT_FIELD_LENGTH - 1, code_screen_done);
+		return campaign_fail();
+	}
+	code_screen.text[0] = 0;
+	ui_widget_port_go_back(widget);
+	*widget_deleted = TRUE;
+	return TRUE;
+}
+
+/* "port code back" (B, Escape): back to Direct Link at once */
+static boolean code_screen_back(struct widget_instance *widget, boolean *widget_deleted)
+{
+	if (text_field_editing(NULL))
+		text_field_end(FALSE);
+	code_screen.text[0] = 0;
+	ui_widget_port_go_back(widget);
+	*widget_deleted = TRUE;
+	return TRUE;
+}
+
+/* "port code edit" (the field's row's A: the typing begins; Enter joins) */
+static boolean code_screen_edit(struct widget_instance *row, boolean *widget_deleted)
+{
+	if (text_field_editing(row))
+		return code_screen_join(row, widget_deleted);
+	text_field_begin(row, code_screen.text, TEXT_FIELD_LENGTH - 1, code_screen_done);
+	return TRUE;
+}
+
+/* "direct ip connect go" (Direct Link's PASTE LINK, before ENTER CODE): the
+invite link on the clipboard reached, its game then in the list */
 static boolean direct_link_from_clipboard(void)
 {
 	char text[TEXT_FIELD_LENGTH];
@@ -4336,8 +4439,14 @@ static void lobby_update(struct widget_instance *list)
 		if (global_network_game_server_get() && p2p_invite_link(link, sizeof(link)))
 		{
 			size_t length = ustrlen(text);
+			char code[16];
 
-			usnprintf(text + length, NUMBEROF(text) - 1 - length, L"\r\n\r\nInvite link copied:\r\npaste it to friends");
+			/* (and its join code, for a friend who cannot paste a link: an
+			Apple TV's) */
+			if (!p2p_host_code(code, sizeof(code)))
+				code[0] = 0;
+			usnprintf(text + length, NUMBEROF(text) - 1 - length,
+				L"\r\n\r\nInvite link copied:\r\npaste it to friends\r\nJoin code: %hs", code);
 		}
 		text_set_length(named(description, "lobby_game_data", 0), text, LOBBY_TEXT_LENGTH);
 	}
@@ -5376,6 +5485,26 @@ boolean pc_menu_event_function_invoke(
 		{
 			return password_screen_back(widget, widget_deleted);
 		}
+		else if (!strcmp(name, "port code open"))
+		{
+			return ui_widget_port_open(widget, CODE_NAME, widget_deleted);
+		}
+		else if (!strcmp(name, "port code init"))
+		{
+			return code_screen_initialize(widget);
+		}
+		else if (!strcmp(name, "port code edit"))
+		{
+			return code_screen_edit(widget, widget_deleted);
+		}
+		else if (!strcmp(name, "port code join"))
+		{
+			return code_screen_join(widget, widget_deleted);
+		}
+		else if (!strcmp(name, "port code back"))
+		{
+			return code_screen_back(widget, widget_deleted);
+		}
 		else if (!strcmp(name, "ss copy invite"))
 		{
 			return invite_copy();
@@ -5552,6 +5681,8 @@ void pc_menu_game_data_function_invoke(
 		server_settings_update(widget);
 	else if (!strcmp(name, "port password update"))
 		password_screen_update(widget);
+	else if (!strcmp(name, "port code update"))
+		code_screen_update(widget);
 	else if (!strcmp(name, "gamespy screen update"))
 		browser_update(widget);
 	else if (!strcmp(name, "gt edit list update"))

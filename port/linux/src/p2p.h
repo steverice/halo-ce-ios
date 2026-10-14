@@ -78,6 +78,21 @@ void p2p_set_hosting_allowed(int allowed);
 /* the invite link of the game this machine hosts (empty, 0: none, or LAN
 only) */
 int p2p_invite_link(char *link, int size);
+/* the join code of the game this machine hosts, as shown ("ABCD-EFGH"):
+0 and empty if none (p2p_code.h) */
+int p2p_host_code(char *text, int size);
+/* joins the game a join code stands for (looked up at the signalling
+brokers), or the invite link the text holds: nonzero if the text is either;
+p2p_join_code_status then says how the code's lookup went */
+int p2p_join_code(const char *text);
+enum
+{
+	P2P_CODE_NONE,
+	P2P_CODE_LOOKING,
+	P2P_CODE_FOUND,
+	P2P_CODE_NOT_FOUND,
+};
+int p2p_join_code_status(void);
 
 /* the hosted game's players and the most it takes, which Discord shows
 (0, 0: not hosting; until the game says, the machines the tunnel reaches

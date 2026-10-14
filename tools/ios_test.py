@@ -89,6 +89,10 @@ if 'chosen_origins(' not in (ROOT / 'tools/mac_run.py').read_text().split('def p
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/virtual_clock_probe.c', '-o', BUILD/'virtual-clock-probe')
 run(BUILD/'virtual-clock-probe')
+# internet play's join codes (p2p_code.c): the alphabet, reading them back, and refusals
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/join_code_probe.c', 'port/linux/src/p2p_code.c', '-o', BUILD/'join-code-probe')
+run(BUILD/'join-code-probe')
 # halo://join links the app is opened with (host_join_link.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')
