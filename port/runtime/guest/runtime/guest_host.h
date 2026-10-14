@@ -73,6 +73,14 @@ int host_sdl_gl_swap_window(unsigned int window);
 int host_sdl_poll_event(void *event);
 int host_sdl_set_clipboard_text(const char *text);
 void host_sdl_get_clipboard_text(char *buffer, unsigned int size);
+/* the system's keyboard up for a menu's text field (its title, its text,
+and whether it is a password's), or put away (xinput_sdl.c's
+platform_text_field). On a phone, a tablet or a headset its keys come as key
+events; an Apple TV asks with a dialog of its own (host_tv.m), whose text
+host_sdl_text_result gives once it is done: 1 and the text, 2 if it was
+canceled, 0 while there is none */
+void host_sdl_text_input(int on, const char *title, const char *text, int masked);
+int host_sdl_text_result(char *buffer, unsigned int size);
 /* the keyboard's keys by name (the controls' bindings, xinput_sdl.c) */
 void host_sdl_scancode_name(int scancode, char *buffer, unsigned int size);
 int host_sdl_scancode_from_name(const char *name);

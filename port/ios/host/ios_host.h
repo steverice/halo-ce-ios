@@ -53,4 +53,10 @@ int host_linux_errno(int native_errno);
 void host_install_signal_handlers(void);
 uint32_t host_guest_invoke(uintptr_t function, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uintptr_t arena);
 uint32_t host_guest_on_stack(uintptr_t function, uint32_t argument, uintptr_t arena, void *stack_top);
+/* host_tv.m: a menu's text field asked for with tvOS's dialog (on: shown,
+with its title, text and whether it is a password's; off: dismissed; 0 if
+it cannot be shown yet, to be asked again), and its text once it is done: 1
+and the text, 2 if canceled, 0 while neither (each result is given once) */
+int host_tv_text_prompt(int on, const char *title, const char *text, int masked);
+int host_tv_text_result(char *buffer, uint32_t size);
 #endif

@@ -2251,7 +2251,8 @@ void p2p_set_hosting_allowed(int allowed);
 int p2p_peer_address(unsigned char const *identifier, unsigned long *address);
 int platform_clipboard_get(char *text, int size);
 void platform_clipboard_set(char const *text);
-void platform_text_field(int typing);
+void platform_text_field(int typing, char const *title, char const *text, int masked);
+int platform_text_field_result(char *text, int size);
 int config_boolean(char const *name);
 void ui_widget_port_post_button(short controller_index, short button_index);
 
@@ -2309,17 +2310,25 @@ static struct
 	boolean masked;
 } text_field;
 
-/* when the field was last shown (a field not shown for a while is let go
-of: its screen has gone) */
+/* when the field was last shown, and the menus' functions run since (a
+field not shown for a while is let go of: its screen has gone) */
 static unsigned long text_field_shown_time;
+static int text_field_passes_unshown;
 
 static boolean text_field_editing(struct widget_instance *row)
 {
 	return text_field.row && (!row || text_field.row == row);
 }
 
-static void text_field_begin(struct widget_instance *row, char const *text, short maximum,
-	void (*done)(char const *text))
+/* the field's title for the system's dialog (an Apple TV's), by its row */
+static char const *text_field_title(struct widget_instance const *row)
+{
+	return !row ? "" : strstr(row->name, "password") ? "Password" : strstr(row->name, "code") ? "Join Code" :
+		strstr(row->name, "name") ? "Game Name" : "";
+}
+
+static void text_field_start(struct widget_instance *row, char const *text, short maximum,
+	void (*done)(char const *text), boolean masked)
 {
 	struct key_stroke key;
 
@@ -2328,26 +2337,32 @@ static void text_field_begin(struct widget_instance *row, char const *text, shor
 	snprintf(text_field.before, sizeof(text_field.before), "%s", text);
 	text_field.maximum = (short)MIN(maximum, TEXT_FIELD_LENGTH - 1);
 	text_field.done = done;
-	text_field.masked = FALSE;
+	text_field.masked = masked;
 	text_field_shown_time = system_milliseconds();
+	text_field_passes_unshown = 0;
 	while (input_get_key(&key))
 		;
-	platform_text_field(TRUE);
+	platform_text_field(TRUE, text_field_title(row), text_field.text, masked);
+}
+
+static void text_field_begin(struct widget_instance *row, char const *text, short maximum,
+	void (*done)(char const *text))
+{
+	text_field_start(row, text, maximum, done, FALSE);
 }
 
 /* a password's field: as text_field_begin, its text shown as stars */
 static void text_field_begin_masked(struct widget_instance *row, char const *text, short maximum,
 	void (*done)(char const *text))
 {
-	text_field_begin(row, text, maximum, done);
-	text_field.masked = TRUE;
+	text_field_start(row, text, maximum, done, TRUE);
 }
 
 static void text_field_end(boolean keep)
 {
 	void (*done)(char const *text) = text_field.done;
 
-	platform_text_field(FALSE);
+	platform_text_field(FALSE, NULL, NULL, FALSE);
 	text_field.row = NULL;
 	text_field.done = NULL;
 	if (!keep)
@@ -2379,8 +2394,24 @@ static void text_field_show(struct widget_instance *value, char const *text, boo
 	if (editing)
 	{
 		text_field_shown_time = system_milliseconds();
+		text_field_passes_unshown = 0;
 		struct key_stroke key;
+		char asked[TEXT_FIELD_LENGTH];
 
+		/* the system's dialog's text (an Apple TV's), whole: Done also
+		presses Start, which the field's row takes as Enter; Cancel stops
+		the editing, and the row's A asks again */
+		switch (platform_text_field_result(asked, sizeof(asked)))
+		{
+		case 1:
+			text_field.text[0] = 0;
+			text_field_insert(asked);
+			break;
+		case 2:
+			text_field_end(FALSE);
+			text_set(value, L"");
+			return;
+		}
 		while (input_get_key(&key))
 		{
 			size_t length = strlen(text_field.text);
@@ -5686,8 +5717,11 @@ void pc_menu_game_data_function_invoke(
 
 	if (!name)
 		return;
-	/* (a text field whose screen has gone: let go of) */
-	if (text_field.row && system_milliseconds() - text_field_shown_time > 500)
+	/* (a text field whose screen has gone: let go of, once other screens'
+	functions have run a while without it shown; a long frame alone, such
+	as a load's, is no sign of that, and would put an Apple TV's dialog
+	away) */
+	if (text_field.row && ++text_field_passes_unshown > 30 && system_milliseconds() - text_field_shown_time > 500)
 		text_field_end(FALSE);
 	if (!strcmp(name, "solo map list update"))
 		level_list_update(widget);
