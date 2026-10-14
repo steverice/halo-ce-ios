@@ -6,8 +6,9 @@
    The record holds the report and a few of its fields again as columns to
    search by: the report's code, the model identifier, system and app versions,
    the suite and mode, the start time to the minute, the run count and flags.
-   CloudKit adds, and nothing here can remove, the record's times and the
-   opaque ID of the iCloud user who created it; the screen says so. Nothing is
+   CloudKit adds, and nothing here can remove, the record's times, the opaque
+   ID of the iCloud user who created it and an ID it assigns to the device for
+   this container; the screen says so. Nothing is
    sent before Send is pressed. */
 #import <CloudKit/CloudKit.h>
 #import <UIKit/UIKit.h>
@@ -271,7 +272,7 @@ int host_benchmark_send(const char *report_path, const char *summary, char *mess
     controller.summary = [NSString stringWithFormat:@"%s\nThe report holds this device's model, system version, graphics chip and "
         "display mode, the app's version, and the measurements of each run, with %lu frame times.\nIt does not hold the device's "
         "name, any account, any address or location, or anything from the game.\nIt goes to the VISR developers through iCloud, "
-        "which records with it the time and an ID that stands for your iCloud account in this app.",
+        "which records with it the time and two IDs it assigns in this app: one for your iCloud account and one for this device.",
         summary, (unsigned long)frame_values];
     controller.lines = [text componentsSeparatedByString:@"\n"];
     window = window_for(controller);
