@@ -4440,7 +4440,7 @@ static void lobby_update(struct widget_instance *list)
 	lobby_map_show(description, game->map.name);
 	{
 		short seconds = network_game_client_get_seconds_to_game_start(client);
-		char link[TEXT_FIELD_LENGTH];
+		char code[16];
 		wchar_t gametype[NUMBEROF(game->variant.human_readable_game_description) + 1];
 
 		ustrncpy(gametype, game->variant.human_readable_game_description, NUMBEROF(gametype) - 1);
@@ -4455,17 +4455,16 @@ static void lobby_update(struct widget_instance *list)
 
 			usnprintf(text + length, NUMBEROF(text) - 1 - length, L" %d", seconds);
 		}
-		if (global_network_game_server_get() && p2p_invite_link(link, sizeof(link)))
+		/* (the join code, which friends type under Join Game > Direct Link,
+		on a line of its own: after "Join code: " the panel cuts its last
+		character off, and it has room for two lines after the countdown's.
+		The invite link is still on the clipboard where there is one, but an
+		Apple TV has none to paste from) */
+		if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)))
 		{
 			size_t length = ustrlen(text);
-			char code[16];
 
-			/* (and its join code, for a friend who cannot paste a link: an
-			Apple TV's) */
-			if (!p2p_host_code(code, sizeof(code)))
-				code[0] = 0;
-			usnprintf(text + length, NUMBEROF(text) - 1 - length,
-				L"\r\n\r\nInvite link copied:\r\npaste it to friends\r\nJoin code: %hs", code);
+			usnprintf(text + length, NUMBEROF(text) - 1 - length, L"\r\nJoin code:\r\n%hs", code);
 		}
 		text_set_length(named(description, "lobby_game_data", 0), text, LOBBY_TEXT_LENGTH);
 	}
