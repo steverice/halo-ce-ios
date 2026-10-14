@@ -444,6 +444,8 @@ static struct render_target_entry **render_target_bucket(unsigned long data)
 
 
 static struct render_target_entry *render_targets;
+/* the render targets made since the game started (debug.gpu_stats) */
+static unsigned long render_targets_made;
 
 /* ---------- the device */
 
@@ -508,6 +510,8 @@ static struct
 	unsigned long draws, immediate_draws, clears, presents;
 	unsigned long skipped_no_program, skipped_no_target, skipped_link;
 	unsigned long target_changes;
+	/* render_target_get's lookups */
+	unsigned long render_target_lookups;
 	/* vertex and index bytes drawn from the mirror, and streamed */
 	unsigned long mirrored_bytes, streamed_bytes;
 } stats;
@@ -872,6 +876,7 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 	}
 	entry->next = render_targets;
 	render_targets = entry;
+	render_targets_made++;
 	entry->next_in_bucket = *render_target_bucket(entry->target.data);
 	*render_target_bucket(entry->target.data) = entry;
 	return entry;
@@ -881,6 +886,7 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 {
 	int layer = render_target_layer();
 
+	stats.render_target_lookups++;
 	/* stereo's HUD layer, keyed by the current HUD group (halo_stereo.h):
 	each group draws into a target of its own, so groups that overlap on
 	the screen never share pixels; the catch-all's is the layer's own */
@@ -5162,6 +5168,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			stats.target_changes / stats.presents, stats.skipped_no_program, stats.skipped_no_target, stats.skipped_link,
 			stats.mirrored_bytes / stats.presents / 1024, stats.streamed_bytes / stats.presents / 1024,
 			calls / stats.presents);
+		platform_log("render targets: %lu lookups a frame; %lu made in all", stats.render_target_lookups / stats.presents,
+			render_targets_made);
 		memset(&stats, 0, sizeof(stats));
 		/* and how stereo's HUD layer took its draws (hud_layer_blend) */
 		if (hud_layer_exact || hud_layer_inexact)
