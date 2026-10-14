@@ -75,6 +75,41 @@ class ImportTests(unittest.TestCase):
                 self.extract()
                 for name,data in payloads.items():self.assertEqual(data,(self.dest/'maps'/name).read_bytes())
                 self.assertEqual(self.invoke('ready',self.dest/'maps').returncode,0)
+    def plan(self, received, total=None):
+        result=self.invoke('plan',self.image,received,self.image.stat().st_size if total is None else total)
+        return [tuple(map(int,line.split())) for line in result.stdout.splitlines()]
+    def test_plan_keeps_only_what_an_import_reads(self):
+        """the Apple TV's upload: no plan until the directories have arrived; then the ranges an import reads, and
+        an image holding only those (holes elsewhere) imports whole, the image used up as it goes"""
+        for partition in (0,0x02080000):
+            with self.subTest(partition=partition):
+                self.dest=self.root/f'out-{partition}';self.dest.mkdir()
+                payloads=fixture(self.image,partition=partition)
+                whole=self.image.read_bytes()
+                # (the volume descriptor is at sector 32, the root directory at 40, the maps' at 41)
+                self.assertEqual(self.plan(partition+0x10000+1024),[])
+                self.assertEqual(self.plan(partition+41*2048),[])
+                ranges=self.plan(partition+42*2048)
+                self.assertTrue(ranges)
+                self.assertEqual(ranges,sorted(ranges))
+                self.assertTrue(all(a<b and b<=len(whole) for a,b in ranges))
+                self.assertTrue(all(ranges[i][1]<ranges[i+1][0] for i in range(len(ranges)-1)),'ranges overlap or touch')
+                kept=sum(b-a for a,b in ranges)
+                self.assertEqual(kept,2048*3+sum(len(data) for data in payloads.values()))
+                # what a receiver that follows the plan has on disk
+                sparse=bytearray(len(whole))
+                for a,b in ranges:sparse[a:b]=whole[a:b]
+                self.image.write_bytes(sparse)
+                result=self.invoke('consume',self.image,self.dest)
+                self.assertEqual(result.returncode,0,result.stdout)
+                for name,data in payloads.items():self.assertEqual(data,(self.dest/'maps'/name).read_bytes())
+                self.assertEqual(self.image.stat().st_size,len(whole))
+    def test_plan_refuses_what_is_no_disc_image(self):
+        self.image.write_bytes(os.urandom(1<<20))
+        self.assertEqual(self.plan(1<<20),[])
+        fixture(self.image)
+        self.patch(41*2048+4,struct.pack('<I',0x7fffffff))    # a map past the end of the image
+        self.assertEqual(self.plan(self.image.stat().st_size),[])
     def test_whole_disc_partition(self):
         fixture(self.image,partition=0x02080000);self.extract()
     def test_bad_magic(self):

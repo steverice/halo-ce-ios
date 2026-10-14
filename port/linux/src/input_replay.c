@@ -49,6 +49,7 @@ to the recording, a summary to the log, and the game quits.
 #include "platform.h"
 #include "port_config.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,8 @@ extern unsigned char game_time_get_paused(void);
 extern unsigned char input_replay_main_menu_loaded(void);
 extern void input_replay_skip_cinematic(void);
 extern void input_replay_level(char *map, unsigned int size, long *difficulty, long *players, unsigned long *seed);
+/* the game's global random seed; set to *seed first when seed is given */
+extern unsigned long input_replay_random_seed(const unsigned long *seed);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 
@@ -113,6 +116,13 @@ static struct
 	struct recorded_action *actions;
 	long action_count, next_action;
 	long segment, last_action_tick;
+	/* tick actions written to the take being recorded */
+	long actions_written;
+	/* a replayed take's .route: the seed each of its segments began with, and whether the take began after the
+	level's opening was skipped (its first tick is past 0), which the replay must do first */
+	struct { long segment; unsigned long seed; } segment_seeds[32];
+	int segment_seed_count;
+	BOOL preroll, preroll_timeline;
 	/* the game time's jumps back seen frame by frame (the ticks' own
 	segment count can miss one: a cinematic can stop the player updates
 	right after its checkpoint), when the last came, and when the game
@@ -181,6 +191,76 @@ static void actions_load(void)
 	}
 	fclose(file);
 	platform_log("debug.input_replay: %ld tick actions from %s", replay.action_count, replay.replay_actions_path);
+}
+
+/* A replayed take's .route, when it has one (an automatic take): the seed each segment began with, and
+whether the take's first tick is past the level's own. Such a take was opened after the player skipped
+the level's opening cinematic, which reverts the game to its first tick: the replay starts one segment
+early, with no actions, so that it skips the cinematic as soon as it can (input_replay_tick_action) and
+the take's first segment begins at that revert, with the take's seed. */
+static void route_load(void)
+{
+	char path[512], line[256];
+	size_t length = strlen(replay.replay_path);
+	FILE *file;
+	long first_tick = 0;
+	unsigned long seed;
+	long segment, tick;
+
+	if (length < 6 || strcmp(replay.replay_path + length - 6, ".input"))
+		return;
+	snprintf(path, sizeof(path), "%.*s.route", (int)(length - 6), replay.replay_path);
+	if (!(file = fopen(path, "r")))
+		return;
+	while (fgets(line, sizeof(line), file))
+	{
+		if (sscanf(line, "first_tick = %ld", &tick) == 1)
+			first_tick = tick;
+		else if (sscanf(line, "random_seed = %lx", &seed) == 1 && replay.segment_seed_count < 32)
+		{
+			replay.segment_seeds[replay.segment_seed_count].segment = 0;
+			replay.segment_seeds[replay.segment_seed_count++].seed = seed;
+		}
+		else if (sscanf(line, "segment_seed = %ld %ld %lx", &segment, &tick, &seed) == 3 && replay.segment_seed_count < 32)
+		{
+			replay.segment_seeds[replay.segment_seed_count].segment = segment;
+			replay.segment_seeds[replay.segment_seed_count++].seed = seed;
+		}
+	}
+	fclose(file);
+	if (first_tick > 0)
+	{
+		replay.preroll = replay.preroll_timeline = TRUE;
+		replay.segment = -1;
+	}
+	platform_log("debug.input_replay: %s: %d segment seed%s%s", path, replay.segment_seed_count,
+		replay.segment_seed_count == 1 ? "" : "s", replay.preroll ? "; the take begins after the level's opening was "
+		"skipped (first_tick past 0), so the replay skips it first" : "");
+}
+
+/* a replay's segment begins (the game time went back): with the seed the recording's began with */
+static void replay_segment_began(long tick)
+{
+	int index;
+
+	if (!replay.action_count)
+		return;
+	for (index = 0; index < replay.segment_seed_count; index++)
+	{
+		if (replay.segment_seeds[index].segment == replay.segment)
+		{
+			input_replay_random_seed(&replay.segment_seeds[index].seed);
+			platform_log("debug.input_replay: segment %ld begins at tick %ld with the recording's seed %08lx", replay.segment,
+				tick, replay.segment_seeds[index].seed);
+		}
+	}
+	if (replay.preroll && replay.segment == 0)
+	{
+		/* the take's own time begins here: its controller states are timed from this revert (game_ticks
+		starts the timeline over when it sees the same revert) */
+		replay.preroll = FALSE;
+		replay.next_state = 0;
+	}
 }
 
 static void recording_path(const char *name, char *path, size_t size)
@@ -277,13 +357,46 @@ static struct
 {
 	BOOL automatic, open, players_written, paused;
 	char map[32], base[256];
-	long first_tick, last_tick, pauses;
+	long first_tick, last_tick, pauses, route_written_tick;
+	/* the .route's lines so far, without the closing ones: the file is written whole from it */
+	char route[4096];
 } take;
+
+/* The take's .route, whole: what was noted at its opening and since, then the closing lines as
+they stand now. Written again every TAKE_ROUTE_TICKS, at a pause and at the close, so a take whose
+app is quit or suspended (which the game never hears of) still has them, at most that old, with
+closed_by = open. */
+#define TAKE_ROUTE_TICKS 300
+
+static void take_route_write(const char *closed_by)
+{
+	char path[512];
+	FILE *route;
+
+	snprintf(path, sizeof(path), "%s.route", take.base);
+	if (!(route = fopen(path, "w")))
+		return;
+	fprintf(route, "%sclosed_by = %s\nsegments = %ld\npauses = %ld\nlast_tick = %ld\nseconds = %.1f\n", take.route,
+		closed_by, replay.segment + 1, take.pauses, take.last_tick, (double)replay.actions_written / 30.0);
+	fclose(route);
+	take.route_written_tick = take.last_tick;
+}
+
+static void take_route_note(const char *format, ...) __attribute__((format(printf, 1, 2)));
+
+static void take_route_note(const char *format, ...)
+{
+	size_t length = strlen(take.route);
+	va_list arguments;
+
+	va_start(arguments, format);
+	vsnprintf(take.route + length, sizeof(take.route) - length, format, arguments);
+	va_end(arguments);
+}
 
 static void take_close(const char *why)
 {
 	char path[512];
-	FILE *route;
 
 	if (!take.open)
 		return;
@@ -294,7 +407,7 @@ static void take_close(const char *why)
 		fclose(replay.actions_file);
 	replay.record_file = replay.actions_file = NULL;
 	replay.record_path[0] = replay.record_actions_path[0] = 0;
-	if (take.last_tick - take.first_tick < TAKE_MINIMUM_TICKS)
+	if (replay.actions_written < TAKE_MINIMUM_TICKS)
 	{
 		static const char *const extensions[] = { "input", "actions", "route" };
 		int index;
@@ -305,29 +418,21 @@ static void take_close(const char *why)
 			remove(path);
 		}
 		platform_log("debug.input_record: take %s was %ld ticks (%s): too short to keep", take.base,
-			take.last_tick - take.first_tick, why);
+			replay.actions_written, why);
 		return;
 	}
-	snprintf(path, sizeof(path), "%s.route", take.base);
-	route = fopen(path, "a");
-	if (route)
-	{
-		fprintf(route, "closed_by = %s\nsegments = %ld\npauses = %ld\nlast_tick = %ld\nseconds = %.1f\n", why,
-			replay.segment + 1, take.pauses, take.last_tick, (double)(take.last_tick - take.first_tick) / 30.0);
-		fclose(route);
-	}
+	take_route_write(why);
 	platform_log("debug.input_record: take %s closed (%s): %ld ticks, %ld segment%s", take.base, why,
-		take.last_tick - take.first_tick, replay.segment + 1, replay.segment ? "s" : "");
+		replay.actions_written, replay.segment + 1, replay.segment ? "s" : "");
 }
 
 static void take_open(const char *map, long tick, long difficulty, long players, unsigned long seed)
 {
 	static const char *const difficulties[] = { "easy", "normal", "hard", "impossible" };
-	char path[512], settings[2048];
+	char settings[2048];
 	const char *build = getenv("HALO_APP_BUILD");
 	time_t now = time(NULL);
 	struct tm utc;
-	FILE *route;
 
 	gmtime_r(&now, &utc);
 	snprintf(take.map, sizeof(take.map), "%s", map);
@@ -336,6 +441,8 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	take.first_tick = take.last_tick = tick;
 	take.players_written = take.paused = FALSE;
 	take.pauses = 0;
+	take.route[0] = 0;
+	replay.actions_written = 0;
 	/* a recording of its own: its time and its segments begin here */
 	replay.record_ended = FALSE;
 	replay.segment = 0;
@@ -344,23 +451,15 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	replay.last_game_ticks = 0.0;
 	snprintf(replay.record_path, sizeof(replay.record_path), "%s.input", take.base);
 	snprintf(replay.record_actions_path, sizeof(replay.record_actions_path), "%s.actions", take.base);
-	snprintf(path, sizeof(path), "%s.route", take.base);
-	route = fopen(path, "w");
-	if (!route)
-	{
-		platform_log("debug.input_record: cannot write %s; this level is not recorded", path);
-		replay.record_path[0] = replay.record_actions_path[0] = 0;
-		return;
-	}
 	take.open = TRUE;
 	config_profile_settings_text(settings, sizeof(settings));
 	(void)players;   /* (none yet at a level's first tick: written once the game has made them, take_update) */
-	fprintf(route, "map = %s\ndifficulty = %s\nentered = %s\nfirst_tick = %ld\nrandom_seed = %08lx\n"
+	take_route_note("map = %s\ndifficulty = %s\nentered = %s\nfirst_tick = %ld\nrandom_seed = %08lx\n"
 		"stereo = %s\nversion = %s\nrecorded = %04d-%02d-%02dT%02d:%02d:%02dZ\n%s", map,
 		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick <= TAKE_START_TICKS ? "start" : "saved",
 		tick, seed, config_string("display.stereo"), build && *build ? build : "unknown", utc.tm_year + 1900,
 		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec, settings);
-	fclose(route);
+	take_route_write("open");
 	platform_log("debug.input_record: take %s: %s on %s from tick %ld%s", take.base, map,
 		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick,
 		tick <= TAKE_START_TICKS ? "" : " (a saved game: this take replays nowhere else)");
@@ -382,10 +481,10 @@ static void take_update(void)
 	}
 	input_replay_level(map, sizeof(map), &difficulty, &players, &seed);
 	tick = game_time_get();
+	/* (the game time going back, to the level's first tick included, is no new take: skipping a level's opening
+	cinematic reverts to its start, as restarting the level does, and either is a segment a replay follows) */
 	if (take.open && strcmp(map, take.map))
 		take_close("level_change");
-	else if (take.open && tick < take.last_tick && tick <= TAKE_START_TICKS)
-		take_close("restart");
 	if (!take.open)
 		take_open(map, tick, difficulty, players, seed);
 	if (take.open)
@@ -394,22 +493,20 @@ static void take_update(void)
 
 		take.last_tick = tick;
 		/* a pause stops the game time, so the take simply has no ticks for it; counted for the take's listing */
-		if (paused && !take.paused)
-			take.pauses++;
-		take.paused = paused;
 		if (!take.players_written && players > 0)
 		{
-			char path[512];
-			FILE *route;
-
-			snprintf(path, sizeof(path), "%s.route", take.base);
-			if ((route = fopen(path, "a")))
-			{
-				fprintf(route, "players = %ld\n", players);
-				fclose(route);
-			}
+			take_route_note("players = %ld\n", players);
 			take.players_written = TRUE;
+			take.route_written_tick = -TAKE_ROUTE_TICKS;
 		}
+		if (paused && !take.paused)
+		{
+			take.pauses++;
+			take.route_written_tick = -TAKE_ROUTE_TICKS;
+		}
+		take.paused = paused;
+		if (tick - take.route_written_tick >= TAKE_ROUTE_TICKS || tick < take.route_written_tick)
+			take_route_write("open");
 	}
 }
 
@@ -442,6 +539,7 @@ static void configure(void)
 		replay.benchmark = config_boolean("debug.benchmark");
 		replay_load();
 		actions_load();
+		route_load();
 	}
 }
 
@@ -461,6 +559,17 @@ static double game_ticks(void)
 		/* resume at the next whole tick after the last seen, so recording
 		and replay, whose last frames before the jump fall at different
 		fractions, agree */
+		/* (a take replayed from before its own beginning, route_load: its time starts at this revert, which is
+		not one of the recording's own) */
+		if (replay.preroll_timeline)
+		{
+			replay.preroll_timeline = FALSE;
+			replay.timeline_offset = 0.0;
+			replay.next_state = 0;
+			replay.last_game_ticks = ticks;
+			platform_log("debug.input_replay: the level's opening was skipped; the take's time begins");
+			return ticks;
+		}
 		replay.timeline_offset += ceil(replay.last_game_ticks) - ticks;
 		/* a replay lets go of its buttons at the jump and drops the states
 		recorded before it: a press held across the jump can't be released
@@ -608,7 +717,17 @@ void input_replay_tick_action(void *action)
 		return;
 	tick = game_time_get();
 	if (replay.last_action_tick > 0 && tick < replay.last_action_tick)
+	{
 		replay.segment++;
+		/* a take notes the random seed each segment starts with, and a replay of it starts each segment with
+		that seed: what the game does after a revert depends on it, and it is not part of what a revert restores */
+		if (take.open)
+		{
+			take_route_note("segment_seed = %ld %ld %08lx\n", replay.segment, tick, input_replay_random_seed(NULL));
+			take.route_written_tick = -TAKE_ROUTE_TICKS;
+		}
+		replay_segment_began(tick);
+	}
 	replay.last_action_tick = tick;
 
 	if (*replay.record_actions_path)
@@ -634,6 +753,7 @@ void input_replay_tick_action(void *action)
 			}
 		}
 		memcpy(words, action, sizeof(words));
+		replay.actions_written++;
 		fprintf(replay.actions_file, "%ld %ld", replay.segment, tick);
 		for (index = 0; index < ACTION_WORDS; index++)
 			fprintf(replay.actions_file, " %08x", words[index]);

@@ -48,6 +48,13 @@ void input_replay_level(char *map, unsigned int size, long *difficulty, long *pl
 	*seed = *get_global_random_seed_address();
 }
 
+unsigned long input_replay_random_seed(const unsigned long *seed)
+{
+	if (seed)
+		*get_global_random_seed_address() = *seed;
+	return *get_global_random_seed_address();
+}
+
 void input_replay_skip_cinematic(void)
 {
 	if (cinematic_can_be_skipped())
