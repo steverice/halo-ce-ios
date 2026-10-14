@@ -79,6 +79,18 @@ Linux and Windows ports.
 - Use long-form flags (`--verbose`, not `-v`) when scripts or docs call a CLI,
   unless the flag has no long form.
 
+## Working as an agent
+
+- Keep instructions agent-neutral. Rules for agents go in this file, which
+  every agent reads; `CLAUDE.md` and `GEMINI.md` only import it. Don't put a
+  rule in one tool's file, and write rules in terms any agent can follow
+  (scripts, files, commands), not one tool's features.
+- Use the cheapest model that can do the job. Running builds and tests,
+  reading logs, and mechanical edits rarely need the most capable model; keep
+  that for design, hard debugging, merges with real conflicts and
+  renderer work. When you hand work to another agent, pick its model the same
+  way.
+
 ## Commits
 
 Conventional Commits, each led by its gitmoji:
