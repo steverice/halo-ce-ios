@@ -439,6 +439,11 @@ uint32_t gpu_visibility_result(uint32_t slot, uint32_t *samples);
 
 /* submits the work queued so far */
 void gpu_flush(void);
+/* waits for the display's next 60 Hz vertical blank and returns 1, or
+returns 0 at once when the backend has no display clock to follow (the
+caller then keeps its own timer): the Xbox's blank, for
+d3d8_device.c's vertical_blank_thread */
+uint32_t gpu_vertical_blank_wait(void);
 /* letterboxes the back buffer into the drawable, swaps, and starts the next
 frame's transient buffers. Returns how long from now, in microseconds, until
 the next frame is due on the display, when the backend schedules its frames
@@ -652,6 +657,7 @@ its own functions. */
 	F(uint32_t, visibility_result, (uint32_t slot, uint32_t *samples), (slot, samples)) \
 	P(flush, (void), ()) \
 	P(upscale, (gpu_texture source, gpu_texture destination, const struct gpu_rect *area), (source, destination, area)) \
+	F(uint32_t, vertical_blank_wait, (void), ()) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \
 	F(uint32_t, call_count_take, (void), ()) \

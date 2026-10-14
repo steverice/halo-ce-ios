@@ -1896,6 +1896,12 @@ static uint32_t gpu_gl_visibility_result(uint32_t slot, uint32_t *samples)
 
 /* ---------- frames */
 
+/* (no display clock: d3d8_device.c's vertical blank keeps its timer) */
+static uint32_t gpu_gl_vertical_blank_wait(void)
+{
+	return 0;
+}
+
 static void gpu_gl_flush(void)
 {
 	glFlush();

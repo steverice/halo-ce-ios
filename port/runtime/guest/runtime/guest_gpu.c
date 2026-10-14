@@ -100,6 +100,11 @@ void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_r
 	host_gpu_upscale(source, destination, area);
 }
 
+uint32_t gpu_vertical_blank_wait(void)
+{
+	return host_gpu_vertical_blank_wait();
+}
+
 uint32_t gpu_present(gpu_texture back_buffer)
 {
 	return host_gpu_present(back_buffer);

@@ -59,6 +59,7 @@
 - [ ] Sharing the host's invite from the app
 - [ ] Internet play on by default
 - [x] Custom Edition maps downloaded from a game's players, from OpenCE; off by default (`network.map_download`, DOWNLOAD MAPS in Settings > Network Setup)
+- [x] Helping send a Custom Edition map to other players is off by default (`network.map_seed`, HELP SEND MAPS in Settings > Network Setup)
 - [ ] A question with the map's name and size before a map download starts, then downloads on by default
 
 ## App
