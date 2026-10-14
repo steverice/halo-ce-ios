@@ -43,7 +43,19 @@ The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
 compiles the guest, embeds it into signed application text, and builds the host.
 Specify `--llvm` and `--lld` for non-default toolchain locations.
 Game assertions remain enabled. An Xcode `Release` host configuration does not
-disable the game's assertions. PGO and LTO are disabled for this initial port.
+disable the game's assertions. The game code is link-time optimized: the game,
+the platform layer and the bundled libraries are compiled to bitcode and
+optimized as one module before the assembly conversion (`tools/ios_guest_lto.py`);
+`--lto=off` compiles each file alone. It is also built with profile-guided
+optimization from `pgo/halo_linux.profdata`, the profile the Linux build
+records; `--pgo=off` builds it without. The host (the app, the Metal and OpenGL
+backends, SDL) is built with profile-guided optimization from
+`pgo/visr_host.profdata`, which `tools/host_pgo_train.py` records by playing
+the Mac app; `--host-pgo=off` builds without it. That profile holds only the
+functions that ran in the recording, so code only a device reaches is compiled
+as without a profile. Record it again after large changes to `port/ios/host`,
+`gpu_gl.c` or SDL: a function that changed since no longer matches and goes
+without.
 
 Outputs:
 
@@ -199,9 +211,6 @@ shadow_map_size = 512        # 128 (as on the Xbox) to 2048
 effect_resolution = true     # Active camouflage at the screen's resolution, not 320x240
 frame_pacing = "off"         # Experimental: "tick" or "refresh" hold every frame for whole refreshes
 frame_rate = "display"       # Mac app: a cap ("60", "240") or "unlimited"; see below
-frames_in_flight = ""        # Metal: frames on their way to the display at once, "1" to "3" or "system" (empty: "2"); see below
-frame_spacing = true         # Metal: each frame stays up for its share of the display's time; see below
-frame_source = ""            # Metal: "clock" (default) or "system" (iOS 17, tvOS 17, macOS 14); see below
 async_shaders = "auto"       # Compile shaders off the game thread, skipping a draw until it's ready ("off": wait)
 direct_camera = true         # On foot, the view follows the stick every frame
 ```
@@ -221,40 +230,6 @@ The game runs at 30 ticks a second whatever is drawn, and with
 `interpolation = false` it draws 30 frames a second at most. With the OpenGL ES
 renderer only caps under the display's rate hold. On iPhone, iPad, Apple TV
 and Vision Pro the system paces frames and the setting is ignored.
-
-A frame pacer decides how frames reach the display, on the Mac, an iPhone, an
-iPad and an Apple TV. It is a module of its own (`host/host_frame_pacer.h`;
-its rules, in `host/frame_pacer.h`, have no clock or graphics in them and are
-tested by `tests/frame_pacer_probe.c`), and the renderer only tells it when a
-frame begins, is presented and was shown. It is compiled in by the build
-option `HALO_FRAME_PACING` (`tools/ios_build.py --frame-pacing on|off`), on by
-default everywhere except a Vision Pro build: there the Compositor paces
-frames and the build has none of this.
-
-- `frames_in_flight` (`"1"` to `"3"`, or `"system"`; default `"2"`) is how many
-  frames may be on their way to the display at once. A frame is not started
-  on its way until fewer than that many are waiting to be shown. `"1"` gives
-  the shortest delay between the game and the screen, and costs frames
-  whenever a frame's CPU and GPU work together take longer than one refresh.
-  `"system"` leaves the queue to the system, which allows up to three.
-- `frame_spacing` (default `true`) keeps each frame on screen for its share
-  of the display's time before the next may replace it: one refresh, or with
-  a `frame_rate` cap under the display's rate, the cap's (two refreshes for
-  `"60"` on a 120 Hz display).
-- `frame_source` (`"clock"` or `"system"`; default `"clock"`) is where frames
-  get their place on the display. `"clock"` asks for one when a frame is ready
-  and applies the two settings above. `"system"` takes one from the system
-  for each refresh (`CAMetalDisplayLink`: iOS 17, tvOS 17, macOS 14 and
-  later), which then keeps the frames in flight itself; it cannot draw faster
-  than the display or hold a cap, so it is used only with `frame_rate =
-  "display"`.
-- The game's own 60 Hz clock, which paces frames when `interpolation = false`,
-  follows the display's refreshes instead of a timer of its own.
-
-None of it applies when frames do not wait for the display (`frame_rate =
-"unlimited"`, or a cap above the display's rate): a minimum time on screen
-would itself be a cap there. `debug.present_times = true` logs when each
-frame reached the display and how long after its work began.
 
 `render_scale = 0.67` with `upscaler = "metalfx"` draws under half the
 pixels and scales them back up with sharper edges than a plain stretch; the

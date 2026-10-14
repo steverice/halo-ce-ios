@@ -21,6 +21,28 @@ HEADERS = {
     'KHR/khrplatform.h': ('EGL-Registry', EGL_REVISION, 'api/KHR/khrplatform.h'),
 }
 
+HOST_PROFILE = ROOT / 'pgo/visr_host.profdata'
+HOST_PROFILE_RAW = ROOT / 'build/host-pgo/raw'
+
+
+def host_pgo_flags(mode):
+    """the CMake settings for --host-pgo: use (the profile in pgo/, when this Xcode's clang can read it),
+    generate (an instrumented app that writes raw profiles into build/host-pgo/raw when it exits) or off"""
+    if mode == 'generate':
+        HOST_PROFILE_RAW.mkdir(parents=True, exist_ok=True)
+        return ['-DHALO_HOST_PGO=generate', f'-DHALO_HOST_PROFILE={HOST_PROFILE_RAW}/visr-%p.profraw']
+    if mode == 'use':
+        if not HOST_PROFILE.is_file():
+            print(f'{HOST_PROFILE} is missing: building the host without profile-guided optimization', flush=True)
+        elif subprocess.run(['xcrun', 'llvm-profdata', 'show', HOST_PROFILE], capture_output=True).returncode:
+            # a profile written by a newer LLVM than this Xcode's cannot be read, and clang would stop on it
+            print(f'this Xcode cannot read {HOST_PROFILE} (recorded with a newer one): building the host without '
+                  'profile-guided optimization', flush=True)
+        else:
+            return ['-DHALO_HOST_PGO=use', f'-DHALO_HOST_PROFILE={HOST_PROFILE}']
+    return ['-DHALO_HOST_PGO=off', '-DHALO_HOST_PROFILE=']
+
+
 def run(*args):
     print('+', ' '.join(str(a) for a in args), flush=True)
     subprocess.run([str(a) for a in args], cwd=ROOT, check=True)
@@ -78,6 +100,16 @@ def main():
     parser.add_argument('--upload', action='store_true',
                         help='with --app-store-package: upload the package to App Store Connect with the account '
                              'Xcode is signed in to. The app record must exist there first')
+    parser.add_argument('--pgo', choices=('use', 'off'), default='use',
+                        help='profile-guided optimization of the game code: use (the default) builds it with the '
+                             'profile in pgo/, off builds it without')
+    parser.add_argument('--lto', choices=('full', 'off'), default='full',
+                        help='link-time optimization of the game code: full (the default) optimizes the game, the '
+                             'platform layer and the bundled libraries as one module, off compiles each file alone')
+    parser.add_argument('--host-pgo', choices=('use', 'off', 'generate'), default='use',
+                        help='profile-guided optimization of the host (the app, the Metal backend, SDL): use (the '
+                             'default) builds with pgo/visr_host.profdata, off without, generate builds the '
+                             'instrumented app that tools/host_pgo_train.py records the profile with')
     parser.add_argument('--llvm', default='/opt/homebrew/opt/llvm')
     parser.add_argument('--lld', default='/opt/homebrew/opt/lld/bin/ld.lld')
     parser.add_argument('--jobs', type=int, default=min(12,os.cpu_count() or 4))
@@ -132,7 +164,7 @@ def main():
         url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
         data=urllib.request.urlopen(url,timeout=30).read()
         if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
-    run(sys.executable,'configure.py','--ios','--pgo=off','--lto=off','--ios-llvm',args.llvm,'--ios-lld',args.lld)
+    run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld)
     run('ninja','ios_guest','-j',args.jobs)
     run(sys.executable,'tools/ios_bridges.py')
     run(sys.executable,'tools/ios_embed_guest.py','build/ios/halo_guest.elf','build/ios/embedded')
@@ -170,7 +202,8 @@ def main():
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
-             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud]
+             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud,
+             *host_pgo_flags(args.host_pgo)]
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     command.append(f'-DHALO_TESTER_BUILD={"ON" if args.tester else "OFF"}')
@@ -318,7 +351,8 @@ def build_mac(args, cloud):
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
-        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud)
+        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,
+        *host_pgo_flags(args.host_pgo))
     # ad hoc, except with --cloud-saves or --benchmark-upload: iCloud entitlements need a development signature and a
     # Mac profile (and the Mac itself registered with the team, which a Mac profile lists as its device)
     signing=(['-allowProvisioningUpdates','-allowProvisioningDeviceRegistration'] if args.cloud_saves or args.benchmark_upload else
