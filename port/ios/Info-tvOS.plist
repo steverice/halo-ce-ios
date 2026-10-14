@@ -42,6 +42,8 @@
 	</array>
 	<key>GCSupportsControllerUserInteraction</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>VISR uses Bluetooth only to connect game controllers.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to other Halo players on your local network.</string>
 	<key>UIApplicationSceneManifest</key>
