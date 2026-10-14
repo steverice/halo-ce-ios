@@ -435,6 +435,11 @@ uint32_t gpu_visibility_result(uint32_t slot, uint32_t *samples);
 
 /* submits the work queued so far */
 void gpu_flush(void);
+/* waits for the display's next 60 Hz vertical blank and returns 1, or
+returns 0 at once when the backend has no display clock to follow (the
+caller then keeps its own timer): the Xbox's blank, for
+d3d8_device.c's vertical_blank_thread */
+uint32_t gpu_vertical_blank_wait(void);
 /* letterboxes the back buffer into the drawable, swaps, and starts the next
 frame's transient buffers. Returns how long from now, in microseconds, until
 the next frame is due on the display, when the backend schedules its frames
@@ -576,13 +581,29 @@ enum
 	compiles shaders and pipelines on worker threads, and skips a draw
 	whose pipeline isn't ready rather than wait for it (gpu_metal.m) */
 	GPU_INITIALIZE_ASYNC_SHADERS = 4096,
+	/* debug.metal_vertex_bgra = false: the Metal backend reports no BGRA
+	vertex attributes (gpu_capabilities.vertex_bgra), as Apple's OpenGL ES
+	does, so the front end swizzles vertex colors as it uploads them */
+	GPU_INITIALIZE_NO_VERTEX_BGRA = 8192,
+	/* debug.metal_base_vertex = false: the Metal backend reports no base
+	vertex on indexed draws (gpu_capabilities.base_vertex), as Apple's
+	OpenGL ES does, so the front end copies and rebases every draw's indices */
+	GPU_INITIALIZE_NO_BASE_VERTEX = 16384,
+	/* display.frame_rate: bits 16-31 hold the most frames a second the Mac
+	app shows (port/ios/host/host_gpu_dispatch.c): 0 for the display's
+	refresh, as every host paces without it; GPU_INITIALIZE_FRAME_RATE_UNLIMITED
+	for no cap and no wait for the display; any other number, a cap */
+	GPU_INITIALIZE_FRAME_RATE_SHIFT = 16,
+	GPU_INITIALIZE_FRAME_RATE_UNLIMITED = 0xffff,
 };
 /* probe the context, which must be current, and set it up */
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 
 /* the line every backend logs at the end of gpu_initialize: the capabilities
 that change what the front end does, which a GL run and a Metal run of the
-same build must agree on (tools/mac_run.py compare --across-backends) */
+same build must agree on (tools/mac_run.py compare --across-backends),
+apart from those Metal has and Apple's OpenGL ES lacks (vertex BGRA, base
+vertex) */
 #define GPU_CAPABILITIES_LOG(log, capabilities) \
 	log("GPU capabilities: vertex BGRA %u, base vertex %u, triangle fans %u, line loops %u, sampler LOD bias %u, " \
 		"occlusion %u, S3TC %u, border clamp %u, max texture size %u", (unsigned)(capabilities)->vertex_bgra, \
@@ -623,6 +644,7 @@ its own functions. */
 	P(visibility_end, (uint32_t slot), (slot)) \
 	F(uint32_t, visibility_result, (uint32_t slot, uint32_t *samples), (slot, samples)) \
 	P(flush, (void), ()) \
+	F(uint32_t, vertical_blank_wait, (void), ()) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \
 	F(uint32_t, call_count_take, (void), ()) \

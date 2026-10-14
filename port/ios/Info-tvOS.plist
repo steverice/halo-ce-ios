@@ -42,6 +42,8 @@
 	</array>
 	<key>GCSupportsControllerUserInteraction</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>VISR uses Bluetooth only to connect game controllers.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>VISR uses your local network to receive your copy of the game from a phone or computer, to find and join system link games on this network, and to host games for nearby players.</string>
 	<key>NSBonjourServices</key>

@@ -9,6 +9,7 @@
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
 #endif
+#include "../../linux/include/halo_port_limits.h" /* HALO_PORT_NETWORK_VERSION, for the log */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #if TARGET_OS_MACCATALYST
@@ -399,6 +400,8 @@ int main(int argc,char **argv) {
         size_t stack_size=16*1024*1024;
         void *stack=host_low_map(stack_size+0x4000,PROT_READ|PROT_WRITE);
         if(!stack)host_fatal("could not allocate game stack");mprotect(stack,0x4000,PROT_NONE);
+        /* (machines of different network versions cannot play together: the log of each says which it is) */
+        host_logf(HOST_LOG_INFO,"network version %d",HALO_PORT_NETWORK_VERSION);
         host_logf(HOST_LOG_INFO,"entering guest at %08x, data %s",host_image.header->start,data_root);
         host_guest_on_stack((uintptr_t)host_pointer(host_image.header->start),guest_pointer(boot),host_arena,(char *)stack+stack_size+0x4000);
     }

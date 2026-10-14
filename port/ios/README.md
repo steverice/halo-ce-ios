@@ -43,7 +43,19 @@ The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
 compiles the guest, embeds it into signed application text, and builds the host.
 Specify `--llvm` and `--lld` for non-default toolchain locations.
 Game assertions remain enabled. An Xcode `Release` host configuration does not
-disable the game's assertions. PGO and LTO are disabled for this initial port.
+disable the game's assertions. The game code is link-time optimized: the game,
+the platform layer and the bundled libraries are compiled to bitcode and
+optimized as one module before the assembly conversion (`tools/ios_guest_lto.py`);
+`--lto=off` compiles each file alone. It is also built with profile-guided
+optimization from `pgo/halo_linux.profdata`, the profile the Linux build
+records; `--pgo=off` builds it without. The host (the app, the Metal and OpenGL
+backends, SDL) is built with profile-guided optimization from
+`pgo/visr_host.profdata`, which `tools/host_pgo_train.py` records by playing
+the Mac app; `--host-pgo=off` builds without it. That profile holds only the
+functions that ran in the recording, so code only a device reaches is compiled
+as without a profile. Record it again after large changes to `port/ios/host`,
+`gpu_gl.c` or SDL: a function that changed since no longer matches and goes
+without.
 
 Outputs:
 
@@ -181,6 +193,7 @@ anisotropic_filtering = 16   # 1 (as on the Xbox) to 16
 shadow_map_size = 512        # 128 (as on the Xbox) to 2048
 effect_resolution = true     # Active camouflage at the screen's resolution, not 320x240
 frame_pacing = "off"         # Experimental: "tick" or "refresh" hold every frame for whole refreshes
+frame_rate = "display"       # Mac app: a cap ("60", "240") or "unlimited"; see below
 async_shaders = "auto"       # Compile shaders off the game thread, skipping a draw until it's ready ("off": wait)
 direct_camera = true         # On foot, the view follows the stick every frame
 ```
@@ -189,6 +202,17 @@ Models always draw their highest geometry detail level, so they never pop
 between detail levels or drop out with distance. For the Xbox's choice by
 on-screen size, set `model_lod = "auto"` in `[display]` (default `"max"`); the
 console's `rasterizer_debug_model_lod` overrides either.
+
+`frame_rate` is for the Mac app. `"display"` (the default) draws one frame for
+each refresh of the display. A number, such as `"60"` or `"240"`, holds that
+many frames a second, and `"unlimited"` draws as fast as the Mac can. Above the
+display's refresh rate, and with `"unlimited"`, frames stop waiting for the
+display: the picture can tear, the Mac uses more power and runs warmer, and a
+frame the display is not ready for is drawn and not shown.
+The game runs at 30 ticks a second whatever is drawn, and with
+`interpolation = false` it draws 30 frames a second at most. With the OpenGL ES
+renderer only caps under the display's rate hold. On iPhone, iPad, Apple TV
+and Vision Pro the system paces frames and the setting is ignored.
 
 `render_scale = 0.67` with `upscaler = "metalfx"` draws under half the
 pixels and scales them back up with sharper edges than a plain stretch; the
