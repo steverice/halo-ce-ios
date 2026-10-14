@@ -9,8 +9,9 @@ prints a proposal in the device-profiles format (profiles/TEMPLATE.toml), each v
 behind it. It never writes into profiles/ and never commits: a person reviews the proposal.
 
 The targets: 60 frames a second or better in play and in the menu, 30 in cutscenes. A run holds a target when
-its 99th percentile frame interval is within the target's frame time plus 5%, its CPU and GPU times at the 95th
-percentile are under 85% of it, and at least 300 MB stayed free before the system's memory limit. A gameplay
+its 99th percentile frame interval is within the target's frame time plus 5%, its CPU time at the 95th percentile
+is under 85% of it, and at least 300 MB stayed free before the system's memory limit. GPU time is shown and not
+judged. A gameplay
 profile that only holds 30 is never proposed: when nothing holds 60 the proposal says so and is marked
 "below target". On a display that refreshes at 100 Hz or more, the proposal still aims for 60 and adds a line on
 whether 120 is within reach.
@@ -69,9 +70,10 @@ def holds(run, frames_a_second):
     period = 1000.0 * refreshes / hertz
     if run["interval_ms"]["p99"] > period * 1.05:
         return False, f"99th percentile frame {run['interval_ms']['p99']:.1f} ms over {period * 1.05:.1f}"
-    for part in ("cpu_ms", "gpu_ms"):
-        if run[part]["p95"] > period * 0.85:
-            return False, f"{part[:3].upper()} 95th percentile {run[part]['p95']:.1f} ms over {period * 0.85:.1f}"
+    # the GPU time is reported and not judged: on an Apple TV HD it read far over a frame's time for frames that
+    # were all shown on time, so it spans more than one frame's own work there (port/runtime/benchmark_plan.c)
+    if run["cpu_ms"]["p95"] > period * 0.85:
+        return False, f"CPU 95th percentile {run['cpu_ms']['p95']:.1f} ms over {period * 0.85:.1f}"
     left = run.get("memory_mb", {}).get("left_least", -1)
     if 0 <= left < MEMORY_FLOOR:
         return False, f"only {left} MB left before the memory limit"

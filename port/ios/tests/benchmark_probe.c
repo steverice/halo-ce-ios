@@ -192,8 +192,10 @@ static void test_plan(void) {
 
     /* what "holds the target" means */
     CHECK(benchmark_outcome_meets(&outcome, 1));
-    outcome.gpu_p95 = 14.5;                          /* over 85% of 16.7 */
+    outcome.cpu_p95 = 14.5;                          /* over 85% of 16.7 */
     CHECK(!benchmark_outcome_meets(&outcome, 1) && benchmark_outcome_meets(&outcome, 2));
+    outcome.cpu_p95 = 9.0; outcome.gpu_p95 = 30.0;   /* the GPU time is not judged: it can span more than a frame */
+    CHECK(benchmark_outcome_meets(&outcome, 1));
     outcome.gpu_p95 = 12.0; outcome.interval_p99 = 18.0;
     CHECK(!benchmark_outcome_meets(&outcome, 1));
     outcome.interval_p99 = 16.7; outcome.left_least = 250;

@@ -113,7 +113,10 @@ int benchmark_outcome_meets(const struct benchmark_outcome *outcome, int refresh
 
     if (!outcome || outcome->status != BENCHMARK_OK || outcome->refresh_hertz <= 0.0) return 0;
     period = 1000.0 * (double)refreshes / outcome->refresh_hertz;
-    return outcome->interval_p99 <= period * 1.05 && outcome->cpu_p95 <= period * 0.85 && outcome->gpu_p95 <= period * 0.85 &&
+    /* The GPU time is reported and not judged: on an Apple TV HD it read 29.5 ms at the 95th percentile for a menu
+       that showed every frame for one refresh (2026-10-13), so it spans more than one frame's own work there.
+       What the display got decides; the CPU's margin is kept because that time is the frame's own */
+    return outcome->interval_p99 <= period * 1.05 && outcome->cpu_p95 <= period * 0.85 &&
         (outcome->left_least < 0 || outcome->left_least >= BENCHMARK_MEMORY_FLOOR);
 }
 
