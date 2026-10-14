@@ -53,7 +53,9 @@ run(BUILD/'display-pin-probe')
 # keeps the first of each instead of being ignored; once with the iOS and visionOS settings (HALO_ILP32)
 # and once with the desktop's (only the address sanitizer: tomlc17's page arithmetic trips the
 # undefined-behavior one)
-for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-desktop', [])):
+# ... and once as an Apple build (HALO_IOS), whose defaults keep map downloads and map seeding off
+for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-desktop', []),
+                      ('config-probe-apple', ['-DHALO_ILP32=1', '-DHALO_IOS=1'])):
     run('xcrun', 'clang', '-O2', '-fsanitize=address', *defines, '-Iport/linux/src', '-Iport/third_party/tomlc17',
         'port/ios/tests/config_probe.c', *sdl_flags, '-o', BUILD / name)
     run(BUILD / name)
@@ -91,6 +93,10 @@ run(BUILD/'virtual-clock-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')
 run(BUILD/'join-link-probe')
+# the frame pacer's rules (frame_pacer.h), with made-up refreshes and presented times
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/frame_pacer_probe.c', '-o', BUILD/'frame-pacer-probe')
+run(BUILD/'frame-pacer-probe')
 # the Metal backend's redundant-state filter (metal_state_cache.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
