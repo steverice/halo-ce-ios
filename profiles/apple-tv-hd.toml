@@ -6,7 +6,8 @@
 #
 # Left as the game's defaults, also measured: the high-res HUD and text (display.high_res_hud, high_res_text).
 # Off, they change no frame time and lower peak memory from 509 to 449 MB on a10 and from 660 to 466 MB on b30,
-# of about 1,450 MB the system allows. They stay on because the menu now draws at 1080, where they show.
+# of about 1,450 MB the system allows; in a replayed take the peak was 566 MB without them against 775 to 797.
+# They stay on by decision, until the HUD is drawn at the display's own size.
 
 schema = 1
 name = "Apple TV HD"
@@ -46,24 +47,25 @@ source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13"
 # All three together: b30's beach 31 to 40-53 frames a second (GPU 30.5 to 23 ms, CPU 26 to 22), its Pelican ride
 # 42 to 54-60; a10's rooms 44-53 to 48-58. Peak memory unchanged.
 
-# The main menu: a fixed, light scene, so it can have the display's own 1080 lines.
+# The main menu at 720 lines.
 [scene.menu.display]
-render_scale = 1.0
+render_scale = 0.6667
 
 [evidence."scene.menu.display.render_scale"]
 basis = "measured"
-why = "The menu held 60 frames a second at 1080 for a minute: 2,997 of 2,999 frames shown for one refresh, GPU 12.4 to 14.5 ms a frame of the 16.7 available (10 to 11 ms at 720, 5 to 8 at 540), peak memory 555 MB against 533 at 540. The margin is about 2 ms: if a longer sitting shows dropped frames, 0.667 (720) has 6."
-source = "Apple TV HD menu runs at 540, 720 and 1080, 60 s each, 2026-10-13"
+why = "At 1080 the still menu held 60 (GPU 12.4 to 14.5 ms of the 16.7 available), but moving through the menus in a played session it ran 53.5 frames a second, the slowest window 51.7. At 720 the menu takes 10 to 11 ms of GPU time."
+source = "Apple TV HD menu runs at 540, 720 and 1080, 60 s each, and the played session of 2026-10-13 (14:34)"
 
-# Cutscenes: 720 lines at 30 frames a second, as the original played them.
+# Cutscenes: about 650 lines at 30 frames a second, as the original played them.
 [scene.cutscene.display]
-render_scale = 0.6667
+render_scale = 0.6
 frame_rate = "30"
 
 [evidence."scene.cutscene.display.render_scale"]
 basis = "assumed"
-why = "a10's opening cutscene takes 10 to 15 ms of GPU time a frame at 540; 720 has 1.8 times the pixels, so about 18 to 27 ms, inside the 33 ms of a frame held for two refreshes. Not yet timed at 720 with the hold."
+why = "At 720 a10's cutscenes held 29.3 to 29.9 frames a second overall, but their heaviest windows ran 26.9 to 28.9 with 50 ms frames; at 486 lines the same windows held 29.6. 1152x648 has 81 percent of 720's pixels: expected to hold 30 throughout, not yet measured."
 
 [evidence."scene.cutscene.display.frame_rate"]
-basis = "assumed"
-why = "Decided for this device: a cutscene's cost is scripted, and at 540 it already uses most of a 60 Hz frame, so the sharper picture is bought with the original's 30 frames a second. Each frame stays up two refreshes."
+basis = "measured"
+why = "Decided for this device: a cutscene's cost is scripted, and at 540 it already uses most of a 60 Hz frame, so the sharper picture is bought with the original's 30 frames a second. Each frame stays up two refreshes: a steady 30.0 with a 95th percentile frame of 33.9 ms in a10's opening."
+source = "Apple TV HD runs of a10 with the 30 cap, and replays of a played take, 2026-10-13"
