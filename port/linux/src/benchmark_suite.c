@@ -46,6 +46,8 @@ double input_replay_timeline(void);
 void benchmark_scenario_load(const char *map, const char *difficulty);
 unsigned char benchmark_scenario_at_menu(void);
 unsigned char benchmark_scenario_player_position(float *position);
+/* port/linux/game/scene_class.c: the menu, a cutscene or gameplay, this frame (port_config.h's CONFIG_SCENE_ values) */
+int halo_scene_class(void);
 /* d3d8_device.c */
 void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy);
 /* source/models/models.c: display.model_lod's value while the game runs (1 "max", 0 "auto") */
@@ -81,6 +83,9 @@ static struct
 	double lead, seconds;
 	long lines, anisotropy, shadow_size;
 	int model_lod_max;
+	/* a gameplay scene: frames of a cutscene inside it are not measured (a cutscene has its own target, and a
+	profile may hold it to 30); whether the window is closed for one now */
+	int gameplay, in_cutscene;
 	/* real time: when the state was entered; when the window opened */
 	double entered, opened;
 	/* the recorded time when the window opened (a level), and the next route point's */
@@ -160,6 +165,12 @@ static void next_run(void)
 	suite.anisotropy = (long)number_field(text, "anisotropy");
 	suite.shadow_size = (long)number_field(text, "shadow");
 	suite.model_lod_max = (int)number_field(text, "lod");
+	{
+		char kind[16];
+
+		suite.gameplay = field(text, "kind", kind, sizeof(kind)) && !strcmp(kind, "gameplay");
+		suite.in_cutscene = 0;
+	}
 	suite.route_length = 0;
 	suite.route[0] = 0;
 	suite.route_due = 0.0;
@@ -317,7 +328,8 @@ void benchmark_suite_frame(long width, long height)
 		{
 			suite.opened = now;
 			suite.opened_ticks = ticks;
-			host_benchmark_window(1, (int)width, (int)height);
+			suite.in_cutscene = suite.gameplay && halo_scene_class() == CONFIG_SCENE_CUTSCENE;
+			host_benchmark_window(!suite.in_cutscene, (int)width, (int)height);
 			enter(suite_measuring);
 		}
 		else if (*suite.recording && input_replay_ended())
@@ -328,6 +340,11 @@ void benchmark_suite_frame(long width, long height)
 	case suite_measuring:
 		if (!menu)
 			route_point(ticks);
+		if (suite.gameplay && (halo_scene_class() == CONFIG_SCENE_CUTSCENE) != suite.in_cutscene)
+		{
+			suite.in_cutscene = !suite.in_cutscene;
+			host_benchmark_window(!suite.in_cutscene, (int)width, (int)height);
+		}
 		if (suite.diverged)
 		{
 			host_benchmark_window(0, (int)width, (int)height);

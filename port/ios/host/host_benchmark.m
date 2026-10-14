@@ -458,9 +458,10 @@ int host_benchmark_next(char *text, unsigned int size) {
     }
     if (outcome_count) wait_seconds(last_run_throttled ? PAUSE_AFTER_THROTTLE_SECONDS : PAUSE_SECONDS);
     scene = &plan.scenes[run.scene];
-    snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s lead=%.1f seconds=%.1f lines=%ld anisotropy=%ld "
-        "shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "", scene->lead,
-        scene->seconds, run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
+    snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f lines=%ld anisotropy=%ld "
+        "shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" : "gameplay",
+        scene->lead, scene->seconds, run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
     benchmark_metrics_reset(&metrics, refresh_hertz);
