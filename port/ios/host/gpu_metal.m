@@ -4267,7 +4267,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		id<MTLTexture> picture, target;
 		MTLScissorRect scissor;
 		struct gpu_clear whole_clear;
-		BOOL whole;
+		BOOL whole, scaled = NO;
 
 		frame_begin();
 		if (!source_record || !source_record->texture || !destination_record || !destination_record->texture)
@@ -4295,11 +4295,10 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 					(unsigned long)source_record->texture.width, (unsigned long)source_record->texture.height,
 					picture == target ? "the target" : "its own texture", (unsigned long)target.width,
 					(unsigned long)target.height];
+			/* (scaled straight into the target: there is no quad to draw,
+			and the pass the HUD continues loads what the scaler wrote) */
 			if (picture == target)
-			{
-				use_texture(destination_record);
-				return;
-			}
+				scaled = YES;
 		}
 		/* the frame so far is committed, so that a pass that interrupts the
 		one opened here can run between the two (native_pass) */
@@ -4310,9 +4309,11 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		use_texture(source_record);
 		memset(&whole_clear, 0, sizeof(whole_clear));
 		whole_clear.flags = GPU_CLEAR_COLOR;
-		if (!pass_begin(destination, 0, whole ? &whole_clear : NULL))
+		if (!pass_begin(destination, 0, whole && !scaled ? &whole_clear : NULL))
 			return;
 		native_pass.color = destination;
+		if (scaled)
+			return;
 		if (pass_log)
 			[pass_log appendFormat:@"; upscale: texture %u %lux%lu into %lux%lu at %lu,%lu", source,
 				(unsigned long)picture.width, (unsigned long)picture.height, (unsigned long)scissor.width,
