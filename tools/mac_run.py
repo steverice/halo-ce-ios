@@ -934,6 +934,9 @@ def collect(documents, out):
             shutil.copy2(documents / name, out / name)
     if (documents / "runner").is_dir():
         shutil.copytree(documents / "runner", out / "runner", dirs_exist_ok=True)
+    # automatic takes (debug.input_record = "auto"), newest last
+    if (documents / "recordings").is_dir():
+        shutil.copytree(documents / "recordings", out / "recordings", dirs_exist_ok=True)
     # the device benchmark's journal, runs and report (--benchmark-suite), without the recordings it replayed
     if (documents / "benchmark").is_dir():
         (out / "benchmark").mkdir(exist_ok=True)

@@ -321,17 +321,21 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         return 0;
     }
     mkdir(FOLDER, 0755);
-    /* the app's recordings, where the game reads them (benchmark_suite.c); the app's own always replace a copy */
+    /* The recordings, where the game reads them (benchmark_suite.c): the folder is made over at each start from
+       the app's own, then from benchmark/local-routes in the data folder, where a developer drops a route to try
+       (tools/replay_check.py); a tester's device has none */
     {
         NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
 
+        [files removeItemAtPath:@FOLDER "/recordings" error:nil];
         mkdir(FOLDER "/recordings", 0755);
-        for (NSString *name in [files contentsOfDirectoryAtPath:bundled error:nil]) {
-            NSString *target = [@FOLDER "/recordings" stringByAppendingPathComponent:name];
+        for (NSString *source in @[ bundled, @FOLDER "/local-routes" ])
+            for (NSString *name in [files contentsOfDirectoryAtPath:source error:nil]) {
+                NSString *target = [@FOLDER "/recordings" stringByAppendingPathComponent:name];
 
-            [files removeItemAtPath:target error:nil];
-            [files copyItemAtPath:[bundled stringByAppendingPathComponent:name] toPath:target error:nil];
-        }
+                [files removeItemAtPath:target error:nil];
+                [files copyItemAtPath:[source stringByAppendingPathComponent:name] toPath:target error:nil];
+            }
     }
     flags = [NSMutableArray array];
     started = NSDate.date;
@@ -342,7 +346,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         /* the scenes: the ones that play by themselves, then one for each recorded route the app carries, by name */
         static struct benchmark_scene scenes[BENCHMARK_SCENES_MAXIMUM];
         static struct benchmark_route routes[BENCHMARK_SCENES_MAXIMUM];
-        NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
+        NSString *bundled = @FOLDER "/recordings";
         int count = 0, route_count = 0;
 
         for (index = 0; index < benchmark_suite_scene_count; index++)
@@ -416,6 +420,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     }
     if (UIScreen.mainScreen.maximumFramesPerSecond != 60) flag(@"refresh_not_60");
     if (only) flag(@"scenes_filtered");
+    if ([files contentsOfDirectoryAtPath:@FOLDER "/local-routes" error:nil].count) flag(@"local_routes");
 #if TARGET_OS_SIMULATOR
     flag(@"simulator");
 #endif
