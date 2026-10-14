@@ -37,6 +37,11 @@ wait that holds the cap, called once a frame before it is shown, which
 returns the seconds it slept */
 int host_frame_rate_unlimited(void);
 double host_frame_rate_cap(void);
+/* the most frames a second for the frames from now on: a scene class's rate from the device profile
+   (gpu_frame_context, gpu_metal.m) when one is in force, else host_frame_rate_cap's; 0 for none. What the
+   frame pacer spaces frames for and judges them against (host_frame_pacer.c) */
+double host_frame_rate_target(void);
+void host_frame_rate_scene(double rate);
 double host_frame_rate_limit(void);
 void host_frame_counter_start(int fixed_timestep, int metal);
 void host_frame_counter_show(unsigned long frame);

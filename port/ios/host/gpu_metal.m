@@ -3704,6 +3704,7 @@ static void gpu_metal_frame_context(uint32_t scene_class, uint32_t frame_rate, c
 	}
 	frame_context.scene_class = scene_class;
 	frame_context.rate = frame_rate;
+	host_frame_rate_scene((double)frame_rate);
 	snprintf(frame_context.level, sizeof(frame_context.level), "%s", level ? level : "");
 }
 
