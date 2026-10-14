@@ -59,4 +59,5 @@ it cannot be shown yet, to be asked again), and its text once it is done: 1
 and the text, 2 if canceled, 0 while neither (each result is given once) */
 int host_tv_text_prompt(int on, const char *title, const char *text, int masked);
 int host_tv_text_result(char *buffer, uint32_t size);
+void host_tv_text_prompt_tick(void);
 #endif

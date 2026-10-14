@@ -23,6 +23,13 @@ static SDL_Joystick *remote_joystick;
 static UILabel *controller_note;
 #endif
 static SDL_JoystickID remote_id, primary_hardware;
+#if TARGET_OS_TV
+/* true while tvOS's text dialog is up, and after it until every button of the
+   hardware controller is let go: the game reads no controller then (below) */
+static bool text_input_blocked(void);
+#else
+#define text_input_blocked() false
+#endif
 /* Remote presses latch until the game reads them: a swipe's key down and up
    arrive together, and a slow frame could otherwise miss a short press. Key
    events are pumped by the game's own poll, so all of this is on one thread. */
@@ -53,6 +60,7 @@ static bool SDLCALL remote_event(void *userdata,SDL_Event *event) {
     if(event->type!=SDL_EVENT_KEY_DOWN && event->type!=SDL_EVENT_KEY_UP)return true;
     int button=remote_button(event->key.scancode);
     if(button<0)return true;
+    if(text_input_blocked())return false;
     if(!event->key.repeat) {
         remote_down[button]=event->key.down;
         if(event->key.down)remote_latched[button]=true;
@@ -141,6 +149,7 @@ int host_ios_gamepad_type(SDL_Gamepad *pad) {
     return physical?SDL_GetGamepadType(physical):SDL_GAMEPAD_TYPE_XBOX360;
 }
 int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
+    if(text_input_blocked())return 0;
     int value=SDL_GetGamepadAxis(pad,axis);
     if(SDL_GetGamepadID(pad)==remote_id && primary_hardware) {
         int physical=SDL_GetGamepadAxis(SDL_GetGamepadFromID(primary_hardware),axis);
@@ -149,6 +158,7 @@ int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     return value;
 }
 int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
+    if(text_input_blocked())return 0;
     if(SDL_GetGamepadID(pad)!=remote_id)return SDL_GetGamepadButton(pad,button);
     return remote_read(button) ||
         (primary_hardware && SDL_GetGamepadButton(SDL_GetGamepadFromID(primary_hardware),button));
@@ -163,6 +173,69 @@ int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
 static UIAlertController *text_prompt;
 static int text_prompt_state;
 static char text_prompt_result[512];
+/* the dialog as UIKit has it, until it is gone (text_prompt is nil from the
+   moment Done or Cancel is chosen, while the dialog still animates away) */
+static __weak UIAlertController *text_prompt_shown;
+static bool text_prompt_gate, text_prompt_hint_set, text_prompt_hint_had;
+static char text_prompt_hint_saved[16];
+
+static bool text_prompt_up(void) {
+    return text_prompt || text_prompt_shown.presentingViewController || text_prompt_shown.beingPresented;
+}
+
+/* Any button or stick of a hardware controller held down */
+static bool hardware_held(void) {
+    int count=0;SDL_JoystickID *ids=SDL_GetGamepads(&count);
+    bool held=false;
+    for(int i=0;i<count && !held;i++) {
+        SDL_Gamepad *pad=SDL_GetGamepadFromID(ids[i]);
+        if(!pad || ids[i]==remote_id)continue;
+        for(int b=0;b<SDL_GAMEPAD_BUTTON_COUNT && !held;b++)held=SDL_GetGamepadButton(pad,(SDL_GamepadButton)b);
+        for(int a=0;a<SDL_GAMEPAD_AXIS_COUNT && !held;a++)held=abs(SDL_GetGamepadAxis(pad,(SDL_GamepadAxis)a))>12000;
+    }
+    SDL_free(ids);
+    return held;
+}
+
+/* SDL's tvOS view controller is a GCEventViewController, whose
+   controllerUserInteractionEnabled stays NO unless SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS
+   is "1" (SDL's hint callback sets it, also when the hint changes later). With
+   it off a controller's input never reaches UIKit's focus engine, so the
+   dialog could not be reached while the game went on reading the same
+   controller. So: the hint is "1" for as long as the dialog is up, and the
+   game reads no controller then, nor while the button that closed the dialog
+   is still held. */
+static void text_prompt_hint(bool on) {
+    if(on==text_prompt_hint_set)return;
+    if(on) {
+        const char *old=SDL_GetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS);
+        text_prompt_hint_had=old!=NULL;
+        SDL_strlcpy(text_prompt_hint_saved,old?old:"",sizeof(text_prompt_hint_saved));
+        SDL_SetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS,"1");
+    } else {
+        SDL_SetHint(SDL_HINT_APPLE_TV_CONTROLLER_UI_EVENTS,text_prompt_hint_had?text_prompt_hint_saved:NULL);
+    }
+    text_prompt_hint_set=on;
+}
+
+static bool text_input_blocked(void) {
+    if(text_prompt_up()) {
+        text_prompt_gate=true;
+        return true;
+    }
+    if(text_prompt_hint_set)text_prompt_hint(false);
+    if(!text_prompt_gate)return false;
+    if(hardware_held())return true;
+    text_prompt_gate=false;
+    host_ios_touch_reset();
+    return false;
+}
+
+/* each poll (host_sdl.c's text_input_update): the controller goes back to the
+   game as soon as the dialog is gone, however it went */
+void host_tv_text_prompt_tick(void) {
+    (void)text_input_blocked();
+}
 
 /* Done: the dialog's text, whole, for host_tv_text_result */
 static void text_prompt_done(NSString *typed) {
@@ -236,16 +309,25 @@ int host_tv_text_prompt(int on, const char *title, const char *text, int masked)
     }]];
     alert.preferredAction=done;
     text_prompt=alert;
+    text_prompt_shown=alert;
+    text_prompt_gate=true;
+    text_prompt_hint(true);
+    host_ios_touch_reset();
     /* (the field is chosen with the remote, which brings tvOS's full-screen
     keyboard up; a keyboard brought up from here instead stayed on screen
     after the dialog went, in the simulator) */
-    [presenter presentViewController:alert animated:YES completion:nil];
+    [presenter presentViewController:alert animated:YES completion:^{
+        /* the keyboard comes straight up, and a hardware keyboard types into the field */
+        UIAlertController *shown=weak;
+        if(shown && shown==text_prompt)[shown.textFields.firstObject becomeFirstResponder];
+    }];
     /* (UIKit drops a presentation it cannot make now, saying nothing: then
     the dialog has no presenter, and this is asked again on the next poll) */
     if(!alert.presentingViewController){
         static int refusals;
         if(!refusals++)host_logf(HOST_LOG_INFO,"keyboard: tvOS's text dialog could not be shown yet; asking again");
         text_prompt=nil;
+        text_prompt_hint(false);
         return 0;
     }
     host_logf(HOST_LOG_INFO,"keyboard: tvOS's text dialog up for a text field");
