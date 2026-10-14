@@ -32,9 +32,11 @@ void benchmark_scenario_load(const char *map, const char *difficulty)
 		main_goto_main_menu();
 		return;
 	}
+	/* (the next map's difficulty, as the console's game_difficulty_set sets it: game_difficulty_level_set changes only
+	the game in progress, and the map load overwrites it with this one) */
 	for (level = 0; level < 4; level++)
 		if (!strcmp(difficulty, names[level]))
-			game_difficulty_level_set(level);
+			main_set_difficulty(level);
 	main_set_map_name(map);
 }
 
