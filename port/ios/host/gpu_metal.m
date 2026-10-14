@@ -4472,9 +4472,6 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				already; otherwise the pacer says) */
 				if (hold == 0.0)
 					hold = frame_pacer_present(&paced);
-#if !TARGET_OS_SIMULATOR
-				/* (the tvOS simulator's drawables have no presented handler or time; a simulator
-				cannot hold a frame in any case) */
 				if (frame_pacer_watches(&paced))
 				{
 					struct frame_pacer_frame shown_frame = paced;
@@ -4485,7 +4482,6 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					}];
 					paced.slot = 0;
 				}
-#endif
 #endif
 #if TARGET_OS_SIMULATOR
 				(void)hold;
