@@ -43,6 +43,9 @@ def main():
     parser.add_argument('--extended-virtual-addressing', action='store_true',
                         help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
                              'in case the device refuses the 4 GB guest arena')
+    parser.add_argument('--frame-pacing', choices=('on','off'),
+                        help="compile in the Metal renderer's presentation pacing (HALO_FRAME_PACING; "
+                             'default on, off for --visionos, whose frames the Compositor paces)')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
     parser.add_argument('--llvm', default='/opt/homebrew/opt/llvm')
     parser.add_argument('--lld', default='/opt/homebrew/opt/lld/bin/ld.lld')
@@ -115,6 +118,8 @@ def main():
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}']
+    if args.frame_pacing:
+        command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     if not args.tvos:
         # a new CFBundleVersion each build, so an install over the app replaces it
         import time
@@ -187,7 +192,8 @@ def build_mac(args):
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         '-DHALO_DEVELOPMENT_TEAM=','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
-        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
+        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
+        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []))
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',
         '-sdk','macosx','SDK_VARIANT=iosmac','SUPPORTS_MACCATALYST=YES','DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER=NO',
         'CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM=')

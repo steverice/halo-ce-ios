@@ -87,7 +87,7 @@ add_executable(VISR MACOSX_BUNDLE
     "${ROOT}/port/runtime/texture_policy.c" "${ROOT}/port/runtime/texture_cache.c"
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
-    host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
+    host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
     host/host_join_link.c host/host_config.c host/host_profile.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
@@ -101,6 +101,20 @@ file(GLOB HALO_MBEDTLS_SOURCES CONFIGURE_DEPENDS "${ROOT}/port/third_party/mbedt
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/posix_dtls.c" ${HALO_MBEDTLS_SOURCES})
 target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/mbedtls/include")
 target_compile_definitions(VISR PRIVATE HALO_IOS=1 st_mtim=st_mtimespec st_atim=st_atimespec st_ctim=st_ctimespec)
+# The Metal renderer's presentation pacing (host/gpu_metal.m: frames in flight,
+# a minimum time on screen, the game's 60 Hz blank following the display link;
+# tools/ios_build.py --frame-pacing). On by default except for a Vision Pro,
+# whose frames the Compositor paces: its build then has none of it.
+if(HALO_VISIONOS)
+    option(HALO_FRAME_PACING "Compile in the Metal renderer's presentation pacing" OFF)
+else()
+    option(HALO_FRAME_PACING "Compile in the Metal renderer's presentation pacing" ON)
+endif()
+if(HALO_FRAME_PACING)
+    target_compile_definitions(VISR PRIVATE HALO_FRAME_PACING=1)
+else()
+    target_compile_definitions(VISR PRIVATE HALO_FRAME_PACING=0)
+endif()
 target_compile_options(VISR PRIVATE "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:-Wno-deprecated-declarations>")
 if(NOT HALO_VISIONOS)
     # the GL backend (step 4): OpenGL ES through gl.h's pointer table, resolved by name
