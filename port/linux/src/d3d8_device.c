@@ -67,6 +67,24 @@ static uint32_t frame_pacing_flags(void)
 	return GPU_INITIALIZE_PACING_OFF;
 }
 
+/* display.frame_rate in gpu_initialize's flags (GPU_INITIALIZE_FRAME_RATE_SHIFT) */
+static uint32_t frame_rate_flags(void)
+{
+	const char *rate = config_string("display.frame_rate");
+	char *end;
+	long cap;
+
+	if (!strcmp(rate, "display"))
+		return 0;
+	if (!strcmp(rate, "unlimited"))
+		return (uint32_t)GPU_INITIALIZE_FRAME_RATE_UNLIMITED << GPU_INITIALIZE_FRAME_RATE_SHIFT;
+	cap = strtol(rate, &end, 10);
+	if (*rate && !*end && cap >= 1 && cap <= 1000)
+		return (uint32_t)cap << GPU_INITIALIZE_FRAME_RATE_SHIFT;
+	platform_log("display.frame_rate: unknown value \"%s\" (\"display\", \"unlimited\" or 1 to 1000); using \"display\"", rate);
+	return 0;
+}
+
 /* display.async_shaders as a gpu_initialize flag: "auto" (the default)
 compiles off the game thread except in a run that must draw the same frames
 every time (fixed timestep, an input replay or benchmark, a timed runner
@@ -542,6 +560,7 @@ static BOOL vertical_blank_thread_started = FALSE;
 static void *vertical_blank_thread(void *unused)
 {
 	struct timespec next;
+	BOOL followed = FALSE;
 
 	(void)unused;
 	clock_gettime(CLOCK_MONOTONIC, &next);
@@ -549,13 +568,27 @@ static void *vertical_blank_thread(void *unused)
 	{
 		D3DCALLBACK callback;
 
-		next.tv_nsec += VERTICAL_BLANK_NANOSECONDS;
-		if (next.tv_nsec >= 1000000000L)
+		/* the display's own blank where the backend follows one (Metal's
+		display link: a timer here drifts against the refresh, and frames
+		paced by the blank then bunch), else this timer, restarted from now
+		after a spell of the display's */
+		if (device.gl_ready && gpu_vertical_blank_wait())
 		{
-			next.tv_nsec -= 1000000000L;
-			next.tv_sec++;
+			followed = TRUE;
 		}
-		clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+		else
+		{
+			if (followed)
+				clock_gettime(CLOCK_MONOTONIC, &next);
+			followed = FALSE;
+			next.tv_nsec += VERTICAL_BLANK_NANOSECONDS;
+			if (next.tv_nsec >= 1000000000L)
+			{
+				next.tv_nsec -= 1000000000L;
+				next.tv_sec++;
+			}
+			clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
+		}
 
 		pthread_mutex_lock(&vertical_blank_lock);
 		vertical_blank_count++;
@@ -1282,7 +1315,9 @@ static void gl_initialize(void)
 		(config_boolean("debug.metal_state_cache") ? 0 : GPU_INITIALIZE_NO_STATE_CACHE) |
 		(config_boolean("debug.metal_specialize") ? 0 : GPU_INITIALIZE_NO_SPECIALIZE) |
 		(config_boolean("debug.metal_pipeline_archive") ? 0 : GPU_INITIALIZE_NO_PIPELINE_ARCHIVE) |
-		async_shader_flags(), &device_capabilities);
+		(config_boolean("debug.metal_vertex_bgra") ? 0 : GPU_INITIALIZE_NO_VERTEX_BGRA) |
+		(config_boolean("debug.metal_base_vertex") ? 0 : GPU_INITIALIZE_NO_BASE_VERTEX) |
+		async_shader_flags() | frame_rate_flags(), &device_capabilities);
 	screen_maximum_texture_size = (int32_t)device_capabilities.max_texture_size;
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */
@@ -1716,6 +1751,49 @@ void WINAPI D3DDevice_InsertCallback(D3DCALLBACKTYPE type, D3DCALLBACK callback,
 
 /* ---------- visibility (occlusion) tests */
 
+/* display.stereo_flare_counting: with stereo's two eyes, each eye counts
+its own visibility tests and reads its own answers.
+
+The eyes are two passes over the frame, and the game gives a light's test the
+same number in both, so in one set of slots the second eye's test replaces
+the first's and both eyes read whichever came last. That is harmless for a
+yes-or-no answer and wrong for a count: a light one eye sees whole and the
+other sees half hidden would flare alike in both. With the setting, the slots
+are split in two halves, one an eye, so each eye's flare follows what that
+eye sees, as two real eyes would.
+
+It is off by default because one thing is not corrected and can't be judged
+off the headset: under foveation an eye's target has fewer pixels toward
+its edges (the rate map), a test there passes fewer samples than the game's
+area for it, and the flare would dim toward the edge of the view. The count
+is exact where the rate is 1, at the middle of the view. Off, stereo keeps
+the yes-or-no answer it always had. */
+static BOOL stereo_flare_counting(void)
+{
+	static int setting = -1;
+
+	if (setting < 0)
+		setting = config_boolean("display.stereo_flare_counting") ? 1 : 0;
+	return setting != 0;
+}
+
+/* the slot a visibility test's number names: the number itself, or in an
+eye's pass with display.stereo_flare_counting, the eye's half of the slots */
+static DWORD visibility_slot(DWORD index)
+{
+	if (halo_stereo_frame()->eye_count == 2 && stereo_flare_counting())
+	{
+		int layer = halo_stereo_current_layer();
+
+		index %= GPU_VISIBILITY_SLOTS / 2;
+		if (!index)
+			index = 1;
+		return layer == 1 ? index + GPU_VISIBILITY_SLOTS / 2 : index;
+	}
+	index %= GPU_VISIBILITY_SLOTS;
+	return index ? index : 1;
+}
+
 void WINAPI D3DDevice_BeginVisibilityTest(void)
 {
 	if (!device.gl_ready || device.visibility_test_active)
@@ -1730,25 +1808,36 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 	if (!device.gl_ready || !device.visibility_test_active)
 		return S_OK;
 	device.visibility_test_active = FALSE;
-	index %= GPU_VISIBILITY_SLOTS;
-	if (!index)
-		index = 1;
+	index = visibility_slot(index);
 	/* the target's pixels to a game pixel: the result is a count of the
 	game's pixels (visibility_unscaled), which the game divides by its own
 	test's area (lens flares, rasterizer_lights.c), a split-screen window's
 	or the screen's alike */
 	device.query_area[index] = target_scale[0] * target_scale[1];
+	/* A frame with stereo's eyes keeps the yes-or-no answer (0: see
+	visibility_unscaled) unless display.stereo_flare_counting is on
+	(visibility_slot). */
+	if (halo_stereo_frame()->eye_count == 2 && !stereo_flare_counting())
+		device.query_area[index] = 0.0f;
 	device.query_pending[index] = TRUE;
 	gpu_visibility_end((uint32_t)index);
 	return S_OK;
 }
 
-/* a count of samples in the game's pixels */
+/* a count of samples in the game's pixels: the target's pixels over how
+many of them make one game pixel, more than one at a higher render
+resolution and fewer under the render-size cap. An area of 0 marks a test
+that only says whether anything passed (stereo, D3DDevice_EndVisibilityTest):
+more than any test covers, as GPU_OCCLUSION_ANY_SAMPLE reports. */
 static uint32_t visibility_unscaled(uint32_t samples, DWORD index)
 {
 	float area = device.query_area[index];
 
-	return area > 1.0f ? (uint32_t)(samples / area + 0.5f) : samples;
+	if (area <= 0.0f)
+		return samples ? VISIBILITY_ALL_SAMPLES : 0;
+	if (area == 1.0f)
+		return samples;
+	return (uint32_t)(samples / area + 0.5f);
 }
 
 HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULONGLONG *time_stamp)
@@ -1757,9 +1846,7 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 
 	if (time_stamp)
 		*time_stamp = 0;
-	index %= GPU_VISIBILITY_SLOTS;
-	if (!index)
-		index = 1;
+	index = visibility_slot(index);
 	if (!device.gl_ready || !device.query_pending[index])
 	{
 		if (result)
@@ -2652,7 +2739,7 @@ void halo_shader_list_warm(char const *map_name)
 				char kinds[64];
 				struct vertex_shader_object *program = NULL;
 				BOOL used = FALSE;
-				int fields;
+				int fields, attribute;
 
 				memset(&description, 0, sizeof(description));
 				fields = sscanf(line, "pipeline %llx.%u.%lx %llx %u %u %u %u %u %u %u %63s %u %u", &vertex_hash, &variant,
@@ -2671,6 +2758,15 @@ void halo_shader_list_warm(char const *map_name)
 				{
 					missing++;
 					continue;
+				}
+				/* a color attribute's kind follows vertex_bgra (attribute_format):
+				a list recorded with either reads as the one this run draws with */
+				for (attribute = 0; attribute < GPU_ATTRIBUTE_COUNT; attribute++)
+				{
+					if (description.attribute_kinds[attribute] == GPU_ATTRIBUTE_BGRA8 ||
+						description.attribute_kinds[attribute] == GPU_ATTRIBUTE_RGBA8)
+						description.attribute_kinds[attribute] = device_capabilities.vertex_bgra ? GPU_ATTRIBUTE_BGRA8 :
+							GPU_ATTRIBUTE_RGBA8;
 				}
 				description.blend = (uint8_t)values[0];
 				description.source = (uint8_t)values[1];

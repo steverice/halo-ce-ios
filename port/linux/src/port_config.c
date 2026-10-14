@@ -70,7 +70,15 @@ struct config_setting
 #ifdef HALO_IOS
 #define DEFAULT_INTERNET_PLAY "false"
 #define DEFAULT_CLIPBOARD_JOIN "false"
+/* (a download of up to about 2.3 GB starts without a question: off on Apple
+builds until it asks first) */
+#define DEFAULT_MAP_DOWNLOAD "false"
+/* (helping send a map opens a listening port, TCP 5153, to any address, and
+uploads unasked: off on Apple builds, a player's choice there) */
+#define DEFAULT_MAP_SEED "false"
 #else
+#define DEFAULT_MAP_DOWNLOAD "true"
+#define DEFAULT_MAP_SEED "true"
 #define DEFAULT_INTERNET_PLAY "true"
 #define DEFAULT_CLIPBOARD_JOIN "true"
 #endif
@@ -319,6 +327,45 @@ static const struct config_setting config_settings[] =
 		"rate when frames take too long; \"refresh\" allows any whole number of\n"
 		"refreshes (45 at 90 Hz). Experimental: in a visionOS window the pacing\n"
 		"can't yet see when frames show." },
+	{ "display.stereo_flare_counting", _config_boolean, "false", "HALO_STEREO_FLARE_COUNTING", _environment_value, _platform_ios,
+		"On a Vision Pro in stereo, dim each eye's lens flares by how much of the\n"
+		"light that eye can see, as the flat screen does, each eye for itself.\n"
+		"Off (default), a light either flares fully or not at all, the same in\n"
+		"both eyes. With foveation, flares toward the edge of the view come out\n"
+		"dimmer than they should; to be compared in the headset. Changes apply on\n"
+		"relaunch." },
+	{ "display.frame_source", _config_string, "\"\"", "HALO_FRAME_SOURCE", _environment_value, _platform_ios,
+		"Where the Metal renderer's frames get their place on the display:\n"
+		"\"clock\" asks for one when a frame is ready and applies\n"
+		"display.frames_in_flight and display.frame_spacing itself; \"system\"\n"
+		"takes one from the system for each refresh (iOS 17, tvOS 17, macOS 14\n"
+		"and later, and only with display.frame_rate = \"display\"; elsewhere\n"
+		"\"clock\" is used). Empty (default): \"clock\". Not on a Vision Pro." },
+	{ "display.frames_in_flight", _config_string, "\"\"", "HALO_FRAMES_IN_FLIGHT", _environment_value, _platform_ios,
+		"How many frames the Metal renderer may have on their way to the display\n"
+		"at once, \"1\" to \"3\": a frame isn't started on its way until fewer than\n"
+		"that many are waiting to be shown. \"1\" gives the least delay between the\n"
+		"game and the screen, and costs frames when a frame's CPU and GPU work\n"
+		"together take longer than a refresh; \"system\" leaves the queue to the\n"
+		"system (up to 3). Empty (default): \"2\". Not on a Vision Pro, which paces\n"
+		"frames itself, and not for frames that don't wait for the display\n"
+		"(display.frame_rate)." },
+	{ "display.frame_spacing", _config_boolean, "true", "HALO_FRAME_SPACING", _environment_value, _platform_ios,
+		"Keep each frame on screen for its share of the display's time before the\n"
+		"next may replace it (the Metal renderer), so frames show evenly spaced:\n"
+		"one refresh, or with a display.frame_rate cap under the display's rate,\n"
+		"the cap's. Off with \"unlimited\" or a cap above the display's rate, where\n"
+		"it would itself be a cap. Not on a Vision Pro." },
+	{ "display.frame_rate", _config_string, "\"display\"", "HALO_FRAME_RATE", _environment_value, _platform_ios,
+		"The most frames a second, in the Mac app: \"display\" (default) draws one\n"
+		"frame for each refresh of the display; a number (\"60\", \"240\") holds that\n"
+		"rate; \"unlimited\" draws as fast as it can. Above the display's refresh\n"
+		"rate, and with \"unlimited\", frames no longer wait for the display, so the\n"
+		"picture can tear and the Mac uses more power; a frame the display isn't\n"
+		"ready for is drawn and not shown. The game still runs at 30\n"
+		"ticks a second whatever is drawn, and with display.interpolation off it\n"
+		"draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro\n"
+		"the system paces frames and this is ignored." },
 	{ "display.async_shaders", _config_string, "\"auto\"", "HALO_ASYNC_SHADERS", _environment_value, _platform_ios,
 		"How the Metal renderer compiles shaders: \"auto\" (default) on worker\n"
 		"threads, skipping a draw for the frames until its pipeline is ready, so\n"
@@ -523,6 +570,34 @@ static const struct config_setting config_settings[] =
 		"in everyone's server browser: anyone can see and join it) or, false,\n"
 		"PRIVATE (only players with its invite link can join). Server Setup's\n"
 		"LISTING changes it for each game." },
+	{ "network.map_share", _config_boolean, "true", "HALO_NET_MAP_SHARE", _environment_value, _platform_all,
+		"Hosting: send a player who joins without the game's Custom Edition map\n"
+		"the map (from custom_maps), and the resource maps it needs that the\n"
+		"player lacks (bitmaps.map, sounds.map, loc.map). The game's other\n"
+		"players help (network.map_seed)." },
+	{ "network.map_share_upload", _config_integer, "1024", "HALO_NET_MAP_SHARE_UPLOAD", _environment_value,
+		_platform_all,
+		"Hosting: the most kilobytes a second the host sends of maps (16 to\n"
+		"65536), so that the game's own traffic keeps the rest of the upload." },
+	{ "network.map_seed", _config_boolean, DEFAULT_MAP_SEED, "HALO_NET_MAP_SEED", _environment_value, _platform_all,
+		"Playing in another's game: help send its map to players who join\n"
+		"without it, as a torrent's peers do (the pieces this machine has, at\n"
+		"most network.map_seed_upload). While it does, in a game on a Custom\n"
+		"Edition map, this machine takes connections on TCP port 5153. Off by\n"
+		"default on Apple builds." },
+	{ "network.map_seed_upload", _config_integer, "256", "HALO_NET_MAP_SEED_UPLOAD", _environment_value,
+		_platform_all,
+		"Playing in another's game: the most kilobytes a second this machine\n"
+		"sends of maps to other players (16 to 65536)." },
+	{ "network.map_download", _config_boolean, DEFAULT_MAP_DOWNLOAD, "HALO_NET_MAP_DOWNLOAD", _environment_value,
+		_platform_all,
+		"Joining a game on a Custom Edition map this machine does not have:\n"
+		"download it (and the resource maps it needs, up to about 2.3 GB) from\n"
+		"the game's players into custom_maps, if its host shares it\n"
+		"(network.map_share); false leaves the game, saying which map is missing\n"
+		"and that downloads are off. Off by default on Apple builds. It governs\n"
+		"receiving only: sending maps to others is network.map_share (a host)\n"
+		"and network.map_seed (a player in another's game)." },
 	{ "network.coop_public", _config_boolean, "false", "HALO_NET_COOP_PUBLIC", _environment_value, _platform_all,
 		"Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER\n"
 		"map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in\n"
@@ -728,6 +803,21 @@ static const struct config_setting config_settings[] =
 	{ "debug.frame_trace", _config_boolean, "false", "HALO_FRAME_TRACE", _environment_set_is_true, _platform_all,
 		"Log every frame's time, the blend between ticks and the camera's yaw,\n"
 		"to see how smoothly the view turns." },
+	{ "debug.present_times", _config_boolean, "false", "HALO_PRESENT_TIMES", _environment_set_is_true, _platform_ios,
+		"Log when each frame reached the display and how long after its work began\n"
+		"(the frame pacer, with the Metal renderer; not a Vision Pro or a\n"
+		"simulator), to see how evenly and how late frames are shown." },
+	{ "debug.visibility_any_sample", _config_boolean, "false", "HALO_VISIBILITY_ANY_SAMPLE", _environment_set_is_true, _platform_ios,
+		"The Metal renderer's visibility tests (lens flares) only say whether\n"
+		"anything was visible, as before they counted how much: a light that is\n"
+		"mostly hidden then flares at full strength. For comparing." },
+	{ "debug.frame_load_cpu", _config_real, "0.0", "HALO_FRAME_LOAD_CPU", _environment_value, _platform_ios,
+		"Milliseconds of made-up CPU work added to every frame (the frame pacer),\n"
+		"to see what display.frames_in_flight does when frames don't fit in a\n"
+		"refresh. 0 (default): none." },
+	{ "debug.frame_load_gpu", _config_integer, "0", "HALO_FRAME_LOAD_GPU", _environment_value, _platform_ios,
+		"Made-up GPU work added to every frame: that many extra full-size draws\n"
+		"(the Metal renderer), with debug.frame_load_cpu. 0 (default): none." },
 	{ "debug.frame_counter", _config_boolean, "false", "HALO_FRAME_COUNTER", _environment_set_is_true, _platform_ios,
 		"Show the frame number and the game time in a corner of the screen, to\n"
 		"point at a moment; with debug.fixed_timestep the same frame is the same\n"
@@ -765,6 +855,15 @@ static const struct config_setting config_settings[] =
 		"With the Metal renderer, specialize each pipeline's vertex shader for its\n"
 		"attribute formats; false uses the unspecialized shaders, which read the\n"
 		"formats per draw (the fallback when specializing fails), to compare." },
+	{ "debug.metal_vertex_bgra", _config_boolean, "true", "HALO_METAL_VERTEX_BGRA", _environment_value, _platform_ios,
+		"With the Metal renderer, the vertex shaders read vertex colors in the\n"
+		"game's own byte order (BGRA); false swaps the bytes of every colored\n"
+		"vertex on the CPU as it is uploaded, as the OpenGL ES renderer has to, to\n"
+		"compare." },
+	{ "debug.metal_base_vertex", _config_boolean, "true", "HALO_METAL_BASE_VERTEX", _environment_value, _platform_ios,
+		"With the Metal renderer, indexed draws take a base vertex, so their\n"
+		"indices are drawn as the game holds them; false copies and rebases every\n"
+		"draw's indices on the CPU, as the OpenGL ES renderer has to, to compare." },
 	{ "debug.menu_open", _config_string, "\"\"", "HALO_MENU_OPEN", _environment_value, _platform_all,
 		"Start on this screen of the menus (port/assets/menus) instead of the main\n"
 		"menu, a player profile being edited; empty for the main menu." },

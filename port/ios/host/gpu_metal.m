@@ -182,6 +182,7 @@ static float reversed_depth(float depth);
 static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *physical);
 static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, NSUInteger height);
 #include "host_config.h"
+#include "host_frame_pacer.h"
 #include "host_stereo.h"
 #if TARGET_OS_VISION
 #include "host_theater.h"
@@ -199,8 +200,21 @@ static BOOL compressed_textures;
 /* debug.metal_specialize = false: vertex_function returns the unspecialized
 function, its fallback when specializing fails */
 static BOOL specialize_off;
+/* gpu_capabilities.base_vertex: indexed draws pass their base vertex, which
+needs GPU family Apple3 (an A9) or a Mac; an A8 (the Apple TV HD) has no
+base vertex drawing, so there, and with debug.metal_base_vertex = false, the
+front end rebases each draw's indices and the draws take none */
+static BOOL base_vertex_draws;
 /* debug.fixed_timestep: visibility answers wait for the GPU (visibility_result) */
 static BOOL visibility_wait;
+/* visibility tests count the samples that passed (MTLVisibilityResultModeCounting,
+GPU_OCCLUSION_EXACT) where the GPU can: from the A9's family (Apple3) and on
+every Mac. An A8 only says whether any passed (GPU_OCCLUSION_ANY_SAMPLE). */
+static BOOL visibility_counts;
+/* an answer: the serial of the command buffer that gave it over the count
+(or the yes-or-no), which fits a 4K frame's pixels three times over */
+#define VISIBILITY_COUNT_BITS 25
+#define VISIBILITY_COUNT_MAXIMUM ((1ull << VISIBILITY_COUNT_BITS) - 1)
 
 /* the open command buffer and render pass */
 static id<MTLCommandBuffer> commands;
@@ -510,16 +524,21 @@ static void commit(BOOL frame_end)
 			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
 		for (test = 0; test < pending.length / sizeof(*tests); test++)
 		{
-			uint8_t answer = 0;
+			/* the samples its draws passed, added up (a yes-or-no test's
+			entries are 0 or not, and any that isn't makes the answer 1) */
+			uint64_t answer = 0;
 
 			for (entry = 0; entry < tests[test].count; entry++)
-				if (entries[(tests[test].first + entry) % VISIBILITY_ENTRIES])
-					answer = 1;
+				answer += entries[(tests[test].first + entry) % VISIBILITY_ENTRIES];
+			if (!visibility_counts)
+				answer = answer != 0;
+			else if (answer > VISIBILITY_COUNT_MAXIMUM)
+				answer = VISIBILITY_COUNT_MAXIMUM;
 			{
-				uint64_t value = (serial << 1) | answer;
+				uint64_t value = (serial << VISIBILITY_COUNT_BITS) | answer;
 				uint64_t seen = atomic_load(&visibility_answers[tests[test].slot]);
 
-				while (seen >> 1 <= serial &&
+				while (seen >> VISIBILITY_COUNT_BITS <= serial &&
 					!atomic_compare_exchange_weak(&visibility_answers[tests[test].slot], &seen, value))
 					;
 			}
@@ -3154,7 +3173,8 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			visibility.count++;
 			visibility.entry_open = 1;
 			((uint64_t *)visibility_buffer.contents)[entry] = 0;
-			[encoder setVisibilityResultMode:MTLVisibilityResultModeBoolean offset:entry * sizeof(uint64_t)];
+			[encoder setVisibilityResultMode:visibility_counts ? MTLVisibilityResultModeCounting : MTLVisibilityResultModeBoolean
+				offset:entry * sizeof(uint64_t)];
 			metal_state_always(&state_cache);
 		}
 		if (metal_state_object(&state_cache, METAL_STATE_PIPELINE, (__bridge void *)pipeline, 0))
@@ -3233,7 +3253,13 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			gpu_buffer indices;
 			uint32_t offset, count = convert_primitive(draw, &type, &indices, &offset);
 
-			if (count)
+			/* (the converted indices are the draw's own, so its base vertex
+			still applies; 0 for a draw without indices) */
+			if (count && base_vertex_draws)
+				[encoder drawIndexedPrimitives:type indexCount:count indexType:MTLIndexTypeUInt32
+					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset instanceCount:1
+					baseVertex:draw->base_vertex baseInstance:0];
+			else if (count)
 				[encoder drawIndexedPrimitives:type indexCount:count indexType:MTLIndexTypeUInt32
 					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset];
 			return 1;
@@ -3251,9 +3277,18 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			if (!record)
 				return 1;
 			use_buffer(record);
-			/* the base vertex is ignored, as on Apple's GL (base_vertex is 0) */
-			[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
-				indexBuffer:record->buffer indexBufferOffset:draw->index_offset];
+			/* the vertex shaders' vertex_id, which their fetches index the
+			streams with (nv2a_msl.c), is the index plus the base vertex.
+			Without gpu_capabilities.base_vertex the front end leaves it 0,
+			and the call that takes one isn't made: a GPU below family Apple3
+			doesn't have it */
+			if (base_vertex_draws)
+				[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
+					indexBuffer:record->buffer indexBufferOffset:draw->index_offset instanceCount:1
+					baseVertex:draw->base_vertex baseInstance:0];
+			else
+				[encoder drawIndexedPrimitives:type indexCount:draw->count indexType:MTLIndexTypeUInt16
+					indexBuffer:record->buffer indexBufferOffset:draw->index_offset];
 		}
 		else
 		{
@@ -3289,7 +3324,8 @@ static void gpu_metal_visibility_end(uint32_t slot)
 	}
 }
 
-/* whether any sample passed (GPU_OCCLUSION_ANY_SAMPLE). With the fixed
+/* how many samples passed (GPU_OCCLUSION_EXACT), or on a GPU that can't
+count, whether any did (GPU_OCCLUSION_ANY_SAMPLE). With the fixed
 timestep, a result the GPU hasn't written yet is waited for, committing the
 open command buffer if it writes it: the game asks again until it has an
 answer (lens flares), so an answer now keeps runs repeatable, as a wait under
@@ -3306,7 +3342,7 @@ static uint32_t gpu_metal_visibility_result(uint32_t slot, uint32_t *samples)
 			return 1;
 		if (!visibility_wait)
 		{
-			*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & 1);
+			*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & VISIBILITY_COUNT_MAXIMUM);
 			return 1;
 		}
 		if (visibility.slots[slot].serial == current_serial)
@@ -3314,9 +3350,9 @@ static uint32_t gpu_metal_visibility_result(uint32_t slot, uint32_t *samples)
 		/* wait for the answer itself: waitUntilCompleted can return before
 		the completion handler has run, and a later command buffer's handler
 		can raise completed_serial before this one's has written the answer */
-		while ((atomic_load(&visibility_answers[slot]) >> 1) < visibility.slots[slot].serial)
+		while ((atomic_load(&visibility_answers[slot]) >> VISIBILITY_COUNT_BITS) < visibility.slots[slot].serial)
 			[last_committed waitUntilCompleted];
-		*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & 1);
+		*samples = (uint32_t)(atomic_load(&visibility_answers[slot]) & VISIBILITY_COUNT_MAXIMUM);
 		return 1;
 	}
 }
@@ -3370,6 +3406,8 @@ static CFTimeInterval refresh_period; /* CACurrentMediaTime's clock */
 	os_unfair_lock_lock(&pacing_lock);
 	refresh_period = link.targetTimestamp - link.timestamp;
 	os_unfair_lock_unlock(&pacing_lock);
+	/* (the pacer's clock: host_frame_pacer.h) */
+	frame_pacer_refresh(link.timestamp, link.targetTimestamp - link.timestamp);
 }
 @end
 
@@ -3570,6 +3608,224 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	*next_frame_due = (uint32_t)fmax(1.0, (pacing.due - now) * 1e6);
 	return hold;
 }
+
+/* display.frame_rate in the Mac app (host_gpu_dispatch.c): when the setting
+is "unlimited" or a cap above the display's rate, frames stop waiting for the
+display. The layer no longer holds a drawable back for the refresh
+(displaySyncEnabled), and Present no longer waits in nextDrawable at all: the
+window server still hands drawables out at its own pace (two a refresh
+behind a locked screen), so a thread of its own asks for the next one, and
+a frame that finds none ready is drawn and not shown (free_drawable_take). A
+cap at or under the display's rate keeps both waits, so those frames don't
+tear, and host_frame_rate_limit holds the cap. The display's rate is the
+pacing clock's, which starts a few frames in (not at all with
+debug.fixed_timestep, where only "unlimited" lifts the wait). Returns
+whether frames go unsynchronized. */
+#if TARGET_OS_MACCATALYST
+static struct
+{
+	dispatch_semaphore_t wanted;
+	/* a retained id<CAMetalDrawable>, or NULL while the thread waits for one */
+	_Atomic(void *) ready;
+} free_drawables;
+#endif
+
+/* the drawable the thread has waited for, or nil if none has come; again:
+the thread then asks for the next one. (With again NO it hands back one
+left over from before frames went back to waiting for the display.) */
+static id<CAMetalDrawable> free_drawable_take(BOOL again)
+{
+#if TARGET_OS_MACCATALYST
+	void *taken;
+
+	if (!free_drawables.wanted)
+	{
+		NSThread *thread;
+
+		if (!again)
+			return nil;
+		free_drawables.wanted = dispatch_semaphore_create(1);
+		thread = [[NSThread alloc] initWithBlock:^{
+			for (;;)
+			{
+				dispatch_semaphore_wait(free_drawables.wanted, DISPATCH_TIME_FOREVER);
+				@autoreleasepool
+				{
+					id<CAMetalDrawable> next;
+
+					/* (nil in the background, or after its one-second timeout) */
+					while (!(next = [layer nextDrawable]))
+						usleep(5000);
+					atomic_store(&free_drawables.ready, (__bridge_retained void *)next);
+				}
+			}
+		}];
+		thread.name = @"Metal drawables";
+		thread.qualityOfService = NSQualityOfServiceUserInteractive;
+		[thread start];
+	}
+	taken = atomic_exchange(&free_drawables.ready, NULL);
+	if (!taken)
+		return nil;
+	if (again)
+		dispatch_semaphore_signal(free_drawables.wanted);
+	return (__bridge_transfer id<CAMetalDrawable>)taken;
+#else
+	(void)again;
+	return nil;
+#endif
+}
+
+static BOOL frame_rate_sync(void)
+{
+#if TARGET_OS_MACCATALYST
+	double cap = host_frame_rate_cap();
+	CFTimeInterval period;
+	BOOL sync;
+
+	if (!host_frame_rate_unlimited() && cap == 0.0)
+		return NO;
+	os_unfair_lock_lock(&pacing_lock);
+	period = refresh_period;
+	os_unfair_lock_unlock(&pacing_lock);
+	sync = !host_frame_rate_unlimited() && !(period > 0.0 && cap > 1.0 / period + 0.5);
+	if (@available(macCatalyst 13.1, *))
+	{
+		if (layer.displaySyncEnabled != sync)
+		{
+			layer.displaySyncEnabled = sync;
+			platform_log("Metal: frames %s the display's refresh (display.frame_rate)", sync ? "wait for" : "no longer wait for");
+		}
+		return !sync;
+	}
+#endif
+	return NO;
+}
+
+/* the display's 60 Hz blank for the game's vertical blank thread
+(d3d8_device.c), which the pacer keeps from the display link's refreshes */
+static uint32_t gpu_metal_vertical_blank_wait(void)
+{
+	return frame_pacer_vertical_blank_wait();
+}
+
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+/* display.frame_source = "system" (host_frame_pacer.h): the system's own
+pacer, a CAMetalDisplayLink (iOS 17, tvOS 17, macOS 14), hands over one
+drawable for each refresh, on a thread of its own since the game's thread
+never returns to a run loop, and Present takes the latest. One the game
+was too late for is let go when the next comes. The pacer asks for the
+delay it keeps (preferredFrameLatency) and has no rules of its own here. */
+static struct
+{
+	BOOL active;
+	dispatch_semaphore_t came;
+	/* a retained id<CAMetalDrawable>, or NULL */
+	_Atomic(void *) ready;
+} system_frames;
+
+API_AVAILABLE(ios(17.0), tvos(17.0), macCatalyst(17.0))
+@interface SystemFrames : NSObject <CAMetalDisplayLinkDelegate>
+@end
+
+@implementation SystemFrames
+- (void)metalDisplayLink:(CAMetalDisplayLink *)link needsUpdate:(CAMetalDisplayLinkUpdate *)update
+{
+	void *stale = atomic_exchange(&system_frames.ready, (__bridge_retained void *)update.drawable);
+
+	(void)link;
+	if (stale)
+		(void)(__bridge_transfer id<CAMetalDrawable>)stale;
+	else
+		dispatch_semaphore_signal(system_frames.came);
+}
+@end
+
+static void system_frames_start(void)
+{
+	if (!frame_pacer_wants_system_source())
+		return;
+	if (@available(iOS 17.0, tvOS 17.0, macCatalyst 17.0, *))
+	{
+		int latency = frame_pacer_in_flight();
+		NSThread *thread;
+
+		system_frames.came = dispatch_semaphore_create(0);
+		thread = [[NSThread alloc] initWithBlock:^{
+			CAMetalDisplayLink *link = [[CAMetalDisplayLink alloc] initWithMetalLayer:layer];
+			SystemFrames *frames_delegate = [SystemFrames new];
+
+			link.delegate = frames_delegate;
+			if (latency)
+				link.preferredFrameLatency = (float)latency;
+			link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+			[link addToRunLoop:NSRunLoop.currentRunLoop forMode:NSDefaultRunLoopMode];
+			for (;;)
+				[NSRunLoop.currentRunLoop run];
+		}];
+		thread.name = @"Metal system frames";
+		thread.qualityOfService = NSQualityOfServiceUserInteractive;
+		[thread start];
+		system_frames.active = YES;
+		frame_pacer_system_source();
+	}
+	else
+		platform_log("Metal: display.frame_source \"system\" needs iOS 17, tvOS 17 or macOS 14; using \"clock\"");
+}
+
+/* the system's next drawable, waited for 100 ms at most (nil in the
+background, where none come) */
+static id<CAMetalDrawable> system_frame_take(void)
+{
+	void *taken;
+
+	if (dispatch_semaphore_wait(system_frames.came, dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC)))
+		return nil;
+	taken = atomic_exchange(&system_frames.ready, NULL);
+	return taken ? (__bridge_transfer id<CAMetalDrawable>)taken : nil;
+}
+#endif
+
+#if HALO_FRAME_PACING
+/* debug.frame_load_gpu: a made-up GPU load, that many extra full-size
+draws of the frame's picture into a scratch texture before it is presented,
+to see what the pacer's settings do when a frame's work doesn't fit in a
+refresh (debug.frame_load_cpu is the pacer's own, host_frame_pacer.c) */
+static long frame_load_passes;
+static id<MTLTexture> frame_load_target;
+
+static void frame_load_draw(id<MTLTexture> picture)
+{
+	long index;
+
+	if (frame_load_passes <= 0 || !picture)
+		return;
+	if (!frame_load_target)
+	{
+		MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:layer.pixelFormat
+			width:4096 height:4096 mipmapped:NO];
+
+		descriptor.usage = MTLTextureUsageRenderTarget;
+		descriptor.storageMode = MTLStorageModePrivate;
+		frame_load_target = [device newTextureWithDescriptor:descriptor];
+	}
+	for (index = 0; index < frame_load_passes; index++)
+	{
+		MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+		id<MTLRenderCommandEncoder> load;
+
+		pass.colorAttachments[0].texture = frame_load_target;
+		pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+		pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+		load = [commands renderCommandEncoderWithDescriptor:pass];
+		[load setRenderPipelineState:present_pipeline];
+		[load setFragmentTexture:picture atIndex:0];
+		[load setFragmentSamplerState:present_sampler atIndex:0];
+		[load drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		[load endEncoding];
+	}
+}
+#endif
 
 /* ---------- frames */
 
@@ -3843,6 +4099,10 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		id<CAMetalDrawable> drawable;
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
+		BOOL unsynced;
+		/* the frame's dealings with the pacer (host_frame_pacer.h), which
+		decides when it may start toward the display and how long it stays */
+		struct frame_pacer_frame paced;
 
 		command_buffer();
 		pass_finish(YES);
@@ -3893,8 +4153,19 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		pipelines all still compiling) isn't shown; the window keeps the last
 		whole one (metal_hold_frame) */
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
+		unsynced = frame_rate_sync();
 		waited = CACurrentMediaTime();
-		drawable = frame_held ? nil : [layer nextDrawable];
+		/* display.frame_rate's cap; its sleep counts as waiting, not as the
+		frame's CPU time */
+		host_frame_rate_limit();
+		/* (unsynchronized, a frame with no drawable ready isn't shown) */
+		frame_pacer_frame_begin(&paced, frames, pacing.work_started, !frame_held && !unsynced);
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+		if (system_frames.active)
+			drawable = frame_held ? nil : system_frame_take();
+		else
+#endif
+		drawable = frame_held ? nil : unsynced ? free_drawable_take(YES) : (free_drawable_take(NO) ?: [layer nextDrawable]);
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from
 		the compiles) */
@@ -3908,8 +4179,12 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			usleep((useconds_t)((period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 1.0 / 60.0) * 1e6));
 		}
 		pacing_waited += CACurrentMediaTime() - waited;
-		/* nil in the background (or held): the frame still commits, so its
-		slot is freed */
+		/* (a frame not shown isn't scheduled, so its waits aren't taken up
+		there: they mustn't count against the next frame that is) */
+		if (unsynced && !drawable)
+			pacing_waited = 0.0;
+		/* nil in the background (or held, or unsynchronized with none ready):
+		the frame still commits, so its slot is freed */
 		if (drawable && record && record->texture)
 		{
 			MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -3929,6 +4204,9 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			pass.colorAttachments[0].loadAction = MTLLoadActionClear;
 			pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 			pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+#if HALO_FRAME_PACING
+			frame_load_draw(picture);
+#endif
 			present = [commands renderCommandEncoderWithDescriptor:pass];
 			if (metal_debug)
 				present.label = @"present";
@@ -3947,6 +4225,29 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			{
 				CFTimeInterval hold = pacing_schedule(drawable, &next_frame_due);
 
+#if HALO_FRAME_PACING
+				/* (display.frame_pacing's own holds are whole refreshes
+				already; otherwise the pacer says) */
+				if (hold == 0.0)
+					hold = frame_pacer_present(&paced);
+				if (frame_pacer_watches(&paced))
+				{
+#if TARGET_OS_SIMULATOR
+					/* the iOS and tvOS simulators' MTLDrawable has no presented
+					handler and no presentedTime: the pacer is told now, with no
+					time (it holds no slots there, host_frame_pacer.c) */
+					frame_pacer_presented(&paced, 0.0);
+#else
+					struct frame_pacer_frame shown_frame = paced;
+
+					[drawable addPresentedHandler:^(id<MTLDrawable> shown)
+					{
+						frame_pacer_presented(&shown_frame, shown.presentedTime);
+					}];
+#endif
+					paced.slot = 0;
+				}
+#endif
 #if TARGET_OS_SIMULATOR
 				(void)hold;
 				[commands presentDrawable:drawable];
@@ -3958,6 +4259,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 #endif
 			}
 		}
+		/* (a frame with nothing to show: its slot goes back now) */
+		frame_pacer_frame_dropped(&paced);
 		drawable = nil;
 		commit(YES);
 		os_unfair_lock_lock(&compile_stats_lock);
@@ -4283,6 +4586,10 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		metalfx_wanted = NO;
 #endif
 		pacing_start(flags);
+		frame_pacer_start((flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0);
+#if HALO_FRAME_PACING
+		frame_load_passes = (long)host_config_real("debug.frame_load_gpu", 0.0);
+#endif
 		layer = (__bridge CAMetalLayer *)host_sdl_metal_layer();
 		device = MTLCreateSystemDefaultDevice();
 		if (!layer || !device)
@@ -4391,14 +4698,42 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 				"are decoded (this GPU has no BC formats)");
 		}
 
-		/* what GL reports on Apple's OpenGL ES 3.0 (gpu_gl.c's gpu_gl_initialize),
-		so the front end behaves exactly as it does under GL */
-		capabilities->vertex_bgra = 0;
-		capabilities->base_vertex = 0;
+		/* the vertex shaders fetch their own attributes (nv2a_msl.c's
+		fetch_attribute), BGRA8 as readily as RGBA8, so the front end needn't
+		swizzle colored streams as it uploads them and can draw them from the
+		mirror; debug.metal_vertex_bgra = false reports what GL does */
+		capabilities->vertex_bgra = (flags & GPU_INITIALIZE_NO_VERTEX_BGRA) ? 0 : 1;
+		/* indexed draws take the packet's base vertex (gpu_metal_draw), so the
+		front end needn't rebase a draw's indices and can draw them from the
+		mirror, on a GPU that has base vertex drawing: family Apple3 (an A9)
+		and later, and every Mac. An A8 (the Apple TV HD, family Apple2)
+		doesn't, and nor does a simulator that reports no such family;
+		there, and with debug.metal_base_vertex = false, this reports what
+		GL does. (vertex_bgra needs no such test: it is the shaders' own
+		fetch, not a vertex descriptor's format.) */
+		base_vertex_draws = !(flags & GPU_INITIALIZE_NO_BASE_VERTEX) &&
+			([device supportsFamily:MTLGPUFamilyApple3] || [device supportsFamily:MTLGPUFamilyMac2]);
+		if (!base_vertex_draws && !(flags & GPU_INITIALIZE_NO_BASE_VERTEX))
+			platform_log("Metal: this GPU has no base vertex drawing (below family Apple3); indices are rebased per draw");
+		capabilities->base_vertex = base_vertex_draws ? 1 : 0;
+		/* the rest is what GL reports on Apple's OpenGL ES 3.0 (gpu_gl.c's
+		gpu_gl_initialize), so the front end behaves as it does under GL */
 		capabilities->triangle_fans = 1;
 		capabilities->line_loops = 1;
 		capabilities->sampler_lod_bias = 0;
-		capabilities->occlusion_mode = GPU_OCCLUSION_ANY_SAMPLE;
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+		system_frames_start();
+#endif
+		visibility_counts = [device supportsFamily:MTLGPUFamilyApple3] || [device supportsFamily:MTLGPUFamilyMac2];
+		{
+			/* debug.visibility_any_sample: the yes-or-no answer everywhere, to compare */
+			char value[8];
+
+			host_config_string("debug.visibility_any_sample", "false", value, sizeof(value));
+			if (!strcmp(value, "true"))
+				visibility_counts = NO;
+		}
+		capabilities->occlusion_mode = visibility_counts ? GPU_OCCLUSION_EXACT : GPU_OCCLUSION_ANY_SAMPLE;
 		capabilities->s3tc = compressed_textures ? 1 : 0;
 		/* border colors stay inside the backend: the front end doesn't read
 		border_clamp, and a GL run and a Metal run report the same line */

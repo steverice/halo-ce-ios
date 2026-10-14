@@ -270,6 +270,11 @@ the setting for one start of the game. It has priority over the file.
 | `network.coop_enemies_mode` | `"per_player"` | `HALO_NET_COOP_ENEMIES_MODE` | Online co-op's extra enemies: `"none"`; `"per_player"`, each squad of enemies that a level places grows by `network.coop_enemies` for each player past the first; or `"multiplier"`, each squad is `network.coop_enemies_multiplier` times as large, for any number of players. The extra enemies stand around the squad's places, and those that a dropship has no seats for drop out of it after its passengers. EXTRA ENEMIES in co-op's Server Setup writes its choice here. |
 | `network.coop_enemies` | `50` | `HALO_NET_COOP_ENEMIES` | The extra enemies per player, a percentage from `25` to `200`: for each player past the first, each squad of enemies gets this much of itself more (`100`: as many again, so four players meet four times the squad), up to 8 times the squad however many players there are. PER PLAYER in co-op's Server Setup writes its choice here. |
 | `network.coop_enemies_multiplier` | `2` | `HALO_NET_COOP_ENEMIES_MULTIPLIER` | The static multiplier of the enemies, `2` to `32`: each squad of enemies is this many times as large. MULTIPLIER in co-op's Server Setup writes its choice here. |
+| `network.map_share` | `true` | `HALO_NET_MAP_SHARE` | When you host: send a player who joins without the game's Custom Edition map the map, and the resource maps that it needs and that the player does not have. SHARE MAPS in Server Setup writes its choice here. Refer to "Map sharing". |
+| `network.map_share_upload` | `1024` | `HALO_NET_MAP_SHARE_UPLOAD` | When you host: the most kilobytes per second that the game sends of maps (`16` to `65536`). |
+| `network.map_seed` | `true`; `false` on Apple builds | `HALO_NET_MAP_SEED` | When you play in the game of another machine: help send its map to players who join without it. HELP SEND MAPS in Settings > Network Setup. |
+| `network.map_seed_upload` | `256` | `HALO_NET_MAP_SEED_UPLOAD` | When you play in the game of another machine: the most kilobytes per second that the game sends of maps to other players (`16` to `65536`). MAP UPLOAD LIMIT in Settings > Network Setup. |
+| `network.map_download` | `true`; `false` on Apple builds | `HALO_NET_MAP_DOWNLOAD` | When you join a game on a Custom Edition map that you do not have: download it from the players of the game. `false`: leave the game and show which map is missing. DOWNLOAD MAPS in Settings > Network Setup. |
 | `network.coop_public` | `false` | `HALO_NET_COOP_PUBLIC` | `true`: an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in co-op's Server Setup writes its choice here. Refer to "Server browser". |
 | `network.brokers_file` | `"brokers.txt"` | `HALO_NET_BROKERS_FILE` | The file of the public MQTT brokers that let the machines of an invite find each other, and that carry the listings of the server browser: next to `config.toml`, unless a full path. One `host:port` on each line, up to 4; `#` starts a comment. |
 | `network.stun_servers` | Google and Cloudflare | `HALO_NET_STUN` | The public STUN servers (`host:port`, with commas between them) that give the internet address of a machine. |
@@ -532,6 +537,49 @@ same broker to see each other's games. The game uses
 MQTT 5 if the broker has it, else MQTT 3.1.1. A broker that does not keep
 retained messages, or does not let clients subscribe with wildcards, carries
 only invites, not listings.
+
+### Map sharing
+
+When you join a game on a Custom Edition map that you do not have, the game
+downloads the map from the players of the game, if the host shares its maps
+(SHARE MAPS in Server Setup, `network.map_share`, on by
+default). This operates on a local network and
+on the internet. It also downloads the resource maps that the map needs
+(`bitmaps.map`, `sounds.map`, `loc.map`) if you do not have them. A line at
+the top of the screen shows the progress. In the lobby, the game starts when
+every player has the map. If the game already operates, you join it when
+the download is complete. If no player sends any of the map for a minute,
+you leave the game, and the main menu tells you why.
+
+All the players help (HELP SEND MAPS in Settings > Network Setup,
+`network.map_seed`), as the peers of a torrent do:
+the downloaded map comes in pieces from the host and from each player who
+has it or has a part of it. The game checks each piece against its hash, so
+a player cannot send a different map. A player who sends a bad piece is not
+asked again. To keep the upload free for the game, the host sends at most
+`network.map_share_upload` (1024 KB/s, in `config.toml`) and each other
+player at most `network.map_seed_upload` (256 KB/s: MAP UPLOAD LIMIT in
+Settings > Network Setup). Set these lower on
+a slow connection. DOWNLOAD MAPS there (`network.map_download`) turns
+downloading off: you then leave a game whose map you do not have.
+
+The name of each map in `custom_maps` ends with the start of its hash: when
+the map lists find `hugeass.map`, the game renames it `hugeass_0e2b3ee4.map`
+(and its picture and description). Thus two versions of a map have different
+names, and a game always loads the version of the host. The menus show the
+map without the hash, and with it only when you have two versions of the
+map. The downloaded map has the same name. A download that stops leaves a
+`.part` file in `custom_maps` (only of the last map whose download stopped,
+and only if it holds part of the map); the next download of that map
+continues from it. Maps in the folder of a Halo Custom Edition install
+(`paths.custom_edition`) keep their names, and the host does not share them.
+Copy a map to `custom_maps` to share it.
+
+Over the internet, the players of a game connect only to the host. To send
+each other a map, a player answers the other players of the game (who have
+its invite) as the host does, and a player who downloads connects to them in
+the same way that it connected to the host. Map sharing uses port 5153 for
+its connections. Refer to `NETCODE.md`, "Map sharing".
 
 ### Security
 
@@ -821,6 +869,7 @@ Other changes:
 | `rasterizer/rasterizer_text.c`, `text/draw_string.c` | Text is drawn from an atlas of the fonts' glyphs, rasterized at the resolution the game draws at (`src/text_hires.c`), when the font has every character of the string. Text can be drawn scaled about a point (`rasterizer_text_set_scale`), as the players' names are. Each glyph's advance is centred on the font tag character's, so the layout is the same, and a glyph is cut at a text box only where the font tag's character visibly was. |
 | `cutscene/cinematics.c` | A scenario's titles (some Custom Edition maps show their name for the whole game) are not drawn over a menu, as the letterbox is not: the screen's overlays are drawn after the players' menus. |
 | `rasterizer/rasterizer.h` | A frame holds 2048 transparent geometry groups, not 384 (`include/halo_port_capacity.h`): a co-op game with many added enemies asked for more, and the Xbox's pool drew the frame without the rest. |
+| `cache/cache_files.c`, `networking/network_client_manager.c`, `networking/network_server_manager.c`, `networking/network_server_message_handler.c`, `main/main.c`, `interface/interface.c` | Map sharing (`game/map_share.c`): a client that does not have the game's Custom Edition map asks the host for it instead of leaving, is not given time to precache it until it has it, and adds its players to a game in progress only then; the host names the game's map for its hash, takes the requests from any machine in the game, lobby too, and does not drop a machine that downloads; the transfers run each frame, and their progress is drawn over the screen. |
 
 The x86 inline assembly of the game is replaced by C. Thus the compiler
 can optimize that code for each processor:

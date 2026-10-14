@@ -95,7 +95,8 @@ SCREENS = {
     "network_setup": {
         "screen": "network_settings_screen",
         "header": ("header_profile_network_settings", f"{PE}/network_setup/header_profile_network_settings"),
-        "spacing": 30,
+        # (eleven rows: closer together)
+        "spacing": 24,
         "rows": [
             ("INTERNET PLAY:", "network.online", ON_OFF,
              "Host and join games over the internet by invite\nlinks; off keeps to the local network.", None),
@@ -115,6 +116,16 @@ SCREENS = {
              "A team game's scoreboard: a column for each team,\nor every player in order of score.", None),
             ("SCOREBOARD PANEL:", "display.scoreboard_background", ON_OFF,
              "Draw a panel behind the scoreboard, for clearer\ntext.", None),
+            # (map sharing, port/linux/game/map_share.c: this machine's part in
+            # another's game)
+            ("DOWNLOAD MAPS:", "network.map_download", ON_OFF,
+             "Joining a game on a Custom Edition map you do not\nhave: download it from the players (if shared).",
+             None),
+            ("HELP SEND MAPS:", "network.map_seed", ON_OFF,
+             "In another's game, send its map to players who\njoin without it, as a torrent's peers do.", None),
+            ("MAP UPLOAD LIMIT:", "network.map_seed_upload",
+             [(f"{kb} KB/S" if kb < 1024 else f"{kb // 1024} MB/S", str(kb)) for kb in (64, 128, 256, 512, 1024, 2048)],
+             "The most you send of maps to other players, so\nthat the game keeps the rest of your upload.", None),
         ],
     },
     "gamepad_setup": {
@@ -670,8 +681,8 @@ def _server_settings() -> list:
     whether the server browser lists it (PUBLIC or PRIVATE: an internet
     game's)"""
     base = f"{MT}/server_settings"
-    # (eleven rows: closer together, the help lower)
-    spec = {"screen": "server_settings_screen", "spacing": 26, "help_top": 366,
+    # (twelve rows: closer together, the help lower)
+    spec = {"screen": "server_settings_screen", "spacing": 24, "help_top": 366,
             "header": ("header_server_settings", f"{base}/header_server_settings")}
     rows, extra = [], []
     extra += _value_row(base, "server_name", 0, "ss edit server name")
@@ -741,7 +752,7 @@ def _server_settings() -> list:
                       ("header_bounds", "7 -13 19 -7"), ("footer_bounds", "7 208 19 214")],
                      ['<on event="created" run="port setting load"/>', '<on event="deleted" run="port setting save"/>',
                       '<on event="left_mouse" run="mouse spinner 1wide click"/>'])
-    rows.append((f"{base}/op_friendly_fire", None, 5))
+    rows.append((f"{base}/op_friendly_fire", None, SETUP_OPTIONS_PLACE))
     # ... and its EXTRA ENEMIES (port/linux/game/coop_enemies.c), below it:
     # NONE, PER PLAYER or STATIC MULTIPLIER, and below that the amount of the
     # one chosen (its own row, the other hidden: menu_functions.c's
@@ -771,18 +782,24 @@ def _server_settings() -> list:
 
     spinner_row("extra_enemies", 11, ["NONE", "PER PLAYER", "STATIC MULTIPLIER"], "network.coop_enemies_mode",
                 COOP_ENEMIES_MODES)
-    rows.append((f"{base}/op_extra_enemies", None, 6))
+    rows.append((f"{base}/op_extra_enemies", None, SETUP_OPTIONS_PLACE + 1))
     spinner_row("enemies_per_player", 12, [f"{value}%" for value in COOP_ENEMIES_PERCENTAGES],
                 "network.coop_enemies", COOP_ENEMIES_PERCENTAGES)
-    rows.append((f"{base}/op_enemies_per_player", None, 7))
+    rows.append((f"{base}/op_enemies_per_player", None, SETUP_OPTIONS_PLACE + 2))
     spinner_row("enemies_multiplier", 13, [f"{value}X" for value in COOP_ENEMIES_MULTIPLIERS],
                 "network.coop_enemies_multiplier", COOP_ENEMIES_MULTIPLIERS)
-    rows.append((f"{base}/op_enemies_multiplier", None, 7))
+    rows.append((f"{base}/op_enemies_multiplier", None, SETUP_OPTIONS_PLACE + 2))
     # ... and its PLAYER COLLISIONS, below them (network.coop_player_collisions,
     # which the host sends its players as the game begins: menu_functions.c's
     # server_start)
     spinner_row("player_collisions", 14, ["ON", "OFF"], "network.coop_player_collisions", ["true", "false"])
-    rows.append((f"{base}/op_player_collisions", None, 8))
+    rows.append((f"{base}/op_player_collisions", None, SETUP_OPTIONS_PLACE + 3))
+    # SHARE MAPS (port/linux/game/map_share.c), for any game, above the
+    # options' rows (SETUP_OPTIONS_PLACE): whether players who join without
+    # the game's Custom Edition map download it (network.map_share). The
+    # host's upload limit is config.toml's network.map_share_upload
+    spinner_row("map_share", 16, ["ON", "OFF"], "network.map_share", ["true", "false"])
+    rows.append((f"{base}/op_map_share", None, SETUP_OPTIONS_PLACE - 1))
     # the gametype's options for this game (the gametype editor's screens,
     # editing a copy of the gametype chosen: "port setup edit")
     for index, (key, screen) in enumerate(SETUP_OPTION_SCREENS):
@@ -801,7 +818,7 @@ def _server_settings() -> list:
         extra += _widget(f"{base}/{key}_value", [("type", "text"), ("controller", 1), ("width", 280), ("height", 22),
                                                  ("font", "ui\\small_ui"), ("color", "#FF2896FF"), ("align", "center"),
                                                  ("text_y", 5), ("text_flags", "no_focus_test")], [])
-        rows.append((f"{base}/op_{key}", None, 5 + index))
+        rows.append((f"{base}/op_{key}", None, SETUP_OPTIONS_PLACE + index))
     extra += _button(f"{base}/button_defaults", 3, [])
     extra += _widget(f"{base}/button_ok", [("type", "text"), ("width", 128), ("height", 24),
                                            ("bitmap", "bitmaps/text_button_background"), ("text", "START GAME"),
@@ -813,7 +830,8 @@ def _server_settings() -> list:
     extra += _strings(f"{base}/labels", ["GAME NAME:", "MAXIMUM PLAYERS:", "INVITE LINK:", "GAME TYPE:",
                                          "PLAYER OPTIONS:", "ITEM OPTIONS:", "VEHICLE OPTIONS:", "INDICATOR OPTIONS:",
                                          "TEAMPLAY OPTIONS:", "LISTING:", "FRIENDLY FIRE:", "EXTRA ENEMIES:",
-                                         "PER PLAYER:", "MULTIPLIER:", "PLAYER COLLISIONS:", "PASSWORD:"])
+                                         "PER PLAYER:", "MULTIPLIER:", "PLAYER COLLISIONS:", "PASSWORD:",
+                                         "SHARE MAPS:"])
     extra += _strings(f"{base}/help_strings", [
         "",
         "The name the game shows in the lists of games.\\nEnter changes it.",
@@ -845,6 +863,9 @@ def _server_settings() -> list:
         "Players walk through each other, so that no one\\nblocks a doorway. The AI's characters still block.",
         # (PASSWORD's)
         "Players from the Server Browser must type it to\\njoin (an invite link needs none). Enter sets it.",
+        # (SHARE MAPS', by its choice)
+        "Players who join without the game's Custom Edition\\nmap download it from you and the other players.",
+        "Players who join without the map cannot play.",
     ])
     lines = _screen(base, spec, rows, ["server settings update"],
                     ['<on event="created" run="server settings init"/>'], extra)
@@ -866,6 +887,9 @@ COOP_FRIENDLY_FIRE_VALUES = ["off", "on", "shields_only", "explosives_only"]
 COOP_ENEMIES_MODES = ["none", "per_player", "multiplier"]
 COOP_ENEMIES_PERCENTAGES = [25, 50, 100, 150, 200]
 COOP_ENEMIES_MULTIPLIERS = [2, 4, 8, 16, 32]
+# (Server Setup's place of its options' rows, co-op's or the gametype's: after
+# SHARE MAPS')
+SETUP_OPTIONS_PLACE = 6
 # Server Setup's rows of the gametype's options: the gametype editor's
 # screens
 SETUP_OPTION_SCREENS = [

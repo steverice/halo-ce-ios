@@ -1020,6 +1020,14 @@ void network_test_update(
 		}
 		break;
 	case _network_test_join:
+		/* (the main menu's own start, main_menu_initialize, can come after this
+		search began: it disposes the client and clears the players joined to
+		multiplayer. The search then starts over) */
+		if (network_test.set_up && !network_test.joined && !global_network_game_client_get())
+		{
+			network_test.set_up = FALSE;
+			platform_log("network test: the search's client was disposed; searching again");
+		}
 		if (!network_test.set_up)
 		{
 			network_test.set_up = TRUE;
@@ -1038,6 +1046,9 @@ void network_test_update(
 		else if (!network_test.joined && network_game_client_join_first_available_game())
 		{
 			network_test.joined = TRUE;
+			/* (again, as the menus' joins do just before they join: a client the
+			invite's screens made after the main menu cleared the players has none) */
+			player_ui_local_player_joined_multiplayer_game(0);
 			ui_widgets_close_all();
 			ui_widget_load_by_name_or_tag(
 				pc_menus_screen("ui\\shell\\main_menu\\multiplayer_type_select\\connected\\pregame\\connected_pregame_screen"),

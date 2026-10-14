@@ -95,6 +95,11 @@ void gpu_flush(void)
 	host_gpu_flush();
 }
 
+uint32_t gpu_vertical_blank_wait(void)
+{
+	return host_gpu_vertical_blank_wait();
+}
+
 uint32_t gpu_present(gpu_texture back_buffer)
 {
 	return host_gpu_present(back_buffer);
