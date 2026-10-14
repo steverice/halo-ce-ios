@@ -56,6 +56,43 @@ void halo_model_counts_take(unsigned long drawn[5], unsigned long *culled);
 
 struct gpu_capabilities device_capabilities;
 
+/* Render validation (gpu_validate.h), in a build configured with it: the
+identity of the draw being made, which goes to the host just before the
+draw does, and this file's own fallbacks, by name. In any other build each
+of these is nothing. */
+#include "gpu_validate.h"
+#if HALO_RENDER_VALIDATION
+static struct gpu_validation_identity validation_draw;
+/* at a D3D draw's or clear's entry: its kind and the game code that called it */
+#define VALIDATION_BEGIN(draw_kind) \
+	(validation_draw.kind = (draw_kind), validation_draw.caller = (uint32_t)(unsigned long)__builtin_return_address(0))
+#define VALIDATION_VERTEX_SHADER(program, variant) \
+	(validation_draw.vertex_program = (uint32_t)(program)->id, validation_draw.vertex_variant = (uint32_t)(variant))
+#define VALIDATION_PIXEL_SHADER(entry) (validation_draw.pixel_key = (uint32_t)(entry)->hash)
+#define VALIDATION_SUBMIT() (validation_draw.frame = (uint32_t)device.frame, gpu_validation_identity(&validation_draw))
+#define VALIDATION_NOTE(reason, detail, value) gpu_validation_note(GPU_VALIDATION_##reason, (uint32_t)(detail), (uint32_t)(value))
+#else
+#define VALIDATION_BEGIN(draw_kind) ((void)0)
+#define VALIDATION_VERTEX_SHADER(program, variant) ((void)0)
+#define VALIDATION_PIXEL_SHADER(entry) ((void)0)
+#define VALIDATION_SUBMIT() ((void)0)
+#define VALIDATION_NOTE(reason, detail, value) ((void)0)
+#endif
+/* VALIDATION_NOTE(FRONT_STATE_UNKNOWN, ...)'s details: which mapping met a
+value it has no case for (1 to 7), or 0x100 plus a render state this file
+stores and never reads, set to something other than its resting value */
+enum
+{
+	_validation_state_filter = 1,
+	_validation_state_address,
+	_validation_state_compare,
+	_validation_state_stencil_operation,
+	_validation_state_blend_factor,
+	_validation_state_blend_operation,
+	_validation_state_primitive,
+	_validation_state_ignored = 0x100,
+};
+
 /* display.frame_pacing as gpu_initialize flags */
 static uint32_t frame_pacing_flags(void)
 {
@@ -2137,6 +2174,10 @@ void WINAPI D3DDevice_GetDeviceCaps(D3DCAPS8 *caps)
 
 void WINAPI D3DDevice_GetBackBuffer(INT back_buffer, D3DBACKBUFFER_TYPE type, D3DSurface **result)
 {
+	/* (-1, the frame before this one, gets this frame's: the loading
+	screen's progress bar asks for it) */
+	if (back_buffer != 0)
+		VALIDATION_NOTE(FRONT_PREVIOUS_BACK_BUFFER, back_buffer, 0);
 	(void)back_buffer;
 	(void)type;
 	/* like Direct3D, the caller gets a reference it must release */
@@ -2831,7 +2872,10 @@ static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	for (index = 0; index < RECENT_FRAGMENT_COUNT; index++)
 	{
 		if (recent[index] && words_equal(&recent[index]->key, key, sizeof(*key)))
+		{
+			VALIDATION_PIXEL_SHADER(recent[index]);
 			return recent[index]->dump_source ? fragment_shader_first_draw(recent[index]) : recent[index]->shader;
+		}
 	}
 	hash = hash_words(key, sizeof(*key));
 	bucket = &fragment_buckets[hash % FRAGMENT_BUCKETS];
@@ -2840,6 +2884,7 @@ static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 		if (entry->hash == hash && words_equal(&entry->key, key, sizeof(*key)))
 		{
 			recent[recent_next++ % RECENT_FRAGMENT_COUNT] = entry;
+			VALIDATION_PIXEL_SHADER(entry);
 			return entry->dump_source ? fragment_shader_first_draw(entry) : entry->shader;
 		}
 	}
@@ -2856,6 +2901,7 @@ static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	*bucket = entry;
 	recent[recent_next++ % RECENT_FRAGMENT_COUNT] = entry;
 	shader_list_pixel_made(key, entry->shader);
+	VALIDATION_PIXEL_SHADER(entry);
 	return entry->shader;
 }
 
@@ -3360,7 +3406,10 @@ static uint8_t gpu_filter(DWORD filter)
 	case D3DTEXF_ANISOTROPIC: return GPU_FILTER_ANISOTROPIC;
 	case D3DTEXF_QUINCUNX: return GPU_FILTER_QUINCUNX;
 	case D3DTEXF_GAUSSIANCUBIC: return GPU_FILTER_GAUSSIAN_CUBIC;
-	default: return GPU_FILTER_NONE;
+	default:
+		if (filter != D3DTEXF_NONE)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_filter, filter);
+		return GPU_FILTER_NONE;
 	}
 }
 
@@ -3372,7 +3421,10 @@ static uint8_t gpu_address(DWORD mode)
 	case D3DTADDRESS_CLAMP: return GPU_ADDRESS_CLAMP;
 	case D3DTADDRESS_BORDER: return GPU_ADDRESS_BORDER;
 	case D3DTADDRESS_CLAMPTOEDGE: return GPU_ADDRESS_CLAMP_TO_EDGE;
-	default: return GPU_ADDRESS_WRAP;
+	default:
+		if (mode != D3DTADDRESS_WRAP)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_address, mode);
+		return GPU_ADDRESS_WRAP;
 	}
 }
 
@@ -3601,7 +3653,10 @@ static uint8_t gpu_compare(DWORD function)
 	case D3DCMP_GREATEREQUAL: return GPU_COMPARE_GREATER_EQUAL;
 	case D3DCMP_ALWAYS: return GPU_COMPARE_ALWAYS;
 	/* D3DCMP_NEVER, and 0 (an unset render state) */
-	default: return GPU_COMPARE_NEVER;
+	default:
+		if (function != D3DCMP_NEVER && function != 0)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_compare, function);
+		return GPU_COMPARE_NEVER;
 	}
 }
 
@@ -3617,7 +3672,10 @@ static uint8_t gpu_stencil_operation(DWORD operation)
 	case D3DSTENCILOP_INCR: return GPU_STENCIL_INCREMENT_WRAP;
 	case D3DSTENCILOP_DECR: return GPU_STENCIL_DECREMENT_WRAP;
 	/* D3DSTENCILOP_ZERO is 0 */
-	default: return GPU_STENCIL_ZERO;
+	default:
+		if (operation != D3DSTENCILOP_ZERO)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_stencil_operation, operation);
+		return GPU_STENCIL_ZERO;
 	}
 }
 
@@ -3640,7 +3698,10 @@ static uint8_t gpu_blend_factor(DWORD factor)
 	case D3DBLEND_CONSTANTALPHA: return GPU_BLEND_CONSTANT_ALPHA;
 	case D3DBLEND_INVCONSTANTALPHA: return GPU_BLEND_ONE_MINUS_CONSTANT_ALPHA;
 	/* D3DBLEND_ZERO is 0 */
-	default: return GPU_BLEND_ZERO;
+	default:
+		if (factor != D3DBLEND_ZERO)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_blend_factor, factor);
+		return GPU_BLEND_ZERO;
 	}
 }
 
@@ -3649,13 +3710,20 @@ static uint8_t gpu_blend_operation(DWORD operation)
 	switch (operation)
 	{
 	case D3DBLENDOP_SUBTRACT: return GPU_BLEND_OP_SUBTRACT;
-	case D3DBLENDOP_REVSUBTRACT:
-	case D3DBLENDOP_REVSUBTRACTSIGNED: return GPU_BLEND_OP_REVERSE_SUBTRACT;
+	case D3DBLENDOP_REVSUBTRACTSIGNED:
+		VALIDATION_NOTE(FRONT_BLEND_SIGNED, operation, 0);
+		return GPU_BLEND_OP_REVERSE_SUBTRACT;
+	case D3DBLENDOP_REVSUBTRACT: return GPU_BLEND_OP_REVERSE_SUBTRACT;
 	case D3DBLENDOP_MIN: return GPU_BLEND_OP_MIN;
 	case D3DBLENDOP_MAX: return GPU_BLEND_OP_MAX;
 	/* D3DBLENDOP_ADD, and ADDSIGNED (the NV2A's signed add, whose bias is
 	dropped, as before) */
-	default: return GPU_BLEND_OP_ADD;
+	default:
+		if (operation == D3DBLENDOP_ADDSIGNED)
+			VALIDATION_NOTE(FRONT_BLEND_SIGNED, operation, 0);
+		else if (operation != D3DBLENDOP_ADD)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_blend_operation, operation);
+		return GPU_BLEND_OP_ADD;
 	}
 }
 
@@ -3834,6 +3902,8 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 	if (!device.gl_ready || !program || !device.vertex_shader || !program->instructions)
 	{
 		stats.skipped_no_program++;
+		VALIDATION_NOTE(FRONT_NO_PROGRAM, (device.gl_ready ? 1 : 0) | (program ? 2 : 0) | (device.vertex_shader ? 4 : 0),
+			program ? program->id : 0);
 		return FALSE;
 	}
 	{
@@ -3842,7 +3912,10 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 		while (skip && *skip)
 		{
 			if ((unsigned long)atol(skip) == program->id)
+			{
+				VALIDATION_NOTE(FRONT_SKIP_LIST, program->id, 0);
 				return FALSE;
+			}
 			skip = strchr(skip, ',');
 			if (skip)
 				skip++;
@@ -3852,6 +3925,7 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 	if (!draw_targets(&draw->color_target, &draw->depth_target))
 	{
 		stats.skipped_no_target++;
+		VALIDATION_NOTE(FRONT_NO_TARGET, 0, 0);
 		return FALSE;
 	}
 	has_depth = draw->depth_target != 0;
@@ -3888,6 +3962,27 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 
 	draw->vertex_shader = vertex_shader_get(program, immediate);
 	draw->pixel_shader = fragment_shader_get(&key);
+	VALIDATION_VERTEX_SHADER(program, immediate ? 1 : 0);
+#if HALO_RENDER_VALIDATION
+	/* render states the game can set that nothing here reads */
+	{
+		static const struct { unsigned short state; DWORD rest, also; } ignored[] =
+		{
+			{ D3DRS_LOGICOP, 0, 0 }, { D3DRS_EDGEANTIALIAS, 0, 0 }, { D3DRS_YUVENABLE, 0, 0 },
+			{ D3DRS_TWOSIDEDLIGHTING, 0, 0 }, { D3DRS_BACKFILLMODE, 0, D3DFILL_SOLID },
+			{ D3DRS_SHADOWFUNC, 0, D3DCMP_NEVER }, { D3DRS_LINEWIDTH, 0, 0x3f800000 },
+		};
+		unsigned long index;
+
+		for (index = 0; index < sizeof(ignored) / sizeof(ignored[0]); index++)
+		{
+			DWORD value = D3D__RenderState[ignored[index].state];
+
+			if (value != ignored[index].rest && value != ignored[index].also)
+				VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_ignored + ignored[index].state, value);
+		}
+	}
+#endif
 
 	/* the state the other uniforms come from: most draws share it with the
 	draw before them, and so share its uniforms */
@@ -3975,6 +4070,7 @@ static struct gpu_draw draw_packet;
 
 static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 {
+	VALIDATION_SUBMIT();
 	if (!gpu_draw(draw, &constant_store, &draw_uniforms))
 	{
 		stats.skipped_link++;
@@ -4383,7 +4479,10 @@ static uint8_t attribute_format(const struct vertex_element *element)
 	case D3DVSDT_PBYTE3: return GPU_ATTRIBUTE_UBYTE3;
 	case D3DVSDT_PBYTE4: return GPU_ATTRIBUTE_UBYTE4;
 	case D3DVSDT_NORMPACKED3: return GPU_ATTRIBUTE_NORMPACKED3;
-	default: return GPU_ATTRIBUTE_FLOAT4;
+	default:
+		if (element->type != D3DVSDT_FLOAT4)
+			VALIDATION_NOTE(FRONT_ATTRIBUTE_TYPE_UNKNOWN, element->type, element->reg);
+		return GPU_ATTRIBUTE_FLOAT4;
 	}
 }
 
@@ -4490,7 +4589,11 @@ static uint32_t packet_primitive(D3DPRIMITIVETYPE type)
 	case D3DPT_QUADSTRIP: return GPU_PRIMITIVE_TRIANGLE_STRIP;
 	case D3DPT_TRIANGLEFAN:
 	case D3DPT_POLYGON: return GPU_PRIMITIVE_TRIANGLE_FAN;
-	default: return GPU_PRIMITIVE_TRIANGLES;
+	default:
+		/* (a quad list's caller replaces the result) */
+		if (type != D3DPT_TRIANGLELIST && type != D3DPT_QUADLIST)
+			VALIDATION_NOTE(FRONT_STATE_UNKNOWN, _validation_state_primitive, type);
+		return GPU_PRIMITIVE_TRIANGLES;
 	}
 }
 
@@ -4616,6 +4719,7 @@ void WINAPI D3DDevice_DrawVertices(D3DPRIMITIVETYPE primitive_type, UINT start_v
 {
 	struct gpu_draw *draw = &draw_packet;
 
+	VALIDATION_BEGIN(GPU_VALIDATION_DRAW_VERTICES);
 	if (!vertex_count || !prepare_draw(draw, FALSE))
 		return;
 	if (target_hud_measured)
@@ -4647,6 +4751,7 @@ void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT 
 	const WORD *source = index_data;
 	BOOL mirrored;
 
+	VALIDATION_BEGIN(GPU_VALIDATION_DRAW_INDEXED);
 	if (!vertex_count || !index_data || !prepare_draw(draw, FALSE))
 		return;
 	if (target_hud_measured)
@@ -4725,6 +4830,7 @@ void WINAPI D3DDevice_End(void)
 	D3DPRIMITIVETYPE type = device.immediate_type;
 
 	device.immediate_active = FALSE;
+	VALIDATION_BEGIN(GPU_VALIDATION_DRAW_IMMEDIATE);
 	if (!count || !prepare_draw(draw, TRUE))
 		return;
 	if (target_hud_measured)
@@ -4885,6 +4991,14 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 			listed++;
 		}
 	}
+#if HALO_RENDER_VALIDATION
+	{
+		struct gpu_validation_identity identity = { GPU_VALIDATION_DRAW_CLEAR, 0, 0, 0,
+			(uint32_t)(unsigned long)__builtin_return_address(0), (uint32_t)device.frame };
+
+		gpu_validation_identity(&identity);
+	}
+#endif
 	gpu_clear(&clear, list, listed);
 	free(list);
 }

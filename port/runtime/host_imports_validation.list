@@ -1,0 +1,4 @@
+# Render validation's imports (port/linux/src/gpu_validate.h), in a guest configured with
+# --render-validation only (tools/ios_guest_build.py)
+host_gpu_validation_identity
+host_gpu_validation_note

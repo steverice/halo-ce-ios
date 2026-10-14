@@ -10,6 +10,13 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 
 #include "gpu.h"
 #include "ios_host.h"
+#if HALO_RENDER_VALIDATION
+#include "gpu_validate.h"
+#include "host_config.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#endif
 
 #include <TargetConditionals.h>
 #include <mach/mach_time.h>
@@ -151,6 +158,52 @@ double host_frame_rate_limit(void)
 	return 0.0;
 }
 
+#if HALO_RENDER_VALIDATION
+/* render validation (gpu_validate.h), in a build configured with it: the
+chosen backend's table with every function checked first. debug.render_validation
+is "off", "log" (the default in such a build) or "strict"; the environment's
+HALO_RENDER_VALIDATION overrides it, as the game's settings are overridden.
+debug.render_validation_allow (HALO_RENDER_VALIDATION_ALLOW) names the
+reasons a strict run goes on past. */
+static struct gpu_backend validated;
+
+static void validation_log(const char *line)
+{
+	platform_log("%s", line);
+}
+
+static void validation_stop(const char *line)
+{
+	platform_log("%s", line);
+	host_exit(3);
+}
+
+static const struct gpu_backend *validation_wrap(const struct gpu_backend *chosen)
+{
+	static char mode[32], allow[512];
+	struct gpu_validation_host host = { validation_log, validation_stop, GPU_VALIDATION_LOG, allow };
+
+	host_config_string("debug.render_validation", "log", mode, sizeof(mode));
+	if (getenv("HALO_RENDER_VALIDATION"))
+		snprintf(mode, sizeof(mode), "%s", getenv("HALO_RENDER_VALIDATION"));
+	host_config_string("debug.render_validation_allow", "", allow, sizeof(allow));
+	if (getenv("HALO_RENDER_VALIDATION_ALLOW"))
+		snprintf(allow, sizeof(allow), "%s", getenv("HALO_RENDER_VALIDATION_ALLOW"));
+	if (!strcmp(mode, "off"))
+	{
+		platform_log("render validation: off (debug.render_validation)");
+		return chosen;
+	}
+	if (!strcmp(mode, "strict"))
+		host.mode = GPU_VALIDATION_STRICT;
+	else if (strcmp(mode, "log"))
+		platform_log("render validation: debug.render_validation = \"%s\" is not off, log or strict; taken as log", mode);
+	validated = *chosen;
+	gpu_validation_install(&validated, &host);
+	return &validated;
+}
+#endif
+
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 #if TARGET_OS_VISION
@@ -160,6 +213,9 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 	backend = &gpu_backend_metal;
 #else
 	backend = (flags & GPU_INITIALIZE_METAL) ? &gpu_backend_metal : &gpu_backend_gl;
+#endif
+#if HALO_RENDER_VALIDATION
+	backend = validation_wrap(backend);
 #endif
 	wrapped_backend = backend;
 	wrapped = *backend;

@@ -118,6 +118,16 @@ run(BUILD/'benchmark-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
 run(BUILD/'metal-state-probe')
+# render validation (port/ios/host/gpu_validate.c): deliberately bad draws through a backend that draws
+# nothing, each checked for its named reason; then that a build without the option has none of it
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-DHALO_RENDER_VALIDATION=1',
+    '-Iport/linux/src', 'port/ios/tests/gpu_validate_probe.c', 'port/ios/host/gpu_validate.c', '-o', BUILD/'gpu-validate-probe')
+run(BUILD/'gpu-validate-probe')
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/src', '-c', 'port/ios/host/gpu_validate.c',
+    '-o', BUILD/'gpu-validate-off.o')
+symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(BUILD/'gpu-validate-off.o')], text=True, cwd=ROOT)
+if symbols.strip():
+    raise SystemExit(f'gpu_validate.c defines symbols without HALO_RENDER_VALIDATION:\n{symbols}')
 # the Metal backend's pipelines compiled off the game thread (metal_compile_async.h): its table
 # under the thread sanitizer, then everything under the address and undefined-behavior ones
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=thread', '-Iport/ios/host',

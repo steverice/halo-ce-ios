@@ -39,3 +39,12 @@ def test_more_than_eight_integer_or_pointer_arguments_is_an_error():
 def test_eight_arguments_and_floats_are_allowed():
     parameters = ", ".join(f"unsigned int a{index}" for index in range(8)) + ", float extra"
     ios_bridges.bridge("void", "host_eight", parameters)
+
+
+def test_render_validation_imports_bridge_to_the_validator():
+    name, source = ios_bridges.bridge("void", "host_gpu_validation_identity",
+                                      "const struct gpu_validation_identity *identity")
+    assert name == "host_gpu_validation_identity"
+    assert "gpu_validation_identity((const struct gpu_validation_identity *)host_pointer(a0))" in source
+    name, source = ios_bridges.bridge("void", "host_gpu_validation_note", "uint32_t reason, uint32_t detail, uint32_t value")
+    assert "gpu_validation_note(a0, a1, a2)" in source

@@ -7,6 +7,9 @@ gpu.h declares.
 */
 
 #include "gpu.h"
+/* GPU_VALIDATION_REPORT: this backend's fallbacks and skips, by name, in a
+build with render validation; nothing otherwise */
+#include "gpu_validate.h"
 #include "gl.h"
 #include "halo_stereo.h"
 #include "halo_display.h"
@@ -314,7 +317,11 @@ static void depth_clamp_apply(int enabled)
 			"not supported (no GL_EXT_depth_clamp), so the body is clipped at the near plane");
 	}
 	if (!supported)
+	{
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_DEPTH_CLAMP_UNSUPPORTED, 0, "GL: no GL_EXT_depth_clamp; a draw that asks for a "
+			"depth clamp is clipped at the near plane");
 		return;
+	}
 	on = enabled;
 	if (on)
 		glEnable(0x864f);
@@ -1220,7 +1227,11 @@ static GLuint framebuffer_get(GLuint color, GLuint depth)
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depth, 0);
 	glDrawBuffers(1, &draw_buffer);
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	{
 		platform_log("framebuffer %u/%u is incomplete", color, depth);
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_FRAMEBUFFER_INCOMPLETE, 0, "GL: the framebuffer of targets %u and %u is "
+			"incomplete; draws into it are lost", color, depth);
+	}
 	state_invalidate();
 	entry->next = framebuffers;
 	framebuffers = entry;
@@ -1554,6 +1565,8 @@ static struct gpu_gl_program *program_get(gpu_shader vertex_shader, gpu_shader f
 
 		glGetProgramInfoLog(entry->program, sizeof(log), NULL, log);
 		platform_log("cannot link a shader program: %s", log);
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_PROGRAM_LINK_FAILED, 1, "GL: shaders %u and %u do not link: %s", vertex_shader,
+			fragment_shader, log);
 		entry->program = 0;
 		return NULL;
 	}
@@ -1705,6 +1718,7 @@ static void check_errors(const char *where)
 	{
 		if (reports++ < 200)
 			platform_log("GL error %04x at %s (frame %lu)", (unsigned)error, where, frames);
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_GL_ERROR, error, "GL error %04x at %s", (unsigned)error, where);
 	}
 }
 #else
@@ -1745,6 +1759,9 @@ static uint32_t gpu_gl_draw(const struct gpu_draw *draw, const struct gpu_consta
 	if (!program)
 	{
 		check_errors("program");
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_PROGRAM_LINK_FAILED, (uint64_t)draw->vertex_shader << 32 | draw->pixel_shader | 1ull << 63,
+			"GL: no program for shaders %u and %u (one is missing, or they did not link); the draw is skipped",
+			draw->vertex_shader, draw->pixel_shader);
 		return 0;
 	}
 	state_framebuffer(framebuffer_get(draw->color_target, draw->depth_target));

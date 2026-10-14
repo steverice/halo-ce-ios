@@ -165,3 +165,18 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 	host_gpu_initialize(flags, capabilities);
 }
+
+#if HALO_RENDER_VALIDATION
+/* render validation (gpu_validate.h): the front end's two calls */
+#include "guest_host_validation.h"
+
+void gpu_validation_identity(const struct gpu_validation_identity *identity)
+{
+	host_gpu_validation_identity(identity);
+}
+
+void gpu_validation_note(uint32_t reason, uint32_t detail, uint32_t value)
+{
+	host_gpu_validation_note(reason, detail, value);
+}
+#endif

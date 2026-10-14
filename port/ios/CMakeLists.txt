@@ -8,6 +8,9 @@ endif()
 set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr" CACHE STRING "App bundle identifier")
 # Mac Catalyst (tools/ios_build.py --mac): configured as iOS, built with -sdk macosx SUPPORTS_MACCATALYST=YES
 option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
+# tools/ios_build.py --render-validation: every call into the GPU backend is checked first
+# (port/linux/src/gpu_validate.h). Off, the app's code is what it is without the option.
+option(HALO_RENDER_VALIDATION "Check every call into the GPU backend (debug.render_validation)" OFF)
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
 # iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
 # On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
@@ -130,6 +133,10 @@ else()
     target_compile_definitions(VISR PRIVATE HALO_FRAME_PACING=0)
 endif()
 target_compile_options(VISR PRIVATE "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:-Wno-deprecated-declarations>")
+if(HALO_RENDER_VALIDATION)
+    target_sources(VISR PRIVATE host/gpu_validate.c)
+    target_compile_definitions(VISR PRIVATE HALO_RENDER_VALIDATION=1)
+endif()
 if(NOT HALO_VISIONOS)
     # the GL backend (step 4): OpenGL ES through gl.h's pointer table, resolved by name
     target_sources(VISR PRIVATE "${ROOT}/port/linux/src/gpu_gl.c" "${ROOT}/port/linux/src/gl_functions.c")

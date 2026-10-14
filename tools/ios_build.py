@@ -100,6 +100,12 @@ def main():
     parser.add_argument('--upload', action='store_true',
                         help='with --app-store-package: upload the package to App Store Connect with the account '
                              'Xcode is signed in to. The app record must exist there first')
+    parser.add_argument('--render-validation', choices=('on', 'off'),
+                        default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
+                        help='check every call into the GPU backend before it is made, and name every fallback '
+                             '(debug.render_validation: off, log or strict; log unless set). Off by default: a build '
+                             'without it has no trace of it. For test builds, never for a release or a benchmark. '
+                             'HALO_RENDER_VALIDATION_BUILD=1 in the environment turns it on for tools that build for you')
     parser.add_argument('--pgo', choices=('use', 'off'), default='use',
                         help='profile-guided optimization of the game code: use (the default) builds it with the '
                              'profile in pgo/, off builds it without')
@@ -164,9 +170,11 @@ def main():
         url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
         data=urllib.request.urlopen(url,timeout=30).read()
         if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
-    run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld)
+    validation = args.render_validation == 'on'
+    run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld,
+        *(['--render-validation'] if validation else []))
     run('ninja','ios_guest','-j',args.jobs)
-    run(sys.executable,'tools/ios_bridges.py')
+    run(sys.executable,'tools/ios_bridges.py',*(['--render-validation'] if validation else []))
     run(sys.executable,'tools/ios_embed_guest.py','build/ios/halo_guest.elf','build/ios/embedded')
     notices = ROOT/'build/ios/licenses'
     notices.mkdir(parents=True, exist_ok=True)
@@ -204,6 +212,7 @@ def main():
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud,
+             f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
@@ -351,6 +360,7 @@ def build_mac(args, cloud):
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
+        f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
         *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,
         *host_pgo_flags(args.host_pgo))

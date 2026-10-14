@@ -23,6 +23,9 @@ but never returns to its run loop, which would otherwise drain them.
 #include "gpu.h"
 #include "ios_host.h"
 #include "metal_state_cache.h"
+/* GPU_VALIDATION_REPORT: this backend's fallbacks and skips, by name, in a
+build with render validation; nothing otherwise */
+#include "gpu_validate.h"
 #include "metal_compile_async.h"
 #include "host_benchmark.h"
 #include "halo_display.h"
@@ -617,8 +620,12 @@ static void commit(BOOL frame_end)
 		unsigned long test, entry;
 
 		if (completed.status == MTLCommandBufferStatusError)
+		{
 			platform_log("Metal: command buffer %llu failed: %s", (unsigned long long)serial,
 				completed.error.description.UTF8String);
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_COMMAND_BUFFER_FAILED, 0, "command buffer %llu: %s", (unsigned long long)serial,
+				completed.error.description.UTF8String);
+		}
 		if (completed.GPUEndTime > completed.GPUStartTime)
 			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
 		for (test = 0; test < pending.length / sizeof(*tests); test++)
@@ -820,7 +827,11 @@ static void gpu_metal_texture_upload(gpu_texture texture, uint32_t face, uint32_
 
 		if (!record || record->description.format == GPU_FORMAT_DEPTH_STENCIL || level >= record->levels ||
 			(record->description.format != GPU_FORMAT_BGRA8 && !compressed_textures))
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_UPLOAD_IGNORED, 1, "Metal: texture %u face %u level %u: no such texture or "
+				"level, a depth target, or a format this GPU does not take", texture, face, level);
 			return;
+		}
 		description = &record->description;
 		if (!record->texture || busy(record->used))
 		{
@@ -862,7 +873,11 @@ static void gpu_metal_texture_upload(gpu_texture texture, uint32_t face, uint32_
 		depth = description->type == GPU_TEXTURE_3D ? level_dimension(description->depth, level) : 1;
 		level_layout(description->format, width, height, &row, &image);
 		if (size < image * depth)
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_UPLOAD_IGNORED, 2, "Metal: texture %u face %u level %u: %u bytes for a level "
+				"of %lu", texture, face, level, size, image * depth);
 			return;
+		}
 		[record->texture replaceRegion:MTLRegionMake3D(0, 0, 0, width, height, depth) mipmapLevel:level
 			slice:description->type == GPU_TEXTURE_CUBE ? face : 0 withBytes:data bytesPerRow:row
 			bytesPerImage:image];
@@ -895,7 +910,10 @@ static uint32_t gpu_metal_texture_read(gpu_texture texture, void *pixels, uint32
 		if (!record || !record->texture || description->type != GPU_TEXTURE_2D ||
 			(description->format != GPU_FORMAT_BGRA8 && description->format != GPU_FORMAT_DEPTH_STENCIL) ||
 			(description->format == GPU_FORMAT_DEPTH_STENCIL && description->usage != GPU_USAGE_RENDER_TARGET))
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_READ_UNSUPPORTED, 0, "Metal: texture %u cannot be read back", texture);
 			return 0;
+		}
 		width = description->width;
 		height = description->height;
 		/* a foveated eye's target: resolved to its screen size first, so the
@@ -1005,11 +1023,19 @@ static void gpu_metal_texture_copy_level(gpu_texture source, gpu_texture destina
 		unsigned long width, height;
 
 		if (!from || !to || !from->texture || !to->texture || level >= to->levels)
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_COPY_IGNORED, 1, "Metal: texture %u into level %u of texture %u: a texture "
+				"without storage, or no such level", source, level, destination);
 			return;
+		}
 		width = level_dimension(to->description.width, level);
 		height = level_dimension(to->description.height, level);
 		if (width > from->texture.width || height > from->texture.height)
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_COPY_IGNORED, 2, "Metal: texture %u is smaller than level %u of texture %u",
+				source, level, destination);
 			return;
+		}
 		pass_end();
 		blit = [command_buffer() blitCommandEncoder];
 		if (metal_debug)
@@ -1036,7 +1062,11 @@ static void gpu_metal_texture_generate_mipmaps(gpu_texture texture, uint32_t bas
 		id<MTLBlitCommandEncoder> blit;
 
 		if (!record || !record->texture || base_level + 1 >= record->levels)
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_MIPMAPS_IGNORED, record != nil, "Metal: texture %u from level %u: no storage, "
+				"or no levels after it", texture, base_level);
 			return;
+		}
 		levels = base_level ? [record->texture newTextureViewWithPixelFormat:record->texture.pixelFormat
 			textureType:MTLTextureType2D levels:NSMakeRange(base_level, record->levels - base_level)
 			slices:NSMakeRange(0, 1)] : record->texture;
@@ -1227,6 +1257,8 @@ static BOOL shader_finish(MetalShader *record, uint32_t stage, NSString *text, i
 	{
 		platform_log("cannot compile the %s shader:\n%s\n%s", stage == GPU_SHADER_VERTEX ? "vertex" : "pixel",
 			error.localizedDescription.UTF8String, text.UTF8String);
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_SHADER_COMPILE_FAILED, stage << 8 | 1, "Metal: cannot compile a %s shader: %s",
+			stage == GPU_SHADER_VERTEX ? "vertex" : "pixel", error.localizedDescription.UTF8String);
 		return NO;
 	}
 	/* a vertex shader's attribute kinds are function constants, which the
@@ -1240,6 +1272,8 @@ static BOOL shader_finish(MetalShader *record, uint32_t stage, NSString *text, i
 	{
 		platform_log("cannot make the %s shader's function: %s", stage == GPU_SHADER_VERTEX ? "vertex" : "pixel",
 			error ? error.localizedDescription.UTF8String : "no entry point");
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_SHADER_COMPILE_FAILED, stage << 8 | 2, "Metal: cannot make a %s shader's function",
+			stage == GPU_SHADER_VERTEX ? "vertex" : "pixel");
 		return NO;
 	}
 	if (stage != GPU_SHADER_VERTEX)
@@ -1332,8 +1366,12 @@ static id<MTLFunction> pixel_function(MetalShader *pixel, unsigned exact)
 				if (library)
 					pixel->exact[exact] = [library newFunctionWithName:@"fragment_main"];
 				if (!pixel->exact[exact])
+				{
 					platform_log("cannot compile the pixel shader with exact border colors (stages %#x): %s", exact,
 						library ? "no entry point" : error.localizedDescription.UTF8String);
+					GPU_VALIDATION_REPORT(GPU_VALIDATION_EXACT_BORDERS_FAILED, exact, "Metal: a pixel shader does not compile "
+						"with exact border colors (stages %#x)", exact);
+				}
 			}
 		}
 		return pixel->exact[exact];
@@ -1824,7 +1862,11 @@ static void gpu_metal_clear(const struct gpu_clear *clear, const struct gpu_rect
 			return;
 		}
 		if (!pass_begin(clear->color_target, clear->depth_target, NULL))
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_PASS_NOT_BEGUN, 1, "Metal: no pass for targets %u and %u (one has no "
+				"storage); the clear is dropped", clear->color_target, clear->depth_target);
 			return;
+		}
 		color_value[0] = (float)((clear->color >> 16) & 0xff) / 255.0f;
 		color_value[1] = (float)((clear->color >> 8) & 0xff) / 255.0f;
 		color_value[2] = (float)(clear->color & 0xff) / 255.0f;
@@ -2167,6 +2209,8 @@ static id<MTLFunction> vertex_function(MetalShader *vertex, const uint8_t kinds[
 				then keeps with the fallback) */
 				platform_log("Metal: cannot specialize vertex shader %p for its attributes, which it then reads per draw: %s",
 					(__bridge void *)vertex, error.localizedDescription.UTF8String);
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_SPECIALIZATION_FAILED, 0, "Metal: a vertex shader cannot be specialized "
+					"for its attributes: %s", error.localizedDescription.UTF8String);
 				function = vertex->function;
 			}
 			vertex->specialized[name] = function;
@@ -2380,6 +2424,8 @@ static id pipeline_make(MTLRenderPipelineDescriptor *descriptor)
 	if (!pipeline)
 	{
 		platform_log("cannot link a shader program: %s",
+			error ? error.localizedDescription.UTF8String : "a shader did not compile");
+		GPU_VALIDATION_REPORT(GPU_VALIDATION_PIPELINE_FAILED, 1, "Metal: a pipeline cannot be built: %s",
 			error ? error.localizedDescription.UTF8String : "a shader did not compile");
 		pipeline = [NSNull null];
 	}
@@ -2747,8 +2793,12 @@ static void gpu_metal_warm_end(void)
 				/* (one that failed gets the unspecialized function, as
 				vertex_function files it, rather than compiling again there) */
 				if (functions[index] == [NSNull null])
+				{
 					platform_log("Metal: cannot specialize vertex shader %p for its attributes, which it then reads per draw",
 						(__bridge void *)vertex);
+					GPU_VALIDATION_REPORT(GPU_VALIDATION_SPECIALIZATION_FAILED, 1, "Metal: a listed vertex shader cannot be "
+						"specialized for its attributes");
+				}
 				vertex->specialized[[name subdataWithRange:NSMakeRange(sizeof(handle), GPU_ATTRIBUTE_COUNT)]] =
 					functions[index] != [NSNull null] ? functions[index] : vertex->function;
 			}
@@ -3271,7 +3321,24 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 
 		/* as GL's program_get: no program, no draw */
 		if (!vertex || !pixel)
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_SHADER_MISSING, 4, "Metal: shaders %u and %u: one is missing; the draw is "
+				"skipped", draw->vertex_shader, draw->pixel_shader);
 			return 0;
+		}
+#if HALO_RENDER_VALIDATION
+		/* a GPU without border colors (below Apple7): BORDER addressing clamps to the edge */
+		if (!border_colors)
+		{
+			int stage;
+
+			for (stage = 0; stage < GPU_STAGE_COUNT; stage++)
+				if (draw->stages[stage].type && (draw->stages[stage].sampler.address_u == GPU_ADDRESS_BORDER ||
+					draw->stages[stage].sampler.address_v == GPU_ADDRESS_BORDER))
+					GPU_VALIDATION_REPORT(GPU_VALIDATION_BORDER_UNSUPPORTED, 1, "Metal: stage %d: this GPU has no border colors; "
+						"BORDER addressing clamps to the edge", stage);
+		}
+#endif
 		draw_attributes_decide(draw, &attributes);
 		pipeline = draw_pipeline(draw, &attributes, vertex, pixel, exact, MTLPixelFormatBGRA8Unorm,
 			depth && depth->texture ? depth->texture.pixelFormat : MTLPixelFormatInvalid, &pending);
@@ -3288,7 +3355,18 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 					"theirs are ready", frames);
 		}
 		if (!pipeline)
+		{
+			/* a pipeline still compiling is the setting's doing; one that
+			can't be made skips its draws for good */
+			if (pending)
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_PIPELINE_COMPILING, 0, "Metal: the draw's pipeline is still compiling on a "
+					"worker (display.async_shaders); it is skipped until then");
+			else
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_PIPELINE_FAILED, (uint64_t)draw->vertex_shader << 32 | draw->pixel_shader,
+					"Metal: the pipeline for shaders %u and %u could not be built; every draw with it is skipped",
+					draw->vertex_shader, draw->pixel_shader);
 			return 0;
+		}
 		/* display.native_hud (native_pass): a draw outside the display-sized
 		pass that samples the back buffer must follow that pass's draws so
 		far, so the pass ends here and the frame goes on in order */
@@ -3305,14 +3383,22 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 				}
 		}
 		if (!pass_begin(draw->color_target, draw->depth_target, NULL))
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_PASS_NOT_BEGUN, 0, "Metal: no pass for targets %u and %u (one has no "
+				"storage); the draw is dropped", draw->color_target, draw->depth_target);
 			return 1;
+		}
 		target_size(draw->color_target, draw->depth_target, &width, &height);
 		/* GL takes a scissor outside the target, Metal doesn't; an empty one
 		draws nothing, but the draw happened */
 		area = draw->scissor.width > 0 && draw->scissor.height > 0 ? draw->scissor :
 			(struct gpu_rect){ 0, 0, (int32_t)width, (int32_t)height };
 		if (!clamp_rect(&area, width, height, &scissor))
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_DRAW_DROPPED, 1, "Metal: the scissor %d,%d %dx%d leaves nothing of a %lux%lu "
+				"target; the draw is dropped", area.x, area.y, area.width, area.height, width, height);
 			return 1;
+		}
 		if (visibility.active && !visibility.entry_open)
 		{
 			unsigned long entry = visibility.next;
@@ -3323,6 +3409,8 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			if (busy(visibility_entry_serials[entry]) && !lapped)
 			{
 				platform_log("Metal: the visibility ring lapped a test still on the GPU; answers may be wrong");
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_VISIBILITY_LAPPED, 0, "Metal: the visibility ring lapped a test still on "
+					"the GPU");
 				lapped = 1;
 			}
 			visibility_entry_serials[entry] = current_serial;
@@ -3414,6 +3502,9 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 
 			/* (the converted indices are the draw's own, so its base vertex
 			still applies; 0 for a draw without indices) */
+			if (!count)
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_DRAW_DROPPED, 2, "Metal: a fan or loop of %u vertices has nothing to draw, "
+					"or its indices lie outside their buffer", draw->count);
 			if (count && base_vertex_draws)
 				[encoder drawIndexedPrimitives:type indexCount:count indexType:MTLIndexTypeUInt32
 					indexBuffer:buffer_record(indices)->buffer indexBufferOffset:offset instanceCount:1
@@ -3434,7 +3525,11 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			__unsafe_unretained MetalBuffer *record = buffer_record(draw->index_buffer);
 
 			if (!record)
+			{
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_DRAW_DROPPED, 3, "Metal: index buffer %u does not exist; the draw is "
+					"dropped", draw->index_buffer);
 				return 1;
+			}
 			use_buffer(record);
 			/* the vertex shaders' vertex_id, which their fetches index the
 			streams with (nv2a_msl.c), is the index plus the base vertex.
@@ -4741,6 +4836,8 @@ static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long 
 				!(upscaler = [descriptor newSpatialScalerWithDevice:device]))
 			{
 				platform_log("Metal: MetalFX's spatial scaler is unavailable; the picture is scaled bilinearly");
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_UPSCALER_UNAVAILABLE, 0, "Metal: MetalFX's spatial scaler is unavailable; "
+					"the picture is scaled bilinearly");
 				metalfx_wanted = NO;
 				return back_buffer;
 			}
@@ -5599,7 +5696,11 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 			platform_log("Metal: vertex shaders are not specialized (debug.metal_specialize)");
 #ifndef HAVE_METALFX
 		if (metalfx_wanted)
+		{
 			platform_log("Metal: this build has no MetalFX; the picture is scaled bilinearly");
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_UPSCALER_UNAVAILABLE, 1, "Metal: this build has no MetalFX; the picture is "
+				"scaled bilinearly");
+		}
 		metalfx_wanted = NO;
 #endif
 		pacing_start(flags);

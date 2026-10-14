@@ -873,6 +873,17 @@ static const struct config_setting config_settings[] =
 		"host_theater.m). For the simulator." },
 	{ "debug.gl_debug", _config_boolean, "false", "HALO_GL_DEBUG", _environment_set_is_true, _platform_all,
 		"Report OpenGL errors in the log." },
+	{ "debug.render_validation", _config_string, "\"log\"", "HALO_RENDER_VALIDATION", _environment_value, _platform_ios,
+		"In a build made with render validation (tools/ios_build.py\n"
+		"--render-validation; no other build has any of it): every call into the\n"
+		"GPU backend is checked before it is made, and every place the renderer\n"
+		"substitutes, ignores or skips something is named and counted in the log.\n"
+		"\"off\", \"log\" (each distinct cause once, with the draw it first happened\n"
+		"in, and a summary with counts) or \"strict\" (the first failure or fallback\n"
+		"ends the run with exit status 3)." },
+	{ "debug.render_validation_allow", _config_string, "\"\"", "HALO_RENDER_VALIDATION_ALLOW", _environment_value, _platform_ios,
+		"With debug.render_validation = \"strict\": reasons the run goes on past,\n"
+		"separated by commas (\"fill-mode-ignored,sampler-unbound\")." },
 	{ "debug.metal_state_cache", _config_boolean, "true", "HALO_METAL_STATE_CACHE", _environment_value, _platform_ios,
 		"With the Metal renderer, skip the encoder calls that set what the\n"
 		"encoder already holds; false makes every call, to compare." },

@@ -178,6 +178,8 @@ DEFAULTS = {
     "input.stick_dead_zone": "0.27",
     "debug.null_renderer": "false",
     "debug.gl_debug": "false",
+    "debug.render_validation": '"log"',
+    "debug.render_validation_allow": '""',
     "debug.metal_state_cache": "true",
     "debug.metal_specialize": "true",
     "debug.metal_vertex_bgra": "true",
