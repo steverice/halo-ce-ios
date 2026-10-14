@@ -548,7 +548,9 @@ on the internet. It also downloads the resource maps that the map needs
 the top of the screen shows the progress. In the lobby, the game starts when
 every player has the map. If the game already operates, you join it when
 the download is complete. If no player sends any of the map for a minute,
-you leave the game, and the main menu tells you why.
+you leave the game, and the main menu tells you why. If the downloaded map
+cannot be played, the game deletes the files that it downloaded, and you
+leave the game.
 
 All the players help (HELP SEND MAPS in Settings > Network Setup,
 `network.map_seed`), as the peers of a torrent do:
@@ -562,17 +564,18 @@ Settings > Network Setup). Set these lower on
 a slow connection. DOWNLOAD MAPS there (`network.map_download`) turns
 downloading off: you then leave a game whose map you do not have.
 
-The name of each map in `custom_maps` ends with the start of its hash: when
-the map lists find `hugeass.map`, the game renames it `hugeass_0e2b3ee4.map`
-(and its picture and description). Thus two versions of a map have different
-names, and a game always loads the version of the host. The menus show the
-map without the hash, and with it only when you have two versions of the
-map. The downloaded map has the same name. A download that stops leaves a
-`.part` file in `custom_maps` (only of the last map whose download stopped,
-and only if it holds part of the map); the next download of that map
-continues from it. Maps in the folder of a Halo Custom Edition install
-(`paths.custom_edition`) keep their names, and the host does not share them.
-Copy a map to `custom_maps` to share it.
+Maps keep their names. A game is on a map by its name (`hugeass`), and says
+which version of it by the start of the map's hash, so a game always loads
+the version of the host, whatever your copy is called. A downloaded map
+takes its own name (`hugeass.map`); if you have another version of that
+name, the download is named with the start of its hash
+(`hugeass_0e2b3ee4.map`), and the menus show it as "Hugeass (2)". A map that
+an earlier build renamed this way gets its name back, unless you have a map
+of that name. A download that stops leaves a `.part` file in `custom_maps`
+(only of the last map whose download stopped, and only if it holds part of
+the map); the next download of that map continues from it. The host shares
+maps in the folder of a Halo Custom Edition install (`paths.custom_edition`)
+too; downloads go to `custom_maps`.
 
 Over the internet, the players of a game connect only to the host. To send
 each other a map, a player answers the other players of the game (who have
@@ -877,7 +880,7 @@ Other changes:
 | `rasterizer/rasterizer_text.c`, `text/draw_string.c` | Text is drawn from an atlas of the fonts' glyphs, rasterized at the resolution the game draws at (`src/text_hires.c`), when the font has every character of the string. Text can be drawn scaled about a point (`rasterizer_text_set_scale`), as the players' names are. Each glyph's advance is centred on the font tag character's, so the layout is the same, and a glyph is cut at a text box only where the font tag's character visibly was. |
 | `cutscene/cinematics.c` | A scenario's titles (some Custom Edition maps show their name for the whole game) are not drawn over a menu, as the letterbox is not: the screen's overlays are drawn after the players' menus. |
 | `rasterizer/rasterizer.h` | A frame holds 2048 transparent geometry groups, not 384 (`include/halo_port_capacity.h`): a co-op game with many added enemies asked for more, and the Xbox's pool drew the frame without the rest. |
-| `cache/cache_files.c`, `networking/network_client_manager.c`, `networking/network_server_manager.c`, `networking/network_server_message_handler.c`, `main/main.c`, `interface/interface.c` | Map sharing (`game/map_share.c`): a client that does not have the game's Custom Edition map asks the host for it instead of leaving, is not given time to precache it until it has it, and adds its players to a game in progress only then; the host names the game's map for its hash, takes the requests from any machine in the game, lobby too, and does not drop a machine that downloads; the transfers run each frame, and their progress is drawn over the screen. |
+| `cache/cache_files.c`, `networking/network_client_manager.c`, `networking/network_server_manager.c`, `networking/network_server_message_handler.c`, `main/main.c`, `interface/interface.c` | Map sharing (`game/map_share.c`): a client that does not have the game's Custom Edition map asks the host for it instead of leaving, is not given time to precache it until it has it, and adds its players to a game in progress only then; the host gives the game's map its own name and its version (its hash's start), takes the requests from any machine in the game, lobby too, and does not drop a machine that downloads; the transfers run each frame, and their progress is drawn over the screen. |
 
 The x86 inline assembly of the game is replaced by C. Thus the compiler
 can optimize that code for each processor:
