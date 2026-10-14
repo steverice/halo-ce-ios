@@ -2082,6 +2082,13 @@ static void progress_bar_render(
 	long stage;
 
 	wobble_phase+= 0.01f;
+	/* port: a load that is done (1, which the Xbox's loop never drew: it had
+	ended) settles on its end without the wobble, which otherwise holds the
+	progress as much as 0.05 short of it for seconds, the picture still dimly
+	lit (the loading screen's hold waits for the end to be drawn) */
+	if (progress>=1.f)
+		progress= (real)((progress - last_t)*0.2 + last_t);
+	else
 	progress= (real)((sin(wobble_phase)*0.05 + progress - last_t)*0.2 + last_t);
 	if (progress>1.0)
 		progress= 1.f;

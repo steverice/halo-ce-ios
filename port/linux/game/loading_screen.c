@@ -85,6 +85,8 @@ enum
 	FRAME_MILLISECONDS = 16,
 	/* compiles that make no headway for this long are given up on */
 	STALLED_MILLISECONDS = 60000,
+	/* the most the screen stays, once the load is done, to draw its end */
+	END_MILLISECONDS = 500,
 };
 
 /* the shares of the progress the level's read and the compiles take */
@@ -193,7 +195,7 @@ boolean halo_loading_screen_holding(void)
 void halo_loading_screen_finish(void)
 {
 	unsigned long peak, outstanding, last_outstanding, last_change, now, frames = 0;
-	unsigned long loaded;
+	unsigned long loaded, finished = 0;
 	struct scenario *scenario;
 
 	if (!loading_screen.active)
@@ -225,8 +227,15 @@ void halo_loading_screen_finish(void)
 		loading_screen.work = peak ? READ_SHARE + (1.0f - READ_SHARE) * (real)(peak - outstanding) / (real)peak : 1.0f;
 		/* done once the work is, the minimum has passed and the screen has
 		drawn its end: the picture and the blur faded to black */
-		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && frames && last_t >= 0.985f)
-			break;
+		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && frames)
+		{
+			if (!finished)
+				finished = now ? now : 1;
+			if (last_t >= 0.985f || now - finished >= END_MILLISECONDS)
+				break;
+		}
+		else
+			finished = 0;
 		loading_screen_frame();
 		frames++;
 	}
