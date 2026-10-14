@@ -1345,22 +1345,25 @@ static void anti_aliasing_prepare(void)
 }
 
 /* FXAA, ready, and run inside the stretch to the display-sized back buffer
-(halo_render_scene_end) rather than as its own pass:
-debug.anti_aliasing_separate keeps the pass, to compare */
+(halo_render_scene_end) rather than as its own pass: only with
+debug.anti_aliasing_folded. Inside the stretch FXAA runs at every pixel of
+the display, four times the scene's at half scale, and on the Apple TV HD
+that cost more (15 ms a frame on b30) than the copy and pass it saves (the
+pass: 6 ms) */
 static BOOL anti_aliasing_folds(void)
 {
-	static int separate = -1;
+	static int folded = -1;
 
 	if (anti_aliasing_method < 0)
 		anti_aliasing_read();
-	if (separate < 0)
+	if (folded < 0)
 	{
-		separate = config_boolean("debug.anti_aliasing_separate") != 0;
-		if (separate)
-			platform_log("anti-aliasing: FXAA runs as its own pass (debug.anti_aliasing_separate)");
+		folded = config_boolean("debug.anti_aliasing_folded") != 0;
+		if (folded)
+			platform_log("anti-aliasing: FXAA runs inside the stretch (debug.anti_aliasing_folded)");
 	}
 	return anti_aliasing_ready && anti_aliasing_method == _anti_aliasing_fxaa && device_capabilities.upscale_anti_alias &&
-		!separate;
+		folded;
 }
 
 /* the pass over the view's rectangle of the scene's target (halo_render_scene_end) */
@@ -1420,9 +1423,8 @@ void halo_render_scene_end(void)
 		return;
 	/* (a view that drew nothing, a movie's, has nothing to bring over) */
 	scene = back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO);
-	/* FXAA goes into the stretch below where the backend can run it there
-	(gpu_capabilities.upscale_anti_alias), which saves its copy and its
-	pass; otherwise, and for SMAA, its pass runs over the scene first */
+	/* the anti-aliasing pass over the scene first, unless FXAA goes into
+	the stretch below (debug.anti_aliasing_folded, anti_aliasing_folds) */
 	fold = native_hud_active() && anti_aliasing_folds();
 	if (scene && !fold)
 		anti_aliasing_pass(scene);
