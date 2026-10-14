@@ -270,6 +270,13 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
         string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
         string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
     endif()
+    # App Store Connect refuses a tvOS app with CloudKit but no push environment: the benchmark's send (CloudKit's
+    # own subscriptions use it; the app sends and receives no notification of its own). Xcode signs an App Store
+    # export with "production" from the distribution profile
+    if(HALO_BENCHMARK_UPLOAD)
+        string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>development</string>"
+            HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
+    endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements" "${HALO_CLOUD_ENTITLEMENTS}")
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
