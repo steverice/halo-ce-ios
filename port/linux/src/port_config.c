@@ -560,10 +560,10 @@ static const struct config_setting config_settings[] =
 		"The UDP port internet play uses; 0 picks one. A fixed one can be\n"
 		"forwarded on the router, for networks whose NAT stops connections." },
 	{ "network.allow_upnp", _config_boolean, "true", "HALO_NET_ALLOW_UPNP", _environment_value, _platform_all,
-		"Let internet play ask the router (UPnP) to forward its port, for\n"
-		"networks whose NAT stops connections: when a player joins this\n"
-		"machine's game, and when joining a game takes too long. False never\n"
-		"asks." },
+		"Let internet play ask the router (UPnP; on Apple devices NAT-PMP or\n"
+		"PCP) to forward its port, for networks whose NAT stops connections:\n"
+		"when a player joins this machine's game, and when joining a game takes\n"
+		"too long. False never asks." },
 	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"

@@ -24,7 +24,8 @@ link games as if they were on one LAN, without a server of this project's.
   packets get through (hole punching). There is no relay: two machines whose
   NATs both map every destination to a new port cannot connect, unless a
   router forwards one of them a port. So a host asks its router to forward
-  the tunnel's port (UPnP, posix_upnp.c) as soon as a player reaches out
+  the tunnel's port (UPnP, posix_upnp.c; on Apple devices NAT-PMP or PCP,
+  port/ios/host/host_natpmp.c) as soon as a player reaches out
   with its invite, and a joiner asks its own when it has not reached the
   host in a few seconds (network.allow_upnp); the forwarded port is one more
   of the addresses a machine offers (the joiner asks the host again every
@@ -393,8 +394,10 @@ static struct
 	char clipboard[P2P_LINK_SIZE];
 	int has_clipboard;
 
-	/* UPnP (posix_upnp.c): a thread asking the router; the port it forwards
-	here, and when it was last asked */
+	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
+	the router; the port it forwards here, when it was last asked, how soon
+	the forwarding is asked for again, whether that is due at once (after a
+	suspension), and whether it goes, hosting having stopped */
 	int upnp_working;
 	int upnp_asked;
 	int upnp_forwarded;
@@ -402,6 +405,9 @@ static struct
 	int upnp_released;
 	struct p2p_candidate upnp_candidate;
 	unsigned long upnp_time;
+	unsigned long upnp_renew_interval;
+	int upnp_renew_now;
+	int upnp_stop_wanted;
 } p2p = { 0, 0, -1, 0, -1, .hosting_socket = -1 };
 
 /* the proxy (its index + 1) with each local port (all of theirs are on
@@ -1503,6 +1509,9 @@ static void network_resumed(unsigned long stopped)
 		p2p.stun[index].has_mapped = 0;
 		p2p.stun[index].attempts = 0;
 	}
+	/* (and the router's forwarding asked for again, for the socket opened
+	again and in case its lease lapsed during the stop) */
+	p2p.upnp_renew_now = 1;
 	p2p_signal_reconnect();
 	platform_log("Internet play: the game was stopped for %lu seconds; its public address is asked again and "
 		"the brokers reconnected", stopped / 1000);
@@ -2893,6 +2902,8 @@ static void update_hosting(void)
 		p2p.hosting = 0;
 		p2p_signal_stop_hosting();
 		publish_code(0);
+		/* (the router's forwarding goes too: update_upnp) */
+		p2p.upnp_stop_wanted = 1;
 		p2p_discord_set_hosting(NULL, 0, 0);
 	}
 	if (p2p.hosting)
@@ -3032,6 +3043,18 @@ void p2p_set_game_player_counts(int count, int maximum)
 
 /* ---------- UPnP (posix_upnp.c): the router forwards a port here */
 
+/* how the router was asked, for the log */
+static const char *upnp_method_name(void)
+{
+	switch (posix_upnp_method())
+	{
+	case POSIX_UPNP_NAT_PMP: return "NAT-PMP";
+	case POSIX_UPNP_PCP: return "PCP";
+	case POSIX_UPNP_NAT_PMP_OR_PCP: return "NAT-PMP and PCP";
+	default: return "UPnP";
+	}
+}
+
 /* the router asked, on a thread of its own (it takes seconds) */
 static void *upnp_thread(void *unused)
 {
@@ -3059,21 +3082,46 @@ static void *upnp_thread(void *unused)
 	if (forwarded)
 	{
 		char text[32];
+		int renew_seconds = posix_upnp_renew_seconds();
 
 		if (!p2p.upnp_forwarded || p2p.upnp_candidate.address != address ||
 			p2p.upnp_candidate.port != external_port)
 		{
-			platform_log("Internet play: the router forwards %s to this machine (UPnP)",
-				address_text(address, external_port, text));
+			platform_log("Internet play: the router forwards %s to this machine (%s)",
+				address_text(address, external_port, text), upnp_method_name());
 		}
 		p2p.upnp_forwarded = 1;
 		p2p.upnp_candidate.address = address;
 		p2p.upnp_candidate.port = external_port;
+		/* (sooner than usual where the router gave a shorter lease) */
+		p2p.upnp_renew_interval = renew_seconds > 0 && (unsigned long)renew_seconds * 1000 < UPNP_RENEW_INTERVAL ?
+			(unsigned long)renew_seconds * 1000 : UPNP_RENEW_INTERVAL;
 	}
 	else if (!p2p.upnp_forwarded)
 	{
-		platform_log("Internet play: UPnP: %s", error);
+		platform_log("Internet play: %s: %s", upnp_method_name(), error);
 	}
+	pthread_mutex_unlock(&p2p_lock);
+	return NULL;
+}
+
+/* hosting stopped (and no join under way): the router forwards the port
+no longer, on a thread of its own (it takes a moment) */
+static void *upnp_stop_thread(void *unused)
+{
+	unsigned short external_port;
+
+	(void)unused;
+	pthread_mutex_lock(&p2p_lock);
+	external_port = p2p.upnp_candidate.port;
+	pthread_mutex_unlock(&p2p_lock);
+	posix_upnp_stop_forwarding_udp(external_port);
+	pthread_mutex_lock(&p2p_lock);
+	p2p.upnp_forwarded = 0;
+	p2p.upnp_asked = 0;
+	p2p.upnp_working = 0;
+	p2p.upnp_time = p2p_now();
+	platform_log("Internet play: the router forwards the port no longer (hosting stopped)");
 	pthread_mutex_unlock(&p2p_lock);
 	return NULL;
 }
@@ -3153,10 +3201,25 @@ static void update_upnp(void)
 #endif
 	if (!allowed || p2p.upnp_working || p2p.upnp_released)
 		return;
+	if (p2p.upnp_stop_wanted)
+	{
+		p2p.upnp_stop_wanted = 0;
+		if (p2p.upnp_forwarded && !p2p.hosting && !p2p.joining && !p2p.join_requested)
+		{
+			p2p.upnp_working = 1;
+			if (pthread_create(&thread, NULL, upnp_stop_thread, NULL) != 0)
+				p2p.upnp_working = 0;
+			else
+				pthread_detach(thread);
+			return;
+		}
+	}
 	if (p2p.upnp_forwarded)
-		ask = elapsed(p2p.upnp_time, UPNP_RENEW_INTERVAL);
+		ask = p2p.upnp_renew_now || elapsed(p2p.upnp_time, p2p.upnp_renew_interval ? p2p.upnp_renew_interval :
+			UPNP_RENEW_INTERVAL);
 	else
-		ask = upnp_needed() && (!p2p.upnp_asked || elapsed(p2p.upnp_time, UPNP_RETRY_INTERVAL));
+		ask = upnp_needed() && (!p2p.upnp_asked || p2p.upnp_renew_now || elapsed(p2p.upnp_time, UPNP_RETRY_INTERVAL));
+	p2p.upnp_renew_now = 0;
 	if (!ask)
 		return;
 	p2p.upnp_working = 1;
