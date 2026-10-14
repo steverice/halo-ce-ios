@@ -583,6 +583,9 @@ static void text_input_update(void)
 {
 	SDL_Window *window;
 
+#if TARGET_OS_TV
+	host_tv_text_prompt_tick();
+#endif
 	if (text_input_wanted == text_input_on || !(window = host_sdl_window()))
 		return;
 #if TARGET_OS_TV
