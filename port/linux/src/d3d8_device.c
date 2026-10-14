@@ -510,8 +510,8 @@ static struct
 	unsigned long draws, immediate_draws, clears, presents;
 	unsigned long skipped_no_program, skipped_no_target, skipped_link;
 	unsigned long target_changes;
-	/* render_target_get's lookups */
-	unsigned long render_target_lookups;
+	/* render_target_get's lookups, and those the recent targets answered */
+	unsigned long render_target_lookups, render_target_recent;
 	/* vertex and index bytes drawn from the mirror, and streamed */
 	unsigned long mirrored_bytes, streamed_bytes;
 } stats;
@@ -882,11 +882,73 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 	return entry;
 }
 
+/* the targets render_target_get found last in frames without stereo's
+eyes, by what it found them from: each draw asks again for the same two
+(draw_targets). Only there does a surface's target follow from the surface,
+the screen's width and scale and the frame's eye count alone; a stereo
+frame's layers and foveated sizes change from draw to draw, and its lookups
+go the long way. (After upstream's 197c1994.) */
+#define RECENT_RENDER_TARGET_COUNT 4
+
+static struct
+{
+	DWORD data, format, size;
+	long screen_width;
+	float scale[2];
+	int32_t eye_count;
+	struct render_target_entry *entry;
+} recent_render_targets[RECENT_RENDER_TARGET_COUNT];
+static unsigned long recent_render_target_next;
+
+/* forgets the recent targets, before any target is freed */
+static void recent_render_targets_forget(void)
+{
+	memset(recent_render_targets, 0, sizeof(recent_render_targets));
+}
+
 static struct render_target_entry *render_target_get(const D3DSurface *surface)
 {
-	int layer = render_target_layer();
+	int layer;
+	int32_t eye_count;
+	long screen;
+	unsigned long slot;
+	struct render_target_entry *entry;
 
 	stats.render_target_lookups++;
+	if (!surface || !surface->Data)
+		return NULL;
+	eye_count = halo_stereo_frame()->eye_count;
+	if (eye_count != 2)
+	{
+		/* (the width first: its first call sets the scale) */
+		screen = halo_screen_width();
+		for (slot = 0; slot < RECENT_RENDER_TARGET_COUNT; slot++)
+		{
+			if (recent_render_targets[slot].entry && recent_render_targets[slot].data == surface->Data &&
+				recent_render_targets[slot].format == surface->Format &&
+				recent_render_targets[slot].size == surface->Size &&
+				recent_render_targets[slot].screen_width == screen &&
+				recent_render_targets[slot].scale[0] == screen_scale[0] &&
+				recent_render_targets[slot].scale[1] == screen_scale[1] &&
+				recent_render_targets[slot].eye_count == eye_count)
+			{
+				stats.render_target_recent++;
+				return recent_render_targets[slot].entry;
+			}
+		}
+		entry = render_target_get_layer(surface, HALO_STEREO_LAYER_MONO);
+		slot = recent_render_target_next++ % RECENT_RENDER_TARGET_COUNT;
+		recent_render_targets[slot].data = surface->Data;
+		recent_render_targets[slot].format = surface->Format;
+		recent_render_targets[slot].size = surface->Size;
+		recent_render_targets[slot].screen_width = screen;
+		recent_render_targets[slot].scale[0] = screen_scale[0];
+		recent_render_targets[slot].scale[1] = screen_scale[1];
+		recent_render_targets[slot].eye_count = eye_count;
+		recent_render_targets[slot].entry = entry;
+		return entry;
+	}
+	layer = render_target_layer();
 	/* stereo's HUD layer, keyed by the current HUD group (halo_stereo.h):
 	each group draws into a target of its own, so groups that overlap on
 	the screen never share pixels; the catch-all's is the layer's own */
@@ -4865,6 +4927,7 @@ static void stereo_targets_release(void)
 	struct render_target_entry **link = &render_targets;
 	unsigned long freed = 0, bytes = 0;
 
+	recent_render_targets_forget();
 	while (*link)
 	{
 		struct render_target_entry *entry = *link;
@@ -5168,8 +5231,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			stats.target_changes / stats.presents, stats.skipped_no_program, stats.skipped_no_target, stats.skipped_link,
 			stats.mirrored_bytes / stats.presents / 1024, stats.streamed_bytes / stats.presents / 1024,
 			calls / stats.presents);
-		platform_log("render targets: %lu lookups a frame; %lu made in all", stats.render_target_lookups / stats.presents,
-			render_targets_made);
+		platform_log("render targets: %lu lookups a frame, %lu of them from the recent targets; %lu made in all",
+			stats.render_target_lookups / stats.presents, stats.render_target_recent / stats.presents, render_targets_made);
 		memset(&stats, 0, sizeof(stats));
 		/* and how stereo's HUD layer took its draws (hud_layer_blend) */
 		if (hud_layer_exact || hud_layer_inexact)
