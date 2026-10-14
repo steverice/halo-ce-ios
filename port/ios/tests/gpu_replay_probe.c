@@ -86,6 +86,11 @@ static void mock_warm_begin(void) {}
 static void mock_pipeline_warm(const struct gpu_pipeline_description *d) { (void)d; }
 static void mock_warm_end(void) {}
 static uint32_t mock_pipeline_built_take(struct gpu_pipeline_description *d) { (void)d; return 0; }
+static void mock_upscale(gpu_texture s, gpu_texture d, const struct gpu_rect *a, uint32_t aa) { (void)s; (void)d; (void)a; (void)aa; }
+static uint32_t mock_anti_alias_prepare(uint32_t m, const char *s, const void *a, const void *t) { (void)m; (void)s; (void)a; (void)t; return 0; }
+static void mock_anti_alias(uint32_t m, gpu_texture t, const struct gpu_rect *r) { (void)m; (void)t; (void)r; }
+static void mock_frame_context(uint32_t c, uint32_t r, const char *l) { (void)c; (void)r; (void)l; }
+static uint32_t mock_compiles_outstanding(void) { return 0; }
 static void mock_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 	(void)flags;
