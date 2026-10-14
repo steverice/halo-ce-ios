@@ -2495,6 +2495,11 @@ double config_scene_real(const char *name, int scene)
 	return config_scene_value(name, _config_real, scene)->real;
 }
 
+long config_scene_integer(const char *name, int scene)
+{
+	return config_scene_value(name, _config_integer, scene)->integer;
+}
+
 int config_scene_boolean(const char *name, int scene)
 {
 	return config_scene_value(name, _config_boolean, scene)->boolean;

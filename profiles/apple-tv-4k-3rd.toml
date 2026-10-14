@@ -1,0 +1,33 @@
+# Apple TV 4K, 3rd generation (2022, models A2737 and A2843): A15 Bionic, 4 GB, GPU family Apple8.
+# AN ESTIMATE: nothing here has been measured on this model. Every value is scaled from other devices'
+# measurements and meant to make a first run playable; the benchmark report replaces it.
+# Least sure, so the first things to sweep: the render height (1080, 1440, 2160), then anisotropic filtering
+# (8, 16), then the menu's height.
+
+schema = 1
+name = "Apple TV 4K (3rd generation)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "tvos"
+models = ["AppleTV14,1"]
+
+[display]
+render_height = 1080
+anisotropic_filtering = 8
+
+[scene.menu.display]
+render_height = 2160
+
+[evidence."display.render_height"]
+basis = "assumed"
+why = "An iPad Pro (M1) draws a10 at 3180x2384 in 10.4 ms of GPU time a frame. An A15's GPU is roughly 60 percent of an M1's, and 1080 is about a quarter of those pixels, so about 5 ms a frame: 60 with wide margin. 1440 (about 8 ms) probably holds and 2160 (about 19) does not; upstream's note that 4K fill rate limits heavy fights on this model agrees. 1080, the class's value, until measured."
+
+[evidence."display.anisotropic_filtering"]
+basis = "assumed"
+why = "Free on an iPad Pro (M1), the largest cost on an Apple TV HD. Nothing between them has been measured; 8x is most of the sharpness at 1080 for half the samples."
+
+[evidence."scene.menu.display.render_height"]
+basis = "assumed"
+why = "The menu took 12.4 to 14.5 ms of GPU time at 1080 on an Apple TV HD, whose GPU is about a twentieth of this one. At 2160 (four times the pixels) that is about 3 ms. Shows only on a 4K output; on a 1080 output the display's own height is the limit."

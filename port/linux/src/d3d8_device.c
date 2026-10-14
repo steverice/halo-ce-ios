@@ -246,7 +246,7 @@ static void screen_mode_choose(long *width, float scale[2])
 		}
 	}
 	pixels = halo_display_render_size(drawable_width, drawable_height, *width,
-		requested_width, config_integer("display.render_height"), screen_maximum_texture_size);
+		requested_width, config_scene_integer("display.render_height", halo_scene_class()), screen_maximum_texture_size);
 	{
 		/* head-tracked stereo: the screen's targets are the eyes' pictures,
 		each view's size and shape times display.render_scale, which needn't
@@ -257,7 +257,7 @@ static void screen_mode_choose(long *width, float scale[2])
 		the drawable is theirs then (host_stereo_picture_size) */
 		if (head_eyes_frame())
 		{
-			long render_height = config_integer("display.render_height");
+			long render_height = config_scene_integer("display.render_height", halo_scene_class());
 
 			pixels.width = drawable_width;
 			pixels.height = drawable_height;
