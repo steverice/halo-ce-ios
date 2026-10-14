@@ -241,6 +241,9 @@ set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_
     XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
     # a dSYM beside the app, which an App Store archive carries to App Store Connect for symbolicated crash reports
     XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+    # (CMake's Release flags have no -g, so its Xcode project turns debug symbols off and no dSYM is made; this
+    # gives the compiler -g back without changing the code it generates)
+    XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS YES
     XCODE_ATTRIBUTE_HALO_RENDER_HEIGHT "${HALO_RENDER_HEIGHT}"
     XCODE_ATTRIBUTE_HALO_BUILD_NUMBER "${HALO_BUILD_NUMBER}")
 if(HALO_DEVELOPMENT_TEAM)
