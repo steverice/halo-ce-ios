@@ -2795,6 +2795,11 @@ static void gpu_gl_frame_context(uint32_t scene_class, uint32_t frame_rate, cons
 	(void)level;
 }
 
+static uint32_t gpu_gl_compiles_outstanding(void)
+{
+	return 0;
+}
+
 /* ---------- the backend */
 
 #define GPU_GL_FUNCTION(type, name, parameters, arguments) .name = gpu_gl_##name,

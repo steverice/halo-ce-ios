@@ -57,6 +57,7 @@ includes software developed by in <in@fishtank.com>.
 */
 
 #include "xiso.h"
+#include "loading_picture.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -124,7 +125,7 @@ int xiso_maps_ready(const char *maps, char *error, size_t error_size) {
     return 1;
 }
 struct walk { struct image *image; const unsigned char *table; unsigned char *visited;
-    uint32_t size; struct entry *files; int count, directories; };
+    uint32_t size; struct entry *files; int count, directories; const char *exact; };
 static int walk_tree(struct walk *walk, uint32_t offset, unsigned depth) {
     if (depth>64 || offset+14>walk->size || (offset&3) || walk->visited[offset/4])
         return fail(walk->image,"The disc image has a damaged directory tree.");
@@ -144,7 +145,7 @@ static int walk_tree(struct walk *walk, uint32_t offset, unsigned depth) {
         }
         name[count]=0;
         if (!strcmp(name,".") || !strcmp(name,"..")) return fail(walk->image,"The disc image contains an unsafe filename.");
-        if (walk->directories || (count>4 && !strcmp(name+count-4,".map"))) {
+        if (walk->exact ? !strcmp(name,walk->exact) : walk->directories || (count>4 && !strcmp(name+count-4,".map"))) {
             if (walk->count>=MAX_FILES) return fail(walk->image,"The disc image has too many map files.");
             for (int i=0;i<walk->count;i++) if (!strcmp(walk->files[i].name,name))
                 return fail(walk->image,"The disc image contains duplicate filenames.");
@@ -157,8 +158,15 @@ static int walk_tree(struct walk *walk, uint32_t offset, unsigned depth) {
     }
     return !right || walk_tree(walk,right*4,depth+1);
 }
+static int directory_named(struct image *image, uint32_t sector, uint32_t size, int directories,
+    const char *exact, struct entry *files, int *count);
 static int directory(struct image *image, uint32_t sector, uint32_t size, int directories,
     struct entry *files, int *count) {
+    return directory_named(image,sector,size,directories,NULL,files,count);
+}
+/* exact: only the file of that name (lower case), whatever its extension */
+static int directory_named(struct image *image, uint32_t sector, uint32_t size, int directories,
+    const char *exact, struct entry *files, int *count) {
     if (!size || size>MAX_DIRECTORY) return fail(image,"The disc image has a damaged directory size.");
     unsigned char *table=malloc(size), *visited=calloc((size+3)/4,1);
     int ok=0;
@@ -166,7 +174,7 @@ static int directory(struct image *image, uint32_t sector, uint32_t size, int di
     if (!read_at(image,image->partition+(uint64_t)sector*SECTOR,table,size)) {
         fail(image,"Could not read the disc image directory. The image may be incomplete.");goto done;
     }
-    struct walk walk={image,table,visited,size,files,0,directories};
+    struct walk walk={image,table,visited,size,files,0,directories,exact};
     ok=walk_tree(&walk,0,0); *count=walk.count;
 done: free(table);free(visited);return ok;
 }
@@ -227,6 +235,39 @@ done:
 }
 static int extract_maps(const char *image_path, const char *destination,
     xiso_progress_proc progress, void *context, char *error, size_t error_size, int consume);
+/* The loading screen's picture (loading_picture.h), into the maps being
+   imported as loading.tga: the disc's own maps\loading.tga (PAL), or the
+   picture in its executable (NTSC). A disc with neither, or any failure,
+   leaves no file, and the loading screen then lights nothing: never an
+   import error. */
+static void import_loading_picture(struct image *image, uint32_t root_sector, uint32_t root_size,
+    uint32_t maps_sector, uint32_t maps_size, const char *partial) {
+    struct entry *file=calloc(1,sizeof(*file));
+    struct image quiet=*image;
+    unsigned char *data=NULL, *pixels=malloc(LOADING_PICTURE_PIXELS);
+    char path[2400]; int count=0, written=0;
+    quiet.error=NULL; quiet.error_size=0;
+    if (!file || !pixels || snprintf(path,sizeof(path),"%s/loading.tga",partial)>=(int)sizeof(path)) goto done;
+    if (directory_named(&quiet,maps_sector,maps_size,0,"loading.tga",file,&count) && count==1 &&
+        file->size==LOADING_PICTURE_TGA_BYTES && (data=malloc(file->size)) &&
+        read_at(&quiet,quiet.partition+(uint64_t)file->sector*SECTOR,data,file->size) &&
+        data[2]==2 && data[16]==24 && !(data[17]&0x20)) {
+        FILE *output=fopen(path,"wb");
+        if (output) {
+            written=fwrite(data,1,file->size,output)==file->size;
+            if (fclose(output)) written=0;
+            if (!written) remove(path);
+        }
+    }
+    free(data); data=NULL; count=0;
+    if (!written && directory_named(&quiet,root_sector,root_size,0,"default.xbe",file,&count) && count==1 &&
+        file->size<=(16u<<20) && (data=malloc(file->size)) &&
+        read_at(&quiet,quiet.partition+(uint64_t)file->sector*SECTOR,data,file->size) &&
+        loading_picture_find(data,file->size,pixels))
+        loading_picture_write(path,pixels);
+done:
+    free(data); free(pixels); free(file);
+}
 int xiso_extract_maps(const char *image_path, const char *destination,
     xiso_progress_proc progress, void *context, char *error, size_t error_size) {
     return extract_maps(image_path,destination,progress,context,error,error_size,0);
@@ -242,7 +283,7 @@ static int extract_maps(const char *image_path, const char *destination,
     unsigned char *buffer=NULL, header[2048];
     char partial[2048], final[2048], path[2400], expected[33]={0};
     struct stat st; int ok=0,count=0,found=0;
-    uint32_t root_sector=0,root_size=0; uint64_t total=0,done=0;
+    uint32_t root_sector=0,root_size=0,disc_sector=0,disc_size=0; uint64_t total=0,done=0;
     if (!files) {fail(&image,"Not enough memory to import the disc image.");goto cleanup;}
     image.fd=open(image_path,consume?O_RDWR:O_RDONLY);
     if (image.fd<0 || fstat(image.fd,&st) || !S_ISREG(st.st_mode)) {
@@ -257,6 +298,7 @@ static int extract_maps(const char *image_path, const char *destination,
     }
     if (!found) {fail(&image,"This is not an Xbox XISO. Choose an uncompressed Halo: Combat Evolved .iso or .xiso file.");goto cleanup;}
     if (!directory(&image,root_sector,root_size,1,files,&count)) goto cleanup;
+    disc_sector=root_sector; disc_size=root_size;
     found=0;
     for (int i=0;i<count;i++) if (!strcmp(files[i].name,"maps")) {root_sector=files[i].sector;root_size=files[i].size;found=1;break;}
     if (!found) {fail(&image,"This disc image has no Halo maps folder.");goto cleanup;}
@@ -314,6 +356,7 @@ static int extract_maps(const char *image_path, const char *destination,
             xiso_free_range(image.fd,from,from+files[i].size);
         }
     }
+    import_loading_picture(&image,disc_sector,disc_size,root_sector,root_size,partial);
     if (rename(partial,final)) {fail(&image,"Could not finish the game import.");goto cleanup;}
     ok=1;
 cleanup:

@@ -255,6 +255,8 @@ the setting for one start of the game. It has priority over the file.
 | `controls.<action>` | (the table in "Controls") | `HALO_KEY_<ACTION>` | The keys and mouse buttons of an action, up to two, separated by a comma: `move_forward`, `move_backward`, `strafe_left`, `strafe_right`, `jump`, `crouch`, `fire`, `throw_grenade`, `melee`, `reload`, `zoom`, `switch_weapon`, `switch_grenade`, `action`, `flashlight`, `scoreboard`, `pause`. Keys by their names (`"W"`, `"Space"`, `"Left Ctrl"`, `"F1"`), and `"Mouse Left"`, `"Mouse Right"`, `"Mouse Middle"`, `"Mouse 4"`, `"Mouse 5"`, `"Wheel"` (either way), `"Wheel Up"`, `"Wheel Down"`. |
 | `game.console_log` | `"important"` | `HALO_CONSOLE_LOG` | What the console shows on the screen. `"important"`: bans, players that the host drops for cheating, the reasons that the game refuses a command, and the asserts that stop the game. `"all"`: all the lines. `"none"`: only the asserts that stop the game. The output of a command always shows. `debug.txt` gets all the lines. |
 | `game.language` | `""` | `HALO_LANGUAGE` | The language of the menus: `ja`, `de`, `fr`, `es` or `it`. Empty: English. |
+| `game.loading_screen` | `"auto"` | `HALO_LOADING_SCREEN` | The loading screen over a campaign level's load: the last frame blurs away, a band of light crosses the ring's picture from left to right as the load goes, and the tone plays, until the level is read and its shaders are compiled. `"auto"`: shown, except in a run that must draw the same frames every time (`debug.fixed_timestep`, an input replay or benchmark, `debug.exit_after`, screenshots) and except in stereo. `"on"`, `"off"`: always, never. |
+| `game.loading_screen_seconds` | `1.5` | `HALO_LOADING_SCREEN_SECONDS` | The least time the loading screen stays up, in seconds (0 to 30), so that a level that is ready at once does not flash it. |
 | `paths.data` | `""` | `HALO_DATA_ROOT` | The data root. Refer to "Start the game". |
 | `paths.saves` | `""` | `HALO_SAVE_ROOT` | The save root. Refer to "Files and folders". |
 | `network.address` | `""` | `HALO_NET_ADDRESS` | The IPv4 address of this machine for system link. Refer to "Play on one computer". |
@@ -767,9 +769,17 @@ tags or a tag's data that is out of range gets zeros (`tag_empty_data` in
 
 A map's name must be its file's: the cache file slots are found by the name
 in the map's header, so a map file whose header names another map (a
-renamed one) is refused, not copied again for ever. The `loading.tga` a map
-pack may put in the maps folder is read only if it is an uncompressed 24-bit
-picture of 320 by 240, the loading screen's texture.
+renamed one) is refused, not copied again for ever.
+
+The loading screen's picture is `loading.tga` in the maps folder, read only
+if it is an uncompressed 24-bit picture of 320 by 240. A PAL disc has the
+file; an NTSC disc holds the picture in its `default.xbe`, and the iPhone,
+iPad, Apple TV and Vision Pro importers write the file from it
+(`port/runtime/loading_picture.h`). For maps imported before that, or copied
+by hand, `python3 tools/loading_picture.py DISC_IMAGE MAPS_FOLDER` writes it.
+Without the file the loading screen is the blur and the tone alone. The
+screen is held over a campaign level's whole load, shader compiles included
+(`port/linux/game/loading_screen.c`).
 
 A checkpoint (`savegame.bin`, in the profile's folder) and a core are
 images of the game state's memory: with the data arrays' pointers to their

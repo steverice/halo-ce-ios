@@ -577,6 +577,8 @@ void gpu_warm_end(void);
 /* a pipeline a draw built outside warming, since the last call: 1 and its
 description, or 0 when there are no more */
 uint32_t gpu_pipeline_built_take(struct gpu_pipeline_description *description);
+/* the shaders and pipelines still compiling off the game thread */
+uint32_t gpu_compiles_outstanding(void);
 
 /* What the frames from now on are, told whenever any of it changes
 (port/linux/game/scene_class.c): the scene class (port_config.h's
@@ -711,7 +713,11 @@ its own functions. */
 	/* a pipeline built for a draw, outside warming, since the last call: 1 \
 	and its description, or 0 when there are no more */ \
 	F(uint32_t, pipeline_built_take, (struct gpu_pipeline_description *description), (description)) \
-	P(frame_context, (uint32_t scene_class, uint32_t frame_rate, const char *level), (scene_class, frame_rate, level))
+	P(frame_context, (uint32_t scene_class, uint32_t frame_rate, const char *level), (scene_class, frame_rate, level)) \
+	/* the shaders and pipelines still compiling off the game thread \
+	(display.async_shaders); 0 from a backend that compiles none there. The \
+	loading screen stays up until it is 0 (port/linux/game/loading_screen.c) */ \
+	F(uint32_t, compiles_outstanding, (void), ())
 
 #define GPU_FUNCTIONS(F, P) \
 	GPU_OPERATIONS(F, P) \

@@ -531,6 +531,18 @@ static const struct config_setting config_settings[] =
 	{ "game.language", _config_string, "\"\"", "HALO_LANGUAGE", _environment_value, _platform_all,
 		"The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\";\n"
 		"empty for English. The game data decides what is translated." },
+	{ "game.loading_screen", _config_string, "\"auto\"", "HALO_LOADING_SCREEN", _environment_value, _platform_all,
+		"The loading screen over a campaign level's load: the last frame blurring\n"
+		"away, the ring's picture lit from left to right as the load goes, and\n"
+		"its tone, until the level is read and its shaders are compiled. \"auto\"\n"
+		"(default) shows it except in a run that must draw the same frames every\n"
+		"time (fixed timestep, an input replay or benchmark, debug.exit_after,\n"
+		"screenshots) and except in stereo; \"on\" or \"off\" forces either. The\n"
+		"picture is your disc's: a maps folder imported before the importer took\n"
+		"it gets it from tools/loading_picture.py." },
+	{ "game.loading_screen_seconds", _config_real, "1.5", "HALO_LOADING_SCREEN_SECONDS", _environment_value, _platform_all,
+		"The least time the loading screen stays up, in seconds (0 to 30), so a\n"
+		"level that is ready at once doesn't flash it." },
 	{ "game.custom_edition", _config_boolean, "true", "HALO_CUSTOM_EDITION", _environment_value, _platform_all,
 		"Load and run Halo Custom Edition maps (not those that need OpenSauce):\n"
 		"put them and Custom Edition's bitmaps.map, sounds.map and loc.map in\n"

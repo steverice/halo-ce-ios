@@ -161,6 +161,11 @@ void gpu_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *le
 	host_gpu_frame_context(scene_class, frame_rate, level);
 }
 
+uint32_t gpu_compiles_outstanding(void)
+{
+	return host_gpu_compiles_outstanding();
+}
+
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 	host_gpu_initialize(flags, capabilities);

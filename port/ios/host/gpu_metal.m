@@ -2626,6 +2626,11 @@ static uint32_t gpu_metal_pipeline_built_take(struct gpu_pipeline_description *d
 	return 1;
 }
 
+static uint32_t gpu_metal_compiles_outstanding(void)
+{
+	return (uint32_t)atomic_load(&compiles_outstanding);
+}
+
 /* ---------- compiling at map load (gpu.h; the front end's shader_list.c) */
 
 static uint32_t gpu_metal_warm_list_read(const char *name, char *text, uint32_t size)
