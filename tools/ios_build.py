@@ -181,6 +181,11 @@ def main():
     import time
     command.append(f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
     run(*command)
+    # an App Store archive leaves the product as a link into its own intermediates, which the next plain build
+    # cannot write through ("unable to create directory"): a link there is removed first
+    product = build/f'Release-{sdk}/VISR.app'
+    if product.is_symlink():
+        product.unlink()
     command=['cmake','--build',build,'--config','Release','--target','VISR','--','-quiet']
     if args.simulator or args.unsigned:command.append('CODE_SIGNING_ALLOWED=NO')
     else:
