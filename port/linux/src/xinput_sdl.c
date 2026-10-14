@@ -1100,12 +1100,22 @@ stick as the game was last given it for player one, and when; and the stick
 as it is now, read again without the game hearing of it. 0 when there is no
 controller to read, or the input is a test's or a replay's, which must play
 the same every time. */
+double halo_frame_trace_milliseconds(void);
+
 static struct
 {
-	Uint64 read_ns;
+	double read_ms;              /* halo_frame_trace_milliseconds' clock; 0 before the first read */
 	float x, y;
 	int valid;
 } look_read;
+
+/* how long ago the game last read player one's controller, in seconds (0
+before it has): what a re-read just before the camera could gain, whether or
+not there is a stick to re-read */
+float halo_look_read_age(void)
+{
+	return look_read.read_ms > 0.0 ? (float)((halo_frame_trace_milliseconds() - look_read.read_ms) / 1000.0) : 0.0f;
+}
 
 int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds)
 {
@@ -1124,7 +1134,7 @@ int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *no
 	*read_y = look_read.y;
 	*now_x = (float)stick(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX), FALSE) / 32767.0f;
 	*now_y = (float)stick(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY), TRUE) / 32767.0f;
-	*age_seconds = (float)((double)(SDL_GetTicksNS() - look_read.read_ns) / 1e9);
+	*age_seconds = halo_look_read_age();
 	return 1;
 }
 
@@ -1177,7 +1187,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			!config_string("debug.test_input")[0] && !config_string("debug.input_replay")[0];
 		look_read.x = (float)state->Gamepad.sThumbRX / 32767.0f;
 		look_read.y = (float)state->Gamepad.sThumbRY / 32767.0f;
-		look_read.read_ns = SDL_GetTicksNS();
+		look_read.read_ms = halo_frame_trace_milliseconds();
 		input_replay_filter(&state->Gamepad);
 	}
 	else if (port < config_integer("debug.network_test_players"))

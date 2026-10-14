@@ -871,6 +871,7 @@ there is to gain. */
 #define LATE_LOOK_MAXIMUM 0.05f        /* radians a frame, about 3 degrees */
 
 int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds);
+float halo_look_read_age(void);
 double halo_frame_trace_milliseconds(void);
 
 static int late_look_setting = -1;
@@ -903,6 +904,17 @@ static void late_look(struct observer_result *camera)
 	previous_yaw = yaw;
 	previous_pitch = pitch;
 	previous_ms = now_ms;
+	/* the age is logged whether or not there is a stick to read again: it is what a re-read could gain */
+	ages += halo_look_read_age();
+	if (++counted >= 600)
+	{
+		platform_log("late look %s: the game's read of the controller was %.2f ms old at the camera on average over 600 "
+			"frames; %lu frames turned, by %.3f degrees on average", late_look_setting ? "on" : "off",
+			ages / (double)counted * 1000.0, applied, applied ? (double)turned / (double)applied * 57.29578 : 0.0);
+		ages = 0.0;
+		turned = 0.0f;
+		counted = applied = 0;
+	}
 	if (!halo_look_stick_latest(&read_x, &read_y, &now_x, &now_y, &age))
 		return;
 	while (turn_yaw > (real)M_PI)
@@ -917,8 +929,6 @@ static void late_look(struct observer_result *camera)
 		if (fabsf(read_y) > LATE_LOOK_STICK)
 			rate_pitch = turn_pitch / (read_y * seconds);
 	}
-	ages += age;
-	counted++;
 	if (late_look_setting && age > 0.0f && age < 0.05f)
 	{
 		real more_yaw = rate_yaw * now_x * age, more_pitch = rate_pitch * now_y * age;
@@ -938,15 +948,6 @@ static void late_look(struct observer_result *camera)
 			turned += fabsf(more_yaw) + fabsf(more_pitch);
 			applied++;
 		}
-	}
-	if (counted >= 600)
-	{
-		platform_log("late look %s: the game's read of the stick was %.2f ms old at the camera on average over 600 frames; "
-			"%lu frames turned, by %.3f degrees on average", late_look_setting ? "on" : "off", ages / (double)counted * 1000.0,
-			applied, applied ? (double)turned / (double)applied * 57.29578 : 0.0);
-		ages = 0.0;
-		turned = 0.0f;
-		counted = applied = 0;
 	}
 }
 

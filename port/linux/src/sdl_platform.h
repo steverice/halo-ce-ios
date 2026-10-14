@@ -90,6 +90,8 @@ void halo_frame_start(void);
 last read it, as it is now, and how long ago that read was; 0 if there is
 none to use */
 int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds);
+/* and how long ago that read was, whether or not there is a stick to read again */
+float halo_look_read_age(void);
 /* render_interpolation.c: display.late_look on and off while playing (F9) */
 void halo_late_look_toggle(void);
 void platform_mouse_capture(BOOL capture);
