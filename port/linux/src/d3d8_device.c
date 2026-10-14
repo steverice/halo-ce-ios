@@ -1382,16 +1382,28 @@ static BOOL anti_aliasing_folds(void)
 		folded;
 }
 
+/* source/game/game.h, source/interface/hud_messaging.h */
+unsigned char game_in_progress(void);
+void hud_print_message(short local_player_index, wchar_t const *message);
+
 /* the live chord (xinput_sdl.c: hold Back and press R1): FXAA on if it is
-off, off otherwise, from the next frame, with a label on screen for two
-seconds. Not saved: the next launch takes display.anti_aliasing again */
+off, off otherwise, from the next frame, with a label on screen: in a game,
+the HUD's own message line (where "Checkpoint... done" shows), elsewhere
+the debug text, for two seconds. Not saved: the next launch takes
+display.anti_aliasing again */
 void halo_anti_aliasing_toggle(void)
 {
 	if (anti_aliasing_method < 0)
 		anti_aliasing_read();
 	anti_aliasing_live = anti_aliasing_method == _anti_aliasing_fxaa ? _anti_aliasing_off : _anti_aliasing_fxaa;
 	anti_aliasing_label = anti_aliasing_live == _anti_aliasing_fxaa ? "FXAA on" : "FXAA off";
-	anti_aliasing_changed_milliseconds = halo_frame_trace_milliseconds();
+	if (game_in_progress())
+	{
+		hud_print_message(0, anti_aliasing_live == _anti_aliasing_fxaa ? L"FXAA on" : L"FXAA off");
+		anti_aliasing_changed_milliseconds = -1.0;
+	}
+	else
+		anti_aliasing_changed_milliseconds = halo_frame_trace_milliseconds();
 	platform_log("anti-aliasing: %s (the live chord, until the app quits)", anti_aliasing_label);
 	if (device.gl_ready)
 		anti_aliasing_read();
