@@ -277,6 +277,7 @@ int host_benchmark_send(const char *report_path, const char *summary, char *mess
     controller.lines = [text componentsSeparatedByString:@"\n"];
     window = window_for(controller);
     if (!window) return 0;
+    host_logf(HOST_LOG_INFO, "benchmark: asking whether to send the report");
     while (!controller.answer)
         @autoreleasepool { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true); }
     if (controller.answer == 1) sent = upload(report, &result);
