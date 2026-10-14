@@ -4329,12 +4329,19 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					hold = frame_pacer_present(&paced);
 				if (frame_pacer_watches(&paced))
 				{
+#if TARGET_OS_SIMULATOR
+					/* the iOS and tvOS simulators' MTLDrawable has no presented
+					handler and no presentedTime: the pacer is told now, with no
+					time (it holds no slots there, host_frame_pacer.c) */
+					frame_pacer_presented(&paced, 0.0);
+#else
 					struct frame_pacer_frame shown_frame = paced;
 
 					[drawable addPresentedHandler:^(id<MTLDrawable> shown)
 					{
 						frame_pacer_presented(&shown_frame, shown.presentedTime);
 					}];
+#endif
 					paced.slot = 0;
 				}
 #endif
