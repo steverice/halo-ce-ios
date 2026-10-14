@@ -70,3 +70,4 @@ size_t host_profile_encode(const struct host_profile *profile, char *text, size_
    reader told to ask it. values is HALO_DEVICE_PROFILE_VALUES for the game's environment */
 void host_device_identify(struct host_device *device);
 const char *host_device_profile_install(const char *data_root);
+const struct host_profile *host_device_profile(void);

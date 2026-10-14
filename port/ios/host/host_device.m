@@ -88,6 +88,12 @@ static int installed_value(const char *name, char *text, size_t size)
 	return host_profile_value(&installed_profile, name, text, size);
 }
 
+/* the profile host_device_profile_install resolved (empty before it has run), for the device benchmark's report */
+const struct host_profile *host_device_profile(void)
+{
+	return &installed_profile;
+}
+
 const char *host_device_profile_install(const char *data_root)
 {
 	static char values[HOST_PROFILE_MAXIMUM_VALUES * 216];

@@ -12,6 +12,7 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_benchmark.h"
+#include "host_profile.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
 #include <mach/mach.h>
@@ -220,7 +221,7 @@ static NSString *report_header(void) {
         "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
         "\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
-        "\"profile\":{\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
+        "\"profile\":{\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
         "\"model_lod\":\"%s\"},\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
         [minutes stringFromDate:started ?: NSDate.date],
@@ -233,6 +234,8 @@ static NSString *report_header(void) {
         screen.nativeBounds.size.width, screen.nativeBounds.size.height, (long)screen.maximumFramesPerSecond,
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]), HALO_GUEST_SHA256,
+        json_string(@(host_device_profile()->class_file)), json_string(@(host_device_profile()->model_file)),
+        host_device_profile()->drop_in ? "true" : "false",
         plan.device.drawable_lines, plan.device.base_lines, plan.device.anisotropy, plan.device.shadow_size,
         plan.device.model_lod_max ? "max" : "auto",
         [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:flags options:0 error:nil] encoding:NSUTF8StringEncoding]];
@@ -420,6 +423,8 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     screen_hertz = (double)UIScreen.mainScreen.maximumFramesPerSecond;
     if (UIScreen.mainScreen.maximumFramesPerSecond != 60) flag(@"refresh_not_60");
     if (only) flag(@"scenes_filtered");
+    /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
+    if (host_device_profile()->drop_in) flag(@"drop_in_profile");
     if ([files contentsOfDirectoryAtPath:@FOLDER "/local-routes" error:nil].count) flag(@"local_routes");
 #if TARGET_OS_SIMULATOR
     flag(@"simulator");
