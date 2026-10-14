@@ -1,0 +1,38 @@
+# Apple TV 4K, 1st generation (2017, model A1842): A10X Fusion, 3 GB, GPU family Apple3.
+# AN ESTIMATE: nothing here has been measured on this model. Every value is scaled from the Apple TV HD's
+# measurements and meant to make a first run playable; the benchmark report replaces it.
+# Least sure, so the first things to sweep: the render height (720, 900, 1080), then anisotropic filtering
+# (4, 8, 16), then the model detail.
+
+schema = 1
+name = "Apple TV 4K (1st generation)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "tvos"
+models = ["AppleTV6,2"]
+
+[display]
+render_height = 720
+anisotropic_filtering = 4
+model_lod = "auto"
+
+[scene.menu.display]
+render_height = 1080
+
+[evidence."display.render_height"]
+basis = "assumed"
+why = "The Apple TV HD's A8 needed 23 to 30 ms of GPU time a frame on b30's beach at 540 with these settings. An A10X's GPU is about five to six times an A8's in published benchmarks, and it has no relaxed pixel math and runs the safe mode, about a fifth slower than the fast mode the A8 was measured with. That puts 1080 (four times 540's pixels) at roughly 20 to 30 ms, over a 60 Hz frame, and 720 (1.8 times) at 9 to 13, inside it. 720 until measured."
+
+[evidence."display.anisotropic_filtering"]
+basis = "assumed"
+why = "On the Apple TV HD 16x was the largest single cost (b30's beach 31 frames a second against 34 to 38 at 4x); on an iPad Pro (M1) it was free. An A10X is between the two and nearer the first in age: 4x, as on the HD, until measured."
+
+[evidence."display.model_lod"]
+basis = "assumed"
+why = "The game's own choice of detail by size on screen: on the Apple TV HD it took b30's CPU time from 26 to 21.5 ms a frame with no visible difference at 540. An A10X's CPU is about two and a half times an A8's, so this is headroom, not need; at 720 the lower levels may show more than they did at 540."
+
+[evidence."scene.menu.display.render_height"]
+basis = "assumed"
+why = "The menu held 60 at 1080 on the Apple TV HD with 2 ms to spare (GPU 12.4 to 14.5 ms); a GPU five times that has ample room."

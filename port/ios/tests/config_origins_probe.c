@@ -447,6 +447,14 @@ static void check_scenes(void)
 		!strcmp(text, "display.render_scale 0.667 [model Apple TV HD]"));
 	assert(!config_scene_describe(CONFIG_SCENE_GAMEPLAY, text, sizeof(text)));
 	assert(!strcmp(config_scene_name(CONFIG_SCENE_CUTSCENE), "cutscene"));
+	/* a render height for a scene class (an integer setting) */
+	launch(TV_CLASS "display.render_height\t720\tmodel 4K\n" "display.render_height\t1080\tmodel 4K\tmenu\n");
+	assert(config_scene_integer("display.render_height", CONFIG_SCENE_GAMEPLAY) == 720);
+	assert(config_scene_integer("display.render_height", CONFIG_SCENE_MENU) == 1080);
+	assert(config_scene_integer("display.render_height", CONFIG_SCENE_CUTSCENE) == 720);
+	assert(strstr(logged, "settings: display.render_height = 720 [model 4K] over 1080 [class Apple TV] over 0 [default]; "
+		"menu 1080 [model 4K]"));
+	launch(TV_MODEL);
 	/* a drop-in file's scene value over the model's */
 	launch(TV_MODEL "display.render_scale\t1\tDROP-IN FILE\tmenu\n");
 	assert(config_scene_real("display.render_scale", CONFIG_SCENE_MENU) == 1.0);

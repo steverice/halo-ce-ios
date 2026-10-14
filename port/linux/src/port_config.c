@@ -925,6 +925,10 @@ static const struct config_setting config_settings[] =
 		"the render size, the scene class, the map, memory and thermal state, so a\n"
 		"session played by hand can be read afterwards (tools/frame_log.py).\n"
 		"\"auto\" (default) logs on an Apple TV only; \"on\" and \"off\" force it." },
+	{ "debug.test_win_level", _config_real, "0.0", "HALO_TEST_WIN_LEVEL", _environment_value, _platform_ios,
+		"Win the level after this many seconds of its game time, once, as when\n"
+		"the player reaches its end: a run nobody plays then goes through the\n"
+		"change to the next level. 0 (default) does nothing." },
 	{ "debug.settings_dump", _config_boolean, "false", "HALO_SETTINGS_DUMP", _environment_set_is_true, _platform_ios,
 		"Log every setting a device profile may set at start, with the layer each\n"
 		"value came from; false logs only those something set." },
@@ -2548,6 +2552,11 @@ static const struct config_value *config_scene_value(const char *name, enum conf
 double config_scene_real(const char *name, int scene)
 {
 	return config_scene_value(name, _config_real, scene)->real;
+}
+
+long config_scene_integer(const char *name, int scene)
+{
+	return config_scene_value(name, _config_integer, scene)->integer;
 }
 
 int config_scene_boolean(const char *name, int scene)

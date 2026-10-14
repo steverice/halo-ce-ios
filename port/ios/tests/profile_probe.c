@@ -218,8 +218,18 @@ static void check_shipped(const char *shipped)
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "\tmodel Apple TV HD\tmenu\n") && strstr(encoded, "\tmodel Apple TV HD\tcutscene\n"));
 	/* an Apple TV 4K, and the tvOS simulator: what the build's default was */
-	profile = resolve(shipped, device("tvos", "AppleTV14,1", "", 8), NULL, "");
+	profile = resolve(shipped, device("tvos", "AppleTV11,1", "", 5), NULL, "");
 	assert(has(&profile, "display.render_height", "1080") && !profile.model_file[0] && profile.count == 3);
+	/* the two Apple TV 4K models with estimated profiles: 720 in play on the first, 1080 on the third, and a
+	menu at the display's height */
+	profile = resolve(shipped, device("tvos", "AppleTV6,2", "", 3), NULL, "");
+	assert(has(&profile, "display.render_height", "720") && has(&profile, "display.anisotropic_filtering", "4") &&
+		has(&profile, "display.renderer", "metal") && !strcmp(profile.model_file, "apple-tv-4k-1st.toml"));
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(strstr(encoded, "display.render_height\t1080\tmodel Apple TV 4K (1st generation)\tmenu\n"));
+	profile = resolve(shipped, device("tvos", "AppleTV14,1", "", 8), NULL, "");
+	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.anisotropic_filtering", "8") &&
+		!strcmp(profile.model_file, "apple-tv-4k-3rd.toml"));
 	/* Vision Pro: the headset sweep's values, which are the built-in defaults too */
 	profile = resolve(shipped, device("visionos", "RealityDevice14,1", "", 8), NULL, "");
 	assert(has(&profile, "display.render_quality", "0.6") && has(&profile, "display.foveation", "true"));
