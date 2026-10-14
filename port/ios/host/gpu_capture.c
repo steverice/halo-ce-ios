@@ -89,6 +89,8 @@ static struct
 	uint32_t epoch, window_end;
 	unsigned long records;
 	int failed;
+	/* the log has said a call went unrecorded (capture_unrecorded) */
+	int unrecorded_logged;
 	/* what the open window's file has of the constants and uniforms */
 	int constants_sent, uniforms_sent;
 	uint64_t constants_serial;
@@ -825,6 +827,46 @@ static void capture_warm_end(void)
 static uint32_t capture_pipeline_built_take(struct gpu_pipeline_description *description)
 {
 	return capture.backend.pipeline_built_take(description);
+}
+
+/* display.native_hud's stretch and display.anti_aliasing's passes are not
+recorded yet: a replay of a window that holds them leaves them out, which a
+line in the log says once a capture */
+static void capture_unrecorded(const char *call)
+{
+	if (capture.file && !capture.unrecorded_logged)
+	{
+		capture.unrecorded_logged = 1;
+		capture_log("render capture: %s is not recorded; a replay of this window leaves it out", call);
+	}
+}
+
+static void capture_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias)
+{
+	capture_unrecorded("gpu_upscale");
+	capture.backend.upscale(source, destination, area, anti_alias);
+}
+
+static uint32_t capture_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels)
+{
+	return capture.backend.anti_alias_prepare(method, smaa_shader, area_texels, search_texels);
+}
+
+static void capture_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect)
+{
+	capture_unrecorded("gpu_anti_alias");
+	capture.backend.anti_alias(method, target, rect);
+}
+
+static void capture_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level)
+{
+	capture.backend.frame_context(scene_class, frame_rate, level);
+}
+
+static uint32_t capture_compiles_outstanding(void)
+{
+	return capture.backend.compiles_outstanding();
 }
 
 static void capture_initialize(uint32_t flags, struct gpu_capabilities *capabilities)

@@ -1632,6 +1632,30 @@ static void check_picture(gpu_texture texture, const char *name, int color)
 		REPORT(PRESENT_INVALID, entry != NULL, "%s %u is not a live %s target", name, texture, color ? "color" : "depth");
 }
 
+/* display.native_hud's stretch and display.anti_aliasing's passes: the
+pictures they read and write must be live color targets */
+static void validate_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias)
+{
+	validation.call = "upscale";
+	check_picture(source, "the upscale's source", 1);
+	check_picture(destination, "the upscale's destination", 1);
+	validation.backend.upscale(source, destination, area, anti_alias);
+}
+
+static uint32_t validate_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels)
+{
+	validation.call = "anti_alias_prepare";
+	return validation.backend.anti_alias_prepare(method, smaa_shader, area_texels, search_texels);
+}
+
+static void validate_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect)
+{
+	validation.call = "anti_alias";
+	check_picture(target, "the anti-aliasing target", 1);
+	validation.backend.anti_alias(method, target, rect);
+}
+
 static uint32_t validate_present(gpu_texture back_buffer)
 {
 	uint32_t due;
@@ -1726,6 +1750,18 @@ static void validate_warm_end(void)
 static uint32_t validate_pipeline_built_take(struct gpu_pipeline_description *description)
 {
 	return validation.backend.pipeline_built_take(description);
+}
+
+/* (what is being drawn, for the backend's frame log: nothing to check) */
+static void validate_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level)
+{
+	validation.backend.frame_context(scene_class, frame_rate, level);
+}
+
+/* (the loading screen asks this from the game thread: nothing to check) */
+static uint32_t validate_compiles_outstanding(void)
+{
+	return validation.backend.compiles_outstanding();
 }
 
 static void validate_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
