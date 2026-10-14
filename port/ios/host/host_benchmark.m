@@ -153,18 +153,6 @@ static void sampler_start(void) {
         }];
 }
 
-/* waits on a still screen with the run loop turning (the app must keep answering the system) */
-static void wait_seconds(double seconds) {
-    CFAbsoluteTime until = CFAbsoluteTimeGetCurrent() + seconds;
-
-    while (CFAbsoluteTimeGetCurrent() < until) {
-        @autoreleasepool {
-            /* (on a thread whose run loop has nothing to wait on, the call returns at once: sleep the slice) */
-            if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true) == kCFRunLoopRunFinished) usleep(100000);
-        }
-    }
-}
-
 /* ---------- the report */
 
 static NSString *json_string(NSString *text) {
@@ -312,6 +300,10 @@ static void flag(NSString *name) {
     if (![flags containsObject:name]) [flags addObject:name];
 }
 
+static int cooled(void) {
+    return NSProcessInfo.processInfo.thermalState <= NSProcessInfoThermalStateNominal;
+}
+
 int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
     int model_lod_max) {
     static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* nothing that reads as another */
@@ -415,12 +407,14 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 
     /* conditions: a warm device gets time to cool, then runs flagged; the display's rate is recorded as it is */
     if (process.thermalState > NSProcessInfoThermalStateNominal) {
-        CFAbsoluteTime begun = CFAbsoluteTimeGetCurrent();
-
         host_logf(HOST_LOG_INFO, "benchmark: the device is warm (thermal state %ld); waiting up to %.0f s for it to cool",
             (long)process.thermalState, COOL_WAIT_SECONDS);
-        while (process.thermalState > NSProcessInfoThermalStateNominal && CFAbsoluteTimeGetCurrent() - begun < COOL_WAIT_SECONDS)
-            wait_seconds(1.0);
+        if (host_benchmark_notice("The device is warm", "Waiting for it to cool before measuring, for up to five minutes.",
+            COOL_WAIT_SECONDS, cooled)) {
+            host_logf(HOST_LOG_INFO, "benchmark: stopped from the screen before the first run");
+            atomic_store(&running, 0);
+            return 0;
+        }
         if (process.thermalState > NSProcessInfoThermalStateNominal) flag(@"warm_at_start");
     }
     screen_hertz = (double)UIScreen.mainScreen.maximumFramesPerSecond;
@@ -467,8 +461,24 @@ int host_benchmark_next(char *text, unsigned int size) {
         atomic_store(&running, 0);
         return 0;
     }
-    if (outcome_count) wait_seconds(last_run_throttled ? PAUSE_AFTER_THROTTLE_SECONDS : PAUSE_SECONDS);
     scene = &plan.scenes[run.scene];
+    if (outcome_count) {
+        /* the pause between runs, on a still screen that says what comes next; Back there stops the suite, which
+           carries on from its journal the next time it is started */
+        char heading[96], detail[160];
+        double minutes = -[started timeIntervalSinceNow] / 60.0;
+
+        snprintf(heading, sizeof(heading), "Benchmark: run %d is next", run.index + 1);
+        snprintf(detail, sizeof(detail), "%s%s, %ld lines. Started %.0f minute%s ago.",
+            last_run_throttled ? "The device got hot: cooling for a minute. Then " : "", scene->id, run.lines, minutes,
+            minutes >= 1.5 || minutes < 0.5 ? "s" : "");
+        if (host_benchmark_notice(heading, detail, last_run_throttled ? PAUSE_AFTER_THROTTLE_SECONDS : PAUSE_SECONDS, NULL)) {
+            host_logf(HOST_LOG_INFO, "benchmark: stopped from the screen before run %d; the journal keeps what is done", run.index);
+            flag(@"stopped");
+            atomic_store(&running, 0);
+            return 0;
+        }
+    }
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f lines=%ld anisotropy=%ld "
         "shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" : "gameplay",

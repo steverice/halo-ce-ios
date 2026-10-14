@@ -16,6 +16,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <stdatomic.h>
+#include <unistd.h>
 #include <zlib.h>
 
 #if !__has_feature(objc_arc)
@@ -277,6 +278,80 @@ static UIImage *qr_image(NSString *text) {
     [super pressesBegan:presses withEvent:event];
 }
 @end
+
+/* ---------- the screen between runs */
+
+@interface HaloBenchmarkNoticeController : UIViewController
+@property(nonatomic, copy) NSString *heading, *detail;
+@property(nonatomic) BOOL stopped;
+@end
+
+@implementation HaloBenchmarkNoticeController
+- (void)viewDidLoad {
+    UIStackView *stack = [UIStackView new];
+    UILabel *title = [UILabel new], *text = [UILabel new], *stop = [UILabel new];
+
+    [super viewDidLoad];
+    self.view.backgroundColor = UIColor.blackColor;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentCenter;
+    stack.spacing = 20;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:stack];
+    title.text = self.heading;
+    title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle2];
+    title.textColor = UIColor.whiteColor;
+    text.text = self.detail;
+    text.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    text.textColor = UIColor.lightGrayColor;
+    text.numberOfLines = 0;
+    text.textAlignment = NSTextAlignmentCenter;
+    stop.text = @"Leave the device alone until the benchmark says it has finished. Press Back now to stop it.";
+    stop.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCallout];
+    stop.textColor = UIColor.grayColor;
+    stop.numberOfLines = 0;
+    stop.textAlignment = NSTextAlignmentCenter;
+    for (UILabel *label in @[ title, text, stop ]) [stack addArrangedSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor multiplier:0.8]]];
+}
+- (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    for (UIPress *press in presses)
+        if (press.type == UIPressTypeMenu) { self.stopped = YES; return; }
+    [super pressesBegan:presses withEvent:event];
+}
+@end
+
+int host_benchmark_notice(const char *heading, const char *detail, double seconds, int (*until)(void)) {
+    UIWindowScene *scene = nil;
+    HaloBenchmarkNoticeController *controller = [HaloBenchmarkNoticeController new];
+    UIWindow *window = nil;
+    CFAbsoluteTime end = CFAbsoluteTimeGetCurrent() + seconds;
+    int stopped;
+
+    for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
+        if ([candidate isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)candidate; break; }
+    controller.heading = @(heading);
+    controller.detail = @(detail);
+    if (scene) {
+        window = [[UIWindow alloc] initWithWindowScene:scene];
+        window.frame = scene.coordinateSpace.bounds;
+        window.windowLevel = UIWindowLevelNormal + 2;
+        window.rootViewController = controller;
+        [window makeKeyAndVisible];
+    }
+    while (!controller.stopped && CFAbsoluteTimeGetCurrent() < end && !(until && until())) {
+        @autoreleasepool {
+            if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true) == kCFRunLoopRunFinished) usleep(100000);
+        }
+    }
+    stopped = controller.stopped;
+    window.hidden = YES;
+    window.rootViewController = nil;
+    return stopped;
+}
 
 void host_benchmark_page(const char *report_path, const char *summary, const char *code, int minutes) {
     NSData *report = [NSData dataWithContentsOfFile:@(report_path)];

@@ -28,6 +28,10 @@ const char *host_benchmark_menu(void);
    sentence for the screen either way */
 int host_benchmark_send(const char *report_path, const char *summary, char *message, unsigned long size);
 
+/* host_benchmark_page.m: a still screen between runs, for up to seconds or until `until` (when given) returns
+   nonzero: what comes next, and that Back stops the benchmark. 1 if Back was pressed */
+int host_benchmark_notice(const char *heading, const char *detail, double seconds, int (*until)(void));
+
 /* host_benchmark_page.m: the finished report on a page the device serves on the local network, with a screen
    that shows the page's address as a QR code, until Back or Menu is pressed or the minutes run out */
 void host_benchmark_page(const char *report_path, const char *summary, const char *code, int minutes);
