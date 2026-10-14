@@ -291,6 +291,56 @@ extern struct pixel_shader_definition pixel_shader;
 
 static long last_decal_index_queried_by_lruv_cache = NONE;
 
+/* port: decal batching. Consecutive decals of a cluster's layer that share
+the blend function and the bitmap differ only in their color, which the game
+sets as a constant vertex attribute before each one's draw; they are drawn
+as one draw instead (halo_draw_quad_ranges, d3d8_device.c), with each
+decal's color given to its own vertices, in the same order. A run of one
+is drawn as the game draws it. display.decal_batching = false draws every
+decal on its own, to compare */
+#define DECAL_BATCH_MAXIMUM 256
+
+static UINT decal_batch_first[DECAL_BATCH_MAXIMUM];
+static UINT decal_batch_quads[DECAL_BATCH_MAXIMUM];
+static BYTE decal_batch_colors[DECAL_BATCH_MAXIMUM][4];
+static short decal_batch_count = 0;
+
+void halo_draw_quad_ranges(const UINT *first_vertex, const UINT *quad_count, const BYTE (*colors)[4], UINT count,
+	INT color_reg);
+boolean config_boolean(const char *name);
+
+static boolean decal_batching_enabled(
+	void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+		enabled = config_boolean("display.decal_batching") != FALSE;
+	return enabled != 0;
+}
+
+static void decal_batch_flush(
+	void)
+{
+	if (decal_batch_count == 1)
+	{
+		IDirect3DDevice8_SetVertexData4ub(global_d3d_device, 9, decal_batch_colors[0][0], decal_batch_colors[0][1],
+			decal_batch_colors[0][2], decal_batch_colors[0][3]);
+		IDirect3DDevice8_DrawPrimitive(global_d3d_device, D3DPT_QUADLIST, decal_batch_first[0], decal_batch_quads[0]);
+	}
+	else if (decal_batch_count > 1)
+	{
+		short last = decal_batch_count - 1;
+
+		halo_draw_quad_ranges(decal_batch_first, decal_batch_quads,
+			(const BYTE (*)[4])decal_batch_colors, decal_batch_count, 9);
+		/* the attribute as the game's last draw left it */
+		IDirect3DDevice8_SetVertexData4ub(global_d3d_device, 9, decal_batch_colors[last][0],
+			decal_batch_colors[last][1], decal_batch_colors[last][2], decal_batch_colors[last][3]);
+	}
+	decal_batch_count = 0;
+}
+
 /* ---------- public code */
 
 void rasterizer_decal_vertices_end_update(
@@ -659,6 +709,7 @@ void _rasterizer_decals_draw(
 
 		if (local_framebuffer_blend_function != framebuffer_blend_function)
 		{
+			decal_batch_flush(); /* port: (decal batching) */
 			local_framebuffer_blend_function = framebuffer_blend_function;
 			if (framebuffer_blend_function == _shader_framebuffer_blend_function_multiply ||
 				framebuffer_blend_function == _shader_framebuffer_blend_function_double_multiply)
@@ -726,6 +777,7 @@ void _rasterizer_decals_draw(
 		if (rasterizer_decal_cached_bitmap_group_index != shader->map.index ||
 			rasterizer_decal_cached_bitmap_index != (char)decal->bitmap_index)
 		{
+			decal_batch_flush(); /* port: (decal batching) */
 			rasterizer_decal_cached_bitmap_group_index = shader->map.index;
 			rasterizer_decal_cached_bitmap_index = (char)decal->bitmap_index;
 			rasterizer_set_texture(
@@ -749,18 +801,34 @@ void _rasterizer_decals_draw(
 			"c:\\halo\\SOURCE\\rasterizer\\xbox\\rasterizer_xbox_decals.c",
 			511,
 			vertex_data_offset%sizeof(struct decal_vertex)==0);
-		IDirect3DDevice8_SetVertexData4ub(
-			global_d3d_device,
-			9,
-			color >> 16,
-			color >> 8,
-			color,
-			PIXEL32_COMPONENT_MASK - intensity);
-		IDirect3DDevice8_DrawPrimitive(
-			global_d3d_device,
-			D3DPT_QUADLIST,
-			vertex_data_offset/sizeof(struct decal_vertex),
-			decal->quad_count);
+		if (decal_batching_enabled())
+		{
+			/* port: (decal batching) the draw joins the run */
+			if (decal_batch_count == DECAL_BATCH_MAXIMUM)
+				decal_batch_flush();
+			decal_batch_first[decal_batch_count] = vertex_data_offset/sizeof(struct decal_vertex);
+			decal_batch_quads[decal_batch_count] = decal->quad_count;
+			decal_batch_colors[decal_batch_count][0] = (BYTE)(color >> 16);
+			decal_batch_colors[decal_batch_count][1] = (BYTE)(color >> 8);
+			decal_batch_colors[decal_batch_count][2] = (BYTE)color;
+			decal_batch_colors[decal_batch_count][3] = (BYTE)(PIXEL32_COMPONENT_MASK - intensity);
+			decal_batch_count++;
+		}
+		else
+		{
+			IDirect3DDevice8_SetVertexData4ub(
+				global_d3d_device,
+				9,
+				color >> 16,
+				color >> 8,
+				color,
+				PIXEL32_COMPONENT_MASK - intensity);
+			IDirect3DDevice8_DrawPrimitive(
+				global_d3d_device,
+				D3DPT_QUADLIST,
+				vertex_data_offset/sizeof(struct decal_vertex),
+				decal->quad_count);
+		}
 		if (rasterizer_debug_options.statistics_mode == _rasterizer_statistics_mode_geometry)
 		{
 			rasterizer_frame_statistics.decal_draw_count++;
@@ -777,6 +845,7 @@ void _rasterizer_decals_draw(
 void _rasterizer_decals_end(
 	void)
 {
+	decal_batch_flush(); /* port: (decal batching) the layer's last run */
 	if (local_layer == _decal_layer_alpha_tested)
 		rasterizer_set_stencil_mode(RASTERIZER_STENCIL_MODE_REJECT);
 
