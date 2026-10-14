@@ -663,6 +663,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.input_replay", _config_string, "\"\"", "HALO_INPUT_REPLAY", _environment_value, _platform_all,
 		"Replay a recording made with debug.input_record in place of controller 1,\n"
 		"at the same moments of the game time." },
+	{ "debug.input_replay_route", _config_integer, "0", "HALO_INPUT_REPLAY_ROUTE", _environment_value, _platform_all,
+		"With debug.input_replay or debug.input_record: log player 1's position\n"
+		"every this many ticks, with the segment, the tick and whether the tick\n"
+		"took a recorded action (tools/replay_check.py reads it); 0 never." },
 	{ "debug.benchmark", _config_boolean, "false", "HALO_BENCHMARK", _environment_value, _platform_all,
 		"With debug.input_replay: time every frame of the replay, write\n"
 		"benchmark-<name>-<time>.txt and quit when the replay ends." },

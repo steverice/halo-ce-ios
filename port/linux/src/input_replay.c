@@ -69,6 +69,8 @@ extern void input_replay_level(char *map, unsigned int size, long *difficulty, l
 extern unsigned long input_replay_random_seed(const unsigned long *seed);
 /* both random sequences' seeds, global then local: read, or set */
 extern void input_replay_random_seeds(unsigned long seeds[2], unsigned char set);
+/* player 1's position; 0 while there is no player unit */
+extern unsigned char input_replay_player_position(float position[3]);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 
@@ -145,6 +147,14 @@ static struct
 	level's opening was skipped (its first tick is past 0), which the replay must do first */
 	struct { long segment, tick; unsigned long seed; BOOL applied; } segment_seeds[32];
 	int segment_seed_count;
+	/* the difficulty the take was recorded at (its .route's), checked against the level's at the first replayed
+	tick: a replay at another difficulty meets other enemies and other scripts (a10's tutorial runs only on easy
+	and normal) */
+	char route_difficulty[16];
+	BOOL difficulty_checked;
+	/* ticks whose random seeds, as the game had them before the recording's were set, were not the recording's:
+	the tick before drew a different count of random numbers, so the replay had left the take's path there */
+	long seed_misses;
 	BOOL preroll, preroll_timeline;
 	/* the replay itself skipped a cinematic and the revert that follows has not been seen yet. The revert is a
 	segment's beginning even when the game time does not go back by it: a cinematic skipped on the level's first
@@ -283,6 +293,10 @@ static void route_load(void)
 	{
 		if (sscanf(line, "first_tick = %ld", &tick) == 1)
 			first_tick = tick;
+		else if (sscanf(line, "difficulty = %15s", replay.route_difficulty) == 1)
+		{
+			/* (checked at the first replayed tick, replay_check_difficulty) */
+		}
 		else if (sscanf(line, "random_seed = %lx", &seed) == 1 && replay.segment_seed_count < 32)
 		{
 			/* (the take's own: noted at its first tick, which a first_tick line before or after this one gives) */
@@ -884,6 +898,44 @@ static int compare_action_keys(const struct recorded_action *action, long segmen
 	return action->tick < tick ? -1 : action->tick > tick;
 }
 
+/* at the first replayed tick: whether the level runs at the difficulty the take was recorded at */
+static void replay_check_difficulty(void)
+{
+	static const char *const names[] = { "easy", "normal", "hard", "impossible" };
+	char map[32];
+	long difficulty, players;
+	unsigned long seed;
+	const char *running;
+
+	replay.difficulty_checked = TRUE;
+	input_replay_level(map, sizeof(map), &difficulty, &players, &seed);
+	running = difficulty >= 0 && difficulty < 4 ? names[difficulty] : "unknown";
+	if (strcmp(running, replay.route_difficulty))
+		platform_log("debug.input_replay: warning: the take was recorded on %s and %s runs on %s; the replay will not "
+			"follow its route (set the difficulty for the next map with game_difficulty_set or main_set_difficulty, "
+			"not game_difficulty_level_set, which the map load overwrites)", replay.route_difficulty, map, running);
+	else
+		platform_log("debug.input_replay: %s runs on %s, as the take was recorded", map, running);
+}
+
+/* debug.input_replay_route: "debug.input_replay: route segment S tick T at X,Y,Z (what the tick took)" every
+route_every ticks, which tools/replay_check.py compares with a recording's known positions */
+static void route_log(long tick, const char *took)
+{
+	static long every = -1;
+	float position[3];
+
+	if (every < 0)
+		every = config_integer("debug.input_replay_route");
+	if (every <= 0 || tick % every)
+		return;
+	if (input_replay_player_position(position))
+		platform_log("debug.input_replay: route segment %ld tick %ld at %.2f,%.2f,%.2f (%s; %ld seed misses)",
+			replay.segment, tick, position[0], position[1], position[2], took, replay.seed_misses);
+	else
+		platform_log("debug.input_replay: route segment %ld tick %ld at none (%s)", replay.segment, tick, took);
+}
+
 /* player 1's action as a tick takes it (update_client_dequeue, single
 player): recorded, or replaced by the recording's for this segment and tick */
 void input_replay_tick_action(void *action)
@@ -913,6 +965,9 @@ void input_replay_tick_action(void *action)
 			replay.last_game_ticks = (double)tick;
 			platform_log("debug.input_replay: the level's opening was skipped on tick %ld; the take's time begins", tick);
 		}
+		platform_log("debug.input_replay: segment %ld begins at tick %ld (%s; the last tick was %ld)", replay.segment + 1,
+			tick, replay.skip_pending && tick >= replay.last_action_tick ? "a skipped cinematic" : "the game time went back",
+			replay.last_action_tick);
 		replay.skip_pending = FALSE;
 		replay.segment++;
 		/* a take notes the random seed each segment starts with, and a replay of it starts each segment with
@@ -978,6 +1033,10 @@ void input_replay_tick_action(void *action)
 	}
 	if (replay.action_count)
 	{
+		BOOL applied = FALSE;
+
+		if (!replay.difficulty_checked && replay.route_difficulty[0])
+			replay_check_difficulty();
 		replay_seed(tick);
 		while (replay.next_action < replay.action_count &&
 			compare_action_keys(&replay.actions[replay.next_action], replay.segment, tick) < 0)
@@ -987,8 +1046,23 @@ void input_replay_tick_action(void *action)
 		{
 			/* (the recording's seeds for this tick first, when it has them) */
 			if (replay.actions[replay.next_action].has_seeds)
+			{
+				unsigned long seeds[2];
+
+				input_replay_random_seeds(seeds, FALSE);
+				if (seeds[0] != replay.actions[replay.next_action].seeds[0] ||
+					seeds[1] != replay.actions[replay.next_action].seeds[1])
+				{
+					if (!replay.seed_misses++)
+						platform_log("debug.input_replay: segment %ld, tick %ld: the game's random seeds %08lx %08lx are not "
+							"the recording's %08lx %08lx: the replay left the take's path in the tick before", replay.segment,
+							tick, seeds[0], seeds[1], replay.actions[replay.next_action].seeds[0],
+							replay.actions[replay.next_action].seeds[1]);
+				}
 				input_replay_random_seeds(replay.actions[replay.next_action].seeds, TRUE);
+			}
 			memcpy(action, replay.actions[replay.next_action].words, sizeof(words));
+			applied = TRUE;
 		}
 		/* past the end of this segment's actions: the recording went back to a
 		checkpoint here. When that was a cinematic skip, the moment the
@@ -1007,7 +1081,10 @@ void input_replay_tick_action(void *action)
 		segment, whenever the controller's timeline puts it */
 		if (compare_action_keys(&replay.actions[replay.action_count - 1], replay.segment, tick) <= 0)
 			replay.replay_finished = TRUE;
+		route_log(tick, applied ? "recorded action" : "no recorded action");
 	}
+	else if (*replay.record_actions_path)
+		route_log(tick, "recorded");
 }
 
 /* ---------- the benchmark */
