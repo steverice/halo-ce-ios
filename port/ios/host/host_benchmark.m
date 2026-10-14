@@ -156,7 +156,10 @@ static void wait_seconds(double seconds) {
     CFAbsoluteTime until = CFAbsoluteTimeGetCurrent() + seconds;
 
     while (CFAbsoluteTimeGetCurrent() < until) {
-        @autoreleasepool { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true); }
+        @autoreleasepool {
+            /* (on a thread whose run loop has nothing to wait on, the call returns at once: sleep the slice) */
+            if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true) == kCFRunLoopRunFinished) usleep(100000);
+        }
     }
 }
 
