@@ -24,7 +24,7 @@ devices. A deployment target does not establish older-device coverage.
 ## Local toolchain
 
 Apple Silicon Mac; Xcode 27 with iOS 27 SDK; Homebrew LLVM/LLD 23.1.2;
-SDL 3.4.16; musl 1.2.5. iOS deployment target 16.0. PGO and LTO are disabled;
+SDL 3.4.16; musl 1.2.5. iOS deployment target 16.0. LTO and PGO (`pgo/halo_linux.profdata`) are on for the game code;
 game assertions stay enabled. All guest imports resolved at startup.
 The app executes signed native code without JIT or writable executable pages.
 
