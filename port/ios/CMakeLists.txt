@@ -9,6 +9,10 @@ set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr" CACHE STRING "App bundle identif
 # Mac Catalyst (tools/ios_build.py --mac): configured as iOS, built with -sdk macosx SUPPORTS_MACCATALYST=YES
 option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
+# iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
+# On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
+option(HALO_CLOUD_SAVES "Sync saves through the player's private iCloud database" OFF)
+set(HALO_CLOUD_CONTAINER "iCloud.org.steverice.visr" CACHE STRING "iCloud container for HALO_CLOUD_SAVES")
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
@@ -77,6 +81,13 @@ else()
 endif()
 # the texture upscale policy (port/assets/texture-policy.json) as a C table for port/runtime/texture_policy.c
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# the app's page in the Settings app; a build with iCloud saves takes a copy with their rows added
+set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
+if(HALO_CLOUD_SAVES AND NOT HALO_TVOS)
+    set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/cloud/Settings.bundle")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${ROOT}/tools/settings_bundle.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" "${HALO_SETTINGS_BUNDLE}" COMMAND_ERROR_IS_FATAL ANY)
+endif()
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     COMMAND Python3::Interpreter "${ROOT}/tools/embed_texture_policy.py"
@@ -145,6 +156,8 @@ if(HALO_TVOS)
     # guest arena; the entitlement asks for a larger address space
     # (tools/ios_build.py --tvos --extended-virtual-addressing)
     if(HALO_EXTENDED_VIRTUAL_ADDRESSING)
+        # (named, so the iCloud keys are added to it and do not replace it)
+        set(HALO_ENTITLEMENTS VISR-tvOS-extended.entitlements)
         set_target_properties(VISR PROPERTIES
             XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/VISR-tvOS-extended.entitlements")
     endif()
@@ -153,8 +166,8 @@ elseif(HALO_VISIONOS)
         "-framework ARKit" "-framework SwiftUI")
     set_source_files_properties(Assets-visionOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # the app's page in the Settings app (host/host_texture_settings.m)
-    target_sources(VISR PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")
+    set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # Theater.swift calls host_theater.m's C functions
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/host/host_theater.h"
@@ -172,8 +185,8 @@ else()
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers")
     set_source_files_properties(Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # the app's page in the Settings app (host/host_texture_settings.m)
-    target_sources(VISR PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")
+    set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon")
 # internet play's MQTT brokers (network.brokers_file): host_main.m writes them
@@ -219,4 +232,30 @@ set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_
     XCODE_ATTRIBUTE_HALO_BUILD_NUMBER "${HALO_BUILD_NUMBER}")
 if(HALO_DEVELOPMENT_TEAM)
     set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${HALO_DEVELOPMENT_TEAM}")
+endif()
+# The device benchmark's report, sent when its tester agrees (host/host_benchmark_send.m): one record in the public
+# database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
+option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to the iCloud container's public database" OFF)
+if(HALO_BENCHMARK_UPLOAD)
+    target_sources(VISR PRIVATE host/host_benchmark_send.m)
+    target_compile_definitions(VISR PRIVATE "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
+endif()
+if(HALO_CLOUD_SAVES)
+    # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit
+    target_sources(VISR PRIVATE "${ROOT}/port/runtime/cloud_saves.c" host/cloud_store_cloudkit.m host/host_cloud_saves.m)
+    target_compile_definitions(VISR PRIVATE HALO_CLOUD_SAVES=1 "HALO_CLOUD_CONTAINER=\"${HALO_CLOUD_CONTAINER}\"")
+endif()
+if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
+    target_link_libraries(VISR PRIVATE "-framework CloudKit")
+    # the iCloud keys, added to the target's own entitlements when it has some (visionOS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_CLOUD_ENTITLEMENTS)
+    if(HALO_ENTITLEMENTS)
+        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_ENTITLEMENTS}" HALO_BASE_ENTITLEMENTS)
+        string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
+        string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
+    endif()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements" "${HALO_CLOUD_ENTITLEMENTS}")
+    set_target_properties(VISR PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
+        XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
 endif()
