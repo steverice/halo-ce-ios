@@ -728,7 +728,9 @@ static const struct config_setting config_settings[] =
 		"\"zoom:<start>,<swaps>,<clicks>[,<lights>[,<unclicks>]]\" stands still and\n"
 		"from poll <start> swaps weapons <swaps> times, zooms <clicks> times,\n"
 		"presses the flashlight <lights> times (night vision), then clicks the\n"
-		"zoom <unclicks> times more (out of it); empty for none." },
+		"zoom <unclicks> times more (out of it); \"aachord:<start>,<period>\"\n"
+		"presses the live anti-aliasing chord (Back and R1) from poll <start> and\n"
+		"every <period> polls after; empty for none." },
 	{ "debug.side_by_side_screen", _config_boolean, "false", "HALO_SIDE_BY_SIDE_SCREEN", _environment_set_is_true,
 		_platform_ios,
 		"With display.stereo = \"side_by_side\": show the eyes SCREEN mode's\n"

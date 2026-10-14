@@ -170,10 +170,18 @@ static double render_scale_changed_milliseconds = -1.0;
 /* the render scale on screen for two seconds after it changes; called as
 each frame begins (render_interpolation.c), so the frame's debug pass draws
 it (the console's lines show only while the console is open) */
+/* the anti-aliasing chord's label (halo_anti_aliasing_toggle): when it
+last switched, and the text, for two seconds */
+static double anti_aliasing_changed_milliseconds = -1.0;
+static const char *anti_aliasing_label;
+
 void halo_render_scale_overlay(void)
 {
 	char text[64];
 
+	if (anti_aliasing_changed_milliseconds >= 0.0 &&
+		halo_frame_trace_milliseconds() - anti_aliasing_changed_milliseconds <= 2000.0)
+		render_debug_string(0, anti_aliasing_label);
 	if (render_scale_changed_milliseconds < 0.0 ||
 		halo_frame_trace_milliseconds() - render_scale_changed_milliseconds > 2000.0)
 		return;
@@ -1262,8 +1270,11 @@ enum
 	_anti_aliasing_smaa,
 };
 
-/* the method in effect, -1 until the setting is first read */
+/* the method in effect, -1 until the setting is first read; and the
+method the chord chose while the game runs (halo_anti_aliasing_toggle), in
+place of the setting's until the app quits, -1 for none */
 static int anti_aliasing_method = -1;
+static int anti_aliasing_live = -1;
 /* its passes' programs could be made (anti_aliasing_prepare) */
 static BOOL anti_aliasing_ready;
 
@@ -1276,6 +1287,11 @@ static void anti_aliasing_read(void)
 	int method = !strcmp(setting, "fxaa") ? _anti_aliasing_fxaa : !strcmp(setting, "smaa") ? _anti_aliasing_smaa :
 		_anti_aliasing_off;
 
+	if (anti_aliasing_live >= 0)
+	{
+		method = anti_aliasing_live;
+		setting = method == _anti_aliasing_fxaa ? "fxaa" : "off";
+	}
 	if (method == anti_aliasing_method)
 		return;
 	anti_aliasing_method = method;
@@ -1364,6 +1380,21 @@ static BOOL anti_aliasing_folds(void)
 	}
 	return anti_aliasing_ready && anti_aliasing_method == _anti_aliasing_fxaa && device_capabilities.upscale_anti_alias &&
 		folded;
+}
+
+/* the live chord (xinput_sdl.c: hold Back and press R1): FXAA on if it is
+off, off otherwise, from the next frame, with a label on screen for two
+seconds. Not saved: the next launch takes display.anti_aliasing again */
+void halo_anti_aliasing_toggle(void)
+{
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	anti_aliasing_live = anti_aliasing_method == _anti_aliasing_fxaa ? _anti_aliasing_off : _anti_aliasing_fxaa;
+	anti_aliasing_label = anti_aliasing_live == _anti_aliasing_fxaa ? "FXAA on" : "FXAA off";
+	anti_aliasing_changed_milliseconds = halo_frame_trace_milliseconds();
+	platform_log("anti-aliasing: %s (the live chord, until the app quits)", anti_aliasing_label);
+	if (device.gl_ready)
+		anti_aliasing_read();
 }
 
 /* the pass over the view's rectangle of the scene's target (halo_render_scene_end) */
