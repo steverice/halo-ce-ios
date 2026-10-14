@@ -1,0 +1,11 @@
+scene = c40-bridge
+map = c40
+difficulty = easy
+entered = console
+first_tick = 0
+players = 1
+stereo = off
+kind = gameplay
+lead = 0
+window = 0
+recorded = 2026-10-03

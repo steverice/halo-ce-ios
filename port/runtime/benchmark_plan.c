@@ -2,19 +2,78 @@
 #include "benchmark_plan.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/* Suite 1. A scene with a recording replays it (debug.input_record made it); the others play by themselves.
-   The recordings are not in the repository yet: a scene whose recording is not on the device is skipped. */
+/* Suite 1's scenes that nobody plays: they run by themselves. The app adds one scene for each recorded route it
+   carries (benchmark_scene_from_route; port/benchmark/recordings/NAME.route). The probe's own copy of the whole
+   suite is in benchmark_probe.c */
 const struct benchmark_scene benchmark_suite_scenes[] = {
     { "menu", "", "normal", NULL, 5.0, 30.0, BENCHMARK_SCENE_MENU, 0 },
     { "a10-opening", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0 },
-    { "a10-crew", "a10", "hard", "a10-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
     /* the landing cutscene is about 75 s; then the beach, standing still */
     { "b30-beach", "b30", "easy", NULL, 85.0, 60.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
-    { "c40-bridge", "c40", "easy", "c40-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
 };
 const int benchmark_suite_scene_count = (int)(sizeof(benchmark_suite_scenes) / sizeof(benchmark_suite_scenes[0]));
+
+/* the value of "key = value" in a route file's text, quotes and spaces trimmed; 0 if the key is not there */
+static int route_value(const char *text, const char *key, char *value, size_t size) {
+    size_t length = strlen(key);
+    const char *line = text;
+
+    while (line && *line) {
+        const char *end = strchr(line, '\n'), *at = line + length;
+
+        if (!strncmp(line, key, length) && (*at == ' ' || *at == '=' || *at == '\t')) {
+            size_t count;
+
+            while (*at == ' ' || *at == '\t') at++;
+            if (*at == '=') {
+                at++;
+                while (*at == ' ' || *at == '\t' || *at == '"') at++;
+                count = end ? (size_t)(end - at) : strlen(at);
+                while (count && (at[count - 1] == ' ' || at[count - 1] == '\r' || at[count - 1] == '"' || at[count - 1] == '\t')) count--;
+                if (count >= size) count = size - 1;
+                memcpy(value, at, count);
+                value[count] = 0;
+                return 1;
+            }
+        }
+        line = end ? end + 1 : NULL;
+    }
+    *value = 0;
+    return 0;
+}
+
+int benchmark_scene_from_route(const char *text, const char *recording, struct benchmark_route *route) {
+    static const char *const difficulties[] = { "easy", "normal", "hard", "impossible" };
+    char number[32], kind[16];
+    int index, known = 0;
+
+    memset(route, 0, sizeof(*route));
+    snprintf(route->recording, sizeof(route->recording), "%s", recording);
+    if (!route_value(text, "map", route->map, sizeof(route->map)) || !*route->map) return 0;
+    if (!route_value(text, "difficulty", route->difficulty, sizeof(route->difficulty))) return 0;
+    for (index = 0; index < 4; index++) known |= !strcmp(route->difficulty, difficulties[index]);
+    if (!known) return 0;
+    /* a route that did not begin at its level's beginning cannot be replayed on another device */
+    if (route_value(text, "first_tick", number, sizeof(number)) && atol(number) > 1) return 0;
+    if (route_value(text, "entered", number, sizeof(number)) && !strcmp(number, "saved")) return 0;
+    if (route_value(text, "players", number, sizeof(number)) && atol(number) != 1) return 0;
+    if (!route_value(text, "scene", route->id, sizeof(route->id)) || !*route->id)
+        snprintf(route->id, sizeof(route->id), "%s", recording);
+    route->scene.lead = route_value(text, "lead", number, sizeof(number)) ? atof(number) : 0.0;
+    route->scene.seconds = route_value(text, "window", number, sizeof(number)) ? atof(number) : 0.0;
+    route->scene.kind = route_value(text, "kind", kind, sizeof(kind)) && !strcmp(kind, "cutscene") ? BENCHMARK_SCENE_CUTSCENE :
+        BENCHMARK_SCENE_GAMEPLAY;
+    route->scene.heavy = route->scene.kind == BENCHMARK_SCENE_GAMEPLAY &&
+        !(route_value(text, "heavy", number, sizeof(number)) && !strcmp(number, "false"));
+    route->scene.id = route->id;
+    route->scene.map = route->map;
+    route->scene.difficulty = route->difficulty;
+    route->scene.recording = route->recording;
+    return 1;
+}
 
 static const long ladder_lines[] = { 540, 720, 1080, 1440, 2160 };
 #define LADDER_COUNT ((int)(sizeof(ladder_lines) / sizeof(ladder_lines[0])))
@@ -31,6 +90,22 @@ const char *benchmark_status_name(enum benchmark_status status) {
 
 const char *benchmark_mode_name(enum benchmark_mode mode) {
     return mode == BENCHMARK_FULL ? "full" : "quick";
+}
+
+unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
+    unsigned long hash = 2166136261UL + BENCHMARK_SUITE_VERSION;
+    char text[256];
+    int scene;
+    const char *at;
+
+    for (scene = 0; scene < plan->scene_count; scene++) {
+        const struct benchmark_scene *one = &plan->scenes[scene];
+
+        snprintf(text, sizeof(text), "%s|%s|%s|%s|%.2f|%.2f|%d|%d;", one->id, one->map, one->difficulty,
+            one->recording ? one->recording : "", one->lead, one->seconds, (int)one->kind, one->heavy);
+        for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
+    }
+    return hash;
 }
 
 int benchmark_outcome_meets(const struct benchmark_outcome *outcome, int refreshes) {
@@ -110,12 +185,12 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     struct benchmark_run *next) {
     struct walk walk = { plan, finished, count, 0, 0, next };
     const struct benchmark_device *device = &plan->device;
-    const struct benchmark_outcome *baseline[16] = { 0 }, *reference = NULL;
+    const struct benchmark_outcome *baseline[BENCHMARK_SCENES_MAXIMUM] = { 0 }, *reference = NULL;
     long ladder[LADDER_COUNT + 1], base_lines, lines, anisotropy = device->anisotropy, shadow_size = device->shadow_size;
     int ladder_count = 0, base = 0, chosen, scene, worst = -1, base_meets = 1, index, model_lod_max = device->model_lod_max;
     int heavier_only, lighter_only;
 
-    if (plan->scene_count > 16) return 0;
+    if (plan->scene_count > BENCHMARK_SCENES_MAXIMUM) return 0;
     base_lines = device->base_lines > 0 && device->base_lines < device->drawable_lines ? device->base_lines : device->drawable_lines;
 
     /* A: every scene as the device's profile has it */

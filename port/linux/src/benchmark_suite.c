@@ -61,12 +61,17 @@ double halo_frame_trace_milliseconds(void);
 #define LOAD_LIMIT_MILLISECONDS 180000.0
 /* a recording that has not ended this long after its length has left its route */
 #define REPLAY_OVERRUN_MILLISECONDS 60000.0
+/* how long the first run waits for the main menu before going ahead without it (a launch straight into a map) */
+#define START_LIMIT_MILLISECONDS 60000.0
 /* the menu fades in and its music starts before its frames settle */
 #define MENU_SETTLE_MILLISECONDS 3000.0
 /* the route: player 1's position every this many ticks of the recorded time */
 #define ROUTE_TICKS 300.0
+/* a replay this many world units from the recording's own route has left it (a tick's difference in when a point
+is taken moves a running player a small fraction of this) */
+#define ROUTE_TOLERANCE 2.0
 
-enum suite_state { suite_unasked, suite_off, suite_next, suite_loading, suite_lead, suite_measuring };
+enum suite_state { suite_unasked, suite_off, suite_starting, suite_next, suite_loading, suite_lead, suite_measuring };
 
 static struct
 {
@@ -80,8 +85,14 @@ static struct
 	double entered, opened;
 	/* the recorded time when the window opened (a level), and the next route point's */
 	double opened_ticks, route_due;
-	char route[1536];
+	char route[4096];
 	size_t route_length;
+	/* the recording's own route (NAME.checks beside it: the same "tick:x,y,z;..." text, made from replays that
+	agreed), the next point of it to compare, and how far off the worst point so far was */
+	char checks[4096];
+	const char *next_check;
+	double worst_distance;
+	int diverged;
 } suite;
 
 static void enter(enum suite_state state)
@@ -152,6 +163,10 @@ static void next_run(void)
 	suite.route_length = 0;
 	suite.route[0] = 0;
 	suite.route_due = 0.0;
+	suite.checks[0] = 0;
+	suite.next_check = suite.checks;
+	suite.worst_distance = 0.0;
+	suite.diverged = 0;
 	platform_log("benchmark suite: %s", text);
 	enter(suite_loading);
 	if (*suite.recording)
@@ -161,6 +176,21 @@ static void next_run(void)
 		{
 			finish("skipped", "the recording is not on this device");
 			return;
+		}
+	}
+	if (*suite.recording)
+	{
+		char checks_path[256];
+		FILE *file;
+
+		snprintf(checks_path, sizeof(checks_path), RECORDINGS "/%s.checks", suite.recording);
+		file = fopen(checks_path, "r");
+		if (file)
+		{
+			size_t count = fread(suite.checks, 1, sizeof(suite.checks) - 1, file);
+
+			suite.checks[count] = 0;
+			fclose(file);
 		}
 	}
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
@@ -190,6 +220,31 @@ static void route_point(double ticks)
 		suite.route_length ? ";" : "", ticks, position[0], position[1], position[2]);
 	if (written > 0)
 		suite.route_length += (size_t)written;
+	/* against the recording's own route: the point for this stretch of ticks, if it has one */
+	while (suite.next_check && *suite.next_check)
+	{
+		double check_ticks, x, y, z, distance;
+		const char *following = strchr(suite.next_check, ';');
+
+		if (sscanf(suite.next_check, "%lf:%lf,%lf,%lf", &check_ticks, &x, &y, &z) != 4)
+			break;
+		if (check_ticks > ticks + ROUTE_TICKS / 2.0)
+			break;
+		suite.next_check = following ? following + 1 : NULL;
+		if (check_ticks < ticks - ROUTE_TICKS / 2.0)
+			continue;
+		distance = sqrt((x - position[0]) * (x - position[0]) + (y - position[1]) * (y - position[1]) +
+			(z - position[2]) * (z - position[2]));
+		if (distance > suite.worst_distance)
+			suite.worst_distance = distance;
+		if (distance > ROUTE_TOLERANCE && !suite.diverged)
+		{
+			suite.diverged = 1;
+			platform_log("benchmark suite: %s left its route at tick %.0f: %.1f world units from the recording's own position",
+				suite.scene, ticks, distance);
+		}
+		break;
+	}
 }
 
 void benchmark_suite_frame(long width, long height)
@@ -225,12 +280,19 @@ void benchmark_suite_frame(long width, long height)
 			platform_log("benchmark suite: the app refused to start it; quitting");
 			exit(EXIT_FAILURE);
 		}
-		enter(suite_next);
+		enter(suite_starting);
 	}
 	now = halo_frame_trace_milliseconds();
 	ticks = input_replay_timeline();
 	switch (suite.state)
 	{
+	case suite_starting:
+		/* the first run waits for the game to have finished starting: the main menu loaded and settled. A map
+		asked for on the launch's first frames (a suite that carries on at a level) crashed the game */
+		if ((benchmark_scenario_at_menu() && now - suite.entered >= MENU_SETTLE_MILLISECONDS) ||
+			now - suite.entered > START_LIMIT_MILLISECONDS)
+			enter(suite_next);
+		break;
 	case suite_next:
 		next_run();
 		break;
@@ -244,7 +306,13 @@ void benchmark_suite_frame(long width, long height)
 			finish("failed", "the map did not start");
 		break;
 	case suite_lead:
-		if (menu ? now - suite.entered >= suite.lead * 1000.0 : ticks >= suite.lead * 30.0)
+		/* the route is followed from the level's first tick, so a replay that leaves it during the lead-in is
+		caught before anything is measured */
+		if (!menu)
+			route_point(ticks);
+		if (suite.diverged)
+			finish("diverged", suite.route);
+		else if (menu ? now - suite.entered >= suite.lead * 1000.0 : ticks >= suite.lead * 30.0)
 		{
 			suite.opened = now;
 			suite.opened_ticks = ticks;
@@ -259,7 +327,12 @@ void benchmark_suite_frame(long width, long height)
 	case suite_measuring:
 		if (!menu)
 			route_point(ticks);
-		if (menu ? now - suite.opened >= suite.seconds * 1000.0 :
+		if (suite.diverged)
+		{
+			host_benchmark_window(0, (int)width, (int)height);
+			finish("diverged", suite.route);
+		}
+		else if (menu ? now - suite.opened >= suite.seconds * 1000.0 :
 			suite.seconds > 0.0 ? ticks - suite.opened_ticks >= suite.seconds * 30.0 : input_replay_ended())
 		{
 			host_benchmark_window(0, (int)width, (int)height);

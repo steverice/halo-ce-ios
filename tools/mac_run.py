@@ -182,6 +182,7 @@ DEFAULTS = {
     "debug.input_record": '""',
     "debug.input_replay": '""',
     "debug.benchmark": "false",
+    "debug.benchmark_suite": '""',
     "debug.gpu_stats": "false",
     "debug.gpu_trace_frame": "-1",
     "debug.gpu_trace_constants": "false",
@@ -888,6 +889,11 @@ def prepare(args, documents, rewrite=False):
     if getattr(args, "record_shader_lists", False):
         settings["debug.shader_list_record"] = f'"{runner}/shader-lists"'
     settings["debug.exit_after"] = f"{float(args.exit_after)}"
+    if getattr(args, "benchmark_suite", None):
+        # the device benchmark's suite ends the game itself when its last run is over
+        settings["debug.benchmark_suite"] = f'"{args.benchmark_suite}"'
+        settings["debug.exit_after"] = "0.0"
+        shutil.rmtree(documents / "benchmark", ignore_errors=True)
     for assignment in args.set:
         key, value = assignment.split("=", 1)
         settings[key.strip()] = value.strip()
@@ -906,6 +912,10 @@ def prepare(args, documents, rewrite=False):
     (documents / "stderr.log").touch()
 
 
+# a benchmark suite without --time-limit: an hour and a half of wall time, then it is killed
+SUITE_LIMIT = 5400
+
+
 def collect(documents, out):
     out.mkdir(parents=True, exist_ok=True)
     for name in ("ios-runtime.log", "stderr.log", "debug.txt", "config.toml"):
@@ -913,6 +923,12 @@ def collect(documents, out):
             shutil.copy2(documents / name, out / name)
     if (documents / "runner").is_dir():
         shutil.copytree(documents / "runner", out / "runner", dirs_exist_ok=True)
+    # the device benchmark's journal, runs and report (--benchmark-suite), without the recordings it replayed
+    if (documents / "benchmark").is_dir():
+        (out / "benchmark").mkdir(exist_ok=True)
+        for file in sorted((documents / "benchmark").iterdir()):
+            if file.is_file():
+                shutil.copy2(file, out / "benchmark" / file.name)
 
 
 def simulator_pattern(udid):
@@ -949,7 +965,7 @@ def run_simulator(args):
     if not wait_for(lambda: simulator_running(udid), 60):
         collect(documents, args.out)
         sys.exit(f"the game did not start in simulator {udid} within 60 seconds; logs are in {args.out}")
-    limit = args.time_limit or args.exit_after + 120
+    limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     finished = wait_for(lambda: not simulator_running(udid), limit)
     if not finished:
         subprocess.run(["xcrun", "simctl", "terminate", udid, bundle_id], capture_output=True)
@@ -1136,7 +1152,7 @@ def run_native(args):
     if not (data / SEED_MARKER).is_file():
         seed_native_data(args, data)
     prepare(args, data, rewrite=True)
-    limit = args.time_limit or args.exit_after + 120
+    limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     environment = validation_environment(args.metal_validation, args.metal_shader_validation)
     if "MTL_DEBUG_LAYER_WARNING_MODE" in environment:
         # an open-launched app's NSLog lands in stderr.log, which check-metal greps for validation errors,
@@ -1177,7 +1193,7 @@ def run(args):
     documents = container_documents(args)
     prepare(args, documents, rewrite=args.fresh_config)
     launch(documents)
-    limit = args.time_limit or args.exit_after + 120
+    limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     finished = wait_for(lambda: not running(), limit)
     if not finished:
         subprocess.run(["pkill", "-x", TARGET])
@@ -1219,6 +1235,10 @@ def main():
                                  "(600 = 18,000 frames), which validation slows")
     run_parser.add_argument("--set", action="append", default=[], metavar="SECTION.KEY=VALUE",
                             help="a config.toml setting, value in TOML syntax (repeatable)")
+    run_parser.add_argument("--benchmark-suite", choices=("quick", "full"),
+                            help="run the device benchmark's suite (debug.benchmark_suite) in place of a timed run: "
+                                 "the game quits when the suite is over (--exit-after is ignored; --time-limit bounds "
+                                 "it, 90 minutes by default) and its journal, runs and report.json land in OUT/benchmark")
     run_parser.add_argument("--init", action="append", default=[], metavar="COMMAND",
                             help="a console command for init.txt, e.g. 'map_name a10' (repeatable)")
     run_parser.add_argument("--screenshot-every", type=int, default=0, metavar="FRAMES")

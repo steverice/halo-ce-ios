@@ -86,6 +86,43 @@ static void test_metrics(void) {
     benchmark_metrics_free(&metrics);
 }
 
+/* ---------- the suite the plan is walked with: three scenes that play by themselves and two recorded routes */
+
+static const struct benchmark_scene probe_scenes[] = {
+    { "menu", "", "normal", NULL, 5.0, 30.0, BENCHMARK_SCENE_MENU, 0 },
+    { "a10-opening", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0 },
+    { "a10-crew", "a10", "hard", "a10-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
+    { "b30-beach", "b30", "easy", NULL, 85.0, 60.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
+    { "c40-bridge", "c40", "easy", "c40-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
+};
+#define PROBE_SCENE_COUNT ((int)(sizeof(probe_scenes) / sizeof(probe_scenes[0])))
+
+static void test_routes(void) {
+    struct benchmark_route route;
+
+    CHECK(benchmark_scene_from_route("scene = a10-crew\nmap = a10\ndifficulty = hard\nfirst_tick = 0\nplayers = 1\nlead = 12.5\n"
+        "window = 40\n", "a10-bench", &route));
+    CHECK(!strcmp(route.scene.id, "a10-crew") && !strcmp(route.scene.map, "a10") && !strcmp(route.scene.difficulty, "hard") &&
+        !strcmp(route.scene.recording, "a10-bench") && route.scene.lead == 12.5 && route.scene.seconds == 40.0 &&
+        route.scene.kind == BENCHMARK_SCENE_GAMEPLAY && route.scene.heavy);
+    /* a take as the recorder writes it: quoted values, other keys, no scene name (the recording's name stands in) */
+    CHECK(benchmark_scene_from_route("map = a10\r\ndifficulty = impossible\r\nentered = start\nfirst_tick = 1\n"
+        "display.model_lod = \"auto\"\nplayers = 1\nsegments = 3\n", "take-a10-20261013-213502", &route));
+    CHECK(!strcmp(route.scene.id, "take-a10-20261013-213502") && !strcmp(route.scene.difficulty, "impossible") &&
+        route.scene.lead == 0.0 && route.scene.seconds == 0.0);
+    CHECK(benchmark_scene_from_route("map=c40\ndifficulty=easy\nkind = cutscene\n", "x", &route) &&
+        route.scene.kind == BENCHMARK_SCENE_CUTSCENE && !route.scene.heavy);
+    CHECK(benchmark_scene_from_route("map = c40\ndifficulty = easy\nheavy = false\n", "x", &route) && !route.scene.heavy);
+    /* not usable: begun from a save or past the start, more than one player, no map, a difficulty that is no name */
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nentered = saved\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nfirst_tick = 4500\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nplayers = 2\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("difficulty = hard\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = legendary\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("mapping = a10\ndifficulty = hard\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("", "x", &route));
+}
+
 /* ---------- a made-up device, to walk the plan with */
 
 struct pretend {
@@ -97,7 +134,7 @@ struct pretend {
 };
 
 static struct benchmark_outcome pretend_run(const struct pretend *device, const struct benchmark_run *run) {
-    const struct benchmark_scene *scene = &benchmark_suite_scenes[run->scene];
+    const struct benchmark_scene *scene = &probe_scenes[run->scene];
     struct benchmark_outcome outcome = { BENCHMARK_OK, 0, 0, 0, device->hertz, 900 };
     double gpu = device->gpu_at_1080 * (double)(run->lines * run->lines) / (1080.0 * 1080.0), period = 1000.0 / device->hertz;
 
@@ -117,7 +154,7 @@ static struct benchmark_outcome pretend_run(const struct pretend *device, const 
 /* walks a whole suite; returns the run count, and the last run of each stage through `last` (indexed by letter) */
 static int walk_suite(enum benchmark_mode mode, const struct benchmark_device *facts, const struct pretend *device,
     struct benchmark_run *runs, struct benchmark_outcome *outcomes) {
-    struct benchmark_plan plan = { mode, benchmark_suite_scenes, benchmark_suite_scene_count, *facts };
+    struct benchmark_plan plan = { mode, probe_scenes, PROBE_SCENE_COUNT, *facts };
     int count = 0;
 
     while (count < BENCHMARK_RUNS_MAXIMUM && benchmark_plan_next(&plan, outcomes, count, &runs[count])) {
@@ -170,7 +207,7 @@ static void test_plan(void) {
         struct pretend device = { 60.0, 9.0, 59.94, -1, BENCHMARK_OK };
 
         count = walk_suite(BENCHMARK_QUICK, &facts, &device, runs, outcomes);
-        CHECK(count == benchmark_suite_scene_count && count_stage(runs, count, 'A') == count);
+        CHECK(count == PROBE_SCENE_COUNT && count_stage(runs, count, 'A') == count);
         CHECK(runs[0].lines == 540 && runs[0].anisotropy == 4 && runs[0].shadow_size == 256 && !runs[0].model_lod_max);
         CHECK(!strcmp(runs[2].key, "A a10-crew 540 4 256 auto"));
     }
@@ -182,11 +219,11 @@ static void test_plan(void) {
         struct pretend device = { 30.0, 9.0, 59.94, -1, BENCHMARK_OK };   /* holds at 540 only with cheaper settings */
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
-        CHECK(count > benchmark_suite_scene_count && count < BENCHMARK_RUNS_MAXIMUM);
+        CHECK(count > PROBE_SCENE_COUNT && count < BENCHMARK_RUNS_MAXIMUM);
         run = last_of_stage(runs, count, 'B');
         CHECK(run && run->lines < 1080);
         run = last_of_stage(runs, count, 'E');
-        CHECK(run && run->lines == 540 && count_stage(runs, count, 'E') == benchmark_suite_scene_count);
+        CHECK(run && run->lines == 540 && count_stage(runs, count, 'E') == PROBE_SCENE_COUNT);
         /* nothing in stage C costlier than the profile's, since the target was missed */
         for (run = runs; run < runs + count; run++)
             CHECK(run->stage != 'C' || (run->anisotropy <= 16 && run->shadow_size <= 512 && run->lines == 540));
@@ -216,7 +253,7 @@ static void test_plan(void) {
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         CHECK(count_stage(runs, count, 'D') >= 2);
         run = last_of_stage(runs, count, 'D');
-        CHECK(run && run->lines > 1080 && benchmark_suite_scenes[run->scene].kind != BENCHMARK_SCENE_GAMEPLAY);
+        CHECK(run && run->lines > 1080 && probe_scenes[run->scene].kind != BENCHMARK_SCENE_GAMEPLAY);
         /* the baseline was already the answer: no confirmation pass repeats it */
         CHECK(count_stage(runs, count, 'E') == 0);
     }
@@ -245,13 +282,13 @@ static void test_plan(void) {
     /* scenes that cannot run here (no recording) are left out of every later stage */
     {
         struct benchmark_device facts = { 1080, 1080, 16, 512, 1 };
-        struct benchmark_plan plan = { BENCHMARK_FULL, benchmark_suite_scenes, benchmark_suite_scene_count, facts };
+        struct benchmark_plan plan = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT, facts };
         struct pretend device = { 30.0, 9.0, 59.94, -1, BENCHMARK_OK };
 
         count = 0;
         while (count < BENCHMARK_RUNS_MAXIMUM && benchmark_plan_next(&plan, outcomes, count, &runs[count])) {
             outcomes[count] = pretend_run(&device, &runs[count]);
-            if (benchmark_suite_scenes[runs[count].scene].recording) {
+            if (probe_scenes[runs[count].scene].recording) {
                 CHECK(runs[count].stage == 'A' || runs[count].stage == 'B');
                 outcomes[count].status = BENCHMARK_SKIPPED;
             }
@@ -259,7 +296,7 @@ static void test_plan(void) {
         }
         CHECK(count < BENCHMARK_RUNS_MAXIMUM && last_of_stage(runs, count, 'E'));
         for (run = runs; run < runs + count; run++)
-            CHECK(run->stage == 'A' || run->stage == 'B' || !benchmark_suite_scenes[run->scene].recording);
+            CHECK(run->stage == 'A' || run->stage == 'B' || !probe_scenes[run->scene].recording);
     }
 
     /* every device from hopeless to idle ends, within the run limit */
@@ -271,7 +308,7 @@ static void test_plan(void) {
             struct pretend device = { gpu, 7.0, 59.94, -1, BENCHMARK_OK };
 
             count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
-            CHECK(count >= benchmark_suite_scene_count && count < BENCHMARK_RUNS_MAXIMUM);
+            CHECK(count >= PROBE_SCENE_COUNT && count < BENCHMARK_RUNS_MAXIMUM);
         }
     }
 }
@@ -294,14 +331,14 @@ static long file_size(const char *path) {
 /* runs a suite through the journal as the app does, stopping (as a kill would) after `events` journal writes;
    returns 1 if the suite reached its end */
 static int journaled_suite(const struct benchmark_device *facts, const struct pretend *device, int events, int crash) {
-    struct benchmark_plan plan = { BENCHMARK_FULL, benchmark_suite_scenes, benchmark_suite_scene_count, *facts };
+    struct benchmark_plan plan = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT, *facts };
     struct benchmark_journal journal;
     struct benchmark_run run;
 
     benchmark_journal_load(journal_path, &journal);
     if (!journal.valid || journal.finished) {
         if (events-- <= 0) return 0;
-        benchmark_journal_start(journal_path, BENCHMARK_FULL, "TESTCODE", facts);
+        benchmark_journal_start(journal_path, BENCHMARK_FULL, "TESTCODE", facts, 0x1234abcdUL);
         benchmark_journal_load(journal_path, &journal);
     } else if (journal.cut_off) {
         /* the app's first act on a resume: the cut-off run gets its end line */
@@ -347,7 +384,7 @@ static void test_journal(void) {
     CHECK(!journal.valid);
 
     /* what is written comes back */
-    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "K7Q2M9XD", &facts));
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "K7Q2M9XD", &facts, 0x5f3a9c01UL));
     CHECK(benchmark_journal_begin(journal_path, 0, "A menu 1080 16 512 max"));
     CHECK(benchmark_journal_memory(journal_path, 512, 904));
     CHECK(benchmark_journal_end(journal_path, 0, &outcome));
@@ -356,6 +393,15 @@ static void test_journal(void) {
         !journal.cut_off && !journal.finished);
     CHECK(journal.device.drawable_lines == 2160 && journal.device.base_lines == 1080 && journal.device.anisotropy == 16 &&
         journal.device.shadow_size == 512 && journal.device.model_lod_max == 1);
+    CHECK(journal.signature == 0x5f3a9c01UL);
+    {
+        /* the signature follows the scenes: the same suite gives the same number, another scene list another */
+        struct benchmark_plan same = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT, facts };
+        struct benchmark_plan fewer = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT - 1, facts };
+
+        CHECK(benchmark_plan_signature(&same) == benchmark_plan_signature(&same));
+        CHECK(benchmark_plan_signature(&same) != benchmark_plan_signature(&fewer));
+    }
     CHECK(journal.outcomes[0].status == BENCHMARK_OK && NEAR(journal.outcomes[0].interval_p99, 16.68, 1e-9) &&
         NEAR(journal.outcomes[0].cpu_p95, 9.25, 1e-9) && NEAR(journal.outcomes[0].gpu_p95, 12.5, 1e-9) &&
         NEAR(journal.outcomes[0].refresh_hertz, 59.94, 1e-9) && journal.outcomes[0].left_least == 904);
@@ -386,11 +432,11 @@ static void test_journal(void) {
 
     /* a foreign file, and a begin out of order, are not trusted */
     file = fopen(journal_path, "w");
-    fputs("something else\nsuite full X 1 1 1 1 1\n", file);
+    fputs("something else\nsuite full X 1 1 1 1 1 0\n", file);
     fclose(file);
     benchmark_journal_load(journal_path, &journal);
     CHECK(!journal.valid);
-    benchmark_journal_start(journal_path, BENCHMARK_QUICK, "X", &facts);
+    benchmark_journal_start(journal_path, BENCHMARK_QUICK, "X", &facts, 1UL);
     benchmark_journal_begin(journal_path, 3, "A menu 1080 16 512 max");
     benchmark_journal_load(journal_path, &journal);
     CHECK(!journal.valid);
@@ -399,7 +445,7 @@ static void test_journal(void) {
     unlink(journal_path);
     CHECK(journaled_suite(&facts, &device, 1 << 20, 0));
     benchmark_journal_load(journal_path, &whole);
-    CHECK(whole.valid && whole.finished && whole.count > benchmark_suite_scene_count);
+    CHECK(whole.valid && whole.finished && whole.count > PROBE_SCENE_COUNT);
 
     /* the file cut at every byte: never a crash, never more runs than the whole, and the finished ones agree */
     size = file_size(journal_path);
@@ -446,6 +492,7 @@ static void test_journal(void) {
 
 int main(void) {
     test_metrics();
+    test_routes();
     test_plan();
     test_journal();
     if (failures) {

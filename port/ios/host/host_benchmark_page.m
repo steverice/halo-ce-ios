@@ -266,6 +266,7 @@ static UIImage *qr_image(NSString *text) {
     if (url && ![url isEqualToString:self.shownURL]) {
         self.shownURL = url;
         self.address.text = url;
+        host_logf(HOST_LOG_INFO, "benchmark: the report page is at %s", url.UTF8String);
         self.qr.image = qr_image(url);
     } else if (!url && !self.shownURL) self.address.text = @"Connect this device to your network to get the report.";
 }

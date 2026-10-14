@@ -15,6 +15,7 @@
 #include <stddef.h>
 
 #define BENCHMARK_RUNS_MAXIMUM 64
+#define BENCHMARK_SCENES_MAXIMUM 16
 /* megabytes that must stay free before the system's limit for a run to count as meeting its target */
 #define BENCHMARK_MEMORY_FLOOR 300
 
@@ -80,7 +81,16 @@ struct benchmark_plan {
     struct benchmark_device device;
 };
 
-/* the suite's scenes (suite 1) */
+/* A recorded route as a scene: the text of its NAME.route file ("key = value" lines; port/benchmark/README.md)
+   and the recording's name. The scene's strings point into the route, which must outlive the plan. 0 for a route
+   that cannot be a scene: no map or difficulty, not begun at its level's beginning, not single-player */
+struct benchmark_route {
+    struct benchmark_scene scene;
+    char id[48], map[32], difficulty[16], recording[64];
+};
+int benchmark_scene_from_route(const char *text, const char *recording, struct benchmark_route *route);
+
+/* the suite's scenes that play by themselves (suite 1); the app adds its recorded routes */
 extern const struct benchmark_scene benchmark_suite_scenes[];
 extern const int benchmark_suite_scene_count;
 #define BENCHMARK_SUITE_VERSION 1
@@ -90,6 +100,9 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     struct benchmark_run *next);
 /* whether an outcome holds a target of one frame every `refreshes` refreshes */
 int benchmark_outcome_meets(const struct benchmark_outcome *outcome, int refreshes);
+/* a number that changes when the suite's scenes do, so a journal written for one set of scenes is never carried
+   on with another */
+unsigned long benchmark_plan_signature(const struct benchmark_plan *plan);
 const char *benchmark_status_name(enum benchmark_status status);
 const char *benchmark_mode_name(enum benchmark_mode mode);
 
@@ -99,6 +112,7 @@ struct benchmark_journal {
     int valid;               /* a journal of this version with a suite line */
     enum benchmark_mode mode;
     char id[16];             /* the report's code */
+    unsigned long signature; /* benchmark_plan_signature of the suite it was written for */
     struct benchmark_device device;
     struct benchmark_outcome outcomes[BENCHMARK_RUNS_MAXIMUM];
     int count;               /* finished runs, a cut-off one included */
@@ -109,7 +123,8 @@ struct benchmark_journal {
 };
 
 /* starts a journal over; 0 if the file cannot be written */
-int benchmark_journal_start(const char *path, enum benchmark_mode mode, const char *id, const struct benchmark_device *device);
+int benchmark_journal_start(const char *path, enum benchmark_mode mode, const char *id, const struct benchmark_device *device,
+    unsigned long signature);
 int benchmark_journal_begin(const char *path, int index, const char *key);
 int benchmark_journal_end(const char *path, int index, const struct benchmark_outcome *outcome);
 int benchmark_journal_memory(const char *path, long footprint, long left);

@@ -2,7 +2,7 @@
    grows, one line per event, each written with one write() and synced.
 
      visr benchmark journal 1
-     suite full K7Q2M9XD 2160 1080 16 512 1
+     suite full K7Q2M9XD 2160 1080 16 512 1 5f3a9c01
      begin 0 A menu 1080 16 512 max
      memory 512 904
      end 0 ok 16.9 4.1 7.3 59.94 904
@@ -40,10 +40,11 @@ static int append_line(const char *path, int flags, const char *format, ...) {
     return written == length;
 }
 
-int benchmark_journal_start(const char *path, enum benchmark_mode mode, const char *id, const struct benchmark_device *device) {
+int benchmark_journal_start(const char *path, enum benchmark_mode mode, const char *id, const struct benchmark_device *device,
+    unsigned long signature) {
     return append_line(path, O_TRUNC, "%s", JOURNAL_HEADER) &&
-        append_line(path, 0, "suite %s %s %ld %ld %ld %ld %d", benchmark_mode_name(mode), id, device->drawable_lines,
-            device->base_lines, device->anisotropy, device->shadow_size, device->model_lod_max);
+        append_line(path, 0, "suite %s %s %ld %ld %ld %ld %d %08lx", benchmark_mode_name(mode), id, device->drawable_lines,
+            device->base_lines, device->anisotropy, device->shadow_size, device->model_lod_max, signature);
 }
 
 int benchmark_journal_begin(const char *path, int index, const char *key) {
@@ -108,9 +109,9 @@ void benchmark_journal_load(const char *path, struct benchmark_journal *journal)
         if (!header) {
             if (strcmp(line, JOURNAL_HEADER)) break;
             header = 1;
-        } else if (sscanf(line, "suite %15s %15s %ld %ld %ld %ld %d", mode, id, &journal->device.drawable_lines,
+        } else if (sscanf(line, "suite %15s %15s %ld %ld %ld %ld %d %lx", mode, id, &journal->device.drawable_lines,
             &journal->device.base_lines, &journal->device.anisotropy, &journal->device.shadow_size,
-            &journal->device.model_lod_max) == 7) {
+            &journal->device.model_lod_max, &journal->signature) == 8) {
             journal->valid = 1;
             journal->mode = !strcmp(mode, "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
             snprintf(journal->id, sizeof(journal->id), "%s", id);

@@ -93,6 +93,7 @@ const char *host_benchmark_menu(void) {
 
     /* a benchmark that was cut off comes first: the app cannot reopen itself, so this is where it carries on */
     benchmark_journal_load("benchmark/journal.txt", &journal);
+    /* (a journal written for other scenes, by another build, is started over by host_benchmark_start) */
     if (journal.valid && !journal.finished && journal.count > 0) {
         NSString *detail = [NSString stringWithFormat:@"The %s benchmark stopped %@ run %d. Carrying on skips nothing "
             "that already finished.", benchmark_mode_name(journal.mode), journal.cut_off ? @"during" : @"after",

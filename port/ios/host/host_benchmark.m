@@ -336,12 +336,30 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     flags = [NSMutableArray array];
     started = NSDate.date;
     plan.mode = !strcmp(mode, "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
-    plan.scenes = benchmark_suite_scenes;
-    plan.scene_count = benchmark_suite_scene_count;
+    {
+        /* the scenes: the ones that play by themselves, then one for each recorded route the app carries, by name */
+        static struct benchmark_scene scenes[BENCHMARK_SCENES_MAXIMUM];
+        static struct benchmark_route routes[BENCHMARK_SCENES_MAXIMUM];
+        NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
+        int count = 0, route_count = 0;
+
+        for (index = 0; index < benchmark_suite_scene_count; index++) scenes[count++] = benchmark_suite_scenes[index];
+        for (NSString *name in [[files contentsOfDirectoryAtPath:bundled error:nil] sortedArrayUsingSelector:@selector(compare:)]) {
+            NSString *text;
+
+            if (![name.pathExtension isEqualToString:@"route"] || count >= BENCHMARK_SCENES_MAXIMUM) continue;
+            text = [NSString stringWithContentsOfFile:[bundled stringByAppendingPathComponent:name] encoding:NSUTF8StringEncoding error:nil];
+            if (text && benchmark_scene_from_route(text.UTF8String, name.stringByDeletingPathExtension.UTF8String, &routes[route_count]))
+                scenes[count++] = routes[route_count++].scene;
+            else host_logf(HOST_LOG_INFO, "benchmark: %s is not a route this suite can use", name.UTF8String);
+        }
+        plan.scenes = scenes;
+        plan.scene_count = count;
+    }
     plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
 
     benchmark_journal_load(JOURNAL, &journal);
-    if (journal.valid && !journal.finished && journal.mode == plan.mode &&
+    if (journal.valid && !journal.finished && journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
         journal.device.drawable_lines == plan.device.drawable_lines && journal.device.base_lines == plan.device.base_lines &&
         journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&
         journal.device.model_lod_max == plan.device.model_lod_max) {
@@ -370,7 +388,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         outcome_count = 0;
         for (index = 0; index < BENCHMARK_RUNS_MAXIMUM; index++) [files removeItemAtPath:run_path(index) error:nil];
         [files removeItemAtPath:@REPORT error:nil];
-        if (!benchmark_journal_start(JOURNAL, plan.mode, report_code, &plan.device)) {
+        if (!benchmark_journal_start(JOURNAL, plan.mode, report_code, &plan.device, benchmark_plan_signature(&plan))) {
             host_logf(HOST_LOG_INFO, "benchmark: cannot write %s (is the device's storage full?)", JOURNAL);
             return 0;
         }
