@@ -15,6 +15,7 @@ recording skipped it.
 #include "game/players.h"
 #include "main/main.h"
 #include "math/real_math.h"
+#include "objects/objects.h"
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 
@@ -69,6 +70,25 @@ void input_replay_random_seeds(unsigned long seeds[2], unsigned char set)
 		seeds[0] = *get_global_random_seed_address();
 		seeds[1] = *get_global_local_random_seed_address();
 	}
+}
+
+/* player 1's position, for debug.input_replay_route; 0 while there is no player unit */
+unsigned char input_replay_player_position(float position[3])
+{
+	long player_index = local_player_get_player_index(0);
+	struct player_datum *player;
+	real_point3d origin;
+
+	if (player_index == NONE)
+		return 0;
+	player = player_try_and_get(player_index);
+	if (!player || player->unit_index == NONE)
+		return 0;
+	object_get_origin(player->unit_index, &origin);
+	position[0] = origin.x;
+	position[1] = origin.y;
+	position[2] = origin.z;
+	return 1;
 }
 
 /* 1 if there was a cinematic to skip and it was asked to end */
