@@ -270,7 +270,7 @@ def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=
     if not cloud_saves and not benchmark_upload:
         if cloud_container:
             raise ValueError('--cloud-container is for --cloud-saves builds')
-        return ['-DHALO_CLOUD_SAVES=OFF']
+        return ['-DHALO_CLOUD_SAVES=OFF', '-DHALO_BENCHMARK_UPLOAD=OFF']   # both named: CMake's cache keeps an earlier ON
     if not cloud_container:
         if bundle_id != 'org.steverice.visr' and not bundle_id.startswith('org.steverice.visr.'):
             raise ValueError(f'--cloud-saves with the bundle ID {bundle_id} needs --cloud-container '
@@ -279,7 +279,7 @@ def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=
     if not re.fullmatch(r'iCloud\.[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', cloud_container):
         raise ValueError('--cloud-container must look like iCloud.com.yourname.visr')
     return [f'-DHALO_CLOUD_SAVES={"ON" if cloud_saves else "OFF"}', f'-DHALO_CLOUD_CONTAINER={cloud_container}',
-            *(['-DHALO_BENCHMARK_UPLOAD=ON'] if benchmark_upload else [])]
+            f'-DHALO_BENCHMARK_UPLOAD={"ON" if benchmark_upload else "OFF"}']
 
 
 def mac_build_folder(environment=None):
