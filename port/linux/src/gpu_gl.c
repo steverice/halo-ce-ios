@@ -2430,10 +2430,25 @@ static void gpu_gl_flush(void)
 /* display.native_hud (gpu.h): the scene's picture stretched over the
 display-sized back buffer with the filter gpu_gl_present's blit uses, inside
 area */
-static void gpu_gl_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area)
+static void gpu_gl_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect);
+
+static void gpu_gl_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias)
 {
 	const struct gpu_texture_description *from = &texture_record(source)->description;
 	const struct gpu_texture_description *to = &texture_record(destination)->description;
+
+	/* (FXAA first, as its own pass, over the matching rectangle of the
+	scene: a blit can't run it) */
+	if (anti_alias == GPU_ANTI_ALIAS_FXAA && to->width && to->height)
+	{
+		struct gpu_rect rect;
+
+		rect.x = (int32_t)((long)area->x * from->width / to->width);
+		rect.y = (int32_t)((long)area->y * from->height / to->height);
+		rect.width = (int32_t)(((long)area->x + area->width) * from->width / to->width) - rect.x;
+		rect.height = (int32_t)(((long)area->y + area->height) * from->height / to->height) - rect.y;
+		gpu_gl_anti_alias(GPU_ANTI_ALIAS_FXAA, source, &rect);
+	}
 
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(source, 0));
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer_get(destination, 0));

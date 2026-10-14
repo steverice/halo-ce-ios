@@ -783,6 +783,10 @@ static const struct config_setting config_settings[] =
 		"foveated view's full size, and only the last step that fills each view\n"
 		"goes through the Compositor's rate map (composite-only foveation, the\n"
 		"reference the full path is compared against)." },
+	{ "debug.anti_aliasing_separate", _config_boolean, "false", "HALO_ANTI_ALIASING_SEPARATE", _environment_value, _platform_all,
+		"With display.anti_aliasing = \"fxaa\" and the HUD at the display's size:\n"
+		"run FXAA as a pass of its own before the stretch, as at native size,\n"
+		"rather than inside it (to compare the two)." },
 	{ "debug.rate_map_test", _config_boolean, "false", "HALO_RATE_MAP_TEST", _environment_value, _platform_ios,
 		"Metal renderer on the Mac: give the screen-sized targets a synthetic,\n"
 		"lopsided rate map (full rate in the middle third, half outside it, denser\n"

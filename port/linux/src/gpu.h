@@ -66,7 +66,11 @@ struct gpu_capabilities
 	the display's size over a smaller scene (display.native_hud,
 	d3d8_device.c); 0 on visionOS, whose presenters place the HUD themselves */
 	uint8_t upscale;
-	uint8_t pad[2];
+	/* gpu_upscale can run FXAA in its stretch (GPU_ANTI_ALIAS_FXAA as its
+	anti_alias) for less than a pass of its own; otherwise the front end runs
+	gpu_anti_alias first */
+	uint8_t upscale_anti_alias;
+	uint8_t pad[1];
 	uint32_t max_texture_size;
 };
 
@@ -520,8 +524,12 @@ destination, a larger one, with the filter gpu_present scales a picture by
 (display.upscaler's MetalFX where the area is the whole target), all four
 channels, inside area (destination's pixels) only. What destination held
 outside area stays. The front end calls it when a view's scene is drawn and
-its HUD is next (halo_render_scene_end) */
-void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area);
+its HUD is next (halo_render_scene_end). anti_alias GPU_ANTI_ALIAS_FXAA
+runs FXAA (gpu_anti_alias's, once prepared) on source as it is stretched:
+inside area, as gpu_anti_alias over the matching rectangle of source and a
+plain stretch would draw, without a pass of its own where the backend has
+upscale_anti_alias; 0 for none */
+void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias);
 
 /* ---------- anti-aliasing passes (display.anti_aliasing's "fxaa" and "smaa") */
 
@@ -673,7 +681,8 @@ its own functions. */
 	P(visibility_end, (uint32_t slot), (slot)) \
 	F(uint32_t, visibility_result, (uint32_t slot, uint32_t *samples), (slot, samples)) \
 	P(flush, (void), ()) \
-	P(upscale, (gpu_texture source, gpu_texture destination, const struct gpu_rect *area), (source, destination, area)) \
+	P(upscale, (gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias), \
+		(source, destination, area, anti_alias)) \
 	F(uint32_t, anti_alias_prepare, (uint32_t method, const char *smaa_shader, const void *area_texels, \
 		const void *search_texels), (method, smaa_shader, area_texels, search_texels)) \
 	P(anti_alias, (uint32_t method, gpu_texture target, const struct gpu_rect *rect), (method, target, rect)) \

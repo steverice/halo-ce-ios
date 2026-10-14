@@ -1344,6 +1344,25 @@ static void anti_aliasing_prepare(void)
 		platform_log("anti-aliasing: its programs cannot be made, so the 3D view is not antialiased");
 }
 
+/* FXAA, ready, and run inside the stretch to the display-sized back buffer
+(halo_render_scene_end) rather than as its own pass:
+debug.anti_aliasing_separate keeps the pass, to compare */
+static BOOL anti_aliasing_folds(void)
+{
+	static int separate = -1;
+
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	if (separate < 0)
+	{
+		separate = config_boolean("debug.anti_aliasing_separate") != 0;
+		if (separate)
+			platform_log("anti-aliasing: FXAA runs as its own pass (debug.anti_aliasing_separate)");
+	}
+	return anti_aliasing_ready && anti_aliasing_method == _anti_aliasing_fxaa && device_capabilities.upscale_anti_alias &&
+		!separate;
+}
+
 /* the pass over the view's rectangle of the scene's target (halo_render_scene_end) */
 static void anti_aliasing_pass(struct render_target_entry *scene)
 {
@@ -1392,6 +1411,7 @@ void halo_render_scene_end(void)
 {
 	struct render_target_entry *scene, *native;
 	struct gpu_rect area;
+	BOOL fold;
 
 	if (!native_scene)
 		return;
@@ -1400,7 +1420,11 @@ void halo_render_scene_end(void)
 		return;
 	/* (a view that drew nothing, a movie's, has nothing to bring over) */
 	scene = back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO);
-	if (scene)
+	/* FXAA goes into the stretch below where the backend can run it there
+	(gpu_capabilities.upscale_anti_alias), which saves its copy and its
+	pass; otherwise, and for SMAA, its pass runs over the scene first */
+	fold = native_hud_active() && anti_aliasing_folds();
+	if (scene && !fold)
 		anti_aliasing_pass(scene);
 	if (!native_hud_active())
 		return;
@@ -1413,7 +1437,7 @@ void halo_render_scene_end(void)
 	area.height = (int32_t)floorf((float)native_scene_bounds[3] * native->target.scale[1] + 0.5f) - area.y;
 	if (area.width <= 0 || area.height <= 0)
 		return;
-	gpu_upscale(scene->target.texture, native->target.texture, &area);
+	gpu_upscale(scene->target.texture, native->target.texture, &area, fold ? GPU_ANTI_ALIAS_FXAA : 0);
 	native->last_rendered = device.frame + 1;
 	native->target.written = ++render_target_write_serial;
 }

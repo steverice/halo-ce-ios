@@ -95,9 +95,9 @@ void gpu_flush(void)
 	host_gpu_flush();
 }
 
-void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area)
+void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias)
 {
-	host_gpu_upscale(source, destination, area);
+	host_gpu_upscale(source, destination, area, anti_alias);
 }
 
 uint32_t gpu_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
