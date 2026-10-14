@@ -1,0 +1,14 @@
+# a10-bench: Pillar of Autumn on heroic, from the cryo tube to the bridge's second cinematic. The opening
+# cinematic is skipped on tick 134 of segment 0, so the route is segment 1 (from the revert to tick 1).
+# The points are from replays on the native Mac runner with debug.fixed_timestep, which agree to the hundredth.
+recording = port/benchmark/recordings/a10-bench.input
+map = a10
+difficulty = hard
+suite = a10-crew
+exit_after = 110
+# segment tick x,y,z tolerance what the point shows
+1 180 -56.41,0.41,0.42 0.5 in the cryo tube, before the technician opens it
+1 480 -52.45,3.31,0.00 2.0 out of the cryo tube
+1 1080 -45.50,-13.56,0.00 2.0 out of the cryo bay
+1 1980 -30.72,-11.86,0.00 2.0 the corridor
+1 2880 -5.01,1.52,0.00 2.0 at the bridge, before the second cinematic

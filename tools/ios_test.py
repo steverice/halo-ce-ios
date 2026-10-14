@@ -75,6 +75,8 @@ run(BUILD / 'profile-probe', ROOT / 'profiles')
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
 run('python3', 'tools/profile_check.py')
 run('python3', 'tools/test_profile_check.py')
+# a recorded route replays: tools/route_check.py's verdicts, and the suite's difficulty for the next map
+run('python3', 'tools/test_route_check.py')
 # a runner's settings are the run's, never a device profile's: mac_run.py writes every setting a profile may set
 # (and marks what it writes chosen in config.origins), so no profile can move a check-metal run
 profile_keys = re.findall(r'^PROFILE_(?:BOOLEAN|INTEGER|REAL|STRING)\("([^"]+)"',
