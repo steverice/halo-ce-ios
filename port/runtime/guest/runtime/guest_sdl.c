@@ -79,6 +79,18 @@ char *SDL_GetClipboardText(void)
 	return strdup(buffer);
 }
 
+/* ---------- the system's keyboard (a menu's text field, xinput_sdl.c) */
+
+void halo_host_text_input(int on, const char *title, const char *text, int masked)
+{
+	host_sdl_text_input(on, title, text, masked);
+}
+
+int halo_host_text_result(char *buffer, unsigned int size)
+{
+	return host_sdl_text_result(buffer, size);
+}
+
 bool SDL_ShowAndroidToast(const char *message, int duration, int gravity, int xoffset, int yoffset)
 {
 	return host_sdl_show_toast(message, duration, gravity, xoffset, yoffset) != 0;

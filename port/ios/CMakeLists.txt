@@ -105,7 +105,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
-    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c
+    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_natpmp.c host/host_natpmp_packets.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"

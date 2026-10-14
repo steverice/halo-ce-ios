@@ -108,7 +108,7 @@
 	</strings>
 	<strings name="main_menu/multiplayer_type_select/join_game/code/help_strings">
 		<string text=""/>
-		<string text="Type the join code your friend's lobby shows,\nor a whole invite link, then press Enter."/>
+		<string text="Type the join code your friend's lobby shows,\nor a whole invite link, then JOIN GAME."/>
 		<string text="That is not a join code (eight letters and digits)\nor an invite link. Try again."/>
 	</strings>
 </menus>

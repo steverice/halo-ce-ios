@@ -71,6 +71,21 @@ none) */
 void p2p_signal_code_publish(const char *topic, const unsigned char *record, int size);
 void p2p_signal_code_join(const char *topic);
 
+/* (p2p_code.c) a code's record for an invite's bytes (its host's key hash
+and token, P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE): its topic, and the record
+(at most P2P_CODE_RECORD_SIZE bytes; returns its size) */
+void p2p_code_topic(const char *code, char *topic);
+int p2p_code_record_make(const char *code, const unsigned char *invite, unsigned char *record);
+/* (p2p_code.c) text typed for a code, as p2p_join_code is given it (either
+case, spaces and dashes or none): 1, the code's topic and the key that opens
+its record (P2P_PASSWORD_KEY_SIZE bytes: an Argon2id, a moment) if it is a
+code, else 0 */
+int p2p_code_lookup(const char *text, char *topic, unsigned char *key);
+/* (p2p_code.c) a record heard on a code's topic opened with the code's key:
+1 and the invite's bytes, else 0 (another code's, altered, or not a
+record) */
+int p2p_code_record_open(const unsigned char *key, const unsigned char *record, int size, unsigned char *invite);
+
 /* internet play's state (p2p.c), which the game's threads and the p2p
 thread share */
 extern pthread_mutex_t p2p_lock;

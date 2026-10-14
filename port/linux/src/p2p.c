@@ -24,7 +24,8 @@ link games as if they were on one LAN, without a server of this project's.
   packets get through (hole punching). There is no relay: two machines whose
   NATs both map every destination to a new port cannot connect, unless a
   router forwards one of them a port. So a host asks its router to forward
-  the tunnel's port (UPnP, posix_upnp.c) as soon as a player reaches out
+  the tunnel's port (UPnP, posix_upnp.c; on Apple devices NAT-PMP or PCP,
+  port/ios/host/host_natpmp.c) as soon as a player reaches out
   with its invite, and a joiner asks its own when it has not reached the
   host in a few seconds (network.allow_upnp); the forwarded port is one more
   of the addresses a machine offers (the joiner asks the host again every
@@ -205,6 +206,12 @@ struct peer
 	unsigned long endpoint_heard_time;
 	unsigned long sent_time;
 	unsigned long round_trip;
+	/* whether the game has sent it a datagram yet, had one from it, or
+	dropped one of its (each logged the first time: what shows where a
+	join stops after the tunnel is up) */
+	int datagram_sent_logged;
+	int datagram_received_logged;
+	int datagram_dropped_logged;
 };
 
 /* a UDP stand-in for one port of a peer */
@@ -340,7 +347,7 @@ static struct
 	char invite[P2P_LINK_SIZE];
 	int invite_copied;
 	/* the invite's join code (made with it: make_invite) and its record at
-	the brokers (p2p_code_record) */
+	the brokers (p2p_code_record_make) */
 	char code[P2P_CODE_LENGTH + 1];
 	char code_topic[P2P_CODE_TOPIC_SIZE];
 	unsigned char code_record[P2P_CODE_RECORD_SIZE];
@@ -387,8 +394,10 @@ static struct
 	char clipboard[P2P_LINK_SIZE];
 	int has_clipboard;
 
-	/* UPnP (posix_upnp.c): a thread asking the router; the port it forwards
-	here, and when it was last asked */
+	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
+	the router; the port it forwards here, when it was last asked, how soon
+	the forwarding is asked for again, whether that is due at once (after a
+	suspension), and whether it goes, hosting having stopped */
 	int upnp_working;
 	int upnp_asked;
 	int upnp_forwarded;
@@ -396,6 +405,9 @@ static struct
 	int upnp_released;
 	struct p2p_candidate upnp_candidate;
 	unsigned long upnp_time;
+	unsigned long upnp_renew_interval;
+	int upnp_renew_now;
+	int upnp_stop_wanted;
 } p2p = { 0, 0, -1, 0, -1, .hosting_socket = -1 };
 
 /* the proxy (its index + 1) with each local port (all of theirs are on
@@ -828,6 +840,23 @@ static void packet_nonce(const unsigned char *packet, unsigned char *nonce)
 	memcpy(nonce + P2P_NONCE_SIZE - 8, packet + 1 + P2P_IDENTIFIER_SIZE, 8);
 }
 
+/* a datagram out of the tunnel's socket; its first failure in a row is
+logged (a socket the system took back while the app was suspended fails
+every send: network_resumed opens it again) */
+static void tunnel_sendto(const void *data, int size, const struct sockaddr_in *to)
+{
+	static int failing;
+
+	if (posix_socket_sendto(p2p.tunnel_socket, data, size, 0, to, sizeof(*to)) >= 0 || would_block())
+	{
+		failing = 0;
+		return;
+	}
+	if (!failing)
+		platform_log("Internet play: the tunnel's socket cannot send (error %d)", posix_socket_last_error());
+	failing = 1;
+}
+
 static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, const unsigned char *inner, int size)
 {
 	unsigned char packet[MAXIMUM_PACKET_SIZE];
@@ -855,7 +884,7 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 		return;
 	}
 	make_address(&address, to->address, to->port);
-	posix_socket_sendto(p2p.tunnel_socket, packet, TUNNEL_HEADER_SIZE + sealed, 0, &address, sizeof(address));
+	tunnel_sendto(packet, TUNNEL_HEADER_SIZE + sealed, &address);
 }
 
 /* to a peer the tunnel has reached; dropped otherwise */
@@ -926,6 +955,12 @@ static int address_retired(unsigned long address)
 			return 1;
 	}
 	return 0;
+}
+
+/* "host" or "player", as the log names a peer */
+static const char *peer_kind(const struct peer *peer)
+{
+	return peer->is_host && !peer->is_player ? "host" : "player";
 }
 
 static void drop_peer(struct peer *peer, const char *reason)
@@ -1231,7 +1266,7 @@ static void stun_send(struct stun_server *server)
 		posix_random_bytes(server->transaction, sizeof(server->transaction));
 	memcpy(request + 8, server->transaction, sizeof(server->transaction));
 	make_address(&address, server->address, server->port);
-	posix_socket_sendto(p2p.tunnel_socket, request, sizeof(request), 0, &address, sizeof(address));
+	tunnel_sendto(request, sizeof(request), &address);
 	server->sent_time = p2p_now();
 	server->attempts++;
 }
@@ -1449,15 +1484,34 @@ The NAT's mapping of the tunnel may have lapsed, so this machine's public
 address is asked again before an offer names it, and the brokers'
 connections, which the network may have dropped, are made anew rather than
 at their silence timeout */
+static int tunnel_open(unsigned short port);
+
 static void network_resumed(unsigned long stopped)
 {
 	int index;
 
+	/* (iOS and tvOS take back a suspended app's sockets: the tunnel's then
+	fails every send and hears nothing, so no STUN server answers and no
+	peer is reached. A new one, on the same port where it is free) */
+	if (p2p.tunnel_socket >= 0)
+	{
+		unsigned short port = p2p.tunnel_port;
+
+		posix_socket_close(p2p.tunnel_socket);
+		p2p.tunnel_socket = -1;
+		if (!tunnel_open(port) && !tunnel_open(0))
+			platform_log("Internet play: its socket could not be opened again after the stop");
+		else if (p2p.tunnel_port != port)
+			platform_log("Internet play: its socket was opened again on another port after the stop");
+	}
 	for (index = 0; index < p2p.stun_count; index++)
 	{
 		p2p.stun[index].has_mapped = 0;
 		p2p.stun[index].attempts = 0;
 	}
+	/* (and the router's forwarding asked for again, for the socket opened
+	again and in case its lease lapsed during the stop) */
+	p2p.upnp_renew_now = 1;
 	p2p_signal_reconnect();
 	platform_log("Internet play: the game was stopped for %lu seconds; its public address is asked again and "
 		"the brokers reconnected", stopped / 1000);
@@ -1947,6 +2001,12 @@ static void datagram_send(struct peer *peer, unsigned short source_port, unsigne
 	put_short(inner + 3, port);
 	memcpy(inner + 5, data, (size_t)size);
 	peer_send(peer, inner, size + 5);
+	if (!peer->datagram_sent_logged)
+	{
+		peer->datagram_sent_logged = 1;
+		platform_log("Internet play: the game's first datagram to %s %s (from port %u to its port %u)",
+			peer_kind(peer), peer->name, network_short(source_port), network_short(port));
+	}
 }
 
 /* a datagram from the game to a peer, through its stand-in (from a socket
@@ -1979,13 +2039,37 @@ static void datagram_received(struct peer *peer, const unsigned char *inner, int
 	struct sockaddr_in to;
 
 	/* only to the game */
-	if (size < 5 || !game_port_open(0, get_short(inner + 3)))
+	if (size < 5)
 		return;
+	if (!game_port_open(0, get_short(inner + 3)))
+	{
+		if (!peer->datagram_dropped_logged)
+		{
+			peer->datagram_dropped_logged = 1;
+			platform_log("Internet play: a datagram from %s %s to port %u, which is not the game's, is dropped "
+				"(only the first is logged)", peer_kind(peer), peer->name, network_short(get_short(inner + 3)));
+		}
+		return;
+	}
 	proxy = find_proxy((int)(peer - p2p.peers), get_short(inner + 1), 1);
 	if (!proxy)
+	{
+		if (!peer->datagram_dropped_logged)
+		{
+			peer->datagram_dropped_logged = 1;
+			platform_log("Internet play: a datagram from %s %s is dropped: no stand-in for its port %u "
+				"(only the first is logged)", peer_kind(peer), peer->name, network_short(get_short(inner + 1)));
+		}
 		return;
+	}
 	make_address(&to, p2p.local_address, get_short(inner + 3));
 	posix_socket_sendto(proxy->socket, inner + 5, size - 5, 0, &to, sizeof(to));
+	if (!peer->datagram_received_logged)
+	{
+		peer->datagram_received_logged = 1;
+		platform_log("Internet play: the first datagram from %s %s's game (from its port %u to the game's port %u)",
+			peer_kind(peer), peer->name, network_short(get_short(inner + 1)), network_short(get_short(inner + 3)));
+	}
 }
 
 /* ---------- streams */
@@ -2370,7 +2454,7 @@ void p2p_tunnel_send(unsigned long address, unsigned short port, const void *dat
 	if (p2p.tunnel_socket < 0)
 		return;
 	make_address(&to, address, port);
-	posix_socket_sendto(p2p.tunnel_socket, data, size, 0, &to, sizeof(to));
+	tunnel_sendto(data, size, &to);
 }
 
 static void tunnel_readable(void)
@@ -2494,19 +2578,15 @@ int p2p_join_invite(const char *text)
 	return result > 0;
 }
 
-static void look_up_code(const char *code);
+static int look_up_code(const char *text);
 
 void p2p_invite_received(const char *text)
 {
-	char code[P2P_CODE_LENGTH + 1];
-
 	/* (an older version's is logged as such; a join code handed over as a
 	link is, the app's or another copy's, is looked up) */
 	if (join_invite(text))
 		return;
-	if (p2p_code_normalize(text, code))
-		look_up_code(code);
-	else
+	if (!look_up_code(text))
 		platform_log("Internet play: that is not an invite");
 }
 
@@ -2619,7 +2699,7 @@ A join code (p2p_code.h) is eight characters that stand for an invite, for
 a player who cannot paste a link. It holds too little to be the invite, so
 the host leaves the invite where the code finds it: at every signalling
 broker that retains messages, on a topic made from the code
-(code_topic_for), sealed with a key made from the code (code_key_for:
+(p2p_code_topic), sealed with a key made from the code (p2p_code.c:
 Argon2id, as a password's key is). The record is
 
 	"HC", format 1, then the invite (its host's key hash and token, 32
@@ -2634,43 +2714,16 @@ code costs an Argon2id: guessing at the codes in use takes far longer than a
 game lasts. A wrong or altered record does not open. The code goes with the
 invite: a new invite (going private, a new password) has a new code. */
 
-static void code_topic_for(const char *code, char *topic)
-{
-	unsigned char digest[P2P_SHA256_SIZE];
-	char hashed[64];
-	char hex[2 * 16 + 1];
-
-	snprintf(hashed, sizeof(hashed), "hceu-join-code-topic-1:%s", code);
-	p2p_sha256(hashed, (int)strlen(hashed), digest);
-	p2p_hex(digest, 16, hex);
-	snprintf(topic, P2P_CODE_TOPIC_SIZE, "%s%s", P2P_CODE_TOPIC_PREFIX, hex);
-}
-
-static void code_key_for(const char *code, unsigned char *key)
-{
-	static const char label[] = "hceu-join-code-key-1";
-	unsigned char salt[P2P_SHA256_SIZE];
-
-	p2p_sha256(label, (int)sizeof(label) - 1, salt);
-	p2p_password_key(code, salt, key);
-}
-
 /* a new code for the invite's bytes (its host's key hash and token), and
 its record */
 static void make_code(const unsigned char *invite_bytes)
 {
 	unsigned char random[P2P_CODE_RANDOM_SIZE];
-	unsigned char key[P2P_PASSWORD_KEY_SIZE];
 
 	posix_random_bytes(random, sizeof(random));
 	p2p_code_make(random, p2p.code);
-	code_topic_for(p2p.code, p2p.code_topic);
-	code_key_for(p2p.code, key);
-	p2p.code_record[0] = 'H';
-	p2p.code_record[1] = 'C';
-	p2p.code_record[2] = 1;
-	p2p.code_record_size = 3 + p2p_seal(key, invite_bytes, P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE, p2p.code_record + 3);
-	memset(key, 0, sizeof(key));
+	p2p_code_topic(p2p.code, p2p.code_topic);
+	p2p.code_record_size = p2p_code_record_make(p2p.code, invite_bytes, p2p.code_record);
 }
 
 /* the code's record at the brokers while the game is hosted (and its
@@ -2693,15 +2746,11 @@ static void publish_code(int hosting)
 of the code being looked up */
 void p2p_code_heard(const unsigned char *payload, int size)
 {
-	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE + 16];
+	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE];
 	char text[2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1];
 	char link[P2P_LINK_SIZE];
-	int opened;
 
-	if (!p2p.code_looking || size < 3 || payload[0] != 'H' || payload[1] != 'C' || payload[2] != 1)
-		return;
-	opened = p2p_open(p2p.code_join_key, payload + 3, size - 3, bytes);
-	if (opened != P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE)
+	if (!p2p.code_looking || !p2p_code_record_open(p2p.code_join_key, payload, size, bytes))
 		return;
 	p2p.code_looking = 0;
 	p2p.code_join_status = P2P_CODE_FOUND;
@@ -2724,12 +2773,12 @@ static void update_code_joining(void)
 	}
 }
 
-/* the lookup of a code (normalized) begun: its topic and key made (the key
-by Argon2id: a moment), with the lock held */
-static void look_up_code(const char *code)
+/* the lookup of a code typed begun, if it is one: its topic and key made
+(the key by Argon2id: a moment), with the lock held */
+static int look_up_code(const char *text)
 {
-	code_topic_for(code, p2p.code_join_topic);
-	code_key_for(code, p2p.code_join_key);
+	if (!p2p_code_lookup(text, p2p.code_join_topic, p2p.code_join_key))
+		return 0;
 	p2p.code_looking = 1;
 	p2p.code_join_time = p2p_now();
 	p2p.code_join_status = P2P_CODE_LOOKING;
@@ -2737,20 +2786,21 @@ static void look_up_code(const char *code)
 	p2p_signal_start();
 	p2p_signal_code_join(p2p.code_join_topic);
 	platform_log("Internet play: looking up a join code");
+	return 1;
 }
 
 int p2p_join_code(const char *text)
 {
-	char code[P2P_CODE_LENGTH + 1];
+	int looking;
 
 	/* (a whole link typed or pasted joins as a link does) */
 	if (p2p_join_invite(text))
 		return 1;
-	if (!p2p_code_normalize(text, code))
-		return 0;
 	pthread_mutex_lock(&p2p_lock);
-	look_up_code(code);
+	looking = look_up_code(text);
 	pthread_mutex_unlock(&p2p_lock);
+	if (!looking)
+		return 0;
 	if (!p2p.running)
 		platform_log("Internet play is off (network.online in config.toml): the join code is ignored");
 	return 1;
@@ -2758,7 +2808,12 @@ int p2p_join_code(const char *text)
 
 int p2p_join_code_status(void)
 {
-	return p2p.code_join_status;
+	int status;
+
+	pthread_mutex_lock(&p2p_lock);
+	status = p2p.code_join_status == P2P_CODE_FOUND && joined_host() ? P2P_CODE_REACHED : p2p.code_join_status;
+	pthread_mutex_unlock(&p2p_lock);
+	return status;
 }
 
 int p2p_host_code(char *text, int size)
@@ -2847,6 +2902,8 @@ static void update_hosting(void)
 		p2p.hosting = 0;
 		p2p_signal_stop_hosting();
 		publish_code(0);
+		/* (the router's forwarding goes too: update_upnp) */
+		p2p.upnp_stop_wanted = 1;
 		p2p_discord_set_hosting(NULL, 0, 0);
 	}
 	if (p2p.hosting)
@@ -2986,6 +3043,18 @@ void p2p_set_game_player_counts(int count, int maximum)
 
 /* ---------- UPnP (posix_upnp.c): the router forwards a port here */
 
+/* how the router was asked, for the log */
+static const char *upnp_method_name(void)
+{
+	switch (posix_upnp_method())
+	{
+	case POSIX_UPNP_NAT_PMP: return "NAT-PMP";
+	case POSIX_UPNP_PCP: return "PCP";
+	case POSIX_UPNP_NAT_PMP_OR_PCP: return "NAT-PMP and PCP";
+	default: return "UPnP";
+	}
+}
+
 /* the router asked, on a thread of its own (it takes seconds) */
 static void *upnp_thread(void *unused)
 {
@@ -3013,21 +3082,46 @@ static void *upnp_thread(void *unused)
 	if (forwarded)
 	{
 		char text[32];
+		int renew_seconds = posix_upnp_renew_seconds();
 
 		if (!p2p.upnp_forwarded || p2p.upnp_candidate.address != address ||
 			p2p.upnp_candidate.port != external_port)
 		{
-			platform_log("Internet play: the router forwards %s to this machine (UPnP)",
-				address_text(address, external_port, text));
+			platform_log("Internet play: the router forwards %s to this machine (%s)",
+				address_text(address, external_port, text), upnp_method_name());
 		}
 		p2p.upnp_forwarded = 1;
 		p2p.upnp_candidate.address = address;
 		p2p.upnp_candidate.port = external_port;
+		/* (sooner than usual where the router gave a shorter lease) */
+		p2p.upnp_renew_interval = renew_seconds > 0 && (unsigned long)renew_seconds * 1000 < UPNP_RENEW_INTERVAL ?
+			(unsigned long)renew_seconds * 1000 : UPNP_RENEW_INTERVAL;
 	}
 	else if (!p2p.upnp_forwarded)
 	{
-		platform_log("Internet play: UPnP: %s", error);
+		platform_log("Internet play: %s: %s", upnp_method_name(), error);
 	}
+	pthread_mutex_unlock(&p2p_lock);
+	return NULL;
+}
+
+/* hosting stopped (and no join under way): the router forwards the port
+no longer, on a thread of its own (it takes a moment) */
+static void *upnp_stop_thread(void *unused)
+{
+	unsigned short external_port;
+
+	(void)unused;
+	pthread_mutex_lock(&p2p_lock);
+	external_port = p2p.upnp_candidate.port;
+	pthread_mutex_unlock(&p2p_lock);
+	posix_upnp_stop_forwarding_udp(external_port);
+	pthread_mutex_lock(&p2p_lock);
+	p2p.upnp_forwarded = 0;
+	p2p.upnp_asked = 0;
+	p2p.upnp_working = 0;
+	p2p.upnp_time = p2p_now();
+	platform_log("Internet play: the router forwards the port no longer (hosting stopped)");
 	pthread_mutex_unlock(&p2p_lock);
 	return NULL;
 }
@@ -3107,10 +3201,25 @@ static void update_upnp(void)
 #endif
 	if (!allowed || p2p.upnp_working || p2p.upnp_released)
 		return;
+	if (p2p.upnp_stop_wanted)
+	{
+		p2p.upnp_stop_wanted = 0;
+		if (p2p.upnp_forwarded && !p2p.hosting && !p2p.joining && !p2p.join_requested)
+		{
+			p2p.upnp_working = 1;
+			if (pthread_create(&thread, NULL, upnp_stop_thread, NULL) != 0)
+				p2p.upnp_working = 0;
+			else
+				pthread_detach(thread);
+			return;
+		}
+	}
 	if (p2p.upnp_forwarded)
-		ask = elapsed(p2p.upnp_time, UPNP_RENEW_INTERVAL);
+		ask = p2p.upnp_renew_now || elapsed(p2p.upnp_time, p2p.upnp_renew_interval ? p2p.upnp_renew_interval :
+			UPNP_RENEW_INTERVAL);
 	else
-		ask = upnp_needed() && (!p2p.upnp_asked || elapsed(p2p.upnp_time, UPNP_RETRY_INTERVAL));
+		ask = upnp_needed() && (!p2p.upnp_asked || p2p.upnp_renew_now || elapsed(p2p.upnp_time, UPNP_RETRY_INTERVAL));
+	p2p.upnp_renew_now = 0;
 	if (!ask)
 		return;
 	p2p.upnp_working = 1;
@@ -3503,6 +3612,23 @@ static void *p2p_thread(void *unused)
 	return NULL;
 }
 
+/* the tunnel's socket on the port (network byte order; 0: any): 1 if it
+opened */
+static int tunnel_open(unsigned short port)
+{
+	/* all of a host's traffic, up to a 128-machine game's, goes through
+	this one socket: buffers as large as the game's own sockets' (at least
+	1 MB, transport_endpoint_winsock.c) */
+	int size = 1 << 20;
+
+	p2p.tunnel_socket = open_socket(SOCK_DGRAM, 0, port, &p2p.tunnel_port);
+	if (p2p.tunnel_socket < 0)
+		return 0;
+	posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+	posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+	return 1;
+}
+
 void p2p_initialize(unsigned long local_address)
 {
 	char invite[256];
@@ -3526,21 +3652,11 @@ void p2p_initialize(unsigned long local_address)
 	for (index = 0; index < MAXIMUM_STREAMS; index++)
 		p2p.streams[index].socket = -1;
 	p2p.local_address = local_address;
-	p2p.tunnel_socket = open_socket(SOCK_DGRAM, 0, network_short((unsigned short)tunnel_port), &p2p.tunnel_port);
-	if (p2p.tunnel_socket < 0)
+	if (!tunnel_open(network_short((unsigned short)tunnel_port)))
 	{
 		platform_log("Internet play: cannot open its socket (network.tunnel_port %ld in use?); it is off",
 			tunnel_port);
 		return;
-	}
-	{
-		/* all of a host's traffic, up to a 128-machine game's, goes through
-		this one socket: buffers as large as the game's own sockets' (at
-		least 1 MB, transport_endpoint_winsock.c) */
-		int size = 1 << 20;
-
-		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
-		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 	}
 #ifndef HALO_ILP32
 	/* the first copy of the game takes the invites later ones are opened

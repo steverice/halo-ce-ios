@@ -658,7 +658,7 @@ def _code_screen() -> list:
     # (by its state: menu_functions.c's code_screen_update)
     extra += _strings(f"{base}/help_strings", [
         "",
-        "Type the join code your friend's lobby shows,\\nor a whole invite link, then press Enter.",
+        "Type the join code your friend's lobby shows,\\nor a whole invite link, then JOIN GAME.",
         "That is not a join code (eight letters and digits)\\nor an invite link. Try again.",
     ])
     lines = _screen(base, spec, [(f"{base}/op_code", None)], ["port code update"],

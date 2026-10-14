@@ -560,10 +560,10 @@ static const struct config_setting config_settings[] =
 		"The UDP port internet play uses; 0 picks one. A fixed one can be\n"
 		"forwarded on the router, for networks whose NAT stops connections." },
 	{ "network.allow_upnp", _config_boolean, "true", "HALO_NET_ALLOW_UPNP", _environment_value, _platform_all,
-		"Let internet play ask the router (UPnP) to forward its port, for\n"
-		"networks whose NAT stops connections: when a player joins this\n"
-		"machine's game, and when joining a game takes too long. False never\n"
-		"asks." },
+		"Let internet play ask the router (UPnP; on Apple devices NAT-PMP or\n"
+		"PCP) to forward its port, for networks whose NAT stops connections:\n"
+		"when a player joins this machine's game, and when joining a game takes\n"
+		"too long. False never asks." },
 	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
@@ -837,6 +837,11 @@ static const struct config_setting config_settings[] =
 		"Ask for a second window scene a few seconds in, to check that the game\n"
 		"ignores its start, keeps its event pump and closes the scene (the\n"
 		"host's host_main.m). For the simulator." },
+	{ "debug.test_text_answer", _config_string, "\"\"", "HALO_TEST_TEXT_ANSWER", _environment_value, _platform_ios,
+		"On an Apple TV, answer the dialog a menu's text field asks with (a join\n"
+		"code, a password) with this text, 3 seconds after it comes up, as if it\n"
+		"were typed and Done pressed (the host's host_tv.m); empty for none. For\n"
+		"the simulator, whose keyboard cannot type into it." },
 	{ "debug.test_theater_reopen", _config_boolean, "false", "HALO_TEST_THEATER_REOPEN", _environment_set_is_true, _platform_ios,
 		"With display.immersive: close the immersive space a few seconds in, then\n"
 		"press the window's button that opens it again (the host's\n"

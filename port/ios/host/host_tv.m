@@ -7,6 +7,7 @@
 #import <UIKit/UIKit.h>
 #include <SDL3/SDL.h>
 #include "ios_host.h"
+#include "host_config.h"
 #include <stdlib.h>
 
 /* The Siri Remote isn't a joystick (host_main.m), so SDL delivers its presses
@@ -152,3 +153,124 @@ int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
     return remote_read(button) ||
         (primary_hardware && SDL_GetGamepadButton(SDL_GetGamepadFromID(primary_hardware),button));
 }
+
+#if TARGET_OS_TV
+/* ---------- a menu's text field (host_sdl.c's host_sdl_text_input): tvOS's
+   own dialog, a text field over its full-screen keyboard (SDL's hidden text
+   field brings none up on an Apple TV). Done gives the text whole, Cancel
+   nothing (host_tv_text_result); a field put away by the game dismisses it.
+   On the main thread, as host_sdl_poll_event is. */
+static UIAlertController *text_prompt;
+static int text_prompt_state;
+static char text_prompt_result[512];
+
+/* Done: the dialog's text, whole, for host_tv_text_result */
+static void text_prompt_done(NSString *typed) {
+    SDL_strlcpy(text_prompt_result,typed.UTF8String?:"",sizeof(text_prompt_result));
+    text_prompt_state=1;
+    text_prompt=nil;
+}
+
+/* the dialog put away with the full-screen keyboard presented over it
+   (which outlasts the dialog when only the dialog is dismissed): everything
+   its presenter presents goes */
+static void text_prompt_dismiss(UIAlertController *alert) {
+    UIViewController *presenter=alert.presentingViewController;
+    [alert.textFields.firstObject resignFirstResponder];
+    if(presenter)[presenter dismissViewControllerAnimated:YES completion:nil];
+    else [alert dismissViewControllerAnimated:YES completion:nil];
+}
+
+/* the keyboard's own done: the dialog's Done too, so one press finishes */
+@interface HaloTextPromptTarget : NSObject
+@end
+@implementation HaloTextPromptTarget
+- (void)keyboardDone:(UITextField *)field {
+    UIAlertController *alert=text_prompt;
+    if(!alert || alert.textFields.firstObject!=field)return;
+    text_prompt_done(field.text?:@"");
+    text_prompt_dismiss(alert);
+}
+@end
+
+int host_tv_text_prompt(int on, const char *title, const char *text, int masked) {
+    if(!on){
+        if(text_prompt)text_prompt_dismiss(text_prompt);
+        text_prompt=nil;
+        return 1;
+    }
+    if(text_prompt)return 1;
+    SDL_Window *window=host_sdl_window();
+    UIWindow *native=window?(__bridge UIWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+        SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER,NULL):nil;
+    UIViewController *presenter=native.rootViewController;
+    /* (a dialog still going away, a field ended and begun again at once: a
+    presentation over it would be dropped, so this is asked again on the
+    next poll) */
+    if(!presenter || presenter.presentedViewController)return 0;
+    text_prompt_state=0;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@(title&&*title?title:"Text")
+        message:nil preferredStyle:UIAlertControllerStyleAlert];
+    NSString *initial=@(text?text:"");
+    BOOL secure=masked!=0;
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field){
+        field.text=initial;
+        field.secureTextEntry=secure;
+        field.keyboardType=UIKeyboardTypeASCIICapable;
+        field.autocorrectionType=UITextAutocorrectionTypeNo;
+        field.autocapitalizationType=secure?UITextAutocapitalizationTypeNone:UITextAutocapitalizationTypeAllCharacters;
+        static HaloTextPromptTarget *target;
+        if(!target)target=[HaloTextPromptTarget new];
+        [field addTarget:target action:@selector(keyboardDone:) forControlEvents:UIControlEventEditingDidEndOnExit];
+    }];
+    __weak UIAlertController *weak=alert;
+    UIAlertAction *done=[UIAlertAction actionWithTitle:@"Done" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
+        (void)action;
+        text_prompt_done(weak.textFields.firstObject.text?:@"");
+    }];
+    [alert addAction:done];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action){
+        (void)action;
+        text_prompt_state=2;
+        text_prompt=nil;
+    }]];
+    alert.preferredAction=done;
+    text_prompt=alert;
+    /* (the field is chosen with the remote, which brings tvOS's full-screen
+    keyboard up; a keyboard brought up from here instead stayed on screen
+    after the dialog went, in the simulator) */
+    [presenter presentViewController:alert animated:YES completion:nil];
+    /* (UIKit drops a presentation it cannot make now, saying nothing: then
+    the dialog has no presenter, and this is asked again on the next poll) */
+    if(!alert.presentingViewController){
+        static int refusals;
+        if(!refusals++)host_logf(HOST_LOG_INFO,"keyboard: tvOS's text dialog could not be shown yet; asking again");
+        text_prompt=nil;
+        return 0;
+    }
+    host_logf(HOST_LOG_INFO,"keyboard: tvOS's text dialog up for a text field");
+    /* debug.test_text_answer: answered for the simulator, whose keyboard
+    cannot type into it */
+    char answer[256];
+    host_config_string("debug.test_text_answer","",answer,sizeof(answer));
+    if(*answer){
+        NSString *typed=@(answer);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+            UIAlertController *shown=weak;
+            if(!shown || shown!=text_prompt)return;
+            shown.textFields.firstObject.text=typed;
+            host_logf(HOST_LOG_INFO,"keyboard: debug.test_text_answer typed into the dialog, and Done");
+            text_prompt_done(typed);
+            text_prompt_dismiss(shown);
+        });
+    }
+    return 1;
+}
+
+int host_tv_text_result(char *buffer, uint32_t size) {
+    int state=text_prompt_state;
+    if(state==1 && buffer && size)SDL_strlcpy(buffer,text_prompt_result,size);
+    text_prompt_state=0;
+    return state;
+}
+#endif

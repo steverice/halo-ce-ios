@@ -91,6 +91,9 @@ enum
 	P2P_CODE_LOOKING,
 	P2P_CODE_FOUND,
 	P2P_CODE_NOT_FOUND,
+	/* found, and the tunnel to its host is up: the game's own search finds
+	the game next */
+	P2P_CODE_REACHED,
 };
 int p2p_join_code_status(void);
 

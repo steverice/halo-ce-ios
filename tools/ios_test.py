@@ -89,10 +89,17 @@ if 'chosen_origins(' not in (ROOT / 'tools/mac_run.py').read_text().split('def p
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/virtual_clock_probe.c', '-o', BUILD/'virtual-clock-probe')
 run(BUILD/'virtual-clock-probe')
-# internet play's join codes (p2p_code.c): the alphabet, reading them back, and refusals
+# internet play's join codes (p2p_code.c): the alphabet, reading them back, refusals, and a host's record found
+# from the code typed with or without its dash (p2p_code_lookup, what p2p_join_code reads a code with)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
-    'port/ios/tests/join_code_probe.c', 'port/linux/src/p2p_code.c', '-o', BUILD/'join-code-probe')
+    '-Iport/third_party/monocypher', 'port/ios/tests/join_code_probe.c', 'port/linux/src/p2p_code.c',
+    'port/linux/src/p2p_crypto.c', 'port/third_party/monocypher/monocypher.c',
+    'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD/'join-code-probe')
 run(BUILD/'join-code-probe')
+# a router's forwarding on Apple devices (host_natpmp_packets.c): NAT-PMP's and PCP's requests and answers
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/natpmp_probe.c', 'port/ios/host/host_natpmp_packets.c', '-o', BUILD/'natpmp-probe')
+run(BUILD/'natpmp-probe')
 # halo://join links the app is opened with (host_join_link.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')

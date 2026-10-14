@@ -2251,7 +2251,8 @@ void p2p_set_hosting_allowed(int allowed);
 int p2p_peer_address(unsigned char const *identifier, unsigned long *address);
 int platform_clipboard_get(char *text, int size);
 void platform_clipboard_set(char const *text);
-void platform_text_field(int typing);
+void platform_text_field(int typing, char const *title, char const *text, int masked);
+int platform_text_field_result(char *text, int size);
 int config_boolean(char const *name);
 void ui_widget_port_post_button(short controller_index, short button_index);
 
@@ -2309,17 +2310,25 @@ static struct
 	boolean masked;
 } text_field;
 
-/* when the field was last shown (a field not shown for a while is let go
-of: its screen has gone) */
+/* when the field was last shown, and the menus' functions run since (a
+field not shown for a while is let go of: its screen has gone) */
 static unsigned long text_field_shown_time;
+static int text_field_passes_unshown;
 
 static boolean text_field_editing(struct widget_instance *row)
 {
 	return text_field.row && (!row || text_field.row == row);
 }
 
-static void text_field_begin(struct widget_instance *row, char const *text, short maximum,
-	void (*done)(char const *text))
+/* the field's title for the system's dialog (an Apple TV's), by its row */
+static char const *text_field_title(struct widget_instance const *row)
+{
+	return !row ? "" : strstr(row->name, "password") ? "Password" : strstr(row->name, "code") ? "Join Code" :
+		strstr(row->name, "name") ? "Game Name" : "";
+}
+
+static void text_field_start(struct widget_instance *row, char const *text, short maximum,
+	void (*done)(char const *text), boolean masked)
 {
 	struct key_stroke key;
 
@@ -2328,26 +2337,32 @@ static void text_field_begin(struct widget_instance *row, char const *text, shor
 	snprintf(text_field.before, sizeof(text_field.before), "%s", text);
 	text_field.maximum = (short)MIN(maximum, TEXT_FIELD_LENGTH - 1);
 	text_field.done = done;
-	text_field.masked = FALSE;
+	text_field.masked = masked;
 	text_field_shown_time = system_milliseconds();
+	text_field_passes_unshown = 0;
 	while (input_get_key(&key))
 		;
-	platform_text_field(TRUE);
+	platform_text_field(TRUE, text_field_title(row), text_field.text, masked);
+}
+
+static void text_field_begin(struct widget_instance *row, char const *text, short maximum,
+	void (*done)(char const *text))
+{
+	text_field_start(row, text, maximum, done, FALSE);
 }
 
 /* a password's field: as text_field_begin, its text shown as stars */
 static void text_field_begin_masked(struct widget_instance *row, char const *text, short maximum,
 	void (*done)(char const *text))
 {
-	text_field_begin(row, text, maximum, done);
-	text_field.masked = TRUE;
+	text_field_start(row, text, maximum, done, TRUE);
 }
 
 static void text_field_end(boolean keep)
 {
 	void (*done)(char const *text) = text_field.done;
 
-	platform_text_field(FALSE);
+	platform_text_field(FALSE, NULL, NULL, FALSE);
 	text_field.row = NULL;
 	text_field.done = NULL;
 	if (!keep)
@@ -2379,8 +2394,24 @@ static void text_field_show(struct widget_instance *value, char const *text, boo
 	if (editing)
 	{
 		text_field_shown_time = system_milliseconds();
+		text_field_passes_unshown = 0;
 		struct key_stroke key;
+		char asked[TEXT_FIELD_LENGTH];
 
+		/* the system's dialog's text (an Apple TV's), whole: Done also
+		presses Start, which the field's row takes as Enter; Cancel stops
+		the editing, and the row's A asks again */
+		switch (platform_text_field_result(asked, sizeof(asked)))
+		{
+		case 1:
+			text_field.text[0] = 0;
+			text_field_insert(asked);
+			break;
+		case 2:
+			text_field_end(FALSE);
+			text_set(value, L"");
+			return;
+		}
 		while (input_get_key(&key))
 		{
 			size_t length = strlen(text_field.text);
@@ -3163,6 +3194,23 @@ static void browser_games_read(void)
 	}
 	if (multiplayer.game_chosen >= multiplayer.game_count)
 		multiplayer.game_chosen = (short)MAX(0, multiplayer.game_count - 1);
+	/* (Direct Link's games, and the LAN's the client also found, logged as
+	they change: what shows whether a host's answers reach the game) */
+	if (multiplayer.mode == _multiplayer_mode_direct_link)
+	{
+		static short logged_peer_games = -1, logged_other_games = -1;
+		short other_games = 0;
+
+		for (index = 0; index < MAXIMUM_ADVERTISED_GAMES; index++)
+			other_games += network_game_client_advertised_game_is_valid(&games[index]) && !game_from_peer(&games[index]);
+		if (multiplayer.game_count != logged_peer_games || other_games != logged_other_games)
+		{
+			logged_peer_games = multiplayer.game_count;
+			logged_other_games = other_games;
+			platform_log("menus: Direct Link lists %d games from internet play (and the LAN has %d)",
+				multiplayer.game_count, other_games);
+		}
+	}
 }
 
 static short browser_row_index(struct widget_instance *row)
@@ -3907,6 +3955,7 @@ static void browser_update(struct widget_instance *list)
 				L"Looking for games on your LAN..." :
 				code_status == P2P_CODE_LOOKING ? L"Looking up the join code..." :
 				code_status == P2P_CODE_FOUND ? L"Found the game: connecting to its host..." :
+				code_status == P2P_CODE_REACHED ? L"Reached the host: waiting for its game..." :
 				code_status == P2P_CODE_NOT_FOUND ? L"No game has that join code. ENTER CODE to try again" :
 				L"ENTER CODE: a friend's join code or invite link");
 		}
@@ -3998,7 +4047,8 @@ static boolean code_screen_join(struct widget_instance *widget, boolean *widget_
 		text_field_end(TRUE);
 	if (!p2p_join_code(code_screen.text))
 	{
-		platform_log("menus: that is neither a join code nor an invite link");
+		platform_log("menus: that is neither a join code nor an invite link (%d characters)",
+			(int)strlen(code_screen.text));
 		code_screen.help = _code_help_not_one;
 		if (row)
 			text_field_begin(row, code_screen.text, TEXT_FIELD_LENGTH - 1, code_screen_done);
@@ -4421,7 +4471,7 @@ static void lobby_update(struct widget_instance *list)
 	lobby_map_show(description, game->map.name);
 	{
 		short seconds = network_game_client_get_seconds_to_game_start(client);
-		char link[TEXT_FIELD_LENGTH];
+		char code[16];
 		wchar_t gametype[NUMBEROF(game->variant.human_readable_game_description) + 1];
 
 		ustrncpy(gametype, game->variant.human_readable_game_description, NUMBEROF(gametype) - 1);
@@ -4436,17 +4486,16 @@ static void lobby_update(struct widget_instance *list)
 
 			usnprintf(text + length, NUMBEROF(text) - 1 - length, L" %d", seconds);
 		}
-		if (global_network_game_server_get() && p2p_invite_link(link, sizeof(link)))
+		/* (the join code, which friends type under Join Game > Direct Link,
+		on a line of its own: after "Join code: " the panel cuts its last
+		character off, and it has room for two lines after the countdown's.
+		The invite link is still on the clipboard where there is one, but an
+		Apple TV has none to paste from) */
+		if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)))
 		{
 			size_t length = ustrlen(text);
-			char code[16];
 
-			/* (and its join code, for a friend who cannot paste a link: an
-			Apple TV's) */
-			if (!p2p_host_code(code, sizeof(code)))
-				code[0] = 0;
-			usnprintf(text + length, NUMBEROF(text) - 1 - length,
-				L"\r\n\r\nInvite link copied:\r\npaste it to friends\r\nJoin code: %hs", code);
+			usnprintf(text + length, NUMBEROF(text) - 1 - length, L"\r\nJoin code:\r\n%hs", code);
 		}
 		text_set_length(named(description, "lobby_game_data", 0), text, LOBBY_TEXT_LENGTH);
 	}
@@ -5668,8 +5717,11 @@ void pc_menu_game_data_function_invoke(
 
 	if (!name)
 		return;
-	/* (a text field whose screen has gone: let go of) */
-	if (text_field.row && system_milliseconds() - text_field_shown_time > 500)
+	/* (a text field whose screen has gone: let go of, once other screens'
+	functions have run a while without it shown; a long frame alone, such
+	as a load's, is no sign of that, and would put an Apple TV's dialog
+	away) */
+	if (text_field.row && ++text_field_passes_unshown > 30 && system_milliseconds() - text_field_shown_time > 500)
 		text_field_end(FALSE);
 	if (!strcmp(name, "solo map list update"))
 		level_list_update(widget);

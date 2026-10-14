@@ -141,6 +141,20 @@ int posix_upnp_forward_udp(unsigned short port, unsigned short preferred_port, p
 /* stops the router forwarding that port (network byte order) of its, which
 posix_upnp_forward_udp set up; blocks */
 void posix_upnp_stop_forwarding_udp(unsigned short external_port);
+/* how the last posix_upnp_forward_udp asked the router (POSIX_UPNP_*: UPnP;
+on Apple devices, which cannot search for a UPnP router, NAT-PMP or PCP,
+port/ios/host/host_natpmp.c, or both when the router answered neither),
+and the seconds after which its forwarding is to be asked for again, as the
+router gave it for a shorter time than asked (0: no sooner than usual) */
+enum
+{
+	POSIX_UPNP_UPNP,
+	POSIX_UPNP_NAT_PMP,
+	POSIX_UPNP_PCP,
+	POSIX_UPNP_NAT_PMP_OR_PCP,
+};
+int posix_upnp_method(void);
+int posix_upnp_renew_seconds(void);
 
 /* ---------- DTLS for WebRTC (internet play with browsers, p2p_webrtc.c;
 posix_dtls.c, with port/third_party/mbedtls) */

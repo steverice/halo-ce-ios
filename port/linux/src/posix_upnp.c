@@ -232,6 +232,17 @@ int posix_upnp_forward_udp(unsigned short port, unsigned short preferred_port, p
 	return 1;
 }
 
+int posix_upnp_method(void)
+{
+	return POSIX_UPNP_UPNP;
+}
+
+/* (a lease of an hour, renewed by p2p.c after half of it) */
+int posix_upnp_renew_seconds(void)
+{
+	return 0;
+}
+
 void posix_upnp_stop_forwarding_udp(unsigned short external_port)
 {
 	char external_text[8];
