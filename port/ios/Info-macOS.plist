@@ -31,6 +31,8 @@
 	<string>$(HALO_BUILD_NUMBER)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.action-games</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>VISR uses Bluetooth only to connect game controllers.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to other Halo players on your local network.</string>
 	<key>UIApplicationSceneManifest</key>

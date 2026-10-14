@@ -134,6 +134,25 @@ if(NOT HALO_VISIONOS)
     endif()
 endif()
 target_compile_options(VISR PRIVATE "$<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>")
+# Profile-guided optimization of the host and SDL (tools/ios_build.py --host-pgo): "use" compiles with the
+# profile in HALO_HOST_PROFILE (pgo/visr_host.profdata, recorded by tools/host_pgo_train.py); "generate" builds
+# the instrumented app that records one, writing raw profiles to the pattern in HALO_HOST_PROFILE when it exits.
+set(HALO_HOST_PGO "off" CACHE STRING "Host profile-guided optimization: off, use or generate")
+set(HALO_HOST_PROFILE "" CACHE STRING "use: the profile; generate: the raw profiles' file name pattern")
+if(HALO_HOST_PGO STREQUAL "generate")
+    set(HALO_HOST_PGO_FLAGS "-fprofile-instr-generate=${HALO_HOST_PROFILE}")
+    target_link_options(VISR PRIVATE "-fprofile-instr-generate")
+elseif(HALO_HOST_PGO STREQUAL "use")
+    # a function changed since the recording, or absent from it, is compiled as without a profile
+    set(HALO_HOST_PGO_FLAGS "-fprofile-instr-use=${HALO_HOST_PROFILE}" -Wno-profile-instr-out-of-date
+        -Wno-profile-instr-unprofiled)
+else()
+    set(HALO_HOST_PGO_FLAGS "")
+endif()
+foreach(flag ${HALO_HOST_PGO_FLAGS})
+    target_compile_options(VISR PRIVATE "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:${flag}>")
+    target_compile_options(SDL3-static PRIVATE "${flag}")
+endforeach()
 target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "-framework UIKit"
     "-framework Metal" "-framework QuartzCore" z)
 # display.upscaler = "metalfx" (gpu_metal.m); the simulators have no MetalFX
