@@ -103,6 +103,14 @@ def merge_config(text, settings):
     return "\n".join(lines) + "\n"
 
 
+def chosen_origins(old, keys):
+    """config.origins text (port/linux/src/port_config.c) with each dotted key in keys marked chosen: a value a
+    run writes into config.toml is in force whatever a device profile says, including one equal to a default,
+    which the game would otherwise take for a default it wrote and let the profile move"""
+    kept = [line for line in old.splitlines() if line.split("\t", 1)[0] not in keys]
+    return "".join(f"{line}\n" for line in kept + [f"{key}\tchosen" for key in sorted(keys)])
+
+
 # what port_config.c defaults these to: a run that doesn't --set one gets
 # the default, not whatever an earlier run's --set left in config.toml
 DEFAULTS = {
@@ -182,6 +190,7 @@ DEFAULTS = {
     "debug.input_record": '""',
     "debug.input_replay": '""',
     "debug.benchmark": "false",
+    "debug.benchmark_suite": '""',
     "debug.gpu_stats": "false",
     "debug.gpu_trace_frame": "-1",
     "debug.gpu_trace_constants": "false",
@@ -888,6 +897,11 @@ def prepare(args, documents, rewrite=False):
     if getattr(args, "record_shader_lists", False):
         settings["debug.shader_list_record"] = f'"{runner}/shader-lists"'
     settings["debug.exit_after"] = f"{float(args.exit_after)}"
+    if getattr(args, "benchmark_suite", None):
+        # the device benchmark's suite ends the game itself when its last run is over
+        settings["debug.benchmark_suite"] = f'"{args.benchmark_suite}"'
+        settings["debug.exit_after"] = "0.0"
+        shutil.rmtree(documents / "benchmark", ignore_errors=True)
     for assignment in args.set:
         key, value = assignment.split("=", 1)
         settings[key.strip()] = value.strip()
@@ -896,6 +910,9 @@ def prepare(args, documents, rewrite=False):
     # folder); otherwise merged into the container's file, as the iPad runner always has
     old = "" if rewrite or not config.is_file() else config.read_text()
     config.write_text(merge_config(old, settings))
+    # every value this run wrote is the run's, not a default for the device's profile to move
+    origins = documents / "config.origins"
+    origins.write_text(chosen_origins("" if rewrite or not origins.is_file() else origins.read_text(), set(settings)))
     init = documents / "init.txt"
     if args.init:
         init.write_text("\n".join(args.init) + "\n")
@@ -906,13 +923,26 @@ def prepare(args, documents, rewrite=False):
     (documents / "stderr.log").touch()
 
 
+# a benchmark suite without --time-limit: an hour and a half of wall time, then it is killed
+SUITE_LIMIT = 5400
+
+
 def collect(documents, out):
     out.mkdir(parents=True, exist_ok=True)
-    for name in ("ios-runtime.log", "stderr.log", "debug.txt", "config.toml"):
+    for name in ("ios-runtime.log", "stderr.log", "debug.txt", "config.toml", "config.origins"):
         if (documents / name).is_file():
             shutil.copy2(documents / name, out / name)
     if (documents / "runner").is_dir():
         shutil.copytree(documents / "runner", out / "runner", dirs_exist_ok=True)
+    # automatic takes (debug.input_record = "auto"), newest last
+    if (documents / "recordings").is_dir():
+        shutil.copytree(documents / "recordings", out / "recordings", dirs_exist_ok=True)
+    # the device benchmark's journal, runs and report (--benchmark-suite), without the recordings it replayed
+    if (documents / "benchmark").is_dir():
+        (out / "benchmark").mkdir(exist_ok=True)
+        for file in sorted((documents / "benchmark").iterdir()):
+            if file.is_file():
+                shutil.copy2(file, out / "benchmark" / file.name)
 
 
 def simulator_pattern(udid):
@@ -931,14 +961,16 @@ def run_simulator(args):
     if not (app / "VISR").is_file():
         sys.exit(f"no simulator app at {app}; run tools/ios_build.py --simulator (--visionos) first")
     with (app / "Info.plist").open("rb") as file:
-        bundle_id = plistlib.load(file)["CFBundleIdentifier"]
+        info = plistlib.load(file)
+    bundle_id = info["CFBundleIdentifier"]
     # boots the simulator if it isn't, and waits until it has
     run_command("xcrun", "simctl", "bootstatus", udid, "-b", stdout=subprocess.DEVNULL)
     subprocess.run(["xcrun", "simctl", "terminate", udid, bundle_id], capture_output=True)
     run_command("xcrun", "simctl", "install", udid, app)
     container = subprocess.run(["xcrun", "simctl", "get_app_container", udid, bundle_id, "data"],
                                capture_output=True, text=True, check=True).stdout.strip()
-    documents = Path(container) / "Documents"
+    # an Apple TV app may write only to Caches, and keeps everything in Caches/Halo (host_main.m)
+    documents = Path(container) / ("Library/Caches/Halo" if info.get("DTPlatformName") == "appletvsimulator" else "Documents")
     if args.maps and not (documents / "maps").is_dir():
         documents.mkdir(parents=True, exist_ok=True)
         run_command("cp", "-c", "-R", args.maps, documents / "maps")
@@ -947,7 +979,7 @@ def run_simulator(args):
     if not wait_for(lambda: simulator_running(udid), 60):
         collect(documents, args.out)
         sys.exit(f"the game did not start in simulator {udid} within 60 seconds; logs are in {args.out}")
-    limit = args.time_limit or args.exit_after + 120
+    limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     finished = wait_for(lambda: not simulator_running(udid), limit)
     if not finished:
         subprocess.run(["xcrun", "simctl", "terminate", udid, bundle_id], capture_output=True)
@@ -1037,6 +1069,29 @@ def launch_native(app, data, out, environment, limit):
                 shutil.copy2(data / name, out / name)
 
 
+# how long a native app is given to end after TERM before it is killed outright
+TERM_GRACE = 15
+
+
+def end_native(app, opener, grace=TERM_GRACE, run=subprocess.run, sleep=time.sleep):
+    """ends a native app that outlived its time limit: TERM, then KILL if it is still there after grace seconds.
+    A game spinning in its own code has ignored TERM (a level change under debug.fixed_timestep, 2026-10-13: the
+    run then held its host's line for an hour), so TERM alone is not an end"""
+    pattern = native_pattern(app)
+    run(["pkill", "-f", pattern])
+    for _ in range(grace):
+        if run(["pgrep", "-f", pattern], capture_output=True).returncode != 0:
+            break
+        sleep(1)
+    else:
+        print(f"the native app ignored TERM for {grace} s: killing it", flush=True)
+        run(["pkill", "-KILL", "-f", pattern])
+    try:
+        opener.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        opener.kill()
+
+
 def _launch_native(app, data, out, environment, limit):
     command = native_command(app, data, out, environment)
     print("+", " ".join(command), flush=True)
@@ -1044,11 +1099,7 @@ def _launch_native(app, data, out, environment, limit):
     try:
         status = opener.wait(timeout=limit)
     except subprocess.TimeoutExpired:
-        subprocess.run(["pkill", "-f", native_pattern(app)])
-        try:
-            opener.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            opener.kill()
+        end_native(app, opener)
         return False
     if status != 0:
         sys.exit(f"open could not start {app} (exit {status}): a user must be logged in to this Mac's "
@@ -1134,8 +1185,11 @@ def run_native(args):
     if not (data / SEED_MARKER).is_file():
         seed_native_data(args, data)
     prepare(args, data, rewrite=True)
-    limit = args.time_limit or args.exit_after + 120
+    limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     environment = validation_environment(args.metal_validation, args.metal_shader_validation)
+    for assignment in getattr(args, "app_env", None) or []:
+        name, _, value = assignment.partition("=")
+        environment[name] = value
     if "MTL_DEBUG_LAYER_WARNING_MODE" in environment:
         # an open-launched app's NSLog lands in stderr.log, which check-metal greps for validation errors,
         # while the Xcode-launched iPad runner's goes to the unified log. Both runners get the same warnings
@@ -1175,7 +1229,7 @@ def run(args):
     documents = container_documents(args)
     prepare(args, documents, rewrite=args.fresh_config)
     launch(documents)
-    limit = args.time_limit or args.exit_after + 120
+    limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     finished = wait_for(lambda: not running(), limit)
     if not finished:
         subprocess.run(["pkill", "-x", TARGET])
@@ -1199,7 +1253,8 @@ def main():
                                  "native: checked against the app's own")
     run_parser.add_argument("--app", type=Path,
                             help="the CMake-built device app (tools/ios_build.py --team ...; the default), or "
-                                 "with --simulator the simulator app (default: the visionOS one)")
+                                 "with --simulator the simulator app (default: the visionOS one; an Apple TV "
+                                 "simulator takes build/tvos/app-simulator/Release-appletvsimulator/VISR.app)")
     run_parser.add_argument("--simulator", metavar="UDID",
                             help="run the simulator app in this simulator (xcrun simctl list devices)")
     run_parser.add_argument("--maps", type=Path,
@@ -1216,6 +1271,12 @@ def main():
                                  "(600 = 18,000 frames), which validation slows")
     run_parser.add_argument("--set", action="append", default=[], metavar="SECTION.KEY=VALUE",
                             help="a config.toml setting, value in TOML syntax (repeatable)")
+    run_parser.add_argument("--app-env", action="append", default=[], metavar="NAME=VALUE",
+                            help="native runner: a variable for the app's own environment (not a setting)")
+    run_parser.add_argument("--benchmark-suite", metavar="MODE",
+                            help="run the device benchmark's suite (debug.benchmark_suite) in place of a timed run: "
+                                 "the game quits when the suite is over (--exit-after is ignored; --time-limit bounds "
+                                 "it, 90 minutes by default) and its journal, runs and report.json land in OUT/benchmark")
     run_parser.add_argument("--init", action="append", default=[], metavar="COMMAND",
                             help="a console command for init.txt, e.g. 'map_name a10' (repeatable)")
     run_parser.add_argument("--screenshot-every", type=int, default=0, metavar="FRAMES")

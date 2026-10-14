@@ -1189,3 +1189,49 @@ def test_xcode_alert_is_none_when_sample_writes_nothing(monkeypatch):
     monkeypatch.setattr(mac_run, "xcode_pid", lambda xcode: 2748)
     monkeypatch.setattr(mac_run.subprocess, "run", lambda command, **options: mac_run.subprocess.CompletedProcess(command, 1))
     assert mac_run.xcode_alert("/Applications/Xcode.app") is None
+
+
+def test_chosen_origins_marks_what_a_run_writes():
+    """every key a run writes into config.toml is marked chosen in config.origins, so a device profile never
+    moves a runner's value; the game's own lines for other keys are kept"""
+    old = "display.render_height\tdefault\t0\ninput.turn\tdefault\t\"snap\"\ndisplay.renderer\tchosen\n"
+    text = mac_run.chosen_origins(old, {"display.render_height", "display.shadow_map_size"})
+    assert text.splitlines() == ['input.turn\tdefault\t"snap"', "display.renderer\tchosen",
+                                 "display.render_height\tchosen", "display.shadow_map_size\tchosen"]
+    assert mac_run.chosen_origins("", {"display.vsync"}) == "display.vsync\tchosen\n"
+    assert mac_run.chosen_origins(text, set()) == text
+
+
+class _Opener:
+    def __init__(self):
+        self.killed = False
+
+    def wait(self, timeout=None):
+        return 0
+
+    def kill(self):
+        self.killed = True
+
+
+def test_a_native_app_that_ignores_term_is_killed(tmp_path):
+    calls = []
+
+    def run(command, **options):
+        calls.append(command)
+        # pgrep keeps finding the app: it ignored TERM
+        return argparse.Namespace(returncode=0)
+
+    mac_run.end_native(tmp_path / "VISR.app", _Opener(), grace=3, run=run, sleep=lambda seconds: None)
+    assert calls[0][:2] == ["pkill", "-f"] and calls[-1][:3] == ["pkill", "-KILL", "-f"]
+    assert sum(1 for call in calls if call[0] == "pgrep") == 3
+
+
+def test_a_native_app_that_ends_on_term_is_not_killed(tmp_path):
+    calls = []
+
+    def run(command, **options):
+        calls.append(command)
+        return argparse.Namespace(returncode=1 if command[0] == "pgrep" else 0)
+
+    mac_run.end_native(tmp_path / "VISR.app", _Opener(), grace=3, run=run, sleep=lambda seconds: None)
+    assert [call[0] for call in calls] == ["pkill", "pgrep"] and "-KILL" not in calls[0]

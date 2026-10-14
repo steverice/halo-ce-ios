@@ -1,0 +1,10 @@
+# Only functional runs so far (b30 at 1,117 and a10 at 2,266 frames a second uncapped): the built-in defaults.
+
+schema = 1
+name = "Mac (M6)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "mac"
+chips = ["Apple M6"]

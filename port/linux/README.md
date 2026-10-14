@@ -261,7 +261,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.online` | `true` | `HALO_NET_ONLINE` | `true`: internet play. `false`: system link on the local network only. |
 | `network.join_from_clipboard` | `true` | `HALO_NET_JOIN_FROM_CLIPBOARD` | `true`: when the game comes to the front, it joins the game of an invite link on the clipboard. |
 | `network.tunnel_port` | `0` | `HALO_NET_TUNNEL_PORT` | The UDP port for internet play. `0`: the game selects a port. Refer to "Internet play". |
-| `network.allow_upnp` | `true` | `HALO_NET_ALLOW_UPNP` | `true`: internet play can ask the router to forward its port (UPnP). `false`: the game does not ask. Refer to "Internet play". |
+| `network.allow_upnp` | `true` | `HALO_NET_ALLOW_UPNP` | `true`: internet play can ask the router to forward its port (UPnP; NAT-PMP or PCP on Apple devices). `false`: the game does not ask. Refer to "Internet play". |
 | `network.public_lobby` | `true` | `HALO_NET_PUBLIC_LOBBY` | `true`: the server browser. Public games are listed, and Join Game > Server Browser shows them. `false`: no games are listed or shown. Refer to "Server browser". |
 | `network.host_public` | `true` | `HALO_NET_HOST_PUBLIC` | `true`: a new game of Create Game > Internet starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in Server Setup changes it for each game. Refer to "Server browser". |
 | `network.coop_friendly_fire` | `"on"` | `HALO_NET_COOP_FRIENDLY_FIRE` | Whether the players of an online co-op game hurt each other: `"off"`, `"on"`, `"shields_only"` or `"explosives_only"`. FRIENDLY FIRE in co-op's Server Setup writes its choice here. Their AI allies they always can, as in the campaign. |
@@ -671,7 +671,8 @@ The game can ask the router to forward the port (UPnP,
 - The forwarded port is one more address that the machine gives to the
   other machine.
 - The forward has a duration of one hour. The game makes it longer while
-  it operates. When the game stops normally, it removes the forward. It
+  it operates. When the game stops hosting (and is not joining a game),
+  or stops normally, it removes the forward. It
   does not remove the forward after a crash, or if a request to the router
   is still under way 3 seconds after the game starts to stop. Some routers only make forwards without a duration.
 - When the game finds the router, it removes the forwards to this machine
@@ -681,7 +682,16 @@ The game can ask the router to forward the port (UPnP,
   network provider. Then the router has a private address, and the game
   does not ask.
 
-To stop all UPnP requests, set `network.allow_upnp` to `false`.
+On Apple devices the game asks with NAT-PMP, then PCP, instead
+(`port/ios/host/host_natpmp.c`): a UPnP router is found by multicast, which
+an Apple app can send only with an entitlement that Apple grants on request.
+NAT-PMP and PCP are unicast UDP to the router's port 5351, at the gateway of
+the default route. The forward has a duration of one hour, or the shorter
+one that the router gives, and the game asks again after half of it. It
+asks again too when it comes back from the background.
+
+To stop all UPnP, NAT-PMP and PCP requests, set `network.allow_upnp` to
+`false`.
 
 In the game, each machine has an address in 100.64.0.0/10:
 

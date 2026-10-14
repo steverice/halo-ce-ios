@@ -9,6 +9,10 @@ set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr" CACHE STRING "App bundle identif
 # Mac Catalyst (tools/ios_build.py --mac): configured as iOS, built with -sdk macosx SUPPORTS_MACCATALYST=YES
 option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
+# iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
+# On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
+option(HALO_CLOUD_SAVES "Sync saves through the player's private iCloud database" OFF)
+set(HALO_CLOUD_CONTAINER "iCloud.org.steverice.visr" CACHE STRING "iCloud container for HALO_CLOUD_SAVES")
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
@@ -35,20 +39,22 @@ if(HALO_MAC)
     target_compile_options(SDL3-static PRIVATE "-F${HALO_GLES_FRAMEWORKS}")
     target_compile_definitions(SDL3-static PRIVATE GLES_SILENCE_DEPRECATION=1)
 endif()
-# iPhone and visionOS: each build a new CFBundleVersion (tools/ios_build.py), so
-# installing over the app replaces it and keeps its Documents (the imported game)
+# Each build a new CFBundleVersion (tools/ios_build.py), so installing over the
+# app replaces it and keeps its Documents, or on tvOS its Caches (the imported game)
 set(HALO_BUILD_NUMBER 6 CACHE STRING "CFBundleVersion")
 if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # Controllers only, no Files app: the XISO arrives from a browser
     # (host/host_tv_import.m).
     set(HALO_TVOS ON)
-    # 4K fill rate is the bottleneck in heavy fights on an Apple TV 4K (3rd gen);
-    # there's no Files app to edit config.toml, so the build picks it (0 = native).
-    set(HALO_RENDER_HEIGHT 1080 CACHE STRING "Internal render height (display.render_height)")
+    # The render height is the device profile's (profiles/apple-tv.toml: 1080, since 4K fill
+    # rate is the bottleneck in heavy fights on an Apple TV 4K, 3rd gen). A build made with
+    # tools/ios_build.py --render-height N overrides every profile (0 = the profile's).
+    set(HALO_RENDER_HEIGHT 0 CACHE STRING "Internal render height (display.render_height); 0 leaves it to the device profile")
     # Brand assets (layered icon, top shelf) made from the iOS AppIcon artwork.
     set(HALO_PLATFORM_SOURCES Assets-tvOS.xcassets host/host_tv.m host/host_tv_import.m)
     set(HALO_INFO_PLIST Info-tvOS.plist)
     set(HALO_DEVICE_FAMILY 3)
+    option(HALO_EXTENDED_VIRTUAL_ADDRESSING "Sign with the extended virtual addressing entitlement" OFF)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
     # A window, played with a game controller (host/host_tv.m's input), the
     # game imported through Files or the Documents folder (host/host_import.m).
@@ -75,6 +81,13 @@ else()
 endif()
 # the texture upscale policy (port/assets/texture-policy.json) as a C table for port/runtime/texture_policy.c
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# the app's page in the Settings app; a build with iCloud saves takes a copy with their rows added
+set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
+if(HALO_CLOUD_SAVES AND NOT HALO_TVOS)
+    set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/cloud/Settings.bundle")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${ROOT}/tools/settings_bundle.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" "${HALO_SETTINGS_BUNDLE}" COMMAND_ERROR_IS_FATAL ANY)
+endif()
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     COMMAND Python3::Interpreter "${ROOT}/tools/embed_texture_policy.py"
@@ -87,13 +100,16 @@ add_executable(VISR MACOSX_BUNDLE
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
-    host/host_join_link.c host/host_config.c
+    host/host_join_link.c host/host_config.c host/host_profile.c host/host_device.m
+    "${ROOT}/port/third_party/tomlc17/tomlc17.c"
+    host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
+    "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
-    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c
+    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_natpmp.c host/host_natpmp_packets.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
-    "${ROOT}/build/ios/embedded")
+    "${ROOT}/build/ios/embedded" "${ROOT}/port/third_party/tomlc17")
 # WebRTC peers use DTLS in the host; generated posix bridges translate guest buffers.
 file(GLOB HALO_MBEDTLS_SOURCES CONFIGURE_DEPENDS "${ROOT}/port/third_party/mbedtls/library/*.c")
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/posix_dtls.c" ${HALO_MBEDTLS_SOURCES})
@@ -147,7 +163,7 @@ foreach(flag ${HALO_HOST_PGO_FLAGS})
     target_compile_options(SDL3-static PRIVATE "${flag}")
 endforeach()
 target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "-framework UIKit"
-    "-framework Metal" "-framework QuartzCore" z)
+    "-framework Metal" "-framework QuartzCore" "-framework Network" "-framework CoreImage" z)
 # display.upscaler = "metalfx" (gpu_metal.m); the simulators have no MetalFX
 if(NOT CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
     target_link_libraries(VISR PRIVATE "-weak_framework MetalFX")
@@ -155,13 +171,22 @@ endif()
 if(HALO_TVOS)
     target_link_libraries(VISR PRIVATE "-framework Network" "-framework CoreImage")
     set_source_files_properties(Assets-tvOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    # An Apple TV HD (A8, 2 GB) has no free 4 GB at a multiple of 4 GB for the
+    # guest arena; the entitlement asks for a larger address space
+    # (tools/ios_build.py --tvos --extended-virtual-addressing)
+    if(HALO_EXTENDED_VIRTUAL_ADDRESSING)
+        # (named, so the iCloud keys are added to it and do not replace it)
+        set(HALO_ENTITLEMENTS VISR-tvOS-extended.entitlements)
+        set_target_properties(VISR PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/VISR-tvOS-extended.entitlements")
+    endif()
 elseif(HALO_VISIONOS)
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers" "-framework CompositorServices"
         "-framework ARKit" "-framework SwiftUI")
     set_source_files_properties(Assets-visionOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # the app's page in the Settings app (host/host_texture_settings.m)
-    target_sources(VISR PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")
+    set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # Theater.swift calls host_theater.m's C functions
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/host/host_theater.h"
@@ -179,10 +204,14 @@ else()
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers")
     set_source_files_properties(Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # the app's page in the Settings app (host/host_texture_settings.m)
-    target_sources(VISR PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")
+    set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon")
+# An archive (tools/ios_build.py --app-store-package) holds only what its targets install. CMake's targets skip the
+# install step, which leaves an archive with no app in it that no distribution method accepts; the app alone is
+# installed, so the archive is an app archive and not one with a static library beside the app.
+set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_SKIP_INSTALL NO XCODE_ATTRIBUTE_INSTALL_PATH "/Applications")
 # internet play's MQTT brokers (network.brokers_file): host_main.m writes them
 # beside config.toml at each start, as upstream's Android app does
 target_sources(VISR PRIVATE "${ROOT}/port/assets/network/brokers.txt")
@@ -190,6 +219,36 @@ set_source_files_properties("${ROOT}/port/assets/network/brokers.txt" PROPERTIES
 file(GLOB HALO_LICENSES "${ROOT}/build/ios/licenses/*.txt")
 target_sources(VISR PRIVATE ${HALO_LICENSES})
 set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
+# The privacy manifest (port/ios/privacy): a tester build, whose benchmark can send a report when its tester
+# agrees, declares that; every other build sends nothing and declares nothing collected
+option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
+if(HALO_TESTER_BUILD)
+    target_sources(VISR PRIVATE host/host_benchmark_menu.m)
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
+    target_compile_definitions(VISR PRIVATE HALO_TESTER_BUILD=1)
+else()
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/plain/PrivacyInfo.xcprivacy")
+endif()
+target_sources(VISR PRIVATE "${HALO_PRIVACY_MANIFEST}")
+set_source_files_properties("${HALO_PRIVACY_MANIFEST}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+# The device benchmark's recorded routes (port/benchmark/README.md), copied into the data folder when a suite
+# starts. Off, the suite has only the scenes that play by themselves and the app carries no recording: the first
+# tester builds are made so, until recorded routes are shown to hold on other devices
+option(HALO_BENCHMARK_ROUTES "Bundle the device benchmark's recorded routes and run them as scenes" ON)
+if(HALO_BENCHMARK_ROUTES)
+    file(GLOB HALO_BENCHMARK_RECORDINGS CONFIGURE_DEPENDS "${ROOT}/port/benchmark/recordings/*.input"
+        "${ROOT}/port/benchmark/recordings/*.actions" "${ROOT}/port/benchmark/recordings/*.route"
+        "${ROOT}/port/benchmark/recordings/*.checks" "${ROOT}/port/benchmark/recordings/*.seeds")
+    target_sources(VISR PRIVATE ${HALO_BENCHMARK_RECORDINGS})
+    set_source_files_properties(${HALO_BENCHMARK_RECORDINGS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/benchmark-recordings)
+else()
+    target_compile_definitions(VISR PRIVATE HALO_BENCHMARK_NO_ROUTES=1)
+endif()
+# the device profiles (profiles/README.md): host/host_profile.c picks this device's at start
+file(GLOB HALO_DEVICE_PROFILES CONFIGURE_DEPENDS "${ROOT}/profiles/*.toml")
+list(FILTER HALO_DEVICE_PROFILES EXCLUDE REGEX "TEMPLATE\\.toml$")
+target_sources(VISR PRIVATE ${HALO_DEVICE_PROFILES})
+set_source_files_properties(${HALO_DEVICE_PROFILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/profiles)
 # the maps' shader lists, compiled at map load (d3d8_device.c's halo_shader_list_warm)
 file(GLOB HALO_SHADER_LISTS CONFIGURE_DEPENDS "${ROOT}/port/shader-lists/*.txt")
 target_sources(VISR PRIVATE ${HALO_SHADER_LISTS})
@@ -199,8 +258,46 @@ set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${HALO_BUNDLE_IDENTIFIER}"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "${HALO_DEVICE_FAMILY}"
     XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
+    # a dSYM beside the app, which an App Store archive carries to App Store Connect for symbolicated crash reports
+    XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+    # (CMake's Release flags have no -g, so its Xcode project turns debug symbols off and no dSYM is made; this
+    # gives the compiler -g back without changing the code it generates)
+    XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS YES
     XCODE_ATTRIBUTE_HALO_RENDER_HEIGHT "${HALO_RENDER_HEIGHT}"
     XCODE_ATTRIBUTE_HALO_BUILD_NUMBER "${HALO_BUILD_NUMBER}")
 if(HALO_DEVELOPMENT_TEAM)
     set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${HALO_DEVELOPMENT_TEAM}")
+endif()
+# The device benchmark's report, sent when its tester agrees (host/host_benchmark_send.m): one record in the public
+# database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
+option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to the iCloud container's public database" OFF)
+if(HALO_BENCHMARK_UPLOAD)
+    target_sources(VISR PRIVATE host/host_benchmark_send.m)
+    target_compile_definitions(VISR PRIVATE "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
+endif()
+if(HALO_CLOUD_SAVES)
+    # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit
+    target_sources(VISR PRIVATE "${ROOT}/port/runtime/cloud_saves.c" host/cloud_store_cloudkit.m host/host_cloud_saves.m)
+    target_compile_definitions(VISR PRIVATE HALO_CLOUD_SAVES=1 "HALO_CLOUD_CONTAINER=\"${HALO_CLOUD_CONTAINER}\"")
+endif()
+if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
+    target_link_libraries(VISR PRIVATE "-framework CloudKit")
+    # the iCloud keys, added to the target's own entitlements when it has some (visionOS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_CLOUD_ENTITLEMENTS)
+    if(HALO_ENTITLEMENTS)
+        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_ENTITLEMENTS}" HALO_BASE_ENTITLEMENTS)
+        string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
+        string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
+    endif()
+    # App Store Connect refuses a tvOS app with CloudKit but no push environment: the benchmark's send (CloudKit's
+    # own subscriptions use it; the app sends and receives no notification of its own). Xcode signs an App Store
+    # export with "production" from the distribution profile
+    if(HALO_BENCHMARK_UPLOAD)
+        string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>development</string>"
+            HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
+    endif()
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements" "${HALO_CLOUD_ENTITLEMENTS}")
+    set_target_properties(VISR PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
+        XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
 endif()

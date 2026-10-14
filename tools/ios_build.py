@@ -63,9 +63,43 @@ def main():
                         help='tvOS and visionOS: internal render height in pixels, 0 for native '
                              '(default 1080 on tvOS; native on visionOS, which follows the window\'s size)')
     parser.add_argument('--extended-virtual-addressing', action='store_true',
-                        help='visionOS: sign with the extended virtual addressing entitlement (paid developer teams), '
-                             'in case the device refuses the 4 GB guest arena')
+                        help='visionOS and tvOS: sign with the extended virtual addressing entitlement (paid developer '
+                             'teams), in case the device refuses the 4 GB guest arena')
+    parser.add_argument('--frame-pacing', choices=('on','off'),
+                        help="compile in the Metal renderer's presentation pacing (HALO_FRAME_PACING; "
+                             'default on, off for --visionos, whose frames the Compositor paces)')
+    parser.add_argument('--register-device', metavar='UDID',
+                        help='signed device builds: build for this one device and let Xcode register it with the team '
+                             '(-allowProvisioningDeviceRegistration). Off by default: a build never registers a device unasked')
+    parser.add_argument('--cloud-saves', action='store_true',
+                        help='sync saves through the player\'s private iCloud database (docs/cloud-saves.md). The App ID '
+                             'needs the iCloud capability with CloudKit and the container; a signed build with this '
+                             'option lets Xcode add them to your developer account')
+    parser.add_argument('--cloud-container',
+                        help='--cloud-saves: the iCloud container (default iCloud.org.steverice.visr for the '
+                             'org.steverice.visr bundle IDs; required with any other bundle ID)')
+    parser.add_argument('--benchmark-upload', action='store_true',
+                        help='let the device benchmark send its report, when its tester agrees, to the public database '
+                             'of the iCloud container (--cloud-container, or the project\'s own). Signs with the iCloud '
+                             'entitlement as --cloud-saves does, without turning cloud saves on')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
+    parser.add_argument('--tester', action='store_true',
+                        help='a tester build: the Run benchmark row at launch, and the privacy manifest that declares '
+                             'the benchmark report (port/ios/privacy)')
+    parser.add_argument('--benchmark-routes', choices=('on','off'),
+                        help="bundle the device benchmark's recorded routes and run them as scenes (default on; off "
+                             'for --tester, whose suite has only the scenes that play by themselves until recorded '
+                             'routes are shown to hold on other devices)')
+    parser.add_argument('--archive-only', action='store_true',
+                        help='with --app-store-package: stop after the archive. The export that follows is what '
+                             'makes the distribution certificate and App Store profile')
+    parser.add_argument('--app-store-package', type=Path, metavar='FOLDER',
+                        help='signed device builds: also archive the app and export an App Store Connect package '
+                             '(for TestFlight) into this folder. Xcode makes the team\'s distribution certificate and '
+                             'App Store profile if they are missing, which changes the developer account')
+    parser.add_argument('--upload', action='store_true',
+                        help='with --app-store-package: upload the package to App Store Connect with the account '
+                             'Xcode is signed in to. The app record must exist there first')
     parser.add_argument('--pgo', choices=('use', 'off'), default='use',
                         help='profile-guided optimization of the game code: use (the default) builds it with the '
                              'profile in pgo/, off builds it without')
@@ -86,16 +120,39 @@ def main():
         parser.error('use --team YOUR_TEAM_ID to sign, or --unsigned to sign later')
     if args.team and (args.unsigned or args.simulator):
         parser.error('--team is only used for signed device builds')
+    if args.register_device and not args.team:
+        parser.error('--register-device is for signed device builds (--team)')
     if args.ipa and args.simulator:
         parser.error('--ipa requires a device build')
+    if args.app_store_package and not args.team:
+        parser.error('--app-store-package is for signed device builds (--team)')
+    if args.upload and not args.app_store_package:
+        parser.error('--upload needs --app-store-package')
+    if args.archive_only and (not args.app_store_package or args.upload):
+        parser.error('--archive-only goes with --app-store-package and without --upload')
+    if args.tester and args.mac:
+        parser.error('--tester is for device and simulator builds')
+    if args.benchmark_upload and (args.simulator or args.unsigned):
+        parser.error('--benchmark-upload needs a signed build: the iCloud entitlement comes from the signature')
     if args.render_height is None:
-        args.render_height = 0 if args.visionos else 1080
-    if args.extended_virtual_addressing and not args.visionos:
-        parser.error('--extended-virtual-addressing is for --visionos builds')
+        # 0: the device profile's (profiles/); a number here overrides every profile
+        args.render_height = 0
+    if args.extended_virtual_addressing and not (args.visionos or args.tvos):
+        parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
     args.bundle_id = args.bundle_id or ('org.steverice.visr' if platform_name == 'ios' else f'org.steverice.visr.{platform_name}')
-    if args.mac and (args.simulator or args.unsigned or args.team):
+    if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
+    try:
+        cloud = cloud_definitions(args.bundle_id, args.cloud_saves, args.cloud_container, args.benchmark_upload)
+    except ValueError as error:
+        parser.error(str(error))
+    if args.mac and (args.cloud_saves or args.benchmark_upload) and not args.team:
+        parser.error('--mac with --cloud-saves or --benchmark-upload needs --team: macOS does not run an ad hoc signed '
+                     'app with iCloud entitlements')
+    if args.cloud_saves and args.team:
+        print(f'iCloud saves: this signed build lets Xcode enable the iCloud capability and the container '
+              f'{cloud[1].split("=", 1)[1]} on the App ID {args.bundle_id} and make a new profile', flush=True)
     if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', args.bundle_id):
         parser.error('--bundle-id must be a reverse-DNS identifier (e.g. com.example.halo)')
     if args.jobs < 1:
@@ -132,7 +189,7 @@ def main():
     ):
         shutil.copyfile(ROOT/source, notices/name)
     if args.mac:
-        build_mac(args)
+        build_mac(args, cloud)
         return
     build=ROOT/'build'/platform_name/('app-simulator' if args.simulator else
                 'app-unsigned' if args.unsigned else 'app-device')
@@ -145,16 +202,33 @@ def main():
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
-             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}',
+             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud,
              *host_pgo_flags(args.host_pgo)]
-    if not args.tvos:
-        # a new CFBundleVersion each build, so an install over the app replaces it
-        import time
-        command.append(f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
+    if args.frame_pacing:
+        command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
+    command.append(f'-DHALO_TESTER_BUILD={"ON" if args.tester else "OFF"}')
+    routes = args.benchmark_routes or ('off' if args.tester else 'on')
+    command.append(f'-DHALO_BENCHMARK_ROUTES={routes.upper()}')
+    # a new CFBundleVersion each build, so an install over the app replaces it (on an Apple TV that keeps
+    # the imported maps: an uninstall would take them, and the upload with them)
+    import time
+    command.append(f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
     run(*command)
+    # an App Store archive leaves the product as a link into its own intermediates, which the next plain build
+    # cannot write through ("unable to create directory"): a link there is removed first
+    product = build/f'Release-{sdk}/VISR.app'
+    if product.is_symlink():
+        product.unlink()
     command=['cmake','--build',build,'--config','Release','--target','VISR','--','-quiet']
     if args.simulator or args.unsigned:command.append('CODE_SIGNING_ALLOWED=NO')
-    else:command.append('-allowProvisioningUpdates')
+    else:
+        command.append('-allowProvisioningUpdates')
+        if args.register_device:
+            # xcodebuild ignores a destination without a scheme, so this build names the scheme itself
+            # (CMake's Xcode generator makes one per target) and keeps the products where the other builds put them
+            command=['xcodebuild','-project',build/'VISR.xcodeproj','-scheme','VISR','-configuration','Release',
+                     '-destination',f'platform={system},id={args.register_device}','-quiet',
+                     '-allowProvisioningUpdates','-allowProvisioningDeviceRegistration',f'SYMROOT={build}','build']
     run(*command)
     app = build/f'Release-{sdk}/VISR.app'
     print(f'App: {app}')
@@ -162,6 +236,45 @@ def main():
         command = [sys.executable, 'tools/ios_package.py', app, args.ipa.resolve()]
         if args.unsigned: command.append('--require-unsigned')
         run(*command)
+    if args.app_store_package:
+        commands = app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload)
+        run(*commands[0])
+        # the archive's own dSYMs folder stays empty for this CMake project (its products go to the build folder,
+        # where the archive does not look), so the dSYM the archive build wrote there goes in by hand; the UUIDs
+        # match, since it is the same build
+        dsym = build/f'Release-{sdk}/VISR.app.dSYM'
+        if dsym.is_dir():
+            target = args.app_store_package.resolve()/'VISR.xcarchive/dSYMs/VISR.app.dSYM'
+            shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(dsym, target, symlinks=True)
+            print(f'dSYM: {target}')
+        else:
+            print(f'no dSYM at {dsym}: the upload will carry no debug symbols', flush=True)
+        for command in [] if args.archive_only else commands[1:]:
+            run(*command)
+        print(f'App Store Connect package: {args.app_store_package}' +
+              (' (archive only: not exported)' if args.archive_only else ' (uploaded)' if args.upload else ''))
+
+
+def app_store_options(team, upload):
+    """the export options for an App Store Connect package: signed for distribution by Xcode's automatic signing,
+    and either written to disk or uploaded"""
+    return {'method': 'app-store-connect', 'destination': 'upload' if upload else 'export', 'teamID': team,
+            'signingStyle': 'automatic', 'manageAppVersionAndBuildNumber': False, 'uploadSymbols': True}
+
+
+def app_store_commands(build, system, team, out, upload):
+    """the commands that archive the configured project and export (or upload) its App Store Connect package into
+    out; writes out/ExportOptions.plist for the second"""
+    import plistlib
+    out.mkdir(parents=True, exist_ok=True)
+    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload)))
+    archive = out/'VISR.xcarchive'
+    return [['xcodebuild', '-project', build/'VISR.xcodeproj', '-scheme', 'VISR', '-configuration', 'Release',
+             '-destination', f'generic/platform={system}', '-archivePath', archive, '-quiet', '-allowProvisioningUpdates',
+             'archive'],
+            ['xcodebuild', '-exportArchive', '-archivePath', archive, '-exportOptionsPlist', out/'ExportOptions.plist',
+             '-exportPath', out, '-allowProvisioningUpdates']]
 
 # the iPhoneOS SDK's OpenGLES.tbd (Xcode 27), and what the Catalyst link stub says in its place
 IOS_STUB_TARGETS = '[ arm64e-ios, arm64e.x1-ios ]'
@@ -201,6 +314,24 @@ def opengles_framework(folder):
     return folder
 
 
+def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=False):
+    """the CMake definitions for --cloud-saves and --benchmark-upload: off unless asked for, and then with a
+    container, which only the project's own bundle IDs have a default for (a container belongs to one developer team)"""
+    if not cloud_saves and not benchmark_upload:
+        if cloud_container:
+            raise ValueError('--cloud-container is for --cloud-saves builds')
+        return ['-DHALO_CLOUD_SAVES=OFF', '-DHALO_BENCHMARK_UPLOAD=OFF']   # both named: CMake's cache keeps an earlier ON
+    if not cloud_container:
+        if bundle_id != 'org.steverice.visr' and not bundle_id.startswith('org.steverice.visr.'):
+            raise ValueError(f'--cloud-saves with the bundle ID {bundle_id} needs --cloud-container '
+                             '(an iCloud container of your own team, e.g. iCloud.com.yourname.visr)')
+        cloud_container = 'iCloud.org.steverice.visr'
+    if not re.fullmatch(r'iCloud\.[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', cloud_container):
+        raise ValueError('--cloud-container must look like iCloud.com.yourname.visr')
+    return [f'-DHALO_CLOUD_SAVES={"ON" if cloud_saves else "OFF"}', f'-DHALO_CLOUD_CONTAINER={cloud_container}',
+            f'-DHALO_BENCHMARK_UPLOAD={"ON" if benchmark_upload else "OFF"}']
+
+
 def mac_build_folder(environment=None):
     """where the Catalyst build goes: build/mac/app in the checkout, or, on a host that runs developer-built
     apps only from one folder (HALO_MAC_BUILD, set by that host's job runner), a folder per
@@ -211,18 +342,24 @@ def mac_build_folder(environment=None):
     return ROOT / 'build/mac/app'
 
 
-def build_mac(args):
+def build_mac(args, cloud):
     """The iOS project built for Mac Catalyst: configured as iOS, built with the macOS SDK"""
     build=mac_build_folder()
     frameworks=opengles_framework(ROOT/'build/mac/frameworks')
     import time
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
-        '-DHALO_DEVELOPMENT_TEAM=','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
-        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',*host_pgo_flags(args.host_pgo))
+        f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
+        f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
+        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,
+        *host_pgo_flags(args.host_pgo))
+    # ad hoc, except with --cloud-saves or --benchmark-upload: iCloud entitlements need a development signature and a
+    # Mac profile (and the Mac itself registered with the team, which a Mac profile lists as its device)
+    signing=(['-allowProvisioningUpdates','-allowProvisioningDeviceRegistration'] if args.cloud_saves or args.benchmark_upload else
+             ['CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM='])
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',
         '-sdk','macosx','SDK_VARIANT=iosmac','SUPPORTS_MACCATALYST=YES','DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER=NO',
-        'CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM=')
+        *signing)
     print(f'App: {build}/Release-maccatalyst/VISR.app')
 
 

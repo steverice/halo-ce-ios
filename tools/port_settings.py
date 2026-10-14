@@ -630,10 +630,44 @@ def _join_game_extras() -> list:
     lines += _header(f"{base}/header_direct_link", f"{base}/header_direct_link")
     lines += _widget(f"{base}/button_clipboard", [("type", "text"), ("width", 128), ("height", 24),
                                                   ("bitmap", "bitmaps/text_button_background"),
-                                                  ("text", "PASTE LINK"), ("font", "ui\\small_ui"),
+                                                  ("text", "ENTER CODE"), ("font", "ui\\small_ui"),
                                                   ("color", "#FFFFFFFF"), ("align", "center"), ("text_y", 2)],
-                     ['<on event="a" run="direct ip connect go"/>', '<on event="start" run="direct ip connect go"/>',
+                     ['<on event="a" run="port code open"/>', '<on event="start" run="port code open"/>',
                       '<on event="left_mouse" run="mouse emit accept event"/>'])
+    lines += _code_screen()
+    return lines
+
+
+def _code_screen() -> list:
+    """Direct Link's ENTER CODE screen: a friend's join code (eight
+    characters, shown in their lobby and Server Setup) or a whole invite link
+    typed, and JOIN GAME looks it up (menu_functions.c's code_screen_*); an
+    invite link on the clipboard is in the field to begin with"""
+    base = f"{MT}/join_game/code"
+    spec = {"screen": "code_screen", "spacing": 28, "help_top": 120,
+            "header": ("header_direct_link", f"{MT}/join_game/header_direct_link")}
+    extra = _value_row(base, "code", 0, "port code edit")
+    extra += _button(f"{base}/button_defaults", 3, [])
+    extra += _widget(f"{base}/button_ok", [("type", "text"), ("width", 128), ("height", 24),
+                                           ("bitmap", "bitmaps/text_button_background"), ("text", "JOIN GAME"),
+                                           ("font", "ui\\small_ui"), ("color", "#FFFFFFFF"), ("align", "center"),
+                                           ("text_y", 2)],
+                     ['<on event="a" run="port code join"/>', '<on event="start" run="port code join"/>',
+                      '<on event="left_mouse" run="mouse emit accept event"/>'])
+    extra += _strings(f"{base}/labels", ["JOIN CODE:"])
+    # (by its state: menu_functions.c's code_screen_update)
+    extra += _strings(f"{base}/help_strings", [
+        "",
+        "Type the join code your friend's lobby shows,\\nor a whole invite link, then JOIN GAME.",
+        "That is not a join code (eight letters and digits)\\nor an invite link. Try again.",
+    ])
+    lines = _screen(base, spec, [(f"{base}/op_code", None)], ["port code update"],
+                    ['<on event="created" run="port code init"/>'], extra)
+    # (no Defaults: the bar is JOIN GAME and CANCEL; B goes back at once)
+    lines = [line.replace(f'<child widget="{base}/button_defaults" y="1"/>', "") for line in lines]
+    lines = [line.replace('<on event="b" back="true"/>', '<on event="b" run="port code back"/>')
+             .replace('<on event="back" back="true"/>', '<on event="back" run="port code back"/>')
+             for line in lines]
     return lines
 
 

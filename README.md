@@ -68,7 +68,10 @@ into the VISR folder before launching. The importer checks the image's file
 system, map build and campaign maps before it copies anything, then extracts
 the maps and starts the game. Later launches go straight to the game, and you
 can delete the image. Saves live in the `save` folder inside the VISR folder;
-back it up before you delete the app.
+back it up before you delete the app. A build made with `--cloud-saves` also
+copies profiles and campaign saves to your private iCloud storage, so they
+follow you between devices; see [iCloud saves](docs/cloud-saves.md) for what
+is copied, the privacy notes and how to build with it.
 
 > [!WARNING]
 > **Do not ask** where to obtain an XISO. If you do not have an XISO from your own,

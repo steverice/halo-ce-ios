@@ -1,0 +1,15 @@
+schema = 1
+name = "Mac (M4)"
+kind = "model"
+
+[match]
+platform = "mac"
+chips = ["Apple M4"]
+
+[display]
+shadow_map_size = 512
+
+[evidence."display.shadow_map_size"]
+basis = "measured"
+why = "GPU time was flat from 128 to 1024 (about 0.6 ms at 640x480, 1.0 ms at 1920x1440); 2048 added about 0.1 ms."
+source = "Mac mini shadow size benchmark, 2026-10-06"

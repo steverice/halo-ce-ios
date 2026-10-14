@@ -235,6 +235,9 @@ test */
 void host_extra_scene_poll(void);
 void host_extra_scene_test(void);
 
+/* (the system's keyboard, below) */
+static void text_input_update(void);
+
 int host_sdl_poll_event(void *event)
 {
 	SDL_Event host_event;
@@ -283,6 +286,7 @@ int host_sdl_poll_event(void *event)
 	(void)test_extra_scene;
 	(void)polls;
 #endif
+	text_input_update();
 	if (!SDL_PollEvent(&host_event))
 		return 0;
 	/* the layouts agree except for the pointers of text, drop and user
@@ -536,6 +540,66 @@ void host_sdl_get_clipboard_text(char *buffer, uint32_t size)
 
 	SDL_strlcpy(buffer, text ? text : "", size);
 	SDL_free(text);
+}
+
+/* ---------- the system's keyboard (a menu's text field: a join code, a
+password, a game's name)
+
+On a phone, a tablet or a headset the keyboard is the system's, on screen,
+up while the field is edited. SDL turns what is typed on it into key presses
+(SDL_uikitviewcontroller.m's SDL_SendKeyboardUnicodeKey, shift held for a
+capital), which the guest reads as a hardware keyboard's; its Return is a
+Return key press. On an Apple TV SDL's hidden text field brings no keyboard
+up, so the field is asked for with tvOS's own dialog (host_tv.m), whose text
+the guest takes whole (host_sdl_text_result). Either is begun in
+host_sdl_poll_event, on the main thread, which UIKit needs. */
+
+static int text_input_wanted, text_input_on, text_input_masked;
+static char text_input_title[64], text_input_text[512];
+
+void host_sdl_text_input(int on, const char *title, const char *text, int masked)
+{
+	if (on)
+	{
+		SDL_strlcpy(text_input_title, title ? title : "", sizeof(text_input_title));
+		SDL_strlcpy(text_input_text, text ? text : "", sizeof(text_input_text));
+		text_input_masked = masked != 0;
+	}
+	text_input_wanted = on != 0;
+}
+
+int host_sdl_text_result(char *buffer, uint32_t size)
+{
+#if TARGET_OS_TV
+	return host_tv_text_result(buffer, size);
+#else
+	(void)buffer;
+	(void)size;
+	return 0;
+#endif
+}
+
+static void text_input_update(void)
+{
+	SDL_Window *window;
+
+	if (text_input_wanted == text_input_on || !(window = host_sdl_window()))
+		return;
+#if TARGET_OS_TV
+	if (host_tv_text_prompt(text_input_wanted, text_input_title, text_input_text, text_input_masked))
+		text_input_on = text_input_wanted;
+#else
+	text_input_on = text_input_wanted;
+	if (text_input_on)
+	{
+		SDL_StartTextInput(window);
+		host_logf(HOST_LOG_INFO, "keyboard: up for a text field");
+	}
+	else
+	{
+		SDL_StopTextInput(window);
+	}
+#endif
 }
 
 /* the guest's window (host_sdl_create_window makes one), for the GPU backend's

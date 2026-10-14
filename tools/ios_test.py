@@ -59,9 +59,47 @@ for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-d
     run('xcrun', 'clang', '-O2', '-fsanitize=address', *defines, '-Iport/linux/src', '-Iport/third_party/tomlc17',
         'port/ios/tests/config_probe.c', *sdl_flags, '-o', BUILD / name)
     run(BUILD / name)
+# the settings' layers: the default, the device's profile, a chosen value, the environment; config.origins,
+# which tells a chosen value from a default the game wrote; scene classes (port/linux/src/port_config.c).
+# Only the address sanitizer, as above
+run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
+    'port/ios/tests/config_origins_probe.c', *sdl_flags, '-o', BUILD / 'config-origins-probe')
+run(BUILD / 'config-origins-probe')
+# device profiles: which files a device gets and in what order, what a profile may not set, and the shipped
+# profiles for the devices measured so far (port/ios/host/host_profile.c)
+run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
+    'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/third_party/tomlc17/tomlc17.c',
+    '-o', BUILD / 'profile-probe')
+run(BUILD / 'profile-probe', ROOT / 'profiles')
+# the profiles' own rules: only the settings a profile may set, inside their ranges, each with its evidence,
+# one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
+run('python3', 'tools/profile_check.py')
+run('python3', 'tools/test_profile_check.py')
+# a runner's settings are the run's, never a device profile's: mac_run.py writes every setting a profile may set
+# (and marks what it writes chosen in config.origins), so no profile can move a check-metal run
+profile_keys = re.findall(r'^PROFILE_(?:BOOLEAN|INTEGER|REAL|STRING)\("([^"]+)"',
+                          (ROOT / 'port/linux/src/port_profile_keys.h').read_text(), re.M)
+mac_run_defaults = (ROOT / 'tools/mac_run.py').read_text()
+mac_run_defaults = mac_run_defaults[mac_run_defaults.index('DEFAULTS = {'):mac_run_defaults.index('\n}\n', mac_run_defaults.index('DEFAULTS = {'))]
+unpinned = [key for key in profile_keys if f'"{key}"' not in mac_run_defaults]
+if not profile_keys or unpinned:
+    raise SystemExit(f"mac_run.py: DEFAULTS must set every setting a device profile may set; missing {unpinned}")
+if 'chosen_origins(' not in (ROOT / 'tools/mac_run.py').read_text().split('def prepare(')[1]:
+    raise SystemExit('mac_run.py: prepare must mark the settings it writes chosen in config.origins')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/virtual_clock_probe.c', '-o', BUILD/'virtual-clock-probe')
 run(BUILD/'virtual-clock-probe')
+# internet play's join codes (p2p_code.c): the alphabet, reading them back, refusals, and a host's record found
+# from the code typed with or without its dash (p2p_code_lookup, what p2p_join_code reads a code with)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    '-Iport/third_party/monocypher', 'port/ios/tests/join_code_probe.c', 'port/linux/src/p2p_code.c',
+    'port/linux/src/p2p_crypto.c', 'port/third_party/monocypher/monocypher.c',
+    'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD/'join-code-probe')
+run(BUILD/'join-code-probe')
+# a router's forwarding on Apple devices (host_natpmp_packets.c): NAT-PMP's and PCP's requests and answers
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/natpmp_probe.c', 'port/ios/host/host_natpmp_packets.c', '-o', BUILD/'natpmp-probe')
+run(BUILD/'natpmp-probe')
 # halo://join links the app is opened with (host_join_link.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')
@@ -70,6 +108,12 @@ run(BUILD/'join-link-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/frame_pacer_probe.c', '-o', BUILD/'frame-pacer-probe')
 run(BUILD/'frame-pacer-probe')
+# the device benchmark's metrics, plan and journal (port/runtime/benchmark_*.c): percentiles of made-up frames,
+# the sweep walked with made-up devices, and the journal cut at every byte and after every write
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
+    'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
+run(BUILD/'benchmark-probe')
 # the Metal backend's redundant-state filter (metal_state_cache.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
@@ -82,6 +126,14 @@ run(BUILD/'metal-compile-probe-thread')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_compile_probe.c', '-o', BUILD/'metal-compile-probe')
 run(BUILD/'metal-compile-probe')
+# the Apple host's socket adapter: every address it returns is laid out as the game reads it (a datagram's
+# source read with recvmsg was not, so a host took an internet play joiner's datagrams for its own machine's)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Dst_mtim=st_mtimespec',
+    '-Dst_atim=st_atimespec', '-Dst_ctim=st_ctimespec', '--include-directory=port/linux/src',
+    '--include-directory=port/ios/host', '--include-directory=port/runtime/include',
+    '--include-directory=port/runtime/guest/runtime', 'port/ios/tests/posix_net_probe.c',
+    'port/ios/host/posix_net.c', '-Wl,-dead_strip', f'--output={BUILD / "posix-net-probe"}')
+run(BUILD/'posix-net-probe')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
@@ -105,6 +157,10 @@ run(BUILD/'texture-upscale-state-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host', 'port/ios/tests/host_config_write_probe.c',
     'port/ios/host/host_config.c', '-o', BUILD/'host-config-write-probe')
 run(BUILD/'host-config-write-probe')
+# cloud saves: the sync rules against a fake cloud shared by several simulated devices (port/runtime/cloud_saves.c)
+run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-fno-sanitize-recover=undefined',
+    '-Iport/runtime', 'port/ios/tests/cloud_saves_probe.c', 'port/runtime/cloud_saves.c', '-lz', '-o', BUILD/'cloud-saves-probe')
+run(BUILD/'cloud-saves-probe')
 # the game's reread of one setting at a level load, the environment still winning (port/linux/src/port_config.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_ILP32', '-Iport/linux/src',
     '-Iport/third_party/tomlc17', *shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'sdl3'], text=True)),

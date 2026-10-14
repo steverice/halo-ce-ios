@@ -25,8 +25,15 @@
 #define HEADER_LIMIT 16384
 #define IMAGE_MINIMUM (64ull<<20)
 #define IMAGE_MAXIMUM (16ull<<30)
-/* The extracted maps take about 1.7 GB next to the uploaded image. */
-#define MAPS_RESERVE (2ull<<30)
+/* The upload is not kept whole: once the image's directories have arrived, only the maps' own
+   bytes are written (xiso_plan), and the extraction gives each map's room back as it copies it
+   out (xiso_extract_maps_consuming). So an import needs room for the maps once (about 1.9 GB),
+   the largest map again, and the start of the image up to its directories (about 0.7 GB on the
+   retail disc, freed as soon as they are read): 3 GB free, whatever the image's size. An image
+   whose directories come after its maps is stored whole, and needs its own size as well. */
+#define IMPORT_FREE (3ull<<30)
+/* how much more of the image arrives between looks for its directories */
+#define PLAN_INTERVAL (32ull<<20)
 
 enum import_state {import_waiting,import_receiving,import_extracting,import_done,import_failed};
 
@@ -67,7 +74,7 @@ static void import_image(void) {
         char error[1024]={0};
         NSFileManager *files=NSFileManager.defaultManager;
         status_set(import_extracting,0,0,@"Checking the disc image…");
-        BOOL imported=xiso_extract_maps(upload_path.fileSystemRepresentation,staging.fileSystemRepresentation,
+        BOOL imported=xiso_extract_maps_consuming(upload_path.fileSystemRepresentation,staging.fileSystemRepresentation,
             extract_progress,NULL,error,sizeof(error));
         [files removeItemAtPath:upload_path error:nil];
         NSString *failure=imported?nil:[NSString stringWithUTF8String:error];
@@ -183,6 +190,51 @@ static BOOL local_peer(nw_connection_t connection) {
     return NO;
 }
 
+/* the parts of the image being received that the import will read (xiso_plan); none until its
+   directories have arrived */
+static struct xiso_range plan[XISO_PLAN_RANGES];
+static int plan_count;
+static uint64_t plan_tried;
+
+static BOOL write_at(int fd,const unsigned char *bytes,size_t size,uint64_t offset) {
+    while(size) {
+        ssize_t count=pwrite(fd,bytes,size,(off_t)offset);
+        if(count<0 && errno==EINTR)continue;
+        if(count<=0)return NO;
+        bytes+=count;offset+=(uint64_t)count;size-=(size_t)count;
+    }
+    return YES;
+}
+
+/* Writes the next bytes of the image at their own place in the file: all of them until the plan
+   is known, then only what the plan keeps (the file has the image's full length, with holes). */
+static BOOL image_write(int fd,const unsigned char *bytes,size_t size,uint64_t offset) {
+    if(!plan_count)return write_at(fd,bytes,size,offset);
+    for(int i=0;i<plan_count;i++) {
+        uint64_t start=plan[i].start>offset?plan[i].start:offset;
+        uint64_t end=plan[i].end<offset+size?plan[i].end:offset+size;
+        if(start<end && !write_at(fd,bytes+(start-offset),(size_t)(end-start),start))return NO;
+    }
+    return YES;
+}
+
+/* Looks for the image's directories in what has arrived; with them, frees what was written and is
+   not needed. */
+static void image_plan(int fd,uint64_t received,uint64_t total) {
+    if(plan_count || received<plan_tried+PLAN_INTERVAL)return;
+    plan_tried=received;
+    plan_count=xiso_plan(upload_path.fileSystemRepresentation,received,total,plan,XISO_PLAN_RANGES);
+    if(!plan_count)return;
+    uint64_t kept=0,from=0;
+    for(int i=0;i<plan_count;i++) {
+        if(plan[i].start<received)xiso_free_range(fd,from,plan[i].start<received?plan[i].start:received);
+        from=plan[i].end;kept+=plan[i].end-plan[i].start;
+    }
+    if(from<received)xiso_free_range(fd,from,received);
+    host_logf(HOST_LOG_INFO,"upload: the image's directories arrived in its first %llu MB; keeping %llu MB of %llu (%d parts)",
+        (unsigned long long)(received>>20),(unsigned long long)(kept>>20),(unsigned long long)(total>>20),plan_count);
+}
+
 static void upload_failed(HaloUploadRequest *request,NSString *message) {
     if(request.fd>=0){close(request.fd);request.fd=-1;}
     [NSFileManager.defaultManager removeItemAtPath:upload_path error:nil];
@@ -205,12 +257,13 @@ static BOOL write_all(int fd,const void *bytes,size_t size) {
 static BOOL upload_append(HaloUploadRequest *request,const void *bytes,size_t size) {
     uint64_t remaining=request.length-request.received;
     if(size>remaining)size=(size_t)remaining;
-    if(!write_all(request.fd,bytes,size)) {
+    if(!image_write(request.fd,bytes,size,request.received)) {
         upload_failed(request,@"The Apple TV ran out of storage while receiving the disc image.");
         respond_text(request.connection,507,@"The Apple TV ran out of storage.");
         return NO;
     }
     request.received+=size;
+    image_plan(request.fd,request.received,request.length);
     status_set(import_receiving,request.received,request.length,@"Receiving the disc image…");
     return YES;
 }
@@ -261,11 +314,19 @@ static void start_upload(HaloUploadRequest *request,NSArray<NSString *> *lines,N
     if(!code || strcmp(code.UTF8String,pairing_code)) {respond_text(connection,403,@"That code doesn't match the one on the TV.");return;}
     if(state!=import_waiting && state!=import_failed) {respond_text(connection,409,@"The Apple TV is already importing a disc image.");return;}
     if(size<IMAGE_MINIMUM || size>IMAGE_MAXIMUM) {respond_text(connection,413,@"That file isn't the size of an Xbox disc image.");return;}
-    if(available && available.unsignedLongLongValue<size+MAPS_RESERVE) {
-        respond_text(connection,507,[NSString stringWithFormat:@"The Apple TV needs %.1f GB free for this import.",(size+MAPS_RESERVE)/1e9]);return;
+    if(available && available.unsignedLongLongValue<IMPORT_FREE) {
+        host_logf(HOST_LOG_ERROR,"upload refused: %llu MB free, %llu needed",available.unsignedLongLongValue>>20,IMPORT_FREE>>20);
+        respond_text(connection,507,[NSString stringWithFormat:@"The Apple TV needs %.1f GB free for this import and has %.1f.",
+            IMPORT_FREE/1e9,available.unsignedLongLongValue/1e9]);return;
     }
-    request.fd=open(upload_path.fileSystemRepresentation,O_WRONLY|O_CREAT|O_TRUNC,0600);
-    if(request.fd<0) {respond_text(connection,507,@"Could not store the disc image on the Apple TV.");return;}
+    request.fd=open(upload_path.fileSystemRepresentation,O_RDWR|O_CREAT|O_TRUNC,0600);
+    /* (the image's full length from the start: what the plan leaves out stays a hole) */
+    if(request.fd<0 || ftruncate(request.fd,(off_t)size)) {
+        if(request.fd>=0){close(request.fd);request.fd=-1;}
+        respond_text(connection,507,@"Could not store the disc image on the Apple TV.");return;
+    }
+    plan_count=0;plan_tried=0;
+    host_logf(HOST_LOG_INFO,"upload: %llu MB free on the Apple TV",available.unsignedLongLongValue>>20);
     request.length=size;request.received=0;
     host_logf(HOST_LOG_INFO,"upload started: %llu bytes",size);
     status_set(import_receiving,0,size,@"Receiving the disc image…");

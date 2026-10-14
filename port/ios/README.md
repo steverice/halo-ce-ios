@@ -145,6 +145,16 @@ Keep `maps` directly inside Documents. `config.toml`, `debug.txt`, and
 `ios-runtime.log` are available there for diagnostics. Back up `Documents/save`
 before uninstalling or changing bundle IDs.
 
+### iCloud saves
+
+`tools/ios_build.py --cloud-saves` builds an app that syncs profiles, finished
+levels, the Save and Quit checkpoint and custom game types through the
+player's private iCloud database. It needs a paid developer team and an iCloud
+container, and the first signed build with it changes the App ID's
+capabilities. [docs/cloud-saves.md](../../docs/cloud-saves.md) has the
+behavior, the Settings rows, the privacy notes and the build steps. Without
+the option the app has none of it.
+
 ### Upscaled textures in the Settings app
 
 On iPhone, iPad and Apple Vision Pro, the app's page in the system Settings app
@@ -181,6 +191,13 @@ The renderer preserves the selected aspect ratio and caps the render size to
 the drawable and GPU texture limit. Existing configuration files without
 `render_height` automatically use native resolution. Anti-aliasing and an
 in-app graphics settings menu are not implemented yet.
+
+Each device starts from its **device profile**: the graphics settings chosen
+for its model, or for its class of device when the model has none
+([`profiles/`](../../profiles/README.md)). A value you set in `config.toml`,
+in the menus or in the Settings app wins over the profile; `config.origins`,
+beside `config.toml`, records which values are yours. The log's `device:`,
+`device profile:` and `settings:` lines say what the app chose and why.
 
 With the Metal renderer (`renderer = "metal"`; always on Apple Vision Pro),
 these `[display]` settings also apply:

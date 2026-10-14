@@ -29,6 +29,24 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 void host_log(int priority, const char *text);
 void host_abort(const char *reason) __attribute__((noreturn));
 void host_exit(int code) __attribute__((noreturn));
+
+/* ---------- the device benchmark (port/ios/host/host_benchmark.m; the guest's
+side is port/linux/src/benchmark_suite.c) */
+
+/* starts a suite ("quick" or "full"), or carries on the one the journal says
+was cut off, on a device whose display has drawable_lines lines and whose
+settings in force are the rest; 0 if the benchmark cannot run now (the log
+says why) */
+int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
+	int model_lod_max);
+/* the next run as text ("scene=a10-crew map=a10 difficulty=hard recording=a10-bench
+lead=0 seconds=0 lines=540 anisotropy=4 shadow=256 lod=1"), after the pause
+between runs; 0 once the suite is over and its report written */
+int host_benchmark_next(char *text, unsigned int size);
+/* the measured window opens (1) or closes (0); the render size it drew at */
+void host_benchmark_window(int open, int width, int height);
+/* the run is over: a status by name (benchmark_plan.h) and a note for the report */
+void host_benchmark_end(const char *status, const char *note);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 
@@ -73,6 +91,14 @@ int host_sdl_gl_swap_window(unsigned int window);
 int host_sdl_poll_event(void *event);
 int host_sdl_set_clipboard_text(const char *text);
 void host_sdl_get_clipboard_text(char *buffer, unsigned int size);
+/* the system's keyboard up for a menu's text field (its title, its text,
+and whether it is a password's), or put away (xinput_sdl.c's
+platform_text_field). On a phone, a tablet or a headset its keys come as key
+events; an Apple TV asks with a dialog of its own (host_tv.m), whose text
+host_sdl_text_result gives once it is done: 1 and the text, 2 if it was
+canceled, 0 while there is none */
+void host_sdl_text_input(int on, const char *title, const char *text, int masked);
+int host_sdl_text_result(char *buffer, unsigned int size);
 /* the keyboard's keys by name (the controls' bindings, xinput_sdl.c) */
 void host_sdl_scancode_name(int scancode, char *buffer, unsigned int size);
 int host_sdl_scancode_from_name(const char *name);
@@ -121,6 +147,7 @@ void host_gpu_warm_begin(void);
 void host_gpu_pipeline_warm(const struct gpu_pipeline_description *description);
 void host_gpu_warm_end(void);
 uint32_t host_gpu_pipeline_built_take(struct gpu_pipeline_description *description);
+void host_gpu_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level);
 void host_gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 
 /* ---------- stereo (port/linux/game/stereo.c; the host's port/ios/host/host_stereo.m)

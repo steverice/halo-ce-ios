@@ -11,7 +11,10 @@ recording skipped it.
 
 #include "cseries.h"
 #include "cutscene/cinematics.h"
+#include "game/game.h"
+#include "game/players.h"
 #include "main/main.h"
+#include "math/real_math.h"
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 
@@ -22,8 +25,57 @@ unsigned char input_replay_main_menu_loaded(void)
 	return scenario && scenario->type == _scenario_type_main_menu;
 }
 
-void input_replay_skip_cinematic(void)
+/* what an automatic take (debug.input_record = "auto") writes about the level it starts in: the map's
+name without its folders, the difficulty (0 easy to 3 impossible), how many players this machine has, and the
+game's random seed */
+void input_replay_level(char *map, unsigned int size, long *difficulty, long *players, unsigned long *seed)
 {
-	if (cinematic_can_be_skipped())
-		main_skip_cinematic();
+	const char *name = main_get_map_name();
+	const char *cursor;
+	unsigned int index = 0;
+
+	for (cursor = name; cursor && *cursor; cursor++)
+	{
+		if (*cursor == '\\' || *cursor == '/')
+			name = cursor + 1;
+	}
+	for (; name && name[index] && index + 1 < size; index++)
+		map[index] = name[index];
+	if (size)
+		map[index] = 0;
+	*difficulty = game_difficulty_level_get();
+	*players = players_globals ? players_globals->local_player_count : 0;
+	*seed = *get_global_random_seed_address();
+}
+
+unsigned long input_replay_random_seed(const unsigned long *seed)
+{
+	if (seed)
+		*get_global_random_seed_address() = *seed;
+	return *get_global_random_seed_address();
+}
+
+/* both of the game's random sequences (render_random.c says which is which): the global one, which the
+simulation draws from, and the local one, which a tick also draws from; read into seeds, or set from them */
+void input_replay_random_seeds(unsigned long seeds[2], unsigned char set)
+{
+	if (set)
+	{
+		*get_global_random_seed_address() = seeds[0];
+		*get_global_local_random_seed_address() = seeds[1];
+	}
+	else
+	{
+		seeds[0] = *get_global_random_seed_address();
+		seeds[1] = *get_global_local_random_seed_address();
+	}
+}
+
+/* 1 if there was a cinematic to skip and it was asked to end */
+unsigned char input_replay_skip_cinematic(void)
+{
+	if (!cinematic_can_be_skipped())
+		return 0;
+	main_skip_cinematic();
+	return 1;
 }

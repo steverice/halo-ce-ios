@@ -1,10 +1,14 @@
 /* Start the statically compiled guest on the iOS UI thread and persist its log. */
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <Metal/Metal.h>
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_display_pin.h"
+#include "host_profile.h"
 #include "host_join_link.h"
+#include "host_benchmark.h"
+#include "host_cloud_saves.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
 #endif
@@ -14,6 +18,8 @@
 #if TARGET_OS_MACCATALYST
 #include <objc/message.h>
 #endif
+#include <mach/mach.h>
+#include <os/proc.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -38,7 +44,37 @@ void host_fatal(const char *format,...) {
     if(!getenv("HALO_RUNNER"))SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"VISR",text,NULL);exit(1);
 }
 void host_abort(const char *reason) { host_logf(HOST_LOG_ERROR,"guest abort: %s",reason);abort(); }
-void host_exit(int code) {host_logf(HOST_LOG_INFO,"game exit %d",code);exit(code);}
+void host_exit(int code) {
+    host_logf(HOST_LOG_INFO,"game exit %d",code);
+    /* a save made just before the app is left still goes up (nothing without HALO_CLOUD_SAVES) */
+    host_cloud_saves_leaving(3);
+    exit(code);
+}
+
+/* What the system counts against the app, every ten seconds: tvOS ends an app
+   well under the device's memory (2 GB on an Apple TV HD), and the log is the
+   only place to see how close a level comes. Always on tvOS; elsewhere when
+   HALO_MEMORY_LOG is set in the app's environment or the data folder has a
+   file named memory-log (as tools make stderr.log). */
+static void memory_log_start(void) {
+    static dispatch_source_t timer;
+    host_logf(HOST_LOG_INFO,"memory: the device has %llu MB",NSProcessInfo.processInfo.physicalMemory>>20);
+    timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_global_queue(QOS_CLASS_UTILITY,0));
+    dispatch_source_set_timer(timer,dispatch_time(DISPATCH_TIME_NOW,0),10*NSEC_PER_SEC,NSEC_PER_SEC);
+    dispatch_source_set_event_handler(timer,^{
+        task_vm_info_data_t info;mach_msg_type_number_t count=TASK_VM_INFO_COUNT;
+        if(task_info(mach_task_self(),TASK_VM_INFO,(task_info_t)&info,&count)!=KERN_SUCCESS)return;
+#if TARGET_OS_MACCATALYST
+        host_logf(HOST_LOG_INFO,"memory: footprint %llu MB, peak %llu MB",
+            (unsigned long long)info.phys_footprint>>20,(unsigned long long)info.ledger_phys_footprint_peak>>20);
+#else
+        host_logf(HOST_LOG_INFO,"memory: footprint %llu MB, peak %llu MB, %llu MB left before the system's limit",
+            (unsigned long long)info.phys_footprint>>20,(unsigned long long)info.ledger_phys_footprint_peak>>20,
+            (unsigned long long)os_proc_available_memory()>>20);
+#endif
+    });
+    dispatch_resume(timer);
+}
 int host_errno(void) {return host_linux_errno(errno);}
 void host_debug_thread_started(void) {}
 void host_debug_thread_exited(void) {}
@@ -230,6 +266,11 @@ int main(int argc,char **argv) {
         host_logf(HOST_LOG_INFO,"Halo iOS native guest starting");
         /* names the exact game image a result folder came from (tools/mac_run.py compare-inputs) */
         host_logf(HOST_LOG_INFO,"guest image sha256 %s",HALO_GUEST_SHA256);
+#if TARGET_OS_TV
+        memory_log_start();
+#else
+        if(getenv("HALO_MEMORY_LOG")||access("memory-log",F_OK)==0)memory_log_start();
+#endif
         /* halo://join links (host_join_link.c): before the import screen can spin the run loop,
            which is when SDL's scene delegate passes on the link the app was launched with */
         host_join_link_install(data_root);
@@ -253,6 +294,9 @@ int main(int argc,char **argv) {
                 host_exit(0);}];
 #endif
         UIApplication.sharedApplication.idleTimerDisabled=YES;
+        /* iCloud saves (nothing without HALO_CLOUD_SAVES): begun before the import screen, whose
+           time on a new or purged device is also the time the saves take to come back */
+        host_cloud_saves_start(data_root,save_root);
 #if TARGET_OS_MACCATALYST
         /* a runner's run (tools/mac_run.py sets HALO_RUNNER) must not slow down when its window is covered
            or minimized: App Nap would throttle its timers and drawable presentation */
@@ -264,13 +308,27 @@ int main(int argc,char **argv) {
         }
 #endif
         host_ios_prepare_assets(data_root);
+        /* the device benchmark: debug.benchmark_suite's value through the launch's environment, or in a tester
+           build the choice made on its first screen */
+        const char *benchmark_suite=getenv("HALO_BENCHMARK_SUITE");
+#ifdef HALO_TESTER_BUILD
+        if(!benchmark_suite&&!getenv("HALO_RUNNER"))benchmark_suite=host_benchmark_menu();
+#endif
 #if !TARGET_OS_TV
         /* the Settings app's texture pane: acted on now and at every return to the foreground */
         host_texture_settings_observe(data_root);
 #endif
         /* the arena is the step a device can refuse (visionOS: see port/ios/README.md) */
+#if TARGET_OS_TV
+        /* (no Files app on an Apple TV; and a message box would hold a test run open) */
+        if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image.":
+            "This Apple TV cannot give the game the 4 GB of address space it needs.");
+#else
         if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image. See ios-runtime.log in Files.":
             "Could not reserve the game's 4 GB memory arena. See ios-runtime.log in Files.");
+#endif
+        /* the device benchmark's crash marker goes under the memory watch's handlers, which pass on what is not theirs */
+        host_benchmark_install();
         host_install_signal_handlers();
         SDL_SetHint(SDL_HINT_ORIENTATIONS,"LandscapeLeft LandscapeRight");
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
@@ -305,9 +363,22 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[12];size_t env_count=0;
+        const char *env[16];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
+        /* This device's profile (profiles/, host_profile.h): its values go to the game as one variable, which
+           port_config.c lays under config.toml. Not as the settings' own HALO_ variables, which win over the
+           file: a profile never outranks what the player chose. */
+        static char env_profile[sizeof("HALO_DEVICE_PROFILE_VALUES=")+HOST_PROFILE_MAXIMUM_VALUES*216];
+        snprintf(env_profile,sizeof(env_profile),"HALO_DEVICE_PROFILE_VALUES=%s",host_device_profile_install(data_root));
+        env[env_count++]=env_profile;
+        /* the build, for what the game writes beside a recording (input_replay.c), and the folder its automatic
+           takes go to */
+        static char env_build[96];
+        snprintf(env_build,sizeof(env_build),"HALO_APP_BUILD=%s",
+            [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String?:"");
+        env[env_count++]=env_build;
+        mkdir("recordings",0755);
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's
            display.renderer. The aspect is pinned to 16:9, since a visionOS
@@ -316,12 +387,35 @@ int main(int argc,char **argv) {
         env[env_count++]="HALO_RENDERER=metal";
         env[env_count++]="HALO_SCREEN_WIDTH=852";
 #endif
+#if TARGET_OS_TV
+        /* The renderer and upscaled textures are the device profile's (profiles/apple-tv.toml: Metal, and no
+           upscaled textures). HALO_RENDERER in the app's own environment (devicectl's
+           DEVICECTL_CHILD_HALO_RENDERER=gl, simctl's SIMCTL_CHILD_) still chooses, for a comparison run. */
+        char env_renderer[32];
+        const char *launch_renderer=getenv("HALO_RENDERER");
+        if(launch_renderer&&(!strcmp(launch_renderer,"gl")||!strcmp(launch_renderer,"metal"))){
+            snprintf(env_renderer,sizeof(env_renderer),"HALO_RENDERER=%s",launch_renderer);
+            env[env_count++]=env_renderer;
+            host_logf(HOST_LOG_INFO,"tvOS: %s from the launch's environment",env_renderer);
+        }
+#endif
 #if TARGET_OS_TV || TARGET_OS_VISION
         char env_render[64];
-        /* The build chooses the render height (tools/ios_build.py --render-height). */
+        /* A build made with tools/ios_build.py --render-height N draws at N whatever the device's profile says
+           (0, the default: the profile's display.render_height and display.render_scale). */
         int render_height=[[NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRenderHeight"] intValue];
+#if TARGET_OS_TV
+        /* (the Apple TV HD's 540 is its profile's: profiles/apple-tv-hd.toml) */
+        /* a launch's own HALO_RENDER_HEIGHT, to measure another height without a rebuild */
+        if(getenv("HALO_RENDER_HEIGHT")&&atoi(getenv("HALO_RENDER_HEIGHT"))>0)render_height=atoi(getenv("HALO_RENDER_HEIGHT"));
+#endif
         if(render_height>0){snprintf(env_render,sizeof(env_render),"HALO_RENDER_HEIGHT=%d",render_height);env[env_count++]=env_render;}
 #endif
+        char env_benchmark[320];
+        if(benchmark_suite&&*benchmark_suite){
+            snprintf(env_benchmark,sizeof(env_benchmark),"HALO_BENCHMARK_SUITE=%s",benchmark_suite);
+            env[env_count++]=env_benchmark;
+        }
         env[env_count++]="TZ=UTC0";env[env_count++]=NULL;
         uint32_t *environment=host_low_map(sizeof(uint32_t)*env_count,PROT_READ|PROT_WRITE);
         for(size_t i=0;i<env_count-1;i++)environment[i]=copy_string(env[i]);environment[env_count-1]=0;
@@ -333,6 +427,8 @@ int main(int argc,char **argv) {
         if(!stack)host_fatal("could not allocate game stack");mprotect(stack,0x4000,PROT_NONE);
         /* (machines of different network versions cannot play together: the log of each says which it is) */
         host_logf(HOST_LOG_INFO,"network version %d",HALO_PORT_NETWORK_VERSION);
+        /* the saves are compared with iCloud's before the game reads them, and not replaced after */
+        host_cloud_saves_before_game();
         host_logf(HOST_LOG_INFO,"entering guest at %08x, data %s",host_image.header->start,data_root);
         host_guest_on_stack((uintptr_t)host_pointer(host_image.header->start),guest_pointer(boot),host_arena,(char *)stack+stack_size+0x4000);
     }

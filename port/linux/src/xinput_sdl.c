@@ -262,10 +262,47 @@ void platform_text_typing(int typing)
 	text_typing_update();
 }
 
-void platform_text_field(int typing)
+#ifdef HALO_IOS
+/* (guest_sdl.c: the host's system keyboard) */
+void halo_host_text_input(int on, const char *title, const char *text, int masked);
+int halo_host_text_result(char *buffer, unsigned int size);
+#endif
+/* the field's text taken whole from the system's dialog: Done presses
+Start once (typing_gamepad), as Enter does */
+static BOOL text_typing_submit;
+
+void platform_text_field(int typing, const char *title, const char *text, int masked)
 {
+#ifdef HALO_IOS
+	/* (an Apple device's keyboard is the system's: on screen, up while the
+	field is edited, its keys typing into it as a hardware keyboard's do; an
+	Apple TV's, a dialog whose text platform_text_field_result gives;
+	host_sdl.c) */
+	if ((typing != 0) != text_typing_field)
+		halo_host_text_input(typing != 0, title, text, masked);
+#else
+	(void)title;
+	(void)text;
+	(void)masked;
+#endif
 	text_typing_field = typing != 0;
+	text_typing_submit = FALSE;
 	text_typing_update();
+}
+
+int platform_text_field_result(char *text, int size)
+{
+#ifdef HALO_IOS
+	int result = text_typing_field ? halo_host_text_result(text, (unsigned int)size) : 0;
+
+	if (result == 1)
+		text_typing_submit = TRUE;
+	return result;
+#else
+	(void)text;
+	(void)size;
+	return 0;
+#endif
 }
 
 static void typing_gamepad(const struct platform_input_state *input, XINPUT_GAMEPAD *pad)
@@ -281,6 +318,11 @@ static void typing_gamepad(const struct platform_input_state *input, XINPUT_GAME
 		text_typing_enter_armed = TRUE;
 	else if (text_typing_enter_armed)
 		pad->wButtons |= XINPUT_GAMEPAD_START;
+	if (text_typing_submit)
+	{
+		pad->wButtons |= XINPUT_GAMEPAD_START;
+		text_typing_submit = FALSE;
+	}
 	pad->bAnalogButtons[XINPUT_GAMEPAD_B] |= analog(k[SDL_SCANCODE_ESCAPE]);
 }
 

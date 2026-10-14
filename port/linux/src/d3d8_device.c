@@ -47,6 +47,8 @@ void d3d8_surface_resize(D3DSurface *surface, D3DFORMAT format, unsigned long wi
 void render_interpolation_next_frame_due(unsigned long microseconds);
 /* input_replay.c */
 void input_replay_frame(long width, long height);
+/* benchmark_suite.c: the device benchmark's suite, once a presented frame */
+void benchmark_suite_frame(long width, long height);
 /* source/models/models.c: models drawn at each detail level (0 the lowest, 4
 the highest) and models the size cull dropped since the last call */
 void halo_model_counts_take(unsigned long drawn[5], unsigned long *culled);
@@ -153,6 +155,18 @@ static int32_t screen_maximum_texture_size = 8192;
 first changed */
 static double render_scale_live = -1.0;
 
+/* The device benchmark (benchmark_suite.c) sets these between its runs, in place of the settings: the render
+height in lines (the next frame's halo_screen_commit draws at it, as a render scale step does), the shadow maps'
+size and the anisotropy; 0 leaves the setting in force */
+static long benchmark_render_lines, benchmark_shadow_size, benchmark_anisotropy;
+
+void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy)
+{
+	benchmark_render_lines = render_lines;
+	benchmark_shadow_size = shadow_size;
+	benchmark_anisotropy = anisotropy;
+}
+
 /* source/render/render_debug.c: text the frame's debug pass draws */
 void render_debug_string(unsigned char immediate, const char *string);
 /* xbox_kernel.c */
@@ -192,6 +206,19 @@ void halo_render_scale_step(int direction)
 
 static int head_eyes_frame(void);
 
+#ifdef HALO_ILP32
+/* port/linux/game/scene_class.c */
+int halo_scene_class(void);
+
+/* display.render_scale for the frame about to be drawn: the D-pad's live
+value if there is one, else the setting's, which a device profile may give
+the menu and cutscenes their own value for (config_scene_real) */
+static double render_scale_now(void)
+{
+	return render_scale_live >= 0.0 ? render_scale_live : config_scene_real("display.render_scale", halo_scene_class());
+}
+#endif
+
 static void screen_mode_choose(long *width, float scale[2])
 {
 #ifdef HALO_ILP32
@@ -224,8 +251,10 @@ static void screen_mode_choose(long *width, float scale[2])
 		(display.upscaler scales the picture back up). Not for foveated eyes:
 		the Compositor's rate map sets their size, at the render quality, which
 		takes the scale's place */
-		double render_scale = render_scale_live >= 0.0 ? render_scale_live : config_real("display.render_scale");
+		double render_scale = render_scale_now();
 
+		if (benchmark_render_lines > 0)
+			render_scale = 1.0;
 		if (render_scale >= 0.25 && render_scale < 1.0 && !(head_eyes_frame() && halo_stereo_frame()->foveated))
 		{
 			drawable_width = (int)lround(drawable_width * render_scale);
@@ -233,7 +262,8 @@ static void screen_mode_choose(long *width, float scale[2])
 		}
 	}
 	pixels = halo_display_render_size(drawable_width, drawable_height, *width,
-		requested_width, config_integer("display.render_height"), screen_maximum_texture_size);
+		requested_width, benchmark_render_lines > 0 ? benchmark_render_lines :
+		config_scene_integer("display.render_height", halo_scene_class()), screen_maximum_texture_size);
 	{
 		/* head-tracked stereo: the screen's targets are the eyes' pictures,
 		each view's size and shape times display.render_scale, which needn't
@@ -244,7 +274,7 @@ static void screen_mode_choose(long *width, float scale[2])
 		the drawable is theirs then (host_stereo_picture_size) */
 		if (head_eyes_frame())
 		{
-			long render_height = config_integer("display.render_height");
+			long render_height = config_scene_integer("display.render_height", halo_scene_class());
 
 			pixels.width = drawable_width;
 			pixels.height = drawable_height;
@@ -712,7 +742,7 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 		effect_factor = !strcmp(config_string("display.mirror_resolution"), "full") ? 2.0f : 1.0f;
 	}
 	if (width == 128 && height == 128 && (format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
-		scale[0] = scale[1] = (float)shadow_size / 128.0f;
+		scale[0] = scale[1] = (float)(benchmark_shadow_size > 0 ? benchmark_shadow_size : shadow_size) / 128.0f;
 	else if (width == 320 && height == 240 && effect_resolution)
 	{
 		float dense[2];
@@ -2650,6 +2680,10 @@ static struct vertex_shader_object *shader_list_program(struct vertex_shader_obj
 	return NULL;
 }
 
+/* the most of a device's own record (debug.shader_list_record) warmed with a
+map's list: a10's whole list is under half a megabyte */
+#define SHADER_LIST_RECORD_MAXIMUM (4L * 1024 * 1024)
+
 void halo_shader_list_warm(char const *map_name)
 {
 	const char *base = map_name;
@@ -2659,6 +2693,9 @@ void halo_shader_list_warm(char const *map_name)
 	unsigned long vertex_count = 0, pixel_count = 0, pipeline_count = 0, missing = 0;
 	double started;
 	int pass;
+	char recorded_path[512];
+	FILE *recorded = NULL;
+	uint32_t recorded_size = 0;
 
 	for (cursor = map_name; *cursor; cursor++)
 	{
@@ -2666,16 +2703,67 @@ void halo_shader_list_warm(char const *map_name)
 			base = cursor + 1;
 	}
 	snprintf(shader_list.map, sizeof(shader_list.map), "%s", base);
-	if (!device.gl_ready || !config_boolean("debug.shader_list_warm") ||
-		!(size = gpu_warm_list_read(shader_list.map, NULL, 0)))
+	if (!device.gl_ready || !config_boolean("debug.shader_list_warm"))
 		return;
-	text = malloc(size + 1);
-	if (!text || gpu_warm_list_read(shader_list.map, text, size) != size)
+	/* a run that dumps its shaders (debug.gpu_dump_shaders: check-metal's) compiles each at its first draw, as
+	GL does, so the dump holds the shaders the run drew: the lists now carry shaders recorded in played sessions,
+	which a check's scene never draws */
+	if (*config_string("debug.gpu_dump_shaders"))
 	{
-		free(text);
+		platform_log("shader list %s: not warmed: debug.gpu_dump_shaders dumps the shaders this run draws", shader_list.map);
 		return;
 	}
-	text[size] = 0;
+	size = gpu_warm_list_read(shader_list.map, NULL, 0);
+	/* what earlier sessions on this device still had to make while drawing
+	(shader_list_made's record) is warmed with the list, so a device stops
+	hitching on a shader the second time it meets it, without a new build */
+	/* (only where the record is made, shader_list_made: under a backend that
+	has no lists, GL, a record left by a Metal run in the same data folder
+	would compile shaders at load that GL compiles as it draws. And only a
+	record of a sane size: it is a file in the data folder) */
+	if (shader_dialect.msl && *config_string("debug.shader_list_record"))
+	{
+		long length;
+
+		snprintf(recorded_path, sizeof(recorded_path), "%s/%s.txt", config_string("debug.shader_list_record"),
+			shader_list.map);
+		if ((recorded = fopen(recorded_path, "r")) != NULL)
+		{
+			if (!fseek(recorded, 0, SEEK_END) && (length = ftell(recorded)) > 0)
+			{
+				if (length <= SHADER_LIST_RECORD_MAXIMUM)
+					recorded_size = (uint32_t)length;
+				else
+					platform_log("shader list %s: %s is %ld bytes, more than a record holds; not warmed", shader_list.map,
+						recorded_path, length);
+			}
+			rewind(recorded);
+		}
+	}
+	if (!size && !recorded_size)
+	{
+		if (recorded)
+			fclose(recorded);
+		return;
+	}
+	text = malloc(size + 1 + recorded_size + 1);
+	if (!text || (size && gpu_warm_list_read(shader_list.map, text, size) != size))
+	{
+		free(text);
+		if (recorded)
+			fclose(recorded);
+		return;
+	}
+	text[size] = '\n';
+	if (recorded)
+	{
+		recorded_size = (uint32_t)fread(text + size + 1, 1, recorded_size, recorded);
+		fclose(recorded);
+	}
+	text[size + 1 + recorded_size] = 0;
+	if (recorded_size)
+		platform_log("shader list %s: with %u bytes recorded on this device (%s)", shader_list.map,
+			(unsigned int)recorded_size, recorded_path);
 	started = halo_frame_trace_milliseconds();
 	shader_list_warming = TRUE;
 	gpu_warm_begin();
@@ -2869,6 +2957,8 @@ static void sampler_state_fill(int stage, BOOL mipmapped, BOOL hires, struct gpu
 			anisotropy = config_integer("display.anisotropic_filtering");
 			anisotropy = anisotropy < 1 ? 1 : anisotropy > 16 ? 16 : anisotropy;
 		}
+		if (benchmark_anisotropy > 0)
+			anisotropy = benchmark_anisotropy;
 		if (anisotropy > 1 && sampler->min_filter == GPU_FILTER_LINEAR && sampler->mip_filter != GPU_FILTER_NONE)
 		{
 			sampler->min_filter = GPU_FILTER_ANISOTROPIC;
@@ -5148,6 +5238,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	}
 	device.frame++;
 	input_replay_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
+	benchmark_suite_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
 	/* debug.fixed_timestep: a frame ends once the workers are idle */
 	platform_quiescence_wait();
 	platform_clock_frame();

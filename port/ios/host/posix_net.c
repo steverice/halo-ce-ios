@@ -55,6 +55,14 @@ static ssize_t ios_sendto(int fd,const void *p,size_t n,int flags,const void *ad
 static ssize_t ios_recvfrom(int fd,void *p,size_t n,int flags,void *address,socklen_t *size) {
     ssize_t out=recvfrom(fd,p,n,flags,address,size);if(out>=0 && size)sockaddr_outward(address,*size);return out;
 }
+/* (posix_socket_recvfrom reads with recvmsg, for MSG_TRUNC: its source address is Darwin's too.
+Left as it came, its family read 0x0210, xnet.c took it for no IPv4 address and rewrote nothing, and
+a datagram from an internet play peer's stand-in reached the game as 127.0.0.1's, the host's own) */
+static ssize_t ios_recvmsg(int fd,struct msghdr *message,int flags) {
+    ssize_t out=recvmsg(fd,message,flags);
+    if(out>=0 && message && message->msg_name)sockaddr_outward(message->msg_name,message->msg_namelen);
+    return out;
+}
 static int ios_getsockname(int fd,void *p,socklen_t *n) {int r=getsockname(fd,p,n);if(!r)sockaddr_outward(p,*n);return r;}
 static int ios_getpeername(int fd,void *p,socklen_t *n) {int r=getpeername(fd,p,n);if(!r)sockaddr_outward(p,*n);return r;}
 static ssize_t ios_getrandom(void *p,size_t size,unsigned flags) {(void)flags;arc4random_buf(p,size);return size;}
@@ -64,26 +72,69 @@ static ssize_t ios_getrandom(void *p,size_t size,unsigned flags) {(void)flags;ar
 #define accept4 ios_accept4
 #define sendto ios_sendto
 #define recvfrom ios_recvfrom
+#define recvmsg ios_recvmsg
 #define getsockname ios_getsockname
 #define getpeername ios_getpeername
 #define getrandom ios_getrandom
 #include "../../linux/src/posix_net.c"
 
-/* ---------- UPnP (posix_upnp.c, with miniupnpc, isn't in the iOS host yet):
-internet play falls back to its other ways through a router */
+/* ---------- a router's forwarding: NAT-PMP or PCP (host_natpmp.c). UPnP
+(posix_upnp.c, with miniupnpc) finds its router by multicast, which an Apple
+device may send only with an entitlement Apple grants on request. p2p.c calls
+these from one thread at a time; ports are in network byte order here */
+#include "host_natpmp.h"
+
+static int forward_method = POSIX_UPNP_NAT_PMP, forward_renew_seconds;
+/* the internal port forwarded (a removal names it), 0 if none */
+static unsigned short forwarded_port;
+
 int posix_upnp_forward_udp(unsigned short port, unsigned short preferred_port, posix_ulong *external_address,
 	unsigned short *external_port, char *error, int error_size)
 {
-	(void)port;
-	(void)preferred_port;
-	(void)external_address;
-	(void)external_port;
-	if (error && error_size > 0)
-		snprintf(error, (size_t)error_size, "UPnP isn't available on this platform");
-	return 0;
+	uint32_t address = 0, lifetime = 0;
+	uint16_t mapped = 0;
+	int method = 0;
+	char why[160] = "";
+
+	/* (the tunnel's socket on another port since: its old forwarding goes) */
+	if (forwarded_port && forwarded_port != port)
+	{
+		natpmp_unmap_udp(ntohs(forwarded_port), 0);
+		forwarded_port = 0;
+	}
+	if (!natpmp_map_udp(ntohs(port), ntohs(preferred_port), &address, &mapped, &lifetime, &method, why,
+		sizeof(why)))
+	{
+		forward_method = method == 2 ? POSIX_UPNP_PCP : method == 3 ? POSIX_UPNP_NAT_PMP_OR_PCP : POSIX_UPNP_NAT_PMP;
+		if (error && error_size > 0)
+			snprintf(error, (size_t)error_size, "%s", why);
+		return 0;
+	}
+	forward_method = method == 2 ? POSIX_UPNP_PCP : POSIX_UPNP_NAT_PMP;
+	/* (renewed after half of the lifetime the router gave, when that is
+	shorter than p2p.c's half hour) */
+	forward_renew_seconds = lifetime && lifetime < 3600 ? (int)(lifetime / 2) : 0;
+	forwarded_port = port;
+	*external_address = address;
+	*external_port = htons(mapped);
+	return 1;
 }
 
 void posix_upnp_stop_forwarding_udp(unsigned short external_port)
 {
 	(void)external_port;
+	if (!forwarded_port)
+		return;
+	natpmp_unmap_udp(ntohs(forwarded_port), 0);
+	forwarded_port = 0;
+}
+
+int posix_upnp_method(void)
+{
+	return forward_method;
+}
+
+int posix_upnp_renew_seconds(void)
+{
+	return forward_renew_seconds;
 }

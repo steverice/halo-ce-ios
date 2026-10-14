@@ -113,6 +113,20 @@ double host_frame_rate_cap(void)
 	return frame_rate.cap;
 }
 
+/* (set and read on the game's thread, which draws and presents) */
+static double scene_frame_rate;
+
+void host_frame_rate_scene(double rate)
+{
+	scene_frame_rate = rate;
+}
+
+double host_frame_rate_target(void)
+{
+	return scene_frame_rate > 0.0 && (frame_rate.cap <= 0.0 || scene_frame_rate < frame_rate.cap) ? scene_frame_rate :
+		frame_rate.cap;
+}
+
 double host_frame_rate_limit(void)
 {
 	uint64_t now;

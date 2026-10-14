@@ -12,6 +12,21 @@ static int progress(void *context, const char *file, uint64_t done, uint64_t tot
 int main(int argc, char **argv) {
     char error[1024]={0};int ok;
     if (argc<3) return 2;
+    if (!strcmp(argv[1],"plan")) {
+        /* plan IMAGE RECEIVED TOTAL: the ranges an import reads, one "start end" a line */
+        static struct xiso_range ranges[XISO_PLAN_RANGES];
+        int count;
+        if (argc<5) return 2;
+        count=xiso_plan(argv[2],strtoull(argv[3],NULL,10),strtoull(argv[4],NULL,10),ranges,XISO_PLAN_RANGES);
+        for (int i=0;i<count;i++) printf("%llu %llu\n",(unsigned long long)ranges[i].start,(unsigned long long)ranges[i].end);
+        return count?0:1;
+    }
+    if (!strcmp(argv[1],"consume")) {
+        if (argc<4) return 2;
+        ok=xiso_extract_maps_consuming(argv[2],argv[3],progress,NULL,error,sizeof(error));
+        printf("%s: %s\n",ok?"OK":"ERROR",ok?"maps validated":error);
+        return ok?0:1;
+    }
     if (!strcmp(argv[1],"ready")) ok=xiso_maps_ready(argv[2],error,sizeof(error));
     else {
         if (argc<4) return 2;

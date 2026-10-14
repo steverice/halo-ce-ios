@@ -1,0 +1,9 @@
+# Every Mac without a profile of its own: the built-in defaults.
+
+schema = 1
+name = "Mac"
+kind = "class"
+
+[match]
+platform = "mac"
+gpu_family = [1, 0]

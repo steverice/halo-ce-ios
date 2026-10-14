@@ -113,7 +113,7 @@ enum
 	/* the publishes awaiting acknowledgement on a broker */
 	MAXIMUM_IN_FLIGHT = 4,
 	/* the topics a broker is subscribed to (_topic_*) */
-	NUMBER_OF_TOPICS = 5,
+	NUMBER_OF_TOPICS = 6,
 	/* a broker's publishes: at most PUBLISH_BURST at once, one more each
 	PUBLISH_INTERVAL milliseconds (EMQX drops a connection's publishes past
 	about 10 a second, without a word) */
@@ -126,6 +126,10 @@ enum
 	Interval): a dead host's goes even from a broker that kept it through a
 	restart */
 	LISTING_EXPIRY = 90,
+	/* a join code's record: seconds it lasts at the broker, and how often
+	the host publishes it again (milliseconds) */
+	CODE_EXPIRY = 120,
+	CODE_REPUBLISH_INTERVAL = 30000,
 
 	/* milliseconds */
 	CONNECT_TIMEOUT = 10000,
@@ -178,6 +182,8 @@ enum
 	_topic_own_slot,
 	_topic_query,
 	_topic_slots,
+	/* a join code being looked up (p2p.c, "join codes") */
+	_topic_code,
 };
 
 /* MQTT 5's properties */
@@ -232,6 +238,12 @@ struct broker
 	int lobby_clear_pending;
 	/* a query to send once subscribed to the slots */
 	int query_pending;
+	/* when the join code's record was last published here, and whether a
+	clearing of an old one is owed */
+	unsigned long code_published_time;
+	int code_published;
+	int code_clear_pending;
+	char code_cleared_topic[P2P_CODE_TOPIC_SIZE];
 	/* publishes at least once, awaiting PUBACK */
 	struct
 	{
@@ -328,6 +340,11 @@ static struct
 	char own_slot[TOPIC_SIZE];
 	int lobby_listed;
 	int lobby_browsing;
+	/* the hosted game's join code record, and the code topic looked up */
+	char code_topic[P2P_CODE_TOPIC_SIZE];
+	unsigned char code_record[P2P_CODE_RECORD_SIZE];
+	int code_record_size;
+	char code_join_topic[P2P_CODE_TOPIC_SIZE];
 	unsigned char lobby_listing[MAXIMUM_LISTING_SIZE];
 	int lobby_listing_size;
 	int lobby_version;
@@ -683,6 +700,7 @@ static void broker_sync_topics(struct broker *broker)
 	wanted[_topic_own_slot] = lobby && signalling.lobby_listed ? signalling.own_slot : "";
 	wanted[_topic_query] = lobby && signalling.lobby_listed ? P2P_LOBBY_QUERY_TOPIC : "";
 	wanted[_topic_slots] = lobby && signalling.lobby_browsing ? P2P_LOBBY_SLOT_PREFIX "+" : "";
+	wanted[_topic_code] = broker->retain_available ? signalling.code_join_topic : "";
 	for (index = 0; index < NUMBER_OF_TOPICS; index++)
 	{
 		char *had = broker->topics[index];
@@ -711,6 +729,57 @@ static void publish_everywhere(const char *topic, const unsigned char *payload, 
 
 		if (broker->state == _broker_ready && broker_may_publish(broker, 0))
 			broker_publish(broker, topic, payload, size);
+	}
+}
+
+/* a publish at most once, retained: a join code's record, expiring at the
+broker (MQTT 5), or an empty one, which clears the topic */
+static void broker_publish_retained(struct broker *broker, const char *topic, const unsigned char *payload,
+	int payload_size)
+{
+	unsigned char body[2 + TOPIC_SIZE + 6 + P2P_CODE_RECORD_SIZE];
+	int size = put_string(body, topic);
+
+	if (broker->protocol == 5)
+	{
+		if (payload_size)
+		{
+			body[size++] = 5;
+			body[size++] = _property_message_expiry;
+			body[size++] = 0;
+			body[size++] = 0;
+			body[size++] = 0;
+			body[size++] = CODE_EXPIRY;
+		}
+		else
+		{
+			body[size++] = 0;
+		}
+	}
+	if (payload_size)
+		memcpy(body + size, payload, (size_t)payload_size);
+	/* PUBLISH, QoS 0, retained */
+	broker_send(broker, 0x31, body, size + payload_size);
+}
+
+/* the join code's publishes due on a broker that retains messages: an old
+record's clearing, and the record, again each CODE_REPUBLISH_INTERVAL */
+static void broker_update_code(struct broker *broker)
+{
+	if (broker->state != _broker_ready || !broker->retain_available)
+		return;
+	if (broker->code_clear_pending && broker_may_publish(broker, 0))
+	{
+		broker_publish_retained(broker, broker->code_cleared_topic, NULL, 0);
+		broker->code_clear_pending = 0;
+	}
+	if (signalling.code_record_size &&
+		(!broker->code_published || elapsed(broker->code_published_time, CODE_REPUBLISH_INTERVAL)) &&
+		broker_may_publish(broker, 0))
+	{
+		broker_publish_retained(broker, signalling.code_topic, signalling.code_record, signalling.code_record_size);
+		broker->code_published = 1;
+		broker->code_published_time = p2p_now();
 	}
 }
 
@@ -1437,6 +1506,11 @@ static void publish_received(struct broker *broker, const char *topic, const uns
 		p2p_lobby_query_heard();
 		return;
 	}
+	if (signalling.code_join_topic[0] && !strcmp(topic, signalling.code_join_topic))
+	{
+		p2p_code_heard(payload, size);
+		return;
+	}
 	if (signalling.hosting && !strcmp(topic, signalling.host_topic))
 	{
 		message_size = p2p_open(signalling.host_key, payload, size, message);
@@ -1548,6 +1622,8 @@ static int broker_acknowledged(struct broker *broker, const unsigned char *body,
 	}
 	broker->state = _broker_ready;
 	broker->failures = 0;
+	/* (a new connection: the join code's record is published again at once) */
+	broker->code_published = 0;
 	broker->publish_tokens = PUBLISH_BURST;
 	broker->publish_time = p2p_now();
 	broker_sync_topics(broker);
@@ -1888,6 +1964,7 @@ void p2p_signal_update(const int *read, int read_count, const int *write, int wr
 			broker_send(broker, 0xC0, NULL, 0);
 		}
 		broker_update_lobby(broker);
+		broker_update_code(broker);
 	}
 	for (index = 0; index < MAXIMUM_JOINS; index++)
 	{
@@ -2031,6 +2108,50 @@ void p2p_signal_stop_joining_player(const unsigned char *identifier)
 			sync_all_topics();
 		}
 	}
+}
+
+void p2p_signal_code_publish(const char *topic, const unsigned char *record, int size)
+{
+	int index;
+
+	/* (the record it replaces, if another, is cleared at each broker it
+	was published at) */
+	if (signalling.code_record_size && (!topic || strcmp(topic, signalling.code_topic)))
+	{
+		for (index = 0; index < signalling.broker_count; index++)
+		{
+			struct broker *broker = &signalling.brokers[index];
+
+			if (broker->code_published)
+			{
+				strcpy(broker->code_cleared_topic, signalling.code_topic);
+				broker->code_clear_pending = 1;
+			}
+			broker->code_published = 0;
+		}
+	}
+	if (topic && size > 0 && size <= P2P_CODE_RECORD_SIZE)
+	{
+		snprintf(signalling.code_topic, sizeof(signalling.code_topic), "%s", topic);
+		memcpy(signalling.code_record, record, (size_t)size);
+		signalling.code_record_size = size;
+	}
+	else
+	{
+		signalling.code_topic[0] = 0;
+		signalling.code_record_size = 0;
+	}
+	for (index = 0; index < signalling.broker_count; index++)
+	{
+		signalling.brokers[index].code_published = 0;
+		broker_update_code(&signalling.brokers[index]);
+	}
+}
+
+void p2p_signal_code_join(const char *topic)
+{
+	snprintf(signalling.code_join_topic, sizeof(signalling.code_join_topic), "%s", topic ? topic : "");
+	sync_all_topics();
 }
 
 void p2p_signal_lobby_topics(int listed, int browsing)

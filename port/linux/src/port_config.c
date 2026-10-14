@@ -10,6 +10,15 @@ values of the wrong type are reported in the log and the defaults used
 instead, and a table or key repeated in it keeps its first and is reported
 too. Once it exists, the file is only rewritten to add a newer version's
 settings or fold such repeats, keeping the player's edits and comments.
+
+Under the file sits the device's profile (profiles/, chosen by the iOS host:
+port/ios/host/host_profile.c), which reaches this file as
+HALO_DEVICE_PROFILE_VALUES. A setting's device value is its default with the
+profile's value over it. config.origins, beside config.toml, records for
+each setting whether the value in the file is one the game wrote as a
+default or one somebody chose: a written default follows the device value
+(its line is rewritten when that changes), a chosen value is in force. See
+config_origin_decide.
 */
 
 #include "platform.h"
@@ -551,10 +560,10 @@ static const struct config_setting config_settings[] =
 		"The UDP port internet play uses; 0 picks one. A fixed one can be\n"
 		"forwarded on the router, for networks whose NAT stops connections." },
 	{ "network.allow_upnp", _config_boolean, "true", "HALO_NET_ALLOW_UPNP", _environment_value, _platform_all,
-		"Let internet play ask the router (UPnP) to forward its port, for\n"
-		"networks whose NAT stops connections: when a player joins this\n"
-		"machine's game, and when joining a game takes too long. False never\n"
-		"asks." },
+		"Let internet play ask the router (UPnP; on Apple devices NAT-PMP or\n"
+		"PCP) to forward its port, for networks whose NAT stops connections:\n"
+		"when a player joins this machine's game, and when joining a game takes\n"
+		"too long. False never asks." },
 	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
@@ -657,6 +666,11 @@ static const struct config_setting config_settings[] =
 	{ "debug.benchmark", _config_boolean, "false", "HALO_BENCHMARK", _environment_value, _platform_all,
 		"With debug.input_replay: time every frame of the replay, write\n"
 		"benchmark-<name>-<time>.txt and quit when the replay ends." },
+	{ "debug.benchmark_suite", _config_string, "\"\"", "HALO_BENCHMARK_SUITE", _environment_value, _platform_ios,
+		"\"quick\" or \"full\" runs the device benchmark and quits: the suite's\n"
+		"scenes, several times over at different settings, with a report in\n"
+		"the data folder's benchmark folder (port/linux/src/benchmark_suite.c);\n"
+		"empty for none." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
@@ -823,6 +837,11 @@ static const struct config_setting config_settings[] =
 		"Ask for a second window scene a few seconds in, to check that the game\n"
 		"ignores its start, keeps its event pump and closes the scene (the\n"
 		"host's host_main.m). For the simulator." },
+	{ "debug.test_text_answer", _config_string, "\"\"", "HALO_TEST_TEXT_ANSWER", _environment_value, _platform_ios,
+		"On an Apple TV, answer the dialog a menu's text field asks with (a join\n"
+		"code, a password) with this text, 3 seconds after it comes up, as if it\n"
+		"were typed and Done pressed (the host's host_tv.m); empty for none. For\n"
+		"the simulator, whose keyboard cannot type into it." },
 	{ "debug.test_theater_reopen", _config_boolean, "false", "HALO_TEST_THEATER_REOPEN", _environment_set_is_true, _platform_ios,
 		"With display.immersive: close the immersive space a few seconds in, then\n"
 		"press the window's button that opens it again (the host's\n"
@@ -899,6 +918,25 @@ static const struct config_setting config_settings[] =
 		"Log texture uploads." },
 	{ "debug.texture_no_cache", _config_boolean, "false", "HALO_TEXTURE_NO_CACHE", _environment_set_is_true, _platform_all,
 		"Upload textures again every time they are used." },
+	{ "debug.device_profile", _config_string, "\"\"", "HALO_DEVICE_PROFILE", _environment_value, _platform_ios,
+		"Which device profile (profiles/ in the app) sets this device's graphics\n"
+		"settings: empty chooses by the device; \"none\" uses the built-in\n"
+		"defaults; a model identifier (\"AppleTV5,3\") or a Mac's chip name chooses\n"
+		"as that device, for trying its profile elsewhere." },
+	{ "debug.frame_log", _config_string, "\"auto\"", "HALO_FRAME_LOG", _environment_value, _platform_ios,
+		"With the Metal renderer: append to frame-log.txt, in this folder, a line\n"
+		"every 5 seconds and at each change of scene class with the frames drawn,\n"
+		"frames a second, the 95th and 99th percentile frame times, late frames,\n"
+		"the render size, the scene class, the map, memory and thermal state, so a\n"
+		"session played by hand can be read afterwards (tools/frame_log.py).\n"
+		"\"auto\" (default) logs on an Apple TV only; \"on\" and \"off\" force it." },
+	{ "debug.test_win_level", _config_real, "0.0", "HALO_TEST_WIN_LEVEL", _environment_value, _platform_ios,
+		"Win the level after this many seconds of its game time, once, as when\n"
+		"the player reaches its end: a run nobody plays then goes through the\n"
+		"change to the next level. 0 (default) does nothing." },
+	{ "debug.settings_dump", _config_boolean, "false", "HALO_SETTINGS_DUMP", _environment_set_is_true, _platform_ios,
+		"Log every setting a device profile may set at start, with the layer each\n"
+		"value came from; false logs only those something set." },
 
 };
 
@@ -923,6 +961,107 @@ struct config_value
 static struct config_value config_values[NUMBER_OF_CONFIG_SETTINGS];
 static int config_loaded = 0;
 static pthread_mutex_t config_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* ---------- the device's profile, and where each value came from */
+
+/* the settings a device profile may set, and those it may set for a scene
+class */
+static const char *const config_profile_keys[] =
+{
+#define PROFILE_BOOLEAN(name) name,
+#define PROFILE_INTEGER(name, minimum, maximum) name,
+#define PROFILE_REAL(name, minimum, maximum) name,
+#define PROFILE_STRING(name, choices) name,
+#define PROFILE_SCENE(name)
+#include "port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+};
+
+static const char *const config_scene_keys[] =
+{
+#define PROFILE_BOOLEAN(name)
+#define PROFILE_INTEGER(name, minimum, maximum)
+#define PROFILE_REAL(name, minimum, maximum)
+#define PROFILE_STRING(name, choices)
+#define PROFILE_SCENE(name) name,
+#include "port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+};
+
+static const struct
+{
+	const char *name;
+	/* as the file held it */
+	const char *value;
+} config_former_defaults[] =
+{
+#define FORMER_DEFAULT(name, value) { name, value },
+#include "port_config_former_defaults.h"
+#undef FORMER_DEFAULT
+};
+
+static const char *const config_scene_names[NUMBER_OF_CONFIG_SCENES] = { "gameplay", "menu", "cutscene" };
+
+enum
+{
+	/* a class profile, a model profile and a drop-in file */
+	MAXIMUM_PROFILE_LAYERS = 3,
+};
+
+/* one profile layer's value for a setting: as text (true, 540, metal) and
+the layer's name for the log (class "Apple TV") */
+struct config_profile_value
+{
+	char *text;
+	char *source;
+};
+
+enum config_source
+{
+	_source_default,
+	_source_profile,
+	_source_file,
+	_source_environment,
+};
+
+enum config_origin
+{
+	/* config.origins has no line for the setting */
+	_origin_none,
+	/* the game wrote the file's value as the setting's default */
+	_origin_default,
+	/* somebody set it: the menus, the Settings app's switch, a tool, a hand edit */
+	_origin_chosen,
+};
+
+static struct config_setting_state
+{
+	/* the profile's layers that set it, lowest first */
+	struct config_profile_value profile[MAXIMUM_PROFILE_LAYERS];
+	int profile_count;
+	/* a scene class's value, from the highest layer that has one (text NULL: none) */
+	struct config_profile_value scene[NUMBER_OF_CONFIG_SCENES];
+	struct config_value scene_value[NUMBER_OF_CONFIG_SCENES];
+	/* the default with the profile over it */
+	struct config_value device;
+	/* that as config.toml holds a value (strings quoted) */
+	char *device_literal;
+	/* where the value in force came from */
+	enum config_source source;
+	/* config.origins' line: for _origin_default, the value written */
+	enum config_origin origin;
+	char *origin_literal;
+} config_states[NUMBER_OF_CONFIG_SETTINGS];
+
+static int config_origins_changed;
 
 /* ---------- the file */
 
@@ -1037,8 +1176,18 @@ static char *config_copy(const char *text, size_t length)
 	return copy;
 }
 
+/* the setting's value on this device, as the file holds a value: its
+default, or the profile's value over it (before the profile is read, as in a
+probe: the default) */
+static const char *config_device_literal(const struct config_setting *setting)
+{
+	const char *literal = config_states[setting - config_settings].device_literal;
+
+	return literal ? literal : setting->default_value;
+}
+
 /* one setting as the file holds it: its comment, and its key at the
-default */
+device's value */
 static void config_append_setting(struct config_text *text, const struct config_setting *setting)
 {
 	const char *dot = strchr(setting->name, '.');
@@ -1072,7 +1221,7 @@ static void config_append_setting(struct config_text *text, const struct config_
 	}
 	config_append(text, buffer);
 #endif
-	snprintf(buffer, sizeof(buffer), "%s = %s\n", dot + 1, setting->default_value);
+	snprintf(buffer, sizeof(buffer), "%s = %s\n", dot + 1, config_device_literal(setting));
 	config_append(text, buffer);
 }
 
@@ -1272,6 +1421,9 @@ static char *config_fold_repeats(const char *text)
 	return out.buffer;
 }
 
+static void config_origin_set(size_t index, enum config_origin origin, const char *literal);
+static void config_origin_set_device(size_t index);
+
 /* the settings of this build that text (the file, parsed as table) lacks,
 added to it in their sections, keeping the rest as it is: a newer version's
 settings appear in an older file. Returns the new text, or NULL if nothing
@@ -1347,6 +1499,7 @@ static char *config_add_missing(const char *text, toml_datum_t table)
 			free(result);
 			result = updated.buffer;
 			platform_log("settings: added %s (new in this version) at its default", setting->name);
+			config_origin_set_device(index);
 		}
 	}
 	return result;
@@ -1393,15 +1546,15 @@ static void config_set_from_text(struct config_value *value, enum config_type ty
 	}
 }
 
-/* the value in the file, if it is there and of the setting's type */
-static void config_set_from_file(struct config_value *value, const struct config_setting *setting,
+/* the value in the file, if it is there and of the setting's type (1; else 0) */
+static int config_set_from_file(struct config_value *value, const struct config_setting *setting,
 	toml_datum_t table)
 {
 	toml_datum_t datum = toml_seek(table, setting->name);
 	int wrong_type = 0;
 
 	if (datum.type == TOML_UNKNOWN)
-		return;
+		return 0;
 	switch (setting->type)
 	{
 	case _config_boolean:
@@ -1441,8 +1594,9 @@ static void config_set_from_file(struct config_value *value, const struct config
 		static const char *const expected[] = { "true or false", "a whole number", "a number", "a quoted string" };
 
 		platform_log("config.toml line %d: %s should be %s; using %s", datum.lineno, setting->name,
-			expected[setting->type], setting->default_value);
+			expected[setting->type], config_device_literal(setting));
 	}
+	return !wrong_type;
 }
 
 /* how many times a setting has been written (config_write): readers that
@@ -1487,8 +1641,8 @@ static void config_report_unknown_keys(toml_datum_t table)
 	}
 }
 
-/* the setting's default, as a new file would have it */
-static void config_set_default(size_t index)
+/* the setting's built-in default, as a new file would have it */
+static void config_set_builtin(size_t index)
 {
 	const char *default_value = config_settings[index].default_value;
 
@@ -1504,6 +1658,417 @@ static void config_set_default(size_t index)
 	{
 		config_set_from_text(&config_values[index], config_settings[index].type, default_value);
 	}
+}
+
+/* a value as config.toml holds one: true, 60, 1.5 (always with its point:
+TOML reads 1 as an integer), "all" (quoted, its quotes and backslashes
+escaped) */
+static void config_literal(enum config_type type, const struct config_value *value, char *text, size_t size)
+{
+	switch (type)
+	{
+	case _config_boolean:
+		snprintf(text, size, "%s", value->boolean ? "true" : "false");
+		break;
+	case _config_integer:
+		snprintf(text, size, "%ld", value->integer);
+		break;
+	case _config_real:
+		snprintf(text, size, "%.15g", value->real);
+		if (!strpbrk(text, ".en") && strlen(text) + 3 < size)
+			strcat(text, ".0");
+		break;
+	case _config_string:
+	{
+		const char *character = value->string ? value->string : "";
+		size_t length = 0;
+
+		if (size < 3)
+		{
+			text[0] = 0;
+			break;
+		}
+		text[length++] = '"';
+		for (; *character && length + 3 < size; character++)
+		{
+			if (*character == '"' || *character == '\\')
+				text[length++] = '\\';
+			text[length++] = *character;
+		}
+		text[length++] = '"';
+		text[length] = 0;
+		break;
+	}
+	}
+}
+
+/* a default as the table writes it ("0.6", "\"gl\"") in config_literal's
+form, so that it compares with a value read from the file */
+static void config_literal_of_default(enum config_type type, const char *default_value, char *text, size_t size)
+{
+	struct config_value value = { 0, 0, 0.0, NULL };
+	size_t length = strlen(default_value);
+
+	if (type == _config_string)
+		value.string = length >= 2 ? config_copy(default_value + 1, length - 2) : strdup("");
+	else
+		config_set_from_text(&value, type, default_value);
+	config_literal(type, &value, text, size);
+	free(value.string);
+}
+
+/* ---------- the device's profile */
+
+static int config_name_in(const char *name, const char *const *names, size_t count)
+{
+	size_t index;
+
+	for (index = 0; index < count; index++)
+	{
+		if (!strcmp(names[index], name))
+			return 1;
+	}
+	return 0;
+}
+
+static int config_is_profile_setting(size_t index)
+{
+	return config_name_in(config_settings[index].name, config_profile_keys,
+		sizeof(config_profile_keys) / sizeof(config_profile_keys[0]));
+}
+
+/* a profile's value (true, 540, 0.6, metal) as the setting's type */
+static void config_set_from_profile_text(struct config_value *value, enum config_type type, const char *text)
+{
+	if (type == _config_string)
+	{
+		free(value->string);
+		value->string = strdup(text);
+	}
+	else
+	{
+		config_set_from_text(value, type, text);
+	}
+}
+
+/* The profile the host chose (port/ios/host/host_profile.c), from
+HALO_DEVICE_PROFILE_VALUES: a line for each value, lowest layer first,
+"name<tab>value<tab>layer", and for a scene class's value a fourth field,
+the class. Not one of the settings' own HALO_ variables, which win over the
+file: these sit under it. A build with no host (the desktop's) has none. */
+static void config_profile_load(void)
+{
+	const char *line = getenv("HALO_DEVICE_PROFILE_VALUES");
+
+	while (line && *line)
+	{
+		const char *end = line + strcspn(line, "\n");
+		char fields[4][96] = { "", "", "", "" };
+		const char *field = line;
+		int count = 0, scene;
+		long index;
+
+		while (count < 4 && field <= end)
+		{
+			size_t length = 0;
+
+			while (field + length < end && field[length] != '\t')
+				length++;
+			snprintf(fields[count++], sizeof(fields[0]), "%.*s", (int)length, field);
+			field += length + 1;
+		}
+		line = *end ? end + 1 : end;
+		if (count < 3)
+			continue;
+		index = config_setting_index(fields[0]);
+		if (index < 0 || !config_is_profile_setting((size_t)index) || !(config_settings[index].platforms & CONFIG_PLATFORM))
+		{
+			platform_log("settings: the device profile sets %s, which is not a setting a profile may set here; ignored",
+				fields[0]);
+			continue;
+		}
+		if (count == 4)
+		{
+			for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && strcmp(config_scene_names[scene], fields[3]); scene++)
+				;
+			if (scene == NUMBER_OF_CONFIG_SCENES || !config_name_in(fields[0], config_scene_keys,
+				sizeof(config_scene_keys) / sizeof(config_scene_keys[0])))
+			{
+				platform_log("settings: the device profile sets %s for scene class %s, which this build cannot; ignored",
+					fields[0], fields[3]);
+				continue;
+			}
+			/* (a later layer's takes the earlier one's place) */
+			free(config_states[index].scene[scene].text);
+			free(config_states[index].scene[scene].source);
+			config_states[index].scene[scene].text = strdup(fields[1]);
+			config_states[index].scene[scene].source = strdup(fields[2]);
+			config_set_from_profile_text(&config_states[index].scene_value[scene], config_settings[index].type, fields[1]);
+		}
+		else if (config_states[index].profile_count < MAXIMUM_PROFILE_LAYERS)
+		{
+			struct config_profile_value *value = &config_states[index].profile[config_states[index].profile_count++];
+
+			value->text = strdup(fields[1]);
+			value->source = strdup(fields[2]);
+		}
+	}
+}
+
+/* the setting's device value: its default, with the profile's value over
+it; what it has when nobody set it */
+static void config_set_device(size_t index)
+{
+	const struct config_setting_state *state = &config_states[index];
+
+	config_set_builtin(index);
+	if (state->profile_count)
+		config_set_from_profile_text(&config_values[index], config_settings[index].type,
+			state->profile[state->profile_count - 1].text);
+}
+
+/* the device value kept, and as the file holds it: the table's own text
+where no profile sets it, so a file without a profile is written as it
+always was */
+static void config_keep_device(size_t index)
+{
+	struct config_setting_state *state = &config_states[index];
+	char literal[600];
+
+	config_set_device(index);
+	free(state->device.string);
+	state->device = config_values[index];
+	if (state->device.string)
+		state->device.string = strdup(state->device.string);
+	free(state->device_literal);
+	if (state->profile_count)
+	{
+		config_literal(config_settings[index].type, &state->device, literal, sizeof(literal));
+		state->device_literal = strdup(literal);
+	}
+	else
+	{
+		state->device_literal = strdup(config_settings[index].default_value);
+	}
+	state->source = state->profile_count ? _source_profile : _source_default;
+}
+
+/* ---------- config.origins: which of the file's values the game wrote as
+defaults
+
+config.toml holds every setting, so by itself it cannot say whether a value
+is one the player chose or the default of the build that wrote it; a
+default that changed, or a device profile, would never reach an existing
+install. config.origins, beside it, has a line for each setting:
+
+	display.render_height<tab>default<tab>0
+	display.upscaled_textures<tab>chosen
+
+"default" with the value the game wrote, or "chosen". Only the game writes
+it (and tools/mac_run.py, to mark a runner's values chosen). Losing it is
+harmless: config_origin_decide's rule for a setting with no line applies
+again. */
+
+static void config_origins_path(char *path, size_t size)
+{
+	char folder[1024];
+
+	config_folder(folder, sizeof(folder));
+	snprintf(path, size, "%sconfig.origins", folder);
+}
+
+static void config_origin_set(size_t index, enum config_origin origin, const char *literal)
+{
+	struct config_setting_state *state = &config_states[index];
+
+	if (state->origin == origin && (origin != _origin_default ||
+		(state->origin_literal && !strcmp(state->origin_literal, literal))))
+		return;
+	state->origin = origin;
+	free(state->origin_literal);
+	state->origin_literal = origin == _origin_default ? strdup(literal) : NULL;
+	config_origins_changed = 1;
+}
+
+/* the setting's line in the file is the device value, written as a default */
+static void config_origin_set_device(size_t index)
+{
+	char literal[600];
+
+	config_literal(config_settings[index].type, &config_states[index].device, literal, sizeof(literal));
+	config_origin_set(index, _origin_default, literal);
+}
+
+static void config_origins_read(void)
+{
+	char path[1024];
+	size_t size = 0, index;
+	char *text;
+	const char *line;
+
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		config_states[index].origin = _origin_none;
+		free(config_states[index].origin_literal);
+		config_states[index].origin_literal = NULL;
+	}
+	config_origins_changed = 0;
+	config_origins_path(path, sizeof(path));
+	text = config_read_file(path, &size);
+	for (line = text ? text : ""; *line;)
+	{
+		const char *end = line + strcspn(line, "\r\n");
+		const char *name_end = memchr(line, '\t', (size_t)(end - line));
+		char name[128];
+		long setting;
+
+		if (name_end && (size_t)(name_end - line) < sizeof(name))
+		{
+			const char *kind = name_end + 1;
+
+			snprintf(name, sizeof(name), "%.*s", (int)(name_end - line), line);
+			setting = config_setting_index(name);
+			if (setting >= 0 && end - kind == 6 && !strncmp(kind, "chosen", 6))
+			{
+				config_states[setting].origin = _origin_chosen;
+			}
+			else if (setting >= 0 && end - kind > 8 && !strncmp(kind, "default\t", 8))
+			{
+				config_states[setting].origin = _origin_default;
+				free(config_states[setting].origin_literal);
+				config_states[setting].origin_literal = config_copy(kind + 8, (size_t)(end - kind - 8));
+			}
+		}
+		line = end + strspn(end, "\r\n");
+	}
+	free(text);
+}
+
+static void config_origins_write(void)
+{
+	struct config_text text = { NULL, 0, 0 };
+	char path[1024], line[800];
+	size_t index;
+
+	if (!config_origins_changed)
+		return;
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting_state *state = &config_states[index];
+
+		if (state->origin == _origin_chosen)
+			snprintf(line, sizeof(line), "%s\tchosen\n", config_settings[index].name);
+		else if (state->origin == _origin_default && state->origin_literal)
+			snprintf(line, sizeof(line), "%s\tdefault\t%s\n", config_settings[index].name, state->origin_literal);
+		else
+			continue;
+		config_append(&text, line);
+	}
+	config_origins_path(path, sizeof(path));
+	if (!text.buffer || !config_write_file(path, text.buffer))
+		platform_log("settings: cannot write %s", path);
+	else
+		config_origins_changed = 0;
+	free(text.buffer);
+}
+
+/* whether a value the file holds for a setting with no line in
+config.origins is one a build wrote as a default: the built-in default now,
+one main once shipped for a profile setting (port_config_former_defaults.h),
+or this device's value */
+static int config_literal_is_a_default(size_t index, const char *literal)
+{
+	const struct config_setting *setting = &config_settings[index];
+	char other[600];
+	size_t former;
+
+	config_literal_of_default(setting->type, setting->default_value, other, sizeof(other));
+	if (!strcmp(literal, other))
+		return 1;
+	config_literal(setting->type, &config_states[index].device, other, sizeof(other));
+	if (!strcmp(literal, other))
+		return 1;
+	for (former = 0; former < sizeof(config_former_defaults) / sizeof(config_former_defaults[0]); former++)
+	{
+		if (strcmp(config_former_defaults[former].name, setting->name))
+			continue;
+		config_literal_of_default(setting->type, config_former_defaults[former].value, other, sizeof(other));
+		if (!strcmp(literal, other))
+			return 1;
+	}
+	return 0;
+}
+
+static char *config_text_set(const char *text, const char *name, const char *line_text);
+
+/* One setting the file holds (its value read into file_value, of the right
+type), against config.origins:
+
+	the line says   the file's value        then
+	default T       T                       nobody touched it: the device value is in force, and if that
+	                                        is no longer T the file's line is rewritten to it
+	default T       not T                   somebody set it: chosen from now on
+	chosen          any                     the file's value is in force
+	(no line)       a default (see above)   as "default T, T"; logged, so a player who did choose that
+	                                        value sees what happened and can set it again
+	(no line)       anything else           chosen
+
+Returns the file's new text when the line was rewritten (free the old), else
+NULL. */
+static char *config_origin_decide(size_t index, const struct config_value *file_value, const char *text)
+{
+	const struct config_setting *setting = &config_settings[index];
+	struct config_setting_state *state = &config_states[index];
+	char file_literal[600], device_literal[600], line_text[700];
+	const char *dot = strchr(setting->name, '.');
+	int reclassified = 0;
+
+	config_literal(setting->type, file_value, file_literal, sizeof(file_literal));
+	config_literal(setting->type, &state->device, device_literal, sizeof(device_literal));
+	if (state->origin == _origin_none)
+	{
+		if (config_literal_is_a_default(index, file_literal))
+		{
+			config_origin_set(index, _origin_default, file_literal);
+			reclassified = 1;
+		}
+		else
+		{
+			config_origin_set(index, _origin_chosen, NULL);
+		}
+	}
+	else if (state->origin == _origin_default && strcmp(state->origin_literal, file_literal))
+	{
+		config_origin_set(index, _origin_chosen, NULL);
+	}
+	if (state->origin == _origin_chosen)
+	{
+		/* the file's value is in force */
+		if (setting->type == _config_string)
+		{
+			free(config_values[index].string);
+			config_values[index].string = strdup(file_value->string ? file_value->string : "");
+		}
+		else
+		{
+			config_values[index] = *file_value;
+		}
+		state->source = _source_file;
+		return NULL;
+	}
+	/* a written default: the device value stays in force */
+	if (!strcmp(file_literal, device_literal))
+		return NULL;
+	if (reclassified)
+		platform_log("settings: %s = %s in config.toml is a default an earlier version wrote, not a choice: it becomes "
+			"this device's %s. If you chose %s, set it again and it stays", setting->name, file_literal, device_literal,
+			file_literal);
+	else
+		platform_log("settings: %s was the default %s in config.toml; it is now this device's %s", setting->name,
+			file_literal, device_literal);
+	config_origin_set(index, _origin_default, device_literal);
+	snprintf(line_text, sizeof(line_text), "%s = %s\n", dot + 1, device_literal);
+	return config_text_set(text, setting->name, line_text);
 }
 
 /* the setting's environment variable, if it is set, over the file */
@@ -1526,6 +2091,87 @@ static void config_set_from_environment(size_t index)
 		config_values[index].boolean = 0;
 		break;
 	}
+	config_states[index].source = _source_environment;
+}
+
+/* the log's account of where the settings a profile may set got their
+values: one line for each that anything but its default set (all of them
+with debug.settings_dump), highest layer first. Other settings (network,
+paths, controls) are never printed, so the lines are safe to pass on. */
+static void config_dump(void)
+{
+	size_t index;
+	int dump_all = 0;
+	long dump_index = config_setting_index("debug.settings_dump");
+
+	if (dump_index >= 0)
+		dump_all = config_values[dump_index].boolean;
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting *setting = &config_settings[index];
+		const struct config_setting_state *state = &config_states[index];
+		struct config_text line = { NULL, 0, 0 };
+		char literal[600], piece[800];
+		int layer, scene;
+
+		if (!config_is_profile_setting(index) || !(setting->platforms & CONFIG_PLATFORM))
+			continue;
+		if (!dump_all && state->source == _source_default && !state->profile_count)
+		{
+			/* (nothing set it; a scene class's value alone still has its line) */
+			for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && !state->scene[scene].text; scene++)
+				;
+			if (scene == NUMBER_OF_CONFIG_SCENES)
+				continue;
+		}
+		config_literal(setting->type, &config_values[index], literal, sizeof(literal));
+		snprintf(piece, sizeof(piece), "settings: %s = %s", setting->name, literal);
+		config_append(&line, piece);
+		if (state->source == _source_environment)
+		{
+			snprintf(piece, sizeof(piece), " [environment %s]", setting->environment);
+			config_append(&line, piece);
+		}
+		if (state->source == _source_file || (state->source == _source_environment && state->origin == _origin_chosen))
+		{
+			if (state->source == _source_environment)
+				config_append(&line, " over a value");
+			config_append(&line, " [config.toml, chosen]");
+		}
+		for (layer = state->profile_count - 1; layer >= 0; layer--)
+		{
+			struct config_value value = { 0, 0, 0.0, NULL };
+
+			config_set_from_profile_text(&value, setting->type, state->profile[layer].text);
+			config_literal(setting->type, &value, literal, sizeof(literal));
+			free(value.string);
+			if (layer == state->profile_count - 1 && state->source == _source_profile)
+				snprintf(piece, sizeof(piece), " [%s]", state->profile[layer].source);
+			else
+				snprintf(piece, sizeof(piece), " over %s [%s]", literal, state->profile[layer].source);
+			config_append(&line, piece);
+		}
+		config_literal_of_default(setting->type, setting->default_value, literal, sizeof(literal));
+		if (state->source == _source_default)
+			config_append(&line, " [default]");
+		else
+		{
+			snprintf(piece, sizeof(piece), " over %s [default]", literal);
+			config_append(&line, piece);
+		}
+		for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES; scene++)
+		{
+			if (!state->scene[scene].text)
+				continue;
+			config_literal(setting->type, &state->scene_value[scene], literal, sizeof(literal));
+			snprintf(piece, sizeof(piece), "; %s %s [%s]%s", config_scene_names[scene], literal, state->scene[scene].source,
+				state->source == _source_file || state->source == _source_environment ? " (not used: the value is set)" : "");
+			config_append(&line, piece);
+		}
+		if (line.buffer)
+			platform_log("%s", line.buffer);
+		free(line.buffer);
+	}
 }
 
 static void config_load(void)
@@ -1535,8 +2181,10 @@ static void config_load(void)
 	char *text;
 	size_t index;
 
+	config_profile_load();
 	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
-		config_set_default(index);
+		config_keep_device(index);
+	config_origins_read();
 
 	config_path(path, sizeof(path));
 	text = config_read_file(path, &size);
@@ -1555,15 +2203,41 @@ static void config_load(void)
 		if (result.ok)
 		{
 			char *completed;
+			int rewritten = 0;
 
 			for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
-				config_set_from_file(&config_values[index], &config_settings[index], result.toptab);
+			{
+				struct config_value file_value = { 0, 0, 0.0, NULL };
+				char *changed;
+
+				if (toml_seek(result.toptab, config_settings[index].name).type == TOML_UNKNOWN)
+				{
+					/* (not in the file: config_add_missing writes it, as a default) */
+					if (config_states[index].origin != _origin_none)
+					{
+						config_states[index].origin = _origin_none;
+						config_origins_changed = 1;
+					}
+					continue;
+				}
+				/* (a value of the wrong type is reported, and counts as nobody's: the device value) */
+				if (!config_set_from_file(&file_value, &config_settings[index], result.toptab))
+					continue;
+				changed = config_origin_decide(index, &file_value, text);
+				free(file_value.string);
+				if (changed)
+				{
+					free(text);
+					text = changed;
+					rewritten = 1;
+				}
+			}
 			config_report_unknown_keys(result.toptab);
 			platform_log("settings: %s", path);
 			completed = config_add_missing(text, result.toptab);
 			/* (the folded file written back, so the player's edits and the
 			settings screen's land in one place) */
-			if ((completed || folded) && !config_write_file(path, completed ? completed : text))
+			if ((completed || folded || rewritten) && !config_write_file(path, completed ? completed : text))
 				platform_log("settings: cannot write %s", path);
 			else if (folded)
 				platform_log("settings: folded the repeats out of %s", path);
@@ -1581,14 +2255,25 @@ static void config_load(void)
 		char *defaults = config_default_text();
 
 		if (defaults && config_write_file(path, defaults))
+		{
 			platform_log("settings: wrote the defaults to %s", path);
+			for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+			{
+				if (config_settings[index].platforms & CONFIG_PLATFORM)
+					config_origin_set_device(index);
+			}
+		}
 		else
+		{
 			platform_log("settings: cannot write %s; using the defaults", path);
+		}
 		free(defaults);
 	}
+	config_origins_write();
 
 	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
 		config_set_from_environment(index);
+	config_dump();
 }
 
 static const struct config_value *config_value(const char *name, enum config_type type)
@@ -1646,61 +2331,19 @@ static int config_line_section(const char *line, const char *end, char *section,
 	return 1;
 }
 
-/* sets a setting, for now and in config.toml, from its value as text
-("true", "60", "1.5", "all"): its line there is changed (or added), the rest
-of the file kept as it is */
-int config_write(const char *name, const char *value)
+/* text (config.toml's) with name's line as line_text ("key = value\n"): its
+line there changed, or added at the end of its section (a new section at
+the end when it has none), the rest kept as it is. NULL without memory */
+static char *config_text_set(const char *text, const char *name, const char *line_text)
 {
 	const char *dot = strchr(name, '.');
-	long index = config_setting_index(name);
-	char section[64], key[64], wanted[80], current[64] = "", line_text[600], path[1024];
+	char section[64], key[64], current[64] = "";
 	struct config_text out = { 0 };
-	size_t size = 0;
-	char *text;
 	const char *line;
-	int written = 0, in_section = 0, succeeded;
+	int written = 0, in_section = 0;
 
-	if (index < 0 || !dot || (size_t)(dot - name) >= sizeof(section) || strlen(value) > 256)
-		return 0;
-	/* (the file read first, as the other settings are) */
-	config_value(name, config_settings[index].type);
-	pthread_mutex_lock(&config_lock);
-	config_set_from_text(&config_values[index], config_settings[index].type, value);
 	snprintf(section, sizeof(section), "%.*s", (int)(dot - name), name);
 	snprintf(key, sizeof(key), "%s", dot + 1);
-	switch (config_settings[index].type)
-	{
-	case _config_boolean:
-		snprintf(line_text, sizeof(line_text), "%s = %s\n", key, config_values[index].boolean ? "true" : "false");
-		break;
-	case _config_integer:
-		snprintf(line_text, sizeof(line_text), "%s = %ld\n", key, config_values[index].integer);
-		break;
-	case _config_real:
-		/* (with its point: TOML reads 1 as an integer) */
-		snprintf(line_text, sizeof(line_text), "%s = %.15g", key, config_values[index].real);
-		if (!strpbrk(line_text + strlen(key) + 3, ".en"))
-			strcat(line_text, ".0");
-		strcat(line_text, "\n");
-		break;
-	case _config_string:
-	{
-		char *end = line_text + snprintf(line_text, sizeof(line_text), "%s = \"", key);
-		const char *character;
-
-		for (character = config_values[index].string; *character; character++)
-		{
-			if (*character == '"' || *character == '\\')
-				*end++ = '\\';
-			*end++ = *character;
-		}
-		strcpy(end, "\"\n");
-		break;
-	}
-	}
-	snprintf(wanted, sizeof(wanted), "%s", section);
-	config_path(path, sizeof(path));
-	text = config_read_file(path, &size);
 	for (line = text ? text : ""; *line;)
 	{
 		const char *end = line + strcspn(line, "\n");
@@ -1714,7 +2357,7 @@ int config_write(const char *name, const char *value)
 				config_append(&out, line_text);
 				written = 1;
 			}
-			in_section = !strcmp(current, wanted);
+			in_section = !strcmp(current, section);
 		}
 		else if (in_section && !written && config_line_key(line, end, key))
 		{
@@ -1747,10 +2390,51 @@ int config_write(const char *name, const char *value)
 		}
 		config_append(&out, line_text);
 	}
-	succeeded = out.buffer && config_write_file(path, out.buffer);
+	return out.buffer;
+}
+
+/* sets a setting, for now and in config.toml, from its value as text
+("true", "60", "1.5", "all"): its line there is changed (or added), the rest
+of the file kept as it is. The value is the player's choice from now on
+(config.origins), unless it is the device's own value for the setting: then
+it is a default again and follows the device's profile, so the menus'
+Defaults puts a setting back in the profile's hands */
+int config_write(const char *name, const char *value)
+{
+	const char *dot = strchr(name, '.');
+	long index = config_setting_index(name);
+	char literal[600], device_literal[600], line_text[700], path[1024];
+	size_t size = 0;
+	char *text, *out;
+	int succeeded;
+
+	if (index < 0 || !dot || (size_t)(dot - name) >= 64 || strlen(value) > 256)
+		return 0;
+	/* (the file read first, as the other settings are) */
+	config_value(name, config_settings[index].type);
+	pthread_mutex_lock(&config_lock);
+	config_set_from_text(&config_values[index], config_settings[index].type, value);
+	config_literal(config_settings[index].type, &config_values[index], literal, sizeof(literal));
+	config_literal(config_settings[index].type, &config_states[index].device, device_literal, sizeof(device_literal));
+	snprintf(line_text, sizeof(line_text), "%s = %s\n", dot + 1, literal);
+	if (!strcmp(literal, device_literal))
+	{
+		config_origin_set((size_t)index, _origin_default, literal);
+		config_states[index].source = config_states[index].profile_count ? _source_profile : _source_default;
+	}
+	else
+	{
+		config_origin_set((size_t)index, _origin_chosen, NULL);
+		config_states[index].source = _source_file;
+	}
+	config_path(path, sizeof(path));
+	text = config_read_file(path, &size);
+	out = config_text_set(text, name, line_text);
+	succeeded = out && config_write_file(path, out);
+	config_origins_write();
 	config_change_count++;
 	pthread_mutex_unlock(&config_lock);
-	free(out.buffer);
+	free(out);
 	free(text);
 	return succeeded;
 }
@@ -1820,24 +2504,133 @@ unsigned long config_changes(void)
 	return config_change_count;
 }
 
+/* the setting's value when nobody has set it: its default with the device's
+profile over it (what the menus' Defaults shows and writes) */
 int config_default(const char *name, char *text, size_t size)
 {
 	long index = config_setting_index(name);
-	const char *value;
-	size_t length;
+	const struct config_value *device;
 
 	if (index < 0)
 		return 0;
-	value = config_settings[index].default_value;
-	length = strlen(value);
-	/* (a string's without its quotes: the defaults have no escapes) */
-	if (config_settings[index].type == _config_string && length >= 2 && value[0] == '"')
+	/* (the profile read first) */
+	config_value(name, config_settings[index].type);
+	device = &config_states[index].device;
+	switch (config_settings[index].type)
 	{
-		value++;
-		length -= 2;
+	case _config_boolean:
+		snprintf(text, size, "%s", device->boolean ? "true" : "false");
+		break;
+	case _config_integer:
+		snprintf(text, size, "%ld", device->integer);
+		break;
+	case _config_real:
+		snprintf(text, size, "%.15g", device->real);
+		break;
+	case _config_string:
+		snprintf(text, size, "%s", device->string ? device->string : "");
+		break;
 	}
-	snprintf(text, size, "%.*s", (int)length, value);
 	return 1;
+}
+
+/* ---------- scene classes
+
+A device profile may give a few settings another value for a scene class
+(the main menu, cutscenes): [scene.menu.display] in its file. That value
+stands in for the device's while the scene is that class, and only while
+the setting's value comes from its default or the profile: one the player
+or the environment set is the value in every scene. */
+
+static const struct config_value *config_scene_value(const char *name, enum config_type type, int scene)
+{
+	const struct config_value *value = config_value(name, type);
+	long index = config_setting_index(name);
+
+	if (index >= 0 && config_settings[index].type == type && scene > 0 && scene < NUMBER_OF_CONFIG_SCENES &&
+		config_states[index].scene[scene].text &&
+		(config_states[index].source == _source_default || config_states[index].source == _source_profile))
+		return &config_states[index].scene_value[scene];
+	return value;
+}
+
+double config_scene_real(const char *name, int scene)
+{
+	return config_scene_value(name, _config_real, scene)->real;
+}
+
+long config_scene_integer(const char *name, int scene)
+{
+	return config_scene_value(name, _config_integer, scene)->integer;
+}
+
+int config_scene_boolean(const char *name, int scene)
+{
+	return config_scene_value(name, _config_boolean, scene)->boolean;
+}
+
+int config_scene_string(const char *name, int scene, char *text, size_t size)
+{
+	const struct config_value *value = config_scene_value(name, _config_string, scene);
+	long index = config_setting_index(name);
+
+	snprintf(text, size, "%s", value->string ? value->string : "");
+	return index >= 0 && value == &config_states[index].scene_value[scene < 0 || scene >= NUMBER_OF_CONFIG_SCENES ? 0 : scene];
+}
+
+const char *config_scene_name(int scene)
+{
+	return scene >= 0 && scene < NUMBER_OF_CONFIG_SCENES ? config_scene_names[scene] : "";
+}
+
+void config_profile_settings_text(char *text, size_t size)
+{
+	size_t index, length = 0;
+
+	(void)config_boolean("debug.settings_dump");   /* the first load */
+	if (size)
+		text[0] = 0;
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		char literal[600];
+		int written;
+
+		if (!config_is_profile_setting(index) || !(config_settings[index].platforms & CONFIG_PLATFORM))
+			continue;
+		config_literal(config_settings[index].type, &config_values[index], literal, sizeof(literal));
+		written = snprintf(text + length, size - length, "%s = %s\n", config_settings[index].name, literal);
+		if (written < 0 || (size_t)written >= size - length)
+		{
+			text[length] = 0;
+			break;
+		}
+		length += (size_t)written;
+	}
+}
+
+int config_scene_describe(int scene, char *text, size_t size)
+{
+	size_t index, length = 0;
+
+	(void)config_boolean("debug.settings_dump");   /* the first load */
+	if (size)
+		text[0] = 0;
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS && scene > 0 && scene < NUMBER_OF_CONFIG_SCENES; index++)
+	{
+		const struct config_setting_state *state = &config_states[index];
+		char literal[600];
+		int written;
+
+		if (!state->scene[scene].text || (state->source != _source_default && state->source != _source_profile))
+			continue;
+		config_literal(config_settings[index].type, &state->scene_value[scene], literal, sizeof(literal));
+		written = snprintf(text + length, size - length, "%s%s %s [%s]", length ? ", " : "", config_settings[index].name,
+			literal, state->scene[scene].source);
+		if (written < 0 || (size_t)written >= size - length)
+			break;
+		length += (size_t)written;
+	}
+	return length > 0;
 }
 
 int config_boolean(const char *name)
@@ -1845,8 +2638,8 @@ int config_boolean(const char *name)
 	return config_value(name, _config_boolean)->boolean;
 }
 
-/* one boolean read again from the file, as at start-up (its default when the
-file lacks it or does not parse), the environment still winning: for a
+/* one boolean read again from the file, as at start-up (the device's value
+when the file lacks it or does not parse), the environment still winning: for a
 setting another process changes while the game runs (the iOS host, from the
 Settings app's switch) */
 int config_reload_boolean(const char *name)
@@ -1863,7 +2656,7 @@ int config_reload_boolean(const char *name)
 	config_path(path, sizeof(path));
 	text = config_read_file(path, &size);
 	pthread_mutex_lock(&config_lock);
-	config_set_default((size_t)index);
+	config_set_device((size_t)index);
 	if (text)
 	{
 		toml_result_t result = toml_parse(text, (int)size);

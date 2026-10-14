@@ -166,7 +166,8 @@ double frame_pacer_present(const struct frame_pacer_frame *frame)
 	pthread_mutex_lock(&pacer.lock);
 	period = pacer.period;
 	pthread_mutex_unlock(&pacer.lock);
-	return frame_pacer_minimum_duration(pacer.spacing, frame->waits_for_display, period, host_frame_rate_cap());
+	/* (a scene class's rate counts: a cutscene at 30 is spaced for 30) */
+	return frame_pacer_minimum_duration(pacer.spacing, frame->waits_for_display, period, host_frame_rate_target());
 }
 
 void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
@@ -186,7 +187,8 @@ void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
 		pthread_cond_broadcast(&pacer.shown_or_ticked);
 	}
 	period = pacer.period;
-	interval = frame_pacer_shown_add(&pacer.shown, at, period, frame_pacer_share(period, host_frame_rate_cap()));
+	/* (judged against the rate in force: under a scene class's 30 a frame's share is two refreshes) */
+	interval = frame_pacer_shown_add(&pacer.shown, at, period, frame_pacer_share(period, host_frame_rate_target()));
 	if (pacer.shown.frames >= pacer.reported + 600)
 	{
 		frames = pacer.shown.frames - pacer.reported;
