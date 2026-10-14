@@ -154,6 +154,11 @@ static const struct config_setting config_settings[] =
 		"menus, text and letterbox bars at the display's own resolution over the\n"
 		"scaled-up scene. false scales them up with the scene. No effect, and no\n"
 		"cost, at native resolution or on Apple Vision Pro." },
+	{ "display.anti_aliasing", _config_string, "\"off\"", "HALO_ANTI_ALIASING", _environment_value, _platform_all,
+		"Smoothing of jagged edges, which the Xbox did not have: \"off\", or\n"
+		"\"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size\n"
+		"it is drawn at (the HUD and menus are drawn after it and stay sharp).\n"
+		"SMAA is sharper and costs more." },
 	{ "display.upscaler", _config_string, "\"bilinear\"", "HALO_UPSCALER", _environment_value, _platform_ios,
 		"How a picture rendered below the display's size is scaled up: \"bilinear\"\n"
 		"(default), or \"metalfx\" (Metal renderer, on a device: MetalFX's spatial\n"

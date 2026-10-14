@@ -33,6 +33,7 @@ Conventions carried over from the Xbox:
 #include "halo_stereo_window.h"
 #include "halo_stereo_cutscene.h"
 #include "posix.h"
+#include "zlib_prefixed.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -1241,6 +1242,127 @@ static BOOL draw_targets(gpu_texture *color_texture, gpu_texture *depth_texture)
 
 static struct render_target_entry *back_buffer_drawn_this_frame(int layer);
 
+/* ---------- display.anti_aliasing: FXAA or SMAA over the scene
+
+Upstream's setting (OpenCE 94882796) and its two passes over the 3D view,
+FXAA and SMAA (gpu_anti_alias; port/third_party/smaa), without its
+multisampling and supersampling, which change every target the frame draws.
+The pass runs when a view's scene ends (halo_render_scene_end), on the
+scene's own target at the size it is drawn at, after the weapon's screen
+effects and before the HUD: with display.native_hud that is before the
+stretch, so the HUD and menus, drawn at the display's size afterward, are
+never filtered; without it they are drawn over the filtered scene in the
+same target. Off by default; read again between frames
+(halo_screen_commit). Not in a stereo frame. */
+
+enum
+{
+	_anti_aliasing_off,
+	_anti_aliasing_fxaa,
+	_anti_aliasing_smaa,
+};
+
+/* the method in effect, -1 until the setting is first read */
+static int anti_aliasing_method = -1;
+/* its passes' programs could be made (anti_aliasing_prepare) */
+static BOOL anti_aliasing_ready;
+
+static void anti_aliasing_prepare(void);
+
+/* display.anti_aliasing's method; a value this build does not draw is off */
+static void anti_aliasing_read(void)
+{
+	const char *setting = config_string("display.anti_aliasing");
+	int method = !strcmp(setting, "fxaa") ? _anti_aliasing_fxaa : !strcmp(setting, "smaa") ? _anti_aliasing_smaa :
+		_anti_aliasing_off;
+
+	if (method == anti_aliasing_method)
+		return;
+	anti_aliasing_method = method;
+	if (method == _anti_aliasing_off && strcmp(setting, "off"))
+		platform_log("anti-aliasing: \"%s\" is not one of this build's (\"off\", \"fxaa\", \"smaa\"), so off", setting);
+	else
+		platform_log("anti-aliasing: %s", setting);
+	anti_aliasing_prepare();
+}
+
+/* port/third_party/smaa, embedded by tools/embed_assets.py: the shader's
+text (ending in a NUL) and the lookup textures' bytes compressed with zlib;
+each size 0 where the build had no such file */
+extern const unsigned int xgpu_smaa_shader[];
+extern const unsigned long xgpu_smaa_shader_size;
+extern const unsigned int xgpu_smaa_area_texture[];
+extern const unsigned long xgpu_smaa_area_texture_size;
+extern const unsigned int xgpu_smaa_search_texture[];
+extern const unsigned long xgpu_smaa_search_texture_size;
+
+/* a lookup texture of SMAA's from its zlib stream (kept: the backend may
+make its textures again), or NULL if it does not inflate */
+static void *smaa_lookup_texels(const unsigned int *stream, unsigned long stream_size, unsigned long size)
+{
+	uLongf inflated = (uLongf)size;
+	unsigned char *texels = stream_size ? malloc(size) : NULL;
+	int result;
+
+	if (!texels)
+		return NULL;
+	result = uncompress(texels, &inflated, (const Bytef *)stream, (uLong)stream_size);
+	if ((result != Z_OK && result != Z_BUF_ERROR) || inflated != (uLongf)size)
+	{
+		free(texels);
+		return NULL;
+	}
+	return texels;
+}
+
+/* the method's programs and textures, made as the setting is chosen rather
+than in the middle of a frame (SMAA's are large), once the backend is up */
+static void anti_aliasing_prepare(void)
+{
+	static void *area, *search;
+
+	anti_aliasing_ready = FALSE;
+	if (!device.gl_ready || anti_aliasing_method <= _anti_aliasing_off)
+		return;
+	if (anti_aliasing_method == _anti_aliasing_fxaa)
+		anti_aliasing_ready = gpu_anti_alias_prepare(GPU_ANTI_ALIAS_FXAA, NULL, NULL, NULL) != 0;
+	else if (!xgpu_smaa_shader_size)
+		platform_log("anti-aliasing: the build has no SMAA");
+	else
+	{
+		if (!area)
+			area = smaa_lookup_texels(xgpu_smaa_area_texture, xgpu_smaa_area_texture_size, 160 * 560 * 2);
+		if (!search)
+			search = smaa_lookup_texels(xgpu_smaa_search_texture, xgpu_smaa_search_texture_size, 64 * 16);
+		if (!area || !search)
+			platform_log("anti-aliasing: cannot inflate SMAA's lookup textures");
+		else
+			anti_aliasing_ready = gpu_anti_alias_prepare(GPU_ANTI_ALIAS_SMAA, (const char *)xgpu_smaa_shader, area,
+				search) != 0;
+	}
+	if (!anti_aliasing_ready)
+		platform_log("anti-aliasing: its programs cannot be made, so the 3D view is not antialiased");
+}
+
+/* the pass over the view's rectangle of the scene's target (halo_render_scene_end) */
+static void anti_aliasing_pass(struct render_target_entry *scene)
+{
+	const struct halo_stereo_frame *stereo = halo_stereo_frame();
+	struct gpu_rect rect;
+
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	if (!anti_aliasing_ready || stereo->mode != HALO_STEREO_OFF || stereo->eye_count != 0)
+		return;
+	rect.x = (int32_t)floorf((float)native_scene_bounds[0] * scene->target.scale[0] + 0.5f);
+	rect.y = (int32_t)floorf((float)native_scene_bounds[1] * scene->target.scale[1] + 0.5f);
+	rect.width = (int32_t)floorf((float)native_scene_bounds[2] * scene->target.scale[0] + 0.5f) - rect.x;
+	rect.height = (int32_t)floorf((float)native_scene_bounds[3] * scene->target.scale[1] + 0.5f) - rect.y;
+	if (rect.width > 0 && rect.height > 0)
+		gpu_anti_alias(anti_aliasing_method == _anti_aliasing_smaa ? GPU_ANTI_ALIAS_SMAA : GPU_ANTI_ALIAS_FXAA,
+			scene->target.texture, &rect);
+}
+
 /* render_window, as a view's window begins (source/render/render.c): what
 it draws into the back buffer until halo_render_scene_end is the scene, at
 the scene's size. Only a player's or the menu's own view (the primary
@@ -1274,10 +1396,14 @@ void halo_render_scene_end(void)
 	if (!native_scene)
 		return;
 	native_scene = FALSE;
-	if (!device.gl_ready || !native_hud_active())
+	if (!device.gl_ready)
 		return;
 	/* (a view that drew nothing, a movie's, has nothing to bring over) */
 	scene = back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO);
+	if (scene)
+		anti_aliasing_pass(scene);
+	if (!native_hud_active())
+		return;
 	native = render_target_get_layer(&device.back_buffer, HALO_STEREO_LAYER_NATIVE);
 	if (!scene || !native)
 		return;
@@ -1512,6 +1638,11 @@ static void gl_initialize(void)
 	if (debug_settings.shader_replay)
 		shader_replay(debug_settings.shader_replay);
 	device.gl_ready = TRUE;
+	/* (display.anti_aliasing's programs, now that the backend is up) */
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	else
+		anti_aliasing_prepare();
 }
 
 Direct3D *WINAPI Direct3DCreate8(UINT sdk_version)
@@ -1731,6 +1862,9 @@ long halo_screen_commit(void)
 	long width;
 	float scale[2], native[2];
 
+	/* (display.anti_aliasing, as config.toml has it now) */
+	if (device.gl_ready)
+		anti_aliasing_read();
 	if (!screen_width)
 		return halo_screen_width();
 	screen_mode_choose(&width, scale, native);

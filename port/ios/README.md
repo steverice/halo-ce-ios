@@ -177,6 +177,13 @@ render target the size of the display and one pass over it a frame;
 resolution it does nothing and costs nothing. It works with both renderers and
 is not used on Apple Vision Pro, which places the HUD itself.
 
+`anti_aliasing` (both renderers; a line in `config.toml`, not a menu row)
+smooths the 3D view's jagged edges with a pass over it once it is drawn:
+`"fxaa"` (cheap) or `"smaa"` (sharper, about three times the work). The pass
+runs at the size the scene is rendered at, before the HUD and menus are
+drawn, so they are never blurred. It is off by default; the Apple TV HD's
+device profile turns FXAA on.
+
 The renderer preserves the selected aspect ratio and caps the render size to
 the drawable and GPU texture limit. Existing configuration files without
 `render_height` automatically use native resolution. Anti-aliasing and an
@@ -188,6 +195,7 @@ these `[display]` settings also apply:
 ```toml
 render_scale = 1.0           # Render this fraction of the display's pixels each way (0.25-1.0)
 upscaler = "bilinear"        # "metalfx": scale a smaller render up with MetalFX (on a device)
+anti_aliasing = "off"        # "fxaa" or "smaa": smooth the 3D view's edges (the HUD stays sharp)
 compressed_textures = true   # Keep the game's DXT textures compressed on the GPU
 anisotropic_filtering = 16   # 1 (as on the Xbox) to 16
 shadow_map_size = 512        # 128 (as on the Xbox) to 2048

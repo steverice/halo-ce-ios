@@ -3976,6 +3976,462 @@ static void frame_load_draw(id<MTLTexture> picture)
 }
 #endif
 
+/* ---------- anti-aliasing passes (gpu_anti_alias)
+
+display.anti_aliasing's FXAA and SMAA, the passes gpu_gl.c runs from
+upstream's xgpu_post.c (94882796), in MSL: on a render target in place, over
+the rectangle of a window's 3D view. Each pass draws one triangle covering
+the rectangle and finds its texels from the pixel's position, rows from the
+top as in every target; the target's pixels are copied first, so that no
+pass reads what it writes, and only color is written back (the game keeps
+values of its own in destination alpha). FXAA is gpu_gl.c's shader line for
+line. SMAA is port/third_party/smaa/SMAA.hlsl at its HIGH preset, through
+its SMAA_CUSTOM_SL macros: the target's size, which SMAA reads as a global
+(SMAA_RT_METRICS), is function constant 16 (0 to 15 are the game's
+shaders'), so each pass's pipeline is made
+for each size of target (a new one is a compile, once); HLSL's out and inout
+parameters become references and its array parameters pointers
+(smaa_metal_text). Point samples are linear ones, as in the GLSL that
+gpu_gl.c compiles (SMAA takes them at texel centers). */
+
+static NSString *const post_source =
+	@"#include <metal_stdlib>\n"
+	"using namespace metal;\n"
+	"struct PostOut { float4 position [[position]]; };\n"
+	"/* one triangle over the whole viewport */\n"
+	"vertex PostOut post_vertex(uint id [[vertex_id]])\n"
+	"{\n"
+	"\tPostOut out;\n"
+	"\tout.position = float4(float((id & 1) << 2) - 1.0, float((id & 2) << 1) - 1.0, 0.0, 1.0);\n"
+	"\treturn out;\n"
+	"}\n";
+
+static NSString *const fxaa_source =
+	@"/* 1 / width, 1 / height, width, height; and the rectangle's outermost\n"
+	"texel centers, as texture coordinates */\n"
+	"struct FxaaParameters { float4 metrics; float4 bounds; };\n"
+	"constexpr sampler fxaa_linear(filter::linear, address::clamp_to_edge);\n"
+	"constant float EDGE_THRESHOLD = 0.125;\n"
+	"constant float EDGE_THRESHOLD_MINIMUM = 0.0312;\n"
+	"constant float SUBPIXEL_QUALITY = 0.75;\n"
+	"constant int STEPS = 12;\n"
+	"constant float STEP_LENGTHS[12] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0 };\n"
+	"static float3 color_at(texture2d<float> color_texture, float4 bounds, float2 position)\n"
+	"{\n"
+	"\treturn color_texture.sample(fxaa_linear, clamp(position, bounds.xy, bounds.zw), level(0.0)).rgb;\n"
+	"}\n"
+	"static float luma_at(texture2d<float> color_texture, float4 bounds, float2 position)\n"
+	"{\n"
+	"\treturn dot(color_at(color_texture, bounds, position), float3(0.299, 0.587, 0.114));\n"
+	"}\n"
+	"#define color_at(position) color_at(color_texture, p.bounds, position)\n"
+	"#define luma_at(position) luma_at(color_texture, p.bounds, position)\n"
+	"fragment float4 fxaa_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
+	"\tconstant FxaaParameters &p [[buffer(0)]])\n"
+	"{\n"
+	"\tfloat4 metrics = p.metrics;\n"
+	"\tfloat2 position = in.position.xy * metrics.xy;\n"
+	"\tfloat luma = luma_at(position);\n"
+	"\tfloat up = luma_at(position + float2(0.0, -metrics.y));\n"
+	"\tfloat down = luma_at(position + float2(0.0, metrics.y));\n"
+	"\tfloat left = luma_at(position + float2(-metrics.x, 0.0));\n"
+	"\tfloat right = luma_at(position + float2(metrics.x, 0.0));\n"
+	"\tfloat highest = max(luma, max(max(up, down), max(left, right)));\n"
+	"\tfloat range = highest - min(luma, min(min(up, down), min(left, right)));\n"
+	"\n"
+	"\t/* no edge: the target has the pixel already */\n"
+	"\tif (range < max(EDGE_THRESHOLD_MINIMUM, highest * EDGE_THRESHOLD))\n"
+	"\t\tdiscard_fragment();\n"
+	"\tfloat up_left = luma_at(position + float2(-metrics.x, -metrics.y));\n"
+	"\tfloat up_right = luma_at(position + float2(metrics.x, -metrics.y));\n"
+	"\tfloat down_left = luma_at(position + float2(-metrics.x, metrics.y));\n"
+	"\tfloat down_right = luma_at(position + float2(metrics.x, metrics.y));\n"
+	"\n"
+	"\t/* how much the pixel stands out from its neighborhood (a feature\n"
+	"\tthinner than a pixel) */\n"
+	"\tfloat average = (2.0 * (up + down + left + right) + up_left + up_right + down_left + down_right) / 12.0;\n"
+	"\tfloat subpixel = smoothstep(0.0, 1.0, clamp(abs(average - luma) / range, 0.0, 1.0));\n"
+	"\tsubpixel = subpixel * subpixel * SUBPIXEL_QUALITY;\n"
+	"\n"
+	"\t/* an edge along the rows where the luma changes more from row to row\n"
+	"\tthan from column to column; across it, the side it changes more to */\n"
+	"\tbool horizontal = abs(up_left + down_left - 2.0 * left) + 2.0 * abs(up + down - 2.0 * luma) +\n"
+	"\t\tabs(up_right + down_right - 2.0 * right) >=\n"
+	"\t\tabs(up_left + up_right - 2.0 * up) + 2.0 * abs(left + right - 2.0 * luma) +\n"
+	"\t\tabs(down_left + down_right - 2.0 * down);\n"
+	"\tfloat before = horizontal ? up : left;\n"
+	"\tfloat after = horizontal ? down : right;\n"
+	"\tbool before_steeper = abs(before - luma) >= abs(after - luma);\n"
+	"\tfloat gradient = 0.25 * max(abs(before - luma), abs(after - luma));\n"
+	"\tfloat edge_luma = 0.5 * ((before_steeper ? before : after) + luma);\n"
+	"\tfloat2 across = (horizontal ? float2(0.0, metrics.y) : float2(metrics.x, 0.0)) * (before_steeper ? -1.0 : 1.0);\n"
+	"\tfloat2 along = horizontal ? float2(metrics.x, 0.0) : float2(0.0, metrics.y);\n"
+	"\n"
+	"\t/* along the edge, half a pixel across, to where its luma ends either way */\n"
+	"\tfloat2 end_before = position + 0.5 * across - along;\n"
+	"\tfloat2 end_after = position + 0.5 * across + along;\n"
+	"\tfloat luma_before = luma_at(end_before) - edge_luma;\n"
+	"\tfloat luma_after = luma_at(end_after) - edge_luma;\n"
+	"\tbool reached_before = abs(luma_before) >= gradient;\n"
+	"\tbool reached_after = abs(luma_after) >= gradient;\n"
+	"\tfor (int index = 1; index < STEPS && !(reached_before && reached_after); index++)\n"
+	"\t{\n"
+	"\t\tif (!reached_before)\n"
+	"\t\t{\n"
+	"\t\t\tend_before -= along * STEP_LENGTHS[index];\n"
+	"\t\t\tluma_before = luma_at(end_before) - edge_luma;\n"
+	"\t\t\treached_before = abs(luma_before) >= gradient;\n"
+	"\t\t}\n"
+	"\t\tif (!reached_after)\n"
+	"\t\t{\n"
+	"\t\t\tend_after += along * STEP_LENGTHS[index];\n"
+	"\t\t\tluma_after = luma_at(end_after) - edge_luma;\n"
+	"\t\t\treached_after = abs(luma_after) >= gradient;\n"
+	"\t\t}\n"
+	"\t}\n"
+	"\n"
+	"\t/* blended across the edge the more, the nearer the pixel is to an end;\n"
+	"\tonly where the luma at that end changes the way the pixel's does */\n"
+	"\tfloat distance_before = horizontal ? position.x - end_before.x : position.y - end_before.y;\n"
+	"\tfloat distance_after = horizontal ? end_after.x - position.x : end_after.y - position.y;\n"
+	"\tfloat pixel_offset = 0.5 - min(distance_before, distance_after) / (distance_before + distance_after);\n"
+	"\tbool varies = ((distance_before < distance_after ? luma_before : luma_after) < 0.0) != (luma < edge_luma);\n"
+	"\treturn float4(color_at(position + max(varies ? pixel_offset : 0.0, subpixel) * across), 1.0);\n"
+	"}\n";
+
+/* SMAA.hlsl's macros for Metal (SMAA_CUSTOM_SL), and the global it reads
+the target's size from */
+static NSString *const smaa_prelude =
+	@"#pragma clang diagnostic ignored \"-Wunused-variable\"\n"
+	"#pragma clang diagnostic ignored \"-Wunused-function\"\n"
+	"constant float4 smaa_metrics [[function_constant(16)]];\n"
+	"#define SMAA_RT_METRICS smaa_metrics\n"
+	"#define SMAA_CUSTOM_SL 1\n"
+	"#define SMAA_PRESET_HIGH 1\n"
+	"constexpr sampler smaa_linear(filter::linear, address::clamp_to_edge);\n"
+	"#define SMAATexture2D(tex) texture2d<float> tex\n"
+	"#define SMAATexturePass2D(tex) tex\n"
+	"#define SMAASampleLevelZero(tex, coord) tex.sample(smaa_linear, coord, level(0.0))\n"
+	"#define SMAASampleLevelZeroPoint(tex, coord) tex.sample(smaa_linear, coord, level(0.0))\n"
+	"#define SMAASampleLevelZeroOffset(tex, coord, offset) tex.sample(smaa_linear, coord, level(0.0), offset)\n"
+	"#define SMAASample(tex, coord) tex.sample(smaa_linear, coord)\n"
+	"#define SMAASamplePoint(tex, coord) tex.sample(smaa_linear, coord)\n"
+	"#define SMAASampleOffset(tex, coord, offset) tex.sample(smaa_linear, coord, offset)\n"
+	"#define SMAA_FLATTEN\n"
+	"#define SMAA_BRANCH\n"
+	"#define discard discard_fragment()\n"
+	"#define lerp(a, b, t) mix(a, b, t)\n"
+	"#define mad(a, b, c) fma(a, b, c)\n"
+	"#define SMAAGather(tex, coord) tex.gather(smaa_linear, coord)\n";
+
+/* the main functions of SMAA's passes, as gpu_gl.c's */
+static NSString *const smaa_mains =
+	@"fragment float4 smaa_edges_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]])\n"
+	"{\n"
+	"\tfloat2 texcoord = in.position.xy * SMAA_RT_METRICS.xy;\n"
+	"\tfloat4 offset[3];\n"
+	"\tSMAAEdgeDetectionVS(texcoord, offset);\n"
+	"\treturn float4(SMAALumaEdgeDetectionPS(texcoord, offset, color_texture), 0.0, 0.0);\n"
+	"}\n"
+	"fragment float4 smaa_weights_fragment(PostOut in [[stage_in]], texture2d<float> edges_texture [[texture(0)]],\n"
+	"\ttexture2d<float> area_texture [[texture(1)]], texture2d<float> search_texture [[texture(2)]])\n"
+	"{\n"
+	"\tfloat2 texcoord = in.position.xy * SMAA_RT_METRICS.xy;\n"
+	"\tfloat2 pixcoord;\n"
+	"\tfloat4 offset[3];\n"
+	"\tSMAABlendingWeightCalculationVS(texcoord, pixcoord, offset);\n"
+	"\treturn SMAABlendingWeightCalculationPS(texcoord, pixcoord, offset, edges_texture, area_texture,\n"
+	"\t\tsearch_texture, float4(0.0));\n"
+	"}\n"
+	"fragment float4 smaa_blend_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
+	"\ttexture2d<float> weights_texture [[texture(1)]])\n"
+	"{\n"
+	"\tfloat2 texcoord = in.position.xy * SMAA_RT_METRICS.xy;\n"
+	"\tfloat4 offset;\n"
+	"\tSMAANeighborhoodBlendingVS(texcoord, offset);\n"
+	"\treturn SMAANeighborhoodBlendingPS(texcoord, offset, color_texture, weights_texture);\n"
+	"}\n";
+
+/* SMAA.hlsl's text with what MSL lacks rewritten: out and inout parameters
+as references in the thread address space, array parameters as pointers,
+and the calls that pass a swizzle to an inout parameter (which a reference
+cannot bind) through a temporary. nil if a rewrite no longer finds its text
+(another SMAA.hlsl than port/third_party/smaa's) */
+static NSString *smaa_metal_text(const char *hlsl)
+{
+	static NSString *const rewrites[][2] =
+	{
+		{ @"    SMAAMovc(cond.xy, variable.xy, value.xy);\n    SMAAMovc(cond.zw, variable.zw, value.zw);\n",
+			@"    variable = select(variable, value, cond);\n" },
+		{ @"SMAADetectHorizontalCornerPattern(SMAATexturePass2D(edgesTex), weights.rg, coords.xyzy, d);",
+			@"{ float2 corner = weights.rg; SMAADetectHorizontalCornerPattern(SMAATexturePass2D(edgesTex), corner, coords.xyzy, d); weights.rg = corner; }" },
+		{ @"SMAADetectVerticalCornerPattern(SMAATexturePass2D(edgesTex), weights.ba, coords.xyxz, d);",
+			@"{ float2 corner = weights.ba; SMAADetectVerticalCornerPattern(SMAATexturePass2D(edgesTex), corner, coords.xyxz, d); weights.ba = corner; }" },
+		{ @"out float4 offset[3]", @"thread float4 *offset" },
+		{ @"float4 offset[3]", @"thread float4 *offset" },
+		{ @"inout float2 ", @"thread float2 &" },
+		{ @"inout float4 ", @"thread float4 &" },
+		{ @"out float2 ", @"thread float2 &" },
+		{ @"out float4 ", @"thread float4 &" },
+	};
+	NSMutableString *text = [NSMutableString stringWithUTF8String:hlsl];
+	unsigned long index;
+
+	if (!text)
+		return nil;
+	for (index = 0; index < sizeof(rewrites) / sizeof(rewrites[0]); index++)
+	{
+		if (![text replaceOccurrencesOfString:rewrites[index][0] withString:rewrites[index][1] options:NSLiteralSearch
+			range:NSMakeRange(0, text.length)])
+		{
+			platform_log("Metal: SMAA.hlsl has no \"%s\" to rewrite for MSL", rewrites[index][0].UTF8String);
+			return nil;
+		}
+	}
+	return text;
+}
+
+enum { POST_FXAA, POST_SMAA_EDGES, POST_SMAA_WEIGHTS, POST_SMAA_BLEND, POST_PROGRAMS };
+
+static struct
+{
+	id<MTLFunction> vertex;
+	/* FXAA's function; and SMAA's library, whose functions are made for
+	each size of target */
+	id<MTLFunction> fxaa;
+	id<MTLLibrary> smaa;
+	/* FXAA's pipeline, and SMAA's for each size ("WxH" and the pass) */
+	id<MTLRenderPipelineState> fxaa_pipeline;
+	NSMutableDictionary<NSString *, id<MTLRenderPipelineState>> *smaa_pipelines;
+	/* FXAA's, and SMAA's, programs or textures could not be made */
+	BOOL failed[2];
+	/* the target's pixels before the pass, and SMAA's edges and blending
+	weights, at the target's size */
+	id<MTLTexture> color, edges, weights;
+	/* SMAA's lookup textures */
+	id<MTLTexture> area, search;
+} post;
+
+static id<MTLRenderPipelineState> post_pipeline(id<MTLFunction> fragment, MTLPixelFormat format, BOOL color_only)
+{
+	MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
+	NSError *error = nil;
+	id<MTLRenderPipelineState> pipeline;
+
+	descriptor.vertexFunction = post.vertex;
+	descriptor.fragmentFunction = fragment;
+	descriptor.colorAttachments[0].pixelFormat = format;
+	if (color_only)
+		descriptor.colorAttachments[0].writeMask = MTLColorWriteMaskRed | MTLColorWriteMaskGreen | MTLColorWriteMaskBlue;
+	pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+	if (!pipeline)
+		platform_log("Metal: cannot make an anti-aliasing pipeline: %s", error.localizedDescription.UTF8String);
+	return pipeline;
+}
+
+/* SMAA's pipeline for a pass and a size of target, made the first time */
+static id<MTLRenderPipelineState> smaa_pipeline(int which, unsigned long width, unsigned long height)
+{
+	static NSString *const names[POST_PROGRAMS] =
+		{ nil, @"smaa_edges_fragment", @"smaa_weights_fragment", @"smaa_blend_fragment" };
+	NSString *key = [NSString stringWithFormat:@"%lux%lu/%d", width, height, which];
+	id<MTLRenderPipelineState> pipeline = post.smaa_pipelines[key];
+
+	if (!pipeline)
+	{
+		MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
+		float metrics[4] = { 1.0f / (float)width, 1.0f / (float)height, (float)width, (float)height };
+		NSError *error = nil;
+		id<MTLFunction> fragment;
+
+		[values setConstantValue:metrics type:MTLDataTypeFloat4 atIndex:16];
+		fragment = [post.smaa newFunctionWithName:names[which] constantValues:values error:&error];
+		if (!fragment)
+		{
+			platform_log("Metal: cannot make SMAA's %s: %s", names[which].UTF8String, error.localizedDescription.UTF8String);
+			return nil;
+		}
+		pipeline = post_pipeline(fragment, which == POST_SMAA_EDGES ? MTLPixelFormatRG8Unorm :
+			which == POST_SMAA_WEIGHTS ? MTLPixelFormatRGBA8Unorm : MTLPixelFormatBGRA8Unorm, which == POST_SMAA_BLEND);
+		if (!pipeline)
+			return nil;
+		post.smaa_pipelines[key] = pipeline;
+		platform_log("Metal: SMAA's %s made for %lux%lu", names[which].UTF8String, width, height);
+	}
+	return pipeline;
+}
+
+static id<MTLTexture> post_texture(MTLPixelFormat format, unsigned long width, unsigned long height, BOOL target)
+{
+	MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+		width:width height:height mipmapped:NO];
+
+	descriptor.usage = MTLTextureUsageShaderRead | (target ? MTLTextureUsageRenderTarget : 0);
+	descriptor.storageMode = target ? MTLStorageModePrivate : MTLStorageModeShared;
+	return [device newTextureWithDescriptor:descriptor];
+}
+
+static uint32_t gpu_metal_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels)
+{
+	@autoreleasepool
+	{
+		BOOL smaa = method == GPU_ANTI_ALIAS_SMAA;
+		NSError *error = nil;
+
+		if (post.failed[smaa])
+			return 0;
+		if (!post.vertex)
+		{
+			id<MTLLibrary> library = [device newLibraryWithSource:[post_source stringByAppendingString:fxaa_source]
+				options:pixel_compile_options error:&error];
+
+			post.vertex = [library newFunctionWithName:@"post_vertex"];
+			post.fxaa = [library newFunctionWithName:@"fxaa_fragment"];
+			if (!post.vertex || !post.fxaa)
+			{
+				platform_log("Metal: cannot compile FXAA: %s", error.localizedDescription.UTF8String);
+				post.failed[0] = post.failed[1] = YES;
+				return 0;
+			}
+			post.smaa_pipelines = [NSMutableDictionary dictionary];
+		}
+		if (!smaa)
+		{
+			if (!post.fxaa_pipeline && !(post.fxaa_pipeline = post_pipeline(post.fxaa, MTLPixelFormatBGRA8Unorm, YES)))
+				post.failed[0] = YES;
+			return post.failed[0] ? 0 : 1;
+		}
+		if (!post.smaa)
+		{
+			NSString *text = smaa_shader ? smaa_metal_text(smaa_shader) : nil;
+
+			if (text)
+				post.smaa = [device newLibraryWithSource:[NSString stringWithFormat:@"%@%@%@\n%@", post_source,
+					smaa_prelude, text, smaa_mains] options:pixel_compile_options error:&error];
+			if (!post.smaa)
+			{
+				platform_log("Metal: cannot compile SMAA: %s", error ? error.localizedDescription.UTF8String : "no shader");
+				post.failed[1] = YES;
+				return 0;
+			}
+			post.area = post_texture(MTLPixelFormatRG8Unorm, 160, 560, NO);
+			[post.area replaceRegion:MTLRegionMake2D(0, 0, 160, 560) mipmapLevel:0 withBytes:area_texels bytesPerRow:160 * 2];
+			post.search = post_texture(MTLPixelFormatR8Unorm, 64, 16, NO);
+			[post.search replaceRegion:MTLRegionMake2D(0, 0, 64, 16) mipmapLevel:0 withBytes:search_texels bytesPerRow:64];
+		}
+		return 1;
+	}
+}
+
+/* a pass over the rectangle of target: its pipeline's fragment function
+reads the textures given, from 0 */
+static void post_pass(id<MTLTexture> target, BOOL clear, id<MTLRenderPipelineState> pipeline, MTLScissorRect rect,
+	NSArray<id<MTLTexture>> *textures, const void *parameters, size_t size, NSString *label)
+{
+	MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+	id<MTLRenderCommandEncoder> post_encoder;
+	NSUInteger index;
+
+	pass.colorAttachments[0].texture = target;
+	pass.colorAttachments[0].loadAction = clear ? MTLLoadActionClear : MTLLoadActionLoad;
+	pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+	pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+	pass_traffic_count(pass);
+	post_encoder = [command_buffer() renderCommandEncoderWithDescriptor:pass];
+	if (metal_debug)
+		post_encoder.label = label;
+	if (pass_log)
+		[pass_log appendFormat:@"\n  %@: %lux%lu at %lu,%lu of %lux%lu", label, (unsigned long)rect.width,
+			(unsigned long)rect.height, (unsigned long)rect.x, (unsigned long)rect.y, (unsigned long)target.width,
+			(unsigned long)target.height];
+	[post_encoder setRenderPipelineState:pipeline];
+	[post_encoder setViewport:(MTLViewport){ (double)rect.x, (double)rect.y, (double)rect.width, (double)rect.height,
+		0.0, 1.0 }];
+	[post_encoder setScissorRect:rect];
+	for (index = 0; index < textures.count; index++)
+		[post_encoder setFragmentTexture:textures[index] atIndex:index];
+	if (parameters)
+		[post_encoder setFragmentBytes:parameters length:size atIndex:0];
+	[post_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+	[post_encoder endEncoding];
+}
+
+static void gpu_metal_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect)
+{
+	@autoreleasepool
+	{
+		MetalTexture *record = texture_record(target);
+		BOOL smaa = method == GPU_ANTI_ALIAS_SMAA;
+		unsigned long width, height;
+		MTLScissorRect area;
+		id<MTLBlitCommandEncoder> blit;
+
+		if (!record || !record->texture || record->description.format != GPU_FORMAT_BGRA8 ||
+			(smaa ? !post.smaa : !post.fxaa_pipeline))
+			return;
+		width = record->texture.width;
+		height = record->texture.height;
+		if (!clamp_rect(rect, width, height, &area))
+			return;
+		pass_end();
+		if (!post.color || post.color.width != width || post.color.height != height)
+		{
+			post.color = post_texture(MTLPixelFormatBGRA8Unorm, width, height, YES);
+			post.edges = post.weights = nil;
+			/* SMAA's pipelines are specialized for one size: the old
+			size's go, so a live resize does not keep one set per size */
+			[post.smaa_pipelines removeAllObjects];
+		}
+		if (smaa && !post.edges)
+		{
+			post.edges = post_texture(MTLPixelFormatRG8Unorm, width, height, YES);
+			post.weights = post_texture(MTLPixelFormatRGBA8Unorm, width, height, YES);
+		}
+		/* the target's pixels, read while the target is drawn into */
+		blit = [command_buffer() blitCommandEncoder];
+		if (metal_debug)
+			blit.label = @"anti-aliasing copy";
+		[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0
+			sourceOrigin:MTLOriginMake(area.x, area.y, 0) sourceSize:MTLSizeMake(area.width, area.height, 1)
+			toTexture:post.color destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(area.x, area.y, 0)];
+		[blit endEncoding];
+		use_texture(record);
+		if (!smaa)
+		{
+			struct { float metrics[4], bounds[4]; } parameters =
+			{
+				{ 1.0f / (float)width, 1.0f / (float)height, (float)width, (float)height },
+				/* (split screen: no texel of the next window is read) */
+				{ ((float)area.x + 0.5f) / (float)width, ((float)area.y + 0.5f) / (float)height,
+					((float)(area.x + area.width) - 0.5f) / (float)width, ((float)(area.y + area.height) - 0.5f) / (float)height },
+			};
+
+			post_pass(record->texture, NO, post.fxaa_pipeline, area, @[ post.color ], &parameters, sizeof(parameters),
+				@"FXAA");
+			return;
+		}
+		{
+			id<MTLRenderPipelineState> edges = smaa_pipeline(POST_SMAA_EDGES, width, height);
+			id<MTLRenderPipelineState> weights = smaa_pipeline(POST_SMAA_WEIGHTS, width, height);
+			id<MTLRenderPipelineState> blend = smaa_pipeline(POST_SMAA_BLEND, width, height);
+
+			if (!edges || !weights || !blend)
+			{
+				post.failed[1] = YES;
+				post.smaa = nil;
+				return;
+			}
+			/* the intermediates emptied, all of them, so that no edge of
+			another window's pass is found: SMAA's passes write only where
+			there is an edge */
+			post_pass(post.edges, YES, edges, area, @[ post.color ], NULL, 0, @"SMAA edges");
+			post_pass(post.weights, YES, weights, area, @[ post.edges, post.area, post.search ], NULL, 0, @"SMAA weights");
+			post_pass(record->texture, NO, blend, area, @[ post.color, post.weights ], NULL, 0, @"SMAA blend");
+		}
+	}
+}
+
 /* ---------- frames */
 
 /* the game's KickPushBuffer: committing here would split render passes */

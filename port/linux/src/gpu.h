@@ -523,6 +523,23 @@ outside area stays. The front end calls it when a view's scene is drawn and
 its HUD is next (halo_render_scene_end) */
 void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area);
 
+/* ---------- anti-aliasing passes (display.anti_aliasing's "fxaa" and "smaa") */
+
+enum { GPU_ANTI_ALIAS_FXAA = 1, GPU_ANTI_ALIAS_SMAA };
+
+/* makes a method's programs and textures now, rather than in the middle of a
+frame. SMAA needs its shader text (port/third_party/smaa/SMAA.hlsl, ending
+in a NUL) and its lookup textures, the area texture's 160x560 texels of two
+bytes and the search texture's 64x16 of one, which the front end embeds;
+FXAA takes NULL for each. Returns 0 if they cannot be made; the method's
+passes then do nothing. */
+uint32_t gpu_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels);
+/* the method's pass over rect (target pixels) of a color render target, in
+place: its red, green and blue are written inside rect only, and alpha not
+at all, since the game keeps values of its own in destination alpha */
+void gpu_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect);
+
 /* presents a stereo frame as gpu_present does a mono one (and returns the
 same). The GL backend's debug view puts eye 0 in the left half of the window,
 eye 1 in the right (or, zoomed, the zoomed picture in both), and the HUD over
@@ -657,6 +674,9 @@ its own functions. */
 	F(uint32_t, visibility_result, (uint32_t slot, uint32_t *samples), (slot, samples)) \
 	P(flush, (void), ()) \
 	P(upscale, (gpu_texture source, gpu_texture destination, const struct gpu_rect *area), (source, destination, area)) \
+	F(uint32_t, anti_alias_prepare, (uint32_t method, const char *smaa_shader, const void *area_texels, \
+		const void *search_texels), (method, smaa_shader, area_texels, search_texels)) \
+	P(anti_alias, (uint32_t method, gpu_texture target, const struct gpu_rect *rect), (method, target, rect)) \
 	F(uint32_t, vertical_blank_wait, (void), ()) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \
