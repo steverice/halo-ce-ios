@@ -101,6 +101,13 @@ int halo_scene_class(void)
 		now = CONFIG_SCENE_MENU;
 		cutscene_last_tick = -1;
 	}
+	else if (!game_time_initialized())
+	{
+		/* a frame presented while one level is being replaced by the next (game_precache_new_map presents with the
+		old game's time already disposed of): the class stays what it was. game_time_get asserts here, which ended
+		the game at a level change */
+		return scene_class;
+	}
 	else
 	{
 		long tick = game_time_get();
