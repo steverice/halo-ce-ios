@@ -67,6 +67,8 @@ extern void input_replay_skip_cinematic(void);
 extern void input_replay_level(char *map, unsigned int size, long *difficulty, long *players, unsigned long *seed);
 /* the game's global random seed; set to *seed first when seed is given */
 extern unsigned long input_replay_random_seed(const unsigned long *seed);
+/* both random sequences' seeds, global then local: read, or set */
+extern void input_replay_random_seeds(unsigned long seeds[2], unsigned char set);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 
@@ -82,7 +84,18 @@ struct recorded_action
 {
 	long segment, tick;
 	unsigned int words[ACTION_WORDS];
+	/* from the recording's .seeds file, when it has one: the two random seeds as this tick began */
+	unsigned long seeds[2];
+	BOOL has_seeds;
 };
+
+/* A recording's third file, NAME.seeds, beside NAME.input and NAME.actions (which keep their form, so
+recordings made before it read as they did): the line "halo seed recording 1", then for each tick an
+action was recorded for, in the same order, its segment, its tick and the game's two random seeds as the
+tick began, global then local, in hex. What enemies choose depends on them, and frames drawn between
+ticks draw from them too, so two runs with the same seed at a take's first tick part once the frame
+rates differ; a replay that sets both before each tick's action keeps the recording's. */
+#define SEEDS_HEADER "halo seed recording 1"
 
 struct recorded_state
 {
@@ -119,7 +132,7 @@ static struct
 	/* each tick's action: the file being written, or the recording being
 	replayed; the segment and the game tick of the last action seen */
 	char record_actions_path[512], replay_actions_path[512];
-	FILE *actions_file;
+	FILE *actions_file, *seeds_file;
 	struct recorded_action *actions;
 	long action_count, next_action;
 	long segment, last_action_tick;
@@ -183,7 +196,7 @@ static void actions_load(void)
 	}
 	while (fgets(line, sizeof(line), file))
 	{
-		struct recorded_action action;
+		struct recorded_action action = { 0 };
 		unsigned int *w = action.words;
 
 		if (sscanf(line, "%ld %ld %x %x %x %x %x %x %x %x", &action.segment, &action.tick,
@@ -198,6 +211,45 @@ static void actions_load(void)
 	}
 	fclose(file);
 	platform_log("debug.input_replay: %ld tick actions from %s", replay.action_count, replay.replay_actions_path);
+}
+
+static int compare_action_keys(const struct recorded_action *action, long segment, long tick);
+
+/* the recording's .seeds, when it has one: each line's seeds go to the action of the same segment and tick
+(the two files are written together, so in step; a line that matches no action is skipped) */
+static void seeds_load(void)
+{
+	char path[512], line[128];
+	size_t length = strlen(replay.replay_path);
+	FILE *file;
+	long index = 0, matched = 0, segment, tick;
+	unsigned long global, local;
+
+	if (!replay.action_count || length < 6 || strcmp(replay.replay_path + length - 6, ".input"))
+		return;
+	snprintf(path, sizeof(path), "%.*s.seeds", (int)(length - 6), replay.replay_path);
+	if (!(file = fopen(path, "r")))
+		return;
+	if (fgets(line, sizeof(line), file) && !strncmp(line, SEEDS_HEADER, strlen(SEEDS_HEADER)))
+	{
+		while (fgets(line, sizeof(line), file) && index < replay.action_count)
+		{
+			if (sscanf(line, "%ld %ld %lx %lx", &segment, &tick, &global, &local) != 4)
+				continue;
+			while (index < replay.action_count && compare_action_keys(&replay.actions[index], segment, tick) < 0)
+				index++;
+			if (index < replay.action_count && !compare_action_keys(&replay.actions[index], segment, tick))
+			{
+				replay.actions[index].seeds[0] = global;
+				replay.actions[index].seeds[1] = local;
+				replay.actions[index].has_seeds = TRUE;
+				matched++;
+			}
+		}
+	}
+	fclose(file);
+	platform_log("debug.input_replay: %ld of %ld ticks have the recording's random seeds (%s): set before each tick's action",
+		matched, replay.action_count, path);
 }
 
 /* A replayed take's .route, when it has one (an automatic take): the seed each segment began with, and
@@ -436,14 +488,16 @@ static void take_close(const char *why)
 		fclose(replay.record_file);
 	if (replay.actions_file)
 		fclose(replay.actions_file);
-	replay.record_file = replay.actions_file = NULL;
+	if (replay.seeds_file)
+		fclose(replay.seeds_file);
+	replay.record_file = replay.actions_file = replay.seeds_file = NULL;
 	replay.record_path[0] = replay.record_actions_path[0] = 0;
 	if (replay.actions_written < TAKE_MINIMUM_TICKS)
 	{
-		static const char *const extensions[] = { "input", "actions", "route" };
+		static const char *const extensions[] = { "input", "actions", "route", "seeds" };
 		int index;
 
-		for (index = 0; index < 3; index++)
+		for (index = 0; index < 4; index++)
 		{
 			snprintf(path, sizeof(path), "%s.%s", take.base, extensions[index]);
 			remove(path);
@@ -570,6 +624,7 @@ static void configure(void)
 		replay.benchmark = config_boolean("debug.benchmark");
 		replay_load();
 		actions_load();
+		seeds_load();
 		route_load();
 	}
 }
@@ -709,7 +764,9 @@ static void record_end(const char *why)
 		fclose(replay.record_file);
 	if (replay.actions_file)
 		fclose(replay.actions_file);
-	replay.record_file = replay.actions_file = NULL;
+	if (replay.seeds_file)
+		fclose(replay.seeds_file);
+	replay.record_file = replay.actions_file = replay.seeds_file = NULL;
 	replay.record_ended = TRUE;
 	replay.record_actions_path[0] = 0;
 	platform_log("debug.input_record: %s; the recording ends", why);
@@ -867,6 +924,26 @@ void input_replay_tick_action(void *action)
 				else
 					fprintf(replay.actions_file, "%s\n", ACTION_HEADER);
 			}
+			{
+				char seeds_path[512];
+				size_t length = strlen(replay.record_actions_path);
+
+				/* NAME.actions: NAME.seeds */
+				if (length > 8 && !strcmp(replay.record_actions_path + length - 8, ".actions"))
+				{
+					snprintf(seeds_path, sizeof(seeds_path), "%.*s.seeds", (int)(length - 8), replay.record_actions_path);
+					if ((replay.seeds_file = fopen(seeds_path, "w")))
+						fprintf(replay.seeds_file, "%s\n", SEEDS_HEADER);
+				}
+			}
+		}
+		if (replay.seeds_file)
+		{
+			unsigned long seeds[2];
+
+			input_replay_random_seeds(seeds, FALSE);
+			fprintf(replay.seeds_file, "%ld %ld %08lx %08lx\n", replay.segment, tick, seeds[0], seeds[1]);
+			fflush(replay.seeds_file);
 		}
 		memcpy(words, action, sizeof(words));
 		replay.actions_written++;
@@ -884,7 +961,12 @@ void input_replay_tick_action(void *action)
 			replay.next_action++;
 		if (replay.next_action < replay.action_count &&
 			!compare_action_keys(&replay.actions[replay.next_action], replay.segment, tick))
+		{
+			/* (the recording's seeds for this tick first, when it has them) */
+			if (replay.actions[replay.next_action].has_seeds)
+				input_replay_random_seeds(replay.actions[replay.next_action].seeds, TRUE);
 			memcpy(action, replay.actions[replay.next_action].words, sizeof(words));
+		}
 		/* past the end of this segment's actions: the recording went back to a
 		checkpoint here. When that was a cinematic skip, the moment the
 		cinematic can be skipped depends on loading (its script waits for the
