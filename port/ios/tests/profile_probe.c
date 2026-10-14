@@ -228,7 +228,7 @@ static void check_shipped(const char *shipped)
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "display.render_height\t1080\tmodel Apple TV 4K (1st generation)\tmenu\n"));
 	profile = resolve(shipped, device("tvos", "AppleTV14,1", "", 8), NULL, "");
-	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.anisotropic_filtering", "8") &&
+	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.anisotropic_filtering", "16") &&
 		!strcmp(profile.model_file, "apple-tv-4k-3rd.toml"));
 	/* Vision Pro: the headset sweep's values, which are the built-in defaults too */
 	profile = resolve(shipped, device("visionos", "RealityDevice14,1", "", 8), NULL, "");

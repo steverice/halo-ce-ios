@@ -1,9 +1,9 @@
 # Apple TV 4K, 3rd generation (2022, models A2737 and A2843): A15 Bionic, 4 GB, GPU family Apple8.
-# AN ESTIMATE: nothing here has been measured on this model. Every value is scaled from other devices'
-# measurements and meant to make a first run playable; the benchmark report replaces it.
-# Least sure, so the first things to sweep: the render height (1080, 1440, 2160), then anisotropic filtering
-# (8, 16), then a menu at the display's own height (2160 on a 4K output), which is left at the
-# play height here: nothing about this model's memory in the menus is known yet.
+# Play values measured by a tester's device benchmark report (H7C78EJ8): three easy scenes nobody played
+# (b30's beach on Easy, the main menu, a10's opening), so nothing here is evidence about fights.
+# Shadows (512) and model detail (the highest) are the built-in defaults, unmeasured on this model; the menu
+# is at the play height and cutscenes have no values of their own. Still to sweep: 1440 in play, and a menu at
+# the display's own height (2160 on a 4K output).
 
 schema = 1
 name = "Apple TV 4K (3rd generation)"
@@ -16,12 +16,14 @@ models = ["AppleTV14,1"]
 
 [display]
 render_height = 1080
-anisotropic_filtering = 8
+anisotropic_filtering = 16
 
 [evidence."display.render_height"]
-basis = "assumed"
-why = "An iPad Pro (M1) draws a10 at 3180x2384 in 10.4 ms of GPU time a frame. An A15's GPU is roughly 60 percent of an M1's, and 1080 is about a quarter of those pixels, so about 5 ms a frame: 60 with wide margin. 1440 (about 8 ms) probably holds and 2160 (about 19) does not; upstream's note that 4K fill rate limits heavy fights on this model agrees. 1080, the class's value, until measured."
+basis = "measured"
+why = "At 1080 with 16x filtering, b30's beach on Easy with nobody playing ran 59.9 frames a second with every frame on time, GPU 15.0 ms a frame at the 95th percentile and 15.9 at worst; the menu 59.4; a10's opening, uncapped, 57.4. Three easy scenes only: not evidence about fights."
+source = "device benchmark report H7C78EJ8 (a tester's Apple TV 4K, 3rd generation), 2026-10-14; proposal derive/atv4k3-proposal.toml"
 
 [evidence."display.anisotropic_filtering"]
-basis = "assumed"
-why = "Free on an iPad Pro (M1), the largest cost on an Apple TV HD. Nothing between them has been measured; 8x is most of the sharpness at 1080 for half the samples."
+basis = "measured"
+why = "16x, the highest, held the same numbers as the render height's (b30 beach 59.9 frames a second, all on time, GPU 95th percentile 15.0 ms). The only value tried; three easy scenes only."
+source = "device benchmark report H7C78EJ8 (a tester's Apple TV 4K, 3rd generation), 2026-10-14"
