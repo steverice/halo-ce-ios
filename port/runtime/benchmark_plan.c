@@ -195,7 +195,9 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
 
     /* A: every scene as the device's profile has it */
     for (scene = 0; scene < plan->scene_count; scene++) {
-        baseline[scene] = step(&walk, 'A', scene, base_lines, device->anisotropy, device->shadow_size, device->model_lod_max);
+        /* (0 lines: the render size is left to the device's profile, which may have its own for the menu and for
+           cutscenes; base_lines is what it gives gameplay, where the sweep starts) */
+        baseline[scene] = step(&walk, 'A', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max);
         if (!baseline[scene]) return walk.stopped == 1;
         if (!plan->scenes[scene].heavy || baseline[scene]->status == BENCHMARK_SKIPPED) continue;
         if (!holds(baseline[scene], PLAY_TARGET)) base_meets = 0;
@@ -318,7 +320,7 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     /* R: a baseline run that heat or an interruption spoiled, once more */
     for (scene = 0; scene < plan->scene_count; scene++)
         if (baseline[scene]->status == BENCHMARK_THERMAL || baseline[scene]->status == BENCHMARK_INTERRUPTED)
-            if (!step(&walk, 'R', scene, base_lines, device->anisotropy, device->shadow_size, device->model_lod_max))
+            if (!step(&walk, 'R', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
                 return walk.stopped == 1;
     return 0;
 }

@@ -256,7 +256,9 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         finished->index, finished->stage, scene->id, scene->map, scene->difficulty,
         scene->recording ? json_string(@(scene->recording)) : @"null",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" : "gameplay",
-        finished->lines, finished->anisotropy, finished->shadow_size, finished->model_lod_max ? "max" : "auto",
+        /* (a baseline run leaves the size to the profile: what it drew at is the setting it ran with) */
+        finished->lines ? finished->lines : (long)window_height, finished->anisotropy, finished->shadow_size,
+        finished->model_lod_max ? "max" : "auto",
         benchmark_status_name(status), json_string(note), window_width, window_height, measurements ? "," : "",
         measurements ?: ""];
 

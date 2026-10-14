@@ -129,6 +129,7 @@ struct pretend {
     double gpu_at_1080;      /* GPU ms a frame in play at 1080 lines with 16x filtering and 512 shadows */
     double cpu;
     double hertz;
+    long base_lines;         /* what the profile renders gameplay at: a run with 0 lines draws at this */
     int fail_index;          /* this run ends as fail_status (-1: none) */
     enum benchmark_status fail_status;
 };
@@ -136,7 +137,8 @@ struct pretend {
 static struct benchmark_outcome pretend_run(const struct pretend *device, const struct benchmark_run *run) {
     const struct benchmark_scene *scene = &probe_scenes[run->scene];
     struct benchmark_outcome outcome = { BENCHMARK_OK, 0, 0, 0, device->hertz, 900 };
-    double gpu = device->gpu_at_1080 * (double)(run->lines * run->lines) / (1080.0 * 1080.0), period = 1000.0 / device->hertz;
+    long lines = run->lines ? run->lines : device->base_lines;
+    double gpu = device->gpu_at_1080 * (double)(lines * lines) / (1080.0 * 1080.0), period = 1000.0 / device->hertz;
 
     gpu *= run->anisotropy >= 16 ? 1.0 : run->anisotropy >= 4 ? 0.8 : 0.75;
     gpu *= run->shadow_size >= 512 ? 1.0 : run->shadow_size >= 256 ? 0.93 : 0.9;
@@ -204,19 +206,20 @@ static void test_plan(void) {
     /* quick: the baseline, every scene once, at the profile's values */
     {
         struct benchmark_device facts = { 1080, 540, 4, 256, 0 };
-        struct pretend device = { 60.0, 9.0, 59.94, -1, BENCHMARK_OK };
+        struct pretend device = { 60.0, 9.0, 59.94, 540, -1, BENCHMARK_OK };
 
         count = walk_suite(BENCHMARK_QUICK, &facts, &device, runs, outcomes);
         CHECK(count == PROBE_SCENE_COUNT && count_stage(runs, count, 'A') == count);
-        CHECK(runs[0].lines == 540 && runs[0].anisotropy == 4 && runs[0].shadow_size == 256 && !runs[0].model_lod_max);
-        CHECK(!strcmp(runs[2].key, "A a10-crew 540 4 256 auto"));
+        /* a baseline run leaves the render size to the profile */
+        CHECK(runs[0].lines == 0 && runs[0].anisotropy == 4 && runs[0].shadow_size == 256 && !runs[0].model_lod_max);
+        CHECK(!strcmp(runs[2].key, "A a10-crew 0 4 256 auto"));
     }
 
     /* a slow device whose estimate was too hopeful: 1080 misses, the sweep steps down, nothing above the baseline
        is tried, the confirmation runs at the size that held */
     {
         struct benchmark_device facts = { 1080, 1080, 16, 512, 1 };
-        struct pretend device = { 30.0, 9.0, 59.94, -1, BENCHMARK_OK };   /* holds at 540 only with cheaper settings */
+        struct pretend device = { 30.0, 9.0, 59.94, 1080, -1, BENCHMARK_OK };   /* holds at 540 only with cheaper settings */
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         CHECK(count > PROBE_SCENE_COUNT && count < BENCHMARK_RUNS_MAXIMUM);
@@ -233,7 +236,7 @@ static void test_plan(void) {
     /* a fast device at a 4K display with a 1080 estimate: the sweep climbs, at most three sizes */
     {
         struct benchmark_device facts = { 2160, 1080, 4, 256, 0 };
-        struct pretend device = { 2.5, 4.0, 59.94, -1, BENCHMARK_OK };
+        struct pretend device = { 2.5, 4.0, 59.94, 1080, -1, BENCHMARK_OK };
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         run = last_of_stage(runs, count, 'E');
@@ -248,7 +251,7 @@ static void test_plan(void) {
     /* a device whose estimate is exactly right: no size change, and the menu and cutscene are tried one size up */
     {
         struct benchmark_device facts = { 2160, 1080, 16, 512, 1 };
-        struct pretend device = { 11.0, 6.0, 59.94, -1, BENCHMARK_OK };
+        struct pretend device = { 11.0, 6.0, 59.94, 1080, -1, BENCHMARK_OK };
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         CHECK(count_stage(runs, count, 'D') >= 2);
@@ -261,7 +264,7 @@ static void test_plan(void) {
     /* a 120 Hz display: 60 is held with a frame every two refreshes, and one run asks what 120 would take */
     {
         struct benchmark_device facts = { 1440, 1440, 16, 512, 1 };
-        struct pretend device = { 5.0, 5.0, 120.0, -1, BENCHMARK_OK };   /* 8.9 ms of GPU at 1440: 60 yes, 120 no */
+        struct pretend device = { 5.0, 5.0, 120.0, 1440, -1, BENCHMARK_OK };   /* 8.9 ms of GPU at 1440: 60 yes, 120 no */
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         CHECK(count_stage(runs, count, 'F') == 1);
@@ -273,7 +276,7 @@ static void test_plan(void) {
     /* a baseline run spoiled by heat is run once more at the end */
     {
         struct benchmark_device facts = { 1080, 1080, 16, 512, 1 };
-        struct pretend device = { 8.0, 6.0, 59.94, 1, BENCHMARK_THERMAL };
+        struct pretend device = { 8.0, 6.0, 59.94, 1080, 1, BENCHMARK_THERMAL };
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         CHECK(count_stage(runs, count, 'R') == 1 && runs[count - 1].stage == 'R' && runs[count - 1].scene == 1);
@@ -283,7 +286,7 @@ static void test_plan(void) {
     {
         struct benchmark_device facts = { 1080, 1080, 16, 512, 1 };
         struct benchmark_plan plan = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT, facts };
-        struct pretend device = { 30.0, 9.0, 59.94, -1, BENCHMARK_OK };
+        struct pretend device = { 30.0, 9.0, 59.94, 1080, -1, BENCHMARK_OK };
 
         count = 0;
         while (count < BENCHMARK_RUNS_MAXIMUM && benchmark_plan_next(&plan, outcomes, count, &runs[count])) {
@@ -305,7 +308,7 @@ static void test_plan(void) {
 
         for (gpu = 0.5; gpu < 200.0; gpu *= 1.3) {
             struct benchmark_device facts = { 2160, 1080, 16, 512, 1 };
-            struct pretend device = { gpu, 7.0, 59.94, -1, BENCHMARK_OK };
+            struct pretend device = { gpu, 7.0, 59.94, 1080, -1, BENCHMARK_OK };
 
             count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
             CHECK(count >= PROBE_SCENE_COUNT && count < BENCHMARK_RUNS_MAXIMUM);
@@ -369,7 +372,7 @@ static int journaled_suite(const struct benchmark_device *facts, const struct pr
 
 static void test_journal(void) {
     struct benchmark_device facts = { 2160, 1080, 16, 512, 1 };
-    struct pretend device = { 30.0, 9.0, 59.94, -1, BENCHMARK_OK };
+    struct pretend device = { 30.0, 9.0, 59.94, 1080, -1, BENCHMARK_OK };
     struct benchmark_journal whole, journal;
     struct benchmark_outcome outcome = { BENCHMARK_OK, 16.68, 9.25, 12.5, 59.94, 904 };
     char *bytes;

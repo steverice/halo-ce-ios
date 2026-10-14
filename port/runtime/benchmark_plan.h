@@ -51,7 +51,7 @@ struct benchmark_scene {
 /* what the plan needs to know about the device and its profile's values */
 struct benchmark_device {
     long drawable_lines;   /* the display's height in pixels */
-    long base_lines;       /* the render height in force (0: the drawable's) */
+    long base_lines;       /* the render height the profile gives gameplay (0: the drawable's) */
     long anisotropy, shadow_size;
     int model_lod_max;     /* display.model_lod is "max" */
 };
@@ -68,6 +68,7 @@ struct benchmark_run {
        E confirmation, R a repeat */
     char stage;
     int scene;
+    /* lines 0: the render size is left to the device's profile (the baseline) */
     long lines, anisotropy, shadow_size;
     int model_lod_max;
     /* names the run in the journal and the report: "A a10-crew 540 16 512 max" */

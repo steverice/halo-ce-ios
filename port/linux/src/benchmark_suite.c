@@ -285,7 +285,16 @@ void benchmark_suite_frame(long width, long height)
 		platform_video_drawable_size(&drawable_width, &drawable_height);
 		if (drawable_height <= 0)
 			drawable_height = (int)height;
-		/* the settings in force for this device: what a run "at the profile's values" means */
+		/* the settings in force for this device: what a run "at the profile's values" means. The render size is
+		gameplay's (the first frame here is the menu's, which a profile may give its own) */
+		{
+			double scale = config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY);
+			long limit = config_integer("display.render_height");
+
+			height = scale >= 0.25 && scale < 1.0 ? lround((double)drawable_height * scale) : drawable_height;
+			if (limit > 0 && height > limit)
+				height = limit;
+		}
 		if (!host_benchmark_start(mode, drawable_height, (int)height, (int)config_integer("display.anisotropic_filtering"),
 			(int)config_integer("display.shadow_map_size"), strcmp(config_string("display.model_lod"), "auto") != 0))
 		{
