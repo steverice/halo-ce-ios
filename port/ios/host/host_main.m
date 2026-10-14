@@ -411,7 +411,7 @@ int main(int argc,char **argv) {
 #endif
         if(render_height>0){snprintf(env_render,sizeof(env_render),"HALO_RENDER_HEIGHT=%d",render_height);env[env_count++]=env_render;}
 #endif
-        char env_benchmark[48];
+        char env_benchmark[320];
         if(benchmark_suite&&*benchmark_suite){
             snprintf(env_benchmark,sizeof(env_benchmark),"HALO_BENCHMARK_SUITE=%s",benchmark_suite);
             env[env_count++]=env_benchmark;

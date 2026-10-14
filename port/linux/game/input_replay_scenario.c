@@ -71,8 +71,11 @@ void input_replay_random_seeds(unsigned long seeds[2], unsigned char set)
 	}
 }
 
-void input_replay_skip_cinematic(void)
+/* 1 if there was a cinematic to skip and it was asked to end */
+unsigned char input_replay_skip_cinematic(void)
 {
-	if (cinematic_can_be_skipped())
-		main_skip_cinematic();
+	if (!cinematic_can_be_skipped())
+		return 0;
+	main_skip_cinematic();
+	return 1;
 }

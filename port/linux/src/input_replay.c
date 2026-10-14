@@ -63,7 +63,7 @@ extern float game_time_get_tick_fraction(void);
 extern unsigned char game_time_get_paused(void);
 /* port/linux/game/input_replay_scenario.c */
 extern unsigned char input_replay_main_menu_loaded(void);
-extern void input_replay_skip_cinematic(void);
+extern unsigned char input_replay_skip_cinematic(void);
 extern void input_replay_level(char *map, unsigned int size, long *difficulty, long *players, unsigned long *seed);
 /* the game's global random seed; set to *seed first when seed is given */
 extern unsigned long input_replay_random_seed(const unsigned long *seed);
@@ -77,6 +77,9 @@ double halo_frame_trace_milliseconds(void);
 #define REPLAY_TAIL_TICKS 30.0
 
 #define ACTION_HEADER "halo action recording 1"
+/* a cinematic the replay skipped whose revert has not shown as a step back in this many ticks did not step back:
+the segment begins anyway */
+#define SKIP_REVERT_TICKS 90
 /* struct player_action (source/game/players.h) is 0x20 bytes */
 #define ACTION_WORDS 8
 
@@ -143,6 +146,11 @@ static struct
 	struct { long segment, tick; unsigned long seed; BOOL applied; } segment_seeds[32];
 	int segment_seed_count;
 	BOOL preroll, preroll_timeline;
+	/* the replay itself skipped a cinematic and the revert that follows has not been seen yet. The revert is a
+	segment's beginning even when the game time does not go back by it: a cinematic skipped on the level's first
+	tick reverts to that same tick (a fast load, or debug.fixed_timestep), which the tick alone cannot show */
+	BOOL skip_pending;
+	long skip_tick;
 	/* the game time's jumps back seen frame by frame (the ticks' own
 	segment count can miss one: a cinematic can stop the player updates
 	right after its checkpoint), when the last came, and when the game
@@ -893,8 +901,19 @@ void input_replay_tick_action(void *action)
 	tick = game_time_get();
 	if (awaiting_level((double)tick))
 		return;
-	if (replay.last_action_tick > 0 && tick < replay.last_action_tick)
+	if ((replay.last_action_tick > 0 && tick < replay.last_action_tick) ||
+		(replay.skip_pending && (tick <= replay.last_action_tick || tick > replay.skip_tick + SKIP_REVERT_TICKS)))
 	{
+		if (replay.skip_pending && tick >= replay.last_action_tick && replay.preroll_timeline)
+		{
+			/* (game_ticks sees no step back either: the take's own time begins here) */
+			replay.preroll_timeline = FALSE;
+			replay.timeline_offset = 0.0;
+			replay.next_state = 0;
+			replay.last_game_ticks = (double)tick;
+			platform_log("debug.input_replay: the level's opening was skipped on tick %ld; the take's time begins", tick);
+		}
+		replay.skip_pending = FALSE;
 		replay.segment++;
 		/* a take notes the random seed each segment starts with, and a replay of it starts each segment with
 		that seed: what the game does after a revert depends on it, and it is not part of what a revert restores */
@@ -977,7 +996,13 @@ void input_replay_tick_action(void *action)
 		map's sounds and textures), so skip it as soon as it can be */
 		else if (replay.next_action < replay.action_count &&
 			replay.actions[replay.next_action].segment > replay.segment)
-			input_replay_skip_cinematic();
+		{
+			if (input_replay_skip_cinematic() && !replay.skip_pending)
+			{
+				replay.skip_pending = TRUE;
+				replay.skip_tick = tick;
+			}
+		}
 		/* the replay ends with the last recorded action, in the action's own
 		segment, whenever the controller's timeline puts it */
 		if (compare_action_keys(&replay.actions[replay.action_count - 1], replay.segment, tick) <= 0)
