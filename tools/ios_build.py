@@ -205,7 +205,19 @@ def main():
         run(*command)
     if args.app_store_package:
         commands = app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload)
-        for command in commands[:1] if args.archive_only else commands:
+        run(*commands[0])
+        # the archive's own dSYMs folder stays empty for this CMake project (its products go to the build folder,
+        # where the archive does not look), so the dSYM the archive build wrote there goes in by hand; the UUIDs
+        # match, since it is the same build
+        dsym = build/f'Release-{sdk}/VISR.app.dSYM'
+        if dsym.is_dir():
+            target = args.app_store_package.resolve()/'VISR.xcarchive/dSYMs/VISR.app.dSYM'
+            shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(dsym, target, symlinks=True)
+            print(f'dSYM: {target}')
+        else:
+            print(f'no dSYM at {dsym}: the upload will carry no debug symbols', flush=True)
+        for command in [] if args.archive_only else commands[1:]:
             run(*command)
         print(f'App Store Connect package: {args.app_store_package}' +
               (' (archive only: not exported)' if args.archive_only else ' (uploaded)' if args.upload else ''))
