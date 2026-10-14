@@ -118,6 +118,11 @@ static const struct config_setting config_settings[] =
 	{ "display.anisotropic_filtering", _config_integer, "16", "HALO_ANISOTROPIC_FILTERING", _environment_value, _platform_all,
 		"Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16:\n"
 		"sharper floors and terrain at a distance, for a few percent of GPU time." },
+	{ "display.shadow_batching", _config_boolean, "true", "HALO_SHADOW_BATCHING", _environment_value, _platform_all,
+		"Draw all of a view's character and vehicle shadows before laying any on the\n"
+		"world, and in stereo lay one eye's shadows in the other too: the picture's\n"
+		"pass is no longer interrupted for each shadow. False keeps the Xbox's\n"
+		"order, to compare." },
 	{ "display.shadow_map_size", _config_integer, "512", "HALO_SHADOW_MAP_SIZE", _environment_value, _platform_all,
 		"The size of the textures characters' and vehicles' shadows are drawn into,\n"
 		"128 (as on the Xbox) to 2048: larger is smoother." },

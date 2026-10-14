@@ -268,6 +268,44 @@ extern short debug_rasterizer_light_count;
 
 boolean render_shadows = TRUE;
 
+/* port: deferred object shadows (rasterizer_xbox_shadows.c): a window's
+shadows are all generated, each into targets of its own, before any is
+applied, so the picture's pass is not split around every shadow; in stereo
+the second eye applies the first eye's. display.shadow_batching = false
+keeps the game's order, to compare */
+#define MAXIMUM_DEFERRED_SHADOWS MAXIMUM_RENDERED_OBJECTS
+
+struct deferred_shadow_apply
+{
+	long object_index;
+	short handle; /* NONE: no slot was left; drawn the game's way when applied */
+	real_matrix4x3 shadow_matrix;
+	real shadow_bounding_radius;
+};
+
+static struct deferred_shadow_apply deferred_shadow_applies[MAXIMUM_DEFERRED_SHADOWS];
+static short deferred_shadow_apply_count;
+static boolean render_shadows_deferring = FALSE;
+
+boolean config_boolean(const char *name);
+boolean rasterizer_environment_shadows_defer_begin(void);
+void rasterizer_environment_shadows_defer_end(void);
+boolean rasterizer_environment_shadow_reused(void);
+short rasterizer_environment_shadow_handle(void);
+void rasterizer_environment_shadow_generate_end(void);
+void rasterizer_environment_shadow_apply_begin(short handle);
+void rasterizer_environment_shadows_apply_end(void);
+
+static boolean shadow_batching_enabled(
+	void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+		enabled = config_boolean("display.shadow_batching") != FALSE;
+	return enabled != 0;
+}
+
 static struct profile_section render_objects_section =
 	{ "render_objects", NONE, TRUE };
 static struct profile_section render_object_shadows_section =
@@ -397,7 +435,38 @@ void render_object_shadows(
 		rasterizer_environment_shadows_begin();
 
 		data.shadow = TRUE;
-		process_rendered_objects(&data);
+		if (shadow_batching_enabled() && rasterizer_environment_shadows_defer_begin())
+		{
+			short index;
+
+			deferred_shadow_apply_count = 0;
+			render_shadows_deferring = TRUE;
+			process_rendered_objects(&data);
+			render_shadows_deferring = FALSE;
+			rasterizer_environment_shadows_defer_end();
+			for (index = 0; index < deferred_shadow_apply_count; index++)
+			{
+				struct deferred_shadow_apply *apply = &deferred_shadow_applies[index];
+
+				data.object_index = apply->object_index;
+				if (apply->handle != NONE)
+				{
+					rasterizer_environment_shadow_apply_begin(apply->handle);
+					data.shadow_matrix = apply->shadow_matrix;
+					data.shadow_bounding_radius = apply->shadow_bounding_radius;
+					render_object_shadow_end(&data);
+				}
+				else
+				{
+					render_object(&data);
+				}
+			}
+			rasterizer_environment_shadows_apply_end();
+		}
+		else
+		{
+			process_rendered_objects(&data);
+		}
 
 		rasterizer_environment_shadows_end();
 	}
@@ -1203,8 +1272,37 @@ static void render_object(
 
 				if (render_object_shadow_begin(data, darkness_fraction * size_fraction))
 				{
-					render_object_list(data, NULL, data->object_index);
-					render_object_shadow_end(data);
+					/* port: generated now and applied with the window's
+					others (render_object_shadows), or applied as the game
+					does */
+					short handle = rasterizer_environment_shadow_handle();
+
+					if (!rasterizer_environment_shadow_reused())
+						render_object_list(data, NULL, data->object_index);
+					if (handle != NONE && deferred_shadow_apply_count < MAXIMUM_DEFERRED_SHADOWS)
+					{
+						struct deferred_shadow_apply *apply = &deferred_shadow_applies[deferred_shadow_apply_count++];
+
+						rasterizer_environment_shadow_generate_end();
+						apply->object_index = data->object_index;
+						apply->handle = handle;
+						apply->shadow_matrix = data->shadow_matrix;
+						apply->shadow_bounding_radius = data->shadow_bounding_radius;
+					}
+					else
+					{
+						if (handle != NONE)
+							rasterizer_environment_shadow_generate_end();
+						render_object_shadow_end(data);
+					}
+				}
+				else if (render_shadows_deferring && deferred_shadow_apply_count < MAXIMUM_DEFERRED_SHADOWS)
+				{
+					/* port: no slot left this frame */
+					struct deferred_shadow_apply *apply = &deferred_shadow_applies[deferred_shadow_apply_count++];
+
+					apply->object_index = data->object_index;
+					apply->handle = NONE;
 				}
 			}
 		}

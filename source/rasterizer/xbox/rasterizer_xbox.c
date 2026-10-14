@@ -3884,3 +3884,61 @@ static void rasterizer_filthy_bitmap_defaults_initialize(
 	rasterizer_globals.default_cm_hardware_format = default_cm_hardware_format;
 	return;
 }
+
+/* port: the object shadows' targets, one pair a shadow (rasterizer_xbox_shadows.c,
+render_object_shadows). The game draws every shadow into the one shadow target
+and its blur, so each shadow had to be applied before the next was drawn: the
+picture's pass ended and began again around every shadow. Slot 0 is the game's
+own pair; the others are made as a frame first needs them, the same size and
+format, and kept. Selecting a slot points the game's shadow globals at its pair,
+so every use of the shadow targets (rasterizer_set_target and
+rasterizer_set_target_as_texture) takes it. */
+#define RASTERIZER_SHADOW_SLOTS 96
+
+static struct
+{
+	D3DTexture *texture[2];
+	D3DSurface *surface[2];
+} rasterizer_shadow_slots[RASTERIZER_SHADOW_SLOTS];
+
+short rasterizer_shadow_slot_count(
+	void)
+{
+	return RASTERIZER_SHADOW_SLOTS;
+}
+
+boolean rasterizer_shadow_slot_select(
+	short slot)
+{
+	short index;
+
+	if (slot < 0 || slot >= RASTERIZER_SHADOW_SLOTS || !global_d3d_texture_shadow_primary)
+		return FALSE;
+	if (!rasterizer_shadow_slots[0].texture[0])
+	{
+		rasterizer_shadow_slots[0].texture[0] = global_d3d_texture_shadow_primary;
+		rasterizer_shadow_slots[0].surface[0] = global_d3d_surface_shadow_primary;
+		rasterizer_shadow_slots[0].texture[1] = global_d3d_texture_shadow_secondary;
+		rasterizer_shadow_slots[0].surface[1] = global_d3d_surface_shadow_secondary;
+	}
+	for (index = 0; index < 2 && !rasterizer_shadow_slots[slot].surface[index]; index++)
+	{
+		if (IDirect3DDevice8_CreateTexture(global_d3d_device, RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE,
+				RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R5G6B5, D3DPOOL_DEFAULT,
+				&rasterizer_shadow_slots[slot].texture[index]) < 0 ||
+			!rasterizer_shadow_slots[slot].texture[index] ||
+			IDirect3DTexture8_GetSurfaceLevel(rasterizer_shadow_slots[slot].texture[index], 0,
+				&rasterizer_shadow_slots[slot].surface[index]) < 0)
+		{
+			rasterizer_shadow_slots[slot].surface[index] = NULL;
+			return FALSE;
+		}
+	}
+	if (!rasterizer_shadow_slots[slot].surface[0] || !rasterizer_shadow_slots[slot].surface[1])
+		return FALSE;
+	global_d3d_texture_shadow_primary = rasterizer_shadow_slots[slot].texture[0];
+	global_d3d_surface_shadow_primary = rasterizer_shadow_slots[slot].surface[0];
+	global_d3d_texture_shadow_secondary = rasterizer_shadow_slots[slot].texture[1];
+	global_d3d_surface_shadow_secondary = rasterizer_shadow_slots[slot].surface[1];
+	return TRUE;
+}
