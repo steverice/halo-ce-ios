@@ -564,6 +564,10 @@ static const struct config_setting config_settings[] =
 		"PCP) to forward its port, for networks whose NAT stops connections:\n"
 		"when a player joins this machine's game, and when joining a game takes\n"
 		"too long. False never asks." },
+	{ "network.background_grace", _config_integer, "60", "HALO_NET_BACKGROUND_GRACE", _environment_value, _platform_all,
+		"Seconds the other players of an internet game wait for this machine\n"
+		"when its app goes to the background (an Apple device suspends it, its\n"
+		"game held) before they drop it." },
 	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"

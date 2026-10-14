@@ -381,6 +381,7 @@ symbols in this file:
 #include "networking/network_server_manager.h" /* port: a co-op game's level won */
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "map_share.h" /* port: port/linux/game/map_share.c */
+#include "network_away.h" /* port: port/linux/game/network_away.c */
 #include "camera/director.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
@@ -3468,6 +3469,8 @@ void main_loop(
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
 			/* port: map sharing, in the lobby and in game (port/linux/game/map_share.c) */
 			map_share_update();
+			/* port: players whose app went to the background (port/linux/game/network_away.c) */
+			network_away_update(main_globals.main_menu_scenario_loaded);
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
 			{
@@ -3475,6 +3478,8 @@ void main_loop(
 				{
 					display_error_when_main_menu_loaded(6);
 					error(_error_silent, "the game host went down");
+					/* port: joined again if it or its host was away (port/linux/game/network_away.c) */
+					network_away_game_lost();
 					network_game_abort();
 				}
 			}

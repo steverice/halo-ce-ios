@@ -32,6 +32,19 @@ unsigned long long host_lifecycle_background_milliseconds(void) {
     pthread_mutex_unlock(&background_lock);
     return total;
 }
+/* the time the system gives an app going to the background before it is
+suspended (about 30 seconds, less if it needs it), asked for so that
+internet play can tell its peers it is away and keep its tunnel up as long
+as it may (p2p.c, posix_app_in_background) */
+static UIBackgroundTaskIdentifier background_task;
+static int background_task_held;
+
+static void background_task_end(void) {
+    if(background_task_held){
+        [UIApplication.sharedApplication endBackgroundTask:background_task];
+        background_task_held=0;
+    }
+}
 
 /* host_main.m: whether a scene is the game's window's (any of SDL's window
 scenes before the window exists). Another scene going to the background (an
@@ -50,7 +63,20 @@ void host_lifecycle_install(void) {
             if(!background_began)background_began=monotonic_milliseconds();
             pthread_mutex_unlock(&background_lock);
             host_sdl_audio_pause(1);
-            host_logf(HOST_LOG_INFO,"in the background: audio paused, the game holds at its next frame");
+            background_task_end();
+            background_task=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"network game"
+                expirationHandler:^{
+                    host_logf(HOST_LOG_INFO,"in the background: the system's time for it is up; it is suspended");
+                    background_task_end();
+                }];
+            background_task_held=background_task!=UIBackgroundTaskInvalid;
+            NSTimeInterval remaining=UIApplication.sharedApplication.backgroundTimeRemaining;
+            /* (the system says how long only once the app is in the background: a huge number before) */
+            if(remaining<3600)
+                host_logf(HOST_LOG_INFO,"in the background: audio paused, the game holds at its next frame (%.0f s "
+                    "before it is suspended)",remaining);
+            else
+                host_logf(HOST_LOG_INFO,"in the background: audio paused, the game holds at its next frame");
         }];
     [NSNotificationCenter.defaultCenter addObserverForName:UISceneWillEnterForegroundNotification object:nil
         queue:nil usingBlock:^(NSNotification *notification){
@@ -63,6 +89,7 @@ void host_lifecycle_install(void) {
             pthread_mutex_unlock(&background_lock);
             atomic_store(&backgrounded,0);
             host_sdl_audio_pause(0);
+            background_task_end();
             host_logf(HOST_LOG_INFO,"in the foreground: the game resumes");
             /* (the sockets the system took back while the app was suspended,
                made again: host_socket_revival.c; with debug.test_reclaim_sockets,
