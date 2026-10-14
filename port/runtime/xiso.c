@@ -74,7 +74,8 @@ static const uint64_t partitions[] = {0, 0x0FD90000, 0x02080000, 0x18300000};
 static const char *required[] = {"ui.map", "a10.map", "a30.map", "a50.map", "b30.map", "b40.map",
     "c10.map", "c20.map", "c40.map", "d20.map", "d40.map"};
 struct entry { char name[256]; uint32_t sector, size; };
-struct image { int fd; uint64_t length, partition; char *error; size_t error_size; };
+/* (available: for xiso_plan, how much of the image has arrived; 0 for all of it) */
+struct image { int fd; uint64_t length, partition; char *error; size_t error_size; uint64_t available; };
 
 static int fail(struct image *image, const char *format, ...) {
     va_list args; va_start(args, format);
@@ -86,6 +87,7 @@ static uint32_t u32(const unsigned char *p) {
 }
 static int read_at(struct image *image, uint64_t offset, void *out, size_t size) {
     if (offset > image->length || size > image->length-offset) return 0;
+    if (image->available && (offset > image->available || size > image->available-offset)) return 0;
     unsigned char *p=out;
     while (size) {
         ssize_t count=pread(image->fd,p,size,(off_t)offset);
@@ -168,8 +170,73 @@ static int directory(struct image *image, uint32_t sector, uint32_t size, int di
     ok=walk_tree(&walk,0,0); *count=walk.count;
 done: free(table);free(visited);return ok;
 }
+int xiso_free_range(int fd, uint64_t start, uint64_t end) {
+#ifdef F_PUNCHHOLE
+    /* whole blocks only: the edges stay */
+    const uint64_t block=4096;
+    fpunchhole_t hole={0};
+    start=(start+block-1)/block*block; end=end/block*block;
+    if (end<=start) return 1;
+    hole.fp_offset=(off_t)start; hole.fp_length=(off_t)(end-start);
+    return fcntl(fd,F_PUNCHHOLE,&hole)==0;
+#else
+    (void)fd;(void)start;(void)end;return 0;
+#endif
+}
+static int compare_ranges(const void *a, const void *b) {
+    const struct xiso_range *x=a,*y=b;
+    return x->start<y->start?-1:x->start>y->start;
+}
+int xiso_plan(const char *image_path, uint64_t received, uint64_t total, struct xiso_range *ranges, int maximum) {
+    struct image image={.fd=-1,.length=total,.available=received};
+    struct entry *files=calloc(MAX_FILES,sizeof(*files));
+    unsigned char header[2048];
+    uint32_t root_sector=0,root_size=0,maps_sector=0,maps_size=0;
+    int count=0,found=0,planned=0,merged=0;
+    if (!files || maximum<4 || !received) goto done;
+    image.fd=open(image_path,O_RDONLY);
+    if (image.fd<0) goto done;
+    for (size_t i=0;i<sizeof(partitions)/sizeof(*partitions) && !found;i++) {
+        /* (the first place whose header has arrived and is a volume's: an image has one, and the places are
+        tried in the extraction's order among those that have arrived) */
+        if (!read_at(&image,partitions[i]+0x10000,header,sizeof(header))) continue;
+        if (!memcmp(header,magic,20) && !memcmp(header+0x7ec,magic,20)) {
+            image.partition=partitions[i];root_sector=u32(header+20);root_size=u32(header+24);found=1;
+        }
+    }
+    if (!found || !directory(&image,root_sector,root_size,1,files,&count)) goto done;
+    found=0;
+    for (int i=0;i<count;i++) if (!strcmp(files[i].name,"maps")) {maps_sector=files[i].sector;maps_size=files[i].size;found=1;break;}
+    if (!found || !directory(&image,maps_sector,maps_size,0,files,&count) || count+3>maximum) goto done;
+    ranges[planned++]=(struct xiso_range){image.partition+0x10000,image.partition+0x10000+2048};
+    ranges[planned++]=(struct xiso_range){image.partition+(uint64_t)root_sector*SECTOR,image.partition+(uint64_t)root_sector*SECTOR+root_size};
+    ranges[planned++]=(struct xiso_range){image.partition+(uint64_t)maps_sector*SECTOR,image.partition+(uint64_t)maps_sector*SECTOR+maps_size};
+    for (int i=0;i<count;i++) {
+        uint64_t start=image.partition+(uint64_t)files[i].sector*SECTOR;
+        ranges[planned++]=(struct xiso_range){start,start+files[i].size};
+    }
+    qsort(ranges,(size_t)planned,sizeof(*ranges),compare_ranges);
+    for (int i=1;i<planned;i++) {
+        if (ranges[i].start<=ranges[merged].end) {if (ranges[i].end>ranges[merged].end) ranges[merged].end=ranges[i].end;}
+        else ranges[++merged]=ranges[i];
+    }
+    planned=merged+1;
+done:
+    if (image.fd>=0) close(image.fd);
+    free(files);return planned;
+}
+static int extract_maps(const char *image_path, const char *destination,
+    xiso_progress_proc progress, void *context, char *error, size_t error_size, int consume);
 int xiso_extract_maps(const char *image_path, const char *destination,
     xiso_progress_proc progress, void *context, char *error, size_t error_size) {
+    return extract_maps(image_path,destination,progress,context,error,error_size,0);
+}
+int xiso_extract_maps_consuming(const char *image_path, const char *destination,
+    xiso_progress_proc progress, void *context, char *error, size_t error_size) {
+    return extract_maps(image_path,destination,progress,context,error,error_size,1);
+}
+static int extract_maps(const char *image_path, const char *destination,
+    xiso_progress_proc progress, void *context, char *error, size_t error_size, int consume) {
     struct image image={.fd=-1,.error=error,.error_size=error_size};
     struct entry *files=calloc(MAX_FILES,sizeof(*files));
     unsigned char *buffer=NULL, header[2048];
@@ -177,7 +244,7 @@ int xiso_extract_maps(const char *image_path, const char *destination,
     struct stat st; int ok=0,count=0,found=0;
     uint32_t root_sector=0,root_size=0; uint64_t total=0,done=0;
     if (!files) {fail(&image,"Not enough memory to import the disc image.");goto cleanup;}
-    image.fd=open(image_path,O_RDONLY);
+    image.fd=open(image_path,consume?O_RDWR:O_RDONLY);
     if (image.fd<0 || fstat(image.fd,&st) || !S_ISREG(st.st_mode)) {
         fail(&image,"Could not open the disc image. Download it in Files first, then try again.");goto cleanup;
     }
@@ -208,7 +275,8 @@ int xiso_extract_maps(const char *image_path, const char *destination,
         strcpy(expected,build);total+=files[i].size;
     }
     struct statvfs space;
-    if (!statvfs(destination,&space) && total>(uint64_t)space.f_bavail*space.f_frsize) {
+    /* (a consuming import gives each map's room back as it goes: it needs the largest map's, checked by the writes) */
+    if (!consume && !statvfs(destination,&space) && total>(uint64_t)space.f_bavail*space.f_frsize) {
         fail(&image,"Not enough storage. Free at least %.2f GB for the extracted game maps.",(double)total/1e9);goto cleanup;
     }
     if (snprintf(partial,sizeof(partial),"%s/maps.partial",destination)>=(int)sizeof(partial) ||
@@ -240,6 +308,11 @@ int xiso_extract_maps(const char *image_path, const char *destination,
         if (copied && fsync(output)) {fail(&image,"Could not save %s. Check available storage.",files[i].name);copied=0;}
         if (close(output) && copied) {fail(&image,"Could not finish saving %s.",files[i].name);copied=0;}
         if (!copied) goto cleanup;
+        /* (the map is saved: its bytes in the image, which is the caller's to use up, are no longer needed) */
+        if (consume) {
+            uint64_t from=image.partition+(uint64_t)files[i].sector*SECTOR;
+            xiso_free_range(image.fd,from,from+files[i].size);
+        }
     }
     if (rename(partial,final)) {fail(&image,"Could not finish the game import.");goto cleanup;}
     ok=1;

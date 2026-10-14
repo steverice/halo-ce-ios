@@ -81,7 +81,8 @@ def main():
     if args.tester and args.mac:
         parser.error('--tester is for device and simulator builds')
     if args.render_height is None:
-        args.render_height = 0 if args.visionos else 1080
+        # 0: the device profile's (profiles/); a number here overrides every profile
+        args.render_height = 0
     if args.extended_virtual_addressing and not (args.visionos or args.tvos):
         parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'

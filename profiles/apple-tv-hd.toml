@@ -1,0 +1,69 @@
+# Apple TV HD (2015): A8, 2 GB, GPU family Apple2, no BC textures. Output 1920x1080 at 60 Hz.
+#
+# Measured on the device on 2026-10-13, unattended, 150 s a run at 960x540 with fast pixel math: a10 from its
+# opening cutscene into the first rooms, b30 from the Pelican ride onto the beach. Frames a second are 600-frame
+# windows; two runs of the same settings agreed within 1.
+#
+# Left as the game's defaults, also measured: the high-res HUD and text (display.high_res_hud, high_res_text).
+# Off, they change no frame time and lower peak memory from 509 to 449 MB on a10 and from 660 to 466 MB on b30,
+# of about 1,450 MB the system allows. They stay on because the menu now draws at 1080, where they show.
+
+schema = 1
+name = "Apple TV HD"
+kind = "model"
+
+[match]
+platform = "tvos"
+models = ["AppleTV5,3"]
+
+# Gameplay. The class profile's render height is 1080; half of it each way is 960x540.
+[display]
+render_scale = 0.5
+anisotropic_filtering = 4
+model_lod = "auto"
+shadow_map_size = 256
+
+[evidence."display.render_scale"]
+basis = "measured"
+why = "The A8's GPU is the limit. At 1080 b30's beach ran 12 to 18 frames a second and at 720 about 22; at 540 with fast pixel math it ran 30 to 43, and a10 held 57 to 60 walking and 42 to 54 in fights. The player called 540 smooth and playable. Written as a scale of the class's 1080, not as a render height, because the scale can change by scene class and the height cannot."
+source = "Apple TV HD runs of a10 and b30 at 1080, 720 and 540, 600-frame windows, 2026-10-12; hands-on session 2026-10-13"
+
+[evidence."display.anisotropic_filtering"]
+basis = "measured"
+why = "The largest single cost found. Against 16x, 4x took b30's Pelican ride from 42 to 54-57 frames a second and the beach from 31 to 34-38 (GPU 30.5 to 26 ms a frame), and a10's rooms from 44-53 to 47-57. 2x gave 2 to 5 more on the beach but the ground blurs visibly a few meters out in the screenshots; at 4x the difference from 16x shows only in the far distance."
+source = "Apple TV HD sweep: a10 and b30 at 16x, 4x and 2x, screenshots at 60 and 120 s, 2026-10-13"
+
+[evidence."display.model_lod"]
+basis = "measured"
+why = "The game's own choice of model detail by size on screen, as the Xbox made it, against always the highest. b30's beach went from 31 to 35-36 frames a second (CPU 26 to 21.5 ms a frame, GPU 30.5 to 27.7), with a third of its models at lower levels; the screenshots at 540 could not be told apart. a10's interiors gained only in their heaviest window (36 to 43)."
+source = "Apple TV HD sweep: a10 and b30, max against auto, 2026-10-13"
+
+[evidence."display.shadow_map_size"]
+basis = "measured"
+why = "256 against 512 gained 2 to 5 frames a second in a10's rooms with characters (53 to 56, 49 to 53, 51 to 54) and 1 to 2 on b30; 128 gained about 1 more. 256 keeps shadow edges smoother than the Xbox's 128 for most of the gain."
+source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13"
+
+# All three together: b30's beach 31 to 40-53 frames a second (GPU 30.5 to 23 ms, CPU 26 to 22), its Pelican ride
+# 42 to 54-60; a10's rooms 44-53 to 48-58. Peak memory unchanged.
+
+# The main menu: a fixed, light scene, so it can have the display's own 1080 lines.
+[scene.menu.display]
+render_scale = 1.0
+
+[evidence."scene.menu.display.render_scale"]
+basis = "measured"
+why = "The menu held 60 frames a second at 1080 for a minute: 2,997 of 2,999 frames shown for one refresh, GPU 12.4 to 14.5 ms a frame of the 16.7 available (10 to 11 ms at 720, 5 to 8 at 540), peak memory 555 MB against 533 at 540. The margin is about 2 ms: if a longer sitting shows dropped frames, 0.667 (720) has 6."
+source = "Apple TV HD menu runs at 540, 720 and 1080, 60 s each, 2026-10-13"
+
+# Cutscenes: 720 lines at 30 frames a second, as the original played them.
+[scene.cutscene.display]
+render_scale = 0.6667
+frame_rate = "30"
+
+[evidence."scene.cutscene.display.render_scale"]
+basis = "assumed"
+why = "a10's opening cutscene takes 10 to 15 ms of GPU time a frame at 540; 720 has 1.8 times the pixels, so about 18 to 27 ms, inside the 33 ms of a frame held for two refreshes. Not yet timed at 720 with the hold."
+
+[evidence."scene.cutscene.display.frame_rate"]
+basis = "assumed"
+why = "Decided for this device: a cutscene's cost is scripted, and at 540 it already uses most of a 60 Hz frame, so the sharper picture is bought with the original's 30 frames a second. Each frame stays up two refreshes."

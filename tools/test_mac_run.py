@@ -1189,3 +1189,14 @@ def test_xcode_alert_is_none_when_sample_writes_nothing(monkeypatch):
     monkeypatch.setattr(mac_run, "xcode_pid", lambda xcode: 2748)
     monkeypatch.setattr(mac_run.subprocess, "run", lambda command, **options: mac_run.subprocess.CompletedProcess(command, 1))
     assert mac_run.xcode_alert("/Applications/Xcode.app") is None
+
+
+def test_chosen_origins_marks_what_a_run_writes():
+    """every key a run writes into config.toml is marked chosen in config.origins, so a device profile never
+    moves a runner's value; the game's own lines for other keys are kept"""
+    old = "display.render_height\tdefault\t0\ninput.turn\tdefault\t\"snap\"\ndisplay.renderer\tchosen\n"
+    text = mac_run.chosen_origins(old, {"display.render_height", "display.shadow_map_size"})
+    assert text.splitlines() == ['input.turn\tdefault\t"snap"', "display.renderer\tchosen",
+                                 "display.render_height\tchosen", "display.shadow_map_size\tchosen"]
+    assert mac_run.chosen_origins("", {"display.vsync"}) == "display.vsync\tchosen\n"
+    assert mac_run.chosen_origins(text, set()) == text

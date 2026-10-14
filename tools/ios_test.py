@@ -59,6 +59,33 @@ for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-d
     run('xcrun', 'clang', '-O2', '-fsanitize=address', *defines, '-Iport/linux/src', '-Iport/third_party/tomlc17',
         'port/ios/tests/config_probe.c', *sdl_flags, '-o', BUILD / name)
     run(BUILD / name)
+# the settings' layers: the default, the device's profile, a chosen value, the environment; config.origins,
+# which tells a chosen value from a default the game wrote; scene classes (port/linux/src/port_config.c).
+# Only the address sanitizer, as above
+run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
+    'port/ios/tests/config_origins_probe.c', *sdl_flags, '-o', BUILD / 'config-origins-probe')
+run(BUILD / 'config-origins-probe')
+# device profiles: which files a device gets and in what order, what a profile may not set, and the shipped
+# profiles for the devices measured so far (port/ios/host/host_profile.c)
+run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
+    'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/third_party/tomlc17/tomlc17.c',
+    '-o', BUILD / 'profile-probe')
+run(BUILD / 'profile-probe', ROOT / 'profiles')
+# the profiles' own rules: only the settings a profile may set, inside their ranges, each with its evidence,
+# one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
+run('python3', 'tools/profile_check.py')
+run('python3', 'tools/test_profile_check.py')
+# a runner's settings are the run's, never a device profile's: mac_run.py writes every setting a profile may set
+# (and marks what it writes chosen in config.origins), so no profile can move a check-metal run
+profile_keys = re.findall(r'^PROFILE_(?:BOOLEAN|INTEGER|REAL|STRING)\("([^"]+)"',
+                          (ROOT / 'port/linux/src/port_profile_keys.h').read_text(), re.M)
+mac_run_defaults = (ROOT / 'tools/mac_run.py').read_text()
+mac_run_defaults = mac_run_defaults[mac_run_defaults.index('DEFAULTS = {'):mac_run_defaults.index('\n}\n', mac_run_defaults.index('DEFAULTS = {'))]
+unpinned = [key for key in profile_keys if f'"{key}"' not in mac_run_defaults]
+if not profile_keys or unpinned:
+    raise SystemExit(f"mac_run.py: DEFAULTS must set every setting a device profile may set; missing {unpinned}")
+if 'chosen_origins(' not in (ROOT / 'tools/mac_run.py').read_text().split('def prepare(')[1]:
+    raise SystemExit('mac_run.py: prepare must mark the settings it writes chosen in config.origins')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/virtual_clock_probe.c', '-o', BUILD/'virtual-clock-probe')
 run(BUILD/'virtual-clock-probe')

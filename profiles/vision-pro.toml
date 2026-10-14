@@ -1,0 +1,21 @@
+# Every Apple Vision Pro. The M2 headset's measured values are in vision-pro-m2.toml.
+
+schema = 1
+name = "Apple Vision Pro"
+kind = "class"
+
+[match]
+platform = "visionos"
+gpu_family = [1, 0]
+
+[display]
+foveation = true
+render_quality = 0.6
+
+[evidence."display.foveation"]
+basis = "assumed"
+why = "Taken from the M2 headset, where unfoveated rendering ran at 45 frames a second."
+
+[evidence."display.render_quality"]
+basis = "assumed"
+why = "Taken from the M2 headset's sweep; a newer headset likely holds more and should get its own profile once measured."

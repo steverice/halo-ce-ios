@@ -541,6 +541,15 @@ void gpu_warm_end(void);
 description, or 0 when there are no more */
 uint32_t gpu_pipeline_built_take(struct gpu_pipeline_description *description);
 
+/* What the frames from now on are, told whenever any of it changes
+(port/linux/game/scene_class.c): the scene class (port_config.h's
+CONFIG_SCENE_ values), the most frames a second the device's profile wants
+for it (0: every refresh), and the map's name ("a10"; "" before one). A
+backend that holds frames on screen keeps each one up for the whole number
+of refreshes that gives the rate, and a backend that logs frames
+(debug.frame_log) says which were which. */
+void gpu_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level);
+
 /* gpu_initialize flags */
 enum
 {
@@ -659,7 +668,8 @@ its own functions. */
 	P(warm_end, (void), ()) \
 	/* a pipeline built for a draw, outside warming, since the last call: 1 \
 	and its description, or 0 when there are no more */ \
-	F(uint32_t, pipeline_built_take, (struct gpu_pipeline_description *description), (description))
+	F(uint32_t, pipeline_built_take, (struct gpu_pipeline_description *description), (description)) \
+	P(frame_context, (uint32_t scene_class, uint32_t frame_rate, const char *level), (scene_class, frame_rate, level))
 
 #define GPU_FUNCTIONS(F, P) \
 	GPU_OPERATIONS(F, P) \

@@ -1,0 +1,40 @@
+# A device profile: the graphics settings VISR uses on one device. Copy this file, rename it for the device
+# (lowercase words joined by hyphens: ipad-air-m2.toml), fill it in, and check it:
+#
+#     python3 tools/profile_check.py profiles/ipad-air-m2.toml
+#
+# To try it on a device before sending it, see "Trying a profile" in README.md.
+
+schema = 1
+
+# What people call the device. It shows in the game's log beside every value this file sets.
+name = "Example device"
+
+# "model" for one device model, "class" for every device of a platform in a range of GPU families.
+# A new device almost always wants "model".
+kind = "model"
+
+# "provisional" until a second report from the same model agrees; leave the line out once it has.
+status = "provisional"
+
+[match]
+# "ios" (iPhone and iPad), "tvos", "visionos" or "mac"
+platform = "ios"
+# The model identifiers this file is for, as the game's log prints them on its "device:" line.
+models = ["Example1,1"]
+# On a Mac, the chip's name from the same line instead, since one Mac identifier ships with several chips:
+# chips = ["Apple M4 Pro"]
+
+# The values. Only what differs from the device's class profile needs to be here, and only settings listed
+# in port/linux/src/port_profile_keys.h can be: the check refuses anything else.
+[display]
+shadow_map_size = 512
+
+# One table for each value above, named for the setting, saying why:
+#   basis   "measured" (you timed it on this device), "assumed" (a reasoned guess) or "inherited" (copied
+#           from a similar device)
+#   why     the reason, with the numbers: what it cost or bought, in which scene
+#   source  for "measured": the profiling report or log, the scene and the date
+[evidence."display.shadow_map_size"]
+basis = "assumed"
+why = "The default; 1024 has not been timed on this device."

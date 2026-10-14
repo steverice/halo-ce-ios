@@ -5,6 +5,7 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_display_pin.h"
+#include "host_profile.h"
 #include "host_join_link.h"
 #include "host_benchmark.h"
 #if !TARGET_OS_TV
@@ -356,6 +357,19 @@ int main(int argc,char **argv) {
         const char *env[16];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
+        /* This device's profile (profiles/, host_profile.h): its values go to the game as one variable, which
+           port_config.c lays under config.toml. Not as the settings' own HALO_ variables, which win over the
+           file: a profile never outranks what the player chose. */
+        static char env_profile[sizeof("HALO_DEVICE_PROFILE_VALUES=")+HOST_PROFILE_MAXIMUM_VALUES*216];
+        snprintf(env_profile,sizeof(env_profile),"HALO_DEVICE_PROFILE_VALUES=%s",host_device_profile_install(data_root));
+        env[env_count++]=env_profile;
+        /* the build, for what the game writes beside a recording (input_replay.c), and the folder its automatic
+           takes go to */
+        static char env_build[96];
+        snprintf(env_build,sizeof(env_build),"HALO_APP_BUILD=%s",
+            [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String?:"");
+        env[env_count++]=env_build;
+        mkdir("recordings",0755);
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's
            display.renderer. The aspect is pinned to 16:9, since a visionOS
@@ -365,36 +379,24 @@ int main(int argc,char **argv) {
         env[env_count++]="HALO_SCREEN_WIDTH=852";
 #endif
 #if TARGET_OS_TV
-        /* Metal unless the launch says otherwise. An Apple TV has no Files app
-           and no Settings page, so nobody can edit config.toml's
-           display.renderer there, and its OpenGL ES has no S3TC, border clamp
-           or base vertex. HALO_RENDERER in the app's own environment (devicectl's
-           DEVICECTL_CHILD_HALO_RENDERER=gl, simctl's SIMCTL_CHILD_) still
-           chooses, for a comparison run. Nothing on an Apple TV makes upscaled
-           textures, and the smallest one has 2 GB of memory: they stay off. */
+        /* The renderer and upscaled textures are the device profile's (profiles/apple-tv.toml: Metal, and no
+           upscaled textures). HALO_RENDERER in the app's own environment (devicectl's
+           DEVICECTL_CHILD_HALO_RENDERER=gl, simctl's SIMCTL_CHILD_) still chooses, for a comparison run. */
         char env_renderer[32];
         const char *launch_renderer=getenv("HALO_RENDERER");
-        snprintf(env_renderer,sizeof(env_renderer),"HALO_RENDERER=%s",launch_renderer&&!strcmp(launch_renderer,"gl")?"gl":"metal");
-        env[env_count++]=env_renderer;
-        env[env_count++]="HALO_UPSCALED_TEXTURES=false";
-        host_logf(HOST_LOG_INFO,"tvOS: %s, upscaled textures off",env_renderer);
+        if(launch_renderer&&(!strcmp(launch_renderer,"gl")||!strcmp(launch_renderer,"metal"))){
+            snprintf(env_renderer,sizeof(env_renderer),"HALO_RENDERER=%s",launch_renderer);
+            env[env_count++]=env_renderer;
+            host_logf(HOST_LOG_INFO,"tvOS: %s from the launch's environment",env_renderer);
+        }
 #endif
 #if TARGET_OS_TV || TARGET_OS_VISION
         char env_render[64];
-        /* The build chooses the render height (tools/ios_build.py --render-height). */
+        /* A build made with tools/ios_build.py --render-height N draws at N whatever the device's profile says
+           (0, the default: the profile's display.render_height and display.render_scale). */
         int render_height=[[NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRenderHeight"] intValue];
 #if TARGET_OS_TV
-        /* An Apple TV HD (A8, GPU family Apple2, the only tvOS device below
-           Apple3) draws open scenes at 12 to 18 frames a second at 1080 and in
-           the mid-20s at 540: the build's default of 1080 becomes 540 there. A
-           build made with another --render-height keeps its own. */
-        if(render_height==1080){
-            id<MTLDevice> gpu=MTLCreateSystemDefaultDevice();
-            if(gpu&&![gpu supportsFamily:MTLGPUFamilyApple3]){
-                render_height=540;
-                host_logf(HOST_LOG_INFO,"tvOS: render height 540 on this GPU (%s, below family Apple3)",gpu.name.UTF8String);
-            }
-        }
+        /* (the Apple TV HD's 540 is its profile's: profiles/apple-tv-hd.toml) */
         /* a launch's own HALO_RENDER_HEIGHT, to measure another height without a rebuild */
         if(getenv("HALO_RENDER_HEIGHT")&&atoi(getenv("HALO_RENDER_HEIGHT"))>0)render_height=atoi(getenv("HALO_RENDER_HEIGHT"));
 #endif

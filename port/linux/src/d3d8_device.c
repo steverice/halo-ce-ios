@@ -206,6 +206,19 @@ void halo_render_scale_step(int direction)
 
 static int head_eyes_frame(void);
 
+#ifdef HALO_ILP32
+/* port/linux/game/scene_class.c */
+int halo_scene_class(void);
+
+/* display.render_scale for the frame about to be drawn: the D-pad's live
+value if there is one, else the setting's, which a device profile may give
+the menu and cutscenes their own value for (config_scene_real) */
+static double render_scale_now(void)
+{
+	return render_scale_live >= 0.0 ? render_scale_live : config_scene_real("display.render_scale", halo_scene_class());
+}
+#endif
+
 static void screen_mode_choose(long *width, float scale[2])
 {
 #ifdef HALO_ILP32
@@ -238,7 +251,7 @@ static void screen_mode_choose(long *width, float scale[2])
 		(display.upscaler scales the picture back up). Not for foveated eyes:
 		the Compositor's rate map sets their size, at the render quality, which
 		takes the scale's place */
-		double render_scale = render_scale_live >= 0.0 ? render_scale_live : config_real("display.render_scale");
+		double render_scale = render_scale_now();
 
 		if (benchmark_render_lines > 0)
 			render_scale = 1.0;
@@ -2667,6 +2680,10 @@ static struct vertex_shader_object *shader_list_program(struct vertex_shader_obj
 	return NULL;
 }
 
+/* the most of a device's own record (debug.shader_list_record) warmed with a
+map's list: a10's whole list is under half a megabyte */
+#define SHADER_LIST_RECORD_MAXIMUM (4L * 1024 * 1024)
+
 void halo_shader_list_warm(char const *map_name)
 {
 	const char *base = map_name;
@@ -2676,6 +2693,9 @@ void halo_shader_list_warm(char const *map_name)
 	unsigned long vertex_count = 0, pixel_count = 0, pipeline_count = 0, missing = 0;
 	double started;
 	int pass;
+	char recorded_path[512];
+	FILE *recorded = NULL;
+	uint32_t recorded_size = 0;
 
 	for (cursor = map_name; *cursor; cursor++)
 	{
@@ -2683,16 +2703,59 @@ void halo_shader_list_warm(char const *map_name)
 			base = cursor + 1;
 	}
 	snprintf(shader_list.map, sizeof(shader_list.map), "%s", base);
-	if (!device.gl_ready || !config_boolean("debug.shader_list_warm") ||
-		!(size = gpu_warm_list_read(shader_list.map, NULL, 0)))
+	if (!device.gl_ready || !config_boolean("debug.shader_list_warm"))
 		return;
-	text = malloc(size + 1);
-	if (!text || gpu_warm_list_read(shader_list.map, text, size) != size)
+	size = gpu_warm_list_read(shader_list.map, NULL, 0);
+	/* what earlier sessions on this device still had to make while drawing
+	(shader_list_made's record) is warmed with the list, so a device stops
+	hitching on a shader the second time it meets it, without a new build */
+	/* (only where the record is made, shader_list_made: under a backend that
+	has no lists, GL, a record left by a Metal run in the same data folder
+	would compile shaders at load that GL compiles as it draws. And only a
+	record of a sane size: it is a file in the data folder) */
+	if (shader_dialect.msl && *config_string("debug.shader_list_record"))
 	{
-		free(text);
+		long length;
+
+		snprintf(recorded_path, sizeof(recorded_path), "%s/%s.txt", config_string("debug.shader_list_record"),
+			shader_list.map);
+		if ((recorded = fopen(recorded_path, "r")) != NULL)
+		{
+			if (!fseek(recorded, 0, SEEK_END) && (length = ftell(recorded)) > 0)
+			{
+				if (length <= SHADER_LIST_RECORD_MAXIMUM)
+					recorded_size = (uint32_t)length;
+				else
+					platform_log("shader list %s: %s is %ld bytes, more than a record holds; not warmed", shader_list.map,
+						recorded_path, length);
+			}
+			rewind(recorded);
+		}
+	}
+	if (!size && !recorded_size)
+	{
+		if (recorded)
+			fclose(recorded);
 		return;
 	}
-	text[size] = 0;
+	text = malloc(size + 1 + recorded_size + 1);
+	if (!text || (size && gpu_warm_list_read(shader_list.map, text, size) != size))
+	{
+		free(text);
+		if (recorded)
+			fclose(recorded);
+		return;
+	}
+	text[size] = '\n';
+	if (recorded)
+	{
+		recorded_size = (uint32_t)fread(text + size + 1, 1, recorded_size, recorded);
+		fclose(recorded);
+	}
+	text[size + 1 + recorded_size] = 0;
+	if (recorded_size)
+		platform_log("shader list %s: with %u bytes recorded on this device (%s)", shader_list.map,
+			(unsigned int)recorded_size, recorded_path);
 	started = halo_frame_trace_milliseconds();
 	shader_list_warming = TRUE;
 	gpu_warm_begin();

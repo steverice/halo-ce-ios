@@ -103,6 +103,14 @@ def merge_config(text, settings):
     return "\n".join(lines) + "\n"
 
 
+def chosen_origins(old, keys):
+    """config.origins text (port/linux/src/port_config.c) with each dotted key in keys marked chosen: a value a
+    run writes into config.toml is in force whatever a device profile says, including one equal to a default,
+    which the game would otherwise take for a default it wrote and let the profile move"""
+    kept = [line for line in old.splitlines() if line.split("\t", 1)[0] not in keys]
+    return "".join(f"{line}\n" for line in kept + [f"{key}\tchosen" for key in sorted(keys)])
+
+
 # what port_config.c defaults these to: a run that doesn't --set one gets
 # the default, not whatever an earlier run's --set left in config.toml
 DEFAULTS = {
@@ -902,6 +910,9 @@ def prepare(args, documents, rewrite=False):
     # folder); otherwise merged into the container's file, as the iPad runner always has
     old = "" if rewrite or not config.is_file() else config.read_text()
     config.write_text(merge_config(old, settings))
+    # every value this run wrote is the run's, not a default for the device's profile to move
+    origins = documents / "config.origins"
+    origins.write_text(chosen_origins("" if rewrite or not origins.is_file() else origins.read_text(), set(settings)))
     init = documents / "init.txt"
     if args.init:
         init.write_text("\n".join(args.init) + "\n")
@@ -918,7 +929,7 @@ SUITE_LIMIT = 5400
 
 def collect(documents, out):
     out.mkdir(parents=True, exist_ok=True)
-    for name in ("ios-runtime.log", "stderr.log", "debug.txt", "config.toml"):
+    for name in ("ios-runtime.log", "stderr.log", "debug.txt", "config.toml", "config.origins"):
         if (documents / name).is_file():
             shutil.copy2(documents / name, out / name)
     if (documents / "runner").is_dir():

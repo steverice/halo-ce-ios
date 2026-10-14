@@ -42,9 +42,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # Controllers only, no Files app: the XISO arrives from a browser
     # (host/host_tv_import.m).
     set(HALO_TVOS ON)
-    # 4K fill rate is the bottleneck in heavy fights on an Apple TV 4K (3rd gen);
-    # there's no Files app to edit config.toml, so the build picks it (0 = native).
-    set(HALO_RENDER_HEIGHT 1080 CACHE STRING "Internal render height (display.render_height)")
+    # The render height is the device profile's (profiles/apple-tv.toml: 1080, since 4K fill
+    # rate is the bottleneck in heavy fights on an Apple TV 4K, 3rd gen). A build made with
+    # tools/ios_build.py --render-height N overrides every profile (0 = the profile's).
+    set(HALO_RENDER_HEIGHT 0 CACHE STRING "Internal render height (display.render_height); 0 leaves it to the device profile")
     # Brand assets (layered icon, top shelf) made from the iOS AppIcon artwork.
     set(HALO_PLATFORM_SOURCES Assets-tvOS.xcassets host/host_tv.m host/host_tv_import.m)
     set(HALO_INFO_PLIST Info-tvOS.plist)
@@ -88,7 +89,8 @@ add_executable(VISR MACOSX_BUNDLE
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
-    host/host_join_link.c host/host_config.c
+    host/host_join_link.c host/host_config.c host/host_profile.c host/host_device.m
+    "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
@@ -96,7 +98,7 @@ add_executable(VISR MACOSX_BUNDLE
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
-    "${ROOT}/build/ios/embedded")
+    "${ROOT}/build/ios/embedded" "${ROOT}/port/third_party/tomlc17")
 # WebRTC peers use DTLS in the host; generated posix bridges translate guest buffers.
 file(GLOB HALO_MBEDTLS_SOURCES CONFIGURE_DEPENDS "${ROOT}/port/third_party/mbedtls/library/*.c")
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/posix_dtls.c" ${HALO_MBEDTLS_SOURCES})
@@ -199,6 +201,11 @@ file(GLOB HALO_BENCHMARK_RECORDINGS CONFIGURE_DEPENDS "${ROOT}/port/benchmark/re
     "${ROOT}/port/benchmark/recordings/*.checks")
 target_sources(VISR PRIVATE ${HALO_BENCHMARK_RECORDINGS})
 set_source_files_properties(${HALO_BENCHMARK_RECORDINGS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/benchmark-recordings)
+# the device profiles (profiles/README.md): host/host_profile.c picks this device's at start
+file(GLOB HALO_DEVICE_PROFILES CONFIGURE_DEPENDS "${ROOT}/profiles/*.toml")
+list(FILTER HALO_DEVICE_PROFILES EXCLUDE REGEX "TEMPLATE\\.toml$")
+target_sources(VISR PRIVATE ${HALO_DEVICE_PROFILES})
+set_source_files_properties(${HALO_DEVICE_PROFILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/profiles)
 # the maps' shader lists, compiled at map load (d3d8_device.c's halo_shader_list_warm)
 file(GLOB HALO_SHADER_LISTS CONFIGURE_DEPENDS "${ROOT}/port/shader-lists/*.txt")
 target_sources(VISR PRIVATE ${HALO_SHADER_LISTS})
