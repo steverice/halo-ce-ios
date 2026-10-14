@@ -205,6 +205,12 @@ struct peer
 	unsigned long endpoint_heard_time;
 	unsigned long sent_time;
 	unsigned long round_trip;
+	/* whether the game has sent it a datagram yet, had one from it, or
+	dropped one of its (each logged the first time: what shows where a
+	join stops after the tunnel is up) */
+	int datagram_sent_logged;
+	int datagram_received_logged;
+	int datagram_dropped_logged;
 };
 
 /* a UDP stand-in for one port of a peer */
@@ -943,6 +949,12 @@ static int address_retired(unsigned long address)
 			return 1;
 	}
 	return 0;
+}
+
+/* "host" or "player", as the log names a peer */
+static const char *peer_kind(const struct peer *peer)
+{
+	return peer->is_host && !peer->is_player ? "host" : "player";
 }
 
 static void drop_peer(struct peer *peer, const char *reason)
@@ -1980,6 +1992,12 @@ static void datagram_send(struct peer *peer, unsigned short source_port, unsigne
 	put_short(inner + 3, port);
 	memcpy(inner + 5, data, (size_t)size);
 	peer_send(peer, inner, size + 5);
+	if (!peer->datagram_sent_logged)
+	{
+		peer->datagram_sent_logged = 1;
+		platform_log("Internet play: the game's first datagram to %s %s (from port %u to its port %u)",
+			peer_kind(peer), peer->name, network_short(source_port), network_short(port));
+	}
 }
 
 /* a datagram from the game to a peer, through its stand-in (from a socket
@@ -2012,13 +2030,37 @@ static void datagram_received(struct peer *peer, const unsigned char *inner, int
 	struct sockaddr_in to;
 
 	/* only to the game */
-	if (size < 5 || !game_port_open(0, get_short(inner + 3)))
+	if (size < 5)
 		return;
+	if (!game_port_open(0, get_short(inner + 3)))
+	{
+		if (!peer->datagram_dropped_logged)
+		{
+			peer->datagram_dropped_logged = 1;
+			platform_log("Internet play: a datagram from %s %s to port %u, which is not the game's, is dropped "
+				"(only the first is logged)", peer_kind(peer), peer->name, network_short(get_short(inner + 3)));
+		}
+		return;
+	}
 	proxy = find_proxy((int)(peer - p2p.peers), get_short(inner + 1), 1);
 	if (!proxy)
+	{
+		if (!peer->datagram_dropped_logged)
+		{
+			peer->datagram_dropped_logged = 1;
+			platform_log("Internet play: a datagram from %s %s is dropped: no stand-in for its port %u "
+				"(only the first is logged)", peer_kind(peer), peer->name, network_short(get_short(inner + 1)));
+		}
 		return;
+	}
 	make_address(&to, p2p.local_address, get_short(inner + 3));
 	posix_socket_sendto(proxy->socket, inner + 5, size - 5, 0, &to, sizeof(to));
+	if (!peer->datagram_received_logged)
+	{
+		peer->datagram_received_logged = 1;
+		platform_log("Internet play: the first datagram from %s %s's game (from its port %u to the game's port %u)",
+			peer_kind(peer), peer->name, network_short(get_short(inner + 1)), network_short(get_short(inner + 3)));
+	}
 }
 
 /* ---------- streams */
@@ -2757,7 +2799,12 @@ int p2p_join_code(const char *text)
 
 int p2p_join_code_status(void)
 {
-	return p2p.code_join_status;
+	int status;
+
+	pthread_mutex_lock(&p2p_lock);
+	status = p2p.code_join_status == P2P_CODE_FOUND && joined_host() ? P2P_CODE_REACHED : p2p.code_join_status;
+	pthread_mutex_unlock(&p2p_lock);
+	return status;
 }
 
 int p2p_host_code(char *text, int size)

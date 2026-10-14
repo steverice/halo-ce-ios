@@ -3163,6 +3163,23 @@ static void browser_games_read(void)
 	}
 	if (multiplayer.game_chosen >= multiplayer.game_count)
 		multiplayer.game_chosen = (short)MAX(0, multiplayer.game_count - 1);
+	/* (Direct Link's games, and the LAN's the client also found, logged as
+	they change: what shows whether a host's answers reach the game) */
+	if (multiplayer.mode == _multiplayer_mode_direct_link)
+	{
+		static short logged_peer_games = -1, logged_other_games = -1;
+		short other_games = 0;
+
+		for (index = 0; index < MAXIMUM_ADVERTISED_GAMES; index++)
+			other_games += network_game_client_advertised_game_is_valid(&games[index]) && !game_from_peer(&games[index]);
+		if (multiplayer.game_count != logged_peer_games || other_games != logged_other_games)
+		{
+			logged_peer_games = multiplayer.game_count;
+			logged_other_games = other_games;
+			platform_log("menus: Direct Link lists %d games from internet play (and the LAN has %d)",
+				multiplayer.game_count, other_games);
+		}
+	}
 }
 
 static short browser_row_index(struct widget_instance *row)
@@ -3907,6 +3924,7 @@ static void browser_update(struct widget_instance *list)
 				L"Looking for games on your LAN..." :
 				code_status == P2P_CODE_LOOKING ? L"Looking up the join code..." :
 				code_status == P2P_CODE_FOUND ? L"Found the game: connecting to its host..." :
+				code_status == P2P_CODE_REACHED ? L"Reached the host: waiting for its game..." :
 				code_status == P2P_CODE_NOT_FOUND ? L"No game has that join code. ENTER CODE to try again" :
 				L"ENTER CODE: a friend's join code or invite link");
 		}
@@ -3998,7 +4016,8 @@ static boolean code_screen_join(struct widget_instance *widget, boolean *widget_
 		text_field_end(TRUE);
 	if (!p2p_join_code(code_screen.text))
 	{
-		platform_log("menus: that is neither a join code nor an invite link");
+		platform_log("menus: that is neither a join code nor an invite link (%d characters)",
+			(int)strlen(code_screen.text));
 		code_screen.help = _code_help_not_one;
 		if (row)
 			text_field_begin(row, code_screen.text, TEXT_FIELD_LENGTH - 1, code_screen_done);
