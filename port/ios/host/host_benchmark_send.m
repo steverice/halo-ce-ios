@@ -253,6 +253,20 @@ int host_benchmark_send(const char *report_path, const char *summary, char *mess
 
     *message = 0;
     if (!text) return 0;
+#ifndef HALO_TESTER_BUILD
+    /* a developer's own test of the upload, with nobody at the screen: HALO_BENCHMARK_SEND=send in the launch's
+       environment sends without the question. A tester build has no such way around it */
+    {
+        const char *unattended = getenv("HALO_BENCHMARK_SEND");
+
+        if (unattended && !strcmp(unattended, "send")) {
+            host_logf(HOST_LOG_INFO, "benchmark: HALO_BENCHMARK_SEND=send: sending without the question (a developer's test)");
+            sent = upload(report, &result);
+            snprintf(message, size, "%s", result.UTF8String);
+            return sent;
+        }
+    }
+#endif
     controller = [HaloBenchmarkConsentController new];
     controller.summary = [NSString stringWithFormat:@"%s\nThe report holds this device's model, system version, graphics chip and "
         "display mode, the app's version, and the measurements of each run, with %lu frame times.\nIt does not hold the device's "

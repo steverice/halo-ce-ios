@@ -1069,6 +1069,29 @@ def launch_native(app, data, out, environment, limit):
                 shutil.copy2(data / name, out / name)
 
 
+# how long a native app is given to end after TERM before it is killed outright
+TERM_GRACE = 15
+
+
+def end_native(app, opener, grace=TERM_GRACE, run=subprocess.run, sleep=time.sleep):
+    """ends a native app that outlived its time limit: TERM, then KILL if it is still there after grace seconds.
+    A game spinning in its own code has ignored TERM (a level change under debug.fixed_timestep, 2026-10-13: the
+    run then held its host's line for an hour), so TERM alone is not an end"""
+    pattern = native_pattern(app)
+    run(["pkill", "-f", pattern])
+    for _ in range(grace):
+        if run(["pgrep", "-f", pattern], capture_output=True).returncode != 0:
+            break
+        sleep(1)
+    else:
+        print(f"the native app ignored TERM for {grace} s: killing it", flush=True)
+        run(["pkill", "-KILL", "-f", pattern])
+    try:
+        opener.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        opener.kill()
+
+
 def _launch_native(app, data, out, environment, limit):
     command = native_command(app, data, out, environment)
     print("+", " ".join(command), flush=True)
@@ -1076,11 +1099,7 @@ def _launch_native(app, data, out, environment, limit):
     try:
         status = opener.wait(timeout=limit)
     except subprocess.TimeoutExpired:
-        subprocess.run(["pkill", "-f", native_pattern(app)])
-        try:
-            opener.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            opener.kill()
+        end_native(app, opener)
         return False
     if status != 0:
         sys.exit(f"open could not start {app} (exit {status}): a user must be logged in to this Mac's "
@@ -1168,6 +1187,9 @@ def run_native(args):
     prepare(args, data, rewrite=True)
     limit = args.time_limit or (SUITE_LIMIT if getattr(args, "benchmark_suite", None) else args.exit_after + 120)
     environment = validation_environment(args.metal_validation, args.metal_shader_validation)
+    for assignment in getattr(args, "app_env", None) or []:
+        name, _, value = assignment.partition("=")
+        environment[name] = value
     if "MTL_DEBUG_LAYER_WARNING_MODE" in environment:
         # an open-launched app's NSLog lands in stderr.log, which check-metal greps for validation errors,
         # while the Xcode-launched iPad runner's goes to the unified log. Both runners get the same warnings
@@ -1249,6 +1271,8 @@ def main():
                                  "(600 = 18,000 frames), which validation slows")
     run_parser.add_argument("--set", action="append", default=[], metavar="SECTION.KEY=VALUE",
                             help="a config.toml setting, value in TOML syntax (repeatable)")
+    run_parser.add_argument("--app-env", action="append", default=[], metavar="NAME=VALUE",
+                            help="native runner: a variable for the app's own environment (not a setting)")
     run_parser.add_argument("--benchmark-suite", metavar="MODE",
                             help="run the device benchmark's suite (debug.benchmark_suite) in place of a timed run: "
                                  "the game quits when the suite is over (--exit-after is ignored; --time-limit bounds "
