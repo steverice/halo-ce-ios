@@ -38,6 +38,8 @@ static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 static struct benchmark_metrics metrics;
 static int window_open, window_interrupted, window_width, window_height;
 static double refresh_hertz;
+/* the screen's own rate, for a presenter that reports no refresh period (the Mac's) */
+static double screen_hertz;
 
 static _Atomic int running;
 static struct benchmark_plan plan;
@@ -96,7 +98,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     os_unfair_lock_lock(&lock);
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (window_open && interval > 0.0) {
-        if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz;
+        if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
         benchmark_metrics_frame(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0);
     }
     os_unfair_lock_unlock(&lock);
@@ -421,6 +423,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
             wait_seconds(1.0);
         if (process.thermalState > NSProcessInfoThermalStateNominal) flag(@"warm_at_start");
     }
+    screen_hertz = (double)UIScreen.mainScreen.maximumFramesPerSecond;
     if (UIScreen.mainScreen.maximumFramesPerSecond != 60) flag(@"refresh_not_60");
     if (only) flag(@"scenes_filtered");
     if ([files contentsOfDirectoryAtPath:@FOLDER "/local-routes" error:nil].count) flag(@"local_routes");
@@ -486,7 +489,7 @@ void host_benchmark_window(int open, int width, int height) {
     if (open) {
         window_width = width;
         window_height = height;
-        if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz;
+        if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz > 0.0 ? refresh_hertz : screen_hertz;
     }
     os_unfair_lock_unlock(&lock);
 }
