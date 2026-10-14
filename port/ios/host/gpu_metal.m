@@ -25,6 +25,7 @@ but never returns to its run loop, which would otherwise drain them.
 #include "metal_state_cache.h"
 #include "metal_compile_async.h"
 #include "host_benchmark.h"
+#include "halo_display.h"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -466,10 +467,106 @@ static const char *store_name(MTLStoreAction store)
 	return store == MTLStoreActionStore ? "store" : store == MTLStoreActionDontCare ? "dontcare" : "unknown";
 }
 
+/* display.native_hud: the pass on the display-sized back buffer, which
+gpu_metal_upscale opens in a command buffer of its own (the frame's earlier
+passes are committed first) and the HUD's draws continue. The HUD leaves it
+for a moment to draw into a small target of its own (the motion tracker's
+blips) and comes back to draw that target over the scene; ending the pass
+there and opening it again would store the whole back buffer and load it
+back, every frame. So a pass that interrupts it is encoded in another command
+buffer, with the display-sized pass's encoder set aside still open (parked),
+and that buffer is committed first when the draws come back: Metal runs
+command buffers in the order they are committed, so the interrupting pass
+runs after the scene and before the whole display-sized pass, the draws made
+before it included. That is the order the game asked for only if the
+interrupting pass neither reads what those earlier draws wrote nor writes
+what they read, which is checked: it may not sample the back buffer
+(gpu_metal_draw), and its targets may not have been used in the display-sized
+pass's command buffer (native_side_allowed). Otherwise the pass ends and
+reopens, in order. */
+static struct
+{
+	/* the back buffer whose pass is open or parked; 0: none */
+	gpu_texture color;
+	BOOL parked;
+	/* parked: the pass's command buffer, encoder and encoder state */
+	id<MTLCommandBuffer> commands;
+	id<MTLRenderCommandEncoder> encoder;
+	struct metal_state_cache cache;
+	int depth_clamp, entry_open;
+	unsigned long pass_commands;
+	/* since the last frame's log line */
+	unsigned long parks, in_order;
+} native_pass;
+
+static void pass_finish_open(BOOL frame_end);
+
+static void native_park(void)
+{
+	native_pass.commands = commands;
+	native_pass.encoder = encoder;
+	native_pass.cache = state_cache;
+	native_pass.depth_clamp = encoder_depth_clamp;
+	native_pass.entry_open = visibility.entry_open;
+	native_pass.pass_commands = pass_commands;
+	native_pass.parked = YES;
+	native_pass.parks++;
+	commands = nil;
+	encoder = nil;
+	metal_state_reset(&state_cache);
+	encoder_depth_clamp = 0;
+	visibility.entry_open = 0;
+	pass_color = pass_depth = 0;
+	pass_commands = 0;
+	if (pass_log)
+		[pass_log appendString:@"; parked for"];
+}
+
+/* ends the interrupting pass, commits its command buffer ahead of the
+display-sized pass's, and makes that pass the open one again */
+static void native_unpark(void)
+{
+	pass_finish_open(NO);
+	if (commands)
+	{
+		[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
+		{
+			if (completed.status == MTLCommandBufferStatusError)
+				platform_log("Metal: a command buffer ahead of the HUD's failed: %s", completed.error.description.UTF8String);
+			if (completed.GPUEndTime > completed.GPUStartTime)
+				gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+		}];
+		[commands commit];
+	}
+	commands = native_pass.commands;
+	encoder = native_pass.encoder;
+	state_cache = native_pass.cache;
+	encoder_depth_clamp = native_pass.depth_clamp;
+	visibility.entry_open = native_pass.entry_open;
+	pass_commands = native_pass.pass_commands;
+	pass_color = native_pass.color;
+	pass_depth = 0;
+	native_pass.commands = nil;
+	native_pass.encoder = nil;
+	native_pass.parked = NO;
+	if (pass_log)
+		[pass_log appendString:@"\n  the display-sized pass continues"];
+}
+
 /* ends the open pass. The depth-stencil target is stored, unless the pass
 ends the frame (Present): nothing reads the screen's depth after it, and at
 the display's size it's tens of megabytes of writes a frame */
 static void pass_finish(BOOL frame_end)
+{
+	/* display.native_hud: with its pass parked, the pass that ends is that
+	one, after the interrupting pass ahead of it */
+	if (native_pass.parked)
+		native_unpark();
+	native_pass.color = 0;
+	pass_finish_open(frame_end);
+}
+
+static void pass_finish_open(BOOL frame_end)
 {
 	if (encoder && pass_depth_texture)
 	{
@@ -1459,6 +1556,15 @@ static void pass_traffic_count(MTLRenderPassDescriptor *pass)
 		pass.stencilAttachment.storeAction, 1.0);
 }
 
+/* display.native_hud (native_pass): a pass on these targets may run ahead
+of the display-sized pass: nothing in that pass's command buffer has used
+them yet (a draw made before this one that sampled one would see what this
+pass draws) */
+static BOOL native_side_allowed(MetalTexture *color, MetalTexture *depth)
+{
+	return !(color && color->used == current_serial) && !(depth && depth->used == current_serial);
+}
+
 static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_clear *clear)
 {
 	MetalTexture *color_record = texture_record(color), *depth_record = texture_record(depth);
@@ -1469,7 +1575,27 @@ static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_cl
 	if ((color && (!color_record || !color_record->texture)) || (depth && (!depth_record || !depth_record->texture)) ||
 		(!color && !depth))
 		return NO;
-	pass_end();
+	/* display.native_hud (native_pass): the draws come back to the parked
+	pass; or leave it for a pass that may run ahead of it; or neither */
+	if (native_pass.parked && color == native_pass.color && !depth && !clear)
+	{
+		native_unpark();
+		return YES;
+	}
+	if (native_pass.color && color != native_pass.color && native_side_allowed(color_record, depth_record) &&
+		(native_pass.parked || (encoder && pass_color == native_pass.color && !pass_depth)))
+	{
+		if (native_pass.parked)
+			pass_finish_open(NO);
+		else
+			native_park();
+	}
+	else
+	{
+		if (native_pass.color && encoder)
+			native_pass.in_order++;
+		pass_end();
+	}
 	pass = [MTLRenderPassDescriptor renderPassDescriptor];
 	pass.visibilityResultBuffer = visibility_buffer;
 	/* a foveated eye's targets render through its map; both attachments are
@@ -1562,6 +1688,8 @@ static id<MTLTexture> upscaled;
 
 static id<MTLFunction> clear_vertex, clear_fragment, present_vertex, present_fragment;
 static id<MTLRenderPipelineState> present_pipeline;
+/* gpu_upscale's: the present quad into a BGRA8 render target with no depth */
+static id<MTLRenderPipelineState> upscale_pipeline;
 static id<MTLSamplerState> present_sampler;
 
 static NSString *const utility_source =
@@ -1588,6 +1716,12 @@ static NSString *const utility_source =
 	"\tsampler linear [[sampler(0)]])\n"
 	"{\n"
 	"\treturn float4(picture.sample(linear, in.coordinates).rgb, 1.0);\n"
+	"}\n"
+	/* gpu_upscale: alpha too, which the game's later draws may read */
+	"fragment float4 upscale_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
+	"\tsampler linear [[sampler(0)]])\n"
+	"{\n"
+	"\treturn picture.sample(linear, in.coordinates);\n"
 	"}\n";
 
 static id<MTLRenderPipelineState> clear_pipeline(MTLPixelFormat color, MTLPixelFormat depth, uint32_t mask)
@@ -3155,6 +3289,21 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 		}
 		if (!pipeline)
 			return 0;
+		/* display.native_hud (native_pass): a draw outside the display-sized
+		pass that samples the back buffer must follow that pass's draws so
+		far, so the pass ends here and the frame goes on in order */
+		if (native_pass.color && draw->color_target != native_pass.color)
+		{
+			int stage;
+
+			for (stage = 0; stage < GPU_STAGE_COUNT; stage++)
+				if (draw->stages[stage].texture == native_pass.color)
+				{
+					native_pass.in_order++;
+					pass_end();
+					break;
+				}
+		}
 		if (!pass_begin(draw->color_target, draw->depth_target, NULL))
 			return 1;
 		target_size(draw->color_target, draw->depth_target, &width, &height);
@@ -4065,6 +4214,490 @@ static void frame_load_draw(id<MTLTexture> picture)
 }
 #endif
 
+/* ---------- anti-aliasing passes (gpu_anti_alias)
+
+display.anti_aliasing's FXAA and SMAA, the passes gpu_gl.c runs from
+upstream's xgpu_post.c (94882796), in MSL: on a render target in place, over
+the rectangle of a window's 3D view. Each pass draws one triangle covering
+the rectangle and finds its texels from the pixel's position, rows from the
+top as in every target; the target's pixels are copied first, so that no
+pass reads what it writes, and only color is written back (the game keeps
+values of its own in destination alpha). FXAA is gpu_gl.c's shader line for
+line. SMAA is port/third_party/smaa/SMAA.hlsl at its HIGH preset, through
+its SMAA_CUSTOM_SL macros: the target's size, which SMAA reads as a global
+(SMAA_RT_METRICS), is function constant 16 (0 to 15 are the game's
+shaders'), so each pass's pipeline is made
+for each size of target (a new one is a compile, once); HLSL's out and inout
+parameters become references and its array parameters pointers
+(smaa_metal_text). Point samples are linear ones, as in the GLSL that
+gpu_gl.c compiles (SMAA takes them at texel centers). */
+
+static NSString *const post_source =
+	@"#include <metal_stdlib>\n"
+	"using namespace metal;\n"
+	"struct PostOut { float4 position [[position]]; };\n"
+	"/* one triangle over the whole viewport */\n"
+	"vertex PostOut post_vertex(uint id [[vertex_id]])\n"
+	"{\n"
+	"\tPostOut out;\n"
+	"\tout.position = float4(float((id & 1) << 2) - 1.0, float((id & 2) << 1) - 1.0, 0.0, 1.0);\n"
+	"\treturn out;\n"
+	"}\n";
+
+static NSString *const fxaa_source =
+	@"/* 1 / width, 1 / height, width, height; and the rectangle's outermost\n"
+	"texel centers, as texture coordinates */\n"
+	"struct FxaaParameters { float4 metrics; float4 bounds; };\n"
+	"constexpr sampler fxaa_linear(filter::linear, address::clamp_to_edge);\n"
+	"constant float EDGE_THRESHOLD = 0.125;\n"
+	"constant float EDGE_THRESHOLD_MINIMUM = 0.0312;\n"
+	"constant float SUBPIXEL_QUALITY = 0.75;\n"
+	"constant int STEPS = 12;\n"
+	"constant float STEP_LENGTHS[12] = { 1.0, 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0 };\n"
+	"static float3 color_at(texture2d<float> color_texture, float4 bounds, float2 position)\n"
+	"{\n"
+	"\treturn color_texture.sample(fxaa_linear, clamp(position, bounds.xy, bounds.zw), level(0.0)).rgb;\n"
+	"}\n"
+	"static float luma_at(texture2d<float> color_texture, float4 bounds, float2 position)\n"
+	"{\n"
+	"\treturn dot(color_at(color_texture, bounds, position), float3(0.299, 0.587, 0.114));\n"
+	"}\n"
+	"#define color_at(position) color_at(color_texture, p.bounds, position)\n"
+	"#define luma_at(position) luma_at(color_texture, p.bounds, position)\n"
+	"/* FXAA at position (texture coordinates): false where there is no edge,\n"
+	"and the texture's own color stands; else the blended color */\n"
+	"static bool fxaa_at(texture2d<float> color_texture, FxaaParameters p, float2 position, thread float3 &blended)\n"
+	"{\n"
+	"\tfloat4 metrics = p.metrics;\n"
+	"\tfloat luma = luma_at(position);\n"
+	"\tfloat up = luma_at(position + float2(0.0, -metrics.y));\n"
+	"\tfloat down = luma_at(position + float2(0.0, metrics.y));\n"
+	"\tfloat left = luma_at(position + float2(-metrics.x, 0.0));\n"
+	"\tfloat right = luma_at(position + float2(metrics.x, 0.0));\n"
+	"\tfloat highest = max(luma, max(max(up, down), max(left, right)));\n"
+	"\tfloat range = highest - min(luma, min(min(up, down), min(left, right)));\n"
+	"\n"
+	"\t/* no edge: the target has the pixel already */\n"
+	"\tif (range < max(EDGE_THRESHOLD_MINIMUM, highest * EDGE_THRESHOLD))\n"
+	"\t\treturn false;\n"
+	"\tfloat up_left = luma_at(position + float2(-metrics.x, -metrics.y));\n"
+	"\tfloat up_right = luma_at(position + float2(metrics.x, -metrics.y));\n"
+	"\tfloat down_left = luma_at(position + float2(-metrics.x, metrics.y));\n"
+	"\tfloat down_right = luma_at(position + float2(metrics.x, metrics.y));\n"
+	"\n"
+	"\t/* how much the pixel stands out from its neighborhood (a feature\n"
+	"\tthinner than a pixel) */\n"
+	"\tfloat average = (2.0 * (up + down + left + right) + up_left + up_right + down_left + down_right) / 12.0;\n"
+	"\tfloat subpixel = smoothstep(0.0, 1.0, clamp(abs(average - luma) / range, 0.0, 1.0));\n"
+	"\tsubpixel = subpixel * subpixel * SUBPIXEL_QUALITY;\n"
+	"\n"
+	"\t/* an edge along the rows where the luma changes more from row to row\n"
+	"\tthan from column to column; across it, the side it changes more to */\n"
+	"\tbool horizontal = abs(up_left + down_left - 2.0 * left) + 2.0 * abs(up + down - 2.0 * luma) +\n"
+	"\t\tabs(up_right + down_right - 2.0 * right) >=\n"
+	"\t\tabs(up_left + up_right - 2.0 * up) + 2.0 * abs(left + right - 2.0 * luma) +\n"
+	"\t\tabs(down_left + down_right - 2.0 * down);\n"
+	"\tfloat before = horizontal ? up : left;\n"
+	"\tfloat after = horizontal ? down : right;\n"
+	"\tbool before_steeper = abs(before - luma) >= abs(after - luma);\n"
+	"\tfloat gradient = 0.25 * max(abs(before - luma), abs(after - luma));\n"
+	"\tfloat edge_luma = 0.5 * ((before_steeper ? before : after) + luma);\n"
+	"\tfloat2 across = (horizontal ? float2(0.0, metrics.y) : float2(metrics.x, 0.0)) * (before_steeper ? -1.0 : 1.0);\n"
+	"\tfloat2 along = horizontal ? float2(metrics.x, 0.0) : float2(0.0, metrics.y);\n"
+	"\n"
+	"\t/* along the edge, half a pixel across, to where its luma ends either way */\n"
+	"\tfloat2 end_before = position + 0.5 * across - along;\n"
+	"\tfloat2 end_after = position + 0.5 * across + along;\n"
+	"\tfloat luma_before = luma_at(end_before) - edge_luma;\n"
+	"\tfloat luma_after = luma_at(end_after) - edge_luma;\n"
+	"\tbool reached_before = abs(luma_before) >= gradient;\n"
+	"\tbool reached_after = abs(luma_after) >= gradient;\n"
+	"\tfor (int index = 1; index < STEPS && !(reached_before && reached_after); index++)\n"
+	"\t{\n"
+	"\t\tif (!reached_before)\n"
+	"\t\t{\n"
+	"\t\t\tend_before -= along * STEP_LENGTHS[index];\n"
+	"\t\t\tluma_before = luma_at(end_before) - edge_luma;\n"
+	"\t\t\treached_before = abs(luma_before) >= gradient;\n"
+	"\t\t}\n"
+	"\t\tif (!reached_after)\n"
+	"\t\t{\n"
+	"\t\t\tend_after += along * STEP_LENGTHS[index];\n"
+	"\t\t\tluma_after = luma_at(end_after) - edge_luma;\n"
+	"\t\t\treached_after = abs(luma_after) >= gradient;\n"
+	"\t\t}\n"
+	"\t}\n"
+	"\n"
+	"\t/* blended across the edge the more, the nearer the pixel is to an end;\n"
+	"\tonly where the luma at that end changes the way the pixel's does */\n"
+	"\tfloat distance_before = horizontal ? position.x - end_before.x : position.y - end_before.y;\n"
+	"\tfloat distance_after = horizontal ? end_after.x - position.x : end_after.y - position.y;\n"
+	"\tfloat pixel_offset = 0.5 - min(distance_before, distance_after) / (distance_before + distance_after);\n"
+	"\tbool varies = ((distance_before < distance_after ? luma_before : luma_after) < 0.0) != (luma < edge_luma);\n"
+	"\tblended = color_at(position + max(varies ? pixel_offset : 0.0, subpixel) * across);\n"
+	"\treturn true;\n"
+	"}\n"
+	"fragment float4 fxaa_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
+	"\tconstant FxaaParameters &p [[buffer(0)]])\n"
+	"{\n"
+	"\tfloat3 blended;\n"
+	"\tif (!fxaa_at(color_texture, p, in.position.xy * p.metrics.xy, blended))\n"
+	"\t\tdiscard_fragment();\n"
+	"\treturn float4(blended, 1.0);\n"
+	"}\n"
+	"/* gpu_upscale with FXAA folded in (display.native_hud): the stretch of the\n"
+	"scene into the display-sized target, each of its pixels FXAA's at the\n"
+	"pixel's place in the scene, or the plain bilinear sample where there is no\n"
+	"edge, alpha always the sample's (the game's later draws may read it) */\n"
+	"struct UpscaleFxaaParameters { FxaaParameters fxaa; float2 target; };\n"
+	"fragment float4 upscale_fxaa_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
+	"\tconstant UpscaleFxaaParameters &u [[buffer(0)]])\n"
+	"{\n"
+	"\tFxaaParameters p = u.fxaa;\n"
+	"\tfloat2 position = in.position.xy / u.target;\n"
+	"\tfloat4 sampled = color_texture.sample(fxaa_linear, position, level(0.0));\n"
+	"\tfloat3 blended;\n"
+	"\treturn fxaa_at(color_texture, p, position, blended) ? float4(blended, sampled.a) : sampled;\n"
+	"}\n";
+
+/* SMAA.hlsl's macros for Metal (SMAA_CUSTOM_SL), and the global it reads
+the target's size from */
+static NSString *const smaa_prelude =
+	@"#pragma clang diagnostic ignored \"-Wunused-variable\"\n"
+	"#pragma clang diagnostic ignored \"-Wunused-function\"\n"
+	"constant float4 smaa_metrics [[function_constant(16)]];\n"
+	"#define SMAA_RT_METRICS smaa_metrics\n"
+	"#define SMAA_CUSTOM_SL 1\n"
+	"#define SMAA_PRESET_HIGH 1\n"
+	"constexpr sampler smaa_linear(filter::linear, address::clamp_to_edge);\n"
+	"#define SMAATexture2D(tex) texture2d<float> tex\n"
+	"#define SMAATexturePass2D(tex) tex\n"
+	"#define SMAASampleLevelZero(tex, coord) tex.sample(smaa_linear, coord, level(0.0))\n"
+	"#define SMAASampleLevelZeroPoint(tex, coord) tex.sample(smaa_linear, coord, level(0.0))\n"
+	"#define SMAASampleLevelZeroOffset(tex, coord, offset) tex.sample(smaa_linear, coord, level(0.0), offset)\n"
+	"#define SMAASample(tex, coord) tex.sample(smaa_linear, coord)\n"
+	"#define SMAASamplePoint(tex, coord) tex.sample(smaa_linear, coord)\n"
+	"#define SMAASampleOffset(tex, coord, offset) tex.sample(smaa_linear, coord, offset)\n"
+	"#define SMAA_FLATTEN\n"
+	"#define SMAA_BRANCH\n"
+	"#define discard discard_fragment()\n"
+	"#define lerp(a, b, t) mix(a, b, t)\n"
+	"#define mad(a, b, c) fma(a, b, c)\n"
+	"#define SMAAGather(tex, coord) tex.gather(smaa_linear, coord)\n";
+
+/* the main functions of SMAA's passes, as gpu_gl.c's */
+static NSString *const smaa_mains =
+	@"fragment float4 smaa_edges_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]])\n"
+	"{\n"
+	"\tfloat2 texcoord = in.position.xy * SMAA_RT_METRICS.xy;\n"
+	"\tfloat4 offset[3];\n"
+	"\tSMAAEdgeDetectionVS(texcoord, offset);\n"
+	"\treturn float4(SMAALumaEdgeDetectionPS(texcoord, offset, color_texture), 0.0, 0.0);\n"
+	"}\n"
+	"fragment float4 smaa_weights_fragment(PostOut in [[stage_in]], texture2d<float> edges_texture [[texture(0)]],\n"
+	"\ttexture2d<float> area_texture [[texture(1)]], texture2d<float> search_texture [[texture(2)]])\n"
+	"{\n"
+	"\tfloat2 texcoord = in.position.xy * SMAA_RT_METRICS.xy;\n"
+	"\tfloat2 pixcoord;\n"
+	"\tfloat4 offset[3];\n"
+	"\tSMAABlendingWeightCalculationVS(texcoord, pixcoord, offset);\n"
+	"\treturn SMAABlendingWeightCalculationPS(texcoord, pixcoord, offset, edges_texture, area_texture,\n"
+	"\t\tsearch_texture, float4(0.0));\n"
+	"}\n"
+	"fragment float4 smaa_blend_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
+	"\ttexture2d<float> weights_texture [[texture(1)]])\n"
+	"{\n"
+	"\tfloat2 texcoord = in.position.xy * SMAA_RT_METRICS.xy;\n"
+	"\tfloat4 offset;\n"
+	"\tSMAANeighborhoodBlendingVS(texcoord, offset);\n"
+	"\treturn SMAANeighborhoodBlendingPS(texcoord, offset, color_texture, weights_texture);\n"
+	"}\n";
+
+/* SMAA.hlsl's text with what MSL lacks rewritten: out and inout parameters
+as references in the thread address space, array parameters as pointers,
+and the calls that pass a swizzle to an inout parameter (which a reference
+cannot bind) through a temporary. nil if a rewrite no longer finds its text
+(another SMAA.hlsl than port/third_party/smaa's) */
+static NSString *smaa_metal_text(const char *hlsl)
+{
+	static NSString *const rewrites[][2] =
+	{
+		{ @"    SMAAMovc(cond.xy, variable.xy, value.xy);\n    SMAAMovc(cond.zw, variable.zw, value.zw);\n",
+			@"    variable = select(variable, value, cond);\n" },
+		{ @"SMAADetectHorizontalCornerPattern(SMAATexturePass2D(edgesTex), weights.rg, coords.xyzy, d);",
+			@"{ float2 corner = weights.rg; SMAADetectHorizontalCornerPattern(SMAATexturePass2D(edgesTex), corner, coords.xyzy, d); weights.rg = corner; }" },
+		{ @"SMAADetectVerticalCornerPattern(SMAATexturePass2D(edgesTex), weights.ba, coords.xyxz, d);",
+			@"{ float2 corner = weights.ba; SMAADetectVerticalCornerPattern(SMAATexturePass2D(edgesTex), corner, coords.xyxz, d); weights.ba = corner; }" },
+		{ @"out float4 offset[3]", @"thread float4 *offset" },
+		{ @"float4 offset[3]", @"thread float4 *offset" },
+		{ @"inout float2 ", @"thread float2 &" },
+		{ @"inout float4 ", @"thread float4 &" },
+		{ @"out float2 ", @"thread float2 &" },
+		{ @"out float4 ", @"thread float4 &" },
+	};
+	NSMutableString *text = [NSMutableString stringWithUTF8String:hlsl];
+	unsigned long index;
+
+	if (!text)
+		return nil;
+	for (index = 0; index < sizeof(rewrites) / sizeof(rewrites[0]); index++)
+	{
+		if (![text replaceOccurrencesOfString:rewrites[index][0] withString:rewrites[index][1] options:NSLiteralSearch
+			range:NSMakeRange(0, text.length)])
+		{
+			platform_log("Metal: SMAA.hlsl has no \"%s\" to rewrite for MSL", rewrites[index][0].UTF8String);
+			return nil;
+		}
+	}
+	return text;
+}
+
+enum { POST_FXAA, POST_SMAA_EDGES, POST_SMAA_WEIGHTS, POST_SMAA_BLEND, POST_PROGRAMS };
+
+static struct
+{
+	id<MTLFunction> vertex;
+	/* FXAA's function; and SMAA's library, whose functions are made for
+	each size of target */
+	id<MTLFunction> fxaa, upscale_fxaa;
+	id<MTLLibrary> smaa;
+	/* FXAA's pipeline, and SMAA's for each size ("WxH" and the pass) */
+	id<MTLRenderPipelineState> fxaa_pipeline;
+	/* gpu_upscale's with FXAA folded in: all four channels written */
+	id<MTLRenderPipelineState> upscale_fxaa_pipeline;
+	NSMutableDictionary<NSString *, id<MTLRenderPipelineState>> *smaa_pipelines;
+	/* FXAA's, and SMAA's, programs or textures could not be made */
+	BOOL failed[2];
+	/* the target's pixels before the pass, and SMAA's edges and blending
+	weights, at the target's size */
+	id<MTLTexture> color, edges, weights;
+	/* SMAA's lookup textures */
+	id<MTLTexture> area, search;
+} post;
+
+static id<MTLRenderPipelineState> post_pipeline(id<MTLFunction> fragment, MTLPixelFormat format, BOOL color_only)
+{
+	MTLRenderPipelineDescriptor *descriptor = [MTLRenderPipelineDescriptor new];
+	NSError *error = nil;
+	id<MTLRenderPipelineState> pipeline;
+
+	descriptor.vertexFunction = post.vertex;
+	descriptor.fragmentFunction = fragment;
+	descriptor.colorAttachments[0].pixelFormat = format;
+	if (color_only)
+		descriptor.colorAttachments[0].writeMask = MTLColorWriteMaskRed | MTLColorWriteMaskGreen | MTLColorWriteMaskBlue;
+	pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
+	if (!pipeline)
+		platform_log("Metal: cannot make an anti-aliasing pipeline: %s", error.localizedDescription.UTF8String);
+	return pipeline;
+}
+
+/* SMAA's pipeline for a pass and a size of target, made the first time */
+static id<MTLRenderPipelineState> smaa_pipeline(int which, unsigned long width, unsigned long height)
+{
+	static NSString *const names[POST_PROGRAMS] =
+		{ nil, @"smaa_edges_fragment", @"smaa_weights_fragment", @"smaa_blend_fragment" };
+	NSString *key = [NSString stringWithFormat:@"%lux%lu/%d", width, height, which];
+	id<MTLRenderPipelineState> pipeline = post.smaa_pipelines[key];
+
+	if (!pipeline)
+	{
+		MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
+		float metrics[4] = { 1.0f / (float)width, 1.0f / (float)height, (float)width, (float)height };
+		NSError *error = nil;
+		id<MTLFunction> fragment;
+
+		[values setConstantValue:metrics type:MTLDataTypeFloat4 atIndex:16];
+		fragment = [post.smaa newFunctionWithName:names[which] constantValues:values error:&error];
+		if (!fragment)
+		{
+			platform_log("Metal: cannot make SMAA's %s: %s", names[which].UTF8String, error.localizedDescription.UTF8String);
+			return nil;
+		}
+		pipeline = post_pipeline(fragment, which == POST_SMAA_EDGES ? MTLPixelFormatRG8Unorm :
+			which == POST_SMAA_WEIGHTS ? MTLPixelFormatRGBA8Unorm : MTLPixelFormatBGRA8Unorm, which == POST_SMAA_BLEND);
+		if (!pipeline)
+			return nil;
+		post.smaa_pipelines[key] = pipeline;
+		platform_log("Metal: SMAA's %s made for %lux%lu", names[which].UTF8String, width, height);
+	}
+	return pipeline;
+}
+
+static id<MTLTexture> post_texture(MTLPixelFormat format, unsigned long width, unsigned long height, BOOL target)
+{
+	MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+		width:width height:height mipmapped:NO];
+
+	descriptor.usage = MTLTextureUsageShaderRead | (target ? MTLTextureUsageRenderTarget : 0);
+	descriptor.storageMode = target ? MTLStorageModePrivate : MTLStorageModeShared;
+	return [device newTextureWithDescriptor:descriptor];
+}
+
+static uint32_t gpu_metal_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels)
+{
+	@autoreleasepool
+	{
+		BOOL smaa = method == GPU_ANTI_ALIAS_SMAA;
+		NSError *error = nil;
+
+		if (post.failed[smaa])
+			return 0;
+		if (!post.vertex)
+		{
+			id<MTLLibrary> library = [device newLibraryWithSource:[post_source stringByAppendingString:fxaa_source]
+				options:pixel_compile_options error:&error];
+
+			post.vertex = [library newFunctionWithName:@"post_vertex"];
+			post.fxaa = [library newFunctionWithName:@"fxaa_fragment"];
+			post.upscale_fxaa = [library newFunctionWithName:@"upscale_fxaa_fragment"];
+			if (!post.vertex || !post.fxaa)
+			{
+				platform_log("Metal: cannot compile FXAA: %s", error.localizedDescription.UTF8String);
+				post.failed[0] = post.failed[1] = YES;
+				return 0;
+			}
+			post.smaa_pipelines = [NSMutableDictionary dictionary];
+		}
+		if (!smaa)
+		{
+			if (!post.fxaa_pipeline && !(post.fxaa_pipeline = post_pipeline(post.fxaa, MTLPixelFormatBGRA8Unorm, YES)))
+				post.failed[0] = YES;
+			if (!post.failed[0] && !post.upscale_fxaa_pipeline)
+				post.upscale_fxaa_pipeline = post_pipeline(post.upscale_fxaa, MTLPixelFormatBGRA8Unorm, NO);
+			return post.failed[0] ? 0 : 1;
+		}
+		if (!post.smaa)
+		{
+			NSString *text = smaa_shader ? smaa_metal_text(smaa_shader) : nil;
+
+			if (text)
+				post.smaa = [device newLibraryWithSource:[NSString stringWithFormat:@"%@%@%@\n%@", post_source,
+					smaa_prelude, text, smaa_mains] options:pixel_compile_options error:&error];
+			if (!post.smaa)
+			{
+				platform_log("Metal: cannot compile SMAA: %s", error ? error.localizedDescription.UTF8String : "no shader");
+				post.failed[1] = YES;
+				return 0;
+			}
+			post.area = post_texture(MTLPixelFormatRG8Unorm, 160, 560, NO);
+			[post.area replaceRegion:MTLRegionMake2D(0, 0, 160, 560) mipmapLevel:0 withBytes:area_texels bytesPerRow:160 * 2];
+			post.search = post_texture(MTLPixelFormatR8Unorm, 64, 16, NO);
+			[post.search replaceRegion:MTLRegionMake2D(0, 0, 64, 16) mipmapLevel:0 withBytes:search_texels bytesPerRow:64];
+		}
+		return 1;
+	}
+}
+
+/* a pass over the rectangle of target: its pipeline's fragment function
+reads the textures given, from 0 */
+static void post_pass(id<MTLTexture> target, BOOL clear, id<MTLRenderPipelineState> pipeline, MTLScissorRect rect,
+	NSArray<id<MTLTexture>> *textures, const void *parameters, size_t size, NSString *label)
+{
+	MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+	id<MTLRenderCommandEncoder> post_encoder;
+	NSUInteger index;
+
+	pass.colorAttachments[0].texture = target;
+	pass.colorAttachments[0].loadAction = clear ? MTLLoadActionClear : MTLLoadActionLoad;
+	pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
+	pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+	pass_traffic_count(pass);
+	post_encoder = [command_buffer() renderCommandEncoderWithDescriptor:pass];
+	if (metal_debug)
+		post_encoder.label = label;
+	if (pass_log)
+		[pass_log appendFormat:@"\n  %@: %lux%lu at %lu,%lu of %lux%lu", label, (unsigned long)rect.width,
+			(unsigned long)rect.height, (unsigned long)rect.x, (unsigned long)rect.y, (unsigned long)target.width,
+			(unsigned long)target.height];
+	[post_encoder setRenderPipelineState:pipeline];
+	[post_encoder setViewport:(MTLViewport){ (double)rect.x, (double)rect.y, (double)rect.width, (double)rect.height,
+		0.0, 1.0 }];
+	[post_encoder setScissorRect:rect];
+	for (index = 0; index < textures.count; index++)
+		[post_encoder setFragmentTexture:textures[index] atIndex:index];
+	if (parameters)
+		[post_encoder setFragmentBytes:parameters length:size atIndex:0];
+	[post_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+	[post_encoder endEncoding];
+}
+
+static void gpu_metal_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect)
+{
+	@autoreleasepool
+	{
+		MetalTexture *record = texture_record(target);
+		BOOL smaa = method == GPU_ANTI_ALIAS_SMAA;
+		unsigned long width, height;
+		MTLScissorRect area;
+		id<MTLBlitCommandEncoder> blit;
+
+		if (!record || !record->texture || record->description.format != GPU_FORMAT_BGRA8 ||
+			(smaa ? !post.smaa : !post.fxaa_pipeline))
+			return;
+		width = record->texture.width;
+		height = record->texture.height;
+		if (!clamp_rect(rect, width, height, &area))
+			return;
+		pass_end();
+		if (!post.color || post.color.width != width || post.color.height != height)
+		{
+			post.color = post_texture(MTLPixelFormatBGRA8Unorm, width, height, YES);
+			post.edges = post.weights = nil;
+			/* SMAA's pipelines are specialized for one size: the old
+			size's go, so a live resize does not keep one set per size */
+			[post.smaa_pipelines removeAllObjects];
+		}
+		if (smaa && !post.edges)
+		{
+			post.edges = post_texture(MTLPixelFormatRG8Unorm, width, height, YES);
+			post.weights = post_texture(MTLPixelFormatRGBA8Unorm, width, height, YES);
+		}
+		/* the target's pixels, read while the target is drawn into */
+		blit = [command_buffer() blitCommandEncoder];
+		if (metal_debug)
+			blit.label = @"anti-aliasing copy";
+		[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0
+			sourceOrigin:MTLOriginMake(area.x, area.y, 0) sourceSize:MTLSizeMake(area.width, area.height, 1)
+			toTexture:post.color destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(area.x, area.y, 0)];
+		[blit endEncoding];
+		use_texture(record);
+		if (!smaa)
+		{
+			struct { float metrics[4], bounds[4]; } parameters =
+			{
+				{ 1.0f / (float)width, 1.0f / (float)height, (float)width, (float)height },
+				/* (split screen: no texel of the next window is read) */
+				{ ((float)area.x + 0.5f) / (float)width, ((float)area.y + 0.5f) / (float)height,
+					((float)(area.x + area.width) - 0.5f) / (float)width, ((float)(area.y + area.height) - 0.5f) / (float)height },
+			};
+
+			post_pass(record->texture, NO, post.fxaa_pipeline, area, @[ post.color ], &parameters, sizeof(parameters),
+				@"FXAA");
+			return;
+		}
+		{
+			id<MTLRenderPipelineState> edges = smaa_pipeline(POST_SMAA_EDGES, width, height);
+			id<MTLRenderPipelineState> weights = smaa_pipeline(POST_SMAA_WEIGHTS, width, height);
+			id<MTLRenderPipelineState> blend = smaa_pipeline(POST_SMAA_BLEND, width, height);
+
+			if (!edges || !weights || !blend)
+			{
+				post.failed[1] = YES;
+				post.smaa = nil;
+				return;
+			}
+			/* the intermediates emptied, all of them, so that no edge of
+			another window's pass is found: SMAA's passes write only where
+			there is an edge */
+			post_pass(post.edges, YES, edges, area, @[ post.color ], NULL, 0, @"SMAA edges");
+			post_pass(post.weights, YES, weights, area, @[ post.edges, post.area, post.search ], NULL, 0, @"SMAA weights");
+			post_pass(record->texture, NO, blend, area, @[ post.color, post.weights ], NULL, 0, @"SMAA blend");
+		}
+	}
+}
+
 /* ---------- frames */
 
 /* the game's KickPushBuffer: committing here would split render passes */
@@ -4074,7 +4707,16 @@ static void gpu_metal_flush(void)
 
 /* the back buffer scaled to width x height by MetalFX when it's smaller and
 display.upscaler asks for it, else the back buffer itself */
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output);
+
 static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long height)
+{
+	return upscale_into(back_buffer, width, height, nil);
+}
+
+/* (output: a texture of that size to scale into in place of the scaler's
+own, if its usage allows; the result says which was written) */
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output)
 {
 #ifdef HAVE_METALFX
 	if (@available(iOS 16.0, tvOS 16.0, visionOS 1.0, *))
@@ -4110,16 +4752,20 @@ static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long heigh
 			platform_log("Metal: MetalFX scales %lux%lu up to %ldx%ld", (unsigned long)back_buffer.width,
 				(unsigned long)back_buffer.height, width, height);
 		}
+		if (!output || (output.usage & upscaler.outputTextureUsage) != upscaler.outputTextureUsage ||
+			output.pixelFormat != upscaled.pixelFormat || (long)output.width != width || (long)output.height != height)
+			output = upscaled;
 		upscaler.colorTexture = back_buffer;
-		upscaler.outputTexture = upscaled;
+		upscaler.outputTexture = output;
 		upscaler.inputContentWidth = back_buffer.width;
 		upscaler.inputContentHeight = back_buffer.height;
 		[upscaler encodeToCommandBuffer:commands];
-		return upscaled;
+		return output;
 	}
 #endif
 	(void)width;
 	(void)height;
+	(void)output;
 	return back_buffer;
 }
 
@@ -4329,6 +4975,119 @@ static void async_frame_end(void)
 	frame_held = NO;
 }
 
+/* display.native_hud (gpu.h): the scene's picture into the display-sized
+back buffer, where the HUD draws next. The quad goes in the pass the HUD's
+draws then continue (pass_begin finds it open), so the two cost one pass; an
+area that is the whole target makes the pass's load action a clear. The
+scene's pass ends here, and its depth and stencil are not stored: the draws
+that follow bind none, and the next scene clears its own. */
+static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias)
+{
+	@autoreleasepool
+	{
+		MetalTexture *source_record = texture_record(source), *destination_record = texture_record(destination);
+		id<MTLTexture> picture, target;
+		MTLScissorRect scissor;
+		struct gpu_clear whole_clear;
+		BOOL whole, scaled = NO, fxaa;
+		struct gpu_rect scene;
+
+		frame_begin();
+		if (!source_record || !source_record->texture || !destination_record || !destination_record->texture)
+			return;
+		picture = source_record->texture;
+		target = destination_record->texture;
+		if (!clamp_rect(area, target.width, target.height, &scissor))
+			return;
+		whole = scissor.x == 0 && scissor.y == 0 && scissor.width == target.width && scissor.height == target.height;
+		/* FXAA (display.anti_aliasing): in the quad's own shader, unless
+		MetalFX scales this picture (it reads the scene itself) or the
+		folded pipeline is missing; then as its own pass first, over the
+		matching rectangle of the scene */
+		scene.x = (int32_t)((unsigned long)scissor.x * picture.width / target.width);
+		scene.y = (int32_t)((unsigned long)scissor.y * picture.height / target.height);
+		scene.width = (int32_t)((unsigned long)(scissor.x + scissor.width) * picture.width / target.width) - scene.x;
+		scene.height = (int32_t)((unsigned long)(scissor.y + scissor.height) * picture.height / target.height) - scene.y;
+		fxaa = anti_alias == GPU_ANTI_ALIAS_FXAA && post.upscale_fxaa_pipeline &&
+			!(whole && metalfx_wanted && (picture.width < target.width || picture.height < target.height));
+		if (anti_alias == GPU_ANTI_ALIAS_FXAA && !fxaa)
+			gpu_metal_anti_alias(GPU_ANTI_ALIAS_FXAA, source, &scene);
+		command_buffer();
+		/* (only the scene's own pass: another target's depth is its own affair) */
+		if (encoder && pass_color == source)
+			pass_finish(YES);
+		else
+			pass_end();
+		use_texture(source_record);
+		/* display.upscaler = "metalfx", which scales whole pictures only:
+		straight into the target if it can be the scaler's output, else into
+		the scaler's own texture, which the quad copies */
+		if (whole)
+		{
+			picture = upscale_into(picture, (long)target.width, (long)target.height, target);
+			if (pass_log && picture != source_record->texture)
+				[pass_log appendFormat:@"\n  upscale: MetalFX, texture %u %lux%lu into %s %lux%lu", source,
+					(unsigned long)source_record->texture.width, (unsigned long)source_record->texture.height,
+					picture == target ? "the target" : "its own texture", (unsigned long)target.width,
+					(unsigned long)target.height];
+			/* (scaled straight into the target: there is no quad to draw,
+			and the pass the HUD continues loads what the scaler wrote) */
+			if (picture == target)
+				scaled = YES;
+		}
+		/* the frame so far is committed, so that a pass that interrupts the
+		one opened here can run between the two (native_pass) */
+		commit(NO);
+		/* (again, for the new command buffer: this marks the scene as used
+		in it, so the next view's scene is never taken for a pass that may
+		run ahead) */
+		use_texture(source_record);
+		memset(&whole_clear, 0, sizeof(whole_clear));
+		whole_clear.flags = GPU_CLEAR_COLOR;
+		if (!pass_begin(destination, 0, whole && !scaled ? &whole_clear : NULL))
+			return;
+		native_pass.color = destination;
+		if (scaled)
+			return;
+		if (pass_log)
+			[pass_log appendFormat:@"; upscale: texture %u %lux%lu into %lux%lu at %lu,%lu", source,
+				(unsigned long)picture.width, (unsigned long)picture.height, (unsigned long)scissor.width,
+				(unsigned long)scissor.height, (unsigned long)scissor.x, (unsigned long)scissor.y];
+		[encoder setRenderPipelineState:fxaa ? post.upscale_fxaa_pipeline : upscale_pipeline];
+		[encoder setCullMode:MTLCullModeNone];
+		[encoder setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
+		[encoder setViewport:(MTLViewport){ 0.0, 0.0, (double)target.width, (double)target.height, 0.0, 1.0 }];
+		[encoder setScissorRect:scissor];
+		[encoder setFragmentTexture:picture atIndex:0];
+		[encoder setFragmentSamplerState:present_sampler atIndex:0];
+		if (visibility.entry_open)
+			[encoder setVisibilityResultMode:MTLVisibilityResultModeDisabled offset:0];
+		if (fxaa)
+		{
+			float width = (float)picture.width, height = (float)picture.height;
+			/* the scene's size, the view's outermost texel centers (split
+			screen: no texel of the next view is read), and the target's size */
+			struct { float metrics[4], bounds[4], target[2], pad[2]; } parameters =
+			{
+				{ 1.0f / width, 1.0f / height, width, height },
+				{ ((float)scene.x + 0.5f) / width, ((float)scene.y + 0.5f) / height,
+					((float)(scene.x + scene.width) - 0.5f) / width, ((float)(scene.y + scene.height) - 0.5f) / height },
+				{ (float)target.width, (float)target.height }, { 0.0f, 0.0f },
+			};
+
+			[encoder setFragmentBytes:&parameters length:sizeof(parameters) atIndex:0];
+			/* (post_vertex: one triangle over the viewport) */
+			[encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+		}
+		else
+			[encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		pass_commands++;
+		visibility.entry_open = 0;
+		/* the next draw sets everything again */
+		metal_state_reset(&state_cache);
+	}
+}
+
 static uint32_t gpu_metal_present(gpu_texture back_buffer)
 {
 	@autoreleasepool
@@ -4436,6 +5195,17 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				height = window_height;
 				width = window_height * (long)record->description.width / (long)record->description.height;
 			}
+#if !TARGET_OS_VISION
+			{
+				/* (a picture within a pixel of its place is copied, not
+				resampled: display.native_hud's back buffer, halo_display.h) */
+				struct halo_display_size place = halo_display_present_size(window_width, window_height,
+					(long)record->description.width, (long)record->description.height);
+
+				width = place.width;
+				height = place.height;
+			}
+#endif
 			/* (debug.rate_map_test: the back buffer resolved first) */
 			picture = upscale(foveation_picture(record), width, height);
 			pass.colorAttachments[0].texture = drawable.texture;
@@ -4559,6 +5329,10 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			platform_log("Metal: a frame has %.1f render passes, which load %.0f MB and store %.0f MB",
 				(double)pass_traffic.passes / 600.0, pass_traffic.loaded / 600.0 / 1e6, pass_traffic.stored / 600.0 / 1e6);
 			memset(&pass_traffic, 0, sizeof(pass_traffic));
+			if (native_pass.parks || native_pass.in_order)
+				platform_log("Metal: the HUD's display-sized pass was left %.1f times a frame for a pass that ran ahead of "
+					"it, and ended early %.1f times a frame", native_pass.parks / 600.0, native_pass.in_order / 600.0);
+			native_pass.parks = native_pass.in_order = 0;
 		}
 		pacing.work_started = CACurrentMediaTime();
 		return next_frame_due;
@@ -4872,6 +5646,11 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		present_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
 		if (!present_pipeline)
 			host_fatal("Metal: cannot create the present pipeline: %s", error.description.UTF8String);
+		present_descriptor.fragmentFunction = [utilities newFunctionWithName:@"upscale_fragment"];
+		present_descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+		upscale_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
+		if (!upscale_pipeline)
+			host_fatal("Metal: cannot create the upscale pipeline: %s", error.description.UTF8String);
 		linear.minFilter = MTLSamplerMinMagFilterLinear;
 		linear.magFilter = MTLSamplerMinMagFilterLinear;
 		present_sampler = [device newSamplerStateWithDescriptor:linear];
@@ -5026,6 +5805,12 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		capabilities->shader_language = GPU_SHADER_LANGUAGE_MSL;
 		capabilities->shader_es = 0;
 		capabilities->clip_y_flip = 0;
+#if !TARGET_OS_VISION
+		/* (not on visionOS: the theater screen, the UI's quad and the
+		Compositor's presenters place and scale the HUD themselves) */
+		capabilities->upscale = 1;
+		capabilities->upscale_anti_alias = 1;
+#endif
 		capabilities->clip_z_remap = 0;
 		GPU_CAPABILITIES_LOG(platform_log, capabilities);
 	}

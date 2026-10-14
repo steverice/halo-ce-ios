@@ -362,6 +362,10 @@ static void render_window(
 		parameters.screen_flash = *render_stereo_screen_flash;
 	else
 		player_effect_get_screen_flash(local_player_index, &parameters.screen_flash);
+	/* port: the view's scene begins (display.native_hud) */
+	halo_render_scene_begin(rasterizer_target, rasterizer_camera->viewport_bounds.x0,
+		rasterizer_camera->viewport_bounds.y0, rasterizer_camera->viewport_bounds.x1,
+		rasterizer_camera->viewport_bounds.y1);
 	rasterizer_window_begin(&parameters);
 
 	if (!bink_playback_in_progress())
@@ -450,7 +454,13 @@ static void render_window(
 		over what the HUD covers (render_player_frame_stereo) */
 		if (halo_stereo_current_layer() == HALO_STEREO_LAYER_MONO)
 		{
-			interface_draw_screen();
+			/* port: interface_draw_screen's two halves, with the scene's
+			end between them: the weapon's screen effects read the scene and
+			are part of it; the HUD, the flash and the menus are drawn over
+			it (display.native_hud) */
+			interface_draw_screen_effects();
+			halo_render_scene_end();
+			interface_draw_hud();
 			rasterizer_screen_flash();
 			halo_screen_ui_offset(TRUE);
 			render_ui_widgets(local_player_index, &rasterizer_camera->viewport_bounds);
@@ -466,6 +476,9 @@ static void render_window(
 		}
 	}
 
+	/* port: a view with a movie in the world's place has no scene (and a
+	stereo eye's ends here) */
+	halo_render_scene_end();
 	/* port: in stereo the movie draws once, in the HUD pass: each call can
 	decode a frame and wait for the next */
 	if (halo_stereo_current_layer() == HALO_STEREO_LAYER_MONO)

@@ -62,7 +62,15 @@ struct gpu_capabilities
 	depth from 0..1 to -1..1 */
 	uint8_t clip_y_flip;
 	uint8_t clip_z_remap;
-	uint8_t pad[3];
+	/* gpu_upscale works here, so the front end may draw the HUD and menus at
+	the display's size over a smaller scene (display.native_hud,
+	d3d8_device.c); 0 on visionOS, whose presenters place the HUD themselves */
+	uint8_t upscale;
+	/* gpu_upscale can run FXAA in its stretch (GPU_ANTI_ALIAS_FXAA as its
+	anti_alias) for less than a pass of its own; otherwise the front end runs
+	gpu_anti_alias first */
+	uint8_t upscale_anti_alias;
+	uint8_t pad[1];
 	uint32_t max_texture_size;
 };
 
@@ -511,6 +519,35 @@ struct gpu_stereo_present
 	int32_t cut_requested;
 };
 
+/* display.native_hud: source, a render target, drawn over the whole of
+destination, a larger one, with the filter gpu_present scales a picture by
+(display.upscaler's MetalFX where the area is the whole target), all four
+channels, inside area (destination's pixels) only. What destination held
+outside area stays. The front end calls it when a view's scene is drawn and
+its HUD is next (halo_render_scene_end). anti_alias GPU_ANTI_ALIAS_FXAA
+runs FXAA (gpu_anti_alias's, once prepared) on source as it is stretched:
+inside area, as gpu_anti_alias over the matching rectangle of source and a
+plain stretch would draw, without a pass of its own where the backend has
+upscale_anti_alias; 0 for none */
+void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias);
+
+/* ---------- anti-aliasing passes (display.anti_aliasing's "fxaa" and "smaa") */
+
+enum { GPU_ANTI_ALIAS_FXAA = 1, GPU_ANTI_ALIAS_SMAA };
+
+/* makes a method's programs and textures now, rather than in the middle of a
+frame. SMAA needs its shader text (port/third_party/smaa/SMAA.hlsl, ending
+in a NUL) and its lookup textures, the area texture's 160x560 texels of two
+bytes and the search texture's 64x16 of one, which the front end embeds;
+FXAA takes NULL for each. Returns 0 if they cannot be made; the method's
+passes then do nothing. */
+uint32_t gpu_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels);
+/* the method's pass over rect (target pixels) of a color render target, in
+place: its red, green and blue are written inside rect only, and alpha not
+at all, since the game keeps values of its own in destination alpha */
+void gpu_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect);
+
 /* presents a stereo frame as gpu_present does a mono one (and returns the
 same). The GL backend's debug view puts eye 0 in the left half of the window,
 eye 1 in the right (or, zoomed, the zoomed picture in both), and the HUD over
@@ -653,6 +690,11 @@ its own functions. */
 	P(visibility_end, (uint32_t slot), (slot)) \
 	F(uint32_t, visibility_result, (uint32_t slot, uint32_t *samples), (slot, samples)) \
 	P(flush, (void), ()) \
+	P(upscale, (gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias), \
+		(source, destination, area, anti_alias)) \
+	F(uint32_t, anti_alias_prepare, (uint32_t method, const char *smaa_shader, const void *area_texels, \
+		const void *search_texels), (method, smaa_shader, area_texels, search_texels)) \
+	P(anti_alias, (uint32_t method, gpu_texture target, const struct gpu_rect *rect), (method, target, rect)) \
 	F(uint32_t, vertical_blank_wait, (void), ()) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \

@@ -186,6 +186,7 @@ def main():
         ('port/assets/fonts/Overpass-OFL.txt', 'Overpass-OFL.txt'),
         ('port/assets/fonts/OpenCE-OFL.txt', 'OpenCE-OFL.txt'),
         ('port/assets/fonts/Newtown-LICENSE.txt', 'Newtown.txt'),
+        ('port/third_party/smaa/LICENSE', 'SMAA.txt'),
     ):
         shutil.copyfile(ROOT/source, notices/name)
     if args.mac:

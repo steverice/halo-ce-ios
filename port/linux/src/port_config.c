@@ -157,6 +157,17 @@ static const struct config_setting config_settings[] =
 		"Render at this fraction of the display's pixels each way (0.25 to 1.0;\n"
 		"0.67 draws under half the pixels), scaled back up by display.upscaler.\n"
 		"display.render_height, when set, caps the result." },
+	{ "display.native_hud", _config_boolean, "true", "HALO_NATIVE_HUD", _environment_value, _platform_ios,
+		"When the scene renders below the display's size (display.render_height,\n"
+		"display.render_scale, or a build that sets a render height), draw the HUD,\n"
+		"menus, text and letterbox bars at the display's own resolution over the\n"
+		"scaled-up scene. false scales them up with the scene. No effect, and no\n"
+		"cost, at native resolution or on Apple Vision Pro." },
+	{ "display.anti_aliasing", _config_string, "\"off\"", "HALO_ANTI_ALIASING", _environment_value, _platform_all,
+		"Smoothing of jagged edges, which the Xbox did not have: \"off\", or\n"
+		"\"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size\n"
+		"it is drawn at (the HUD and menus are drawn after it and stay sharp).\n"
+		"SMAA is sharper and costs more." },
 	{ "display.upscaler", _config_string, "\"bilinear\"", "HALO_UPSCALER", _environment_value, _platform_ios,
 		"How a picture rendered below the display's size is scaled up: \"bilinear\"\n"
 		"(default), or \"metalfx\" (Metal renderer, on a device: MetalFX's spatial\n"
@@ -731,7 +742,9 @@ static const struct config_setting config_settings[] =
 		"\"zoom:<start>,<swaps>,<clicks>[,<lights>[,<unclicks>]]\" stands still and\n"
 		"from poll <start> swaps weapons <swaps> times, zooms <clicks> times,\n"
 		"presses the flashlight <lights> times (night vision), then clicks the\n"
-		"zoom <unclicks> times more (out of it); empty for none." },
+		"zoom <unclicks> times more (out of it); \"aachord:<start>,<period>\"\n"
+		"presses the live anti-aliasing chord (Back and R1) from poll <start> and\n"
+		"every <period> polls after; empty for none." },
 	{ "debug.side_by_side_screen", _config_boolean, "false", "HALO_SIDE_BY_SIDE_SCREEN", _environment_set_is_true,
 		_platform_ios,
 		"With display.stereo = \"side_by_side\": show the eyes SCREEN mode's\n"
@@ -786,6 +799,12 @@ static const struct config_setting config_settings[] =
 		"foveated view's full size, and only the last step that fills each view\n"
 		"goes through the Compositor's rate map (composite-only foveation, the\n"
 		"reference the full path is compared against)." },
+	{ "debug.anti_aliasing_folded", _config_boolean, "false", "HALO_ANTI_ALIASING_FOLDED", _environment_value, _platform_all,
+		"With display.anti_aliasing = \"fxaa\" and the HUD at the display's size:\n"
+		"run FXAA inside the stretch to the display's size (Metal), at each of\n"
+		"the display's pixels, rather than as a pass over the scene before it.\n"
+		"It saves a copy and a pass but does four times the FXAA work at half\n"
+		"scale: on the Apple TV HD it cost 15 ms a frame against the pass's 6." },
 	{ "debug.rate_map_test", _config_boolean, "false", "HALO_RATE_MAP_TEST", _environment_value, _platform_ios,
 		"Metal renderer on the Mac: give the screen-sized targets a synthetic,\n"
 		"lopsided rate map (full rate in the middle third, half outside it, denser\n"

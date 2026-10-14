@@ -185,7 +185,26 @@ For a lower GPU workload, edit the existing `[display]` section of
 ```toml
 render_height = 0 # Native (default); 1080, 720, or 480 render fewer pixels
 screen_width = 0  # Fit the display; 640 selects original 4:3
+native_hud = true # Below native: the HUD and menus stay at the display's resolution
 ```
+
+When the scene renders below the display's size (`render_height`,
+`render_scale`, or a build made with `--render-height`: 1080 by default on
+iPhone, iPad, Mac and Apple TV), `native_hud` draws the HUD, the menus and
+the pause screen, their text, loading screens, movies and the letterbox bars
+at the display's own resolution, over the scaled-up scene. The weapon's screen
+effects (a scope's blur, night vision) stay with the scene. It costs one
+render target the size of the display and one pass over it a frame;
+`native_hud = false` scales the HUD up with the scene, as before. At native
+resolution it does nothing and costs nothing. It works with both renderers and
+is not used on Apple Vision Pro, which places the HUD itself.
+
+`anti_aliasing` (both renderers; a line in `config.toml`, not a menu row)
+smooths the 3D view's jagged edges with a pass over it once it is drawn:
+`"fxaa"` (cheap) or `"smaa"` (sharper, about three times the work). The pass
+runs at the size the scene is rendered at, before the HUD and menus are
+drawn, so they are never blurred. It is off by default; the Apple TV HD's
+device profile turns FXAA on.
 
 The renderer preserves the selected aspect ratio and caps the render size to
 the drawable and GPU texture limit. Existing configuration files without
@@ -205,6 +224,7 @@ these `[display]` settings also apply:
 ```toml
 render_scale = 1.0           # Render this fraction of the display's pixels each way (0.25-1.0)
 upscaler = "bilinear"        # "metalfx": scale a smaller render up with MetalFX (on a device)
+anti_aliasing = "off"        # "fxaa" or "smaa": smooth the 3D view's edges (the HUD stays sharp)
 compressed_textures = true   # Keep the game's DXT textures compressed on the GPU
 anisotropic_filtering = 16   # 1 (as on the Xbox) to 16
 shadow_map_size = 512        # 128 (as on the Xbox) to 2048
@@ -232,8 +252,10 @@ renderer only caps under the display's rate hold. On iPhone, iPad, Apple TV
 and Vision Pro the system paces frames and the setting is ignored.
 
 `render_scale = 0.67` with `upscaler = "metalfx"` draws under half the
-pixels and scales them back up with sharper edges than a plain stretch; the
-HUD is scaled with the rest. The simulators have no MetalFX.
+pixels and scales them back up with sharper edges than a plain stretch. With
+`native_hud` (the default) MetalFX scales the scene alone and the HUD is drawn
+over it at full size; without it the HUD is scaled with the rest. The
+simulators have no MetalFX.
 
 ### Touch and controller input
 

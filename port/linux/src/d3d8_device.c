@@ -33,6 +33,7 @@ Conventions carried over from the Xbox:
 #include "halo_stereo_window.h"
 #include "halo_stereo_cutscene.h"
 #include "posix.h"
+#include "zlib_prefixed.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -141,6 +142,12 @@ frames, after one is presented (halo_screen_commit). */
 render target the size of the screen has per unit of it */
 static long screen_width;
 static float screen_scale[2] = { 1.0f, 1.0f };
+/* display.native_hud: the same for the display's own pixels, with no
+display.render_scale or display.render_height taken off: what the HUD's and
+the menus' back buffer gets while the scene's is smaller (native_hud_active);
+equal to screen_scale otherwise, and always in a stereo frame and on the
+desktop */
+static float screen_scale_native[2] = { 1.0f, 1.0f };
 /* head-tracked stereo: the screen's scale for frames and layers without the
 Compositor's eyes (menus, loads, the mono layer), the last one a frame
 without them took: the theater picture's, which the mono presenter puts on
@@ -177,10 +184,18 @@ static double render_scale_changed_milliseconds = -1.0;
 /* the render scale on screen for two seconds after it changes; called as
 each frame begins (render_interpolation.c), so the frame's debug pass draws
 it (the console's lines show only while the console is open) */
+/* the anti-aliasing chord's label (halo_anti_aliasing_toggle): when it
+last switched, and the text, for two seconds */
+static double anti_aliasing_changed_milliseconds = -1.0;
+static const char *anti_aliasing_label;
+
 void halo_render_scale_overlay(void)
 {
 	char text[64];
 
+	if (anti_aliasing_changed_milliseconds >= 0.0 &&
+		halo_frame_trace_milliseconds() - anti_aliasing_changed_milliseconds <= 2000.0)
+		render_debug_string(0, anti_aliasing_label);
 	if (render_scale_changed_milliseconds < 0.0 ||
 		halo_frame_trace_milliseconds() - render_scale_changed_milliseconds > 2000.0)
 		return;
@@ -205,6 +220,7 @@ void halo_render_scale_step(int direction)
 }
 
 static int head_eyes_frame(void);
+static BOOL native_hud_active(void);
 
 #ifdef HALO_ILP32
 /* port/linux/game/scene_class.c */
@@ -219,7 +235,7 @@ static double render_scale_now(void)
 }
 #endif
 
-static void screen_mode_choose(long *width, float scale[2])
+static void screen_mode_choose(long *width, float scale[2], float native[2])
 {
 #ifdef HALO_ILP32
 	/* display.screen_width, or 0 for the display's shape, which the app
@@ -229,7 +245,7 @@ static void screen_mode_choose(long *width, float scale[2])
 	const char *pixels_y = getenv("HALO_DISPLAY_PIXEL_HEIGHT");
 	long requested_width = config_integer("display.screen_width");
 	int drawable_width = 0, drawable_height = 0;
-	struct halo_display_size pixels;
+	struct halo_display_size pixels, native_pixels;
 
 	*width = requested_width;
 	if (*width <= 0)
@@ -246,6 +262,8 @@ static void screen_mode_choose(long *width, float scale[2])
 		drawable_width = pixels_x ? atoi(pixels_x) : (int)*width;
 		drawable_height = pixels_y ? atoi(pixels_y) : SCREEN_HEIGHT;
 	}
+	native_pixels = halo_display_render_size(drawable_width, drawable_height, *width, requested_width, 0,
+		screen_maximum_texture_size);
 	{
 		/* display.render_scale: a fraction of the display's pixels each way
 		(display.upscaler scales the picture back up). Not for foveated eyes:
@@ -287,10 +305,18 @@ static void screen_mode_choose(long *width, float scale[2])
 				pixels.width = screen_maximum_texture_size;
 			if (pixels.height > screen_maximum_texture_size)
 				pixels.height = screen_maximum_texture_size;
+			native_pixels = pixels;
 		}
 	}
 	scale[0] = (float)pixels.width / (float)*width;
 	scale[1] = (float)pixels.height / (float)SCREEN_HEIGHT;
+	native[0] = (float)native_pixels.width / (float)*width;
+	native[1] = (float)native_pixels.height / (float)SCREEN_HEIGHT;
+	if (native[0] < scale[0] || native[1] < scale[1])
+	{
+		native[0] = scale[0];
+		native[1] = scale[1];
+	}
 #else
 	long display_width, display_height;
 
@@ -308,6 +334,8 @@ static void screen_mode_choose(long *width, float scale[2])
 		if (*width != wanted && *width != (wanted & ~1L))
 			scale[0] = scale[1] = scale[0] < scale[1] ? scale[0] : scale[1];
 	}
+	native[0] = scale[0];
+	native[1] = scale[1];
 #endif
 }
 
@@ -338,7 +366,7 @@ long halo_screen_width(void)
 {
 	if (!screen_width)
 	{
-		screen_mode_choose(&screen_width, screen_scale);
+		screen_mode_choose(&screen_width, screen_scale, screen_scale_native);
 		screen_scale_taken();
 		platform_log("screen: %ldx%d drawn at %.0fx%.0f", screen_width, SCREEN_HEIGHT,
 			screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1]);
@@ -346,11 +374,13 @@ long halo_screen_width(void)
 	return screen_width;
 }
 
-/* the display's pixels for each of the 480 lines (text_hires.c) */
+/* the display's pixels for each of the 480 lines (text_hires.c): those of
+the back buffer text is drawn into, which display.native_hud makes the
+display's own */
 float halo_screen_pixel_scale(void)
 {
 	halo_screen_width();
-	return screen_scale[1];
+	return native_hud_active() ? screen_scale_native[1] : screen_scale[1];
 }
 
 void halo_screen_ui_offset(unsigned char centered)
@@ -545,6 +575,72 @@ static struct
 static D3DDevice *device_pointer(void)
 {
 	return (D3DDevice *)&device;
+}
+
+/* ---------- display.native_hud: the HUD and menus at the display's size
+
+When the scene renders smaller than the display (display.render_height, the
+build's HaloRenderHeight, display.render_scale), the back buffer has two
+targets: the scene's, at screen_scale, and one at screen_scale_native
+(HALO_STEREO_LAYER_NATIVE). A view's world and its weapon's screen effects
+draw into the first (render.c marks the span: halo_render_scene_begin and
+halo_render_scene_end). When the span ends, the backend stretches the view's
+part of the scene's target into the other (gpu_upscale, with the filter
+Present would have used), and everything else the frame draws into the back
+buffer goes there: the HUD, the screen flash over it, the menus, the letterbox
+bars, loading screens and movies, with the game's own blends over real scene
+pixels. Present shows that target, which is already the size of its place on
+the display.
+
+Those draws get no depth or stencil buffer: the scene's is the wrong size, and
+they follow the world, so a test against it would have cut them where a wall
+stood nearer than the screen.
+
+Off (native_hud_active) where the scene is already the display's size, in any
+stereo mode, and on a backend without gpu_upscale (visionOS): then none of
+this runs, and the back buffer has its one target as before. */
+
+/* display.native_hud and the backend's part, read once the backend is up: -1
+until then */
+static int native_hud_wanted = -1;
+/* inside a view's scene span (halo_render_scene_begin), and the view's
+rectangle in the game's units */
+static BOOL native_scene;
+static long native_scene_bounds[4];
+/* debug.gpu_stats: draws into the display-sized target that asked for a depth
+or stencil test other than "always", since the last line */
+static unsigned long native_depth_asks;
+
+static BOOL native_hud_active(void)
+{
+	const struct halo_stereo_frame *stereo;
+
+	if (native_hud_wanted < 0)
+	{
+		if (!device.gl_ready)
+			return FALSE;
+		native_hud_wanted = config_boolean("display.native_hud") && device_capabilities.upscale;
+	}
+	if (!native_hud_wanted || (screen_scale_native[0] <= screen_scale[0] && screen_scale_native[1] <= screen_scale[1]))
+		return FALSE;
+	stereo = halo_stereo_frame();
+	return stereo->mode == HALO_STEREO_OFF && stereo->eye_count == 0 && !rate_map_test();
+}
+
+/* halo_screen_commit: the display's own scale as it is now, logged when the
+HUD's size changes */
+static void native_hud_commit(long width, const float scale[2], const float native[2])
+{
+	static float logged[2];
+	BOOL larger = native[0] > scale[0] || native[1] > scale[1];
+
+	screen_scale_native[0] = native[0];
+	screen_scale_native[1] = native[1];
+	if (native_hud_wanted > 0 && larger && (logged[0] != native[0] || logged[1] != native[1]))
+		platform_log("screen: the HUD and menus are drawn at %.0fx%.0f over the scene's %.0fx%.0f (display.native_hud)",
+			width * native[0], SCREEN_HEIGHT * native[1], width * scale[0], SCREEN_HEIGHT * scale[1]);
+	logged[0] = larger ? native[0] : 0.0f;
+	logged[1] = larger ? native[1] : 0.0f;
 }
 
 static float dword_to_float(DWORD value)
@@ -795,6 +891,12 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 			scale[0] = screen_scale_mono[0];
 			scale[1] = screen_scale_mono[1];
 		}
+		/* display.native_hud: the back buffer at the display's own size */
+		if (layer == HALO_STEREO_LAYER_NATIVE)
+		{
+			scale[0] = screen_scale_native[0];
+			scale[1] = screen_scale_native[1];
+		}
 		/* the zoomed picture: the whole view at the eyes' density without
 		foveation, unfoveated (halo_stereo_zoom_density), in steps of 1/256 of
 		an eye's so that a tangent's rounding doesn't make a new target */
@@ -919,6 +1021,11 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 	else if (layer == HALO_STEREO_LAYER_HUD && halo_hud_group_current() != HALO_HUD_GROUP_NONE &&
 		halo_stereo_hud_split())
 		layer = HALO_STEREO_LAYER_HUD_GROUP + halo_hud_group_current();
+	/* display.native_hud: outside a view's scene, the back buffer's color is
+	the display-sized target */
+	else if (layer == HALO_STEREO_LAYER_MONO && !native_scene && surface && surface->Data == device.back_buffer.Data &&
+		native_hud_active())
+		layer = HALO_STEREO_LAYER_NATIVE;
 	return render_target_get_layer(surface, layer);
 }
 
@@ -944,10 +1051,24 @@ struct xgpu_render_target *xgpu_render_target_find(unsigned long data)
 
 	for (entry = *render_target_bucket(data); entry; entry = entry->next_in_bucket)
 	{
+		/* display.native_hud: the display-sized back buffer is what a draw
+		outside a view's scene samples, once it is the later of the two
+		written; a scene's draws sample the scene's */
+		if (entry->layer == HALO_STEREO_LAYER_NATIVE)
+		{
+			if (entry->target.data != data || native_scene || !native_hud_active())
+				continue;
+			if (!best || entry->last_rendered > best->last_rendered ||
+				(entry->last_rendered == best->last_rendered && entry->target.written > best->target.written))
+				best = entry;
+			continue;
+		}
 		/* a sampled screen-sized target is the current layer's */
 		if (entry->layer != HALO_STEREO_LAYER_MONO && entry->layer != layer)
 			continue;
-		if (entry->target.data == data && !entry->target.depth && (!best || entry->last_rendered > best->last_rendered))
+		if (entry->target.data == data && !entry->target.depth && (!best || entry->last_rendered > best->last_rendered ||
+			(best->layer == HALO_STEREO_LAYER_NATIVE && entry->last_rendered == best->last_rendered &&
+				entry->target.written > best->target.written)))
 			best = entry;
 	}
 	return best ? &best->target : NULL;
@@ -961,6 +1082,8 @@ static float target_scale[2] = { 1.0f, 1.0f };
 /* the bound color target is stereo's HUD layer, the reticle's layer or a
 HUD group's target (draw_targets) */
 static BOOL target_hud_layer;
+/* the bound color target is display.native_hud's display-sized back buffer */
+static BOOL target_native;
 /* the bound color target is the HUD layer or a HUD group's target, whose
 draws' extents go to the group's rectangle (halo_hud_group_extent_in); and
 which group's that is (HALO_HUD_GROUP_NONE: the HUD layer's own) */
@@ -1027,6 +1150,7 @@ static const char *foveation_audit_layer(int layer)
 	case HALO_STEREO_LAYER_ZOOM: return "zoom";
 	case HALO_STEREO_LAYER_RETICLE: return "reticle";
 	case HALO_STEREO_LAYER_UI: return "UI";
+	case HALO_STEREO_LAYER_NATIVE: return "native HUD";
 	}
 	snprintf(other, sizeof(other), "HUD group %d", layer - HALO_STEREO_LAYER_HUD_GROUP);
 	return other;
@@ -1110,6 +1234,11 @@ static BOOL draw_targets(gpu_texture *color_texture, gpu_texture *depth_texture)
 
 	if (depth && !depth->target.depth)
 		depth = NULL;
+	/* display.native_hud: the display-sized back buffer has no depth (the
+	scene's is another size) */
+	target_native = color && color->layer == HALO_STEREO_LAYER_NATIVE;
+	if (target_native)
+		depth = NULL;
 	if (!color && !depth)
 		return FALSE;
 	foveation_audit_pass(color, depth);
@@ -1147,6 +1276,245 @@ static BOOL draw_targets(gpu_texture *color_texture, gpu_texture *depth_texture)
 	*color_texture = color ? color->target.texture : 0;
 	*depth_texture = depth ? depth->target.texture : 0;
 	return TRUE;
+}
+
+static struct render_target_entry *back_buffer_drawn_this_frame(int layer);
+
+/* ---------- display.anti_aliasing: FXAA or SMAA over the scene
+
+Upstream's setting (OpenCE 94882796) and its two passes over the 3D view,
+FXAA and SMAA (gpu_anti_alias; port/third_party/smaa), without its
+multisampling and supersampling, which change every target the frame draws.
+The pass runs when a view's scene ends (halo_render_scene_end), on the
+scene's own target at the size it is drawn at, after the weapon's screen
+effects and before the HUD: with display.native_hud that is before the
+stretch, so the HUD and menus, drawn at the display's size afterward, are
+never filtered; without it they are drawn over the filtered scene in the
+same target. Off by default; read again between frames
+(halo_screen_commit). Not in a stereo frame. */
+
+enum
+{
+	_anti_aliasing_off,
+	_anti_aliasing_fxaa,
+	_anti_aliasing_smaa,
+};
+
+/* the method in effect, -1 until the setting is first read; and the
+method the chord chose while the game runs (halo_anti_aliasing_toggle), in
+place of the setting's until the app quits, -1 for none */
+static int anti_aliasing_method = -1;
+static int anti_aliasing_live = -1;
+/* its passes' programs could be made (anti_aliasing_prepare) */
+static BOOL anti_aliasing_ready;
+
+static void anti_aliasing_prepare(void);
+
+/* display.anti_aliasing's method; a value this build does not draw is off */
+static void anti_aliasing_read(void)
+{
+	const char *setting = config_string("display.anti_aliasing");
+	int method = !strcmp(setting, "fxaa") ? _anti_aliasing_fxaa : !strcmp(setting, "smaa") ? _anti_aliasing_smaa :
+		_anti_aliasing_off;
+
+	if (anti_aliasing_live >= 0)
+	{
+		method = anti_aliasing_live;
+		setting = method == _anti_aliasing_fxaa ? "fxaa" : "off";
+	}
+	if (method == anti_aliasing_method)
+		return;
+	anti_aliasing_method = method;
+	if (method == _anti_aliasing_off && strcmp(setting, "off"))
+		platform_log("anti-aliasing: \"%s\" is not one of this build's (\"off\", \"fxaa\", \"smaa\"), so off", setting);
+	else
+		platform_log("anti-aliasing: %s", setting);
+	anti_aliasing_prepare();
+}
+
+/* port/third_party/smaa, embedded by tools/embed_assets.py: the shader's
+text (ending in a NUL) and the lookup textures' bytes compressed with zlib;
+each size 0 where the build had no such file */
+extern const unsigned int xgpu_smaa_shader[];
+extern const unsigned long xgpu_smaa_shader_size;
+extern const unsigned int xgpu_smaa_area_texture[];
+extern const unsigned long xgpu_smaa_area_texture_size;
+extern const unsigned int xgpu_smaa_search_texture[];
+extern const unsigned long xgpu_smaa_search_texture_size;
+
+/* a lookup texture of SMAA's from its zlib stream (kept: the backend may
+make its textures again), or NULL if it does not inflate */
+static void *smaa_lookup_texels(const unsigned int *stream, unsigned long stream_size, unsigned long size)
+{
+	uLongf inflated = (uLongf)size;
+	unsigned char *texels = stream_size ? malloc(size) : NULL;
+	int result;
+
+	if (!texels)
+		return NULL;
+	result = uncompress(texels, &inflated, (const Bytef *)stream, (uLong)stream_size);
+	if ((result != Z_OK && result != Z_BUF_ERROR) || inflated != (uLongf)size)
+	{
+		free(texels);
+		return NULL;
+	}
+	return texels;
+}
+
+/* the method's programs and textures, made as the setting is chosen rather
+than in the middle of a frame (SMAA's are large), once the backend is up */
+static void anti_aliasing_prepare(void)
+{
+	static void *area, *search;
+
+	anti_aliasing_ready = FALSE;
+	if (!device.gl_ready || anti_aliasing_method <= _anti_aliasing_off)
+		return;
+	if (anti_aliasing_method == _anti_aliasing_fxaa)
+		anti_aliasing_ready = gpu_anti_alias_prepare(GPU_ANTI_ALIAS_FXAA, NULL, NULL, NULL) != 0;
+	else if (!xgpu_smaa_shader_size)
+		platform_log("anti-aliasing: the build has no SMAA");
+	else
+	{
+		if (!area)
+			area = smaa_lookup_texels(xgpu_smaa_area_texture, xgpu_smaa_area_texture_size, 160 * 560 * 2);
+		if (!search)
+			search = smaa_lookup_texels(xgpu_smaa_search_texture, xgpu_smaa_search_texture_size, 64 * 16);
+		if (!area || !search)
+			platform_log("anti-aliasing: cannot inflate SMAA's lookup textures");
+		else
+			anti_aliasing_ready = gpu_anti_alias_prepare(GPU_ANTI_ALIAS_SMAA, (const char *)xgpu_smaa_shader, area,
+				search) != 0;
+	}
+	if (!anti_aliasing_ready)
+		platform_log("anti-aliasing: its programs cannot be made, so the 3D view is not antialiased");
+}
+
+/* FXAA, ready, and run inside the stretch to the display-sized back buffer
+(halo_render_scene_end) rather than as its own pass: only with
+debug.anti_aliasing_folded. Inside the stretch FXAA runs at every pixel of
+the display, four times the scene's at half scale, and on the Apple TV HD
+that cost more (15 ms a frame on b30) than the copy and pass it saves (the
+pass: 6 ms) */
+static BOOL anti_aliasing_folds(void)
+{
+	static int folded = -1;
+
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	if (folded < 0)
+	{
+		folded = config_boolean("debug.anti_aliasing_folded") != 0;
+		if (folded)
+			platform_log("anti-aliasing: FXAA runs inside the stretch (debug.anti_aliasing_folded)");
+	}
+	return anti_aliasing_ready && anti_aliasing_method == _anti_aliasing_fxaa && device_capabilities.upscale_anti_alias &&
+		folded;
+}
+
+/* source/game/game.h, source/interface/hud_messaging.h */
+unsigned char game_in_progress(void);
+void hud_print_message(short local_player_index, wchar_t const *message);
+
+/* the live chord (xinput_sdl.c: hold Back and press R1): FXAA on if it is
+off, off otherwise, from the next frame, with a label on screen: in a game,
+the HUD's own message line (where "Checkpoint... done" shows), elsewhere
+the debug text, for two seconds. Not saved: the next launch takes
+display.anti_aliasing again */
+void halo_anti_aliasing_toggle(void)
+{
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	anti_aliasing_live = anti_aliasing_method == _anti_aliasing_fxaa ? _anti_aliasing_off : _anti_aliasing_fxaa;
+	anti_aliasing_label = anti_aliasing_live == _anti_aliasing_fxaa ? "FXAA on" : "FXAA off";
+	if (game_in_progress())
+	{
+		hud_print_message(0, anti_aliasing_live == _anti_aliasing_fxaa ? L"FXAA on" : L"FXAA off");
+		anti_aliasing_changed_milliseconds = -1.0;
+	}
+	else
+		anti_aliasing_changed_milliseconds = halo_frame_trace_milliseconds();
+	platform_log("anti-aliasing: %s (the live chord, until the app quits)", anti_aliasing_label);
+	if (device.gl_ready)
+		anti_aliasing_read();
+}
+
+/* the pass over the view's rectangle of the scene's target (halo_render_scene_end) */
+static void anti_aliasing_pass(struct render_target_entry *scene)
+{
+	const struct halo_stereo_frame *stereo = halo_stereo_frame();
+	struct gpu_rect rect;
+
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	if (!anti_aliasing_ready || stereo->mode != HALO_STEREO_OFF || stereo->eye_count != 0)
+		return;
+	rect.x = (int32_t)floorf((float)native_scene_bounds[0] * scene->target.scale[0] + 0.5f);
+	rect.y = (int32_t)floorf((float)native_scene_bounds[1] * scene->target.scale[1] + 0.5f);
+	rect.width = (int32_t)floorf((float)native_scene_bounds[2] * scene->target.scale[0] + 0.5f) - rect.x;
+	rect.height = (int32_t)floorf((float)native_scene_bounds[3] * scene->target.scale[1] + 0.5f) - rect.y;
+	if (rect.width > 0 && rect.height > 0)
+		gpu_anti_alias(anti_aliasing_method == _anti_aliasing_smaa ? GPU_ANTI_ALIAS_SMAA : GPU_ANTI_ALIAS_FXAA,
+			scene->target.texture, &rect);
+}
+
+/* render_window, as a view's window begins (source/render/render.c): what
+it draws into the back buffer until halo_render_scene_end is the scene, at
+the scene's size. Only a player's or the menu's own view (the primary
+target); a mirror's has its own target */
+void halo_render_scene_begin(short rasterizer_target, long x0, long y0, long x1, long y1)
+{
+	native_scene = rasterizer_target == 0;
+	native_scene_bounds[0] = x0;
+	native_scene_bounds[1] = y0;
+	native_scene_bounds[2] = x1;
+	native_scene_bounds[3] = y1;
+}
+
+/* the view's world and screen effects are drawn; its HUD is next (or a
+movie in the world's place). With display.native_hud on, the view's part of
+the scene goes into the display-sized back buffer, which takes the back
+buffer's draws from here on. Does nothing outside a scene.
+
+A pass over the finished scene belongs here, before the stretch, which then
+takes that pass's output as its source: FXAA at the scene's size, or the
+resolve of a multisampled scene target. The HUD and menus are drawn after it
+and stay untouched. (halo_render_before_hud comes earlier, before the
+weapon's screen effects, which read the scene.) While the layer is off, the
+scene and the HUD share one target, and such a pass would have to end the
+scene's pass and write the back buffer itself */
+void halo_render_scene_end(void)
+{
+	struct render_target_entry *scene, *native;
+	struct gpu_rect area;
+	BOOL fold;
+
+	if (!native_scene)
+		return;
+	native_scene = FALSE;
+	if (!device.gl_ready)
+		return;
+	/* (a view that drew nothing, a movie's, has nothing to bring over) */
+	scene = back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO);
+	/* the anti-aliasing pass over the scene first, unless FXAA goes into
+	the stretch below (debug.anti_aliasing_folded, anti_aliasing_folds) */
+	fold = native_hud_active() && anti_aliasing_folds();
+	if (scene && !fold)
+		anti_aliasing_pass(scene);
+	if (!native_hud_active())
+		return;
+	native = render_target_get_layer(&device.back_buffer, HALO_STEREO_LAYER_NATIVE);
+	if (!scene || !native)
+		return;
+	area.x = (int32_t)floorf((float)native_scene_bounds[0] * native->target.scale[0] + 0.5f);
+	area.y = (int32_t)floorf((float)native_scene_bounds[1] * native->target.scale[1] + 0.5f);
+	area.width = (int32_t)floorf((float)native_scene_bounds[2] * native->target.scale[0] + 0.5f) - area.x;
+	area.height = (int32_t)floorf((float)native_scene_bounds[3] * native->target.scale[1] + 0.5f) - area.y;
+	if (area.width <= 0 || area.height <= 0)
+		return;
+	gpu_upscale(scene->target.texture, native->target.texture, &area, fold ? GPU_ANTI_ALIAS_FXAA : 0);
+	native->last_rendered = device.frame + 1;
+	native->target.written = ++render_target_write_serial;
 }
 
 /* what the shader translators emit for this context */
@@ -1352,7 +1720,7 @@ static void gl_initialize(void)
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */
 	(void)halo_screen_width();
-	screen_mode_choose(&screen_width, screen_scale);
+	screen_mode_choose(&screen_width, screen_scale, screen_scale_native);
 	platform_log("iOS render target: %.0fx%.0f (logical %ldx%d)",
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
 #endif
@@ -1369,6 +1737,11 @@ static void gl_initialize(void)
 	if (debug_settings.shader_replay)
 		shader_replay(debug_settings.shader_replay);
 	device.gl_ready = TRUE;
+	/* (display.anti_aliasing's programs, now that the backend is up) */
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	else
+		anti_aliasing_prepare();
 }
 
 Direct3D *WINAPI Direct3DCreate8(UINT sdk_version)
@@ -1586,16 +1959,20 @@ agree for a whole frame. Returns the width the game draws. */
 long halo_screen_commit(void)
 {
 	long width;
-	float scale[2];
+	float scale[2], native[2];
 
+	/* (display.anti_aliasing, as config.toml has it now) */
+	if (device.gl_ready)
+		anti_aliasing_read();
 	if (!screen_width)
 		return halo_screen_width();
-	screen_mode_choose(&width, scale);
+	screen_mode_choose(&width, scale, native);
 	if (!head_eyes_frame())
 	{
 		screen_scale_mono[0] = scale[0];
 		screen_scale_mono[1] = scale[1];
 	}
+	native_hud_commit(width, scale, native);
 	if (width != screen_width || scale[0] != screen_scale[0] || scale[1] != screen_scale[1])
 	{
 		platform_log("screen: %ldx%d drawn at %.0fx%.0f", width, SCREEN_HEIGHT,
@@ -1624,7 +2001,7 @@ void halo_screen_commit_stereo_scale(void)
 {
 	const struct halo_stereo_frame *stereo = halo_stereo_frame();
 	long width;
-	float scale[2];
+	float scale[2], native[2];
 	/* what the scale depends on, to skip the work while it doesn't change */
 	static int32_t last_mode = -1, last_eye_count, last_width, last_height, last_foveated;
 	static double last_render_scale;
@@ -1640,11 +2017,16 @@ void halo_screen_commit_stereo_scale(void)
 	last_width = stereo->eye_width;
 	last_height = stereo->eye_height;
 	last_render_scale = render_scale_live;
-	screen_mode_choose(&width, scale);
+	screen_mode_choose(&width, scale, native);
 	if (!head_eyes_frame())
 	{
 		screen_scale_mono[0] = scale[0];
 		screen_scale_mono[1] = scale[1];
+	}
+	if (width == screen_width)
+	{
+		screen_scale_native[0] = native[0];
+		screen_scale_native[1] = native[1];
 	}
 	if (width == screen_width && (scale[0] != screen_scale[0] || scale[1] != screen_scale[1]))
 	{
@@ -3405,6 +3787,9 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 		return FALSE;
 	}
 	has_depth = draw->depth_target != 0;
+	if (target_native && ((D3D__RenderState[D3DRS_ZENABLE] && D3D__RenderState[D3DRS_ZFUNC] != D3DCMP_ALWAYS) ||
+		D3D__RenderState[D3DRS_STENCILENABLE]))
+		native_depth_asks++;
 	raster_state_fill(has_depth, &draw->viewport, &draw->scissor, &draw->depth_stencil, &draw->blend, &draw->raster);
 
 	memset(&key, 0, sizeof(key));
@@ -4953,7 +5338,7 @@ static void stereo_targets_release(void)
 	{
 		struct render_target_entry *entry = *link;
 
-		if (entry->layer == HALO_STEREO_LAYER_MONO)
+		if (entry->layer == HALO_STEREO_LAYER_MONO || entry->layer == HALO_STEREO_LAYER_NATIVE)
 		{
 			link = &entry->next;
 			continue;
@@ -4973,6 +5358,38 @@ static void stereo_targets_release(void)
 	}
 	if (freed)
 		platform_log("stereo: stereo stopped; freed %lu eye and HUD targets (%lu MB)", freed, bytes >> 20);
+}
+
+/* display.native_hud: a display-sized back buffer nothing has drawn into for
+two seconds' frames goes (the layer turned off, or the window changed size
+and another took its place) */
+static void native_targets_release(void)
+{
+	struct render_target_entry **link = &render_targets;
+
+	while (*link)
+	{
+		struct render_target_entry *entry = *link;
+
+		if (entry->layer != HALO_STEREO_LAYER_NATIVE || entry->last_rendered + 120 > device.frame ||
+			(native_hud_active() && entry->target.scale[0] == screen_scale_native[0] &&
+				entry->target.scale[1] == screen_scale_native[1]))
+		{
+			link = &entry->next;
+			continue;
+		}
+		{
+			struct render_target_entry **bucket = render_target_bucket(entry->target.data);
+
+			while (*bucket != entry)
+				bucket = &(*bucket)->next_in_bucket;
+			*bucket = entry->next_in_bucket;
+		}
+		*link = entry->next;
+		platform_log("screen: freed the HUD's %lux%lu back buffer", entry->target.gl_width, entry->target.gl_height);
+		gpu_texture_destroy(entry->target.texture);
+		free(entry);
+	}
 }
 
 /* the back buffer's texture for a stereo layer if something drew it this
@@ -5023,8 +5440,12 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			stereo_targets_release();
 		/* a stereo frame's screenshot and trace are of eye 0, or the zoomed
 		picture in a zoomed frame */
+		/* display.native_hud: the display-sized back buffer, which holds the
+		scene with the HUD and menus over it (a scene left open is closed
+		first; render.c closes each) */
 		struct render_target_entry *back_buffer = zoom ? zoom : render_target_get_layer(&device.back_buffer,
-			stereo_frame ? 0 : HALO_STEREO_LAYER_MONO);
+			stereo_frame ? 0 : (halo_render_scene_end(), native_hud_active()) ? HALO_STEREO_LAYER_NATIVE :
+			HALO_STEREO_LAYER_MONO);
 		struct render_target_entry *hud = stereo_frame ? back_buffer_drawn_this_frame(HALO_STEREO_LAYER_HUD) : NULL;
 		/* the reticle's layer and each HUD group's target, if drawn this
 		frame (halo_stereo.h) */
@@ -5052,6 +5473,9 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		if (screenshot_every > 0 && device.frame % (unsigned long)screenshot_every == 0)
 		{
 			write_screenshot(back_buffer, "");
+			/* display.native_hud: and the scene as drawn, before its stretch */
+			if (back_buffer->layer == HALO_STEREO_LAYER_NATIVE && back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO))
+				write_screenshot(back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO), "-scene");
 			/* and each picture of a stereo frame, to free-view or inspect: the
 			eyes', or a zoomed frame's one picture for both (its eyes weren't
 			drawn) */
@@ -5236,6 +5660,9 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		xgpu_texture_cache_begin_frame();
 		shader_list_take_pipelines();
 	}
+	native_scene = FALSE;
+	if (device.frame % 60 == 0)
+		native_targets_release();
 	device.frame++;
 	input_replay_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
 	benchmark_suite_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
@@ -5259,6 +5686,11 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			platform_log("stereo: the HUD layer's last 60 frames: %lu draws with exact transmittance, %lu without",
 				hud_layer_exact, hud_layer_inexact);
 		hud_layer_exact = hud_layer_inexact = 0;
+		/* and display.native_hud's draws that wanted a depth or stencil test */
+		if (native_depth_asks)
+			platform_log("screen: the last 60 frames: %lu draws over the scene asked for a depth or stencil test, which "
+				"the display-sized back buffer does not have", native_depth_asks);
+		native_depth_asks = 0;
 		{
 			unsigned long models_drawn[5], models_culled;
 
