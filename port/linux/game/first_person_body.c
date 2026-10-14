@@ -850,7 +850,7 @@ static enum body_skip first_person_body_pose(long object_index)
 		first_person_body_seat_log(object_index, camera);
 	if (unit_is_playing_custom_animation(object_index))
 		return BODY_SKIP_CUSTOM_ANIMATION;
-	if (TEST_FLAG(object->object.flags, _object_dead_bit))
+	if (TEST_FLAG(object->object.damage_flags, _object_dead_bit))
 		return BODY_SKIP_DEAD;
 	if (model_index == NONE)
 		return BODY_SKIP_MODEL;

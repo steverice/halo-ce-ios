@@ -153,6 +153,10 @@ SCREENS = {
     },
 }
 
+# display.first_person_legs (OpenCE's LEGS row) has no row here: upstream puts it on
+# its FOV AND VIEWMODELS screen, which this port doesn't have yet. Until then it is
+# a config.toml setting only (port/linux/src/port_config.c, port/linux/README.md).
+
 # Controls Setup: the keyboard and mouse's actions, in groups (the order of
 # port/linux/game/menu_functions.c's table of them)
 CONTROL_GROUPS = ["MOVEMENT", "WEAPONS", "ACTIONS"]

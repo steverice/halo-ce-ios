@@ -365,6 +365,11 @@ not while climbing in or out). render_objects.c draws it after the
 first-person weapon, under that weapon's stencil, then again for its inside
 faces (halo_first_person_body_fill) */
 int halo_first_person_body(long object_index);
+/* port/linux/game/first_person_view.c: nonzero when the frame being drawn is
+flat (mono), where display.first_person_legs applies and
+display.first_person_body doesn't; 0 in a stereo frame, the other way
+around. Logs once per change of view which setting is ignored */
+int halo_first_person_legs_apply(void);
 /* the render-only node matrices for that body, set back along the facing
 (facing: the unit's world forward; only its horizontal part counts) by
 display.first_person_body_offset, or seated by

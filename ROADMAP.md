@@ -52,6 +52,7 @@
 - [ ] Mirror reflections at full resolution by default (`display.mirror_resolution`)
 - [ ] AI-upscaled textures
 - [ ] Bink intro and attract videos
+- [x] Your own legs when you look down on a flat screen, from OpenCE (`display.first_person_legs`, off by default; set it in `config.toml`: its menu row comes with OpenCE's FOV and Viewmodels screen, not ported yet). The headset draws the whole body instead (`display.first_person_body`)
 
 ## Multiplayer
 
