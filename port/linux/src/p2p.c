@@ -828,6 +828,23 @@ static void packet_nonce(const unsigned char *packet, unsigned char *nonce)
 	memcpy(nonce + P2P_NONCE_SIZE - 8, packet + 1 + P2P_IDENTIFIER_SIZE, 8);
 }
 
+/* a datagram out of the tunnel's socket; its first failure in a row is
+logged (a socket the system took back while the app was suspended fails
+every send: network_resumed opens it again) */
+static void tunnel_sendto(const void *data, int size, const struct sockaddr_in *to)
+{
+	static int failing;
+
+	if (posix_socket_sendto(p2p.tunnel_socket, data, size, 0, to, sizeof(*to)) >= 0 || would_block())
+	{
+		failing = 0;
+		return;
+	}
+	if (!failing)
+		platform_log("Internet play: the tunnel's socket cannot send (error %d)", posix_socket_last_error());
+	failing = 1;
+}
+
 static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, const unsigned char *inner, int size)
 {
 	unsigned char packet[MAXIMUM_PACKET_SIZE];
@@ -855,7 +872,7 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 		return;
 	}
 	make_address(&address, to->address, to->port);
-	posix_socket_sendto(p2p.tunnel_socket, packet, TUNNEL_HEADER_SIZE + sealed, 0, &address, sizeof(address));
+	tunnel_sendto(packet, TUNNEL_HEADER_SIZE + sealed, &address);
 }
 
 /* to a peer the tunnel has reached; dropped otherwise */
@@ -1231,7 +1248,7 @@ static void stun_send(struct stun_server *server)
 		posix_random_bytes(server->transaction, sizeof(server->transaction));
 	memcpy(request + 8, server->transaction, sizeof(server->transaction));
 	make_address(&address, server->address, server->port);
-	posix_socket_sendto(p2p.tunnel_socket, request, sizeof(request), 0, &address, sizeof(address));
+	tunnel_sendto(request, sizeof(request), &address);
 	server->sent_time = p2p_now();
 	server->attempts++;
 }
@@ -1449,10 +1466,26 @@ The NAT's mapping of the tunnel may have lapsed, so this machine's public
 address is asked again before an offer names it, and the brokers'
 connections, which the network may have dropped, are made anew rather than
 at their silence timeout */
+static int tunnel_open(unsigned short port);
+
 static void network_resumed(unsigned long stopped)
 {
 	int index;
 
+	/* (iOS and tvOS take back a suspended app's sockets: the tunnel's then
+	fails every send and hears nothing, so no STUN server answers and no
+	peer is reached. A new one, on the same port where it is free) */
+	if (p2p.tunnel_socket >= 0)
+	{
+		unsigned short port = p2p.tunnel_port;
+
+		posix_socket_close(p2p.tunnel_socket);
+		p2p.tunnel_socket = -1;
+		if (!tunnel_open(port) && !tunnel_open(0))
+			platform_log("Internet play: its socket could not be opened again after the stop");
+		else if (p2p.tunnel_port != port)
+			platform_log("Internet play: its socket was opened again on another port after the stop");
+	}
 	for (index = 0; index < p2p.stun_count; index++)
 	{
 		p2p.stun[index].has_mapped = 0;
@@ -2370,7 +2403,7 @@ void p2p_tunnel_send(unsigned long address, unsigned short port, const void *dat
 	if (p2p.tunnel_socket < 0)
 		return;
 	make_address(&to, address, port);
-	posix_socket_sendto(p2p.tunnel_socket, data, size, 0, &to, sizeof(to));
+	tunnel_sendto(data, size, &to);
 }
 
 static void tunnel_readable(void)
@@ -3469,6 +3502,23 @@ static void *p2p_thread(void *unused)
 	return NULL;
 }
 
+/* the tunnel's socket on the port (network byte order; 0: any): 1 if it
+opened */
+static int tunnel_open(unsigned short port)
+{
+	/* all of a host's traffic, up to a 128-machine game's, goes through
+	this one socket: buffers as large as the game's own sockets' (at least
+	1 MB, transport_endpoint_winsock.c) */
+	int size = 1 << 20;
+
+	p2p.tunnel_socket = open_socket(SOCK_DGRAM, 0, port, &p2p.tunnel_port);
+	if (p2p.tunnel_socket < 0)
+		return 0;
+	posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+	posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+	return 1;
+}
+
 void p2p_initialize(unsigned long local_address)
 {
 	char invite[256];
@@ -3492,21 +3542,11 @@ void p2p_initialize(unsigned long local_address)
 	for (index = 0; index < MAXIMUM_STREAMS; index++)
 		p2p.streams[index].socket = -1;
 	p2p.local_address = local_address;
-	p2p.tunnel_socket = open_socket(SOCK_DGRAM, 0, network_short((unsigned short)tunnel_port), &p2p.tunnel_port);
-	if (p2p.tunnel_socket < 0)
+	if (!tunnel_open(network_short((unsigned short)tunnel_port)))
 	{
 		platform_log("Internet play: cannot open its socket (network.tunnel_port %ld in use?); it is off",
 			tunnel_port);
 		return;
-	}
-	{
-		/* all of a host's traffic, up to a 128-machine game's, goes through
-		this one socket: buffers as large as the game's own sockets' (at
-		least 1 MB, transport_endpoint_winsock.c) */
-		int size = 1 << 20;
-
-		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
-		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 	}
 #ifndef HALO_ILP32
 	/* the first copy of the game takes the invites later ones are opened
