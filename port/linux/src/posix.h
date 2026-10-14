@@ -200,6 +200,14 @@ int posix_register_url_scheme(const char *scheme, const char *description);
 file that only they can read (made the first time); 1 on success, 0 where
 there is none (always, on Android) */
 int posix_user_secret(unsigned char *secret, int size);
+/* whether the app is in the background, where an Apple device suspends it
+in a few seconds (its game held, its sockets taken back): internet play
+tells its peers it is away (p2p.c); 0 elsewhere */
+int posix_app_in_background(void);
+/* the milliseconds the app has spent in the background since it started
+(the time it is in there now included), by which the game's clock stands
+still there (xbox_kernel.c); 0 elsewhere */
+posix_ulong posix_background_milliseconds(void);
 
 /* a connection to the Discord desktop client's local socket or pipe, or -1
 if none is running (always, on iOS) */

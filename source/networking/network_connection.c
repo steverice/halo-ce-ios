@@ -329,6 +329,11 @@ static boolean network_connection_flush_reliable(
 	struct network_connection *connection);
 static void network_connection_flush_reliable_last(
 	struct network_connection *connection);
+static boolean network_connection_peer_away(
+	struct network_connection *connection);
+static void network_connection_grow_reliable_queue(
+	struct network_connection *connection,
+	long needed);
 static long network_connection_datagram_size(
 	byte const *datagram);
 
@@ -1876,6 +1881,13 @@ static boolean network_connection_write_reliable(
 		{
 			connection->reliable_outgoing_time = system_milliseconds();
 		}
+		/* (port: for a peer whose app is in the background, a larger queue,
+		that it is waited for as long as internet play waits for it) */
+		if (circular_queue_free_space(connection->reliable_outgoing_queue) < buffer_size - bytes_sent &&
+			network_connection_peer_away(connection))
+		{
+			network_connection_grow_reliable_queue(connection, buffer_size - bytes_sent);
+		}
 		if (!circular_queue_queue_data(
 			connection->reliable_outgoing_queue,
 			(byte const *)message + bytes_sent,
@@ -1887,6 +1899,59 @@ static boolean network_connection_write_reliable(
 	}
 
 	return TRUE;
+}
+
+/* port: whether the connection's peer is an internet play machine whose app
+went to the background (an Apple device's, suspended: p2p.c's away notice),
+which is waited for rather than dropped for reading nothing */
+int p2p_peer_away(unsigned long address);
+void network_event(char *format, ...);
+
+static boolean network_connection_peer_away(
+	struct network_connection *connection)
+{
+	struct transport_address address;
+
+	if (!connection->reliable_address_valid && !connection->reliable_endpoint)
+	{
+		return FALSE;
+	}
+	csmemset(&address, 0, sizeof(address));
+	network_connection_get_address(connection, &address, NULL);
+	/* (a transport address's IPv4 is in host byte order; internet play's
+	are in network byte order) */
+	return p2p_peer_away(__builtin_bswap32(address.address.long_words[0])) != 0;
+}
+
+/* port: the reliable queue of a connection to an away peer, four times as
+large (up to 4 MB), with what it held */
+static void network_connection_grow_reliable_queue(
+	struct network_connection *connection,
+	long needed)
+{
+	struct circular_queue *queue = connection->reliable_outgoing_queue;
+	struct circular_queue *larger;
+	long size = queue->buffer_size;
+
+	while (size < 0x400000 && size - circular_queue_size(queue) < needed + 1)
+	{
+		size *= 4;
+	}
+	if (size == queue->buffer_size || !(larger = circular_queue_new("outgoing-reliable", size)))
+	{
+		return;
+	}
+	while (circular_queue_size(queue) > 0)
+	{
+		byte buffer[4096];
+		long chunk = MIN(circular_queue_size(queue), (long)sizeof(buffer));
+
+		circular_queue_dequeue_data(queue, buffer, chunk, TRUE);
+		circular_queue_queue_data(larger, buffer, chunk);
+	}
+	circular_queue_delete(queue);
+	connection->reliable_outgoing_queue = larger;
+	network_event("the reliable queue of a peer whose app is in the background grew to %ld bytes", size);
 }
 
 /* what the stream has waiting, as far as the peer takes it; FALSE when the
@@ -1918,7 +1983,10 @@ static boolean network_connection_flush_reliable(
 		}
 		else if (sent == _transport_result_operation_would_block)
 		{
-			if (current_time - connection->reliable_outgoing_time >= NETWORK_CONNECTION_WRITE_TIMEOUT)
+			/* (port: a peer whose app is in the background reads nothing until it
+			is back: internet play says how long it is waited for) */
+			if (current_time - connection->reliable_outgoing_time >= NETWORK_CONNECTION_WRITE_TIMEOUT &&
+				!network_connection_peer_away(connection))
 			{
 				error(_error_silent, "a reliable connection's peer has stopped reading");
 				return FALSE;

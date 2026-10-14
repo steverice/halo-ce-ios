@@ -81,6 +81,17 @@ int posix_register_url_scheme(const char *scheme, const char *description)
 	return ok ? 1 : 0;
 }
 
+/* (a desktop's game goes on behind other windows) */
+int posix_app_in_background(void)
+{
+	return 0;
+}
+
+posix_ulong posix_background_milliseconds(void)
+{
+	return 0;
+}
+
 int posix_user_secret(unsigned char *secret, int size)
 {
 	/* in the user's local application data, which only they (and the

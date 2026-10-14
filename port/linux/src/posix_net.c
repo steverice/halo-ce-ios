@@ -600,6 +600,20 @@ posix_ulong posix_process_id(void)
 	return (posix_ulong)getpid();
 }
 
+#ifndef HALO_IOS
+/* (a desktop's game goes on behind other windows; the Apple host's says:
+port/ios/host/posix_net.c) */
+int posix_app_in_background(void)
+{
+	return 0;
+}
+
+posix_ulong posix_background_milliseconds(void)
+{
+	return 0;
+}
+#endif
+
 int posix_user_secret(unsigned char *secret, int size)
 {
 #if defined(__ANDROID__) || defined(HALO_IOS)
