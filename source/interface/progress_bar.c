@@ -1497,6 +1497,15 @@ static struct pixel_shader_definition copy_shader;
 
 static void progress_bar_keep_frame(
 	boolean black);
+static void progress_bar_start_frame(
+	boolean black);
+/* port: the shaders and pipelines still compiling off the game thread
+(port/linux/src/gpu.h) */
+unsigned int gpu_compiles_outstanding(void);
+/* port: a target the size of the screen that the screen's draws are made into
+once before its first frame (progress_bar_start_frame) */
+static IDirect3DTexture8 *warm_texture= NULL;
+static IDirect3DSurface8 *warm_surface= NULL;
 
 /* port: the screen's draws name vertex shader 0, Direct3D's fixed function,
 with identity world and view transforms and a projection that leaves x and y
@@ -1646,7 +1655,7 @@ void progress_bar_begin(
 	/* port: the screen starts from the last frame shown, or from black when
 	there was none (no map loaded), as the Xbox's front buffer had it */
 	if (!progress_bar_mode.active)
-		progress_bar_keep_frame(!skip_frame_capture);
+		progress_bar_start_frame(!skip_frame_capture);
 	progress_bar_mode.active= TRUE;
 	SetThreadPriority((void *)-2, 2);
 
@@ -2076,6 +2085,11 @@ static void progress_bar_render(
 	progress= (real)((sin(wobble_phase)*0.05 + progress - last_t)*0.2 + last_t);
 	if (progress>1.0)
 		progress= 1.f;
+	/* port: nor under 0, where the wobble takes a small progress once its
+	phase has passed pi (a later load): the color's pow of a negative sine
+	is not a number */
+	if (progress<0.f)
+		progress= 0.f;
 	last_t= progress;
 	color.red= color.green= color.blue= (real)pow(sin(progress*3.14159), 0.9f);
 	for (sound_index= 0; sound_index<NUMBER_OF_PROGRESS_BAR_SOUNDS; sound_index++)
@@ -2258,6 +2272,63 @@ static void progress_bar_keep_frame(
 	IDirect3DSurface8_Release(back_buffer);
 	if (depth_buffer)
 		IDirect3DSurface8_Release(depth_buffer);
+
+	return;
+}
+
+/* port: what the screen starts from: the last frame shown (or black), in the
+kept frame. Under display.async_shaders a pipeline's first draw is skipped
+while it compiles, and the screen's own three pipelines (the blur, the
+picture and the copy) are first drawn here: were they left to the first
+frames, the copy of the last frame and then the blur of it would be the
+draws skipped, and the screen would start from black. So the screen's draws
+are made once into a target nobody sees, the compiles they started are
+waited for (a few tens of milliseconds, once a launch), and then the last
+frame, which nothing has drawn over yet, is copied. */
+static void progress_bar_start_frame(
+	boolean black)
+{
+	IDirect3DSurface8 *back_buffer;
+	IDirect3DSurface8 *depth_buffer= NULL;
+	long width= halo_screen_width();
+	long waited;
+
+	progress_bar_keep_frame(black);
+	if (!previous_frame_texture)
+		return;
+	if (warm_texture && previous_frame_width!=width)
+	{
+		IDirect3DSurface8_Release(warm_surface);
+		IDirect3DTexture8_Release(warm_texture);
+		warm_texture= NULL;
+	}
+	if (!warm_texture)
+	{
+		if (IDirect3DDevice8_CreateTexture(global_d3d_device, width, 480, 1, D3DUSAGE_RENDERTARGET,
+			D3DFMT_LIN_A8R8G8B8, D3DPOOL_DEFAULT, &warm_texture)<0 || !warm_texture)
+		{
+			warm_texture= NULL;
+			return;
+		}
+		IDirect3DTexture8_GetSurfaceLevel(warm_texture, 0, &warm_surface);
+	}
+	if (!progress_bar_mode.texture0)
+	{
+		progress_bar_make_stuff_ready();
+		progress_bar_globals.initial_progress= 0.f;
+	}
+	IDirect3DDevice8_GetBackBuffer(global_d3d_device, 0, 0, &back_buffer);
+	IDirect3DDevice8_GetDepthStencilSurface(global_d3d_device, &depth_buffer);
+	IDirect3DDevice8_SetRenderTarget(global_d3d_device, warm_surface, depth_buffer);
+	/* (it ends with progress_bar_keep_frame, which binds the back buffer again) */
+	progress_bar_render(0.f);
+	last_t= 0.f;
+	IDirect3DSurface8_Release(back_buffer);
+	if (depth_buffer)
+		IDirect3DSurface8_Release(depth_buffer);
+	for (waited= 0; gpu_compiles_outstanding() && waited<1000; waited++)
+		Sleep(1);
+	progress_bar_keep_frame(black);
 
 	return;
 }

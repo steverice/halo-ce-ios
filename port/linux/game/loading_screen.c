@@ -21,9 +21,9 @@ So a campaign level's load holds the screen itself:
   or a saved game resumed: they all load the level's map), starts the screen
   over the last frame and shows its first frame;
 - the level is unloaded, copied if it never was, and loaded. The game
-  thread does that work, so the picture stands still for it (0.1 to 0.3 s on
-  the devices this was measured on); the tone plays on, mixed on the audio
-  thread;
+  thread does that work, so the picture stands still for it (0.07 to 0.1 s
+  measured on an M6 Mac, more on slower devices); the tone plays on, mixed
+  on the audio thread;
 - halo_loading_screen_finish, at the end of main_new_map, keeps drawing the
   screen, sixty frames a second as the Xbox did, until the shaders and
   pipelines still compiling on the worker threads (gpu_compiles_outstanding)
@@ -48,6 +48,10 @@ draw the same frames every time (debug.fixed_timestep, debug.input_replay,
 debug.benchmark, debug.exit_after, debug.screenshot_every: the same runs
 that compile shaders at their first draw) and except in stereo, where it has
 not been seen on a headset; "on" and "off" force it.
+With display.async_shaders off (those same runs, or the setting) the compiles
+block halo_shader_list_warm on the game thread, so a forced-on screen stands
+still for them: a run that wants to see the screen as a player does sets both
+game.loading_screen = "on" and display.async_shaders = "on".
 */
 
 #include "cseries.h"
