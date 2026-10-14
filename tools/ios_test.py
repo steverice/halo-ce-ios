@@ -96,6 +96,10 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/linux/src/p2p_crypto.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD/'join-code-probe')
 run(BUILD/'join-code-probe')
+# the game's sockets made again after a suspension (host_socket_revival.c), with force on a Mac
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/socket_revival_probe.c', 'port/ios/host/host_socket_revival.c', '-o', BUILD/'socket-revival-probe')
+run(BUILD/'socket-revival-probe')
 # a router's forwarding on Apple devices (host_natpmp_packets.c): NAT-PMP's and PCP's requests and answers
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/natpmp_probe.c', 'port/ios/host/host_natpmp_packets.c', '-o', BUILD/'natpmp-probe')
@@ -126,7 +130,8 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-D
     '-Dst_atim=st_atimespec', '-Dst_ctim=st_ctimespec', '--include-directory=port/linux/src',
     '--include-directory=port/ios/host', '--include-directory=port/runtime/include',
     '--include-directory=port/runtime/guest/runtime', 'port/ios/tests/posix_net_probe.c',
-    'port/ios/host/posix_net.c', '-Wl,-dead_strip', f'--output={BUILD / "posix-net-probe"}')
+    'port/ios/host/posix_net.c', 'port/ios/host/host_socket_revival.c', '-Wl,-dead_strip',
+    f'--output={BUILD / "posix-net-probe"}')
 run(BUILD/'posix-net-probe')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)

@@ -832,6 +832,12 @@ static const struct config_setting config_settings[] =
 		"Ask for a second window scene a few seconds in, to check that the game\n"
 		"ignores its start, keeps its event pump and closes the scene (the\n"
 		"host's host_main.m). For the simulator." },
+	{ "debug.test_reclaim_sockets", _config_boolean, "false", "HALO_TEST_RECLAIM_SOCKETS", _environment_set_is_true,
+		_platform_ios,
+		"On coming back from the background, make every socket of the game's\n"
+		"again and break its TCP connections, as an Apple device does to a\n"
+		"suspended app (the host's host_socket_revival.c); for the simulator,\n"
+		"whose apps keep their sockets." },
 	{ "debug.test_text_answer", _config_string, "\"\"", "HALO_TEST_TEXT_ANSWER", _environment_value, _platform_ios,
 		"On an Apple TV, answer the dialog a menu's text field asks with (a join\n"
 		"code, a password) with this text, 3 seconds after it comes up, as if it\n"

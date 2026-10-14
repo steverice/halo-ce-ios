@@ -92,7 +92,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_join_link.c host/host_config.c host/host_profile.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
-    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_natpmp.c host/host_natpmp_packets.c
+    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_socket_revival.c host/host_natpmp.c host/host_natpmp_packets.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"

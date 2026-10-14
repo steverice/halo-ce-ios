@@ -5,6 +5,9 @@ and the game holds at its next Present (host_gpu_dispatch.c), pumping the run
 loop until the scene returns; the game resumes where it was. Not on a Mac. */
 #import <UIKit/UIKit.h>
 #include "ios_host.h"
+#include "host_socket_revival.h"
+#include "host_config.h"
+#include <string.h>
 #include <stdatomic.h>
 
 static _Atomic int backgrounded;
@@ -31,6 +34,12 @@ void host_lifecycle_install(void) {
             atomic_store(&backgrounded,0);
             host_sdl_audio_pause(0);
             host_logf(HOST_LOG_INFO,"in the foreground: the game resumes");
+            /* (the sockets the system took back while the app was suspended,
+               made again: host_socket_revival.c; with debug.test_reclaim_sockets,
+               all of them, as if it had, since a simulator's app keeps its sockets) */
+            char test[8];
+            host_config_string("debug.test_reclaim_sockets","false",test,sizeof(test));
+            host_socket_revive(strcmp(test,"true") ? 0 : 2);
         }];
 }
 

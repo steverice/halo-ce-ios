@@ -18,6 +18,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "host_socket_revival.h"
+
 #ifndef SOCK_CLOEXEC
 #define SOCK_CLOEXEC 0x80000
 #endif
@@ -40,17 +42,34 @@ static struct sockaddr_storage sockaddr_inward(const void *input,socklen_t size)
 static void sockaddr_outward(void *address,socklen_t size) {
     if(address && size>=2){uint16_t family=((struct sockaddr *)address)->sa_family;memcpy(address,&family,2);}
 }
+/* (each socket's making kept, to make it again after the app was suspended: host_socket_revival.c) */
 static int ios_socket(int family,int type,int protocol) {
     int fd=socket(family,type&~SOCK_CLOEXEC,protocol);
-    if(fd>=0){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));fcntl(fd,F_SETFD,FD_CLOEXEC);}return fd;
+    if(fd>=0){int one=1;setsockopt(fd,SOL_SOCKET,SO_NOSIGPIPE,&one,sizeof(one));fcntl(fd,F_SETFD,FD_CLOEXEC);
+        host_socket_opened(fd,family,type&~SOCK_CLOEXEC,protocol);}
+    return fd;
 }
-static int ios_bind(int fd,const void *p,socklen_t n) {struct sockaddr_storage a=sockaddr_inward(p,n);return bind(fd,(struct sockaddr *)&a,n);}
-static int ios_connect(int fd,const void *p,socklen_t n) {struct sockaddr_storage a=sockaddr_inward(p,n);return connect(fd,(struct sockaddr *)&a,n);}
+static int ios_bind(int fd,const void *p,socklen_t n) {
+    struct sockaddr_storage a=sockaddr_inward(p,n);int r=bind(fd,(struct sockaddr *)&a,n);if(!r)host_socket_bound(fd);return r;
+}
+static int ios_connect(int fd,const void *p,socklen_t n) {
+    struct sockaddr_storage a=sockaddr_inward(p,n);int r=connect(fd,(struct sockaddr *)&a,n);
+    if(!r || errno==EINPROGRESS)host_socket_connected(fd,(struct sockaddr *)&a,n);
+    return r;
+}
+static int ios_listen(int fd,int backlog) {int r=listen(fd,backlog);if(!r)host_socket_listening(fd,backlog);return r;}
+static int ios_setsockopt(int fd,int level,int name,const void *value,socklen_t length) {
+    int r=setsockopt(fd,level,name,value,length);if(!r)host_socket_option(fd,level,name,value,length);return r;
+}
+static int ios_close(int fd) {host_socket_closed(fd);return close(fd);}
 static int ios_accept4(int fd,void *p,socklen_t *n,int flags) {
     (void)flags;int out=accept(fd,p,n);if(out>=0){fcntl(out,F_SETFD,FD_CLOEXEC);if(n)sockaddr_outward(p,*n);}return out;
 }
 static ssize_t ios_sendto(int fd,const void *p,size_t n,int flags,const void *address,socklen_t size) {
-    struct sockaddr_storage a=sockaddr_inward(address,size);return sendto(fd,p,n,flags,(struct sockaddr *)&a,size);
+    struct sockaddr_storage a=sockaddr_inward(address,size);ssize_t r=sendto(fd,p,n,flags,(struct sockaddr *)&a,size);
+    /* (a first send gives an unbound socket its port: kept, as a bind's is) */
+    host_socket_bound(fd);
+    return r;
 }
 static ssize_t ios_recvfrom(int fd,void *p,size_t n,int flags,void *address,socklen_t *size) {
     ssize_t out=recvfrom(fd,p,n,flags,address,size);if(out>=0 && size)sockaddr_outward(address,*size);return out;
@@ -67,6 +86,9 @@ static int ios_getsockname(int fd,void *p,socklen_t *n) {int r=getsockname(fd,p,
 static int ios_getpeername(int fd,void *p,socklen_t *n) {int r=getpeername(fd,p,n);if(!r)sockaddr_outward(p,*n);return r;}
 static ssize_t ios_getrandom(void *p,size_t size,unsigned flags) {(void)flags;arc4random_buf(p,size);return size;}
 #define socket ios_socket
+#define listen ios_listen
+#define setsockopt ios_setsockopt
+#define close ios_close
 #define bind ios_bind
 #define connect ios_connect
 #define accept4 ios_accept4
