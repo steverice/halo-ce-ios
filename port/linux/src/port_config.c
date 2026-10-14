@@ -881,6 +881,15 @@ static const struct config_setting config_settings[] =
 		"\"off\", \"log\" (each distinct cause once, with the draw it first happened\n"
 		"in, and a summary with counts) or \"strict\" (the first failure or fallback\n"
 		"ends the run with exit status 3)." },
+	{ "debug.render_capture", _config_string, "\"\"", "HALO_RENDER_CAPTURE", _environment_value, _platform_ios,
+		"In a build made with render validation: a folder (in the data folder\n"
+		"unless a full path) where the frames named by render_capture_frames are\n"
+		"written as the calls the game made into the GPU backend, one file a\n"
+		"window, for tools/render_replay.py to replay without the game. The files\n"
+		"hold the game's own textures and models: keep them out of any repository." },
+	{ "debug.render_capture_frames", _config_string, "\"\"", "HALO_RENDER_CAPTURE_FRAMES", _environment_value, _platform_ios,
+		"The windows render_capture writes: \"600+30,1200+30\" is 30 frames from\n"
+		"frame 600 and 30 from frame 1200." },
 	{ "debug.render_validation_allow", _config_string, "\"\"", "HALO_RENDER_VALIDATION_ALLOW", _environment_value, _platform_ios,
 		"With debug.render_validation = \"strict\": reasons the run goes on past,\n"
 		"separated by commas (\"fill-mode-ignored,sampler-unbound\")." },

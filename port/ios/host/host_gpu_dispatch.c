@@ -12,10 +12,14 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 #include "ios_host.h"
 #if HALO_RENDER_VALIDATION
 #include "gpu_validate.h"
+#include "gpu_capture.h"
+#include "gpu_interface_hash.h"
+#include "guest_image.h"
 #include "host_config.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #endif
 
 #include <TargetConditionals.h>
@@ -196,11 +200,42 @@ static const struct gpu_backend *validation_wrap(const struct gpu_backend *chose
 	}
 	if (!strcmp(mode, "strict"))
 		host.mode = GPU_VALIDATION_STRICT;
+	else if (!strcmp(mode, "reject"))
+		host.mode = GPU_VALIDATION_REJECT;
 	else if (strcmp(mode, "log"))
 		platform_log("render validation: debug.render_validation = \"%s\" is not off, log or strict; taken as log", mode);
 	validated = *chosen;
 	gpu_validation_install(&validated, &host);
 	return &validated;
+}
+
+/* render capture (gpu_capture.h): debug.render_capture names a folder (in
+the data folder unless a full path) and debug.render_capture_frames the
+windows of frames that go there, one file each ("600+30,1200+30"); the
+environment's HALO_RENDER_CAPTURE and HALO_RENDER_CAPTURE_FRAMES override
+them. The capture sees the calls before the validator does. A replay
+(host_render_replay.c) is never captured. */
+static struct gpu_backend captured;
+
+static const struct gpu_backend *capture_wrap(const struct gpu_backend *chosen, uint32_t flags)
+{
+	static char folder[1024], frames[256], label[64];
+	struct gpu_capture_host host = { validation_log, folder, frames, GPU_INTERFACE_HASH, GPU_FRONT_END_HASH, HALO_GUEST_SHA256, label };
+
+	host_config_string("debug.render_capture", "", folder, sizeof(folder));
+	if (getenv("HALO_RENDER_CAPTURE"))
+		snprintf(folder, sizeof(folder), "%s", getenv("HALO_RENDER_CAPTURE"));
+	host_config_string("debug.render_capture_frames", "", frames, sizeof(frames));
+	if (getenv("HALO_RENDER_CAPTURE_FRAMES"))
+		snprintf(frames, sizeof(frames), "%s", getenv("HALO_RENDER_CAPTURE_FRAMES"));
+	if (!folder[0] || !frames[0] || getenv("HALO_RENDER_REPLAY"))
+		return chosen;
+	mkdir(folder, 0755);
+	snprintf(label, sizeof(label), "%s%s%s", (flags & GPU_INITIALIZE_METAL) ? "metal" : "gl",
+		getenv("HALO_RENDER_CAPTURE_LABEL") ? " " : "", getenv("HALO_RENDER_CAPTURE_LABEL") ? getenv("HALO_RENDER_CAPTURE_LABEL") : "");
+	captured = *chosen;
+	gpu_capture_install(&captured, &host);
+	return &captured;
 }
 #endif
 
@@ -216,6 +251,7 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 #endif
 #if HALO_RENDER_VALIDATION
 	backend = validation_wrap(backend);
+	backend = capture_wrap(backend, flags);
 #endif
 	wrapped_backend = backend;
 	wrapped = *backend;

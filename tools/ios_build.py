@@ -175,6 +175,8 @@ def main():
         *(['--render-validation'] if validation else []))
     run('ninja','ios_guest','-j',args.jobs)
     run(sys.executable,'tools/ios_bridges.py',*(['--render-validation'] if validation else []))
+    # what a render capture is checked against when it is replayed (port/ios/host/gpu_capture.h)
+    if validation: run(sys.executable,'tools/gpu_interface_hash.py')
     run(sys.executable,'tools/ios_embed_guest.py','build/ios/halo_guest.elf','build/ios/embedded')
     notices = ROOT/'build/ios/licenses'
     notices.mkdir(parents=True, exist_ok=True)

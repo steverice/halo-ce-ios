@@ -135,11 +135,16 @@ static struct
 	uint64_t constants_nonfinite[3];
 	uint32_t uniforms_serial;
 	int uniforms_seen;
+	/* the uniforms last looked at had a nonfinite value: every draw with
+	them is a failure, not only the first */
+	int uniforms_nonfinite;
 	int visibility_active;
 	/* findings */
 	struct cause_entry causes[CAUSE_ENTRIES];
 	unsigned long cause_count, cause_overflow;
 	unsigned long counts[GPU_VALIDATION_REASON_COUNT];
+	/* failures so far, and the calls a REJECT run kept from the backend */
+	unsigned long failures, rejected;
 	unsigned long summarized;
 	int installed, stopping;
 } validation;
@@ -162,6 +167,26 @@ const char *gpu_validation_reason_name(uint32_t reason)
 unsigned long gpu_validation_count(uint32_t reason)
 {
 	return reason < GPU_VALIDATION_REASON_COUNT ? validation.counts[reason] : 0;
+}
+
+unsigned long gpu_validation_rejected(void)
+{
+	return validation.rejected;
+}
+
+unsigned long gpu_validation_failures(void)
+{
+	return validation.failures;
+}
+
+/* in a REJECT run: whether the call being checked has had a failure since
+before (the failure count when its checks began), so is not passed on */
+static int rejected(unsigned long before)
+{
+	if (validation.host.mode != GPU_VALIDATION_REJECT || validation.failures == before)
+		return 0;
+	validation.rejected++;
+	return 1;
 }
 
 /* ---------- reporting */
@@ -222,6 +247,8 @@ void gpu_validation_report(uint32_t reason, uint64_t cause, const char *format, 
 	pthread_mutex_lock(&report_lock);
 	validation.reported++;
 	validation.counts[reason]++;
+	if (reason_classes[reason] == GPU_VALIDATION_FAILURE)
+		validation.failures++;
 	for (index = 0; index < validation.cause_count; index++)
 	{
 		if (validation.causes[index].reason == reason && validation.causes[index].cause == cause)
@@ -421,6 +448,7 @@ static gpu_texture validate_texture_create(const struct gpu_texture_description 
 	struct texture_entry *entry;
 	uint32_t largest, possible = 1;
 	int unsupported = 0;
+	unsigned long before = validation.failures;
 
 	validation.call = "texture_create";
 	if (!description)
@@ -440,7 +468,8 @@ static gpu_texture validate_texture_create(const struct gpu_texture_description 
 		!description->width || !description->height || (description->type == GPU_TEXTURE_3D && !description->depth) ||
 		(description->type == GPU_TEXTURE_CUBE && description->width != description->height) ||
 		(description->usage == GPU_USAGE_RENDER_TARGET && description->type != GPU_TEXTURE_2D) ||
-		(description->format == GPU_FORMAT_DEPTH_STENCIL && description->usage != GPU_USAGE_RENDER_TARGET))
+		(description->format == GPU_FORMAT_DEPTH_STENCIL && description->usage != GPU_USAGE_RENDER_TARGET) ||
+		description->levels > 32)
 		REPORT(TEXTURE_DESCRIPTION_INVALID, description->type | description->usage << 8 | description->format << 16,
 			"type %u format %u usage %u, %ux%ux%u", description->type, description->format, description->usage,
 			description->width, description->height, description->depth);
@@ -459,6 +488,8 @@ static gpu_texture validate_texture_create(const struct gpu_texture_description 
 	if (validation.capabilities.max_texture_size && largest > validation.capabilities.max_texture_size)
 		REPORT(TEXTURE_TOO_LARGE, largest, "%ux%ux%u is larger than the GPU's %u", description->width, description->height,
 			description->depth, validation.capabilities.max_texture_size);
+	if (rejected(before))
+		return 0;
 	handle = validation.backend.texture_create(description);
 	entry = table_entry(&validation.textures, handle, 1);
 	if (entry)
@@ -475,6 +506,7 @@ static gpu_texture validate_texture_create(const struct gpu_texture_description 
 static void validate_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size)
 {
 	struct texture_entry *entry = texture_entry(texture);
+	unsigned long before = validation.failures;
 
 	validation.call = "texture_upload";
 	if (!entry)
@@ -492,12 +524,15 @@ static void validate_texture_upload(gpu_texture texture, uint32_t face, uint32_t
 			face, level, size, (unsigned long long)level_bytes(&entry->description, level));
 	else if (!entry->unsupported)
 		entry->uploaded[face] |= 1u << level;
+	if (rejected(before))
+		return;
 	validation.backend.texture_upload(texture, face, level, data, size);
 }
 
 static void validate_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level)
 {
 	struct texture_entry *from = texture_entry(source), *to = texture_entry(destination);
+	unsigned long before = validation.failures;
 
 	validation.call = "texture_copy_level";
 	/* his copy: source and destination distinct, formats equal, in bounds */
@@ -512,30 +547,38 @@ static void validate_texture_copy_level(gpu_texture source, gpu_texture destinat
 			to->description.width, to->description.height, to->levels, to->description.format);
 	else
 		to->uploaded[0] |= 1u << level;
+	if (rejected(before))
+		return;
 	validation.backend.texture_copy_level(source, destination, level);
 }
 
 static void validate_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 {
 	struct texture_entry *entry = texture_entry(texture);
+	unsigned long before = validation.failures;
 
 	validation.call = "texture_generate_mipmaps";
 	if (!entry || entry->description.type != GPU_TEXTURE_2D || base_level >= entry->levels)
 		REPORT(MIPMAPS_INVALID, entry != NULL, "texture %u from level %u (%u levels)", texture, base_level, entry ? entry->levels : 0);
 	else
 		entry->uploaded[0] |= ~0u << base_level;
+	if (rejected(before))
+		return;
 	validation.backend.texture_generate_mipmaps(texture, base_level);
 }
 
 static void validate_texture_destroy(gpu_texture texture)
 {
 	struct texture_entry *entry = texture_entry(texture);
+	unsigned long before = validation.failures;
 
 	validation.call = "texture_destroy";
 	if (!entry)
 		REPORT(DESTROY_UNKNOWN, 0, "texture %u is not a live texture", texture);
 	else
 		entry->live = 0;
+	if (rejected(before))
+		return;
 	validation.backend.texture_destroy(texture);
 }
 
@@ -549,10 +592,18 @@ static uint32_t validate_texture_read(gpu_texture texture, void *pixels, uint32_
 
 static gpu_buffer validate_buffer_create(uint32_t size)
 {
-	gpu_buffer handle = validation.backend.buffer_create(size);
-	struct buffer_entry *entry = table_entry(&validation.buffers, handle, 1);
+	unsigned long before = validation.failures;
+	gpu_buffer handle;
+	struct buffer_entry *entry;
 
 	validation.call = "buffer_create";
+	/* (the mirror's segments are 4 MB) */
+	if (!size || size > (1u << 28))
+		REPORT(BUFFER_SIZE_INVALID, size != 0, "a buffer of %u bytes", size);
+	if (rejected(before))
+		return 0;
+	handle = validation.backend.buffer_create(size);
+	entry = table_entry(&validation.buffers, handle, 1);
 	if (entry)
 	{
 		free(entry->pages);
@@ -567,6 +618,7 @@ static gpu_buffer validate_buffer_create(uint32_t size)
 static void validate_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags)
 {
 	struct buffer_entry *entry = buffer_entry(buffer);
+	unsigned long before = validation.failures;
 
 	validation.call = "buffer_write";
 	if (!entry || entry->kind != BUFFER_PERSISTENT)
@@ -589,6 +641,8 @@ static void validate_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t s
 		for (page = offset >> PAGE_SHIFT; page <= (offset + size - 1) >> PAGE_SHIFT; page++)
 			entry->pages[page] = write;
 	}
+	if (rejected(before))
+		return;
 	validation.backend.buffer_write(buffer, offset, size, data, flags);
 }
 
@@ -603,10 +657,17 @@ static uint32_t validate_stream(uint32_t kind, const void *data, uint32_t size, 
 	struct stream_range *range;
 	struct buffer_entry *entry;
 	uint32_t offset;
+	unsigned long before = validation.failures;
 
 	validation.call = "stream";
 	if ((kind != GPU_STREAM_KIND_VERTEX && kind != GPU_STREAM_KIND_INDEX) || !data || !size || !buffer)
 		REPORT(STREAM_INVALID, kind, "kind %u, %u bytes at %p", kind, size, data);
+	if (rejected(before))
+	{
+		if (buffer)
+			*buffer = 0;
+		return 0;
+	}
 	offset = validation.backend.stream(kind, data, size, buffer);
 	if (!buffer || !data)
 		return offset;
@@ -773,10 +834,13 @@ static gpu_shader validate_shader_create(uint32_t stage, const char *source)
 {
 	gpu_shader handle;
 	struct shader_entry *entry;
+	unsigned long before = validation.failures;
 
 	validation.call = "shader_create";
 	if ((stage != GPU_SHADER_VERTEX && stage != GPU_SHADER_PIXEL) || !source || !*source)
 		REPORT(SHADER_COMPILE_FAILED, 1, "stage %u, source %s", stage, source ? "empty" : "missing");
+	if (rejected(before))
+		return 0;
 	handle = validation.backend.shader_create(stage, source);
 	if (!handle)
 	{
@@ -895,6 +959,7 @@ static int rect_outside(int32_t x, int32_t y, int32_t width, int32_t height, uin
 static void validate_clear(const struct gpu_clear *clear, const struct gpu_rect *rectangles, uint32_t count)
 {
 	uint32_t width, height, index;
+	unsigned long before = validation.failures;
 
 	validation.call = "clear";
 	validation.current = NULL;
@@ -927,7 +992,8 @@ static void validate_clear(const struct gpu_clear *clear, const struct gpu_rect 
 			REPORT(CLEAR_RECT_OUTSIDE_TARGET, 0, "rectangle %d,%d %dx%d in a %ux%u target", rect->x, rect->y, rect->width,
 				rect->height, width, height);
 	}
-	validation.backend.clear(clear, rectangles, count);
+	if (!rejected(before))
+		validation.backend.clear(clear, rectangles, count);
 	validation.identity_valid = 0;
 }
 
@@ -1054,6 +1120,13 @@ static void check_geometry(const struct gpu_draw *draw, const struct shader_entr
 		REPORT(DRAW_EMPTY, 0, "no vertices");
 		return;
 	}
+	/* (indices are 16-bit and the game's largest draws a few thousand
+	triangles; a count like this is a corrupt packet, and a GPU hang) */
+	if (draw->count > (1u << 24))
+	{
+		REPORT(DRAW_TOO_LARGE, 0, "%u vertices", draw->count);
+		return;
+	}
 	/* his topology check: whole primitives */
 	if ((draw->primitive == GPU_PRIMITIVE_TRIANGLES && draw->count % 3) || (draw->primitive == GPU_PRIMITIVE_LINES && draw->count % 2) ||
 		((draw->primitive == GPU_PRIMITIVE_TRIANGLE_STRIP || draw->primitive == GPU_PRIMITIVE_TRIANGLE_FAN) && draw->count < 3) ||
@@ -1109,8 +1182,8 @@ static void check_geometry(const struct gpu_draw *draw, const struct shader_entr
 		const uint8_t *bytes;
 		int why;
 
-		if (!(used & (1u << attribute)))
-			continue;
+		/* every attribute's format and stream (the backends index the
+		streams with it); the data of those the shader reads */
 		if (packet->format < GPU_ATTRIBUTE_FLOAT1 || packet->format > GPU_ATTRIBUTE_NORMPACKED3 ||
 			(packet->stream >= 16 && packet->stream != GPU_STREAM_CONSTANT) ||
 			(packet->format == GPU_ATTRIBUTE_BGRA8 && !validation.capabilities.vertex_bgra))
@@ -1119,6 +1192,8 @@ static void check_geometry(const struct gpu_draw *draw, const struct shader_entr
 				packet->format, packet->stream);
 			continue;
 		}
+		if (!(used & (1u << attribute)))
+			continue;
 		if (packet->stream == GPU_STREAM_CONSTANT)
 		{
 			unsigned long which = 0;
@@ -1330,8 +1405,11 @@ static void check_state(const struct gpu_draw *draw, uint32_t width, uint32_t he
 
 #define UNIFORM_CHECK_GPU_UNIFORM_VERTEX(name, count) \
 	if (floats_worst(uniforms->name, count * 4, &which) == FLOAT_NONFINITE) \
+	{ \
+		validation.uniforms_nonfinite = 1; \
 		REPORT(UNIFORM_NONFINITE, field, #name "[%lu].%c is %#010x", which / 4, "xyzw"[which % 4], \
 			float_bits(&uniforms->name[which / 4][which % 4])); \
+	} \
 	field++;
 #define UNIFORM_CHECK_GPU_UNIFORM_PIXEL(name, count) UNIFORM_CHECK_GPU_UNIFORM_VERTEX(name, count)
 #define UNIFORM_CHECK_GPU_UNIFORM_PIXEL_LOD_BIAS(name, count) UNIFORM_CHECK_GPU_UNIFORM_VERTEX(name, count)
@@ -1351,8 +1429,13 @@ static void check_numbers(const struct shader_entry *vertex, const struct gpu_co
 
 		validation.uniforms_seen = 1;
 		validation.uniforms_serial = uniforms->serial;
+		validation.uniforms_nonfinite = 0;
 		GPU_UNIFORMS(UNIFORM_CHECK)
 		(void)field;
+	}
+	else if (validation.uniforms_nonfinite)
+	{
+		REPORT(UNIFORM_NONFINITE, 0x1000, "the uniforms still hold the nonfinite value an earlier draw was told of");
 	}
 	if (constants && (!validation.constants_seen || validation.constants_serial != constants->serial))
 	{
@@ -1410,7 +1493,7 @@ static uint32_t validate_draw(const struct gpu_draw *draw, const struct gpu_cons
 {
 	const struct shader_entry *vertex, *pixel;
 	uint32_t width, height, drawn;
-	unsigned long reported;
+	unsigned long reported, before = validation.failures;
 
 	validation.call = "draw";
 	validation.draw++;
@@ -1452,6 +1535,12 @@ static uint32_t validate_draw(const struct gpu_draw *draw, const struct gpu_cons
 	check_stages(draw, pixel);
 	check_numbers(vertex, constants, uniforms);
 	check_geometry(draw, vertex);
+	if (rejected(before))
+	{
+		validation.current = NULL;
+		validation.identity_valid = 0;
+		return 0;
+	}
 	reported = validation.reported;
 	validation.call = "draw (in the backend)";
 	drawn = validation.backend.draw(draw, constants, uniforms);
@@ -1546,6 +1635,7 @@ static void check_picture(gpu_texture texture, const char *name, int color)
 static uint32_t validate_present(gpu_texture back_buffer)
 {
 	uint32_t due;
+	unsigned long before = validation.failures;
 
 	validation.call = "present";
 	validation.current = NULL;
@@ -1553,7 +1643,7 @@ static uint32_t validate_present(gpu_texture back_buffer)
 	if (validation.visibility_active)
 		REPORT(VISIBILITY_INVALID, 5, "a visibility test is still open at the frame's end");
 	check_picture(back_buffer, "the back buffer", 1);
-	due = validation.backend.present(back_buffer);
+	due = rejected(before) ? 0 : validation.backend.present(back_buffer);
 	frame_end();
 	return due;
 }
@@ -1562,6 +1652,7 @@ static uint32_t validate_present_stereo(const struct gpu_stereo_present *present
 {
 	uint32_t due;
 	int eye, group;
+	unsigned long before = validation.failures;
 
 	validation.call = "present_stereo";
 	validation.current = NULL;
@@ -1596,7 +1687,7 @@ static uint32_t validate_present_stereo(const struct gpu_stereo_present *present
 	{
 		REPORT(PRESENT_INVALID, 3, "no stereo frame");
 	}
-	due = validation.backend.present_stereo(present);
+	due = rejected(before) ? 0 : validation.backend.present_stereo(present);
 	frame_end();
 	return due;
 }
@@ -1723,7 +1814,7 @@ void gpu_validation_install(struct gpu_backend *table, const struct gpu_validati
 		char line[256];
 
 		snprintf(line, sizeof(line), "render validation: on, in %s mode (debug.render_validation)%s%s",
-			host->mode == GPU_VALIDATION_STRICT ? "strict" : "log", host->allow && *host->allow ? ", allowing " : "",
+			host->mode == GPU_VALIDATION_STRICT ? "strict" : host->mode == GPU_VALIDATION_REJECT ? "reject" : "log", host->allow && *host->allow ? ", allowing " : "",
 			host->allow ? host->allow : "");
 		emit(line);
 	}

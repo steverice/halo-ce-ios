@@ -180,6 +180,8 @@ DEFAULTS = {
     "debug.gl_debug": "false",
     "debug.render_validation": '"log"',
     "debug.render_validation_allow": '""',
+    "debug.render_capture": '""',
+    "debug.render_capture_frames": '""',
     "debug.metal_state_cache": "true",
     "debug.metal_specialize": "true",
     "debug.metal_vertex_bgra": "true",

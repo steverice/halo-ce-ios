@@ -42,6 +42,9 @@ enum
 	GPU_VALIDATION_LOG,
 	/* as LOG, and the first failure or fallback stops the run */
 	GPU_VALIDATION_STRICT,
+	/* as LOG, and a call with a failure is not passed on to the backend
+	(a replay of a capture nobody vouches for: port/ios/host/gpu_replay.c) */
+	GPU_VALIDATION_REJECT,
 };
 
 /* what a reason means for the run */
@@ -77,6 +80,7 @@ enum
 	X(PRIMITIVE_UNSUPPORTED, "primitive-unsupported", GPU_VALIDATION_FAILURE) \
 	X(PRIMITIVE_INCOMPLETE, "primitive-incomplete", GPU_VALIDATION_WARNING) \
 	X(DRAW_EMPTY, "draw-empty", GPU_VALIDATION_WARNING) \
+	X(DRAW_TOO_LARGE, "draw-too-large", GPU_VALIDATION_FAILURE) \
 	/* ---- draws: numbers */ \
 	X(VERTEX_NONFINITE, "vertex-nonfinite", GPU_VALIDATION_FAILURE) \
 	X(VERTEX_HUGE, "vertex-huge", GPU_VALIDATION_WARNING) \
@@ -135,6 +139,7 @@ enum
 	X(MIPMAPS_INVALID, "mipmaps-invalid", GPU_VALIDATION_FAILURE) \
 	X(DESTROY_UNKNOWN, "destroy-unknown", GPU_VALIDATION_FAILURE) \
 	X(BUFFER_WRITE_OUT_OF_RANGE, "buffer-write-out-of-range", GPU_VALIDATION_FAILURE) \
+	X(BUFFER_SIZE_INVALID, "buffer-size-invalid", GPU_VALIDATION_FAILURE) \
 	X(STREAM_INVALID, "stream-invalid", GPU_VALIDATION_FAILURE) \
 	X(SHADER_COMPILE_FAILED, "shader-compile-failed", GPU_VALIDATION_FAILURE) \
 	X(VISIBILITY_INVALID, "visibility-invalid", GPU_VALIDATION_FAILURE) \
@@ -239,6 +244,9 @@ void gpu_validation_summary(void);
 const char *gpu_validation_reason_name(uint32_t reason);
 /* findings of each class so far (tests) */
 unsigned long gpu_validation_count(uint32_t reason);
+/* calls a REJECT run did not pass on, and failures so far */
+unsigned long gpu_validation_rejected(void);
+unsigned long gpu_validation_failures(void);
 /* forgets everything (tests) */
 void gpu_validation_reset(void);
 

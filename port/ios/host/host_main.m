@@ -38,6 +38,11 @@ void host_logf(int priority,const char *format,...) {
     if(log_file){flockfile(log_file);fprintf(log_file,"%s\n",text);fflush(log_file);funlockfile(log_file);}
 }
 void host_log(int priority,const char *text) { host_logf(priority,"%s",text); }
+#if HALO_RENDER_VALIDATION
+/* host_render_replay.c */
+int host_render_replay_requested(void);
+void host_render_replay(void) __attribute__((noreturn));
+#endif
 void host_fatal(const char *format,...) {
     va_list ap;va_start(ap,format);char text[1024];vsnprintf(text,sizeof(text),format,ap);va_end(ap);
     host_logf(HOST_LOG_ERROR,"FATAL: %s",text);
@@ -307,6 +312,10 @@ int main(int argc,char **argv) {
             host_logf(HOST_LOG_INFO,"runner: App Nap held off");
         }
 #endif
+#if HALO_RENDER_VALIDATION
+        /* a capture replayed with no game (host_render_replay.c): no game data, no game image */
+        if(!host_render_replay_requested())
+#endif
         host_ios_prepare_assets(data_root);
         /* the device benchmark: debug.benchmark_suite's value through the launch's environment, or in a tester
            build the choice made on its first screen */
@@ -319,6 +328,9 @@ int main(int argc,char **argv) {
         host_texture_settings_observe(data_root);
 #endif
         /* the arena is the step a device can refuse (visionOS: see port/ios/README.md) */
+#if HALO_RENDER_VALIDATION
+        if(!host_render_replay_requested())
+#endif
 #if TARGET_OS_TV
         /* (no Files app on an Apple TV; and a message box would hold a test run open) */
         if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image.":
@@ -355,6 +367,9 @@ int main(int argc,char **argv) {
             host_sdl_pin_window_pixels(pixel_width,pixel_height);
             host_logf(HOST_LOG_INFO,"display pinned to %s: %dx%d pixels, width %d",pin_text,pixel_width,pixel_height,width);
         }
+#if HALO_RENDER_VALIDATION
+        if(host_render_replay_requested())host_render_replay();
+#endif
         /* what the guest is told, under either runner (tools/mac_run.py compare-inputs) */
         host_logf(HOST_LOG_INFO,"guest display: width %d, pixels %dx%d",width,pixel_width,pixel_height);
         char env_data[1200],env_save[1200],env_width[64],env_pixel_width[64],env_pixel_height[64];

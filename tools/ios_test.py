@@ -128,6 +128,19 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/src', '-c', 'port
 symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(BUILD/'gpu-validate-off.o')], text=True, cwd=ROOT)
 if symbols.strip():
     raise SystemExit(f'gpu_validate.c defines symbols without HALO_RENDER_VALIDATION:\n{symbols}')
+# render capture and replay (port/ios/host/gpu_capture.c, gpu_replay.c): a scripted frame captured to a file and
+# replayed into a backend that only notes its calls; damaged files; the fuzzer's wrong calls, each refused
+run('xcrun', 'clang', '-O1', '-g', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-DHALO_RENDER_VALIDATION=1',
+    '-Iport/linux/src', '-Iport/ios/host', 'port/ios/tests/gpu_replay_probe.c', 'port/ios/host/gpu_capture.c',
+    'port/ios/host/gpu_replay.c', 'port/ios/host/gpu_validate.c', '-lz', '-o', BUILD/'gpu-replay-probe')
+run(BUILD/'gpu-replay-probe')
+for source in ('gpu_capture.c', 'gpu_replay.c'):
+    run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/src', '-Iport/ios/host', '-c', f'port/ios/host/{source}',
+        '-o', BUILD/'gpu-capture-off.o')
+    symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(BUILD/'gpu-capture-off.o')], text=True, cwd=ROOT)
+    if symbols.strip():
+        raise SystemExit(f'{source} defines symbols without HALO_RENDER_VALIDATION:\n{symbols}')
+run('python3', 'tools/test_render_replay.py')
 # the Metal backend's pipelines compiled off the game thread (metal_compile_async.h): its table
 # under the thread sanitizer, then everything under the address and undefined-behavior ones
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=thread', '-Iport/ios/host',
