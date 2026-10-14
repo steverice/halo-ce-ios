@@ -154,6 +154,9 @@ static void sampler_start(void) {
         }];
 }
 
+static double screen_rate(void);
+static void screen_size(double *width, double *height);
+
 /* ---------- the report */
 
 static NSString *json_string(NSString *text) {
@@ -203,7 +206,9 @@ static NSString *report_header(void) {
     NSProcessInfo *process = NSProcessInfo.processInfo;
     NSOperatingSystemVersion version = process.operatingSystemVersion;
     id<MTLDevice> gpu = MTLCreateSystemDefaultDevice();
-    UIScreen *screen = UIScreen.mainScreen;
+    double screen_width, screen_height;
+
+    screen_size(&screen_width, &screen_height);
     NSDateFormatter *minutes = [NSDateFormatter new];
     char chip[128] = "";
     size_t chip_size = sizeof(chip);
@@ -231,7 +236,7 @@ static NSString *report_header(void) {
         json_string([[process.operatingSystemVersionString componentsSeparatedByString:@"Build "].lastObject
             stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@")"]]),
         json_string(gpu.name), gpu ? gpu_family(gpu) : 0, process.physicalMemory >> 20,
-        screen.nativeBounds.size.width, screen.nativeBounds.size.height, (long)screen.maximumFramesPerSecond,
+        screen_width, screen_height, (long)screen_rate(),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]), HALO_GUEST_SHA256,
         json_string(@(host_device_profile()->class_file)), json_string(@(host_device_profile()->model_file)),
@@ -314,6 +319,24 @@ static NSString *report_summary(void) {
 
 static void flag(NSString *name) {
     if (![flags containsObject:name]) [flags addObject:name];
+}
+
+/* the main screen's highest rate and its size in pixels; visionOS has no screen (UIScreen): its displays run at 90 */
+static double screen_rate(void) {
+#if TARGET_OS_VISION
+    return 90.0;
+#else
+    return (double)UIScreen.mainScreen.maximumFramesPerSecond;
+#endif
+}
+
+static void screen_size(double *width, double *height) {
+#if TARGET_OS_VISION
+    *width = *height = 0.0;
+#else
+    *width = UIScreen.mainScreen.nativeBounds.size.width;
+    *height = UIScreen.mainScreen.nativeBounds.size.height;
+#endif
 }
 
 static int cooled(void) {
@@ -439,8 +462,8 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         }
         if (process.thermalState > NSProcessInfoThermalStateNominal) flag(@"warm_at_start");
     }
-    screen_hertz = (double)UIScreen.mainScreen.maximumFramesPerSecond;
-    if (UIScreen.mainScreen.maximumFramesPerSecond != 60) flag(@"refresh_not_60");
+    screen_hertz = screen_rate();
+    if (screen_hertz != 60.0) flag(@"refresh_not_60");
     if (only) flag(@"scenes_filtered");
     /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
     if (host_device_profile()->drop_in) flag(@"drop_in_profile");
