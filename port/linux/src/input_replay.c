@@ -641,6 +641,8 @@ int input_replay_begin(const char *name)
 		fclose(replay.record_file);
 	if (replay.actions_file)
 		fclose(replay.actions_file);
+	if (replay.seeds_file)
+		fclose(replay.seeds_file);
 	memset(&replay, 0, sizeof(replay));
 	replay.configured = replay.suite = TRUE;
 	if (game_time_initialized() && !input_replay_main_menu_loaded())
@@ -659,7 +661,9 @@ int input_replay_begin(const char *name)
 	actions_path(replay.replay_path, replay.replay_actions_path, sizeof(replay.replay_actions_path));
 	replay_load();
 	actions_load();
-	/* (a take's .route: its seeds, and whether it began after its level's opening was skipped) */
+	/* (a take's .seeds, both random seeds at every tick; and its .route: the older segment seeds, and whether it
+	began after its level's opening was skipped) */
+	seeds_load();
 	route_load();
 	return replay.state_count > 0;
 }

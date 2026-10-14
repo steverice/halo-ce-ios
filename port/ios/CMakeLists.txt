@@ -211,7 +211,7 @@ set_source_files_properties("${HALO_PRIVACY_MANIFEST}" PROPERTIES MACOSX_PACKAGE
 # the device benchmark's recordings (port/benchmark/README.md), copied into the data folder when a suite starts
 file(GLOB HALO_BENCHMARK_RECORDINGS CONFIGURE_DEPENDS "${ROOT}/port/benchmark/recordings/*.input"
     "${ROOT}/port/benchmark/recordings/*.actions" "${ROOT}/port/benchmark/recordings/*.route"
-    "${ROOT}/port/benchmark/recordings/*.checks")
+    "${ROOT}/port/benchmark/recordings/*.checks" "${ROOT}/port/benchmark/recordings/*.seeds")
 target_sources(VISR PRIVATE ${HALO_BENCHMARK_RECORDINGS})
 set_source_files_properties(${HALO_BENCHMARK_RECORDINGS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/benchmark-recordings)
 # the device profiles (profiles/README.md): host/host_profile.c picks this device's at start
