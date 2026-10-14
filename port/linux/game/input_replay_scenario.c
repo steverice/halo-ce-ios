@@ -55,6 +55,22 @@ unsigned long input_replay_random_seed(const unsigned long *seed)
 	return *get_global_random_seed_address();
 }
 
+/* both of the game's random sequences (render_random.c says which is which): the global one, which the
+simulation draws from, and the local one, which a tick also draws from; read into seeds, or set from them */
+void input_replay_random_seeds(unsigned long seeds[2], unsigned char set)
+{
+	if (set)
+	{
+		*get_global_random_seed_address() = seeds[0];
+		*get_global_local_random_seed_address() = seeds[1];
+	}
+	else
+	{
+		seeds[0] = *get_global_random_seed_address();
+		seeds[1] = *get_global_local_random_seed_address();
+	}
+}
+
 void input_replay_skip_cinematic(void)
 {
 	if (cinematic_can_be_skipped())
