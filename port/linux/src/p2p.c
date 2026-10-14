@@ -426,9 +426,11 @@ static int has_identifier;
 
 /* ---------- helpers */
 
+/* (the real clock, which goes on while the app is in the background: the
+game's stands still there, xbox_kernel.c) */
 unsigned long p2p_now(void)
 {
-	return GetTickCount();
+	return platform_real_milliseconds();
 }
 
 static int elapsed(unsigned long since, unsigned long time)

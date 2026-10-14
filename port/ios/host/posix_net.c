@@ -151,6 +151,21 @@ void posix_upnp_stop_forwarding_udp(unsigned short external_port)
 	forwarded_port = 0;
 }
 
+/* ---------- the app in the background (host_lifecycle.m) */
+
+int host_lifecycle_in_background(void);
+unsigned long long host_lifecycle_background_milliseconds(void);
+
+int posix_app_in_background(void)
+{
+	return host_lifecycle_in_background();
+}
+
+posix_ulong posix_background_milliseconds(void)
+{
+	return (posix_ulong)host_lifecycle_background_milliseconds();
+}
+
 int posix_upnp_method(void)
 {
 	return forward_method;
