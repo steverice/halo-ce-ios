@@ -374,6 +374,8 @@ static char const *const port_function_names[] =
 	"port password init", "port password edit", "port password join", "port password back",
 	/* (Settings begins editing after its new profile is created) */
 	"new campaign decision",
+	/* (Direct Link's ENTER CODE screen: a join code or an invite link) */
+	"port code open", "port code init", "port code edit", "port code join", "port code back",
 };
 
 /* the PC version's game data functions that the Xbox's have not, from
@@ -395,6 +397,8 @@ static char const *const port_game_data_input_names[] =
 	/* (the profile settings' picture: the Xbox's of the button settings,
 	on Gamepad Setup's row) */
 	"port gamepad layout preview",
+	/* (Direct Link's ENTER CODE screen) */
+	"port code update",
 };
 
 static struct

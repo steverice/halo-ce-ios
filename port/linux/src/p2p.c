@@ -57,6 +57,7 @@ only look up and create stand-ins.
 #include "posix.h"
 #include "port_config.h"
 #include "p2p_internal.h"
+#include "p2p_code.h"
 #include "ikcp.h"
 
 #include <stddef.h>
@@ -118,6 +119,9 @@ enum
 	PEER_TIMEOUT = 20000,
 	PUNCH_TIMEOUT = 30000,
 	JOIN_TIMEOUT = 90000,
+	/* how long a join code is looked for at the brokers before the player
+	is told no game has it (a retained record comes when subscribed) */
+	CODE_TIMEOUT = 20000,
 	/* another player of the game joined, asked for (p2p_reach_player) */
 	PLAYER_REACH_TIMEOUT = 30000,
 	STREAM_LINGER_TIME = 10000,
@@ -335,6 +339,19 @@ static struct
 	int token_listed;
 	char invite[P2P_LINK_SIZE];
 	int invite_copied;
+	/* the invite's join code (made with it: make_invite) and its record at
+	the brokers (p2p_code_record) */
+	char code[P2P_CODE_LENGTH + 1];
+	char code_topic[P2P_CODE_TOPIC_SIZE];
+	unsigned char code_record[P2P_CODE_RECORD_SIZE];
+	int code_record_size;
+	/* a join code being looked up: its topic, its key, since when, and how
+	it ended (P2P_CODE_*) */
+	int code_looking;
+	char code_join_topic[P2P_CODE_TOPIC_SIZE];
+	unsigned char code_join_key[P2P_PASSWORD_KEY_SIZE];
+	unsigned long code_join_time;
+	int code_join_status;
 	/* the game's players and its most (p2p_set_game_player_counts; 0: not
 	said, and the machines the tunnel reaches are shown), and what Discord
 	was told */
@@ -2477,10 +2494,19 @@ int p2p_join_invite(const char *text)
 	return result > 0;
 }
 
+static void look_up_code(const char *code);
+
 void p2p_invite_received(const char *text)
 {
-	/* (an older version's is logged as such) */
-	if (!join_invite(text))
+	char code[P2P_CODE_LENGTH + 1];
+
+	/* (an older version's is logged as such; a join code handed over as a
+	link is, the app's or another copy's, is looked up) */
+	if (join_invite(text))
+		return;
+	if (p2p_code_normalize(text, code))
+		look_up_code(code);
+	else
 		platform_log("Internet play: that is not an invite");
 }
 
@@ -2587,6 +2613,168 @@ static int connected_player_count(void)
 	return count;
 }
 
+/* ---------- join codes
+
+A join code (p2p_code.h) is eight characters that stand for an invite, for
+a player who cannot paste a link. It holds too little to be the invite, so
+the host leaves the invite where the code finds it: at every signalling
+broker that retains messages, on a topic made from the code
+(code_topic_for), sealed with a key made from the code (code_key_for:
+Argon2id, as a password's key is). The record is
+
+	"HC", format 1, then the invite (its host's key hash and token, 32
+	bytes) sealed (p2p_seal) with the code's key,
+
+retained and expiring at the broker (p2p_signal_code_publish), published
+again while the game is hosted and cleared when it stops. A player who types
+the code subscribes to its topic, opens the retained record with the code's
+key and joins its invite as if it had been pasted. Anyone may read every
+code topic, but a record opens only with its code's key, and each guess at a
+code costs an Argon2id: guessing at the codes in use takes far longer than a
+game lasts. A wrong or altered record does not open. The code goes with the
+invite: a new invite (going private, a new password) has a new code. */
+
+static void code_topic_for(const char *code, char *topic)
+{
+	unsigned char digest[P2P_SHA256_SIZE];
+	char hashed[64];
+	char hex[2 * 16 + 1];
+
+	snprintf(hashed, sizeof(hashed), "hceu-join-code-topic-1:%s", code);
+	p2p_sha256(hashed, (int)strlen(hashed), digest);
+	p2p_hex(digest, 16, hex);
+	snprintf(topic, P2P_CODE_TOPIC_SIZE, "%s%s", P2P_CODE_TOPIC_PREFIX, hex);
+}
+
+static void code_key_for(const char *code, unsigned char *key)
+{
+	static const char label[] = "hceu-join-code-key-1";
+	unsigned char salt[P2P_SHA256_SIZE];
+
+	p2p_sha256(label, (int)sizeof(label) - 1, salt);
+	p2p_password_key(code, salt, key);
+}
+
+/* a new code for the invite's bytes (its host's key hash and token), and
+its record */
+static void make_code(const unsigned char *invite_bytes)
+{
+	unsigned char random[P2P_CODE_RANDOM_SIZE];
+	unsigned char key[P2P_PASSWORD_KEY_SIZE];
+
+	posix_random_bytes(random, sizeof(random));
+	p2p_code_make(random, p2p.code);
+	code_topic_for(p2p.code, p2p.code_topic);
+	code_key_for(p2p.code, key);
+	p2p.code_record[0] = 'H';
+	p2p.code_record[1] = 'C';
+	p2p.code_record[2] = 1;
+	p2p.code_record_size = 3 + p2p_seal(key, invite_bytes, P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE, p2p.code_record + 3);
+	memset(key, 0, sizeof(key));
+}
+
+/* the code's record at the brokers while the game is hosted (and its
+clearing when it is not) */
+static void publish_code(int hosting)
+{
+	char shown[P2P_CODE_LENGTH + 2];
+
+	if (!hosting || !p2p.has_token)
+	{
+		p2p_signal_code_publish(NULL, NULL, 0);
+		return;
+	}
+	p2p_signal_code_publish(p2p.code_topic, p2p.code_record, p2p.code_record_size);
+	p2p_code_display(p2p.code, shown);
+	platform_log("Internet play: join code %s (Join Game > Direct Link > ENTER CODE)", shown);
+}
+
+/* (p2p_signal.c, with the lock held) a retained record heard on the topic
+of the code being looked up */
+void p2p_code_heard(const unsigned char *payload, int size)
+{
+	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE + 16];
+	char text[2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1];
+	char link[P2P_LINK_SIZE];
+	int opened;
+
+	if (!p2p.code_looking || size < 3 || payload[0] != 'H' || payload[1] != 'C' || payload[2] != 1)
+		return;
+	opened = p2p_open(p2p.code_join_key, payload + 3, size - 3, bytes);
+	if (opened != P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE)
+		return;
+	p2p.code_looking = 0;
+	p2p.code_join_status = P2P_CODE_FOUND;
+	p2p_signal_code_join(NULL);
+	p2p_hex(bytes, P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE, text);
+	snprintf(link, sizeof(link), "halo://join/%s", text);
+	platform_log("Internet play: the join code found its game");
+	if (join_invite(link) <= 0)
+		p2p.code_join_status = P2P_CODE_NOT_FOUND;
+}
+
+static void update_code_joining(void)
+{
+	if (p2p.code_looking && elapsed(p2p.code_join_time, CODE_TIMEOUT))
+	{
+		p2p.code_looking = 0;
+		p2p.code_join_status = P2P_CODE_NOT_FOUND;
+		p2p_signal_code_join(NULL);
+		platform_log("Internet play: no game has that join code (it may have ended, or the code is mistyped)");
+	}
+}
+
+/* the lookup of a code (normalized) begun: its topic and key made (the key
+by Argon2id: a moment), with the lock held */
+static void look_up_code(const char *code)
+{
+	code_topic_for(code, p2p.code_join_topic);
+	code_key_for(code, p2p.code_join_key);
+	p2p.code_looking = 1;
+	p2p.code_join_time = p2p_now();
+	p2p.code_join_status = P2P_CODE_LOOKING;
+	p2p.stun_started = 1;
+	p2p_signal_start();
+	p2p_signal_code_join(p2p.code_join_topic);
+	platform_log("Internet play: looking up a join code");
+}
+
+int p2p_join_code(const char *text)
+{
+	char code[P2P_CODE_LENGTH + 1];
+
+	/* (a whole link typed or pasted joins as a link does) */
+	if (p2p_join_invite(text))
+		return 1;
+	if (!p2p_code_normalize(text, code))
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	look_up_code(code);
+	pthread_mutex_unlock(&p2p_lock);
+	if (!p2p.running)
+		platform_log("Internet play is off (network.online in config.toml): the join code is ignored");
+	return 1;
+}
+
+int p2p_join_code_status(void)
+{
+	return p2p.code_join_status;
+}
+
+int p2p_host_code(char *text, int size)
+{
+	int hosting;
+	char shown[P2P_CODE_LENGTH + 2];
+
+	pthread_mutex_lock(&p2p_lock);
+	hosting = p2p.hosting && p2p.has_token;
+	if (hosting)
+		p2p_code_display(p2p.code, shown);
+	pthread_mutex_unlock(&p2p_lock);
+	snprintf(text, (size_t)size, "%s", hosting ? shown : "");
+	return hosting;
+}
+
 /* a new invite (a new token) */
 static void make_invite(void)
 {
@@ -2600,6 +2788,7 @@ static void make_invite(void)
 	memcpy(bytes + P2P_KEY_HASH_SIZE, p2p.token, P2P_TOKEN_SIZE);
 	p2p_hex(bytes, sizeof(bytes), text);
 	snprintf(p2p.invite, sizeof(p2p.invite), "halo://join/%s", text);
+	make_code(bytes);
 }
 
 void p2p_new_invite_if_listed(void)
@@ -2612,6 +2801,7 @@ void p2p_new_invite_if_listed(void)
 	if (p2p.hosting)
 	{
 		p2p_signal_host(p2p.token);
+		publish_code(1);
 		memcpy(p2p.clipboard, p2p.invite, sizeof(p2p.clipboard));
 		p2p.has_clipboard = 1;
 		/* (Discord is told the new one) */
@@ -2643,6 +2833,7 @@ static void update_hosting(void)
 		p2p_signal_host(p2p.token);
 		platform_log("Internet play: hosting. Invite players with this link (it only works while this "
 			"copy of the game runs): %s", p2p.invite);
+		publish_code(1);
 		if (!p2p.invite_copied)
 		{
 			memcpy(p2p.clipboard, p2p.invite, sizeof(p2p.clipboard));
@@ -2655,6 +2846,7 @@ static void update_hosting(void)
 	{
 		p2p.hosting = 0;
 		p2p_signal_stop_hosting();
+		publish_code(0);
 		p2p_discord_set_hosting(NULL, 0, 0);
 	}
 	if (p2p.hosting)
@@ -3299,6 +3491,7 @@ static void *p2p_thread(void *unused)
 			}
 		}
 		update_joining();
+		update_code_joining();
 		update_answering();
 		update_reaching();
 		update_upnp();
