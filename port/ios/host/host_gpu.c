@@ -34,5 +34,7 @@ void platform_video_drawable_size(int *width, int *height)
 
 void platform_video_swap(void)
 {
+	/* display.frame_rate's cap (host_gpu_dispatch.c) */
+	host_frame_rate_limit();
 	SDL_GL_SwapWindow(host_sdl_window());
 }

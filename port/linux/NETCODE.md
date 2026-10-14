@@ -198,11 +198,21 @@ the gametype, by which every machine places a map's vehicles, so a client of
 version 23 would place none of a set it does not know while the host placed
 them all; version 25 sends a unit's integrated light with the host's object
 states, so a client restores the correct light after a missed toggle or a
-late join, while its own player and driven vehicle keep local prediction.
+late join, while its own player and driven vehicle keep local prediction;
+version 26 has each machine say its WebRTC in internet play's signalling (a
+native build's certificate, a browser's ICE credentials too), so that
+browsers play (port/linux/README.md, "Browsers"); version 27 shares Custom
+Edition maps (below, "Map sharing"): a client asks the host for a map it
+lacks, and the game's players reach each other to send it; version 28 holds
+the players of a machine still downloading the map out of the game until it
+has the map, keeps a multiplayer map's first scripted BSP, leaves dynamic
+lights and the flashlight on past the Xbox game's player and vehicle limits,
+and readies a second weapon picked up while firing.
 
 `port/linux/network_format.txt` records the wire format of the current
 version (`tools/network_format.py`): `test_linux_port.py` fails when the
-sources' messages, kinds, bits or structs sent whole differ from it.
+sources' messages, kinds, bits, structs sent whole or the sizes of their
+arrays differ from it.
 
 A client plays by its host's rules: in another's game (searching for it,
 in its lobby, or playing it) the developer console, the telnet console
@@ -296,6 +306,91 @@ Until it has loaded, the machine hears none of the game's messages (which a
 machine in the pregame refuses, and which the others no longer need), only
 a pregame keep-alive every five seconds from the host
 (`network_server_manager.c`, `network_server_message_handler.c`).
+
+## Map sharing
+
+A client may join a game on a Custom Edition map it does not have
+(`port/linux/game/map_share.c`, `map_share_files.c`). Every map in the
+custom_maps folder is named for its contents: once the map lists (or a host
+picking it) find it, `hugeass.map` is renamed `hugeass_<8 hex digits>.map`,
+the first digits of its hash, with its picture and description, so a game's
+level name (`custom_maps\hugeass_0e2b3ee4`) says which version of the map it
+is, and two versions never meet. A file's hash is BLAKE2b's (32 bytes) of a
+label, its size and the BLAKE2b hashes of its pieces (256 KiB each). The
+menus show a map without its hash, unless two versions are listed.
+
+- **Asking.** A client whose settings name a map it lacks
+  (`cache_files_map_present`), or one whose resource maps it lacks, asks the
+  host over its connection (`_distributed_message_map_share_request`: the
+  level, and which of the map, bitmaps.map, sounds.map and loc.map it
+  lacks) instead of leaving, if `network.map_download` lets it; the map must
+  be named for its hash. Its players wait to join until the host's settings
+  have named the map, and for a game in progress until it is downloaded; in
+  the lobby they join at once, and the host's start waits for the machine to
+  precache the map, as it waits for any machine.
+- **The offer.** A host that shares maps (`network.map_share`) hashes the
+  map, and the resource maps the map needs (its tag index says which: a tag
+  whose entry's word at 0x18 is set is held whole by bitmaps.map for a
+  bitmap, sounds.map for a sound, loc.map for a font, string list or HUD
+  message text) that the client lacks, on a thread of their own, and
+  answers with each file's size and hash (`_offer`, or why it does not:
+  sharing off, or not the game's map), and which of its other machines may
+  have them (`_sources`: an address on a LAN, internet play's key hash on the
+  internet), again every ten seconds. A map whose hash is not its name's is
+  not offered. The client checks that the map's hash is its name's, and
+  that no file is larger than the cache loader takes, and refuses a map
+  name Windows takes for a device (`CON`, `NUL`, `COM1` and the like,
+  before the first dot). It connects to a LAN machine the host names only
+  at an address of the host's kind (a private network's if the host's is,
+  loopback only if the host's is; never 0.0.0.0, multicast or internet
+  play's), so that a host cannot send its players anywhere.
+- **The swarm.** The client connects to the host and up to eight of the
+  others on port 5153 (of two downloading, the one of the lower machine
+  connects). Each end says which files it has, whole or by piece, and tells
+  the other of each piece it gets; the client asks for the rarest pieces
+  first (from a random place, so that clients ask for different pieces), two
+  at a time from each connection, sixteen in all, and the last few again of
+  whoever is quicker. The pieces' hashes come from the host (from the
+  others it named after ten seconds without them, and from the connections
+  other machines made after thirty), all of them within a minute, checked
+  against the file's hash; a frame of none is refused. Each piece is
+  checked against its own as it arrives, and an end that sends a wrong one
+  is not asked again. A machine
+  sends of the game's files (its map, the resource maps the map needs, a
+  download's pieces) no faster than `network.map_share_upload` (the host,
+  1024 KB/s) or `network.map_seed_upload` (a player, 256 KB/s), round all
+  its connections a 16 KiB block at a time, so that the game's own traffic
+  keeps the rest of the upload; `network.map_seed = false` sends none. A
+  player that has downloaded the map sends it on at once.
+- **Connections.** A machine takes up to 24 connections, of which 15 others
+  made (the rest are kept for its own download's), four from one address,
+  eight at once that have not said hello (the oldest makes way); a
+  connection says hello within ten seconds, and one that sends no whole
+  frame for 30 seconds is closed. The host takes connections only from its
+  game's machines' addresses.
+- **Internet play.** The players of an internet game reach its host alone.
+  A player that shares answers the holders of the invite it joined with as
+  its host does (`p2p_set_answering_players`), and a downloading client asks
+  another player, by the key hash the host told, for a session as it asked
+  the host (`p2p_reach_player`: up to eight at once, alongside the request to
+  the host, in one topic of the invite's token). Its map sharing connection
+  then goes through their tunnel, as the game's connections go.
+- **Writing.** A download is written to `<file>.part` beside its file in
+  custom_maps, each piece at its place as it comes (the file is not made its
+  size at once), and renamed when every piece is had. A part file found
+  again is checked piece by piece on the hashing thread and taken up where
+  it was. A download that stops deletes a part file that holds none of its
+  file, and keeps one map's part file at most (the one kept before is
+  deleted), so that a host cannot fill a disk with offers.
+  The client checks the map again once it has it (`custom_edition_cache_present`),
+  and tells the host its progress every two seconds (`_progress`); the host
+  does not drop a machine downloading (and for 20 seconds after) for adding
+  no players or loading slowly, while what it says it has grew by a piece
+  (or to the whole, and no more than the files offered) in the last 80
+  seconds, counted from the first offer however often it asks again. A
+  download that brings nothing for a minute, or a host that does not answer
+  in 30 seconds, leaves the game, saying why.
+- The download's progress is drawn at the top of the screen.
 
 ## Stages
 
@@ -623,3 +718,53 @@ DTLS 1.2 and an unordered SCTP data channel on the existing tunnel socket.
 The Apple host compiles Mbed TLS and `posix_dtls.c`; the ILP32 guest calls
 its scalar handles and buffer arguments through generated posix bridges.
 Version 25 peers fail the existing version gate.
+
+## Apple port: versions 27 and 28
+
+Version 27's map sharing and version 28's rules are upstream's code, compiled
+into the guest unchanged. What differs on Apple platforms:
+
+- **Voice chat and votes to kick are not here.** Their message numbers (78 to
+  82) are kept, and `network_distributed_handle_message` drops them, so a
+  host or a client of upstream's build plays with this one without them. The
+  wire format record (`port/linux/network_format.txt`) is upstream's at
+  version 28 less their five structs.
+- **Where a download goes.** `custom_maps` is `d:\custom_maps`, which
+  `platform_translate_path` puts under the data root: the app's
+  `Documents/custom_maps` on iOS, iPadOS and visionOS (Files shows it under
+  On My iPhone > VISR), `Caches/Halo/custom_maps` on tvOS, and on the Mac
+  `HALO_DATA_ROOT/custom_maps` (a runner's data folder) or
+  `~/Library/Application Support/<bundle ID>/custom_maps`. All are writable
+  by the app. A download is written there as `<name>.map.part` and renamed
+  when whole; the resource maps a map needs (`bitmaps.map`, `sounds.map`,
+  `loc.map`) land in the same folder.
+- **Sockets.** Map sharing's connections are TCP, made with the game's
+  Winsock calls (`socket`, `connect`, `listen`, `accept`, `select`, `send`,
+  `recv`), which reach `port/linux/src/posix_net.c` through `xnet.c`. The
+  Apple host's adapter (`port/ios/host/posix_net.c`) converts every address
+  those calls pass in or hand back. A machine listens on TCP port 5153 only
+  in a game on a Custom Edition map, while it shares (`network.map_share`,
+  `network.map_seed`) or downloads.
+- **Settings.** DOWNLOAD MAPS, HELP SEND MAPS and MAP UPLOAD LIMIT are rows
+  of Settings > Network Setup, and SHARE MAPS a row of Server Setup; the
+  host's upload limit is `network.map_share_upload` in `config.toml`.
+
+What a machine checks of a download, all of it upstream's: the map's name
+has no path separator, drive colon, control character or leading dot, is
+not a Windows device name, and ends with the first eight digits of the hash
+the host offers; each file is at most 768 MB (the map) or 512 MB (a resource
+map), so a download is at most about 2.3 GB; every 256 KiB piece is checked
+against its BLAKE2b hash, and the pieces' hashes against the file's. The
+host's word is the root of that: a host can offer any file it likes under a
+map's name, and the map loader then reads it. There is no check of free
+disk space and no question before a download starts, so
+`network.map_download` is off by default on Apple builds: joining a game on
+a map the device lacks then leaves the game, and the main menu says which
+map is missing and that DOWNLOAD MAPS in Settings > Network Setup turns
+downloads on. The switch governs receiving only; `network.map_share` (a
+host) and `network.map_seed` (a player in another's game) govern sending.
+`network.map_seed` is off by default on Apple builds too (HELP SEND MAPS in
+Settings > Network Setup turns it on): a player's device then opens no
+listening port and sends no map to other players. `network.map_share` stays
+on: a host on a Custom Edition map listens on TCP port 5153 for its own
+game's machines and sends them the map when they ask.

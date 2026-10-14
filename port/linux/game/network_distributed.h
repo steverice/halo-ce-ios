@@ -106,6 +106,25 @@ enum
 	/* co-op: where the host's devices are (doors, elevators), when they move
 	(network_coop.c) */
 	_distributed_message_coop_device_states = 77,
+	/* a player's vote to kick a player (network_votekick.c): to the host,
+	reliably, which takes it only from the voter's own stream */
+	_distributed_message_votekick = 78,
+	/* the vote running as the host counts it, to each client, every second
+	and when it changes (unreliable: network_votekick.c) */
+	_distributed_message_votekick_status = 79,
+	/* voice chat (network_voice.c), in the lobby too: a client's frame to
+	the host, unreliably, with its key; a frame the host relays to a
+	client; the host's settings and the client's key, reliably */
+	_distributed_message_voice_up = 80,
+	_distributed_message_voice_down = 81,
+	_distributed_message_voice_config = 82,
+	/* map sharing (map_share.c), in the lobby too, reliably: a client's
+	request for the game's map, the host's offer (the files, their sizes and
+	hashes) and the machines that may have them, and the client's progress */
+	_distributed_message_map_share_request = 83,
+	_distributed_message_map_share_offer = 84,
+	_distributed_message_map_share_sources = 85,
+	_distributed_message_map_share_progress = 86,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };

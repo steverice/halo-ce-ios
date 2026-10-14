@@ -376,6 +376,18 @@ def test_compare_across_backends_requires_matching_capabilities(tmp_path):
     assert any("capabilities differ" in p for p in mac_run.compare(silent, silent, across_backends=True))
 
 
+def test_compare_across_backends_allows_the_capabilities_only_metal_has(tmp_path):
+    line = "GPU capabilities: vertex BGRA {0}, base vertex {0}, triangle fans 1, max texture size {1}\n" \
+        "frame 60: 5 draws, 2 immediate; skipped 0 link; {2} KB mirrored, {3} KB streamed, {4} GL calls\n"
+    gl = _result(tmp_path / "gl", {}, {}, line.format(0, 16384, 10, 90, 7))
+    metal = _result(tmp_path / "metal", {}, {}, line.format(1, 16384, 80, 20, 0))
+    other = _result(tmp_path / "other", {}, {}, line.format(1, 8192, 80, 20, 0))
+    assert mac_run.compare(gl, metal, across_backends=True) == []
+    assert any("capabilities differ" in p for p in mac_run.compare(gl, other, across_backends=True))
+    # two runs of one backend still compare the whole lines
+    assert any("gpu_stats differ" in p for p in mac_run.compare(gl, metal, ignore_gl_calls=True))
+
+
 def test_compare_same_backend_compares_metal_sources_too(tmp_path):
     a = _result(tmp_path / "a", {"ps_1.metal": "x"}, {}, "")
     b = _result(tmp_path / "b", {"ps_1.metal": "y"}, {}, "")

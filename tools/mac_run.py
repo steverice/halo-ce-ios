@@ -40,8 +40,13 @@ from pathlib import Path
 STATS = re.compile(r"frame \d+: (.*)$")
 # the GL call total at the end of a debug.gpu_stats summary
 GL_CALLS = re.compile(r",? \d+ GL calls$")
-# what a backend reports it can do (gpu_gl.c, gpu_metal.m), the same in every backend
+# what a backend reports it can do (gpu_gl.c, gpu_metal.m)
 CAPABILITIES = re.compile(r"GPU capabilities: (.*)$")
+# the capabilities Metal has and Apple's OpenGL ES lacks, so a GL run and a Metal run report them differently:
+# they decide how the front end uploads vertex colors and indices (d3d8_device.c), not what is drawn
+BACKEND_CAPABILITIES = re.compile(r"(?:vertex BGRA|base vertex) \d+(?:, )?")
+# the upload totals in a debug.gpu_stats summary, which follow those capabilities
+UPLOAD_BYTES = re.compile(r"\d+ KB mirrored, \d+ KB streamed(?:, )?")
 # a translated shader's source (.glsl or .metal) and the inputs it was translated from
 SHADER_SOURCES = ("*.glsl", "*.metal")
 SHADER_INPUTS = ("*.vsh", "*.key")
@@ -111,6 +116,7 @@ DEFAULTS = {
     "display.effect_resolution": "false",
     "display.compressed_textures": "false",
     "display.frame_pacing": '"off"',
+    "display.frame_rate": '"display"',
     # (a runner run sets debug.exit_after, so "auto" compiles at each first draw, as before)
     "display.async_shaders": '"auto"',
     "display.render_scale": "1.0",
@@ -164,6 +170,8 @@ DEFAULTS = {
     "debug.gl_debug": "false",
     "debug.metal_state_cache": "true",
     "debug.metal_specialize": "true",
+    "debug.metal_vertex_bgra": "true",
+    "debug.metal_base_vertex": "true",
     "debug.metal_pipeline_archive": "false",
     "debug.shader_list_warm": "true",
     "debug.shader_list_record": '"shader-lists-missed"',
@@ -427,8 +435,10 @@ def compare(a, b, tolerance=0, ignore_gl_calls=False, channel_tolerance=0, fract
     left) only the pixels inside it are compared, and fraction is of those. With ignore_gl_calls the gpu_stats lines are compared without their
     GL call totals. across_backends compares a GL run with a Metal run: the
     shaders' inputs (.vsh, .key) must be the same files and their sources the
-    same names, whatever their language; GL calls are ignored; and the two
-    backends must report the same capabilities."""
+    same names, whatever their language; GL calls and the upload totals
+    (mirrored, streamed) are ignored; and the two backends must report the
+    same capabilities, apart from vertex BGRA and base vertex, which Metal has
+    and Apple's OpenGL ES lacks."""
     a, b = Path(a), Path(b)
     problems = []
     for folder in ("runner/shaders", "runner/replay/replay"):
@@ -464,10 +474,13 @@ def compare(a, b, tolerance=0, ignore_gl_calls=False, channel_tolerance=0, fract
         stats_a, stats_b = (stats_lines(text) for text in texts)
         if across_backends:
             capabilities_a, capabilities_b = (capability_lines(text) for text in texts)
-            if not capabilities_a or capabilities_a != capabilities_b:
+            if not capabilities_a or [BACKEND_CAPABILITIES.sub("", line) for line in capabilities_a] != \
+                    [BACKEND_CAPABILITIES.sub("", line) for line in capabilities_b]:
                 problems.append(f"capabilities differ:\n  {a}: {capabilities_a}\n  {b}: {capabilities_b}")
         if ignore_gl_calls or across_backends:
             stats_a, stats_b = ([GL_CALLS.sub("", line) for line in lines] for lines in (stats_a, stats_b))
+        if across_backends:
+            stats_a, stats_b = ([UPLOAD_BYTES.sub("", line) for line in lines] for lines in (stats_a, stats_b))
         if stats_a != stats_b:
             problems.append(f"gpu_stats differ:\n  {a}: {stats_a}\n  {b}: {stats_b}")
     return problems

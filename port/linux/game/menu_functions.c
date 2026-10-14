@@ -2819,6 +2819,8 @@ help_strings, tools/port_settings.py) */
 #define COOPERATIVE_ENEMIES_MULTIPLIER_HELP 20
 #define COOPERATIVE_PLAYER_COLLISIONS_HELP 21
 #define SERVER_PASSWORD_HELP 23
+/* ... and for SHARE MAPS, by its choice (port/linux/game/map_share.c) */
+#define MAP_SHARE_HELP 24
 
 /* co-op's EXTRA ENEMIES' choices (port_settings.COOP_ENEMIES_MODES, in this
 order): its amount's row is the choice's */
@@ -2994,6 +2996,16 @@ static void server_settings_update(struct widget_instance *list)
 			if (help && list->focused_child == named(list, "op_player_collisions", 0))
 				help->parameters.text_box.string_list_index = (short)(COOPERATIVE_PLAYER_COLLISIONS_HELP + choice);
 		}
+	}
+	/* SHARE MAPS (any game's: map_share.c), ON or OFF: its help is its
+	choice's. Its spinner keeps network.map_share itself */
+	if ((spinner = named(list, "map_share_spinner", 0)) != NULL)
+	{
+		short choice = (short)PIN(spinner->parameters.list.selected_index, 0, 1);
+		struct widget_instance *help = list->parameters.list.extended_description;
+
+		if (help && list->focused_child == named(list, "op_map_share", 0))
+			help->parameters.text_box.string_list_index = (short)(MAP_SHARE_HELP + choice);
 	}
 	/* LISTING (an internet game's): PUBLIC, listed in everyone's server
 	browser, or PRIVATE, for this game. Its help is its choice's */

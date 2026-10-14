@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .embed_assets import hud_assets_build
-from .linux_build import (LINUX_PROFILE, MUSL_MATH_DIR, XDK_INCLUDE, compile_launcher, game_defines_and_includes,
-                          game_sources, musl_math_cflags, musl_math_sources, pgo_mode, pgo_profile, profile_use_flags,
+from .linux_build import (LINUX_PROFILE, MUSL_MATH_DIR, STB_VORBIS_SOURCE, XDK_INCLUDE, compile_launcher,
+                          game_defines_and_includes,
+                          game_sources, lto_mode, musl_math_cflags, musl_math_sources, pgo_mode, pgo_profile, profile_use_flags,
                           xdk_headers)
 from .ninja_syntax import Writer
 
@@ -268,6 +269,13 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         deps="gcc",
     )
     n.rule(
+        name="guest_bc",
+        command=f"{compile_launcher(sln)}$guest_cc -MMD -MF $out.d $cflags -flto=full -c $in -o $out",
+        description="IOS BC $out",
+        depfile="$out.d",
+        deps="gcc",
+    )
+    n.rule(
         name="guest_as",
         command="$guest_cc --target=aarch64-none-elf -c $in -o $out",
         description="IOS AS $out",
@@ -277,21 +285,44 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         f"-isystem {libc_include}", f"-isystem {arch}", f"-isystem {MUSL_DIR}/arch/generic",
         f"-isystem {MUSL_DIR}/include",
     ]
-    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []))
-    guest_code = " ".join(GUEST_CODE_FLAGS)
-    tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
+    # Link-time optimization (--lto=full; thin is taken as full): the game,
+    # the platform layer and the bundled libraries are compiled to bitcode
+    # and optimized as one module (tools/ios_guest_lto.py). The C library,
+    # the guest runtime and the import table stay outside it.
+    lto = lto_mode(sln) != "off"
     # profile-guided optimisation with the Linux build's profile (committed,
     # or trained by the Linux build with --pgo=train): the game and platform
     # code are the same, and functions that differ simply go without
     profile = pgo_profile(sln, LINUX_PROFILE if pgo_mode(sln) == "train" else None, [LINUX_PROFILE], guest_cc)
     profile_flags = " ".join(profile_use_flags(profile))
+    # The converter turns each memory access and indirect branch into three
+    # instructions (tools/ios_asm_convert.py), so a conditional branch that
+    # LLVM placed within reach can end up out of it in the larger functions
+    # that a profile or inlining across units makes ("fixup value out of
+    # range"). LLVM then relaxes those branches at a quarter of their reach
+    # instead. With neither, the flags stay out, so a --pgo=off --lto=off
+    # build is the code it always was.
+    branch_ranges = ["-mllvm", "-aarch64-tbz-offset-bits=12", "-mllvm", "-aarch64-cbz-offset-bits=17",
+                     "-mllvm", "-aarch64-bcc-offset-bits=17"] if lto or profile else []
+    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + branch_ranges + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []))
+    guest_code = " ".join(GUEST_CODE_FLAGS)
+    tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
+    bitcode_implicit = [*generated_headers]
     if profile:
         tool_implicit.append(profile)
+        bitcode_implicit.append(profile)
 
-    def guest_object(source: Path, cflags: str, prefix: str = "") -> Path:
+    def guest_object(source: Path, cflags: str, prefix: str = "", whole: bool = False) -> Path:
+        """the unit's object; with link-time optimization, a unit that is part
+        of the whole (whole) is compiled to bitcode (.bc) instead"""
         obj = obj_dir / prefix / Path(str(source).lstrip("/")).with_suffix(".o")
         if str(source).startswith(str(BUILD)):
             obj = obj_dir / prefix / source.relative_to(BUILD).with_suffix(".o")
+        if lto and whole:
+            obj = obj.with_suffix(".bc")
+            n.build(outputs=obj, rule="guest_bc", inputs=source, implicit=bitcode_implicit,
+                    variables={"cflags": cflags})
+            return obj
         n.build(outputs=obj, rule="guest_cc", inputs=source, implicit=tool_implicit,
                 variables={"cflags": cflags})
         return obj
@@ -338,9 +369,11 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         cflags = game_cflags
         if source.as_posix() in VARIADIC_PROTOTYPE_FILES:
             cflags += f" -include {PORT_DIR}/include/halo_guest_variadic_prototypes.h"
-        objects.append(guest_object(source, cflags))
+        objects.append(guest_object(source, cflags, whole=True))
     for source in sorted(Path(config["game_sources"]).glob("*.c")):
-        objects.append(guest_object(source, game_cflags))
+        objects.append(guest_object(source, game_cflags, whole=True))
+    # (the Custom Edition maps' Ogg Vorbis decoder, as upstream's builds)
+    objects.append(guest_object(STB_VORBIS_SOURCE, game_cflags, whole=True))
 
     # the platform layer shared with Linux, and the guest runtime
     platform_cflags = " ".join([
@@ -356,25 +389,25 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     for source in sorted((LINUX_DIR / "src").glob("*.c")):
         if source.name.startswith("posix_") or source.name in guest_host_only:
             continue
-        objects.append(guest_object(source, platform_cflags))
+        objects.append(guest_object(source, platform_cflags, whole=True))
     # the high-res HUD's, text's and titles' assets (port/assets; hud_hires.c, text_hires.c)
     for source in hud_assets_build(n, "ios", obj_dir / "gen" / "hud_hires_assets.c"):
-        objects.append(guest_object(source, platform_cflags))
+        objects.append(guest_object(source, platform_cflags, whole=True))
     # the settings file's parser (port/third_party/tomlc17)
-    objects.append(guest_object(TOML_DIR / "tomlc17.c", platform_cflags))
+    objects.append(guest_object(TOML_DIR / "tomlc17.c", platform_cflags, whole=True))
     # the menus' XML parser (port/third_party/expat; menu_files.c)
     for name in EXPAT_SOURCES:
-        objects.append(guest_object(EXPAT_DIR / name, platform_cflags))
+        objects.append(guest_object(EXPAT_DIR / name, platform_cflags, whole=True))
     # the game's sin, pow and the rest, the same on every port (port/include/halo_math.h)
     for source in musl_math_sources():
         objects.append(guest_object(source, " ".join([guest_abi, profile_flags, *libc_includes,
                                                       musl_math_cflags("")])))
     # internet play's reliable streams (port/third_party/kcp; p2p.c)
-    objects.append(guest_object(KCP_DIR / "ikcp.c", platform_cflags))
+    objects.append(guest_object(KCP_DIR / "ikcp.c", platform_cflags, whole=True))
     # internet play's signatures, for public games' listings
     # (port/third_party/monocypher; p2p_crypto.c)
     for name in ("monocypher.c", "monocypher-ed25519.c"):
-        objects.append(guest_object(MONOCYPHER_DIR / name, platform_cflags))
+        objects.append(guest_object(MONOCYPHER_DIR / name, platform_cflags, whole=True))
     # the port's zlib, without the ARM CRC instructions: the guest's assembly
     # is assembled for plain aarch64, which does not take them
     for name in ZLIB_SOURCES:
@@ -405,6 +438,38 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     imports_o = obj_dir / "gen" / "imports.o"
     n.build(outputs=imports_o, rule="guest_as", inputs=imports_s)
     objects.append(imports_o)
+
+    # ---------- link-time optimization: the bitcode units as one object
+
+    bitcode = [obj for obj in objects if obj.suffix == ".bc"]
+    if bitcode:
+        objects = [obj for obj in objects if obj.suffix != ".bc"]
+        # what the units outside the whole refer to stays visible in it
+        keep = guest_dir / "lto" / "keep.txt"
+        n.rule(
+            name="guest_lto_keep",
+            command=("$guest_tool_bin/llvm-nm --undefined-only --format=just-symbols --no-sort @$out.rsp "
+                     "| grep --invert-match --extended-regexp ':$$|^$$' | sort --unique > $out"),
+            description="IOS LTO KEEP $out",
+            rspfile="$out.rsp",
+            rspfile_content="$in_newline",
+        )
+        n.build(outputs=keep, rule="guest_lto_keep", inputs=[*objects, libguestc])
+        whole_o = obj_dir / "lto" / "whole.o"
+        n.rule(
+            name="guest_lto",
+            command=(f"{python} tools/ios_guest_lto.py --llvm-bin $guest_tool_bin --keep {keep} --cflags '$cflags' "
+                     f"--work {guest_dir}/lto --out $out.darwin.s @$out.rsp && "
+                     f"{python} {converter} $out.darwin.s $out.s && "
+                     f"$guest_cc --target=aarch64-none-elf -c $out.s -o $out"),
+            description="IOS LTO $out",
+            rspfile="$out.rsp",
+            rspfile_content="$in_newline",
+        )
+        n.build(outputs=whole_o, rule="guest_lto", inputs=bitcode,
+                implicit=[keep, Path("tools/ios_guest_lto.py"), *tool_implicit],
+                variables={"cflags": guest_abi})
+        objects.append(whole_o)
 
     # ---------- the guest image
 
