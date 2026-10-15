@@ -22,6 +22,14 @@ memory_watch.c detects that by write-protecting the pages.
 #include "../game/cache_file_formats.h"
 #include "texture_override.h"
 #include "texture_upscale_state.h"
+/* render validation's name for a texture this file cannot convert, in a
+build configured with it (gpu_validate.h); nothing otherwise */
+#include "gpu_validate.h"
+#if HALO_RENDER_VALIDATION
+#define VALIDATION_NOTE(reason, detail, value) gpu_validation_note(GPU_VALIDATION_##reason, (uint32_t)(detail), (uint32_t)(value))
+#else
+#define VALIDATION_NOTE(reason, detail, value) ((void)0)
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,6 +117,8 @@ static struct format_information format_information(DWORD format)
 
 	if (format < sizeof(table) / sizeof(table[0]) && table[format].kind != _texel_unknown)
 		return table[format];
+	/* read as A8R8G8B8, whatever it is */
+	VALIDATION_NOTE(FRONT_TEXTURE_FORMAT_UNKNOWN, format, 0);
 	return unknown;
 }
 
@@ -1138,6 +1148,7 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 		{
 			platform_log("textures: a %lux%lux%lu texture is larger than the device takes; it is not drawn",
 				entry->description.width, entry->description.height, entry->description.depth);
+			VALIDATION_NOTE(FRONT_TEXTURE_NOT_DRAWN, 2, entry->description.width << 16 | entry->description.height);
 		}
 		entry->generation = 0;
 		{

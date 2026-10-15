@@ -59,6 +59,7 @@ only look up and create stand-ins.
 #include "port_config.h"
 #include "p2p_internal.h"
 #include "p2p_code.h"
+#include "p2p_away.h"
 #include "ikcp.h"
 
 #include <stddef.h>
@@ -118,6 +119,10 @@ enum
 	PING_INTERVAL = 1000,
 	ENDPOINT_SWITCH_TIME = 3000,
 	PEER_TIMEOUT = 20000,
+	/* how often an app in the background says it is away, while it can */
+	AWAY_INTERVAL = 2000,
+	/* the away notices kept for the game (p2p_take_away_notice) */
+	MAXIMUM_AWAY_NOTICES = 8,
 	PUNCH_TIMEOUT = 30000,
 	JOIN_TIMEOUT = 90000,
 	/* how long a join code is looked for at the brokers before the player
@@ -151,6 +156,9 @@ enum
 	_packet_datagram,
 	_packet_stream,
 	_packet_bye,
+	/* the sender's app went to the background (2 bytes: the seconds its
+	peers wait for it, network byte order), or came back (0): "away" */
+	_packet_away,
 };
 
 /* the messages of a stream, inside KCP */
@@ -212,6 +220,10 @@ struct peer
 	int datagram_sent_logged;
 	int datagram_received_logged;
 	int datagram_dropped_logged;
+	/* its app is in the background (said by _packet_away): until when it is
+	waited for, rather than dropped at PEER_TIMEOUT */
+	int away;
+	unsigned long away_until;
 };
 
 /* a UDP stand-in for one port of a peer */
@@ -408,6 +420,17 @@ static struct
 	unsigned long upnp_renew_interval;
 	int upnp_renew_now;
 	int upnp_stop_wanted;
+	/* this app in the background (posix_app_in_background): its peers told,
+	and when last; and the peers' notices, for the game to show */
+	int away;
+	unsigned long away_sent_time;
+	struct p2p_away_notice away_notices[MAXIMUM_AWAY_NOTICES];
+	int away_notice_count;
+	/* when this app last came back from the background, and when the host
+	of the game joined last said it was away (a game lost after either is
+	joined again: p2p_rejoin_invite) */
+	unsigned long back_time;
+	unsigned long host_away_time;
 } p2p = { 0, 0, -1, 0, -1, .hosting_socket = -1 };
 
 /* the proxy (its index + 1) with each local port (all of theirs are on
@@ -426,9 +449,11 @@ static int has_identifier;
 
 /* ---------- helpers */
 
+/* (the real clock, which goes on while the app is in the background: the
+game's stands still there, xbox_kernel.c) */
 unsigned long p2p_now(void)
 {
-	return GetTickCount();
+	return platform_real_milliseconds();
 }
 
 static int elapsed(unsigned long since, unsigned long time)
@@ -896,6 +921,25 @@ static void peer_send(struct peer *peer, const unsigned char *inner, int size)
 	peer->sent_time = p2p_now();
 }
 
+/* a peer's away notice for the game (seconds waited for it, 0 back, -1
+dropped), with the lock held; the oldest goes when they are not taken */
+static void away_notice(struct peer const *peer, int seconds)
+{
+	struct p2p_away_notice *notice;
+
+	if (p2p.away_notice_count == MAXIMUM_AWAY_NOTICES)
+	{
+		memmove(p2p.away_notices, p2p.away_notices + 1, sizeof(p2p.away_notices) - sizeof(*p2p.away_notices));
+		p2p.away_notice_count--;
+	}
+	notice = &p2p.away_notices[p2p.away_notice_count++];
+	notice->address = peer->virtual_address;
+	notice->is_host = peer->is_host && !peer->is_player;
+	notice->seconds = seconds;
+	if (notice->is_host && seconds)
+		p2p.host_away_time = p2p_now() | 1;
+}
+
 static void peer_ping(struct peer *peer, const struct p2p_candidate *to)
 {
 	unsigned char inner[5];
@@ -1217,7 +1261,14 @@ static void update_peers(void)
 			continue;
 		if (peer->connected)
 		{
-			if (elapsed(peer->heard_time, PEER_TIMEOUT))
+			/* (one away is waited for until its grace ends) */
+			if (peer->away && p2p_away_wait_over(p2p_now(), peer->away_until))
+			{
+				peer->away = 0;
+				away_notice(peer, -1);
+				drop_peer(peer, "its app stayed in the background past the time it was waited for");
+			}
+			else if (!peer->away && elapsed(peer->heard_time, PEER_TIMEOUT))
 				drop_peer(peer, "lost the connection");
 			else if (elapsed(peer->sent_time, PING_INTERVAL))
 			{
@@ -2436,6 +2487,27 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 	case _packet_bye:
 		drop_peer(peer, "left");
 		break;
+	case _packet_away:
+		if (p2p_away_packet_seconds(inner, inner_size) >= 0)
+		{
+			int seconds = p2p_away_packet_seconds(inner, inner_size);
+
+			if (seconds && !peer->away)
+			{
+				platform_log("Internet play: %s %s: its app went to the background; it is waited for up to %d s",
+					peer_kind(peer), peer->name, seconds);
+				away_notice(peer, seconds);
+			}
+			else if (!seconds && peer->away)
+			{
+				platform_log("Internet play: %s %s: its app is back", peer_kind(peer), peer->name);
+				away_notice(peer, 0);
+			}
+			peer->away = seconds != 0;
+			if (seconds)
+				peer->away_until = p2p_now() + (unsigned long)seconds * 1000;
+		}
+		break;
 	}
 }
 
@@ -2681,6 +2753,99 @@ static void update_reaching(void)
 			p2p.reaching[index].asked = 1;
 		}
 	}
+}
+
+/* this app in the background: its peers told it is away (again every
+AWAY_INTERVAL, while the system lets it run), and that it is back when it
+returns */
+static void update_away(void)
+{
+	int away = posix_app_in_background() != 0;
+	long grace = config_integer("network.background_grace");
+	int index;
+
+	if (away == p2p.away && (!away || !elapsed(p2p.away_sent_time, AWAY_INTERVAL)))
+		return;
+	if (away != p2p.away)
+	{
+		platform_log(away ? "Internet play: the app went to the background; its peers are told it is away "
+			"(they wait up to %ld s)" : "Internet play: the app is back; its peers are told", grace);
+	}
+	if (p2p.away && !away)
+		p2p.back_time = p2p_now() | 1;
+	p2p.away = away;
+	p2p.away_sent_time = p2p_now();
+	grace = p2p_away_clamp_grace(grace);
+	for (index = 0; index < P2P_MAXIMUM_PEERS; index++)
+	{
+		struct peer *peer = &p2p.peers[index];
+		unsigned char inner[P2P_AWAY_PACKET_SIZE];
+
+		if (!peer->used || !peer->connected)
+			continue;
+		p2p_away_packet_make(inner, _packet_away, away, grace);
+		peer_send_to(peer, &peer->endpoint, inner, sizeof(inner));
+	}
+}
+
+int p2p_take_away_notice(struct p2p_away_notice *notice)
+{
+	int taken = 0;
+
+	if (!p2p.running)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	if (p2p.away_notice_count)
+	{
+		*notice = p2p.away_notices[0];
+		memmove(p2p.away_notices, p2p.away_notices + 1, sizeof(p2p.away_notices) - sizeof(*p2p.away_notices));
+		p2p.away_notice_count--;
+		taken = 1;
+	}
+	pthread_mutex_unlock(&p2p_lock);
+	return taken;
+}
+
+int p2p_rejoin_invite(char *text, int size)
+{
+	/* (a game lost within this long of either, or before the p2p thread saw
+	the app come back: the absence lost it) */
+	unsigned long recent = 120000 + (unsigned long)config_integer("network.background_grace") * 1000;
+	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE];
+	char hex[2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1];
+	static const unsigned char none[P2P_TOKEN_SIZE];
+	int rejoin;
+
+	if (!p2p.running)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	rejoin = !p2p.hosting && memcmp(p2p.join_token, none, sizeof(none)) &&
+		(p2p.away || posix_app_in_background() || (p2p.back_time && !elapsed(p2p.back_time, recent)) ||
+		(p2p.host_away_time && !elapsed(p2p.host_away_time, recent)));
+	if (rejoin)
+	{
+		memcpy(bytes, p2p.join_host_hash, P2P_KEY_HASH_SIZE);
+		memcpy(bytes + P2P_KEY_HASH_SIZE, p2p.join_token, P2P_TOKEN_SIZE);
+		p2p_hex(bytes, sizeof(bytes), hex);
+		snprintf(text, (size_t)size, "halo://join/%s", hex);
+		p2p.back_time = p2p.host_away_time = 0;
+	}
+	pthread_mutex_unlock(&p2p_lock);
+	return rejoin;
+}
+
+int p2p_peer_away(unsigned long address)
+{
+	struct peer *peer;
+	int away = 0;
+
+	if (!p2p.running || !is_virtual_address(address))
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	peer = find_peer_by_address(address);
+	away = peer && peer->away;
+	pthread_mutex_unlock(&p2p_lock);
+	return away;
 }
 
 static int connected_player_count(void)
@@ -3604,6 +3769,7 @@ static void *p2p_thread(void *unused)
 		update_answering();
 		update_reaching();
 		update_upnp();
+		update_away();
 		p2p_discord_update();
 #ifdef HALO_ILP32
 		poll_invite_file();

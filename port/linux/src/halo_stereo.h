@@ -34,6 +34,11 @@ enum
 	quad shows this layer whole, and the HUD's own draws stay in their
 	pieces */
 	HALO_STEREO_LAYER_UI = 5,
+	/* not stereo's: d3d8_device.c's key for the mono back buffer at the
+	display's own size, where the HUD and menus draw over a smaller scene
+	(display.native_hud). Never the game's current layer, and never made in
+	a stereo frame */
+	HALO_STEREO_LAYER_NATIVE = 6,
 	/* d3d8_device.c's key for a HUD group's own target: this plus the group
 	(enum halo_hud_group). The game's layer stays HALO_STEREO_LAYER_HUD; the
 	device keys the HUD layer's color target by the current group, and the
@@ -360,6 +365,11 @@ not while climbing in or out). render_objects.c draws it after the
 first-person weapon, under that weapon's stencil, then again for its inside
 faces (halo_first_person_body_fill) */
 int halo_first_person_body(long object_index);
+/* port/linux/game/first_person_view.c: nonzero when the frame being drawn is
+flat (mono), where display.first_person_legs applies and
+display.first_person_body doesn't; 0 in a stereo frame, the other way
+around. Logs once per change of view which setting is ignored */
+int halo_first_person_legs_apply(void);
 /* the render-only node matrices for that body, set back along the facing
 (facing: the unit's world forward; only its horizontal part counts) by
 display.first_person_body_offset, or seated by

@@ -59,6 +59,27 @@ void input_replay_filter(XINPUT_GAMEPAD *pad);
 /* d3d8_device.c */
 void halo_render_scale_step(int direction);
 
+/* d3d8_device.c */
+void halo_anti_aliasing_toggle(void);
+
+/* while Back is held, R1 (the Xbox's Black) switches FXAA on and off
+(halo_anti_aliasing_toggle), and the game doesn't see R1 */
+static void anti_aliasing_chord(XINPUT_GAMEPAD *pad)
+{
+	static int held;
+	int pressed = pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] > 64;
+
+	if (!(pad->wButtons & XINPUT_GAMEPAD_BACK))
+	{
+		held = 0;
+		return;
+	}
+	if (pressed && !held)
+		halo_anti_aliasing_toggle();
+	held = pressed;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] = 0;
+}
+
 /* debug.render_scale_dpad: while Back is held, the D-pad's left and right
 step the render scale down and up, and the game doesn't see the D-pad */
 static void render_scale_dpad(XINPUT_GAMEPAD *pad)
@@ -621,6 +642,9 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 	static int zooming;
 	static long zoom_start, zoom_swaps, zoom_clicks, zoom_lights, zoom_unclicks;
 	static unsigned long zoom_polls;
+	static int chording;
+	static long chord_start, chord_period;
+	static unsigned long chord_polls;
 	double t;
 
 	if (!checked)
@@ -642,6 +666,15 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 			seed = atoi(setting + 9);
 			walklooking = 1;
 		}
+		/* "aachord:START,PERIOD": holds Back and presses R1 (the
+		anti-aliasing chord) for a few polls from poll START and every
+		PERIOD polls after, and nothing else */
+		else if (!strncmp(setting, "aachord:", 8))
+		{
+			chording = 1;
+			if (sscanf(setting + 8, "%ld,%ld", &chord_start, &chord_period) != 2 || chord_period < 10)
+				chord_period = 300;
+		}
 		else if (!strncmp(setting, "zoom:", 5))
 		{
 			zooming = 1;
@@ -655,6 +688,18 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 			if (fields < 5)
 				zoom_unclicks = 0;
 		}
+	}
+	if (chording)
+	{
+		long since = (long)chord_polls++ - chord_start;
+
+		if (since >= 0 && since % chord_period < 6)
+		{
+			pad->wButtons |= XINPUT_GAMEPAD_BACK;
+			if (since % chord_period >= 2)
+				pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] = 255;
+		}
+		return;
 	}
 	if (zooming)
 	{
@@ -1088,6 +1133,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			pthread_mutex_unlock(&mouse_lock);
 		}
 		render_scale_dpad(&state->Gamepad);
+		anti_aliasing_chord(&state->Gamepad);
 		input_replay_filter(&state->Gamepad);
 	}
 	else if (port_gamepad(gamepads, count, port))

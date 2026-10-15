@@ -233,6 +233,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.gpu_flush_draws` | `-1` | `HALO_GPU_FLUSH_DRAWS` | Flush the GPU's pipeline every this many draws. `-1`: every 3 on Intel graphics with Mesa's driver, which can otherwise hang in the game's long runs of small draws and reset the desktop's graphics too. `0`: never. |
 | `display.interpolation` | `true` | `HALO_INTERPOLATION` | `true`: one frame for each refresh of the display. `false`: 30 frames each second, as on the Xbox. Refer to "Frame rate". |
 | `display.direct_camera` | `true` | `HALO_DIRECT_CAMERA` | `true`: in first person, on foot, the view points where the player aims in each frame, not where the last tick left it. Refer to "Frame rate". |
+| `display.first_person_legs` | `false` | `HALO_FIRST_PERSON_LEGS` | `true`: on a flat view (a phone, a tablet, a window), your own body is drawn from the waist down in first person, so you see your legs when you look down, moving as the body's animation moves them. It is the body others see: the upper body is folded away, and the body is set back behind the eye as far as keeps the open waist below the view, more the further down you look. Only this machine's view changes. Not in a stereo view: head-tracked stereo draws the whole body instead (`display.first_person_body`), and the two never draw together; the log says once when a setting is ignored for the view. It has no menu row yet. |
 | `display.high_res_hud` | `true` | `HALO_HIGH_RES_HUD` | `true`: the HUD (meters, counters, panels and their outlines, the motion sensor, reticles, waypoints, scopes) is drawn from the high-res assets in `port/assets/hud`, 8x the size of the maps' bitmaps. The bitmaps with English text keep the maps' own. `false`: the maps' own bitmaps. |
 | `display.high_res_text` | `true` | `HALO_HIGH_RES_TEXT` | `true`: the menus' and HUD's text is drawn with the fonts in `port/assets/fonts` (Overpass, in place of the maps' Interstate) at the resolution the game draws at, laid out as before, and the menus' titles are drawn from the high-res pictures in `port/assets/titles`. `false`: the maps' bitmap fonts and titles. |
 | `display.upscaled_textures` | `true` | `HALO_UPSCALED_TEXTURES` | `true`: the maps' textures are drawn upscaled where an upscaled copy exists (made on this device from your copy of the game). `false`: the maps' own textures. It is decided at each level load and holds for the whole level, so a change takes effect at the next level load; a level whose upscaling was skipped, or that had too little free storage for it, plays with the original textures. On iOS and visionOS, the "Upscale textures" switch in the app's page of the Settings app writes this setting when the app starts or returns to the foreground, and only after you change the switch, so an edit of the file stays until then; it also applies at the next level load. |
@@ -254,6 +255,8 @@ the setting for one start of the game. It has priority over the file.
 | `controls.<action>` | (the table in "Controls") | `HALO_KEY_<ACTION>` | The keys and mouse buttons of an action, up to two, separated by a comma: `move_forward`, `move_backward`, `strafe_left`, `strafe_right`, `jump`, `crouch`, `fire`, `throw_grenade`, `melee`, `reload`, `zoom`, `switch_weapon`, `switch_grenade`, `action`, `flashlight`, `scoreboard`, `pause`. Keys by their names (`"W"`, `"Space"`, `"Left Ctrl"`, `"F1"`), and `"Mouse Left"`, `"Mouse Right"`, `"Mouse Middle"`, `"Mouse 4"`, `"Mouse 5"`, `"Wheel"` (either way), `"Wheel Up"`, `"Wheel Down"`. |
 | `game.console_log` | `"important"` | `HALO_CONSOLE_LOG` | What the console shows on the screen. `"important"`: bans, players that the host drops for cheating, the reasons that the game refuses a command, and the asserts that stop the game. `"all"`: all the lines. `"none"`: only the asserts that stop the game. The output of a command always shows. `debug.txt` gets all the lines. |
 | `game.language` | `""` | `HALO_LANGUAGE` | The language of the menus: `ja`, `de`, `fr`, `es` or `it`. Empty: English. |
+| `game.loading_screen` | `"auto"` | `HALO_LOADING_SCREEN` | The loading screen over a campaign level's load: the last frame blurs away, a band of light crosses the ring's picture from left to right as the load goes, and the tone plays, until the level is read and its shaders are compiled. `"auto"`: shown, except in a run that must draw the same frames every time (`debug.fixed_timestep`, an input replay or benchmark, `debug.exit_after`, screenshots) and except in stereo. `"on"`, `"off"`: always, never. |
+| `game.loading_screen_seconds` | `1.5` | `HALO_LOADING_SCREEN_SECONDS` | The least time the loading screen stays up, in seconds (0 to 30), so that a level that is ready at once does not flash it. |
 | `paths.data` | `""` | `HALO_DATA_ROOT` | The data root. Refer to "Start the game". |
 | `paths.saves` | `""` | `HALO_SAVE_ROOT` | The save root. Refer to "Files and folders". |
 | `network.address` | `""` | `HALO_NET_ADDRESS` | The IPv4 address of this machine for system link. Refer to "Play on one computer". |
@@ -262,6 +265,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.join_from_clipboard` | `true` | `HALO_NET_JOIN_FROM_CLIPBOARD` | `true`: when the game comes to the front, it joins the game of an invite link on the clipboard. |
 | `network.tunnel_port` | `0` | `HALO_NET_TUNNEL_PORT` | The UDP port for internet play. `0`: the game selects a port. Refer to "Internet play". |
 | `network.allow_upnp` | `true` | `HALO_NET_ALLOW_UPNP` | `true`: internet play can ask the router to forward its port (UPnP; NAT-PMP or PCP on Apple devices). `false`: the game does not ask. Refer to "Internet play". |
+| `network.background_grace` | `60` | `HALO_NET_BACKGROUND_GRACE` | Seconds the other players of an internet game wait for this machine when its app goes to the background (an Apple device suspends it) before they drop it. The players see "NAME's game is in the background", then "NAME is back" or "NAME did not come back in time". |
 | `network.public_lobby` | `true` | `HALO_NET_PUBLIC_LOBBY` | `true`: the server browser. Public games are listed, and Join Game > Server Browser shows them. `false`: no games are listed or shown. Refer to "Server browser". |
 | `network.host_public` | `true` | `HALO_NET_HOST_PUBLIC` | `true`: a new game of Create Game > Internet starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in Server Setup changes it for each game. Refer to "Server browser". |
 | `network.coop_friendly_fire` | `"on"` | `HALO_NET_COOP_FRIENDLY_FIRE` | Whether the players of an online co-op game hurt each other: `"off"`, `"on"`, `"shields_only"` or `"explosives_only"`. FRIENDLY FIRE in co-op's Server Setup writes its choice here. Their AI allies they always can, as in the campaign. |
@@ -766,9 +770,17 @@ tags or a tag's data that is out of range gets zeros (`tag_empty_data` in
 
 A map's name must be its file's: the cache file slots are found by the name
 in the map's header, so a map file whose header names another map (a
-renamed one) is refused, not copied again for ever. The `loading.tga` a map
-pack may put in the maps folder is read only if it is an uncompressed 24-bit
-picture of 320 by 240, the loading screen's texture.
+renamed one) is refused, not copied again for ever.
+
+The loading screen's picture is `loading.tga` in the maps folder, read only
+if it is an uncompressed 24-bit picture of 320 by 240. A PAL disc has the
+file; an NTSC disc holds the picture in its `default.xbe`, and the iPhone,
+iPad, Apple TV and Vision Pro importers write the file from it
+(`port/runtime/loading_picture.h`). For maps imported before that, or copied
+by hand, `python3 tools/loading_picture.py DISC_IMAGE MAPS_FOLDER` writes it.
+Without the file the loading screen is the blur and the tone alone. The
+screen is held over a campaign level's whole load, shader compiles included
+(`port/linux/game/loading_screen.c`).
 
 A checkpoint (`savegame.bin`, in the profile's folder) and a core are
 images of the game state's memory: with the data arrays' pointers to their
@@ -877,6 +889,7 @@ Other changes:
 | `sound/sound_manager.c`, `interface/hud.c`, `game/game_engine.c` | The music's and the other sounds' volumes; the HUD's and the scoreboard's settings are read again when Settings changes them. |
 | `rasterizer/rasterizer.c` | The 128 KB of vertices of the debug display of a model's vertices are static, not on the stack: the compiler inlines the function in `render_model`, and the Windows build probed the stack a page at a time for every model drawn. |
 | `interface/hud.c` | In multiplayer, players' names are drawn above their heads (`display.player_names`, `display.player_name_scale`). |
+| `render/render_objects.c`, `objects/objects.c` | In first person on a flat view, your own body is drawn from the waist down with the pose `first_person_legs.c` makes (`display.first_person_legs`); the waist it found and the mesh `object_mesh.c` read are forgotten on a new map. `game/first_person_view.c` keeps it out of stereo frames. |
 | `rasterizer/rasterizer_text.c`, `text/draw_string.c` | Text is drawn from an atlas of the fonts' glyphs, rasterized at the resolution the game draws at (`src/text_hires.c`), when the font has every character of the string. Text can be drawn scaled about a point (`rasterizer_text_set_scale`), as the players' names are. Each glyph's advance is centred on the font tag character's, so the layout is the same, and a glyph is cut at a text box only where the font tag's character visibly was. |
 | `cutscene/cinematics.c` | A scenario's titles (some Custom Edition maps show their name for the whole game) are not drawn over a menu, as the letterbox is not: the screen's overlays are drawn after the players' menus. |
 | `rasterizer/rasterizer.h` | A frame holds 2048 transparent geometry groups, not 384 (`include/halo_port_capacity.h`): a co-op game with many added enemies asked for more, and the Xbox's pool drew the frame without the rest. |

@@ -31,4 +31,28 @@ static inline struct halo_display_size halo_display_render_size(
     if (size.height < 1) size.height = 1;
     return size;
 }
+
+/* Where gpu_present puts a picture in the drawable: fitted to it, keeping the
+   picture's shape, and centered. A picture within a pixel of its fitted size
+   (the display-sized back buffer of display.native_hud where the display's
+   shape was clamped and its width rounded) is shown at its own size, so it
+   is copied and not resampled. */
+static inline struct halo_display_size halo_display_present_size(
+    long window_width, long window_height, long picture_width, long picture_height)
+{
+    struct halo_display_size size;
+    size.width = window_width;
+    size.height = window_width * picture_height / picture_width;
+    if (size.height > window_height) {
+        size.height = window_height;
+        size.width = window_height * picture_width / picture_height;
+    }
+    if (picture_width <= window_width && picture_height <= window_height &&
+        size.width - picture_width >= -1 && size.width - picture_width <= 1 &&
+        size.height - picture_height >= -1 && size.height - picture_height <= 1) {
+        size.width = picture_width;
+        size.height = picture_height;
+    }
+    return size;
+}
 #endif

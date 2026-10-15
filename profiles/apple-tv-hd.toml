@@ -9,6 +9,14 @@
 # of about 1,450 MB the system allows; in a replayed take the peak was 566 MB without them against 775 to 797.
 # They stay on by decision, until the HUD is drawn at the display's own size.
 
+# Measured again on 2026-10-14 on the play build with full LTO and PGO, the native HUD and the frame pacer
+# (scratch/native-hud-tv 6e38fb332, build 20261014.091123), unattended, 150 s a run: the values below stay. b30's
+# beach on Easy at 540: 42.4 and 42.5 frames a second in two runs (CPU 20.4 ms, GPU 23.6 to 23.9 ms a frame, the
+# medians of 600-frame windows), against about 48 on 2026-10-13's build (CPU 21.9, GPU 22.7): the CPU gained 1.5 ms,
+# the GPU lost about 1 ms to the HUD drawn at the display's size. At 648 the beach ran 35.0 (GPU 29.1 ms). FXAA
+# (display.anti_aliasing = "fxaa") cost about 6 ms of GPU at 540 in play (33.9 frames a second, GPU 30.0 ms), 4.5 ms
+# in the menu at 720 (59.1, slowest window 56.8) and 3 ms in cutscenes at 648 (29.2, slowest 23.5): left off.
+
 schema = 1
 name = "Apple TV HD"
 kind = "model"

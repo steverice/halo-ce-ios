@@ -110,6 +110,31 @@ class ImportTests(unittest.TestCase):
         fixture(self.image)
         self.patch(41*2048+4,struct.pack('<I',0x7fffffff))    # a map past the end of the image
         self.assertEqual(self.plan(self.image.stat().st_size),[])
+    def add_executable(self, data, partition=0):
+        """adds default.xbe to the fixture's root directory, after maps"""
+        entry=bytearray(28);struct.pack_into('<HHIIBB',entry,0,0,0,200,len(data),0,11);entry[14:25]=b'default.xbe'
+        self.patch(partition+40*2048+2,struct.pack('<H',5));self.patch(partition+40*2048+20,bytes(entry))
+        self.patch(partition+200*2048,data)
+    def test_loading_picture_from_executable(self):
+        import sys;sys.path.insert(0,str(ROOT/'tools'));import loading_picture
+        # a made-up picture in the executable's form: 320, 240, then runs (count in the high four bits, gray in the low)
+        runs=bytes(0xf0|(n*7)%16 for n in range(320*240//15))
+        executable=os.urandom(3000)+struct.pack('<II',320,240)+runs+os.urandom(500)
+        fixture(self.image);self.add_executable(executable);self.extract()
+        pixels=b''.join(bytes([(run&15)<<4])*(run>>4) for run in runs)
+        self.assertEqual(loading_picture.find_picture(executable),pixels)
+        self.assertEqual((self.dest/'maps'/'loading.tga').read_bytes(),loading_picture.tga(pixels))
+        self.assertEqual(self.invoke('ready',self.dest/'maps').returncode,0)
+    def test_no_loading_picture(self):
+        # an executable without one, and a disc without an executable: the import succeeds, with no picture
+        fixture(self.image);self.add_executable(struct.pack('<II',320,240)+bytes(8000));self.extract()
+        self.assertFalse((self.dest/'maps'/'loading.tga').exists())
+        self.dest=self.root/'bare';self.dest.mkdir();fixture(self.image);self.extract()
+        self.assertFalse((self.dest/'maps'/'loading.tga').exists())
+    def test_loading_picture_file_not_a_picture(self):
+        # maps/loading.tga that is not the 320 by 240 picture is left on the disc, and is no map
+        fixture(self.image,names=[*NAMES,'loading.tga']);self.extract()
+        self.assertFalse((self.dest/'maps'/'loading.tga').exists())
     def test_whole_disc_partition(self):
         fixture(self.image,partition=0x02080000);self.extract()
     def test_bad_magic(self):

@@ -93,6 +93,11 @@ void rasterizer_set_target_as_texture(
 	short stage,
 	short target,
 	short maximum_mipmap_level);
+/* port: the object shadows' target pairs (deferred shadows) */
+boolean rasterizer_shadow_slot_select(
+	short slot);
+short rasterizer_shadow_slot_count(
+	void);
 void SetRenderStateSmart(
 	D3DRENDERSTATETYPE state,
 	unsigned long value);

@@ -8,6 +8,7 @@ threads, asynchronous procedure calls, time, memory and debug output.
 #include "platform.h"
 #include "port_config.h"
 #include "halo_virtual_clock.h"
+#include "posix.h"
 
 #include <errno.h>
 #include <sched.h>
@@ -873,7 +874,7 @@ power-on. Its code keeps times in signed 32-bit variables, which a host up
 for more than 24.8 days (2^31 ms since boot) overflows: a hosted game then
 timed out its own clients. They start at 10 s, about where an Xbox's clock
 is by the time the game runs. */
-static unsigned long long platform_clock_nanoseconds(void)
+static unsigned long long platform_real_nanoseconds(void)
 {
 	static unsigned long long start;
 	struct timespec now;
@@ -885,11 +886,32 @@ static unsigned long long platform_clock_nanoseconds(void)
 	return value - __atomic_load_n(&start, __ATOMIC_RELAXED);
 }
 
+/* The game's clock stands still while the app is in the background (an
+Apple device's: the game is held at its next frame, then suspended), so
+that its own timers see no gap when it comes back: a hosted game's own
+client timed out its connection to the server it had not heard from for
+the minute and a half its app was away ("timeout in
+network_connection_idle"), and the game ended. Its peers' clocks go on;
+they wait for it as long as internet play's away notice says
+(network.background_grace). Internet play keeps the real clock
+(platform_real_milliseconds), by which it sees the stop. */
+static unsigned long long platform_clock_nanoseconds(void)
+{
+	return platform_real_nanoseconds() - (unsigned long long)posix_background_milliseconds() * 1000000ULL;
+}
+
 DWORD WINAPI GetTickCount(void)
 {
 	if (platform_fixed_timestep())
 		return (DWORD)halo_virtual_clock_milliseconds(platform_clock_frames());
 	return (DWORD)(platform_clock_nanoseconds() / 1000000ULL);
+}
+
+unsigned long platform_real_milliseconds(void)
+{
+	if (platform_fixed_timestep())
+		return (unsigned long)halo_virtual_clock_milliseconds(platform_clock_frames());
+	return (unsigned long)(platform_real_nanoseconds() / 1000000ULL);
 }
 
 /* The Xbox performance counter runs at the 733 MHz CPU clock. Report a

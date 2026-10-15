@@ -8,6 +8,9 @@ endif()
 set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr" CACHE STRING "App bundle identifier")
 # Mac Catalyst (tools/ios_build.py --mac): configured as iOS, built with -sdk macosx SUPPORTS_MACCATALYST=YES
 option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
+# tools/ios_build.py --render-validation: every call into the GPU backend is checked first
+# (port/linux/src/gpu_validate.h). Off, the app's code is what it is without the option.
+option(HALO_RENDER_VALIDATION "Check every call into the GPU backend (debug.render_validation)" OFF)
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
 # iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
 # On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
@@ -105,7 +108,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
-    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_natpmp.c host/host_natpmp_packets.c
+    "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_socket_revival.c host/host_natpmp.c host/host_natpmp_packets.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
@@ -130,6 +133,10 @@ else()
     target_compile_definitions(VISR PRIVATE HALO_FRAME_PACING=0)
 endif()
 target_compile_options(VISR PRIVATE "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:-Wno-deprecated-declarations>")
+if(HALO_RENDER_VALIDATION)
+    target_sources(VISR PRIVATE host/gpu_validate.c host/gpu_capture.c host/gpu_replay.c host/host_render_replay.c)
+    target_compile_definitions(VISR PRIVATE HALO_RENDER_VALIDATION=1)
+endif()
 if(NOT HALO_VISIONOS)
     # the GL backend (step 4): OpenGL ES through gl.h's pointer table, resolved by name
     target_sources(VISR PRIVATE "${ROOT}/port/linux/src/gpu_gl.c" "${ROOT}/port/linux/src/gl_functions.c")
@@ -282,10 +289,12 @@ if(HALO_CLOUD_SAVES)
 endif()
 if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
     target_link_libraries(VISR PRIVATE "-framework CloudKit")
-    # the iCloud keys, added to the target's own entitlements when it has some (visionOS)
+    # the iCloud keys, added to whatever entitlements the target already signs with (visionOS's, or the
+    # extended virtual addressing entitlement of a visionOS or tvOS build), which this block must run after
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_CLOUD_ENTITLEMENTS)
-    if(HALO_ENTITLEMENTS)
-        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_ENTITLEMENTS}" HALO_BASE_ENTITLEMENTS)
+    get_target_property(HALO_BASE_ENTITLEMENTS_FILE VISR XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS)
+    if(HALO_BASE_ENTITLEMENTS_FILE)
+        file(READ "${HALO_BASE_ENTITLEMENTS_FILE}" HALO_BASE_ENTITLEMENTS)
         string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
         string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
     endif()

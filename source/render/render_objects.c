@@ -251,6 +251,9 @@ static void process_rendered_objects(
 /* port: head-tracked stereo's body (port/linux/game/first_person_body.c) */
 static void render_first_person_body(
 	struct object_render_data *data);
+/* port: the legs' shadow (port/linux/game/first_person_legs.c) */
+static boolean first_person_legs_shadow(
+	long object_index);
 
 short structure_visibility_find_objects(
 	long *object_indices,
@@ -267,6 +270,44 @@ extern short debug_rasterizer_light_count;
 /* ---------- globals */
 
 boolean render_shadows = TRUE;
+
+/* port: deferred object shadows (rasterizer_xbox_shadows.c): a window's
+shadows are all generated, each into targets of its own, before any is
+applied, so the picture's pass is not split around every shadow; in stereo
+the second eye applies the first eye's. display.shadow_batching = false
+keeps the game's order, to compare */
+#define MAXIMUM_DEFERRED_SHADOWS MAXIMUM_RENDERED_OBJECTS
+
+struct deferred_shadow_apply
+{
+	long object_index;
+	short handle; /* NONE: no slot was left; drawn the game's way when applied */
+	real_matrix4x3 shadow_matrix;
+	real shadow_bounding_radius;
+};
+
+static struct deferred_shadow_apply deferred_shadow_applies[MAXIMUM_DEFERRED_SHADOWS];
+static short deferred_shadow_apply_count;
+static boolean render_shadows_deferring = FALSE;
+
+boolean config_boolean(const char *name);
+boolean rasterizer_environment_shadows_defer_begin(void);
+void rasterizer_environment_shadows_defer_end(void);
+boolean rasterizer_environment_shadow_reused(void);
+short rasterizer_environment_shadow_handle(void);
+void rasterizer_environment_shadow_generate_end(void);
+void rasterizer_environment_shadow_apply_begin(short handle);
+void rasterizer_environment_shadows_apply_end(void);
+
+static boolean shadow_batching_enabled(
+	void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+		enabled = config_boolean("display.shadow_batching") != FALSE;
+	return enabled != 0;
+}
 
 static struct profile_section render_objects_section =
 	{ "render_objects", NONE, TRUE };
@@ -385,6 +426,11 @@ void render_objects(
 	return;
 }
 
+/* port: port/linux/game/first_person_legs.c */
+boolean first_person_legs_wanted(long object_index);
+real_matrix4x3 const *first_person_legs_node_matrices(long object_index, real_matrix4x3 const *nodes);
+real_matrix4x3 const *first_person_legs_shadow_node_matrices(long object_index, real_matrix4x3 const *nodes);
+
 void render_object_shadows(
 	void)
 {
@@ -397,7 +443,38 @@ void render_object_shadows(
 		rasterizer_environment_shadows_begin();
 
 		data.shadow = TRUE;
-		process_rendered_objects(&data);
+		if (shadow_batching_enabled() && rasterizer_environment_shadows_defer_begin())
+		{
+			short index;
+
+			deferred_shadow_apply_count = 0;
+			render_shadows_deferring = TRUE;
+			process_rendered_objects(&data);
+			render_shadows_deferring = FALSE;
+			rasterizer_environment_shadows_defer_end();
+			for (index = 0; index < deferred_shadow_apply_count; index++)
+			{
+				struct deferred_shadow_apply *apply = &deferred_shadow_applies[index];
+
+				data.object_index = apply->object_index;
+				if (apply->handle != NONE)
+				{
+					rasterizer_environment_shadow_apply_begin(apply->handle);
+					data.shadow_matrix = apply->shadow_matrix;
+					data.shadow_bounding_radius = apply->shadow_bounding_radius;
+					render_object_shadow_end(&data);
+				}
+				else
+				{
+					render_object(&data);
+				}
+			}
+			rasterizer_environment_shadows_apply_end();
+		}
+		else
+		{
+			process_rendered_objects(&data);
+		}
 
 		rasterizer_environment_shadows_end();
 	}
@@ -420,6 +497,17 @@ static boolean object_is_first_person_camera(
 		director_get_perspective(render.local_player_index) ==
 			_director_perspective_first_person) ||
 		scripted_camera_object_is_first_person_camera(object_index);
+}
+
+/* port: whether the player's own body, whose legs draw in first person
+(display.first_person_legs), casts its shadow in this view: wherever the
+legs themselves draw */
+static boolean first_person_legs_shadow(
+	long object_index)
+{
+	return !render.camera.mirrored && object_is_first_person_camera(object_index) &&
+		!halo_first_person_body(object_index) && halo_first_person_legs_apply() &&
+		first_person_legs_wanted(object_index);
 }
 
 static void find_rendered_objects(
@@ -489,9 +577,24 @@ static void render_object_list(
 		(port/linux/game/first_person_body.c), on foot or in a vehicle's
 		first-person seat */
 		boolean first_person_body = halo_first_person_body(object_index) && !render.camera.mirrored;
+		/* port: the player's own legs, seen looking down in first person
+		(port/linux/game/first_person_legs.c): its body drawn from the waist
+		down, nothing it carries. On a flat view only
+		(port/linux/game/first_person_view.c): a stereo frame draws
+		display.first_person_body instead, and the two never draw together */
+		boolean legs = !first_person_body && !data->shadow && !render.camera.mirrored &&
+			object_is_first_person_camera(object_index) && halo_first_person_legs_apply() &&
+			first_person_legs_wanted(object_index);
+		real_matrix4x3 const *legs_node_matrices = legs ?
+			first_person_legs_node_matrices(object_index, object_get_node_matrices(object_index)) : NULL;
+		/* port: and the shadow of that body, whole, set back as its legs were */
+		boolean legs_shadow = data->shadow && first_person_legs_shadow(object_index);
+		real_matrix4x3 const *legs_shadow_node_matrices = legs_shadow ?
+			first_person_legs_shadow_node_matrices(object_index, object_get_node_matrices(object_index)) : NULL;
 
 		if (!object_is_first_person_camera(object_index) || render.camera.mirrored ||
-			(first_person_body && (data->shadow || first_person_body_pass)))
+			(first_person_body && (data->shadow || first_person_body_pass)) || (legs && legs_node_matrices) ||
+			(legs_shadow && legs_shadow_node_matrices))
 		{
 			struct render_model_effect model_effect;
 
@@ -527,7 +630,8 @@ static void render_object_list(
 				real level_of_detail_pixels = object_get_level_of_detail_pixels(object_index);
 				/* port: the first-person body's are a render-only copy, and its
 				shadow's another, both set back along the facing */
-				real_matrix4x3 const *node_matrices = object_get_node_matrices(object_index);
+				real_matrix4x3 const *node_matrices = legs ? legs_node_matrices :
+					legs_shadow ? legs_shadow_node_matrices : object_get_node_matrices(object_index);
 
 				if (first_person_body && definition->object.model.index != NONE)
 				{
@@ -698,7 +802,7 @@ static void render_object_list(
 
 			/* port: the body's widgets and children (the third-person weapon)
 			go with its hidden torso */
-			if (!data->shadow && object->object.first_widget_index != NONE && !first_person_body)
+			if (!data->shadow && !legs && object->object.first_widget_index != NONE && !first_person_body)
 			{
 				struct render_animation animation;
 
@@ -707,7 +811,7 @@ static void render_object_list(
 				widgets_render(object_index, data->lighting, &animation);
 			}
 
-			if (object->object.first_child_object_index != NONE && !first_person_body)
+			if (object->object.first_child_object_index != NONE && !first_person_body && !legs && !legs_shadow)
 			{
 				render_object_list(
 					data,
@@ -1175,7 +1279,8 @@ static void render_object(
 		/* port: the first-person body casts its shadow (first_person_body.c),
 		except in a mirror, as in mono */
 		if ((!object_is_first_person_camera(data->object_index) ||
-				(halo_first_person_body(data->object_index) && !render.camera.mirrored)) &&
+				(halo_first_person_body(data->object_index) && !render.camera.mirrored) ||
+				first_person_legs_shadow(data->object_index)) &&
 			!TEST_FLAG(object->object.flags, _object_shadowless_bit) &&
 			(!TEST_FLAG(object->object.flags, _object_invisible_bit) ||
 				object->object.first_child_object_index != NONE))
@@ -1203,8 +1308,37 @@ static void render_object(
 
 				if (render_object_shadow_begin(data, darkness_fraction * size_fraction))
 				{
-					render_object_list(data, NULL, data->object_index);
-					render_object_shadow_end(data);
+					/* port: generated now and applied with the window's
+					others (render_object_shadows), or applied as the game
+					does */
+					short handle = rasterizer_environment_shadow_handle();
+
+					if (!rasterizer_environment_shadow_reused())
+						render_object_list(data, NULL, data->object_index);
+					if (handle != NONE && deferred_shadow_apply_count < MAXIMUM_DEFERRED_SHADOWS)
+					{
+						struct deferred_shadow_apply *apply = &deferred_shadow_applies[deferred_shadow_apply_count++];
+
+						rasterizer_environment_shadow_generate_end();
+						apply->object_index = data->object_index;
+						apply->handle = handle;
+						apply->shadow_matrix = data->shadow_matrix;
+						apply->shadow_bounding_radius = data->shadow_bounding_radius;
+					}
+					else
+					{
+						if (handle != NONE)
+							rasterizer_environment_shadow_generate_end();
+						render_object_shadow_end(data);
+					}
+				}
+				else if (render_shadows_deferring && deferred_shadow_apply_count < MAXIMUM_DEFERRED_SHADOWS)
+				{
+					/* port: no slot left this frame */
+					struct deferred_shadow_apply *apply = &deferred_shadow_applies[deferred_shadow_apply_count++];
+
+					apply->object_index = data->object_index;
+					apply->handle = NONE;
 				}
 			}
 		}

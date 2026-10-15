@@ -127,6 +127,15 @@ static const struct config_setting config_settings[] =
 	{ "display.anisotropic_filtering", _config_integer, "16", "HALO_ANISOTROPIC_FILTERING", _environment_value, _platform_all,
 		"Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16:\n"
 		"sharper floors and terrain at a distance, for a few percent of GPU time." },
+	{ "display.decal_batching", _config_boolean, "true", "HALO_DECAL_BATCHING", _environment_value, _platform_all,
+		"Draw the decals (bullet holes, blood, scorch marks) that share a texture\n"
+		"in one draw each rather than one draw a decal: the same picture for less\n"
+		"CPU time. False draws each on its own, to compare." },
+	{ "display.shadow_batching", _config_boolean, "true", "HALO_SHADOW_BATCHING", _environment_value, _platform_all,
+		"Draw all of a view's character and vehicle shadows before laying any on the\n"
+		"world, and in stereo lay one eye's shadows in the other too: the picture's\n"
+		"pass is no longer interrupted for each shadow. False keeps the Xbox's\n"
+		"order, to compare." },
 	{ "display.shadow_map_size", _config_integer, "512", "HALO_SHADOW_MAP_SIZE", _environment_value, _platform_all,
 		"The size of the textures characters' and vehicles' shadows are drawn into,\n"
 		"128 (as on the Xbox) to 2048: larger is smoother." },
@@ -157,6 +166,17 @@ static const struct config_setting config_settings[] =
 		"Render at this fraction of the display's pixels each way (0.25 to 1.0;\n"
 		"0.67 draws under half the pixels), scaled back up by display.upscaler.\n"
 		"display.render_height, when set, caps the result." },
+	{ "display.native_hud", _config_boolean, "true", "HALO_NATIVE_HUD", _environment_value, _platform_ios,
+		"When the scene renders below the display's size (display.render_height,\n"
+		"display.render_scale, or a build that sets a render height), draw the HUD,\n"
+		"menus, text and letterbox bars at the display's own resolution over the\n"
+		"scaled-up scene. false scales them up with the scene. No effect, and no\n"
+		"cost, at native resolution or on Apple Vision Pro." },
+	{ "display.anti_aliasing", _config_string, "\"off\"", "HALO_ANTI_ALIASING", _environment_value, _platform_all,
+		"Smoothing of jagged edges, which the Xbox did not have: \"off\", or\n"
+		"\"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size\n"
+		"it is drawn at (the HUD and menus are drawn after it and stay sharp).\n"
+		"SMAA is sharper and costs more." },
 	{ "display.upscaler", _config_string, "\"bilinear\"", "HALO_UPSCALER", _environment_value, _platform_ios,
 		"How a picture rendered below the display's size is scaled up: \"bilinear\"\n"
 		"(default), or \"metalfx\" (Metal renderer, on a device: MetalFX's spatial\n"
@@ -520,6 +540,18 @@ static const struct config_setting config_settings[] =
 	{ "game.language", _config_string, "\"\"", "HALO_LANGUAGE", _environment_value, _platform_all,
 		"The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\";\n"
 		"empty for English. The game data decides what is translated." },
+	{ "game.loading_screen", _config_string, "\"auto\"", "HALO_LOADING_SCREEN", _environment_value, _platform_all,
+		"The loading screen over a campaign level's load: the last frame blurring\n"
+		"away, the ring's picture lit from left to right as the load goes, and\n"
+		"its tone, until the level is read and its shaders are compiled. \"auto\"\n"
+		"(default) shows it except in a run that must draw the same frames every\n"
+		"time (fixed timestep, an input replay or benchmark, debug.exit_after,\n"
+		"screenshots) and except in stereo; \"on\" or \"off\" forces either. The\n"
+		"picture is your disc's: a maps folder imported before the importer took\n"
+		"it gets it from tools/loading_picture.py." },
+	{ "game.loading_screen_seconds", _config_real, "1.5", "HALO_LOADING_SCREEN_SECONDS", _environment_value, _platform_all,
+		"The least time the loading screen stays up, in seconds (0 to 30), so a\n"
+		"level that is ready at once doesn't flash it." },
 	{ "game.custom_edition", _config_boolean, "true", "HALO_CUSTOM_EDITION", _environment_value, _platform_all,
 		"Load and run Halo Custom Edition maps (not those that need OpenSauce):\n"
 		"put them and Custom Edition's bitmaps.map, sounds.map and loc.map in\n"
@@ -527,6 +559,12 @@ static const struct config_setting config_settings[] =
 		"as CUSTOM SINGLEPLAYER and CUSTOM MULTIPLAYER. Their tags are checked\n"
 		"as the game's own maps' are before they run; false refuses them\n"
 		"(docs/custom_edition_caches.md)." },
+	{ "display.first_person_legs", _config_boolean, "false", "HALO_FIRST_PERSON_LEGS", _environment_value, _platform_all,
+		"Your own legs in first person, seen looking down: your body as others\n"
+		"see it, drawn from the waist down, moving as it moves. On a flat view (a\n"
+		"phone, a tablet, a window) only: a stereo view ignores it, and\n"
+		"display.first_person_body draws the whole body in head-tracked stereo. No\n"
+		"menu row yet." },
 
 	{ "paths.data", _config_string, "\"\"", "HALO_DATA_ROOT", _environment_value, _platform_desktop,
 		"The folder holding the game data's maps folder; empty looks in the\n"
@@ -564,6 +602,10 @@ static const struct config_setting config_settings[] =
 		"PCP) to forward its port, for networks whose NAT stops connections:\n"
 		"when a player joins this machine's game, and when joining a game takes\n"
 		"too long. False never asks." },
+	{ "network.background_grace", _config_integer, "60", "HALO_NET_BACKGROUND_GRACE", _environment_value, _platform_all,
+		"Seconds the other players of an internet game wait for this machine\n"
+		"when its app goes to the background (an Apple device suspends it, its\n"
+		"game held) before they drop it." },
 	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
@@ -663,6 +705,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.input_replay", _config_string, "\"\"", "HALO_INPUT_REPLAY", _environment_value, _platform_all,
 		"Replay a recording made with debug.input_record in place of controller 1,\n"
 		"at the same moments of the game time." },
+	{ "debug.input_replay_route", _config_integer, "0", "HALO_INPUT_REPLAY_ROUTE", _environment_value, _platform_all,
+		"With debug.input_replay or debug.input_record: log player 1's position\n"
+		"every this many ticks, with the segment, the tick and whether the tick\n"
+		"took a recorded action (tools/replay_check.py reads it); 0 never." },
 	{ "debug.benchmark", _config_boolean, "false", "HALO_BENCHMARK", _environment_value, _platform_all,
 		"With debug.input_replay: time every frame of the replay, write\n"
 		"benchmark-<name>-<time>.txt and quit when the replay ends." },
@@ -731,7 +777,9 @@ static const struct config_setting config_settings[] =
 		"\"zoom:<start>,<swaps>,<clicks>[,<lights>[,<unclicks>]]\" stands still and\n"
 		"from poll <start> swaps weapons <swaps> times, zooms <clicks> times,\n"
 		"presses the flashlight <lights> times (night vision), then clicks the\n"
-		"zoom <unclicks> times more (out of it); empty for none." },
+		"zoom <unclicks> times more (out of it); \"aachord:<start>,<period>\"\n"
+		"presses the live anti-aliasing chord (Back and R1) from poll <start> and\n"
+		"every <period> polls after; empty for none." },
 	{ "debug.side_by_side_screen", _config_boolean, "false", "HALO_SIDE_BY_SIDE_SCREEN", _environment_set_is_true,
 		_platform_ios,
 		"With display.stereo = \"side_by_side\": show the eyes SCREEN mode's\n"
@@ -786,6 +834,12 @@ static const struct config_setting config_settings[] =
 		"foveated view's full size, and only the last step that fills each view\n"
 		"goes through the Compositor's rate map (composite-only foveation, the\n"
 		"reference the full path is compared against)." },
+	{ "debug.anti_aliasing_folded", _config_boolean, "false", "HALO_ANTI_ALIASING_FOLDED", _environment_value, _platform_all,
+		"With display.anti_aliasing = \"fxaa\" and the HUD at the display's size:\n"
+		"run FXAA inside the stretch to the display's size (Metal), at each of\n"
+		"the display's pixels, rather than as a pass over the scene before it.\n"
+		"It saves a copy and a pass but does four times the FXAA work at half\n"
+		"scale: on the Apple TV HD it cost 15 ms a frame against the pass's 6." },
 	{ "debug.rate_map_test", _config_boolean, "false", "HALO_RATE_MAP_TEST", _environment_value, _platform_ios,
 		"Metal renderer on the Mac: give the screen-sized targets a synthetic,\n"
 		"lopsided rate map (full rate in the middle third, half outside it, denser\n"
@@ -837,6 +891,12 @@ static const struct config_setting config_settings[] =
 		"Ask for a second window scene a few seconds in, to check that the game\n"
 		"ignores its start, keeps its event pump and closes the scene (the\n"
 		"host's host_main.m). For the simulator." },
+	{ "debug.test_reclaim_sockets", _config_boolean, "false", "HALO_TEST_RECLAIM_SOCKETS", _environment_set_is_true,
+		_platform_ios,
+		"On coming back from the background, make every socket of the game's\n"
+		"again and break its TCP connections, as an Apple device does to a\n"
+		"suspended app (the host's host_socket_revival.c); for the simulator,\n"
+		"whose apps keep their sockets." },
 	{ "debug.test_text_answer", _config_string, "\"\"", "HALO_TEST_TEXT_ANSWER", _environment_value, _platform_ios,
 		"On an Apple TV, answer the dialog a menu's text field asks with (a join\n"
 		"code, a password) with this text, 3 seconds after it comes up, as if it\n"
@@ -848,6 +908,26 @@ static const struct config_setting config_settings[] =
 		"host_theater.m). For the simulator." },
 	{ "debug.gl_debug", _config_boolean, "false", "HALO_GL_DEBUG", _environment_set_is_true, _platform_all,
 		"Report OpenGL errors in the log." },
+	{ "debug.render_validation", _config_string, "\"log\"", "HALO_RENDER_VALIDATION", _environment_value, _platform_ios,
+		"In a build made with render validation (tools/ios_build.py\n"
+		"--render-validation; no other build has any of it): every call into the\n"
+		"GPU backend is checked before it is made, and every place the renderer\n"
+		"substitutes, ignores or skips something is named and counted in the log.\n"
+		"\"off\", \"log\" (each distinct cause once, with the draw it first happened\n"
+		"in, and a summary with counts) or \"strict\" (the first failure or fallback\n"
+		"ends the run with exit status 3)." },
+	{ "debug.render_capture", _config_string, "\"\"", "HALO_RENDER_CAPTURE", _environment_value, _platform_ios,
+		"In a build made with render validation: a folder (in the data folder\n"
+		"unless a full path) where the frames named by render_capture_frames are\n"
+		"written as the calls the game made into the GPU backend, one file a\n"
+		"window, for tools/render_replay.py to replay without the game. The files\n"
+		"hold the game's own textures and models: keep them out of any repository." },
+	{ "debug.render_capture_frames", _config_string, "\"\"", "HALO_RENDER_CAPTURE_FRAMES", _environment_value, _platform_ios,
+		"The windows render_capture writes: \"600+30,1200+30\" is 30 frames from\n"
+		"frame 600 and 30 from frame 1200." },
+	{ "debug.render_validation_allow", _config_string, "\"\"", "HALO_RENDER_VALIDATION_ALLOW", _environment_value, _platform_ios,
+		"With debug.render_validation = \"strict\": reasons the run goes on past,\n"
+		"separated by commas (\"fill-mode-ignored,sampler-unbound\")." },
 	{ "debug.metal_state_cache", _config_boolean, "true", "HALO_METAL_STATE_CACHE", _environment_value, _platform_ios,
 		"With the Metal renderer, skip the encoder calls that set what the\n"
 		"encoder already holds; false makes every call, to compare." },

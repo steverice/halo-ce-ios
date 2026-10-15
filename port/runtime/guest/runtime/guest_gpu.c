@@ -95,6 +95,22 @@ void gpu_flush(void)
 	host_gpu_flush();
 }
 
+void gpu_upscale(gpu_texture source, gpu_texture destination, const struct gpu_rect *area, uint32_t anti_alias)
+{
+	host_gpu_upscale(source, destination, area, anti_alias);
+}
+
+uint32_t gpu_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels,
+	const void *search_texels)
+{
+	return host_gpu_anti_alias_prepare(method, smaa_shader, area_texels, search_texels);
+}
+
+void gpu_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect)
+{
+	host_gpu_anti_alias(method, target, rect);
+}
+
 uint32_t gpu_vertical_blank_wait(void)
 {
 	return host_gpu_vertical_blank_wait();
@@ -145,7 +161,27 @@ void gpu_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *le
 	host_gpu_frame_context(scene_class, frame_rate, level);
 }
 
+uint32_t gpu_compiles_outstanding(void)
+{
+	return host_gpu_compiles_outstanding();
+}
+
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 	host_gpu_initialize(flags, capabilities);
 }
+
+#if HALO_RENDER_VALIDATION
+/* render validation (gpu_validate.h): the front end's two calls */
+#include "guest_host_validation.h"
+
+void gpu_validation_identity(const struct gpu_validation_identity *identity)
+{
+	host_gpu_validation_identity(identity);
+}
+
+void gpu_validation_note(uint32_t reason, uint32_t detail, uint32_t value)
+{
+	host_gpu_validation_note(reason, detail, value);
+}
+#endif

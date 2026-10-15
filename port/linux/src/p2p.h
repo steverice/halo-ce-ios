@@ -97,6 +97,24 @@ enum
 };
 int p2p_join_code_status(void);
 
+/* a peer whose app went to the background (an Apple device's: suspended in
+seconds, its game held), for the game to show and to wait for: its virtual
+address, whether it is the host of the game joined, and the seconds it is
+waited for (0: back; -1: dropped, the time up). p2p_take_away_notice gives
+each once; p2p_peer_away whether the peer at the address is away now */
+struct p2p_away_notice
+{
+	unsigned long address;
+	int is_host;
+	int seconds;
+};
+int p2p_take_away_notice(struct p2p_away_notice *notice);
+int p2p_peer_away(unsigned long address);
+/* the invite of the game this machine joined last, if it was lost after
+this app or that game's host was away (in the background) lately: 1 and the
+link, which joins it again (port/linux/game/network_away.c); else 0 */
+int p2p_rejoin_invite(char *text, int size);
+
 /* the hosted game's players and the most it takes, which Discord shows
 (0, 0: not hosting; until the game says, the machines the tunnel reaches
 are shown). The game's server calls it as they change (calling it with the

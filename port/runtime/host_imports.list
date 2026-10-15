@@ -67,6 +67,9 @@ host_gpu_visibility_begin
 host_gpu_visibility_end
 host_gpu_visibility_result
 host_gpu_flush
+host_gpu_upscale
+host_gpu_anti_alias_prepare
+host_gpu_anti_alias
 host_gpu_vertical_blank_wait
 host_gpu_present
 host_gpu_present_stereo
@@ -77,6 +80,7 @@ host_gpu_pipeline_warm
 host_gpu_warm_end
 host_gpu_pipeline_built_take
 host_gpu_frame_context
+host_gpu_compiles_outstanding
 host_gpu_initialize
 # stereo (halo_stereo.h)
 host_stereo_frame

@@ -54,7 +54,7 @@ def main():
     mode.add_argument('--simulator', action='store_true', help='build for an ARM64 simulator')
     mode.add_argument('--unsigned', action='store_true', help='build a device app for signing later')
     parser.add_argument('--team', help='Apple development team ID for device signing')
-    parser.add_argument('--bundle-id', help='bundle identifier covered by your signing profile (default org.steverice.visr, or org.steverice.visr.tvos / .visionos / .mac for --tvos / --visionos / --mac)')
+    parser.add_argument('--bundle-id', help='bundle identifier covered by your signing profile (default org.steverice.visr for iOS, tvOS and visionOS, so one App Store Connect record covers them all; org.steverice.visr.mac for --mac)')
     target = parser.add_mutually_exclusive_group()
     target.add_argument('--tvos', action='store_true', help='build for Apple TV instead of iPhone/iPad')
     target.add_argument('--visionos', action='store_true', help='build for Apple Vision Pro (Metal only) instead of iPhone/iPad')
@@ -102,6 +102,12 @@ def main():
                              'Xcode is signed in to. The app record must exist there first')
     parser.add_argument('--internal-only', action='store_true',
                         help='with --app-store-package: restrict the exported build to internal TestFlight groups')
+    parser.add_argument('--render-validation', choices=('on', 'off'),
+                        default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
+                        help='check every call into the GPU backend before it is made, and name every fallback '
+                             '(debug.render_validation: off, log or strict; log unless set). Off by default: a build '
+                             'without it has no trace of it. For test builds, never for a release or a benchmark. '
+                             'HALO_RENDER_VALIDATION_BUILD=1 in the environment turns it on for tools that build for you')
     parser.add_argument('--pgo', choices=('use', 'off'), default='use',
                         help='profile-guided optimization of the game code: use (the default) builds it with the '
                              'profile in pgo/, off builds it without')
@@ -144,7 +150,7 @@ def main():
     if args.extended_virtual_addressing and not (args.visionos or args.tvos):
         parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
-    args.bundle_id = args.bundle_id or ('org.steverice.visr' if platform_name == 'ios' else f'org.steverice.visr.{platform_name}')
+    args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
     if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
     try:
@@ -168,9 +174,13 @@ def main():
         url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
         data=urllib.request.urlopen(url,timeout=30).read()
         if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
-    run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld)
+    validation = args.render_validation == 'on'
+    run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld,
+        *(['--render-validation'] if validation else []))
     run('ninja','ios_guest','-j',args.jobs)
-    run(sys.executable,'tools/ios_bridges.py')
+    run(sys.executable,'tools/ios_bridges.py',*(['--render-validation'] if validation else []))
+    # what a render capture is checked against when it is replayed (port/ios/host/gpu_capture.h)
+    if validation: run(sys.executable,'tools/gpu_interface_hash.py')
     run(sys.executable,'tools/ios_embed_guest.py','build/ios/halo_guest.elf','build/ios/embedded')
     notices = ROOT/'build/ios/licenses'
     notices.mkdir(parents=True, exist_ok=True)
@@ -190,6 +200,7 @@ def main():
         ('port/assets/fonts/Overpass-OFL.txt', 'Overpass-OFL.txt'),
         ('port/assets/fonts/OpenCE-OFL.txt', 'OpenCE-OFL.txt'),
         ('port/assets/fonts/Newtown-LICENSE.txt', 'Newtown.txt'),
+        ('port/third_party/smaa/LICENSE', 'SMAA.txt'),
     ):
         shutil.copyfile(ROOT/source, notices/name)
     if args.mac:
@@ -207,6 +218,7 @@ def main():
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud,
+             f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
@@ -358,6 +370,7 @@ def build_mac(args, cloud):
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
+        f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
         *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,
         *host_pgo_flags(args.host_pgo))

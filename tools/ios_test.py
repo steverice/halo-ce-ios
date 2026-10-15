@@ -75,6 +75,8 @@ run(BUILD / 'profile-probe', ROOT / 'profiles')
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
 run('python3', 'tools/profile_check.py')
 run('python3', 'tools/test_profile_check.py')
+# a recorded route replays: tools/route_check.py's verdicts, and the suite's difficulty for the next map
+run('python3', 'tools/test_route_check.py')
 # a runner's settings are the run's, never a device profile's: mac_run.py writes every setting a profile may set
 # (and marks what it writes chosen in config.origins), so no profile can move a check-metal run
 profile_keys = re.findall(r'^PROFILE_(?:BOOLEAN|INTEGER|REAL|STRING)\("([^"]+)"',
@@ -96,10 +98,34 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/linux/src/p2p_crypto.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD/'join-code-probe')
 run(BUILD/'join-code-probe')
+# the game's sockets made again after a suspension (host_socket_revival.c), with force on a Mac
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/socket_revival_probe.c', 'port/ios/host/host_socket_revival.c', '-o', BUILD/'socket-revival-probe')
+run(BUILD/'socket-revival-probe')
 # a router's forwarding on Apple devices (host_natpmp_packets.c): NAT-PMP's and PCP's requests and answers
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/natpmp_probe.c', 'port/ios/host/host_natpmp_packets.c', '-o', BUILD/'natpmp-probe')
 run(BUILD/'natpmp-probe')
+# internet play's away notice (p2p_away.h): the packet an app in the background sends its peers and when a wait is up
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/away_probe.c', '-o', BUILD/'away-probe')
+run(BUILD/'away-probe')
+# and the call sites the probe can't see: the tunnel waits for a peer that said it is away instead of timing it out,
+# the game's server and connections wait for it too, the app asks the system for its background time, and the
+# game's loop shows the notices and joins a lost game again
+def required(path, *needles):
+    text = (ROOT / path).read_text()
+    for needle in needles:
+        if needle not in text:
+            raise SystemExit(f'{path}: missing `{needle}`')
+required('port/linux/src/p2p.c', '#include "p2p_away.h"', 'peer->away && p2p_away_wait_over(p2p_now(), peer->away_until)',
+         '!peer->away && elapsed(peer->heard_time, PEER_TIMEOUT)', 'p2p_away_packet_make(inner, _packet_away, away, grace);')
+required('source/networking/network_server_manager.c',
+         'if (network_game_server_client_machine_away(machine))\n\t\treturn FALSE;')
+required('source/networking/network_connection.c', '!network_connection_peer_away(connection))\n\t\t\t{')
+required('port/ios/host/host_lifecycle.m', 'beginBackgroundTaskWithName', 'background_task_end();')
+required('source/main/main.c', 'network_away_update(main_globals.main_menu_loaded_placeholder)'.replace('main_globals.main_menu_loaded_placeholder', 'main_globals.main_menu_scenario_loaded'),
+         'network_away_game_lost();\n\t\t\t\t\tnetwork_game_abort();')
 # halo://join links the app is opened with (host_join_link.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')
@@ -118,6 +144,29 @@ run(BUILD/'benchmark-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
 run(BUILD/'metal-state-probe')
+# render validation (port/ios/host/gpu_validate.c): deliberately bad draws through a backend that draws
+# nothing, each checked for its named reason; then that a build without the option has none of it
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-DHALO_RENDER_VALIDATION=1',
+    '-Iport/linux/src', 'port/ios/tests/gpu_validate_probe.c', 'port/ios/host/gpu_validate.c', '-o', BUILD/'gpu-validate-probe')
+run(BUILD/'gpu-validate-probe')
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/src', '-c', 'port/ios/host/gpu_validate.c',
+    '-o', BUILD/'gpu-validate-off.o')
+symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(BUILD/'gpu-validate-off.o')], text=True, cwd=ROOT)
+if symbols.strip():
+    raise SystemExit(f'gpu_validate.c defines symbols without HALO_RENDER_VALIDATION:\n{symbols}')
+# render capture and replay (port/ios/host/gpu_capture.c, gpu_replay.c): a scripted frame captured to a file and
+# replayed into a backend that only notes its calls; damaged files; the fuzzer's wrong calls, each refused
+run('xcrun', 'clang', '-O1', '-g', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-DHALO_RENDER_VALIDATION=1',
+    '-Iport/linux/src', '-Iport/ios/host', 'port/ios/tests/gpu_replay_probe.c', 'port/ios/host/gpu_capture.c',
+    'port/ios/host/gpu_replay.c', 'port/ios/host/gpu_validate.c', '-lz', '-o', BUILD/'gpu-replay-probe')
+run(BUILD/'gpu-replay-probe')
+for source in ('gpu_capture.c', 'gpu_replay.c'):
+    run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/src', '-Iport/ios/host', '-c', f'port/ios/host/{source}',
+        '-o', BUILD/'gpu-capture-off.o')
+    symbols = subprocess.check_output(['xcrun', 'nm', '-g', str(BUILD/'gpu-capture-off.o')], text=True, cwd=ROOT)
+    if symbols.strip():
+        raise SystemExit(f'{source} defines symbols without HALO_RENDER_VALIDATION:\n{symbols}')
+run('python3', 'tools/test_render_replay.py')
 # the Metal backend's pipelines compiled off the game thread (metal_compile_async.h): its table
 # under the thread sanitizer, then everything under the address and undefined-behavior ones
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=thread', '-Iport/ios/host',
@@ -132,7 +181,8 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-D
     '-Dst_atim=st_atimespec', '-Dst_ctim=st_ctimespec', '--include-directory=port/linux/src',
     '--include-directory=port/ios/host', '--include-directory=port/runtime/include',
     '--include-directory=port/runtime/guest/runtime', 'port/ios/tests/posix_net_probe.c',
-    'port/ios/host/posix_net.c', '-Wl,-dead_strip', f'--output={BUILD / "posix-net-probe"}')
+    'port/ios/host/posix_net.c', 'port/ios/host/host_socket_revival.c', '-Wl,-dead_strip',
+    f'--output={BUILD / "posix-net-probe"}')
 run(BUILD/'posix-net-probe')
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)

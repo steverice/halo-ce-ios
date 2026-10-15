@@ -92,13 +92,13 @@ brew install cmake ninja llvm lld sdl3 pkgconf
 python3 tools/ios_test.py
 
 # Apple Vision Pro: signed, unsigned IPA, simulator
-python3 tools/ios_build.py --visionos --team YOUR_TEAM_ID --bundle-id com.yourname.visr.vision
+python3 tools/ios_build.py --visionos --team YOUR_TEAM_ID --bundle-id com.yourname.visr
 python3 tools/ios_build.py --visionos --unsigned --ipa dist/VISR-visionOS-unsigned.ipa
 python3 tools/ios_build.py --visionos --simulator
 
 # iPhone and iPad, Apple TV, Mac
 python3 tools/ios_build.py --team YOUR_TEAM_ID --bundle-id com.yourname.visr
-python3 tools/ios_build.py --tvos --team YOUR_TEAM_ID --bundle-id com.yourname.visr.tv
+python3 tools/ios_build.py --tvos --team YOUR_TEAM_ID --bundle-id com.yourname.visr
 python3 tools/ios_build.py --mac
 ```
 

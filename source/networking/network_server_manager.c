@@ -3612,6 +3612,63 @@ boolean network_game_server_client_machine_is_local(
 		network_game_client_get_machine_index(client) == machine->machine_index;
 }
 
+/* port: whether the machine's internet play peer says its app is in the
+background (p2p.c) */
+int p2p_peer_away(unsigned long address);
+
+static boolean network_game_server_client_machine_away(
+	struct network_game_server_client_machine *machine)
+{
+	struct transport_address address;
+
+	if (!machine->connection)
+		return FALSE;
+	csmemset(&address, 0, sizeof(address));
+	network_connection_get_address(machine->connection, &address, NULL);
+	/* (a transport address's IPv4 is in host byte order) */
+	return p2p_peer_away(__builtin_bswap32(address.address.long_words[0])) != 0;
+}
+
+/* port: the name of the machine in the game whose connection is at an
+internet play peer's address (network byte order: port/linux/game/network_away.c) */
+boolean network_game_server_port_machine_name_at_address(
+	unsigned long address,
+	wchar_t *name,
+	short size)
+{
+	struct network_game_server *server = global_network_game_server_get();
+	short index;
+
+	for (index = 0; server && index < MAXIMUM_NETWORK_MACHINE_COUNT; index++)
+	{
+		struct network_game_server_client_machine *machine = &server->client_machines[index];
+		struct transport_address machine_address;
+		short machine_index = machine->machine_index;
+
+		if (!machine->connection || machine_index < 0 || machine_index >= MAXIMUM_NETWORK_MACHINE_COUNT)
+			continue;
+		csmemset(&machine_address, 0, sizeof(machine_address));
+		network_connection_get_address(machine->connection, &machine_address, NULL);
+		if (__builtin_bswap32(machine_address.address.long_words[0]) != address)
+			continue;
+		/* (the game's machines are listed by their index) */
+		{
+			short game_index;
+
+			for (game_index = 0; game_index < server->game.machine_count; game_index++)
+			{
+				if (server->game.machines[game_index].machine_index == machine_index)
+				{
+					ustrncpy(name, server->game.machines[game_index].name, size - 1);
+					name[size - 1] = 0;
+					return TRUE;
+				}
+			}
+		}
+	}
+	return FALSE;
+}
+
 /* port: a connection that has not joined in time, or a machine in the game
 gone silent (the lockstep netcode's stall timed it out; the distributed
 netcode waits for no machine) */
@@ -3628,6 +3685,10 @@ static boolean network_game_server_client_machine_timed_out(
 	{
 		return FALSE;
 	}
+	/* (port: one whose app went to the background, an Apple device's, is
+	waited for as long as internet play waits for it: p2p.c's away notice) */
+	if (network_game_server_client_machine_away(machine))
+		return FALSE;
 	if (TEST_FLAG(machine->flags, _network_client_machine_level_loaded_bit))
 		return silence > NETWORK_GAME_SERVER_CLIENT_TIMEOUT;
 	/* (port: downloading the map, which it says every few seconds, before

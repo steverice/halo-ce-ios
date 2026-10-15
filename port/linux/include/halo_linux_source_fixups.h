@@ -70,10 +70,26 @@ before interface_draw_screen): where a post-process pass over the view goes
 union rectangle2d;
 void halo_render_before_hud(short local_player_index, short rasterizer_target,
 	union rectangle2d const *viewport_bounds);
+/* display.native_hud (port/linux/src/d3d8_device.c): render_window marks the
+part of a view that is its scene, from before the window begins to after the
+weapon's screen effects. What the frame draws into the back buffer outside
+these spans (the HUD, the flash, menus, bars, loading screens, movies) is
+drawn at the display's size when the scene's is smaller */
+void halo_render_scene_begin(short rasterizer_target, long x0, long y0, long x1, long y1);
+void halo_render_scene_end(void);
 /* a map has loaded and its first frame is next (main_new_map): the shaders
 and pipelines its list names are compiled now, under the loading screen
 (port/linux/src/d3d8_device.c) */
 void halo_shader_list_warm(char const *map_name);
+/* the loading screen, held over a campaign level's load and the compiles
+after it (port/linux/game/loading_screen.c): begun as the map changes,
+finished at the end of main_new_map; its progress for render_frame_pregame,
+and whether a loaded level waits behind it */
+void halo_loading_screen_begin(char const *map_name);
+void halo_loading_screen_finish(void);
+unsigned char halo_loading_screen_progress(float *progress);
+unsigned char halo_loading_screen_holding(void);
+void halo_main_time_restart(void);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"
 /* the frame's stereo state: source/render/render.c renders each eye and the

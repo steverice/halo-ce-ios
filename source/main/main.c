@@ -381,6 +381,7 @@ symbols in this file:
 #include "networking/network_server_manager.h" /* port: a co-op game's level won */
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "map_share.h" /* port: port/linux/game/map_share.c */
+#include "network_away.h" /* port: port/linux/game/network_away.c */
 #include "camera/director.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
@@ -1496,6 +1497,9 @@ static void main_new_map(
 	if (main_globals.allow_persistent_storage)
 		game_state_try_and_load_from_persistent_storage();
 	ui_widgets_disable_pause_game(30);
+	/* port: the loading screen stays up until the level's shaders and
+	pipelines are compiled (port/linux/game/loading_screen.c) */
+	halo_loading_screen_finish();
 
 	return;
 }
@@ -1550,6 +1554,9 @@ static void main_change_map_name(
 				NUMBEROF(options.map_name) - 1);
 			options.map_name[NUMBEROF(options.map_name) - 1] = 0;
 			options.difficulty = global_difficulty_level;
+			/* port: the loading screen, from here to the end of main_new_map
+			(port/linux/game/loading_screen.c) */
+			halo_loading_screen_begin(options.map_name);
 			game_dispose_from_old_map();
 			game_precache_new_map(options.map_name, TRUE);
 			game_unload();
@@ -1943,7 +1950,9 @@ void main_pregame_render(
 
 	collision_log_continue_period(TRUE);
 	halo_render_random_begin(); /* port: render_random.c */
-	sound_render();
+	/* port: nothing of a level that waits behind the loading screen sounds yet */
+	if (!halo_loading_screen_holding())
+		sound_render();
 	{
 		real_point3d position = { 0.0f, 0.0f, 0.0f };
 		real_vector3d forward = { 0.0f, 0.0f, 1.0f };
@@ -2430,22 +2439,33 @@ static boolean main_framerate_throttle_enabled(
 by vsync, and frames fall between the 30 Hz ticks
 (port/linux/game/render_interpolation.c): no vertical blank throttle, and
 the frame is timed with the performance counter. */
+static LARGE_INTEGER main_previous_counter;
+
+/* port: the next frame's time starts now: what the game thread spent since
+the last frame (a level's load behind the loading screen) is not game time */
+void halo_main_time_restart(
+	void)
+{
+	QueryPerformanceCounter(&main_previous_counter);
+	main_globals.frame_start_milliseconds = system_milliseconds();
+	return;
+}
+
 static void main_update_time_unthrottled(
 	void)
 {
-	static LARGE_INTEGER previous_counter;
 	LARGE_INTEGER counter;
 	LARGE_INTEGER frequency;
 	real seconds_elapsed = 0.0f;
 
 	QueryPerformanceCounter(&counter);
 	QueryPerformanceFrequency(&frequency);
-	if (previous_counter.QuadPart && frequency.QuadPart)
+	if (main_previous_counter.QuadPart && frequency.QuadPart)
 	{
-		seconds_elapsed = (real)((double)(counter.QuadPart - previous_counter.QuadPart) /
+		seconds_elapsed = (real)((double)(counter.QuadPart - main_previous_counter.QuadPart) /
 			(double)frequency.QuadPart);
 	}
-	previous_counter = counter;
+	main_previous_counter = counter;
 
 	if (main_globals.movie)
 	{
@@ -3471,6 +3491,8 @@ void main_loop(
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
 			/* port: map sharing, in the lobby and in game (port/linux/game/map_share.c) */
 			map_share_update();
+			/* port: players whose app went to the background (port/linux/game/network_away.c) */
+			network_away_update(main_globals.main_menu_scenario_loaded);
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
 			{
@@ -3478,6 +3500,8 @@ void main_loop(
 				{
 					display_error_when_main_menu_loaded(6);
 					error(_error_silent, "the game host went down");
+					/* port: joined again if it or its host was away (port/linux/game/network_away.c) */
+					network_away_game_lost();
 					network_game_abort();
 				}
 			}
