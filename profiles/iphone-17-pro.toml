@@ -10,6 +10,7 @@ models = ["iPhone18,1"]
 [display]
 anisotropic_filtering = 16
 shadow_map_size = 512
+anti_aliasing = "fxaa"
 
 [evidence."display.anisotropic_filtering"]
 basis = "assumed"
@@ -18,3 +19,8 @@ why = "Free on the iPad Pro (M1); this phone's one benchmark ran a10 at 119 fram
 [evidence."display.shadow_map_size"]
 basis = "assumed"
 why = "The default. The phone's settings sweeps were stopped because it ran hot; nothing but the one benchmark is measured."
+
+[evidence."display.anti_aliasing"]
+basis = "measured"
+why = "FXAA on cost almost nothing on this phone at its native 2622x1206 (Metal, 120 Hz quick suite); every scene held 120 frames a second with it on. GPU mean/p95 in ms, off then on: menu 2.62/2.8 then 5.36/5.8, a10 opening 3.96/6.3 then 4.94/6.4, b30 beach 5.28/6.5 then 5.37/6.3, a10 crew 5.26/6.6 then 5.35/6.6, c40 bridge 5.24/6.5 then 5.45/6.6. The menu's cost is the largest (about 2.7 ms), and still leaves 2.6 ms of the 8.3 ms frame. On by the user's decision."
+source = "Reports NMYSEQ6R (off) and 47PS5LC2 (on), iPhone18,1, quick suite, 2026-10-15."

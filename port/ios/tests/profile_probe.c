@@ -239,8 +239,9 @@ static void check_shipped(const char *shipped)
 	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
 	class profile's Metal */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(profile.count == 3 && has(&profile, "display.anisotropic_filtering", "16") &&
-		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal"));
+	assert(profile.count == 4 && has(&profile, "display.anisotropic_filtering", "16") &&
+		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
+		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
 	assert(profile.count == 4 && has(&profile, "display.mirror_resolution", "half") &&
 		has(&profile, "display.renderer", "metal"));
