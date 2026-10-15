@@ -1,9 +1,8 @@
 # b30-beach: Halo on heroic, the landing and the beach fight, played on an Apple TV. A replay sets the take's random
-# seeds before each tick and steps its silent mixer with the ticks, and it is the same every time on the Mac runner.
-# From tick 1821 on the game's global seed is not the take's (the device's sounds and frames shaped the fight there,
-# which a replay cannot repeat), so the fight is the replay's own, and the same each time. The player is alive
-# through the scene's 85 seconds (2550 ticks); in a full replay the player dies at tick 2626 and the game reverts to
-# a checkpoint (a second segment).
+# seeds before each tick, plays no sound, and is the same every time on the Mac runner, idle or busy. From tick 1471
+# on the game's global seed is not the take's (the device's sounds and frames shaped the fight there, which a replay
+# cannot repeat), so the fight is the replay's own, and the same each time. The player is alive through the scene's
+# 85 seconds (2550 ticks).
 recording = port/benchmark/recordings/b30-beach.input
 map = b30
 difficulty = hard
@@ -15,12 +14,12 @@ exit_after = 100
 0 1200 -63.58,33.15,0.90 1.0 first contact
 0 1500 -56.09,25.19,2.36 1.0 fighting
 0 1800 -56.90,18.46,2.29 1.0 fighting
-0 2100 -51.11,7.18,4.28 1.0 fighting
-0 2400 -54.30,2.80,3.34 1.0 hurt, shields down
+0 2100 -51.18,7.26,4.28 1.0 fighting
+0 2400 -54.48,2.70,3.32 1.0 shields down
 # segment tick alive=1 actors=N dead=N: the fight at those ticks
 state 0 900 alive=1 actors=23 dead=9
 state 0 1200 alive=1 actors=22 dead=10
 state 0 1500 alive=1 actors=19 dead=13
-state 0 1800 alive=1 actors=16 dead=16
-state 0 2100 alive=1 actors=14 dead=18
-state 0 2400 alive=1 actors=11 dead=21
+state 0 1800 alive=1 actors=17 dead=15
+state 0 2100 alive=1 actors=15 dead=17
+state 0 2400 alive=1 actors=12 dead=20
