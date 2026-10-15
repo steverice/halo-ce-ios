@@ -88,6 +88,12 @@ static void import_image(void) {
             }
         }
         if(imported) {
+            /* the intro and credits movies, when the build plays them and the disc has them (xiso.c) */
+            NSString *movies=[documents stringByAppendingPathComponent:@"bink"];
+            if([files fileExistsAtPath:[staging stringByAppendingPathComponent:@"bink"]]) {
+                [files removeItemAtPath:movies error:nil];
+                [files moveItemAtPath:[staging stringByAppendingPathComponent:@"bink"] toPath:movies error:nil];
+            }
             host_logf(HOST_LOG_INFO,"XISO import complete");
             [files removeItemAtPath:staging error:nil];
             status_set(import_done,1,1,@"Imported. Starting Halo…");
@@ -96,6 +102,8 @@ static void import_image(void) {
             /* A fresh staging folder for the next attempt. */
             [files removeItemAtPath:[staging stringByAppendingPathComponent:@"maps.partial"] error:nil];
             [files removeItemAtPath:[staging stringByAppendingPathComponent:@"maps"] error:nil];
+            [files removeItemAtPath:[staging stringByAppendingPathComponent:@"bink.partial"] error:nil];
+            [files removeItemAtPath:[staging stringByAppendingPathComponent:@"bink"] error:nil];
             status_set(import_failed,0,0,failure);
         }
     }

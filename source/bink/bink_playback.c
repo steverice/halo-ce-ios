@@ -454,6 +454,12 @@ void bink_playback_stop(
 
 	if (bink_globals.bink)
 	{
+		/* port: how often the game drew during the movie, beside BinkClose's
+		line with how long it ran (a view that follows the head draws at the
+		display's rate, bink_movie_polls; a flat one once a movie frame) */
+		extern void platform_log(const char *format, ...);
+
+		platform_log("Bink: the game drew %ld frames during the movie", bink_globals.rendered_frame_count);
 		BinkClose(bink_globals.bink);
 		bink_globals.bink = NULL;
 	}
@@ -973,14 +979,44 @@ static void bink_decompress_video_frame(
 	return;
 }
 
+/* port: 1 while the game presents to a view that follows the head (HEAD mode
+and the theater's screen, port/linux/src/halo_stereo.h), where the movie's
+panel has to be drawn at the display's rate; 0 for a flat display, which
+plays the movie as the original does */
+static boolean bink_movie_polls(
+	void)
+{
+	extern int halo_stereo_head_tracked_view(void);
+
+	return halo_stereo_head_tracked_view()!=0;
+}
+
 static void bink_playback_update__internal(
 	void)
 {
+	/* port: FALSE while the movie's current frame is still on screen and its
+	next isn't due (bink_movie_polls): the movie's end waits for it, as the
+	blocking wait did */
+	boolean frame_due= TRUE;
+
 	if (bink_globals.initialized && bink_globals.bink)
 	{
 		if (global_frame_rate_throttle)
 		{
 			bink_globals.needs_decode= BinkWait(bink_globals.bink)==0;
+		}
+		else if (bink_movie_polls())
+		{
+			/* port: the view follows the head (halo_stereo.h): the panel the
+			movie plays on is placed again with every frame the game presents,
+			so waiting here for the movie's next frame moved it at the movie's
+			30 frames a second. One short wait instead, and a frame that isn't
+			due yet draws the last one again (bink_playback_render) */
+			bink_globals.needs_decode= BinkWait(bink_globals.bink)==0;
+			if (!bink_globals.needs_decode)
+			{
+				frame_due= FALSE;
+			}
 		}
 		else
 		{
@@ -1002,7 +1038,8 @@ static void bink_playback_update__internal(
 			}
 		}
 
-		if ((!bink_globals.bink || bink_globals.bink->FrameNum==bink_globals.bink->Frames-1) &&
+		if (frame_due &&
+			(!bink_globals.bink || bink_globals.bink->FrameNum==bink_globals.bink->Frames-1) &&
 			!TEST_FLAG(bink_globals.flags, _bink_playback_loop_bit))
 		{
 			bink_playback_stop();

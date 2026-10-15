@@ -1407,6 +1407,11 @@ void halo_stereo_log_film_camera(const float position[3], const float forward[3]
 		halo_stereo_cutscene_immersive() ? "immersive" : "film", film_reasons[film_reason]);
 }
 
+int halo_stereo_head_tracked_view(void)
+{
+	return stereo_mode == HALO_STEREO_HEAD || stereo_mode == HALO_STEREO_SCREEN;
+}
+
 int halo_stereo_cut_covered(void)
 {
 	return frame_fade[3] > 0.0f;

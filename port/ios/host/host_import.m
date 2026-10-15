@@ -158,6 +158,12 @@ static int import_progress(void *context, const char *file, uint64_t done, uint6
                         failure=@"Could not finish the import. Existing maps remain in the import backup folder.";
                 }
                 if (imported) {
+                    /* the intro and credits movies, when the build plays them and the disc has them
+                       (xiso.c); a bink folder already here is the player's own and stays */
+                    NSString *movies=[self.documents stringByAppendingPathComponent:@"bink"];
+                    if ([files fileExistsAtPath:[staging stringByAppendingPathComponent:@"bink"]] && ![files fileExistsAtPath:movies] &&
+                        [files moveItemAtPath:[staging stringByAppendingPathComponent:@"bink"] toPath:movies error:nil])
+                        [[NSURL fileURLWithPath:movies] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
                     NSURL *mapsURL=[NSURL fileURLWithPath:target];[mapsURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
                     /* Successful completion marker used only for diagnostics; game data stays separate. */
                     host_logf(HOST_LOG_INFO,"XISO import complete; original map bytes preserved");

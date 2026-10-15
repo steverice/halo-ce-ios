@@ -37,6 +37,9 @@ python3 tools/ios_build.py --team YOUR_TEAM_ID --bundle-id com.yourname.haloce
 
 # Unsigned device IPA (no Apple account needed to build).
 python3 tools/ios_build.py --unsigned --ipa dist/VISR-iOS-unsigned.ipa
+
+# Any of them without the FFmpeg movie decoder (LGPL): the game skips its movies.
+python3 tools/ios_build.py --unsigned --bink off
 ```
 
 The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
@@ -276,7 +279,26 @@ orientation lock for the full-screen scene; portrait is excluded from the
 app's orientation masks. iPadOS controls windowed multitasking and may
 letterbox the landscape app when a full-screen orientation lock is unavailable.
 Internet invite hosting and clipboard joining default to off on iOS. Local/network multiplayer is
-not yet validated. Bink intro videos remain unsupported by the upstream port.
+not yet validated.
+
+### Movies
+
+The game's intro and credits are Bink videos on the disc (`bink/intro.bik`,
+`bink/credits.bik`). The import copies them next to the maps, into
+`Documents/bink`, and the game plays them where the Xbox does: the intro
+before the main menu, the credits after the last level. Any controller
+button skips a movie. The attract movies that play on an idle Xbox menu are
+not imported or played.
+
+An installation whose game was imported by an earlier build has no
+`Documents/bink`. Copy `intro.bik` and `credits.bik` into a `bink` folder
+there (Files, Finder, or `tools/ios_extract_assets.py` and `devicectl` as
+below), or delete `Documents/maps` and import the disc image again.
+
+`display.movies = "off"` in `config.toml` skips them. The decoder is FFmpeg's
+(`port/third_party/ffmpeg-bink`, LGPL 2.1 or later; see
+[NOTICE.md](../../NOTICE.md)). `tools/ios_build.py --bink off` builds an app
+without it, which skips the movies.
 
 With internet play on (`network.online = true` in `config.toml`), opening a
 `halo://join/...` invite link (tapped where it shows as a link, or pasted into

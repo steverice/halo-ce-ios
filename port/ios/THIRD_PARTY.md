@@ -13,7 +13,13 @@ the Newtown font (public domain), and SMAA (MIT;
 `port/third_party/smaa`). The native XISO parser adapts upstream
 extraction code following
 extract-xiso (modified BSD; see `port/third_party/extract-xiso/LICENSE.TXT`).
-This product includes software developed by in <in@fishtank.com>. Their complete notices are copied into the built app's `Licenses`
+This product includes software developed by in <in@fishtank.com>.
+Builds that play the game's intro and credits movies (the default; not those
+made with `--bink off`) use libraries from the FFmpeg project (9.0.2, its
+Bink demuxer and decoders) under the LGPLv2.1, statically linked. FFmpeg's
+source, unmodified, is in `port/third_party/ffmpeg-bink` of this app's source
+repository, and the app can be rebuilt from that repository with a modified
+FFmpeg; the license is in `Licenses/FFmpeg-LGPL-2.1.txt`. Their complete notices are copied into the built app's `Licenses`
 directory. Khronos headers retain the notices supplied by their registries.
 Other vendored components retain their original notices in the source tree.
 

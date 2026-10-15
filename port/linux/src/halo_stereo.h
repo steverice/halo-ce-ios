@@ -527,6 +527,12 @@ fraction (render.c sets it before the eyes; zero until then), which the
 host's room tint takes as well, so the two move in step */
 void halo_stereo_set_fade(const float rgb_intensity[4]);
 void halo_stereo_fade(float rgb_intensity[4]);
+/* 1 when display.stereo puts the game in a view that follows the head: HEAD
+mode, and the theater's screen (not off, and not the side-by-side test view).
+What is drawn there is placed again with every presented frame, so a part of
+the game that presents less often than the display (a movie, bink_playback.c)
+moves in steps */
+int halo_stereo_head_tracked_view(void);
 /* The film's and the 3D TV's one mapping (stereo.c has the math): from
 the depth share (infinity's parallax as a share of the viewer's eye
 separation), the convergence (meters ahead of the camera on the screen's

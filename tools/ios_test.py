@@ -433,3 +433,6 @@ print('main menu without Quit: ' + ', '.join(child.get('widget').split('/')[-1] 
 # Parse untrusted XISO metadata and exercise extraction/cancellation under sanitizers.
 run('python3', 'tools/ios_xiso_test.py')
 run('python3', 'tools/test_network_light_state.py')
+# the Bink movie decoder (port/runtime/bink_decoder.c on port/third_party/ffmpeg-bink) builds for this Mac,
+# and decodes the game's intro where the game's files are (tools/bink_test.py)
+run('python3', 'tools/bink_test.py', '--if-present')

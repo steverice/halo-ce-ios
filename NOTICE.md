@@ -20,6 +20,7 @@ app's `Licenses` folder (`tools/ios_build.py`).
 
 | Component | License | Location | In the Apple apps |
 | --- | --- | --- | --- |
+| [FFmpeg](https://ffmpeg.org/) 9.0.2, its Bink demuxer and decoders only | LGPL-2.1-or-later | `port/third_party/ffmpeg-bink/COPYING.LGPLv2.1`, `port/third_party/ffmpeg-bink/` | Yes, unless built with `--bink off` |
 | [extract-xiso](https://github.com/XboxDev/extract-xiso) | BSD-style, 4 clauses, with an advertising clause | `port/third_party/extract-xiso/LICENSE.TXT`, `port/runtime/xiso.c`, `port/linux/src/xiso.c` | Yes |
 | [Expat](https://libexpat.github.io/) | MIT | `port/third_party/expat/COPYING` | Yes |
 | [KCP](https://github.com/skywind3000/kcp) | MIT | `port/third_party/kcp/LICENSE` | Yes |
@@ -32,6 +33,30 @@ app's `Licenses` folder (`tools/ios_build.py`).
 | [miniupnpc](https://miniupnp.tuxfamily.org/) | BSD-3-Clause | `port/third_party/miniupnpc/LICENSE` | No, desktop builds only |
 | zlib, as the game shipped it | zlib | `source/memory/zlib/` | Part of the decompiled source tree |
 | libtiff, as the game shipped it | libtiff (Sam Leffler and Silicon Graphics, notice in each file) | `source/bitmaps/libtiff/` | Part of the decompiled source tree |
+
+## FFmpeg and the LGPL
+
+The Apple apps play the game's intro and credits movies with FFmpeg's Bink
+demuxer and decoders. This software uses libraries from the
+[FFmpeg](https://ffmpeg.org/) project under the
+[LGPLv2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html). FFmpeg's
+files in `port/third_party/ffmpeg-bink/` are not under CC0: they stay under
+the GNU Lesser General Public License, version 2.1 or later, and each keeps
+its own notice.
+
+- The source is the unmodified release `n9.0.2`
+  (`port/third_party/ffmpeg-bink/README.md` lists the files, the configure
+  command and how they were chosen). VISR does not own FFmpeg.
+- The configuration is LGPL only: no `--enable-gpl`, `--enable-version3` or
+  `--enable-nonfree`, and no external libraries.
+- FFmpeg is linked statically into the app's executable. To use a modified
+  FFmpeg, change the files in `port/third_party/ffmpeg-bink/` and rebuild
+  the app with `tools/ios_build.py`; everything the app is built from is in
+  this repository.
+- An app that contains FFmpeg carries the license text as
+  `Licenses/FFmpeg-LGPL-2.1.txt`.
+- `tools/ios_build.py --bink off` (CMake `HALO_BINK=OFF`) builds an app with
+  no FFmpeg code and no FFmpeg license file. It skips the movies.
 
 ## Downloaded at build time
 

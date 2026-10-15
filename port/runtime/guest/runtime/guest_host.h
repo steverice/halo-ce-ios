@@ -162,4 +162,27 @@ struct halo_stereo_frame crosses as it is (tools/ios_test.py pins its layout). *
 fills the eyes and the head's turn from it; eye_count stays 0 without one */
 void host_stereo_frame(struct halo_stereo_frame *frame);
 
+/* ---------- Bink movies (guest_bink.c; the host's port/ios/host/host_bink.c)
+
+One movie at a time, decoded in the host (port/runtime/bink_decoder.h, whose
+functions these are). A host built without the decoder opens nothing. */
+
+/* 32-bit members only: the same layout on both sides */
+struct host_bink_information
+{
+	unsigned int width, height;
+	unsigned int frame_count;
+	unsigned int frame_rate, frame_rate_divisor;
+	unsigned int audio_rate, audio_channels;
+};
+
+/* path is a host path; 1 if the movie opened */
+int host_bink_open(const char *path, struct host_bink_information *information);
+void host_bink_close(void);
+int host_bink_decode_frame(void);
+/* the last frame decoded as X8R8G8B8, into guest memory */
+void host_bink_copy_frame(void *pixels, int pitch, int height);
+int host_bink_audio_read(short *samples, int capacity, unsigned int until);
+void host_bink_audio_skip(unsigned int position);
+
 #endif

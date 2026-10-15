@@ -110,4 +110,5 @@ embedding the compiled code into the iOS app.
 Extended physical iPad gameplay, older iPhones/iOS versions, a complete campaign,
 physical controllers, network multiplayer, audio route changes/headphones,
 and prolonged background/resume behavior. PAL maps are accepted by the cache
-validator but have not been played on iOS. Bink intro videos are unsupported.
+validator but have not been played on iOS. The intro and credits movies have not been
+watched on a physical device.
