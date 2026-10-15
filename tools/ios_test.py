@@ -71,6 +71,27 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/th
     'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/third_party/tomlc17/tomlc17.c',
     '-o', BUILD / 'profile-probe')
 run(BUILD / 'profile-probe', ROOT / 'profiles')
+# Downloaded snapshots must pass the same bounded validators as the publisher.
+run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
+    'port/ios/tests/profile_pack_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c',
+    'port/third_party/tomlc17/tomlc17.c', '-o', BUILD / 'profile-pack-probe')
+run(BUILD / 'profile-pack-probe', ROOT / 'profiles')
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror',
+    'port/ios/tests/recording_pack_probe.c', 'port/ios/host/host_recording_pack.c',
+    'port/runtime/benchmark_plan.c', '-o', BUILD / 'recording-pack-probe')
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks',
+    '-framework', 'Foundation', 'port/ios/tests/data_pack_probe.m', 'port/ios/host/host_data_pack.m',
+    'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
+    '-o', BUILD / 'data-pack-probe')
+run(BUILD / 'data-pack-probe')
+run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
+    '-Iport/ios/host', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
+    'port/ios/tests/data_updates_probe.m', 'port/ios/host/host_data_pack.m',
+    'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c',
+    'port/ios/host/host_recording_pack.c', 'port/runtime/benchmark_plan.c',
+    'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
+    'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'data-updates-probe')
+run(BUILD / 'data-updates-probe')
 # the profiles' own rules: only the settings a profile may set, inside their ranges, each with its evidence,
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
 run('python3', 'tools/profile_check.py')

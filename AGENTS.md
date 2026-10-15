@@ -51,7 +51,7 @@ Run before every commit that changes code:
 python3 tools/ios_test.py
 
 python3 -m pytest tools/test_ios_build.py tools/test_ios_bridges.py \
-  tools/test_ios_embed_guest.py tools/test_mac_run.py tools/test_profile_catalog_check.py
+  tools/test_ios_embed_guest.py tools/test_mac_run.py tools/test_profile_catalog_check.py tools/test_data_pack.py
 ```
 
 A change to rendering, gameplay or the importer also needs a run in the

@@ -10,6 +10,8 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 
 #include "gpu.h"
 #include "ios_host.h"
+#include "host_data_updates.h"
+#include <string.h>
 #if HALO_RENDER_VALIDATION
 #include "gpu_validate.h"
 #include "gpu_capture.h"
@@ -45,6 +47,19 @@ static struct gpu_backend wrapped;
 static const struct gpu_backend *wrapped_backend;
 static int frame_counter;
 static unsigned long presented;
+static int menu_seen, updates_healthy;
+static void frame_context_wrapped(uint32_t scene_class, uint32_t rate, const char *level)
+{
+    menu_seen = level && !strcmp(level, "ui");
+    if (wrapped_backend->frame_context) wrapped_backend->frame_context(scene_class, rate, level);
+}
+static void data_updates_presented(void)
+{
+    if (menu_seen && !updates_healthy) {
+        updates_healthy = 1;
+        host_data_updates_healthy();
+    }
+}
 
 static uint32_t present_wrapped(gpu_texture back_buffer)
 {
@@ -52,6 +67,7 @@ static uint32_t present_wrapped(gpu_texture back_buffer)
 
 	host_lifecycle_hold();
 	next_frame_due = wrapped_backend->present(back_buffer);
+	data_updates_presented();
 	if (frame_counter)
 		host_frame_counter_show(presented++);
 	return next_frame_due;
@@ -64,6 +80,7 @@ static uint32_t present_stereo_wrapped(const struct gpu_stereo_present *present)
 
 	host_lifecycle_hold();
 	next_frame_due = wrapped_backend->present_stereo(present);
+	data_updates_presented();
 	if (frame_counter)
 		host_frame_counter_show(presented++);
 	return next_frame_due;
@@ -255,6 +272,7 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 #endif
 	wrapped_backend = backend;
 	wrapped = *backend;
+	wrapped.frame_context = frame_context_wrapped;
 	wrapped.present = present_wrapped;
 	wrapped.present_stereo = present_stereo_wrapped;
 	backend = &wrapped;

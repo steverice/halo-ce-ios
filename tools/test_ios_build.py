@@ -97,3 +97,69 @@ def test_benchmark_upload_takes_the_container_without_turning_cloud_saves_on():
     assert ios_build.cloud_definitions("org.steverice.visr.tvos", True, None, True)[0] == "-DHALO_CLOUD_SAVES=ON"
     with pytest.raises(ValueError, match="needs --cloud-container"):
         ios_build.cloud_definitions("com.example.visr", False, None, True)
+
+
+def test_data_pack_networking_defaults_are_explicitly_empty():
+    assert ios_build.data_pack_definitions('', '', '') == [
+        '-DHALO_DATA_PACK_PUBLIC_KEY=', '-DHALO_PROFILE_FEED_URL=', '-DHALO_RECORDING_FEED_URL=']
+
+
+def test_data_pack_configuration_accepts_public_key_and_https_feeds():
+    assert ios_build.data_pack_definitions('AB' * 32, 'https://packs.example/profiles.json',
+                                           'https://packs.example/recordings.json') == [
+        '-DHALO_DATA_PACK_PUBLIC_KEY=' + 'ab' * 32,
+        '-DHALO_PROFILE_FEED_URL=https://packs.example/profiles.json',
+        '-DHALO_RECORDING_FEED_URL=https://packs.example/recordings.json']
+
+
+@pytest.mark.parametrize('key', ['ab' * 31, 'ab' * 33, 'zz' * 32, 'ab' * 32 + '\n'])
+def test_data_pack_public_key_must_be_exactly_32_hex_bytes(key):
+    with pytest.raises(ValueError, match='public key'):
+        ios_build.data_pack_definitions(key, '', '')
+
+
+@pytest.mark.parametrize('url', [
+    'http://packs.example/p.json', 'https:///p.json', 'https://user@packs.example/p.json',
+    'https://user:password@packs.example/p.json', 'https://packs.example/p.json?id=device',
+    'https://packs.example/p.json#fragment', 'https://packs.example/p.json?',
+    'https://packs.example/p.json#', 'https://packs.example/p.json\n',
+    'https://packs.example/p file.json', 'https://packs.example:invalid/p.json',
+])
+@pytest.mark.parametrize('feed', ['profiles', 'recordings'])
+def test_data_pack_feed_requires_https_without_credentials_queries_or_fragments(url, feed):
+    with pytest.raises(ValueError, match='feed URL'):
+        ios_build.data_pack_definitions('', url if feed == 'profiles' else '', url if feed == 'recordings' else '')
+
+
+@pytest.mark.parametrize('mac', [False, True])
+def test_data_pack_cli_settings_reach_the_cmake_configuration(monkeypatch, tmp_path, mac):
+    import sys
+    commands = []
+    monkeypatch.setattr(ios_build, 'ROOT', tmp_path)
+    monkeypatch.setattr(ios_build, 'HEADERS', {})
+    monkeypatch.setattr(ios_build.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(ios_build.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(ios_build, 'run', lambda *command: commands.append([str(part) for part in command]))
+    monkeypatch.setattr(ios_build.shutil, 'copyfile', lambda *args: None)
+    monkeypatch.setattr(ios_build, 'opengles_framework', lambda *args: tmp_path / 'frameworks')
+    monkeypatch.setattr(sys, 'argv', ['ios_build.py', '--mac' if mac else '--unsigned', '--host-pgo=off',
+                                    '--data-pack-public-key', '12' * 32,
+                                    '--profile-feed-url', 'https://packs.example/profiles.json',
+                                    '--recording-feed-url', 'https://packs.example/recordings.json'])
+    ios_build.main()
+    configure = next(command for command in commands if command[0] == 'cmake' and '-S' in command)
+    assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + '12' * 32 in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://packs.example/profiles.json' in configure
+    assert '-DHALO_RECORDING_FEED_URL=https://packs.example/recordings.json' in configure
+
+
+@pytest.mark.parametrize('name', ['Info.plist', 'Info-macOS.plist', 'Info-tvOS.plist', 'Info-visionOS.plist'])
+def test_data_pack_public_configuration_is_embedded_in_every_app_plist(name):
+    import plistlib
+    from pathlib import Path
+    values = plistlib.loads((Path(__file__).resolve().parents[1] / 'port/ios' / name).read_bytes())
+    for key, setting in [('HaloDataPackPublicKey', 'HALO_DATA_PACK_PUBLIC_KEY'),
+                         ('HaloProfileFeedURL', 'HALO_PROFILE_FEED_URL'),
+                         ('HaloRecordingFeedURL', 'HALO_RECORDING_FEED_URL'),
+                         ('HaloDataPackChannel', 'HALO_DATA_PACK_CHANNEL')]:
+        assert values[key] == f'$({setting})'

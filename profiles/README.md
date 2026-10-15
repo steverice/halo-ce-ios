@@ -95,3 +95,5 @@ A contributed profile is merged with `status = "provisional"` until a second rep
 ## Limits
 
 A profile file is at most 64 KB. It cannot name a path, a server or a debug switch, hold the game below 30 frames a second, or ask for more than a device can do: what a GPU lacks (compressed textures on an A8, for example) is checked in code and no profile turns it on.
+
+Profiles can also arrive as signed complete snapshots. See [Updating profiles and benchmark recordings](../docs/data-packs.md) for build configuration, publishing and rollback.
