@@ -50,6 +50,9 @@ struct host_profile
 	/* the files in force ("" for none), for the log */
 	char class_name[64], class_file[64], model_name[64], model_file[64];
 	int drop_in;
+	/* Actual and source hardware stay distinct in inherited-profile reports. */
+	int inherited, source_tier, target_tier;
+	char source_hardware[64], target_hardware[64], catalog_version[64];
 };
 
 /* The profile for device from the *.toml files in folder (NULL or missing: none), with the drop-in file's
@@ -71,3 +74,11 @@ size_t host_profile_encode(const struct host_profile *profile, char *text, size_
 void host_device_identify(struct host_device *device);
 const char *host_device_profile_install(const char *data_root);
 const struct host_profile *host_device_profile(void);
+
+/* Internal catalog selection: resolves a source without drop-ins or recursive fallback. */
+int host_profile_inherit(const struct host_device *device, const char *folder,
+	void (*log)(const char *), struct host_profile *profile);
+
+/* Downloaded profile snapshots are accepted only as a complete valid set. */
+int host_profile_validate_folder(const char *folder, void (*log)(const char *));
+int host_profile_catalog_validate(const char *folder);

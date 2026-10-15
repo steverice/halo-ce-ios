@@ -1,0 +1,32 @@
+# Tiers order hardware within a platform, not model identifiers or release dates.
+# This first catalog establishes only the M1 iPad tier. Other hardware keeps exact/class matching.
+schema = 1
+version = "2026-10-15"
+
+[[hardware]]
+id = "ipad-pro-m1-12-9"
+platform = "ios"
+models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
+tier = 100
+gpu_family = 7
+basis = "measured"
+source = "ipad-pro-m1.toml: M1 settings sweep, a10 at 3180x2384, 2026-10-03. Tier 100 establishes this platform's M1 baseline; it does not rank M1 against A-series chips."
+
+[[hardware]]
+id = "ipad-pro-m1-11"
+platform = "ios"
+models = ["iPad13,4", "iPad13,5", "iPad13,6", "iPad13,7"]
+tier = 100
+gpu_family = 7
+basis = "assumed"
+source = "https://support.apple.com/en-us/111897: same M1 CPU and 8-core GPU, 8 or 16 GB RAM, smaller 2388x1668 display. Inheritance is a conservative hardware assessment, not a measurement of this model."
+
+[[fallback]]
+hardware = "ipad-pro-m1-12-9"
+profile = "ipad-pro-m1.toml"
+# The measured device has 8 GB physical RAM; tolerate the system's reported usable physical total.
+minimum_memory_mb = 7000
+minimum_gpu_family = 7
+# Measured a10 workload; native 11-inch rendering is below this limit in every scene.
+maximum_pixels = [7581120, 7581120, 7581120]
+maximum_refresh_hertz = 120

@@ -67,5 +67,13 @@
 	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>HaloDataPackChannel</key>
+	<string>$(HALO_DATA_PACK_CHANNEL)</string>
+	<key>HaloDataPackPublicKey</key>
+	<string>$(HALO_DATA_PACK_PUBLIC_KEY)</string>
+	<key>HaloProfileFeedURL</key>
+	<string>$(HALO_PROFILE_FEED_URL)</string>
+	<key>HaloRecordingFeedURL</key>
+	<string>$(HALO_RECORDING_FEED_URL)</string>
 </dict>
 </plist>

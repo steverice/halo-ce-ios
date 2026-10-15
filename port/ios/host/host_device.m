@@ -3,6 +3,7 @@
 #import <Metal/Metal.h>
 #import <UIKit/UIKit.h>
 #include "host_profile.h"
+#import "host_data_updates.h"
 #include "host_config.h"
 #include "ios_host.h"
 #include <sys/sysctl.h>
@@ -102,6 +103,7 @@ const char *host_device_profile_install(const char *data_root)
 	const char *environment = getenv("HALO_DEVICE_PROFILE");
 	NSString *folder = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"profiles"];
 
+	folder = host_profile_update_folder(folder);
 	host_device_identify(&device);
 	if (device.pixel_width)
 		snprintf(display, sizeof(display), ", %dx%d at %d Hz", device.pixel_width, device.pixel_height, device.refresh_rate);
