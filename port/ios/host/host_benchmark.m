@@ -512,9 +512,13 @@ int host_benchmark_next(char *text, unsigned int size) {
             summary = [NSString stringWithFormat:@"%s\n%@", message, summary];
         }
 #endif
-        if (page && atoi(page) > 0) host_benchmark_page(REPORT, summary.UTF8String, report_code, atoi(page));
+        int shown = page && atoi(page) > 0;
+
+        if (shown) host_benchmark_page(REPORT, summary.UTF8String, report_code, atoi(page));
         atomic_store(&running, 0);
-        return 0;
+        /* a person pressed Done on the report: the game goes back to its main menu (2). With no report screen (a runner
+           or a scripted launch) nobody is there to press anything, and the game quits (0) */
+        return shown ? 2 : 0;
     }
     scene = &plan.scenes[run.scene];
     if (outcome_count) {
