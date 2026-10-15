@@ -85,12 +85,18 @@ builds until it asks first) */
 /* (helping send a map opens a listening port, TCP 5153, to any address, and
 uploads unasked: off on Apple builds, a player's choice there) */
 #define DEFAULT_MAP_SEED "false"
+#define DEFAULT_HOST_PUBLIC "false"
 #else
 #define DEFAULT_MAP_DOWNLOAD "true"
 #define DEFAULT_MAP_SEED "true"
 #define DEFAULT_INTERNET_PLAY "true"
 #define DEFAULT_CLIPBOARD_JOIN "true"
+#define DEFAULT_HOST_PUBLIC "true"
 #endif
+/* (Apple builds' network.online_ask) "true" is internet play on by default,
+as far as an Apple build goes: the first internet screen opened asks, and
+nothing reaches a server before the player agrees (halo_internet.h) */
+#define DEFAULT_ONLINE_ASK "false"
 
 static const struct config_setting config_settings[] =
 {
@@ -599,11 +605,21 @@ static const struct config_setting config_settings[] =
 		"Comma-separated IPv4 addresses system link sends its announcements to\n"
 		"instead of the local network's broadcast address (for VPNs); empty for\n"
 		"the local network." },
+	{ "network.lan_broadcast", _config_string, "\"auto\"", "HALO_NET_LAN_BROADCAST", _environment_value, _platform_ios,
+		"System link by broadcast, which finds games of every system: \"auto\" where\n"
+		"this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's\n"
+		"multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices\n"
+		"either way." },
 	{ "network.online", _config_boolean, DEFAULT_INTERNET_PLAY, "HALO_NET_ONLINE", _environment_value, _platform_all,
 		"Internet play: hosting makes an invite link (logged, and put on the\n"
 		"clipboard) that lets whoever has it join over the internet; opening a\n"
 		"link (or copying one before switching to the game) joins. Only people\n"
 		"with the invite can join. Off keeps system link to the local network." },
+	{ "network.online_ask", _config_boolean, DEFAULT_ONLINE_ASK, "HALO_NET_ONLINE_ASK", _environment_value, _platform_ios,
+		"While network.online is false: ask whether to turn Internet Play on the\n"
+		"first time Create Game > Internet, Join Game > Server Browser or Direct\n"
+		"Link is opened, saying which servers it reaches and what they see. Asked\n"
+		"once: either answer, and a join link's question, writes false here." },
 	{ "network.join_from_clipboard", _config_boolean, DEFAULT_CLIPBOARD_JOIN, "HALO_NET_JOIN_FROM_CLIPBOARD", _environment_value,
 		_platform_all,
 		"Join the game of an invite link found on the clipboard when the game\n"
@@ -624,7 +640,7 @@ static const struct config_setting config_settings[] =
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
 		"game of this machine's and shows none." },
-	{ "network.host_public", _config_boolean, "true", "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
+	{ "network.host_public", _config_boolean, DEFAULT_HOST_PUBLIC, "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
 		"Whether a new game of Create Game > Internet starts as PUBLIC (listed\n"
 		"in everyone's server browser: anyone can see and join it) or, false,\n"
 		"PRIVATE (only players with its invite link can join). Server Setup's\n"
@@ -866,6 +882,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
+	{ "debug.link_consent_answer", _config_string, "\"\"", "HALO_LINK_CONSENT_ANSWER", _environment_value, _platform_ios,
+		"The answer to \"Join this game over the internet?\" and to \"Turn on\n"
+		"Internet Play?\" for automated tests: \"join\" (Join, Turn On) or\n"
+		"\"cancel\"; empty asks." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens (of game time under\n"
 		"debug.fixed_timestep); 0 never." },

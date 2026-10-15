@@ -1235,3 +1235,18 @@ def test_a_native_app_that_ends_on_term_is_not_killed(tmp_path):
 
     mac_run.end_native(tmp_path / "VISR.app", _Opener(), grace=3, run=run, sleep=lambda seconds: None)
     assert [call[0] for call in calls] == ["pkill", "pgrep"] and "-KILL" not in calls[0]
+def test_defaults_are_settings_the_game_has():
+    """every setting the runner resets is one of config.toml's
+    (port/linux/src/port_config.c)"""
+    import re
+    root = Path(__file__).resolve().parents[1]
+    config = (root / "port/linux/src/port_config.c").read_text()
+    known = set(re.findall(r'^\t\{ "([a-z_0-9]+\.[a-z_0-9]+)", _config_', config, re.M))
+    assert sorted(set(mac_run.DEFAULTS) - known) == []
+
+
+def test_defaults_reset_the_network_addresses():
+    """a two-instance run's addresses and internet play do not leak into the next run"""
+    assert mac_run.DEFAULTS["network.address"] == '""'
+    assert mac_run.DEFAULTS["network.broadcast"] == '""'
+    assert mac_run.DEFAULTS["network.online"] == "false"

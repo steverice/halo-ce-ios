@@ -11,6 +11,22 @@ struct SDL_Window;
 struct SDL_Gamepad;
 /* the guest's window (host_sdl.c), for the GPU backend's present (gpu_gl.c) */
 struct SDL_Window *host_sdl_window(void);
+/* a message box over the game (host_sdl.c; the guest's SDL_ShowSimpleMessageBox
+comes here too) */
+int host_sdl_show_simple_message_box(unsigned int flags, const char *title, const char *message);
+/* a message with one or two buttons over the game, theater mode too
+(host_share.m): the index pressed, or -1 with no window scene or off the main
+thread (the caller then shows SDL's box); waits */
+int host_alert(const char *title, const char *message, const char *first, const char *second);
+/* a share sheet is up over the game (host_share.m): the game's input waits */
+int host_window_up(void);
+#ifdef __OBJC__
+@class UIWindow;
+/* a window of its own at the alert level on the game's scene, shown and key */
+UIWindow *host_present_window(void);
+/* nonzero for a window of host_present_window's (theater mode leaves those be) */
+int host_is_present_window(UIWindow *window);
+#endif
 /* the CAMetalLayer of a Metal window's view (host_sdl.c), or NULL */
 void *host_sdl_metal_layer(void);
 void host_ios_touch_initialize(void);
@@ -50,6 +66,8 @@ int host_ios_gamepad_type(struct SDL_Gamepad *pad);
 int host_ios_gamepad_axis(struct SDL_Gamepad *pad, int axis);
 int host_ios_gamepad_button(struct SDL_Gamepad *pad, int button);
 int host_linux_errno(int native_errno);
+/* posix_net.c: the system link interface's address and netmask, network byte order; 0 if none */
+int host_ranked_interface(uint32_t *address, uint32_t *netmask);
 void host_install_signal_handlers(void);
 uint32_t host_guest_invoke(uintptr_t function, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uintptr_t arena);
 uint32_t host_guest_on_stack(uintptr_t function, uint32_t argument, uintptr_t arena, void *stack_top);

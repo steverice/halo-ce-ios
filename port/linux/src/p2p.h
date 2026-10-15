@@ -25,6 +25,61 @@ int p2p_hand_off_invite(void);
 /* joins the game an invite link or code leads to; text may hold other
 words around it. Returns nonzero if it held an invite */
 int p2p_join_invite(const char *text);
+/* the same, for internet play about to start (p2p_initialize next, on this
+thread): without p2p_join_invite's "internet play is off" line. The join
+waits for p2p's thread, as one asked for at any time does */
+int p2p_join_invite_starting(const char *text);
+
+/* whether internet play runs (p2p_initialize started its thread). The main
+thread's: p2p_initialize sets it there, from WSAStartup or
+xnet_start_internet_play */
+int p2p_running(void);
+/* whether network.online asked for internet play and p2p_initialize could
+not start it (its socket, most often). The main thread's, as p2p_running */
+int p2p_start_failed(void);
+
+/* (xnet.c) internet play turned on while the game runs: p2p_initialize, which
+WSAStartup ran with network.online off, then the ports of the game's
+sockets already open, which it would otherwise never learn */
+void xnet_start_internet_play(void);
+
+/* how joining the latest invite goes, which Join Game > Direct Link shows:
+reaching the brokers, asking the host through them, reaching it directly,
+reached; or what went wrong, as soon as it is known (joining goes on
+until it gives up, so a stage can still pass) */
+enum
+{
+	P2P_JOIN_NONE,
+	P2P_JOIN_STARTING,
+	P2P_JOIN_ASKING,
+	P2P_JOIN_REACHING,
+	P2P_JOIN_CONNECTED,
+	/* no broker reached */
+	P2P_JOIN_NO_SERVER,
+	/* brokers reached, but no answer from the host: its game ended, or it
+	quit (the brokers cannot tell which, or whether it was ever there) */
+	P2P_JOIN_NOT_FOUND,
+	/* the host's listing (a public game's) says its game ended */
+	P2P_JOIN_ENDED,
+	/* ... holds another invite: this one is old */
+	P2P_JOIN_NEW_INVITE,
+	/* ... has another network version */
+	P2P_JOIN_VERSION,
+	/* the host answered, but no packet got through either way */
+	P2P_JOIN_NO_DIRECT,
+	/* ... and this machine was refused sending to the host's local address
+	(on Apple's systems: the Local Network permission, off or not given yet) */
+	P2P_JOIN_LOCAL_NETWORK,
+};
+/* whether the signalling brokers, which invites and the server browser go
+through, can be reached (halo_internet.h's HALO_INTERNET_SERVERS_*): none
+is contacted before a game is hosted for the internet, an invite is joined
+or the server browser is opened */
+int p2p_servers_status(void);
+
+/* the stage (P2P_JOIN_*), the seconds since the invite came, whether
+joining has given up, and (P2P_JOIN_VERSION) the host's network version */
+int p2p_join_status(int *seconds, int *over, int *host_version);
 
 /* this machine's identifier, which its XNADDR carries (6 bytes) */
 const unsigned char *p2p_identifier(void);
@@ -70,6 +125,13 @@ void p2p_socket_closed(int socket, unsigned short datagram_port);
 /* text for the clipboard (a new invite link), once; NULL if none. Called
 from the main thread */
 const char *p2p_take_clipboard_text(void);
+/* nonzero once after an invite from elsewhere (join_link.txt on Apple
+builds and Android, the hand-off on the desktop) was taken. Called from
+the main thread */
+int p2p_take_invite_taken(void);
+/* nonzero once after a join's host never answered (it gave up after 90
+seconds). Called from the main thread */
+int p2p_take_join_failed(void);
 
 /* whether a game this machine hosts may be joined from the internet (an
 invite, Discord): the PC menus' Create Game > Internet (the default), not
@@ -182,6 +244,11 @@ struct p2p_listing
 /* a copy of the public games found, in the order shown (the most players
 first; then those not failed, the open ones, by name); returns their count */
 int p2p_lobby_games(struct p2p_listing *games, int maximum_count);
+/* the public games heard while browsing that the list leaves out, since
+their network version is not this build's: those of a newer one, and of an
+older one (their listings' signatures are not checked: a count to tell the
+player with, no more) */
+void p2p_lobby_other_versions(int *newer, int *older);
 /* a game the browser could not join: kept, marked failed, for this run */
 void p2p_lobby_mark_failed(const unsigned char *identifier);
 /* a locked game's invite (into its invite), if the password is its own:

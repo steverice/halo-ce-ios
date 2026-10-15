@@ -60,6 +60,8 @@ only look up and create stand-ins.
 #include "p2p_internal.h"
 #include "p2p_code.h"
 #include "p2p_away.h"
+#include "halo_internet.h"
+#include "halo_port_limits.h"
 #include "ikcp.h"
 
 #include <stddef.h>
@@ -402,9 +404,34 @@ static struct
 	unsigned char join_host_hash[P2P_KEY_HASH_SIZE];
 	unsigned char join_token[P2P_TOKEN_SIZE];
 	unsigned long join_time;
+	/* the latest invite's story, which Direct Link shows (p2p_join_status)
+	and the log tells: since when, whether joining gave up, when a broker
+	was first reached (0: not yet), whether the host answered, its punches
+	that failed, whether a send to its local address was refused, and the
+	stage last logged */
+	int join_shown;
+	int join_over;
+	unsigned long join_begin_time;
+	unsigned long join_broker_time;
+	int join_answered;
+	int join_punch_failures;
+	int join_local_refused;
+	int join_stage;
 
 	char clipboard[P2P_LINK_SIZE];
 	int has_clipboard;
+	/* an invite from elsewhere (join_link.txt, the hand-off) was taken: for
+	the menus (p2p_take_invite_taken) */
+	int invite_taken;
+	/* the invite's host never answered (JOIN_TIMEOUT): for the menus
+	(p2p_take_join_failed) */
+	int join_failed;
+	/* p2p_initialize was asked to start internet play and could not
+	(p2p_start_failed) */
+	int start_failed;
+	/* whether the signalling brokers can be reached, as last seen
+	(p2p_servers_status) */
+	int servers_status;
 
 	/* UPnP (posix_upnp.c; NAT-PMP or PCP on Apple devices): a thread asking
 	the router; the port it forwards here, when it was last asked, how soon
@@ -810,6 +837,22 @@ static int is_virtual_address(unsigned long address)
 	return (network_long(address) & 0xFFC00000) == 0x64400000;
 }
 
+/* an address of a local network: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+or 169.254.0.0/16 */
+static int is_local_network_address(unsigned long address)
+{
+	unsigned long value = network_long(address);
+
+	return (value & 0xFF000000) == 0x0A000000 || (value & 0xFFF00000) == 0xAC100000 ||
+		(value & 0xFFFF0000) == 0xC0A80000 || (value & 0xFFFF0000) == 0xA9FE0000;
+}
+
+/* whether a peer is the host of the invite being joined */
+static int is_join_host(const struct peer *peer)
+{
+	return peer->is_host && p2p.join_shown && !memcmp(peer->identifier, p2p.join_host, P2P_IDENTIFIER_SIZE);
+}
+
 /* whether address was another machine's than the identifier's, recently: the
 game may still have traffic for that machine, which a new peer at the
 address would take (and whose traffic would seem to come from it) */
@@ -868,18 +911,22 @@ static void packet_nonce(const unsigned char *packet, unsigned char *nonce)
 /* a datagram out of the tunnel's socket; its first failure in a row is
 logged (a socket the system took back while the app was suspended fails
 every send: network_resumed opens it again) */
-static void tunnel_sendto(const void *data, int size, const struct sockaddr_in *to)
+/* 0, or the send's error (logged the first time in a row) */
+static int tunnel_sendto(const void *data, int size, const struct sockaddr_in *to)
 {
 	static int failing;
+	int error;
 
 	if (posix_socket_sendto(p2p.tunnel_socket, data, size, 0, to, sizeof(*to)) >= 0 || would_block())
 	{
 		failing = 0;
-		return;
+		return 0;
 	}
+	error = posix_socket_last_error();
 	if (!failing)
-		platform_log("Internet play: the tunnel's socket cannot send (error %d)", posix_socket_last_error());
+		platform_log("Internet play: the tunnel's socket cannot send (error %d)", error);
 	failing = 1;
+	return error;
 }
 
 static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, const unsigned char *inner, int size)
@@ -890,6 +937,7 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 	unsigned long long counter;
 	int sealed;
 	int index;
+	int error;
 
 	if ((p2p.tunnel_socket < 0 && peer->connection < 0) || size > MAXIMUM_INNER_SIZE)
 		return;
@@ -909,7 +957,21 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 		return;
 	}
 	make_address(&address, to->address, to->port);
-	tunnel_sendto(packet, TUNNEL_HEADER_SIZE + sealed, &address);
+	error = tunnel_sendto(packet, TUNNEL_HEADER_SIZE + sealed, &address);
+	if (error && is_join_host(peer) && is_local_network_address(to->address) && !p2p.join_local_refused)
+	{
+		char text[32];
+
+		/* (Apple's systems refuse sends to the local network without the
+		Local Network permission, as they do while it is still asked for) */
+		if (error == WSAEHOSTUNREACH || error == WSAENETUNREACH || error == WSAEACCES)
+		{
+			p2p.join_local_refused = 1;
+			platform_log("Internet play: sending to the host's local address %s was refused (error %d): "
+				"the system may not let the game reach the local network (Apple's systems: Local Network "
+				"in the privacy settings)", address_text(to->address, to->port, text), error);
+		}
+	}
 }
 
 /* to a peer the tunnel has reached; dropped otherwise */
@@ -1014,6 +1076,14 @@ static void drop_peer(struct peer *peer, const char *reason)
 
 	platform_log("Internet play: %s %s: %s", peer->is_host && !peer->is_player ? "host" : "player", peer->name,
 		reason);
+	/* (the invite's story: a punch that failed, or the end of it) */
+	if (is_join_host(peer))
+	{
+		if (peer->connected)
+			p2p.join_shown = 0;
+		else
+			p2p.join_punch_failures++;
+	}
 	if (peer->connected)
 	{
 		unsigned char bye = _packet_bye;
@@ -1151,6 +1221,12 @@ int p2p_peer_offered(const unsigned char *peer_identifier, const unsigned char *
 		peer->offered_time = p2p_now();
 		platform_log("Internet play: reaching %s %s%s", offered == _p2p_offered_host ? "host" : "player", peer->name,
 			webrtc->kind == _p2p_webrtc_browser ? " (a browser)" : "");
+		if (is_join_host(peer) && !p2p.join_answered)
+		{
+			p2p.join_answered = 1;
+			platform_log("Internet play: the invite's host answered through the brokers, %.1f s after the "
+				"invite came", (double)(unsigned int)(p2p_now() - p2p.join_begin_time) / 1000);
+		}
 	}
 	add_candidates(peer, candidates, count);
 	peer->connection = p2p_webrtc_offered(peer->connection, (int)(peer - p2p.peers), peer->secret, webrtc,
@@ -2634,10 +2710,22 @@ static int join_invite(const char *text)
 	memcpy(p2p.join_host_hash, hash, sizeof(hash));
 	memcpy(p2p.join_token, token, sizeof(token));
 	p2p.join_requested = 1;
+	/* (a new join: an earlier one's failure is no longer news) */
+	p2p.join_failed = 0;
+	/* (a new story, told from here) */
+	p2p.join_shown = 1;
+	p2p.join_over = 0;
+	p2p.join_begin_time = p2p_now();
+	p2p.join_broker_time = 0;
+	p2p.join_answered = 0;
+	p2p.join_punch_failures = 0;
+	p2p.join_local_refused = 0;
+	p2p.join_stage = P2P_JOIN_NONE;
+	p2p_lobby_watch(hash, token);
 	return 1;
 }
 
-int p2p_join_invite(const char *text)
+static int join_invite_locked(const char *text)
 {
 	int result;
 
@@ -2645,6 +2733,13 @@ int p2p_join_invite(const char *text)
 	pthread_mutex_lock(&p2p_lock);
 	result = join_invite(text);
 	pthread_mutex_unlock(&p2p_lock);
+	return result;
+}
+
+int p2p_join_invite(const char *text)
+{
+	int result = join_invite_locked(text);
+
 	if (result > 0 && !p2p.running)
 		platform_log("Internet play is off (network.online in config.toml): the invite is ignored");
 	return result > 0;
@@ -2652,19 +2747,121 @@ int p2p_join_invite(const char *text)
 
 static int look_up_code(const char *text);
 
+int p2p_join_invite_starting(const char *text)
+{
+	return join_invite_locked(text) > 0;
+}
+
+int p2p_running(void)
+{
+	return p2p.running;
+}
+
+int p2p_start_failed(void)
+{
+	return p2p.start_failed && !p2p.running;
+}
+
+/* p2p_initialize could not start: a join asked for meanwhile (a link's,
+platform_link_consent) is dropped, not left for a later start to run */
+static void start_failed(void)
+{
+	p2p.start_failed = 1;
+	pthread_mutex_lock(&p2p_lock);
+	p2p.join_requested = 0;
+	pthread_mutex_unlock(&p2p_lock);
+}
+
 void p2p_invite_received(const char *text)
 {
+	int result = join_invite(text);
+
 	/* (an older version's is logged as such; a join code handed over as a
 	link is, the app's or another copy's, is looked up) */
-	if (join_invite(text))
-		return;
-	if (!look_up_code(text))
+	if (result > 0)
+		p2p.invite_taken = 1;
+	else if (!result && !look_up_code(text))
 		platform_log("Internet play: that is not an invite");
+}
+
+/* under p2p_lock: the latest invite's stage (P2P_JOIN_*) */
+static int join_stage(void)
+{
+	struct p2p_join_facts facts;
+	struct peer *peer;
+
+	if (!p2p.join_shown)
+		return P2P_JOIN_NONE;
+	memset(&facts, 0, sizeof(facts));
+	facts.elapsed = (unsigned int)(p2p_now() - p2p.join_begin_time);
+	facts.over = p2p.join_over;
+	/* (the brokers are counted once signalling has begun for it: until
+	then, it waits for STUN) */
+	if (p2p.join_requested)
+		facts.brokers = 1;
+	else
+		facts.brokers_failed = p2p_signal_brokers_failed(&facts.brokers);
+	facts.broker_reached = p2p.join_broker_time != 0;
+	facts.since_broker = facts.broker_reached ? (unsigned int)(p2p_now() - p2p.join_broker_time) : 0;
+	facts.answered = p2p.join_answered;
+	facts.punch_failures = p2p.join_punch_failures;
+	facts.local_refused = p2p.join_local_refused;
+	peer = find_peer(p2p.join_host);
+	facts.connected = peer && peer->is_host && peer->connected;
+	facts.watched = p2p_lobby_watched(&facts.host_version);
+	facts.version = HALO_PORT_NETWORK_VERSION;
+	return p2p_join_stage(&facts);
+}
+
+int p2p_join_status(int *seconds, int *over, int *host_version)
+{
+	int stage = P2P_JOIN_NONE;
+
+	*seconds = 0;
+	*over = 0;
+	*host_version = 0;
+	if (!p2p.running)
+		return P2P_JOIN_NONE;
+	pthread_mutex_lock(&p2p_lock);
+	stage = join_stage();
+	if (stage != P2P_JOIN_NONE)
+	{
+		*seconds = (int)((unsigned int)(p2p_now() - p2p.join_begin_time) / 1000);
+		*over = p2p.join_over;
+		p2p_lobby_watched(host_version);
+	}
+	pthread_mutex_unlock(&p2p_lock);
+	return stage;
+}
+
+/* the log's words for a stage */
+static const char *join_stage_text(int stage)
+{
+	switch (stage)
+	{
+	case P2P_JOIN_STARTING: return "reaching the signalling brokers";
+	case P2P_JOIN_ASKING: return "asking the host through the brokers";
+	case P2P_JOIN_REACHING: return "the host answered; reaching it directly (UDP hole punching)";
+	case P2P_JOIN_CONNECTED: return "connected to the host";
+	case P2P_JOIN_NO_SERVER: return "no signalling broker can be reached (network.brokers_file; the network or a "
+		"firewall may block TCP to them)";
+	case P2P_JOIN_NOT_FOUND: return "no answer from the invite's host through the brokers; its game may have "
+		"ended, or it quit";
+	case P2P_JOIN_ENDED: return "the host's listing says its game ended";
+	case P2P_JOIN_NEW_INVITE: return "the host lists its game under a newer invite; this one is old";
+	case P2P_JOIN_VERSION: return "the host has another network version";
+	case P2P_JOIN_NO_DIRECT: return "the host answered, but no packet got through either way (both networks' "
+		"NATs may be too strict for a direct connection)";
+	case P2P_JOIN_LOCAL_NETWORK: return "the host answered, but sends to its local address were refused (the "
+		"Local Network permission?)";
+	}
+	return "nothing";
 }
 
 static void update_joining(void)
 {
 	char name[2 * P2P_IDENTIFIER_SIZE + 1];
+	int stage;
 
 	if (p2p.join_requested)
 	{
@@ -2686,8 +2883,39 @@ static void update_joining(void)
 	else if (p2p.joining && elapsed(p2p.join_time, JOIN_TIMEOUT))
 	{
 		p2p.joining = 0;
+		p2p.join_over = 1;
 		p2p_signal_stop_joining();
+		p2p.join_failed = 1;
 		platform_log("Internet play: no answer from the invite's host; it may have stopped hosting or quit");
+	}
+	if (p2p.joining && !p2p.join_broker_time && p2p_signal_connected())
+	{
+		p2p.join_broker_time = p2p_now() | 1;
+		platform_log("Internet play: joining: a signalling broker is reached, %.1f s after the invite came",
+			(double)(unsigned int)(p2p_now() - p2p.join_begin_time) / 1000);
+	}
+	/* each stage logged as it comes, with its time */
+	stage = join_stage();
+	if (stage != p2p.join_stage || (p2p.join_over && stage != P2P_JOIN_NONE && p2p.join_over != 2))
+	{
+		int version;
+
+		p2p_lobby_watched(&version);
+		if (stage != P2P_JOIN_NONE)
+		{
+			char text[32];
+
+			if (stage == P2P_JOIN_VERSION)
+				snprintf(text, sizeof(text), " (%d; this machine's is %d)", version, HALO_PORT_NETWORK_VERSION);
+			else
+				text[0] = 0;
+			platform_log("Internet play: joining, %.1f s: %s%s%s",
+				(double)(unsigned int)(p2p_now() - p2p.join_begin_time) / 1000, join_stage_text(stage), text,
+				p2p.join_over ? "; gave up" : "");
+		}
+		p2p.join_stage = stage;
+		if (p2p.join_over)
+			p2p.join_over = 2;
 	}
 }
 
@@ -2846,6 +3074,29 @@ int p2p_peer_away(unsigned long address)
 	away = peer && peer->away;
 	pthread_mutex_unlock(&p2p_lock);
 	return away;
+}
+
+/* whether the brokers can be reached, for the menus, and in the log each
+time it changes for the worse or back */
+static void update_servers(void)
+{
+	int status = p2p_signal_status();
+
+	if (status == p2p.servers_status)
+		return;
+	if (status == HALO_INTERNET_SERVERS_UNREACHABLE)
+	{
+		platform_log("Internet play: no signalling broker can be reached (network.brokers_file; the network or a "
+			"firewall may block TCP to them): invites and the server browser cannot work until one is");
+	}
+	else if (status == HALO_INTERNET_SERVERS_REACHED && p2p.servers_status == HALO_INTERNET_SERVERS_UNREACHABLE)
+		platform_log("Internet play: a signalling broker is reached again");
+	p2p.servers_status = status;
+}
+
+int p2p_servers_status(void)
+{
+	return p2p.servers_status;
 }
 
 static int connected_player_count(void)
@@ -3421,6 +3672,32 @@ const char *p2p_take_clipboard_text(void)
 	return result;
 }
 
+int p2p_take_invite_taken(void)
+{
+	int taken;
+
+	if (!p2p.running)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	taken = p2p.invite_taken;
+	p2p.invite_taken = 0;
+	pthread_mutex_unlock(&p2p_lock);
+	return taken;
+}
+
+int p2p_take_join_failed(void)
+{
+	int failed;
+
+	if (!p2p.running)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	failed = p2p.join_failed;
+	p2p.join_failed = 0;
+	pthread_mutex_unlock(&p2p_lock);
+	return failed;
+}
+
 /* ---------- invites from elsewhere */
 
 /* the first command line argument holding an invite (or an older
@@ -3768,6 +4045,7 @@ static void *p2p_thread(void *unused)
 		update_code_joining();
 		update_answering();
 		update_reaching();
+		update_servers();
 		update_upnp();
 		update_away();
 		p2p_discord_update();
@@ -3822,6 +4100,7 @@ void p2p_initialize(unsigned long local_address)
 	{
 		platform_log("Internet play: cannot open its socket (network.tunnel_port %ld in use?); it is off",
 			tunnel_port);
+		start_failed();
 		return;
 	}
 #ifndef HALO_ILP32
@@ -3836,9 +4115,11 @@ void p2p_initialize(unsigned long local_address)
 	{
 		close_socket(&p2p.tunnel_socket);
 		close_socket(&p2p.handoff_socket);
+		start_failed();
 		return;
 	}
 	pthread_detach(thread);
+	p2p.start_failed = 0;
 	p2p.running = 1;
 	if (command_line_invite(invite, sizeof(invite)))
 		p2p_join_invite(invite);

@@ -65,6 +65,10 @@ boolean terminal_shows(short kind);
 /* port: whether a command someone typed is running (hs_compile_and_evaluate):
 what it logs, its errors too, is its answer, always shown */
 extern boolean terminal_command_running;
+/* port: the next line is a notice for the player (console_notice); the
+console's notices alone drawn (Apple builds, interface.c) */
+extern boolean terminal_port_notice_printing;
+void terminal_port_draw_notices(void);
 
 /* ---------- globals */
 

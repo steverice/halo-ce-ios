@@ -388,3 +388,38 @@ posix_ulong posix_resolve_ipv4(const char *host)
 	freeaddrinfo(results);
 	return address;
 }
+
+/* ---------- LAN discovery: broadcasts alone find games here */
+
+void posix_lan_discovery(int hosting, int searching, unsigned short version, posix_ulong fork)
+{
+	(void)hosting;
+	(void)searching;
+	(void)version;
+	(void)fork;
+}
+
+int posix_lan_peers(posix_ulong *addresses, int maximum_count)
+{
+	(void)addresses;
+	(void)maximum_count;
+	return 0;
+}
+
+int posix_lan_status(void)
+{
+	return _posix_lan_broadcast;
+}
+
+posix_ulong posix_lan_broadcast_address(void)
+{
+	return 0xFFFFFFFFu;
+}
+
+/* ---------- sharing: a desktop has the clipboard */
+
+int posix_share_link(const char *link)
+{
+	(void)link;
+	return 0;
+}

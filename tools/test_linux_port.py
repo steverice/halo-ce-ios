@@ -241,7 +241,7 @@ def test_menus_are_well_formed():
             where = f"{path.name}: <{element.tag} {element.get('name', '')}>"
             assert element.tag in MENU_ATTRIBUTES, where
             assert set(element.attrib) <= MENU_ATTRIBUTES[element.tag], where
-            assert element.get("platform") in (None, "desktop", "android", "quit", "mac_app"), where
+            assert element.get("platform") in (None, "desktop", "android", "apple", "quit", "mac_app"), where
             # (menu_files.c's whole numbers, which the tags keep in shorts,
             # its true/false attributes, and no text but whitespace outside
             # <string>s)
@@ -413,6 +413,24 @@ def test_network_format_is_the_recorded_one():
     assert not problems, "\n".join(problems)
 
 
+def test_direct_link_join_lines_fit():
+    """Direct Link's lines for an invite being joined (menu_functions.c's
+    direct_link_status), with two-digit numbers, are no longer than the line
+    the page already shows ("Copy an invite link and PASTE LINK, ..."), and
+    there is one for each of p2p.h's stages"""
+    root = MENUS.parent.parent.parent
+    functions = (root / "port/linux/game/menu_functions.c").read_text()
+    body = functions[functions.index("static void direct_link_status("):]
+    body = body[:body.index("\n}\n")]
+    lines = re.findall(r'L"([^"]*)"', body)
+    longest = len("Copy an invite link and PASTE LINK, or accept a Discord invite")
+    assert len(lines) >= 12
+    for line in lines:
+        assert len(line.replace("%d", "00")) <= longest, line
+    stages = re.findall(r"^\t(P2P_JOIN_[A-Z_]+),", (root / "port/linux/src/p2p.h").read_text(), re.M)
+    assert set(stages) - {"P2P_JOIN_NONE"} == set(re.findall(r"case (P2P_JOIN_[A-Z_]+):", body))
+
+
 # ---------- the tag validator (port/linux/game/tag_validate.c)
 
 RETAIL_MAPS = Path("assets/maps")
@@ -482,3 +500,34 @@ def test_custom_edition_loader_and_validator_survive_damaged_maps():
     result = subprocess.run([str(MAP_VALIDATE), "--fuzz", "100", "--seed", "1", *map(str, chosen)],
                             capture_output=True, text=True, timeout=3600)
     assert result.returncode == 0, (result.stdout + result.stderr)[-6000:]
+
+
+# ---------- the port's posix.h functions
+
+# the functions posix.h has for Apple builds' needs; every platform defines
+# them: the iOS host in port/ios/host, Linux and Windows as stubs
+PORT_POSIX_FUNCTIONS = (
+    "posix_lan_discovery",
+    "posix_lan_peers",
+    "posix_lan_status",
+    "posix_lan_broadcast_address",
+    "posix_share_link",
+)
+
+
+def _defines(name, paths):
+    pattern = re.compile(r"^[A-Za-z_][\w \*]*?\b" + name + r"\s*\([^;{]*\)\s*\{", re.M)
+    return any(pattern.search(path.read_text(errors="replace")) for path in paths)
+
+
+def test_port_posix_functions_are_defined_everywhere():
+    """each of PORT_POSIX_FUNCTIONS is declared in posix.h and defined in
+    posix_net.c (Linux), win32_net.c (Windows) and the iOS host"""
+    root = Path(__file__).resolve().parents[1]
+    header = (root / "port/linux/src/posix.h").read_text()
+    host = sorted((root / "port/ios/host").glob("*.[cm]"))
+    for name in PORT_POSIX_FUNCTIONS:
+        assert re.search(r"\b" + name + r"\s*\(", header), f"posix.h does not declare {name}"
+        assert _defines(name, [root / "port/linux/src/posix_net.c"]), f"posix_net.c does not define {name}"
+        assert _defines(name, [root / "port/windows/src/win32_net.c"]), f"win32_net.c does not define {name}"
+        assert _defines(name, host), f"port/ios/host does not define {name}"

@@ -107,7 +107,8 @@ void p2p_discord_sanitize(char *destination, int size, const char *source, int n
 void p2p_discord_identity(char *id, int id_size, char *name, int name_size);
 unsigned long p2p_peer_endpoint_address(unsigned long virtual_address);
 unsigned long system_milliseconds(void);
-void console_warning(const char *format, ...);
+/* (a red line meant for the player: Apple builds draw it, console.h) */
+void console_notice(const char *format, ...);
 
 /* the host: a client's game run faster than its clock (a speed hack, which
 speeds up the machine's own clock: nothing on it can tell), found by its
@@ -3476,7 +3477,7 @@ static void distributed_send_notice(
 		length = MAXIMUM_NOTICE_LENGTH - 1;
 	csmemset(&message, 0, sizeof(message));
 	csmemcpy(message.text, text, length);
-	console_warning("%s", message.text);
+	console_notice("%s", message.text);
 	error(_error_log, "%s", message.text);
 	distributed_send(&message, _distributed_message_notice, 0, (word)(sizeof(message.header) + length + 1),
 		_distributed_to_clients_reliably);
@@ -3747,7 +3748,7 @@ void network_distributed_ban(
 		distributed_send_notice(notice);
 	else
 	{
-		console_warning("%s", notice);
+		console_notice("%s", notice);
 		error(_error_log, "%s", notice);
 	}
 }
@@ -3768,7 +3769,7 @@ void network_distributed_kick(
 		distributed_send_notice(notice);
 	else
 	{
-		console_warning("%s", notice);
+		console_notice("%s", notice);
 		error(_error_log, "%s", notice);
 	}
 }
@@ -4167,7 +4168,7 @@ void network_distributed_handle_message(
 			if (text[index] < 32 || text[index] > 126)
 				text[index] = '?';
 		}
-		console_warning("%s", text);
+		console_notice("%s", text);
 		error(_error_log, "the host: %s", text);
 		break;
 	}

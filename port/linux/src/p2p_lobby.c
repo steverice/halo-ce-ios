@@ -83,6 +83,8 @@ enum
 		P2P_SIGNATURE_SIZE,
 	MAXIMUM_GAMES = 256,
 	MAXIMUM_TOMBSTONES = 256,
+	/* the games of other network versions counted (p2p_lobby_other_versions) */
+	MAXIMUM_OTHERS = 64,
 	MAXIMUM_QUEUED = 64,
 
 	/* milliseconds */
@@ -140,6 +142,17 @@ struct tombstone
 	unsigned long time;
 };
 
+/* a public game of another network version, which the list leaves out: its
+signature is not checked (a count for the player's eyes, which lets no one
+in), and it is forgotten as a game is */
+struct other
+{
+	int used;
+	unsigned char key_hash[P2P_KEY_HASH_SIZE];
+	int version;
+	unsigned long heard_time;
+};
+
 struct queued
 {
 	unsigned char key_hash[P2P_KEY_HASH_SIZE];
@@ -182,9 +195,23 @@ static struct
 	struct game games[MAXIMUM_GAMES];
 	struct tombstone tombstones[MAXIMUM_TOMBSTONES];
 	int next_tombstone;
+	struct other others[MAXIMUM_OTHERS];
 	/* the identifiers of games joining failed */
 	unsigned char failed[MAXIMUM_GAMES][P2P_IDENTIFIER_SIZE];
 	int failed_count;
+
+	/* an invite being joined (p2p_lobby_watch): its host's key hash and
+	the token; what its slot held (P2P_WATCH_*), of which version, from
+	which sequence; the last payload checked, and when */
+	int watching;
+	unsigned char watch_hash[P2P_KEY_HASH_SIZE];
+	unsigned char watch_token[P2P_TOKEN_SIZE];
+	int watched;
+	int watched_version;
+	unsigned long watched_sequence;
+	unsigned char watch_payload[MAXIMUM_LISTING_SIZE];
+	int watch_payload_size;
+	unsigned long watch_checked_time;
 } lobby;
 
 static int elapsed(unsigned long since, unsigned long time)
@@ -513,6 +540,112 @@ static int identifier_failed(const unsigned char *identifier)
 	return 0;
 }
 
+/* a listing on the slot of the host of an invite being joined: what it
+says of the invite's game, if it is the host's own (signed) and of about
+now. Checked at once (it is one listing, not the browser's many), but
+anyone can publish to the slot: a payload checked already is not checked
+again, nor is one within a few milliseconds of the last */
+static void watched_slot_heard(const unsigned char *payload, int size, int retained)
+{
+	struct listing listing;
+	unsigned char key_hash[P2P_KEY_HASH_SIZE];
+	int watched;
+
+	if (size < MINIMUM_LISTING_SIZE || size > MAXIMUM_LISTING_SIZE ||
+		(size == lobby.watch_payload_size && !memcmp(payload, lobby.watch_payload, (size_t)size)) ||
+		(lobby.watch_checked_time && !elapsed(lobby.watch_checked_time, VERIFY_BUDGET)))
+	{
+		return;
+	}
+	memcpy(lobby.watch_payload, payload, (size_t)size);
+	lobby.watch_payload_size = size;
+	lobby.watch_checked_time = p2p_now() | 1;
+	if (!listing_read(payload, size, &listing) || !signing_key_hash(listing.key, key_hash) ||
+		memcmp(key_hash, lobby.watch_hash, P2P_KEY_HASH_SIZE) ||
+		(lobby.watched && listing.sequence <= lobby.watched_sequence))
+	{
+		return;
+	}
+	if (retained)
+	{
+		long difference = (long)(listing.time - (unsigned long)time(NULL));
+
+		if (difference > RETAINED_WINDOW || difference < -RETAINED_WINDOW)
+			return;
+	}
+	if (!listing_signed(payload, &listing))
+		return;
+	watched = listing.flags & _listing_closed ? P2P_WATCH_ENDED :
+		!(listing.flags & _listing_password) && memcmp(listing.token, lobby.watch_token, P2P_TOKEN_SIZE) ?
+		P2P_WATCH_NEW_INVITE : P2P_WATCH_LISTED;
+	if (watched != lobby.watched || listing.version != lobby.watched_version)
+	{
+		platform_log("Internet play: the invite's host lists its game: %s, network version %d (this "
+			"machine's is %d)", watched == P2P_WATCH_ENDED ? "ended" : watched == P2P_WATCH_NEW_INVITE ?
+			"under a newer invite" : "running", listing.version, HALO_PORT_NETWORK_VERSION);
+	}
+	lobby.watched = watched;
+	lobby.watched_version = listing.version;
+	lobby.watched_sequence = listing.sequence;
+}
+
+void p2p_lobby_watch(const unsigned char *key_hash, const unsigned char *token)
+{
+	if (key_hash && lobby.watching && !memcmp(key_hash, lobby.watch_hash, P2P_KEY_HASH_SIZE) &&
+		!memcmp(token, lobby.watch_token, P2P_TOKEN_SIZE))
+	{
+		return;
+	}
+	lobby.watching = key_hash != NULL;
+	lobby.watched = P2P_WATCH_NONE;
+	lobby.watched_version = 0;
+	lobby.watched_sequence = 0;
+	lobby.watch_payload_size = 0;
+	if (key_hash)
+	{
+		memcpy(lobby.watch_hash, key_hash, P2P_KEY_HASH_SIZE);
+		memcpy(lobby.watch_token, token, P2P_TOKEN_SIZE);
+	}
+}
+
+int p2p_lobby_watched(int *version)
+{
+	*version = lobby.watching ? lobby.watched_version : 0;
+	return lobby.watching ? lobby.watched : P2P_WATCH_NONE;
+}
+
+int p2p_join_stage(const struct p2p_join_facts *facts)
+{
+	if (facts->connected)
+		return P2P_JOIN_CONNECTED;
+	/* (the host's own word, signed: as soon as it comes) */
+	if (facts->watched == P2P_WATCH_ENDED)
+		return P2P_JOIN_ENDED;
+	if (facts->watched == P2P_WATCH_NEW_INVITE)
+		return P2P_JOIN_NEW_INVITE;
+	if (facts->watched == P2P_WATCH_LISTED && facts->host_version != facts->version)
+		return P2P_JOIN_VERSION;
+	if (facts->answered)
+	{
+		if (!facts->punch_failures && !facts->over)
+			return P2P_JOIN_REACHING;
+		return facts->local_refused ? P2P_JOIN_LOCAL_NETWORK : P2P_JOIN_NO_DIRECT;
+	}
+	if (!facts->broker_reached)
+	{
+		if (facts->over || !facts->brokers || facts->brokers_failed >= facts->brokers ||
+			facts->elapsed >= P2P_JOIN_BROKER_WAIT)
+		{
+			return P2P_JOIN_NO_SERVER;
+		}
+		return P2P_JOIN_STARTING;
+	}
+	/* (a host whose listing is heard is there: it may be busy) */
+	if (facts->over || (facts->watched != P2P_WATCH_LISTED && facts->since_broker >= P2P_JOIN_ANSWER_WAIT))
+		return P2P_JOIN_NOT_FOUND;
+	return P2P_JOIN_ASKING;
+}
+
 void p2p_lobby_slot_heard(const char *hash_text, const unsigned char *payload, int size, int retained)
 {
 	unsigned char key_hash[P2P_KEY_HASH_SIZE];
@@ -536,6 +669,8 @@ void p2p_lobby_slot_heard(const char *hash_text, const unsigned char *payload, i
 		if (!memcmp(own, key_hash, P2P_KEY_HASH_SIZE))
 			own_slot_heard(payload, size, retained);
 	}
+	if (lobby.watching && !memcmp(key_hash, lobby.watch_hash, P2P_KEY_HASH_SIZE))
+		watched_slot_heard(payload, size, retained);
 	/* (an emptied slot is no news: a wipe is not a delete) */
 	if (!lobby.browsing || size < MINIMUM_LISTING_SIZE || size > MAXIMUM_LISTING_SIZE)
 		return;
@@ -643,6 +778,57 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->ping = -1;
 }
 
+/* whether a slot's retained copy is of about now (a host that died left
+it, and nothing cleared it) */
+static int retained_is_current(const struct listing *listing)
+{
+	long difference = (long)(listing->time - (unsigned long)time(NULL));
+
+	return difference <= RETAINED_WINDOW && difference >= -RETAINED_WINDOW;
+}
+
+/* a listing of another network version: counted, or (a tombstone) no
+longer */
+static void other_heard(const struct queued *queued, const struct listing *listing)
+{
+	unsigned long now = p2p_now();
+	struct other *other = NULL;
+	int index;
+
+	if (queued->retained && !retained_is_current(listing))
+		return;
+	for (index = 0; index < MAXIMUM_OTHERS && !other; index++)
+	{
+		if (lobby.others[index].used && !memcmp(lobby.others[index].key_hash, queued->key_hash, P2P_KEY_HASH_SIZE))
+			other = &lobby.others[index];
+	}
+	if (listing->flags & _listing_closed)
+	{
+		if (other)
+			other->used = 0;
+		return;
+	}
+	/* (a new one: a free place, else that of the one heard longest ago) */
+	for (index = 0; index < MAXIMUM_OTHERS && !other; index++)
+	{
+		if (!lobby.others[index].used)
+			other = &lobby.others[index];
+	}
+	if (!other)
+	{
+		other = &lobby.others[0];
+		for (index = 1; index < MAXIMUM_OTHERS; index++)
+		{
+			if ((unsigned int)(now - lobby.others[index].heard_time) > (unsigned int)(now - other->heard_time))
+				other = &lobby.others[index];
+		}
+	}
+	other->used = 1;
+	memcpy(other->key_hash, queued->key_hash, P2P_KEY_HASH_SIZE);
+	other->version = listing->version;
+	other->heard_time = now;
+}
+
 static void update_browsing(void)
 {
 	unsigned long start = p2p_now();
@@ -662,20 +848,18 @@ static void update_browsing(void)
 		int good;
 
 		memmove(lobby.queue, lobby.queue + 1, sizeof(*lobby.queue) * (size_t)(--lobby.queue_count));
-		if (!listing_read(queued.payload, queued.size, &listing) || listing.version != HALO_PORT_NETWORK_VERSION ||
-			!signing_key_hash(listing.key, key_hash) || memcmp(key_hash, queued.key_hash, P2P_KEY_HASH_SIZE))
+		if (!listing_read(queued.payload, queued.size, &listing))
+			continue;
+		if (listing.version != HALO_PORT_NETWORK_VERSION)
 		{
+			other_heard(&queued, &listing);
 			continue;
 		}
-		/* a slot's retained copy: only one of about now (a host that died
-		left it, and nothing cleared it) */
-		if (queued.retained)
-		{
-			long difference = (long)(listing.time - (unsigned long)time(NULL));
-
-			if (difference > RETAINED_WINDOW || difference < -RETAINED_WINDOW)
-				continue;
-		}
+		if (!signing_key_hash(listing.key, key_hash) || memcmp(key_hash, queued.key_hash, P2P_KEY_HASH_SIZE))
+			continue;
+		/* a slot's retained copy: only one of about now */
+		if (queued.retained && !retained_is_current(&listing))
+			continue;
 		/* (the work, without the lock: the game's threads need not wait) */
 		pthread_mutex_unlock(&p2p_lock);
 		good = listing_signed(queued.payload, &listing);
@@ -689,6 +873,11 @@ static void update_browsing(void)
 	{
 		if (lobby.games[index].used && elapsed(lobby.games[index].heard_time, GAME_EXPIRY))
 			lobby.games[index].used = 0;
+	}
+	for (index = 0; index < MAXIMUM_OTHERS; index++)
+	{
+		if (lobby.others[index].used && elapsed(lobby.others[index].heard_time, GAME_EXPIRY))
+			lobby.others[index].used = 0;
 	}
 }
 
@@ -794,6 +983,7 @@ void p2p_lobby_browse(int on)
 		if (!on)
 		{
 			memset(lobby.games, 0, sizeof(lobby.games));
+			memset(lobby.others, 0, sizeof(lobby.others));
 			lobby.queue_count = 0;
 		}
 		lobby.query_wanted = on;
@@ -847,6 +1037,24 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 	pthread_mutex_unlock(&p2p_lock);
 	qsort(games, (size_t)count, sizeof(*games), listing_order);
 	return count;
+}
+
+void p2p_lobby_other_versions(int *newer, int *older)
+{
+	int index;
+
+	*newer = *older = 0;
+	pthread_mutex_lock(&p2p_lock);
+	for (index = 0; index < MAXIMUM_OTHERS; index++)
+	{
+		if (!lobby.others[index].used)
+			continue;
+		if (lobby.others[index].version > HALO_PORT_NETWORK_VERSION)
+			(*newer)++;
+		else
+			(*older)++;
+	}
+	pthread_mutex_unlock(&p2p_lock);
 }
 
 int p2p_listing_unlock(struct p2p_listing *listing, const char *password)

@@ -72,6 +72,7 @@ answered it in a while.
 #include "posix.h"
 #include "port_config.h"
 #include "p2p_internal.h"
+#include "halo_internet.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -184,6 +185,9 @@ enum
 	_topic_slots,
 	/* a join code being looked up (p2p.c, "join codes") */
 	_topic_code,
+	/* joining: the host's slot, whose listing (a public game's) tells
+	whether its game still runs, and its version (p2p_lobby_watch) */
+	_topic_join_slot,
 };
 
 /* MQTT 5's properties */
@@ -226,6 +230,8 @@ struct broker
 	int wildcard_available;
 	/* seconds; its own if it said */
 	int keep_alive;
+	/* whether it was reached this run (said once) */
+	int heard_ready;
 	int receive_maximum;
 	/* the bucket its publishes spend from */
 	int publish_tokens;
@@ -329,6 +335,9 @@ struct used_request
 static struct
 {
 	int started;
+	/* when a broker was last reached, or signalling began if none has been
+	(p2p_signal_status) */
+	unsigned long reached_time;
 	struct broker brokers[MAXIMUM_BROKERS];
 	int broker_count;
 	char client_identifier[24];
@@ -379,6 +388,8 @@ static struct
 	unsigned char join_token[P2P_TOKEN_SIZE];
 	unsigned char join_key[P2P_SHA256_SIZE];
 	char join_topic[TOPIC_SIZE];
+	/* the invite's host's slot, whose listing a join watches (_topic_join_slot) */
+	char join_slot[TOPIC_SIZE];
 } signalling;
 
 static int elapsed(unsigned long since, unsigned long time)
@@ -467,6 +478,18 @@ static void broker_close(struct broker *broker, int failed)
 	broker->query_pending = 0;
 	if (failed)
 		broker->failures++;
+}
+
+/* a broker not reached, or lost: said once until it is reached again (it
+is tried again and again) */
+static void broker_fail(struct broker *broker, const char *why)
+{
+	if (!broker->failures)
+	{
+		platform_log("Internet play: the signalling broker %s:%u %s; trying it again later", broker->host,
+			(unsigned)network_short(broker->port), why);
+	}
+	broker_close(broker, 1);
 }
 
 static void broker_flush(struct broker *broker)
@@ -701,6 +724,7 @@ static void broker_sync_topics(struct broker *broker)
 	wanted[_topic_query] = lobby && signalling.lobby_listed ? P2P_LOBBY_QUERY_TOPIC : "";
 	wanted[_topic_slots] = lobby && signalling.lobby_browsing ? P2P_LOBBY_SLOT_PREFIX "+" : "";
 	wanted[_topic_code] = broker->retain_available ? signalling.code_join_topic : "";
+	wanted[_topic_join_slot] = broker->retain_available && signalling.joins[0].active ? signalling.join_slot : "";
 	for (index = 0; index < NUMBER_OF_TOPICS; index++)
 	{
 		char *had = broker->topics[index];
@@ -876,7 +900,7 @@ static void broker_connect(struct broker *broker)
 	broker->socket = posix_socket(AF_INET, SOCK_STREAM, 0);
 	if (broker->socket < 0)
 	{
-		broker_close(broker, 1);
+		broker_fail(broker, "cannot be reached (no socket)");
 		return;
 	}
 	posix_socket_set_nonblocking(broker->socket, 1);
@@ -895,7 +919,12 @@ static void broker_connect(struct broker *broker)
 		int error = posix_socket_last_error();
 
 		if (error != WSAEWOULDBLOCK && error != WSAEINPROGRESS)
-			broker_close(broker, 1);
+		{
+			char why[64];
+
+			snprintf(why, sizeof(why), "cannot be reached (error %d)", error);
+			broker_fail(broker, why);
+		}
 	}
 }
 
@@ -1620,6 +1649,12 @@ static int broker_acknowledged(struct broker *broker, const unsigned char *body,
 			}
 		}
 	}
+	if (broker->failures || !broker->heard_ready)
+	{
+		platform_log("Internet play: reached the signalling broker %s:%u (MQTT %s)", broker->host,
+			(unsigned)network_short(broker->port), broker->protocol == 5 ? "5" : "3.1.1");
+		broker->heard_ready = 1;
+	}
 	broker->state = _broker_ready;
 	broker->failures = 0;
 	/* (a new connection: the join code's record is published again at once) */
@@ -1754,7 +1789,8 @@ static void broker_readable(struct broker *broker)
 
 		if (size == 0)
 		{
-			broker_close(broker, 1);
+			broker_fail(broker, broker->state == _broker_ready ? "closed the connection" :
+				"closed the connection before answering (a connection a network or firewall cut?)");
 			return;
 		}
 		if (size < 0)
@@ -1762,7 +1798,12 @@ static void broker_readable(struct broker *broker)
 			int error = posix_socket_last_error();
 
 			if (error != WSAEWOULDBLOCK && error != WSAEINPROGRESS)
-				broker_close(broker, 1);
+			{
+				char why[64];
+
+				snprintf(why, sizeof(why), "lost the connection (error %d)", error);
+				broker_fail(broker, why);
+			}
 			return;
 		}
 		broker->input_size += size;
@@ -1839,6 +1880,7 @@ void p2p_signal_start(void)
 	if (signalling.started)
 		return;
 	signalling.started = 1;
+	signalling.reached_time = p2p_now();
 	posix_random_bytes(random, sizeof(random));
 	p2p_hex(random, sizeof(random), hex);
 	snprintf(signalling.client_identifier, sizeof(signalling.client_identifier), "hceu-%s", hex);
@@ -1937,11 +1979,11 @@ void p2p_signal_update(const int *read, int read_count, const int *write, int wr
 			if (list_holds(write, write_count, broker->socket))
 				broker_connected(broker);
 			else if (elapsed(broker->state_time, CONNECT_TIMEOUT))
-				broker_close(broker, 1);
+				broker_fail(broker, "did not answer the connection in 10 seconds");
 			break;
 		case _broker_awaiting_acknowledgement:
 			if (elapsed(broker->state_time, CONNECT_TIMEOUT))
-				broker_close(broker, 1);
+				broker_fail(broker, "took the connection but did not answer MQTT in 10 seconds");
 			break;
 		}
 		if (broker->socket < 0 || broker->state == _broker_connecting)
@@ -1955,7 +1997,7 @@ void p2p_signal_update(const int *read, int read_count, const int *write, int wr
 		if (elapsed(broker->heard_time, (unsigned long)broker->keep_alive * 1500 > SILENCE_TIMEOUT ?
 			(unsigned long)broker->keep_alive * 1500 : SILENCE_TIMEOUT))
 		{
-			broker_close(broker, 1);
+			broker_fail(broker, "fell silent");
 			continue;
 		}
 		if (elapsed(broker->sent_time, (unsigned long)broker->keep_alive * 500 < PING_INTERVAL ?
@@ -2012,6 +2054,31 @@ void p2p_signal_reconnect(void)
 	}
 }
 
+int p2p_signal_brokers_failed(int *count)
+{
+	int failed = 0;
+	int index;
+
+	for (index = 0; index < signalling.broker_count; index++)
+		failed += signalling.brokers[index].failures > 0;
+	*count = signalling.broker_count;
+	return failed;
+}
+
+int p2p_signal_status(void)
+{
+	int count, failed, connected;
+
+	if (!signalling.started)
+		return HALO_INTERNET_SERVERS_NONE;
+	connected = p2p_signal_connected();
+	if (connected)
+		signalling.reached_time = p2p_now();
+	failed = p2p_signal_brokers_failed(&count);
+	return halo_internet_servers(1, count, failed, connected,
+		(unsigned long)(unsigned int)(p2p_now() - signalling.reached_time));
+}
+
 static void sync_all_topics(void)
 {
 	int index;
@@ -2053,6 +2120,7 @@ void p2p_signal_join(const unsigned char *host_hash, const unsigned char *token)
 	memcpy(signalling.join_token, token, P2P_TOKEN_SIZE);
 	derive(token, "seal", NULL, signalling.join_key);
 	make_topic(token, "joiner", p2p_identifier(), signalling.join_topic);
+	p2p_lobby_slot_topic(host_hash, signalling.join_slot, sizeof(signalling.join_slot));
 	/* (new each time: the host makes one session of a request; a browser's
 	connection for the last goes, unless a session took it up) */
 	p2p_webrtc_new_request();

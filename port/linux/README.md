@@ -471,6 +471,31 @@ When the machines connect, the game of the host shows in Multiplayer,
 System Link. Join the game as on a local network. System link on a local
 network does not need an invite.
 
+While the game joins an invite, Join Game > Direct Link shows each step,
+and what went wrong as soon as the game knows it. The log has the same
+steps, with the seconds since the invite came:
+
+- "reaching the matchmaking servers": the game connects to the brokers.
+  If it cannot reach any broker in 12 seconds (or all of them fail), the
+  page says so.
+- "looking for the host's game": the game asks the host through the
+  brokers. A host answers in a second or two. If no answer comes in 20
+  seconds, the game of the host was not found: it ended, or the host quit.
+  The brokers cannot tell which. A public game's listing (refer to "Server
+  browser") tells more: it ended, the invite is old (the host made a new
+  one), or the host has another network version. The game tells these at
+  once.
+- "found the host: connecting directly": the two machines send packets to
+  each other (refer to "Connection"). If no packet gets through in 30
+  seconds, the networks cannot connect directly. If the system refused
+  the packets to the host's address on the local network, the page asks
+  for the Local Network permission (Apple's systems).
+
+The game asks again until 90 seconds pass, so a step can still succeed
+after the page shows a problem. `python3 tools/p2p_broker_probe.py
+[invite link]` checks the brokers and STUN servers from a computer's
+network, and finds the public listing of the host of an invite.
+
 ### Server browser
 
 Server Setup in Create Game > Internet has a LISTING row:

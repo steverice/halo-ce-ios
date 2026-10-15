@@ -11,10 +11,15 @@ a browser (this program again): taken, and a tampered one, one on another's
 slot, an older one, a retained one of long ago, a tombstone and a listing
 older than it each handled as they must be; and a game with a password,
 listed locked (its token nowhere in the listing), opened by its password
-alone. Prints PASS or the failures.
+alone. Then the host of an invite being joined, watched on its slot
+(p2p_lobby_watch): its listing, one of another invite, of another network
+version, a tombstone, and tampered or old ones; and the stages Direct Link
+shows (p2p_join_stage) from what is known of a join. Prints PASS or the
+failures.
 */
 
 #include "p2p_internal.h"
+#include "halo_port_limits.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -317,10 +322,157 @@ static void lobby_checks(void)
 		"a game whose password is taken off is listed open");
 }
 
+/* the host's listing signed again after a change (as a host of that
+version would have signed it) */
+static void sign_again(unsigned char *bytes, int size)
+{
+	static const char label[] = "hceu-lobby-1";
+	unsigned char data[sizeof(label) - 1 + 512];
+	int signed_size = size - P2P_SIGNATURE_SIZE;
+
+	memcpy(data, label, sizeof(label) - 1);
+	memcpy(data + sizeof(label) - 1, bytes, (size_t)signed_size);
+	p2p_sign(data, (int)(sizeof(label) - 1) + signed_size, bytes + signed_size);
+}
+
+static int watched(int *version)
+{
+	int result;
+
+	pthread_mutex_lock(&p2p_lock);
+	result = p2p_lobby_watched(version);
+	pthread_mutex_unlock(&p2p_lock);
+	return result;
+}
+
+/* the slot of the host of an invite being joined, browsing or not */
+static void watch_checks(void)
+{
+	static const unsigned char token[P2P_TOKEN_SIZE] = { 7, 7, 7 };
+	static const unsigned char old_token[P2P_TOKEN_SIZE] = { 8, 8, 8 };
+	unsigned char hash[P2P_KEY_HASH_SIZE], bytes[512];
+	int version = -1;
+
+	p2p_key_hash(x25519_public, hash);
+	p2p_lobby_browse(0);
+	p2p_lobby_watch(hash, token);
+	check(watched(&version) == P2P_WATCH_NONE && version == 0, "nothing heard of a watched host at first");
+	/* its listing (hosting public, as lobby_checks left it) */
+	p2p_set_game_listing("Watched", NULL, NULL, 2, 1, 0, 1);
+	clock_now += 6000;
+	lobby_update(token, 3, 16);
+	clock_now += 10;
+	hear(published, published_size, 0, NULL);
+	check(watched(&version) == P2P_WATCH_LISTED && version == HALO_PORT_NETWORK_VERSION,
+		"a watched host's listing is heard, with its version, while not browsing");
+	/* tampered (another version, the old signature): no change */
+	memcpy(bytes, published, (size_t)published_size);
+	bytes[4] = (unsigned char)(bytes[4] + 2);
+	bytes[9] = (unsigned char)(bytes[9] + 50);
+	clock_now += 10;
+	hear(bytes, published_size, 0, NULL);
+	check(watched(&version) == P2P_WATCH_LISTED && version == HALO_PORT_NETWORK_VERSION,
+		"a tampered listing on a watched slot is ignored");
+	/* the same, signed by the host: a host of another version */
+	sign_again(bytes, published_size);
+	clock_now += 10;
+	hear(bytes, published_size, 0, NULL);
+	check(watched(&version) == P2P_WATCH_LISTED && version == HALO_PORT_NETWORK_VERSION + 2,
+		"a watched host of another version is told");
+	/* a retained copy of long ago: ignored */
+	memcpy(bytes, published, (size_t)published_size);
+	bytes[9] = (unsigned char)(bytes[9] + 100);
+	bytes[10] = (unsigned char)(bytes[10] - 1);
+	sign_again(bytes, published_size);
+	/* (watching the same invite again keeps what was heard: anew) */
+	p2p_lobby_watch(hash, token);
+	check(watched(&version) == P2P_WATCH_LISTED, "watching the same invite again keeps what was heard");
+	p2p_lobby_watch(NULL, NULL);
+	p2p_lobby_watch(hash, token);
+	clock_now += 10;
+	hear(bytes, published_size, 1, NULL);
+	check(watched(&version) == P2P_WATCH_NONE, "a watched slot's retained listing of long ago is ignored");
+	/* an older invite of the host's: its listing holds another token */
+	p2p_lobby_watch(hash, old_token);
+	clock_now += 10;
+	hear(published, published_size, 0, NULL);
+	check(watched(&version) == P2P_WATCH_NEW_INVITE, "a listing of another invite says this one is old");
+	/* on another's slot: nothing */
+	p2p_lobby_watch(NULL, NULL);
+	p2p_lobby_watch(hash, token);
+	clock_now += 10;
+	hear(published, published_size, 0, "00112233445566778899aabbccddeeff");
+	check(watched(&version) == P2P_WATCH_NONE, "a listing on another slot is not the watched host's");
+	/* the host stops: its tombstone */
+	p2p_set_hosting_public(0);
+	clock_now += 6000;
+	lobby_update(token, 3, 16);
+	clock_now += 10;
+	hear(published, published_size, 0, NULL);
+	check(published_closing && watched(&version) == P2P_WATCH_ENDED, "a watched host's tombstone ends its game");
+	/* watching stopped */
+	p2p_lobby_watch(NULL, NULL);
+	check(watched(&version) == P2P_WATCH_NONE && version == 0, "nothing is watched once joining ends");
+}
+
+/* the stage of a join from what is known of it */
+static void stage_checks(void)
+{
+	struct p2p_join_facts facts;
+
+	memset(&facts, 0, sizeof(facts));
+	facts.version = HALO_PORT_NETWORK_VERSION;
+	facts.brokers = 4;
+	check(p2p_join_stage(&facts) == P2P_JOIN_STARTING, "a join begins reaching the brokers");
+	facts.brokers_failed = 3;
+	facts.elapsed = 11000;
+	check(p2p_join_stage(&facts) == P2P_JOIN_STARTING, "one broker still being tried is waited for");
+	facts.brokers_failed = 4;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NO_SERVER, "every broker failed: no server, at once");
+	facts.brokers_failed = 0;
+	facts.elapsed = P2P_JOIN_BROKER_WAIT;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NO_SERVER, "no broker reached in time: no server");
+	facts.brokers = 0;
+	facts.elapsed = 0;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NO_SERVER, "no brokers at all: no server");
+	facts.brokers = 4;
+	facts.broker_reached = 1;
+	facts.elapsed = 13000;
+	check(p2p_join_stage(&facts) == P2P_JOIN_ASKING, "a broker reached: asking the host");
+	facts.since_broker = P2P_JOIN_ANSWER_WAIT;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NOT_FOUND, "no answer in 20 s: not found");
+	facts.watched = P2P_WATCH_LISTED;
+	facts.host_version = HALO_PORT_NETWORK_VERSION;
+	check(p2p_join_stage(&facts) == P2P_JOIN_ASKING, "a host whose listing is heard is still asked");
+	facts.over = 1;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NOT_FOUND, "given up without an answer: not found");
+	facts.over = 0;
+	facts.host_version = HALO_PORT_NETWORK_VERSION + 3;
+	check(p2p_join_stage(&facts) == P2P_JOIN_VERSION, "a listing of another version: told at once");
+	facts.watched = P2P_WATCH_ENDED;
+	check(p2p_join_stage(&facts) == P2P_JOIN_ENDED, "a tombstone: ended");
+	facts.watched = P2P_WATCH_NEW_INVITE;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NEW_INVITE, "a listing of a newer invite: old invite");
+	facts.watched = P2P_WATCH_NONE;
+	facts.answered = 1;
+	check(p2p_join_stage(&facts) == P2P_JOIN_REACHING, "the host answered: reaching it");
+	facts.punch_failures = 1;
+	check(p2p_join_stage(&facts) == P2P_JOIN_NO_DIRECT, "a punch failed: no direct connection, at once");
+	facts.local_refused = 1;
+	check(p2p_join_stage(&facts) == P2P_JOIN_LOCAL_NETWORK, "sends to the local network refused: the permission");
+	facts.connected = 1;
+	check(p2p_join_stage(&facts) == P2P_JOIN_CONNECTED, "reached: connected");
+	facts.brokers_failed = 4;
+	facts.broker_reached = 0;
+	check(p2p_join_stage(&facts) == P2P_JOIN_CONNECTED, "reached, whatever the brokers do after");
+}
+
 int main(void)
 {
 	crypto_checks();
 	lobby_checks();
+	watch_checks();
+	stage_checks();
 	printf("%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
 	return failures != 0;
 }

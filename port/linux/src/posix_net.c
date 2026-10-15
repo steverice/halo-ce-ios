@@ -465,6 +465,50 @@ static posix_ulong interface_address(unsigned int flags)
 	return result;
 }
 
+#if defined(HALO_IOS)
+#include "halo_interface_rank.h"
+#include "host.h"
+
+/* the best-ranked interface's IPv4 address and netmask (halo_interface_rank.h,
+network byte order); 0 if none (the iOS host's: system link's address, and
+host_bonjour.m's subnet broadcast) */
+int host_ranked_interface(uint32_t *address, uint32_t *netmask)
+{
+	static char logged[IFNAMSIZ + 1];
+	char chosen[IFNAMSIZ + 1] = "";
+	struct ifaddrs *addresses, *entry;
+	int best = -1;
+
+	if (getifaddrs(&addresses) != 0)
+		return 0;
+	for (entry = addresses; entry; entry = entry->ifa_next)
+	{
+		int rank;
+
+		if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET || !entry->ifa_netmask)
+			continue;
+		rank = halo_interface_rank(entry->ifa_name, entry->ifa_flags);
+		if (rank < 0 || (best >= 0 && rank >= best))
+			continue;
+		best = rank;
+		*address = ((struct sockaddr_in *)entry->ifa_addr)->sin_addr.s_addr;
+		*netmask = ((struct sockaddr_in *)entry->ifa_netmask)->sin_addr.s_addr;
+		snprintf(chosen, sizeof(chosen), "%s", entry->ifa_name);
+	}
+	freeifaddrs(addresses);
+	/* (once a run, and again when the choice changes) */
+	if (best >= 0 && strcmp(chosen, logged))
+	{
+		unsigned char *bytes = (unsigned char *)address;
+
+		snprintf(logged, sizeof(logged), "%s", chosen);
+		host_logf(HOST_LOG_INFO, "system link interface %s, %u.%u.%u.%u", chosen, bytes[0], bytes[1], bytes[2],
+			bytes[3]);
+	}
+	return best >= 0;
+}
+#endif
+
 posix_ulong posix_local_ipv4_address(void)
 {
 	struct sockaddr_in route;
@@ -480,6 +524,17 @@ posix_ulong posix_local_ipv4_address(void)
 	result = interface_address(IFF_BROADCAST);
 	if (result)
 		return result;
+#endif
+#if defined(HALO_IOS)
+	/* the same reason on an iPhone (cellular is its default route on Wi-Fi
+	without the internet, or while it shares its connection), and the order
+	matters: a Developer Strap or a USB adapter may come before Wi-Fi */
+	{
+		uint32_t address, netmask;
+
+		if (host_ranked_interface(&address, &netmask))
+			return address;
+	}
 #endif
 	/* the address the default route leaves from: a UDP socket "connected"
 	to an internet address (a documentation one; nothing is sent) has it */
@@ -854,3 +909,41 @@ void posix_discord_close(int handle)
 	if (handle >= 0)
 		close(handle);
 }
+
+#if !defined(HALO_IOS)
+/* ---------- LAN discovery (the iOS host's are port/ios/host/host_bonjour.m):
+broadcasts alone find games here */
+
+void posix_lan_discovery(int hosting, int searching, unsigned short version, posix_ulong fork)
+{
+	(void)hosting;
+	(void)searching;
+	(void)version;
+	(void)fork;
+}
+
+int posix_lan_peers(posix_ulong *addresses, int maximum_count)
+{
+	(void)addresses;
+	(void)maximum_count;
+	return 0;
+}
+
+int posix_lan_status(void)
+{
+	return _posix_lan_broadcast;
+}
+
+posix_ulong posix_lan_broadcast_address(void)
+{
+	return 0xFFFFFFFFu;
+}
+
+/* ---------- sharing: a desktop has the clipboard */
+
+int posix_share_link(const char *link)
+{
+	(void)link;
+	return 0;
+}
+#endif

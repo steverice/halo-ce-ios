@@ -23,6 +23,7 @@ so the audio callback is handed to a thread that has one.
 #include <pthread.h>
 #include <string.h>
 #include "ios_host.h"
+#include "host_join_link.h"
 
 #define HANDLE_COUNT 256
 
@@ -237,6 +238,29 @@ void host_extra_scene_test(void);
 
 /* (the system's keyboard, below) */
 static void text_input_update(void);
+/* while a share sheet is up (host_window_up) the player's presses and
+movements are the sheet's, not the game's: the game gets the releases alone,
+so nothing stays held */
+static int held_back(const SDL_Event *event)
+{
+	if (!host_window_up())
+		return 0;
+	switch (event->type)
+	{
+	case SDL_EVENT_KEY_DOWN:
+	case SDL_EVENT_TEXT_INPUT:
+	case SDL_EVENT_MOUSE_MOTION:
+	case SDL_EVENT_MOUSE_BUTTON_DOWN:
+	case SDL_EVENT_MOUSE_WHEEL:
+	case SDL_EVENT_FINGER_DOWN:
+	case SDL_EVENT_FINGER_MOTION:
+	case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+	case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+		return 1;
+	default:
+		return 0;
+	}
+}
 
 int host_sdl_poll_event(void *event)
 {
@@ -287,8 +311,14 @@ int host_sdl_poll_event(void *event)
 	(void)polls;
 #endif
 	text_input_update();
-	if (!SDL_PollEvent(&host_event))
-		return 0;
+	/* (a malformed join link's message, between frames: host_join_link.c) */
+	host_join_link_poll();
+	do
+	{
+		if (!SDL_PollEvent(&host_event))
+			return 0;
+	}
+	while (held_back(&host_event));
 	/* the layouts agree except for the pointers of text, drop and user
 	events, which the guest does not read */
 	memcpy(event, &host_event, sizeof(host_event));
@@ -321,14 +351,16 @@ int host_sdl_gamepad_axis(uint32_t gamepad, int axis)
 {
 	SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
-	return object ? host_ios_gamepad_axis(object, axis) : 0;
+	/* (at rest while a share sheet is up) */
+	return object && !host_window_up() ? host_ios_gamepad_axis(object, axis) : 0;
 }
 
 int host_sdl_gamepad_button(uint32_t gamepad, int button)
 {
 	SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
-	return object ? host_ios_gamepad_button(object, button) : 0;
+	/* (none pressed while a share sheet is up) */
+	return object && !host_window_up() ? host_ios_gamepad_button(object, button) : 0;
 }
 
 int host_sdl_gamepad_type(uint32_t gamepad)
@@ -641,5 +673,24 @@ int host_sdl_show_toast(const char *message, int duration, int gravity, int x, i
 
 int host_sdl_show_simple_message_box(unsigned int flags, const char *title, const char *message)
 {
+	if (host_alert(title, message, "OK", NULL) >= 0)
+		return 1;
 	return SDL_ShowSimpleMessageBox((SDL_MessageBoxFlags)flags, title, message, host_sdl_window());
+}
+
+int host_sdl_show_message_box(unsigned int flags, const char *title, const char *message, const char *first,
+	const char *second)
+{
+	int shown = host_alert(title, message, first, second);
+	SDL_MessageBoxButtonData buttons[2] = {
+		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 0, first },
+		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 1, second },
+	};
+	SDL_MessageBoxData data = { (SDL_MessageBoxFlags)flags, host_sdl_window(), title, message, second ? 2 : 1,
+		buttons, NULL };
+	int answer = -1;
+
+	if (shown >= 0)
+		return shown;
+	return SDL_ShowMessageBox(&data, &answer) ? answer : -1;
 }

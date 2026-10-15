@@ -103,6 +103,9 @@ struct output_line_datum
 	char buffer[256];
 	real_argb_color color;
 	long timer;
+	/* port: a notice for the player (console_notice), which Apple builds
+	draw while they keep the rest of the console off the picture */
+	boolean notice;
 };
 
 /* ---------- prototypes */
@@ -115,6 +118,12 @@ static long terminal_new_line(void);
 /* ---------- globals */
 
 boolean terminal_render_enable = TRUE;
+
+/* port: the next line is a notice for the player (console_notice) */
+boolean terminal_port_notice_printing = FALSE;
+/* port: terminal_draw draws only the notices, not the prompt (Apple builds:
+terminal_port_draw_notices) */
+static boolean terminal_port_notices_only = FALSE;
 
 /* name from the 2003 PC demo PDB and the HCEX PDB (terminal file static const short[3]); January's 6 bytes
  * are identical to the demo's and it has no public for it (static) */
@@ -218,7 +227,7 @@ void terminal_draw(
 	{
 		struct font_header *font = font_definition_get(font_tag_index);
 		short line_height = font->ascending_height + font->descending_height + font->leading_height;
-		if (terminal_globals.input_state)
+		if (terminal_globals.input_state && !terminal_port_notices_only)
 		{
 			short buff_len;
 
@@ -263,6 +272,9 @@ void terminal_draw(
 				real fade_progress;
 
 				line = output_line_get(line_index);
+				/* port: (Apple builds) the notices alone, packed at the bottom */
+				if (terminal_port_notices_only && !line->notice)
+					continue;
 				fade_progress = 4.f - line->timer * 0.033333335f;
 
 				color = line->color;
@@ -296,6 +308,17 @@ void terminal_draw(
 	}
 
 	return;
+}
+
+/* port: the console's notices for the player and nothing else (Apple
+builds, interface.c: no developer output, prompt or counters on the
+picture) */
+void terminal_port_draw_notices(
+	void)
+{
+	terminal_port_notices_only = TRUE;
+	terminal_draw();
+	terminal_port_notices_only = FALSE;
 }
 
 boolean terminal_update(
@@ -374,6 +397,7 @@ void terminal_printf(
 			if (count < 0 || count >= (int)(NUMBEROF(line->buffer)-2))
 				line->buffer[NUMBEROF(line->buffer)-2] = 0;
 			line->tabstop = strstr(line->buffer, "|t") != 0;
+			line->notice = terminal_port_notice_printing;
 			telnet_console_print(line->buffer);
 		}
 	}

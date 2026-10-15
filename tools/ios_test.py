@@ -223,6 +223,72 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-D
     'port/ios/host/posix_net.c', 'port/ios/host/host_socket_revival.c', '-Wl,-dead_strip',
     f'--output={BUILD / "posix-net-probe"}')
 run(BUILD/'posix-net-probe')
+# where a system link broadcast goes, and the listening sockets that hold discovery up (halo_lan_targets.h)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
+    'port/ios/tests/lan_targets_probe.c', f'--output={BUILD / "lan-targets-probe"}')
+run(BUILD/'lan-targets-probe')
+# internet play: whether its brokers can be reached, the server browser's empty list and the question
+# an Apple build asks before turning it on (halo_internet.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
+    'port/ios/tests/internet_probe.c', f'--output={BUILD / "internet-probe"}')
+run(BUILD/'internet-probe')
+# and what the probe can't see. Nothing reaches a server before the player hosts for the internet, joins an
+# invite, looks up a join code or opens the server browser: p2p.c begins signalling in those four places and
+# STUN in the first three
+p2p_source = (ROOT / 'port/linux/src/p2p.c').read_text()
+def body_of(source, name):
+    match = re.search(r'\n(?:static )?\w[\w \*]*\b' + name + r'\([^)]*\)\n\{\n(.*?)\n\}\n', source, re.S)
+    if not match:
+        raise SystemExit(f'no function {name}')
+    return match.group(1)
+for name, calls in (('update_joining', ('p2p.stun_started = 1;', 'p2p_signal_start();')),
+                    ('update_hosting', ('p2p.stun_started = 1;', 'p2p_signal_start();')),
+                    ('look_up_code', ('p2p.stun_started = 1;', 'p2p_signal_start();')),
+                    ('p2p_thread', ('if (p2p_lobby_browsing())\n\t\t\tp2p_signal_start();',))):
+    if any(call not in body_of(p2p_source, name) for call in calls):
+        raise SystemExit(f'p2p.c: {name} must begin signalling (and STUN) itself')
+# ... and, since network version 27, where a machine already in an internet game asks that game's other players
+# for a map or answers them (map sharing): both only while the tunnel reaches the host of the game it joined, so
+# after one of the three above
+for name, gate in (('update_answering', 'int want = p2p.answer_players && !p2p.hosting && joined_host() != NULL;'),
+                   ('update_reaching', '|| !joined_host())')):
+    body = body_of(p2p_source, name)
+    if gate not in body or body.count('p2p_signal_start();') != 1:
+        raise SystemExit(f'p2p.c: {name} may begin signalling only while this machine is in the game of a host '
+                         'it joined (joined_host)')
+if p2p_source.count('p2p_signal_start();') != 6 or p2p_source.count('p2p.stun_started = 1;') != 3:
+    raise SystemExit('p2p.c: only a join, a hosted internet game, a join code\'s lookup, the server browser and '
+                     'map sharing inside a joined game may begin signalling, and only the first three STUN')
+if 'if (!p2p.stun_started)\n\t\treturn;' not in body_of(p2p_source, 'stun_update'):
+    raise SystemExit('p2p.c: stun_update must do nothing, its lookups included, until STUN is begun')
+# an Apple build turns network.online on only from a question that says what internet play reaches: a join
+# link's, or the one the Settings switch and the first internet screen ask for
+config_source = (ROOT / 'port/linux/src/port_config.c').read_text()
+if not re.search(r'#ifdef HALO_IOS\n#define DEFAULT_INTERNET_PLAY "false"\n', config_source):
+    raise SystemExit('port_config.c: network.online stays off by default on Apple builds; internet play on by '
+                     'default is DEFAULT_ONLINE_ASK "true", which asks before any server is reached')
+# ... and does not download a Custom Edition map from a game's players unless the player turned that on
+if not re.search(r'#ifdef HALO_IOS\n(?:.*\n)*?#define DEFAULT_MAP_DOWNLOAD "false"\n(?:.*\n)*?#else', config_source) or \
+        '{ "network.map_download", _config_boolean, DEFAULT_MAP_DOWNLOAD,' not in config_source:
+    raise SystemExit('port_config.c: network.map_download stays off by default on Apple builds until a download '
+                     'asks first')
+platform_source = (ROOT / 'port/linux/src/sdl_platform.c').read_text()
+for name, question in (('platform_link_consent', 'platform_ask(HALO_INTERNET_LINK_TITLE, HALO_INTERNET_LINK_MESSAGE,'),
+                       ('platform_internet_play_ask', 'platform_ask(HALO_INTERNET_ASK_TITLE, HALO_INTERNET_DISCLOSURE,')):
+    body = body_of(platform_source, name)
+    asked, written = body.find(question), body.find('config_write_boolean("network.online", 1);')
+    if asked < 0 or written < asked:
+        raise SystemExit(f'sdl_platform.c: {name} must ask before it writes network.online')
+if platform_source.count('config_write_boolean("network.online", 1);') != 2:
+    raise SystemExit('sdl_platform.c: network.online is turned on only after one of the two questions')
+menu_source = (ROOT / 'port/linux/game/menu_functions.c').read_text()
+save = body_of(menu_source, 'setting_changed_save')
+if not 0 <= save.find('platform_internet_play_request();') < save.find('setting_write(setting->setting'):
+    raise SystemExit("menu_functions.c: the Settings switch must ask before network.online is written true")
+if 'menu_internet_screen_opened();' not in body_of(menu_source, 'multiplayer_mode_set') or \
+        'platform_internet_play_request();' not in body_of(menu_source, 'menu_internet_screen_opened'):
+    raise SystemExit('menu_functions.c: choosing an internet screen must go through menu_internet_screen_opened, '
+                     "which asks for the question where network.online_ask owes it")
 
 # debug.texture_override_directory's hash and file checks (port/linux/src/texture_override.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
@@ -404,6 +470,13 @@ if '{ "display.foveation", _config_boolean, "true"' not in (ROOT / 'port/linux/s
 mac_run_text = (ROOT / 'tools/mac_run.py').read_text()
 if '"display.foveation": "true",' not in mac_run_text or '"debug.foveation_eye_passes": "true",' not in mac_run_text:
     raise SystemExit("mac_run.py: DEFAULTS must follow port_config.c's foveation defaults")
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/ios/host',
+    'port/ios/tests/host_lan_probe.c', 'port/ios/host/host_lan.c', f'--output={BUILD / "host-lan-probe"}')
+run(BUILD/'host-lan-probe')
+# which interface supplies the system link address (halo_interface_rank.h)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/linux/src',
+    'port/ios/tests/interface_rank_probe.c', f'--output={BUILD / "interface-rank-probe"}')
+run(BUILD/'interface-rank-probe')
 
 # The menus' platform attribute: "quit" is for the desktop ports and the Mac app (the host sets HALO_APP_CAN_QUIT), not
 # for an iPhone, an iPad, an Apple TV or a Vision Pro (menu_platform.h)

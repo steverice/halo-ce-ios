@@ -3880,6 +3880,14 @@ void ui_widget_port_go_back(
 	widget_instance_go_back_to_previous(widget);
 }
 
+/* port: the screen a local player's menus show, or NULL in play
+(menu_functions.c's invite jump) */
+struct widget_instance *ui_widget_port_active_screen(
+	short local_player_index)
+{
+	return widget_globals.active_widgets[local_player_index];
+}
+
 struct widget_instance *ui_widget_load_by_name_or_tag(
 	char const *name,
 	long tag_index,

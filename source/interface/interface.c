@@ -398,7 +398,9 @@ void interface_draw_fullscreen_overlays(
 #else
 	/* port: debug.terminal_on_screen draws the console's output (what
 	print and the console's commands print) on iOS too, for reminders
-	bound to cheats.txt's buttons in a headset */
+	bound to cheats.txt's buttons in a headset; without it, only the
+	notices meant for the player (console_notice: an invite in a game, a
+	player away, back or gone) */
 	{
 		static int terminal_on_screen = -1;
 
@@ -406,6 +408,8 @@ void interface_draw_fullscreen_overlays(
 			terminal_on_screen = config_boolean("debug.terminal_on_screen") != 0;
 		if (terminal_on_screen)
 			terminal_draw();
+		else
+			terminal_port_draw_notices();
 	}
 #endif
 

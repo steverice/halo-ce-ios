@@ -65,8 +65,12 @@ static inline int host_join_link_parse(const char *url, char *invite)
 }
 
 /* from main, with the data folder, before anything spins the run loop: clears
-   a link a previous run left untaken, and starts listening for links (SDL's
+   a link a previous run left untaken (or was asking about: join_link.asked),
+   and starts listening for links (SDL's
    events subsystem comes up early for it) */
 void host_join_link_install(const char *data_root);
 /* a URL the app was opened with (SDL's drop event, or a scene of the host's own) */
 void host_join_link_open(const char *url);
+/* from the guest's event poll (host_sdl_poll_event): tells the player about a
+halo: link that was not a join link, once, if one came since the last poll */
+void host_join_link_poll(void);

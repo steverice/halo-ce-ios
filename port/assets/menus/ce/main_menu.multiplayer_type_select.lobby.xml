@@ -7,6 +7,7 @@
 		<on event="created" run="net server allow start"/>
 		<on event="b" run="port lobby leave" back="true"/>
 		<on event="back" run="port lobby leave" back="true"/>
+		<on event="y" run="port lobby share" platform="apple"/>
 		<on event="start" run="port lobby join" open="main_menu/multiplayer_type_select/lobby/player_profile_screen" branch="true"/>
 		<child widget="main_menu/new_select/sel_list_desc_bkd"/>
 		<child widget="main_menu/multiplayer_type_select/lobby/lobby_list"/>

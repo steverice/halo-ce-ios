@@ -304,12 +304,75 @@ With internet play on (`network.online = true` in `config.toml`), opening a
 `halo://join/...` invite link (tapped where it shows as a link, or pasted into
 Safari's address bar; chat apps such as Discord may not make it tappable; on the
 Mac, `open 'halo://join/...'` in Terminal) opens the app and joins the invite,
-as pasting it into Join Game > Direct Link does. The app registers the `halo` URL scheme on iPhone, iPad, Apple Vision Pro, Apple TV and
+as pasting it into Join Game > Direct Link does. With internet play off, the app asks "Join this game over the internet?" first, and says what internet play reaches (below); Join turns internet play on (in `config.toml` too) and joins, Cancel drops the link. Unlike the desktop, Apple builds start a new internet game as PRIVATE (`network.host_public = false`): only players with its invite link can join, until Server Setup's LISTING makes it public. The app registers the `halo` URL scheme on iPhone, iPad, Apple Vision Pro, Apple TV and
 the Mac. The link is taken in any state of the game: internet play reaches the
 invite's host in the background, and the host's game then appears in Direct
-Link's list. A link that opens the app cold waits until internet play starts.
-Only a join link's 64 hex digits are used; any other `halo:` link is ignored
-with a line in `ios-runtime.log`, as is a link while internet play is off.
+Link's list. A link that opens the app cold, with internet play on, waits until internet play starts.
+Only a join link's 64 hex digits are used; any other `halo:` link is refused
+with a message, and a line in `ios-runtime.log`.
+Direct Link shows how the join goes (reaching the matchmaking servers,
+looking for the host's game, connecting to it) and, as soon as it is known,
+what went wrong: the servers can't be reached, the host's game wasn't found
+or has ended, the invite is old, the host is on another network version,
+or the two networks can't connect directly. With internet play off, it says
+so. Once a link opens, the game's own log goes to `stderr.log` in Documents
+(created if needed; started anew past 4 MB at launch), with each step and its
+time (`Internet play:` lines); `ios-runtime.log`, which each launch starts
+anew, has the link itself (`join link:` lines).
+Internet play reaches the brokers and the host over the internet, which
+needs no Local Network permission; only a host on the same network as the
+device is reached through it, and the join keeps trying for 90 seconds,
+so a permission given during the attempt is used.
+
+### What internet play reaches
+
+Internet play has no server of this project's. It uses servers that other people
+run, and the app contacts none of them until you host a game with Create Game >
+Internet, join an invite, or open Join Game > Server Browser. System link on
+the local network, the campaign and split screen never contact them. Once one
+of those three has happened, the app stays connected to the matchmaking
+servers until it quits.
+
+- **Matchmaking servers** (MQTT brokers, listed in `brokers.txt` beside
+  `config.toml`; `network.brokers_file` names another list): OpenCE's own
+  `opence.milenko.org`, and the public brokers of EMQX, HiveMQ and Mosquitto.
+  The app connects to all of them at once over plain TCP, so each sees the IP
+  address you connect from. What it sends through them is encrypted with a key
+  from the invite: your addresses (the one on your local network, and the
+  public one), for the host or the joiner of that invite alone. A game you
+  list as PUBLIC is the exception: its name, map, game type, player counts and
+  invite are published for every server browser to read, and anyone can then
+  ask your device to connect, which tells them your IP address. Apple builds
+  start a new internet game as PRIVATE.
+- **Address servers** (STUN, `network.stun_servers`): Google's and
+  Cloudflare's. When you host or join, the app asks each what your public
+  address is, and again every 25 seconds while internet play runs. They see
+  your IP address and nothing else.
+- **The other players.** Games are peer to peer, without a relay: every player
+  you connect to sees your IP address, and you see theirs. The traffic between
+  you is encrypted.
+
+Nothing identifies the device or the player to those servers beyond the
+address: the keys and the identifiers are made anew each time the app starts.
+The player name you chose goes to the players you join.
+
+So the app turns `network.online` on only after you have agreed to a question
+that says this: a join link's "Join this game over the internet?", or "Turn on
+Internet Play?", which INTERNET PLAY in Settings > Network Setup asks. With
+`network.online_ask = true` (off by default), the first of Create Game >
+Internet, Join Game > Server Browser or Direct Link you open with internet
+play off asks it too, once. Not Now leaves internet play off, and those
+screens then say "Internet play is off (Settings)".
+
+When no matchmaking server can be reached, the Server Browser, Direct Link and
+a host's lobby and Server Setup say so, and the game keeps trying each one
+(every 15 seconds at first, then up to every two minutes). The Server Browser
+lists only games of this build's network version; when it finds none but hears
+games of other versions, it says how many, and whether they are newer.
+Two networks whose routers both give every destination a new port cannot
+connect directly, and Apple builds cannot ask the router to forward a port
+(UPnP), so such a pair fails with "your networks can't connect directly". A
+host can forward a fixed `network.tunnel_port` (UDP) on its router by hand.
 
 ## How the port works
 

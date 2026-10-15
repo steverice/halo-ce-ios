@@ -184,6 +184,22 @@ void console_printf(
 	return;
 }
 
+/* port: a red line meant for the player (console.h) */
+void console_notice(
+	const char *format,
+	...)
+{
+	char buffer[1024];
+	va_list arglist;
+
+	va_start(arglist, format);
+	vsnprintf(buffer, NUMBEROF(buffer), format, arglist);
+	va_end(arglist);
+	terminal_port_notice_printing = TRUE;
+	console_warning("%s", buffer);
+	terminal_port_notice_printing = FALSE;
+}
+
 void console_warning(
 	const char *format,
 	...)

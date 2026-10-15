@@ -965,6 +965,15 @@ void network_test_update(
 		if (!network_test.set_up)
 		{
 			network_test.set_up = TRUE;
+#ifdef HALO_IOS
+			{
+				/* (menu_functions.c) as Create Game > Internet, which this
+				host stands in for, asks about internet play when it is off */
+				extern void menu_internet_screen_opened(void);
+
+				menu_internet_screen_opened();
+			}
+#endif
 			main_set_multiplayer_map_name(network_test.map_name);
 			player_ui_fast_setup_network_server();
 			platform_log("network test: hosting %s", network_test.map_name);

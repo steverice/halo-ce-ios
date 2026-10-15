@@ -18,6 +18,7 @@ and the debug keyboard that the game's console reads.
 #include "port_config.h"
 #include "halo_virtual_clock.h"
 #include "p2p.h"
+#include "halo_internet.h"
 #include "xiso.h"
 
 #include <SDL3/SDL.h>
@@ -1103,6 +1104,184 @@ void platform_clipboard_set(const char *text)
 	SDL_SetClipboardText(text);
 }
 
+#ifdef HALO_IOS
+/* (menu_functions.c) an invite was just taken: Direct Link, or a notice in a game */
+void menu_invite_taken(void);
+/* (menu_functions.c) the jump a link that launched the app waits for, once the main menu is up */
+void menu_invite_poll(void);
+/* (menu_functions.c) in a network game or its lobby */
+int menu_in_network_game(void);
+/* (menu_functions.c) an invite's host never answered */
+void menu_join_failed(void);
+/* (menu_functions.c) internet play was just turned on from the menus' question */
+void menu_internet_play_on(void);
+void console_notice(const char *format, ...);
+
+/* a question with two answers; nonzero for yes (debug.link_consent_answer
+answers it in tests, as debug.update_answer does the updater's) */
+static BOOL platform_ask(const char *title, const char *message, const char *yes, const char *no)
+{
+	const SDL_MessageBoxButtonData buttons[] = {
+		{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, yes },
+		{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, no },
+	};
+	SDL_MessageBoxData question = { SDL_MESSAGEBOX_INFORMATION, NULL, title, message, 2, buttons, NULL };
+	const char *forced = config_string("debug.link_consent_answer");
+	int answer = 0;
+
+	if (forced && *forced)
+		return !strcmp(forced, "join");
+	return SDL_ShowMessageBox(&question, &answer) && answer == 1;
+}
+
+/* (Apple builds) a join link the host wrote (host_join_link.c) while internet
+play does not run: taken here, as poll_invite_file would take it, and the
+player asked to turn internet play on (spec D3); with network.online on but
+p2p unable to start (p2p_start_failed), taken and the player told why it
+is dropped. Only while p2p does not run, seen on this thread, where p2p
+starts: so poll_invite_file, which runs only once p2p does, never takes the
+file at the same time. Renamed before it is read, so a link the host writes meanwhile is
+a new join_link.txt for the next look. Joined here, not put back: putting
+it back would overwrite a newer one. In a network game or its lobby the
+question would stop the game for everyone (spec section 3: a link in a game
+waits), so the file is left where it is, the newest link the host wrote
+winning, and the player is told once per link; the question comes after
+the game. */
+static void platform_link_consent(void)
+{
+	static Uint64 looked_ms;
+	/* the waiting link the player was last told about */
+	static char told[256];
+	char path[512], asked[512], invite[256];
+	Uint64 now = SDL_GetTicks();
+	FILE *file;
+	size_t size = 0;
+	int joined;
+
+	if ((looked_ms && now - looked_ms < 1000) || p2p_running() ||
+		(config_boolean("network.online") && !p2p_start_failed()))
+	{
+		return;
+	}
+	looked_ms = now;
+	snprintf(path, sizeof(path), "%s/join_link.txt", platform_data_root());
+	snprintf(asked, sizeof(asked), "%s/join_link.asked", platform_data_root());
+	/* internet play is on but could not start: nothing else takes the link */
+	if (config_boolean("network.online"))
+	{
+		if (rename(path, asked) == 0)
+		{
+			remove(asked);
+			platform_log("link: opened, but internet play could not start; dropped");
+			console_notice("Internet play could not start, so VISR cannot join the invite");
+		}
+		return;
+	}
+	if (menu_in_network_game())
+	{
+		/* (read, not taken: the host renames each link into place whole) */
+		file = fopen(path, "rb");
+		if (!file)
+			return;
+		size = fread(invite, 1, sizeof(invite) - 1, file);
+		fclose(file);
+		invite[size] = 0;
+		if (size && strcmp(invite, told))
+		{
+			snprintf(told, sizeof(told), "%s", invite);
+			platform_log("link: %s opened with internet play off in a network game; asked after it", invite);
+			console_notice("Invite received: VISR will ask about it after this game");
+		}
+		return;
+	}
+	told[0] = 0;
+	if (rename(path, asked) != 0)
+		return;
+	file = fopen(asked, "rb");
+	if (file)
+	{
+		size = fread(invite, 1, sizeof(invite) - 1, file);
+		fclose(file);
+	}
+	remove(asked);
+	/* (unreadable after the rename: nothing to ask about) */
+	if (!size)
+		return;
+	invite[size] = 0;
+	platform_log("link: %s opened with internet play off", invite);
+	/* (the player is told here what internet play reaches: the first
+	internet screen's question, network.online_ask, is not owed after it) */
+	if (config_boolean("network.online_ask"))
+		config_write_boolean("network.online_ask", 0);
+	if (!platform_ask(HALO_INTERNET_LINK_TITLE, HALO_INTERNET_LINK_MESSAGE, "Join", "Cancel"))
+	{
+		platform_log("link: not joined (Cancel)");
+		return;
+	}
+	config_write_boolean("network.online", 1);
+	/* asked for before p2p starts: a newer link the host wrote during the
+	question is then taken by p2p's first pass (poll_invite_file) after this
+	one, and replaces it. Newest wins, whichever thread looks first */
+	joined = p2p_join_invite_starting(invite);
+	xnet_start_internet_play();
+	if (!p2p_running())
+	{
+		/* (p2p_initialize logged why: its socket, most often) */
+		platform_log("link: internet play did not start; %s is dropped", invite);
+		console_notice("Internet play could not start, so VISR cannot join the invite");
+		return;
+	}
+	platform_log("link: internet play turned on");
+	if (joined)
+		menu_invite_taken();
+}
+
+/* the menus want the player asked whether to turn internet play on
+(platform_internet_play_request) */
+static BOOL internet_play_ask_pending;
+
+/* (Apple builds; menu_functions.c, on the main thread) the player turned
+INTERNET PLAY on in Settings, or opened an internet screen with it off and
+network.online_ask still owing the question: asked at the next pump, where
+a join link's question is asked too, not inside the menus' event */
+void platform_internet_play_request(void)
+{
+	internet_play_ask_pending = TRUE;
+}
+
+/* the question, and what its answer does: Turn On writes network.online
+and starts internet play at once, as a join link's Join does; Not Now
+leaves it off. Either way network.online_ask is written false: the screens
+ask once */
+static void platform_internet_play_ask(void)
+{
+	if (!internet_play_ask_pending)
+		return;
+	internet_play_ask_pending = FALSE;
+	/* (turned on meanwhile: a link's question, answered Join) */
+	if (config_boolean("network.online") || p2p_running())
+		return;
+	if (config_boolean("network.online_ask"))
+		config_write_boolean("network.online_ask", 0);
+	if (!platform_ask(HALO_INTERNET_ASK_TITLE, HALO_INTERNET_DISCLOSURE, HALO_INTERNET_ASK_YES, HALO_INTERNET_ASK_NO))
+	{
+		platform_log("internet play: asked to turn it on; left off (" HALO_INTERNET_ASK_NO ")");
+		return;
+	}
+	config_write_boolean("network.online", 1);
+	xnet_start_internet_play();
+	if (!p2p_running())
+	{
+		/* (p2p_initialize logged why: its socket, most often) */
+		platform_log("internet play: asked to turn it on; it did not start");
+		console_notice("Internet play could not start");
+		return;
+	}
+	platform_log("internet play: asked to turn it on; turned on (" HALO_INTERNET_ASK_YES ")");
+	menu_internet_play_on();
+}
+#endif
+
 /* puts a new invite on the clipboard, and joins one found there when the
 game comes to the front */
 static void platform_invite_clipboard(BOOL look)
@@ -1111,6 +1290,17 @@ static void platform_invite_clipboard(BOOL look)
 	static char seen[256];
 	const char *invite = p2p_take_clipboard_text();
 
+#ifdef HALO_IOS
+	platform_link_consent();
+	platform_internet_play_ask();
+	/* (one poll_invite_file took, on the p2p thread) */
+	if (p2p_take_invite_taken())
+		menu_invite_taken();
+	/* (a join p2p's thread gave up on) */
+	if (p2p_take_join_failed())
+		menu_join_failed();
+	menu_invite_poll();
+#endif
 	if (invite)
 	{
 		SDL_SetClipboardText(invite);

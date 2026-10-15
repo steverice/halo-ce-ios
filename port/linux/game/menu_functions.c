@@ -83,6 +83,11 @@ their handlers open opens.
 #include "custom_edition_maps.h"
 /* (internet play's server browser: the platform layer's) */
 #include "../src/p2p.h"
+#include "../src/halo_internet.h"
+#ifdef HALO_IOS
+#include "../src/halo_lan_targets.h"
+#include "../src/posix.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -90,6 +95,13 @@ their handlers open opens.
 
 /* the platform layer's (port/linux/src) */
 void platform_log(char const *format, ...);
+void platform_show_message(char const *title, char const *message);
+#ifdef HALO_IOS
+/* (sdl_platform.c) ask the player, at the next pump, whether to turn
+internet play on */
+void platform_internet_play_request(void);
+int menu_in_network_game(void);
+#endif
 void platform_request_quit(void);
 char const *pc_menu_function_name(long function_index);
 char const *pc_menu_game_data_input_name(long function_index);
@@ -1444,12 +1456,37 @@ static boolean setting_changed_save(struct widget_instance *spinner, struct pc_m
 
 	if (index < 0 || index >= setting->value_count || index == setting->loaded_index)
 		return TRUE;
+#ifdef HALO_IOS
+	/* (Apple builds) internet play turned on: the player is first told what
+	it reaches and asked (halo_internet.h), and the answer writes the
+	setting, so the switch shows off again until then (menu_internet_play_on
+	shows it on). Not asked when it already runs: turned off earlier this
+	time, which only takes effect at the next start */
+	if (!strcmp(setting->setting, "network.online") && !strcmp(setting->values[index], "true") && !p2p_running())
+	{
+		platform_log("menus: network.online = true wanted; asking first");
+		spinner->parameters.list.selected_index = setting->loaded_index;
+		platform_internet_play_request();
+		return TRUE;
+	}
+#endif
 	if (!setting_write(setting->setting, setting->values[index]))
 	{
 		platform_log("menus: could not set %s", setting->setting);
 		return FALSE;
 	}
 	platform_log("menus: %s = %s", setting->setting, setting->values[index]);
+#ifdef HALO_IOS
+	/* (Apple builds) internet play turned on starts now; turned off, it stops
+	at the next start (p2p has no stop) */
+	if (!strcmp(setting->setting, "network.online"))
+	{
+		if (!strcmp(setting->values[index], "true"))
+			xnet_start_internet_play();
+		else
+			platform_show_message("Internet Play", "Internet Play turns off the next time VISR starts.");
+	}
+#endif
 	setting->loaded_index = index;
 	return TRUE;
 }
@@ -2291,6 +2328,10 @@ static struct
 	/* Server Setup's LISTING: PRIVATE (each new game starts with
 	network.host_public's choice: PUBLIC unless set otherwise) */
 	boolean game_private;
+	/* (Apple builds) an invite was taken: Direct Link says it connects until its game comes */
+	boolean invite_pending;
+	/* (Apple builds) and opens once the main menu is up (a link that launched the app) */
+	boolean invite_jump;
 	/* Server Setup's PASSWORD (a public internet game's; empty: none), kept
 	while the game runs, never written down */
 	char game_password[PASSWORD_LENGTH + 1];
@@ -2447,6 +2488,25 @@ static void text_field_show(struct widget_instance *value, char const *text, boo
 
 /* ---- the menu */
 
+#ifdef HALO_IOS
+/* (Apple builds; network_test.c's host too) an internet screen is opened
+(Create Game > Internet, Join Game > Server Browser or Direct Link): with
+internet play off, the player is asked once whether to turn it on, where
+network.online_ask says the question is owed (halo_internet.h). Asked at
+the next pump, so the screen opens first, and what it shows follows the
+answer */
+void menu_internet_screen_opened(void)
+{
+	if (!halo_internet_should_ask(config_boolean("network.online"), p2p_running(),
+		config_boolean("network.online_ask"), menu_in_network_game()))
+	{
+		return;
+	}
+	platform_log("menus: an internet screen opened with internet play off; asking");
+	platform_internet_play_request();
+}
+#endif
+
 /* "mp type set mode": the item's (by its name) */
 static void multiplayer_mode_set(struct widget_instance *widget)
 {
@@ -2459,6 +2519,14 @@ static void multiplayer_mode_set(struct widget_instance *widget)
 		strstr(name, "create_lan") ? _multiplayer_mode_host_lan :
 		strstr(name, "join_lan") ? _multiplayer_mode_lan :
 		strstr(name, "join_direct") ? _multiplayer_mode_direct_link : _multiplayer_mode_server_browser;
+	multiplayer.invite_pending = FALSE;
+#ifdef HALO_IOS
+	if (multiplayer.mode == _multiplayer_mode_host_internet || multiplayer.mode == _multiplayer_mode_direct_link ||
+		multiplayer.mode == _multiplayer_mode_server_browser)
+	{
+		menu_internet_screen_opened();
+	}
+#endif
 }
 
 /* player 1's profile for the controller's player in a network game */
@@ -2964,6 +3032,9 @@ static void server_settings_update(struct widget_instance *list)
 		snprintf(text, sizeof(text), "NONE: A LAN GAME");
 	else if (!config_boolean("network.online"))
 		snprintf(text, sizeof(text), "INTERNET PLAY IS OFF (SETTINGS)");
+	/* (an invite reaches no one without a broker) */
+	else if (p2p_servers_status() == HALO_INTERNET_SERVERS_UNREACHABLE)
+		snprintf(text, sizeof(text), "CAN'T REACH THE MATCHMAKING SERVERS");
 	else if (!p2p_host_code(text, sizeof(text)))
 		snprintf(text, sizeof(text), "MADE WHEN THE GAME STARTS");
 	else
@@ -3123,7 +3194,25 @@ static boolean invite_copy(void)
 	if (!p2p_invite_link(link, sizeof(link)))
 		return campaign_fail();
 	platform_clipboard_set(link);
+#ifdef HALO_IOS
+	/* (Apple builds) and the share sheet, the clipboard copy kept */
+	posix_share_link(link);
+#endif
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
+	return TRUE;
+}
+
+/* "port lobby share" (the lobby's Y, Apple builds): the invite link in the
+share sheet; nothing elsewhere */
+static boolean lobby_share(void)
+{
+#ifdef HALO_IOS
+	char link[TEXT_FIELD_LENGTH];
+
+	if (!global_network_game_server_get() || !p2p_invite_link(link, sizeof(link)) || !posix_share_link(link))
+		return campaign_fail();
+	ui_play_audio_feedback_sound(SOUND_FORWARD);
+#endif
 	return TRUE;
 }
 
@@ -3148,6 +3237,53 @@ static boolean server_start(void)
 	else if (!gametype_setup_apply())
 		return campaign_fail();
 	return global_network_game_server_get() != NULL;
+}
+
+/* Direct Link's line for an invite being joined (p2p_join_status) */
+static void direct_link_status(wchar_t *text, short size, int stage, int seconds, int version)
+{
+	switch (stage)
+	{
+	case P2P_JOIN_STARTING:
+		usnprintf(text, size - 1, L"Joining: reaching the matchmaking servers...");
+		break;
+	case P2P_JOIN_ASKING:
+		usnprintf(text, size - 1, L"Joining: looking for the host's game... (%ds)", seconds);
+		break;
+	case P2P_JOIN_REACHING:
+		usnprintf(text, size - 1, L"Found the host: connecting directly... (%ds)", seconds);
+		break;
+	case P2P_JOIN_CONNECTED:
+		usnprintf(text, size - 1, L"Connected to the host: waiting for its game...");
+		break;
+	case P2P_JOIN_NO_SERVER:
+		usnprintf(text, size - 1, L"Can't reach the matchmaking servers: check your internet");
+		break;
+	case P2P_JOIN_NOT_FOUND:
+		usnprintf(text, size - 1, L"The host's game wasn't found: it may have ended");
+		break;
+	case P2P_JOIN_ENDED:
+		usnprintf(text, size - 1, L"The host's game has ended");
+		break;
+	case P2P_JOIN_NEW_INVITE:
+		usnprintf(text, size - 1, L"This invite is old: ask the host for its new link");
+		break;
+	case P2P_JOIN_VERSION:
+		usnprintf(text, size - 1, version > HALO_PORT_NETWORK_VERSION ?
+			L"The host is on version %d, you on %d: update this game" :
+			L"The host is on version %d, you on %d: the host must update", version, HALO_PORT_NETWORK_VERSION);
+		break;
+	case P2P_JOIN_NO_DIRECT:
+		usnprintf(text, size - 1, L"Found the host, but your networks can't connect directly");
+		break;
+	case P2P_JOIN_LOCAL_NETWORK:
+		usnprintf(text, size - 1, L"Found the host: allow Local Network access in Settings");
+		break;
+	default:
+		text[0] = 0;
+		break;
+	}
+	text[size - 1] = 0;
 }
 
 /* ---- the browser (Join Game > Server Browser, LAN, Direct Link): the
@@ -3192,6 +3328,8 @@ static void browser_games_read(void)
 			}
 		}
 	}
+	if (multiplayer.game_count && multiplayer.mode == _multiplayer_mode_direct_link)
+		multiplayer.invite_pending = FALSE;
 	if (multiplayer.game_chosen >= multiplayer.game_count)
 		multiplayer.game_chosen = (short)MAX(0, multiplayer.game_count - 1);
 	/* (Direct Link's games, and the LAN's the client also found, logged as
@@ -3680,8 +3818,31 @@ static void lobby_browser_update(struct widget_instance *list)
 		}
 		else if (!lobby_browser.count)
 		{
-			usnprintf(text, NUMBEROF(text) - 1, L"%s", now - lobby_browser.begin_time < LOBBY_BROWSER_LOOK_TIME ?
-				L"Looking for public games..." : L"No public games found");
+			int newer, older;
+
+			p2p_lobby_other_versions(&newer, &older);
+			switch (halo_internet_browser_empty(p2p_servers_status(),
+				now - lobby_browser.begin_time < LOBBY_BROWSER_LOOK_TIME, newer, older))
+			{
+			case HALO_INTERNET_BROWSER_LOOKING:
+				usnprintf(text, NUMBEROF(text) - 1, L"Looking for public games...");
+				break;
+			case HALO_INTERNET_BROWSER_NO_SERVERS:
+				usnprintf(text, NUMBEROF(text) - 1, L"Can't reach the matchmaking servers: check your internet");
+				break;
+			/* (the list shows only this build's network version) */
+			case HALO_INTERNET_BROWSER_NEWER_ONLY:
+				usnprintf(text, NUMBEROF(text) - 1, L"No games on version %d: %d on newer ones (update this game)",
+					HALO_PORT_NETWORK_VERSION, newer);
+				break;
+			case HALO_INTERNET_BROWSER_OLDER_ONLY:
+				usnprintf(text, NUMBEROF(text) - 1, L"No games on version %d: %d on older ones",
+					HALO_PORT_NETWORK_VERSION, older);
+				break;
+			default:
+				usnprintf(text, NUMBEROF(text) - 1, L"No public games found");
+				break;
+			}
 		}
 		else if (chosen < lobby_browser.count)
 		{
@@ -3944,20 +4105,49 @@ static void browser_update(struct widget_instance *list)
 	}
 	{
 		wchar_t text[ROW_TEXT_LENGTH * 2];
+		int seconds = 0, over = 0, version = 0;
+		int stage = multiplayer.mode == _multiplayer_mode_direct_link ? p2p_join_status(&seconds, &over, &version) :
+			P2P_JOIN_NONE;
 
 		if (multiplayer.mode == _multiplayer_mode_server_browser)
 			text[0] = 0;
+		else if (multiplayer.mode == _multiplayer_mode_direct_link && !config_boolean("network.online"))
+			usnprintf(text, NUMBEROF(text) - 1, L"Internet play is off (Settings)");
+		/* the invite being joined: how it goes, or what went wrong (a game in
+		the list is shown instead, unless the invite's host is known to have
+		another version) */
+		else if (stage != P2P_JOIN_NONE && (!multiplayer.game_count || stage == P2P_JOIN_VERSION))
+			direct_link_status(text, NUMBEROF(text), stage, seconds, version);
 		else if (!multiplayer.game_count)
 		{
 			int code_status = p2p_join_code_status();
-
-			usnprintf(text, NUMBEROF(text) - 1, L"%s", multiplayer.mode != _multiplayer_mode_direct_link ?
+			wchar_t const *empty = multiplayer.mode != _multiplayer_mode_direct_link ?
 				L"Looking for games on your LAN..." :
+				multiplayer.invite_pending ? L"Connecting to the host..." :
 				code_status == P2P_CODE_LOOKING ? L"Looking up the join code..." :
 				code_status == P2P_CODE_FOUND ? L"Found the game: connecting to its host..." :
 				code_status == P2P_CODE_REACHED ? L"Reached the host: waiting for its game..." :
 				code_status == P2P_CODE_NOT_FOUND ? L"No game has that join code. ENTER CODE to try again" :
-				L"ENTER CODE: a friend's join code or invite link");
+				L"ENTER CODE: a friend's join code or invite link";
+
+#ifdef HALO_IOS
+			/* Apple devices find each other by Bonjour; without the multicast
+			entitlement, nothing else */
+			if (multiplayer.mode != _multiplayer_mode_direct_link)
+			{
+				switch (halo_lan_empty_text(posix_lan_status()))
+				{
+				case HALO_LAN_TEXT_REFUSED:
+					empty = L"Local network access is off for VISR in\r\nSettings > Privacy & Security > Local Network.";
+					break;
+				case HALO_LAN_TEXT_APPLE_ONLY:
+					empty = L"Looking for games from other iPhones, iPads and Vision Pros on your Wi-Fi network.\r\n"
+						L"For other systems, use an invite link.";
+					break;
+				}
+			}
+#endif
+			usnprintf(text, NUMBEROF(text) - 1, L"%s", empty);
 		}
 		else
 		{
@@ -4490,8 +4680,16 @@ static void lobby_update(struct widget_instance *list)
 		on a line of its own: after "Join code: " the panel cuts its last
 		character off, and it has room for two lines after the countdown's.
 		The invite link is still on the clipboard where there is one, but an
-		Apple TV has none to paste from) */
-		if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)))
+		Apple TV has none to paste from. An invite reaches no one without a
+		broker: said in the same two lines, until one is reached) */
+		if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)) &&
+			p2p_servers_status() == HALO_INTERNET_SERVERS_UNREACHABLE)
+		{
+			size_t length = ustrlen(text);
+
+			usnprintf(text + length, NUMBEROF(text) - 1 - length, L"\r\nNo matchmaking servers:\r\ninvites won't work");
+		}
+		else if (global_network_game_server_get() && p2p_host_code(code, sizeof(code)))
 		{
 			size_t length = ustrlen(text);
 
@@ -5558,6 +5756,10 @@ boolean pc_menu_event_function_invoke(
 		{
 			return invite_copy();
 		}
+		else if (!strcmp(name, "port lobby share"))
+		{
+			return lobby_share();
+		}
 		else if (!strcmp(name, "ss start game"))
 		{
 			return server_start();
@@ -5767,3 +5969,131 @@ void pc_menu_game_data_function_invoke(
 	else if (!strcmp(name, "port gamepad layout preview"))
 		profile_gamepad_layout(widget);
 }
+
+#ifdef HALO_IOS
+#define JOIN_GAME_SCREEN "pc\\main_menu\\multiplayer_type_select\\join_game\\join_game_screen"
+
+boolean main_port_main_menu_loaded(void);
+boolean game_map_loaded(void);
+void console_notice(const char *format, ...);
+
+/* whether the main menu has been up since the app started: before that, a
+link is the one the app was launched with */
+static boolean menus_seen;
+
+/* (Apple builds; sdl_platform.c too) in a network game or its lobby: a
+server, or a client past searching for games */
+int menu_in_network_game(void)
+{
+	void *client = global_network_game_client_get();
+
+	return global_network_game_server_get() ||
+		(client && network_game_client_get_state(client, NULL) != _client_state_searching);
+}
+
+/* in a game, or in a game's lobby, where leaving on a tap would be worse */
+static boolean invite_waits(void)
+{
+	return !main_port_main_menu_loaded() || menu_in_network_game();
+}
+
+/* Join Game > Direct Link from the menus' current screen */
+static void invite_jump(struct widget_instance *screen)
+{
+	boolean deleted = FALSE;
+
+	multiplayer.invite_jump = FALSE;
+	/* (from Join Game's Server Browser, whose browsing "gamespy screen
+	dispose" would otherwise end only when the screen goes) */
+	if (multiplayer.mode == _multiplayer_mode_server_browser)
+		lobby_browser_end();
+	multiplayer.mode = _multiplayer_mode_direct_link;
+	multiplayer.game_chosen = 0;
+	/* (as Multiplayer's "mp type menu initialize", which this skips: one
+	player, as co-op's setup may have left two) */
+	player_spawn_count = 1;
+	player_ui_reset_single_player_local_player_controllers();
+	if (!strstr(screen->name, "join_game_screen"))
+		ui_widget_port_open(screen, JOIN_GAME_SCREEN, &deleted);
+	else
+	{
+		/* (Join Game already, maybe LAN's: Direct Link's title and parts) */
+		browser_initialize(screen, NULL, &deleted);
+	}
+}
+
+/* (Apple builds; sdl_platform.c, on the main thread) an invite was just
+taken (spec D4): in the menus, Join Game > Direct Link opens and says it
+connects until the host's game comes; at launch, once the main menu is up;
+in a game or a lobby, a notice says where to find it afterwards */
+void menu_invite_taken(void)
+{
+	struct widget_instance *screen = ui_widget_port_active_screen(0);
+
+	multiplayer.invite_pending = TRUE;
+	/* (a map up that is not the main menu's, before it ever was: a game
+	started from init.txt, which gets the notice) */
+	if (!menus_seen && !(game_map_loaded() && !main_port_main_menu_loaded()))
+	{
+		/* (the main menu is still loading: menu_invite_poll opens it) */
+		platform_log("menus: an invite was taken; Direct Link opens once the main menu is up");
+		multiplayer.invite_jump = TRUE;
+		return;
+	}
+	if (!screen || invite_waits())
+	{
+		platform_log("menus: an invite was taken in a game or a lobby; told the player");
+		console_notice("Invite received: open Join Game > Direct Link after this game");
+		return;
+	}
+	platform_log("menus: an invite was taken; Direct Link opens");
+	invite_jump(screen);
+}
+
+static boolean setting_online_reload(struct widget_instance *spinner, struct pc_menu_setting *setting)
+{
+	if (!strcmp(setting->setting, "network.online"))
+		setting_load(spinner);
+	return TRUE;
+}
+
+/* (Apple builds; sdl_platform.c, on the main thread) the player answered
+the question with Turn On, and internet play runs: Settings' INTERNET PLAY
+switch, if its screen is up, shows it */
+void menu_internet_play_on(void)
+{
+	struct widget_instance *screen = ui_widget_port_active_screen(0);
+
+	if (screen)
+		settings_each(screen, setting_online_reload);
+}
+
+/* (Apple builds; sdl_platform.c, on the main thread) the invite's host never
+answered (p2p.c's JOIN_TIMEOUT): Direct Link stops saying it connects and
+shows its PASTE LINK line again, and the player is told */
+void menu_join_failed(void)
+{
+	multiplayer.invite_pending = FALSE;
+	platform_log("menus: the invite's host never answered; told the player");
+	console_notice("Could not reach the host");
+}
+
+/* (Apple builds; every pump, sdl_platform.c) the jump a link at launch is
+waiting for, once the main menu's screen is up */
+void menu_invite_poll(void)
+{
+	struct widget_instance *screen;
+
+	if (!main_port_main_menu_loaded())
+		return;
+	menus_seen = TRUE;
+	if (!multiplayer.invite_jump)
+		return;
+	screen = ui_widget_port_active_screen(0);
+	if (screen && !invite_waits())
+	{
+		platform_log("menus: the main menu is up; Direct Link opens for the invite");
+		invite_jump(screen);
+	}
+}
+#endif

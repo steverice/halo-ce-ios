@@ -108,7 +108,7 @@ add_executable(VISR MACOSX_BUNDLE
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
-    host/host_join_link.c host/host_config.c host/host_bink.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
+    host/host_join_link.c host/host_config.c host/host_bink.c host/host_bonjour.m host/host_share.m host/host_lan.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
@@ -359,4 +359,14 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
         XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
+endif()
+# The multicast entitlement (spec section 2): with it in the chosen
+# entitlements file, iOS and visionOS may broadcast, and network.lan_broadcast
+# = "auto" does (host/host_bonjour.m)
+if(HALO_ENTITLEMENTS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_ENTITLEMENTS}" HALO_ENTITLEMENTS_TEXT)
+    if(HALO_ENTITLEMENTS_TEXT MATCHES "com\\.apple\\.developer\\.networking\\.multicast")
+        target_compile_definitions(VISR PRIVATE HALO_MULTICAST_ENTITLED=1)
+        message(STATUS "the entitlements include multicast: broadcasts on")
+    endif()
 endif()
