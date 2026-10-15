@@ -92,6 +92,11 @@ run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="tes
     'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'data-updates-probe')
 run(BUILD / 'data-updates-probe')
+# a benchmark session keeps the recordings it started with, byte for byte, across an update and a relaunch
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Iport/ios/host',
+    '-framework', 'Foundation', 'port/ios/tests/benchmark_snapshot_probe.m', 'port/ios/host/host_benchmark_snapshot.m',
+    '-o', BUILD / 'benchmark-snapshot-probe')
+run(BUILD / 'benchmark-snapshot-probe')
 # the profiles' own rules: only the settings a profile may set, inside their ranges, each with its evidence,
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
 run('python3', 'tools/profile_check.py')

@@ -105,7 +105,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
     host/host_join_link.c host/host_config.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
-    host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c
+    host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
     "${ROOT}/port/third_party/monocypher/monocypher-ed25519.c"
     host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
