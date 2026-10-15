@@ -54,7 +54,9 @@ static NSData *read_regular(int directory, const char *name, size_t maximum) {
     close(fd); return data;
 }
 /* Return names from the held directory descriptor; neither a link nor a non-regular entry is ever followed. */
-static NSArray<NSString *> *inventory(int fd, BOOL metadata) {
+/* A source folder (local-routes, the bundle) skips what is not a route file (.DS_Store, a README, an empty file);
+   the staged snapshot itself must hold route files only. */
+static NSArray<NSString *> *inventory_in(int fd, BOOL metadata, BOOL skip_strays) {
     int copy = dup(fd);
     DIR *directory = copy >= 0 ? fdopendir(copy) : NULL;
     if (!directory) { if (copy >= 0) close(copy); return nil; }
@@ -67,8 +69,10 @@ static NSArray<NSString *> *inventory(int fd, BOOL metadata) {
         NSString *name = [[NSString alloc] initWithBytes:entry->d_name length:strlen(entry->d_name) encoding:NSUTF8StringEncoding];
         struct stat st;
         if (metadata && [name isEqual:metadata_name]) continue;
-        if (!name || !file_name(name) || fstatat(fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) ||
-            !S_ISREG(st.st_mode) || st.st_size <= 0 || st.st_size > HOST_RECORDING_PACK_MAX_FILE_BYTES ||
+        BOOL route = name && file_name(name) && !fstatat(fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) &&
+            S_ISREG(st.st_mode) && st.st_size > 0;
+        if (!route && skip_strays) { errno = 0; continue; }
+        if (!route || st.st_size > HOST_RECORDING_PACK_MAX_FILE_BYTES ||
             names.count >= HOST_RECORDING_PACK_MAX_FILES) { valid = NO; break; }
         [names addObject:name];
         errno = 0;
@@ -77,6 +81,7 @@ static NSArray<NSString *> *inventory(int fd, BOOL metadata) {
     closedir(directory);
     return valid ? [names sortedArrayUsingSelector:@selector(compare:)] : nil;
 }
+static NSArray<NSString *> *inventory(int fd, BOOL metadata) { return inventory_in(fd, metadata, NO); }
 static NSDictionary *hashes(int fd, NSArray<NSString *> *names) {
     if (!names) return nil;
     NSMutableDictionary *result = [NSMutableDictionary dictionary];
@@ -123,7 +128,7 @@ NSDictionary *host_benchmark_snapshot_create(NSString *folder, NSArray<NSString 
     if (![files createDirectoryAtPath:stage withIntermediateDirectories:YES attributes:@{ NSFilePosixPermissions: @0700 } error:error]) return nil;
     for (NSString *source in sources) {
         int fd = open(source.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-        NSArray *names = fd >= 0 ? inventory(fd, NO) : nil;
+        NSArray *names = fd >= 0 ? inventory_in(fd, NO, YES) : nil;
         if (!names) { if (fd >= 0) close(fd); goto failed; }
         BOOL good = YES;
         for (NSString *name in names) {

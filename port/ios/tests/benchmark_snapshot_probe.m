@@ -54,14 +54,24 @@ int main(void) {
         CHECK([[NSString stringWithContentsOfFile:[pinned stringByAppendingPathComponent:@"route.input"] encoding:NSUTF8StringEncoding error:nil] isEqual:@"local override\n"]);
         CHECK([host_benchmark_snapshot_load(target, identity) isEqual:third]);
         CHECK([files createSymbolicLinkAtPath:[overlay stringByAppendingPathComponent:@"bad.route"] withDestinationPath:[source stringByAppendingPathComponent:@"route.route"] error:nil]);
-        CHECK(host_benchmark_snapshot_create(target, @[ overlay ], identity, updates, &error) == nil);
-        CHECK(error != nil);
-        CHECK([host_benchmark_snapshot_load(target, identity) isEqual:third]); /* A failed replacement preserves the old pin. */
-        CHECK([files removeItemAtPath:[overlay stringByAppendingPathComponent:@"bad.route"] error:nil]);
+        /* A source's link, folder, stray file or empty file is skipped, never followed or copied. */
         directory(overlay, @"nested");
-        CHECK(host_benchmark_snapshot_create(target, @[ overlay ], identity, updates, &error) == nil);
-        CHECK([host_benchmark_snapshot_load(target, identity) isEqual:third]);
-        CHECK([files removeItemAtPath:[overlay stringByAppendingPathComponent:@"nested"] error:nil]);
+        put(overlay, @".DS_Store", @"finder\n");
+        put(overlay, @"README.md", @"notes\n");
+        put(overlay, @"empty.checks", @"");
+        NSDictionary *skipped = host_benchmark_snapshot_create(target, @[ source, overlay ], identity, updates, &error);
+        CHECK(skipped != nil && [skipped[@"files"] count] == 3 && !skipped[@"files"][@"bad.route"]);
+        CHECK([host_benchmark_snapshot_load(target, identity) isEqual:skipped]);
+        for (NSString *name in @[ @"bad.route", @"nested", @".DS_Store", @"README.md", @"empty.checks" ])
+            CHECK([files removeItemAtPath:[overlay stringByAppendingPathComponent:name] error:nil]);
+        /* A failed replacement preserves the old pin: a source that is itself a link is refused. */
+        NSString *linked = [root stringByAppendingPathComponent:@"linked"];
+        CHECK([files createSymbolicLinkAtPath:linked withDestinationPath:overlay error:nil]);
+        CHECK(host_benchmark_snapshot_create(target, @[ linked ], identity, updates, &error) == nil);
+        CHECK(error != nil);
+        CHECK([host_benchmark_snapshot_load(target, identity) isEqual:skipped]);
+        third = host_benchmark_snapshot_create(target, @[ source, overlay ], identity, updates, &error);
+        CHECK(third != nil);
         CHECK([files removeItemAtPath:[pinned stringByAppendingPathComponent:@"route.route"] error:nil]);
         CHECK(host_benchmark_snapshot_load(target, identity) == nil);
         NSDictionary *empty = host_benchmark_snapshot_create(target, @[], identity, @{}, &error);
