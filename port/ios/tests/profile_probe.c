@@ -161,12 +161,13 @@ static void check_refusals(void)
 		"models = [\"Bad1,1\"]\n"
 		"[display]\nrender_quality = 0.5\nshadow_map_size = 2048\nrender_scale = 0.01\nrenderer = \"vulkan\"\n"
 		"stereo = \"head\"\nframe_rate = \"29\"\nanisotropic_filtering = \"16\"\nfoveation = 1\nlod_scale = nan\n"
-		"frame_pacing = \"tick\"\nmirror_resolution = \"half|full\"\n"
+		"frame_pacing = \"tick\"\nmirror_resolution = \"half|full\"\nanti_aliasing = \"taa\"\n"
 		"[network]\nonline = true\n[paths]\ndata = \"/tmp\"\n[debug]\nexit_after = 1.0\n[input]\nturn = \"off\"\n");
 	profile = resolve(folder, device("visionos", "Bad1,1", "", 8), missing, "");
 	assert(profile.count == 2 && has(&profile, "display.render_quality", "0.5") && has(&profile, "display.frame_pacing", "tick"));
 	assert(strstr(logged, "display.shadow_map_size has a value of the wrong type or outside"));
 	assert(strstr(logged, "display.renderer has a value") && strstr(logged, "display.frame_rate has a value"));
+	assert(strstr(logged, "display.anti_aliasing has a value"));
 	assert(strstr(logged, "display.lod_scale has a value") && strstr(logged, "display.foveation has a value"));
 	assert(strstr(logged, "display.stereo is not a setting a profile may set"));
 	assert(strstr(logged, "network.online is not a setting") && strstr(logged, "paths.data is not a setting"));
