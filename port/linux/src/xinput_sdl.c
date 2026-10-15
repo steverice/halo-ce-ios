@@ -1136,6 +1136,13 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		anti_aliasing_chord(&state->Gamepad);
 		input_replay_filter(&state->Gamepad);
 	}
+	else if (port < config_integer("debug.network_test_players"))
+	{
+		/* (split screen without a second gamepad: the scripted player of
+		debug.test_input plays this controller too, ahead of any gamepad,
+		the Mac's touch controls included) */
+		test_input_gamepad(&state->Gamepad);
+	}
 	else if (port_gamepad(gamepads, count, port))
 	{
 		sdl_gamepad_state(port_gamepad(gamepads, count, port), &state->Gamepad);

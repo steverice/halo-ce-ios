@@ -363,15 +363,19 @@ struct rasterizer_cinematic_screen_effect_parameters *rasterizer_screen_effect_g
 		{
 			if (main_get_window_count() > 1)
 			{
-				display_assert(
-					"### FATAL_ERROR screen effects can't use convolution when main_get_window_count>1\r\nmaybe you forgot to turn off the cinematic screen effect?",
-					"c:\\halo\\SOURCE\\rasterizer\\rasterizer_cinematics.c",
-					336,
-					TRUE);
-				system_exit(-1);
+				/* port: the Xbox halted here ("maybe you forgot to turn off the cinematic
+				screen effect?"). Skipping a co-op cutscene on The Pillar of Autumn
+				reverts to a saved state while the effect is on, and the players' windows
+				are back, so split screen goes without the blur until the effect ends */
+				parameters = &cinematic_screen_effect_globals->parameters;
+				parameters->convolution_radius = 0.0f;
+				parameters->convolution_type = 0;
+				parameters->convolution_extra_passes = 0;
 			}
-
-			parameters = &cinematic_screen_effect_globals->parameters;
+			else
+			{
+				parameters = &cinematic_screen_effect_globals->parameters;
+			}
 		}
 
 		if (parameters->filter_light_enhancement_intensity <= _real_epsilon &&

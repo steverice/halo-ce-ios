@@ -108,6 +108,8 @@ static struct
 	boolean joined;
 	boolean map_set;
 	boolean player_added;
+	short players_added;
+	short players_wanted;
 	real joined_seconds;
 	boolean team_set;
 	real kill_interval;
@@ -174,6 +176,7 @@ static void network_test_read_settings(
 	{
 		network_test.mode = _network_test_browse;
 	}
+	network_test.players_wanted = (short)config_integer("debug.network_test_players");
 	network_test.public_game = config_boolean("debug.network_test_public") != 0;
 	network_test.start_delay = (real)config_real("debug.network_test_start");
 	network_test.kill_interval = (real)config_real("debug.network_test_kill");
@@ -1011,6 +1014,13 @@ void network_test_update(
 			}
 			if (!network_test.player_added && network_test.setup_seconds >= 2.0f && global_network_game_client_get())
 				network_test.player_added = network_game_client_add_player(global_network_game_client_get(), 0);
+			/* (split screen: the next controllers' players, a second apart) */
+			if (network_test.player_added && network_test.players_added + 1 < network_test.players_wanted &&
+				network_test.setup_seconds >= 3.0f + network_test.players_added && global_network_game_client_get())
+			{
+				network_game_client_add_player(global_network_game_client_get(), network_test.players_added + 1);
+				network_test.players_added++;
+			}
 			if (network_test.setup_seconds >= network_test.start_delay)
 			{
 				network_test.started = TRUE;
