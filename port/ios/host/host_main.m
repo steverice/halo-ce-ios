@@ -394,6 +394,11 @@ int main(int argc,char **argv) {
             [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String?:"");
         env[env_count++]=env_build;
         mkdir("recordings",0755);
+#if TARGET_OS_MACCATALYST
+        /* the Mac app can end itself, so its menus keep Quit (menu_files.c's platform="quit"); on an iPhone, an
+           iPad, an Apple TV and a Vision Pro the system closes the app and the menus have none */
+        env[env_count++]="HALO_APP_CAN_QUIT=1";
+#endif
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's
            display.renderer. The aspect is pinned to 16:9, since a visionOS

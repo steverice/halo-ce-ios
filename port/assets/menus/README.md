@@ -94,7 +94,7 @@ be a child of many).
 | `description` | A column list's extended description: a widget |
 | `controller` | `1` to `4`, or `any` (the default); a `<child>`'s or `child_controller`: the one it is for |
 | `auto_close`, `auto_close_fade` | It closes itself after this many milliseconds, fading for this many |
-| `platform` | `desktop` or `android`: it is only there. Every element takes this. |
+| `platform` | `desktop`, `android` or `quit`: it is only there (`quit`: where the app can end itself, the desktop's and the Mac app's, not an iPhone, iPad, Apple TV or Vision Pro; the main menu's Quit has it). Every element takes this. |
 
 Widget flags: `pass_unhandled_to_focused_child` (an event it does not handle
 goes to its focused child: a screen needs it for its list to get events),

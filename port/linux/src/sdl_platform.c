@@ -1194,11 +1194,15 @@ static void platform_show_pending_message(void)
 /* ---------- events */
 
 /* quits as closing the window does, when the events are next read (the
-menus' Quit: port/linux/game/menu_functions.c); Android's and iOS's menus
-have none, as the system closes its apps */
+menus' Quit: port/linux/game/menu_functions.c); Android's and the Apple
+devices' menus have none, as the system closes its apps; the Mac app (the
+host sets HALO_APP_CAN_QUIT) has one and ends itself */
 void platform_request_quit(void)
 {
-#if !defined(HALO_ANDROID) && !defined(HALO_ILP32)
+#if defined(HALO_ILP32)
+	if (getenv("HALO_APP_CAN_QUIT"))
+		exit(0);
+#elif !defined(HALO_ANDROID)
 	SDL_Event event;
 
 	memset(&event, 0, sizeof(event));

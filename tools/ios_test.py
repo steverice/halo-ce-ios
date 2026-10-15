@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run native ILP32, memory-tracking and SDL audio handoff regressions."""
+import os
 import re
 import shlex
 import subprocess
 from pathlib import Path
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'build/ios/probe'
@@ -365,6 +367,31 @@ if '{ "display.foveation", _config_boolean, "true"' not in (ROOT / 'port/linux/s
 mac_run_text = (ROOT / 'tools/mac_run.py').read_text()
 if '"display.foveation": "true",' not in mac_run_text or '"debug.foveation_eye_passes": "true",' not in mac_run_text:
     raise SystemExit("mac_run.py: DEFAULTS must follow port_config.c's foveation defaults")
+
+# The menus' platform attribute: "quit" is for the desktop ports and the Mac app (the host sets HALO_APP_CAN_QUIT), not
+# for an iPhone, an iPad, an Apple TV or a Vision Pro (menu_platform.h)
+for name, defines, mac in (('menu-platform-desktop', [], False), ('menu-platform-apple', ['-DHALO_ILP32=1'], False),
+                           ('menu-platform-mac', ['-DHALO_ILP32=1'], True), ('menu-platform-android', ['-DHALO_ANDROID=1'], False)):
+    run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', *defines, 'port/ios/tests/menu_platform_probe.c', '-o', BUILD / name)
+    kind = name.split('-', 2)[2]
+    subprocess.run([str(BUILD / name), kind], cwd=ROOT, check=True,
+                   env={**os.environ, **({'HALO_APP_CAN_QUIT': '1'} if mac else {})})
+# ... and the main menu uses it: Quit's item and the B and Back handlers that open its question are the only elements
+# for platform "quit", every other item stays, and the items run one row apart from the first, so the menu has no
+# gap where Quit was and the list's wrap is its own over the items left (the pause menu's quit to main menu is another
+# screen and not in this file)
+main_menu = ElementTree.parse(ROOT / 'port/assets/menus/ce/main_menu.xml').getroot()
+quit_elements = [element.attrib for element in main_menu.iter() if element.get('platform') == 'quit']
+assert sorted(element.get('event') or element.get('widget') for element in main_menu.iter()
+              if element.get('platform') == 'quit') == ['b', 'back', 'main_menu/main_menu_item_quit_game'], quit_elements
+# (the Quit item's own handlers stay: with the item not a child of the list they are never reached)
+assert all(on.get('platform') == 'quit' for on in main_menu.find("widget[@name='main_menu/main_menu']").iter('on')
+           if 'quit_select' in (on.get('open') or '')), 'a way to the quit question is left on Apple devices'
+shown = [child for child in main_menu.find("widget[@name='main_menu/main_menu_select_list']").iter('child')
+         if child.get('platform') != 'quit']
+assert [int(child.get('y')) for child in shown] == [247 + 36 * row for row in range(len(shown))] and len(shown) == 4, \
+    'the main menu without Quit: four items, a row apart'
+print('main menu without Quit: ' + ', '.join(child.get('widget').split('/')[-1] for child in shown))
 
 # Parse untrusted XISO metadata and exercise extraction/cancellation under sanitizers.
 run('python3', 'tools/ios_xiso_test.py')
