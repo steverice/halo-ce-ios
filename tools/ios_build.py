@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,11 @@ HEADERS = {
     'GLES2/gl2ext.h': ('OpenGL-Registry', GL_REVISION, 'api/GLES2/gl2ext.h'),
     'KHR/khrplatform.h': ('EGL-Registry', EGL_REVISION, 'api/KHR/khrplatform.h'),
 }
+
+# signed profile and recording updates (docs/data-packs.md): the key the publisher's seed pairs with, and the
+# feeds on the project's site, one folder per channel
+DATA_PACK_PUBLIC_KEY = 'b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea'
+DATA_PACK_FEED = 'https://code.steverice.org/visr/packs/{channel}/{kind}.json'
 
 HOST_PROFILE = ROOT / 'pgo/visr_host.profdata'
 HOST_PROFILE_RAW = ROOT / 'build/host-pgo/raw'
@@ -100,6 +106,18 @@ def main():
     parser.add_argument('--upload', action='store_true',
                         help='with --app-store-package: upload the package to App Store Connect with the account '
                              'Xcode is signed in to. The app record must exist there first')
+    parser.add_argument('--data-packs', choices=('on', 'off'),
+                        help='signed profile and recording updates (docs/data-packs.md): on by default for device and '
+                             'simulator builds, from the tester feeds with --tester and the stable feeds otherwise; off '
+                             'by default for --mac, the runner, whose runs must not change with a download, unless a key '
+                             'or feed is named')
+    parser.add_argument('--data-pack-public-key', metavar='HEX',
+                        help='the Ed25519 public key (64 hex digits) that updates must verify against, in place of the '
+                             "project's own")
+    parser.add_argument('--profile-feed-url', metavar='URL',
+                        help='the HTTPS address of the signed profile update envelope, in place of the default')
+    parser.add_argument('--recording-feed-url', metavar='URL',
+                        help='the HTTPS address of the signed benchmark recording update envelope, in place of the default')
     parser.add_argument('--render-validation', choices=('on', 'off'),
                         default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
                         help='check every call into the GPU backend before it is made, and name every fallback '
@@ -153,6 +171,10 @@ def main():
         cloud = cloud_definitions(args.bundle_id, args.cloud_saves, args.cloud_container, args.benchmark_upload)
     except ValueError as error:
         parser.error(str(error))
+    try:
+        data_packs = data_pack_definitions(*data_pack_settings(args))
+    except ValueError as error:
+        parser.error(str(error))
     if args.mac and (args.cloud_saves or args.benchmark_upload) and not args.team:
         parser.error('--mac with --cloud-saves or --benchmark-upload needs --team: macOS does not run an ad hoc signed '
                      'app with iCloud entitlements')
@@ -200,7 +222,7 @@ def main():
     ):
         shutil.copyfile(ROOT/source, notices/name)
     if args.mac:
-        build_mac(args, cloud)
+        build_mac(args, cloud, data_packs)
         return
     build=ROOT/'build'/platform_name/('app-simulator' if args.simulator else
                 'app-unsigned' if args.unsigned else 'app-device')
@@ -213,7 +235,7 @@ def main():
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}',
-             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud,
+             f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
     if args.frame_pacing:
@@ -344,6 +366,49 @@ def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=
             f'-DHALO_BENCHMARK_UPLOAD={"ON" if benchmark_upload else "OFF"}']
 
 
+def data_pack_settings(args):
+    """the key and feed URLs a build gets: the project's own unless named, none with --data-packs off"""
+    explicit = [args.data_pack_public_key, args.profile_feed_url, args.recording_feed_url]
+    named = any(value is not None for value in explicit)
+    enabled = args.data_packs == 'on' or (args.data_packs is None and (named or not args.mac))
+    if not enabled:
+        if named:
+            raise ValueError('--data-packs off leaves out the key and feed URLs; drop them, or use --data-packs on')
+        return '', '', ''
+    channel = 'tester' if args.tester else 'stable'
+    return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
+            DATA_PACK_FEED.format(channel=channel, kind='profiles') if args.profile_feed_url is None else args.profile_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None
+            else args.recording_feed_url)
+
+
+def data_pack_definitions(public_key, profile_feed_url, recording_feed_url):
+    """the CMake definitions for signed data updates (docs/data-packs.md), all three always named so CMake's cache
+    cannot keep an earlier value; empty values leave downloads off"""
+    if public_key and not re.fullmatch(r'[0-9A-Fa-f]{64}', public_key):
+        raise ValueError('--data-pack-public-key must be the 32-byte Ed25519 public key as 64 hex digits')
+    for name, url in (('--profile-feed-url', profile_feed_url), ('--recording-feed-url', recording_feed_url)):
+        if url and not feed_url_valid(url):
+            raise ValueError(f'{name}: a feed URL must be https:// with a host, and without credentials, a query, '
+                             'a fragment, spaces or characters outside a plain URL')
+    return [f'-DHALO_DATA_PACK_PUBLIC_KEY={public_key.lower()}', f'-DHALO_PROFILE_FEED_URL={profile_feed_url}',
+            f'-DHALO_RECORDING_FEED_URL={recording_feed_url}']
+
+
+def feed_url_valid(url):
+    # also keeps out what Xcode would expand or split in a build setting ($, quotes, spaces) and CMake's list
+    # separator (;)
+    if not re.fullmatch(r"[A-Za-z0-9._~:/%+=@-]+", url) or '?' in url or '#' in url:
+        return False
+    parts = urllib.parse.urlsplit(url)
+    try:
+        parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == 'https' and bool(parts.hostname) and parts.username is None and
+            parts.password is None and '@' not in parts.netloc)
+
+
 def mac_build_folder(environment=None):
     """where the Catalyst build goes: build/mac/app in the checkout, or, on a host that runs developer-built
     apps only from one folder (HALO_MAC_BUILD, set by that host's job runner), a folder per
@@ -354,7 +419,7 @@ def mac_build_folder(environment=None):
     return ROOT / 'build/mac/app'
 
 
-def build_mac(args, cloud):
+def build_mac(args, cloud, data_packs=()):
     """The iOS project built for Mac Catalyst: configured as iOS, built with the macOS SDK"""
     build=mac_build_folder()
     frameworks=opengles_framework(ROOT/'build/mac/frameworks')
@@ -364,7 +429,7 @@ def build_mac(args, cloud):
         f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',
         f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
-        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,
+        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,*data_packs,
         *host_pgo_flags(args.host_pgo))
     # ad hoc, except with --cloud-saves or --benchmark-upload: iCloud entitlements need a development signature and a
     # Mac profile (and the Mac itself registered with the team, which a Mac profile lists as its device)

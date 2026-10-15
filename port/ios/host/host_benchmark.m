@@ -12,6 +12,8 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_benchmark.h"
+#import "host_benchmark_snapshot.h"
+#import "host_data_updates.h"
 #include "host_profile.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
@@ -53,6 +55,8 @@ static NSMutableArray<NSString *> *flags;
 static NSDate *started;
 static dispatch_source_t sampler;
 static int last_run_throttled;
+static NSDictionary *pinned_snapshot;
+#define JOURNAL_SNAPSHOT FOLDER "/journal-snapshot.sha256"
 
 /* ---------- the crash marker */
 
@@ -165,6 +169,11 @@ static NSString *json_string(NSString *text) {
     return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"\"\"";
 }
 
+static NSString *json_object(id value) {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:value ?: @{} options:NSJSONWritingSortedKeys error:nil];
+    return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"{}";
+}
+
 static NSString *model_identifier(void) {
     char text[64] = "";
     size_t size = sizeof(text);
@@ -226,8 +235,8 @@ static NSString *report_header(void) {
         "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
         "\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
-        "\"profile\":{\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
-        "\"model_lod\":\"%s\"},\"flags\":%@",
+        "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
+        "\"model_lod\":\"%s\"},\"data_updates\":%@,\"recording_snapshot\":%@,\"profile_sha256\":%@,\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
         [minutes stringFromDate:started ?: NSDate.date],
         json_string(model_identifier()), json_string(@(chip)), platform_name(), (long)version.majorVersion,
@@ -239,10 +248,15 @@ static NSString *report_header(void) {
         screen_width, screen_height, (long)screen_rate(),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]), HALO_GUEST_SHA256,
+        json_string(host_device_profile()->inherited ? @"inherited" : host_device_profile()->model_file[0] ? @"exact" : @"class"),
+        json_string(@(host_device_profile()->source_hardware)), json_string(@(host_device_profile()->target_hardware)),
+        host_device_profile()->source_tier, host_device_profile()->target_tier, json_string(@(host_device_profile()->catalog_version)),
         json_string(@(host_device_profile()->class_file)), json_string(@(host_device_profile()->model_file)),
         host_device_profile()->drop_in ? "true" : "false",
         plan.device.drawable_lines, plan.device.base_lines, plan.device.anisotropy, plan.device.shadow_size,
         plan.device.model_lod_max ? "max" : "auto",
+        json_object(pinned_snapshot[@"updates"]), json_string(pinned_snapshot[@"sha256"]),
+        json_string(pinned_snapshot[@"identity"][@"profile_sha256"]),
         [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:flags options:0 error:nil] encoding:NSUTF8StringEncoding]];
 }
 
@@ -343,47 +357,53 @@ static int cooled(void) {
     return NSProcessInfo.processInfo.thermalState <= NSProcessInfoThermalStateNominal;
 }
 
-int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
-    int model_lod_max) {
-    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* nothing that reads as another */
-    struct benchmark_journal journal;
-    NSProcessInfo *process = NSProcessInfo.processInfo;
+/* A resumed journal must describe the same guest, resolved profile and baseline settings. Recording update
+   identities stay in the snapshot metadata, not here: a newly active pack cannot replace an unfinished suite. */
+static NSDictionary *snapshot_identity(const char *mode) {
+    const struct host_profile *profile = host_device_profile();
+    NSMutableArray *values = [NSMutableArray array];
+    for (int i = 0; i < profile->count; i++) {
+        const struct host_profile_value *value = &profile->values[i];
+        [values addObject:@{ @"name": @(value->name), @"value": @(value->text), @"scene": @(value->scene), @"source": @(value->source) }];
+    }
+    NSDictionary *resolved = @{ @"values": values, @"class": @(profile->class_file), @"model": @(profile->model_file),
+        @"class_name": @(profile->class_name), @"model_name": @(profile->model_name), @"drop_in": @(profile->drop_in),
+        @"inherited": @(profile->inherited), @"source_hardware": @(profile->source_hardware),
+        @"target_hardware": @(profile->target_hardware), @"source_tier": @(profile->source_tier),
+        @"target_tier": @(profile->target_tier), @"catalog_version": @(profile->catalog_version) };
+    struct benchmark_plan builtins = { .mode = plan.mode, .scenes = benchmark_suite_scenes, .scene_count = benchmark_suite_scene_count };
+    return @{ @"guest": @HALO_GUEST_SHA256, @"profile_sha256": host_benchmark_snapshot_digest(resolved),
+        @"suite": @(BENCHMARK_SUITE_VERSION), @"builtins": @(benchmark_plan_signature(&builtins)), @"mode": @(mode),
+        @"app_build": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"",
+        @"device": @[ @(plan.device.drawable_lines), @(plan.device.base_lines), @(plan.device.anisotropy),
+            @(plan.device.shadow_size), @(plan.device.model_lod_max) ] };
+}
+
+static NSDictionary *fresh_snapshot(NSDictionary *identity) {
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
+    NSString *selected = host_recording_update_folder(bundled);
+    NSMutableArray *sources = [NSMutableArray array];
+    NSMutableDictionary *updates = [host_data_updates_metadata() mutableCopy];
+    if (!updates) updates = [NSMutableDictionary dictionary];
+#ifdef HALO_BENCHMARK_NO_ROUTES
+    /* This build option suppresses bundled recordings, while a validated downloaded pack still participates. */
+    if ([selected isEqual:bundled]) selected = nil;
+#endif
+    if (selected && (![selected isEqual:bundled] || [files fileExistsAtPath:selected])) [sources addObject:selected];
+    NSString *local = @FOLDER "/local-routes";
+    BOOL local_routes = [files contentsOfDirectoryAtPath:local error:nil].count != 0;
+    if (local_routes) [sources addObject:local];
+    updates[@"local_routes"] = @(local_routes);
+    NSError *error = nil;
+    NSDictionary *snapshot = host_benchmark_snapshot_create(@FOLDER, sources, identity, updates, &error);
+    if (!snapshot) host_logf(HOST_LOG_INFO, "benchmark: cannot prepare recording snapshot: %s", error.localizedDescription.UTF8String);
+    return snapshot;
+}
+
+static void install_scenes(NSArray<NSString *> *only) {
     NSFileManager *files = NSFileManager.defaultManager;
     int index;
-
-    if (atomic_load(&running)) return 1;
-    if (process.lowPowerModeEnabled) {
-        host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
-        return 0;
-    }
-    mkdir(FOLDER, 0755);
-    /* The recordings, where the game reads them (benchmark_suite.c): the folder is made over at each start from
-       the app's own, then from benchmark/local-routes in the data folder, where a developer drops a route to try
-       (tools/replay_check.py); a tester's device has none */
-    {
-        NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
-
-        [files removeItemAtPath:@FOLDER "/recordings" error:nil];
-        mkdir(FOLDER "/recordings", 0755);
-#ifdef HALO_BENCHMARK_NO_ROUTES
-        /* a build without recorded routes: the folder stays empty, so the suite has only its own scenes */
-        (void)bundled;
-        for (NSString *source in @[])
-#else
-        for (NSString *source in @[ bundled, @FOLDER "/local-routes" ])
-#endif
-            for (NSString *name in [files contentsOfDirectoryAtPath:source error:nil]) {
-                NSString *target = [@FOLDER "/recordings" stringByAppendingPathComponent:name];
-
-                [files removeItemAtPath:target error:nil];
-                [files copyItemAtPath:[source stringByAppendingPathComponent:name] toPath:target error:nil];
-            }
-    }
-    flags = [NSMutableArray array];
-    started = NSDate.date;
-    plan.mode = !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
-    /* "quick:a10-crew,c40-bridge": only the scenes named after the colon */
-    NSArray<NSString *> *only = strchr(mode, ':') ? [@(strchr(mode, ':') + 1) componentsSeparatedByString:@","] : nil;
     {
         /* the scenes: the ones that play by themselves, then one for each recorded route the app carries, by name */
         static struct benchmark_scene scenes[BENCHMARK_SCENES_MAXIMUM];
@@ -406,10 +426,46 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         plan.scenes = scenes;
         plan.scene_count = count;
     }
-    plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
+}
 
+int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
+    int model_lod_max) {
+    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* nothing that reads as another */
+    struct benchmark_journal journal;
+    NSProcessInfo *process = NSProcessInfo.processInfo;
+    NSFileManager *files = NSFileManager.defaultManager;
+    int index;
+
+    if (atomic_load(&running)) return 1;
+    if (process.lowPowerModeEnabled) {
+        host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
+        return 0;
+    }
+    mkdir(FOLDER, 0755);
+    plan.mode = !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
+    plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
     benchmark_journal_load(JOURNAL, &journal);
-    if (journal.valid && !journal.finished && journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
+    NSDictionary *identity = snapshot_identity(mode);
+    pinned_snapshot = journal.valid && !journal.finished ? host_benchmark_snapshot_load(@FOLDER, identity) : nil;
+    NSString *journal_pin = [NSString stringWithContentsOfFile:@JOURNAL_SNAPSHOT encoding:NSUTF8StringEncoding error:nil];
+    BOOL pinned_resume = pinned_snapshot && [journal_pin isEqual:pinned_snapshot[@"sha256"]];
+    if (!pinned_resume) pinned_snapshot = fresh_snapshot(identity);
+    if (!pinned_snapshot) return 0;
+    flags = [NSMutableArray array];
+    started = NSDate.date;
+    /* "quick:a10-crew,c40-bridge": only the scenes named after the colon */
+    NSArray<NSString *> *only = strchr(mode, ':') ? [@(strchr(mode, ':') + 1) componentsSeparatedByString:@","] : nil;
+    install_scenes(only);
+    if (pinned_resume && !(journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
+        journal.device.drawable_lines == plan.device.drawable_lines && journal.device.base_lines == plan.device.base_lines &&
+        journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&
+        journal.device.model_lod_max == plan.device.model_lod_max)) {
+        pinned_resume = NO;
+        pinned_snapshot = fresh_snapshot(identity);
+        if (!pinned_snapshot) return 0;
+        install_scenes(only);
+    }
+    if (pinned_resume && journal.valid && !journal.finished && journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
         journal.device.drawable_lines == plan.device.drawable_lines && journal.device.base_lines == plan.device.base_lines &&
         journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&
         journal.device.model_lod_max == plan.device.model_lod_max) {
@@ -442,6 +498,10 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
             host_logf(HOST_LOG_INFO, "benchmark: cannot write %s (is the device's storage full?)", JOURNAL);
             return 0;
         }
+        if (![pinned_snapshot[@"sha256"] writeToFile:@JOURNAL_SNAPSHOT atomically:YES encoding:NSUTF8StringEncoding error:nil]) {
+            host_logf(HOST_LOG_INFO, "benchmark: cannot bind the journal to its recording snapshot");
+            return 0;
+        }
         host_logf(HOST_LOG_INFO, "benchmark: suite %d %s, report %s; display %d lines, in force: %d lines, %dx filtering, "
             "%d shadows, model detail %s", BENCHMARK_SUITE_VERSION, mode, report_code, drawable_lines, base_lines, anisotropy,
             shadow_size, model_lod_max ? "max" : "auto");
@@ -467,7 +527,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     if (only) flag(@"scenes_filtered");
     /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
     if (host_device_profile()->drop_in) flag(@"drop_in_profile");
-    if ([files contentsOfDirectoryAtPath:@FOLDER "/local-routes" error:nil].count) flag(@"local_routes");
+    if ([pinned_snapshot[@"updates"][@"local_routes"] boolValue]) flag(@"local_routes");
 #if TARGET_OS_SIMULATOR
     flag(@"simulator");
 #endif

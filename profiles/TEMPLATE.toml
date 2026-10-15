@@ -17,6 +17,8 @@ kind = "model"
 # "provisional" until a second report from the same model agrees; leave the line out once it has.
 status = "provisional"
 
+# Optional fallback coverage is recorded in hardware/catalog.toml, with hardware ordering
+# and memory/pixel/refresh limits. Exact matching below works without a catalog entry.
 [match]
 # "ios" (iPhone and iPad), "tvos", "visionos" or "mac"
 platform = "ios"
