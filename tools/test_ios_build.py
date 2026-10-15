@@ -58,6 +58,11 @@ def test_an_app_store_package_is_archived_then_exported_and_uploads_only_when_as
     assert options["manageAppVersionAndBuildNumber"] is False
     ios_build.app_store_commands(tmp_path / "build", "tvOS", "TEAM123456", tmp_path / "out", True)
     assert plistlib.loads((tmp_path / "out" / "ExportOptions.plist").read_bytes())["destination"] == "upload"
+    assert "testFlightInternalTestingOnly" not in options
+    ios_build.app_store_commands(tmp_path / "build", "iOS", "TEAM123456", tmp_path / "out", True, True)
+    internal = plistlib.loads((tmp_path / "out" / "ExportOptions.plist").read_bytes())
+    assert internal["testFlightInternalTestingOnly"] is True
+    assert internal["destination"] == "upload"
 
 
 def test_cloud_saves_are_off_unless_asked_for():
