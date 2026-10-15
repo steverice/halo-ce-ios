@@ -71,6 +71,11 @@ extern unsigned long input_replay_random_seed(const unsigned long *seed);
 extern void input_replay_random_seeds(unsigned long seeds[2], unsigned char set);
 /* player 1's position; 0 while there is no player unit */
 extern unsigned char input_replay_player_position(float position[3]);
+/* player 1's vitality and the AI's count of actors and of dead objects; 0 while there is no player unit */
+extern unsigned char input_replay_fight_state(float *body, float *shield, long *actors, long *dead_objects);
+/* dsound_sdl.c: the replay's mixer, stepped by the ticks */
+extern void dsound_replay_mixer(BOOL on);
+extern void dsound_replay_step(void);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 
@@ -154,7 +159,9 @@ static struct
 	BOOL difficulty_checked;
 	/* ticks whose random seeds, as the game had them before the recording's were set, were not the recording's:
 	the tick before drew a different count of random numbers, so the replay had left the take's path there */
-	long seed_misses;
+	long global_misses;
+	/* the seeds as the last tick's hook found them, before the recording's were set */
+	unsigned long found_seeds[2];
 	BOOL preroll, preroll_timeline;
 	/* the replay itself skipped a cinematic and the revert that follows has not been seen yet. The revert is a
 	segment's beginning even when the game time does not go back by it: a cinematic skipped on the level's first
@@ -935,10 +942,70 @@ static void route_log(long tick, const char *took)
 	if (every <= 0 || tick % every)
 		return;
 	if (input_replay_player_position(position))
-		platform_log("debug.input_replay: route segment %ld tick %ld at %.2f,%.2f,%.2f (%s; %ld seed misses)",
-			replay.segment, tick, position[0], position[1], position[2], took, replay.seed_misses);
+	{
+		float body = 0, shield = 0;
+		long actors = 0, dead = 0;
+
+		input_replay_fight_state(&body, &shield, &actors, &dead);
+		platform_log("debug.input_replay: route segment %ld tick %ld at %.2f,%.2f,%.2f (%s; body %.2f shield %.2f "
+			"actors %ld dead %ld; seed misses %ld; found %08lx %08lx)", replay.segment, tick,
+			position[0], position[1], position[2], took, body, shield, actors, dead, replay.global_misses,
+			replay.found_seeds[0], replay.found_seeds[1]);
+	}
 	else
 		platform_log("debug.input_replay: route segment %ld tick %ld at none (%s)", replay.segment, tick, took);
+}
+
+/* The simulation draws from the random sequences before the tick's player action is taken (game_tick runs
+ai_update, where the enemies choose, ahead of players_update_before_game, where the action and the recording's
+seeds are set), and the frames drawn between two ticks draw from them too, as often as the frames come. So the
+seeds an enemy's choice starts from depend on how many frames came between the ticks: two replays of one take part
+at the first choice a frame's draw changed, and the recording's seeds, set after the choices, cannot undo it. While
+a take is recorded or replayed, a tick ends by noting both seeds and the next one begins by putting them back, so
+the frames' draws never reach the simulation. (The local sequence is started again from the global one: the numbers
+a tick draws from it are not the same in two runs.) The sounds the mixer has finished reach the simulation too,
+which a replay's mixer steps with the ticks for (dsound_sdl.c). */
+static struct { BOOL valid; long tick; unsigned long seeds[2]; } tick_seeds;
+static long tick_seeds_begun = -1;
+
+static BOOL tick_seeds_wanted(void)
+{
+	return replay.action_count || *replay.record_actions_path;
+}
+
+void input_replay_tick_begin(void)
+{
+	long tick;
+
+	/* (a replay's audio is silent and steps with the ticks; see dsound_sdl.c) */
+	if (replay.action_count)
+		dsound_replay_mixer(TRUE);
+
+	if (!tick_seeds_wanted())
+		return;
+	tick = game_time_get();
+	if (tick_seeds.valid && tick == tick_seeds.tick + 1)
+	{
+		unsigned long seeds[2];
+
+		/* (the local sequence starts each tick from the global one: how many numbers a tick draws from it is not the
+		same in two runs, objects_update's draws among them, and what the next tick's enemies draw follows it) */
+		seeds[0] = tick_seeds.seeds[0];
+		seeds[1] = seeds[0] * 1664525ul + 1013904223ul;
+		input_replay_random_seeds(seeds, TRUE);
+	}
+	tick_seeds_begun = tick;
+}
+
+void input_replay_tick_end(void)
+{
+	if (replay.action_count)
+		dsound_replay_step();
+	if (!tick_seeds_wanted() || tick_seeds_begun < 0)
+		return;
+	tick_seeds.valid = TRUE;
+	tick_seeds.tick = tick_seeds_begun;
+	input_replay_random_seeds(tick_seeds.seeds, FALSE);
 }
 
 /* player 1's action as a tick takes it (update_client_dequeue, single
@@ -1055,14 +1122,17 @@ void input_replay_tick_action(void *action)
 				unsigned long seeds[2];
 
 				input_replay_random_seeds(seeds, FALSE);
-				if (seeds[0] != replay.actions[replay.next_action].seeds[0] ||
-					seeds[1] != replay.actions[replay.next_action].seeds[1])
+				replay.found_seeds[0] = seeds[0];
+				replay.found_seeds[1] = seeds[1];
 				{
-					if (!replay.seed_misses++)
-						platform_log("debug.input_replay: segment %ld, tick %ld: the game's random seeds %08lx %08lx are not "
-							"the recording's %08lx %08lx: the replay left the take's path in the tick before", replay.segment,
-							tick, seeds[0], seeds[1], replay.actions[replay.next_action].seeds[0],
-							replay.actions[replay.next_action].seeds[1]);
+					const unsigned long *recorded = replay.actions[replay.next_action].seeds;
+
+					/* (the global sequence is the simulation's own: a miss there is a replay off the take's path; the local
+					one is drawn from by what is only drawn, so a miss there alone does not leave the path) */
+					if (seeds[0] != recorded[0] && !replay.global_misses++)
+						platform_log("debug.input_replay: segment %ld, tick %ld: the game's global seed %08lx is not the "
+							"recording's %08lx: the replay left the take's path in the tick before", replay.segment, tick,
+							seeds[0], recorded[0]);
 				}
 				input_replay_random_seeds(replay.actions[replay.next_action].seeds, TRUE);
 			}

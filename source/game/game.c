@@ -313,6 +313,13 @@ void game_tick(
 	collision_log_begin_period(0);
 	real_math_reset_precision();
 	profile_enter(game_update_section);
+	/* port: debug.input_record and debug.input_replay take the tick's random seeds as the last tick left them, not as
+	the frames drawn since changed them (port/linux/src/input_replay.c) */
+	{
+		extern void input_replay_tick_begin(void);
+
+		input_replay_tick_begin();
+	}
 
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\game.c",
@@ -371,6 +378,11 @@ void game_tick(
 	game_state_check_data_arrays();
 	lights_port_recover();
 
+	{
+		extern void input_replay_tick_end(void);
+
+		input_replay_tick_end();
+	}
 	profile_exit(game_update_section);
 	collision_log_end_period();
 	profile_tick_end();

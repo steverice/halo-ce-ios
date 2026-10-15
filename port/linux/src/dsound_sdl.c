@@ -704,17 +704,51 @@ static void limit(float *output, unsigned long frames)
 
 static void mix_buffers(float *output, unsigned long frames);
 
+/* While a recording is replayed, what the mixer has played is part of the simulation: a sound that has finished
+frees its channel, and whether the next sound plays follows, as do the dialogue and the scripts waiting on a sound.
+The device's callback and the silent clock run at the real rate, so two replays of one recording heard different
+sounds finish at different ticks and went different ways. A replay's mixer is stepped by the game, one tick's worth
+of frames at the end of each tick (dsound_replay_step), and the device and the clock mix nothing. */
+static BOOL replay_mixer;
+static __thread BOOL replay_stepping;
+
+void dsound_replay_mixer(BOOL on)
+{
+	replay_mixer = on;
+}
+
 static void mix(float *output, unsigned long frames)
 {
 	struct sdl_stream *stream;
 
 	memset(output, 0, frames * OUTPUT_CHANNELS * sizeof(float));
+	if (replay_mixer && !replay_stepping)
+		return;
 	pthread_mutex_lock(&mixer_lock);
 	for (stream = streams; stream; stream = stream->next)
 		mix_voice(stream, output, frames);
 	mix_buffers(output, frames);
 	pthread_mutex_unlock(&mixer_lock);
 	limit(output, frames);
+}
+
+/* the game's tick, 1/30 s of frames mixed into a scratch buffer (the replay's silent audio) */
+void dsound_replay_step(void)
+{
+	float buffer[480 * OUTPUT_CHANNELS];
+	unsigned long remaining = OUTPUT_RATE / 30;
+
+	if (!replay_mixer)
+		return;
+	replay_stepping = TRUE;
+	while (remaining)
+	{
+		unsigned long frames = remaining > 480 ? 480 : remaining;
+
+		mix(buffer, frames);
+		remaining -= frames;
+	}
+	replay_stepping = FALSE;
 }
 
 /* ---------- output */
