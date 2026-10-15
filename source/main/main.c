@@ -3578,7 +3578,16 @@ void main_loop(
 					main_save_map_private();
 				}
 
-				if (render_frame && !debug_no_drawing)
+				if (render_frame && !debug_no_drawing && halo_loading_screen_tail())
+				{
+					/* port: the loading screen goes on over the level's first ticks
+					(port/linux/game/loading_screen.c): never the player's start */
+					profile_render_start();
+					main_pregame_render();
+					profile_render_end();
+					halo_loading_screen_tail_frame();
+				}
+				else if (render_frame && !debug_no_drawing)
 				{
 					profile_render_start();
 					/* port: stereo latches its frame once, for the frame it
