@@ -1785,6 +1785,35 @@ void player_control_action_test_note(
 	}
 }
 
+/* port: The scripts' action tests (player_control_action_test_*, a10's tutorial among them: look up, look down,
+move, jump) read action_flags, which each frame's input set, and the frames come as the display and the device's
+load have them, not with the ticks: while a take is recorded or replayed (input_replay_sim_isolated), a replay's
+controller (the take's input, played on its timeline) and live play's set the flags at different ticks, and the
+replayed tick actions don't set them at all, so a10's tutorial moved on at another tick in the replay than in the
+take. So a frame's actions are kept in player_control_frame_action_flags instead, the next tick's action carries
+them (its pad, which update_server_next_update fills from player_control_take_frame_action_flags), a take records
+them with the action and a replay hands them back with it, and the tick notes them where the action is taken
+(player_control_action_test_note_tick, from update_client_dequeue). */
+extern unsigned char input_replay_sim_isolated(void);
+
+static unsigned long player_control_frame_action_flags;
+
+unsigned short player_control_take_frame_action_flags(
+	void)
+{
+	unsigned short flags = (unsigned short)player_control_frame_action_flags;
+
+	player_control_frame_action_flags = 0;
+	return flags;
+}
+
+void player_control_action_test_note_tick(
+	unsigned short flags)
+{
+	player_control_globals->action_flags |= flags;
+	return;
+}
+
 static void player_control_action_test_check_reset_input_blob(
 	struct input_blob *input)
 {
@@ -1797,20 +1826,33 @@ static void player_control_action_test_check_reset_input_blob(
 			main_skip_cinematic();
 	}
 
-	player_control_action_test_note(input->unit_control_flags, &input->facing_delta, &input->throttle,
-		input->primary_trigger);
 	globals = player_control_globals;
-	if (input->accept)
 	{
-		globals->action_flags |= FLAG(_player_control_accept_bit);
-	}
-	if (input->back)
-	{
-		globals->action_flags |= FLAG(_player_control_back_bit);
-	}
-	if (TEST_FLAG(input->player_control_flags, _player_control_input_zoom_bit))
-	{
-		globals->action_flags |= FLAG(_player_control_zoom_bit);
+		/* port: the frame's actions noted on their own (player_control_frame_action_flags) */
+		unsigned long earlier_action_flags = globals->action_flags;
+
+		globals->action_flags = 0;
+		player_control_action_test_note(input->unit_control_flags, &input->facing_delta, &input->throttle,
+			input->primary_trigger);
+		if (input->accept)
+		{
+			globals->action_flags |= FLAG(_player_control_accept_bit);
+		}
+		if (input->back)
+		{
+			globals->action_flags |= FLAG(_player_control_back_bit);
+		}
+		if (TEST_FLAG(input->player_control_flags, _player_control_input_zoom_bit))
+		{
+			globals->action_flags |= FLAG(_player_control_zoom_bit);
+		}
+		if (input_replay_sim_isolated() && game_connection() == _game_connection_local)
+		{
+			player_control_frame_action_flags |= globals->action_flags;
+			globals->action_flags = earlier_action_flags;
+		}
+		else
+			globals->action_flags |= earlier_action_flags;
 	}
 
 	if (!TEST_FLAG(globals->action_test_flags, _player_control_action_bit))

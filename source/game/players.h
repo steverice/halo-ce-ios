@@ -296,6 +296,10 @@ void player_control_set_facing(
 void player_control_new_unit(
 	short local_player_index,
 	long unit_index);
+unsigned short player_control_take_frame_action_flags(
+	void);
+void player_control_action_test_note_tick(
+	unsigned short flags);
 void player_control_action_test_reset(
 	void);
 void player_control_action_test_note(
