@@ -5374,6 +5374,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 #endif
 			}
 		}
+		else
+			host_benchmark_frame_unshown(drawable ? 1 : 0);
 		/* (a frame with nothing to show: its slot goes back now) */
 		frame_pacer_frame_dropped(&paced);
 		drawable = nil;

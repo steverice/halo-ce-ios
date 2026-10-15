@@ -10,6 +10,7 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 
 #include "gpu.h"
 #include "ios_host.h"
+#include "host_benchmark.h"
 #if HALO_RENDER_VALIDATION
 #include "gpu_validate.h"
 #include "gpu_capture.h"
@@ -24,6 +25,7 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 
 #include <TargetConditionals.h>
 #include <mach/mach_time.h>
+#include <time.h>
 
 /* host_gpu.c's, which writes the guest's log */
 void platform_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -46,12 +48,32 @@ static const struct gpu_backend *wrapped_backend;
 static int frame_counter;
 static unsigned long presented;
 
+/* the device benchmark's frames under the GL backend, which iPhones and iPads use unless a profile asks for Metal: the
+Metal backend reports its own, with the GPU's time (gpu_metal.m's pacing_schedule), and this must not count them twice.
+The interval is from one Present's return to the next's; the CPU time is the game's work between them. */
+static int metal_backend;
+
+static double uptime_seconds(void)
+{
+	return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
+}
+
 static uint32_t present_wrapped(gpu_texture back_buffer)
 {
+	static double last_returned;
 	uint32_t next_frame_due;
+	double called = uptime_seconds();
 
 	host_lifecycle_hold();
 	next_frame_due = wrapped_backend->present(back_buffer);
+	if (!metal_backend)
+	{
+		double returned = uptime_seconds();
+
+		if (last_returned > 0.0)
+			host_benchmark_frame(returned - last_returned, called - last_returned, -1.0, 0.0);
+		last_returned = returned;
+	}
 	if (frame_counter)
 		host_frame_counter_show(presented++);
 	return next_frame_due;
@@ -253,6 +275,7 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 	backend = validation_wrap(backend);
 	backend = capture_wrap(backend, flags);
 #endif
+	metal_backend = TARGET_OS_VISION || (flags & GPU_INITIALIZE_METAL) ? 1 : 0;
 	wrapped_backend = backend;
 	wrapped = *backend;
 	wrapped.present = present_wrapped;
