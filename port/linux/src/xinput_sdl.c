@@ -1140,6 +1140,12 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 	{
 		sdl_gamepad_state(port_gamepad(gamepads, count, port), &state->Gamepad);
 	}
+	else if (port < config_integer("debug.network_test_players"))
+	{
+		/* (split screen without a second gamepad: the scripted player of
+		debug.test_input plays this controller too) */
+		test_input_gamepad(&state->Gamepad);
+	}
 
 	if (memcmp(&state->Gamepad, &controllers[port].previous, sizeof(state->Gamepad)))
 	{

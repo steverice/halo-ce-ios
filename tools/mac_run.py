@@ -215,6 +215,7 @@ DEFAULTS = {
     "debug.rate_map_test": "false",
     "debug.network_test": '""',
     "debug.network_test_start": "15.0",
+    "debug.network_test_players": "1",
     "debug.network_test_kill": "0.0",
     "debug.network_test_score": "0",
     "debug.network_test_shoot": "0.0",
