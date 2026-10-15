@@ -126,6 +126,7 @@ struct game_options;
 #include "cache/cache_files.h"
 #include "camera/director.h"
 #include "camera/observer.h"
+#include "camera/camera_scripting.h"
 #include "cseries/errors.h"
 #include "cseries/profile.h"
 #include "cutscene/cinematics.h"
@@ -374,6 +375,8 @@ void game_tick(
 	players_update_after_game();
 	hud_update();
 	player_effect_update();
+	/* port: the scripted camera's transition time, which scripts wait on, counted in ticks (camera_scripting.c) */
+	scripted_camera_tick();
 	/* port: and at its end, before the frame draws the lights */
 	game_state_check_data_arrays();
 	lights_port_recover();
