@@ -32,7 +32,9 @@ SCREENS = {
         # (rows in the place of the row before them: Window Size in
         # Resolution's, port/linux/game/menu_functions.c showing the one the
         # display mode chosen uses)
-        "same_place": ["display.window_size"],
+        # (and Frame Rate, the Mac app's, in Frame Rate Limit's, the desktop
+        # builds': no build shows both)
+        "same_place": ["display.window_size", "display.frame_rate"],
         "rows": [
             ("DISPLAY MODE:", "display.mode",
              [("FULLSCREEN", "fullscreen"), ("BORDERLESS", "borderless"), ("WINDOWED", "windowed")],
@@ -54,6 +56,11 @@ SCREENS = {
              [("AUTO", "0"), ("30", "30"), ("60", "60"), ("120", "120"), ("144", "144"), ("165", "165"),
               ("240", "240"), ("NONE", "-1")],
              "With V-Sync off, the most frames a second. Auto:\ntwice the display's refresh rate.", "desktop"),
+            # (port/linux/game/menu_tags.c adds the display's own rate when
+            # it is none of these; the game reads the setting as it starts)
+            ("FRAME RATE:", "display.frame_rate",
+             [("DISPLAY", "display"), ("30", "30"), ("60", "60"), ("120", "120"), ("UNLIMITED", "unlimited")],
+             "Unlimited can tear and uses more power. Applies\nthe next time the game starts.", "mac_app"),
             ("SMOOTH MOTION:", "display.interpolation", ON_OFF,
              "Draw a frame for every display refresh, blending\nbetween the game's 30 ticks a second.", None),
             ("INSTANT AIM:", "display.direct_camera", ON_OFF,

@@ -403,7 +403,7 @@ static int for_this_platform(struct reader *reader, const XML_Char **attributes)
 
 			if (matches < 0)
 			{
-				reader_error(reader, "platform=\"%s\" is not \"desktop\", \"android\" or \"quit\"", platform);
+				reader_error(reader, "platform=\"%s\" is not \"desktop\", \"android\", \"quit\" or \"mac_app\"", platform);
 				return 1;
 			}
 			return matches;

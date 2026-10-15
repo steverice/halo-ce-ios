@@ -378,7 +378,7 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[16];size_t env_count=0;
+        const char *env[18];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
         /* This device's profile (profiles/, host_profile.h): its values go to the game as one variable, which
@@ -398,6 +398,13 @@ int main(int argc,char **argv) {
         /* the Mac app can end itself, so its menus keep Quit (menu_files.c's platform="quit"); on an iPhone, an
            iPad, an Apple TV and a Vision Pro the system closes the app and the menus have none */
         env[env_count++]="HALO_APP_CAN_QUIT=1";
+        /* The Mac app alone honors display.frame_rate, so its menus alone show
+           the Frame Rate row (platform="mac_app", port/linux/src/menu_platform.h),
+           with the display's own highest rate among its choices
+           (port/linux/game/menu_tags.c). */
+        static char env_max_fps[48];
+        snprintf(env_max_fps,sizeof(env_max_fps),"HALO_DISPLAY_MAX_FPS=%ld",(long)UIScreen.mainScreen.maximumFramesPerSecond);
+        env[env_count++]="HALO_HOST_MAC=1";env[env_count++]=env_max_fps;
 #endif
 #if TARGET_OS_VISION
         /* No OpenGL ES on visionOS: the environment overrides config.toml's

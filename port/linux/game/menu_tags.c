@@ -755,6 +755,33 @@ static long spinner_split(struct halo_menu_widget const *widget, boolean values,
 		if (added > 0)
 			count = 0;
 	}
+	else if (widget->setting && !strcmp(widget->setting, "display.frame_rate"))
+	{
+		/* the Mac app's Frame Rate: the display's own highest rate
+		(HALO_DISPLAY_MAX_FPS, port/ios/host/host_main.m) before the last
+		choice, Unlimited, when it is none of those listed */
+		const char *rate = getenv("HALO_DISPLAY_MAX_FPS");
+		long fps = rate ? atol(rate) : 0;
+		char text[16];
+		char *piece;
+
+		if (fps < 1 || fps > 1000 || count < 1 || count >= MAXIMUM_STRINGS)
+			return count;
+		snprintf(text, sizeof(text), "%ld", fps);
+		/* (the values are the numbers themselves, so both lists are searched alike) */
+		for (index = 0; index < count; index++)
+		{
+			if (!strcmp(pieces[index], text))
+				return count;
+		}
+		piece = allocate((long)strlen(text) + 1);
+		if (!piece)
+			return count;
+		strcpy(piece, text);
+		pieces[count] = pieces[count - 1];
+		pieces[count - 1] = piece;
+		return count + 1;
+	}
 	else
 		return count;
 	for (index = 0; index < added; index++)
