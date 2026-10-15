@@ -1414,6 +1414,13 @@ static int anti_aliasing_live = -1;
 static BOOL anti_aliasing_ready;
 
 static void anti_aliasing_prepare(void);
+/* the passes run since the method last changed (anti_aliasing_pass), for the log */
+static unsigned long anti_aliasing_pass_count;
+
+static const char *anti_aliasing_label_of(void)
+{
+	return anti_aliasing_method == _anti_aliasing_smaa ? "SMAA" : "FXAA";
+}
 
 /* display.anti_aliasing's method; a value this build does not draw is off */
 static void anti_aliasing_read(void)
@@ -1430,6 +1437,7 @@ static void anti_aliasing_read(void)
 	if (method == anti_aliasing_method)
 		return;
 	anti_aliasing_method = method;
+	anti_aliasing_pass_count = 0;
 	if (method == _anti_aliasing_off && strcmp(setting, "off"))
 		platform_log("anti-aliasing: \"%s\" is not one of this build's (\"off\", \"fxaa\", \"smaa\"), so off", setting);
 	else
@@ -1554,13 +1562,21 @@ static void anti_aliasing_pass(struct render_target_entry *scene)
 		anti_aliasing_read();
 	if (!anti_aliasing_ready || stereo->mode != HALO_STEREO_OFF || stereo->eye_count != 0)
 		return;
+	anti_aliasing_pass_count++;
 	rect.x = (int32_t)floorf((float)native_scene_bounds[0] * scene->target.scale[0] + 0.5f);
 	rect.y = (int32_t)floorf((float)native_scene_bounds[1] * scene->target.scale[1] + 0.5f);
 	rect.width = (int32_t)floorf((float)native_scene_bounds[2] * scene->target.scale[0] + 0.5f) - rect.x;
 	rect.height = (int32_t)floorf((float)native_scene_bounds[3] * scene->target.scale[1] + 0.5f) - rect.y;
 	if (rect.width > 0 && rect.height > 0)
+	{
+		/* proof that the pass runs: the first one, then one a minute at 120 a second */
+		if (anti_aliasing_pass_count == 1 || !(anti_aliasing_pass_count % 7200))
+			platform_log("anti-aliasing: %s pass %lu over %dx%d at %d,%d (target scale %.2f)", anti_aliasing_label_of(),
+				anti_aliasing_pass_count, (int)rect.width, (int)rect.height, (int)rect.x, (int)rect.y,
+				(double)scene->target.scale[0]);
 		gpu_anti_alias(anti_aliasing_method == _anti_aliasing_smaa ? GPU_ANTI_ALIAS_SMAA : GPU_ANTI_ALIAS_FXAA,
 			scene->target.texture, &rect);
+	}
 }
 
 /* render_window, as a view's window begins (source/render/render.c): what
