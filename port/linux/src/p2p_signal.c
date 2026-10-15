@@ -388,13 +388,8 @@ static struct
 	unsigned char join_token[P2P_TOKEN_SIZE];
 	unsigned char join_key[P2P_SHA256_SIZE];
 	char join_topic[TOPIC_SIZE];
+	/* the invite's host's slot, whose listing a join watches (_topic_join_slot) */
 	char join_slot[TOPIC_SIZE];
-	unsigned long join_sent_time;
-	/* when join_nonce was made, and whether the host answered it (with
-	join_host_nonce, which its proof carries) */
-	unsigned long join_nonce_time;
-	int join_answered;
-	unsigned char join_host_nonce[NONCE_SIZE];
 } signalling;
 
 static int elapsed(unsigned long since, unsigned long time)
@@ -729,7 +724,7 @@ static void broker_sync_topics(struct broker *broker)
 	wanted[_topic_query] = lobby && signalling.lobby_listed ? P2P_LOBBY_QUERY_TOPIC : "";
 	wanted[_topic_slots] = lobby && signalling.lobby_browsing ? P2P_LOBBY_SLOT_PREFIX "+" : "";
 	wanted[_topic_code] = broker->retain_available ? signalling.code_join_topic : "";
-	wanted[_topic_join_slot] = broker->retain_available && signalling.joining ? signalling.join_slot : "";
+	wanted[_topic_join_slot] = broker->retain_available && signalling.joins[0].active ? signalling.join_slot : "";
 	for (index = 0; index < NUMBER_OF_TOPICS; index++)
 	{
 		char *had = broker->topics[index];
