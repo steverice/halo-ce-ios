@@ -910,10 +910,16 @@ void game_sound_update(
 	return;
 }
 
+/* port: while a take is recorded or replayed the mixer leaves the mouths alone: a unit's mouth aperture is part of
+the simulation (the unit's mouth function moves its jaw in its node matrices, which the game reads its markers
+from), and the mixer sets it as the sound plays, at the device's pace, and not at all in a replay, which plays no
+sound. unit_dialogue_update moves it once a tick from the speech instead (unit_dialogue.c). */
 void game_sound_set_mouth_aperture(
 	long object_index,
 	real mouth_aperture)
 {
+	if (input_replay_sim_isolated())
+		return;
 	if (game_looping_sound_data->valid)
 	{
 		if (object_try_and_get_and_verify_type(object_index, _object_mask_unit))
