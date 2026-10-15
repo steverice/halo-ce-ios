@@ -42,8 +42,10 @@ little each second, so the band does not stop. The displayed value eases
 toward the target with a time constant, so the frame rate does not matter.
 Once the work is done and the minimum has passed, the screen goes on into
 the level's start (the tail): the level's first ticks run behind it (the
-opening script needs three to start its cutscene; main_loop draws this
-screen in place of the game, never the player's start), game time stands
+opening script needs three to start its cutscene and a few more for its fade
+to take hold: the first game frame after fewer showed the cutscene's first
+shot lit for one frame; main_loop draws this screen in place of the game,
+never the player's start), game time stands
 still once they have, and the displayed value eases the rest of the way to
 1, where the picture and the blur have faded to black, as the original's
 do. The level's first frame follows that.
@@ -114,8 +116,10 @@ at most CREEP_MAX over the work */
 #define RUN_MILLISECONDS 600
 /* the tail gives up after this long, however far the level's ticks have got */
 #define TAIL_MAXIMUM_MILLISECONDS 3000
-/* the level's ticks the tail waits for (cinematic_screen.c) */
-#define TAIL_TICKS 3
+/* the level's ticks the tail waits for: three start the opening cutscene
+(cinematic_screen.c), six also have its fade from black in force (b30 showed its first shot
+for one frame after three) */
+#define TAIL_TICKS 6
 
 static struct
 {
