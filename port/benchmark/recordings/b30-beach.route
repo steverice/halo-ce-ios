@@ -1,0 +1,12 @@
+scene = b30-fight
+map = b30
+difficulty = hard
+entered = start
+random_seed = 23df5293
+first_tick = 0
+players = 1
+stereo = off
+kind = gameplay
+lead = 0
+window = 85
+recorded = 2026-10-14
