@@ -22,6 +22,7 @@ from profile_catalog_check import check_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 MAXIMUM_SEQUENCE = 2**53 - 1
+ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024, "recordings": 24 * 1024 * 1024}
 PROFILE_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.toml")
 RECORDING_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?\.(?:input|actions|seeds|route|checks)")
 
@@ -109,7 +110,7 @@ def read_regular(directory, name, maximum):
 def snapshot(folder, kind):
     """Snapshot only allowed files, then validate those exact bytes in a private temporary folder."""
     maximum_files, maximum_file, maximum_total = ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
-        else (160, 16 * 1024 * 1024, 64 * 1024 * 1024))
+        else (160, 4 * 1024 * 1024, 12 * 1024 * 1024))
     files = {}
     descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -199,6 +200,9 @@ def main(arguments=None):
         raise ValueError("signer returned an invalid Ed25519 signature")
     envelope = canonical({name: base64.b64encode(value).decode("ascii")
         for name, value in (("manifest", manifest), ("signature", signature), ("payload", payload))})
+    # the app refuses a larger download before it checks the signature (host_data_pack.m, envelopeLimit)
+    if len(envelope) + 1 > ENVELOPE_LIMITS[args.kind]:
+        raise ValueError(f"envelope exceeds the app's {ENVELOPE_LIMITS[args.kind]} byte download limit")
     atomic_write(args.output, envelope + b"\n")
     print(f"Wrote {args.kind} sequence {args.sequence}: {len(files)} files, {len(envelope) + 1} bytes")
     return 0

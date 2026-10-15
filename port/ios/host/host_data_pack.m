@@ -1,6 +1,7 @@
 #import "host_data_pack.h"
 #import <CommonCrypto/CommonDigest.h>
 #include "../../third_party/monocypher/monocypher-ed25519.h"
+#include "host_recording_pack.h"
 #include <sys/stat.h>
 #include <math.h>
 #include <errno.h>
@@ -117,7 +118,10 @@ static NSDictionary *PackJSON(NSData *data) {
 @end
 
 @implementation HostDataPackStore
-- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : 128 * 1024 * 1024; }
+// The envelope is parsed before its signature is checked, so these bounds are also what an unauthenticated feed
+// can make the app hold. The payload's files are base64 inside the payload, which is base64 again in the envelope:
+// 12 MiB of recordings come to about 21.4 MiB. tools/data_pack.py refuses an envelope above these.
+- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : 24 * 1024 * 1024; }
 - (NSDictionary *)bundledIdentity { return @{@"kind": _kind, @"channel": _channel, @"compatibility": _compatibility, @"sequence": @0, @"sha256": @"", @"bundled": @YES}; }
 - (NSString *)statePath { return [_root stringByAppendingPathComponent:@"state.json"]; }
 - (NSString *)generationPath:(NSString *)name { return [_root stringByAppendingPathComponent:name]; }
@@ -135,34 +139,43 @@ static NSDictionary *PackJSON(NSData *data) {
     if (![manager fileExistsAtPath:_root] && ![manager createDirectoryAtPath:_root withIntermediateDirectories:YES attributes:nil error:NULL]) return self;
     if (!PackNode(_root, YES)) return self;
     struct stat info;
-    if (lstat(self.statePath.fileSystemRepresentation, &info) != 0) {
-        if (errno != ENOENT) return self;
+    if (lstat(self.statePath.fileSystemRepresentation, &info) != 0 && errno != ENOENT) return self;
+    if (![self loadState]) {
+        // Missing or unusable state (the system may purge Caches file by file) starts the store over, as on a fresh
+        // install: every cached generation goes, so none is activated without the state that admitted it.
         for (NSString *name in [manager contentsOfDirectoryAtPath:_root error:NULL]) {
-            if ([self generationName:name] && name.length) return self;
+            if (([self generationName:name] && name.length) || [name hasPrefix:@".stage-"] || [name isEqual:@"state.json"]) {
+                if (![manager removeItemAtPath:[self generationPath:name] error:NULL]) return self;
+            }
         }
-        // Missing state is a fresh store, not permission to activate orphan folders.
         _state = [@{@"schema": @1, @"kind": kind, @"channel": channel, @"compatibility": compatibility, @"highest": @0, @"quarantined": @0, @"active": @"", @"healthy": @"", @"pending": @"", @"trial": @NO, @"last_check": @0} mutableCopy];
         _stateValid = YES;
-    } else {
-        NSDictionary *state = PackJSON(PackRead(self.statePath, 8192));
-        NSArray *keys = @[@"schema", @"kind", @"channel", @"compatibility", @"highest", @"quarantined", @"active", @"healthy", @"pending", @"trial", @"last_check"];
-        if (!PackKeys(state, keys) || !PackInteger(state[@"schema"], 1, 1) || ![state[@"kind"] isEqual:kind] || ![state[@"channel"] isEqual:channel] || ![state[@"compatibility"] isEqual:compatibility] || !PackInteger(state[@"highest"], 0, PackMaxSequence) || !PackInteger(state[@"quarantined"], 0, [state[@"highest"] unsignedLongLongValue]) || ![self generationName:state[@"active"]] || ![self generationName:state[@"healthy"]] || ![self generationName:state[@"pending"]] || ![state[@"trial"] isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)state[@"trial"]) != CFBooleanGetTypeID() || ![state[@"last_check"] isKindOfClass:NSNumber.class] || !isfinite([state[@"last_check"] doubleValue]) || [state[@"last_check"] doubleValue] < 0) return self;
-        for (NSString *field in @[@"active", @"healthy", @"pending"]) {
-            NSString *name = state[field];
-            if (name.length && ([[name componentsSeparatedByString:@"-"][0] longLongValue] > [state[@"highest"] longLongValue] || [[name componentsSeparatedByString:@"-"][0] longLongValue] <= 0)) return self;
-        }
-        if ([state[@"trial"] boolValue]) {
-            if (![state[@"active"] length] || [state[@"active"] isEqual:state[@"healthy"]]) return self;
-        } else if (![state[@"active"] isEqual:state[@"healthy"]]) return self;
-        if ([state[@"pending"] length] && ([state[@"pending"] isEqual:state[@"active"]] || [state[@"pending"] isEqual:state[@"healthy"]])) return self;
-        _state = [state mutableCopy]; _stateValid = YES;
     }
     return self;
+}
+- (BOOL)loadState {
+    NSString *kind = _kind, *channel = _channel, *compatibility = _compatibility;
+    {
+        NSDictionary *state = PackJSON(PackRead(self.statePath, 8192));
+        NSArray *keys = @[@"schema", @"kind", @"channel", @"compatibility", @"highest", @"quarantined", @"active", @"healthy", @"pending", @"trial", @"last_check"];
+        if (!PackKeys(state, keys) || !PackInteger(state[@"schema"], 1, 1) || ![state[@"kind"] isEqual:kind] || ![state[@"channel"] isEqual:channel] || ![state[@"compatibility"] isEqual:compatibility] || !PackInteger(state[@"highest"], 0, PackMaxSequence) || !PackInteger(state[@"quarantined"], 0, [state[@"highest"] unsignedLongLongValue]) || ![self generationName:state[@"active"]] || ![self generationName:state[@"healthy"]] || ![self generationName:state[@"pending"]] || ![state[@"trial"] isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)state[@"trial"]) != CFBooleanGetTypeID() || ![state[@"last_check"] isKindOfClass:NSNumber.class] || !isfinite([state[@"last_check"] doubleValue]) || [state[@"last_check"] doubleValue] < 0) return NO;
+        for (NSString *field in @[@"active", @"healthy", @"pending"]) {
+            NSString *name = state[field];
+            if (name.length && ([[name componentsSeparatedByString:@"-"][0] longLongValue] > [state[@"highest"] longLongValue] || [[name componentsSeparatedByString:@"-"][0] longLongValue] <= 0)) return NO;
+        }
+        if ([state[@"trial"] boolValue]) {
+            if (![state[@"active"] length] || [state[@"active"] isEqual:state[@"healthy"]]) return NO;
+        } else if (![state[@"active"] isEqual:state[@"healthy"]]) return NO;
+        if ([state[@"pending"] length] && ([state[@"pending"] isEqual:state[@"active"]] || [state[@"pending"] isEqual:state[@"healthy"]])) return NO;
+        _state = [state mutableCopy]; _stateValid = YES;
+    }
+    return YES;
 }
 - (BOOL)writeState:(NSDictionary *)state error:(NSError **)error {
     if (!PackNode(_root, YES)) return PackError(error, @"Pack root is unavailable");
     NSData *bytes = [NSJSONSerialization dataWithJSONObject:state options:0 error:error];
-    if (!bytes || ![bytes writeToFile:self.statePath options:NSDataWritingAtomic error:error]) { _stateValid = NO; return NO; }
+    // A failed atomic write leaves the previous file, which still matches _state.
+    if (!bytes || ![bytes writeToFile:self.statePath options:NSDataWritingAtomic error:error]) return NO;
     _state = [state mutableCopy];
     return YES;
 }
@@ -183,8 +196,8 @@ static NSDictionary *PackJSON(NSData *data) {
     if (!PackKeys(payload, @[@"files"]) || ![payload[@"files"] isKindOfClass:NSDictionary.class]) { PackError(error, @"Pack payload has invalid fields"); return nil; }
     NSDictionary *encoded = payload[@"files"];
     BOOL profiles = [_kind isEqual:@"profiles"];
-    NSUInteger fileLimit = profiles ? 64 * 1024 : 16 * 1024 * 1024;
-    NSUInteger totalLimit = profiles ? 2 * 1024 * 1024 : 64 * 1024 * 1024;
+    NSUInteger fileLimit = profiles ? 64 * 1024 : HOST_RECORDING_PACK_MAX_FILE_BYTES;
+    NSUInteger totalLimit = profiles ? 2 * 1024 * 1024 : HOST_RECORDING_PACK_MAX_TOTAL_BYTES;
     if (!encoded.count || encoded.count > (profiles ? 129 : 160)) { PackError(error, @"Pack file count exceeds its limit"); return nil; }
     NSMutableDictionary *files = [NSMutableDictionary dictionary];
     NSUInteger total = 0;
@@ -279,7 +292,8 @@ static NSDictionary *PackJSON(NSData *data) {
     uint64_t sequence = [manifest[@"sequence"] unsignedLongLongValue];
     if (sequence <= [_state[@"highest"] unsignedLongLongValue]) return;
     NSMutableDictionary *next = [_state mutableCopy];
-    next[@"highest"] = @(sequence); next[@"quarantined"] = @(sequence); next[@"pending"] = @"";
+    // Only the sequence is used up: raising the quarantine mark too would also refuse a valid pack already staged.
+    next[@"highest"] = @(sequence);
     if ([self writeState:next error:NULL]) [self prune];
 }
 - (BOOL)stageEnvelope:(NSData *)data error:(NSError **)error { @synchronized(self) {
@@ -357,7 +371,7 @@ static NSDictionary *PackJSON(NSData *data) {
     [_download appendData:data];
 } }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error { @synchronized(self) {
-    if (!error && _responseAccepted) [self stageEnvelope:_download error:NULL];
+    if (!error && _responseAccepted) @autoreleasepool { [self stageEnvelope:_download error:NULL]; }
     _download = nil; _session = nil; [session finishTasksAndInvalidate];
 } }
 @end

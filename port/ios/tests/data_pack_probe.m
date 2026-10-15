@@ -160,15 +160,17 @@ int main(int argc, const char **argv) { @autoreleasepool {
     [[NSFileManager defaultManager] createDirectoryAtPath:root withIntermediateDirectories:YES attributes:nil error:NULL];
     [@"broken" writeToFile:[root stringByAppendingPathComponent:@"state.json"] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
     store = Store(root);
-    CHECK([[store beginLaunch] isEqual:@"/bundled"], "malformed state fails closed");
-    CHECK(![store stageEnvelope:Envelope(1, nil, nil) error:NULL], "malformed state cannot reset replay protection");
+    CHECK([[store beginLaunch] isEqual:@"/bundled"], "malformed state falls back to bundled data");
+    CHECK([store stageEnvelope:Envelope(1, nil, nil) error:NULL], "malformed state starts the store over instead of disabling updates");
     [[NSFileManager defaultManager] removeItemAtPath:root error:NULL];
     root = NewRoot(); store = Store(root);
     CHECK([store stageEnvelope:Envelope(10, nil, nil) error:NULL], "orphan test stages generation");
     [[NSFileManager defaultManager] removeItemAtPath:[root stringByAppendingPathComponent:@"state.json"] error:NULL];
     store = Store(root);
     CHECK([[store beginLaunch] isEqual:@"/bundled"], "missing cache state does not trust orphan generation");
-    CHECK(![store stageEnvelope:Envelope(1, nil, nil) error:NULL], "missing cache state does not reset replay protection around orphan generations");
+    CHECK([[[NSFileManager defaultManager] contentsOfDirectoryAtPath:root error:NULL] filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"SELF BEGINSWITH '10-'"]].count == 0,
+          "missing cache state removes orphan generations");
+    CHECK([store stageEnvelope:Envelope(1, nil, nil) error:NULL], "missing cache state starts the store over, as a fresh install");
     [[NSFileManager defaultManager] removeItemAtPath:root error:NULL];
     root = NewRoot();
     HostDataPackStore *rejecting = [[HostDataPackStore alloc] initWithRoot:root bundled:@"/bundled" kind:@"profiles" channel:@"stable" publicKey:[NSData dataWithBytes:publicKey length:32] compatibility:@"profiles-1" validator:^BOOL(NSString *folder, NSError **error) { (void)folder; (void)error; return NO; }];
@@ -177,6 +179,12 @@ int main(int argc, const char **argv) { @autoreleasepool {
     store = Store(root);
     CHECK(![store stageEnvelope:Envelope(1, nil, nil) error:NULL], "semantic failure quarantines authenticated sequence");
     CHECK([store stageEnvelope:Envelope(2, nil, nil) error:NULL], "higher sequence recovers from semantic failure");
+    {
+        HostDataPackStore *same = [[HostDataPackStore alloc] initWithRoot:root bundled:@"/bundled" kind:@"profiles" channel:@"stable" publicKey:[NSData dataWithBytes:publicKey length:32] compatibility:@"profiles-1" validator:^BOOL(NSString *folder, NSError **error) { (void)folder; (void)error; return NO; }];
+        CHECK(![same stageEnvelope:Envelope(3, nil, nil) error:NULL], "a broken later publish is refused");
+        CHECK(![Store(root) stageEnvelope:Envelope(3, nil, nil) error:NULL], "a broken later publish uses up its sequence");
+        CHECK(![[Store(root) beginLaunch] isEqual:@"/bundled"], "a broken later publish keeps the valid pack already staged");
+    }
     [[NSFileManager defaultManager] removeItemAtPath:root error:NULL];
     root = NewRoot();
     store = Store(root);

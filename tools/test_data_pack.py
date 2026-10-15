@@ -209,7 +209,7 @@ def test_file_size_limit(tmp_path):
     folder = recording(tmp_path / "recordings")
     path = folder / "test-route.input"
     with path.open("wb") as stream:
-        stream.truncate(16 * 1024 * 1024 + 1)
+        stream.truncate(4 * 1024 * 1024 + 1)
     with pytest.raises(ValueError):
         data_pack.validate_recordings(folder)
     with pytest.raises(ValueError):
