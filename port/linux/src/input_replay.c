@@ -993,13 +993,18 @@ void input_replay_tick_begin(void)
 	if (!tick_seeds_wanted())
 		return;
 	tick = game_time_get();
-	if (tick_seeds.valid && tick == tick_seeds.tick + 1)
 	{
 		unsigned long seeds[2];
 
 		/* (the local sequence starts each tick from the global one: how many numbers a tick draws from it is not the
-		same in two runs, objects_update's draws among them, and what the next tick's enemies draw follows it) */
-		seeds[0] = tick_seeds.seeds[0];
+		same in two runs, objects_update's draws among them, and what the next tick's enemies draw follows it. That
+		holds for a tick that follows no tick too, a level's first and the first after a revert: the frames drew from
+		the local sequence while the level loaded or the dead player's timer ran, as many numbers as they came. The
+		frames never draw from the global sequence, so it is as the last tick left it, or as the level or the revert
+		set it) */
+		input_replay_random_seeds(seeds, FALSE);
+		if (tick_seeds.valid && tick == tick_seeds.tick + 1)
+			seeds[0] = tick_seeds.seeds[0];
 		seeds[1] = seeds[0] * 1664525ul + 1013904223ul;
 		input_replay_random_seeds(seeds, TRUE);
 	}
