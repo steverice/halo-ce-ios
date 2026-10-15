@@ -1065,6 +1065,8 @@ static struct
 	long screen_width;
 	float scale[2];
 	int32_t eye_count;
+	/* the back buffer's color is display.native_hud's display-sized target (render_target_get) */
+	BOOL native;
 	struct render_target_entry *entry;
 } recent_render_targets[RECENT_RENDER_TARGET_COUNT];
 static unsigned long recent_render_target_next;
@@ -1081,6 +1083,7 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 	int32_t eye_count;
 	long screen;
 	unsigned long slot;
+	BOOL native;
 	struct render_target_entry *entry;
 
 	stats.render_target_lookups++;
@@ -1091,6 +1094,9 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 	{
 		/* (the width first: its first call sets the scale) */
 		screen = halo_screen_width();
+		/* display.native_hud: outside a view's scene the back buffer's color is the display-sized target, not the
+		scene's, so the same surface has two answers within a frame, and a recent target is the one for its own */
+		native = !native_scene && surface->Data == device.back_buffer.Data && native_hud_active();
 		for (slot = 0; slot < RECENT_RENDER_TARGET_COUNT; slot++)
 		{
 			if (recent_render_targets[slot].entry && recent_render_targets[slot].data == surface->Data &&
@@ -1099,13 +1105,14 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 				recent_render_targets[slot].screen_width == screen &&
 				recent_render_targets[slot].scale[0] == screen_scale[0] &&
 				recent_render_targets[slot].scale[1] == screen_scale[1] &&
-				recent_render_targets[slot].eye_count == eye_count)
+				recent_render_targets[slot].eye_count == eye_count &&
+				recent_render_targets[slot].native == native)
 			{
 				stats.render_target_recent++;
 				return recent_render_targets[slot].entry;
 			}
 		}
-		entry = render_target_get_layer(surface, HALO_STEREO_LAYER_MONO);
+		entry = render_target_get_layer(surface, native ? HALO_STEREO_LAYER_NATIVE : HALO_STEREO_LAYER_MONO);
 		slot = recent_render_target_next++ % RECENT_RENDER_TARGET_COUNT;
 		recent_render_targets[slot].data = surface->Data;
 		recent_render_targets[slot].format = surface->Format;
@@ -1114,6 +1121,7 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 		recent_render_targets[slot].scale[0] = screen_scale[0];
 		recent_render_targets[slot].scale[1] = screen_scale[1];
 		recent_render_targets[slot].eye_count = eye_count;
+		recent_render_targets[slot].native = native;
 		recent_render_targets[slot].entry = entry;
 		return entry;
 	}
