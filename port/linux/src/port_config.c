@@ -565,6 +565,13 @@ static const struct config_setting config_settings[] =
 		"phone, a tablet, a window) only: a stereo view ignores it, and\n"
 		"display.first_person_body draws the whole body in head-tracked stereo. No\n"
 		"menu row yet." },
+	{ "display.first_person_legs_seat_shift", _config_real, "1.0", "HALO_FIRST_PERSON_LEGS_SEAT_SHIFT", _environment_value,
+		_platform_all,
+		"With display.first_person_legs, in a vehicle seat seen through your own\n"
+		"eyes (a Warthog's passenger seat): how far your seated body is drawn\n"
+		"moved ahead so the waist sits under the view, 0.0 (where the game seats\n"
+		"it, well behind the eye) to 1.0 (toward the eye, default), never more\n"
+		"than about 0.37 m so the knees stay short of the dash." },
 
 	{ "paths.data", _config_string, "\"\"", "HALO_DATA_ROOT", _environment_value, _platform_desktop,
 		"The folder holding the game data's maps folder; empty looks in the\n"

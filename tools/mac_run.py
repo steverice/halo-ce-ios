@@ -166,6 +166,7 @@ DEFAULTS = {
     "display.render_quality": "0.6",
     "display.first_person_body": "true",
     "display.first_person_legs": "false",
+    "display.first_person_legs_seat_shift": "1.0",
     "display.first_person_body_offset": "0.08",
     "display.first_person_body_seats": "true",
     "display.first_person_body_seat_offset": "0.0",

@@ -33,6 +33,7 @@ keep their place and size at any field of view.
 
 /* port/linux/src/port_config.c */
 int config_boolean(const char *name);
+double config_real(const char *name);
 unsigned long config_changes(void);
 
 enum
@@ -59,6 +60,16 @@ ahead of it along the way the body faces (a passenger's are behind it; hips
 ahead of the eye would stand the legs in front of it) */
 #define FIRST_PERSON_LEGS_SEAT_HIPS_MAXIMUM 0.3f
 #define FIRST_PERSON_LEGS_SEAT_HIPS_AHEAD_MAXIMUM 0.05f
+/* in a seat the game puts the camera on the vehicle's own marker, ahead of
+where it seats the body: a Warthog passenger's hips are about 0.22 world
+units (0.67 m) behind the eye, so looking down showed the footwell and the
+waist somewhere behind you. The seated body is drawn moved ahead, along the
+way it faces, by display.first_person_legs_seat_shift (0 to 1) of the way
+that brings the hips under the eye, and never by more than this (world
+units, 0.37 m): a Warthog passenger rides with the right knee up, and moved
+0.2 that knee stood in the dash's side panel, while at 0.11 the thighs come
+into the bottom of the view and nothing meets the dash */
+#define FIRST_PERSON_LEGS_SEAT_SHIFT_MAXIMUM 0.12f
 /* the seat flag "allows weapons" (unit_definitions.h names its neighbors, not
 it): the rider keeps the weapon in hand and the first-person view of it, as
 a Warthog's passenger and a Pelican's riders do. A seat without it is one a
@@ -71,6 +82,7 @@ shadow lies under the legs that are drawn; and whose legs those were */
 static real_matrix4x3 first_person_legs_shadow_matrices[FIRST_PERSON_LEGS_MAXIMUM_NODES];
 static real_vector3d first_person_legs_last_set_back = { 0.f, 0.f, 0.f };
 static long first_person_legs_last_object = NONE;
+static real first_person_legs_seat_shift_share = 1.f;
 static boolean first_person_legs_enabled(
 	void)
 {
@@ -79,8 +91,11 @@ static boolean first_person_legs_enabled(
 
 	if (changes != config_changes())
 	{
+		real share = (real)config_real("display.first_person_legs_seat_shift");
+
 		changes = config_changes();
 		enabled = config_boolean("display.first_person_legs") != 0;
+		first_person_legs_seat_shift_share = share != share ? 1.f : share < 0.f ? 0.f : share > 1.f ? 1.f : share;
 	}
 	return enabled;
 }
@@ -267,6 +282,8 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 	real_vector3d back;
 	real_matrix4x3 skin;
 	real set_back;
+	/* (a seated body's move ahead: back with the least set back stays zero there) */
+	real_vector3d seat_shift = { 0.f, 0.f, 0.f };
 
 	if (!object || !nodes)
 		return NULL;
@@ -332,6 +349,22 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 			return NULL;
 		}
 		back = *global_zero_vector3d;
+		/* (ahead by as far as the hips sit behind the eye, along the way
+		the body faces, level: the legs keep their pose and their side of
+		the seat, and come under the view) */
+		if (level > 0.0001f)
+		{
+			real behind = -(hips.i * facing.i + hips.j * facing.j) / (real)sqrt(level);
+			real ahead = behind * first_person_legs_seat_shift_share;
+
+			if (ahead > FIRST_PERSON_LEGS_SEAT_SHIFT_MAXIMUM)
+				ahead = FIRST_PERSON_LEGS_SEAT_SHIFT_MAXIMUM;
+			if (ahead > 0.f)
+			{
+				seat_shift.i = facing.i / (real)sqrt(level) * ahead;
+				seat_shift.j = facing.j / (real)sqrt(level) * ahead;
+			}
+		}
 	}
 
 	/* (as far back as keeps the waist's rim out of the bottom of the view,
@@ -367,8 +400,8 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 			set_back = FIRST_PERSON_LEGS_SET_BACK_MAXIMUM;
 	}
 
-	first_person_legs_last_set_back.i = back.i * set_back;
-	first_person_legs_last_set_back.j = back.j * set_back;
+	first_person_legs_last_set_back.i = back.i * set_back + seat_shift.i;
+	first_person_legs_last_set_back.j = back.j * set_back + seat_shift.j;
 	first_person_legs_last_set_back.k = back.k * set_back;
 	first_person_legs_last_object = object_index;
 
@@ -384,8 +417,8 @@ real_matrix4x3 const *first_person_legs_node_matrices(
 			matrix->position = fold;
 			matrix->scale = 0.001f;
 		}
-		matrix->position.x += back.i * set_back;
-		matrix->position.y += back.j * set_back;
+		matrix->position.x += back.i * set_back + seat_shift.i;
+		matrix->position.y += back.j * set_back + seat_shift.j;
 		matrix->position.z += back.k * set_back;
 	}
 	return first_person_legs_matrices;
