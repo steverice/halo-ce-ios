@@ -455,6 +455,16 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 		free(text);
 	}
 
+	if (!have_model && (!selector || !*selector) && host_profile_inherit(device, folder, log_line, profile))
+	{
+		snprintf(chosen_class.file, sizeof(chosen_class.file), "%s", profile->class_file);
+		snprintf(chosen_class.name, sizeof(chosen_class.name), "%s", profile->class_name);
+		snprintf(chosen_model.file, sizeof(chosen_model.file), "%s", profile->model_file);
+		snprintf(chosen_model.name, sizeof(chosen_model.name), "%s", profile->model_name);
+		have_class = have_model = 1;
+		class_distance = 0;
+	}
+
 	/* the layers, lowest first: the class, the model, the drop-in file */
 	for (index = 0; index < 3; index++)
 	{
@@ -465,6 +475,8 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 		char *text;
 		toml_result_t result;
 
+		if (index < 2 && profile->inherited)
+			continue;
 		if (index == 2)
 		{
 			if (!drop_in_path)

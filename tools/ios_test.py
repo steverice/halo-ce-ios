@@ -68,7 +68,7 @@ run(BUILD / 'config-origins-probe')
 # device profiles: which files a device gets and in what order, what a profile may not set, and the shipped
 # profiles for the devices measured so far (port/ios/host/host_profile.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
-    'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/third_party/tomlc17/tomlc17.c',
+    'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/third_party/tomlc17/tomlc17.c',
     '-o', BUILD / 'profile-probe')
 run(BUILD / 'profile-probe', ROOT / 'profiles')
 # the profiles' own rules: only the settings a profile may set, inside their ranges, each with its evidence,

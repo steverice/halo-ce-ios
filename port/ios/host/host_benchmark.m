@@ -226,7 +226,7 @@ static NSString *report_header(void) {
         "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
         "\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
-        "\"profile\":{\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
+        "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
         "\"model_lod\":\"%s\"},\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
         [minutes stringFromDate:started ?: NSDate.date],
@@ -239,6 +239,9 @@ static NSString *report_header(void) {
         screen_width, screen_height, (long)screen_rate(),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]), HALO_GUEST_SHA256,
+        json_string(host_device_profile()->inherited ? @"inherited" : host_device_profile()->model_file[0] ? @"exact" : @"class"),
+        json_string(@(host_device_profile()->source_hardware)), json_string(@(host_device_profile()->target_hardware)),
+        host_device_profile()->source_tier, host_device_profile()->target_tier, json_string(@(host_device_profile()->catalog_version)),
         json_string(@(host_device_profile()->class_file)), json_string(@(host_device_profile()->model_file)),
         host_device_profile()->drop_in ? "true" : "false",
         plan.device.drawable_lines, plan.device.base_lines, plan.device.anisotropy, plan.device.shadow_size,

@@ -240,6 +240,12 @@ static void check_shipped(const char *shipped)
 		has(&profile, "display.shadow_map_size", "512"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
 	assert(profile.count == 3 && has(&profile, "display.mirror_resolution", "half"));
+	/* The smaller M1 iPad Pro inherits the measured M1 profile, subject to its envelope. */
+	struct host_device sibling = device("ios", "iPad13,4", "", 7);
+	sibling.memory_megabytes = 8192; sibling.pixel_width = 2388; sibling.pixel_height = 1668; sibling.refresh_rate = 120;
+	profile = resolve(shipped, sibling, NULL, "");
+	assert(profile.inherited && has(&profile, "display.mirror_resolution", "half"));
+	assert(!strcmp(profile.model_file, "ipad-pro-m1.toml"));
 	profile = resolve(shipped, device("mac", "Mac14,5", "Apple M2 Max", 8), NULL, "");
 	assert(profile.count == 2 && has(&profile, "display.model_lod", "max") &&
 		has(&profile, "display.compressed_textures", "true"));
@@ -256,6 +262,133 @@ static void check_shipped(const char *shipped)
 	assert(profile.count == 2 && !profile.model_file[0]);
 }
 
+/* Synthetic chip tiers are intentionally independent of real Apple rankings. */
+static void check_capability_fallback(void)
+{
+	struct host_profile profile;
+	struct host_device target = device("ios", "Chip11,1", "", 5);
+	char path[256], encoded[4096];
+
+	target.memory_megabytes = 4096;
+	target.pixel_width = 1920; target.pixel_height = 1080; target.refresh_rate = 60;
+	write_file("tier-class.toml", "schema=1\nname=\"Tier class\"\nkind=\"class\"\n[match]\nplatform=\"ios\"\ngpu_family=[1,3]\n[display]\nrender_height=720\n");
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[scene.menu.display]\nrender_scale=0.5\n");
+	write_file("tier-a12.toml", "schema=1\nname=\"A12\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip12,1\"]\n[display]\nanisotropic_filtering=16\n");
+	snprintf(path, sizeof(path), "%s/hardware", folder); assert(!mkdir(path, 0700));
+	write_file("hardware/catalog.toml",
+		"schema=1\nversion=\"test\"\n"
+		"[[hardware]]\nid=\"a9\"\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\ntier=9\ngpu_family=2\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"a11\"\nplatform=\"ios\"\nmodels=[\"Chip11,1\"]\ntier=11\ngpu_family=5\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"a12\"\nplatform=\"ios\"\nmodels=[\"Chip12,1\"]\ntier=12\ngpu_family=6\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[fallback]]\nhardware=\"a9\"\nprofile=\"tier-a9.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[1000000,1000000,1000000]\nmaximum_refresh_hertz=60\n"
+		"[[fallback]]\nhardware=\"a12\"\nprofile=\"tier-a12.toml\"\nminimum_memory_mb=4096\nminimum_gpu_family=5\nmaximum_pixels=[2073600,2073600,2073600]\nmaximum_refresh_hertz=60\n");
+	profile = resolve(folder, target, NULL, "");
+	assert(has(&profile, "display.anisotropic_filtering", "4"));
+	assert(has(&profile, "display.render_height", "720"));
+	/* The receiving class's shadow setting must not leak into the source baseline. */
+	assert(unset(&profile, "display.shadow_map_size"));
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(strstr(encoded, "display.render_scale\t0.5\tmodel A9\tmenu\n"));
+	assert(strstr(logged, "inherited") && strstr(logged, "a11") && strstr(logged, "a9"));
+	/* Exact/debug matching, unknown hardware, and insufficient memory keep their existing behavior. */
+	target.memory_megabytes = 1024;
+	profile = resolve(folder, target, NULL, "");
+	assert(!profile.model_file[0] && has(&profile, "display.shadow_map_size", "256"));
+	target.memory_megabytes = 4096; target.refresh_rate = 120;
+	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
+	target.refresh_rate = 60; target.pixel_width = 8192;
+	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
+	profile = resolve(folder, device("ios", "Chip12,1", "", 5), NULL, "");
+	assert(has(&profile, "display.anisotropic_filtering", "16"));
+	profile = resolve(folder, target, NULL, "Chip12,1");
+	assert(has(&profile, "display.anisotropic_filtering", "16"));
+	profile = resolve(folder, device("ios", "Unknown99,1", "", 5), NULL, ""); assert(!profile.model_file[0]);
+	profile = resolve(folder, target, NULL, "none"); assert(profile.count == 0);
+	/* A newly measured intermediate tier is selected automatically. */
+	write_file("tier-a10.toml", "schema=1\nname=\"A10\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip10,1\"]\n[display]\nanisotropic_filtering=8\n");
+	snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+	FILE *catalog = fopen(path, "ab"); assert(catalog);
+	fputs("\n[[hardware]]\nid=\"a10\"\nplatform=\"ios\"\nmodels=[\"Chip10,1\"]\ntier=10\ngpu_family=2\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[fallback]]\nhardware=\"a10\"\nprofile=\"tier-a10.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[1000000,1000000,1000000]\nmaximum_refresh_hertz=60\n", catalog);
+	fclose(catalog);
+	target.pixel_width = 1920;
+	profile = resolve(folder, target, NULL, "");
+	assert(has(&profile, "display.anisotropic_filtering", "8") && profile.inherited);
+	assert(profile.source_tier == 10 && profile.target_tier == 11 && !strcmp(profile.catalog_version, "test"));
+	/* Drop-ins remain above an inherited source. */
+	write_file("tier-drop.toml", "[display]\nanisotropic_filtering=2\n");
+	snprintf(path, sizeof(path), "%s/tier-drop.toml", folder);
+	profile = resolve(folder, target, path, "");
+	assert(has(&profile, "display.anisotropic_filtering", "2") && profile.inherited && profile.drop_in);
+	/* Known devices below/equal/above the measured tiers, across platforms. */
+	snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+	catalog = fopen(path, "ab"); assert(catalog);
+	fputs("\n[[hardware]]\nid=\"a8\"\nplatform=\"ios\"\nmodels=[\"Chip8,1\"]\ntier=8\ngpu_family=2\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"equal\"\nplatform=\"ios\"\nmodels=[\"Chip12,2\"]\ntier=12\ngpu_family=6\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"above\"\nplatform=\"ios\"\nmodels=[\"Chip15,1\"]\ntier=15\ngpu_family=6\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"other-platform\"\nplatform=\"tvos\"\nmodels=[\"Chip11,1\"]\ntier=15\ngpu_family=6\nbasis=\"assumed\"\nsource=\"synthetic\"\n", catalog);
+	fclose(catalog);
+	snprintf(target.model, sizeof(target.model), "Chip8,1");
+	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
+	snprintf(target.model, sizeof(target.model), "Chip12,2");
+	profile = resolve(folder, target, NULL, ""); assert(profile.inherited && profile.source_tier == 12);
+	snprintf(target.model, sizeof(target.model), "Chip15,1");
+	profile = resolve(folder, target, NULL, ""); assert(profile.inherited && profile.source_tier == 12);
+	snprintf(target.platform, sizeof(target.platform), "tvos");
+	snprintf(target.model, sizeof(target.model), "Chip11,1");
+	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
+	snprintf(target.platform, sizeof(target.platform), "ios");
+	/* A conflicting catalog is not resolved by filename or directory order. */
+	snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+	catalog = fopen(path, "ab"); assert(catalog);
+	fputs("\n[[fallback]]\nhardware=\"a9\"\nprofile=\"tier-a9.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[1000000,1000000,1000000]\nmaximum_refresh_hertz=60\n", catalog);
+	fclose(catalog);
+	profile = resolve(folder, target, NULL, "");
+	assert(!profile.inherited && !profile.model_file[0] && strstr(logged, "invalid hardware catalog"));
+	write_file("hardware/catalog.toml", "schema=\"broken\"\n");
+	profile = resolve(folder, target, NULL, ""); assert(!profile.inherited && !profile.model_file[0]);
+}
+
+static void check_minimum_height_envelope(void)
+{
+	struct host_device target = device("ios", "Chip11,1", "", 5);
+	struct host_profile profile;
+	target.memory_megabytes = 4096; target.pixel_width = 1920; target.pixel_height = 1080; target.refresh_rate = 60;
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nrender_height=120\n");
+	write_file("hardware/catalog.toml", "schema=1\nversion=\"minimum-height\"\n"
+		"[[hardware]]\nid=\"a9\"\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\ntier=9\ngpu_family=2\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"a11\"\nplatform=\"ios\"\nmodels=[\"Chip11,1\"]\ntier=11\ngpu_family=5\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[fallback]]\nhardware=\"a9\"\nprofile=\"tier-a9.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[30000,30000,30000]\nmaximum_refresh_hertz=60\n");
+	/* 120 requested lines allocate at least 427x240, exceeding this 30,000-pixel envelope. */
+	profile = resolve(folder, target, NULL, ""); assert(!profile.inherited);
+}
+
+static void check_refresh_envelope(void)
+{
+	char path[256];
+	int mac;
+	for (mac = 0; mac < 2; mac++)
+	{
+		const char *platform = mac ? "mac" : "ios";
+		struct host_device target = device(platform, "Rate11,1", "", 5);
+		struct host_profile profile;
+		FILE *file;
+		target.memory_megabytes = 4096; target.pixel_width = 1920; target.pixel_height = 1080; target.refresh_rate = 120;
+		snprintf(path, sizeof(path), "%s/rate-class.toml", folder); file = fopen(path, "wb"); assert(file);
+		fprintf(file, "schema=1\nname=\"Rate class\"\nkind=\"class\"\n[match]\nplatform=\"%s\"\ngpu_family=[1,0]\n", platform); fclose(file);
+		snprintf(path, sizeof(path), "%s/rate-source.toml", folder); file = fopen(path, "wb"); assert(file);
+		fprintf(file, "schema=1\nname=\"Rate source\"\nkind=\"model\"\n[match]\nplatform=\"%s\"\nmodels=[\"Rate9,1\"]\n[display]\nframe_rate=\"60\"\n[scene.menu.display]\nframe_rate=\"%s\"\n[scene.cutscene.display]\nframe_rate=\"30\"\n", platform, mac ? "120" : "30"); fclose(file);
+		snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder); file = fopen(path, "wb"); assert(file);
+		fprintf(file, "schema=1\nversion=\"refresh\"\n"
+			"[[hardware]]\nid=\"source\"\nplatform=\"%s\"\nmodels=[\"Rate9,1\"]\ntier=9\ngpu_family=2\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+			"[[hardware]]\nid=\"target\"\nplatform=\"%s\"\nmodels=[\"Rate11,1\"]\ntier=11\ngpu_family=5\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+			"[[fallback]]\nhardware=\"source\"\nprofile=\"rate-source.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[100000000,100000000,100000000]\nmaximum_refresh_hertz=60\n", platform, platform); fclose(file);
+		profile = resolve(folder, target, NULL, "");
+		/* The base 60 cap is ignored on iOS; on Mac it also caps the 120 menu. */
+		assert(profile.inherited == mac);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	char command[128];
@@ -268,6 +401,9 @@ int main(int argc, char **argv)
 	}
 	check_layers();
 	check_refusals();
+	check_capability_fallback();
+	check_minimum_height_envelope();
+	check_refresh_envelope();
 	if (argc > 1)
 		check_shipped(argv[1]);
 	snprintf(command, sizeof(command), "rm -r %s", folder);

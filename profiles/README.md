@@ -10,12 +10,24 @@ Lowest first; each layer overrides the ones before it.
 
 1. The game's built-in default.
 2. The **class** profile: the one `kind = "class"` file whose platform matches and whose GPU family range holds the device's.
-3. The **model** profile: the one `kind = "model"` file that names the device's model identifier (or, on a Mac, its chip).
+3. The **model** profile: an exact `kind = "model"` match, otherwise the strongest compatible source selected by the hardware catalog. An inherited source brings its own class baseline (see below).
 4. A **drop-in** file, `device-profile.toml` in the app's data folder, for trying a profile (below).
 5. What the player chose: a value set in the menus, with the Settings app's switch, or by editing `config.toml`.
 6. A developer's override: a `HALO_*` environment variable or a build's `--render-height`.
 
 Layers 1 to 4 together are the setting's value on this device. `config.toml` shows it, and a small file beside it, `config.origins`, records which of `config.toml`'s values the game wrote as defaults and which somebody chose. A written default follows the profile when the profile changes; a chosen value stays. In the menus, DEFAULTS then OK hands a setting back to the profile.
+
+## Hardware fallback
+
+An exact model or chip profile wins. Otherwise, the app uses `hardware/catalog.toml` to select the strongest compatible source tier at or below this device's tier. If A9 and A12 profiles are available, a cataloged A11 selects A9; adding an A10 profile makes A11 select A10 on its next launch. The app does not infer capability from a model identifier, release date, or chip-name suffix.
+
+The catalog has separate orderings for iOS, tvOS, visionOS, and Mac. A source must fit the receiving device's physical memory, GPU family, render-pixel limits for gameplay/menu/cutscenes, and refresh target. Unknown or unordered hardware keeps its class fallback. Inheritance uses the source's class baseline and model values together, including scene values; the receiving class does not contribute extra settings. Drop-ins and player choices retain their precedence.
+
+The initial catalog covers the M1 iPad Pro variants: the 11-inch model may inherit the measured 12.9-inch profile. That inheritance is an explicit hardware assessment, not a benchmark of the 11-inch model. Other models retain exact/class matching until their ordering is established. Physical runtime checks can reject a catalog candidate.
+
+To add coverage, record the exact device identities, platform, tier, GPU family, evidence basis, and source in a `[[hardware]]` entry. Designate at most one `[[fallback]]` source per platform/tier, referencing a measured model profile and its compatibility envelope. Omit a hardware tier when ordering is uncertain. Use the existing catalog as the schema example and validate the entire folder with `python3 tools/profile_check.py` before publishing a change.
+
+Logs and benchmark reports distinguish inherited selection from exact selection and retain both hardware identities, tiers, and the catalog version. An inherited result does not change the evidence attached to the source's settings.
 
 ## Scene classes
 

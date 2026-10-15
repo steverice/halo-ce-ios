@@ -237,6 +237,7 @@ def main(arguments):
     whole_folder = not arguments
     failed = False
     tables = {}
+    valid_tables = {}
     for path in files:
         if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*\.toml|TEMPLATE\.toml|device-profile\.toml", path.name):
             print(f"{path.name}: the file name must be lowercase words joined by hyphens, ending .toml")
@@ -247,9 +248,15 @@ def main(arguments):
         failed = failed or bool(problems)
         if table is not None and path.name != "TEMPLATE.toml":
             tables[path.name] = table
+            if not problems:
+                valid_tables[path.name] = table
     if whole_folder:
         for problem in check_set(tables):
             print(problem)
+            failed = True
+        from profile_catalog_check import check_catalog
+        for problem in check_catalog(PROFILES / "hardware/catalog.toml", valid_tables):
+            print(f"hardware/catalog.toml: {problem}")
             failed = True
     if failed:
         return 1

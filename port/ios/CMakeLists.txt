@@ -103,7 +103,7 @@ add_executable(VISR MACOSX_BUNDLE
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
     host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
-    host/host_join_link.c host/host_config.c host/host_profile.c host/host_device.m
+    host/host_join_link.c host/host_config.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
@@ -256,6 +256,9 @@ file(GLOB HALO_DEVICE_PROFILES CONFIGURE_DEPENDS "${ROOT}/profiles/*.toml")
 list(FILTER HALO_DEVICE_PROFILES EXCLUDE REGEX "TEMPLATE\\.toml$")
 target_sources(VISR PRIVATE ${HALO_DEVICE_PROFILES})
 set_source_files_properties(${HALO_DEVICE_PROFILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/profiles)
+set(HALO_HARDWARE_CATALOG "${ROOT}/profiles/hardware/catalog.toml")
+target_sources(VISR PRIVATE ${HALO_HARDWARE_CATALOG})
+set_source_files_properties(${HALO_HARDWARE_CATALOG} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/profiles/hardware)
 # the maps' shader lists, compiled at map load (d3d8_device.c's halo_shader_list_warm)
 file(GLOB HALO_SHADER_LISTS CONFIGURE_DEPENDS "${ROOT}/port/shader-lists/*.txt")
 target_sources(VISR PRIVATE ${HALO_SHADER_LISTS})
