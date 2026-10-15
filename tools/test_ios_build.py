@@ -102,3 +102,18 @@ def test_benchmark_upload_takes_the_container_without_turning_cloud_saves_on():
     assert ios_build.cloud_definitions("org.steverice.visr.tvos", True, None, True)[0] == "-DHALO_CLOUD_SAVES=ON"
     with pytest.raises(ValueError, match="needs --cloud-container"):
         ios_build.cloud_definitions("com.example.visr", False, None, True)
+
+
+def test_extended_virtual_addressing_is_allowed_for_ios_but_refused_for_the_mac_build(monkeypatch, capsys):
+    base = ["ios_build.py", "--unsigned", "--extended-virtual-addressing"]
+    monkeypatch.setattr("sys.argv", base + ["--mac"])
+    with pytest.raises(SystemExit):
+        ios_build.main()
+    assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR in capsys.readouterr().err
+    # an iOS build gets past the check (and on to the build, which the stub ends)
+    monkeypatch.setattr("sys.argv", base)
+    monkeypatch.setattr(ios_build.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stop")))
+    try:
+        ios_build.main()
+    except (RuntimeError, SystemExit) as e:
+        assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR not in capsys.readouterr().err

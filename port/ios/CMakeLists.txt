@@ -72,6 +72,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
     set(HALO_INFO_PLIST Info-visionOS.plist)
     set(HALO_DEVICE_FAMILY 7)
 else()
+    option(HALO_EXTENDED_VIRTUAL_ADDRESSING "Sign with the extended virtual addressing entitlement" OFF)
     set(HALO_PLATFORM_SOURCES Assets.xcassets host/host_import.m host/host_orientation.m host/host_touch.m
         host/host_texture_settings.m host/texture_refine.m)
     if(HALO_MAC)
@@ -210,6 +211,13 @@ elseif(HALO_VISIONOS)
 else()
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers")
     set_source_files_properties(Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    # An iPad Pro (first generation, A9X, 4 GB) has no free 4 GB at a multiple of 4 GB for the guest arena; the
+    # entitlement asks for a larger address space (tools/ios_build.py --extended-virtual-addressing). The iCloud
+    # keys are added to this file's, not in place of them
+    if(HALO_EXTENDED_VIRTUAL_ADDRESSING)
+        set_target_properties(VISR PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_SOURCE_DIR}/VISR-iOS-extended.entitlements")
+    endif()
     # the app's page in the Settings app (host/host_texture_settings.m)
     target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")
     set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)

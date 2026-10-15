@@ -48,6 +48,9 @@ def run(*args):
     subprocess.run([str(a) for a in args], cwd=ROOT, check=True)
 
 
+EXTENDED_ADDRESSING_MAC_ERROR = '--extended-virtual-addressing is for device builds, not --mac'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -63,8 +66,8 @@ def main():
                         help='tvOS and visionOS: internal render height in pixels, 0 for native '
                              '(default 1080 on tvOS; native on visionOS, which follows the window\'s size)')
     parser.add_argument('--extended-virtual-addressing', action='store_true',
-                        help='visionOS and tvOS: sign with the extended virtual addressing entitlement (paid developer '
-                             'teams), in case the device refuses the 4 GB guest arena')
+                        help='sign with the extended virtual addressing entitlement (paid developer '
+                             'teams), in case the device refuses the 4 GB guest arena (not for --mac)')
     parser.add_argument('--frame-pacing', choices=('on','off'),
                         help="compile in the Metal renderer's presentation pacing (HALO_FRAME_PACING; "
                              'default on, off for --visionos, whose frames the Compositor paces)')
@@ -147,8 +150,8 @@ def main():
     if args.render_height is None:
         # 0: the device profile's (profiles/); a number here overrides every profile
         args.render_height = 0
-    if args.extended_virtual_addressing and not (args.visionos or args.tvos):
-        parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
+    if args.extended_virtual_addressing and args.mac:
+        parser.error(EXTENDED_ADDRESSING_MAC_ERROR)
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
     args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
     if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):

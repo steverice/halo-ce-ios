@@ -52,7 +52,7 @@ and your saves carry over.
 The app reserves a 4 GB address range for the game's 32-bit memory at launch.
 If a Vision Pro refuses it, launching shows "Could not reserve the game's 4 GB
 memory arena". Build with `--extended-virtual-addressing`, which needs a paid
-developer team.
+developer team; it works for iPhone, iPad, Apple TV and Vision Pro builds.
 
 ## Game data
 
