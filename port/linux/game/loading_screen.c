@@ -110,6 +110,8 @@ enum
 at most CREEP_MAX over the work */
 #define CREEP_PER_SECOND 0.02f
 #define CREEP_MAX 0.06f
+/* the shortest run from the loaded level to the end of the compiles' range */
+#define RUN_MILLISECONDS 600
 /* the tail gives up after this long, however far the level's ticks have got */
 #define TAIL_MAXIMUM_MILLISECONDS 3000
 /* the level's ticks the tail waits for (cinematic_screen.c) */
@@ -128,6 +130,7 @@ static struct
 	real shown;            /* the displayed progress */
 	unsigned long updated; /* system_milliseconds of the last update */
 	unsigned long work_changed;
+	unsigned long loaded;  /* system_milliseconds when the level was loaded */
 	real last_work_target;
 	unsigned long logged;
 } loading_screen;
@@ -224,8 +227,22 @@ boolean halo_loading_screen_progress(real *progress)
 		}
 		else
 			work_target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
-		time_share = loading_screen.minimum ? (real)elapsed / (real)loading_screen.minimum : 1.0f;
-		time_target = COMPILE_END * MIN(time_share, 1.0f);
+		if (loading_screen.holding && !loading_screen.minimum)
+			time_target = COMPILE_END;
+		else if (loading_screen.holding)
+		{
+			/* the minimum time's remainder after the load, at least RUN_MILLISECONDS, so
+			a load that took the whole minimum still has a run to the end */
+			unsigned long left = loading_screen.minimum > loading_screen.loaded - loading_screen.started ?
+				loading_screen.minimum - (loading_screen.loaded - loading_screen.started) : 0;
+
+			if (left < RUN_MILLISECONDS)
+				left = RUN_MILLISECONDS;
+			time_share = (real)(now - loading_screen.loaded) / (real)left;
+			time_target = READ_SHARE + (COMPILE_END - READ_SHARE) * MIN(time_share, 1.0f);
+		}
+		else
+			time_target = READ_SHARE * MIN(loading_screen.minimum ? (real)elapsed / (real)loading_screen.minimum : 1.0f, 1.0f);
 		if (work_target > loading_screen.last_work_target + 0.0005f || !loading_screen.work_changed)
 		{
 			loading_screen.last_work_target = work_target;
@@ -319,6 +336,7 @@ void halo_loading_screen_finish(void)
 		return;
 	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
 	loaded = system_milliseconds();
+	loading_screen.loaded = loaded;
 	peak = last_outstanding = gpu_compiles_outstanding();
 	last_change = loaded;
 	/* (only a campaign level waits: a failed load that fell back to the
@@ -344,7 +362,7 @@ void halo_loading_screen_finish(void)
 		loading_screen.work = peak ? (real)(peak - outstanding) / (real)peak : 1.0f;
 		/* done once the work is and the minimum has passed, and the bar has
 		eased up to where the work ends; the tail fills the rest */
-		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && frames)
+		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && (now - loaded >= RUN_MILLISECONDS || !loading_screen.minimum) && frames)
 		{
 			if (!finished)
 				finished = now ? now : 1;
