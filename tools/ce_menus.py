@@ -527,7 +527,8 @@ def widget_xml(tag: str, widget: dict, tags: Tags, functions: list, inputs: list
         name = patch.get("swap", {}).get(our_name(child_tag), our_name(child_tag))
         lines += [f"{inner}{line}" for line in patch.get("insert_before", {}).get(our_name(child_tag), [])]
         pairs = [("widget", name), ("x", x or None), ("y", y or None),
-                 ("controller", str(child["custom controller index"] + 1) if child["flags"] & 1 else None)]
+                 ("controller", str(child["custom controller index"] + 1) if child["flags"] & 1 else None),
+                 ("platform", patch.get("child_platform", {}).get(our_name(child_tag)))]
         lines.append(f"{inner}<child{attributes(pairs)}/>")
     lines += [f"{inner}{line}" for line in patch.get("children", [])]
     lines.append(f"{indent}</widget>")

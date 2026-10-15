@@ -20,6 +20,7 @@ high-res HUD's are (hud_hires.c).
 #include "halo_menus.h"
 #include "hud_hires.h"
 #include "menu_files.h"
+#include "menu_platform.h"
 #include "platform.h"
 #include "port_config.h"
 #include "xgpu.h"
@@ -398,19 +399,14 @@ static int for_this_platform(struct reader *reader, const XML_Char **attributes)
 		if (!strcmp(attributes[index], "platform"))
 		{
 			const char *platform = attributes[index + 1];
+			int matches = menu_platform_matches(platform);
 
-			if (strcmp(platform, "desktop") && strcmp(platform, "android"))
+			if (matches < 0)
 			{
-				reader_error(reader, "platform=\"%s\" is not \"desktop\" or \"android\"", platform);
+				reader_error(reader, "platform=\"%s\" is not \"desktop\", \"android\" or \"quit\"", platform);
 				return 1;
 			}
-			/* (iOS, iPadOS and visionOS take the "android" elements: a
-			fullscreen app the system closes, with no window or Quit) */
-#if defined(HALO_ANDROID) || defined(HALO_ILP32)
-			return !strcmp(platform, "android");
-#else
-			return !strcmp(platform, "desktop");
-#endif
+			return matches;
 		}
 	}
 	return 1;

@@ -437,6 +437,16 @@ MAP_KIND_CHOOSER = "main_menu/new_select/list_item_0_map_kind"
 # changes to the PC version's widgets (by our names): attributes set, all
 # their handlers replaced, children added, game data inputs added
 WIDGET_PATCHES = {
+    # (the main menu's Quit, and B and Back's way to its question, only where
+    # the app can end itself: the desktop's and the Mac app's. An iPhone, an
+    # iPad, an Apple TV and a Vision Pro leave to the system, and the
+    # question's OK did nothing there)
+    "main_menu/main_menu": {"handlers": [
+        '<on event="created" run="main menu intialize" label="ring_loop"/>',
+        '<on event="back" open="main_menu/quit_select/quit_screen" platform="quit"/>',
+        '<on event="b" open="main_menu/quit_select/quit_screen" platform="quit"/>',
+    ]},
+    "main_menu/main_menu_select_list": {"child_platform": {"main_menu/main_menu_item_quit_game": "quit"}},
     # (the profile settings' picture: on Gamepad Setup's row, the profile's
     # button settings, BITMAP_FRAMES; menu_functions.c's
     # profile_gamepad_layout)
