@@ -61,13 +61,14 @@ def test_an_app_store_package_is_archived_then_exported_and_uploads_only_when_as
 
 
 def test_cloud_saves_are_off_unless_asked_for():
-    assert ios_build.cloud_definitions("org.steverice.visr", False, None) == ["-DHALO_CLOUD_SAVES=OFF"]
+    assert ios_build.cloud_definitions("org.steverice.visr", False, None) == [
+        "-DHALO_CLOUD_SAVES=OFF", "-DHALO_BENCHMARK_UPLOAD=OFF"]
 
 
 def test_the_project_s_bundle_ids_share_its_container():
     for bundle_id in ("org.steverice.visr", "org.steverice.visr.tvos", "org.steverice.visr.visionos", "org.steverice.visr.mac"):
         assert ios_build.cloud_definitions(bundle_id, True, None) == [
-            "-DHALO_CLOUD_SAVES=ON", "-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr"]
+            "-DHALO_CLOUD_SAVES=ON", "-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr", "-DHALO_BENCHMARK_UPLOAD=OFF"]
 
 
 def test_another_bundle_id_must_name_its_own_container():
