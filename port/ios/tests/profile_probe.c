@@ -161,12 +161,13 @@ static void check_refusals(void)
 		"models = [\"Bad1,1\"]\n"
 		"[display]\nrender_quality = 0.5\nshadow_map_size = 2048\nrender_scale = 0.01\nrenderer = \"vulkan\"\n"
 		"stereo = \"head\"\nframe_rate = \"29\"\nanisotropic_filtering = \"16\"\nfoveation = 1\nlod_scale = nan\n"
-		"frame_pacing = \"tick\"\nmirror_resolution = \"half|full\"\n"
+		"frame_pacing = \"tick\"\nmirror_resolution = \"half|full\"\nanti_aliasing = \"taa\"\n"
 		"[network]\nonline = true\n[paths]\ndata = \"/tmp\"\n[debug]\nexit_after = 1.0\n[input]\nturn = \"off\"\n");
 	profile = resolve(folder, device("visionos", "Bad1,1", "", 8), missing, "");
 	assert(profile.count == 2 && has(&profile, "display.render_quality", "0.5") && has(&profile, "display.frame_pacing", "tick"));
 	assert(strstr(logged, "display.shadow_map_size has a value of the wrong type or outside"));
 	assert(strstr(logged, "display.renderer has a value") && strstr(logged, "display.frame_rate has a value"));
+	assert(strstr(logged, "display.anti_aliasing has a value"));
 	assert(strstr(logged, "display.lod_scale has a value") && strstr(logged, "display.foveation has a value"));
 	assert(strstr(logged, "display.stereo is not a setting a profile may set"));
 	assert(strstr(logged, "network.online is not a setting") && strstr(logged, "paths.data is not a setting"));
@@ -233,13 +234,17 @@ static void check_shipped(const char *shipped)
 	/* Vision Pro: the headset sweep's values, which are the built-in defaults too */
 	profile = resolve(shipped, device("visionos", "RealityDevice14,1", "", 8), NULL, "");
 	assert(has(&profile, "display.render_quality", "0.6") && has(&profile, "display.foveation", "true"));
-	assert(!strcmp(profile.model_file, "vision-pro-m2.toml") && profile.count == 4);
-	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: only values equal to the built-in defaults */
+	assert(!strcmp(profile.model_file, "vision-pro-m2.toml") && profile.count == 5 &&
+		has(&profile, "display.renderer", "metal"));
+	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
+	class profile's Metal */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(profile.count == 2 && has(&profile, "display.anisotropic_filtering", "16") &&
-		has(&profile, "display.shadow_map_size", "512"));
+	assert(profile.count == 4 && has(&profile, "display.anisotropic_filtering", "16") &&
+		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
+		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(profile.count == 3 && has(&profile, "display.mirror_resolution", "half"));
+	assert(profile.count == 4 && has(&profile, "display.mirror_resolution", "half") &&
+		has(&profile, "display.renderer", "metal"));
 	/* The smaller M1 iPad Pro inherits the measured M1 profile, subject to its envelope. */
 	struct host_device sibling = device("ios", "iPad13,4", "", 7);
 	sibling.memory_megabytes = 8192; sibling.pixel_width = 2388; sibling.pixel_height = 1668; sibling.refresh_rate = 120;
@@ -257,9 +262,10 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("mac", "Mac15,3", "Apple M3 Max", 9), NULL, "");
 	assert(profile.count == 0 && !strcmp(profile.class_file, "mac.toml") && !strstr(logged, "ignored"));
 	profile = resolve(shipped, device("ios", "iPhone99,1", "", 15), NULL, "");
-	assert(profile.count == 0 && !strcmp(profile.class_file, "iphone-ipad.toml"));
+	assert(profile.count == 1 && has(&profile, "display.renderer", "metal") &&
+		!strcmp(profile.class_file, "iphone-ipad.toml"));
 	profile = resolve(shipped, device("visionos", "RealityDevice99,1", "", 15), NULL, "");
-	assert(profile.count == 2 && !profile.model_file[0]);
+	assert(profile.count == 3 && !profile.model_file[0] && has(&profile, "display.renderer", "metal"));
 }
 
 /* Synthetic chip tiers are intentionally independent of real Apple rankings. */

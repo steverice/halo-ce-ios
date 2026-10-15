@@ -1,5 +1,8 @@
-# Every iPhone and iPad without a profile of its own: the built-in defaults.
+# Every iPhone and iPad without a profile of its own: Metal, and otherwise the built-in defaults.
 # Split this class by GPU family when a measurement on an older device shows it needs different values.
+# Measured on an iPhone 17 Pro (iPhone18,1, iOS 27.2), quick suite at 2622x1206, menu / a10 opening / b30 beach:
+#   OpenGL ES (report LBAE78A5): 60.0 / 60.0 / 59.9 fps, CPU 2.0 / 4.7 / 6.8 ms (the GL path's 60 Hz cap).
+#   Metal (report C23KM6WA): 119.9 / 119.9 / 120.0 fps, CPU 1.8 / 3.2 / 4.0 ms, GPU 2.6 / 3.9 / 5.5 ms (b30 GPU p95 6.6 ms).
 
 schema = 1
 name = "iPhone and iPad"
@@ -8,3 +11,11 @@ kind = "class"
 [match]
 platform = "ios"
 gpu_family = [1, 0]
+
+[display]
+renderer = "metal"
+
+[evidence."display.renderer"]
+basis = "measured"
+why = "The Metal backend is the project's renderer, and the OpenGL ES path lacks the Metal performance work (shadow-map and decal batching, pipeline caching, frame pacing). On an iPhone 17 Pro at 2622x1206 the quick suite ran 119.9/119.9/120.0 fps on Metal (menu, a10 opening, b30 beach; CPU 1.8/3.2/4.0 ms, GPU 2.6/3.9/5.5 ms, b30 GPU p95 6.6 ms) against 60.0/60.0/59.9 fps on OpenGL ES (CPU 2.0/4.7/6.8 ms), which is the GL path's 60 Hz cap. On the Apple TV HD, Metal ran the menu, a10 and b30 with no Metal error; the Metal menu and a10 replays match the OpenGL ES records on the Mac runner."
+source = "iPhone 17 Pro benchmark reports C23KM6WA (Metal) and LBAE78A5 (OpenGL ES), quick suite, 2026-10-14; check-metal and Apple TV HD runs, 2026-10-14"

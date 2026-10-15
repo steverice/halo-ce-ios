@@ -58,6 +58,11 @@ def test_an_app_store_package_is_archived_then_exported_and_uploads_only_when_as
     assert options["manageAppVersionAndBuildNumber"] is False
     ios_build.app_store_commands(tmp_path / "build", "tvOS", "TEAM123456", tmp_path / "out", True)
     assert plistlib.loads((tmp_path / "out" / "ExportOptions.plist").read_bytes())["destination"] == "upload"
+    assert "testFlightInternalTestingOnly" not in options
+    ios_build.app_store_commands(tmp_path / "build", "iOS", "TEAM123456", tmp_path / "out", True, True)
+    internal = plistlib.loads((tmp_path / "out" / "ExportOptions.plist").read_bytes())
+    assert internal["testFlightInternalTestingOnly"] is True
+    assert internal["destination"] == "upload"
 
 
 def test_cloud_saves_are_off_unless_asked_for():
@@ -206,3 +211,18 @@ def test_the_projects_key_and_feeds_pass_their_own_checks():
     assert ios_build.data_pack_definitions(ios_build.DATA_PACK_PUBLIC_KEY,
                                            ios_build.DATA_PACK_FEED.format(channel='stable', kind='profiles'),
                                            ios_build.DATA_PACK_FEED.format(channel='stable', kind='recordings'))
+
+
+def test_extended_virtual_addressing_is_allowed_for_ios_but_refused_for_the_mac_build(monkeypatch, capsys):
+    base = ["ios_build.py", "--unsigned", "--extended-virtual-addressing"]
+    monkeypatch.setattr("sys.argv", base + ["--mac"])
+    with pytest.raises(SystemExit):
+        ios_build.main()
+    assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR in capsys.readouterr().err
+    # an iOS build gets past the check (and on to the build, which the stub ends)
+    monkeypatch.setattr("sys.argv", base)
+    monkeypatch.setattr(ios_build.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stop")))
+    try:
+        ios_build.main()
+    except (RuntimeError, SystemExit) as e:
+        assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR not in capsys.readouterr().err

@@ -54,6 +54,9 @@ def run(*args):
     subprocess.run([str(a) for a in args], cwd=ROOT, check=True)
 
 
+EXTENDED_ADDRESSING_MAC_ERROR = '--extended-virtual-addressing is for device builds, not --mac'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -69,8 +72,8 @@ def main():
                         help='tvOS and visionOS: internal render height in pixels, 0 for native '
                              '(default 1080 on tvOS; native on visionOS, which follows the window\'s size)')
     parser.add_argument('--extended-virtual-addressing', action='store_true',
-                        help='visionOS and tvOS: sign with the extended virtual addressing entitlement (paid developer '
-                             'teams), in case the device refuses the 4 GB guest arena')
+                        help='sign with the extended virtual addressing entitlement (paid developer '
+                             'teams), in case the device refuses the 4 GB guest arena (not for --mac)')
     parser.add_argument('--frame-pacing', choices=('on','off'),
                         help="compile in the Metal renderer's presentation pacing (HALO_FRAME_PACING; "
                              'default on, off for --visionos, whose frames the Compositor paces)')
@@ -118,6 +121,8 @@ def main():
                         help='the HTTPS address of the signed profile update envelope, in place of the default')
     parser.add_argument('--recording-feed-url', metavar='URL',
                         help='the HTTPS address of the signed benchmark recording update envelope, in place of the default')
+    parser.add_argument('--internal-only', action='store_true',
+                        help='with --app-store-package: restrict the exported build to internal TestFlight groups')
     parser.add_argument('--render-validation', choices=('on', 'off'),
                         default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
                         help='check every call into the GPU backend before it is made, and name every fallback '
@@ -152,6 +157,8 @@ def main():
         parser.error('--app-store-package is for signed device builds (--team)')
     if args.upload and not args.app_store_package:
         parser.error('--upload needs --app-store-package')
+    if args.internal_only and not args.app_store_package:
+        parser.error('--internal-only needs --app-store-package')
     if args.archive_only and (not args.app_store_package or args.upload):
         parser.error('--archive-only goes with --app-store-package and without --upload')
     if args.tester and args.mac:
@@ -161,8 +168,8 @@ def main():
     if args.render_height is None:
         # 0: the device profile's (profiles/); a number here overrides every profile
         args.render_height = 0
-    if args.extended_virtual_addressing and not (args.visionos or args.tvos):
-        parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
+    if args.extended_virtual_addressing and args.mac:
+        parser.error(EXTENDED_ADDRESSING_MAC_ERROR)
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
     args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
     if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
@@ -271,7 +278,8 @@ def main():
         if args.unsigned: command.append('--require-unsigned')
         run(*command)
     if args.app_store_package:
-        commands = app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload)
+        commands = app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload,
+                                      args.internal_only)
         run(*commands[0])
         # the archive's own dSYMs folder stays empty for this CMake project (its products go to the build folder,
         # where the archive does not look), so the dSYM the archive build wrote there goes in by hand; the UUIDs
@@ -290,19 +298,22 @@ def main():
               (' (archive only: not exported)' if args.archive_only else ' (uploaded)' if args.upload else ''))
 
 
-def app_store_options(team, upload):
+def app_store_options(team, upload, internal_only=False):
     """the export options for an App Store Connect package: signed for distribution by Xcode's automatic signing,
     and either written to disk or uploaded"""
-    return {'method': 'app-store-connect', 'destination': 'upload' if upload else 'export', 'teamID': team,
-            'signingStyle': 'automatic', 'manageAppVersionAndBuildNumber': False, 'uploadSymbols': True}
+    options = {'method': 'app-store-connect', 'destination': 'upload' if upload else 'export', 'teamID': team,
+               'signingStyle': 'automatic', 'manageAppVersionAndBuildNumber': False, 'uploadSymbols': True}
+    if internal_only:
+        options['testFlightInternalTestingOnly'] = True
+    return options
 
 
-def app_store_commands(build, system, team, out, upload):
+def app_store_commands(build, system, team, out, upload, internal_only=False):
     """the commands that archive the configured project and export (or upload) its App Store Connect package into
     out; writes out/ExportOptions.plist for the second"""
     import plistlib
     out.mkdir(parents=True, exist_ok=True)
-    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload)))
+    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload, internal_only)))
     archive = out/'VISR.xcarchive'
     return [['xcodebuild', '-project', build/'VISR.xcodeproj', '-scheme', 'VISR', '-configuration', 'Release',
              '-destination', f'generic/platform={system}', '-archivePath', archive, '-quiet', '-allowProvisioningUpdates',

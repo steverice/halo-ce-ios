@@ -133,6 +133,7 @@ DEFAULTS = {
     "display.high_res_hud": "true",
     "display.high_res_text": "true",
     "display.upscaled_textures": "true",
+    "display.anti_aliasing": '"off"',  # the recorded references have no smoothing pass
     "display.immersive": "false",
     "display.mirror_resolution": '"half"',
     "display.model_lod": '"auto"',  # the recorded references were made with the original LOD

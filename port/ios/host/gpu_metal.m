@@ -4735,7 +4735,18 @@ static void gpu_metal_anti_alias(uint32_t method, gpu_texture target, const stru
 
 		if (!record || !record->texture || record->description.format != GPU_FORMAT_BGRA8 ||
 			(smaa ? !post.smaa : !post.fxaa_pipeline))
+		{
+			static BOOL skipped_logged;
+
+			if (!skipped_logged)
+			{
+				skipped_logged = YES;
+				platform_log("Metal: the anti-aliasing pass was skipped (target %s, format %d, programs %s)",
+					record && record->texture ? "ok" : "missing", record ? (int)record->description.format : -1,
+					(smaa ? post.smaa != nil : post.fxaa_pipeline != nil) ? "ready" : "missing");
+			}
 			return;
+		}
 		width = record->texture.width;
 		height = record->texture.height;
 		if (!clamp_rect(rect, width, height, &area))
@@ -5374,6 +5385,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 #endif
 			}
 		}
+		else
+			host_benchmark_frame_unshown(drawable ? 1 : 0);
 		/* (a frame with nothing to show: its slot goes back now) */
 		frame_pacer_frame_dropped(&paced);
 		drawable = nil;

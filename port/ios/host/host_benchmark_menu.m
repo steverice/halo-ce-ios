@@ -80,7 +80,12 @@ static NSInteger ask(NSString *heading, NSString *detail, NSArray<NSString *> *c
     window.rootViewController = controller;
     [window makeKeyAndVisible];
     while (controller.chosen < 0) {
-        @autoreleasepool { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true); }
+        @autoreleasepool {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true);
+#if !TARGET_OS_TV
+            CFRunLoopRunInMode((__bridge CFStringRef)UITrackingRunLoopMode, 0.01, true);
+#endif
+        }
     }
     chosen = controller.chosen;
     window.hidden = YES;

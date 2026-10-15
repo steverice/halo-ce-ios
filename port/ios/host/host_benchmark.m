@@ -45,6 +45,8 @@ static double refresh_hertz;
 static double screen_hertz;
 
 static _Atomic int running;
+/* every frame offered to host_benchmark_frame and every frame not shown, since the run began (the end's log line) */
+static _Atomic unsigned long frames_offered, frames_no_drawable, frames_no_picture;
 static struct benchmark_plan plan;
 static struct benchmark_outcome outcomes[BENCHMARK_RUNS_MAXIMUM];
 static int outcome_count;
@@ -98,8 +100,14 @@ int host_benchmark_running(void) {
 
 /* ---------- measuring */
 
+void host_benchmark_frame_unshown(int why) {
+    if (!atomic_load(&running)) return;
+    atomic_fetch_add(why ? &frames_no_picture : &frames_no_drawable, 1);
+}
+
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period) {
     if (!atomic_load(&running)) return;
+    atomic_fetch_add(&frames_offered, 1);
     os_unfair_lock_lock(&lock);
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (window_open && interval > 0.0) {
@@ -564,9 +572,13 @@ int host_benchmark_next(char *text, unsigned int size) {
             summary = [NSString stringWithFormat:@"%s\n%@", message, summary];
         }
 #endif
-        if (page && atoi(page) > 0) host_benchmark_page(REPORT, summary.UTF8String, report_code, atoi(page));
+        int shown = page && atoi(page) > 0;
+
+        if (shown) host_benchmark_page(REPORT, summary.UTF8String, report_code, atoi(page));
         atomic_store(&running, 0);
-        return 0;
+        /* a person pressed Done on the report: the game goes back to its main menu (2). With no report screen (a runner
+           or a scripted launch) nobody is there to press anything, and the game quits (0) */
+        return shown ? 2 : 0;
     }
     scene = &plan.scenes[run.scene];
     if (outcome_count) {
@@ -592,6 +604,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->lead, scene->seconds, run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
+    atomic_store(&frames_offered, 0); atomic_store(&frames_no_drawable, 0); atomic_store(&frames_no_picture, 0);
     benchmark_metrics_reset(&metrics, refresh_hertz);
     os_unfair_lock_unlock(&lock);
     benchmark_journal_begin(JOURNAL, run.index, run.key);
@@ -651,4 +664,6 @@ void host_benchmark_end(const char *status_name, const char *note) {
         "at %.1f Hz, %dx%d, least memory left %ld MB", run.index, benchmark_status_name(outcome.status), summary.frames,
         summary.frames_a_second, outcome.interval_p99, outcome.cpu_p95, outcome.gpu_p95, outcome.refresh_hertz, window_width,
         window_height, outcome.left_least);
+    host_logf(HOST_LOG_INFO, "benchmark: run %d presented %lu frames; %lu had no drawable and %lu no picture", run.index,
+        atomic_load(&frames_offered), atomic_load(&frames_no_drawable), atomic_load(&frames_no_picture));
 }

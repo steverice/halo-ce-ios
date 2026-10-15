@@ -14,6 +14,9 @@ void host_benchmark_install(void);
 /* the Metal backend, at each present: seconds since the last one, the frame's CPU and GPU seconds (negative:
    unknown), and the display's refresh period (0: unknown) */
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period);
+/* the Metal backend, for each frame it could not show (why: 0 no drawable, 1 no picture): counted so a run that
+   measured nothing can say whether the display handed out no drawables */
+void host_benchmark_frame_unshown(int why);
 /* the Metal backend, for each shader library, specialization or pipeline compiled; any thread */
 void host_benchmark_compile(double seconds);
 /* 1 while a suite runs */

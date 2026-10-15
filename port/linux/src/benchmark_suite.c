@@ -33,6 +33,7 @@ are the iOS, tvOS, visionOS and Mac app's.
 /* port/runtime/guest/runtime/guest_host.h */
 int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
 	int model_lod_max);
+/* 1: a run to carry out; 0: the suite is over and the game quits; 2: over, and the game goes back to its main menu */
 int host_benchmark_next(char *text, unsigned int size);
 void host_benchmark_window(int open, int width, int height);
 void host_benchmark_end(const char *status, const char *note);
@@ -149,8 +150,20 @@ static void finish(const char *status, const char *note)
 static void next_run(void)
 {
 	char text[512], path[256];
+	int more = host_benchmark_next(text, sizeof(text));
 
-	if (!host_benchmark_next(text, sizeof(text)))
+	if (more == 2)
+	{
+		/* the report was shown and dismissed: the settings the runs set are the game's own again, and the player is
+		where they would be without the suite, at the main menu */
+		platform_log("benchmark suite: over; back to the main menu");
+		halo_benchmark_overrides(0, 0, 0);
+		halo_model_lod_set(-1);
+		benchmark_scenario_load("", "");
+		suite.state = suite_off;
+		return;
+	}
+	if (!more)
 	{
 		platform_log("benchmark suite: over; quitting");
 		exit(EXIT_SUCCESS);

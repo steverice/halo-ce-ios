@@ -154,6 +154,17 @@ required('source/networking/network_connection.c', '!network_connection_peer_awa
 required('port/ios/host/host_lifecycle.m', 'beginBackgroundTaskWithName', 'background_task_end();')
 required('source/main/main.c', 'network_away_update(main_globals.main_menu_loaded_placeholder)'.replace('main_globals.main_menu_loaded_placeholder', 'main_globals.main_menu_scenario_loaded'),
          'network_away_game_lost();\n\t\t\t\t\tnetwork_game_abort();')
+# the device benchmark counts a frame under every renderer: iPhones and iPads draw with OpenGL ES unless a profile asks
+# for Metal, and only the Metal backend reported frames, so a suite there measured nothing ("0 frames" in every run).
+# The GL path reports from the dispatch's Present; the Metal path from gpu_metal.m's pacing_schedule, and not both
+required('port/ios/host/host_gpu_dispatch.c', 'if (!metal_backend)', 'host_benchmark_frame(returned - last_returned',
+         'metal_backend = TARGET_OS_VISION || (flags & GPU_INITIALIZE_METAL) ? 1 : 0;')
+required('port/ios/host/gpu_metal.m', 'host_benchmark_frame(interval,')
+# and its Done button: the report screen's end returns the game to its main menu (2), and only a run with no report
+# screen (a runner, a scripted launch) quits
+required('port/ios/host/host_benchmark.m', 'return shown ? 2 : 0;')
+required('port/linux/src/benchmark_suite.c', 'if (more == 2)', 'benchmark_scenario_load("", "");',
+         'halo_benchmark_overrides(0, 0, 0);', 'halo_model_lod_set(-1);')
 # halo://join links the app is opened with (host_join_link.h)
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/join_link_probe.c', '-o', BUILD/'join-link-probe')

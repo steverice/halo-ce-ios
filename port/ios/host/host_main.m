@@ -436,6 +436,15 @@ int main(int argc,char **argv) {
             snprintf(env_benchmark,sizeof(env_benchmark),"HALO_BENCHMARK_SUITE=%s",benchmark_suite);
             env[env_count++]=env_benchmark;
         }
+        /* The game gets only the variables named here, not the app's own environment, so a launch's
+           HALO_ANTI_ALIASING (devicectl's --environment-variables) would otherwise never reach
+           display.anti_aliasing: it is passed on, for comparing FXAA with a launch that lacks it. */
+        char env_anti_aliasing[48];
+        const char *launch_anti_aliasing=getenv("HALO_ANTI_ALIASING");
+        if(launch_anti_aliasing&&*launch_anti_aliasing){
+            snprintf(env_anti_aliasing,sizeof(env_anti_aliasing),"HALO_ANTI_ALIASING=%s",launch_anti_aliasing);
+            env[env_count++]=env_anti_aliasing;
+        }
         env[env_count++]="TZ=UTC0";env[env_count++]=NULL;
         uint32_t *environment=host_low_map(sizeof(uint32_t)*env_count,PROT_READ|PROT_WRITE);
         for(size_t i=0;i<env_count-1;i++)environment[i]=copy_string(env[i]);environment[env_count-1]=0;
