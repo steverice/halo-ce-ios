@@ -2446,6 +2446,11 @@ static uint32_t gpu_gl_vertical_blank_wait(void)
 	return 0;
 }
 
+/* (no pacer: a frame starts when the game does) */
+static void gpu_gl_frame_start(void)
+{
+}
+
 static void gpu_gl_flush(void)
 {
 	glFlush();

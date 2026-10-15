@@ -83,6 +83,17 @@ void platform_video_swap(void);
 /* frames between the 30 Hz ticks at the display's refresh rate, unless
 display.interpolation is false (port/linux/game/render_interpolation.c) */
 int halo_interpolation_enabled(void);
+/* d3d8_device.c: the start of a frame, for the backend's frame pacer; the
+controller read calls it (xinput_sdl.c) */
+void halo_frame_start(void);
+/* xinput_sdl.c, for display.late_look: player one's right stick as the game
+last read it, as it is now, and how long ago that read was; 0 if there is
+none to use */
+int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds);
+/* and how long ago that read was, whether or not there is a stick to read again */
+float halo_look_read_age(void);
+/* render_interpolation.c: display.late_look on and off while playing (F9) */
+void halo_late_look_toggle(void);
 void platform_mouse_capture(BOOL capture);
 
 /* main thread only; a no-op elsewhere */

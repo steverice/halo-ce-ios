@@ -810,6 +810,25 @@ void WINAPI D3DDevice_SetVerticalBlankCallback(D3DCALLBACK callback)
 	vertical_blank_start();
 }
 
+/* The start of a frame, before it reads input: the backend's pacer may hold
+the frame back so its work ends just in time for the display
+(gpu_frame_start; display.late_start). The game's own loop is not touched:
+the port's controller read (xinput_sdl.c's XInputGetState) calls this, and
+the first call after a Present is the frame's start. The game's ticks follow
+the clock, not the frames, so the simulation, a network game and a recorded
+input's replay see the same ticks either way; only where in the tick a
+frame's picture is taken moves. */
+static BOOL frame_start_due = TRUE;
+
+void halo_frame_start(void)
+{
+	if (!frame_start_due)
+		return;
+	frame_start_due = FALSE;
+	if (device.gl_ready)
+		gpu_frame_start();
+}
+
 void WINAPI D3DDevice_BlockUntilVerticalBlank(void)
 {
 	unsigned long count;
@@ -5991,6 +6010,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		}
 	}
 	platform_pump_events();
+	/* (the next controller read starts a frame: halo_frame_start) */
+	frame_start_due = TRUE;
 
 	pthread_mutex_lock(&vertical_blank_lock);
 	/* the Xbox keeps at most two frames queued behind its 60 Hz display;

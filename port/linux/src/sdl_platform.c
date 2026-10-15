@@ -1483,6 +1483,9 @@ void platform_pump_events(void)
 				if (event.key.down)
 					keys_pressed[event.key.scancode] = 1;
 			}
+			/* F9: display.late_look on and off while playing, to feel the difference */
+			if (event.key.down && !event.key.repeat && event.key.scancode == SDL_SCANCODE_F9)
+				halo_late_look_toggle();
 			if (binding_capture == _binding_capture_waiting && event.key.down && !event.key.repeat &&
 				event.key.scancode != SDL_SCANCODE_F11 && event.key.scancode != SDL_SCANCODE_F12)
 			{

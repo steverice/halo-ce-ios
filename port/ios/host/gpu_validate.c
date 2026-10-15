@@ -1608,6 +1608,12 @@ static uint32_t validate_vertical_blank_wait(void)
 	return validation.backend.vertical_blank_wait();
 }
 
+/* (before the frame reads its input: no GPU state is involved) */
+static void validate_frame_start(void)
+{
+	validation.backend.frame_start();
+}
+
 static void frame_end(void)
 {
 	validation.frame++;
