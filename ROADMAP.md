@@ -41,8 +41,8 @@
 - [x] Device profiles: graphics settings chosen per device model or class, with the main menu and cutscenes budgeted apart from play (`profiles/`, `debug.device_profile`)
 - [ ] Profile knobs still to build: a shadow budget, a level-of-detail bias outside stereo, anti-aliasing, a frame-rate target for a scene class, pixel math as a setting
 - [ ] A device profile that also covers every newer model (`and_newer` in its `[match]`), so a device that runs everything at the highest settings sets the floor for later iPhones, iPads, Apple TVs, Vision Pros and Mac chips
-- [ ] A profiling suite testers can run, whose report a profile is derived from
-- [ ] A recent render-target cache (a port of upstream's `197c1994`)
+- [x] A benchmark testers can run from the app, whose report a profile is derived from (tester builds; `debug.benchmark_suite`)
+- [x] A recent render-target cache (a port of upstream's `197c1994`)
 
 ## Graphics
 
@@ -59,7 +59,7 @@
 
 - [x] Split-screen co-op, LAN play, and internet play with a server browser, from OpenCE (`network.online`)
 - [x] `halo://join` invite links on every Apple platform
-- [ ] A grace period that keeps a network game running while the app is in the background
+- [x] A grace period that keeps a network game running while the app is in the background (`network.background_grace`)
 - [ ] LAN discovery over Bonjour
 - [ ] Sharing the host's invite from the app
 - [ ] Internet play on by default
