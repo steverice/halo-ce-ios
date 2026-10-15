@@ -238,7 +238,24 @@ static UIImage *qr_image(NSString *text) {
     stack.alignment = UIStackViewAlignmentCenter;
     stack.spacing = 18;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
+#if TARGET_OS_TV
     [self.view addSubview:stack];
+#else
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:scroll];
+    [scroll addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [scroll.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
+        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:20],
+        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-20],
+        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:20],
+        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-20],
+        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-40]]];
+#endif
     [stack addArrangedSubview:[self label:UIFontTextStyleTitle1 color:UIColor.whiteColor
         text:[NSString stringWithFormat:@"Benchmark finished · report %@", self.code]]];
     [stack addArrangedSubview:[self label:UIFontTextStyleBody color:UIColor.lightGrayColor text:self.summary]];
@@ -253,12 +270,26 @@ static UIImage *qr_image(NSString *text) {
     [stack addArrangedSubview:self.address];
     [stack addArrangedSubview:[self label:UIFontTextStyleCallout color:UIColor.lightGrayColor
         text:@"With a phone or computer on this network, scan the code or open the address, then download the report.\n"
-            "Press Back when you are done."]];
+#if TARGET_OS_TV
+            "Press Back when you are done."
+#else
+            "Keep this screen open until the download finishes."
+#endif
+        ]];
+#if !TARGET_OS_TV
+    UIButton *done = [UIButton buttonWithType:UIButtonTypeSystem];
+    [done setTitle:@"Done" forState:UIControlStateNormal];
+    [done addTarget:self action:@selector(done:) forControlEvents:UIControlEventPrimaryActionTriggered];
+    [done.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    [stack addArrangedSubview:done];
+#else
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
         [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor multiplier:0.85]]];
+#endif
 }
+- (void)done:(UIButton *)button { (void)button; self.dismissed = YES; }
 - (void)refresh {
     NSString *address = local_address();
     unsigned port = atomic_load(&page_port);
@@ -306,17 +337,29 @@ static UIImage *qr_image(NSString *text) {
     text.textColor = UIColor.lightGrayColor;
     text.numberOfLines = 0;
     text.textAlignment = NSTextAlignmentCenter;
+#if TARGET_OS_TV
     stop.text = @"Leave the device alone until the benchmark says it has finished. Press Back now to stop it.";
+#else
+    stop.text = @"Leave the device alone until the benchmark says it has finished.";
+#endif
     stop.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCallout];
     stop.textColor = UIColor.grayColor;
     stop.numberOfLines = 0;
     stop.textAlignment = NSTextAlignmentCenter;
     for (UILabel *label in @[ title, text, stop ]) [stack addArrangedSubview:label];
+#if !TARGET_OS_TV
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    [button setTitle:@"Stop benchmark" forState:UIControlStateNormal];
+    [button addTarget:self action:@selector(stop:) forControlEvents:UIControlEventPrimaryActionTriggered];
+    [button.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
+    [stack addArrangedSubview:button];
+#endif
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
         [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor multiplier:0.8]]];
 }
+- (void)stop:(UIButton *)button { (void)button; self.stopped = YES; }
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
     for (UIPress *press in presses)
         if (press.type == UIPressTypeMenu) { self.stopped = YES; return; }
@@ -345,6 +388,9 @@ int host_benchmark_notice(const char *heading, const char *detail, double second
     while (!controller.stopped && CFAbsoluteTimeGetCurrent() < end && !(until && until())) {
         @autoreleasepool {
             if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true) == kCFRunLoopRunFinished) usleep(100000);
+#if !TARGET_OS_TV
+            CFRunLoopRunInMode((__bridge CFStringRef)UITrackingRunLoopMode, 0.01, true);
+#endif
         }
     }
     stopped = controller.stopped;
@@ -384,6 +430,9 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         @autoreleasepool {
             [controller refresh];
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.25, true);
+#if !TARGET_OS_TV
+            CFRunLoopRunInMode((__bridge CFStringRef)UITrackingRunLoopMode, 0.01, true);
+#endif
         }
     }
     dispatch_sync(page_queue, ^{ if (listener) nw_listener_cancel(listener); listener = nil; });
