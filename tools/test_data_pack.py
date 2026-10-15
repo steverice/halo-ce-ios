@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -301,3 +302,16 @@ def test_notes_escaped_boundary(tmp_path):
     assert manifest["notes"] == "\x01" * 4096
     with pytest.raises(ValueError, match="notes must be at most"):
         data_pack.main(args + ["--notes", "\x01" * 4097])
+
+
+@pytest.mark.parametrize("name", ["bad\nname", "bad\tname", "bad\x7fname", "x" * 64, "é" * 32])
+def test_profile_name_cannot_inject_settings(tmp_path, name):
+    folder = tmp_path / "profiles"
+    shutil.copytree(data_pack.ROOT / "profiles", folder)
+    path = folder / "apple-tv-hd.toml"
+    literal = json.dumps(name)
+    changed, count = re.subn(r"^name =.*$", lambda match: "name = " + literal, path.read_text(), count=1, flags=re.M)
+    assert count == 1
+    path.write_text(changed)
+    with pytest.raises(ValueError, match="profile snapshot rejected"):
+        data_pack.snapshot(folder, "profiles")

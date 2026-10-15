@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 /* ---------- the settings a profile may set (port/linux/src/port_profile_keys.h) */
 
@@ -120,6 +121,7 @@ static int string_is_choice(const char *text, const char *choices)
 struct profile_log
 {
 	void (*log)(const char *line);
+	int *errors;
 };
 
 static void profile_logf(const struct profile_log *log, const char *format, ...) __attribute__((format(printf, 2, 3)));
@@ -129,6 +131,7 @@ static void profile_logf(const struct profile_log *log, const char *format, ...)
 	char line[512];
 	va_list arguments;
 
+	if (log->errors) ++*log->errors;
 	if (!log->log)
 		return;
 	va_start(arguments, format);
@@ -566,7 +569,17 @@ size_t host_profile_encode(const struct host_profile *profile, char *text, size_
 	for (index = 0; index < profile->count; index++)
 	{
 		const struct host_profile_value *value = &profile->values[index];
-		int written = snprintf(text + length, size - length, "%s\t%s\t%s%s%s\n", value->name, value->text, value->source,
+		char source[sizeof(value->source)];
+		char *character;
+		int written;
+
+		/* the source carries a profile's own name: a tab or a line break in it would start another field or
+		   another setting in this encoding, so every control character becomes a space */
+		snprintf(source, sizeof(source), "%s", value->source);
+		for (character = source; *character; character++)
+			if ((unsigned char)*character < 32 || *character == 127)
+				*character = ' ';
+		written = snprintf(text + length, size - length, "%s\t%s\t%s%s%s\n", value->name, value->text, source,
 			value->scene[0] ? "\t" : "", value->scene);
 
 		if (written < 0 || (size_t)written >= size - length)
@@ -577,4 +590,151 @@ size_t host_profile_encode(const struct host_profile *profile, char *text, size_
 		length += (size_t)written;
 	}
 	return length;
+}
+
+
+/* Strict admission for downloaded snapshots; normal bundled matching remains tolerant. */
+static int pack_names(toml_datum_t names)
+{
+	if (names.type == TOML_UNKNOWN) return 1;
+	if (names.type != TOML_ARRAY || names.u.arr.size > 32) return 0;
+	for (int i = 0; i < names.u.arr.size; i++)
+	{
+		toml_datum_t n = names.u.arr.elem[i];
+		if (n.type != TOML_STRING || !*n.u.s || strlen(n.u.s) > 48 ||
+			strspn(n.u.s, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,.-") != strlen(n.u.s)) return 0;
+		for (int j = 0; j < i; j++) if (!strcmp(n.u.s, names.u.arr.elem[j].u.s)) return 0;
+	}
+	return 1;
+}
+static int pack_filename(const char *name)
+{
+	size_t n = strlen(name);
+	if (n < 6 || n >= 64 || strcmp(name + n - 5, ".toml") || !strcmp(name, "device-profile.toml")) return 0;
+	for (size_t i = 0; i < n - 5; i++)
+	{
+		char c = name[i];
+		if (!(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '-') return 0;
+		if (c == '-' && (!i || i == n - 6 || name[i-1] == '-')) return 0;
+	}
+	return 1;
+}
+static int pack_regular(const char *path, int directory)
+{
+	struct stat info;
+	return !lstat(path, &info) && (directory ? S_ISDIR(info.st_mode) : S_ISREG(info.st_mode));
+}
+static int pack_heading(toml_datum_t table, const char *file, struct profile_file *description, const struct profile_log *log)
+{
+	if (!profile_describe(table, file, "", "", description, log)) return 0;
+	toml_datum_t name = toml_get(table, "name"), match = toml_get(table, "match"), status = toml_get(table, "status");
+	if (!*name.u.s || strlen(name.u.s) >= 64 || match.type != TOML_TABLE ||
+		!name_in(description->platform, (const char *const[]){"ios","tvos","visionos","mac"}, 4)) return 0;
+	for (const unsigned char *c = (const unsigned char *)name.u.s; *c; c++)
+		if (*c < 32 || *c == 127) return 0;
+	if (status.type != TOML_UNKNOWN && (status.type != TOML_STRING ||
+		!name_in(status.u.s, (const char *const[]){"tested","provisional","below target"}, 3))) return 0;
+	for (int i = 0; i < match.u.tab.size; i++)
+	{
+		const char *key = match.u.tab.key[i];
+		if (strcmp(key, "platform") && (description->is_class ? strcmp(key, "gpu_family") : strcmp(key, "models") && strcmp(key, "chips"))) return 0;
+	}
+	if (description->is_class)
+	{
+		toml_datum_t raw = toml_seek(table, "match.gpu_family");
+		if (raw.u.arr.elem[0].u.int64 < 1 || raw.u.arr.elem[0].u.int64 > 32 ||
+			raw.u.arr.elem[1].u.int64 < 0 || raw.u.arr.elem[1].u.int64 > 32) return 0;
+		if (description->family_minimum < 1 || description->family_minimum > 32 || description->family_maximum < 0 ||
+			description->family_maximum > 32 || (description->family_maximum && description->family_maximum < description->family_minimum)) return 0;
+	}
+	else
+	{
+		toml_datum_t models = toml_seek(table, "match.models"), chips = toml_seek(table, "match.chips");
+		if (!pack_names(models) || !pack_names(chips) ||
+			!((models.type == TOML_ARRAY && models.u.arr.size) || (chips.type == TOML_ARRAY && chips.u.arr.size))) return 0;
+	}
+	for (int i = 0; i < table.u.tab.size; i++)
+	{
+		const char *key = table.u.tab.key[i]; toml_datum_t value = table.u.tab.value[i];
+		if (!strcmp(key, "schema") || !strcmp(key, "name") || !strcmp(key, "kind") || !strcmp(key, "status") || !strcmp(key, "match")) continue;
+		if (value.type != TOML_TABLE) return 0;
+		if (!strcmp(key, "evidence") || !strcmp(key, "scene")) continue;
+		int known = 0;
+		for (size_t j = 0; j < NUMBER_OF_PROFILE_KEYS; j++)
+			if (!strncmp(profile_keys[j].name, key, strlen(key)) && profile_keys[j].name[strlen(key)] == '.') known = 1;
+		if (!known) return 0;
+	}
+	return 1;
+}
+
+int host_profile_validate_folder(const char *folder, void (*log_line)(const char *))
+{
+	enum { LIMIT = 128 };
+	toml_result_t *tables = calloc(LIMIT, sizeof(*tables));
+	struct profile_file *heads = calloc(LIMIT, sizeof(*heads));
+	int errors = 0, count = 0, valid = 0;
+	struct profile_log log = { log_line, &errors };
+	DIR *directory = NULL;
+	struct dirent *entry;
+	char path[1024];
+	if (!tables || !heads || !folder || !pack_regular(folder, 1) || !(directory = opendir(folder))) goto done;
+	while ((entry = readdir(directory)))
+	{
+		const char *name = entry->d_name;
+		if (!strcmp(name, ".") || !strcmp(name, "..")) continue;
+		/* Source folders also hold contributor documentation; the pack envelope excludes it. */
+		if (!strcmp(name, "README.md") || !strcmp(name, "TEMPLATE.toml")) continue;
+		snprintf(path, sizeof(path), "%s/%s", folder, name);
+		if (!strcmp(name, "hardware"))
+		{
+			if (!pack_regular(path, 1)) goto done;
+			DIR *hardware = opendir(path); struct dirent *item;
+			if (!hardware) goto done;
+			int only_catalog = 1, catalogs = 0;
+			while ((item = readdir(hardware)))
+			{
+				if (!strcmp(item->d_name, ".") || !strcmp(item->d_name, "..")) continue;
+				if (strcmp(item->d_name, "catalog.toml")) only_catalog = 0; else catalogs++;
+			}
+			closedir(hardware);
+			snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+			if (!only_catalog || catalogs != 1 || !pack_regular(path, 0)) goto done;
+			continue;
+		}
+		if (!pack_filename(name) || count == LIMIT || !pack_regular(path, 0)) goto done;
+		size_t size = 0; char *text = profile_read(path, &size, &log, name);
+		if (!text || memchr(text, 0, size)) { free(text); goto done; }
+		tables[count] = toml_parse(text, (int)size); free(text);
+		if (!tables[count].ok) { toml_free(tables[count]); goto done; }
+		int current = count++;
+		if (!pack_heading(tables[current].toptab, name, &heads[current], &log)) goto done;
+		struct host_profile values = {0};
+		profile_add_settings(&values, tables[current].toptab, "pack", name, NULL, &log);
+		if (errors) goto done;
+	}
+	/* Every platform/family has exactly one class; exact model identities remain unique. */
+	for (int p = 0; p < 4; p++)
+		for (int family = 1; family <= 32; family++)
+		{
+			const char *platform = (const char *const[]){"ios","tvos","visionos","mac"}[p]; int holders = 0;
+			for (int i = 0; i < count; i++) if (heads[i].is_class && !strcmp(heads[i].platform, platform) &&
+				heads[i].family_minimum <= family && (!heads[i].family_maximum || heads[i].family_maximum >= family)) holders++;
+			if (holders != 1) goto done;
+		}
+	for (int i = 0; i < count; i++) if (!heads[i].is_class)
+		for (int j = 0; j < i; j++) if (!heads[j].is_class)
+			for (int f = 0; f < 2; f++)
+			{
+				const char *field = f ? "match.chips" : "match.models";
+				toml_datum_t names = toml_seek(tables[i].toptab, field), prior = toml_seek(tables[j].toptab, field);
+				for (int k = 0; names.type == TOML_ARRAY && k < names.u.arr.size; k++)
+					if (string_in_array(prior, names.u.arr.elem[k].u.s)) goto done;
+			}
+	valid = host_profile_catalog_validate(folder);
+done:
+	if (directory) closedir(directory);
+	for (int i = 0; tables && i < count; i++) toml_free(tables[i]);
+	free(tables); free(heads);
+	if (!valid && log_line) log_line("profile update: incomplete or invalid profile snapshot rejected");
+	return valid;
 }

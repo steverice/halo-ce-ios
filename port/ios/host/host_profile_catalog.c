@@ -271,3 +271,31 @@ int host_profile_inherit(const struct host_device *device, const char *folder,
 	else if (log) log("device profile: no compatible profile at or below hardware tier; class fallback retained");
 	toml_free(catalog); return found;
 }
+
+
+int host_profile_catalog_validate(const char *folder)
+{
+	char path[1024]; int valid = 0;
+	snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+	toml_result_t catalog = read_table(path);
+	if (!catalog.ok || !valid_catalog(catalog.toptab)) goto done;
+	toml_datum_t hardware = field(catalog.toptab, "hardware"), fallback = field(catalog.toptab, "fallback");
+	for (int i = 0; i < fallback.u.arr.size; i++)
+	{
+		toml_datum_t f = fallback.u.arr.elem[i];
+		int h = hardware_index(hardware, string(f, "hardware"));
+		toml_datum_t source = hardware.u.arr.elem[h];
+		snprintf(path, sizeof(path), "%s/%s", folder, string(f, "profile"));
+		toml_result_t profile = read_table(path);
+		int match = profile.ok && !strcmp(string(profile.toptab, "kind"), "model") &&
+			!strcmp(string(field(profile.toptab, "match"), "platform"), string(source, "platform")) &&
+			(overlaps(field(source, "models"), toml_seek(profile.toptab, "match.models")) ||
+			 overlaps(field(source, "chips"), toml_seek(profile.toptab, "match.chips")));
+		toml_free(profile);
+		if (!match) goto done;
+	}
+	valid = 1;
+done:
+	toml_free(catalog);
+	return valid;
+}

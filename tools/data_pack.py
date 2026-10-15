@@ -76,6 +76,11 @@ def validate_profiles(folder):
     keys = profile_check.profile_keys()
     for path in sorted(folder.glob("*.toml")):
         errors, table = profile_check.check_profile(path, keys)
+        if table is not None:
+            name = table.get("name")
+            if (not isinstance(name, str) or not name or len(name.encode("utf-8")) >= 64
+                    or any(ord(character) < 32 or ord(character) == 127 for character in name)):
+                errors.append("name must be 1 to 63 UTF-8 bytes without ASCII control characters")
         problems.extend(f"{path.name}: {error}" for error in errors)
         if not errors:
             tables[path.name] = table

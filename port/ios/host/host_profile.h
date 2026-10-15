@@ -78,3 +78,7 @@ const struct host_profile *host_device_profile(void);
 /* Internal catalog selection: resolves a source without drop-ins or recursive fallback. */
 int host_profile_inherit(const struct host_device *device, const char *folder,
 	void (*log)(const char *), struct host_profile *profile);
+
+/* Downloaded profile snapshots are accepted only as a complete valid set. */
+int host_profile_validate_folder(const char *folder, void (*log)(const char *));
+int host_profile_catalog_validate(const char *folder);
