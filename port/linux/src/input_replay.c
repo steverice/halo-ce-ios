@@ -73,9 +73,6 @@ extern void input_replay_random_seeds(unsigned long seeds[2], unsigned char set)
 extern unsigned char input_replay_player_position(float position[3]);
 /* player 1's vitality and the AI's count of actors and of dead objects; 0 while there is no player unit */
 extern unsigned char input_replay_fight_state(float *body, float *shield, long *actors, long *dead_objects);
-/* dsound_sdl.c: the replay's mixer, stepped by the ticks */
-extern void dsound_replay_mixer(BOOL on);
-extern void dsound_replay_step(void);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 
@@ -963,8 +960,11 @@ seeds an enemy's choice starts from depend on how many frames came between the t
 at the first choice a frame's draw changed, and the recording's seeds, set after the choices, cannot undo it. While
 a take is recorded or replayed, a tick ends by noting both seeds and the next one begins by putting them back, so
 the frames' draws never reach the simulation. (The local sequence is started again from the global one: the numbers
-a tick draws from it are not the same in two runs.) The sounds the mixer has finished reach the simulation too,
-which a replay's mixer steps with the ticks for (dsound_sdl.c). */
+a tick draws from it are not the same in two runs.) The sounds reach the simulation too: a unit speaks a scripted
+sound only if the mixer started it, which follows the sound cache's loading and the playing sounds' timing, and the
+sounds drew from the same sequences. So the sounds draw from a sequence of their own, a unit speaks a scripted
+sound whether or not it started while a take is recorded or replayed (input_replay_sim_isolated), and a replay
+plays no sound at all (input_replay_sound_silent). */
 static struct { BOOL valid; long tick; unsigned long seeds[2]; } tick_seeds;
 static long tick_seeds_begun = -1;
 
@@ -973,13 +973,22 @@ static BOOL tick_seeds_wanted(void)
 	return replay.action_count || *replay.record_actions_path;
 }
 
+/* whether the simulation is kept clear of what only the frames and the devices decide (a take is being recorded or
+replayed) */
+unsigned char input_replay_sim_isolated(void)
+{
+	return tick_seeds_wanted();
+}
+
+/* whether a replay is under way, which plays no sound */
+unsigned char input_replay_sound_silent(void)
+{
+	return replay.action_count != 0;
+}
+
 void input_replay_tick_begin(void)
 {
 	long tick;
-
-	/* (a replay's audio is silent and steps with the ticks; see dsound_sdl.c) */
-	if (replay.action_count)
-		dsound_replay_mixer(TRUE);
 
 	if (!tick_seeds_wanted())
 		return;
@@ -999,8 +1008,6 @@ void input_replay_tick_begin(void)
 
 void input_replay_tick_end(void)
 {
-	if (replay.action_count)
-		dsound_replay_step();
 	if (!tick_seeds_wanted() || tick_seeds_begun < 0)
 		return;
 	tick_seeds.valid = TRUE;

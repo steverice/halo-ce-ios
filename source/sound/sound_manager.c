@@ -579,6 +579,12 @@ typedef char verify_sound_manager_environment_offset[
 typedef char verify_sound_manager_channel_count_offset[
 	offsetof(struct sound_manager_globals, channel_count) == 0x174 ? 1 : -1];
 
+/* port: the sounds' own random numbers (pitch, volume, skips, a looping sound's offsets and periods). They were drawn
+from the game's local sequence, which the simulation also draws from, so which sounds were played, and how many,
+changed what the simulation drew next; and how many were played follows the audio device and the frames' timing
+(input_replay.c). */
+unsigned long sound_random_seed = 0x2545F491;
+
 /* ---------- prototypes */
 
 static void sound_update_time(
@@ -819,10 +825,14 @@ void sound_enable(
 	return;
 }
 
+extern unsigned char input_replay_sound_silent(void);
+
 boolean sound_is_active(
 	void)
 {
-	return sound_manager_globals.initialized && sound_manager_globals.enabled;
+	/* port: a replay plays no sound: which sounds the mixer starts follows the sound cache's loading and the frames'
+	timing, and the simulation must not (input_replay.c) */
+	return sound_manager_globals.initialized && sound_manager_globals.enabled && !input_replay_sound_silent();
 }
 
 void sound_pause(
@@ -880,7 +890,7 @@ void sound_initialize_for_new_map(
 void sound_reconnect_to_structure_bsp(
 	void)
 {
-	if (sound_manager_globals.initialized && sound_manager_globals.enabled)
+	if (sound_is_active())
 	{
 		long sound_index = data_next_index(sound_data, NONE);
 
@@ -1440,7 +1450,7 @@ static long looping_sound_new(
 {
 	long looping_sound_index = NONE;
 
-	if (sound_manager_globals.initialized && sound_manager_globals.enabled)
+	if (sound_is_active())
 	{
 		looping_sound_index = datum_new(looping_sound_data);
 		if (looping_sound_index != NONE)
@@ -1601,7 +1611,7 @@ static long update_potentially_audible_looping_sound(
 						definition->random_pitch_bounds.lower;
 
 					sound->pitch = real_seed_random_range(
-						get_global_local_random_seed_address(),
+						&sound_random_seed,
 						pitch_lower_bound,
 						pitch_upper_bound);
 				}
@@ -1781,7 +1791,7 @@ static real sound_scale_random_value(
 	real scale)
 {
 	real base = real_seed_random_range(
-		get_global_local_random_seed_address(),
+		&sound_random_seed,
 		base_lower_bound,
 		base_upper_bound);
 
@@ -2466,7 +2476,7 @@ long sound_new_impulse(
 		source->spatialization_mode = _sound_spatialization_mode_none;
 	}
 
-	if (sound_manager_globals.initialized && sound_manager_globals.enabled)
+	if (sound_is_active())
 	{
 		if (definition->compression == _sound_compression_xbox_adpcm &&
 			((definition->encoding == _sound_encoding_mono &&
@@ -2476,7 +2486,7 @@ long sound_new_impulse(
 			if (source->scale != 0.f || definition->zero_gain_modifier != 0.f)
 			{
 				real random = real_seed_random(
-					get_global_local_random_seed_address());
+					&sound_random_seed);
 
 				if (random > sound_scale_value(
 					definition->skip_fraction,
@@ -3184,7 +3194,7 @@ static void process_looping_sounds(
 					lower_scale = definition->scale_lower_bound.detail_period;
 					period_upper_bound = detail->period_bounds.upper;
 					period_lower_bound = detail->period_bounds.lower;
-					period = real_local_random_range(
+					period = real_seed_random_range(&sound_random_seed, 
 						period_lower_bound,
 						period_upper_bound);
 
@@ -3209,8 +3219,7 @@ void sound_dispose_from_old_map(
 	void)
 {
 	if (!sound_manager_globals.paused &&
-		sound_manager_globals.initialized &&
-		sound_manager_globals.enabled)
+		sound_is_active())
 	{
 		long start_time = (long)system_milliseconds();
 		long sound_index = data_next_index(sound_data, NONE);
@@ -3785,7 +3794,7 @@ void sound_idle(
 {
 	sound_manager_globals.idling = TRUE;
 
-	if (sound_manager_globals.initialized && sound_manager_globals.enabled)
+	if (sound_is_active())
 	{
 		sound_manager_globals.platform_definition->begin_scene();
 
@@ -3920,7 +3929,7 @@ static void detail_sound_random_offset(
 	struct looping_sound_detail const *detail,
 	real_vector3d *offset)
 {
-	real distance = real_local_random_range(
+	real distance = real_seed_random_range(&sound_random_seed, 
 		detail->distance_bounds.lower,
 		detail->distance_bounds.upper);
 
@@ -3928,10 +3937,10 @@ static void detail_sound_random_offset(
 	{
 		real_euler_angles2d angles;
 
-		angles.pitch = real_local_random_range(
+		angles.pitch = real_seed_random_range(&sound_random_seed, 
 			detail->phi_bounds.lower,
 			detail->phi_bounds.upper);
-		angles.yaw = real_local_random_range(
+		angles.yaw = real_seed_random_range(&sound_random_seed, 
 			detail->theta_bounds.lower,
 			detail->theta_bounds.upper);
 		vector3d_from_euler_angles2d(offset, &angles);
@@ -3950,7 +3959,7 @@ void sound_render(
 {
 	profile_enter(sound_render_section);
 
-	if (sound_manager_globals.initialized && sound_manager_globals.enabled)
+	if (sound_is_active())
 	{
 		sound_manager_globals.platform_definition->begin_scene();
 

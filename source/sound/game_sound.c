@@ -522,6 +522,8 @@ enum
 };
 void network_coop_note_sound(short kind, long definition_index, long object_index, real scale);
 
+extern unsigned char input_replay_sim_isolated(void);
+
 void scripted_sound_new(
 	long definition_index,
 	long source_object_index,
@@ -564,7 +566,10 @@ void scripted_sound_new(
 				&position,
 				&forward,
 				scale);
-			if (impulse_sound_index != NONE)
+			/* port: while a take is recorded or replayed a unit speaks a scripted sound whether or not the mixer started
+			it: whether it did follows the sound cache's loading, the listener's distance, the playing sounds and the
+			frames' timing, and the unit's speech, and the AI's with it, must not (input_replay.c) */
+			if (impulse_sound_index != NONE || input_replay_sim_isolated())
 			{
 				object_type_notify_impulse_sound(
 					source_object_index,
