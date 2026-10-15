@@ -164,3 +164,45 @@ def test_data_pack_public_configuration_is_embedded_in_every_app_plist(name):
                          ('HaloRecordingFeedURL', 'HALO_RECORDING_FEED_URL'),
                          ('HaloDataPackChannel', 'HALO_DATA_PACK_CHANNEL')]:
         assert values[key] == f'$({setting})'
+
+
+def configure_with(monkeypatch, tmp_path, *arguments):
+    import sys
+    commands = []
+    monkeypatch.setattr(ios_build, 'ROOT', tmp_path)
+    monkeypatch.setattr(ios_build, 'HEADERS', {})
+    monkeypatch.setattr(ios_build.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(ios_build.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(ios_build, 'run', lambda *command: commands.append([str(part) for part in command]))
+    monkeypatch.setattr(ios_build.shutil, 'copyfile', lambda *args: None)
+    monkeypatch.setattr(ios_build, 'opengles_framework', lambda *args: tmp_path / 'frameworks')
+    monkeypatch.setattr(sys, 'argv', ['ios_build.py', '--host-pgo=off', *arguments])
+    ios_build.main()
+    return next(command for command in commands if command[0] == 'cmake' and '-S' in command)
+
+
+@pytest.mark.parametrize('arguments, channel', [(['--unsigned', '--tester'], 'tester'), (['--unsigned'], 'stable'),
+                                                (['--simulator', '--tvos', '--tester'], 'tester')])
+def test_device_builds_download_from_the_projects_feeds_by_default(monkeypatch, tmp_path, arguments, channel):
+    configure = configure_with(monkeypatch, tmp_path, *arguments)
+    assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
+    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/profiles.json' in configure
+    assert f'-DHALO_RECORDING_FEED_URL=https://code.steverice.org/visr/packs/{channel}/recordings.json' in configure
+
+
+@pytest.mark.parametrize('arguments', [['--mac'], ['--unsigned', '--data-packs', 'off']])
+def test_the_runner_and_data_packs_off_download_nothing(monkeypatch, tmp_path, arguments):
+    configure = configure_with(monkeypatch, tmp_path, *arguments)
+    assert {'-DHALO_DATA_PACK_PUBLIC_KEY=', '-DHALO_PROFILE_FEED_URL=', '-DHALO_RECORDING_FEED_URL='} <= set(configure)
+
+
+def test_data_packs_off_refuses_a_named_feed(monkeypatch, tmp_path):
+    with pytest.raises(SystemExit):
+        configure_with(monkeypatch, tmp_path, '--unsigned', '--data-packs', 'off',
+                       '--profile-feed-url', 'https://packs.example/p.json')
+
+
+def test_the_projects_key_and_feeds_pass_their_own_checks():
+    assert ios_build.data_pack_definitions(ios_build.DATA_PACK_PUBLIC_KEY,
+                                           ios_build.DATA_PACK_FEED.format(channel='stable', kind='profiles'),
+                                           ios_build.DATA_PACK_FEED.format(channel='stable', kind='recordings'))

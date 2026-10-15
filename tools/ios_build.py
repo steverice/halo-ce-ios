@@ -22,6 +22,11 @@ HEADERS = {
     'KHR/khrplatform.h': ('EGL-Registry', EGL_REVISION, 'api/KHR/khrplatform.h'),
 }
 
+# signed profile and recording updates (docs/data-packs.md): the key the publisher's seed pairs with, and the
+# feeds on the project's site, one folder per channel
+DATA_PACK_PUBLIC_KEY = 'b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea'
+DATA_PACK_FEED = 'https://code.steverice.org/visr/packs/{channel}/{kind}.json'
+
 HOST_PROFILE = ROOT / 'pgo/visr_host.profdata'
 HOST_PROFILE_RAW = ROOT / 'build/host-pgo/raw'
 
@@ -101,13 +106,18 @@ def main():
     parser.add_argument('--upload', action='store_true',
                         help='with --app-store-package: upload the package to App Store Connect with the account '
                              'Xcode is signed in to. The app record must exist there first')
-    parser.add_argument('--data-pack-public-key', default='', metavar='HEX',
-                        help='the Ed25519 public key (64 hex digits) that signed profile and recording updates must '
-                             'verify against (docs/data-packs.md); without it the app never downloads updates')
-    parser.add_argument('--profile-feed-url', default='', metavar='URL',
-                        help='the HTTPS address of the signed profile update envelope')
-    parser.add_argument('--recording-feed-url', default='', metavar='URL',
-                        help='the HTTPS address of the signed benchmark recording update envelope')
+    parser.add_argument('--data-packs', choices=('on', 'off'),
+                        help='signed profile and recording updates (docs/data-packs.md): on by default for device and '
+                             'simulator builds, from the tester feeds with --tester and the stable feeds otherwise; off '
+                             'by default for --mac, the runner, whose runs must not change with a download, unless a key '
+                             'or feed is named')
+    parser.add_argument('--data-pack-public-key', metavar='HEX',
+                        help='the Ed25519 public key (64 hex digits) that updates must verify against, in place of the '
+                             "project's own")
+    parser.add_argument('--profile-feed-url', metavar='URL',
+                        help='the HTTPS address of the signed profile update envelope, in place of the default')
+    parser.add_argument('--recording-feed-url', metavar='URL',
+                        help='the HTTPS address of the signed benchmark recording update envelope, in place of the default')
     parser.add_argument('--render-validation', choices=('on', 'off'),
                         default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
                         help='check every call into the GPU backend before it is made, and name every fallback '
@@ -162,7 +172,7 @@ def main():
     except ValueError as error:
         parser.error(str(error))
     try:
-        data_packs = data_pack_definitions(args.data_pack_public_key, args.profile_feed_url, args.recording_feed_url)
+        data_packs = data_pack_definitions(*data_pack_settings(args))
     except ValueError as error:
         parser.error(str(error))
     if args.mac and (args.cloud_saves or args.benchmark_upload) and not args.team:
@@ -354,6 +364,22 @@ def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=
         raise ValueError('--cloud-container must look like iCloud.com.yourname.visr')
     return [f'-DHALO_CLOUD_SAVES={"ON" if cloud_saves else "OFF"}', f'-DHALO_CLOUD_CONTAINER={cloud_container}',
             f'-DHALO_BENCHMARK_UPLOAD={"ON" if benchmark_upload else "OFF"}']
+
+
+def data_pack_settings(args):
+    """the key and feed URLs a build gets: the project's own unless named, none with --data-packs off"""
+    explicit = [args.data_pack_public_key, args.profile_feed_url, args.recording_feed_url]
+    named = any(value is not None for value in explicit)
+    enabled = args.data_packs == 'on' or (args.data_packs is None and (named or not args.mac))
+    if not enabled:
+        if named:
+            raise ValueError('--data-packs off leaves out the key and feed URLs; drop them, or use --data-packs on')
+        return '', '', ''
+    channel = 'tester' if args.tester else 'stable'
+    return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
+            DATA_PACK_FEED.format(channel=channel, kind='profiles') if args.profile_feed_url is None else args.profile_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None
+            else args.recording_feed_url)
 
 
 def data_pack_definitions(public_key, profile_feed_url, recording_feed_url):
