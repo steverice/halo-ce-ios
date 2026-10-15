@@ -64,7 +64,9 @@ Outputs:
 - `build/ios/app-unsigned/Release-iphoneos/VISR.app`
 - `dist/VISR-iOS-unsigned.ipa` and its `.sha256` checksum when requested
 
-The default bundle identifier is `org.steverice.visr`. Set `--bundle-id` to one
+The default bundle identifier is `org.steverice.visr` on iOS, tvOS and visionOS, so one
+App Store Connect record (universal purchase) covers them all; `--mac` defaults to
+`org.steverice.visr.mac`. Set `--bundle-id` to one
 covered by your signing profile. `--ipa PATH` can also package a signed build;
 only unsigned builds are suitable for this project's public release workflow.
 Code signing and provisioning must succeed
