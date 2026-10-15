@@ -254,6 +254,40 @@ static void text_prompt_dismiss(UIAlertController *alert) {
     else [alert dismissViewControllerAnimated:YES completion:nil];
 }
 
+/* Menu (a remote's, or B on a controller, which UIKit turns into Menu while
+   controllerUserInteractionEnabled is on) is taken here, so it is never left
+   unhandled: a Menu press nothing handles goes to the system, which leaves the
+   app for the Home Screen. It puts away the keyboard if one is up, otherwise
+   the dialog, as Cancel does. */
+@interface HaloTextPromptMenu : NSObject
++ (void)menu:(UITapGestureRecognizer *)recognizer;
+@end
+@implementation HaloTextPromptMenu
++ (void)menu:(UITapGestureRecognizer *)recognizer {
+    (void)recognizer;
+    UIAlertController *alert=text_prompt;
+    if(!alert)return;
+    if(alert.presentedViewController) {
+        host_logf(HOST_LOG_INFO,"keyboard: Menu or B over the text dialog: the keyboard goes");
+        [alert dismissViewControllerAnimated:YES completion:nil];
+        return;
+    }
+    host_logf(HOST_LOG_INFO,"keyboard: Menu or B over the text dialog: cancelled");
+    text_prompt_state=2;
+    text_prompt=nil;
+    text_prompt_dismiss(alert);
+}
+@end
+
+/* what asks the app to end while the dialog is up, logged to find out */
+static bool SDLCALL text_prompt_watch(void *userdata,SDL_Event *event) {
+    (void)userdata;
+    if(text_prompt_up() && (event->type==SDL_EVENT_QUIT || event->type==SDL_EVENT_TERMINATING ||
+        event->type==SDL_EVENT_WINDOW_CLOSE_REQUESTED || event->type==SDL_EVENT_WILL_ENTER_BACKGROUND))
+        host_logf(HOST_LOG_INFO,"keyboard: SDL event %d while the text dialog is up",(int)event->type);
+    return true;
+}
+
 /* the keyboard's own done: the dialog's Done too, so one press finishes */
 @interface HaloTextPromptTarget : NSObject
 @end
@@ -308,6 +342,11 @@ int host_tv_text_prompt(int on, const char *title, const char *text, int masked)
         text_prompt=nil;
     }]];
     alert.preferredAction=done;
+    UITapGestureRecognizer *menu=[[UITapGestureRecognizer alloc] initWithTarget:HaloTextPromptMenu.class action:@selector(menu:)];
+    menu.allowedPressTypes=@[@(UIPressTypeMenu)];
+    [alert.view addGestureRecognizer:menu];
+    static bool watching;
+    if(!watching){watching=true;SDL_AddEventWatch(text_prompt_watch,NULL);}
     text_prompt=alert;
     text_prompt_shown=alert;
     text_prompt_gate=true;
