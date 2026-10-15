@@ -233,13 +233,16 @@ static void check_shipped(const char *shipped)
 	/* Vision Pro: the headset sweep's values, which are the built-in defaults too */
 	profile = resolve(shipped, device("visionos", "RealityDevice14,1", "", 8), NULL, "");
 	assert(has(&profile, "display.render_quality", "0.6") && has(&profile, "display.foveation", "true"));
-	assert(!strcmp(profile.model_file, "vision-pro-m2.toml") && profile.count == 4);
-	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: only values equal to the built-in defaults */
+	assert(!strcmp(profile.model_file, "vision-pro-m2.toml") && profile.count == 5 &&
+		has(&profile, "display.renderer", "metal"));
+	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
+	class profile's Metal */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(profile.count == 2 && has(&profile, "display.anisotropic_filtering", "16") &&
-		has(&profile, "display.shadow_map_size", "512"));
+	assert(profile.count == 3 && has(&profile, "display.anisotropic_filtering", "16") &&
+		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(profile.count == 3 && has(&profile, "display.mirror_resolution", "half"));
+	assert(profile.count == 4 && has(&profile, "display.mirror_resolution", "half") &&
+		has(&profile, "display.renderer", "metal"));
 	profile = resolve(shipped, device("mac", "Mac14,5", "Apple M2 Max", 8), NULL, "");
 	assert(profile.count == 2 && has(&profile, "display.model_lod", "max") &&
 		has(&profile, "display.compressed_textures", "true"));
@@ -251,9 +254,10 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("mac", "Mac15,3", "Apple M3 Max", 9), NULL, "");
 	assert(profile.count == 0 && !strcmp(profile.class_file, "mac.toml") && !strstr(logged, "ignored"));
 	profile = resolve(shipped, device("ios", "iPhone99,1", "", 15), NULL, "");
-	assert(profile.count == 0 && !strcmp(profile.class_file, "iphone-ipad.toml"));
+	assert(profile.count == 1 && has(&profile, "display.renderer", "metal") &&
+		!strcmp(profile.class_file, "iphone-ipad.toml"));
 	profile = resolve(shipped, device("visionos", "RealityDevice99,1", "", 15), NULL, "");
-	assert(profile.count == 2 && !profile.model_file[0]);
+	assert(profile.count == 3 && !profile.model_file[0] && has(&profile, "display.renderer", "metal"));
 }
 
 int main(int argc, char **argv)

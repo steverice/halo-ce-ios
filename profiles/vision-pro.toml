@@ -9,6 +9,7 @@ platform = "visionos"
 gpu_family = [1, 0]
 
 [display]
+renderer = "metal"
 foveation = true
 render_quality = 0.6
 
@@ -19,3 +20,8 @@ why = "Taken from the M2 headset, where unfoveated rendering ran at 45 frames a 
 [evidence."display.render_quality"]
 basis = "assumed"
 why = "Taken from the M2 headset's sweep; a newer headset likely holds more and should get its own profile once measured."
+
+[evidence."display.renderer"]
+basis = "measured"
+why = "visionOS has no OpenGL ES: the app sets HALO_RENDERER=metal at launch for the flat window and the headset alike, so the profile only states what the app already does. The M2 headset runs measured in vision-pro-m2.toml used Metal."
+source = "Headset foveation sweep, a10 benchmark, 2026-10-07"
