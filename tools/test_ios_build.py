@@ -124,6 +124,7 @@ def test_data_pack_public_key_must_be_exactly_32_hex_bytes(key):
     'https://packs.example/p.json#fragment', 'https://packs.example/p.json?',
     'https://packs.example/p.json#', 'https://packs.example/p.json\n',
     'https://packs.example/p file.json', 'https://packs.example:invalid/p.json',
+    'https://packs.example/a;b.json', 'https://packs.example/a,b.json', 'https://packs.example/$(HOME).json',
 ])
 @pytest.mark.parametrize('feed', ['profiles', 'recordings'])
 def test_data_pack_feed_requires_https_without_credentials_queries_or_fragments(url, feed):

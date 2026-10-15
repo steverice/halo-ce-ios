@@ -370,8 +370,9 @@ def data_pack_definitions(public_key, profile_feed_url, recording_feed_url):
 
 
 def feed_url_valid(url):
-    # also keeps out what Xcode would expand or split in a build setting ($, quotes, spaces)
-    if not re.fullmatch(r"[A-Za-z0-9._~:/%+,;=@-]+", url) or '?' in url or '#' in url:
+    # also keeps out what Xcode would expand or split in a build setting ($, quotes, spaces) and CMake's list
+    # separator (;)
+    if not re.fullmatch(r"[A-Za-z0-9._~:/%+=@-]+", url) or '?' in url or '#' in url:
         return False
     parts = urllib.parse.urlsplit(url)
     try:
