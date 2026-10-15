@@ -54,7 +54,7 @@ def main():
     mode.add_argument('--simulator', action='store_true', help='build for an ARM64 simulator')
     mode.add_argument('--unsigned', action='store_true', help='build a device app for signing later')
     parser.add_argument('--team', help='Apple development team ID for device signing')
-    parser.add_argument('--bundle-id', help='bundle identifier covered by your signing profile (default org.steverice.visr, or org.steverice.visr.tvos / .visionos / .mac for --tvos / --visionos / --mac)')
+    parser.add_argument('--bundle-id', help='bundle identifier covered by your signing profile (default org.steverice.visr for iOS, tvOS and visionOS, so one App Store Connect record covers them all; org.steverice.visr.mac for --mac)')
     target = parser.add_mutually_exclusive_group()
     target.add_argument('--tvos', action='store_true', help='build for Apple TV instead of iPhone/iPad')
     target.add_argument('--visionos', action='store_true', help='build for Apple Vision Pro (Metal only) instead of iPhone/iPad')
@@ -146,7 +146,7 @@ def main():
     if args.extended_virtual_addressing and not (args.visionos or args.tvos):
         parser.error('--extended-virtual-addressing is for --visionos and --tvos builds')
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
-    args.bundle_id = args.bundle_id or ('org.steverice.visr' if platform_name == 'ios' else f'org.steverice.visr.{platform_name}')
+    args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
     if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
     try:
