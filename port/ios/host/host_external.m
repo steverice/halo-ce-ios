@@ -56,6 +56,8 @@ static NSArray<UIScreenMode *> *offered;
 static struct host_external_mode candidates[64];
 static int candidate_count, preferred_index, requested_index = -1, negotiating, pending;
 static CFTimeInterval deadline, accessory_available_since;
+static CGSize mode_accepted;
+static int mode_reissued, mode_reasserts;
 static int first_low=-1, accepting_low;
 static NSString *chosen_key;
 static NSMutableDictionary<NSString *, NSValue *> *chosen_modes;
@@ -132,7 +134,7 @@ static void begin_modes(void) {
         if(mode==candidate_screen.preferredMode)preferred_index=i;
         [key appendFormat:@"/%dx%d:%.4f",candidates[i].width,candidates[i].height,candidates[i].pixel_aspect];
     }
-    chosen_key=key;first_low=-1;accepting_low=0;
+    chosen_key=key;first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_reasserts=0;
     if(!chosen_modes)chosen_modes=[NSMutableDictionary dictionary];
     if(!refused_modes)refused_modes=[NSMutableDictionary dictionary];
     NSMutableIndexSet *refused=refused_modes[chosen_key];
@@ -313,6 +315,7 @@ int host_external_ready(void) {
 static CGSize mode_before;
 static void mode_accept(void) {
     negotiating=0;pending=1;
+    mode_accepted=candidate_screen.currentMode.size;
     chosen_modes[chosen_key]=[NSValue valueWithCGSize:candidate_screen.currentMode.size];
     const char *reason=forced_width?"forced":requested_index==preferred_index?"preferred":"capped";
     pthread_mutex_lock(&snapshot_lock);
@@ -372,6 +375,14 @@ void host_external_poll(void) {
         } else accessory_available_since=0;
     }
     label_layout();
+    /* The system can put the display back in its preferred mode just after the scene connects, after the
+       policy has already accepted the mode it found: choose again, at most twice per connection. */
+    if(candidate_screen && !negotiating && mode_accepted.width>0 && mode_reasserts<2 &&
+        !CGSizeEqualToSize(candidate_screen.currentMode.size,mode_accepted)) {
+        host_logf(HOST_LOG_INFO,"external display: the display changed itself to %.0fx%.0f; choosing the mode again",
+            candidate_screen.currentMode.size.width,candidate_screen.currentMode.size.height);
+        mode_reasserts++;mode_accepted=CGSizeZero;negotiating=1;requested_index=-1;
+    }
     if(!candidate_screen || !negotiating)return;
     if(requested_index<0) {
         char cap_text[80];
@@ -380,14 +391,18 @@ void host_external_poll(void) {
         int chosen=host_external_mode_choose(candidates,(size_t)candidate_count,preferred_index,cap,forced_width,forced_height);
         if(chosen<0) {
             if(!forced_width && first_low>=0 && !accepting_low) {chosen=first_low;accepting_low=1;}
-            else {
-                host_logf(HOST_LOG_WARN,"external display: no usable mode%s",forced_width?"; forced mode refused":"");
+            else if(forced_width) {
+                host_logf(HOST_LOG_WARN,"external display: forced mode %dx%d refused; choosing by the profile instead",
+                    forced_width,forced_height);
+                forced_width=forced_height=0;return;
+            } else {
+                host_logf(HOST_LOG_WARN,"external display: no usable mode");
                 negotiating=0;pending=0;
                 if(!companion_on)external_window.hidden=YES;
                 return;
             }
         }
-        requested_index=chosen;
+        requested_index=chosen;mode_reissued=0;
         mode_before=candidate_screen.currentMode.size;
         if(CGSizeEqualToSize(mode_before,offered[chosen].size))deadline=0;
         else {candidate_screen.currentMode=offered[chosen];deadline=CACurrentMediaTime()+1;return;}
@@ -404,7 +419,12 @@ void host_external_poll(void) {
             host_logf(HOST_LOG_WARN,"external display: keeping mode below 60 Hz");
         mode_accept();return;
     }
-    if(deadline && CACurrentMediaTime()<deadline && CGSizeEqualToSize(current,mode_before))return;
+    /* wait the whole second: the system may move the display to another mode of its own first */
+    if(deadline && CACurrentMediaTime()<deadline)return;
+    if(deadline && !mode_reissued && !CGSizeEqualToSize(current,mode_before)) {
+        mode_reissued=1;mode_before=current;
+        candidate_screen.currentMode=offered[requested_index];deadline=CACurrentMediaTime()+1;return;
+    }
     host_logf(HOST_LOG_WARN,"external display: refused %dx%d; current %.0fx%.0f",candidates[requested_index].width,
         candidates[requested_index].height,current.width,current.height);
     [refused_modes[chosen_key] addIndex:(NSUInteger)requested_index];
