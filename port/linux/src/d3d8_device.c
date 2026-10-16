@@ -140,6 +140,7 @@ static uint32_t async_shader_flags(void)
 	const char *reason = platform_fixed_timestep() ? "debug.fixed_timestep" :
 		*config_string("debug.input_replay") ? "debug.input_replay" :
 		config_boolean("debug.benchmark") ? "debug.benchmark" :
+		*config_string("debug.benchmark_suite") ? "debug.benchmark_suite" :
 		config_real("debug.exit_after") > 0.0 ? "debug.exit_after" :
 		config_integer("debug.screenshot_every") > 0 ? "debug.screenshot_every" : NULL;
 
