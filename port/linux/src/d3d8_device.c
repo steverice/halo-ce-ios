@@ -3296,6 +3296,7 @@ void halo_shader_list_warm(char const *map_name)
 	const char *cursor;
 	char *text, *line, *next;
 	uint32_t size;
+	size_t text_capacity, text_size;
 	unsigned long vertex_count = 0, pixel_count = 0, pipeline_count = 0, missing = 0;
 	double started;
 	int pass;
@@ -3352,7 +3353,8 @@ void halo_shader_list_warm(char const *map_name)
 			fclose(recorded);
 		return;
 	}
-	text = malloc(size + 1 + recorded_size + 1);
+	text_capacity = (size_t)size + 1 + recorded_size;
+	text = malloc(text_capacity + 1);
 	if (!text || (size && gpu_warm_list_read(shader_list.map, text, size) != size))
 	{
 		free(text);
@@ -3366,7 +3368,8 @@ void halo_shader_list_warm(char const *map_name)
 		recorded_size = (uint32_t)fread(text + size + 1, 1, recorded_size, recorded);
 		fclose(recorded);
 	}
-	text[size + 1 + recorded_size] = 0;
+	text_size = (size_t)size + 1 + recorded_size;
+	text[text_size] = 0;
 	if (recorded_size)
 		platform_log("shader list %s: with %u bytes recorded on this device (%s)", shader_list.map,
 			(unsigned int)recorded_size, recorded_path);
@@ -3485,7 +3488,8 @@ void halo_shader_list_warm(char const *map_name)
 		/* (the first pass cut the text into lines; the second reads them) */
 		if (pass == 0)
 		{
-			for (line = text; line < text + size; line++)
+			/* pass 1 also needs the lines after the bundled list's separator */
+			for (line = text; line < text + text_size; line++)
 			{
 				if (!*line)
 					*line = '\n';
