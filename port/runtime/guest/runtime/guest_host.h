@@ -33,6 +33,9 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 void host_log(int priority, const char *text);
 void host_abort(const char *reason) __attribute__((noreturn));
 void host_exit(int code) __attribute__((noreturn));
+/* 1 after main_game_render finishes, 0 before main_pregame_render draws.
+   The host waits for the following presentation before accepting trial data. */
+void host_data_updates_frame_ready(int ready);
 
 int host_external_cycle(int direction);
 int host_external_force(const char *mode);

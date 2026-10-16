@@ -395,6 +395,12 @@ symbols in this file:
 #include "tag_files/files.h"
 #include "custom_edition_cache.h" /* port: custom_edition_level_name */
 
+#ifdef HALO_IOS
+/* port: a signed data pack stays in trial until a rendered menu or world frame
+is presented. Loading screens use main_pregame_render instead. */
+void host_data_updates_frame_ready(int ready);
+#endif
+
 #if defined(HALO_WINDOWS) || defined(HALO_ANDROID) || defined(__linux__)
 #define HALO_NATIVE_BUILD_INFO 1
 #ifndef HALO_BUILD_NUMBER
@@ -1955,6 +1961,10 @@ void main_pregame_render(
 	   padded to 0xB0 before main_globals, referenced only by this function. */
 	static struct render_window window;
 
+#ifdef HALO_IOS
+	/* port: a rendered frame abandoned before Present must not bless a loading frame. */
+	host_data_updates_frame_ready(0);
+#endif
 	collision_log_continue_period(TRUE);
 	halo_render_random_begin(); /* port: render_random.c */
 	/* port: nothing of a level that waits behind the loading screen sounds yet */
@@ -3649,6 +3659,9 @@ void main_loop(
 					halo_stereo_frame_begin();
 					render_interpolation_frame_begin();
 					main_game_render((double)main_globals.seconds_elapsed);
+#ifdef HALO_IOS
+					host_data_updates_frame_ready(1);
+#endif
 					render_interpolation_frame_end();
 					profile_render_end();
 				}

@@ -94,13 +94,19 @@ run(BUILD / 'profile-pack-probe', ROOT / 'profiles')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror',
     'port/ios/tests/recording_pack_probe.c', 'port/ios/host/host_recording_pack.c',
     'port/runtime/benchmark_plan.c', '-o', BUILD / 'recording-pack-probe')
-run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks',
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Iport/runtime/include',
     '-framework', 'Foundation', 'port/ios/tests/data_pack_probe.m', 'port/ios/host/host_data_pack.m',
     'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
     '-o', BUILD / 'data-pack-probe')
 run(BUILD / 'data-pack-probe')
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Wl,-dead_strip',
+    '-Iport/ios/host', '-Iport/linux/src', '-Iport/runtime/include', '-framework', 'Foundation',
+    'port/ios/tests/data_pack_launch_probe.m', 'port/ios/host/host_data_pack.m',
+    'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
+    '-o', BUILD / 'data-pack-launch-probe')
+run(BUILD / 'data-pack-launch-probe')
 run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
-    '-Iport/ios/host', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
+    '-Iport/ios/host', '-Iport/runtime/include', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
     'port/ios/tests/data_updates_probe.m', 'port/ios/host/host_data_pack.m',
     'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c',
     'port/ios/host/host_recording_pack.c', 'port/runtime/benchmark_plan.c',

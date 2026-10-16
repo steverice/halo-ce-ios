@@ -2,6 +2,7 @@
 #import "../host/host_data_updates.m"
 #include <assert.h>
 #include <unistd.h>
+void host_logf(int priority, const char *format, ...) { (void)priority; (void)format; }
 int main(void)
 {
     @autoreleasepool {

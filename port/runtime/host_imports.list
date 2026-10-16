@@ -97,6 +97,7 @@ host_bink_audio_read
 host_bink_audio_skip
 
 host_errno
+host_data_updates_frame_ready
 
 # Wired external display lifecycle and test controls
 host_external_active

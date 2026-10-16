@@ -2,6 +2,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #include "../../third_party/monocypher/monocypher-ed25519.h"
 #include "host_recording_pack.h"
+#include "host.h"
 #include <sys/stat.h>
 #include <math.h>
 #include <errno.h>
@@ -287,7 +288,11 @@ static NSDictionary *PackJSON(NSData *data) {
     if (!_stateValid || !_launchStarted || [_identity[@"bundled"] boolValue] || ![_state[@"trial"] boolValue] || ![self generation:_state[@"active"]]) return;
     NSMutableDictionary *next = [_state mutableCopy];
     next[@"healthy"] = next[@"active"]; next[@"trial"] = @NO;
-    if ([self writeState:next error:NULL]) [self prune];
+    if ([self writeState:next error:NULL]) {
+        host_logf(HOST_LOG_INFO, "data-packs: %s snapshot %llu is healthy", _kind.UTF8String,
+            [_identity[@"sequence"] unsignedLongLongValue]);
+        [self prune];
+    }
 } }
 - (void)rejectManifest:(NSDictionary *)manifest {
     uint64_t sequence = [manifest[@"sequence"] unsignedLongLongValue];
@@ -379,7 +384,7 @@ static NSDictionary *PackJSON(NSData *data) {
     NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? [(NSHTTPURLResponse *)response statusCode] : 0;
     NSString *etag = status == 200 ? [(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"ETag"] : nil;
     _responseValidator = etag.length && etag.length <= 256 && PackMatches(etag, @"^(W/)?\"[\\x21\\x23-\\x7e]*\"\\z") ? etag : nil;
-    if (status != 200 && status != 304) NSLog(@"data-packs: %@ feed answered HTTP %ld; keeping the current snapshot", _kind, (long)status);
+    if (status != 200 && status != 304) host_logf(HOST_LOG_WARN, "data-packs: %s feed answered HTTP %ld; keeping the current snapshot", _kind.UTF8String, (long)status);
     _responseAccepted = status == 200 && (response.expectedContentLength < 0 || (uint64_t)response.expectedContentLength <= self.envelopeLimit);
     completionHandler(_responseAccepted ? NSURLSessionResponseAllow : NSURLSessionResponseCancel);
 } }
@@ -388,12 +393,12 @@ static NSDictionary *PackJSON(NSData *data) {
     [_download appendData:data];
 } }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error { @synchronized(self) {
-    if (error) NSLog(@"data-packs: %@ feed check ended (%@); keeping the current snapshot", _kind, error.localizedDescription);
+    if (error) host_logf(HOST_LOG_WARN, "data-packs: %s feed check ended (%s); keeping the current snapshot", _kind.UTF8String, error.localizedDescription.UTF8String);
     else if (_responseAccepted) @autoreleasepool {
         NSError *stageError = nil;
         if ([self stageEnvelope:_download error:&stageError]) {
             if (_responseValidator) [[NSString stringWithFormat:@"%@\n%@", _state[@"highest"], _responseValidator] writeToFile:self.validatorPath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
-        } else NSLog(@"data-packs: %@ feed not staged (%@); keeping the current snapshot", _kind, stageError.localizedDescription);
+        } else host_logf(HOST_LOG_WARN, "data-packs: %s feed not staged (%s); keeping the current snapshot", _kind.UTF8String, stageError.localizedDescription.UTF8String);
     }
     _download = nil; _session = nil; [session finishTasksAndInvalidate];
 } }

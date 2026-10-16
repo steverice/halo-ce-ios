@@ -4,6 +4,18 @@
 #include "../../third_party/monocypher/monocypher-ed25519.h"
 #import <objc/runtime.h>
 #include <sys/stat.h>
+#include <stdarg.h>
+
+static BOOL loggedHTTPFailure, loggedNetworkFailure, loggedHealthy;
+void host_logf(int priority, const char *format, ...) {
+    (void)priority;
+    char line[2048];
+    va_list arguments;
+    va_start(arguments, format); vsnprintf(line, sizeof(line), format, arguments); va_end(arguments);
+    if (strstr(line, "HTTP 500")) loggedHTTPFailure = YES;
+    if (strstr(line, "feed check ended")) loggedNetworkFailure = YES;
+    if (strstr(line, "snapshot 1 is healthy")) loggedHealthy = YES;
+}
 
 static uint8_t secretKey[64], publicKey[32];
 static int failures;
@@ -110,6 +122,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     CHECK([[store metadata][@"sequence"] integerValue] == 1, "active metadata identifies signed sequence");
     CHECK([[store metadata][@"compatibility"] isEqual:@"profiles-1"], "active metadata includes compatibility identity");
     [store markHealthy];
+    CHECK(loggedHealthy, "accepted snapshots reach the runtime logger");
     CHECK([store stageEnvelope:Envelope(2, nil, nil) error:NULL], "newer pack stages");
     CHECK([[store beginLaunch] isEqual:first], "active folder stays fixed after staging");
     store = Store(root);
@@ -261,6 +274,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     [NSThread sleepForTimeInterval:0.3];
     if (requests != 4) fprintf(stderr, "requests = %ld\n", (long)requests);
     CHECK(requests == 4, "an HTTP error and a network failure each end one check without retrying");
+    CHECK(loggedHTTPFailure && loggedNetworkFailure, "feed failures reach the runtime logger");
     store = Store(root);
     CHECK(![[store beginLaunch] isEqual:@"/bundled"], "failed checks leave the current snapshot in use");
     method_setImplementation(method, originalConfiguration);

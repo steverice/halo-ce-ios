@@ -49,18 +49,20 @@ static struct gpu_backend wrapped;
 static const struct gpu_backend *wrapped_backend;
 static int frame_counter;
 static unsigned long presented;
-static int menu_seen, updates_healthy;
-static void frame_context_wrapped(uint32_t scene_class, uint32_t rate, const char *level)
+static int ready_frame, updates_healthy;
+void host_data_updates_frame_ready(int ready)
 {
-    menu_seen = level && !strcmp(level, "ui");
-    if (wrapped_backend->frame_context) wrapped_backend->frame_context(scene_class, rate, level);
+    /* main_loop sets this only after main_game_render returns. Loading frames
+       can name a level too, but main_pregame_render clears it before drawing. */
+    ready_frame = ready != 0;
 }
 static void data_updates_presented(void)
 {
-    if (menu_seen && !updates_healthy) {
+    if (ready_frame && !updates_healthy) {
         updates_healthy = 1;
         host_data_updates_healthy();
     }
+    ready_frame = 0;
 }
 
 /* the device benchmark's frames under the GL backend, which iPhones and iPads use unless a profile asks for Metal: the
@@ -295,7 +297,6 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 	metal_backend = TARGET_OS_VISION || (flags & GPU_INITIALIZE_METAL) ? 1 : 0;
 	wrapped_backend = backend;
 	wrapped = *backend;
-	wrapped.frame_context = frame_context_wrapped;
 	wrapped.present = present_wrapped;
 	wrapped.present_stereo = present_stereo_wrapped;
 	backend = &wrapped;
