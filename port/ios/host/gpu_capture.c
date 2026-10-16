@@ -751,6 +751,12 @@ static uint32_t capture_vertical_blank_wait(void)
 	return capture.backend.vertical_blank_wait();
 }
 
+/* (a frame's start, before its input is read: nothing is drawn, so nothing is captured) */
+static void capture_frame_start(void)
+{
+	capture.backend.frame_start();
+}
+
 static void frame_end(void)
 {
 	capture.frame++;

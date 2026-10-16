@@ -364,6 +364,15 @@ static void render_window(
 		parameters.screen_flash = *render_stereo_screen_flash;
 	else
 		player_effect_get_screen_flash(local_player_index, &parameters.screen_flash);
+	/* port: a campaign level's frames before its first ticks, black as the
+	stereo eyes' are (halo_stereo.h) */
+	if (!render_stereo_screen_flash && halo_level_start_hold_flat())
+	{
+		parameters.screen_flash.type = 1;
+		parameters.screen_flash.color.alpha = 1.0f;
+		parameters.screen_flash.color.red = parameters.screen_flash.color.green = parameters.screen_flash.color.blue = 0.0f;
+		parameters.screen_flash.intensity = 1.0f;
+	}
 	/* port: the view's scene begins (display.native_hud) */
 	halo_render_scene_begin(rasterizer_target, rasterizer_camera->viewport_bounds.x0,
 		rasterizer_camera->viewport_bounds.y0, rasterizer_camera->viewport_bounds.x1,
@@ -635,6 +644,17 @@ static void render_player_frame_stereo(
 	player_effect_get_screen_flash(window->local_player_index, &screen_flash);
 	if (halo_screen_fade(render_interpolation_fraction(), fade))
 		screen_flash.intensity = fade[3];
+	/* port: a level's frames before its first tick (halo_stereo.h): black,
+	drawn as the script's fade to black is (type 1, lighten toward the color) */
+	if (halo_stereo_level_start_hold())
+	{
+		fade[0] = fade[1] = fade[2] = 0.0f;
+		fade[3] = 1.0f;
+		screen_flash.type = 1;
+		screen_flash.color.alpha = 1.0f;
+		screen_flash.color.red = screen_flash.color.green = screen_flash.color.blue = 0.0f;
+		screen_flash.intensity = 1.0f;
+	}
 	halo_stereo_set_fade(fade);
 
 	time_delta_since_tick_sec = render.time_delta_since_tick_sec;

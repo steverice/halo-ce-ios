@@ -2149,6 +2149,47 @@ static void main_save_map_private(
 	return;
 }
 
+/* port: The main loop does what the scripts and the game asked of it between two frames: a checkpoint
+(main_save_map_private decides when it is safe and counts its waits, main_saving_map_private saves), a structure
+BSP switch, a skipped cinematic, the revert after a death, the next map. On the Xbox a frame was a tick, so each came between the
+same two ticks every time. The native ports draw as many frames as the display shows, each running none, one or
+several ticks (game_time_update), so a checkpoint's waits were counted in frames, at 60 Hz twice as fast, and what
+was asked for during a tick waited for the end of the frame, after the frame's later ticks. A take recorded in live
+play and its replays then had a checkpoint, a BSP switch or the revert after a death at different ticks: replays of
+an a10 take at a frame a tick and at two frames a tick saved the checkpoint before the player's death at ticks 14480
+and 14430. While a take is recorded or replayed (input_replay_sim_isolated), main_tick_end runs after each tick: it
+takes the checkpoint's next step and says whether the main loop has something to do before the next tick, and
+game_time_update then runs no more ticks in that frame, so it comes between the same two ticks as on the Xbox. (The
+ticks it holds back are dropped from the game's clock rather than run later: a tick or two at a checkpoint.) */
+extern unsigned char input_replay_sim_isolated(void);
+
+static boolean main_steps_each_tick(
+	void)
+{
+	return input_replay_sim_isolated() && main_globals.connection == _game_connection_local;
+}
+
+boolean main_tick_end(
+	void)
+{
+	if (!main_steps_each_tick())
+		return FALSE;
+	if (main_globals.saving_map)
+		main_save_map_private();
+	return main_globals.save_map_completed ||
+		main_globals.switch_to_structure_bsp_index != NONE ||
+		main_globals.won_map ||
+		main_globals.defer_map_change ||
+		main_globals.revert_map ||
+		main_globals.skip_cinematic ||
+		main_globals.reset_map ||
+		main_globals.save_core ||
+		main_globals.load_core ||
+		/* (the revert after a death, at the tick its timer runs out: main_lost_map_private) */
+		(main_globals.lost_map && game_time_get() >= main_loss_last_tick &&
+			main_globals.loss_timer + (game_time_get() - main_loss_last_tick) >= 92);
+}
+
 static void main_switch_to_structure_bsp_private(
 	void)
 {
@@ -3580,12 +3621,22 @@ void main_loop(
 					game_engine_update_non_deterministic((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 				}
 
-				if (main_globals.saving_map)
+				/* (after each tick instead, while a take is recorded or replayed: main_tick_end) */
+				if (main_globals.saving_map && !main_steps_each_tick())
 				{
 					main_save_map_private();
 				}
 
-				if (render_frame && !debug_no_drawing)
+				if (render_frame && !debug_no_drawing && halo_loading_screen_tail())
+				{
+					/* port: the loading screen goes on over the level's first ticks
+					(port/linux/game/loading_screen.c): never the player's start */
+					profile_render_start();
+					main_pregame_render();
+					profile_render_end();
+					halo_loading_screen_tail_frame();
+				}
+				else if (render_frame && !debug_no_drawing)
 				{
 					profile_render_start();
 					/* port: stereo latches its frame once, for the frame it

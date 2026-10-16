@@ -74,6 +74,7 @@ host_gpu_anti_alias
 host_gpu_vertical_blank_wait
 host_gpu_companion_size
 host_gpu_companion_set
+host_gpu_frame_start
 host_gpu_present
 host_gpu_present_stereo
 host_gpu_call_count_take

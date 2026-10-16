@@ -865,6 +865,25 @@ void WINAPI D3DDevice_SetVerticalBlankCallback(D3DCALLBACK callback)
 	vertical_blank_start();
 }
 
+/* The start of a frame, before it reads input: the backend's pacer may hold
+the frame back so its work ends just in time for the display
+(gpu_frame_start; display.late_start). The game's own loop is not touched:
+the port's controller read (xinput_sdl.c's XInputGetState) calls this, and
+the first call after a Present is the frame's start. The game's ticks follow
+the clock, not the frames, so the simulation, a network game and a recorded
+input's replay see the same ticks either way; only where in the tick a
+frame's picture is taken moves. */
+static BOOL frame_start_due = TRUE;
+
+void halo_frame_start(void)
+{
+	if (!frame_start_due)
+		return;
+	frame_start_due = FALSE;
+	if (device.gl_ready)
+		gpu_frame_start();
+}
+
 void WINAPI D3DDevice_BlockUntilVerticalBlank(void)
 {
 	unsigned long count;
@@ -5943,6 +5962,23 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 				hud_groups[group] = NULL;
 		}
 
+		/* a campaign level's frames before its first ticks (halo_stereo.h) present black on a flat
+		screen: the picture is cleared here, last, because a flash drawn over it can miss a frame while
+		its pipeline compiles (async shaders skip a draw whose pipeline isn't ready) */
+		if (!stereo_frame && halo_level_start_hold_flat())
+		{
+			struct gpu_clear hold_clear;
+			struct gpu_rect hold_whole = { 0, 0, (int32_t)back_buffer->target.gl_width,
+				(int32_t)back_buffer->target.gl_height };
+
+			memset(&hold_clear, 0, sizeof(hold_clear));
+			hold_clear.color_target = back_buffer->target.texture;
+			hold_clear.flags = GPU_CLEAR_COLOR;
+			hold_clear.channel_mask = GPU_CHANNEL_RED | GPU_CHANNEL_GREEN | GPU_CHANNEL_BLUE | GPU_CHANNEL_ALPHA;
+			hold_clear.color = 0xff000000u;
+			gpu_clear(&hold_clear, &hold_whole, 1);
+		}
+
 		struct render_target_entry *companion = companion_reissue();
 
 		if (trace_frame())
@@ -6191,6 +6227,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		}
 	}
 	platform_pump_events();
+	/* (the next controller read starts a frame: halo_frame_start) */
+	frame_start_due = TRUE;
 
 	pthread_mutex_lock(&vertical_blank_lock);
 	/* the Xbox keeps at most two frames queued behind its 60 Hz display;

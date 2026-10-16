@@ -170,6 +170,16 @@ static struct scripted_camera_globals camera_script_globals =
 	0
 };
 
+/* port: the transition time scripts read (camera_time), in ticks. The camera's own timer counts down by each frame's
+seconds as the director draws it (scripted_camera_update), so a script that waits on camera_time went on at a tick
+that followed the frames: one frame a tick on the Xbox, but on the native ports two or four at 60 or 120 Hz, or a
+late frame's longer step, and a cutscene's script started the next shot a tick earlier or later (in a replay of an
+a10 take, the captain began his next animation at tick 2476 at 60 frames a second and at 2477 at 30), so a take
+recorded in live play and its replays went separate ways. This counts the same time down once per tick
+(scripted_camera_tick, from game_tick), while the camera is the script's (camera_control), as the director's own
+countdown runs only then. */
+static long camera_script_ticks;
+
 /* ---------- public code */
 
 void scripted_camera_enable(
@@ -211,6 +221,7 @@ void scripted_camera_set_animation(
 					camera_script_globals.field_of_view = 1.22173047f;
 					camera_script_globals.timer =
 						(real)(animation->frame_count / TICKS_PER_SECOND);
+					camera_script_ticks = (animation->frame_count / TICKS_PER_SECOND) * TICKS_PER_SECOND;
 					break;
 				}
 
@@ -311,6 +322,7 @@ void scripted_camera_set(
 		camera_script_globals.field_of_view = 1.22173047f;
 	camera_script_globals.relative_object_index = relative_object_index;
 	camera_script_globals.timer = (real)camera_time;
+	camera_script_ticks = camera_time * TICKS_PER_SECOND;
 
 	director_update(0.f);
 	observer_update(0.0001f);
@@ -344,6 +356,7 @@ void scripted_camera_set_camera_point_relative(
 		camera_script_globals.field_of_view = 1.22173047f;
 	camera_script_globals.timer =
 		(real)((short)transition_time / TICKS_PER_SECOND);
+	camera_script_ticks = ((short)transition_time / TICKS_PER_SECOND) * TICKS_PER_SECOND;
 	camera_script_globals.relative_object_index = relative_object_index;
 
 	director_update(0.f);
@@ -383,7 +396,17 @@ long scripted_camera_object_relative_to(
 short scripted_camera_time(
 	void)
 {
-	return (short)(camera_script_globals.timer * 30.f);
+	/* port: from the tick's countdown, not the frames' (camera_script_ticks) */
+	return (short)camera_script_ticks;
+}
+
+/* port: a tick's step of the countdown camera_time reads (camera_script_ticks) */
+void scripted_camera_tick(
+	void)
+{
+	if (camera_script_globals.enabled && camera_script_ticks > 0)
+		camera_script_ticks--;
+	return;
 }
 
 void scripted_camera_update(

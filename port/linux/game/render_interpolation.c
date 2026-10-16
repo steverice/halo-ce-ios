@@ -790,6 +790,9 @@ static struct observer_result const *render_interpolation_blended_camera(
 	short local_player_index,
 	struct observer_result const *observer);
 
+/* (display.late_look, below; unused on Android, which has no direct camera) */
+static void late_look(struct observer_result *camera) __attribute__((unused));
+
 /* A first-person view is posed from the player's facing, which the input
 turns every frame (player_control.c), but the observer keeps it as of the
 last tick and the blend above draws it a tick later still. On foot, the view
@@ -830,9 +833,122 @@ static struct observer_result const *render_interpolation_direct_camera(
 	*direct = *observer;
 	player_control_get_facing_direction(local_player_index, &direct->forward);
 	observer_up_from_forward(&direct->forward, &direct->up);
+	/* (display.late_look: player one's, turned by what the stick has done since) */
+	if (local_player_index == 0)
+		late_look(direct);
 	camera_noted(halo_stereo_head_yaw_taken(), "direct", TRUE);
 	return direct;
 #endif
+}
+
+/* display.late_look: the first-person view turned by what the stick has
+done since the game read it this frame.
+
+The game reads the controller at the start of a frame, turns the player's
+facing by the stick over the frame's time (player_control.c), and only then
+runs the tick if one is due and builds the camera, a fraction of a
+millisecond later on most frames and a few milliseconds on a tick's. The
+late look reads the stick again here, just before the camera is used, and
+turns the camera (not the facing) by the turn the stick asks for over that
+gap. The next frame's own turn covers the same span of time, so the facing
+catches up and nothing is counted twice.
+
+How far a stick turns the view in a second depends on the sensitivity, the
+zoom, the look acceleration and the aim assist, all the game's. Instead of
+repeating them, the rate is taken from what the game just did: this frame's
+change of facing over the stick that caused it. So it needs the stick to
+have been deflected when the game read it; a stick that leaves rest inside
+the gap is not seen until the next frame, as now.
+
+It moves only the picture: the facing, the simulation and what a shot hits
+are the game's as before, and a shot goes where the facing points at its
+tick, as now. Off by default; never under debug.fixed_timestep, a test's
+input or a replay (halo_look_stick_latest answers 0), so those play the
+same. Player one's controller only. The log says every 600 frames how old
+the game's read was when the camera was built, on or off: that age is all
+there is to gain. */
+#define LATE_LOOK_STICK 0.25f          /* a stick this far over gives a rate */
+#define LATE_LOOK_MAXIMUM 0.05f        /* radians a frame, about 3 degrees */
+
+int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds);
+float halo_look_read_age(void);
+double halo_frame_trace_milliseconds(void);
+
+static int late_look_setting = -1;
+
+void halo_late_look_toggle(void)
+{
+	if (late_look_setting < 0)
+		late_look_setting = config_boolean("display.late_look") ? 1 : 0;
+	late_look_setting = !late_look_setting;
+	platform_log("late look %s (toggled)", late_look_setting ? "on" : "off");
+}
+
+static void late_look(struct observer_result *camera)
+{
+	static real previous_yaw, previous_pitch;
+	static double previous_ms;
+	static real rate_yaw, rate_pitch;      /* radians a second at full stick, from the game's last turns */
+	static double ages;
+	static real turned;
+	static unsigned long counted, applied;
+	float read_x, read_y, now_x, now_y, age;
+	real yaw = (real)atan2(camera->forward.j, camera->forward.i);
+	real pitch = (real)asin(camera->forward.k < -1.0f ? -1.0f : camera->forward.k > 1.0f ? 1.0f : camera->forward.k);
+	double now_ms = halo_frame_trace_milliseconds();
+	real seconds = (real)((now_ms - previous_ms) / 1000.0);
+	real turn_yaw = yaw - previous_yaw, turn_pitch = pitch - previous_pitch;
+
+	if (late_look_setting < 0)
+		late_look_setting = config_boolean("display.late_look") ? 1 : 0;
+	previous_yaw = yaw;
+	previous_pitch = pitch;
+	previous_ms = now_ms;
+	/* the age is logged whether or not there is a stick to read again: it is what a re-read could gain */
+	ages += halo_look_read_age();
+	if (++counted >= 600)
+	{
+		platform_log("late look %s: the game's read of the controller was %.2f ms old at the camera on average over 600 "
+			"frames; %lu frames turned, by %.3f degrees on average", late_look_setting ? "on" : "off",
+			ages / (double)counted * 1000.0, applied, applied ? (double)turned / (double)applied * 57.29578 : 0.0);
+		ages = 0.0;
+		turned = 0.0f;
+		counted = applied = 0;
+	}
+	if (!halo_look_stick_latest(&read_x, &read_y, &now_x, &now_y, &age))
+		return;
+	while (turn_yaw > (real)M_PI)
+		turn_yaw -= (real)(2.0 * M_PI);
+	while (turn_yaw < -(real)M_PI)
+		turn_yaw += (real)(2.0 * M_PI);
+	/* the game's rate, while the stick it read was well over and the frame was a frame */
+	if (seconds > 0.002f && seconds < 0.1f)
+	{
+		if (fabsf(read_x) > LATE_LOOK_STICK)
+			rate_yaw = turn_yaw / (read_x * seconds);
+		if (fabsf(read_y) > LATE_LOOK_STICK)
+			rate_pitch = turn_pitch / (read_y * seconds);
+	}
+	if (late_look_setting && age > 0.0f && age < 0.05f)
+	{
+		real more_yaw = rate_yaw * now_x * age, more_pitch = rate_pitch * now_y * age;
+
+		more_yaw = more_yaw > LATE_LOOK_MAXIMUM ? LATE_LOOK_MAXIMUM : more_yaw < -LATE_LOOK_MAXIMUM ? -LATE_LOOK_MAXIMUM : more_yaw;
+		more_pitch = more_pitch > LATE_LOOK_MAXIMUM ? LATE_LOOK_MAXIMUM :
+			more_pitch < -LATE_LOOK_MAXIMUM ? -LATE_LOOK_MAXIMUM : more_pitch;
+		if (more_yaw != 0.0f || more_pitch != 0.0f)
+		{
+			real new_pitch = pitch + more_pitch;
+
+			new_pitch = new_pitch > 1.5f ? 1.5f : new_pitch < -1.5f ? -1.5f : new_pitch;
+			camera->forward.i = (real)(cos(new_pitch) * cos(yaw + more_yaw));
+			camera->forward.j = (real)(cos(new_pitch) * sin(yaw + more_yaw));
+			camera->forward.k = (real)sin(new_pitch);
+			observer_up_from_forward(&camera->forward, &camera->up);
+			turned += fabsf(more_yaw) + fabsf(more_pitch);
+			applied++;
+		}
+	}
 }
 
 struct observer_result const *render_interpolation_camera(

@@ -140,6 +140,153 @@ static inline int frame_pacer_blank_refresh(struct frame_pacer_blank *blank, dou
 	return 1;
 }
 
+/* ---------- a late start
+
+The delay a player feels is from the moment the game reads the controller to
+the moment the picture made from it is on screen. Left alone, the game starts
+a frame's work as soon as the last one is handed over, finishes early, and the
+finished picture then waits for the display: the wait is at the wrong end.
+Starting late moves it to the front: the frame's work begins just early
+enough to be done for the next refresh, so the controller is read as late as
+it can be. (Nvidia's Reflex and the Vision Pro's Compositor do the same.)
+
+Just early enough is a guess, and a wrong one costs a whole refresh, which is
+worse than the wait it saves. So the guess is cautious:
+
+- a frame's cost is the worst of the last FRAME_PACER_LATE_WINDOW frames'
+  (its work from the start to the GPU's end), not their average;
+- on top of it goes a lead, the time the system needs between a finished
+  frame and the refresh that shows it, learned: it starts at
+  FRAME_PACER_LATE_LEAD, grows by FRAME_PACER_LATE_LEAD_STEP each time a
+  frame is shown later than it aimed for, and shrinks slowly while none is;
+- if cost and lead together take more than FRAME_PACER_LATE_FIT of a
+  refresh, there is no late start: the frame starts at once, as before;
+- a frame that costs more than was allowed for (a fight begins), or is shown
+  late, stops late starts for FRAME_PACER_LATE_HOLDOFF frames, until the
+  window holds only the new costs. */
+
+enum
+{
+	FRAME_PACER_LATE_WINDOW = 32,
+	FRAME_PACER_LATE_HISTORY = 8,     /* frames seen before the first late start */
+	FRAME_PACER_LATE_HOLDOFF = 120
+};
+
+#define FRAME_PACER_LATE_LEAD 0.003
+#define FRAME_PACER_LATE_LEAD_STEP 0.002
+#define FRAME_PACER_LATE_LEAD_MINIMUM 0.002
+#define FRAME_PACER_LATE_FIT 0.75
+/* frames shown on time before the lead shrinks by a quarter of a step */
+#define FRAME_PACER_LATE_CALM 600
+
+struct frame_pacer_late
+{
+	double costs[FRAME_PACER_LATE_WINDOW];
+	int count, next;
+	double lead;            /* 0: FRAME_PACER_LATE_LEAD */
+	double allowed;         /* the cost the last late start allowed for; 0: it started at once */
+	int holdoff;            /* frames still to start at once */
+	unsigned long calm;     /* frames shown on time since the lead last changed */
+	unsigned long late_starts, at_once, jumps, misses;
+};
+
+static inline double frame_pacer_late_worst(const struct frame_pacer_late *late)
+{
+	double worst = 0.0;
+	int index;
+
+	for (index = 0; index < late->count; index++)
+		if (late->costs[index] > worst)
+			worst = late->costs[index];
+	return worst;
+}
+
+static inline double frame_pacer_late_lead(const struct frame_pacer_late *late)
+{
+	return late->lead > 0.0 ? late->lead : FRAME_PACER_LATE_LEAD;
+}
+
+/* How long to wait before starting a frame's work, in seconds (0: start at
+once), and through aim, the refresh the frame then aims to be shown at (0:
+none). now: the clock; refresh: the time of any one refresh of the display
+on that clock, and period the time between them, both from the display link. */
+static inline double frame_pacer_late_wait(struct frame_pacer_late *late, double now, double refresh, double period,
+	double *aim)
+{
+	double budget, start;
+
+	*aim = 0.0;
+	late->allowed = 0.0;
+	if (late->holdoff > 0)
+	{
+		late->holdoff--;
+		late->at_once++;
+		return 0.0;
+	}
+	if (late->count < FRAME_PACER_LATE_HISTORY || period < 1.0 / 240.0 || period > 1.0 / 20.0)
+	{
+		late->at_once++;
+		return 0.0;
+	}
+	budget = frame_pacer_late_worst(late) + frame_pacer_late_lead(late);
+	if (budget > FRAME_PACER_LATE_FIT * period)
+	{
+		late->at_once++;
+		return 0.0;
+	}
+	/* the first refresh the frame can still make if it starts now */
+	*aim = refresh + period * (double)(long)((now + budget - refresh) / period + 1.0);
+	start = *aim - budget;
+	late->allowed = budget - frame_pacer_late_lead(late);
+	if (start <= now)
+	{
+		late->at_once++;
+		return 0.0;
+	}
+	late->late_starts++;
+	return start - now;
+}
+
+/* a frame's work took this long, from its start to the GPU's end */
+static inline void frame_pacer_late_cost(struct frame_pacer_late *late, double cost)
+{
+	/* (a quarter second or more is a load or the background, not a frame) */
+	if (cost <= 0.0 || cost >= 0.25)
+		return;
+	late->costs[late->next] = cost;
+	late->next = (late->next + 1) % FRAME_PACER_LATE_WINDOW;
+	if (late->count < FRAME_PACER_LATE_WINDOW)
+		late->count++;
+	if (late->allowed > 0.0 && cost > late->allowed)
+	{
+		late->jumps++;
+		late->holdoff = FRAME_PACER_LATE_HOLDOFF;
+	}
+}
+
+/* a frame that aimed for a refresh was shown at this time */
+static inline void frame_pacer_late_shown(struct frame_pacer_late *late, double aim, double at, double period)
+{
+	if (aim <= 0.0 || at <= 0.0)
+		return;
+	if (at > aim + 0.5 * period)
+	{
+		late->misses++;
+		late->holdoff = FRAME_PACER_LATE_HOLDOFF;
+		late->lead = frame_pacer_late_lead(late) + FRAME_PACER_LATE_LEAD_STEP;
+		if (late->lead > 0.5 * period)
+			late->lead = 0.5 * period;
+		late->calm = 0;
+	}
+	else if (++late->calm >= FRAME_PACER_LATE_CALM)
+	{
+		late->calm = 0;
+		late->lead = frame_pacer_late_lead(late) - FRAME_PACER_LATE_LEAD_STEP / 4.0;
+		if (late->lead < FRAME_PACER_LATE_LEAD_MINIMUM)
+			late->lead = FRAME_PACER_LATE_LEAD_MINIMUM;
+	}
+}
+
 /* ---------- when frames were shown */
 
 struct frame_pacer_shown

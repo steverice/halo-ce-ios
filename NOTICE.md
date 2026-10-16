@@ -49,10 +49,13 @@ its own notice.
   command and how they were chosen). VISR does not own FFmpeg.
 - The configuration is LGPL only: no `--enable-gpl`, `--enable-version3` or
   `--enable-nonfree`, and no external libraries.
-- FFmpeg is linked statically into the app's executable. To use a modified
-  FFmpeg, change the files in `port/third_party/ffmpeg-bink/` and rebuild
-  the app with `tools/ios_build.py`; everything the app is built from is in
-  this repository.
+- FFmpeg is linked statically into the app's executable. The complete source
+  of the app, including the FFmpeg code it is built with, is at
+  <https://github.com/steverice/visr>.
+- To rebuild the app with a modified FFmpeg, change the files in
+  `port/third_party/ffmpeg-bink/`, then build from the repository root with
+  `python3 tools/ios_build.py --unsigned --ipa dist/VISR-iOS-unsigned.ipa`
+  (other targets and signing options are in `port/ios/README.md`).
 - An app that contains FFmpeg carries the license text as
   `Licenses/FFmpeg-LGPL-2.1.txt`.
 - `tools/ios_build.py --bink off` (CMake `HALO_BINK=OFF`) builds an app with

@@ -157,6 +157,7 @@ void host_gpu_anti_alias(uint32_t method, gpu_texture target, const struct gpu_r
 uint32_t host_gpu_vertical_blank_wait(void);
 uint32_t host_gpu_companion_size(uint32_t *width, uint32_t *height);
 void host_gpu_companion_set(gpu_texture target);
+void host_gpu_frame_start(void);
 uint32_t host_gpu_present(gpu_texture back_buffer);
 uint32_t host_gpu_present_stereo(const struct gpu_stereo_present *present);
 uint32_t host_gpu_call_count_take(void);

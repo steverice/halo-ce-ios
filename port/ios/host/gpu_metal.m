@@ -4367,6 +4367,20 @@ static uint32_t gpu_metal_vertical_blank_wait(void)
 	return frame_pacer_vertical_blank_wait();
 }
 
+/* the game's start of a frame, before it reads input: the pacer may wait
+(display.late_start), and is told what the GPU's frames have been costing */
+static void gpu_metal_frame_start(void)
+{
+#if HALO_FRAME_PACING
+	static uint64_t counted;
+	uint64_t total = atomic_load(&pacing_gpu_nanoseconds);
+
+	frame_pacer_gpu_time((double)(total - counted) / 1e9);
+	counted = total;
+	frame_pacer_frame_start();
+#endif
+}
+
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
 /* display.frame_source = "system" (host_frame_pacer.h): the system's own
 pacer, a CAMetalDisplayLink (iOS 17, tvOS 17, macOS 14), hands over one

@@ -246,6 +246,7 @@ static void update_server_take_local_actions(
 last, and a client sends one a frame (several per tick): a button pressed
 in only one packet between two of the host's ticks would be lost. Every
 button seen since the host's last tick stays down for the next. */
+extern unsigned char input_replay_sim_isolated(void);
 static unsigned long update_server_pending_control_flags[MAXIMUM_NUMBER_OF_PLAYERS];
 
 /* the distributed netcode (port/linux/NETCODE.md): the latest action the
@@ -445,6 +446,11 @@ void update_server_next_update(
 			sizeof(struct player_action));
 		update->update.actions[queue_index].control_flags |= update_server_pending_control_flags[queue_index];
 		update_server_pending_control_flags[queue_index] = 0;
+		/* port: the scripts' action tests the frames since the last tick saw, carried by the action while a take is
+		recorded or replayed (player_control.c, player_control_frame_action_flags) */
+		update->update.actions[queue_index].pad = 0;
+		if (queue_index == 0 && game_connection() == _game_connection_local && input_replay_sim_isolated())
+			update->update.actions[queue_index].pad = (short)player_control_take_frame_action_flags();
 		/* port: a client machine's player whose input has stopped coming
 		(its network lost, until the host drops it) stands still, its
 		buttons and trigger let go, where it faces: its last input held
@@ -770,6 +776,7 @@ boolean update_client_dequeue(
 			queue->desired_weapon_index = action->desired_weapon_index;
 			queue->desired_grenade_index = action->desired_grenade_index;
 			queue->desired_zoom_level = action->desired_zoom_level;
+			queue->pad2 = action->pad;
 			match_assert(
 				"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 				0x1C9,
@@ -796,6 +803,7 @@ boolean update_client_dequeue(
 		actions[queue_index].desired_weapon_index = queue->desired_weapon_index;
 		actions[queue_index].desired_grenade_index = queue->desired_grenade_index;
 		actions[queue_index].desired_zoom_level = queue->desired_zoom_level;
+		actions[queue_index].pad = queue->pad2;
 		match_assert(
 			"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 			0x1E6,
@@ -817,6 +825,9 @@ boolean update_client_dequeue(
 		extern void input_replay_tick_action(void *action);
 
 		input_replay_tick_action(&actions[0]);
+		/* (the action tests the action carries, as the take recorded them or replays them: player_control.c) */
+		if (input_replay_sim_isolated())
+			player_control_action_test_note_tick((unsigned short)actions[0].pad);
 	}
 	update_client_globals.next_update_number_to_dequeue += 1;
 

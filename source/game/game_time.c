@@ -75,6 +75,7 @@ symbols in this file:
 #include "networking/network_game_globals.h"
 #include "networking/network_server_manager.h"
 #include "saved games/game_state.h"
+#include "main/main.h"
 /* port/linux/game/network_distributed.c's */
 void network_distributed_tick(void);
 
@@ -473,6 +474,9 @@ void game_time_update(
 						game_time_globals->local_time++;
 						/* the distributed netcode's per-tick state */
 						network_distributed_tick();
+						/* port: what the main loop does between ticks comes before the next one (main_tick_end) */
+						if (main_tick_end())
+							break;
 					}
 				}
 

@@ -17,6 +17,7 @@ so the audio callback is handed to a thread that has one.
 #endif
 #include "host.h"
 #include "host_config.h"
+#include "host_frame_pacer.h"
 
 #include <SDL3/SDL.h>
 #include <limits.h>
@@ -323,6 +324,12 @@ int host_sdl_poll_event(void *event)
 			return 0;
 	}
 	while (held_back(&host_event));
+#if HALO_FRAME_PACING && TARGET_OS_MACCATALYST
+	/* the Mac app's F8: the frame pacer's late start on and off while
+	playing, to feel the difference (display.late_start) */
+	if (host_event.type == SDL_EVENT_KEY_DOWN && !host_event.key.repeat && host_event.key.scancode == SDL_SCANCODE_F8)
+		frame_pacer_late_start_toggle();
+#endif
 	/* the layouts agree except for the pointers of text, drop and user
 	events, which the guest does not read */
 	memcpy(event, &host_event, sizeof(host_event));

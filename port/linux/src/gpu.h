@@ -448,6 +448,11 @@ returns 0 at once when the backend has no display clock to follow (the
 caller then keeps its own timer): the Xbox's blank, for
 d3d8_device.c's vertical_blank_thread */
 uint32_t gpu_vertical_blank_wait(void);
+/* the game is about to start a frame, before it reads input: a backend that
+paces frames may wait here, so the frame's work ends just in time for the
+display (the iOS host's frame pacer, display.late_start); others return at
+once */
+void gpu_frame_start(void);
 /* letterboxes the back buffer into the drawable, swaps, and starts the next
 frame's transient buffers. Returns how long from now, in microseconds, until
 the next frame is due on the display, when the backend schedules its frames
@@ -705,6 +710,7 @@ its own functions. */
 	F(uint32_t, vertical_blank_wait, (void), ()) \
 	F(uint32_t, companion_size, (uint32_t *width, uint32_t *height), (width, height)) \
 	P(companion_set, (gpu_texture target), (target)) \
+	P(frame_start, (void), ()) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \
 	F(uint32_t, call_count_take, (void), ()) \

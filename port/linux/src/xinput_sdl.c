@@ -1134,12 +1134,58 @@ static int controller_port(HANDLE device)
 	return -1;
 }
 
+/* display.late_look (port/linux/game/render_interpolation.c): the right
+stick as the game was last given it for player one, and when; and the stick
+as it is now, read again without the game hearing of it. 0 when there is no
+controller to read, or the input is a test's or a replay's, which must play
+the same every time. */
+double halo_frame_trace_milliseconds(void);
+
+static struct
+{
+	double read_ms;              /* halo_frame_trace_milliseconds' clock; 0 before the first read */
+	float x, y;
+	int valid;
+} look_read;
+
+/* how long ago the game last read player one's controller, in seconds (0
+before it has): what a re-read just before the camera could gain, whether or
+not there is a stick to re-read */
+float halo_look_read_age(void)
+{
+	return look_read.read_ms > 0.0 ? (float)((halo_frame_trace_milliseconds() - look_read.read_ms) / 1000.0) : 0.0f;
+}
+
+int halo_look_stick_latest(float *read_x, float *read_y, float *now_x, float *now_y, float *age_seconds)
+{
+	SDL_Gamepad *gamepads[PORT_COUNT];
+	SDL_Gamepad *gamepad;
+	int count;
+
+	if (!look_read.valid)
+		return 0;
+	platform_pump_events();
+	count = sdl_gamepads(gamepads);
+	gamepad = port_gamepad(gamepads, count, 0);
+	if (!gamepad)
+		return 0;
+	*read_x = look_read.x;
+	*read_y = look_read.y;
+	*now_x = (float)stick(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX), FALSE) / 32767.0f;
+	*now_y = (float)stick(SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY), TRUE) / 32767.0f;
+	*age_seconds = halo_look_read_age();
+	return 1;
+}
+
 DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 {
 	int port = controller_port(device);
 	SDL_Gamepad *gamepads[PORT_COUNT];
 	int count;
 
+	/* the first read after a Present starts a frame: the frame pacer may
+	wait here, before anything is read (d3d8_device.c, halo_frame_start) */
+	halo_frame_start();
 	memset(state, 0, sizeof(*state));
 	if (port < 0)
 		return ERROR_DEVICE_NOT_CONNECTED;
@@ -1176,6 +1222,14 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 #endif
 		render_scale_dpad(&state->Gamepad);
 		anti_aliasing_chord(&state->Gamepad);
+
+		/* (display.late_look: what the stick was when the game read it; not
+		a test's or a replay's input) */
+		look_read.valid = port_gamepad(gamepads, count, 0) != NULL && !platform_fixed_timestep() &&
+			!config_string("debug.test_input")[0] && !config_string("debug.input_replay")[0];
+		look_read.x = (float)state->Gamepad.sThumbRX / 32767.0f;
+		look_read.y = (float)state->Gamepad.sThumbRY / 32767.0f;
+		look_read.read_ms = halo_frame_trace_milliseconds();
 		input_replay_filter(&state->Gamepad);
 	}
 	else if (port < config_integer("debug.network_test_players"))

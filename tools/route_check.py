@@ -19,6 +19,9 @@ A segment is a stretch of the recording between two times the game time went bac
 revert to a checkpoint), so a point is keyed the same way the replayed actions are.
 
     python3 tools/route_check.py [--runs N] [--out DIR] [--app APP] [--maps MAPS] tools/route_checks/a10-bench.checks
+A `state SEGMENT TICK alive=1 actors=N dead=N` line checks the fight at a tick: player 1's body is above 0, how many
+actors the AI has and how many objects are dead (the same log line's "body, shield, actors, dead").
+
     python3 tools/route_check.py --suite tools/route_checks/a10-bench.checks   # through the benchmark suite
     python3 tools/route_check.py --log stderr.log tools/route_checks/a10-bench.checks   # check a run already made
 
@@ -38,6 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ROUTE_TICKS = 30
 ROUTE_LINE = re.compile(
     r"debug\.input_replay: route segment (-?\d+) tick (\d+) at (?:(none)|(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)) \((.*)\)")
+STATE = re.compile(r"body (-?[\d.]+) shield (-?[\d.]+) actors (\d+) dead (\d+)")
 
 
 @dataclass
@@ -57,14 +61,25 @@ class RouteCheck:
     exit_after: float
     checks: list
     suite: str = ""
+    states: list = None
 
 
 def parse_checks(text, base=ROOT):
     """a .checks file's settings and points (see the module's docstring)"""
     settings, checks = {}, []
+    states = []
     for number, line in enumerate(text.splitlines(), 1):
         line = line.split("#", 1)[0].strip()
         if not line:
+            continue
+        if line.startswith("state "):
+            fields = line.split()
+            expected = dict(field.split("=", 1) for field in fields[3:])
+            if len(fields) < 4 or not set(expected) <= {"alive", "actors", "dead"}:
+                raise ValueError(f"line {number}: expected 'state segment tick alive=1 actors=N dead=N': {line}")
+            if int(fields[2]) % ROUTE_TICKS:
+                raise ValueError(f"line {number}: tick {fields[2]} is not a multiple of {ROUTE_TICKS}, so it is never logged")
+            states.append((int(fields[1]), int(fields[2]), {key: int(value) for key, value in expected.items()}))
             continue
         if "=" in line:
             key, value = (part.strip() for part in line.split("=", 1))
@@ -86,7 +101,7 @@ def parse_checks(text, base=ROOT):
     if not checks:
         raise ValueError("no points to check")
     return RouteCheck(base / settings["recording"], settings["map"], settings["difficulty"],
-                      float(settings.get("exit_after", "120")), checks, settings.get("suite", ""))
+                      float(settings.get("exit_after", "120")), checks, settings.get("suite", ""), states)
 
 
 def parse_route(text):
@@ -98,6 +113,34 @@ def parse_route(text):
             continue
         route[key] = None if match.group(3) else tuple(float(match.group(index)) for index in (4, 5, 6))
     return route
+
+
+def parse_states(text):
+    """{(segment, tick): {"alive": 0 or 1, "actors": n, "dead": n}} from a run's log: the player's body, the AI's
+    actors and the dead objects at that tick (the first line for a segment and tick wins)"""
+    states = {}
+    for match in ROUTE_LINE.finditer(text):
+        key = (int(match.group(1)), int(match.group(2)))
+        state = STATE.search(match.group(7))
+        if key not in states and state:
+            states[key] = {"alive": int(float(state.group(1)) > 0), "actors": int(state.group(3)),
+                           "dead": int(state.group(4))}
+    return states
+
+
+def evaluate_states(route_check, states):
+    """[(label, passed, why)] for each `state` line: the player alive and the fight where it was"""
+    results = []
+    for segment, tick, expected in route_check.states or []:
+        label = f"state {segment} {tick}"
+        found = states.get((segment, tick))
+        if found is None:
+            results.append((label, False, f"segment {segment} tick {tick} was never reached"))
+            continue
+        wrong = [f"{key} {found[key]} not {value}" for key, value in expected.items() if found[key] != value]
+        results.append((label, not wrong, f"segment {segment} tick {tick}: " + (", ".join(wrong) or
+                        ", ".join(f"{key} {found[key]}" for key in expected))))
+    return results
 
 
 def evaluate(route_check, route):
@@ -120,10 +163,15 @@ def evaluate(route_check, route):
     return results
 
 
+def judge(route_check, text):
+    """the points' and the states' verdicts for a run's log"""
+    return evaluate(route_check, parse_route(text)) + evaluate_states(route_check, parse_states(text))
+
+
 def report(label, results):
     failed = [result for result in results if not result[1]]
     for check, passed, why in results:
-        print(f"{label}: {'ok  ' if passed else 'FAIL'} {why}{' - ' + check.what if check.what else ''}")
+        print(f"{label}: {'ok  ' if passed else 'FAIL'} {why}{' - ' + check.what if getattr(check, 'what', '') else ''}")
     print(f"{label}: {'passed' if not failed else f'{len(failed)} of {len(results)} points failed'}")
     return not failed
 
@@ -170,7 +218,7 @@ def main():
     passed = True
     if args.log:
         for log in args.log:
-            passed &= report(str(log), evaluate(route_check, parse_route(log.read_text(errors="replace"))))
+            passed &= report(str(log), judge(route_check, log.read_text(errors="replace")))
         return 0 if passed else 1
     if args.suite and not route_check.suite:
         print("the checks file has no `suite =` line")
@@ -183,7 +231,7 @@ def main():
         text = run_once(route_check, out, args.app, args.maps, args.suite)
         if text is None:
             return 2
-        passed &= report(f"{args.checks.stem} run {run}", evaluate(route_check, parse_route(text)))
+        passed &= report(f"{args.checks.stem} run {run}", judge(route_check, text))
     return 0 if passed else 1
 
 

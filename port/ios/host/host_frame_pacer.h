@@ -5,6 +5,7 @@ tells it three things and asks it two, with no graphics types either way, so
 the Metal backend, the OpenGL ES one, another backend or a test can use the
 same pacer:
 
+	frame_pacer_frame_start   as the game starts a frame, before it reads input (may wait)
 	frame_pacer_frame_begin   before a frame asks for its drawable (may wait)
 	frame_pacer_present       as the frame is presented: how long it must stay up
 	frame_pacer_presented     when the display showed it, with the time
@@ -18,7 +19,8 @@ is an inline that does nothing, so a renderer's calls compile away and its
 frames go as they did before the pacer existed.
 
 Settings (port_config.c): display.frame_source, display.frames_in_flight,
-display.frame_spacing, debug.present_times, debug.frame_load_cpu. Whether frames wait for the
+display.frame_spacing, display.late_start, debug.present_times,
+debug.frame_load_cpu, debug.frame_load_every. Whether frames wait for the
 display at all is display.frame_rate's to say (host_gpu_dispatch.c and the
 backend's frame_rate_sync, which the pacer is told the answer of). */
 #pragma once
@@ -37,6 +39,7 @@ struct frame_pacer_frame
 {
 	unsigned long number;
 	double began;            /* when the frame's work began (the pacer's clock), for the delay to the display */
+	double aim;              /* the refresh a late start aimed it at; 0: none */
 	uint8_t waits_for_display;
 	uint8_t slot;            /* holds one of the frames in flight */
 	uint8_t watched;         /* frame_pacer_presented wants to hear of it */
@@ -73,6 +76,22 @@ int frame_pacer_in_flight(void);
 seconds on the clock frame_pacer_presented's times use (CACurrentMediaTime's);
 any thread */
 void frame_pacer_refresh(double timestamp, double period);
+
+/* The game is about to start a frame: called from its loop before it reads
+the controllers and steps the blend between ticks (d3d8_device.c's
+halo_frame_start, through gpu_frame_start). With display.late_start, waits
+until the frame's work would be done just in time for the next refresh
+(frame_pacer.h, "a late start"); otherwise only notes the time. Nothing
+under debug.fixed_timestep, where the pacer isn't started. */
+void frame_pacer_frame_start(void);
+
+/* the GPU's time on the frames it has finished since the last call, in
+seconds: a renderer's measure for the late start's guess (0 if it has none) */
+void frame_pacer_gpu_time(double seconds);
+
+/* display.late_start on and off while the game runs (the Mac app's F8): the
+new setting */
+int frame_pacer_late_start_toggle(void);
 
 /* A frame is about to ask for its drawable. number: the frame's; began:
 when its work began (0 unknown); waits_for_display: whether it will be shown
@@ -132,6 +151,20 @@ static inline void frame_pacer_refresh(double timestamp, double period)
 {
 	(void)timestamp;
 	(void)period;
+}
+
+static inline void frame_pacer_frame_start(void)
+{
+}
+
+static inline void frame_pacer_gpu_time(double seconds)
+{
+	(void)seconds;
+}
+
+static inline int frame_pacer_late_start_toggle(void)
+{
+	return 0;
 }
 
 static inline void frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display)

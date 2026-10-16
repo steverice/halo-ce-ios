@@ -126,6 +126,11 @@ void gpu_companion_set(gpu_texture target)
 	host_gpu_companion_set(target);
 }
 
+void gpu_frame_start(void)
+{
+	host_gpu_frame_start();
+}
+
 uint32_t gpu_present(gpu_texture back_buffer)
 {
 	return host_gpu_present(back_buffer);

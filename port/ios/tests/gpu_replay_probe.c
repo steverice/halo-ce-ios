@@ -78,6 +78,7 @@ static void mock_visibility_end(uint32_t slot) { note("visibility_end", slot, 0)
 static uint32_t mock_visibility_result(uint32_t slot, uint32_t *samples) { note("visibility_result", slot, 0); *samples = 1; return 1; }
 static void mock_flush(void) { note("flush", 0, 0); }
 static uint32_t mock_vertical_blank_wait(void) { return 0; }
+static void mock_frame_start(void) {}
 static uint32_t mock_present(gpu_texture b) { (void)b; note("present", 0, 0); stream_offset = 0; return 0; }
 static uint32_t mock_present_stereo(const struct gpu_stereo_present *p) { note("present_stereo", (uint32_t)p->mode, 0); stream_offset = 0; return 0; }
 static uint32_t mock_call_count_take(void) { return 0; }

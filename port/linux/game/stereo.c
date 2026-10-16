@@ -338,6 +338,11 @@ static unsigned culling_logged;
 /* the script fade the eyes draw and the room takes this frame
 (halo_stereo_set_fade) */
 static float frame_fade[4];
+/* the level start's hold (halo_stereo_level_start_hold): this frame's, and
+how many frames it has run */
+static int level_start_hold;
+static int level_start_hold_frames;
+static int level_start_taken;
 /* display.stereo_vehicle_screen, read once (mapping_settings): in HEAD mode
 a third-person camera (a vehicle seat's) goes on the screen as the film
 does, the stick still driving it as in mono. Off, it stays head-tracked
@@ -967,6 +972,25 @@ void halo_stereo_frame_begin(void)
 			film_reason = 3;
 	}
 	cutscene = film_reason == 1 || film_reason == 2;
+	/* a level's first frames, before its opening script has had its ticks: black
+	in the full view (and on a flat screen: a campaign level only), unless the
+	film has them already */
+	level_start_taken = film_reason != 0;
+	if ((stereo_mode == HALO_STEREO_HEAD || stereo_mode == HALO_STEREO_SIDE_BY_SIDE ||
+		(stereo_mode == HALO_STEREO_OFF && halo_level_start_campaign())) &&
+		!level_start_taken && halo_level_first_tick_pending()) {
+		level_start_hold = level_start_hold_frames < HALO_STEREO_LEVEL_START_HOLD_FRAMES;
+		if (level_start_hold_frames++ == HALO_STEREO_LEVEL_START_HOLD_FRAMES)
+			platform_log("stereo: the level's first ticks haven't run after %d frames; showing the view",
+				HALO_STEREO_LEVEL_START_HOLD_FRAMES);
+	} else {
+		if (level_start_hold_frames > 0 && stereo_stats)
+			platform_log("stereo: level start: the view was held black for %d frame%s at the level's start; "
+				"this frame's view: %s", level_start_hold_frames, level_start_hold_frames == 1 ? "" : "s",
+				film_reason ? film_reasons[film_reason] : level_start_taken ? "a cutscene's" : "the player's");
+		level_start_hold = 0;
+		level_start_hold_frames = 0;
+	}
 	/* HEAD mode (and the side-by-side view): a cutscene's camera is the
 	film only if it isn't first person, from the cutscene's first such camera
 	to its end; a cutscene first person throughout stays immersive. After
@@ -1410,6 +1434,16 @@ void halo_stereo_log_film_camera(const float position[3], const float forward[3]
 int halo_stereo_head_tracked_view(void)
 {
 	return stereo_mode == HALO_STEREO_HEAD || stereo_mode == HALO_STEREO_SCREEN;
+}
+
+int halo_stereo_level_start_hold(void)
+{
+	return level_start_hold && stereo_frame.eye_count == 2;
+}
+
+int halo_level_start_hold_flat(void)
+{
+	return level_start_hold && stereo_frame.eye_count != 2;
 }
 
 int halo_stereo_cut_covered(void)

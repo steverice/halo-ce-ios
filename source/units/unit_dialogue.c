@@ -94,6 +94,9 @@ symbols in this file:
 #include "tag_files/tag_groups.h"
 #include "unit_definitions.h"
 
+extern unsigned char input_replay_sim_isolated(void);
+static void unit_mouth_aperture_from_speech(long unit_index);
+
 /* port: the AI's speech goes to the clients' copies (port/linux/game/network_actors.c) */
 void network_actors_note_speech(long unit_index, long sound_definition_index);
 
@@ -1120,10 +1123,57 @@ void unit_dialogue_update(
 		unit_speak(unit_index, _unit_play_speech_immediate_dequeue, &unit->unit.speech.queued);
 	}
 
+	if (input_replay_sim_isolated())
+		unit_mouth_aperture_from_speech(unit_index);
+
 	return;
 }
 
 /* ---------- private code */
+
+/* port: while a take is recorded or replayed (input_replay_sim_isolated, port/linux/src/input_replay.c), the mouth
+moves with the speech once a tick, not with the mixer (game_sound_set_mouth_aperture): the mouth aperture of the
+speech's first permutation at the ticks since it began, approached by at most 0.3 a tick as the mixer's was, and
+closing once the speech is over. It is the same in a replay, which plays no sound, as in the take. */
+static void unit_mouth_aperture_from_speech(
+	long unit_index)
+{
+	struct unit_datum *unit = unit_get(unit_index);
+	real target = 0.f;
+
+	if (unit->unit.speech.current.priority > _unit_speech_none &&
+		unit->unit.speech.played &&
+		unit->unit.speech.sound_timer > 0 &&
+		unit->unit.speech.current.sound_definition_index != NONE)
+	{
+		struct sound_definition *definition =
+			sound_definition_get(unit->unit.speech.current.sound_definition_index);
+		long length = (long)(definition->longest_permutation_length * TICKS_PER_SECOND) / 1000;
+
+		if (definition->pitch_ranges.count > 0)
+		{
+			struct sound_pitch_range *pitch_range = TAG_BLOCK_GET_ELEMENT(
+				&definition->pitch_ranges,
+				0,
+				struct sound_pitch_range);
+
+			if (pitch_range->permutations.count > 0)
+			{
+				struct sound_permutation *permutation = TAG_BLOCK_GET_ELEMENT(
+					&pitch_range->permutations,
+					0,
+					struct sound_permutation);
+
+				target = sound_permutation_get_real_mouth_aperture(
+					permutation,
+					MAX(length - unit->unit.speech.sound_timer, 0));
+			}
+		}
+	}
+	unit->unit.mouth_aperture += PIN(target - unit->unit.mouth_aperture, -0.3f, 0.3f);
+
+	return;
+}
 
 static long unit_find_dialogue_variant(
 	struct unit_definition *definition,

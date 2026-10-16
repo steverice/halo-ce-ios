@@ -89,6 +89,9 @@ void halo_loading_screen_begin(char const *map_name);
 void halo_loading_screen_finish(void);
 unsigned char halo_loading_screen_progress(float *progress);
 unsigned char halo_loading_screen_holding(void);
+unsigned char halo_loading_screen_tail(void);
+void halo_loading_screen_tail_frame(void);
+unsigned char halo_loading_screen_smooth(void);
 void halo_main_time_restart(void);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"

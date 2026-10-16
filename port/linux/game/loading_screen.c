@@ -32,13 +32,23 @@ So a campaign level's load holds the screen itself:
   (halo_loading_screen_holding), so the level's opening script, its music
   and its first frame all start after the screen has gone.
 
-The band's place is the load's progress: the lesser of the time's share of
-the minimum and the work's share done (the read, then the compiles), so it
-crosses in the minimum time when everything is ready early and follows the
-compiles when they take longer (a first launch compiles every pipeline: 32 s
-on an Apple TV). The screen leaves as the original does: the picture and
-the blur fade to black as the progress reaches its end, and the level's
-first frame follows.
+The band's place is the load's progress, which moves smoothly and never
+back. Its target is the lesser of the time's share of the minimum and the
+work's share done, both scaled to end at COMPILE_END: the copy's first
+half (0 to 0.075), the read (to READ_SHARE) and the compiles (to
+COMPILE_END). While the work stalls (the compiles of a first launch take
+32 s on an Apple TV) the target creeps on toward the next boundary, a
+little each second, so the band does not stop. The displayed value eases
+toward the target with a time constant, so the frame rate does not matter.
+Once the work is done and the minimum has passed, the screen goes on into
+the level's start (the tail): the level's first ticks run behind it (the
+opening script needs three to start its cutscene and a few more for its fade
+to take hold: the first game frame after fewer showed the cutscene's first
+shot lit for one frame; main_loop draws this screen in place of the game,
+never the player's start), game time stands
+still once they have, and the displayed value eases the rest of the way to
+1, where the picture and the blur have faded to black, as the original's
+do. The level's first frame follows that.
 
 The picture is the player's own (port/runtime/loading_picture.h); without
 it the screen is the blur and the tone alone.
@@ -62,6 +72,7 @@ game.loading_screen = "on" and display.async_shaders = "on".
 #include "scenario/scenario_definitions.h"
 #include "../src/halo_stereo.h"
 
+#include <math.h>
 #include <string.h>
 
 void platform_log(const char *format, ...);
@@ -91,14 +102,41 @@ enum
 
 /* the shares of the progress the level's read and the compiles take */
 #define READ_SHARE 0.15f
+/* the work and the minimum time end here; the tail fills the rest */
+#define COMPILE_END 0.9f
+/* the displayed progress eases toward its target with this time constant */
+#define EASE_SECONDS 0.15f
+/* ... and toward the end, over the tail, with this one */
+#define END_EASE_SECONDS 0.1f
+/* while the work stalls the target creeps on by this much each second, to
+at most CREEP_MAX over the work */
+#define CREEP_PER_SECOND 0.02f
+#define CREEP_MAX 0.06f
+/* the shortest run from the loaded level to the end of the compiles' range */
+#define RUN_MILLISECONDS 600
+/* the tail gives up after this long, however far the level's ticks have got */
+#define TAIL_MAXIMUM_MILLISECONDS 3000
+/* the level's ticks the tail waits for: three start the opening cutscene
+(cinematic_screen.c), six also have its fade from black in force (b30 showed its first shot
+for one frame after three) */
+#define TAIL_TICKS 6
 
 static struct
 {
 	boolean active;        /* from begin to the end of finish */
 	boolean holding;       /* finish's loop: the level is loaded and waits */
+	boolean tail;          /* the level's first ticks run behind the screen */
+	unsigned long tail_started;
+	unsigned long tail_frozen; /* system_milliseconds when game time stood still */
 	unsigned long started; /* system_milliseconds at begin */
 	unsigned long minimum; /* milliseconds */
 	real work;             /* 0 to 1: how much of the load is done */
+	real shown;            /* the displayed progress */
+	unsigned long updated; /* system_milliseconds of the last update */
+	unsigned long work_changed;
+	unsigned long loaded;  /* system_milliseconds when the level was loaded */
+	real last_work_target;
+	unsigned long logged;
 } loading_screen;
 
 static boolean loading_screen_wanted(void)
@@ -162,34 +200,134 @@ void halo_loading_screen_begin(char const *map_name)
 (render_frame_pregame) */
 boolean halo_loading_screen_progress(real *progress)
 {
-	unsigned long elapsed;
-	real time_share, work = loading_screen.work;
+	unsigned long now, elapsed, dt;
+	real time_share, work_target, target, time_target, seconds;
 
 	if (!loading_screen.active)
 		return FALSE;
 	/* (game_precache_new_map ends the progress bar after a copy) */
 	if (!progress_bar_is_active())
 		progress_bar_begin(TRUE);
-	/* while a level is copied, the copy's own progress is the read's first half */
-	if (!loading_screen.holding)
+	now = system_milliseconds();
+	elapsed = now - loading_screen.started;
+	dt = loading_screen.updated ? now - loading_screen.updated : 0;
+	if (dt > 100)
+		dt = 100;
+	loading_screen.updated = now ? now : 1;
+	seconds = (real)dt / 1000.0f;
+	if (loading_screen.tail)
 	{
-		real copy = 0.0f;
-
-		work = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
+		target = 1.0f;
+		seconds /= END_EASE_SECONDS;
 	}
-	elapsed = system_milliseconds() - loading_screen.started;
-	time_share = loading_screen.minimum ? (real)elapsed / (real)loading_screen.minimum : 1.0f;
-	*progress = MIN(time_share, work);
+	else
+	{
+		/* while a level is copied, the copy's own progress is the read's first half */
+		if (!loading_screen.holding)
+		{
+			real copy = 0.0f;
+
+			work_target = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
+		}
+		else
+			work_target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
+		if (loading_screen.holding && !loading_screen.minimum)
+			time_target = COMPILE_END;
+		else if (loading_screen.holding)
+		{
+			/* the minimum time's remainder after the load, at least RUN_MILLISECONDS, so
+			a load that took the whole minimum still has a run to the end */
+			unsigned long left = loading_screen.minimum > loading_screen.loaded - loading_screen.started ?
+				loading_screen.minimum - (loading_screen.loaded - loading_screen.started) : 0;
+
+			if (left < RUN_MILLISECONDS)
+				left = RUN_MILLISECONDS;
+			time_share = (real)(now - loading_screen.loaded) / (real)left;
+			time_target = READ_SHARE + (COMPILE_END - READ_SHARE) * MIN(time_share, 1.0f);
+		}
+		else
+			time_target = READ_SHARE * MIN(loading_screen.minimum ? (real)elapsed / (real)loading_screen.minimum : 1.0f, 1.0f);
+		if (work_target > loading_screen.last_work_target + 0.0005f || !loading_screen.work_changed)
+		{
+			loading_screen.last_work_target = work_target;
+			loading_screen.work_changed = now;
+		}
+		target = work_target;
+		if (work_target < COMPILE_END && work_target < time_target)
+		{
+			/* the work stalls: creep on, slowly */
+			real creep = CREEP_PER_SECOND * (real)(now - loading_screen.work_changed) / 1000.0f;
+
+			target = work_target + MIN(creep, CREEP_MAX);
+			if (target > COMPILE_END)
+				target = COMPILE_END;
+		}
+		if (target > time_target)
+			target = time_target;
+		seconds /= EASE_SECONDS;
+	}
+	if (target > loading_screen.shown)
+		loading_screen.shown += (target - loading_screen.shown) * (1.0f - (real)exp(-seconds));
+	if (loading_screen.shown > 1.0f)
+		loading_screen.shown = 1.0f;
+	*progress = loading_screen.shown;
+	if (now - loading_screen.logged >= 100)
+	{
+		loading_screen.logged = now;
+		platform_log("loading screen: progress %.3f (target %.3f, %s) at %lu ms, game time %d", *progress, target,
+			loading_screen.tail ? "tail" : loading_screen.holding ? "compiles" : "read", elapsed,
+			game_in_progress() ? (int)game_time_get() : -1);
+	}
 	/* (progress_bar_display draws nothing at 0) */
 	*progress = PIN(*progress, 0.001f, 1.0f);
 	return TRUE;
+}
+
+/* 1 when the screen draws the progress itself, without the original's
+wobble and per-frame lag (progress_bar_render) */
+boolean halo_loading_screen_smooth(void)
+{
+	return loading_screen.active;
+}
+
+/* 1 while the screen stands in for the level's first frames (main_loop) */
+boolean halo_loading_screen_tail(void)
+{
+	return loading_screen.active && loading_screen.tail;
+}
+
+/* main_loop, after each frame the tail drew: the level's ticks are running
+behind the screen; when they have run, game time stands still until the
+screen has faded out, so the level's opening starts as the screen goes */
+void halo_loading_screen_tail_frame(void)
+{
+	unsigned long now = system_milliseconds();
+
+	if (!halo_loading_screen_tail())
+		return;
+	if (game_time_get() >= TAIL_TICKS)
+	{
+		if (!loading_screen.tail_frozen)
+			loading_screen.tail_frozen = now ? now : 1;
+		halo_main_time_restart();
+	}
+	if ((loading_screen.tail_frozen && (last_t >= 0.985f || now - loading_screen.tail_frozen >= END_MILLISECONDS)) ||
+		now - loading_screen.tail_started >= TAIL_MAXIMUM_MILLISECONDS)
+	{
+		platform_log("loading screen: the tail ended at %.3f after %lu ms, game time %d", loading_screen.shown,
+			now - loading_screen.tail_started, (int)game_time_get());
+		loading_screen.tail = FALSE;
+		loading_screen.active = FALSE;
+		progress_bar_end();
+		halo_main_time_restart();
+	}
 }
 
 /* the level is loaded and the screen holds its start: no game sound is
 rendered behind it (main_pregame_render) */
 boolean halo_loading_screen_holding(void)
 {
-	return loading_screen.holding;
+	return loading_screen.holding || halo_loading_screen_tail();
 }
 
 void halo_loading_screen_finish(void)
@@ -202,6 +340,7 @@ void halo_loading_screen_finish(void)
 		return;
 	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
 	loaded = system_milliseconds();
+	loading_screen.loaded = loaded;
 	peak = last_outstanding = gpu_compiles_outstanding();
 	last_change = loaded;
 	/* (only a campaign level waits: a failed load that fell back to the
@@ -224,14 +363,14 @@ void halo_loading_screen_finish(void)
 				outstanding, STALLED_MILLISECONDS / 1000);
 			break;
 		}
-		loading_screen.work = peak ? READ_SHARE + (1.0f - READ_SHARE) * (real)(peak - outstanding) / (real)peak : 1.0f;
-		/* done once the work is, the minimum has passed and the screen has
-		drawn its end: the picture and the blur faded to black */
-		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && frames)
+		loading_screen.work = peak ? (real)(peak - outstanding) / (real)peak : 1.0f;
+		/* done once the work is and the minimum has passed, and the bar has
+		eased up to where the work ends; the tail fills the rest */
+		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && (now - loaded >= RUN_MILLISECONDS || !loading_screen.minimum) && frames)
 		{
 			if (!finished)
 				finished = now ? now : 1;
-			if (last_t >= 0.985f || now - finished >= END_MILLISECONDS)
+			if (loading_screen.shown >= COMPILE_END - 0.01f || now - finished >= END_MILLISECONDS)
 				break;
 		}
 		else
@@ -244,8 +383,19 @@ void halo_loading_screen_finish(void)
 		"shaders and pipelines compiled", now - loading_screen.started, loaded - loading_screen.started, now - loaded,
 		frames, peak);
 	loading_screen.holding = FALSE;
-	loading_screen.active = FALSE;
-	progress_bar_end();
+	/* the tail: the screen goes on over the level's first ticks (a campaign
+	level that loaded, not one that fell back to the menus) */
+	if (scenario && scenario->type == _scenario_type_solo && outstanding == 0 && game_in_progress())
+	{
+		loading_screen.tail = TRUE;
+		loading_screen.tail_started = now ? now : 1;
+		loading_screen.tail_frozen = 0;
+	}
+	else
+	{
+		loading_screen.active = FALSE;
+		progress_bar_end();
+	}
 	/* the level's first frame takes its time from here, not from before the load */
 	halo_main_time_restart();
 }
