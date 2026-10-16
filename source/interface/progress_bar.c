@@ -318,6 +318,8 @@ extern struct pixel_shader_definition regular_shader;
 extern unsigned long current_time;
 
 static boolean progress_bar_rendering_enabled= TRUE;
+/* port: port/linux/game/loading_screen.c */
+extern boolean halo_loading_screen_smooth(void);
 
 /* the compressed monk chant played behind the loading screen */
 byte compressed_monk_tone[18396]=
@@ -2086,7 +2088,9 @@ static void progress_bar_render(
 	ended) settles on its end without the wobble, which otherwise holds the
 	progress as much as 0.05 short of it for seconds, the picture still dimly
 	lit (the loading screen's hold waits for the end to be drawn) */
-	if (progress>=1.f)
+	if (halo_loading_screen_smooth())
+		/* the loading screen eases its progress itself, by time (loading_screen.c) */;
+	else if (progress>=1.f)
 		progress= (real)((progress - last_t)*0.2 + last_t);
 	else
 	progress= (real)((sin(wobble_phase)*0.05 + progress - last_t)*0.2 + last_t);

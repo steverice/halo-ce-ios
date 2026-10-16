@@ -5773,6 +5773,22 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 				hud_groups[group] = NULL;
 		}
 
+		/* a campaign level's frames before its first ticks (halo_stereo.h) present black on a flat
+		screen: the picture is cleared here, last, because a flash drawn over it can miss a frame while
+		its pipeline compiles (async shaders skip a draw whose pipeline isn't ready) */
+		if (!stereo_frame && halo_level_start_hold_flat())
+		{
+			struct gpu_clear hold_clear;
+			struct gpu_rect hold_whole = { 0, 0, (int32_t)back_buffer->target.gl_width,
+				(int32_t)back_buffer->target.gl_height };
+
+			memset(&hold_clear, 0, sizeof(hold_clear));
+			hold_clear.color_target = back_buffer->target.texture;
+			hold_clear.flags = GPU_CLEAR_COLOR;
+			hold_clear.channel_mask = GPU_CHANNEL_RED | GPU_CHANNEL_GREEN | GPU_CHANNEL_BLUE | GPU_CHANNEL_ALPHA;
+			hold_clear.color = 0xff000000u;
+			gpu_clear(&hold_clear, &hold_whole, 1);
+		}
 		if (trace_frame())
 			platform_log("present back buffer %08lx texture %u", (unsigned long)device.back_buffer.Data,
 				back_buffer->target.texture);

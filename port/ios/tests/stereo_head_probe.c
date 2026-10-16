@@ -127,6 +127,8 @@ void platform_log(const char *format, ...)
 int halo_cinematic_screen(void) { return game_letterbox; }
 int halo_scripted_camera(void) { return game_scripted_camera; }
 int halo_scripted_director_camera(void) { return 0; }
+int halo_level_first_tick_pending(void) { return 0; }
+int halo_level_start_campaign(void) { return 0; }
 int platform_fixed_timestep(void) { return 1; }
 /* the frame clock (debug.fixed_timestep: 1/30 s a frame), a frame each
 time stereo.c reads it (once a frame) */
