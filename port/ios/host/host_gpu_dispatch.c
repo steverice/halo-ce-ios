@@ -300,6 +300,8 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 	wrapped.present = present_wrapped;
 	wrapped.present_stereo = present_stereo_wrapped;
 	backend = &wrapped;
+	host_frame_counter_stop();
+	presented = 0;
 	frame_counter = (flags & GPU_INITIALIZE_FRAME_COUNTER) != 0;
 	if (frame_counter)
 		host_frame_counter_start((flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0, (flags & GPU_INITIALIZE_METAL) != 0);

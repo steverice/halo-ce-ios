@@ -203,6 +203,10 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
     'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
 run(BUILD/'benchmark-probe')
+# The optional host overlay's bounded timing window, including unavailable GPU samples.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/frame_counter_probe.c', 'port/ios/host/host_frame_counter_stats.c', '-o', BUILD/'frame-counter-probe')
+run(BUILD/'frame-counter-probe')
 # the Metal backend's redundant-state filter (metal_state_cache.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')

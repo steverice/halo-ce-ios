@@ -1,65 +1,126 @@
-/* debug.frame_counter: the renderer ("Metal" or "GL"), the frame number and
-   the game time over the game, so a
-moment can be named ("frame 840") and found again. With debug.fixed_timestep
-a frame is the same moment in every run and under either renderer. A UIKit
-label over the game's view: the renderer never draws it, so screenshots and
-debug.gpu_stats don't change. Updated from gpu_present, on the UI thread the
-game runs on. */
+/* debug.frame_counter is a host UI diagnostic. Wall time and rendered Present
+   calls are independent of simulation ticks and replay time. Existing renderer
+   timings feed a bounded window; UIKit text changes at most four times a second. */
 #import <UIKit/UIKit.h>
+#import <os/lock.h>
 #include "ios_host.h"
+#include "host_frame_counter_stats.h"
+#include <stdatomic.h>
 #include <time.h>
 
 static UILabel *label;
-static int fixed;
+static _Atomic int enabled, update_pending;
+static _Atomic unsigned generation, text_updates;
+static os_unfair_lock sample_lock = OS_UNFAIR_LOCK_INIT;
+static struct host_frame_counter_stats stats;
+static double first, next_update;
 static NSString *renderer;
-static struct timespec first;
 
-void host_frame_counter_start(int fixed_timestep,int metal) {
-    fixed=fixed_timestep;
-    renderer=metal?@"Metal":@"GL";
-    host_logf(HOST_LOG_INFO,"frame counter on (%s, %s time)",renderer.UTF8String,fixed?"game":"wall");
+static double wall_seconds(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (double)now.tv_sec + now.tv_nsec / 1e9;
 }
-
-static UILabel *make_label(void) {
-    UIWindow *window=nil;
-    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if(![scene isKindOfClass:UIWindowScene.class])continue;
-        for(UIWindow *candidate in ((UIWindowScene *)scene).windows)
-            if(candidate.isKeyWindow)window=candidate;
+static void on_main(dispatch_block_t block) {
+    if (NSThread.isMainThread) block();
+    else dispatch_async(dispatch_get_main_queue(), block);
+}
+static void remove_label(unsigned token) {
+    on_main(^{
+        if (token != atomic_load(&generation)) return;
+        [label removeFromSuperview];
+        label = nil;
+    });
+}
+void host_frame_counter_stop(void) {
+    atomic_store(&enabled, 0);
+    unsigned token = atomic_fetch_add(&generation, 1) + 1;
+    os_unfair_lock_lock(&sample_lock);
+    host_frame_counter_stats_reset(&stats);
+    os_unfair_lock_unlock(&sample_lock);
+    remove_label(token);
+}
+void host_frame_counter_start(int fixed_timestep, int metal) {
+    host_frame_counter_stop();
+    unsigned token = atomic_fetch_add(&generation, 1) + 1;
+    os_unfair_lock_lock(&sample_lock);
+    first = wall_seconds(); next_update = first;
+    renderer = metal ? @"Metal" : @"GL";
+    atomic_store(&text_updates, 0);
+    atomic_store(&enabled, 1);
+    os_unfair_lock_unlock(&sample_lock);
+    remove_label(token);
+    host_logf(HOST_LOG_INFO, "frame counter on (%s; wall time, rendered frames; fixed timestep %s)",
+              metal ? "Metal" : "GL", fixed_timestep ? "on" : "off");
+}
+void host_frame_counter_sample(double interval, double cpu, double gpu) {
+    if (!atomic_load_explicit(&enabled, memory_order_relaxed)) return;
+    os_unfair_lock_lock(&sample_lock);
+    if (atomic_load(&enabled)) host_frame_counter_stats_sample(&stats, interval, cpu, gpu);
+    os_unfair_lock_unlock(&sample_lock);
+}
+static UIView *overlay_root(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows)
+            if (window.isKeyWindow) return window.rootViewController.view;
     }
-    UIView *root=window.rootViewController.view;
-    if(!root)return nil;
-    UILabel *made=[UILabel new];
-    made.font=[UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightSemibold];
-    made.textColor=UIColor.whiteColor;
-    made.backgroundColor=[UIColor colorWithWhite:0 alpha:0.55];
-    made.textAlignment=NSTextAlignmentCenter;
-    made.layer.cornerRadius=6;made.clipsToBounds=YES;
-    made.userInteractionEnabled=NO;
-    made.translatesAutoresizingMaskIntoConstraints=NO;
+    return nil;
+}
+static UILabel *make_label(UIView *root) {
+    UILabel *made = [UILabel new];
+    made.font = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightSemibold];
+    made.textColor = UIColor.whiteColor;
+    made.backgroundColor = [UIColor colorWithWhite:0 alpha:0.65];
+    made.textAlignment = NSTextAlignmentCenter;
+    made.numberOfLines = 3;
+    made.layer.cornerRadius = 6; made.clipsToBounds = YES;
+    made.userInteractionEnabled = NO;
+    made.translatesAutoresizingMaskIntoConstraints = NO;
     [root addSubview:made];
-    [made.leadingAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.leadingAnchor constant:8].active=YES;
-    [made.topAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.topAnchor constant:8].active=YES;
-    [made.widthAnchor constraintEqualToConstant:250].active=YES;
-    [made.heightAnchor constraintEqualToConstant:26].active=YES;
+    [made.leadingAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.leadingAnchor constant:8].active = YES;
+    [made.topAnchor constraintEqualToAnchor:root.safeAreaLayoutGuide.topAnchor constant:8].active = YES;
+    [made.trailingAnchor constraintLessThanOrEqualToAnchor:root.safeAreaLayoutGuide.trailingAnchor constant:-8].active = YES;
+    NSLayoutConstraint *width = [made.widthAnchor constraintEqualToConstant:440];
+    width.priority = UILayoutPriorityDefaultHigh; width.active = YES;
+    [made.heightAnchor constraintEqualToConstant:62].active = YES;
     return made;
 }
-
+static NSString *milliseconds(double value) {
+    return value >= 0.0 ? [NSString stringWithFormat:@"%.2f ms", value] : @"n/a";
+}
 void host_frame_counter_show(unsigned long frame) {
-    @autoreleasepool {
-        struct timespec now;clock_gettime(CLOCK_MONOTONIC,&now);
-        if(!frame)first=now;
-        double elapsed=(double)(now.tv_sec-first.tv_sec)+(now.tv_nsec-first.tv_nsec)/1e9;
-        /* in the log too, with the real time since frame 0: to check the count
-           against debug.gpu_stats' frames, and the pace */
-        if(frame%600==0)host_logf(HOST_LOG_INFO,"frame counter: %lu, %.2f s since frame 0",frame,elapsed);
-        if(!label && !(label=make_label()))return;
-        double seconds=fixed?frame/30.0:elapsed;
-        unsigned long whole=(unsigned long)seconds;
-        /* game time as video timecode, minutes:seconds:frames (30 frames a
-           second); wall time with hundredths */
-        label.text=fixed?
-            [NSString stringWithFormat:@"%@  %lu  %lu:%02lu:%02lu",renderer,frame,whole/60,whole%60,frame%30]:
-            [NSString stringWithFormat:@"%@  %lu  %lu:%05.2f",renderer,frame,whole/60,seconds-60*(whole/60)];
-    }
+    if (!atomic_load_explicit(&enabled, memory_order_relaxed)) return;
+    double now = wall_seconds(), elapsed;
+    struct host_frame_counter_summary value;
+    unsigned token;
+    NSString *name;
+    os_unfair_lock_lock(&sample_lock);
+    if (!frame) first = now;
+    elapsed = now - first;
+    if (frame % 600 == 0) host_logf(HOST_LOG_INFO, "frame counter: %lu, %.2f wall s; %u text updates",
+                                   frame, elapsed, atomic_load(&text_updates));
+    if (now < next_update || !atomic_load(&enabled)) { os_unfair_lock_unlock(&sample_lock); return; }
+    if (atomic_exchange(&update_pending, 1)) { os_unfair_lock_unlock(&sample_lock); return; }
+    next_update = now + 0.25;
+    value = host_frame_counter_stats_read(&stats);
+    host_frame_counter_stats_reset(&stats);
+    token = atomic_load(&generation); name = renderer;
+    os_unfair_lock_unlock(&sample_lock);
+    on_main(^{ @autoreleasepool {
+        atomic_store(&update_pending, 0);
+        if (!atomic_load(&enabled) || token != atomic_load(&generation)) return;
+        UIView *root = overlay_root();
+        if (label.superview != root) { [label removeFromSuperview]; label = nil; }
+        if (!root) return;
+        if (!label) label = make_label(root);
+        unsigned long minutes = (unsigned long)elapsed / 60;
+        NSString *fps = value.fps > 0.0 ? [NSString stringWithFormat:@"%.1f FPS", value.fps] : @"FPS n/a";
+        NSString *frames = value.frames ? [NSString stringWithFormat:@"frame avg %.2f / max %.2f ms", value.average_ms, value.worst_ms] : @"frame avg/max n/a";
+        /* Metal reports work completed asynchronously, not utilization or a
+           guaranteed measurement of the frame whose number is displayed. */
+        label.text = [NSString stringWithFormat:@"%@ | wall %02lu:%05.2f | render frame %lu\n%@ | %@\nCPU avg %@ | GPU avg %@ (async)",
+                      name, minutes, elapsed - 60 * minutes, frame, fps, frames, milliseconds(value.cpu_ms), milliseconds(value.gpu_ms)];
+        atomic_fetch_add(&text_updates, 1);
+    } });
 }

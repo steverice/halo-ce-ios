@@ -37,8 +37,8 @@ void host_ios_touch_attach(struct SDL_Window *window);
 void host_ios_touch_reset(void);
 void host_ios_touch_pause(void);
 /* debug.frame_counter (host_frame_counter.m): a label in the window's corner
-showing the renderer, the frame number and the game time, 1/30 s a frame with
-fixed_timestep, else the time since the first frame */
+showing wall time and rendered frames, plus existing frame/CPU/GPU timings;
+these are not simulation ticks or replay time */
 /* the app in the background (host_lifecycle.m): the game's audio pauses and
 the game holds at its next Present until the app is back, since iOS ends an
 app that submits GPU work in the background and a closed visionOS window only
@@ -62,6 +62,8 @@ void host_frame_rate_scene(double rate);
 double host_frame_rate_limit(void);
 void host_frame_counter_start(int fixed_timestep, int metal);
 void host_frame_counter_show(unsigned long frame);
+void host_frame_counter_stop(void);
+void host_frame_counter_sample(double interval, double cpu, double gpu);
 int host_ios_gamepads(uint32_t *out, int capacity);
 int host_ios_gamepad_type(struct SDL_Gamepad *pad);
 int host_ios_gamepad_axis(struct SDL_Gamepad *pad, int axis);

@@ -144,6 +144,7 @@ void host_benchmark_frame_unshown(int why) {
 }
 
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period) {
+    host_frame_counter_sample(interval, cpu, gpu);
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
     os_unfair_lock_lock(&lock);
