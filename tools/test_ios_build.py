@@ -4,6 +4,19 @@ import pytest
 
 from tools import ios_build
 
+
+def test_ipad_multitasking_declares_all_distribution_required_orientations():
+    import plistlib
+
+    info = plistlib.loads((ios_build.ROOT / 'port/ios/Info.plist').read_bytes())
+    landscape = {'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'}
+    assert set(info['UISupportedInterfaceOrientations']) == landscape
+    if not info.get('UIRequiresFullScreen', False):
+        ipad = info.get('UISupportedInterfaceOrientations~ipad', info['UISupportedInterfaceOrientations'])
+        assert set(ipad) >= landscape | {
+            'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+        }
+
 # the iPhoneOS SDK's OpenGLES.tbd as Xcode 27 ships it, cut down to two symbols
 STUB = """--- !tapi-tbd
 tbd-version:     4
