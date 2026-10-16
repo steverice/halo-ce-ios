@@ -1678,6 +1678,17 @@
             "desktop"
           ]
         },
+        "benchmark_lip_sync": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use simulated, tick-driven mouths while recording or replaying benchmark takes. False keeps the original audio-driven mouths; true alone does not change normal play. Benchmark suites opt in for their replays without saving this setting.",
+          "x-environment": "HALO_BENCHMARK_LIP_SYNC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "benchmark_suite": {
           "type": "string",
           "default": "",

@@ -481,6 +481,16 @@ frame's time) and quits when the replay ends. The Metal renderer also logs,
 every 600 frames, how many refreshes frames stayed on screen, each frame's CPU
 and GPU time, and its render passes' memory traffic (`stderr.log`).
 
+Benchmark recordings use `debug.benchmark_lip_sync = true` to drive mouths
+from speech once per tick. Normal play and recordings use the original
+audio-driven mouths by default. The setting only affects an active action
+recording or replay. Device benchmark suites opt in for each replay without
+saving the setting; `tools/mac_run.py` opts in for controller replays and
+resets it for the next run. New action recordings label their mouth mode;
+older benchmark takes use simulated mouths. Benchmarks refuse takes labeled
+`lip_sync=original`: their audio-driven mouths cannot be reproduced during
+silent replay. Record them again with the benchmark setting enabled.
+
 ## Simulator
 
 Build with `--simulator`, then select and boot an ARM64 iPhone or iPad simulator

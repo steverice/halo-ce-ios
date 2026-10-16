@@ -128,6 +128,9 @@ static struct
 	/* the device benchmark's suite (benchmark_suite.c) owns the replays: several in one launch, started with
 	input_replay_begin; it times the frames itself, and the real controller is ignored throughout */
 	BOOL suite;
+	/* Only a benchmark suite's current replay opts in here; ordinary play uses the default-off config. */
+	BOOL benchmark_lip_sync;
+	BOOL recorded_original_lip_sync;
 	/* a replay begun while another level still plays waits for the next level: until the game time is seen to go
 	back, nothing is replayed and no segment is counted */
 	BOOL await_level;
@@ -201,6 +204,16 @@ static void actions_load(void)
 		return;
 	}
 	{
+		/* Older benchmark takes predate this tag and used simulated mouths implicitly. */
+		replay.recorded_original_lip_sync = strstr(line, " lip_sync=original") != NULL;
+		platform_log("debug.input_replay: recorded lip sync: %s%s",
+			replay.recorded_original_lip_sync ? "original" : "simulated",
+			strstr(line, " lip_sync=") ? "" : " (legacy take)");
+		if (!replay.recorded_original_lip_sync && !replay.benchmark_lip_sync &&
+			!config_boolean("debug.benchmark_lip_sync"))
+			platform_log("debug.input_replay: warning: this take needs debug.benchmark_lip_sync=true to match its simulated mouths; this replay may diverge");
+		if (replay.recorded_original_lip_sync)
+			platform_log("debug.input_replay: warning: original audio-driven mouths cannot be reproduced by a silent replay; record benchmark takes with debug.benchmark_lip_sync=true");
 		/* the stereo mode the recording was made in; an older header has none, which reads as off */
 		char recorded[32] = "off";
 		const char *tag = strstr(line, " stereo=");
@@ -655,6 +668,16 @@ static void configure(void)
 		replay.benchmark = config_boolean("debug.benchmark");
 		replay_load();
 		actions_load();
+		if (replay.benchmark && replay.recorded_original_lip_sync)
+		{
+			platform_log("debug.benchmark: refusing an original-mouth take; record it again with debug.benchmark_lip_sync=true");
+			exit(EXIT_FAILURE);
+		}
+		if (replay.benchmark && replay.action_count && !config_boolean("debug.benchmark_lip_sync"))
+		{
+			platform_log("debug.benchmark: simulated-mouth takes require debug.benchmark_lip_sync=true");
+			exit(EXIT_FAILURE);
+		}
 		seeds_load();
 		route_load();
 	}
@@ -663,7 +686,7 @@ static void configure(void)
 /* The device benchmark's suite: replays NAME (a path ending in ".input", or NULL or "" for none) from the next
 level's first tick, in place of whatever was replaying. From the first call on, the real controller is ignored
 while a level's game time runs. 1 if there is nothing to load or the recording loaded with at least one state */
-int input_replay_begin(const char *name)
+int input_replay_begin(const char *name, int benchmark_lip_sync)
 {
 	replay.configured = TRUE;
 	free(replay.states);
@@ -683,6 +706,7 @@ int input_replay_begin(const char *name)
 	}
 	if (!name || !*name)
 		return 1;
+	replay.benchmark_lip_sync = benchmark_lip_sync != 0;
 	{
 		const char *base = strrchr(name, '/');
 
@@ -692,6 +716,11 @@ int input_replay_begin(const char *name)
 	actions_path(replay.replay_path, replay.replay_actions_path, sizeof(replay.replay_actions_path));
 	replay_load();
 	actions_load();
+	if (benchmark_lip_sync && replay.recorded_original_lip_sync)
+	{
+		platform_log("benchmark suite: refusing an original-mouth take; record it again with debug.benchmark_lip_sync=true");
+		return 0;
+	}
 	/* (a take's .seeds, both random seeds at every tick; and its .route: the older segment seeds, and whether it
 	began after its level's opening was skipped) */
 	seeds_load();
@@ -980,6 +1009,17 @@ unsigned char input_replay_sim_isolated(void)
 	return tick_seeds_wanted();
 }
 
+/* Mouth animation is a benchmark-only approximation. Do not couple it to the RNG/scripted-speech isolation:
+   recording normal play keeps the original mixer behavior, and a completed or cleared replay releases it. */
+unsigned char input_replay_benchmark_lip_sync(void)
+{
+	if (!config_boolean("debug.benchmark_lip_sync") && !replay.benchmark_lip_sync)
+		return FALSE;
+	if (replay.action_count)
+		return !replay.await_level && !replay.replay_finished && !replay.recorded_original_lip_sync;
+	return *replay.record_actions_path && !replay.record_ended;
+}
+
 /* whether a replay is under way, which plays no sound */
 unsigned char input_replay_sound_silent(void)
 {
@@ -1081,10 +1121,11 @@ void input_replay_tick_action(void *action)
 			{
 				const char *stereo = config_string("display.stereo");
 
+				fprintf(replay.actions_file, "%s lip_sync=%s", ACTION_HEADER,
+					input_replay_benchmark_lip_sync() ? "simulated" : "original");
 				if (stereo && *stereo && strcmp(stereo, "off"))
-					fprintf(replay.actions_file, "%s stereo=%s\n", ACTION_HEADER, stereo);
-				else
-					fprintf(replay.actions_file, "%s\n", ACTION_HEADER);
+					fprintf(replay.actions_file, " stereo=%s", stereo);
+				fputc('\n', replay.actions_file);
 			}
 			{
 				char seeds_path[512];

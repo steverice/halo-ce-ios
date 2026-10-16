@@ -102,15 +102,32 @@ static int real_number(const char *text, double low, double high, double *value)
     if (errno || *end || !isfinite(n) || n < low || n > high) return 0;
     *value = n; return 1;
 }
-static int header(char **cursor, const char *expected, int stereo)
+static int header(char **cursor, const char *expected, int metadata)
 {
     char *line = line_next(cursor);
     size_t length = strlen(expected);
+    int stereo_seen = 0, lip_sync_seen = 0;
     if (!line) return 0;
     if (!strcmp(line, expected)) return 1;
-    if (!stereo || strncmp(line, expected, length) || strncmp(line + length, " stereo=", 8)) return 0;
-    line += length + 8;
-    return !strcmp(line, "off") || !strcmp(line, "head") || !strcmp(line, "side_by_side") || !strcmp(line, "screen");
+    if (!metadata || strncmp(line, expected, length)) return 0;
+    line += length;
+    while (*line) {
+        char *end;
+        if (*line++ != ' ' || !*line) return 0;
+        end = strchr(line, ' ');
+        if (end) *end = 0;
+        if (!strncmp(line, "stereo=", 7) && !stereo_seen++) {
+            const char *value = line + 7;
+            if (strcmp(value, "off") && strcmp(value, "head") && strcmp(value, "side_by_side") && strcmp(value, "screen")) return 0;
+        } else if (!strncmp(line, "lip_sync=", 9) && !lip_sync_seen++) {
+            const char *value = line + 9;
+            if (strcmp(value, "original") && strcmp(value, "simulated")) return 0;
+        } else return 0;
+        if (!end) break;
+        *end = ' ';
+        line = end;
+    }
+    return 1;
 }
 static int input_valid(char *text)
 {

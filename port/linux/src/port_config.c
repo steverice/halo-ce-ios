@@ -765,6 +765,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.benchmark", _config_boolean, "false", "HALO_BENCHMARK", _environment_value, _platform_all,
 		"With debug.input_replay: time every frame of the replay, write\n"
 		"benchmark-<name>-<time>.txt and quit when the replay ends." },
+	{ "debug.benchmark_lip_sync", _config_boolean, "false", "HALO_BENCHMARK_LIP_SYNC", _environment_value, _platform_all,
+		"Use simulated, tick-driven mouths while recording or replaying benchmark takes.\n"
+		"False keeps the original audio-driven mouths; true alone does not change normal play.\n"
+		"Benchmark suites opt in for their replays without saving this setting." },
 	{ "debug.benchmark_suite", _config_string, "\"\"", "HALO_BENCHMARK_SUITE", _environment_value, _platform_ios,
 		"\"quick\" or \"full\" runs the device benchmark and quits: the suite's\n"
 		"scenes, several times over at different settings, with a report in\n"

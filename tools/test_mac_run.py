@@ -625,6 +625,25 @@ def test_native_run_rewrites_config_each_run(tmp_path, monkeypatch, native):
     assert "a10.rec" not in launches[1]["config"]
 
 
+def test_native_replay_mouth_opt_in_does_not_leak_to_next_run(tmp_path, monkeypatch, native):
+    import tomllib
+    launches = []
+    monkeypatch.setattr(mac_run, "launch_native", fake_launches(launches))
+    mac_run.run_native(native_args(tmp_path, native, set=['debug.input_replay="a10.input"']))
+    mac_run.run_native(native_args(tmp_path, native))
+    assert tomllib.loads(launches[0]["config"])["debug"]["benchmark_lip_sync"] is True
+    assert tomllib.loads(launches[1]["config"])["debug"]["benchmark_lip_sync"] is False
+
+
+def test_native_replay_can_explicitly_keep_original_mouths(tmp_path, monkeypatch, native):
+    import tomllib
+    launches = []
+    monkeypatch.setattr(mac_run, "launch_native", fake_launches(launches))
+    mac_run.run_native(native_args(tmp_path, native, set=[
+        'debug.input_replay="a10.input"', 'debug.benchmark_lip_sync=false']))
+    assert tomllib.loads(launches[0]["config"])["debug"]["benchmark_lip_sync"] is False
+
+
 def seeding(monkeypatch, tmp_path):
     """an empty data folder, extracted maps to seed it from, and cp -c -R done by copytree"""
     shutil.rmtree(tmp_path / "data/maps")

@@ -205,6 +205,7 @@ DEFAULTS = {
     "debug.input_record": '""',
     "debug.input_replay": '""',
     "debug.benchmark": "false",
+    "debug.benchmark_lip_sync": "false",
     "debug.benchmark_suite": '""',
     "debug.gpu_stats": "false",
     "debug.gpu_trace_frame": "-1",
@@ -924,6 +925,10 @@ def prepare(args, documents, rewrite=False):
     for assignment in args.set:
         key, value = assignment.split("=", 1)
         settings[key.strip()] = value.strip()
+    # Explicit controller replays opt into the benchmark takes' simulated mouths. Shader replay is unrelated.
+    if settings["debug.input_replay"].strip('"'):
+        if not any(item.split("=", 1)[0].strip() == "debug.benchmark_lip_sync" for item in args.set):
+            settings["debug.benchmark_lip_sync"] = "true"
     config = documents / "config.toml"
     # rewrite: from DEFAULTS and this run's settings only (the native runner's persistent data
     # folder); otherwise merged into the container's file, as the iPad runner always has

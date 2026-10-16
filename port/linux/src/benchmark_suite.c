@@ -38,7 +38,7 @@ int host_benchmark_next(char *text, unsigned int size);
 void host_benchmark_window(int open, int width, int height);
 void host_benchmark_end(const char *status, const char *note);
 /* input_replay.c */
-int input_replay_begin(const char *name);
+int input_replay_begin(const char *name, int benchmark_lip_sync);
 int input_replay_ended(void);
 long input_replay_segment(void);
 double input_replay_length_ticks(void);
@@ -142,7 +142,7 @@ static void finish(const char *status, const char *note)
 {
 	platform_log("benchmark suite: %s ends: %s%s%s", suite.scene, status, *note ? ", " : "", note);
 	host_benchmark_end(status, note);
-	input_replay_begin(NULL);
+	input_replay_begin(NULL, 0);
 	enter(suite_next);
 }
 
@@ -243,7 +243,7 @@ static void next_run(void)
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
 	halo_model_lod_set(suite.model_lod_max);
 	/* (a recording begun now waits for its own level's first tick; with none, the controller is ignored) */
-	if (!input_replay_begin(*suite.recording ? path : NULL))
+	if (!input_replay_begin(*suite.recording ? path : NULL, 1))
 	{
 		finish("skipped", "the recording could not be read");
 		return;

@@ -276,6 +276,25 @@ def test_good_optional_metadata_and_checks(tmp_path):
     data_pack.validate_recordings(folder)
 
 
+@pytest.mark.parametrize("metadata", ["lip_sync=original", "lip_sync=simulated stereo=head",
+                                      "stereo=off lip_sync=simulated"])
+def test_recording_mouth_metadata(tmp_path, metadata):
+    folder = recording(tmp_path / "recordings")
+    actions = folder / "test-route.actions"
+    actions.write_text(actions.read_text().replace("halo action recording 1", "halo action recording 1 " + metadata))
+    data_pack.validate_recordings(folder)
+
+
+@pytest.mark.parametrize("metadata", ["lip_sync=unknown", "lip_sync=original lip_sync=simulated",
+                                      "lip_sync=simulated stereo=off stereo=head"])
+def test_recording_refuses_invalid_mouth_metadata(tmp_path, metadata):
+    folder = recording(tmp_path / "recordings")
+    actions = folder / "test-route.actions"
+    actions.write_text(actions.read_text().replace("halo action recording 1", "halo action recording 1 " + metadata))
+    with pytest.raises(ValueError):
+        data_pack.validate_recordings(folder)
+
+
 def test_bad_update_preserves_existing_output(tmp_path):
     args = arguments(tmp_path)
     output = tmp_path / "pack.json"
