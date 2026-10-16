@@ -35,16 +35,23 @@ you need your own disc image, imported into the app as the README describes.
 
 ## Testing
 
-Run these before you open a pull request:
+Run the portable tooling suite with Python 3.11 or newer before you open a
+pull request:
 
 ```sh
-# The runtime, memory, audio and disc importer regressions
-python3 tools/ios_test.py
-
-# The Python tools' unit tests
-python3 -m pytest tools/test_ios_build.py tools/test_ios_bridges.py \
-  tools/test_ios_embed_guest.py tools/test_mac_run.py
+uv run --no-project --with-requirements tools/requirements-ci.txt python tools/ci_test.py
 ```
+
+Run native Apple regressions separately on an Apple silicon Mac with Xcode:
+
+```sh
+python3 tools/ios_test.py
+```
+
+The [CI guide](docs/ci.md) lists the automated checks, dependencies and known
+coverage gaps. visionOS builds retain their existing advisory status. The
+[release guide](docs/releasing.md) covers the separate, manually approved
+release workflow and its required repository protection settings.
 
 If your change touches rendering, gameplay or the importer, also run it on a
 device or in the simulator and say in the pull request what you tried: the

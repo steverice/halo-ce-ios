@@ -45,13 +45,17 @@ machine.
 
 ## Test
 
-Run before every commit that changes code:
+Run the portable tooling suite with Python 3.11 or newer before every commit
+that changes code:
+
+```sh
+uv run --no-project --with-requirements tools/requirements-ci.txt python tools/ci_test.py
+```
+
+Run native Apple regressions separately on an Apple silicon Mac with Xcode:
 
 ```sh
 python3 tools/ios_test.py
-
-python3 -m pytest tools/test_ios_build.py tools/test_ios_bridges.py \
-  tools/test_ios_embed_guest.py tools/test_mac_run.py tools/test_profile_catalog_check.py tools/test_data_pack.py
 ```
 
 A change to rendering, gameplay or the importer also needs a run in the
@@ -60,9 +64,11 @@ the device, OS version, renderer (`display.renderer`) and level you tried. A
 change to shared code in `port/linux` or `source/` should still pass
 `python3 tools/ci_build.py linux release`.
 
-CI (`.github/workflows/ios.yml`) runs `ios_test.py` and the unsigned and
-simulator builds for iOS, tvOS and visionOS; `build.yml` builds the upstream
-Linux and Windows ports.
+The [CI guide](docs/ci.md) describes the portable gate, native regressions,
+unsigned Apple builds and known coverage gaps. visionOS builds retain their
+existing advisory status. The upstream Linux and Windows workflow is manual.
+The [release guide](docs/releasing.md) covers the separate, manually approved
+release workflow and its required repository protection settings.
 
 ## Code style
 
