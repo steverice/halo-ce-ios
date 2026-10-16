@@ -27,10 +27,15 @@ models = ["AppleTV5,3"]
 
 # Gameplay. The class profile's render height is 1080; half of it each way is 960x540.
 [display]
+texture_idle_seconds = 30
 render_scale = 0.5
 anisotropic_filtering = 4
 model_lod = "auto"
 shadow_map_size = 256
+
+[evidence."display.texture_idle_seconds"]
+basis = "assumed"
+why = "About 1,450 MB of the 2 GB is available to the app and b30 peaks at 660 MB with the high-res HUD off and 775 to 797 MB on, so unused textures should go sooner than the 60 second default. 30 seconds is half the default and equals the 1800-frame window at 60 frames a second. Not measured: the memory the shorter window frees."
 
 [evidence."display.render_scale"]
 basis = "measured"

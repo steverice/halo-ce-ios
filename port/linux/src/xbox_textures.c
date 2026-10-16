@@ -818,8 +818,8 @@ struct texture_entry
 
 #define TEXTURE_BUCKET_COUNT 4096
 #define TEXTURE_SWEEP_SECONDS 10
-#define TEXTURE_IDLE_SECONDS 30
-#define TEXTURE_SWEEP_COUNT (TEXTURE_IDLE_SECONDS / TEXTURE_SWEEP_SECONDS)
+/* display.texture_idle_seconds goes up to 600: the most sweeps it can look back */
+#define TEXTURE_SWEEP_COUNT 60
 #define MAXIMUM_PALETTE_VARIANTS 8
 
 static struct texture_entry *texture_buckets[TEXTURE_BUCKET_COUNT];
@@ -1274,9 +1274,27 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 	return texture_entry_result(entry, type, description);
 }
 
+/* how many sweeps back the frame is taken that a texture must have been
+drawn since: display.texture_idle_seconds (a device profile's, or
+debug.texture_idle_seconds when not negative) in sweeps, at least one */
+static unsigned long texture_idle_sweeps(void)
+{
+	double seconds = config_real("debug.texture_idle_seconds");
+	unsigned long sweeps;
+
+	if (seconds < 0.0)
+		seconds = config_real("display.texture_idle_seconds");
+	sweeps = (unsigned long)(seconds / TEXTURE_SWEEP_SECONDS + 0.5);
+	if (sweeps < 1)
+		sweeps = 1;
+	if (sweeps > TEXTURE_SWEEP_COUNT)
+		sweeps = TEXTURE_SWEEP_COUNT;
+	return sweeps;
+}
+
 void xgpu_texture_cache_begin_frame(void)
 {
-	unsigned long index, idle_since;
+	unsigned long index, idle_since, sweeps;
 	unsigned long changed = hud_hires_settings_changed();
 	Uint64 now;
 
@@ -1302,12 +1320,14 @@ void xgpu_texture_cache_begin_frame(void)
 	if (now < texture_next_sweep)
 		return;
 	texture_next_sweep = now + TEXTURE_SWEEP_SECONDS * 1000;
-	/* drop the textures not used since the sweep half a minute ago (none
-	before the first sweeps, which find frame 0). The time is counted in
+	sweeps = texture_idle_sweeps();
+	/* drop the textures not used since the sweep the idle time ago (none
+	before that many sweeps, which find frame 0). The time is counted in
 	seconds, not frames: 1800 frames, half a minute at 60 frames a second, is
 	five seconds at 360, and a texture out of sight that long was converted
 	and uploaded again when it came back into view */
-	idle_since = texture_sweep_frames[texture_sweep_count % TEXTURE_SWEEP_COUNT];
+	idle_since = texture_sweep_count < sweeps ? 0 :
+		texture_sweep_frames[(texture_sweep_count - sweeps) % TEXTURE_SWEEP_COUNT];
 	texture_sweep_frames[texture_sweep_count % TEXTURE_SWEEP_COUNT] = texture_frame;
 	texture_sweep_count++;
 	for (index = 0; index < TEXTURE_BUCKET_COUNT; index++)

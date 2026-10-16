@@ -283,6 +283,15 @@ static void check_refusals(void)
 		"models = [\"Grace1,1\"]\n[input]\naim_loss_grace = 9.0\n");
 	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
 	assert(profile.count == 0 && strstr(logged, "input.aim_loss_grace has a value"));
+	/* the texture cache's idle time is the other, within 10 to 600 seconds */
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[display]\ntexture_idle_seconds = 30\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 1 && has(&profile, "display.texture_idle_seconds", "30"));
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[display]\ntexture_idle_seconds = 5\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 0 && strstr(logged, "display.texture_idle_seconds has a value"));
 
 	/* files that are no profile: not parsed, another schema, no heading, too large. The launch goes on */
 	write_file("broken.toml", "schema = 1\nname = \"Broken\nkind = [[[\n");

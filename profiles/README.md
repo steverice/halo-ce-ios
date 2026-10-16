@@ -2,7 +2,7 @@
 
 A device profile is the set of graphics settings VISR uses on one Apple device: one file here for each model we have measured, and one for each class of device (every Apple TV, every Mac) for the models we have not. The app picks the files for the device it runs on at every launch.
 
-A profile only ever sets graphics settings and the tracking-loss grace (`input.aim_loss_grace`, how long a hand-tracking dropout holds the aim), from a fixed list. Controls, sound, network and everything else stay the player's on every device, and anything the player set themselves wins over the profile.
+A profile only ever sets graphics settings, the tracking-loss grace (`input.aim_loss_grace`, how long a hand-tracking dropout holds the aim) and the texture cache's idle time (`display.texture_idle_seconds`, how long an undrawn texture stays in memory), from a fixed list. Controls, sound, network and everything else stay the player's on every device, and anything the player set themselves wins over the profile.
 
 ## How a value is chosen
 
@@ -168,5 +168,10 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | Setting | Type and accepted values | Default (Apple) | Contexts | Description |
 | --- | --- | --- | --- | --- |
 | `input.aim_loss_grace` | real, 0 to 5 | `0.5` | gameplay | With input.aim = "controller": seconds of lost hand tracking during which the last hand aim is held, in local and network play, before the aim eases to the head over 0.2 seconds (0 to 5). |
+### display
+
+| Setting | Type and accepted values | Default (Apple) | Contexts | Description |
+| --- | --- | --- | --- | --- |
+| `display.texture_idle_seconds` | real, 10 to 600 | `60.0` | gameplay | Seconds a texture goes undrawn before the cache drops it, 10 to 600. |
 
 <!-- END GENERATED SETTINGS profile -->

@@ -17,8 +17,11 @@ static struct texture_entry *texture_buckets[TEXTURE_BUCKET_COUNT];
 static struct { struct texture_entry *entry; } recent_textures[4];
 static Uint64 clock_ms;
 static Uint64 SDL_GetTicks(void) { return clock_ms; }
-static void glDeleteTextures(int count, const GLuint *texture) { }
+static void gpu_texture_destroy(GLuint texture) { }
 static void xgpu_gl_state_invalidate(void) { }
+/* display.texture_idle_seconds and debug.texture_idle_seconds */
+static double idle_setting = 30.0, debug_setting = -1.0;
+static double config_real(const char *name) { return name[0] == 'd' && name[1] == 'e' ? debug_setting : idle_setting; }
 /* the high-res HUD's settings never change here */
 static unsigned long hud_hires_settings_changed(void) { return 0; }
 static int hud_hires_bitmap_affected(unsigned long address, long width, long height, unsigned long changed)
@@ -78,11 +81,11 @@ static double play(int rate, double seen_until, double seconds)
 	return -1.0;
 }
 
-static void check_idle(double idle)
+static void check_idle(double idle, double lowest)
 {
-	/* (a sweep every 10 s drops what was not drawn since the sweep 30 s
-	before it: 30 to 40 s after) */
-	CHECK(idle >= 30.0 && idle <= 41.0, "dropped %.1f s after it was last drawn, not 30 to 40", idle);
+	/* (a sweep every 10 s drops what was not drawn since the sweep the idle
+	time before it: the idle time to 10 s more after) */
+	CHECK(idle >= lowest && idle <= lowest + 11.0, "dropped %.1f s after it was last drawn, not %.0f to %.0f", idle, lowest, lowest + 10.0);
 }
 
 int main(int argc, char **argv)
@@ -93,17 +96,36 @@ int main(int argc, char **argv)
 	{
 		/* at 360 frames a second, a texture out of sight for five seconds
 		(1800 frames) is kept */
-		check_idle(play(360, 1.0, 60.0));
+		check_idle(play(360, 1.0, 60.0), 30.0);
 	}
 	CASE("steady")
 	{
 		/* at 60 frames a second, as it was in frames: half a minute */
-		check_idle(play(60, 1.0, 80.0));
+		check_idle(play(60, 1.0, 80.0), 30.0);
 	}
 	CASE("late")
 	{
 		/* round the sweeps more than once */
-		check_idle(play(360, 25.0, 80.0));
+		check_idle(play(360, 25.0, 80.0), 30.0);
+	}
+	CASE("profile")
+	{
+		/* the default, a minute, at a frame rate that would have dropped it in five seconds */
+		idle_setting = 60.0;
+		check_idle(play(360, 1.0, 100.0), 60.0);
+	}
+	CASE("debug")
+	{
+		/* the debug value in place of the profile's, a shorter and a longer one */
+		idle_setting = 60.0;
+		debug_setting = 20.0;
+		check_idle(play(120, 1.0, 60.0), 20.0);
+	}
+	CASE("long")
+	{
+		/* the longest, past the sweeps remembered once round */
+		idle_setting = 600.0;
+		check_idle(play(30, 1.0, 700.0), 600.0);
 	}
 	return 0;
 }

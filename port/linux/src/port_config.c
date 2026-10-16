@@ -367,6 +367,11 @@ static const struct config_setting config_settings[] =
 		"the menus are drawn with, as a fraction of the view's along each axis, 0.5\n"
 		"to 1. Less takes less memory (0.5: a quarter) and looks softer. Read at\n"
 		"start." },
+	{ "display.texture_idle_seconds", _config_real, "60.0", "HALO_TEXTURE_IDLE_SECONDS", _environment_value, _platform_all,
+		"Seconds a texture goes undrawn before the cache drops it, 10 to 600. The\n"
+		"cache sweeps every 10 seconds, so a texture goes 0 to 10 seconds after\n"
+		"that. A device profile sets it for the device's memory; it is not a player\n"
+		"choice." },
 	{ "input.turn", _config_string, "\"snap\"", "HALO_TURN", _environment_value, _platform_ios,
 		"With display.stereo = \"head\": how the right stick turns the view: \"snap\"\n"
 		"(default; a flick turns input.snap_angle at once), \"smooth\" (steadily, at\n"
@@ -579,6 +584,10 @@ static const struct config_setting config_settings[] =
 		"Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand\n"
 		"tracking that hold the last aim, in place of the device profile's. Negative\n"
 		"uses the profile's." },
+	{ "debug.texture_idle_seconds", _config_real, "-1.0", "HALO_TEXTURE_IDLE_SECONDS_DEBUG", _environment_value, _platform_all,
+		"Tuning display.texture_idle_seconds live: from 10 up, the seconds a\n"
+		"texture goes undrawn before the cache drops it, in place of the device\n"
+		"profile's. Negative uses the profile's." },
 	{ "debug.aim_steady_level", _config_real, "-1.0", "HALO_AIM_STEADY_LEVEL", _environment_value, _platform_ios,
 		"Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a\n"
 		"target the hand's aim counts as (1.0 a red reticle), in place of the\n"

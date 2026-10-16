@@ -604,6 +604,17 @@
             "apple"
           ]
         },
+        "texture_idle_seconds": {
+          "type": "number",
+          "default": 60.0,
+          "description": "Seconds a texture goes undrawn before the cache drops it, 10 to 600. The cache sweeps every 10 seconds, so a texture goes 0 to 10 seconds after that. A device profile sets it for the device's memory; it is not a player choice.",
+          "x-environment": "HALO_TEXTURE_IDLE_SECONDS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "theater_width": {
           "type": "number",
           "default": 60.0,
@@ -1341,6 +1352,17 @@
           "x-environment-style": "value",
           "x-platforms": [
             "apple"
+          ]
+        },
+        "texture_idle_seconds": {
+          "type": "number",
+          "default": -1.0,
+          "description": "Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. Negative uses the profile's.",
+          "x-environment": "HALO_TEXTURE_IDLE_SECONDS_DEBUG",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
           ]
         },
         "aim_steady_level": {

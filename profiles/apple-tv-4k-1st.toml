@@ -14,12 +14,17 @@ platform = "tvos"
 models = ["AppleTV6,2"]
 
 [display]
+texture_idle_seconds = 30
 render_height = 720
 anisotropic_filtering = 4
 model_lod = "auto"
 
 [scene.menu.display]
 render_height = 1080
+
+[evidence."display.texture_idle_seconds"]
+basis = "assumed"
+why = "This device has 3 GB, the tightest memory after the Apple TV HD. 30 seconds is half the 60 second default and equals the 1800-frame window at 60 frames a second. Not measured: the memory the shorter window frees."
 
 [evidence."display.render_height"]
 basis = "assumed"

@@ -301,6 +301,7 @@ the setting for one start of the game. It has priority over the file.
 | `display.hud_depth_relax` | number | `1.0` | apple | `HALO_HUD_DEPTH_RELAX` | With display.hud_depth: the seconds a piece takes to go back from the nearest to its resting distance, 0 to 5. |
 | `display.hud_depth_relax_delay` | number | `0.5` | apple | `HALO_HUD_DEPTH_RELAX_DELAY` | With display.hud_depth: the seconds a piece waits, once nothing near is under it, before it goes back, 0 to 5. |
 | `display.hud_resolution` | number | `1.0` | apple | `HALO_HUD_RESOLUTION` | HEAD mode and the side-by-side view: the pixels the HUD, the crosshair and the menus are drawn with, as a fraction of the view's along each axis, 0.5 to 1. |
+| `display.texture_idle_seconds` | number | `60.0` | apple, desktop | `HALO_TEXTURE_IDLE_SECONDS` | Seconds a texture goes undrawn before the cache drops it, 10 to 600. |
 ### input
 
 | Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |
@@ -346,6 +347,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.controller_axes` | boolean | `false` | apple | `HALO_CONTROLLER_AXES` | HEAD mode with Sense controllers (visionOS 27): log the right controller's aim and grip axes in the head's frame twice a second ("spatial: right aim x (...) y (...) z (...) grip ..."), to measure which of the aim's axes points along the barrel. |
 | `debug.aim_trace` | boolean | `false` | apple | `HALO_AIM_TRACE` | Controller aim: log a line every drawn frame while a hand aims, with the sightline's and the first-person gun's yaw and pitch, the reticle's distance, the action's blend and gate and the magnification. |
 | `debug.aim_loss_grace` | number | `-1.0` | apple | `HALO_AIM_LOSS_GRACE_DEBUG` | Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand tracking that hold the last aim, in place of the device profile's. |
+| `debug.texture_idle_seconds` | number | `-1.0` | apple, desktop | `HALO_TEXTURE_IDLE_SECONDS_DEBUG` | Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. |
 | `debug.aim_steady_level` | number | `-1.0` | apple | `HALO_AIM_STEADY_LEVEL` | Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. |
 ### display
 
