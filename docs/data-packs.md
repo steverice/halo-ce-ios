@@ -25,7 +25,7 @@ python3 tools/data_pack.py --kind profiles --channel tester \
   --signing-key /private/path/signing-seed --output profiles-2.json
 ```
 
-The `profiles-2` compatibility identifier admits external-display sections. Keep `profiles.json` serving `profiles-1` snapshots for earlier apps; the publisher refuses external sections in that format. New apps fetch `profiles-2.json` and refuse `profiles-1` snapshots.
+The `profiles-2` compatibility identifier admits external-display sections; the publisher refuses external sections in a `profiles-1` snapshot. Apps fetch `profiles-2.json` and refuse `profiles-1` snapshots, and the project's feeds serve only `profiles-2`: apps built before it keep their bundled profiles.
 
 Each profile snapshot contains the complete profile set and `hardware/catalog.toml`. The publisher and app reject incomplete class coverage, overlapping exact device identities, invalid catalog references, unknown settings and out-of-range graphics values. User overrides keep their existing precedence.
 
