@@ -246,6 +246,14 @@ run(BUILD/'metal-compile-probe-thread')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_compile_probe.c', '-o', BUILD/'metal-compile-probe')
 run(BUILD/'metal-compile-probe')
+# per-load compilation progress: early completion, cache hits, stale workers and
+# the existing loading animation's measured bounds, without a Metal device
+for sanitizer in ('thread', 'address,undefined'):
+    run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', f'-fsanitize={sanitizer}',
+        '--include-directory=port/linux/src', '--include-directory=port/ios/host', 'port/ios/tests/compile_progress_probe.c',
+        f'--output={BUILD / "compile-progress-probe"}')
+    run(BUILD/'compile-progress-probe')
+run('python3', 'tools/test_loading_progress.py')
 # the Apple host's socket adapter: every address it returns is laid out as the game reads it (a datagram's
 # source read with recvmsg was not, so a host took an internet play joiner's datagrams for its own machine's)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Dst_mtim=st_mtimespec',

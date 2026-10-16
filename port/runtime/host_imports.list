@@ -85,6 +85,7 @@ host_gpu_warm_end
 host_gpu_pipeline_built_take
 host_gpu_frame_context
 host_gpu_compiles_outstanding
+host_gpu_compile_progress
 host_gpu_initialize
 # stereo (halo_stereo.h)
 host_stereo_frame

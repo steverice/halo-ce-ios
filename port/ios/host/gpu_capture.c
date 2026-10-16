@@ -880,6 +880,11 @@ static void capture_companion_set(gpu_texture target)
 	capture.backend.companion_set(target);
 }
 
+static void capture_compile_progress(uint32_t action, struct gpu_compile_progress *progress)
+{
+	capture.backend.compile_progress(action, progress);
+}
+
 static uint32_t capture_compiles_outstanding(void)
 {
 	return capture.backend.compiles_outstanding();

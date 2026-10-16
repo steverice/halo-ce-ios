@@ -1775,6 +1775,11 @@ static void validate_companion_set(gpu_texture target)
 	validation.backend.companion_set(target);
 }
 
+static void validate_compile_progress(uint32_t action, struct gpu_compile_progress *progress)
+{
+	validation.backend.compile_progress(action, progress);
+}
+
 static uint32_t validate_compiles_outstanding(void)
 {
 	return validation.backend.compiles_outstanding();

@@ -200,3 +200,8 @@ void gpu_validation_note(uint32_t reason, uint32_t detail, uint32_t value)
 	host_gpu_validation_note(reason, detail, value);
 }
 #endif
+
+void gpu_compile_progress(uint32_t action, struct gpu_compile_progress *progress)
+{
+	host_gpu_compile_progress(action, progress);
+}

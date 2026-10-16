@@ -29,6 +29,7 @@ but never returns to its run loop, which would otherwise drain them.
 build with render validation; nothing otherwise */
 #include "gpu_validate.h"
 #include "metal_compile_async.h"
+#include "metal_compile_progress.h"
 #include "host_benchmark.h"
 #include "halo_display.h"
 #include "host_external.h"
@@ -1217,6 +1218,7 @@ those runs draw exactly the same frames. */
 static BOOL async_compiles;
 /* shaders and pipelines still compiling on workers */
 static _Atomic unsigned long compiles_outstanding;
+static struct metal_compile_progress loading_compiles = { .lock = PTHREAD_MUTEX_INITIALIZER };
 /* the launch's totals and this frame's skips (metal_compile_async.h) */
 static struct metal_compile_totals compile_totals;
 static struct metal_skip_frame skip_frame;
@@ -1311,6 +1313,7 @@ static gpu_shader gpu_metal_shader_create(uint32_t stage, const char *source)
 		{
 			BOOL play = !warming;
 			dispatch_group_t group = warming ? warm_group : nil;
+			uint64_t progress_token = metal_compile_progress_schedule(&loading_compiles);
 
 			dispatch_group_enter(record->compiled);
 			if (group)
@@ -1327,7 +1330,8 @@ static gpu_shader gpu_metal_shader_create(uint32_t stage, const char *source)
 					if (play)
 						compile_count(COMPILE_LIBRARY, begun, 1);
 					metal_compile_finished(&compile_totals, COMPILE_LIBRARY, CACurrentMediaTime() - begun);
-					shader_finish(record, stage, text, compiled, failure);
+					BOOL succeeded = shader_finish(record, stage, text, compiled, failure);
+					metal_compile_progress_finish(&loading_compiles, progress_token, succeeded);
 					atomic_fetch_sub(&compiles_outstanding, 1);
 					dispatch_group_leave(record->compiled);
 					if (group)
@@ -2533,6 +2537,7 @@ static void pipeline_request(const struct pipeline_key *key, MetalShader *vertex
 {
 	struct pipeline_key copy = *key;
 	dispatch_queue_t queue = compile_queue(play);
+	uint64_t progress_token = metal_compile_progress_schedule(&loading_compiles);
 
 	atomic_fetch_add(&compiles_outstanding, 1);
 	if (group)
@@ -2547,7 +2552,8 @@ static void pipeline_request(const struct pipeline_key *key, MetalShader *vertex
 				id pipeline = pipeline_build(&copy, vertex, pixel, play);
 
 				metal_compile_finished(&compile_totals, COMPILE_PIPELINE, CACurrentMediaTime() - begun);
-				pipeline_publish(&copy, pipeline);
+				id published = pipeline_publish(&copy, pipeline);
+				metal_compile_progress_finish(&loading_compiles, progress_token, published && published != [NSNull null]);
 				atomic_fetch_sub(&compiles_outstanding, 1);
 				if (group)
 					dispatch_group_leave(group);
@@ -2630,6 +2636,11 @@ static uint32_t gpu_metal_pipeline_built_take(struct gpu_pipeline_description *d
 	memcpy(description, (const struct gpu_pipeline_description *)built_during_play.bytes + built_taken++,
 		sizeof(*description));
 	return 1;
+}
+
+static void gpu_metal_compile_progress(uint32_t action, struct gpu_compile_progress *progress)
+{
+	metal_compile_progress_update(&loading_compiles, action, progress);
 }
 
 static uint32_t gpu_metal_compiles_outstanding(void)
@@ -2888,8 +2899,14 @@ static void gpu_metal_warm_end(void)
 			[descriptors addObject:pipeline_descriptor(&key, vertex, pixel, 0)];
 		}
 		made = [NSMutableArray arrayWithCapacity:names.count];
+		/* This synchronous path bypasses pipeline_request. Register the same
+		unique jobs before dispatch and retain their load generation through publication. */
+		NSMutableData *progress_tokens = [NSMutableData dataWithLength:names.count * sizeof(uint64_t)];
 		for (index = 0; index < names.count; index++)
+		{
 			[made addObject:[NSNull null]];
+			((uint64_t *)progress_tokens.mutableBytes)[index] = metal_compile_progress_schedule(&loading_compiles);
+		}
 		dispatch_apply(names.count, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(size_t item)
 		{
 			id pipeline = pipeline_make(descriptors[item]);
@@ -2900,7 +2917,11 @@ static void gpu_metal_warm_end(void)
 			}
 		});
 		for (index = 0; index < names.count; index++)
-			pipeline_publish(((NSData *)names[index]).bytes, made[index]);
+		{
+			id published = pipeline_publish(((NSData *)names[index]).bytes, made[index]);
+			metal_compile_progress_finish(&loading_compiles, ((const uint64_t *)progress_tokens.bytes)[index],
+				published && published != [NSNull null]);
+		}
 		warm_list = nil;
 		warm_group = nil;
 		archive_save();

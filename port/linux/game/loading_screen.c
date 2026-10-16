@@ -33,13 +33,15 @@ So a campaign level's load holds the screen itself:
   and its first frame all start after the screen has gone.
 
 The band's place is the load's progress, which moves smoothly and never
-back. Its target is the lesser of the time's share of the minimum and the
-work's share done, both scaled to end at COMPILE_END: the copy's first
-half (0 to 0.075), the read (to READ_SHARE) and the compiles (to
-COMPILE_END). While the work stalls (the compiles of a first launch take
-32 s on an Apple TV) the target creeps on toward the next boundary, a
-little each second, so the band does not stop. The displayed value eases
-toward the target with a time constant, so the frame rate does not matter.
+back. The copy fills the first half of READ_SHARE; when the level has been
+read, newly scheduled preparation jobs fill the range to COMPILE_END. Each
+library or pipeline job advances it when finished, including completions
+that preceded the first poll. The denominator is sealed after the map's
+warmup has registered its jobs. Cached resources need no new job; nested
+specializations and variants finish with their parent pipeline. Elapsed
+time alone does not advance the picture. Smoothing only approaches the
+measured target. Later first-draw work still gates the end through the
+outstanding count, without changing the sealed denominator.
 Once the work is done and the minimum has passed, the screen goes on into
 the level's start (the tail): the level's first ticks run behind it (the
 opening script needs three to start its cutscene and a few more for its fade
@@ -71,6 +73,7 @@ game.loading_screen = "on" and display.async_shaders = "on".
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 #include "../src/halo_stereo.h"
+#include "../src/halo_loading_progress.h"
 
 #include <math.h>
 #include <string.h>
@@ -108,10 +111,6 @@ enum
 #define EASE_SECONDS 0.15f
 /* ... and toward the end, over the tail, with this one */
 #define END_EASE_SECONDS 0.1f
-/* while the work stalls the target creeps on by this much each second, to
-at most CREEP_MAX over the work */
-#define CREEP_PER_SECOND 0.02f
-#define CREEP_MAX 0.06f
 /* the shortest run from the loaded level to the end of the compiles' range */
 #define RUN_MILLISECONDS 600
 /* the tail gives up after this long, however far the level's ticks have got */
@@ -133,9 +132,6 @@ static struct
 	real work;             /* 0 to 1: how much of the load is done */
 	real shown;            /* the displayed progress */
 	unsigned long updated; /* system_milliseconds of the last update */
-	unsigned long work_changed;
-	unsigned long loaded;  /* system_milliseconds when the level was loaded */
-	real last_work_target;
 	unsigned long logged;
 } loading_screen;
 
@@ -177,6 +173,7 @@ static void loading_screen_frame(void)
 void halo_loading_screen_begin(char const *map_name)
 {
 	double seconds = config_real("game.loading_screen_seconds");
+	struct gpu_compile_progress compiles;
 
 	/* (the campaign's own levels; a multiplayer map loads through the network
 	game's lobby, and a Custom Edition level starts as before) */
@@ -190,6 +187,8 @@ void halo_loading_screen_begin(char const *map_name)
 	loading_screen.active = TRUE;
 	loading_screen.started = system_milliseconds();
 	loading_screen.minimum = (unsigned long)(seconds * 1000.0);
+	/* Register jobs before the map's warmup can dispatch or finish them. */
+	gpu_compile_progress(GPU_COMPILE_PROGRESS_BEGIN, &compiles);
 	platform_log("loading screen: %s, at least %.1f s", map_name, seconds);
 	/* over the last frame (a map is loaded: the menu's or the level left) */
 	progress_bar_begin(global_scenario_index != NONE);
@@ -201,7 +200,7 @@ void halo_loading_screen_begin(char const *map_name)
 boolean halo_loading_screen_progress(real *progress)
 {
 	unsigned long now, elapsed, dt;
-	real time_share, work_target, target, time_target, seconds;
+	real target, ease = EASE_SECONDS;
 
 	if (!loading_screen.active)
 		return FALSE;
@@ -211,14 +210,11 @@ boolean halo_loading_screen_progress(real *progress)
 	now = system_milliseconds();
 	elapsed = now - loading_screen.started;
 	dt = loading_screen.updated ? now - loading_screen.updated : 0;
-	if (dt > 100)
-		dt = 100;
 	loading_screen.updated = now ? now : 1;
-	seconds = (real)dt / 1000.0f;
 	if (loading_screen.tail)
 	{
 		target = 1.0f;
-		seconds /= END_EASE_SECONDS;
+		ease = END_EASE_SECONDS;
 	}
 	else
 	{
@@ -227,49 +223,12 @@ boolean halo_loading_screen_progress(real *progress)
 		{
 			real copy = 0.0f;
 
-			work_target = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
+			target = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
 		}
 		else
-			work_target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
-		if (loading_screen.holding && !loading_screen.minimum)
-			time_target = COMPILE_END;
-		else if (loading_screen.holding)
-		{
-			/* the minimum time's remainder after the load, at least RUN_MILLISECONDS, so
-			a load that took the whole minimum still has a run to the end */
-			unsigned long left = loading_screen.minimum > loading_screen.loaded - loading_screen.started ?
-				loading_screen.minimum - (loading_screen.loaded - loading_screen.started) : 0;
-
-			if (left < RUN_MILLISECONDS)
-				left = RUN_MILLISECONDS;
-			time_share = (real)(now - loading_screen.loaded) / (real)left;
-			time_target = READ_SHARE + (COMPILE_END - READ_SHARE) * MIN(time_share, 1.0f);
-		}
-		else
-			time_target = READ_SHARE * MIN(loading_screen.minimum ? (real)elapsed / (real)loading_screen.minimum : 1.0f, 1.0f);
-		if (work_target > loading_screen.last_work_target + 0.0005f || !loading_screen.work_changed)
-		{
-			loading_screen.last_work_target = work_target;
-			loading_screen.work_changed = now;
-		}
-		target = work_target;
-		if (work_target < COMPILE_END && work_target < time_target)
-		{
-			/* the work stalls: creep on, slowly */
-			real creep = CREEP_PER_SECOND * (real)(now - loading_screen.work_changed) / 1000.0f;
-
-			target = work_target + MIN(creep, CREEP_MAX);
-			if (target > COMPILE_END)
-				target = COMPILE_END;
-		}
-		if (target > time_target)
-			target = time_target;
-		seconds /= EASE_SECONDS;
+			target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
 	}
-	if (target > loading_screen.shown)
-		loading_screen.shown += (target - loading_screen.shown) * (1.0f - (real)exp(-seconds));
-	if (loading_screen.shown > 1.0f)
-		loading_screen.shown = 1.0f;
+	loading_screen.shown = halo_loading_progress_advance(loading_screen.shown, target, dt, ease);
 	*progress = loading_screen.shown;
 	if (now - loading_screen.logged >= 100)
 	{
@@ -332,7 +291,8 @@ boolean halo_loading_screen_holding(void)
 
 void halo_loading_screen_finish(void)
 {
-	unsigned long peak, outstanding, last_outstanding, last_change, now, frames = 0;
+	unsigned long outstanding, last_outstanding, last_change, now, frames = 0;
+	struct gpu_compile_progress compiles;
 	unsigned long loaded, finished = 0;
 	struct scenario *scenario;
 
@@ -340,8 +300,10 @@ void halo_loading_screen_finish(void)
 		return;
 	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
 	loaded = system_milliseconds();
-	loading_screen.loaded = loaded;
-	peak = last_outstanding = gpu_compiles_outstanding();
+	/* The list and its unique jobs are now registered; retain completions
+	that happened during parsing, rather than sampling a remaining-work peak. */
+	gpu_compile_progress(GPU_COMPILE_PROGRESS_SEAL, &compiles);
+	outstanding = last_outstanding = gpu_compiles_outstanding();
 	last_change = loaded;
 	/* (only a campaign level waits: a failed load that fell back to the
 	menus' map ends the screen at once) */
@@ -350,8 +312,7 @@ void halo_loading_screen_finish(void)
 	{
 		outstanding = gpu_compiles_outstanding();
 		now = system_milliseconds();
-		if (outstanding > peak)
-			peak = outstanding;
+		gpu_compile_progress(GPU_COMPILE_PROGRESS_SNAPSHOT, &compiles);
 		if (outstanding != last_outstanding)
 		{
 			last_outstanding = outstanding;
@@ -363,7 +324,7 @@ void halo_loading_screen_finish(void)
 				outstanding, STALLED_MILLISECONDS / 1000);
 			break;
 		}
-		loading_screen.work = peak ? (real)(peak - outstanding) / (real)peak : 1.0f;
+		loading_screen.work = halo_loading_compile_fraction(&compiles);
 		/* done once the work is and the minimum has passed, and the bar has
 		eased up to where the work ends; the tail fills the rest */
 		if (!outstanding && now - loading_screen.started >= loading_screen.minimum && (now - loaded >= RUN_MILLISECONDS || !loading_screen.minimum) && frames)
@@ -379,13 +340,14 @@ void halo_loading_screen_finish(void)
 		frames++;
 	}
 	now = system_milliseconds();
-	platform_log("loading screen: up for %lu ms: %lu ms to load the level, then %lu ms and %lu frames while %lu "
-		"shaders and pipelines compiled", now - loading_screen.started, loaded - loading_screen.started, now - loaded,
-		frames, peak);
+	platform_log("loading screen: up for %lu ms: %lu ms to load the level, then %lu ms and %lu frames; "
+		"%u/%u preparation jobs finished, %u failed", now - loading_screen.started, loaded - loading_screen.started,
+		now - loaded, frames, compiles.completed, compiles.total, compiles.failed);
+	gpu_compile_progress(GPU_COMPILE_PROGRESS_END, &compiles);
 	loading_screen.holding = FALSE;
 	/* the tail: the screen goes on over the level's first ticks (a campaign
 	level that loaded, not one that fell back to the menus) */
-	if (scenario && scenario->type == _scenario_type_solo && outstanding == 0 && game_in_progress())
+	if (scenario && scenario->type == _scenario_type_solo && outstanding == 0 && !compiles.failed && game_in_progress())
 	{
 		loading_screen.tail = TRUE;
 		loading_screen.tail_started = now ? now : 1;

@@ -14,6 +14,11 @@ output with the guest's arm64_32 flags, where a mismatch fails the build */
 int main(void)
 {
 	printf("#include <stddef.h>\n#include \"gpu.h\"\n#include \"halo_stereo.h\"\n");
+	SIZE(gpu_compile_progress);
+	FIELD(gpu_compile_progress, total);
+	FIELD(gpu_compile_progress, completed);
+	FIELD(gpu_compile_progress, failed);
+	FIELD(gpu_compile_progress, sealed);
 	SIZE(gpu_capabilities);
 	FIELD(gpu_capabilities, shader_language);
 	FIELD(gpu_capabilities, max_texture_size);

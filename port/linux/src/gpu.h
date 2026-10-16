@@ -590,6 +590,24 @@ uint32_t gpu_pipeline_built_take(struct gpu_pipeline_description *description);
 /* the shaders and pipelines still compiling off the game thread */
 uint32_t gpu_compiles_outstanding(void);
 
+/* A load's newly scheduled preparation jobs (libraries and pipelines, whose
+specializations/variants are part of the pipeline job). All fields are fixed
+width across the guest/host boundary. A failed job is completed but not ready.
+After SEAL, late first-draw jobs still gate compiles_outstanding, without
+changing this batch's total. END cancels accounting, not compiler workers. */
+enum
+{
+	GPU_COMPILE_PROGRESS_SNAPSHOT,
+	GPU_COMPILE_PROGRESS_BEGIN,
+	GPU_COMPILE_PROGRESS_SEAL,
+	GPU_COMPILE_PROGRESS_END,
+};
+struct gpu_compile_progress
+{
+	uint32_t total, completed, failed, sealed;
+};
+void gpu_compile_progress(uint32_t action, struct gpu_compile_progress *progress);
+
 /* What the frames from now on are, told whenever any of it changes
 (port/linux/game/scene_class.c): the scene class (port_config.h's
 CONFIG_SCENE_ values), the most frames a second the device's profile wants
@@ -730,7 +748,8 @@ its own functions. */
 	/* the shaders and pipelines still compiling off the game thread \
 	(display.async_shaders); 0 from a backend that compiles none there. The \
 	loading screen stays up until it is 0 (port/linux/game/loading_screen.c) */ \
-	F(uint32_t, compiles_outstanding, (void), ())
+	F(uint32_t, compiles_outstanding, (void), ()) \
+	P(compile_progress, (uint32_t action, struct gpu_compile_progress *progress), (action, progress))
 
 #define GPU_FUNCTIONS(F, P) \
 	GPU_OPERATIONS(F, P) \

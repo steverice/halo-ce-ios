@@ -174,6 +174,7 @@ void host_gpu_warm_end(void);
 uint32_t host_gpu_pipeline_built_take(struct gpu_pipeline_description *description);
 void host_gpu_frame_context(uint32_t scene_class, uint32_t frame_rate, const char *level);
 uint32_t host_gpu_compiles_outstanding(void);
+void host_gpu_compile_progress(uint32_t action, struct gpu_compile_progress *progress);
 void host_gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 
 /* ---------- stereo (port/linux/game/stereo.c; the host's port/ios/host/host_stereo.m)

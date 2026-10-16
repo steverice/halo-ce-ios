@@ -69,6 +69,12 @@ static void mock_anti_alias(uint32_t m, gpu_texture t, const struct gpu_rect *r)
 static void mock_frame_context(uint32_t c, uint32_t r, const char *l) { (void)c; (void)r; (void)l; }
 static uint32_t mock_companion_size(uint32_t *width, uint32_t *height) { *width = *height = 0; return 0; }
 static void mock_companion_set(gpu_texture target) { (void)target; }
+static void mock_compile_progress(uint32_t action, struct gpu_compile_progress *progress)
+{
+	(void)action;
+	memset(progress, 0, sizeof(*progress));
+	progress->sealed = 1;
+}
 static uint32_t mock_compiles_outstanding(void) { return 0; }
 static void mock_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {

@@ -2811,6 +2811,14 @@ static void gpu_gl_companion_set(gpu_texture target)
 	(void)target;
 }
 
+/* GL has no background preparation jobs. */
+static void gpu_gl_compile_progress(uint32_t action, struct gpu_compile_progress *progress)
+{
+	(void)action;
+	memset(progress, 0, sizeof(*progress));
+	progress->sealed = 1;
+}
+
 static uint32_t gpu_gl_compiles_outstanding(void)
 {
 	return 0;
