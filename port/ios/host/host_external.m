@@ -221,11 +221,14 @@ void host_external_attach(void *window_pointer,int metal) {
         [(VISRExternalSceneDelegate *)scene.delegate scene:scene willConnectToSession:scene.session options:nil];
     }
     if(!metal)host_logf(HOST_LOG_INFO,"external display: renderer is OpenGL ES; the system mirrors this device");
+    /* UISceneAccessory is in the iOS 27 SDK; an app built with an earlier SDK (the CI's) mirrors on iOS 27 */
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
     if (@available(iOS 27.0,*)) {
         if(metal && !accessory_registration)
             accessory_registration=[phone_window.rootViewController registerSceneAccessory:
                 [UISceneAccessory externalNonInteractiveSceneAccessoryWithConfiguration:external_configuration()]];
     }
+#endif
 #endif
 }
 static void snapshot_output(int external,int width,int height,const char *reason) {
@@ -364,6 +367,7 @@ void host_external_poll(void) {
 #endif
     }
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
     if(@available(iOS 27.0,*)) {
         UISceneAccessoryRegistration *registration=accessory_registration;
         if(registration.available && !candidate_screen) {
@@ -374,6 +378,7 @@ void host_external_poll(void) {
             }
         } else accessory_available_since=0;
     }
+#endif
     label_layout();
     /* The system can put the display back in its preferred mode just after the scene connects, after the
        policy has already accepted the mode it found: choose again, at most twice per connection. */
