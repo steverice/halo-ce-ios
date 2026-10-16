@@ -26,6 +26,23 @@ static CFTimeInterval last_touch;
 static UIScreen *output_screen;
 static int output_width, output_height;
 static void *phone_layer;
+static int output_failures;
+
+/* The Mac app's window on a second monitor is a window, not an external output. */
+static int screen_is_external(UIScreen *screen) {
+#if TARGET_OS_MACCATALYST
+    (void)screen;return 0;
+#else
+    return screen && screen!=UIScreen.mainScreen;
+#endif
+}
+/* A switch the renderer cannot take yet (before it starts) stays pending and is logged once. */
+static int output_switch(void *layer,UIScreen *screen,int width,int height) {
+    if(gpu_metal_output(layer,(__bridge void *)screen,width,height)) {output_failures=0;return 1;}
+    if(++output_failures==1)
+        host_logf(HOST_LOG_WARN,"external display: the renderer cannot take the %dx%d output yet",width,height);
+    return 0;
+}
 #if TARGET_OS_MACCATALYST
 /* Runner-only synthetic output shapes; the actual app window stays put. */
 static unsigned long test_output_frame;
@@ -122,7 +139,7 @@ static void begin_modes(void) {
     NSValue *cached=chosen_modes[chosen_key];
     if(cached && !forced_width && CGSizeEqualToSize(candidate_screen.currentMode.size,cached.CGSizeValue)) {
         negotiating=0;pending=1;
-    } else { negotiating=1;requested_index=-1; }
+    } else { negotiating=1;pending=0;requested_index=-1; }
     pthread_mutex_lock(&snapshot_lock);
     snapshot.generation++;
     snapshot.mode_count=candidate_count;
@@ -182,7 +199,7 @@ void host_external_attach(void *window_pointer,int metal) {
     phone_layer=host_sdl_metal_layer();
     output_screen=phone_window.windowScene.screen;
     SDL_GetWindowSizeInPixels(window,&output_width,&output_height);
-    snapshot_output(output_screen && output_screen!=UIScreen.mainScreen,output_width,output_height,"preferred");
+    snapshot_output(screen_is_external(output_screen),output_width,output_height,"preferred");
     last_touch=CACurrentMediaTime();
     host_external_install();
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
@@ -406,8 +423,8 @@ void host_external_commit(int allow_pause) {
             output_screen=candidate_screen;
             output_width=(int)candidate_screen.currentMode.size.width;
             output_height=(int)candidate_screen.currentMode.size.height;
-            if(!gpu_metal_output((__bridge void *)external_window.rootViewController.view.layer,
-                (__bridge void *)output_screen,output_width,output_height)) {
+            if(!output_switch((__bridge void *)external_window.rootViewController.view.layer,
+                output_screen,output_width,output_height)) {
                 output_screen=previous_screen;pending=1;return;
             }
             char reason[32];snprintf(reason,sizeof(reason),"%s",snapshot.reason[0]?snapshot.reason:"preferred");
@@ -425,14 +442,18 @@ void host_external_commit(int allow_pause) {
             }
             playing_label.hidden=NO;last_touch=CACurrentMediaTime();label_layout();
             host_logf(HOST_LOG_INFO,"external display: the game moved to the display (drawable %dx%d)",output_width,output_height);
+        } else if(!companion_on) {
+            /* the display went away before the game moved to it: the renderer never left this device */
+            external_window.hidden=YES;external_window=nil;offered=nil;first_low=-1;accepting_low=0;
+            host_logf(HOST_LOG_INFO,"external display: disconnected before the game moved to it");
         } else {
             output_screen=phone_window.windowScene.screen;
             SDL_GetWindowSizeInPixels(host_sdl_window(),&output_width,&output_height);
-            if(!gpu_metal_output(phone_layer,(__bridge void *)output_screen,output_width,output_height)) {
-                output_screen=previous_screen;pending=1;return;
+            if(!output_switch(phone_layer,output_screen,output_width,output_height)) {
+                output_screen=previous_screen;pending=1;return;    /* never left on a display that is gone */
             }
             companion_on=0;
-            snapshot_output(output_screen && output_screen!=UIScreen.mainScreen,output_width,output_height,"preferred");
+            snapshot_output(screen_is_external(output_screen),output_width,output_height,"preferred");
             external_window.hidden=YES;external_window=nil;offered=nil;first_low=-1;accepting_low=0;
             playing_label.hidden=YES;
             if(was_external && allow_pause)host_ios_touch_pause();
@@ -446,10 +467,10 @@ void host_external_commit(int allow_pause) {
         UIScreen *previous_screen=output_screen;
         output_screen=phone_window.windowScene.screen;
         SDL_GetWindowSizeInPixels(host_sdl_window(),&output_width,&output_height);
-        if(!gpu_metal_output(phone_layer,(__bridge void *)output_screen,output_width,output_height)) {
+        if(!output_switch(phone_layer,output_screen,output_width,output_height)) {
             output_screen=previous_screen;return;
         }
-        snapshot_output(output_screen && output_screen!=UIScreen.mainScreen,output_width,output_height,"preferred");
+        snapshot_output(screen_is_external(output_screen),output_width,output_height,"preferred");
         host_logf(HOST_LOG_INFO,"external display: window moved to %dx%d at %ld Hz",output_width,output_height,
             (long)output_screen.maximumFramesPerSecond);
     }
