@@ -1,0 +1,29 @@
+/* External output lifecycle. UIKit and the game call these on the main thread.
+   A pending output becomes current only at the guest's screen commit. */
+#pragma once
+#include <stddef.h>
+struct host_external_snapshot {
+    int external, width, height, refresh_hertz;
+    unsigned generation;
+    char name[128], reason[32];
+    struct { int width, height; } modes[64];
+    int mode_count;
+};
+void host_external_install(void);
+void host_external_attach(void *sdl_window, int metal);
+void host_external_poll(void);
+void host_external_commit(int allow_pause);
+int host_external_active(void);
+int host_external_size(int *width, int *height);
+void *host_external_phone_layer(void);
+void *host_external_screen(void);
+double host_external_companion_dim(void);
+void host_external_snapshot(struct host_external_snapshot *out);
+int host_external_cycle(int direction);
+int host_external_force(const char *mode);
+int host_external_ready(void);
+void host_external_mode_label(char *text, size_t size);
+/* gpu_metal.m: drains the old output before exchanging layers. */
+int gpu_metal_output(void *layer, void *screen, int width, int height);
+/* host_sdl.c: refresh the output stream after an audio route change. */
+void host_sdl_audio_route_changed(void);

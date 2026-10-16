@@ -19,7 +19,7 @@ PLATFORMS = ("ios", "tvos", "visionos", "mac")
 BASES = ("measured", "assumed", "inherited")
 STATUSES = ("tested", "provisional", "below target")
 # what a profile's top level may hold besides its settings' sections
-FIELDS = {"schema", "name", "kind", "status", "match", "evidence", "scene"}
+FIELDS = {"schema", "name", "kind", "status", "match", "evidence", "scene", "external"}
 # the scene classes a build reads; "gameplay" is the profile's own values, and a class keyed to a level or a
 # cutscene ("cutscene@a10") is reserved
 SCENES = ("menu", "cutscene")
@@ -54,6 +54,11 @@ def load_toml(path):
 def scene_keys(text=None):
     """the settings a profile may also set for a scene class (PROFILE_SCENE in port_profile_keys.h)"""
     return set(re.findall(r'^PROFILE_SCENE\("([a-z_]+\.[a-z0-9_]+)"\)\s*$', KEYS.read_text() if text is None else text, re.M))
+
+
+def external_keys(text=None):
+    """Settings whose values can change with the output."""
+    return set(re.findall(r'^PROFILE_EXTERNAL\("([a-z_]+\.[a-z0-9_]+)"\)\s*$', KEYS.read_text() if text is None else text, re.M))
 
 
 def profile_keys(text=None):
@@ -147,11 +152,11 @@ def check_profile(path, keys, drop_in=False, scenes=None):
         evidence = {}
     settings = []
 
-    def check_settings(sections, scene):
+    def check_settings(sections, scene, external=False):
         """a profile's own sections (scene None) or one scene class's: evidence is named "display.x" for the
         first and "scene.menu.display.x" for the second"""
         for section, values in sections.items():
-            if scene is None and section in FIELDS:
+            if scene is None and section in ({"scene"} if external else FIELDS):
                 continue
             if not isinstance(values, dict):
                 problems.append(f"unknown field {section}")
@@ -159,8 +164,16 @@ def check_profile(path, keys, drop_in=False, scenes=None):
             for key, value in values.items():
                 name = f"{section}.{key}"
                 shown = name if scene is None else f"scene.{scene}.{name}"
+                if external:
+                    shown = "external." + shown
                 if name not in keys:
                     problems.append(f"{shown} is not a setting a profile may set (see port/linux/src/port_profile_keys.h)")
+                    continue
+                if external and name not in external_keys():
+                    problems.append(f"{shown}: {name} cannot change by output (PROFILE_EXTERNAL in port_profile_keys.h)")
+                    continue
+                if not external and name == "display.output_height":
+                    problems.append(f"{shown} is valid only in an external section")
                     continue
                 if scene is not None and name not in scenes:
                     problems.append(f"{shown}: {name} cannot change by scene class (PROFILE_SCENE in port_profile_keys.h)")
@@ -170,17 +183,25 @@ def check_profile(path, keys, drop_in=False, scenes=None):
                     problems.append(f"{shown} = {value!r}: {problem}")
                 settings.append(shown)
 
-    check_settings(table, None)
-    scene_tables = table.get("scene", {})
-    if not isinstance(scene_tables, dict):
-        problems.append("[scene] must be tables named for scene classes: [scene.menu.display]")
-        scene_tables = {}
-    for scene, sections in scene_tables.items():
-        if scene not in SCENES or not isinstance(sections, dict):
-            problems.append(f'scene class "{scene}": a build reads only ' + ", ".join(SCENES)
-                            + " (the profile's own values are gameplay's)")
-            continue
-        check_settings(sections, scene)
+    def check_context(context, external=False):
+        check_settings(context, None, external)
+        scene_tables = context.get("scene", {})
+        if not isinstance(scene_tables, dict):
+            problems.append("[scene] must be tables named for scene classes: [scene.menu.display]")
+            return
+        for scene, sections in scene_tables.items():
+            if scene not in SCENES or not isinstance(sections, dict):
+                problems.append(f'scene class "{scene}": a build reads only ' + ", ".join(SCENES)
+                                + " (the profile's own values are gameplay's)")
+                continue
+            check_settings(sections, scene, external)
+
+    check_context(table)
+    external = table.get("external", {})
+    if not isinstance(external, dict):
+        problems.append("[external] must be a table")
+    else:
+        check_context(external, True)
     for name in settings:
         entry = evidence.get(name)
         if not isinstance(entry, dict):
@@ -192,8 +213,11 @@ def check_profile(path, keys, drop_in=False, scenes=None):
             problems.append(f"evidence for {name}: why must say, in a sentence, why this value")
         if entry.get("basis") == "measured" and (not isinstance(entry.get("source"), str) or len(entry["source"]) < 10):
             problems.append(f"evidence for {name}: a measured value needs source (the report, the scene and the date)")
-        if set(entry) - {"basis", "why", "source"}:
-            problems.append(f"evidence for {name}: only basis, why and source")
+        if name.startswith("external.") and entry.get("basis") == "measured" and entry.get("output") != "external":
+            problems.append(f'evidence for {name}: a measured external value needs output = "external"')
+        allowed = {"basis", "why", "source", "output"} if name.startswith("external.") else {"basis", "why", "source"}
+        if set(entry) - allowed:
+            problems.append(f"evidence for {name}: only " + ", ".join(sorted(allowed)))
     for name in evidence:
         if name not in settings:
             problems.append(f"evidence for {name}, which this profile does not set")

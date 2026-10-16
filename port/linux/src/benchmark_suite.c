@@ -146,12 +146,35 @@ static void finish(const char *status, const char *note)
 	enter(suite_next);
 }
 
+/* A mode change can alter both the drawable and the contextual profile.
+   Build a fresh ladder only after that output committed between frames. */
+static int start_suite_for_output(void)
+{
+    int width=0,height=0;
+    platform_video_drawable_size(&width,&height);
+    if(height<=0)return 0;
+    double scale=config_scene_real("display.render_scale",CONFIG_SCENE_GAMEPLAY);
+    long limit=config_scene_integer("display.render_height",CONFIG_SCENE_GAMEPLAY);
+    long base=scale>=0.25 && scale<1.0 ? lround(height*scale) : height;
+    if(limit>0 && base>limit)base=limit;
+    return host_benchmark_start(config_string("debug.benchmark_suite"),height,(int)base,
+        (int)config_integer("display.anisotropic_filtering"),(int)config_integer("display.shadow_map_size"),
+        strcmp(config_string("display.model_lod"),"auto")!=0);
+}
+
 /* takes the next run from the host and starts it; quits when there is none */
 static void next_run(void)
 {
 	char text[512], path[256];
 	int more = host_benchmark_next(text, sizeof(text));
 
+    if(more==4) {
+        if(!start_suite_for_output()) {
+            platform_log("benchmark suite: cannot replan for the selected output");exit(EXIT_FAILURE);
+        }
+        return;
+    }
+	if (more == 3) return; /* the output switch commits between frames, before the next run */
 	if (more == 2)
 	{
 		/* the report was shown and dismissed: the settings the runs set are the game's own again, and the player is
@@ -302,7 +325,7 @@ void benchmark_suite_frame(long width, long height)
 		gameplay's (the first frame here is the menu's, which a profile may give its own) */
 		{
 			double scale = config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY);
-			long limit = config_integer("display.render_height");
+			long limit = config_scene_integer("display.render_height", CONFIG_SCENE_GAMEPLAY);
 
 			height = scale >= 0.25 && scale < 1.0 ? lround((double)drawable_height * scale) : drawable_height;
 			if (limit > 0 && height > limit)

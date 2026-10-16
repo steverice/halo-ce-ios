@@ -164,12 +164,14 @@ static int profile_metadata_key(const char *key)
 #define PROFILE_REAL(name, minimum, maximum) PROFILE_BOOLEAN(name)
 #define PROFILE_STRING(name, choices) PROFILE_BOOLEAN(name)
 #define PROFILE_SCENE(name)
+#define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
 #undef PROFILE_INTEGER
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
     return 0;
 }
 static char *trim(char *value)

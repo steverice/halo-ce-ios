@@ -81,6 +81,15 @@ int main(void)
     }
     assert(callbacks == 100);
     assert(consumed == produced);
+    /* Route replacement keeps the guest handle and PCM source format. */
+    host_sdl_audio_route_changed();
+    SDL_AudioStream *replacement=handle_get(handle,_handle_audio);
+    assert(replacement && replacement!=stream);
+    SDL_PauseAudioStreamDevice(replacement);
+    SDL_AudioSpec source;
+    assert(SDL_GetAudioStreamFormat(replacement,&source,NULL));
+    assert(source.freq==spec.freq && source.format==spec.format && source.channels==spec.channels);
+    assert(audio_bindings[0]->handle==handle);
     alarm(0);
     printf("PASS: %u SDL callbacks, %u exact PCM samples; no cross-thread stream deadlock\n", callbacks, consumed);
     return 0;

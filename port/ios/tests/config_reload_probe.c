@@ -14,6 +14,8 @@ void platform_log(const char *format, ...)
 	fputc('\n', stderr);
 }
 
+int host_external_active(void) { return 0; }
+
 #include "port_config.c"
 #include <assert.h>
 #include <unistd.h>

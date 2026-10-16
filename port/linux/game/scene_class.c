@@ -34,6 +34,7 @@ frame_rate = "30"), which it holds frames for and names in its frame log
 #include "cseries.h"
 #include "cutscene/cinematics.h"
 #include "game/game.h"
+#include "interface/ui_widget.h"
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 #include "main/main.h"
@@ -158,4 +159,11 @@ int halo_scene_class(void)
 		gpu_frame_context((uint32_t)scene_class, rate, level);
 	}
 	return scene_class;
+}
+
+/* port: unplugging must open a pause menu only while the player is playing. */
+int halo_external_pause_allowed(void)
+{
+    return game_in_progress() && !game_time_get_paused() && !ui_widgets_active() &&
+        halo_scene_class() == CONFIG_SCENE_GAMEPLAY;
 }

@@ -459,6 +459,11 @@ the next frame is due on the display, when the backend schedules its frames
 (Metal), else 0: render_interpolation.c blends that frame for the moment it
 is shown. */
 uint32_t gpu_present(gpu_texture back_buffer);
+/* The built-in screen's companion rectangle, while an external output is
+active. set supplies its texture for the next mono Present only; 0 clears it.
+Present skips it when the main frame is held or no phone drawable is ready. */
+uint32_t gpu_companion_size(uint32_t *width, uint32_t *height);
+void gpu_companion_set(gpu_texture target);
 
 /* a stereo frame's pictures (halo_stereo.h): each eye's color and depth, and
 the HUD drawn once for both. Fixed-width fields only: it crosses the guest/host
@@ -703,6 +708,8 @@ its own functions. */
 		const void *search_texels), (method, smaa_shader, area_texels, search_texels)) \
 	P(anti_alias, (uint32_t method, gpu_texture target, const struct gpu_rect *rect), (method, target, rect)) \
 	F(uint32_t, vertical_blank_wait, (void), ()) \
+	F(uint32_t, companion_size, (uint32_t *width, uint32_t *height), (width, height)) \
+	P(companion_set, (gpu_texture target), (target)) \
 	P(frame_start, (void), ()) \
 	F(uint32_t, present, (gpu_texture back_buffer), (back_buffer)) \
 	F(uint32_t, present_stereo, (const struct gpu_stereo_present *present), (present)) \

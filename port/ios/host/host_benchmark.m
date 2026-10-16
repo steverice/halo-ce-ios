@@ -15,6 +15,8 @@
 #import "host_benchmark_snapshot.h"
 #import "host_data_updates.h"
 #include "host_profile.h"
+#include "host_config.h"
+#include "host_external.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
 #include <mach/mach.h>
@@ -58,6 +60,42 @@ static NSDate *started;
 static dispatch_source_t sampler;
 static int last_run_throttled;
 static NSDictionary *pinned_snapshot;
+static NSDictionary *run_environment_start, *run_output, *suite_output;
+static unsigned run_output_generation;
+static NSArray<NSString *> *external_modes;
+static NSMutableArray<NSString *> *output_reports;
+static NSUInteger external_mode_index;
+static NSString *suite_request;
+static int output_waiting, output_failed;
+static CFAbsoluteTime output_wait_started;
+
+static NSDictionary *output_now(void) {
+    struct host_external_snapshot output;
+    host_external_snapshot(&output);
+    NSMutableArray *modes = [NSMutableArray array];
+    for (int i = 0; i < output.mode_count && i < 64; i++)
+        [modes addObject:@{ @"width": @(output.modes[i].width), @"height": @(output.modes[i].height) }];
+    return @{ @"kind": output.external ? @"external" : @"builtin", @"width": @(output.width),
+        @"height": @(output.height), @"refresh_hertz": @(output.refresh_hertz), @"name": @(output.name),
+        @"reason": @(output.reason), @"offered_modes": modes };
+}
+
+static NSDictionary *environment_now(void) {
+    float level = -1;
+    NSString *charging = @"unavailable";
+#if !TARGET_OS_TV && !TARGET_OS_VISION && !TARGET_OS_MACCATALYST
+    UIDevice.currentDevice.batteryMonitoringEnabled = YES;
+    level = UIDevice.currentDevice.batteryLevel;
+    switch (UIDevice.currentDevice.batteryState) {
+        case UIDeviceBatteryStateUnplugged: charging = @"unplugged"; break;
+        case UIDeviceBatteryStateCharging: charging = @"charging"; break;
+        case UIDeviceBatteryStateFull: charging = @"full"; break;
+        default: charging = @"unknown"; break;
+    }
+#endif
+    return @{ @"battery_level": @(level), @"charging": charging,
+        @"thermal_state": @((int)NSProcessInfo.processInfo.thermalState) };
+}
 #define JOURNAL_SNAPSHOT FOLDER "/journal-snapshot.sha256"
 
 /* ---------- the crash marker */
@@ -242,7 +280,7 @@ static NSString *report_header(void) {
         "\"device\":{\"model\":%@,\"chip\":%@,\"platform\":\"%@\",\"os\":\"%ld.%ld.%ld\",\"os_build\":%@,"
         "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
-        "\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
+        "\"external_modes_complete\":%s,\"output\":%@,\"output_reports\":%@,\"requested_output\":%@,\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
         "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
         "\"model_lod\":\"%s\"},\"data_updates\":%@,\"recording_snapshot\":%@,\"profile_sha256\":%@,\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
@@ -254,6 +292,9 @@ static NSString *report_header(void) {
             stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@")"]]),
         json_string(gpu.name), gpu ? gpu_family(gpu) : 0, process.physicalMemory >> 20,
         screen_width, screen_height, (long)screen_rate(),
+        external_modes.count && external_mode_index + 1 < external_modes.count ? "false" : "true",
+        json_object(suite_output ?: output_now()), json_object(output_reports ?: @[]),
+        json_string(external_modes.count ? external_modes[external_mode_index] : @""),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]), HALO_GUEST_SHA256,
         json_string(host_device_profile()->inherited ? @"inherited" : host_device_profile()->model_file[0] ? @"exact" : @"class"),
@@ -279,14 +320,15 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSString *text = [NSString stringWithFormat:@"{\"index\":%d,\"stage\":\"%c\",\"scene\":\"%s\",\"map\":\"%s\","
         "\"difficulty\":\"%s\",\"recording\":%@,\"kind\":\"%s\",\"settings\":{\"render_lines\":%ld,"
         "\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,\"model_lod\":\"%s\"},\"status\":\"%s\",\"note\":%@,"
-        "\"render_size\":[%d,%d]%s%s}",
+        "\"render_size\":[%d,%d],\"output\":%@,\"environment\":%@%s%s}",
         finished->index, finished->stage, scene->id, scene->map, scene->difficulty,
         scene->recording ? json_string(@(scene->recording)) : @"null",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" : "gameplay",
         /* (a baseline run leaves the size to the profile: what it drew at is the setting it ran with) */
         finished->lines ? finished->lines : (long)window_height, finished->anisotropy, finished->shadow_size,
         finished->model_lod_max ? "max" : "auto",
-        benchmark_status_name(status), json_string(note), window_width, window_height, measurements ? "," : "",
+        benchmark_status_name(status), json_string(note), window_width, window_height, json_object(run_output ?: suite_output ?: output_now()),
+        json_object(@{ @"start": run_environment_start ?: @{}, @"end": environment_now() }), measurements ? "," : "",
         measurements ?: ""];
 
     [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -372,7 +414,7 @@ static NSDictionary *snapshot_identity(const char *mode) {
     NSMutableArray *values = [NSMutableArray array];
     for (int i = 0; i < profile->count; i++) {
         const struct host_profile_value *value = &profile->values[i];
-        [values addObject:@{ @"name": @(value->name), @"value": @(value->text), @"scene": @(value->scene), @"source": @(value->source) }];
+        [values addObject:@{ @"name": @(value->name), @"value": @(value->text), @"scene": @(value->scene), @"external": @(value->external), @"source": @(value->source) }];
     }
     NSDictionary *resolved = @{ @"values": values, @"class": @(profile->class_file), @"model": @(profile->model_file),
         @"class_name": @(profile->class_name), @"model_name": @(profile->model_name), @"drop_in": @(profile->drop_in),
@@ -381,6 +423,7 @@ static NSDictionary *snapshot_identity(const char *mode) {
         @"target_tier": @(profile->target_tier), @"catalog_version": @(profile->catalog_version) };
     struct benchmark_plan builtins = { .mode = plan.mode, .scenes = benchmark_suite_scenes, .scene_count = benchmark_suite_scene_count };
     return @{ @"guest": @HALO_GUEST_SHA256, @"profile_sha256": host_benchmark_snapshot_digest(resolved),
+        @"output_mode": external_modes.count ? external_modes[external_mode_index] : @"",
         @"suite": @(BENCHMARK_SUITE_VERSION), @"builtins": @(benchmark_plan_signature(&builtins)), @"mode": @(mode),
         @"app_build": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"",
         @"device": @[ @(plan.device.drawable_lines), @(plan.device.base_lines), @(plan.device.anisotropy),
@@ -445,10 +488,26 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     int index;
 
     if (atomic_load(&running)) return 1;
+    if (!suite_request) {
+        suite_request = @(mode);
+        char configured[1024];
+        host_config_string("debug.external_mode", "", configured, sizeof(configured));
+        const char *requested = getenv("HALO_EXTERNAL_MODE");
+        if (!requested) requested = configured;
+        external_modes = requested && *requested ? [@(requested) componentsSeparatedByString:@","] : @[];
+        output_reports = [NSMutableArray array];
+        external_mode_index = 0;
+        if (external_modes.count) {
+            host_external_force(external_modes[0].UTF8String);
+            output_waiting = 1;
+            output_wait_started = CFAbsoluteTimeGetCurrent();
+        }
+    }
     if (process.lowPowerModeEnabled) {
         host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
         return 0;
     }
+    output_failed = 0;
     mkdir(FOLDER, 0755);
     plan.mode = !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
     plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
@@ -530,8 +589,13 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         }
         if (process.thermalState > NSProcessInfoThermalStateNominal) flag(@"warm_at_start");
     }
-    screen_hertz = screen_rate();
-    if (screen_hertz != 60.0) flag(@"refresh_not_60");
+    suite_output = output_now();
+    screen_hertz = [suite_output[@"refresh_hertz"] doubleValue];
+    if (!output_waiting && screen_hertz != 60.0) flag(@"refresh_not_60");
+    if(external_modes.count && !output_waiting && host_external_ready() &&
+        host_benchmark_notice("Display mode selected","Waiting for the display to settle before measuring.",PAUSE_SECONDS,NULL)) {
+        atomic_store(&running,0);return 0;
+    }
     if (only) flag(@"scenes_filtered");
     /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
     if (host_device_profile()->drop_in) flag(@"drop_in_profile");
@@ -546,7 +610,40 @@ int host_benchmark_next(char *text, unsigned int size) {
     const struct benchmark_scene *scene;
 
     if (!atomic_load(&running)) return 0;
-    if (!benchmark_plan_next(&plan, outcomes, outcome_count, &run)) {
+    if (output_waiting) {
+        if (!host_external_ready() && CFAbsoluteTimeGetCurrent() - output_wait_started < 5.0) return 3;
+        output_waiting = 0;
+        suite_output = output_now();
+        screen_hertz = [suite_output[@"refresh_hertz"] doubleValue];
+        refresh_hertz = screen_hertz;
+        if (!host_external_ready() || ![suite_output[@"kind"] isEqual:@"external"]) {
+            flag(@"external_output_unavailable");
+            output_failed = 1;
+        }
+        NSString *requested = external_modes[external_mode_index];
+        NSString *actual = [NSString stringWithFormat:@"%@x%@", suite_output[@"width"], suite_output[@"height"]];
+        if (screen_hertz < 60.0 || (![requested isEqual:@"preferred"] && ![requested isEqual:actual])) {
+            flag(@"external_output_mismatch");
+            output_failed = 1;
+        }
+        if (screen_hertz != 60.0) flag(@"refresh_not_60");
+        if(output_failed) {
+            pinned_snapshot=fresh_snapshot(snapshot_identity(suite_request.UTF8String));
+            outcome_count=0;
+        }
+        if(!output_failed) {
+            int descriptor=atomic_exchange(&marker,-1);
+            if(descriptor>=0)close(descriptor);
+            atomic_store(&running,0);
+            /* The guest recomputes drawable/profile sizing on its next frame. */
+            return 4;
+        }
+        if (host_benchmark_notice("Display mode selected", "Waiting for the display to settle before measuring.", PAUSE_SECONDS, NULL)) {
+            atomic_store(&running, 0);
+            return 0;
+        }
+    }
+    if (output_failed || !benchmark_plan_next(&plan, outcomes, outcome_count, &run)) {
         const char *page = getenv("HALO_BENCHMARK_PAGE");
 #ifdef HALO_TESTER_BUILD
         /* a tester has no other way to get the report off the device */
@@ -556,7 +653,30 @@ int host_benchmark_next(char *text, unsigned int size) {
 
         benchmark_journal_done(JOURNAL);
         if (descriptor >= 0) close(descriptor);
-        write_report();
+        if (external_modes.count) {
+            NSString *path = [NSString stringWithFormat:@FOLDER "/output-%02lu.json", (unsigned long)external_mode_index];
+            [output_reports addObject:path.lastPathComponent];
+            write_report();
+            [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+            [NSFileManager.defaultManager copyItemAtPath:@REPORT toPath:path error:nil];
+            if (external_mode_index + 1 < external_modes.count) {
+                external_mode_index++;
+                /* Each mode owns its outcomes, flags and report identity, even
+                   when negotiation fails before a replan can start any run. */
+                outcome_count=0;
+                memset(outcomes,0,sizeof(outcomes));
+                flags=[NSMutableArray array];
+                started=NSDate.date;
+                output_failed=0;
+                static const char alphabet[]="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                for(int i=0;i<8;i++)report_code[i]=alphabet[arc4random_uniform(sizeof(alphabet)-1)];
+                report_code[8]=0;
+                host_external_force(external_modes[external_mode_index].UTF8String);
+                output_waiting = 1;
+                output_wait_started = CFAbsoluteTimeGetCurrent();
+                return 3;
+            }
+        } else write_report();
         NSString *summary = report_summary();
 #ifdef HALO_BENCHMARK_CLOUD
         /* a build that can send: the report is shown and the question asked first (a tester build always asks;
@@ -576,6 +696,7 @@ int host_benchmark_next(char *text, unsigned int size) {
 
         if (shown) host_benchmark_page(REPORT, summary.UTF8String, report_code, atoi(page));
         atomic_store(&running, 0);
+        suite_request = nil;
         /* a person pressed Done on the report: the game goes back to its main menu (2). With no report screen (a runner
            or a scripted launch) nobody is there to press anything, and the game quits (0) */
         return shown ? 2 : 0;
@@ -608,6 +729,11 @@ int host_benchmark_next(char *text, unsigned int size) {
     benchmark_metrics_reset(&metrics, refresh_hertz);
     os_unfair_lock_unlock(&lock);
     benchmark_journal_begin(JOURNAL, run.index, run.key);
+    run_environment_start = environment_now();
+    run_output = output_now();
+    struct host_external_snapshot output;
+    host_external_snapshot(&output);
+    run_output_generation = output.generation;
     run_open = 1;
     host_logf(HOST_LOG_INFO, "benchmark: run %d: %s", run.index, run.key);
     return 1;
@@ -647,6 +773,22 @@ void host_benchmark_end(const char *status_name, const char *note) {
     outcome.refresh_hertz = summary.refresh_hertz;
     /* what happened around a run outranks how it ended: the app left the screen, the device throttled, or a run
        that says it went well has no frames */
+    struct host_external_snapshot output;
+    host_external_snapshot(&output);
+    if (output.generation != run_output_generation) {
+        interrupted = 1;
+        flag(@"output_changed");
+        note = "the display connected, disconnected, or changed mode during this run";
+    }
+    if (external_modes.count) {
+        NSString *wanted = external_modes[external_mode_index];
+        NSString *actual = [NSString stringWithFormat:@"%dx%d", output.width, output.height];
+        if (!output.external || (![wanted isEqual:@"preferred"] && ![wanted isEqual:actual]) || output.refresh_hertz < 60) {
+            interrupted = 1;
+            flag(@"external_output_mismatch");
+            note = "the requested external output was not active at 60 Hz or better";
+        }
+    }
     if (outcome.status == BENCHMARK_OK) {
         if (interrupted) outcome.status = BENCHMARK_INTERRUPTED;
         else if (last_run_throttled) outcome.status = BENCHMARK_THERMAL;

@@ -20,6 +20,8 @@ Every entry point runs in an autorelease pool: the guest runs on the UI thread
 but never returns to its run loop, which would otherwise drain them.
 */
 
+#import <UIKit/UIKit.h>
+#include "host_external.h"
 #include "gpu.h"
 #include "ios_host.h"
 #include "metal_state_cache.h"
@@ -29,6 +31,7 @@ build with render validation; nothing otherwise */
 #include "metal_compile_async.h"
 #include "host_benchmark.h"
 #include "halo_display.h"
+#include "host_external.h"
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -1725,7 +1728,7 @@ static id<MTLFXSpatialScaler> upscaler API_AVAILABLE(ios(16.0), tvos(16.0), visi
 static id<MTLTexture> upscaled;
 
 static id<MTLFunction> clear_vertex, clear_fragment, present_vertex, present_fragment;
-static id<MTLRenderPipelineState> present_pipeline;
+static id<MTLRenderPipelineState> present_pipeline, companion_pipeline;
 /* gpu_upscale's: the present quad into a BGRA8 render target with no depth */
 static id<MTLRenderPipelineState> upscale_pipeline;
 static id<MTLSamplerState> present_sampler;
@@ -1755,6 +1758,9 @@ static NSString *const utility_source =
 	"{\n"
 	"\treturn float4(picture.sample(linear, in.coordinates).rgb, 1.0);\n"
 	"}\n"
+	"fragment float4 companion_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
+	"\tsampler linear [[sampler(0)]], constant float &brightness [[buffer(0)]])\n"
+	"{ return float4(picture.sample(linear, in.coordinates).rgb * brightness, 1.0); }\n"
 	/* gpu_upscale: alpha too, which the game's later draws may read */
 	"fragment float4 upscale_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
 	"\tsampler linear [[sampler(0)]])\n"
@@ -3714,30 +3720,63 @@ static void pacing_percentiles(double *times, unsigned long count, double *media
 
 static void frame_log_start(void);
 
+@interface OutputDisplayLinks : NSObject
++ (void)stop:(id)link;
+@end
+@implementation OutputDisplayLinks
++ (void)stop:(id)link {
+    [link invalidate];
+    [NSThread.currentThread cancel];
+    CFRunLoopStop(CFRunLoopGetCurrent());
+}
+@end
+static NSThread *pacing_thread;
+static CADisplayLink *pacing_link;
+static uint32_t output_initialize_flags;
+static void output_link_stop(id link, NSThread *thread) {
+    if(link && thread && !thread.finished)
+        [OutputDisplayLinks performSelector:@selector(stop:) onThread:thread withObject:link waitUntilDone:YES];
+}
+
 static void pacing_start(uint32_t flags)
 {
+    output_initialize_flags=flags;
 	pacing.off = (flags & (GPU_INITIALIZE_PACING_OFF | GPU_INITIALIZE_FIXED_TIMESTEP)) != 0;
 	pacing.any_rate = (flags & GPU_INITIALIZE_PACING_ANY_RATE) != 0;
 	pacing.refreshes = 1;
-	frame_log_start();
+    static int log_started;
+    if(!log_started++){frame_log_start();}
 	if (flags & GPU_INITIALIZE_FIXED_TIMESTEP)
 		return;
+    output_initialize_flags=flags;
+    dispatch_semaphore_t started=dispatch_semaphore_create(0);
 	NSThread *thread = [[NSThread alloc] initWithBlock:^{
-		CADisplayLink *link = [CADisplayLink displayLinkWithTarget:[PacingClock new] selector:@selector(refresh:)];
+#if TARGET_OS_VISION
+        CADisplayLink *link=[CADisplayLink displayLinkWithTarget:[PacingClock new] selector:@selector(refresh:)];
+#else
+        UIScreen *screen=(__bridge UIScreen *)host_external_screen();
+        CADisplayLink *link=[screen displayLinkWithTarget:[PacingClock new] selector:@selector(refresh:)];
+#endif
+        pacing_link=link;
 
 #if !TARGET_OS_VISION
 		/* ask for 120 Hz, which the system clamps to what the screen can do: a ProMotion
 		iPhone otherwise stays at 60 Hz, even with CADisableMinimumFrameDurationOnPhone
 		(Info.plist) */
-		link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+        float rate=(float)screen.maximumFramesPerSecond;
+        if(rate<60)rate=60;
+		link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80,rate), rate, rate);
 #endif
 		[link addToRunLoop:NSRunLoop.currentRunLoop forMode:NSDefaultRunLoopMode];
-		for (;;)
-			[NSRunLoop.currentRunLoop run];
+        dispatch_semaphore_signal(started);
+		while(!NSThread.currentThread.cancelled)
+			[NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:NSDate.distantFuture];
 	}];
+    pacing_thread=thread;
 	thread.name = @"Metal frame pacing";
 	thread.qualityOfService = NSQualityOfServiceUserInteractive;
 	[thread start];
+    dispatch_semaphore_wait(started,DISPATCH_TIME_FOREVER);
 }
 
 /* whether n refreshes a frame is allowed at this refresh rate: with "tick",
@@ -3820,7 +3859,7 @@ static struct
 
 static struct
 {
-	int on;
+	int on, skip_transition;
 	FILE *file;
 	CFTimeInterval started, window_started;
 	unsigned long frames, late, gaps;
@@ -3912,6 +3951,7 @@ static void frame_log_start(void)
 (0: no frame, a wait), against the refreshes asked */
 static void frame_log_frame(CFTimeInterval now, CFTimeInterval interval, long up, long asked, CFTimeInterval period)
 {
+    if(frame_log.skip_transition) { frame_log.skip_transition=0;return; }
 	if (!frame_log.on)
 		return;
 	if (up <= 0)
@@ -4018,6 +4058,7 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	period = refresh_period;
 	os_unfair_lock_unlock(&pacing_lock);
 	/* the device benchmark (host_benchmark.m): every presented frame while a run's window is open */
+    if(!frame_log.skip_transition)
 	host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0);
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 		return 0.0;
@@ -4163,6 +4204,136 @@ static id<CAMetalDrawable> free_drawable_take(BOOL again)
 #endif
 }
 
+/* The phone's drawable is fetched off the game thread. A generation fences
+an in-flight nextDrawable across disconnect/reconnect, including reusing the
+same phone layer. Only one drawable is held, and only one request is in flight. */
+static os_unfair_lock companion_lock = OS_UNFAIR_LOCK_INIT;
+static CAMetalLayer *companion_layer;
+static id<CAMetalDrawable> companion_ready;
+static dispatch_semaphore_t companion_wanted;
+static unsigned companion_generation;
+static BOOL companion_busy, companion_statistics;
+static gpu_texture companion_target;
+static unsigned long companion_shown, companion_unshown;
+
+static void companion_drawable_request(CAMetalLayer *phone)
+{
+	if (!companion_wanted && phone)
+	{
+		companion_wanted = dispatch_semaphore_create(0);
+		NSThread *thread = [[NSThread alloc] initWithBlock:^{
+			for (;;)
+			{
+				dispatch_semaphore_wait(companion_wanted, DISPATCH_TIME_FOREVER);
+				@autoreleasepool
+				{
+					os_unfair_lock_lock(&companion_lock);
+					CAMetalLayer *requested = companion_layer;
+					unsigned generation = companion_generation;
+					os_unfair_lock_unlock(&companion_lock);
+					/* nil is a skipped phone frame, never a reason to spin. */
+					id<CAMetalDrawable> next = [requested nextDrawable];
+					os_unfair_lock_lock(&companion_lock);
+					if (generation == companion_generation && requested == companion_layer)
+						companion_ready = next;
+					companion_busy = NO;
+					os_unfair_lock_unlock(&companion_lock);
+				}
+			}
+		}];
+		thread.name = @"Companion drawables";
+		thread.qualityOfService = NSQualityOfServiceUserInteractive;
+		[thread start];
+	}
+	os_unfair_lock_lock(&companion_lock);
+	if (phone != companion_layer)
+	{
+		companion_generation++;
+		companion_layer = phone;
+		companion_ready = nil;
+	}
+	if (phone && !companion_ready && !companion_busy)
+	{
+		companion_busy = YES;
+		dispatch_semaphore_signal(companion_wanted);
+	}
+	os_unfair_lock_unlock(&companion_lock);
+}
+
+static uint32_t gpu_metal_companion_size(uint32_t *width, uint32_t *height)
+{
+	CAMetalLayer *phone = host_external_active() ? (__bridge CAMetalLayer *)host_external_phone_layer() : nil;
+	*width = *height = 0;
+	if (phone)
+	{
+		CGSize size = phone.drawableSize;
+		*width = (uint32_t)size.width;
+		*height = (uint32_t)size.height;
+	}
+	companion_drawable_request(phone);
+	return *width > 0 && *height > 0;
+}
+
+static void gpu_metal_companion_set(gpu_texture target)
+{
+	companion_target = target;
+}
+
+/* Called after committing the display frame, on the same command queue.
+The buffer retains its texture even if the front end expires the target.
+Nothing here waits for either a drawable or GPU completion. */
+static void companion_present(BOOL main_shown)
+{
+	gpu_texture target = companion_target;
+	companion_target = 0;
+	if (!target || !host_external_active())
+		return;
+	MetalTexture *record = texture_record(target);
+	os_unfair_lock_lock(&companion_lock);
+	id<CAMetalDrawable> drawable = main_shown ? companion_ready : nil;
+	if (main_shown)
+		companion_ready = nil;
+	os_unfair_lock_unlock(&companion_lock);
+	if (!drawable || !record || !record->texture)
+		companion_unshown++;
+	else
+	{
+		id<MTLCommandBuffer> buffer = [queue commandBuffer];
+		MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+		pass.colorAttachments[0].texture = drawable.texture;
+		pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+		pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+		pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+		struct halo_display_size fit = halo_display_present_size(drawable.texture.width, drawable.texture.height,
+			record->texture.width, record->texture.height);
+		float brightness = (float)host_external_companion_dim();
+		id<MTLRenderCommandEncoder> present = [buffer renderCommandEncoderWithDescriptor:pass];
+		present.label = @"companion present";
+		[present setRenderPipelineState:companion_pipeline];
+		[present setViewport:(MTLViewport){(double)((drawable.texture.width-fit.width)/2),
+			(double)((drawable.texture.height-fit.height)/2), (double)fit.width, (double)fit.height, 0, 1}];
+		[present setFragmentTexture:record->texture atIndex:0];
+		[present setFragmentSamplerState:present_sampler atIndex:0];
+		[present setFragmentBytes:&brightness length:sizeof(brightness) atIndex:0];
+		[present drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		[present endEncoding];
+		[buffer presentDrawable:drawable];
+		[buffer addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+			if (completed.status == MTLCommandBufferStatusError)
+				platform_log("companion: present failed: %s", completed.error.description.UTF8String);
+		}];
+		[buffer commit];
+		companion_shown++;
+	}
+	companion_drawable_request((__bridge CAMetalLayer *)host_external_phone_layer());
+	if (companion_statistics && (companion_shown + companion_unshown) >= 60)
+	{
+		platform_log("companion: %lu frames submitted, %lu skipped (phone drawable or main frame unavailable)",
+			companion_shown, companion_unshown);
+		companion_shown = companion_unshown = 0;
+	}
+}
+
 static BOOL frame_rate_sync(void)
 {
 #if TARGET_OS_MACCATALYST
@@ -4242,6 +4413,8 @@ API_AVAILABLE(ios(17.0), tvos(17.0), macCatalyst(17.0))
 }
 @end
 
+static NSThread *system_frames_thread;
+static id system_frames_link;
 static void system_frames_start(void)
 {
 	if (!frame_pacer_wants_system_source())
@@ -4252,21 +4425,33 @@ static void system_frames_start(void)
 		NSThread *thread;
 
 		system_frames.came = dispatch_semaphore_create(0);
+        dispatch_semaphore_t started=dispatch_semaphore_create(0);
+        CAMetalLayer *output_layer=layer;
 		thread = [[NSThread alloc] initWithBlock:^{
-			CAMetalDisplayLink *link = [[CAMetalDisplayLink alloc] initWithMetalLayer:layer];
+			CAMetalDisplayLink *link = [[CAMetalDisplayLink alloc] initWithMetalLayer:output_layer];
 			SystemFrames *frames_delegate = [SystemFrames new];
 
 			link.delegate = frames_delegate;
 			if (latency)
 				link.preferredFrameLatency = (float)latency;
-			link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+#if TARGET_OS_VISION
+            float rate=120;
+#else
+            float rate=(float)((__bridge UIScreen *)host_external_screen()).maximumFramesPerSecond;
+            if(rate<60)rate=60;
+#endif
+			link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80,rate), rate, rate);
 			[link addToRunLoop:NSRunLoop.currentRunLoop forMode:NSDefaultRunLoopMode];
-			for (;;)
-				[NSRunLoop.currentRunLoop run];
+            system_frames_link=link;
+            dispatch_semaphore_signal(started);
+			while(!NSThread.currentThread.cancelled)
+				[NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:NSDate.distantFuture];
 		}];
+        system_frames_thread=thread;
 		thread.name = @"Metal system frames";
 		thread.qualityOfService = NSQualityOfServiceUserInteractive;
 		[thread start];
+        dispatch_semaphore_wait(started,DISPATCH_TIME_FOREVER);
 		system_frames.active = YES;
 		frame_pacer_system_source();
 	}
@@ -4286,6 +4471,39 @@ static id<CAMetalDrawable> system_frame_take(void)
 	return taken ? (__bridge_transfer id<CAMetalDrawable>)taken : nil;
 }
 #endif
+
+/* Called by host_external_commit before the next frame's first draw. */
+int gpu_metal_output(void *new_layer, void *screen, int width, int height)
+{
+    (void)screen;
+    if(!device || !new_layer || width<=0 || height<=0)return 0;
+    if(frame_started)commit(YES);
+    for(int slot=0;slot<FRAMES;slot++)dispatch_semaphore_wait(frame_slots,DISPATCH_TIME_FOREVER);
+    output_link_stop(pacing_link,pacing_thread);pacing_link=nil;pacing_thread=nil;
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+    output_link_stop(system_frames_link,system_frames_thread);
+    system_frames_link=nil;system_frames_thread=nil;
+    void *stale=atomic_exchange(&system_frames.ready,NULL);
+    if(stale)(void)(__bridge_transfer id<CAMetalDrawable>)stale;
+    system_frames.active=NO;
+#endif
+    layer=(__bridge CAMetalLayer *)new_layer;
+    layer.device=device;layer.pixelFormat=MTLPixelFormatBGRA8Unorm;layer.framebufferOnly=YES;
+    layer.drawableSize=CGSizeMake(width,height);
+    for(int slot=0;slot<FRAMES;slot++)dispatch_semaphore_signal(frame_slots);
+    pacing.last_present=0;pacing.due=0;pacing.refreshes=1;
+    pacing_start(output_initialize_flags);
+#if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
+    system_frames_start();
+#endif
+    frame_log.skip_transition=1;
+    if(frame_log.file) {
+        fprintf(frame_log.file,"output-change size=%dx%d skip_next=1\n",width,height);
+        fflush(frame_log.file);
+    }
+    platform_log("Metal: output changed to %dx%d",width,height);
+    return 1;
+}
 
 #if HALO_FRAME_PACING
 /* debug.frame_load_gpu: a made-up GPU load, that many extra full-size
@@ -5403,8 +5621,10 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			host_benchmark_frame_unshown(drawable ? 1 : 0);
 		/* (a frame with nothing to show: its slot goes back now) */
 		frame_pacer_frame_dropped(&paced);
+		BOOL main_shown = drawable && record && record->texture && !frame_held;
 		drawable = nil;
 		commit(YES);
+		companion_present(main_shown);
 		os_unfair_lock_lock(&compile_stats_lock);
 		if (metal_debug && (compile_stats.count[COMPILE_LIBRARY] || compile_stats.count[COMPILE_SPECIALIZE] ||
 			compile_stats.count[COMPILE_PIPELINE]))
@@ -5779,6 +5999,13 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		present_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
 		if (!present_pipeline)
 			host_fatal("Metal: cannot create the present pipeline: %s", error.description.UTF8String);
+		present_descriptor.fragmentFunction = [utilities newFunctionWithName:@"companion_fragment"];
+		/* SDL's built-in iOS layer uses BGRA8Unorm. The external layer may
+		choose another format without changing this phone pipeline. */
+		present_descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+		companion_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
+		if (!companion_pipeline)
+			host_fatal("Metal: cannot create the companion pipeline: %s", error.description.UTF8String);
 		present_descriptor.fragmentFunction = [utilities newFunctionWithName:@"upscale_fragment"];
 		present_descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
 		upscale_pipeline = [device newRenderPipelineStateWithDescriptor:present_descriptor error:&error];
@@ -5797,6 +6024,8 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 
 			host_config_string("debug.rate_map_test", "false", value, sizeof(value));
 			rate_map_test = !strcmp(value, "true");
+			host_config_string("debug.gpu_stats", "false", value, sizeof(value));
+			companion_statistics = !strcmp(value, "true");
 		}
 		compile_options = [MTLCompileOptions new];
 		/* vertex shaders: no fast math. The GLSL is highp, and the compiler

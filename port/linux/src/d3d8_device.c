@@ -29,6 +29,10 @@ Conventions carried over from the Xbox:
 #include "halo_ui_pointer.h"
 #include "port_config.h"
 #include "halo_display.h"
+#ifdef HALO_ILP32
+#include "guest_host.h"
+#endif
+#include "gpu_companion.h"
 #include "halo_stereo.h"
 #include "halo_stereo_window.h"
 #include "halo_stereo_cutscene.h"
@@ -259,9 +263,11 @@ void halo_render_scale_step(int direction)
 static int head_eyes_frame(void);
 static BOOL native_hud_active(void);
 
-#ifdef HALO_ILP32
 /* port/linux/game/scene_class.c */
 int halo_scene_class(void);
+int halo_external_pause_allowed(void);
+
+#ifdef HALO_ILP32
 
 /* display.render_scale for the frame about to be drawn: the D-pad's live
 value if there is one, else the setting's, which a device profile may give
@@ -299,6 +305,7 @@ static void screen_mode_choose(long *width, float scale[2], float native[2])
 		drawable_width = pixels_x ? atoi(pixels_x) : (int)*width;
 		drawable_height = pixels_y ? atoi(pixels_y) : SCREEN_HEIGHT;
 	}
+	*width = halo_display_layout_width(drawable_width, drawable_height, requested_width, *width);
 	native_pixels = halo_display_render_size(drawable_width, drawable_height, *width, requested_width, 0,
 		screen_maximum_texture_size);
 	{
@@ -652,6 +659,53 @@ static long native_scene_bounds[4];
 or stencil test other than "always", since the last line */
 static unsigned long native_depth_asks;
 
+/* The companion is sampled once per game frame, so every draw uses the same
+output and scale even when a scene connects between event polls. */
+static struct companion_records companion_records;
+static float companion_scale[2];
+static int companion_capture = -1, companion_enabled;
+static unsigned long companion_frame = (unsigned long)-1;
+static unsigned long companion_draws, companion_skipped;
+static double companion_encode_seconds;
+static unsigned int companion_flash_color;
+static int companion_flash_adapt;
+static gpu_shader companion_flash_shader;
+/* source/bink/bink_playback.c; boolean is an unsigned byte in the guest. */
+extern unsigned char bink_playback_in_progress(void);
+
+void halo_companion_flash(unsigned int color, int adapt)
+{
+	companion_flash_color = color;
+	companion_flash_adapt = adapt;
+}
+
+static BOOL companion_active(void)
+{
+	uint32_t width = 0, height = 0;
+	const struct halo_stereo_frame *stereo = halo_stereo_frame();
+	if (!device.gl_ready || !device_capabilities.upscale || stereo->mode != HALO_STEREO_OFF || stereo->eye_count)
+		return FALSE;
+	if (companion_frame == device.frame)
+		return companion_enabled;
+	companion_frame = device.frame;
+	if (companion_capture < 0)
+		companion_capture = config_boolean("debug.companion_capture");
+	companion_enabled = gpu_companion_size(&width, &height) != 0;
+	if (!companion_enabled && companion_capture)
+	{
+		width = 1280;
+		height = 720;
+		companion_enabled = 1;
+	}
+	if (companion_enabled)
+	{
+        long logical=halo_screen_width();
+        companion_picture_scale(logical,SCREEN_HEIGHT,lroundf(logical*screen_scale_native[0]),
+            lroundf(SCREEN_HEIGHT*screen_scale_native[1]),width,height,companion_scale);
+	}
+	return companion_enabled;
+}
+
 static BOOL native_hud_active(void)
 {
 	const struct halo_stereo_frame *stereo;
@@ -662,7 +716,8 @@ static BOOL native_hud_active(void)
 			return FALSE;
 		native_hud_wanted = config_boolean("display.native_hud") && device_capabilities.upscale;
 	}
-	if (!native_hud_wanted || (screen_scale_native[0] <= screen_scale[0] && screen_scale_native[1] <= screen_scale[1]))
+	if (!companion_active() && (!native_hud_wanted ||
+		(screen_scale_native[0] <= screen_scale[0] && screen_scale_native[1] <= screen_scale[1])))
 		return FALSE;
 	stereo = halo_stereo_frame();
 	return stereo->mode == HALO_STEREO_OFF && stereo->eye_count == 0 && !rate_map_test();
@@ -938,7 +993,8 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 
 	format = surface_dimensions(surface, &width, &height, &depth);
 	/* the screen's targets are drawn at the screen's scale */
-	if (width == (unsigned long)halo_screen_width() && height == SCREEN_HEIGHT)
+	if ((surface->Data == device.back_buffer.Data || surface->Data == device.depth_buffer.Data) &&
+		height == SCREEN_HEIGHT)
 	{
 		scale[0] = screen_scale[0];
 		scale[1] = screen_scale[1];
@@ -956,6 +1012,11 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 		{
 			scale[0] = screen_scale_native[0];
 			scale[1] = screen_scale_native[1];
+		}
+		if (layer == HALO_STEREO_LAYER_COMPANION)
+		{
+			scale[0] = companion_scale[0];
+			scale[1] = companion_scale[1];
 		}
 		/* the zoomed picture: the whole view at the eyes' density without
 		foveation, unfoveated (halo_stereo_zoom_density), in steps of 1/256 of
@@ -1186,6 +1247,8 @@ struct xgpu_render_target *xgpu_render_target_find(unsigned long data)
 		/* display.native_hud: the display-sized back buffer is what a draw
 		outside a view's scene samples, once it is the later of the two
 		written; a scene's draws sample the scene's */
+		if (entry->layer == HALO_STEREO_LAYER_COMPANION)
+			continue;
 		if (entry->layer == HALO_STEREO_LAYER_NATIVE)
 		{
 			if (entry->target.data != data || native_scene || !native_hud_active())
@@ -1452,7 +1515,9 @@ static const char *anti_aliasing_label_of(void)
 /* display.anti_aliasing's method; a value this build does not draw is off */
 static void anti_aliasing_read(void)
 {
-	const char *setting = config_string("display.anti_aliasing");
+    char contextual_setting[32];
+    config_scene_string("display.anti_aliasing",halo_scene_class(),contextual_setting,sizeof(contextual_setting));
+	const char *setting = contextual_setting;
 	int method = !strcmp(setting, "fxaa") ? _anti_aliasing_fxaa : !strcmp(setting, "smaa") ? _anti_aliasing_smaa :
 		_anti_aliasing_off;
 
@@ -1869,6 +1934,12 @@ static void gl_initialize(void)
 	/* Select the real Retina drawable before allocating any screen targets. */
 	(void)halo_screen_width();
 	screen_mode_choose(&screen_width, screen_scale, screen_scale_native);
+    /* The window's first drawable may have another aspect than the launch
+       environment. Creation already allocated maximum-width surfaces; keep
+       their descriptors in step with the newly selected logical width. */
+    device.presentation.BackBufferWidth=(UINT)screen_width;
+    d3d8_surface_resize(&device.back_buffer,D3DFMT_LIN_A8R8G8B8,(unsigned long)screen_width,SCREEN_HEIGHT);
+    d3d8_surface_resize(&device.depth_buffer,D3DFMT_LIN_D24S8,(unsigned long)screen_width,SCREEN_HEIGHT);
 	platform_log("iOS render target: %.0fx%.0f (logical %ldx%d)",
 		screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1], screen_width, SCREEN_HEIGHT);
 #endif
@@ -1979,17 +2050,12 @@ HRESULT WINAPI Direct3D_CreateDevice(UINT adapter, D3DDEVTYPE device_type, void 
 			device.presentation = *presentation_parameters;
 		width = device.presentation.BackBufferWidth ? device.presentation.BackBufferWidth : 640;
 		height = device.presentation.BackBufferHeight ? device.presentation.BackBufferHeight : 480;
-#ifdef HALO_ILP32
-		d3d8_surface_initialize(&device.back_buffer, D3DFMT_LIN_A8R8G8B8, width, height);
-		d3d8_surface_initialize(&device.depth_buffer, D3DFMT_LIN_D24S8, width, height);
-#else
 		/* room for the widest screen, which F11 can switch to (the screen's
 		width, above) */
 		d3d8_surface_initialize(&device.back_buffer, D3DFMT_LIN_A8R8G8B8, SCREEN_MAXIMUM_WIDTH, height);
 		d3d8_surface_initialize(&device.depth_buffer, D3DFMT_LIN_D24S8, SCREEN_MAXIMUM_WIDTH, height);
 		d3d8_surface_resize(&device.back_buffer, D3DFMT_LIN_A8R8G8B8, width, height);
 		d3d8_surface_resize(&device.depth_buffer, D3DFMT_LIN_D24S8, width, height);
-#endif
 		device.render_target = &device.back_buffer;
 		device.depth_stencil = &device.depth_buffer;
 		for (index = 0; index < D3DTS_MAX; index++)
@@ -2109,6 +2175,9 @@ long halo_screen_commit(void)
 	long width;
 	float scale[2], native[2];
 
+#ifdef HALO_ILP32
+    host_external_commit(halo_external_pause_allowed());
+#endif
 	/* (display.anti_aliasing, as config.toml has it now) */
 	if (device.gl_ready)
 		anti_aliasing_read();
@@ -2128,14 +2197,12 @@ long halo_screen_commit(void)
 		screen_width = width;
 		screen_scale[0] = scale[0];
 		screen_scale[1] = scale[1];
-#ifndef HALO_ILP32
 		if (device.created)
 		{
 			device.presentation.BackBufferWidth = (UINT)width;
 			d3d8_surface_resize(&device.back_buffer, D3DFMT_LIN_A8R8G8B8, (unsigned long)width, SCREEN_HEIGHT);
 			d3d8_surface_resize(&device.depth_buffer, D3DFMT_LIN_D24S8, (unsigned long)width, SCREEN_HEIGHT);
 		}
-#endif
 	}
 	return screen_width;
 }
@@ -4005,6 +4072,12 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 
 	draw->vertex_shader = vertex_shader_get(program, immediate);
 	draw->pixel_shader = fragment_shader_get(&key);
+	if (companion_flash_adapt && companion_active() && target_native)
+	{
+		key.combiner_state[D3DRS_PSRGBINPUTS0] = 0x01200000;
+		key.combiner_state[D3DRS_PSALPHAINPUTS0] = 0x11200000;
+		companion_flash_shader = fragment_shader_get(&key);
+	}
 	VALIDATION_VERTEX_SHADER(program, immediate ? 1 : 0);
 #if HALO_RENDER_VALIDATION
 	/* render states the game can set that nothing here reads */
@@ -4111,6 +4184,56 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 /* the packet prepare_draw and the draw function built */
 static struct gpu_draw draw_packet;
 
+static BOOL companion_records_target(gpu_texture target)
+{
+	struct render_target_entry *back;
+	if (!companion_active() || native_scene || bink_playback_in_progress())
+		return FALSE;
+	back = render_target_get_layer(&device.back_buffer, HALO_STEREO_LAYER_NATIVE);
+	return companion_eligible(1, native_scene, 0, target, back ? back->target.texture : 0);
+}
+
+static void companion_record_submission(const struct gpu_draw *draw)
+{
+	int stage;
+	struct render_target_entry *entry;
+	struct companion_record *item;
+	float bounds[4] = {device.viewport.X, device.viewport.Y,
+		device.viewport.X + device.viewport.Width, device.viewport.Y + device.viewport.Height};
+	if (!companion_records_target(draw->color_target))
+		return;
+	/* Loading-screen blur samples the completed world. It must not put the
+	world on the phone. The motion tracker's own target is intentionally kept. */
+	for (entry = *render_target_bucket(device.back_buffer.Data); entry; entry = entry->next_in_bucket)
+		if (entry->target.data == device.back_buffer.Data)
+			for (stage = 0; stage < GPU_STAGE_COUNT; stage++)
+				if (draw->stages[stage].texture == entry->target.texture)
+				{
+					companion_skipped++;
+					return;
+				}
+	item = companion_record_draw(&companion_records, draw, &constant_store, &draw_uniforms, bounds);
+	if (!item)
+	{
+		companion_skipped++;
+		return;
+	}
+	if (companion_flash_adapt)
+	{
+		item->draw.pixel_shader = companion_flash_shader;
+		item->draw.blend.enable = 1;
+		item->draw.blend.operation = GPU_BLEND_OP_ADD;
+		item->draw.blend.source = GPU_BLEND_ONE;
+		item->draw.blend.destination = GPU_BLEND_ONE_MINUS_SOURCE_ALPHA;
+		/* A separate serial makes the backend upload the altered constant,
+		including the following TV draw's original value. */
+		draw_uniforms.serial++;
+		item->uniforms.serial = ++draw_uniforms.serial;
+		draw_uniforms.serial++;
+		color_to_vec4(companion_flash_color, item->uniforms.ps_c0[0]);
+	}
+}
+
 static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 {
 	VALIDATION_SUBMIT();
@@ -4119,6 +4242,7 @@ static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 		stats.skipped_link++;
 		return;
 	}
+	companion_record_submission(draw);
 	if (immediate)
 		stats.immediate_draws++;
 	else
@@ -5077,6 +5201,7 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 		clear.flags |= GPU_CLEAR_STENCIL;
 		clear.stencil = (uint32_t)stencil;
 	}
+	BOOL record_companion = (clear.flags & GPU_CLEAR_COLOR) && companion_records_target(clear.color_target);
 	list = malloc(sizeof(*list) * (count && rectangles ? count : 1));
 	if (!count || !rectangles)
 	{
@@ -5090,6 +5215,13 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 		list[0].width = target_pixel((float)(device.viewport.X + device.viewport.Width), 0) - x0;
 		list[0].height = target_pixel((float)(device.viewport.Y + device.viewport.Height), 1) - y0;
 		listed = 1;
+		if (record_companion)
+		{
+			float bounds[4] = {device.viewport.X, device.viewport.Y,
+				device.viewport.X + device.viewport.Width, device.viewport.Y + device.viewport.Height};
+			struct companion_record *item = companion_record_add(&companion_records, bounds);
+			if (item) { item->is_clear = 1; item->clear = clear; }
+		}
 	}
 	else
 	{
@@ -5111,6 +5243,12 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 			list[listed].y = y0;
 			list[listed].width = target_pixel((float)(right + UI_OFFSET), 0) - x0;
 			list[listed].height = target_pixel((float)bottom, 1) - y0;
+			if (record_companion)
+			{
+				float bounds[4] = {left + UI_OFFSET, top, right + UI_OFFSET, bottom};
+				struct companion_record *item = companion_record_add(&companion_records, bounds);
+				if (item) { item->is_clear = 1; item->clear = clear; }
+			}
 			listed++;
 		}
 	}
@@ -5677,8 +5815,8 @@ static void native_targets_release(void)
 	{
 		struct render_target_entry *entry = *link;
 
-		if (entry->layer != HALO_STEREO_LAYER_NATIVE || entry->last_rendered + 120 > device.frame ||
-			(native_hud_active() && entry->target.scale[0] == screen_scale_native[0] &&
+		if ((entry->layer != HALO_STEREO_LAYER_NATIVE && entry->layer != HALO_STEREO_LAYER_COMPANION) || entry->last_rendered + 120 > device.frame ||
+			(entry->layer == HALO_STEREO_LAYER_NATIVE && native_hud_active() && entry->target.scale[0] == screen_scale_native[0] &&
 				entry->target.scale[1] == screen_scale_native[1]))
 		{
 			link = &entry->next;
@@ -5711,6 +5849,57 @@ static struct render_target_entry *back_buffer_drawn_this_frame(int layer)
 			return entry;
 	}
 	return NULL;
+}
+
+static struct render_target_entry *companion_reissue(void)
+{
+	struct render_target_entry *target;
+	struct gpu_clear clear = {0};
+	struct gpu_rect whole;
+	struct timespec start, end;
+	size_t i;
+	gpu_companion_set(0);
+	if (!companion_active() || companion_records.failed)
+		return NULL;
+	clock_gettime(CLOCK_MONOTONIC, &start);
+	target = render_target_get_layer(&device.back_buffer, HALO_STEREO_LAYER_COMPANION);
+	whole = (struct gpu_rect){0, 0, target->target.gl_width, target->target.gl_height};
+	clear.color_target = target->target.texture;
+	clear.color = 0xff000000;
+	clear.flags = GPU_CLEAR_COLOR;
+	clear.channel_mask = 15;
+	gpu_clear(&clear, &whole, 1);
+	for (i = 0; i < companion_records.count; i++)
+	{
+		struct companion_record *item = &companion_records.items[i];
+		struct gpu_rect rect = companion_rect(item->bounds, companion_scale[0], companion_scale[1]);
+		if (item->is_clear)
+		{
+			item->clear.color_target = target->target.texture;
+			item->clear.depth_target = 0;
+			item->clear.flags = GPU_CLEAR_COLOR;
+			gpu_clear(&item->clear, &rect, 1);
+		}
+		else
+		{
+			item->draw.color_target = target->target.texture;
+			item->draw.depth_target = 0;
+			item->draw.viewport.x = rect.x;
+			item->draw.viewport.y = rect.y;
+			item->draw.viewport.width = rect.width;
+			item->draw.viewport.height = rect.height;
+			item->draw.scissor = rect;
+			if (gpu_draw(&item->draw, &item->constants, &item->uniforms))
+				companion_draws++;
+			else
+				companion_skipped++;
+		}
+	}
+	target->last_rendered = device.frame + 1;
+	gpu_companion_set(target->target.texture);
+	clock_gettime(CLOCK_MONOTONIC, &end);
+	companion_encode_seconds += (double)(end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) * 1e-9;
+	return target;
 }
 
 void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destination_rectangle,
@@ -5789,12 +5978,17 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			hold_clear.color = 0xff000000u;
 			gpu_clear(&hold_clear, &hold_whole, 1);
 		}
+
+		struct render_target_entry *companion = companion_reissue();
+
 		if (trace_frame())
 			platform_log("present back buffer %08lx texture %u", (unsigned long)device.back_buffer.Data,
 				back_buffer->target.texture);
 		if (screenshot_every > 0 && device.frame % (unsigned long)screenshot_every == 0)
 		{
 			write_screenshot(back_buffer, "");
+			if (companion && companion_capture)
+				write_screenshot(companion, "-companion");
 			/* display.native_hud: and the scene as drawn, before its stretch */
 			if (back_buffer->layer == HALO_STEREO_LAYER_NATIVE && back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO))
 				write_screenshot(back_buffer_drawn_this_frame(HALO_STEREO_LAYER_MONO), "-scene");
@@ -5983,6 +6177,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		shader_list_take_pipelines();
 	}
 	native_scene = FALSE;
+	companion_records_reset(&companion_records);
 	if (device.frame % 60 == 0)
 		native_targets_release();
 	device.frame++;
@@ -6015,6 +6210,12 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			platform_log("screen: the last 60 frames: %lu draws over the scene asked for a depth or stencil test, which "
 				"the display-sized back buffer does not have", native_depth_asks);
 		native_depth_asks = 0;
+		if (companion_draws || companion_skipped)
+			platform_log("companion: last 60 frames: %lu draws reissued, %lu skipped; %.3f ms encode per frame",
+				companion_draws, companion_skipped, companion_encode_seconds * 1000.0 / 60.0);
+		companion_draws = companion_skipped = 0;
+		companion_encode_seconds = 0;
+
 		{
 			unsigned long models_drawn[5], models_culled;
 

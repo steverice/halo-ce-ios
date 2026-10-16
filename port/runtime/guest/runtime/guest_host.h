@@ -18,6 +18,10 @@ layouts).
 #include "gpu.h"
 #include "halo_stereo.h"
 
+/* Whether the current output is an external display (context values are never saved). */
+int host_external_active(void);
+void host_external_commit(int allow_pause);
+
 /* ---------- process */
 
 /* performs a Linux system call on the guest's behalf, converting the
@@ -29,6 +33,10 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 void host_log(int priority, const char *text);
 void host_abort(const char *reason) __attribute__((noreturn));
 void host_exit(int code) __attribute__((noreturn));
+
+int host_external_cycle(int direction);
+int host_external_force(const char *mode);
+void host_external_mode_label(char *text, unsigned long size);
 
 /* ---------- the device benchmark (port/ios/host/host_benchmark.m; the guest's
 side is port/linux/src/benchmark_suite.c) */
@@ -42,6 +50,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 /* the next run as text ("scene=a10-crew map=a10 difficulty=hard recording=a10-bench
 lead=0 seconds=0 lines=540 anisotropy=4 shadow=256 lod=1"), after the pause
 between runs; 0 once the suite is over and its report written */
+/* 3 waits for an output switch; 4 asks the guest to restart with its committed output sizing. */
 int host_benchmark_next(char *text, unsigned int size);
 /* the measured window opens (1) or closes (0); the render size it drew at */
 void host_benchmark_window(int open, int width, int height);
@@ -146,6 +155,8 @@ void host_gpu_upscale(gpu_texture source, gpu_texture destination, const struct 
 uint32_t host_gpu_anti_alias_prepare(uint32_t method, const char *smaa_shader, const void *area_texels, const void *search_texels);
 void host_gpu_anti_alias(uint32_t method, gpu_texture target, const struct gpu_rect *rect);
 uint32_t host_gpu_vertical_blank_wait(void);
+uint32_t host_gpu_companion_size(uint32_t *width, uint32_t *height);
+void host_gpu_companion_set(gpu_texture target);
 void host_gpu_frame_start(void);
 uint32_t host_gpu_present(gpu_texture back_buffer);
 uint32_t host_gpu_present_stereo(const struct gpu_stereo_present *present);

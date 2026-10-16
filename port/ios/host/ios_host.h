@@ -35,6 +35,7 @@ void host_ios_prepare_assets(const char *documents);
 void host_tv_import(const char *documents);
 void host_ios_touch_attach(struct SDL_Window *window);
 void host_ios_touch_reset(void);
+void host_ios_touch_pause(void);
 /* debug.frame_counter (host_frame_counter.m): a label in the window's corner
 showing the renderer, the frame number and the game time, 1/30 s a frame with
 fixed_timestep, else the time since the first frame */

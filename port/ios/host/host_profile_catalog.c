@@ -149,10 +149,10 @@ static int valid_catalog(toml_datum_t root)
 	return 1;
 }
 
-static const char *setting(const struct host_profile *p, const char *name, const char *scene, const char *otherwise)
+static const char *setting(const struct host_profile *p, const char *name, const char *scene, int external, const char *otherwise)
 {
 	int i;
-	for (i = p->count - 1; i >= 0; i--) if (!strcmp(p->values[i].name, name) && !strcmp(p->values[i].scene, scene))
+	for (i = p->count - 1; i >= 0; i--) if (p->values[i].external == external && !strcmp(p->values[i].name, name) && !strcmp(p->values[i].scene, scene))
 		return p->values[i].text;
 	return otherwise;
 }
@@ -166,10 +166,10 @@ static int compatible(const struct host_device *d, const struct host_profile *p,
 		d->gpu_family < number(f, "minimum_gpu_family", 1, 32)) return 0;
 	for (i = 0; i < 3; i++)
 	{
-		const char *height = setting(p, "display.render_height", scenes[i], setting(p, "display.render_height", "", "0"));
-		const char *scale = setting(p, "display.render_scale", scenes[i], setting(p, "display.render_scale", "", "1"));
-		const char *base_rate = setting(p, "display.frame_rate", "", "display");
-		const char *scene_rate = i ? setting(p, "display.frame_rate", scenes[i], "") : "";
+		const char *height = setting(p, "display.render_height", scenes[i], 0, setting(p, "display.render_height", "", 0, "0"));
+		const char *scale = setting(p, "display.render_scale", scenes[i], 0, setting(p, "display.render_scale", "", 0, "1"));
+		const char *base_rate = setting(p, "display.frame_rate", "", 0, "display");
+		const char *scene_rate = i ? setting(p, "display.frame_rate", scenes[i], 0, "") : "";
 		/* Use the renderer's rounding, aspect clamp, and 240-line minimum. Ignoring the
 		   GPU's maximum texture dimension is conservative: it can only reduce allocation. */
 		struct halo_display_size size = halo_display_render_size(lround(long_side * atof(scale)),
@@ -183,6 +183,22 @@ static int compatible(const struct host_device *d, const struct host_profile *p,
 		if (atoi(scene_rate) > 0 && atoi(scene_rate) < target) target = atoi(scene_rate);
 		if (pixels > field(f, "maximum_pixels").u.arr.elem[i].u.int64 ||
 			target > number(f, "maximum_refresh_hertz", 1, 1000)) return 0;
+		/* External displays have no hardware identity. Bound their allocation at
+		   the renderer's widest frame shape, rather than the built-in panel's shape. */
+		int has_external = 0;
+		for (int v = 0; v < p->count; v++) if (p->values[v].external) has_external = 1;
+		if (has_external)
+		{
+			const char *external_height = setting(p, "display.render_height", scenes[i], 1,
+				setting(p, "display.render_height", "", 1, height));
+			const char *external_scale = setting(p, "display.render_scale", scenes[i], 1,
+				setting(p, "display.render_scale", "", 1, scale));
+			long output_height = atol(setting(p, "display.output_height", "", 1, "0"));
+			if (!output_height) output_height = 8192;
+			size = halo_display_render_size(lround(output_height * (1600.0 / 480.0) * atof(external_scale)),
+				lround(output_height * atof(external_scale)), 1600, 0, atoi(external_height), 8192);
+			if ((double)size.width * size.height > field(f, "maximum_pixels").u.arr.elem[i].u.int64) return 0;
+		}
 	}
 	return 1;
 }

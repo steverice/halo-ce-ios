@@ -33,6 +33,15 @@ with open(BUILD / 'gpu_layout_check.h', 'w') as layout_check:
     subprocess.run([str(BUILD / 'gpu-layout-probe')], cwd=ROOT, check=True, stdout=layout_check)
 run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
     '-fno-stack-protector', '-ffreestanding', '-Iport/linux/src', '-fsyntax-only', '-x', 'c', BUILD / 'gpu_layout_check.h')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/external_mode_probe.c', 'port/ios/host/host_external_mode.c',
+    '-o', BUILD/'external-mode-probe')
+run(BUILD/'external-mode-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/external_request_probe.c', 'port/ios/host/host_external_mode.c',
+    '-o', BUILD/'external-request-probe')
+run(BUILD/'external-request-probe')
+
 # memory_probe.c includes guest_host.h, which includes gpu.h (port/linux/src)
 run('xcrun','clang','-O2','-Iport/ios/host','-Iport/runtime/include','-Iport/linux/src',
     '-Iport/runtime/guest/runtime','port/ios/tests/memory_probe.c','port/ios/host/host_memory.c','-o',BUILD/'memory-probe')
@@ -46,6 +55,10 @@ run(BUILD/'audio-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/display_probe.c', '-o', BUILD/'display-probe')
 run(BUILD/'display-probe')
+
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/companion_probe.c', '-o', BUILD/'companion-probe')
+run(BUILD/'companion-probe')
 
 # the native Mac runner's pinned display (host_display_pin.h)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
@@ -111,7 +124,8 @@ profile_keys = re.findall(r'^PROFILE_(?:BOOLEAN|INTEGER|REAL|STRING)\("([^"]+)"'
                           (ROOT / 'port/linux/src/port_profile_keys.h').read_text(), re.M)
 mac_run_defaults = (ROOT / 'tools/mac_run.py').read_text()
 mac_run_defaults = mac_run_defaults[mac_run_defaults.index('DEFAULTS = {'):mac_run_defaults.index('\n}\n', mac_run_defaults.index('DEFAULTS = {'))]
-unpinned = [key for key in profile_keys if f'"{key}"' not in mac_run_defaults]
+# output_height is external profile policy, never a config.toml setting.
+unpinned = [key for key in profile_keys if key != "display.output_height" and f'"{key}"' not in mac_run_defaults]
 if not profile_keys or unpinned:
     raise SystemExit(f"mac_run.py: DEFAULTS must set every setting a device profile may set; missing {unpinned}")
 if 'chosen_origins(' not in (ROOT / 'tools/mac_run.py').read_text().split('def prepare(')[1]:

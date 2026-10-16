@@ -35,12 +35,14 @@ static const struct profile_key profile_keys[] =
 #define PROFILE_REAL(name, minimum, maximum) { name, _profile_real, minimum, maximum, NULL },
 #define PROFILE_STRING(name, choices) { name, _profile_string, 0.0, 0.0, choices },
 #define PROFILE_SCENE(name)
+#define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
 #undef PROFILE_INTEGER
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
 };
 
 /* those a profile may also set for a scene class, and the classes this build knows */
@@ -51,12 +53,31 @@ static const char *const scene_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name) name,
+#define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
 #undef PROFILE_INTEGER
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
+};
+
+static const char *const external_keys[] =
+{
+#define PROFILE_BOOLEAN(name)
+#define PROFILE_INTEGER(name, minimum, maximum)
+#define PROFILE_REAL(name, minimum, maximum)
+#define PROFILE_STRING(name, choices)
+#define PROFILE_SCENE(name)
+#define PROFILE_EXTERNAL(name) name,
+#include "../../linux/src/port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
 };
 
 static const char *const scene_classes[] = { "menu", "cutscene" };
@@ -172,7 +193,7 @@ static char *profile_read(const char *path, size_t *size, const struct profile_l
 /* table's settings (its "section" tables' keys) added to profile as layer source; those that are no profile
    setting, of the wrong type or outside their range are left out and named in the log */
 static void profile_add_settings(struct host_profile *profile, toml_datum_t table, const char *source,
-	const char *label, const char *scene, const struct profile_log *log)
+	const char *label, const char *scene, int external, const struct profile_log *log)
 {
 	int section_index;
 
@@ -197,8 +218,16 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 					profile_logf(log, "device profile: %s: scene class \"%.40s\" is not one this build knows; ignored",
 						label, class_name);
 				else
-					profile_add_settings(profile, section.u.tab.value[class_index], source, label, class_name, log);
+					profile_add_settings(profile, section.u.tab.value[class_index], source, label, class_name, external, log);
 			}
+			continue;
+		}
+		if (!scene && !strcmp(section_name, "external"))
+		{
+			if (external || section.type != TOML_TABLE)
+				profile_logf(log, "device profile: %s: invalid external table; ignored", label);
+			else
+				profile_add_settings(profile, section, source, label, NULL, 1, log);
 			continue;
 		}
 		/* (the file's own fields and tables: tools/profile_check.py checks those) */
@@ -218,6 +247,12 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 			{
 				profile_logf(log, "device profile: %s line %d: %s.%s is not a setting a profile may set; ignored",
 					label, datum.lineno, section_name, section.u.tab.key[key_index]);
+				continue;
+			}
+			if ((external && !name_in(value.name, external_keys, sizeof(external_keys) / sizeof(external_keys[0]))) ||
+				(!external && !strcmp(value.name, "display.output_height")))
+			{
+				profile_logf(log, "device profile: %s: %s cannot be set in this output context; ignored", label, value.name);
 				continue;
 			}
 			if (scene && !name_in(value.name, scene_keys, sizeof(scene_keys) / sizeof(scene_keys[0])))
@@ -263,6 +298,7 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 				profile_logf(log, "device profile: %s: too many values; %s ignored", label, value.name);
 				continue;
 			}
+			value.external = external;
 			snprintf(value.source, sizeof(value.source), "%s", source);
 			snprintf(value.scene, sizeof(value.scene), "%s", scene ? scene : "");
 			profile->values[profile->count++] = value;
@@ -504,7 +540,7 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 		{
 			int before = profile->count;
 
-			profile_add_settings(profile, result.toptab, source, label, NULL, &log);
+			profile_add_settings(profile, result.toptab, source, label, NULL, 0, &log);
 			if (index == 2)
 			{
 				profile->drop_in = 1;
@@ -550,13 +586,24 @@ int host_profile_value(const struct host_profile *profile, const char *name, cha
 
 	for (index = profile->count - 1; index >= 0; index--)
 	{
-		if (!profile->values[index].scene[0] && !strcmp(profile->values[index].name, name))
+		if (!profile->values[index].external && !profile->values[index].scene[0] && !strcmp(profile->values[index].name, name))
 		{
 			snprintf(text, size, "%s", profile->values[index].text);
 			return 1;
 		}
 	}
 	return 0;
+}
+
+int host_profile_external_value(const struct host_profile *profile, const char *name, char *text, size_t size)
+{
+	for (int index = profile->count - 1; index >= 0; index--)
+		if (profile->values[index].external && !profile->values[index].scene[0] && !strcmp(profile->values[index].name, name))
+		{
+			snprintf(text, size, "%s", profile->values[index].text);
+			return 1;
+		}
+	return host_profile_value(profile, name, text, size);
 }
 
 size_t host_profile_encode(const struct host_profile *profile, char *text, size_t size)
@@ -579,8 +626,8 @@ size_t host_profile_encode(const struct host_profile *profile, char *text, size_
 		for (character = source; *character; character++)
 			if ((unsigned char)*character < 32 || *character == 127)
 				*character = ' ';
-		written = snprintf(text + length, size - length, "%s\t%s\t%s%s%s\n", value->name, value->text, source,
-			value->scene[0] ? "\t" : "", value->scene);
+		written = snprintf(text + length, size - length, "%s\t%s\t%s%s%s%s\n", value->name, value->text, source,
+			value->scene[0] || value->external ? "\t" : "", value->scene, value->external ? "\texternal" : "");
 
 		if (written < 0 || (size_t)written >= size - length)
 		{
@@ -658,7 +705,7 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 		const char *key = table.u.tab.key[i]; toml_datum_t value = table.u.tab.value[i];
 		if (!strcmp(key, "schema") || !strcmp(key, "name") || !strcmp(key, "kind") || !strcmp(key, "status") || !strcmp(key, "match")) continue;
 		if (value.type != TOML_TABLE) return 0;
-		if (!strcmp(key, "evidence") || !strcmp(key, "scene")) continue;
+		if (!strcmp(key, "evidence") || !strcmp(key, "scene") || !strcmp(key, "external")) continue;
 		int known = 0;
 		for (size_t j = 0; j < NUMBER_OF_PROFILE_KEYS; j++)
 			if (!strncmp(profile_keys[j].name, key, strlen(key)) && profile_keys[j].name[strlen(key)] == '.') known = 1;
@@ -709,7 +756,7 @@ int host_profile_validate_folder(const char *folder, void (*log_line)(const char
 		int current = count++;
 		if (!pack_heading(tables[current].toptab, name, &heads[current], &log)) goto done;
 		struct host_profile values = {0};
-		profile_add_settings(&values, tables[current].toptab, "pack", name, NULL, &log);
+		profile_add_settings(&values, tables[current].toptab, "pack", name, NULL, 0, &log);
 		if (errors) goto done;
 	}
 	/* Every platform/family has exactly one class; exact model identities remain unique. */

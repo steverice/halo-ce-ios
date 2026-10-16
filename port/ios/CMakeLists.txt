@@ -110,7 +110,7 @@ add_executable(VISR MACOSX_BUNDLE
     "${ROOT}/port/runtime/texture_policy.c" "${ROOT}/port/runtime/texture_cache.c"
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
     host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
-    host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
+    host/host_thread.c host/host_sdl.c host/host_gpu.c host/host_external.m host/host_external_mode.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_lifecycle.m
     host/host_join_link.c host/host_config.c host/host_bink.c host/host_bonjour.m host/host_share.m host/host_lan.c host/host_profile.c host/host_profile_catalog.c host/host_device.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m
@@ -202,7 +202,7 @@ foreach(flag ${HALO_HOST_PGO_FLAGS})
     target_compile_options(SDL3-static PRIVATE "${flag}")
 endforeach()
 target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "-framework UIKit"
-    "-framework Metal" "-framework QuartzCore" "-framework Network" "-framework CoreImage" z)
+    "-framework Metal" "-framework AVFAudio" "-framework QuartzCore" "-framework Network" "-framework CoreImage" z)
 # display.upscaler = "metalfx" (gpu_metal.m); the simulators have no MetalFX
 if(NOT CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
     target_link_libraries(VISR PRIVATE "-weak_framework MetalFX")

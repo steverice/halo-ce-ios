@@ -97,3 +97,11 @@ A contributed profile is merged with `status = "provisional"` until a second rep
 A profile file is at most 64 KB. It cannot name a path, a server or a debug switch, hold the game below 30 frames a second, or ask for more than a device can do: what a GPU lacks (compressed textures on an A8, for example) is checked in code and no profile turns it on.
 
 Profiles can also arrive as signed complete snapshots. See [Updating profiles and benchmark recordings](../docs/data-packs.md) for build configuration, publishing and rollback.
+
+## External displays
+
+`[external.display]` supplies output values while an iPhone or iPad drives a wired display. It may set only the `PROFILE_EXTERNAL` keys in `port/linux/src/port_profile_keys.h`: `display.output_height`, `display.render_height`, `display.render_scale` and `display.anti_aliasing`. `display.output_height` is a profile-only output cap, valid only here; zero leaves the mode height uncapped.
+
+`[external.scene.menu.display]` and `[external.scene.cutscene.display]` can further set the keys also marked `PROFILE_SCENE`. Precedence is the built-in profile value, the built-in scene value, the external value, then the external scene value. The highest class, model or drop-in layer that supplies each context value wins. Player choices and environment overrides apply on every output. External values never enter `config.toml` or `config.origins`.
+
+Evidence names include the context: `[evidence."external.display.render_height"]` or `[evidence."external.scene.cutscene.display.render_scale"]`. Measured external evidence also needs `output = "external"` and a source identifying the external-output report, scene and date. The marker declares the source's output context; review the report's `output.kind` before marking a value measured.

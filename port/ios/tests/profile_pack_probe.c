@@ -34,6 +34,11 @@ int main(int argc, char **argv)
 	assert(!host_profile_validate_folder(root, NULL));
 	put("bad.toml", "schema=1\nname=\"Bad\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Phone1,1\"]\n");
 	assert(host_profile_validate_folder(root, NULL));
+	put("bad.toml", "schema=1\nname=\"External\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Phone1,1\"]\n[external.display]\noutput_height=1080\nrender_height=720\n[external.scene.cutscene.display]\nrender_scale=0.75\n");
+	assert(host_profile_validate_folder(root, NULL));
+	put("bad.toml", "schema=1\nname=\"External\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Phone1,1\"]\n[external.display]\nrenderer=\"metal\"\n");
+	assert(!host_profile_validate_folder(root, NULL));
+	put("bad.toml", "schema=1\nname=\"External\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Phone1,1\"]\n[external.display]\nrender_height=720\n");
 	put("duplicate.toml", "schema=1\nname=\"Duplicate\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Phone1,1\"]\n");
 	assert(!host_profile_validate_folder(root, NULL));
 	snprintf(path, sizeof(path), "%s/duplicate.toml", root); unlink(path);

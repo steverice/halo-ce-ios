@@ -26,6 +26,11 @@ config_origin_decide.
 #include "tomlc17.h"
 
 #include <SDL3/SDL.h>
+
+#ifdef HALO_ILP32
+/* Runtime output context supplied by the Apple host. */
+int host_external_active(void);
+#endif
 #include <ctype.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -739,6 +744,10 @@ static const struct config_setting config_settings[] =
 		"Look for a new version when the game starts, and offer to update to it;\n"
 		"false never looks (the game's \"Do not ask again\" writes false here)." },
 
+	{ "debug.external_mode", _config_string, "\"\"", "HALO_EXTERNAL_MODE", _environment_value, _platform_ios,
+		"Force an external display mode for testing: preferred, WIDTHxHEIGHT, or a comma-separated list.\n"
+		"Hold Back and press the D-pad's up or down to cycle the list live." },
+
 	{ "debug.render_scale_dpad", _config_boolean, "false", "HALO_RENDER_SCALE_DPAD", _environment_value, _platform_ios,
 		"While Back is held, the D-pad's left and right step the render scale\n"
 		"(display.render_scale) down and up by 0.05 as the game runs, shown on\n"
@@ -1040,6 +1049,8 @@ static const struct config_setting config_settings[] =
 		"Pixel shaders show their first texture." },
 	{ "debug.gpu_debug_flat", _config_boolean, "false", "HALO_GPU_DEBUG_FLAT", _environment_set_is_true, _platform_all,
 		"Pixel shaders show their vertex colour." },
+	{ "debug.companion_capture", _config_boolean, "false", "HALO_COMPANION_CAPTURE", _environment_set_is_true, _platform_all,
+		"Draw the companion HUD without an external display and save it with screenshots." },
 	{ "debug.screenshot_directory", _config_string, "\"\"", "HALO_SCREENSHOT_DIR", _environment_value, _platform_all,
 		"A folder to save frames to (with screenshot_every); empty none." },
 	{ "debug.screenshot_every", _config_integer, "0", "HALO_SCREENSHOT_EVERY", _environment_value, _platform_all,
@@ -1108,12 +1119,14 @@ static const char *const config_profile_keys[] =
 #define PROFILE_REAL(name, minimum, maximum) name,
 #define PROFILE_STRING(name, choices) name,
 #define PROFILE_SCENE(name)
+#define PROFILE_EXTERNAL(name)
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
 #undef PROFILE_INTEGER
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
 };
 
 static const char *const config_scene_keys[] =
@@ -1123,12 +1136,31 @@ static const char *const config_scene_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name) name,
+#define PROFILE_EXTERNAL(name)
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
 #undef PROFILE_INTEGER
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
+};
+
+static const char *const config_external_keys[] =
+{
+#define PROFILE_BOOLEAN(name)
+#define PROFILE_INTEGER(name, minimum, maximum)
+#define PROFILE_REAL(name, minimum, maximum)
+#define PROFILE_STRING(name, choices)
+#define PROFILE_SCENE(name)
+#define PROFILE_EXTERNAL(name) name,
+#include "port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+#undef PROFILE_EXTERNAL
 };
 
 static const struct
@@ -1185,6 +1217,9 @@ static struct config_setting_state
 	/* a scene class's value, from the highest layer that has one (text NULL: none) */
 	struct config_profile_value scene[NUMBER_OF_CONFIG_SCENES];
 	struct config_value scene_value[NUMBER_OF_CONFIG_SCENES];
+	/* Index 0 is the external base, then menu and cutscene. */
+	struct config_profile_value external[NUMBER_OF_CONFIG_SCENES];
+	struct config_value external_value[NUMBER_OF_CONFIG_SCENES];
 	/* the default with the profile over it */
 	struct config_value device;
 	/* that as config.toml holds a value (strings quoted) */
@@ -1898,12 +1933,12 @@ static void config_profile_load(void)
 	while (line && *line)
 	{
 		const char *end = line + strcspn(line, "\n");
-		char fields[4][96] = { "", "", "", "" };
+		char fields[5][96] = { "", "", "", "", "" };
 		const char *field = line;
 		int count = 0, scene;
 		long index;
 
-		while (count < 4 && field <= end)
+		while (count < 5 && field <= end)
 		{
 			size_t length = 0;
 
@@ -1915,11 +1950,35 @@ static void config_profile_load(void)
 		line = *end ? end + 1 : end;
 		if (count < 3)
 			continue;
+		/* Output mode selection belongs to the host, never to config.toml. */
+		if (!strcmp(fields[0], "display.output_height"))
+			continue;
 		index = config_setting_index(fields[0]);
 		if (index < 0 || !config_is_profile_setting((size_t)index) || !(config_settings[index].platforms & CONFIG_PLATFORM))
 		{
 			platform_log("settings: the device profile sets %s, which is not a setting a profile may set here; ignored",
 				fields[0]);
+			continue;
+		}
+		if (count == 5)
+		{
+			if (strcmp(fields[4], "external") || !config_name_in(fields[0], config_external_keys,
+				sizeof(config_external_keys) / sizeof(config_external_keys[0])))
+				continue;
+			scene = 0;
+			if (*fields[3])
+			{
+				for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && strcmp(config_scene_names[scene], fields[3]); scene++)
+					;
+				if (scene == NUMBER_OF_CONFIG_SCENES || !config_name_in(fields[0], config_scene_keys,
+					sizeof(config_scene_keys) / sizeof(config_scene_keys[0])))
+					continue;
+			}
+			free(config_states[index].external[scene].text);
+			free(config_states[index].external[scene].source);
+			config_states[index].external[scene].text = strdup(fields[1]);
+			config_states[index].external[scene].source = strdup(fields[2]);
+			config_set_from_profile_text(&config_states[index].external_value[scene], config_settings[index].type, fields[1]);
 			continue;
 		}
 		if (count == 4)
@@ -2682,10 +2741,22 @@ static const struct config_value *config_scene_value(const char *name, enum conf
 	const struct config_value *value = config_value(name, type);
 	long index = config_setting_index(name);
 
-	if (index >= 0 && config_settings[index].type == type && scene > 0 && scene < NUMBER_OF_CONFIG_SCENES &&
-		config_states[index].scene[scene].text &&
+	if (index >= 0 && config_settings[index].type == type &&
 		(config_states[index].source == _source_default || config_states[index].source == _source_profile))
-		return &config_states[index].scene_value[scene];
+	{
+		const struct config_setting_state *state = &config_states[index];
+#ifdef HALO_ILP32
+		if (host_external_active())
+		{
+			if (scene > 0 && scene < NUMBER_OF_CONFIG_SCENES && state->external[scene].text)
+				return &state->external_value[scene];
+			if (state->external[0].text)
+				return &state->external_value[0];
+		}
+#endif
+		if (scene > 0 && scene < NUMBER_OF_CONFIG_SCENES && state->scene[scene].text)
+			return &state->scene_value[scene];
+	}
 	return value;
 }
 
@@ -2710,7 +2781,8 @@ int config_scene_string(const char *name, int scene, char *text, size_t size)
 	long index = config_setting_index(name);
 
 	snprintf(text, size, "%s", value->string ? value->string : "");
-	return index >= 0 && value == &config_states[index].scene_value[scene < 0 || scene >= NUMBER_OF_CONFIG_SCENES ? 0 : scene];
+	/* Context strings are copied rather than returned through the base string API. */
+	return index >= 0 && value != &config_values[index];
 }
 
 const char *config_scene_name(int scene)
@@ -2732,7 +2804,8 @@ void config_profile_settings_text(char *text, size_t size)
 
 		if (!config_is_profile_setting(index) || !(config_settings[index].platforms & CONFIG_PLATFORM))
 			continue;
-		config_literal(config_settings[index].type, &config_values[index], literal, sizeof(literal));
+		config_literal(config_settings[index].type, config_scene_value(config_settings[index].name,
+			config_settings[index].type, CONFIG_SCENE_GAMEPLAY), literal, sizeof(literal));
 		written = snprintf(text + length, size - length, "%s = %s\n", config_settings[index].name, literal);
 		if (written < 0 || (size_t)written >= size - length)
 		{
@@ -2750,17 +2823,28 @@ int config_scene_describe(int scene, char *text, size_t size)
 	(void)config_boolean("debug.settings_dump");   /* the first load */
 	if (size)
 		text[0] = 0;
-	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS && scene > 0 && scene < NUMBER_OF_CONFIG_SCENES; index++)
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS && scene >= 0 && scene < NUMBER_OF_CONFIG_SCENES; index++)
 	{
 		const struct config_setting_state *state = &config_states[index];
+		const struct config_value *value = config_scene_value(config_settings[index].name, config_settings[index].type, scene);
+		const char *source = NULL;
+		int external = 0;
 		char literal[600];
 		int written;
 
-		if (!state->scene[scene].text || (state->source != _source_default && state->source != _source_profile))
+		if (state->source != _source_default && state->source != _source_profile)
 			continue;
-		config_literal(config_settings[index].type, &state->scene_value[scene], literal, sizeof(literal));
-		written = snprintf(text + length, size - length, "%s%s %s [%s]", length ? ", " : "", config_settings[index].name,
-			literal, state->scene[scene].source);
+		if (scene > 0 && value == &state->scene_value[scene])
+			source = state->scene[scene].source;
+		else if (value == &state->external_value[scene])
+			source = state->external[scene].source, external = 1;
+		else if (value == &state->external_value[0])
+			source = state->external[0].source, external = 1;
+		if (!source)
+			continue;
+		config_literal(config_settings[index].type, value, literal, sizeof(literal));
+		written = snprintf(text + length, size - length, "%s%s %s [%s%s]", length ? ", " : "", config_settings[index].name,
+			literal, source, external ? ", external" : "");
 		if (written < 0 || (size_t)written >= size - length)
 			break;
 		length += (size_t)written;

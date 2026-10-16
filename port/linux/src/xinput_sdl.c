@@ -80,6 +80,45 @@ static void anti_aliasing_chord(XINPUT_GAMEPAD *pad)
 	pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] = 0;
 }
 
+#ifdef HALO_IOS
+int host_external_cycle(int direction);
+int host_external_force(const char *mode);
+void host_external_mode_label(char *text, unsigned long size);
+void hud_print_message(short local_player_index, wchar_t const *message);
+
+static void external_mode_chord(XINPUT_GAMEPAD *pad)
+{
+	static WORD previous;
+	const char *modes = config_string("debug.external_mode");
+	if (!modes || !*modes || !(pad->wButtons & XINPUT_GAMEPAD_BACK))
+	{
+		previous = 0;
+		return;
+	}
+	WORD pressed = pad->wButtons & ~previous;
+	previous = pad->wButtons;
+	int direction = (pressed & XINPUT_GAMEPAD_DPAD_UP) ? 1 : (pressed & XINPUT_GAMEPAD_DPAD_DOWN) ? -1 : 0;
+	if (direction)
+	{
+		char text[160];
+		wchar_t message[160];
+		host_external_force(modes);
+		if (host_external_cycle(direction))
+		{
+			host_external_mode_label(text, sizeof(text));
+			for (unsigned int i = 0; i < sizeof(message) / sizeof(*message); i++)
+			{
+				message[i] = (unsigned char)text[i];
+				if (!text[i]) break;
+			}
+			message[159] = 0;
+			hud_print_message(0, message);
+		}
+	}
+	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN);
+}
+#endif
+
 /* debug.render_scale_dpad: while Back is held, the D-pad's left and right
 step the render scale down and up, and the game doesn't see the D-pad */
 static void render_scale_dpad(XINPUT_GAMEPAD *pad)
@@ -1178,6 +1217,9 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			stick_aimed_ms = SDL_GetTicks();
 			pthread_mutex_unlock(&mouse_lock);
 		}
+#ifdef HALO_IOS
+		external_mode_chord(&state->Gamepad);
+#endif
 		render_scale_dpad(&state->Gamepad);
 		anti_aliasing_chord(&state->Gamepad);
 

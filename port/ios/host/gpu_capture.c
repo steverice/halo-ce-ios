@@ -870,6 +870,16 @@ static void capture_frame_context(uint32_t scene_class, uint32_t frame_rate, con
 	capture.backend.frame_context(scene_class, frame_rate, level);
 }
 
+static uint32_t capture_companion_size(uint32_t *width, uint32_t *height)
+{
+	return capture.backend.companion_size(width, height);
+}
+
+static void capture_companion_set(gpu_texture target)
+{
+	capture.backend.companion_set(target);
+}
+
 static uint32_t capture_compiles_outstanding(void)
 {
 	return capture.backend.compiles_outstanding();

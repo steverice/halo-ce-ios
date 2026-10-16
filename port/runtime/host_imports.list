@@ -72,6 +72,8 @@ host_gpu_upscale
 host_gpu_anti_alias_prepare
 host_gpu_anti_alias
 host_gpu_vertical_blank_wait
+host_gpu_companion_size
+host_gpu_companion_set
 host_gpu_frame_start
 host_gpu_present
 host_gpu_present_stereo
@@ -95,3 +97,10 @@ host_bink_audio_read
 host_bink_audio_skip
 
 host_errno
+
+# Wired external display lifecycle and test controls
+host_external_active
+host_external_commit
+host_external_cycle
+host_external_force
+host_external_mode_label
