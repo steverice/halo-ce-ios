@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Build the iPhone/iPad (or, with --tvos, Apple TV; with --visionos, Apple Vision Pro) app from source on an Apple Silicon Mac."""
+from __future__ import annotations
+
 import argparse
 import os
 import platform
@@ -118,6 +120,9 @@ def main():
                         help='signed device builds: also archive the app and export an App Store Connect package '
                              '(for TestFlight) into this folder. Xcode makes the team\'s distribution certificate and '
                              'App Store profile if they are missing, which changes the developer account')
+    parser.add_argument('--marketing-version', help='release version supplied by the CI release tag')
+    parser.add_argument('--build-number', help='CFBundleVersion supplied by the CI release manifest')
+    parser.add_argument('--signing-profile', help='existing distribution profile UUID; use manual signing without provisioning updates')
     parser.add_argument('--upload', action='store_true',
                         help='with --app-store-package: upload the package to App Store Connect with the account '
                              'Xcode is signed in to. The app record must exist there first')
@@ -167,6 +172,14 @@ def main():
         parser.error('--ipa requires a device build')
     if args.app_store_package and not args.team:
         parser.error('--app-store-package is for signed device builds (--team)')
+    if args.marketing_version and not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', args.marketing_version):
+        parser.error('--marketing-version must have three numeric components')
+    if args.build_number and not re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,2}', args.build_number):
+        parser.error('--build-number must have one to three numeric components')
+    if args.signing_profile and (not args.team or args.register_device or args.cloud_saves or args.benchmark_upload):
+        parser.error('--signing-profile requires --team and cannot change account capabilities or register devices')
+    if args.signing_profile and args.upload:
+        parser.error('--signing-profile archives/exports only; the CI release helper uploads with API authentication')
     if args.upload and not args.app_store_package:
         parser.error('--upload needs --app-store-package')
     if args.internal_only and not args.app_store_package:
@@ -271,7 +284,9 @@ def main():
     # a new CFBundleVersion each build, so an install over the app replaces it (on an Apple TV that keeps
     # the imported maps: an uninstall would take them, and the upload with them)
     import time
-    command.append(f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}')
+    command.append(f'-DHALO_BUILD_NUMBER={args.build_number or time.strftime("%Y%m%d.%H%M%S")}')
+    if args.marketing_version:
+        command.append(f'-DHALO_MARKETING_VERSION={args.marketing_version}')
     run(*command)
     # an App Store archive leaves the product as a link into its own intermediates, which the next plain build
     # cannot write through ("unable to create directory"): a link there is removed first
@@ -282,7 +297,7 @@ def main():
     command=['cmake','--build',build,'--config','Release','--target','VISR','--','-quiet']
     if args.simulator or args.unsigned:command.append('CODE_SIGNING_ALLOWED=NO')
     else:
-        command.append('-allowProvisioningUpdates')
+        command.extend(manual_signing(args.signing_profile) or ['-allowProvisioningUpdates'])
         if args.register_device:
             # xcodebuild ignores a destination without a scheme, so this build names the scheme itself
             # (CMake's Xcode generator makes one per target) and keeps the products where the other builds put them
@@ -298,7 +313,7 @@ def main():
         run(*command)
     if args.app_store_package:
         commands = app_store_commands(build, system, args.team, args.app_store_package.resolve(), args.upload,
-                                      args.internal_only)
+                                      args.internal_only, args.signing_profile, args.bundle_id)
         run(*commands[0])
         # the archive's own dSYMs folder stays empty for this CMake project (its products go to the build folder,
         # where the archive does not look), so the dSYM the archive build wrote there goes in by hand; the UUIDs
@@ -317,28 +332,40 @@ def main():
               (' (archive only: not exported)' if args.archive_only else ' (uploaded)' if args.upload else ''))
 
 
-def app_store_options(team, upload, internal_only=False):
+def manual_signing(profile: str | None) -> list[str]:
+    return ['CODE_SIGN_STYLE=Manual', 'CODE_SIGN_IDENTITY=Apple Distribution',
+            f'PROVISIONING_PROFILE_SPECIFIER={profile}'] if profile else []
+
+
+def app_store_options(team: str, upload: bool, internal_only: bool = False,
+                      profile: str | None = None, bundle_id: str | None = None) -> dict[str, object]:
     """the export options for an App Store Connect package: signed for distribution by Xcode's automatic signing,
     and either written to disk or uploaded"""
-    options = {'method': 'app-store-connect', 'destination': 'upload' if upload else 'export', 'teamID': team,
+    options: dict[str, object] = {'method': 'app-store-connect', 'destination': 'upload' if upload else 'export', 'teamID': team,
                'signingStyle': 'automatic', 'manageAppVersionAndBuildNumber': False, 'uploadSymbols': True}
+    if profile:
+        if not bundle_id:
+            raise ValueError('manual signing needs the actual bundle identifier')
+        options.update(signingStyle='manual', signingCertificate='Apple Distribution',
+                       provisioningProfiles={bundle_id: profile})
     if internal_only:
         options['testFlightInternalTestingOnly'] = True
     return options
 
 
-def app_store_commands(build, system, team, out, upload, internal_only=False):
+def app_store_commands(build: Path, system: str, team: str, out: Path, upload: bool, internal_only: bool = False,
+                       profile: str | None = None, bundle_id: str | None = None) -> list[list[str | Path]]:
     """the commands that archive the configured project and export (or upload) its App Store Connect package into
     out; writes out/ExportOptions.plist for the second"""
     import plistlib
     out.mkdir(parents=True, exist_ok=True)
-    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload, internal_only)))
+    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload, internal_only, profile, bundle_id)))
     archive = out/'VISR.xcarchive'
     return [['xcodebuild', '-project', build/'VISR.xcodeproj', '-scheme', 'VISR', '-configuration', 'Release',
-             '-destination', f'generic/platform={system}', '-archivePath', archive, '-quiet', '-allowProvisioningUpdates',
-             'archive'],
+             '-destination', f'generic/platform={system}', '-archivePath', archive, '-quiet',
+             *(manual_signing(profile) or ['-allowProvisioningUpdates']), 'archive'],
             ['xcodebuild', '-exportArchive', '-archivePath', archive, '-exportOptionsPlist', out/'ExportOptions.plist',
-             '-exportPath', out, '-allowProvisioningUpdates']]
+             '-exportPath', out, *([] if profile else ['-allowProvisioningUpdates'])]]
 
 # the iPhoneOS SDK's OpenGLES.tbd (Xcode 27), and what the Catalyst link stub says in its place
 IOS_STUB_TARGETS = '[ arm64e-ios, arm64e.x1-ios ]'

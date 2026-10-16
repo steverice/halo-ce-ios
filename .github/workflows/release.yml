@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Reviewed full main commit SHA (source SHA when resuming)'
+        required: true
+        type: string
+      platforms:
+        description: 'Existing App Store platforms: ios,tvos,visionos (comma-separated)'
+        default: 'ios,tvos'
+        type: string
+      increment:
+        description: 'Commitizen version increment'
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      resume_tag:
+        description: 'Recover an existing visr-vX.Y.Z tag; never bumps again'
+        type: string
+      bootstrap_since:
+        description: 'First managed release only: reviewed full ancestor SHA for changelog boundary'
+        type: string
+      bootstrap_version:
+        description: 'First managed release only: current TestFlight marketing version'
+        type: string
+        default: '0.1.2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: visr-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Generate and commit release metadata
+        id: prepare
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_PLATFORMS: ${{ inputs.platforms }}
+          INCREMENT: ${{ inputs.increment }}
+          RESUME_TAG: ${{ inputs.resume_tag }}
+          BOOTSTRAP_SINCE: ${{ inputs.bootstrap_since }}
+          BOOTSTRAP_VERSION: ${{ inputs.bootstrap_version }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          uv run --python 3.11 --with-requirements tools/release-requirements.txt python tools/release.py prepare \
+            --source-sha "$SOURCE_SHA" --platforms "$RELEASE_PLATFORMS" --increment "$INCREMENT" \
+            --resume-tag "$RESUME_TAG" --bootstrap-since "$BOOTSTRAP_SINCE" --bootstrap-version "$BOOTSTRAP_VERSION"
+
+  testflight:
+    needs: prepare
+    runs-on: macos-26
+    timeout-minutes: 180
+    environment: release
+    permissions:
+      contents: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      GH_TOKEN: ${{ github.token }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Toolchain and release preflight
+        run: |
+          test "$(uname -m)" = arm64
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          brew install cmake ninja llvm lld sdl3 pkgconf
+          uv run --python 3.11 --with pytest python -m pytest tools/test_release.py tools/test_ios_build.py
+          python3 -c 'import json; from pathlib import Path; m=json.loads(Path(".release/current.json").read_text()); print("Release", m["tag"], "platforms", ",".join(m["platforms"]))'
+      - name: Install existing signing material
+        env:
+          RELEASE_PLATFORMS: ${{ inputs.platforms }}
+          APPLE_DISTRIBUTION_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_P12_BASE64 }}
+          APPLE_DISTRIBUTION_P12_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_P12_PASSWORD }}
+          APPLE_PROFILE_IOS_BASE64: ${{ secrets.APPLE_PROFILE_IOS_BASE64 }}
+          APPLE_PROFILE_TVOS_BASE64: ${{ secrets.APPLE_PROFILE_TVOS_BASE64 }}
+          APPLE_PROFILE_VISIONOS_BASE64: ${{ secrets.APPLE_PROFILE_VISIONOS_BASE64 }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: python3 tools/release_signing.py install
+      - name: Build, upload, reconcile exact TestFlight builds, and publish release
+        run: uv run --python 3.11 --with-requirements tools/release-requirements.txt python tools/release.py publish
+      - name: Remove signing material
+        if: always()
+        run: python3 tools/release_signing.py cleanup

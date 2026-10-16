@@ -52,6 +52,7 @@ endif()
 # Each build a new CFBundleVersion (tools/ios_build.py), so installing over the
 # app replaces it and keeps its Documents, or on tvOS its Caches (the imported game)
 set(HALO_BUILD_NUMBER 6 CACHE STRING "CFBundleVersion")
+set(HALO_MARKETING_VERSION "0.1.2" CACHE STRING "CFBundleShortVersionString supplied by the CI release tag")
 if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # Controllers only, no Files app: the XISO arrives from a browser
     # (host/host_tv_import.m).
@@ -324,7 +325,8 @@ set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_
     # gives the compiler -g back without changing the code it generates)
     XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS YES
     XCODE_ATTRIBUTE_HALO_RENDER_HEIGHT "${HALO_RENDER_HEIGHT}"
-    XCODE_ATTRIBUTE_HALO_BUILD_NUMBER "${HALO_BUILD_NUMBER}")
+    XCODE_ATTRIBUTE_HALO_BUILD_NUMBER "${HALO_BUILD_NUMBER}"
+    XCODE_ATTRIBUTE_HALO_MARKETING_VERSION "${HALO_MARKETING_VERSION}")
 if(HALO_DEVELOPMENT_TEAM)
     set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${HALO_DEVELOPMENT_TEAM}")
 endif()

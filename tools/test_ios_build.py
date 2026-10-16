@@ -1,4 +1,7 @@
 """Tests for tools/ios_build.py's pure helpers."""
+from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
@@ -239,3 +242,25 @@ def test_extended_virtual_addressing_is_allowed_for_ios_but_refused_for_the_mac_
         ios_build.main()
     except (RuntimeError, SystemExit) as e:
         assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR not in capsys.readouterr().err
+
+
+def test_manual_distribution_signing_never_provisions_or_registers(tmp_path: Path) -> None:
+    import plistlib
+
+    commands = ios_build.app_store_commands(tmp_path / 'build', 'iOS', 'TEAM', tmp_path / 'out',
+                                           False, True, 'PROFILE-UUID', 'example.app')
+    archive, export = commands
+    assert 'CODE_SIGN_STYLE=Manual' in archive
+    assert 'PROVISIONING_PROFILE_SPECIFIER=PROFILE-UUID' in archive
+    assert '-allowProvisioningUpdates' not in archive + export
+    assert '-allowProvisioningDeviceRegistration' not in archive + export
+    options = plistlib.loads((tmp_path / 'out/ExportOptions.plist').read_bytes())
+    assert options['signingStyle'] == 'manual'
+    assert options['provisioningProfiles'] == {'example.app': 'PROFILE-UUID'}
+    assert options['testFlightInternalTestingOnly'] is True
+    assert options['manageAppVersionAndBuildNumber'] is False
+
+
+def test_manual_signing_requires_bundle_identifier() -> None:
+    with pytest.raises(ValueError, match='bundle identifier'):
+        ios_build.app_store_options('TEAM', False, profile='PROFILE-UUID')
