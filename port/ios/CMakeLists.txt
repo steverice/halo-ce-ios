@@ -26,6 +26,9 @@ set(SDL_STATIC ON CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+# The game never opens a camera. SDL's CoreMedia camera driver references AVCaptureDevice, which makes
+# App Store Connect demand NSCameraUsageDescription (ITMS-90683).
+set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
 add_subdirectory("${ROOT}/build/third_party/SDL3" sdl3 EXCLUDE_FROM_ALL)
 if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # SDL's CMake forces SDL_OPENGLES off for tvOS, but its UIKit GL ES code is
