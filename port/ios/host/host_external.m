@@ -115,7 +115,9 @@ __attribute__((constructor)) static void install_configuration(void) {
     for(int i=0;i<2;i++) {
         configuration_class[i]=objc_getClass(names[i]);
         Method method=class_getInstanceMethod(configuration_class[i],selector);
-        if(method)original_configuration[i]=method_setImplementation(method,(IMP)configuration);
+        /* a class that inherits the method from the other would hand back our own replacement as SDL's */
+        if(method && method_getImplementation(method)!=(IMP)configuration)
+            original_configuration[i]=method_setImplementation(method,(IMP)configuration);
     }
 }
 static void begin_modes(void) {
