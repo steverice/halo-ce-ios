@@ -50,11 +50,15 @@
 		<key>UISceneConfigurations</key>
 		<dict>
 			<key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
-            <array><dict>
-                <key>UISceneConfigurationName</key><string>VISRExternalDisplay</string>
-                <key>UISceneDelegateClassName</key><string>VISRExternalSceneDelegate</string>
-            </dict></array>
-            <key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>VISRExternalDisplay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>VISRExternalSceneDelegate</string>
+				</dict>
+			</array>
+			<key>UIWindowSceneSessionRoleApplication</key>
 			<array>
 				<dict>
 					<key>UISceneConfigurationName</key>
@@ -71,7 +75,7 @@
 	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
-	<key>UIRequiresFullScreen</key>
+	<key>UIRequiresFullScreen~ipad</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
