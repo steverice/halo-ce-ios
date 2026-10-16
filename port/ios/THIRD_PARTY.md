@@ -16,10 +16,12 @@ extract-xiso (modified BSD; see `port/third_party/extract-xiso/LICENSE.TXT`).
 This product includes software developed by in <in@fishtank.com>.
 Builds that play the game's intro and credits movies (the default; not those
 made with `--bink off`) use libraries from the FFmpeg project (9.0.2, its
-Bink demuxer and decoders) under the LGPLv2.1, statically linked. FFmpeg's
-source, unmodified, is in `port/third_party/ffmpeg-bink` of this app's source
-repository, and the app can be rebuilt from that repository with a modified
-FFmpeg; the license is in `Licenses/FFmpeg-LGPL-2.1.txt`. Their complete notices are copied into the built app's `Licenses`
+Bink demuxer and decoders) under the LGPLv2.1, statically linked. The
+complete source of this app, including the FFmpeg code in
+`port/third_party/ffmpeg-bink`, is at https://github.com/steverice/visr. To
+rebuild the app with a modified FFmpeg, change those files and run
+`python3 tools/ios_build.py --unsigned --ipa dist/VISR-iOS-unsigned.ipa` from
+the repository root. The license is in `Licenses/FFmpeg-LGPL-2.1.txt`. Their complete notices are copied into the built app's `Licenses`
 directory. Khronos headers retain the notices supplied by their registries.
 Other vendored components retain their original notices in the source tree.
 
