@@ -127,6 +127,7 @@ run('python3', 'tools/test_profile_check.py')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/input_replay_probe.c', '-o', BUILD / 'input-replay-probe')
 run(BUILD / 'input-replay-probe')
+run('python3', 'tools/test_replay_control.py')
 run('python3', 'tools/test_route_check.py')
 # a runner's settings are the run's, never a device profile's: mac_run.py writes every setting a profile may set
 # (and marks what it writes chosen in config.origins), so no profile can move a check-metal run
@@ -377,6 +378,10 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-I
     'port/ios/tests/stereo_head_probe.c', 'port/ios/host/host_stereo_head.c',
     '-o', BUILD/'stereo-head-probe')
 run(BUILD/'stereo-head-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Iport/linux/src', '-Iport/ios/host',
+    '-Iport/ios/tests', 'port/ios/tests/replay_stereo_entry_probe.c', 'port/ios/host/host_stereo_head.c',
+    '-o', BUILD/'replay-stereo-entry-probe')
+run(BUILD/'replay-stereo-entry-probe')
 # and the call site the probe can't see: stereo latches its frame once a drawn frame, at the render,
 # not in render_interpolation_frame_begin, which game_time_update calls around game_frame as well
 latch_calls = [path for path in sorted((ROOT / 'source').rglob('*.c')) + sorted((ROOT / 'port/linux').rglob('*.c'))

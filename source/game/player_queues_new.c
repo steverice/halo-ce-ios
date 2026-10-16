@@ -104,6 +104,7 @@ symbols in this file:
 
 /* ---------- headers */
 
+#include "game/player_control_runtime.h" /* port: synchronize replay camera control */
 #include "cseries/cseries.h"
 #include "cseries/cseries_windows.h"
 #include "cseries/errors.h"
@@ -825,6 +826,7 @@ boolean update_client_dequeue(
 		extern void input_replay_tick_action(void *action);
 
 		input_replay_tick_action(&actions[0]);
+		player_control_apply_replay(update_client_local_player_index(0));
 		/* (the action tests the action carries, as the take recorded them or replays them: player_control.c) */
 		if (input_replay_sim_isolated())
 			player_control_action_test_note_tick((unsigned short)actions[0].pad);

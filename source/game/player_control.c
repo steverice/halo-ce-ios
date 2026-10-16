@@ -209,6 +209,7 @@ symbols in this file:
 #include "units/vehicles.h"
 
 #include "real_math.h"
+#include "../../port/linux/src/input_replay.h" /* port: shared recorded camera/control pose */
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 
 /* ---------- constants */
@@ -612,6 +613,25 @@ static void player_action_clear(
 	return;
 }
 
+/* port: update_client_dequeue maps the recorded action to this local control.
+The action and control use the same Euler radians; seat conversion stays in
+player_aiming_vector_from_facing. */
+void player_control_apply_replay(short local_player_index)
+{
+	struct player_control *control;
+	float facing[2];
+	short zoom;
+	if (local_player_index < 0 || local_player_index >= MAXIMUM_NUMBER_OF_LOCAL_PLAYERS)
+		return;
+	control = player_control_get(local_player_index);
+	if (input_replay_apply_control(local_player_index, facing, &zoom))
+	{
+		control->desired_angles.yaw = facing[0];
+		control->desired_angles.pitch = facing[1];
+		control->zoom_level = zoom;
+	}
+}
+
 static void handle_one_player_input(
 	short local_player_index,
 	real time_delta_sec)
@@ -623,6 +643,7 @@ static void handle_one_player_input(
 		struct game_globals_player_control);
 	struct input_blob input;
 	long current_weapon_index;
+	boolean replay_facing = input_replay_controls_facing(local_player_index);
 
 	csmemset(
 		&input,
@@ -699,7 +720,8 @@ static void handle_one_player_input(
 				player->unit_index,
 				player->desired_weapon_index,
 				TEST_FLAG(input.player_control_flags, _player_control_rotate_weapons_bit));
-			player->zoom_level = NONE;
+			if (!replay_facing)
+				player->zoom_level = NONE;
 		}
 
 		must_be_readied_weapon = unit_inventory_get_must_be_readied_weapon(
@@ -708,7 +730,8 @@ static void handle_one_player_input(
 			player->desired_weapon_index != must_be_readied_weapon)
 		{
 			player->desired_weapon_index = must_be_readied_weapon;
-			player->zoom_level = NONE;
+			if (!replay_facing)
+				player->zoom_level = NONE;
 		}
 
 		if (player->desired_grenade_index == NONE ||
@@ -730,7 +753,7 @@ static void handle_one_player_input(
 				1);
 		}
 
-		if (TEST_FLAG(input.player_control_flags, _player_control_input_zoom_bit) &&
+		if (!replay_facing && TEST_FLAG(input.player_control_flags, _player_control_input_zoom_bit) &&
 			player_control_camera_control_is_active() &&
 			current_weapon_index != NONE &&
 			!cinematic_in_progress())
@@ -740,7 +763,7 @@ static void handle_one_player_input(
 				player->zoom_level);
 		}
 
-		if (!director_inhibited_facing(local_player_index))
+		if (!replay_facing && !director_inhibited_facing(local_player_index))
 		{
 			player_control_angle_step_ticks = time_delta_sec * TICKS_PER_SECOND;
 			player_control_modify_desired_angles(
@@ -1076,6 +1099,10 @@ static void get_local_player_input_blob(
 		struct player_datum *player = player_get(player_index);
 		short gamepad_index = player->local_player_index;
 		boolean is_primary_player = gamepad_index == debug_input_target;
+		/* port: the queue replays action slot zero. Head motion must remain
+		in the eyes before its first action, including gaps between actions. */
+		boolean replay_head_look = DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index) == 0 &&
+			input_replay_action_camera_active();
 
 		if (gamepad_index != NONE && input_has_gamepad(gamepad_index))
 		{
@@ -1154,7 +1181,10 @@ static void get_local_player_input_blob(
 				pitches the view, the stick only turns it, in snaps, smoothly (at
 				its own speed, on the game's response curve at the stick's yaw
 				alone: the pitch it drops mustn't speed the turn) or not at all */
-				halo_stereo_stick_look(gamepad_index,
+				if (replay_head_look)
+					halo_stereo_replay_look(gamepad_index, clamped_yaw);
+				else
+					halo_stereo_stick_look(gamepad_index,
 					constants->look_function.count > 1 ?
 						evaluate_piecewise_linear_function(
 							constants->look_function.count,
@@ -1335,7 +1365,8 @@ static void get_local_player_input_blob(
 						real head_yaw;
 						real head_pitch;
 
-						if (halo_stereo_head_look(gamepad_index, control->desired_angles.pitch, &head_yaw, &head_pitch))
+						if (!replay_head_look &&
+						halo_stereo_head_look(gamepad_index, control->desired_angles.pitch, &head_yaw, &head_pitch))
 						{
 							input->facing_delta.yaw += head_yaw;
 							input->facing_delta.pitch += head_pitch;

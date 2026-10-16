@@ -286,6 +286,9 @@ Both do nothing unless the head drives the view, and nothing in a
 third-person camera (a vehicle seat's chase camera), where the stick turns
 and pitches the look as in mono and the head never turns it. */
 void halo_stereo_stick_look(short gamepad_index, float yaw_response, float time_delta, float *yaw, float *pitch);
+/* Action replay owns base aim; preserve live head motion for the eye cameras. */
+void halo_stereo_replay_look(short gamepad_index, float yaw);
+
 int halo_stereo_head_look(short gamepad_index, float current_pitch, float *yaw, float *pitch);
 /* A seat's yaw limit (player_control_modify_desired_angles, inside its seat
 block): 0, and the game's own clamp runs, unless the head drives local

@@ -1051,6 +1051,42 @@ static void paused(void)
 		"a film in between drops the paused turn");
 }
 
+/* An action replay owns base aim while the eyes still follow the live head. */
+static void replay_look(void)
+{
+	float facing_yaw = 0.0f, facing_pitch = 0.0f, view_yaw, view_pitch, yaw, pitch;
+	int frame;
+	restart("snap", 30.0, 120.0, 1);
+	for (frame = 0; frame < 3; frame++)
+		loop(&facing_yaw, &facing_pitch, 0.0f, 0.0f, 0.0f);
+	for (frame = 1; frame <= 3; frame++) {
+		snap_pending = 0.5f;
+		smooth_yaw = 0.2f;
+		head_request = 0.1f;
+		head_fold = 0.1f;
+		vignette_strength = 0.8f;
+		halo_stereo_replay_look(0, 1.0f);
+		check(snap_pending == 0.0f && smooth_yaw == 0.0f && head_request == 0.0f &&
+			head_fold == 0.0f && vignette_strength == 0.0f, "replay drops only suppressed turn transients");
+		set_pose(5.0f * frame * DEGREES, 0.0f, 0.0f);
+		halo_stereo_frame_begin();
+		oriented(facing_yaw, facing_pitch, &view_yaw, &view_pitch);
+		check(fabsf(view_yaw - 5.0f * frame) < 0.01f, "replay eyes follow accumulated live head yaw");
+	}
+	check(!snap_armed, "held replay stick cannot fire a snap on release");
+	check(halo_stereo_head_look(0, facing_pitch, &yaw, &pitch) &&
+		fabsf(yaw / DEGREES - 15.0f) < 0.01f, "releasing replay transfers pending head yaw once");
+	facing_yaw += yaw;
+	set_pose(15.0f * DEGREES, 0.0f, 0.0f);
+	halo_stereo_frame_begin();
+	oriented(facing_yaw, facing_pitch, &view_yaw, &view_pitch);
+	check(fabsf(view_yaw - 15.0f) < 0.01f, "replay release preserves eye orientation");
+	head_seat_leftover = 0.25f;
+	halo_stereo_replay_look(0, 0.0f);
+	check(head_seat_leftover == 0.25f && snap_armed, "replay preserves seat residual and neutral input rearms snap");
+	head_seat_leftover = 0.0f;
+}
+
 /* the game's camera in the render with interpolation (render_interpolation.c):
 the facing is posed into the camera every frame (first_person_camera_update),
 kept after each tick with the head yaw the look had taken
@@ -2858,6 +2894,7 @@ int main(void)
 	third_person();
 	third_person_entries();
 	paused();
+	replay_look();
 	interpolated_turns();
 	glide();
 	seat_yaw_limit();
