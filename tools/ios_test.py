@@ -123,6 +123,9 @@ run(BUILD / 'benchmark-snapshot-probe')
 run('python3', 'tools/settings_schema.py', '--check')
 run('python3', 'tools/profile_check.py')
 run('python3', 'tools/test_profile_check.py')
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-Iport/ios/host',
+    'port/ios/tests/touch_replay_probe.c', '-o', BUILD / 'touch-replay-probe')
+run(BUILD / 'touch-replay-probe')
 # a recorded route replays: tools/route_check.py's verdicts, and the suite's difficulty for the next map
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/input_replay_probe.c', '-o', BUILD / 'input-replay-probe')

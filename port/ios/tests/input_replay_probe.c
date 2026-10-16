@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+#define HALO_IOS 1
 #define __HALO_LINUX_PLATFORM_H
 typedef int BOOL;
 typedef uint8_t BYTE;
@@ -25,6 +26,13 @@ void platform_log(const char *format, ...);
 
 #include "input_replay.c"
 
+static int touch_replay_active;
+static int touch_changes;
+void host_touch_replay_active(int active) {
+	if (touch_replay_active != active) touch_changes++;
+	touch_replay_active = active;
+}
+
 static int lip_sync;
 static int timed_benchmark;
 static const char *replay_name = "";
@@ -35,7 +43,8 @@ long config_integer(const char *name) { (void)name; return 0; }
 const char *config_string(const char *name) { return !strcmp(name, "debug.input_replay") ? replay_name : ""; }
 void config_folder(char *path, size_t size) { snprintf(path, size, "./"); }
 void config_profile_settings_text(char *text, size_t size) { snprintf(text, size, ""); }
-unsigned char game_time_initialized(void) { return 0; }
+static int game_initialized;
+unsigned char game_time_initialized(void) { return game_initialized; }
 long game_time_get(void) { return 0; }
 float game_time_get_tick_fraction(void) { return 0; }
 unsigned char game_time_get_paused(void) { return 0; }
@@ -128,6 +137,45 @@ int main(void)
 	assert(replay.action_count == 1 && !replay.replay_finished);
 	assert(!input_replay_benchmark_lip_sync()); /* same behavior through direct config */
 	input_replay_begin(NULL, 0);
+	/* Both direct config and suite entry points publish actual loaded replay lifetime. */
+	assert(!touch_replay_active);
+	assert(!input_replay_begin("./missing.input", 0));
+	assert(!touch_replay_active);
+	assert(input_replay_begin("./probe.input", 0));
+	assert(touch_replay_active);
+	input_replay_begin(NULL, 0);
+	assert(!touch_replay_active);
+	replay_name = "./probe.input";
+	configure();
+	assert(touch_replay_active);
+	unsigned int action[8] = {0};
+	game_initialized = 1;
+	input_replay_tick_action(action); /* action tick zero is the take's final action */
+	assert(replay.replay_finished && !touch_replay_active);
+	input_replay_begin(NULL, 0);
+	assert(touch_changes >= 4);
+	game_initialized = 0;
+	/* A controller-only take completes through its tail, without tick actions. */
+	unlink("probe.actions");
+	assert(input_replay_begin("./probe.input", 0));
+	assert(touch_replay_active);
+	XINPUT_GAMEPAD pad = {0};
+	play(&pad, REPLAY_TAIL_TICKS + 1);
+	assert(replay.replay_finished && !touch_replay_active);
+	/* Invalid and empty files cannot leave suppression latched. */
+	file = fopen("invalid.input", "w");
+	assert(file); fputs("invalid header\n", file); fclose(file);
+	assert(!input_replay_begin("./invalid.input", 0));
+	assert(!touch_replay_active);
+	file = fopen("invalid.input", "w");
+	assert(file); fputs("halo input recording 1\n", file); fclose(file);
+	assert(!input_replay_begin("./invalid.input", 0));
+	assert(!touch_replay_active);
+	unlink("invalid.input");
+	input_replay_begin(NULL, 0);
+	replay_name = "";
+	configure();
+	assert(!touch_replay_active);
 	unlink("probe.input");
 	unlink("probe.actions");
 	assert(!chdir("/"));

@@ -176,6 +176,23 @@ static struct
 	double jumped, moved;
 } replay;
 
+/* Replay state, rather than benchmark settings, controls the native touch overlay. */
+#ifdef HALO_IOS
+extern void host_touch_replay_active(int active);
+#endif
+static void replay_touch_update(void)
+{
+#ifdef HALO_IOS
+	host_touch_replay_active(*replay.replay_path && !replay.replay_finished);
+#endif
+}
+
+static void replay_finish(void)
+{
+	replay.replay_finished = TRUE;
+	replay_touch_update();
+}
+
 /* NAME.input's actions file, NAME.actions */
 static void actions_path(const char *input_path, char *path, size_t size)
 {
@@ -402,14 +419,14 @@ static void replay_load(void)
 	if (!file)
 	{
 		platform_log("debug.input_replay: cannot open %s", replay.replay_path);
-		replay.replay_finished = TRUE;
+		replay_finish();
 		return;
 	}
 	if (!fgets(line, sizeof(line), file) || strncmp(line, RECORDING_HEADER, strlen(RECORDING_HEADER)))
 	{
 		platform_log("debug.input_replay: %s isn't an input recording", replay.replay_path);
 		fclose(file);
-		replay.replay_finished = TRUE;
+		replay_finish();
 		return;
 	}
 	while (fgets(line, sizeof(line), file))
@@ -442,7 +459,7 @@ static void replay_load(void)
 	platform_log("debug.input_replay: %ld states from %s, %.1f s of game time", replay.state_count,
 		replay.replay_path, replay.state_count ? replay.states[replay.state_count - 1].ticks / 30.0 : 0.0);
 	if (!replay.state_count)
-		replay.replay_finished = TRUE;
+		replay_finish();
 }
 
 /* ---------- automatic takes
@@ -681,6 +698,7 @@ static void configure(void)
 		seeds_load();
 		route_load();
 	}
+	replay_touch_update();
 }
 
 /* The device benchmark's suite: replays NAME (a path ending in ".input", or NULL or "" for none) from the next
@@ -699,6 +717,7 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 		fclose(replay.seeds_file);
 	memset(&replay, 0, sizeof(replay));
 	replay.configured = replay.suite = TRUE;
+	replay_touch_update();
 	if (game_time_initialized() && !input_replay_main_menu_loaded())
 	{
 		replay.await_level = TRUE;
@@ -725,6 +744,7 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 	began after its level's opening was skipped) */
 	seeds_load();
 	route_load();
+	replay_touch_update();
 	return replay.state_count > 0;
 }
 
@@ -888,7 +908,7 @@ static void play(XINPUT_GAMEPAD *pad, double ticks)
 	/* with tick actions, the replay ends with them (input_replay_tick_action) */
 	if (!replay.action_count && replay.next_state == replay.state_count &&
 		ticks > replay.states[replay.state_count - 1].ticks + REPLAY_TAIL_TICKS)
-		replay.replay_finished = TRUE;
+		replay_finish();
 }
 
 /* controller 1's state as the game reads it (xinput_sdl.c's XInputGetState):
@@ -1208,7 +1228,7 @@ void input_replay_tick_action(void *action)
 		/* the replay ends with the last recorded action, in the action's own
 		segment, whenever the controller's timeline puts it */
 		if (compare_action_keys(&replay.actions[replay.action_count - 1], replay.segment, tick) <= 0)
-			replay.replay_finished = TRUE;
+			replay_finish();
 		route_log(tick, applied ? "recorded action" : "no recorded action");
 	}
 	else if (*replay.record_actions_path)
@@ -1316,7 +1336,7 @@ void input_replay_frame(long width, long height)
 			now - replay.jumped > (double)(last->tick - replay.actions[first].tick) * 1000.0 / 30.0 + 10000.0)
 		{
 			platform_log("debug.benchmark: past the recording's end (the game time stopped or ran long)");
-			replay.replay_finished = TRUE;
+			replay_finish();
 			return;
 		}
 	}

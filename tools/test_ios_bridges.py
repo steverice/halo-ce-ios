@@ -48,3 +48,9 @@ def test_render_validation_imports_bridge_to_the_validator():
     assert "gpu_validation_identity((const struct gpu_validation_identity *)host_pointer(a0))" in source
     name, source = ios_bridges.bridge("void", "host_gpu_validation_note", "uint32_t reason, uint32_t detail, uint32_t value")
     assert "gpu_validation_note(a0, a1, a2)" in source
+
+
+def test_replay_touch_notification_preserves_the_integer_flag():
+    name, source = ios_bridges.bridge("void", "host_touch_replay_active", "int active")
+    assert name == "host_touch_replay_active"
+    assert "host_touch_replay_active(a0);" in source

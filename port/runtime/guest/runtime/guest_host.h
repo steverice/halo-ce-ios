@@ -22,6 +22,9 @@ layouts).
 int host_external_active(void);
 void host_external_commit(int allow_pause);
 
+/* Only gameplay touch controls are suppressed; native dialogs remain interactive. */
+void host_touch_replay_active(int active);
+
 /* ---------- process */
 
 /* performs a Linux system call on the guest's behalf, converting the

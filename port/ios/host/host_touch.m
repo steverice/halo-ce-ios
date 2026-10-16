@@ -5,16 +5,22 @@
 #include "ios_host.h"
 #import "host_orientation.h"
 #include <math.h>
+#include "host_touch_replay.h"
+
+static struct host_touch_replay_gate replay_gate;
+static void touch_replay_ui_update(void);
 
 static int pause_pending;
-void host_ios_touch_pause(void) { pause_pending=1; }
+void host_ios_touch_pause(void) { if (!host_touch_replay_blocked(&replay_gate)) pause_pending=1; }
 static SDL_Joystick *touch_joystick;
 static SDL_JoystickID touch_id, primary_hardware;
 
 static void button_state(int button, BOOL down) {
-    if(touch_joystick) SDL_SetJoystickVirtualButton(touch_joystick,button,down);
+    if(touch_joystick) SDL_SetJoystickVirtualButton(touch_joystick,button,
+        host_touch_replay_blocked(&replay_gate)?NO:down);
 }
 static void axis_state(int axis, float value) {
+    if(host_touch_replay_blocked(&replay_gate))value=axis>=SDL_GAMEPAD_AXIS_LEFT_TRIGGER?-1:0;
     if(touch_joystick) SDL_SetJoystickVirtualAxis(touch_joystick,axis,(Sint16)(fmaxf(-1,fminf(1,value))*32767));
 }
 void host_ios_touch_initialize(void) {
@@ -51,6 +57,8 @@ int host_ios_gamepad_type(SDL_Gamepad *pad) {
 }
 int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     int value=SDL_GetGamepadAxis(pad,axis);
+    if(SDL_GetGamepadID(pad)==touch_id && host_touch_replay_blocked(&replay_gate))
+        value=0;
     if(SDL_GetGamepadID(pad)==touch_id && primary_hardware) {
         int physical=SDL_GetGamepadAxis(SDL_GetGamepadFromID(primary_hardware),axis);
         if(abs(physical)>abs(value))value=physical;
@@ -58,16 +66,22 @@ int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     return value;
 }
 int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
-    if(button==SDL_GAMEPAD_BUTTON_START && SDL_GetGamepadID(pad)==touch_id && pause_pending) {
+    if(button==SDL_GAMEPAD_BUTTON_START && SDL_GetGamepadID(pad)==touch_id && pause_pending && !host_touch_replay_blocked(&replay_gate)) {
         pause_pending=0;return 1;
     }
-    return SDL_GetGamepadButton(pad,button) ||
+    return (!(SDL_GetGamepadID(pad)==touch_id && host_touch_replay_blocked(&replay_gate)) && SDL_GetGamepadButton(pad,button)) ||
         (SDL_GetGamepadID(pad)==touch_id && primary_hardware &&
          SDL_GetGamepadButton(SDL_GetGamepadFromID(primary_hardware),button));
 }
 void host_ios_touch_reset(void) {
+    pause_pending=0;
     for(int i=0;i<SDL_GAMEPAD_BUTTON_COUNT;i++)button_state(i,NO);
     for(int i=0;i<SDL_GAMEPAD_AXIS_COUNT;i++)axis_state(i,i>=SDL_GAMEPAD_AXIS_LEFT_TRIGGER?-1:0);
+}
+
+void host_touch_replay_active(int active) {
+    if(host_touch_replay_set(&replay_gate,active,host_ios_touch_reset))
+        dispatch_async(dispatch_get_main_queue(),^{ touch_replay_ui_update(); });
 }
 
 @interface HaloButton : UIButton
@@ -76,6 +90,7 @@ void host_ios_touch_reset(void) {
 @end
 @implementation HaloButton
 - (void)sendDown:(BOOL)down {
+    if(host_touch_replay_blocked(&replay_gate))down=NO;
     self.highlighted=down;
     if(self.gameAxis>=0)axis_state(self.gameAxis,down?1:-1);
     else button_state(self.gameButton,down);
@@ -103,6 +118,7 @@ void host_ios_touch_reset(void) {
 @end
 @implementation HaloStick
 - (void)updateTouch:(UITouch *)touch {
+    if(host_touch_replay_blocked(&replay_gate)){[self reset];return;}
     CGPoint p=[touch locationInView:self];CGFloat radius=self.bounds.size.width*.34;
     CGFloat x=(p.x-self.bounds.size.width/2)/radius,y=(p.y-self.bounds.size.height/2)/radius;
     CGFloat length=hypot(x,y);if(length>1){x/=length;y/=length;}
@@ -169,8 +185,13 @@ void host_ios_touch_reset(void) {
     [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(reset) name:UIApplicationWillResignActiveNotification object:nil];
     return self;
 }
-- (void)reset {host_ios_touch_reset();[self.moveStick reset];[self.lookStick reset];}
+- (void)reset {
+    host_ios_touch_reset();[self.moveStick cancelTrackingWithEvent:nil];[self.lookStick cancelTrackingWithEvent:nil];
+    for(HaloButton *button in self.buttons)[button cancelTrackingWithEvent:nil];
+    [self.toggle cancelTrackingWithEvent:nil];
+}
 - (void)toggleControls {
+    if(host_touch_replay_blocked(&replay_gate))return;
     [self reset];BOOL hidden=!self.moveStick.hidden;
     self.moveStick.hidden=self.lookStick.hidden=hidden;for(UIView *b in self.buttons)b.hidden=hidden;
     [self.toggle setTitle:hidden?@"Show controls":@"Hide controls" forState:UIControlStateNormal];
@@ -200,10 +221,21 @@ void host_ios_touch_reset(void) {
     self.toggle.frame=CGRectMake(right-108,top,108,32);
 }
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    if(host_touch_replay_blocked(&replay_gate))return NO;
     for(UIView *view in self.subviews)if(!view.hidden && [view pointInside:[self convertPoint:point toView:view] withEvent:event])return YES;
     return NO;
 }
 @end
+
+static NSHashTable<HaloControls *> *attached_controls;
+static void touch_replay_ui_update(void) {
+    BOOL blocked=host_touch_replay_blocked(&replay_gate);
+    for(HaloControls *controls in attached_controls) {
+        [controls reset];
+        controls.hidden=blocked;
+        controls.userInteractionEnabled=!blocked;
+    }
+}
 
 void host_ios_touch_attach(SDL_Window *window) {
     UIWindow *native=(__bridge UIWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(window),SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER,NULL);
@@ -219,5 +251,8 @@ void host_ios_touch_attach(SDL_Window *window) {
     UIView *root=native.rootViewController.view;
     HaloControls *controls=[[HaloControls alloc]initWithFrame:root.bounds];
     [root addSubview:controls];
+    if(!attached_controls)attached_controls=[NSHashTable weakObjectsHashTable];
+    [attached_controls addObject:controls];
+    touch_replay_ui_update();
     host_logf(HOST_LOG_INFO,"touch controls attached, %.0fx%.0f",root.bounds.size.width,root.bounds.size.height);
 }

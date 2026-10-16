@@ -35,6 +35,7 @@ void host_ios_prepare_assets(const char *documents);
 void host_tv_import(const char *documents);
 void host_ios_touch_attach(struct SDL_Window *window);
 void host_ios_touch_reset(void);
+void host_touch_replay_active(int active);
 void host_ios_touch_pause(void);
 /* debug.frame_counter (host_frame_counter.m): a label in the window's corner
 showing wall time and rendered frames, plus existing frame/CPU/GPU timings;
