@@ -43,12 +43,13 @@ long config_integer(const char *name) { (void)name; return 0; }
 const char *config_string(const char *name) { return !strcmp(name, "debug.input_replay") ? replay_name : ""; }
 void config_folder(char *path, size_t size) { snprintf(path, size, "./"); }
 void config_profile_settings_text(char *text, size_t size) { snprintf(text, size, ""); }
-static int game_initialized;
-unsigned char game_time_initialized(void) { return game_initialized; }
-long game_time_get(void) { return 0; }
+static unsigned char clock_ready, menu_loaded;
+static long clock_tick;
+unsigned char game_time_initialized(void) { return clock_ready; }
+long game_time_get(void) { return clock_tick; }
 float game_time_get_tick_fraction(void) { return 0; }
 unsigned char game_time_get_paused(void) { return 0; }
-unsigned char input_replay_main_menu_loaded(void) { return 0; }
+unsigned char input_replay_main_menu_loaded(void) { return menu_loaded; }
 unsigned char input_replay_skip_cinematic(void) { return 0; }
 void input_replay_level(char *map, unsigned int size, long *difficulty, long *players, unsigned long *seed)
 { snprintf(map, size, "a10"); *difficulty = *players = 1; *seed = 0; }
@@ -59,11 +60,111 @@ unsigned char input_replay_fight_state(float *body, float *shield, long *actors,
 { (void)body; (void)shield; (void)actors; (void)dead_objects; return 0; }
 double halo_frame_trace_milliseconds(void) { return 0; }
 
+static void check_control_pose(void)
+{
+	float facing[2] = { -2.0f, 0.7f };
+	short zoom = -1;
+	unsigned int action[ACTION_WORDS] = {0};
+	FILE *file = fopen("camera.input", "w");
+	assert(file);
+	fputs("halo input recording 1\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n", file);
+	fclose(file);
+	file = fopen("camera.actions", "w");
+	assert(file);
+	/* yaw 1.0, pitch -0.5, zoom 2; an intentional missing tick before the final action. */
+	fputs("halo action recording 1\n0 10 0 3f800000 bf000000 0 0 0 0 00000002\n"
+		"0 12 0 40c00000 3e800000 0 0 0 0 00000001\n", file);
+	fclose(file);
+	assert(input_replay_begin("./camera.input", 0));
+	clock_ready = 1;
+	clock_tick = 10;
+	assert(input_replay_action_camera_active());
+	input_replay_tick_action(action);
+	assert(action[1] == 0x3f800000 && action[2] == 0xbf000000);
+	/* This is the actual parsed action/control boundary, starting from drifted raw input. */
+	assert(!input_replay_apply_control(-1, facing, &zoom));
+	assert(input_replay_apply_control(1, facing, &zoom));
+	assert(facing[0] == 1.0f && facing[1] == -0.5f && zoom == 2);
+	assert(input_replay_controls_facing(1));
+	assert(!input_replay_controls_facing(0));
+	/* A post-injection impulse must survive repeated camera/input reads. */
+	facing[0] += 0.125f;
+	assert(!input_replay_apply_control(1, facing, &zoom));
+	assert(facing[0] == 1.125f);
+	clock_tick = 11;
+	assert(input_replay_controls_facing(1)); /* game clock advances after the injected tick */
+	input_replay_tick_action(action);
+	assert(!input_replay_controls_facing(1));
+	assert(input_replay_action_camera_active());
+	assert(!input_replay_apply_control(1, facing, &zoom));
+	clock_tick = 12;
+	input_replay_tick_action(action);
+	assert(replay.replay_finished);
+	assert(input_replay_apply_control(1, facing, &zoom));
+	assert(facing[0] == 6.0f && facing[1] == 0.25f && zoom == 1);
+	assert(input_replay_controls_facing(1)); /* final action still owns its rendered frame */
+	assert(input_replay_action_camera_active());
+	clock_tick = 13;
+	assert(input_replay_controls_facing(1));
+	input_replay_tick_action(action);
+	assert(!input_replay_controls_facing(1));
+	/* Replacement, load failure, raw-only replay, and recording never retain ownership. */
+	clock_ready = 0;
+	assert(input_replay_begin("./camera.input", 0));
+	clock_ready = 1;
+	clock_tick = 10;
+	input_replay_tick_action(action);
+	assert(input_replay_apply_control(1, facing, &zoom));
+	menu_loaded = 1;
+	assert(!input_replay_action_camera_active());
+	assert(!input_replay_controls_facing(1));
+	menu_loaded = 0;
+	assert(!input_replay_controls_facing(1));
+	clock_ready = 0;
+	assert(input_replay_begin("./camera.input", 0));
+	clock_ready = 1;
+	clock_tick = 10;
+	input_replay_tick_action(action);
+	assert(input_replay_apply_control(1, facing, &zoom));
+	clock_tick = 1;
+	assert(!input_replay_controls_facing(1));
+	clock_tick = 10;
+	assert(!input_replay_controls_facing(1));
+	clock_ready = 0;
+	input_replay_begin(NULL, 0);
+	assert(!input_replay_controls_facing(1));
+	assert(!input_replay_apply_control(1, facing, &zoom));
+	/* A readable actions sibling cannot make a failed input load own the camera. */
+	unlink("camera.input");
+	assert(!input_replay_begin("./camera.input", 0));
+	clock_ready = 1;
+	clock_tick = 10;
+	input_replay_tick_action(action);
+	assert(!input_replay_apply_control(1, facing, &zoom));
+	assert(!input_replay_controls_facing(1));
+	clock_ready = 0;
+	input_replay_begin(NULL, 0);
+	assert(!input_replay_action_camera_active());
+	unlink("camera.actions");
+	file = fopen("camera.input", "w");
+	assert(file);
+	fputs("halo input recording 1\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n", file);
+	fclose(file);
+	assert(input_replay_begin("./camera.input", 0));
+	clock_ready = 1;
+	assert(!input_replay_action_camera_active()); /* controller-only legacy replay */
+	clock_ready = 0;
+	input_replay_begin(NULL, 0);
+	unlink("camera.input");
+}
+
 int main(void)
 {
 	char folder[] = "/tmp/visr-replay-probe-XXXXXX";
 	assert(mkdtemp(folder));
 	assert(!chdir(folder));
+	check_control_pose();
+	clock_tick = 0;
 	lip_sync = 1;
 	assert(!input_replay_benchmark_lip_sync()); /* opt-in alone never changes gameplay */
 	strcpy(replay.record_actions_path, "take.actions");
@@ -149,12 +250,12 @@ int main(void)
 	configure();
 	assert(touch_replay_active);
 	unsigned int action[8] = {0};
-	game_initialized = 1;
+	clock_ready = 1;
 	input_replay_tick_action(action); /* action tick zero is the take's final action */
 	assert(replay.replay_finished && !touch_replay_active);
 	input_replay_begin(NULL, 0);
 	assert(touch_changes >= 4);
-	game_initialized = 0;
+	clock_ready = 0;
 	/* A controller-only take completes through its tail, without tick actions. */
 	unlink("probe.actions");
 	assert(input_replay_begin("./probe.input", 0));

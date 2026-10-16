@@ -3387,6 +3387,11 @@ static void main_game_render(
 		}
 
 		set_window_camera_values(window, observer);
+		/* port: compare replay aim with the camera after effects, before stereo. */
+		{
+			extern void render_interpolation_replay_camera_trace(short local_player_index, real_vector3d const *forward);
+			render_interpolation_replay_camera_trace(window->local_player_index, &window->rasterizer_camera.forward);
+		}
 		window->console_window = FALSE;
 	}
 

@@ -17,7 +17,9 @@ instead, the same way on recording and replay, so a recording can span
 them. During a
 replay the real controller is ignored while the game time runs. The look
 stick turns the view by its deflection times each frame's length, so aim
-can differ slightly between replays at different frame rates.
+can differ between controller-only replays at different frame rates.
+Action-backed replays instead synchronize the shared camera/control pose
+when each recorded action is injected.
 
 The file is text: the header line "halo input recording 1", then one line
 per change: game time in ticks, the digital buttons (hex), the 8 analog
@@ -37,9 +39,8 @@ back (a checkpoint revert, the next level), so a replay whose revert comes a
 frame later than the recording's still lines up. Its header is "halo action
 recording 1", plus " stereo=head" when display.stereo wasn't off (head, screen
 or side_by_side; an older header reads as off), then one line per tick:
-segment, tick and the action's eight 32-bit words in hex. A replay should run
-with display.direct_camera off: the live camera follows the real stick, not
-the recorded facing.
+segment, tick and the action's eight 32-bit words in hex. Action-backed replay temporarily bypasses the direct camera so observer
+interpolation presents the recorded facing without late controller input.
 
 With debug.benchmark, a replay's frames are timed from the first recorded
 state to the last; then the report goes to benchmark-<name>-<time>.txt next
@@ -48,6 +49,7 @@ to the recording, a summary to the log, and the game quits.
 
 #include "platform.h"
 #include "port_config.h"
+#include "input_replay.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -146,6 +148,9 @@ static struct
 	struct recorded_action *actions;
 	long action_count, next_action;
 	long segment, last_action_tick;
+	struct input_replay_camera_sample camera_sample;
+	BOOL control_pending, control_owned;
+	short control_local_player;
 	/* tick actions written to the take being recorded */
 	long actions_written;
 	/* a replayed take's .route: the seed each of its segments began with, and whether the take began after the
@@ -1090,6 +1095,7 @@ void input_replay_tick_action(void *action)
 	if (!replay.configured)
 		configure();
 	take_update();
+	replay.control_pending = replay.control_owned = FALSE;
 	if (!*replay.record_actions_path && !*replay.replay_actions_path)
 		return;
 	if (!game_time_initialized() || input_replay_main_menu_loaded())
@@ -1124,6 +1130,16 @@ void input_replay_tick_action(void *action)
 		replay_segment_began(tick);
 	}
 	replay.last_action_tick = tick;
+	/* Keep diagnostics keyed to the action actually injected, including gaps. */
+	{
+		struct input_replay_camera_sample *sample = &replay.camera_sample;
+		sample->previous_valid = sample->valid && sample->segment == replay.segment && sample->tick + 1 == tick;
+		sample->previous_tick = sample->tick;
+		memcpy(sample->previous_facing, sample->facing, sizeof(sample->facing));
+		sample->segment = replay.segment;
+		sample->tick = tick;
+		sample->valid = FALSE;
+	}
 
 	if (*replay.record_actions_path)
 	{
@@ -1210,6 +1226,10 @@ void input_replay_tick_action(void *action)
 				input_replay_random_seeds(replay.actions[replay.next_action].seeds, TRUE);
 			}
 			memcpy(action, replay.actions[replay.next_action].words, sizeof(words));
+			memcpy(replay.camera_sample.facing, &replay.actions[replay.next_action].words[1], sizeof(float) * 2);
+			memcpy(&replay.camera_sample.zoom, &replay.actions[replay.next_action].words[7], sizeof(short));
+			replay.camera_sample.valid = TRUE;
+			replay.control_pending = TRUE;
 			applied = TRUE;
 		}
 		/* past the end of this segment's actions: the recording went back to a
@@ -1233,6 +1253,65 @@ void input_replay_tick_action(void *action)
 	}
 	else if (*replay.record_actions_path)
 		route_log(tick, "recorded");
+}
+
+/* The queue calls this once for its mapped local player. Later damage impulses
+   stay in control until the next recorded action; render frames never restamp it. */
+unsigned char input_replay_apply_control(short local_player_index, float facing[2], short *zoom)
+{
+	if (!replay.control_pending || local_player_index < 0 || !replay.state_count ||
+		*replay.record_actions_path || replay.await_level || !game_time_initialized() ||
+		input_replay_main_menu_loaded())
+		return FALSE;
+	memcpy(facing, replay.camera_sample.facing, sizeof(replay.camera_sample.facing));
+	*zoom = replay.camera_sample.zoom;
+	replay.control_pending = FALSE;
+	replay.control_owned = TRUE;
+	replay.control_local_player = local_player_index;
+	return TRUE;
+}
+
+unsigned char input_replay_controls_facing(short local_player_index)
+{
+	long tick;
+	if (replay.await_level || !game_time_initialized() || input_replay_main_menu_loaded())
+	{
+		replay.control_pending = replay.control_owned = FALSE;
+		return FALSE;
+	}
+	/* game_time advances after injection. Keep the last action through its
+	   presentation even though tick_action has already marked replay finished. */
+	tick = game_time_get();
+	if (tick < replay.camera_sample.tick || tick > replay.camera_sample.tick + 1)
+		replay.control_pending = replay.control_owned = FALSE;
+	return replay.control_owned && local_player_index == replay.control_local_player;
+}
+
+/* Head input runs before tick injection. Keep it in the eye cameras even
+   before the first action and through gaps, where a later action would erase
+   a head turn already consumed into raw control. Legacy/recording stays live. */
+unsigned char input_replay_action_camera_active(void)
+{
+	long tick;
+	if (!replay.state_count || !replay.action_count || *replay.record_actions_path ||
+		replay.await_level || !game_time_initialized() || input_replay_main_menu_loaded())
+		return FALSE;
+	if (!replay.replay_finished)
+		return TRUE;
+	tick = game_time_get();
+	return replay.control_owned && tick >= replay.camera_sample.tick && tick <= replay.camera_sample.tick + 1;
+}
+
+/* Read cached time only: game_ticks() also advances controller/segment state. */
+unsigned char input_replay_camera_sample(struct input_replay_camera_sample *sample)
+{
+	long every = config_integer("debug.input_replay_route");
+	if (every <= 0 || !replay.action_count || replay.await_level ||
+		!game_time_initialized() || input_replay_main_menu_loaded() || replay.last_action_tick % every)
+		return FALSE;
+	*sample = replay.camera_sample;
+	sample->timeline = replay.last_game_ticks + replay.timeline_offset;
+	return TRUE;
 }
 
 /* ---------- the benchmark */

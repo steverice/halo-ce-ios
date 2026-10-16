@@ -1673,6 +1673,21 @@ float halo_stereo_vignette_ease(float strength, float turn_fraction, float time_
 	return fmaxf(target, strength - time_delta / VIGNETTE_EASE_OUT);
 }
 
+void halo_stereo_replay_look(short gamepad_index, float yaw)
+{
+	if (gamepad_index != 0)
+		return;
+	/* Do not consume head_pending_yaw or head_seat_leftover: the recorded
+	   control pose does not contain the live head's motion. */
+	snap_pending = smooth_yaw = head_request = head_fold = 0.0f;
+	vignette_strength = 0.0f;
+	vignette_stick_read = 1;
+	if (fabsf(yaw) < SNAP_RELEASE)
+		snap_armed = 1;
+	else if (fabsf(yaw) > SNAP_FLICK)
+		snap_armed = 0;
+}
+
 void halo_stereo_stick_look(short gamepad_index, float yaw_response, float time_delta, float *yaw, float *pitch)
 {
 	float magnitude, turn_fraction = 0.0f;

@@ -43,6 +43,7 @@ with their unit, and with what it rides.
 #include "render/render_cameras.h"
 #include "units/units.h"
 #include "../src/halo_stereo.h"
+#include "../src/input_replay.h"
 
 /* port/linux/src/port_config.c */
 int config_boolean(const char *name);
@@ -818,7 +819,7 @@ static struct observer_result const *render_interpolation_direct_camera(
 		read_at = config_changes();
 		enabled = config_boolean("display.direct_camera");
 	}
-	if (!enabled || !observer ||
+	if (!enabled || !observer || input_replay_controls_facing(local_player_index) ||
 		director_get_perspective(local_player_index) != _director_perspective_first_person ||
 		director_inhibited_facing(local_player_index) ||
 		cinematic_in_progress())
@@ -951,6 +952,77 @@ static void late_look(struct observer_result *camera)
 	}
 }
 
+/* The replay trace separates the tick observer, the selected base camera, and
+   main.c's camera effects. Stereo orientation is applied after this trace. */
+static struct
+{
+	struct input_replay_camera_sample action;
+	real_vector3d observer, base, recorded, previous_recorded, control;
+	real_euler_angles2d control_angles;
+	unsigned long frame;
+	long parent, perspective;
+	short zoom;
+	boolean pending;
+} replay_camera_trace;
+
+static void replay_camera_note(short local_player_index, struct observer_result const *observer,
+	struct observer_result const *base)
+{
+	long player_index, unit_index;
+	real_euler_angles2d angles;
+	struct input_replay_camera_sample *sample = &replay_camera_trace.action;
+
+	if (local_player_index != 0)
+		return;
+	replay_camera_trace.frame++;
+	replay_camera_trace.pending = FALSE;
+	if (!observer || !base || !input_replay_camera_sample(sample))
+		return;
+	player_index = local_player_get_player_index(0);
+	unit_index = player_control_get_unit_index(0);
+	if (player_index == NONE || unit_index == NONE)
+		return;
+	replay_camera_trace.parent = object_get(unit_index)->object.parent_object_index;
+	replay_camera_trace.perspective = director_get_perspective(0);
+	replay_camera_trace.control_angles = *player_control_get_facing_angles(0);
+	replay_camera_trace.zoom = player_control_get_zoom_level(0);
+	player_control_get_facing_direction(0, &replay_camera_trace.control);
+	angles.yaw = sample->facing[0];
+	angles.pitch = sample->facing[1];
+	player_aiming_vector_from_facing(player_index, &replay_camera_trace.recorded, &angles);
+	angles.yaw = sample->previous_facing[0];
+	angles.pitch = sample->previous_facing[1];
+	player_aiming_vector_from_facing(player_index, &replay_camera_trace.previous_recorded, &angles);
+	replay_camera_trace.observer = observer->forward;
+	replay_camera_trace.base = base->forward;
+	replay_camera_trace.pending = TRUE;
+}
+
+void render_interpolation_replay_camera_trace(short local_player_index, real_vector3d const *rendered)
+{
+	struct input_replay_camera_sample *s = &replay_camera_trace.action;
+	if (local_player_index != 0 || !replay_camera_trace.pending)
+		return;
+	replay_camera_trace.pending = FALSE;
+	platform_log("replay camera: frame %lu wall_ms %.3f segment %ld action_tick %ld applied %d previous_tick %ld previous_valid %d "
+		"game_tick %ld fraction %.6f timeline %.4f recorded %.9f %.9f zoom %d previous %.9f %.9f "
+		"control %.9f %.9f zoom %d recorded_world %.9f %.9f %.9f previous_world %.9f %.9f %.9f "
+		"control_world %.9f %.9f %.9f observer %.9f %.9f %.9f base %.9f %.9f %.9f rendered %.9f %.9f %.9f "
+		"source %s perspective %ld parent %ld cinematic %d paused %d direct %d",
+		replay_camera_trace.frame, halo_frame_trace_milliseconds(), s->segment, s->tick, s->valid,
+		s->previous_tick, s->previous_valid, game_time_get(), render_interpolation_fraction(), s->timeline,
+		s->facing[0], s->facing[1], s->zoom, s->previous_facing[0], s->previous_facing[1],
+		replay_camera_trace.control_angles.yaw, replay_camera_trace.control_angles.pitch, replay_camera_trace.zoom,
+		replay_camera_trace.recorded.i, replay_camera_trace.recorded.j, replay_camera_trace.recorded.k,
+		replay_camera_trace.previous_recorded.i, replay_camera_trace.previous_recorded.j, replay_camera_trace.previous_recorded.k,
+		replay_camera_trace.control.i, replay_camera_trace.control.j, replay_camera_trace.control.k,
+		replay_camera_trace.observer.i, replay_camera_trace.observer.j, replay_camera_trace.observer.k,
+		replay_camera_trace.base.i, replay_camera_trace.base.j, replay_camera_trace.base.k,
+		rendered->i, rendered->j, rendered->k, camera_note.source ? camera_note.source : "none",
+		replay_camera_trace.perspective, replay_camera_trace.parent, cinematic_in_progress(), game_time_get_paused(),
+		config_boolean("display.direct_camera"));
+}
+
 struct observer_result const *render_interpolation_camera(
 	short local_player_index,
 	struct observer_result const *observer)
@@ -973,6 +1045,7 @@ struct observer_result const *render_interpolation_camera(
 	(a camera change in the fold's tick) is covered by stereo's cut */
 	if (local_player_index == 0 && result)
 		halo_stereo_camera_posed(camera_note.source && camera_note.holds_facing);
+	replay_camera_note(local_player_index, observer, result);
 	return result;
 }
 
