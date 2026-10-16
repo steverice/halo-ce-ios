@@ -1,6 +1,16 @@
 #include "host_frame_counter_stats.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
+
+void host_frame_counter_clock(char *buffer, size_t size, int fixed, unsigned long frame, double elapsed) {
+    unsigned long minutes = (unsigned long)elapsed / 60;
+    if (fixed)
+        snprintf(buffer, size, "game %lu:%02lu:%02lu | render frame %lu\nwall %02lu:%05.2f",
+                 frame / 1800, (frame / 30) % 60, frame % 30, frame, minutes, elapsed - 60 * minutes);
+    else
+        snprintf(buffer, size, "wall %02lu:%05.2f | render frame %lu", minutes, elapsed - 60 * minutes, frame);
+}
 
 /* Reject impossible timestamps as well as unavailable (-1/0) timing samples. */
 static int valid_seconds(double seconds) { return isfinite(seconds) && seconds > 0.0 && seconds <= 3600.0; }

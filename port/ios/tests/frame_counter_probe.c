@@ -3,9 +3,20 @@
 #include <math.h>
 #include <stdio.h>
 #include <float.h>
+#include <string.h>
 
 static void close_to(double actual, double expected) { assert(fabs(actual - expected) < 0.00001); }
 int main(void) {
+    char clock[160];
+    host_frame_counter_clock(clock, sizeof(clock), 1, 300, 17.25);
+    assert(strcmp(clock, "game 0:10:00 | render frame 300\nwall 00:17.25") == 0);
+    host_frame_counter_clock(clock, sizeof(clock), 1, 1829, 81.5);
+    assert(strcmp(clock, "game 1:00:29 | render frame 1829\nwall 01:21.50") == 0);
+    host_frame_counter_clock(clock, sizeof(clock), 0, 300, 17.25);
+    assert(strcmp(clock, "wall 00:17.25 | render frame 300") == 0);
+    char short_clock[5];
+    host_frame_counter_clock(short_clock, sizeof(short_clock), 1, 300, 17.25);
+    assert(short_clock[sizeof(short_clock) - 1] == '\0');
     struct host_frame_counter_stats stats;
     host_frame_counter_stats_reset(&stats);
     struct host_frame_counter_summary value = host_frame_counter_stats_read(&stats);

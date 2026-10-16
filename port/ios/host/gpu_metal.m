@@ -5770,6 +5770,8 @@ static void stereo_pacing_count(void)
 		interval = presentation - stereo_pacing.last_presentation;
 	if (presentation > 0.0)
 		stereo_pacing.last_presentation = presentation;
+	/* Reuse stereo pacing samples for the opt-in host overlay, without GPU queries. */
+	host_frame_counter_sample(interval, cpu, gpu);
 	/* a quarter second or more is a load or the background, not a frame */
 	if (interval > 0.0 && interval < 0.25 && cpu > 0.0 && stereo_pacing.timed < PACING_TIMED_FRAMES)
 	{

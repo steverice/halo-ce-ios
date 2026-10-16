@@ -1,6 +1,11 @@
 #ifndef HOST_FRAME_COUNTER_STATS_H
 #define HOST_FRAME_COUNTER_STATS_H
 
+#include <stddef.h>
+
+/* Fixed mode retains the 30 Hz game timecode; wall time remains independent. */
+void host_frame_counter_clock(char *buffer, size_t size, int fixed, unsigned long frame, double elapsed);
+
 #define HOST_FRAME_COUNTER_SAMPLES_MAX 4096u
 struct host_frame_counter_stats {
     unsigned frames, cpu_frames, gpu_frames;
