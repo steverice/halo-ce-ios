@@ -229,19 +229,14 @@ def test_the_projects_key_and_feeds_pass_their_own_checks():
                                            ios_build.DATA_PACK_FEED.format(channel='stable', kind='recordings'))
 
 
-def test_extended_virtual_addressing_is_allowed_for_ios_but_refused_for_the_mac_build(monkeypatch, capsys):
-    base = ["ios_build.py", "--unsigned", "--extended-virtual-addressing"]
-    monkeypatch.setattr("sys.argv", base + ["--mac"])
-    with pytest.raises(SystemExit):
-        ios_build.main()
+def test_extended_virtual_addressing_is_allowed_for_ios_but_refused_for_the_mac_build(monkeypatch, capsys, tmp_path):
+    arguments = ('--unsigned', '--extended-virtual-addressing')
+    with pytest.raises(SystemExit) as failure:
+        configure_with(monkeypatch, tmp_path, *arguments, '--mac')
+    assert failure.value.code == 2
     assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR in capsys.readouterr().err
-    # an iOS build gets past the check (and on to the build, which the stub ends)
-    monkeypatch.setattr("sys.argv", base)
-    monkeypatch.setattr(ios_build.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stop")))
-    try:
-        ios_build.main()
-    except (RuntimeError, SystemExit) as e:
-        assert ios_build.EXTENDED_ADDRESSING_MAC_ERROR not in capsys.readouterr().err
+    configure = configure_with(monkeypatch, tmp_path, *arguments)
+    assert '-DHALO_EXTENDED_VIRTUAL_ADDRESSING=ON' in configure
 
 
 def test_manual_distribution_signing_never_provisions_or_registers(tmp_path: Path) -> None:
