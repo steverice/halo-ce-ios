@@ -458,6 +458,11 @@ WIDGET_PATCHES = {
         '<on event="b"/>',
     ]},
     "main_menu/main_menu_select_list": {"child_platform": {"main_menu/main_menu_item_quit_game": "quit"}},
+    # The host returns here after a round with no menu history. Back must
+    # reopen the main menu when it closes the last screen, as the lobby does.
+    f"{MT}/connected/connected_map_select_wrapper": {"set": {
+        "flags": "pass_unhandled_to_focused_child pause_game main_menu_if_no_history tag_controller_index force_handle_mouse",
+    }},
     # (the profile settings' picture: on Gamepad Setup's row, the profile's
     # button settings, BITMAP_FRAMES; menu_functions.c's
     # profile_gamepad_layout)
