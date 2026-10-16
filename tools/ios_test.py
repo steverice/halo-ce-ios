@@ -526,6 +526,7 @@ shown = [child for child in main_menu.find("widget[@name='main_menu/main_menu_se
 assert [int(child.get('y')) for child in shown] == [247 + 36 * row for row in range(len(shown))] and len(shown) == 4, \
     'the main menu without Quit: four items, a row apart'
 print('main menu without Quit: ' + ', '.join(child.get('widget').split('/')[-1] for child in shown))
+run('python3', 'tools/test_menu_cancel.py')
 
 # Parse untrusted XISO metadata and exercise extraction/cancellation under sanitizers.
 run('python3', 'tools/ios_xiso_test.py')

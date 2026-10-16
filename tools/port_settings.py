@@ -447,11 +447,15 @@ WIDGET_PATCHES = {
     # (the main menu's Quit, and B and Back's way to its question, only where
     # the app can end itself: the desktop's and the Mac app's. An iPhone, an
     # iPad, an Apple TV and a Vision Pro leave to the system, and the
-    # question's OK did nothing there)
+    # question's OK did nothing there). Keep inert B and Back handlers after
+    # the quit handlers: without one, the widget runtime deletes the root
+    # menu while trying to return to its empty history.
     "main_menu/main_menu": {"handlers": [
         '<on event="created" run="main menu intialize" label="ring_loop"/>',
         '<on event="back" open="main_menu/quit_select/quit_screen" platform="quit"/>',
         '<on event="b" open="main_menu/quit_select/quit_screen" platform="quit"/>',
+        '<on event="back"/>',
+        '<on event="b"/>',
     ]},
     "main_menu/main_menu_select_list": {"child_platform": {"main_menu/main_menu_item_quit_game": "quit"}},
     # (the profile settings' picture: on Gamepad Setup's row, the profile's

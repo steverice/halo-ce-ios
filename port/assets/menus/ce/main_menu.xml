@@ -14,6 +14,8 @@
 		<on event="created" run="main menu intialize" label="ring_loop"/>
 		<on event="back" open="main_menu/quit_select/quit_screen" platform="quit"/>
 		<on event="b" open="main_menu/quit_select/quit_screen" platform="quit"/>
+		<on event="back"/>
+		<on event="b"/>
 		<child widget="main_menu/halo_logo" y="28"/>
 		<child widget="main_menu/main_menu_select_list"/>
 		<child widget="main_menu/build_number" x="450" y="400"/>
