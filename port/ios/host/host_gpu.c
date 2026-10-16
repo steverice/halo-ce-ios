@@ -6,6 +6,7 @@ the host it runs in on iOS and tvOS.
 */
 
 #include "ios_host.h"
+#include "host_external.h"
 
 #include <SDL3/SDL.h>
 #include <stdarg.h>
@@ -29,7 +30,7 @@ void platform_video_drawable_size(int *width, int *height)
 {
 	*width = 0;
 	*height = 0;
-	SDL_GetWindowSizeInPixels(host_sdl_window(), width, height);
+    if(!host_external_size(width,height))SDL_GetWindowSizeInPixels(host_sdl_window(), width, height);
 }
 
 void platform_video_swap(void)

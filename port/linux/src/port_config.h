@@ -51,13 +51,14 @@ enum
 };
 
 /* a setting's value in a scene class: the profile's value for that class
+with the external output context over it while connected,
 while the setting's own value comes from its default or the profile; else
 (the player or the environment set it, or the profile has none) as
 config_real and config_boolean */
 double config_scene_real(const char *name, int scene);
 int config_scene_boolean(const char *name, int scene);
 long config_scene_integer(const char *name, int scene);
-/* a string setting's, into text; 1 when it is the profile's value for the scene class, 0 when the setting's own */
+/* a string setting's, into text; 1 when it is a scene or external context value, 0 when the setting's own */
 int config_scene_string(const char *name, int scene, char *text, size_t size);
 /* every setting a device profile may set at its value in force, a "section.key = value" line each (what a
 recording notes of the settings it was made under) */

@@ -239,11 +239,11 @@ static void check_shipped(const char *shipped)
 	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
 	class profile's Metal */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(profile.count == 4 && has(&profile, "display.anisotropic_filtering", "16") &&
+	assert(profile.count == 6 && has(&profile, "display.anisotropic_filtering", "16") &&
 		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
 		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(profile.count == 4 && has(&profile, "display.mirror_resolution", "half") &&
+	assert(profile.count == 6 && has(&profile, "display.mirror_resolution", "half") &&
 		has(&profile, "display.renderer", "metal"));
 	/* The smaller M1 iPad Pro inherits the measured M1 profile, subject to its envelope. */
 	struct host_device sibling = device("ios", "iPad13,4", "", 7);
@@ -262,7 +262,7 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("mac", "Mac15,3", "Apple M3 Max", 9), NULL, "");
 	assert(profile.count == 0 && !strcmp(profile.class_file, "mac.toml") && !strstr(logged, "ignored"));
 	profile = resolve(shipped, device("ios", "iPhone99,1", "", 15), NULL, "");
-	assert(profile.count == 1 && has(&profile, "display.renderer", "metal") &&
+	assert(profile.count == 3 && has(&profile, "display.renderer", "metal") &&
 		!strcmp(profile.class_file, "iphone-ipad.toml"));
 	profile = resolve(shipped, device("visionos", "RealityDevice99,1", "", 15), NULL, "");
 	assert(profile.count == 3 && !profile.model_file[0] && has(&profile, "display.renderer", "metal"));
@@ -296,6 +296,11 @@ static void check_capability_fallback(void)
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "display.render_scale\t0.5\tmodel A9\tmenu\n"));
 	assert(strstr(logged, "inherited") && strstr(logged, "a11") && strstr(logged, "a9"));
+	/* A model's external context is inherited with its baseline. */
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[external.display]\noutput_height=720\nrender_height=360\n");
+	profile = resolve(folder, target, NULL, "");
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(profile.inherited && strstr(encoded, "display.render_height\t360\tmodel A9\t\texternal\n"));
 	/* Exact/debug matching, unknown hardware, and insufficient memory keep their existing behavior. */
 	target.memory_megabytes = 1024;
 	profile = resolve(folder, target, NULL, "");
@@ -367,6 +372,17 @@ static void check_minimum_height_envelope(void)
 		"[[fallback]]\nhardware=\"a9\"\nprofile=\"tier-a9.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[30000,30000,30000]\nmaximum_refresh_hertz=60\n");
 	/* 120 requested lines allocate at least 427x240, exceeding this 30,000-pixel envelope. */
 	profile = resolve(folder, target, NULL, ""); assert(!profile.inherited);
+	/* The built-in image fits, but an external render target must fit the same envelope. */
+	write_file("hardware/catalog.toml", "schema=1\nversion=\"external-height\"\n"
+		"[[hardware]]\nid=\"a9\"\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\ntier=9\ngpu_family=2\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[hardware]]\nid=\"a11\"\nplatform=\"ios\"\nmodels=[\"Chip11,1\"]\ntier=11\ngpu_family=5\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
+		"[[fallback]]\nhardware=\"a9\"\nprofile=\"tier-a9.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[1000000,1000000,1000000]\nmaximum_refresh_hertz=60\n");
+	profile = resolve(folder, target, NULL, ""); assert(profile.inherited);
+	char path[256]; snprintf(path, sizeof(path), "%s/tier-a9.toml", folder);
+	FILE *file = fopen(path, "ab"); assert(file);
+	fputs("[external.display]\noutput_height=1080\nrender_height=720\n", file); fclose(file);
+	profile = resolve(folder, target, NULL, ""); assert(!profile.inherited);
+
 }
 
 static void check_refresh_envelope(void)
@@ -395,6 +411,29 @@ static void check_refresh_envelope(void)
 	}
 }
 
+static void check_external(void)
+{
+	struct host_profile profile;
+	char encoded[4096];
+	write_file("external.toml", "schema = 1\nname = \"External\"\nkind = \"model\"\n[match]\nplatform = \"ios\"\n"
+		"models = [\"External1,1\"]\n[display]\nrender_height = 540\noutput_height = 1080\n"
+		"[external.display]\nrender_height = 720\noutput_height = 1440\nrenderer = \"gl\"\n"
+		"[external.scene.cutscene.display]\nrender_scale = 0.75\n"
+		"[external.scene.loading.display]\nrender_scale = 0.5\n");
+	profile = resolve(folder, device("ios", "External1,1", "", 5), NULL, "");
+	assert(has(&profile, "display.render_height", "540"));
+	assert(unset(&profile, "display.output_height"));
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(strstr(encoded, "display.render_height\t720\tmodel External\t\texternal\n"));
+	assert(strstr(encoded, "display.output_height\t1440\tmodel External\t\texternal\n"));
+	assert(strstr(encoded, "display.render_scale\t0.75\tmodel External\tcutscene\texternal\n"));
+	assert(!strstr(encoded, "display.renderer\tgl") && !strstr(encoded, "loading"));
+	char value[32];
+	assert(host_profile_external_value(&profile, "display.output_height", value, sizeof(value)) && !strcmp(value, "1440"));
+	assert(host_profile_external_value(&profile, "display.render_height", value, sizeof(value)) && !strcmp(value, "720"));
+	char path[256]; snprintf(path, sizeof(path), "%s/external.toml", folder); unlink(path);
+}
+
 int main(int argc, char **argv)
 {
 	char command[128];
@@ -406,6 +445,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	check_layers();
+	check_external();
 	check_refusals();
 	check_capability_fallback();
 	check_minimum_height_envelope();

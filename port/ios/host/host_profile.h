@@ -25,7 +25,7 @@ struct host_device
 
 enum
 {
-	HOST_PROFILE_MAXIMUM_VALUES = 96,
+	HOST_PROFILE_MAXIMUM_VALUES = 128,
 	/* a profile file larger than this is not read */
 	HOST_PROFILE_MAXIMUM_FILE_BYTES = 64 * 1024,
 };
@@ -40,6 +40,8 @@ struct host_profile_value
 	char source[80];
 	/* "" for the profile's own value; "menu" or "cutscene" for a scene class's ([scene.menu.display]) */
 	char scene[12];
+	/* values for an external output never replace the built-in display defaults */
+	int external;
 };
 
 struct host_profile
@@ -65,8 +67,12 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 /* the value in force for name (not a scene class's), as text; 0 if no profile sets it */
 int host_profile_value(const struct host_profile *profile, const char *name, char *text, size_t size);
 
+/* The highest non-scene external value, falling back to the built-in profile. */
+int host_profile_external_value(const struct host_profile *profile, const char *name, char *text, size_t size);
+
 /* every value as a "name\tvalue\tsource\n" line (a scene class's with "\tclass" after the source), lowest layer
-   first, for the game; the length written */
+   first, for the game; external values always have a fourth field (possibly empty)
+   and a fifth field "external"; the length written */
 size_t host_profile_encode(const struct host_profile *profile, char *text, size_t size);
 
 /* host_device.m: what this is; and the profile resolved for it, once (host_main.m), with host_config.c's

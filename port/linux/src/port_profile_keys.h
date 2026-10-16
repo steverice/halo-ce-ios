@@ -16,6 +16,9 @@ An X-macro list, included with the four macros defined:
 	PROFILE_STRING(name, choices)
 	PROFILE_SCENE(name)
 
+PROFILE_EXTERNAL names a setting that may vary while driving an external output.
+Display output height is profile-only and valid only in the external context.
+
 PROFILE_SCENE names a setting above that a profile may also set for one
 scene class ([scene.menu.display], [scene.cutscene.display]): the ones the
 game can change between frames while it runs. display.frame_rate as a
@@ -35,6 +38,7 @@ tools/profile_check.py reads this file as text: keep one entry a line.
 
 PROFILE_STRING("display.renderer", "gl|metal")
 PROFILE_INTEGER("display.render_height", 0, 4320)
+PROFILE_INTEGER("display.output_height", 0, 4320)
 PROFILE_REAL("display.render_scale", 0.25, 1.0)
 PROFILE_STRING("display.upscaler", "bilinear|metalfx")
 PROFILE_INTEGER("display.anisotropic_filtering", 1, 16)
@@ -60,3 +64,8 @@ PROFILE_BOOLEAN("display.interpolation")
 PROFILE_SCENE("display.render_scale")
 PROFILE_SCENE("display.render_height")
 PROFILE_SCENE("display.frame_rate")
+
+PROFILE_EXTERNAL("display.output_height")
+PROFILE_EXTERNAL("display.render_height")
+PROFILE_EXTERNAL("display.render_scale")
+PROFILE_EXTERNAL("display.anti_aliasing")

@@ -29,6 +29,9 @@ void platform_log(const char *format, ...)
 		strcat(logged, "\n");
 }
 
+static int external_active;
+int host_external_active(void) { return external_active; }
+
 #include "port_config.c"
 #include "tomlc17.c"
 
@@ -89,6 +92,9 @@ static void launch(const char *profile)
 			free(state->scene[layer].text);
 			free(state->scene[layer].source);
 			free(state->scene_value[layer].string);
+			free(state->external[layer].text);
+			free(state->external[layer].source);
+			free(state->external_value[layer].string);
 		}
 		free(state->device.string);
 		free(state->device_literal);
@@ -499,6 +505,41 @@ static void check_changed_default(void)
 	assert(strstr(logged, "settings: input.snap_angle was the default 45.0 in config.toml; it is now this device's 30.0"));
 }
 
+static void check_external(void)
+{
+	const char *profile = TV_MODEL
+		"display.render_scale\t0.8\tclass Phone\t\texternal\n"
+		"display.render_scale\t0.6\tmodel Phone\t\texternal\n"
+		"display.render_scale\t0.4\tmodel Phone\tcutscene\texternal\n"
+		"display.anti_aliasing\tfxaa\tmodel Phone\t\texternal\n";
+	char *before, *before_origins, shown[32];
+	fresh();
+	external_active = 1;
+	launch(profile);
+	assert(config_real("display.render_scale") == 0.5);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.6);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_MENU) == 0.6);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_CUTSCENE) == 0.4);
+	assert(config_scene_string("display.anti_aliasing", CONFIG_SCENE_GAMEPLAY, shown, sizeof(shown)));
+	assert(!strcmp(shown, "fxaa"));
+	assert(file_has(path, "\nrender_scale = 0.5\n"));
+	assert(file_has(origins, "display.render_scale\tdefault\t0.5\n"));
+	before = read_text(path); before_origins = read_text(origins);
+	external_active = 0;
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_MENU) == 0.667);
+	external_active = 1;
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.6);
+	assert(file_has(path, before) && file_has(origins, before_origins));
+	free(before); free(before_origins);
+	assert(config_write("display.render_scale", "0.9"));
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_CUTSCENE) == 0.9);
+	setenv("HALO_RENDER_SCALE", "0.75", 1);
+	launch(profile);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_CUTSCENE) == 0.75);
+	unsetenv("HALO_RENDER_SCALE");
+	external_active = 0;
+}
+
 int main(void)
 {
 	snprintf(directory, sizeof(directory), "/tmp/config-origins-probe-XXXXXX");
@@ -519,6 +560,7 @@ int main(void)
 	check_environment_and_refusals();
 	check_scenes();
 	check_changed_default();
+	check_external();
 	fresh();
 	rmdir(directory);
 	puts("PASS: settings layers: default, device profile, a chosen value, the environment; config.origins; scene classes");

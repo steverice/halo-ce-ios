@@ -5,6 +5,14 @@
 
 struct halo_display_size { long width, height; };
 
+/* The guest layout follows a changed output only between frames. */
+static inline long halo_display_layout_width(long pixels_x, long pixels_y, long requested, long fallback)
+{
+    long width = requested > 0 ? requested : pixels_x > 0 && pixels_y > 0 ?
+        (480 * pixels_x / pixels_y) : fallback;
+    return (width < 640 ? 640 : width > 1600 ? 1600 : width) & ~1L;
+}
+
 static inline struct halo_display_size halo_display_render_size(
     long display_width, long display_height, long logical_width,
     long requested_width, long requested_height, long maximum_dimension)

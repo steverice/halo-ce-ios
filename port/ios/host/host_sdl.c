@@ -24,6 +24,7 @@ so the audio callback is handed to a thread that has one.
 #include <string.h>
 #include "ios_host.h"
 #include "host_join_link.h"
+#include "host_external.h"
 
 #define HANDLE_COUNT 256
 
@@ -146,6 +147,7 @@ uint32_t host_sdl_create_window(const char *title, int width, int height, int64_
 		if (!metal_view)
 			host_logf(HOST_LOG_ERROR, "SDL_Metal_CreateView failed: %s", SDL_GetError());
 		host_ios_touch_attach(window);
+        host_external_attach(window,1);
 	}
 	return handle_new(_handle_window, window);
 }
@@ -180,6 +182,7 @@ void host_sdl_window_size_in_pixels(uint32_t window, int *width, int *height)
 		return;
 	}
 #endif
+    if(object && host_external_size(width,height))return;
 	if (object && pinned_width)
 	{
 		*width = pinned_width;
@@ -208,7 +211,7 @@ uint32_t host_sdl_gl_create_context(uint32_t window)
 {
 	SDL_Window *object = handle_get(window, _handle_window);
 	SDL_GLContext context = object ? SDL_GL_CreateContext(object) : NULL;
-	if (context) host_ios_touch_attach(object);
+	if (context) { host_ios_touch_attach(object);host_external_attach(object,0); }
 	return handle_new(_handle_context, context);
 }
 
@@ -269,6 +272,7 @@ int host_sdl_poll_event(void *event)
 	static unsigned long polls;
 
 	host_extra_scene_poll();
+    host_external_poll();
 #if TARGET_OS_VISION
 	if (test_extra_scene < 0)
 	{
@@ -458,6 +462,36 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 /* the open audio streams, which host_sdl_audio_pause stops while the app is
 in the background (host_lifecycle.m) */
 static SDL_AudioStream *audio_streams[4];
+static struct audio_binding *audio_bindings[4];
+
+/* Keep the guest's source format stable. SDL converts it to the new route's
+   device rate; changing the source rate would change the game's pitch. */
+void host_sdl_audio_route_changed(void)
+{
+    for(size_t i=0;i<SDL_arraysize(audio_streams);i++) {
+        SDL_AudioStream *old=audio_streams[i];
+        struct audio_binding *binding=audio_bindings[i];
+        SDL_AudioSpec source;
+        if(!old || !binding || !SDL_GetAudioStreamFormat(old,&source,NULL))continue;
+        bool paused=SDL_AudioStreamDevicePaused(old);
+        SDL_PauseAudioStreamDevice(old);
+        SDL_AudioStream *replacement=SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&source,
+            binding->callback?audio_callback:NULL,binding);
+        if(!replacement) {
+            if(!paused)SDL_ResumeAudioStreamDevice(old);
+            host_logf(HOST_LOG_ERROR,"audio route: cannot reopen stream: %s",SDL_GetError());continue;
+        }
+        pthread_mutex_lock(&handle_lock);
+        handles[binding->handle].object=replacement;
+        audio_streams[i]=replacement;
+        pthread_mutex_unlock(&handle_lock);
+        SDL_DestroyAudioStream(old);
+        if(!paused)SDL_ResumeAudioStreamDevice(replacement);
+        SDL_AudioSpec output;
+        if(SDL_GetAudioDeviceFormat(SDL_GetAudioStreamDevice(replacement),&output,NULL))
+            host_logf(HOST_LOG_INFO,"audio route: stream reopened at %d Hz (guest source %d Hz)",output.freq,source.freq);
+    }
+}
 
 void host_sdl_audio_pause(int paused)
 {
@@ -514,6 +548,7 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
 			if (!audio_streams[index])
 			{
 				audio_streams[index] = stream;
+                audio_bindings[index]=binding;
 				break;
 			}
 	}

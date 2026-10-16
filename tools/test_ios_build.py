@@ -191,7 +191,7 @@ def configure_with(monkeypatch, tmp_path, *arguments):
 def test_device_builds_download_from_the_projects_feeds_by_default(monkeypatch, tmp_path, arguments, channel):
     configure = configure_with(monkeypatch, tmp_path, *arguments)
     assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
-    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/profiles.json' in configure
+    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/profiles-2.json' in configure
     assert f'-DHALO_RECORDING_FEED_URL=https://code.steverice.org/visr/packs/{channel}/recordings.json' in configure
 
 

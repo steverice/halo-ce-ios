@@ -30,6 +30,8 @@ void platform_log(const char *format, ...)
 		strcat(logged, "\n");
 }
 
+int host_external_active(void) { return 0; }
+
 #include "port_config.c"
 #include "tomlc17.c"
 

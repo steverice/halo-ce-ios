@@ -78,6 +78,33 @@ refused(SCENE.replace('[evidence."scene.menu.display.render_scale"]', '[evidence
         'scene.menu.display.render_scale needs an [evidence."scene.menu.display.render_scale"]')
 refused(SCENE.replace("render_scale = 0.75", "render_scale = 0.1"), "must be from 0.25 to 1")
 
+# External contexts admit only live output settings and keep distinct evidence.
+EXTERNAL = GOOD + '''[external.display]
+output_height = 1080
+render_height = 720
+[external.scene.cutscene.display]
+render_scale = 0.75
+[evidence."external.display.output_height"]
+basis = "assumed"
+why = "A conservative output cap before measuring the device."
+[evidence."external.display.render_height"]
+basis = "assumed"
+why = "A conservative render height before measuring the device."
+[evidence."external.scene.cutscene.display.render_scale"]
+basis = "assumed"
+why = "Cutscenes leave room for this external render scale."
+'''
+assert problems(EXTERNAL)[0] == []
+refused(EXTERNAL.replace("output_height = 1080", 'output_height = 1080\nrenderer = "metal"'), "cannot change by output")
+refused(GOOD.replace("render_height = 540", "output_height = 1080"), "only in an external section")
+refused(EXTERNAL.replace("[external.scene.cutscene.display]", "[external.scene.loading.display]"), 'scene class "loading"')
+refused(EXTERNAL.replace("render_scale = 0.75", 'anti_aliasing = "fxaa"'), "cannot change by scene class")
+
+EXTERNAL_MEASURED = EXTERNAL.replace('basis = "assumed"', 'basis = "measured"\nsource = "Wired output report, a10, 2026-10-15"\noutput = "external"')
+assert problems(EXTERNAL_MEASURED)[0] == []
+refused(EXTERNAL_MEASURED.replace('output = "external"', 'output = "builtin"'), 'output = "external"')
+refused(EXTERNAL_MEASURED.replace('output = "external"\n', ''), 'output = "external"')
+
 # across the folder: one profile a model, and each platform's classes covering every GPU family once
 def model(names):
     return {"kind": "model", "match": {"platform": "tvos", "models": names}}

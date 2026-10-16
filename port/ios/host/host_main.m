@@ -8,6 +8,7 @@
 #include "host_profile.h"
 #include "host_join_link.h"
 #include "host_benchmark.h"
+#include "host_external.h"
 #include "host_cloud_saves.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
@@ -239,6 +240,7 @@ int main(int argc,char **argv) {
         return 0;
     }
     @autoreleasepool {
+        host_external_install();
 #if TARGET_OS_TV
         /* tvOS apps may only write to Caches (purgeable). */
         NSString *documents=[NSSearchPathForDirectoriesInDomains(NSCachesDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"Halo"];
@@ -380,7 +382,7 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[18];size_t env_count=0;
+        const char *env[20];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
         /* This device's profile (profiles/, host_profile.h): its values go to the game as one variable, which
@@ -453,6 +455,12 @@ int main(int argc,char **argv) {
         if(launch_anti_aliasing&&*launch_anti_aliasing){
             snprintf(env_anti_aliasing,sizeof(env_anti_aliasing),"HALO_ANTI_ALIASING=%s",launch_anti_aliasing);
             env[env_count++]=env_anti_aliasing;
+        }
+        static char env_external[sizeof("HALO_EXTERNAL_MODE=")+512];
+        const char *external_mode=getenv("HALO_EXTERNAL_MODE");
+        if(external_mode && *external_mode) {
+            snprintf(env_external,sizeof(env_external),"HALO_EXTERNAL_MODE=%s",external_mode);
+            env[env_count++]=env_external;
         }
         env[env_count++]="TZ=UTC0";env[env_count++]=NULL;
         uint32_t *environment=host_low_map(sizeof(uint32_t)*env_count,PROT_READ|PROT_WRITE);

@@ -6,6 +6,8 @@
 #import "host_orientation.h"
 #include <math.h>
 
+static int pause_pending;
+void host_ios_touch_pause(void) { pause_pending=1; }
 static SDL_Joystick *touch_joystick;
 static SDL_JoystickID touch_id, primary_hardware;
 
@@ -56,6 +58,9 @@ int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     return value;
 }
 int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
+    if(button==SDL_GAMEPAD_BUTTON_START && SDL_GetGamepadID(pad)==touch_id && pause_pending) {
+        pause_pending=0;return 1;
+    }
     return SDL_GetGamepadButton(pad,button) ||
         (SDL_GetGamepadID(pad)==touch_id && primary_hardware &&
          SDL_GetGamepadButton(SDL_GetGamepadFromID(primary_hardware),button));

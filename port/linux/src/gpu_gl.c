@@ -1662,7 +1662,7 @@ static void program_constants(struct gpu_gl_program *entry, const struct gpu_con
 		{
 			for (index = 0; index < entry->constant_count; index++)
 			{
-				if (store->serials[index] > entry->constants_serial)
+				if (store->serial < entry->constants_serial || store->serials[index] > entry->constants_serial)
 				{
 					if (first > index)
 						first = index;
@@ -2793,6 +2793,17 @@ static void gpu_gl_frame_context(uint32_t scene_class, uint32_t frame_rate, cons
 	(void)scene_class;
 	(void)frame_rate;
 	(void)level;
+}
+
+static uint32_t gpu_gl_companion_size(uint32_t *width, uint32_t *height)
+{
+	*width = *height = 0;
+	return 0;
+}
+
+static void gpu_gl_companion_set(gpu_texture target)
+{
+	(void)target;
 }
 
 static uint32_t gpu_gl_compiles_outstanding(void)

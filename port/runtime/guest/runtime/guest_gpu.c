@@ -116,6 +116,16 @@ uint32_t gpu_vertical_blank_wait(void)
 	return host_gpu_vertical_blank_wait();
 }
 
+uint32_t gpu_companion_size(uint32_t *width, uint32_t *height)
+{
+	return host_gpu_companion_size(width, height);
+}
+
+void gpu_companion_set(gpu_texture target)
+{
+	host_gpu_companion_set(target);
+}
+
 uint32_t gpu_present(gpu_texture back_buffer)
 {
 	return host_gpu_present(back_buffer);

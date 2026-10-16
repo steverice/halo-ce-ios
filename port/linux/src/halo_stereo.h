@@ -39,6 +39,7 @@ enum
 	(display.native_hud). Never the game's current layer, and never made in
 	a stereo frame */
 	HALO_STEREO_LAYER_NATIVE = 6,
+	HALO_STEREO_LAYER_COMPANION = 7,
 	/* d3d8_device.c's key for a HUD group's own target: this plus the group
 	(enum halo_hud_group). The game's layer stays HALO_STEREO_LAYER_HUD; the
 	device keys the HUD layer's color target by the current group, and the
@@ -639,5 +640,8 @@ int halo_stereo_help_text_part(const char *message_name);
 counted, as the tag's elements count them) before its first line break
 ("|n"); length if it has none */
 int halo_stereo_help_text_line_end(const unsigned short *text, int length);
+
+/* Screen flashes whose blend would disappear over the companion black. */
+void halo_companion_flash(unsigned int color, int adapt);
 
 #endif

@@ -107,7 +107,7 @@ def read_regular(directory, name, maximum):
         os.close(descriptor)
 
 
-def snapshot(folder, kind):
+def snapshot(folder, kind, compatibility=None):
     """Snapshot only allowed files, then validate those exact bytes in a private temporary folder."""
     maximum_files, maximum_file, maximum_total = ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
         else (160, 4 * 1024 * 1024, 12 * 1024 * 1024))
@@ -149,6 +149,10 @@ def snapshot(folder, kind):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
         (validate_profiles if kind == "profiles" else validate_recordings)(validated)
+        if kind == "profiles" and compatibility == "profiles-1":
+            for name in files:
+                if name != "hardware/catalog.toml" and "external" in profile_check.load_toml(validated / name):
+                    raise ValueError("profiles-1 snapshots cannot contain external sections; publish as profiles-2")
     return files
 
 
@@ -182,12 +186,12 @@ def main(arguments=None):
         raise ValueError("sequence must be a positive integer at most 2^53 - 1")
     if args.minimum_engine != 1 or args.maximum_engine != 1:
         raise ValueError("this publisher supports only minimum_engine = maximum_engine = 1")
-    expected = "profiles-1" if args.kind == "profiles" else r"benchmark-replay-1:[0-9a-f]{64}"
+    expected = "profiles-[12]" if args.kind == "profiles" else r"benchmark-replay-1:[0-9a-f]{64}"
     if not re.fullmatch(expected, args.compatibility):
-        raise ValueError("compatibility must be profiles-1, or benchmark-replay-1: plus the exact lowercase guest SHA-256")
+        raise ValueError("compatibility must be profiles-1 or profiles-2, or benchmark-replay-1: plus the exact lowercase guest SHA-256")
     if len(args.notes.encode("utf-8")) > 4096:
         raise ValueError("notes must be at most 4096 UTF-8 bytes")
-    files = snapshot(args.input, args.kind)
+    files = snapshot(args.input, args.kind, args.compatibility)
     payload = canonical({"files": {name: base64.b64encode(content).decode("ascii") for name, content in files.items()}})
     manifest = canonical({"schema": 1, "kind": args.kind, "channel": args.channel, "sequence": args.sequence,
         "minimum_engine": args.minimum_engine, "maximum_engine": args.maximum_engine,

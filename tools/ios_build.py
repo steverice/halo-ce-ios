@@ -407,7 +407,7 @@ def data_pack_settings(args):
         return '', '', ''
     channel = 'tester' if args.tester else 'stable'
     return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
-            DATA_PACK_FEED.format(channel=channel, kind='profiles') if args.profile_feed_url is None else args.profile_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind='profiles-2') if args.profile_feed_url is None else args.profile_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None
             else args.recording_feed_url)
 

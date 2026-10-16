@@ -91,7 +91,7 @@ static void initialize(void)
         NSString *resources = NSBundle.mainBundle.resourcePath;
         NSString *bundledProfiles = [resources stringByAppendingPathComponent:@"profiles"];
         NSString *bundledRecordings = [resources stringByAppendingPathComponent:@"benchmark-recordings"];
-        profiles = store(@"profiles", bundledProfiles, @"profiles-1", ^BOOL(NSString *folder, NSError **error) {
+        profiles = store(@"profiles", bundledProfiles, @"profiles-2", ^BOOL(NSString *folder, NSError **error) {
             BOOL valid = host_profile_validate_folder(folder.fileSystemRepresentation, NULL);
             if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Invalid profile snapshot"}];
             return valid;

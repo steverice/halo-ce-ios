@@ -1427,6 +1427,12 @@ void _rasterizer_screen_flash(
 		viewport_height = global_window_parameters.camera.viewport_bounds.y1 -
 			global_window_parameters.camera.viewport_bounds.y0;
 
+		/* port: only the companion uses a colored veil for flashes that
+		would disappear over black. The TV keeps its original blend. */
+		halo_companion_flash(real_argb_color_to_pixel32(&flash_color),
+			global_window_parameters.screen_flash.type == _render_screen_flash_type_darken ||
+			global_window_parameters.screen_flash.type == _render_screen_flash_type_min ||
+			global_window_parameters.screen_flash.type == _render_screen_flash_type_tint);
 		IDirect3DDevice8_Begin(global_d3d_device, D3DPT_TRIANGLEFAN);
 		IDirect3DDevice8_SetVertexData2s(global_d3d_device, 0, 0, 0);
 		IDirect3DDevice8_SetVertexData2s(global_d3d_device, 0, viewport_width, 0);
@@ -1437,6 +1443,7 @@ void _rasterizer_screen_flash(
 			viewport_height);
 		IDirect3DDevice8_SetVertexData2s(global_d3d_device, 0, 0, viewport_height);
 		IDirect3DDevice8_End(global_d3d_device);
+		halo_companion_flash(0, 0);
 	}
 
 	rasterizer_profile_end(_rasterizer_profile_screen_flash);

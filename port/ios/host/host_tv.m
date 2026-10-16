@@ -17,6 +17,7 @@
    either can work the menus, and Back backs out (B). The remote's keys are
    consumed here: the game's keyboard mapping (xinput_sdl.c) would otherwise
    also read Back, which SDL reports as Escape, as Start. */
+void host_ios_touch_pause(void) {}
 static SDL_Joystick *remote_joystick;
 #if TARGET_OS_VISION
 /* "Connect a game controller", shown while none is (host_ios_gamepads) */

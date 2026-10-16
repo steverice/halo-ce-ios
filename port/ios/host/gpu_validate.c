@@ -1759,6 +1759,16 @@ static void validate_frame_context(uint32_t scene_class, uint32_t frame_rate, co
 }
 
 /* (the loading screen asks this from the game thread: nothing to check) */
+static uint32_t validate_companion_size(uint32_t *width, uint32_t *height)
+{
+	return validation.backend.companion_size(width, height);
+}
+
+static void validate_companion_set(gpu_texture target)
+{
+	validation.backend.companion_set(target);
+}
+
 static uint32_t validate_compiles_outstanding(void)
 {
 	return validation.backend.compiles_outstanding();

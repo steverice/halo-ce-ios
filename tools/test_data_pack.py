@@ -315,3 +315,17 @@ def test_profile_name_cannot_inject_settings(tmp_path, name):
     path.write_text(changed)
     with pytest.raises(ValueError, match="profile snapshot rejected"):
         data_pack.snapshot(folder, "profiles")
+
+
+def test_external_profiles_require_new_compatibility(tmp_path):
+    args = arguments(tmp_path)
+    args[args.index("--kind") + 1] = "profiles"
+    args[args.index("--input") + 1] = str(data_pack.ROOT / "profiles")
+    args[args.index("--compatibility") + 1] = "profiles-1"
+    with pytest.raises(ValueError, match="external sections"):
+        data_pack.main(args)
+    args[args.index("--compatibility") + 1] = "profiles-2"
+    assert data_pack.main(args) == 0
+    envelope = json.loads((tmp_path / "pack.json").read_bytes())
+    manifest = json.loads(base64.b64decode(envelope["manifest"]))
+    assert manifest["compatibility"] == "profiles-2"

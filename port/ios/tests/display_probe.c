@@ -19,6 +19,13 @@ static void check_native_presents_whole(long dw,long dh,long logical,long aspect
 }
 int main(void) {
     long dw,dh;
+    /* Hot-plug shape changes and explicit aspect choices share one policy. */
+    assert(halo_display_layout_width(2560,1600,0,1042)==768);
+    assert(halo_display_layout_width(1920,1080,0,768)==852);
+    assert(halo_display_layout_width(2732,2048,0,852)==640);
+    assert(halo_display_layout_width(1920,1080,640,852)==640);
+    assert(halo_display_layout_width(0,0,0,1042)==1042);
+    assert(halo_display_layout_width(10000,480,0,640)==1600);
     for(dw=640;dw<=7680;dw+=97) for(dh=480;dh<=4320;dh+=61){
         long logical=(480*dw+dh/2)/dh;
         logical=(logical<640?640:logical>1600?1600:logical)&~1L;
