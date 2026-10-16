@@ -367,10 +367,10 @@ def app_store_commands(build: Path, system: str, team: str, out: Path, upload: b
             ['xcodebuild', '-exportArchive', '-archivePath', archive, '-exportOptionsPlist', out/'ExportOptions.plist',
              '-exportPath', out, *([] if profile else ['-allowProvisioningUpdates'])]]
 
-# Known iPhoneOS SDK OpenGLES.tbd target lists (Xcode 26.6 and 27).
+# Known iPhoneOS SDK target sets. Export lists must match the full set.
 IOS_STUB_TARGETS = (
-    '[ armv7-ios, armv7s-ios, arm64-ios, arm64e-ios ]',
-    '[ arm64e-ios, arm64e.x1-ios ]',
+    frozenset(('armv7-ios', 'armv7s-ios', 'arm64-ios', 'arm64e-ios')),
+    frozenset(('arm64e-ios', 'arm64e.x1-ios')),
 )
 CATALYST_STUB_TARGETS = '[ arm64-maccatalyst, arm64e-maccatalyst ]'
 IOS_INSTALL_NAME = "'/System/Library/Frameworks/OpenGLES.framework/OpenGLES'"
@@ -380,14 +380,30 @@ CATALYST_INSTALL_NAME = "'/System/iOSSupport/System/Library/Frameworks/OpenGLES.
 def maccatalyst_stub(text):
     """the iPhoneOS SDK's OpenGLES.tbd rewritten to link against the Mac's macCatalyst
     OpenGLES.framework. A stub in any other form (a later Xcode's) is refused, not half rewritten."""
-    targets = next((targets for targets in IOS_STUB_TARGETS if targets in text), None)
-    if targets is None:
-        raise ValueError('OpenGLES.tbd does not list a known iOS target set')
+    pattern = re.compile(r'(^[ \t]*(?:-[ \t]*)?targets:\s*)\[([^\]]*)\]', re.MULTILINE)
+    lists = [tuple(token.strip().strip("'\"") for token in match[2].split(',') if token.strip())
+             for match in pattern.finditer(text)]
+    version = re.search(r'["\']?(?:tbd-version|tapi_tbd_version)["\']?\s*:\s*["\']?(\d+)', text)
+    # Only metadata belongs in an error: never dump SDK symbols or the complete stub.
+    reported = list(dict.fromkeys('[' + ', '.join(targets) + ']' for targets in lists))
+    if not reported:
+        reported = list(dict.fromkeys(re.findall(r'"target"\s*:\s*"([^"\n]+)"', text)))
+    metadata = f'tbd-version={version[1] if version else "unknown"}; target lists={reported or "unrecognized"}'
+
+    def reject(reason):
+        raise ValueError(f'{reason}; {metadata}')
+
+    if not lists or frozenset(lists[0]) not in IOS_STUB_TARGETS:
+        reject('OpenGLES.tbd does not list a known iOS target set')
+    targets = frozenset(lists[0])
+    if any(frozenset(items) != targets or len(items) != len(targets) for items in lists):
+        reject('OpenGLES.tbd names an iOS target set the rewrite does not cover')
     if IOS_INSTALL_NAME not in text:
-        raise ValueError(f'OpenGLES.tbd does not have the install name {IOS_INSTALL_NAME}')
-    stub = text.replace(targets, CATALYST_STUB_TARGETS).replace(IOS_INSTALL_NAME, CATALYST_INSTALL_NAME)
+        reject(f'OpenGLES.tbd does not have the install name {IOS_INSTALL_NAME}')
+    stub = pattern.sub(lambda match: match[1] + CATALYST_STUB_TARGETS, text)
+    stub = stub.replace(IOS_INSTALL_NAME, CATALYST_INSTALL_NAME)
     if '-ios' in stub:
-        raise ValueError('OpenGLES.tbd names an iOS target the rewrite does not cover')
+        reject('OpenGLES.tbd names an iOS target the rewrite does not cover')
     return stub
 
 
