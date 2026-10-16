@@ -828,6 +828,11 @@ boolean network_game_create_game_objects(
 				break;
 			}
 		}
+
+		/* port: network joins bypass main_new_map, including its shader
+		warmup and the map name used to record misses. */
+		if (game->local_data.game_objects_loaded)
+			halo_shader_list_warm(options.map_name);
 	}
 	else
 	{
