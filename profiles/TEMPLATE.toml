@@ -27,6 +27,8 @@ platform = "ios"
 models = ["Example1,1"]
 # On a Mac, the chip's name from the same line instead, since one Mac identifier ships with several chips:
 # chips = ["Apple M4 Pro"]
+# Opt in only with evidence for later generations in this product line (Mac: same tier or higher).
+# and_newer = true
 
 # The values. Only what differs from the device's class profile needs to be here, and only settings listed
 # in port/linux/src/port_profile_keys.h can be: the check refuses anything else.

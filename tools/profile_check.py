@@ -120,6 +120,45 @@ def value_problem(name, value, key):
                                          for choice in choices)
 
 
+PRODUCT_PLATFORMS = {"iPhone": "ios", "iPad": "ios", "AppleTV": "tvos", "RealityDevice": "visionos"}
+MAC_TIERS = ("", " Pro", " Max", " Ultra")
+MAXIMUM_GENERATION = 1000000
+
+
+def newer_rule(match):
+    """Return (product line, newest generation, tier) or reject an unsafe rule.
+
+    A Mac tier is a floor across generations. Unknown tiers cannot establish it.
+    Model minors never rank devices. Only explicit and_newer rules use this order;
+    the hardware catalog retains its independent measured capability ordering.
+    """
+    mac = match.get("platform") == "mac"
+    field, other = ("chips", "models") if mac else ("models", "chips")
+    names = match.get(field)
+    if not isinstance(names, list) or not 1 <= len(names) <= 32 or match.get(other):
+        raise ValueError(f"and_newer needs only match.{field} identities")
+    line, tier, generation = None, None, 0
+    for name in names:
+        if not isinstance(name, str) or len(name) > 48:
+            raise ValueError("and_newer identities must be strings of at most 48 characters")
+        parsed = re.fullmatch(r"Apple M([1-9][0-9]*)( Pro| Max| Ultra)?" if mac else
+                              r"(iPhone|iPad|AppleTV|RealityDevice)([1-9][0-9]*),([0-9]+)", name)
+        if not parsed:
+            raise ValueError("and_newer needs recognized product lines or Apple M chip tiers")
+        if mac:
+            product, number, rank = "Apple M", int(parsed[1]), MAC_TIERS.index(parsed[2] or "")
+        else:
+            product, number, rank = parsed[1], int(parsed[2]), 0
+            if PRODUCT_PLATFORMS[product] != match.get("platform") or int(parsed[3]) > MAXIMUM_GENERATION:
+                raise ValueError("and_newer product line must match its platform and use bounded identifiers")
+        if not 1 <= number <= MAXIMUM_GENERATION:
+            raise ValueError("and_newer generation must be from 1 to 1000000")
+        if line is not None and (product != line or rank != tier):
+            raise ValueError("and_newer identities must share one product line and chip tier")
+        line, tier, generation = product, rank, max(generation, number)
+    return line, generation, tier
+
+
 def check_profile(path, keys, drop_in=False, scenes=None):
     """the problems in one profile, and its parsed table (None if it does not parse)"""
     problems = []
@@ -162,8 +201,16 @@ def check_profile(path, keys, drop_in=False, scenes=None):
             named = named or bool(names)
         if not named and not drop_in:
             problems.append("a model profile needs match.models or match.chips")
-        if set(match) - {"platform", "models", "chips"}:
-            problems.append("a model's [match] holds only platform, models and chips")
+        if set(match) - {"platform", "models", "chips", "and_newer"}:
+            problems.append("a model's [match] holds only platform, models, chips and and_newer")
+    if "and_newer" in match:
+        if kind != "model" or type(match["and_newer"]) is not bool:
+            problems.append("match.and_newer must be a boolean on a model profile")
+        elif match["and_newer"]:
+            try:
+                newer_rule(match)
+            except ValueError as error:
+                problems.append(str(error))
     evidence = table.get("evidence", {})
     if not isinstance(evidence, dict):
         problems.append("[evidence] must be tables named for settings")
@@ -251,10 +298,19 @@ def check_set(tables):
     """problems across a whole profiles/ folder: {file name: parsed table}"""
     problems = []
     claimed = {}
+    rules = {}
     for file, table in sorted(tables.items()):
         match = table.get("match", {})
         if table.get("kind") != "model" or not isinstance(match, dict):
             continue
+        if match.get("and_newer") is True:
+            try:
+                key = (match.get("platform"), *newer_rule(match))
+                if key in rules:
+                    problems.append(f"{file}: ambiguous and_newer threshold also declared by {rules[key]}")
+                rules.setdefault(key, file)
+            except ValueError:
+                pass  # The per-file checker already reports malformed rules.
         for field in ("models", "chips"):
             for name in match.get(field, []) if isinstance(match.get(field, []), list) else []:
                 key = (field, name)

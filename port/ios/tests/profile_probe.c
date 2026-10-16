@@ -434,6 +434,66 @@ static void check_external(void)
 	char path[256]; snprintf(path, sizeof(path), "%s/external.toml", folder); unlink(path);
 }
 
+static void check_and_newer(void)
+{
+	char previous[64], path[256];
+	struct host_profile profile;
+	snprintf(previous, sizeof(previous), "%s", folder);
+	snprintf(folder, sizeof(folder), "/tmp/profile-newer-XXXXXX"); assert(mkdtemp(folder));
+	write_file("a-old.toml", "schema=1\nname=\"Older rule\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"iPhone18,1\",\"iPhone18,2\"]\nand_newer=true\n[display]\nshadow_map_size=256\n[external.display]\noutput_height=720\n");
+	write_file("b-new.toml", "schema=1\nname=\"Newer rule\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"iPhone19,1\"]\nand_newer=true\n[display]\nshadow_map_size=512\n");
+	profile = resolve(folder, device("ios", "iPhone20,2", "", 10), NULL, "");
+	assert(!strcmp(profile.model_file, "b-new.toml") && has(&profile, "display.shadow_map_size", "512"));
+	assert(strstr(logged, "and_newer b-new.toml: iPhone20,2") && strstr(logged, "iPhone19,1"));
+	/* Another minor of the newest source generation is not newer than that rule. */
+	profile = resolve(folder, device("ios", "iPhone19,9", "", 10), NULL, "");
+	assert(!strcmp(profile.model_file, "a-old.toml"));
+	char height[32]; assert(host_profile_external_value(&profile, "display.output_height", height, sizeof(height)) && !strcmp(height, "720"));
+	profile = resolve(folder, device("ios", "iPhone18,9", "", 10), NULL, ""); assert(!profile.model_file[0]);
+	profile = resolve(folder, device("ios", "iPad99,1", "", 10), NULL, ""); assert(!profile.model_file[0]);
+	profile = resolve(folder, device("ios", "iPhone999999999999999999999,1", "", 10), NULL, ""); assert(!profile.model_file[0]);
+	profile = resolve(folder, device("ios", "iPhone99,1", "", 10), NULL, ""); assert(!strcmp(profile.model_file, "b-new.toml"));
+	/* Exact wins even though its filename sorts after both rules. */
+	write_file("z-exact.toml", "schema=1\nname=\"Exact\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"iPhone20,2\"]\n[display]\nshadow_map_size=128\n");
+	profile = resolve(folder, device("ios", "iPhone20,2", "", 10), NULL, "");
+	assert(!strcmp(profile.model_file, "z-exact.toml") && has(&profile, "display.shadow_map_size", "128"));
+	assert(!strstr(logged, "and_newer b-new.toml:"));
+	write_file("mac.toml", "schema=1\nname=\"Pro rule\"\nkind=\"model\"\n[match]\nplatform=\"mac\"\nchips=[\"Apple M4 Pro\"]\nand_newer=true\n[display]\nshadow_map_size=256\n");
+	const char *covered[] = {"Apple M4 Pro", "Apple M4 Max", "Apple M4 Ultra", "Apple M5 Pro", "Apple M99 Max"};
+	const char *uncovered[] = {"Apple M4", "Apple M5", "Apple M3 Ultra", "Apple M5 Extreme", "Apple M99999999999999999999 Pro"};
+	for (int i = 0; i < 5; i++)
+	{
+		profile = resolve(folder, device("mac", "Mac99,1", covered[i], 10), NULL, ""); assert(!strcmp(profile.model_file, "mac.toml"));
+		profile = resolve(folder, device("mac", "Mac99,1", uncovered[i], 10), NULL, ""); assert(!profile.model_file[0]);
+	}
+	/* With the same generation threshold, the higher qualifying tier wins. */
+	write_file("mac-max.toml", "schema=1\nname=\"Max rule\"\nkind=\"model\"\n[match]\nplatform=\"mac\"\nchips=[\"Apple M4 Max\"]\nand_newer=true\n[display]\nshadow_map_size=512\n");
+	profile = resolve(folder, device("mac", "Mac99,1", "Apple M5 Ultra", 10), NULL, ""); assert(!strcmp(profile.model_file, "mac-max.toml"));
+	profile = resolve(folder, device("mac", "Mac99,1", "Apple M5 Pro", 10), NULL, ""); assert(!strcmp(profile.model_file, "mac.toml"));
+	/* A qualifying rule precedes catalog inheritance; removing it restores the
+	   measured fallback and its origin metadata unchanged. */
+	snprintf(path, sizeof(path), "%s/hardware", folder); assert(!mkdir(path, 0700));
+	write_file("source-class.toml", "schema=1\nname=\"Class\"\nkind=\"class\"\n[match]\nplatform=\"ios\"\ngpu_family=[1,0]\n");
+	write_file("source.toml", "schema=1\nname=\"Measured\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"iPhone17,1\"]\n[display]\nshadow_map_size=128\n");
+	write_file("hardware/catalog.toml", "schema=1\nversion=\"newer-test\"\n"
+		"[[hardware]]\nid=\"source\"\nplatform=\"ios\"\nmodels=[\"iPhone17,1\"]\ntier=1\ngpu_family=7\nbasis=\"measured\"\nsource=\"Synthetic fixture\"\n"
+		"[[hardware]]\nid=\"target\"\nplatform=\"ios\"\nmodels=[\"iPhone21,1\"]\ntier=2\ngpu_family=10\nbasis=\"assumed\"\nsource=\"Synthetic fixture\"\n"
+		"[[fallback]]\nhardware=\"source\"\nprofile=\"source.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=7\nmaximum_pixels=[1000000,1000000,1000000]\nmaximum_refresh_hertz=60\n");
+	struct host_device target = device("ios", "iPhone21,1", "", 10);
+	target.memory_megabytes = 8192; target.pixel_width = 1000; target.pixel_height = 500; target.refresh_rate = 60;
+	profile = resolve(folder, target, NULL, "");
+	assert(!profile.inherited && !strcmp(profile.model_file, "b-new.toml"));
+	const char *rules[] = {"a-old.toml", "b-new.toml", "z-exact.toml", "mac.toml", "mac-max.toml"};
+	for (int i = 0; i < 5; i++) { snprintf(path, sizeof(path), "%s/%s", folder, rules[i]); unlink(path); }
+	profile = resolve(folder, target, NULL, "");
+	assert(profile.inherited && !strcmp(profile.model_file, "source.toml") && has(&profile, "display.shadow_map_size", "128"));
+	assert(!strcmp(profile.catalog_version, "newer-test") && !strcmp(profile.target_hardware, "target") && !strcmp(profile.source_hardware, "source"));
+	const char *names[] = {"source.toml", "source-class.toml", "hardware/catalog.toml"};
+	for (int i = 0; i < 3; i++) { snprintf(path, sizeof(path), "%s/%s", folder, names[i]); unlink(path); }
+	snprintf(path, sizeof(path), "%s/hardware", folder); rmdir(path);
+	rmdir(folder); snprintf(folder, sizeof(folder), "%s", previous);
+}
+
 int main(int argc, char **argv)
 {
 	char command[128];
@@ -444,6 +504,7 @@ int main(int argc, char **argv)
 		perror("mkdtemp");
 		return 1;
 	}
+	check_and_newer();
 	check_layers();
 	check_external();
 	check_refusals();

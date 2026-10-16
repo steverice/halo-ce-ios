@@ -1,6 +1,7 @@
 /* Device profiles: choosing and reading them (host_profile.h). Plain C with no Apple headers, so
    port/ios/tests/profile_probe.c runs it on any Mac. */
 #include "host_profile.h"
+#include <errno.h>
 #include "tomlc17.h"
 
 #include <dirent.h>
@@ -317,7 +318,9 @@ struct profile_file
 	/* a class's GPU families, lowest to highest; 0 for no upper bound */
 	int family_minimum, family_maximum;
 	/* whether a model profile names the device's (or the selector's) model or chip */
-	int names_device;
+	int names_device; /* 2 exact, 1 and_newer, 0 neither */
+	int and_newer, newer_generation, newer_tier;
+	char newer_line[16], newer_source[49];
 };
 
 static int string_in_array(toml_datum_t array, const char *text)
@@ -334,12 +337,89 @@ static int string_in_array(toml_datum_t array, const char *text)
 	return 0;
 }
 
+/* Identifier generation is only an explicit rule, never an inferred capability tier.
+   Bounded parsing keeps malformed downloaded headings from overflowing an integer. */
+static int newer_number(const char **text, int zero)
+{
+	char *end;
+	long value;
+	if (**text < (zero ? '0' : '1') || **text > '9') return -1;
+	errno = 0;
+	value = strtol(*text, &end, 10);
+	if (errno || value < (zero ? 0 : 1) || value > 1000000) return -1;
+	*text = end;
+	return (int)value;
+}
+
+static int newer_identity(const char *text, int mac, char line[16], int *generation, int *tier)
+{
+	const char *cursor = text;
+	static const char *const products[] = {"iPhone", "iPad", "AppleTV", "RealityDevice"};
+	static const char *const tiers[] = {"", " Pro", " Max", " Ultra"};
+	if (!text || strlen(text) > 48) return 0;
+	*tier = 0;
+	if (mac)
+	{
+		if (strncmp(cursor, "Apple M", 7)) return 0;
+		snprintf(line, 16, "Apple M"); cursor += 7;
+	}
+	else
+	{
+		int found = 0;
+		for (int i = 0; i < 4; i++)
+			if (!strncmp(cursor, products[i], strlen(products[i])))
+			{
+				snprintf(line, 16, "%s", products[i]); cursor += strlen(products[i]); found = 1; break;
+			}
+		if (!found) return 0;
+	}
+	*generation = newer_number(&cursor, 0);
+	if (*generation < 0) return 0;
+	if (mac)
+	{
+		for (int i = 0; i < 4; i++) if (!strcmp(cursor, tiers[i])) { *tier = i; return 1; }
+		return 0; /* A future unknown tier cannot prove the source's tier floor. */
+	}
+	if (*cursor++ != ',' || newer_number(&cursor, 1) < 0 || *cursor) return 0;
+	return 1;
+}
+
+static int describe_newer(toml_datum_t table, struct profile_file *described)
+{
+	int mac = !strcmp(described->platform, "mac");
+	toml_datum_t names = toml_seek(table, mac ? "match.chips" : "match.models");
+	toml_datum_t other = toml_seek(table, mac ? "match.models" : "match.chips");
+	if (names.type != TOML_ARRAY || names.u.arr.size < 1 || names.u.arr.size > 32 ||
+		(other.type != TOML_UNKNOWN && (other.type != TOML_ARRAY || other.u.arr.size))) return 0;
+	for (int i = 0; i < names.u.arr.size; i++)
+	{
+		char line[16]; int generation, tier;
+		if (names.u.arr.elem[i].type != TOML_STRING ||
+			!newer_identity(names.u.arr.elem[i].u.s, mac, line, &generation, &tier)) return 0;
+		if (!mac)
+		{
+			const char *platform = !strcmp(line, "AppleTV") ? "tvos" : !strcmp(line, "RealityDevice") ? "visionos" : "ios";
+			if (strcmp(platform, described->platform)) return 0;
+		}
+		if (i && (strcmp(line, described->newer_line) || tier != described->newer_tier)) return 0;
+		snprintf(described->newer_line, sizeof(described->newer_line), "%s", line);
+		described->newer_tier = tier;
+		if (generation > described->newer_generation)
+		{
+			described->newer_generation = generation;
+			snprintf(described->newer_source, sizeof(described->newer_source), "%s", names.u.arr.elem[i].u.s);
+		}
+	}
+	return 1;
+}
+
 /* the file's heading: 0 if it is no profile this build reads */
 static int profile_describe(toml_datum_t table, const char *file, const char *model, const char *chip,
 	struct profile_file *described, const struct profile_log *log)
 {
 	toml_datum_t schema = toml_seek(table, "schema"), name = toml_seek(table, "name"), kind = toml_seek(table, "kind");
 	toml_datum_t platform = toml_seek(table, "match.platform"), family = toml_seek(table, "match.gpu_family");
+	toml_datum_t newer = toml_seek(table, "match.and_newer");
 
 	memset(described, 0, sizeof(*described));
 	snprintf(described->file, sizeof(described->file), "%s", file);
@@ -358,6 +438,12 @@ static int profile_describe(toml_datum_t table, const char *file, const char *mo
 	snprintf(described->name, sizeof(described->name), "%s", name.u.s);
 	snprintf(described->platform, sizeof(described->platform), "%s", platform.u.s);
 	described->is_class = !strcmp(kind.u.s, "class");
+	if (newer.type != TOML_UNKNOWN)
+	{
+		if (described->is_class || newer.type != TOML_BOOLEAN) goto bad_newer;
+		described->and_newer = newer.u.boolean;
+		if (described->and_newer && !describe_newer(table, described)) goto bad_newer;
+	}
 	if (described->is_class)
 	{
 		if (family.type != TOML_ARRAY || family.u.arr.size != 2 || family.u.arr.elem[0].type != TOML_INT64 ||
@@ -371,10 +457,23 @@ static int profile_describe(toml_datum_t table, const char *file, const char *mo
 	}
 	else
 	{
-		described->names_device = string_in_array(toml_seek(table, "match.models"), model) ||
-			string_in_array(toml_seek(table, "match.chips"), chip);
+		described->names_device = (string_in_array(toml_seek(table, "match.models"), model) ||
+			string_in_array(toml_seek(table, "match.chips"), chip)) ? 2 : 0;
+		if (!described->names_device && described->and_newer)
+		{
+			char line[16]; int generation, tier;
+			int mac = !strcmp(described->platform, "mac");
+			if (newer_identity(mac ? chip : model, mac, line, &generation, &tier) &&
+				!strcmp(line, described->newer_line) && (mac ?
+					(generation >= described->newer_generation && tier >= described->newer_tier &&
+					 (generation > described->newer_generation || tier > described->newer_tier)) :
+					(generation > described->newer_generation))) described->names_device = 1;
+		}
 	}
 	return 1;
+bad_newer:
+	profile_logf(log, "device profile: %s: invalid match.and_newer rule; not used", file);
+	return 0;
 }
 
 static int compare_names(const void *left, const void *right)
@@ -464,9 +563,13 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 			if (!class_pass && !described.is_class && described.names_device &&
 				(selector && *selector ? 1 : !strcmp(described.platform, platform)))
 			{
-				if (have_model)
+				int better = !have_model || described.names_device > chosen_model.names_device ||
+					(described.names_device == 1 && chosen_model.names_device == 1 &&
+					 (described.newer_generation > chosen_model.newer_generation ||
+					  (described.newer_generation == chosen_model.newer_generation && described.newer_tier > chosen_model.newer_tier)));
+				if (have_model && described.names_device == 2 && chosen_model.names_device == 2)
 					profile_logf(&log, "device profile: %s also names %s; %s is used", file, model, chosen_model.file);
-				else
+				if (better)
 				{
 					chosen_model = described;
 					have_model = 1;
@@ -493,6 +596,10 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 		toml_free(result);
 		free(text);
 	}
+
+	if (have_model && chosen_model.names_device == 1)
+		profile_logf(&log, "device profile: and_newer %s: %s qualifies after %s (known product line and tier floor)",
+			chosen_model.file, !strcmp(platform, "mac") ? chip : model, chosen_model.newer_source);
 
 	if (!have_model && (!selector || !*selector) && host_profile_inherit(device, folder, log_line, profile))
 	{
@@ -684,7 +791,7 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 	for (int i = 0; i < match.u.tab.size; i++)
 	{
 		const char *key = match.u.tab.key[i];
-		if (strcmp(key, "platform") && (description->is_class ? strcmp(key, "gpu_family") : strcmp(key, "models") && strcmp(key, "chips"))) return 0;
+		if (strcmp(key, "platform") && (description->is_class ? strcmp(key, "gpu_family") : strcmp(key, "models") && strcmp(key, "chips") && strcmp(key, "and_newer"))) return 0;
 	}
 	if (description->is_class)
 	{
@@ -777,6 +884,11 @@ int host_profile_validate_folder(const char *folder, void (*log_line)(const char
 				for (int k = 0; names.type == TOML_ARRAY && k < names.u.arr.size; k++)
 					if (string_in_array(prior, names.u.arr.elem[k].u.s)) goto done;
 			}
+	/* Matching rules may overlap, but equal thresholds would make precedence ambiguous. */
+	for (int i = 0; i < count; i++) if (heads[i].and_newer)
+		for (int j = 0; j < i; j++) if (heads[j].and_newer &&
+			!strcmp(heads[i].platform, heads[j].platform) && !strcmp(heads[i].newer_line, heads[j].newer_line) &&
+			heads[i].newer_generation == heads[j].newer_generation && heads[i].newer_tier == heads[j].newer_tier) goto done;
 	valid = host_profile_catalog_validate(folder);
 done:
 	if (directory) closedir(directory);

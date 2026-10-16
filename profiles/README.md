@@ -10,12 +10,31 @@ Lowest first; each layer overrides the ones before it.
 
 1. The game's built-in default.
 2. The **class** profile: the one `kind = "class"` file whose platform matches and whose GPU family range holds the device's.
-3. The **model** profile: an exact `kind = "model"` match, otherwise the strongest compatible source selected by the hardware catalog. An inherited source brings its own class baseline (see below).
+3. The **model** profile: an exact `kind = "model"` match, otherwise an explicit `and_newer` rule, otherwise the strongest compatible source selected by the hardware catalog. An inherited source brings its own class baseline (see below).
 4. A **drop-in** file, `device-profile.toml` in the app's data folder, for trying a profile (below).
 5. What the player chose: a value set in the menus, with the Settings app's switch, or by editing `config.toml`.
 6. A developer's override: a `HALO_*` environment variable or a build's `--render-height`.
 
 Layers 1 to 4 together are the setting's value on this device. `config.toml` shows it, and a small file beside it, `config.origins`, records which of `config.toml`'s values the game wrote as defaults and which somebody chose. A written default follows the profile when the profile changes; a chosen value stays. In the menus, DEFAULTS then OK hands a setting back to the profile.
+
+## This device and everything newer
+
+A measured model profile can explicitly cover later generations:
+
+```toml
+[match]
+platform = "ios"
+models = ["iPhone18,1", "iPhone18,2"]
+and_newer = true
+```
+
+The rule covers listed devices and higher major identifiers in the same recognized product line (`iPhone`, `iPad`, `AppleTV` or `RealityDevice`). Minor numbers do not rank devices: `iPhone19,1` qualifies, but `iPhone18,3` does not. All source identities must belong to one product line and its platform. Generation numbers are bounded to 1 through 1000000. This is an explicit author decision; identifiers do not become catalog capability tiers.
+
+On a Mac, use `chips = ["Apple M4 Pro"]`. Known tiers are base, Pro, Max and Ultra. A Pro rule covers the same generation's Max and Ultra, and later generations at Pro or above. A later base chip does not qualify. Unknown tiers retain the existing hardware/class fallback because their capability relative to Pro is unknown. Multiple source chips must share one tier; the newest generation sets the threshold.
+
+Exact matches always win. Among qualifying rules, the newest source generation wins, then the highest Mac tier. Equal thresholds for one platform/product line are rejected by both snapshot validation and `tools/profile_check.py`. A rule precedes catalog inheritance and uses the receiving device's class baseline. The log names the source rule and target identity. Drop-ins and player choices keep their usual precedence.
+
+No shipped profile enables this rule without evidence. Apps built before support for `and_newer` reject a downloaded snapshot containing the field, including `profiles-2` snapshots; the compatibility label alone does not make the syntax safe for older clients. Keep current feeds free of these rules until the client compatibility policy is updated. The publisher also refuses them in `profiles-1` snapshots.
 
 ## Hardware fallback
 
@@ -59,7 +78,7 @@ scene: menu (display.render_scale 1.0 [model Apple TV HD])
 
 ## Editor schemas and generated references
 
-Put `#:schema ../port/settings/profile.schema.json` at the top of a profile for TOML editors that support JSON Schema. The template includes it. For `config.toml`, point the editor to [`config.schema.json`](../port/settings/config.schema.json); the [configuration reference](../port/linux/README.md#settings) lists every option from the C setting table. The [hardware catalog schema](../port/settings/catalog.schema.json) covers catalog metadata; cross-file and evidence checks still require `tools/profile_check.py`.
+Put `#:schema ../port/settings/profile.schema.json` at the top of a profile for TOML editors that support JSON Schema. The template includes it. This schema requires model identities for contributed profiles. A local drop-in may omit them; check that form with `python3 tools/profile_check.py device-profile.toml`. For `config.toml`, point the editor to [`config.schema.json`](../port/settings/config.schema.json); the [configuration reference](../port/linux/README.md#settings) lists every option from the C setting table. The [hardware catalog schema](../port/settings/catalog.schema.json) covers catalog metadata; cross-file and evidence checks still require `tools/profile_check.py`.
 
 Run `python3 tools/settings_schema.py` after changing the C setting definitions. It refreshes the three schemas and the reference tables in this file and `port/linux/README.md`. `--check` checks their freshness; `--markdown config` and `--markdown profile` print either table. Config schemas check names and types. Profile schemas also check the intentionally narrower profile limits. Build-dependent defaults list Apple and desktop values.
 

@@ -151,8 +151,11 @@ def snapshot(folder, kind, compatibility=None):
         (validate_profiles if kind == "profiles" else validate_recordings)(validated)
         if kind == "profiles" and compatibility == "profiles-1":
             for name in files:
-                if name != "hardware/catalog.toml" and "external" in profile_check.load_toml(validated / name):
-                    raise ValueError("profiles-1 snapshots cannot contain external sections; publish as profiles-2")
+                if name == "hardware/catalog.toml":
+                    continue
+                profile = profile_check.load_toml(validated / name)
+                if "external" in profile or "and_newer" in profile.get("match", {}):
+                    raise ValueError("profiles-1 snapshots cannot contain external sections or and_newer rules; publish as profiles-2")
     return files
 
 

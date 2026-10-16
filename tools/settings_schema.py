@@ -142,6 +142,7 @@ def profile_schema(settings):
         'kind': {'enum': ['class', 'model']}, 'status': {'enum': list(profile_check.STATUSES)},
         'match': object_schema({'platform': {'enum': list(profile_check.PLATFORMS)},
             'models': identity_array(), 'chips': identity_array(),
+            'and_newer': {'type': 'boolean', 'description': 'Explicit model-generation rule. Same product line only; Mac tiers preserve the source tier floor. Run profile_check.py for bounded identities and ambiguous thresholds.'},
             'gpu_family': {'type': 'array', 'prefixItems': [{'type': 'integer', 'minimum': 1, 'maximum': 32},
                 {'type': 'integer', 'minimum': 0, 'maximum': 32}], 'minItems': 2, 'maxItems': 2}}, ['platform']),
         'scene': scene_schema(set(values)),
@@ -175,7 +176,7 @@ def profile_schema(settings):
     result['allOf'] = [
         {'if': {'properties': {'kind': {'const': 'class'}}},
          'then': {'properties': {'match': {'required': ['gpu_family'], 'not': {'anyOf': [
-             {'required': ['models']}, {'required': ['chips']}]}}}},
+             {'required': ['models']}, {'required': ['chips']}, {'required': ['and_newer']}]}}}},
          'else': {'properties': {'match': {'not': {'required': ['gpu_family']}, 'anyOf': [
              {'required': ['models'], 'properties': {'models': {'minItems': 1}}},
              {'required': ['chips'], 'properties': {'chips': {'minItems': 1}}}]}}}}]

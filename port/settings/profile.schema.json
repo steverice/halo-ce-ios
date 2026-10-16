@@ -233,6 +233,10 @@
             "pattern": "^[A-Za-z0-9 ,.-]{1,48}$"
           }
         },
+        "and_newer": {
+          "type": "boolean",
+          "description": "Explicit model-generation rule. Same product line only; Mac tiers preserve the source tier floor. Run profile_check.py for bounded identities and ambiguous thresholds."
+        },
         "gpu_family": {
           "type": "array",
           "prefixItems": [
@@ -2145,6 +2149,11 @@
                 {
                   "required": [
                     "chips"
+                  ]
+                },
+                {
+                  "required": [
+                    "and_newer"
                   ]
                 }
               ]

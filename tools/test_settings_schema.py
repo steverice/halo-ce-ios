@@ -108,3 +108,36 @@ def test_check_detects_stale_schema_and_markdown(tmp_path, monkeypatch):
         (root / relative).write_text('stale\n')
         assert schema.write_artifacts(expected, check=True) == 1
         (root / relative).write_text(expected[relative])
+
+
+def test_schemas_are_well_formed_and_config_uses_config_limits():
+    jsonschema = pytest.importorskip('jsonschema')
+    settings = schema.config_settings()
+    for document in [schema.config_schema(settings), schema.profile_schema(settings), schema.catalog_schema()]:
+        jsonschema.Draft202012Validator.check_schema(document)
+    jsonschema.validate({'display': {'shadow_map_size': 2048}}, schema.config_schema(settings))
+
+
+@pytest.mark.parametrize('relative,before,after', [
+    ('port/linux/src/port_config.c', '128 (as on the Xbox) to 2048', '128 (as on the Xbox) to 4096'),
+    ('port/linux/src/port_profile_keys.h', 'shadow_map_size", 128, 1024', 'shadow_map_size", 128, 2048'),
+])
+def test_source_edits_require_schema_and_document_regeneration(tmp_path, monkeypatch, relative, before, after):
+    expected = schema.artifacts()
+    for name, content in expected.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    for name in ['port/linux/src/port_config.c', 'port/linux/src/port_profile_keys.h']:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((schema.ROOT / name).read_bytes())
+    monkeypatch.setattr(schema, 'ROOT', tmp_path)
+    monkeypatch.setattr(schema.profile_check, 'KEYS', tmp_path / 'port/linux/src/port_profile_keys.h')
+    assert schema.main(['--check']) == 0
+    source = tmp_path / relative
+    assert before in source.read_text()
+    source.write_text(source.read_text().replace(before, after))
+    assert schema.main(['--check']) == 1
+    assert schema.main([]) == 0
+    assert schema.main(['--check']) == 0

@@ -46,6 +46,25 @@ int main(int argc, char **argv)
 	put("hardware/catalog.toml", "schema=1\nversion=\"test\"\nhardware=[]\nfallback=[]\n");
 	snprintf(path, sizeof(path), "%s/link.toml", root); assert(!symlink("bad.toml", path));
 	assert(!host_profile_validate_folder(root, NULL)); unlink(path);
+	/* Newer rules are bounded, unambiguous, and accepted by downloaded snapshots too. */
+	put("bad.toml", "schema=1\nname=\"Newer\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"iPhone18,1\"]\nand_newer=true\n");
+	assert(host_profile_validate_folder(root, NULL));
+	put("duplicate.toml", "schema=1\nname=\"Tied\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"iPhone18,2\"]\nand_newer=true\n");
+	assert(!host_profile_validate_folder(root, NULL));
+	snprintf(path, sizeof(path), "%s/duplicate.toml", root); unlink(path);
+	const char *invalid[] = {
+		"platform=\"ios\"\nmodels=[\"iPhone18,1\"]\nand_newer=1\n",
+		"platform=\"ios\"\nmodels=[\"iPhone18,1\",\"iPad19,1\"]\nand_newer=true\n",
+		"platform=\"ios\"\nmodels=[\"iPhone9999999999999999999,1\"]\nand_newer=true\n",
+		"platform=\"ios\"\nmodels=[\"iPhone18,1\"]\nchips=[\"Apple M4\"]\nand_newer=true\n",
+		"platform=\"mac\"\nchips=[\"Apple M4 Extreme\"]\nand_newer=true\n",
+		"platform=\"mac\"\nchips=[\"Apple M4 Pro\",\"Apple M4 Max\"]\nand_newer=true\n",
+		"platform=\"tvos\"\nmodels=[\"iPhone18,1\"]\nand_newer=true\n"};
+	for (int i = 0; i < 7; i++)
+	{
+		char text[512]; snprintf(text, sizeof(text), "schema=1\nname=\"Invalid\"\nkind=\"model\"\n[match]\n%s", invalid[i]);
+		put("bad.toml", text); assert(!host_profile_validate_folder(root, NULL));
+	}
 	snprintf(path, sizeof(path), "%s/ios.toml", root); unlink(path);
 	assert(!host_profile_validate_folder(root, NULL));
 	/* Temporary named fixtures only; do not remove a shared directory. */
