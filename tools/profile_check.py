@@ -7,6 +7,7 @@ model profiles name one device; and each platform's class profiles cover every G
 
 Run by tools/ios_test.py. A drop-in file (device-profile.toml) can be checked the same way before it is sent."""
 import json
+from functools import lru_cache
 import re
 import subprocess
 import sys
@@ -49,6 +50,23 @@ def load_toml(path):
     if result.returncode:
         raise ParseError(result.stderr.strip())
     return json.loads(result.stdout)
+
+
+@lru_cache(maxsize=2)
+def schema_validator(drop_in=False):
+    """Optional editor-schema validation; generation never calls back into this path."""
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:
+        return None
+    path = ROOT / "port/settings/profile.schema.json"
+    if not path.exists():
+        return None  # Bootstrapping a source checkout before schema generation.
+    schema = json.loads(path.read_text())
+    if drop_in:
+        # A local drop-in may omit model identities, unlike a bundled profile.
+        schema["allOf"][0]["else"]["properties"]["match"].pop("anyOf", None)
+    return Draft202012Validator(schema)
 
 
 def scene_keys(text=None):
@@ -221,6 +239,11 @@ def check_profile(path, keys, drop_in=False, scenes=None):
     for name in evidence:
         if name not in settings:
             problems.append(f"evidence for {name}, which this profile does not set")
+    validator = schema_validator(drop_in)
+    if validator is not None:
+        for error in validator.iter_errors(table):
+            location = ".".join(map(str, error.absolute_path)) or "profile"
+            problems.append(f"{location}: {error.message}")
     return problems, table
 
 

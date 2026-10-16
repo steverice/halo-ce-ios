@@ -114,6 +114,7 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblo
 run(BUILD / 'benchmark-snapshot-probe')
 # the profiles' own rules: only the settings a profile may set, inside their ranges, each with its evidence,
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
+run('python3', 'tools/settings_schema.py', '--check')
 run('python3', 'tools/profile_check.py')
 run('python3', 'tools/test_profile_check.py')
 # a recorded route replays: tools/route_check.py's verdicts, and the suite's difficulty for the next map

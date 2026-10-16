@@ -1,3 +1,4 @@
+#:schema ../port/settings/profile.schema.json
 # A device profile: the graphics settings VISR uses on one device. Copy this file, rename it for the device
 # (lowercase words joined by hyphens: ipad-air-m2.toml), fill it in, and check it:
 #

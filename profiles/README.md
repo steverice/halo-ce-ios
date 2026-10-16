@@ -57,6 +57,12 @@ scene: menu (display.render_scale 1.0 [model Apple TV HD])
 
 `debug.settings_dump = true` in `config.toml` lists every profile setting, defaults included. The log is `ios-runtime.log` in the app's data folder.
 
+## Editor schemas and generated references
+
+Put `#:schema ../port/settings/profile.schema.json` at the top of a profile for TOML editors that support JSON Schema. The template includes it. For `config.toml`, point the editor to [`config.schema.json`](../port/settings/config.schema.json); the [configuration reference](../port/linux/README.md#settings) lists every option from the C setting table. The [hardware catalog schema](../port/settings/catalog.schema.json) covers catalog metadata; cross-file and evidence checks still require `tools/profile_check.py`.
+
+Run `python3 tools/settings_schema.py` after changing the C setting definitions. It refreshes the three schemas and the reference tables in this file and `port/linux/README.md`. `--check` checks their freshness; `--markdown config` and `--markdown profile` print either table. Config schemas check names and types. Profile schemas also check the intentionally narrower profile limits. Build-dependent defaults list Apple and desktop values.
+
 ## Writing a profile
 
 1. Copy `TEMPLATE.toml` to a name for the device, lowercase words joined by hyphens (`ipad-air-m2.toml`).
@@ -105,3 +111,38 @@ Profiles can also arrive as signed complete snapshots. See [Updating profiles an
 `[external.scene.menu.display]` and `[external.scene.cutscene.display]` can further set the keys also marked `PROFILE_SCENE`. Precedence is the built-in profile value, the built-in scene value, the external value, then the external scene value. The highest class, model or drop-in layer that supplies each context value wins. Player choices and environment overrides apply on every output. External values never enter `config.toml` or `config.origins`.
 
 Evidence names include the context: `[evidence."external.display.render_height"]` or `[evidence."external.scene.cutscene.display.render_scale"]`. Measured external evidence also needs `output = "external"` and a source identifying the external-output report, scene and date. The marker declares the source's output context; review the report's `output.kind` before marking a value measured.
+
+## Profile settings reference
+
+<!-- BEGIN GENERATED SETTINGS profile -->
+
+### display
+
+| Setting | Type and accepted values | Default (Apple) | Contexts | Description |
+| --- | --- | --- | --- | --- |
+| `display.renderer` | string: `gl`, `metal` | `"gl"` | gameplay | What draws the game: "gl" (default) OpenGL ES, or "metal" Metal. |
+| `display.render_height` | integer, 0 to 4320 | `0` | gameplay, ⓢ scene, external | Internal rendering height in physical pixels: 0 (default) uses native display resolution. |
+| `display.output_height` | integer, 0 to 4320 | Profile only | external only, external | External output height cap in pixels; zero leaves it uncapped. |
+| `display.render_scale` | real, 0.25 to 1 | `1.0` | gameplay, ⓢ scene, external | Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. |
+| `display.upscaler` | string: `bilinear`, `metalfx` | `"bilinear"` | gameplay | How a picture rendered below the display's size is scaled up: "bilinear" (default), or "metalfx" (Metal renderer, on a device: MetalFX's spatial scaler, sharper edges and text for a fraction of a millisecond). |
+| `display.anisotropic_filtering` | integer, 1 to 16 | `16` | gameplay | Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16: sharper floors and terrain at a distance, for a few percent of GPU time. |
+| `display.shadow_map_size` | integer, 128 to 1024 | `512` | gameplay | The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. |
+| `display.effect_resolution` | boolean | `true` | gameplay | Draw the active-camouflage effect at the screen's resolution rather than the Xbox's 320x240. |
+| `display.mirror_resolution` | string: `half`, `full` | `"half"` | gameplay | With display.effect_resolution: the reflections in mirror floors and the active camouflage (both drawn into the Xbox's 320x240 target) at "half" the screen's resolution each way, as the Xbox had them, or "full" (sharper reflections; up to a whole second render of the scene's pixels where a mirror shows). |
+| `display.model_lod` | string: `max`, `auto` | `"max"` | gameplay | Which geometry detail level models draw: "max" (default) always the highest they have, so they never pop between levels or drop out with distance; "auto" picks by on-screen size, as the Xbox did. |
+| `display.lod_scale` | real, 0.5 to 4 | `1.0` | gameplay | HEAD mode and the side-by-side view: a multiplier on the pixel size the game picks model detail and particle distance by; 1.0 is the Xbox's (0.5 to 4). |
+| `display.compressed_textures` | boolean | `true` | gameplay | With the Metal renderer, keep the game's DXT textures compressed on the GPU where it supports them (BC1-3): a quarter to an eighth of the memory, and faster loads. |
+| `display.high_res_hud` | boolean | `true` | gameplay | Draw the HUD (meters, counters, panels, motion sensor, reticles, waypoints, scopes) from the high-res assets (8x the maps' bitmaps); false draws the maps' own bitmaps. |
+| `display.high_res_text` | boolean | `true` | gameplay | Draw the menus' and HUD's text with the fonts in port/assets/fonts (Overpass) at the resolution the game draws at, and the menus' titles from port/assets/titles; false draws the maps' bitmap fonts and titles. |
+| `display.upscaled_textures` | boolean | `true` | gameplay | Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. |
+| `display.anti_aliasing` | string: `off`, `fxaa`, `smaa` | `"off"` | gameplay, external | Smoothing of jagged edges, which the Xbox did not have: "off", or "fxaa" or "smaa", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). |
+| `display.foveation` | boolean | `true` | gameplay | Apple Vision Pro, display.stereo = "head": render through the Compositor's foveation, sharper at the middle of each view than at its edges, at display.render_quality. |
+| `display.render_quality` | real, 0.1 to 1 | `0.6` | gameplay | With display.foveation: the Compositor's render quality, 0 to 1 (the headset's lowest to its highest): how many pixels the middle of each view gets. |
+| `display.frame_repeat` | integer, 0 to 3 | `0` | gameplay | Apple Vision Pro, display.stereo = "head" or "screen": how many extra display refreshes each frame stays up, 0 to 3: 0 draws a frame every refresh (90 a second), 1 every other (45 a second) for when 90 costs too much. |
+| `display.hud_resolution` | real, 0.5 to 1 | `1.0` | gameplay | HEAD mode and the side-by-side view: the pixels the HUD, the crosshair and the menus are drawn with, as a fraction of the view's along each axis, 0.5 to 1. |
+| `display.frame_pacing` | string: `off`, `tick`, `refresh` | `"off"` | gameplay | How the Metal renderer times frames: "off" (default) shows each frame as soon as it's drawn; "tick" shows every frame for the same whole number of display refreshes, at a rate that is a multiple of the game's 30 ticks a second (90 or 30 at 90 Hz, 60 or 30 at 60 Hz), dropping to the next rate when frames take too long; "refresh" allows any whole number of refreshes (45 at 90 Hz). |
+| `display.frame_rate` | string: `display`, `unlimited`, quoted 30 to 1000 | `"display"` | gameplay, ⓢ scene | The most frames a second, in the Mac app: "display" (default) draws one frame for each refresh of the display; a number ("60", "240") holds that rate; "unlimited" draws as fast as it can. |
+| `display.async_shaders` | string: `auto`, `on`, `off` | `"auto"` | gameplay | How the Metal renderer compiles shaders: "auto" (default) on worker threads, skipping a draw for the frames until its pipeline is ready, so the game never waits on the compiler (on Apple Vision Pro a long wait ends the app); a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) compiles each at its first draw instead. "on" or "off" forces either. |
+| `display.interpolation` | boolean | `true` | gameplay | Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. |
+
+<!-- END GENERATED SETTINGS profile -->

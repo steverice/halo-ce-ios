@@ -1,3 +1,4 @@
+#:schema ../../port/settings/catalog.schema.json
 # Tiers order hardware within a platform, not model identifiers or release dates.
 # This first catalog establishes only the M1 iPad tier. Other hardware keeps exact/class matching.
 schema = 1

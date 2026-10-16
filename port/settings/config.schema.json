@@ -1,0 +1,2579 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VISR config.toml",
+  "type": "object",
+  "properties": {
+    "display": {
+      "type": "object",
+      "properties": {
+        "fullscreen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Where display.mode is empty: start borderless over the whole display; false starts in a window. F11 switches.",
+          "x-environment": "HALO_FULLSCREEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "default": "",
+          "description": "\"fullscreen\" takes the display (at display.resolution's mode), \"borderless\" is a window over the whole desktop, \"windowed\" a window (display.window_size). Empty: display.fullscreen's (true: borderless). F11 switches to the window and back.",
+          "x-environment": "HALO_DISPLAY_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "resolution": {
+          "type": "string",
+          "default": "native",
+          "description": "What fullscreen and borderless draw at: \"native\", the display's own, or \"<width>x<height>\" (\"1920x1080\"), 640x480 or more. Fullscreen sets the display to it; borderless draws it scaled to the display.",
+          "x-environment": "HALO_RESOLUTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "resolution_scaling": {
+          "type": "string",
+          "default": "native",
+          "description": "\"native\" draws at the window's resolution (fullscreen, the display's or display.resolution); \"original\" draws the Xbox's 640x480 and scales it up.",
+          "x-environment": "HALO_RESOLUTION_SCALING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "window_size": {
+          "type": "string",
+          "default": "",
+          "description": "The window's size, \"<width>x<height>\" (\"1920x1080\"), 640x480 or more (it can be resized). Empty: display.window_scale's.",
+          "x-environment": "HALO_WINDOW_SIZE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "window_scale": {
+          "type": "integer",
+          "default": 2,
+          "description": "Where display.window_size is empty: the window's size as a multiple of 640x480.",
+          "x-environment": "HALO_WINDOW_SCALE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "screen_width": {
+          "type": "integer",
+          "default": 0,
+          "description": "Columns of the 480-line picture: 0 for the display's shape, 640 for the Xbox's 4:3.",
+          "x-environment": "HALO_SCREEN_WIDTH",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_height": {
+          "type": "integer",
+          "default": 0,
+          "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch.",
+          "x-environment": "HALO_RENDER_HEIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "anisotropic_filtering": {
+          "type": "integer",
+          "default": 16,
+          "description": "Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16: sharper floors and terrain at a distance, for a few percent of GPU time.",
+          "x-environment": "HALO_ANISOTROPIC_FILTERING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "decal_batching": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the decals (bullet holes, blood, scorch marks) that share a texture in one draw each rather than one draw a decal: the same picture for less CPU time. False draws each on its own, to compare.",
+          "x-environment": "HALO_DECAL_BATCHING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "shadow_batching": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw all of a view's character and vehicle shadows before laying any on the world, and in stereo lay one eye's shadows in the other too: the picture's pass is no longer interrupted for each shadow. False keeps the Xbox's order, to compare.",
+          "x-environment": "HALO_SHADOW_BATCHING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "shadow_map_size": {
+          "type": "integer",
+          "default": 512,
+          "description": "The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother.",
+          "x-environment": "HALO_SHADOW_MAP_SIZE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "effect_resolution": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the active-camouflage effect at the screen's resolution rather than the Xbox's 320x240.",
+          "x-environment": "HALO_EFFECT_RESOLUTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "mirror_resolution": {
+          "type": "string",
+          "default": "half",
+          "description": "With display.effect_resolution: the reflections in mirror floors and the active camouflage (both drawn into the Xbox's 320x240 target) at \"half\" the screen's resolution each way, as the Xbox had them, or \"full\" (sharper reflections; up to a whole second render of the scene's pixels where a mirror shows).",
+          "x-environment": "HALO_MIRROR_RESOLUTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "model_lod": {
+          "type": "string",
+          "default": "max",
+          "description": "Which geometry detail level models draw: \"max\" (default) always the highest they have, so they never pop between levels or drop out with distance; \"auto\" picks by on-screen size, as the Xbox did. The console's rasterizer_debug_model_lod overrides it.",
+          "x-environment": "HALO_MODEL_LOD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "lod_scale": {
+          "type": "number",
+          "default": 1.0,
+          "description": "HEAD mode and the side-by-side view: a multiplier on the pixel size the game picks model detail and particle distance by; 1.0 is the Xbox's (0.5 to 4). Higher keeps model detail and particles farther out, for the headset's denser pixels, at some frame time. Sprites keep their size. Read at start.",
+          "x-environment": "HALO_LOD_SCALE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "compressed_textures": {
+          "type": "boolean",
+          "default": true,
+          "description": "With the Metal renderer, keep the game's DXT textures compressed on the GPU where it supports them (BC1-3): a quarter to an eighth of the memory, and faster loads. false decodes them, as OpenGL ES must.",
+          "x-environment": "HALO_COMPRESSED_TEXTURES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_scale": {
+          "type": "number",
+          "default": 1.0,
+          "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result.",
+          "x-environment": "HALO_RENDER_SCALE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "native_hud": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the scene renders below the display's size (display.render_height, display.render_scale, or a build that sets a render height), draw the HUD, menus, text and letterbox bars at the display's own resolution over the scaled-up scene. false scales them up with the scene. No effect, and no cost, at native resolution or on Apple Vision Pro.",
+          "x-environment": "HALO_NATIVE_HUD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "anti_aliasing": {
+          "type": "string",
+          "default": "off",
+          "description": "Smoothing of jagged edges, which the Xbox did not have: \"off\", or \"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). SMAA is sharper and costs more.",
+          "x-environment": "HALO_ANTI_ALIASING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "upscaler": {
+          "type": "string",
+          "default": "bilinear",
+          "description": "How a picture rendered below the display's size is scaled up: \"bilinear\" (default), or \"metalfx\" (Metal renderer, on a device: MetalFX's spatial scaler, sharper edges and text for a fraction of a millisecond).",
+          "x-environment": "HALO_UPSCALER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "immersive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Apple Vision Pro, visionOS 26 and later: show the game on a screen standing in the room (an immersive space) instead of in a window.",
+          "x-environment": "HALO_IMMERSIVE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "stereo": {
+          "type": "string",
+          "default": "off",
+          "description": "Apple Vision Pro: \"off\" (flat), \"head\" (in stereo, the head turns the view), \"screen\" (in stereo on the theater screen), or \"side_by_side\" (a debug view of both eyes in the window).",
+          "x-environment": "HALO_STEREO",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_repeat": {
+          "type": "integer",
+          "default": 0,
+          "description": "Apple Vision Pro, display.stereo = \"head\" or \"screen\": how many extra display refreshes each frame stays up, 0 to 3: 0 draws a frame every refresh (90 a second), 1 every other (45 a second) for when 90 costs too much. Set when the immersive space opens.",
+          "x-environment": "HALO_FRAME_REPEAT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "foveation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Apple Vision Pro, display.stereo = \"head\": render through the Compositor's foveation, sharper at the middle of each view than at its edges, at display.render_quality. False renders each view evenly, for comparisons. Set when the immersive space opens.",
+          "x-environment": "HALO_FOVEATION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_quality": {
+          "type": "number",
+          "default": 0.6,
+          "description": "With display.foveation: the Compositor's render quality, 0 to 1 (the headset's lowest to its highest): how many pixels the middle of each view gets. Higher is sharper and costs more frame time and memory. In place of display.render_scale for the eyes. The default, 0.6, is the highest quality that held 90 Hz in the 2026-10-07 headset sweep (a10, foveated): 0.7 and 0.8 begin to miss refreshes, 0.9 and 1.0 miss 5 to 9%, and unfoveated rendering ran at 45 Hz. Set when the immersive space opens.",
+          "x-environment": "HALO_RENDER_QUALITY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "first_person_body": {
+          "type": "boolean",
+          "default": true,
+          "description": "With display.stereo = \"head\": draw the Master Chief's body below the view (no head or neck, and no third-person arms while you hold a weapon), so looking down shows your chest and feet. None while a script animates him; in a seat, as display.first_person_body_seats says.",
+          "x-environment": "HALO_FIRST_PERSON_BODY",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "first_person_body_offset": {
+          "type": "number",
+          "default": 0.08,
+          "description": "With display.first_person_body: how far behind your eyes the body stands, in world units (0 to 0.2; 0.08 is about 24 cm), so the feet show past the chest when you look down. Read at start.",
+          "x-environment": "HALO_FIRST_PERSON_BODY_OFFSET",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "first_person_body_seats": {
+          "type": "boolean",
+          "default": true,
+          "description": "With display.first_person_body: also draw the legs in a vehicle's first-person seat (the Warthog's passenger seat, the Scorpion's rider seats). Seats whose camera is on the gun or behind the vehicle, and a10's cryo pod, show no body.",
+          "x-environment": "HALO_FIRST_PERSON_BODY_SEATS",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "first_person_body_seat_offset": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With display.first_person_body_seats: how far the seated legs move back along the seat's facing, in world units (0 to 0.2). A seat's camera is a marker on the vehicle, not a point on the body, so 0 means the legs sit where the game puts them.",
+          "x-environment": "HALO_FIRST_PERSON_BODY_SEAT_OFFSET",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "weapon_offset_down": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With display.stereo = \"head\": how far the first-person weapon and arms sit below where the game puts them, in world units (0 to 0.2; 0.01 is about 3 cm), so the headset's taller view doesn't show where the arms end. Read at start.",
+          "x-environment": "HALO_WEAPON_OFFSET_DOWN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "weapon_offset_back": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With display.stereo = \"head\": how far the first-person weapon and arms sit closer to your eyes than where the game puts them, in world units (0 to 0.2). Read at start.",
+          "x-environment": "HALO_WEAPON_OFFSET_BACK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "eye_height_offset": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With display.stereo = \"head\": how far your eyes sit above the game's camera, in world units (-0.1 to 0.1; 0.03 is about 9 cm), for trying a taller eye height. Not in cutscenes. Read at start.",
+          "x-environment": "HALO_EYE_HEIGHT_OFFSET",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "film_depth_share": {
+          "type": "number",
+          "default": 0.25,
+          "description": "With display.stereo: how deep a cutscene (a 3D film on the screen) looks: how far behind the screen the far distance sits, as a share of your eye separation (0.05 to 0.9; more is deeper). Read at start.",
+          "x-environment": "HALO_FILM_DEPTH_SHARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "film_convergence": {
+          "type": "number",
+          "default": 1.75,
+          "description": "With display.stereo: in a cutscene, what lies this many meters ahead of the camera sits on the screen's surface; nearer comes out in front of it (0.3 to 10; less pushes faces back behind the screen). Read at start.",
+          "x-environment": "HALO_FILM_CONVERGENCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "screen_depth_share": {
+          "type": "number",
+          "default": 0.3,
+          "description": "With display.stereo = \"screen\": how deep the game looks on the screen (a 3D TV): how far behind the screen the far distance sits, as a share of your eye separation (0.05 to 0.9; more is deeper, less keeps the reticle from doubling on far targets). Read at start.",
+          "x-environment": "HALO_SCREEN_DEPTH_SHARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "screen_convergence": {
+          "type": "number",
+          "default": 1.0,
+          "description": "With display.stereo = \"screen\": what lies this many meters ahead of the player sits on the screen's surface; nearer comes out in front of it (0.3 to 10; 0.6 to 0.7 brings only walls you nearly touch in front). Read at start.",
+          "x-environment": "HALO_SCREEN_CONVERGENCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "screen_framing": {
+          "type": "string",
+          "default": "band",
+          "description": "With display.stereo = \"screen\": \"band\" (default) shows the game's horizontal view across the 16:9 screen, so things look their natural size, and the screen's bottom edge cuts the weapon like a window frame; \"wide\" shows the flat game's wider view, everything a quarter smaller and the whole weapon in view. Cutscenes fill the screen either way. Read at start.",
+          "x-environment": "HALO_SCREEN_FRAMING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "stereo_vehicle_screen": {
+          "type": "boolean",
+          "default": false,
+          "description": "With display.stereo = \"head\": put third-person cameras (a vehicle's chase camera) on the theater screen, as cutscenes are. Off (default), they stay around you: your head looks around from the camera, and the sticks drive and aim. Read at start.",
+          "x-environment": "HALO_STEREO_VEHICLE_SCREEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_corner_across": {
+          "type": "number",
+          "default": 28.0,
+          "description": "With display.stereo = \"head\": how far out to the sides the HUD sits, in degrees from the view's center: the outer corners of the weapon's counters (top left), the shields and health (top right), the motion tracker (bottom left) and the prompts and messages (left). Each piece grows toward the center from there. 0 to 40 (both eyes see 40). Read at start.",
+          "x-environment": "HALO_HUD_CORNER_ACROSS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_corner_up": {
+          "type": "number",
+          "default": 20.0,
+          "description": "With display.stereo = \"head\": how far up the HUD's top corners sit (the weapon's counters, the shields and health), in degrees from the view's center, 0 to 40. Read at start.",
+          "x-environment": "HALO_HUD_CORNER_UP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_tracker_down": {
+          "type": "number",
+          "default": 22.0,
+          "description": "With display.stereo = \"head\": how far down the motion tracker's bottom edge sits, in degrees below the view's center, 0 to 40. Read at start.",
+          "x-environment": "HALO_HUD_TRACKER_DOWN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_messages_up": {
+          "type": "number",
+          "default": 12.0,
+          "description": "With display.stereo = \"head\": how far up the top of the help text, prompts and messages sits, in degrees from the view's center; they run down from there. 0 to 40. Read at start.",
+          "x-environment": "HALO_HUD_MESSAGES_UP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_scale": {
+          "type": "number",
+          "default": 1.0,
+          "description": "With display.stereo = \"head\": the size of the HUD's pieces (not the crosshair) against their natural 0.072 degrees a line, 0.5 to 2. Read at start.",
+          "x-environment": "HALO_HUD_SCALE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_distance": {
+          "type": "number",
+          "default": 2.0,
+          "description": "With display.stereo = \"head\": how far ahead the HUD, the crosshair and the menus rest, in meters, 1 to 4. Every piece keeps its size in your view at any distance; only how near it looks changes. Read at start.",
+          "x-environment": "HALO_HUD_DISTANCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_depth": {
+          "type": "boolean",
+          "default": true,
+          "description": "With display.stereo = \"head\": bring each HUD piece (the crosshair, the corners) nearer while something under it is nearer than its resting distance, so it always looks in front of what it covers. Off: the HUD stays at display.hud_distance. Read at start.",
+          "x-environment": "HALO_HUD_DEPTH",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_depth_share": {
+          "type": "number",
+          "default": 0.85,
+          "description": "With display.hud_depth: how near a piece comes, as a share of the distance to the nearest thing under it, 0.5 to 1. Read at start.",
+          "x-environment": "HALO_HUD_DEPTH_SHARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_depth_floor": {
+          "type": "number",
+          "default": 0.3,
+          "description": "With display.hud_depth: the nearest a piece comes, in meters, below display.hud_distance. Read at start.",
+          "x-environment": "HALO_HUD_DEPTH_FLOOR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_depth_pull_in": {
+          "type": "number",
+          "default": 0.1,
+          "description": "With display.hud_depth: the seconds a piece takes to come from its resting distance to the nearest, 0 to 5. Read at start.",
+          "x-environment": "HALO_HUD_DEPTH_PULL_IN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_depth_relax": {
+          "type": "number",
+          "default": 1.0,
+          "description": "With display.hud_depth: the seconds a piece takes to go back from the nearest to its resting distance, 0 to 5. Read at start.",
+          "x-environment": "HALO_HUD_DEPTH_RELAX",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_depth_relax_delay": {
+          "type": "number",
+          "default": 0.5,
+          "description": "With display.hud_depth: the seconds a piece waits, once nothing near is under it, before it goes back, 0 to 5. Read at start.",
+          "x-environment": "HALO_HUD_DEPTH_RELAX_DELAY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "hud_resolution": {
+          "type": "number",
+          "default": 1.0,
+          "description": "HEAD mode and the side-by-side view: the pixels the HUD, the crosshair and the menus are drawn with, as a fraction of the view's along each axis, 0.5 to 1. Less takes less memory (0.5: a quarter) and looks softer. Read at start.",
+          "x-environment": "HALO_HUD_RESOLUTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "theater_width": {
+          "type": "number",
+          "default": 60.0,
+          "description": "With display.immersive: how much of the view the screen spans, in degrees across (the headset's view is about 100; 60 is the front of a cinema). The picture is rendered as sharp as the headset can show at that size.",
+          "x-environment": "HALO_THEATER_WIDTH",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "theater_distance": {
+          "type": "number",
+          "default": 4.0,
+          "description": "With display.immersive: how far away the screen stands, in meters.",
+          "x-environment": "HALO_THEATER_DISTANCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "theater_environment": {
+          "type": "string",
+          "default": "passthrough",
+          "description": "With display.immersive: around the screen, \"passthrough\" (the room) or \"dark\" (black).",
+          "x-environment": "HALO_THEATER_ENVIRONMENT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "renderer": {
+          "type": "string",
+          "default": "gl",
+          "description": "What draws the game: \"gl\" (default) OpenGL ES, or \"metal\" Metal. Changes apply on relaunch.",
+          "x-environment": "HALO_RENDERER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_pacing": {
+          "type": "string",
+          "default": "off",
+          "description": "How the Metal renderer times frames: \"off\" (default) shows each frame as soon as it's drawn; \"tick\" shows every frame for the same whole number of display refreshes, at a rate that is a multiple of the game's 30 ticks a second (90 or 30 at 90 Hz, 60 or 30 at 60 Hz), dropping to the next rate when frames take too long; \"refresh\" allows any whole number of refreshes (45 at 90 Hz). Experimental: in a visionOS window the pacing can't yet see when frames show.",
+          "x-environment": "HALO_FRAME_PACING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "stereo_flare_counting": {
+          "type": "boolean",
+          "default": false,
+          "description": "On a Vision Pro in stereo, dim each eye's lens flares by how much of the light that eye can see, as the flat screen does, each eye for itself. Off (default), a light either flares fully or not at all, the same in both eyes. With foveation, flares toward the edge of the view come out dimmer than they should; to be compared in the headset. Changes apply on relaunch.",
+          "x-environment": "HALO_STEREO_FLARE_COUNTING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "late_look": {
+          "type": "boolean",
+          "default": false,
+          "description": "Read the controller's look stick again just before a frame's camera is built and turn the first-person view by what it has done since the game read it, a few milliseconds on the frames that run a game tick. Only the picture moves; aim and shots are the game's as before. Off by default; F9 switches it while playing. Player one's controller, on foot.",
+          "x-environment": "HALO_LATE_LOOK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "late_start": {
+          "type": "string",
+          "default": "",
+          "description": "Start each frame's work as late as it can be and still be done for the next refresh of the display, so the controller is read later and what you do reaches the screen sooner (the Metal renderer's frame pacer). It backs off to starting at once whenever frames take too long or vary. \"true\" or \"false\"; empty (default): on in the Mac app, off on an iPhone, iPad or Apple TV. The Mac app's F8 switches it while playing. Not on a Vision Pro, and not when frames don't wait for the display (display.frame_rate).",
+          "x-environment": "HALO_LATE_START",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_source": {
+          "type": "string",
+          "default": "",
+          "description": "Where the Metal renderer's frames get their place on the display: \"clock\" asks for one when a frame is ready and applies display.frames_in_flight and display.frame_spacing itself; \"system\" takes one from the system for each refresh (iOS 17, tvOS 17, macOS 14 and later, and only with display.frame_rate = \"display\"; elsewhere \"clock\" is used). Empty (default): \"clock\". Not on a Vision Pro.",
+          "x-environment": "HALO_FRAME_SOURCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frames_in_flight": {
+          "type": "string",
+          "default": "",
+          "description": "How many frames the Metal renderer may have on their way to the display at once, \"1\" to \"3\": a frame isn't started on its way until fewer than that many are waiting to be shown. \"1\" gives the least delay between the game and the screen, and costs frames when a frame's CPU and GPU work together take longer than a refresh; \"system\" leaves the queue to the system (up to 3). Empty (default): \"2\". Not on a Vision Pro, which paces frames itself, and not for frames that don't wait for the display (display.frame_rate).",
+          "x-environment": "HALO_FRAMES_IN_FLIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_spacing": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep each frame on screen for its share of the display's time before the next may replace it (the Metal renderer), so frames show evenly spaced: one refresh, or with a display.frame_rate cap under the display's rate, the cap's. Off with \"unlimited\" or a cap above the display's rate, where it would itself be a cap. Not on a Vision Pro.",
+          "x-environment": "HALO_FRAME_SPACING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_rate": {
+          "type": "string",
+          "default": "display",
+          "description": "The most frames a second, in the Mac app: \"display\" (default) draws one frame for each refresh of the display; a number (\"60\", \"240\") holds that rate; \"unlimited\" draws as fast as it can. Above the display's refresh rate, and with \"unlimited\", frames no longer wait for the display, so the picture can tear and the Mac uses more power; a frame the display isn't ready for is drawn and not shown. The game still runs at 30 ticks a second whatever is drawn, and with display.interpolation off it draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro the system paces frames and this is ignored.",
+          "x-environment": "HALO_FRAME_RATE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "async_shaders": {
+          "type": "string",
+          "default": "auto",
+          "description": "How the Metal renderer compiles shaders: \"auto\" (default) on worker threads, skipping a draw for the frames until its pipeline is ready, so the game never waits on the compiler (on Apple Vision Pro a long wait ends the app); a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) compiles each at its first draw instead. \"on\" or \"off\" forces either. Changes apply on relaunch.",
+          "x-environment": "HALO_ASYNC_SHADERS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "movies": {
+          "type": "string",
+          "default": "auto",
+          "description": "The game's intro and credits movies (bink/intro.bik and bink/credits.bik beside maps/, imported from the disc image with the maps): \"auto\" (default) plays them, except in a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots); \"on\" plays them there too; \"off\" skips them. A build without the movie decoder always skips them.",
+          "x-environment": "HALO_MOVIES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "vsync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Wait for the display between frames; false draws as fast as possible.",
+          "x-environment": "HALO_NO_VSYNC",
+          "x-environment-style": "set_is_false",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "max_fps": {
+          "type": "integer",
+          "default": 0,
+          "description": "With vsync off, the most frames a second: 0 for twice the display's refresh rate, -1 for no limit (which can hang some Intel graphics).",
+          "x-environment": "HALO_MAX_FPS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "interpolation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second.",
+          "x-environment": "HALO_INTERPOLATION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "direct_camera": {
+          "type": "boolean",
+          "default": true,
+          "description": "In first person, point the view where the player aims now instead of where the last tick left it: the view turns the frame the stick or the mouse moves, not up to two ticks (66 ms) later.",
+          "x-environment": "HALO_DIRECT_CAMERA",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "high_res_hud": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the HUD (meters, counters, panels, motion sensor, reticles, waypoints, scopes) from the high-res assets (8x the maps' bitmaps); false draws the maps' own bitmaps.",
+          "x-environment": "HALO_HIGH_RES_HUD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "high_res_text": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the menus' and HUD's text with the fonts in port/assets/fonts (Overpass) at the resolution the game draws at, and the menus' titles from port/assets/titles; false draws the maps' bitmap fonts and titles.",
+          "x-environment": "HALO_HIGH_RES_TEXT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "upscaled_textures": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. Takes effect at the next level load.",
+          "x-environment": "HALO_UPSCALED_TEXTURES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "menus": {
+          "type": "string",
+          "default": "pc",
+          "description": "The menus: \"pc\" for the PC version's main menu (port/assets/menus, and a menus folder here for your own), \"xbox\" for the Xbox's.",
+          "x-environment": "HALO_MENUS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "player_names": {
+          "type": "string",
+          "default": "all",
+          "description": "In multiplayer, whose names are drawn above their heads: \"all\", \"allies\", \"enemies\" or \"none\". An enemy's shows only within the motion sensor's reach, in sight and not camouflaged; none show if the gametype's motion tracker shows no players, only allies' if it shows only friends.",
+          "x-environment": "HALO_PLAYER_NAMES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "player_name_scale": {
+          "type": "number",
+          "default": 1.0,
+          "description": "How large the players' names are drawn: 1.0 three quarters of the size of the HUD's text, 0.25 to 4.",
+          "x-environment": "HALO_PLAYER_NAME_SCALE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "scoreboard_team_layout": {
+          "type": "string",
+          "default": "teams",
+          "description": "How the scoreboard lists a team game's players: \"teams\" in a column for each team (red on the left, blue on the right), \"score\" all in order of score.",
+          "x-environment": "HALO_SCOREBOARD_TEAM_LAYOUT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "scoreboard_background": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw a panel behind the multiplayer scoreboard, for clearer text.",
+          "x-environment": "HALO_SCOREBOARD_BACKGROUND",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "scoreboard_background_color": {
+          "type": "string",
+          "default": "16, 16, 16, 150",
+          "description": "The scoreboard panel's colour: \"red, green, blue, alpha\", each 0 to 255 (alpha 0 is see-through, 255 solid).",
+          "x-environment": "HALO_SCOREBOARD_BACKGROUND_COLOR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "first_person_legs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Your own legs in first person, seen looking down: your body as others see it, drawn from the waist down, moving as it moves. On a flat view (a phone, a tablet, a window) only: a stereo view ignores it, and display.first_person_body draws the whole body in head-tracked stereo. No menu row yet.",
+          "x-environment": "HALO_FIRST_PERSON_LEGS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "first_person_legs_seat_shift": {
+          "type": "number",
+          "default": 1.0,
+          "description": "With display.first_person_legs, in a vehicle seat seen through your own eyes (a Warthog's passenger seat): how far your seated body is drawn moved ahead so the waist sits under the view, 0.0 (where the game seats it, well behind the eye) to 1.0 (toward the eye, default), never more than about 0.37 m so the knees stay short of the dash.",
+          "x-environment": "HALO_FIRST_PERSON_LEGS_SEAT_SHIFT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string",
+          "default": "snap",
+          "description": "With display.stereo = \"head\": how the right stick turns the view: \"snap\" (default; a flick turns input.snap_angle at once), \"smooth\" (steadily, at input.smooth_turn_speed), or \"off\" (it doesn't; turn your body).",
+          "x-environment": "HALO_TURN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "snap_angle": {
+          "type": "number",
+          "default": 30.0,
+          "description": "With input.turn = \"snap\": degrees per snap (5 to 180).",
+          "x-environment": "HALO_SNAP_ANGLE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "smooth_turn_speed": {
+          "type": "number",
+          "default": 120.0,
+          "description": "With input.turn = \"smooth\": degrees per second with the stick all the way over (10 to 720; 120 is the game's own speed before it speeds up).",
+          "x-environment": "HALO_SMOOTH_TURN_SPEED",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "comfort_vignette": {
+          "type": "boolean",
+          "default": false,
+          "description": "With input.turn = \"smooth\": darken the edges of the view while the stick turns it, for comfort.",
+          "x-environment": "HALO_COMFORT_VIGNETTE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "stick_dead_zone": {
+          "type": "number",
+          "default": 0.27,
+          "description": "How far a controller stick moves before it counts, from 0 to 1. At 0.27 (the Xbox's) the game's own square dead zone applies; lower values make a round one of that size (0.1 suits most modern controllers).",
+          "x-environment": "HALO_STICK_DEAD_ZONE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "mouse_sensitivity": {
+          "type": "number",
+          "default": 1.0,
+          "description": "How far the view turns for the mouse's movement.",
+          "x-environment": "HALO_MOUSE_SENSITIVITY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "invert_mouse": {
+          "type": "boolean",
+          "default": false,
+          "description": "Moving the mouse forward looks down.",
+          "x-environment": "HALO_MOUSE_INVERT",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "mouse_aim_assist": {
+          "type": "boolean",
+          "default": false,
+          "description": "Magnetism while aiming with the mouse, as with a controller: the view slowed and dragged along by a target. The last of the mouse and the right stick to move decides. The bullets' autoaim (bent toward the target) stays either way.",
+          "x-environment": "HALO_MOUSE_AIM_ASSIST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "mouse_vertical_sensitivity": {
+          "type": "number",
+          "default": 0.0,
+          "description": "How far the view turns up and down for the mouse's movement; 0 for the same as input.mouse_sensitivity.",
+          "x-environment": "HALO_MOUSE_VERTICAL_SENSITIVITY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Play sound.",
+          "x-environment": "HALO_NO_AUDIO",
+          "x-environment-style": "set_is_false",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "volume": {
+          "type": "number",
+          "default": 1.0,
+          "description": "The volume of everything, 0.0 to 1.0.",
+          "x-environment": "HALO_VOLUME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "music_volume": {
+          "type": "number",
+          "default": 1.0,
+          "description": "The music's volume, 0.0 to 1.0 (of audio.volume).",
+          "x-environment": "HALO_MUSIC_VOLUME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "effects_volume": {
+          "type": "number",
+          "default": 1.0,
+          "description": "The volume of every other sound (effects and speech), 0.0 to 1.0 (of audio.volume).",
+          "x-environment": "HALO_EFFECTS_VOLUME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "loose_sounds": {
+          "type": "boolean",
+          "default": false,
+          "description": "For those making sounds: play each of a map's sounds that has a Halo PC sound tag file of its name under the data root's tags folder (tags/sound/.../name.sound) from that file. At the console, loose_sounds_reload reads the files again and loose_sounds false gives the map's sounds back.",
+          "x-environment": "HALO_LOOSE_SOUNDS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "object",
+      "properties": {
+        "move_forward": {
+          "type": "string",
+          "default": "W",
+          "description": "The keyboard and mouse's controls, which Settings > Controls Setup changes: up to two keys or buttons each, separated by a comma. Keys by their names (\"W\", \"Space\", \"Left Ctrl\", \"F1\"), and \"Mouse Left\", \"Mouse Right\", \"Mouse Middle\", \"Mouse 4\", \"Mouse 5\", \"Wheel\" (either way), \"Wheel Up\" and \"Wheel Down\"; empty for none. Moving forward:",
+          "x-environment": "HALO_KEY_MOVE_FORWARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "move_backward": {
+          "type": "string",
+          "default": "S",
+          "description": "Moving backward.",
+          "x-environment": "HALO_KEY_MOVE_BACKWARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "strafe_left": {
+          "type": "string",
+          "default": "A",
+          "description": "Moving left.",
+          "x-environment": "HALO_KEY_STRAFE_LEFT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "strafe_right": {
+          "type": "string",
+          "default": "D",
+          "description": "Moving right.",
+          "x-environment": "HALO_KEY_STRAFE_RIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "jump": {
+          "type": "string",
+          "default": "Space",
+          "description": "Jumping (and skipping cutscenes).",
+          "x-environment": "HALO_KEY_JUMP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "crouch": {
+          "type": "string",
+          "default": "Left Ctrl, C",
+          "description": "Crouching.",
+          "x-environment": "HALO_KEY_CROUCH",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "fire": {
+          "type": "string",
+          "default": "Mouse Left",
+          "description": "Firing.",
+          "x-environment": "HALO_KEY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "throw_grenade": {
+          "type": "string",
+          "default": "Mouse Right, G",
+          "description": "Throwing a grenade.",
+          "x-environment": "HALO_KEY_THROW_GRENADE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "melee": {
+          "type": "string",
+          "default": "F, Mouse 4",
+          "description": "Melee attack.",
+          "x-environment": "HALO_KEY_MELEE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "reload": {
+          "type": "string",
+          "default": "R",
+          "description": "Reloading.",
+          "x-environment": "HALO_KEY_RELOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "zoom": {
+          "type": "string",
+          "default": "Z, Mouse Middle",
+          "description": "Zooming the scope.",
+          "x-environment": "HALO_KEY_ZOOM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "switch_weapon": {
+          "type": "string",
+          "default": "Wheel, 1",
+          "description": "Switching weapons.",
+          "x-environment": "HALO_KEY_SWITCH_WEAPON",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "switch_grenade": {
+          "type": "string",
+          "default": "X",
+          "description": "Switching grenades.",
+          "x-environment": "HALO_KEY_SWITCH_GRENADE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "default": "E",
+          "description": "The action: picking up (held: swapping weapons), entering and leaving vehicles, pressing switches; never reloading (the controller's X does when there is nothing to act on).",
+          "x-environment": "HALO_KEY_ACTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "flashlight": {
+          "type": "string",
+          "default": "Q",
+          "description": "The flashlight.",
+          "x-environment": "HALO_KEY_FLASHLIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "scoreboard": {
+          "type": "string",
+          "default": "Tab",
+          "description": "Showing the scores (the controller's Back).",
+          "x-environment": "HALO_KEY_SCOREBOARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "pause": {
+          "type": "string",
+          "default": "Escape",
+          "description": "The pause menu (the controller's Start).",
+          "x-environment": "HALO_KEY_PAUSE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "game": {
+      "type": "object",
+      "properties": {
+        "console_log": {
+          "type": "string",
+          "default": "important",
+          "description": "What the game's console shows on screen of what it logs: \"important\" (bans, players dropped for cheating, what refuses a command, and the asserts that stop the game), \"all\" (every line, the game's own chatter too), or \"none\" (the asserts that stop the game only). What a command prints shows whatever this is, and debug.txt has every line.",
+          "x-environment": "HALO_CONSOLE_LOG",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "default": "",
+          "description": "The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\"; empty for English. The game data decides what is translated.",
+          "x-environment": "HALO_LANGUAGE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "loading_screen": {
+          "type": "string",
+          "default": "auto",
+          "description": "The loading screen over a campaign level's load: the last frame blurring away, the ring's picture lit from left to right as the load goes, and its tone, until the level is read and its shaders are compiled. \"auto\" (default) shows it except in a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) and except in stereo; \"on\" or \"off\" forces either. The picture is your disc's: a maps folder imported before the importer took it gets it from tools/loading_picture.py.",
+          "x-environment": "HALO_LOADING_SCREEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "loading_screen_seconds": {
+          "type": "number",
+          "default": 1.5,
+          "description": "The least time the loading screen stays up, in seconds (0 to 30), so a level that is ready at once doesn't flash it.",
+          "x-environment": "HALO_LOADING_SCREEN_SECONDS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "custom_edition": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load and run Halo Custom Edition maps (not those that need OpenSauce): put them and Custom Edition's bitmaps.map, sounds.map and loc.map in the custom_maps folder beside the maps folder; the map lists show them as CUSTOM SINGLEPLAYER and CUSTOM MULTIPLAYER. Their tags are checked as the game's own maps' are before they run; false refuses them (docs/custom_edition_caches.md).",
+          "x-environment": "HALO_CUSTOM_EDITION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "default": "",
+          "description": "The folder holding the game data's maps folder; empty looks in the working directory and its assets folder. Windows paths are easiest in single quotes: 'C:\\Games\\Halo'.",
+          "x-environment": "HALO_DATA_ROOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "saves": {
+          "type": "string",
+          "default": "",
+          "description": "Where saved games and profiles go; empty for the usual place (~/.local/share/halo-linux, or %APPDATA%\\halo on Windows).",
+          "x-environment": "HALO_SAVE_ROOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "custom_edition": {
+          "type": "string",
+          "default": "",
+          "description": "A Halo Custom Edition install whose maps folder is looked in after the custom_maps folder for Custom Edition maps and their bitmaps.map, sounds.map and loc.map (game.custom_edition); empty for none.",
+          "x-environment": "HALO_CUSTOM_EDITION_ROOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "default": "",
+          "description": "This machine's IPv4 address for system link, for a machine on several networks; empty chooses one.",
+          "x-environment": "HALO_NET_ADDRESS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "broadcast": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated IPv4 addresses system link sends its announcements to instead of the local network's broadcast address (for VPNs); empty for the local network.",
+          "x-environment": "HALO_NET_BROADCAST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "lan_broadcast": {
+          "type": "string",
+          "default": "auto",
+          "description": "System link by broadcast, which finds games of every system: \"auto\" where this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices either way.",
+          "x-environment": "HALO_NET_LAN_BROADCAST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "online": {
+          "type": "boolean",
+          "default": false,
+          "description": "Internet play: hosting makes an invite link (logged, and put on the clipboard) that lets whoever has it join over the internet; opening a link (or copying one before switching to the game) joins. Only people with the invite can join. Off keeps system link to the local network.",
+          "x-environment": "HALO_NET_ONLINE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "online_ask": {
+          "type": "boolean",
+          "default": false,
+          "description": "While network.online is false: ask whether to turn Internet Play on the first time Create Game > Internet, Join Game > Server Browser or Direct Link is opened, saying which servers it reaches and what they see. Asked once: either answer, and a join link's question, writes false here.",
+          "x-environment": "HALO_NET_ONLINE_ASK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "join_from_clipboard": {
+          "type": "boolean",
+          "default": false,
+          "description": "Join the game of an invite link found on the clipboard when the game comes to the front.",
+          "x-environment": "HALO_NET_JOIN_FROM_CLIPBOARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "tunnel_port": {
+          "type": "integer",
+          "default": 0,
+          "description": "The UDP port internet play uses; 0 picks one. A fixed one can be forwarded on the router, for networks whose NAT stops connections.",
+          "x-environment": "HALO_NET_TUNNEL_PORT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "allow_upnp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let internet play ask the router (UPnP; on Apple devices NAT-PMP or PCP) to forward its port, for networks whose NAT stops connections: when a player joins this machine's game, and when joining a game takes too long. False never asks.",
+          "x-environment": "HALO_NET_ALLOW_UPNP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "background_grace": {
+          "type": "integer",
+          "default": 60,
+          "description": "Seconds the other players of an internet game wait for this machine when its app goes to the background (an Apple device suspends it, its game held) before they drop it.",
+          "x-environment": "HALO_NET_BACKGROUND_GRACE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "public_lobby": {
+          "type": "boolean",
+          "default": true,
+          "description": "The server browser: public games are listed through the signalling brokers, and Join Game > Server Browser shows them. False lists no game of this machine's and shows none.",
+          "x-environment": "HALO_NET_PUBLIC_LOBBY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "host_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether a new game of Create Game > Internet starts as PUBLIC (listed in everyone's server browser: anyone can see and join it) or, false, PRIVATE (only players with its invite link can join). Server Setup's LISTING changes it for each game.",
+          "x-environment": "HALO_NET_HOST_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "map_share": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hosting: send a player who joins without the game's Custom Edition map the map (from custom_maps), and the resource maps it needs that the player lacks (bitmaps.map, sounds.map, loc.map). The game's other players help (network.map_seed).",
+          "x-environment": "HALO_NET_MAP_SHARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_share_upload": {
+          "type": "integer",
+          "default": 1024,
+          "description": "Hosting: the most kilobytes a second the host sends of maps (16 to 65536), so that the game's own traffic keeps the rest of the upload.",
+          "x-environment": "HALO_NET_MAP_SHARE_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_seed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Playing in another's game: help send its map to players who join without it, as a torrent's peers do (the pieces this machine has, at most network.map_seed_upload). While it does, in a game on a Custom Edition map, this machine takes connections on TCP port 5153. Off by default on Apple builds.",
+          "x-environment": "HALO_NET_MAP_SEED",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "map_seed_upload": {
+          "type": "integer",
+          "default": 256,
+          "description": "Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536).",
+          "x-environment": "HALO_NET_MAP_SEED_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_download": {
+          "type": "boolean",
+          "default": false,
+          "description": "Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. Off by default on Apple builds. It governs receiving only: sending maps to others is network.map_share (a host) and network.map_seed (a player in another's game).",
+          "x-environment": "HALO_NET_MAP_DOWNLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "coop_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here.",
+          "x-environment": "HALO_NET_COOP_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_friendly_fire": {
+          "type": "string",
+          "default": "on",
+          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Their AI allies they always can, as in the campaign.",
+          "x-environment": "HALO_NET_COOP_FRIENDLY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_player_collisions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the players of an online co-op game bump into each other; false, they walk through each other (the AI's characters they still bump into). Server Setup's PLAYER COLLISIONS in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_PLAYER_COLLISIONS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies_mode": {
+          "type": "string",
+          "default": "per_player",
+          "description": "Online co-op's extra enemies: \"none\", \"per_player\" (each squad of enemies grows by coop_enemies for each player past the first) or \"multiplier\" (each is coop_enemies_multiplier times as large, for any number of players). Server Setup's EXTRA ENEMIES in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies": {
+          "type": "integer",
+          "default": 50,
+          "description": "Online co-op's extra enemies per player, a percentage: for each player past the first, each squad of enemies a level places gets this much of itself more (100: as many again; 25 to 200). Server Setup's PER PLAYER in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies_multiplier": {
+          "type": "integer",
+          "default": 2,
+          "description": "Online co-op's static multiplier of its enemies: each squad of enemies a level places is this many times as large (2 to 32). Server Setup's MULTIPLIER in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES_MULTIPLIER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "brokers_file": {
+          "type": "string",
+          "default": "brokers.txt",
+          "description": "The file of the public MQTT brokers through which the machines of an invite find each other (its messages are encrypted), beside this file unless a full path: one host:port on each line, up to 4. Updates replace brokers.txt: keep a list of your own under another name.",
+          "x-environment": "HALO_NET_BROKERS_FILE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "stun_servers": {
+          "type": "string",
+          "default": "stun.l.google.com:19302,stun.cloudflare.com:3478",
+          "description": "Public STUN servers that tell this machine its internet address; comma-separated host:port.",
+          "x-environment": "HALO_NET_STUN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "discord": {
+      "type": "object",
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "default": "1553978809840050229",
+          "description": "The Discord application internet play invites go through while the Discord desktop client runs; empty for none.",
+          "x-environment": "HALO_DISCORD_APPLICATION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "update": {
+      "type": "object",
+      "properties": {
+        "auto": {
+          "type": "boolean",
+          "default": true,
+          "description": "Look for a new version when the game starts, and offer to update to it; false never looks (the game's \"Do not ask again\" writes false here).",
+          "x-environment": "HALO_UPDATE_AUTO",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "debug": {
+      "type": "object",
+      "properties": {
+        "external_mode": {
+          "type": "string",
+          "default": "",
+          "description": "Force an external display mode for testing: preferred, WIDTHxHEIGHT, or a comma-separated list. Hold Back and press the D-pad's up or down to cycle the list live.",
+          "x-environment": "HALO_EXTERNAL_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_scale_dpad": {
+          "type": "boolean",
+          "default": false,
+          "description": "While Back is held, the D-pad's left and right step the render scale (display.render_scale) down and up by 0.05 as the game runs, shown on screen for two seconds; the game doesn't see the D-pad meanwhile.",
+          "x-environment": "HALO_RENDER_SCALE_DPAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "input_record": {
+          "type": "string",
+          "default": "",
+          "description": "Record controller 1 while a map plays, to <name>.input in the data folder (port/linux/src/input_replay.c); empty records nothing.",
+          "x-environment": "HALO_INPUT_RECORD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "input_replay": {
+          "type": "string",
+          "default": "",
+          "description": "Replay a recording made with debug.input_record in place of controller 1, at the same moments of the game time.",
+          "x-environment": "HALO_INPUT_REPLAY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "input_replay_route": {
+          "type": "integer",
+          "default": 0,
+          "description": "With debug.input_replay or debug.input_record: log player 1's position every this many ticks, with the segment, the tick and whether the tick took a recorded action (tools/replay_check.py reads it); 0 never.",
+          "x-environment": "HALO_INPUT_REPLAY_ROUTE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "benchmark": {
+          "type": "boolean",
+          "default": false,
+          "description": "With debug.input_replay: time every frame of the replay, write benchmark-<name>-<time>.txt and quit when the replay ends.",
+          "x-environment": "HALO_BENCHMARK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "benchmark_suite": {
+          "type": "string",
+          "default": "",
+          "description": "\"quick\" or \"full\" runs the device benchmark and quits: the suite's scenes, several times over at different settings, with a report in the data folder's benchmark folder (port/linux/src/benchmark_suite.c); empty for none.",
+          "x-environment": "HALO_BENCHMARK_SUITE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "network_test": {
+          "type": "string",
+          "default": "",
+          "description": "Automated system link sessions for testing (port/linux/game/network_test.c): \"host:<map>\" hosts a game on that map, \"join\" joins the first game found; empty for none.",
+          "x-environment": "HALO_NETWORK_TEST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_start": {
+          "type": "number",
+          "default": 15.0,
+          "description": "Seconds after hosting that an automated test game starts.",
+          "x-environment": "HALO_NETWORK_TEST_START",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_players": {
+          "type": "integer",
+          "default": 1,
+          "description": "The players an automated test host has on its own computer (split screen): controller 1 and the next ones, which debug.test_input plays when no gamepad is connected to them.",
+          "x-environment": "HALO_NETWORK_TEST_PLAYERS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_kill": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Every this many seconds an automated test host kills its last player; 0 never.",
+          "x-environment": "HALO_NETWORK_TEST_KILL",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_score": {
+          "type": "integer",
+          "default": 0,
+          "description": "The score an automated test host's game type plays to (a short game, to test the next); 0 the game type's own.",
+          "x-environment": "HALO_NETWORK_TEST_SCORE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_shoot": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Every this many seconds each automated test player hits the next with their weapon, within its reach (the host brings far players near the first a second before); 0 never.",
+          "x-environment": "HALO_NETWORK_TEST_SHOOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_vehicle": {
+          "type": "number",
+          "default": 0.0,
+          "description": "This many seconds into an automated test game the host seats its last player as a vehicle's driver (and out 15 seconds on); 0 never.",
+          "x-environment": "HALO_NETWORK_TEST_VEHICLE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_pickup": {
+          "type": "number",
+          "default": 0.0,
+          "description": "This many seconds into an automated test game the host stands its last player on a weapon, which a joining player then picks up; 0 never.",
+          "x-environment": "HALO_NETWORK_TEST_PICKUP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_pickup_weapon": {
+          "type": "string",
+          "default": "",
+          "description": "The weapon network_test_pickup stands the player on: the first whose tag name has this in it (\"sniper\", say); empty any.",
+          "x-environment": "HALO_NETWORK_TEST_PICKUP_WEAPON",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_test_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "The network test's host lists its game in the server browser; browse joins it.",
+          "x-environment": "HALO_NETWORK_TEST_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "telnet_console": {
+          "type": "boolean",
+          "default": false,
+          "description": "Listen on 127.0.0.1 (port telnet_console_port) for a script console that runs what it is sent as the game's console does, with no password; false none.",
+          "x-environment": "HALO_TELNET_CONSOLE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "telnet_console_port": {
+          "type": "integer",
+          "default": 2323,
+          "description": "The port of the script console (telnet_console); the Xbox's was 23, which only the administrator can listen on.",
+          "x-environment": "HALO_TELNET_CONSOLE_PORT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_latency": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Milliseconds everything received is held back (a round trip between two machines of twice it), to test the netcode as over the internet; 0 none.",
+          "x-environment": "HALO_NETWORK_LATENCY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_loss": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Percent of datagrams received that are dropped, for the same; 0 none.",
+          "x-environment": "HALO_NETWORK_LOSS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_corrupt": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Percent of the datagrams received that are damaged at random, to test that nothing a machine sends can crash the game; 0 none.",
+          "x-environment": "HALO_NETWORK_CORRUPT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_corrupt_stream": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Percent of the reads of streams that are damaged at random, for the same (a damaged stream is closed, so a little goes a long way); 0 none.",
+          "x-environment": "HALO_NETWORK_CORRUPT_STREAM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "network_corrupt_after": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Seconds after the start before anything is damaged, so that a game can be set up and started first (a host's messages to its own client are damaged too).",
+          "x-environment": "HALO_NETWORK_CORRUPT_AFTER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "test_input": {
+          "type": "string",
+          "default": "",
+          "description": "\"bot:<seed>\" plays controller 1 with a scripted pattern (automated network tests); \"look:<seed>\" stands still, only turning and looking up and down; \"walklook:<seed>\" looks down, then walks; \"zoom:<start>,<swaps>,<clicks>[,<lights>[,<unclicks>]]\" stands still and from poll <start> swaps weapons <swaps> times, zooms <clicks> times, presses the flashlight <lights> times (night vision), then clicks the zoom <unclicks> times more (out of it); \"aachord:<start>,<period>\" presses the live anti-aliasing chord (Back and R1) from poll <start> and every <period> polls after; empty for none.",
+          "x-environment": "HALO_TEST_INPUT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "side_by_side_screen": {
+          "type": "boolean",
+          "default": false,
+          "description": "With display.stereo = \"side_by_side\": show the eyes SCREEN mode's gameplay would have (a 3D TV on the default screen, 64 mm eyes) in place of head-tracked ones.",
+          "x-environment": "HALO_SIDE_BY_SIDE_SCREEN",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "side_by_side_tangents": {
+          "type": "string",
+          "default": "",
+          "description": "With display.stereo = \"side_by_side\": the left eye's frustum as \"left,right,up,down\" tangents (the right eye's mirrored left to right), for asymmetric eyes like the headset's; empty for 0.8 on every side.",
+          "x-environment": "HALO_SIDE_BY_SIDE_TANGENTS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "screen_lean": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With debug.side_by_side_screen: a fixed lean of the head, in meters to the right (up to 0.25), as if you leaned in front of the screen.",
+          "x-environment": "HALO_SCREEN_LEAN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "cutscene_immersive": {
+          "type": "boolean",
+          "default": false,
+          "description": "A spike: in HEAD mode (and the side-by-side view), a cutscene's third-person film frame renders immersive instead of on the 3D-film screen: the eyes are the cutscene camera turned by the head, the director's 16:9 frame is anchored in the room where the head pointed as the cutscene began, and outside it the picture is blurred, darkened and desaturated.",
+          "x-environment": "HALO_CUTSCENE_IMMERSIVE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "cutscene_immersive_min_fov": {
+          "type": "number",
+          "default": 40.0,
+          "description": "With debug.cutscene_immersive: the narrowest shot that renders immersive, as the camera's horizontal field of view in degrees (70 for the game's default lens; the director's frame spans that across its width). A narrower (telephoto) shot falls back to the 3D-film screen.",
+          "x-environment": "HALO_CUTSCENE_IMMERSIVE_MIN_FOV",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "cutscene_outside_dim": {
+          "type": "number",
+          "default": 0.6,
+          "description": "With debug.cutscene_immersive: how much the blurred picture outside the director's frame is darkened and desaturated, 0 (not at all) to 1 (black).",
+          "x-environment": "HALO_CUTSCENE_OUTSIDE_DIM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "side_by_side_head_yaw": {
+          "type": "string",
+          "default": "",
+          "description": "With display.stereo = \"side_by_side\" and debug.cutscene_immersive: a head that turns side to side in the immersive cutscene, as \"amplitude,period\" (degrees, seconds), so the Mac shows the room-anchored frame; empty for none.",
+          "x-environment": "HALO_SIDE_BY_SIDE_HEAD_YAW",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "head_yaw_log": {
+          "type": "boolean",
+          "default": false,
+          "description": "HEAD mode: log a line each frame while the head turns (\"stereo: head yaw\"): the head's yaw from the frame's predicted pose, the yaw the eye cameras used, and how far the world moved against the head since the last line, to see whether the world stays put while the head turns.",
+          "x-environment": "HALO_HEAD_YAW_LOG",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "head_sweep": {
+          "type": "string",
+          "default": "",
+          "description": "HEAD mode: turn the head by itself, left and right in a sine, as \"amplitude_degrees,period_seconds\" (\"30,4\"), in place of the yaw ARKit gives, to check the view's tracking in the simulator; empty for none. It overrides the device's head yaw too, so leave it empty on a headset.",
+          "x-environment": "HALO_HEAD_SWEEP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "foveation_eye_passes": {
+          "type": "boolean",
+          "default": true,
+          "description": "With display.foveation: false renders the game's eyes unfoveated at the foveated view's full size, and only the last step that fills each view goes through the Compositor's rate map (composite-only foveation, the reference the full path is compared against).",
+          "x-environment": "HALO_FOVEATION_EYE_PASSES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "anti_aliasing_folded": {
+          "type": "boolean",
+          "default": false,
+          "description": "With display.anti_aliasing = \"fxaa\" and the HUD at the display's size: run FXAA inside the stretch to the display's size (Metal), at each of the display's pixels, rather than as a pass over the scene before it. It saves a copy and a pass but does four times the FXAA work at half scale: on the Apple TV HD it cost 15 ms a frame against the pass's 6.",
+          "x-environment": "HALO_ANTI_ALIASING_FOLDED",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "rate_map_test": {
+          "type": "boolean",
+          "default": false,
+          "description": "Metal renderer on the Mac: give the screen-sized targets a synthetic, lopsided rate map (full rate in the middle third, half outside it, denser at the top than the bottom), resolved at present, to check foveated rendering off the headset.",
+          "x-environment": "HALO_RATE_MAP_TEST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "update_answer": {
+          "type": "string",
+          "default": "",
+          "description": "The answer to the new version question, for automated tests: \"yes\", \"no\" or \"never\" (do not ask again, confirmed); empty asks.",
+          "x-environment": "HALO_UPDATE_ANSWER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "link_consent_answer": {
+          "type": "string",
+          "default": "",
+          "description": "The answer to \"Join this game over the internet?\" and to \"Turn on Internet Play?\" for automated tests: \"join\" (Join, Turn On) or \"cancel\"; empty asks.",
+          "x-environment": "HALO_LINK_CONSENT_ANSWER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "exit_after": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Quit this many seconds after the window opens (of game time under debug.fixed_timestep); 0 never.",
+          "x-environment": "HALO_EXIT_AFTER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "fixed_timestep": {
+          "type": "boolean",
+          "default": false,
+          "description": "Advance the game's clock 1/30 s per frame, however long the frame took, so two runs show the same frames; debug.exit_after then counts seconds of game time, 30 frames each (600 = 18,000 frames).",
+          "x-environment": "HALO_FIXED_TIMESTEP",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "hidden_window": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep the window hidden (and never fullscreen).",
+          "x-environment": "HALO_HIDDEN_WINDOW",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "null_renderer": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run without a window, drawing nothing.",
+          "x-environment": "HALO_NULL_RENDERER",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "fixed_timestep_paced": {
+          "type": "boolean",
+          "default": false,
+          "description": "With fixed_timestep, hold each frame for at least 1/30 s, so the game plays at its own speed instead of as fast as frames are presented.",
+          "x-environment": "HALO_FIXED_TIMESTEP_PACED",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "frame_trace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log every frame's time, the blend between ticks and the camera's yaw, to see how smoothly the view turns.",
+          "x-environment": "HALO_FRAME_TRACE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "present_times": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log when each frame reached the display and how long after its work began (the frame pacer, with the Metal renderer; not a Vision Pro or a simulator), to see how evenly and how late frames are shown.",
+          "x-environment": "HALO_PRESENT_TIMES",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "visibility_any_sample": {
+          "type": "boolean",
+          "default": false,
+          "description": "The Metal renderer's visibility tests (lens flares) only say whether anything was visible, as before they counted how much: a light that is mostly hidden then flares at full strength. For comparing.",
+          "x-environment": "HALO_VISIBILITY_ANY_SAMPLE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_load_cpu": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Milliseconds of made-up CPU work added to every frame (the frame pacer), to see what display.frames_in_flight does when frames don't fit in a refresh. 0 (default): none.",
+          "x-environment": "HALO_FRAME_LOAD_CPU",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_load_every": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With debug.frame_load_cpu: the made-up work comes and goes, on in every other span of this many seconds, as a fight would. 0 (default): always.",
+          "x-environment": "HALO_FRAME_LOAD_EVERY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_load_gpu": {
+          "type": "integer",
+          "default": 0,
+          "description": "Made-up GPU work added to every frame: that many extra full-size draws (the Metal renderer), with debug.frame_load_cpu. 0 (default): none.",
+          "x-environment": "HALO_FRAME_LOAD_GPU",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_counter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the frame number and the game time in a corner of the screen, to point at a moment; with debug.fixed_timestep the same frame is the same moment in every run. Not in screenshots.",
+          "x-environment": "HALO_FRAME_COUNTER",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "terminal_on_screen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Draw the console's output (what print and commands print) over the game, as the desktop builds do; false keeps it in the log only.",
+          "x-environment": "HALO_TERMINAL_ON_SCREEN",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "test_extra_scene": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ask for a second window scene a few seconds in, to check that the game ignores its start, keeps its event pump and closes the scene (the host's host_main.m). For the simulator.",
+          "x-environment": "HALO_TEST_EXTRA_SCENE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "test_reclaim_sockets": {
+          "type": "boolean",
+          "default": false,
+          "description": "On coming back from the background, make every socket of the game's again and break its TCP connections, as an Apple device does to a suspended app (the host's host_socket_revival.c); for the simulator, whose apps keep their sockets.",
+          "x-environment": "HALO_TEST_RECLAIM_SOCKETS",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "test_text_answer": {
+          "type": "string",
+          "default": "",
+          "description": "On an Apple TV, answer the dialog a menu's text field asks with (a join code, a password) with this text, 3 seconds after it comes up, as if it were typed and Done pressed (the host's host_tv.m); empty for none. For the simulator, whose keyboard cannot type into it.",
+          "x-environment": "HALO_TEST_TEXT_ANSWER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "test_theater_reopen": {
+          "type": "boolean",
+          "default": false,
+          "description": "With display.immersive: close the immersive space a few seconds in, then press the window's button that opens it again (the host's host_theater.m). For the simulator.",
+          "x-environment": "HALO_TEST_THEATER_REOPEN",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "gl_debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Report OpenGL errors in the log.",
+          "x-environment": "HALO_GL_DEBUG",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "render_validation": {
+          "type": "string",
+          "default": "log",
+          "description": "In a build made with render validation (tools/ios_build.py --render-validation; no other build has any of it): every call into the GPU backend is checked before it is made, and every place the renderer substitutes, ignores or skips something is named and counted in the log. \"off\", \"log\" (each distinct cause once, with the draw it first happened in, and a summary with counts) or \"strict\" (the first failure or fallback ends the run with exit status 3).",
+          "x-environment": "HALO_RENDER_VALIDATION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_capture": {
+          "type": "string",
+          "default": "",
+          "description": "In a build made with render validation: a folder (in the data folder unless a full path) where the frames named by render_capture_frames are written as the calls the game made into the GPU backend, one file a window, for tools/render_replay.py to replay without the game. The files hold the game's own textures and models: keep them out of any repository.",
+          "x-environment": "HALO_RENDER_CAPTURE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_capture_frames": {
+          "type": "string",
+          "default": "",
+          "description": "The windows render_capture writes: \"600+30,1200+30\" is 30 frames from frame 600 and 30 from frame 1200.",
+          "x-environment": "HALO_RENDER_CAPTURE_FRAMES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "render_validation_allow": {
+          "type": "string",
+          "default": "",
+          "description": "With debug.render_validation = \"strict\": reasons the run goes on past, separated by commas (\"fill-mode-ignored,sampler-unbound\").",
+          "x-environment": "HALO_RENDER_VALIDATION_ALLOW",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "metal_state_cache": {
+          "type": "boolean",
+          "default": true,
+          "description": "With the Metal renderer, skip the encoder calls that set what the encoder already holds; false makes every call, to compare.",
+          "x-environment": "HALO_METAL_STATE_CACHE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "shader_list_warm": {
+          "type": "boolean",
+          "default": true,
+          "description": "Compile the shaders and pipelines in a map's shader list while it loads; false compiles each when a frame first draws with it, to compare.",
+          "x-environment": "HALO_SHADER_LIST_WARM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "shader_list_record": {
+          "type": "string",
+          "default": "shader-lists-missed",
+          "description": "With the Metal renderer, a folder (in the data folder unless a full path) where the shaders and pipelines made while drawing, those a map's shader list missed, are appended to MAP.txt, each line once; \"\" for none. tools/shader_lists.py merges them into port/shader-lists.",
+          "x-environment": "HALO_SHADER_LIST_RECORD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "metal_pipeline_archive": {
+          "type": "boolean",
+          "default": false,
+          "description": "With the Metal renderer, keep the compiled pipelines in an archive in the app's caches between launches. Off until writing it works: in the Mac app it fails with \"cannot create temporary file\" (Metal's own shader cache still keeps compiled shaders between launches).",
+          "x-environment": "HALO_METAL_PIPELINE_ARCHIVE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "metal_specialize": {
+          "type": "boolean",
+          "default": true,
+          "description": "With the Metal renderer, specialize each pipeline's vertex shader for its attribute formats; false uses the unspecialized shaders, which read the formats per draw (the fallback when specializing fails), to compare.",
+          "x-environment": "HALO_METAL_SPECIALIZE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "metal_vertex_bgra": {
+          "type": "boolean",
+          "default": true,
+          "description": "With the Metal renderer, the vertex shaders read vertex colors in the game's own byte order (BGRA); false swaps the bytes of every colored vertex on the CPU as it is uploaded, as the OpenGL ES renderer has to, to compare.",
+          "x-environment": "HALO_METAL_VERTEX_BGRA",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "metal_base_vertex": {
+          "type": "boolean",
+          "default": true,
+          "description": "With the Metal renderer, indexed draws take a base vertex, so their indices are drawn as the game holds them; false copies and rebases every draw's indices on the CPU, as the OpenGL ES renderer has to, to compare.",
+          "x-environment": "HALO_METAL_BASE_VERTEX",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "menu_open": {
+          "type": "string",
+          "default": "",
+          "description": "Start on this screen of the menus (port/assets/menus) instead of the main menu, a player profile being edited; empty for the main menu.",
+          "x-environment": "HALO_MENU_OPEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_flush_draws": {
+          "type": "integer",
+          "default": -1,
+          "description": "Flush the GPU's pipeline every this many draws: -1 for every 3 on Intel graphics with Mesa's driver (which can hang without), 0 never.",
+          "x-environment": "HALO_GPU_FLUSH_DRAWS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "gpu_stats": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log the renderer's draw counts once a second.",
+          "x-environment": "HALO_GPU_STATS",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_trace_frame": {
+          "type": "integer",
+          "default": -1,
+          "description": "Log every draw of this frame; -1 none.",
+          "x-environment": "HALO_GPU_TRACE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_trace_constants": {
+          "type": "boolean",
+          "default": false,
+          "description": "With gpu_trace_frame, also the vertex shader constants.",
+          "x-environment": "HALO_GPU_TRACE_CONSTANTS",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_skip_vertex_shaders": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated ids of vertex shaders not to draw with.",
+          "x-environment": "HALO_GPU_SKIP_VS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_dump_shaders": {
+          "type": "string",
+          "default": "",
+          "description": "A folder to write the generated shaders (GLSL or MSL) to; empty none.",
+          "x-environment": "HALO_GPU_DUMP_SHADERS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_shader_replay": {
+          "type": "string",
+          "default": "",
+          "description": "A folder of shader inputs (.vsh, .key) that gpu_dump_shaders recorded: translate each at startup into its replay folder; empty none.",
+          "x-environment": "HALO_GPU_SHADER_REPLAY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_shader_replay_dialect": {
+          "type": "string",
+          "default": "",
+          "description": "The dialect gpu_shader_replay translates into: empty the context's, \"450\" desktop GLSL, \"msl\" Metal (which the Metal renderer also compiles).",
+          "x-environment": "HALO_GPU_SHADER_REPLAY_DIALECT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_debug_expression": {
+          "type": "string",
+          "default": "",
+          "description": "A GLSL expression every pixel shader shows instead of its result.",
+          "x-environment": "HALO_GPU_DEBUG_EXPR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_debug_texture0": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pixel shaders show their first texture.",
+          "x-environment": "HALO_GPU_DEBUG_T0",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "gpu_debug_flat": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pixel shaders show their vertex colour.",
+          "x-environment": "HALO_GPU_DEBUG_FLAT",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "companion_capture": {
+          "type": "boolean",
+          "default": false,
+          "description": "Draw the companion HUD without an external display and save it with screenshots.",
+          "x-environment": "HALO_COMPANION_CAPTURE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "screenshot_directory": {
+          "type": "string",
+          "default": "",
+          "description": "A folder to save frames to (with screenshot_every); empty none.",
+          "x-environment": "HALO_SCREENSHOT_DIR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "screenshot_every": {
+          "type": "integer",
+          "default": 0,
+          "description": "Save every this many frames to screenshot_directory; 0 none.",
+          "x-environment": "HALO_SCREENSHOT_EVERY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_dump_directory": {
+          "type": "string",
+          "default": "",
+          "description": "A folder to write every texture to as it is uploaded; empty none.",
+          "x-environment": "HALO_TEXTURE_DUMP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_override_directory": {
+          "type": "string",
+          "default": "",
+          "description": "A folder of replacement textures, <hash>.rgba (step-tools/texture-upscale.py), each drawn in place of the texture whose first mip level hashes to <hash>; empty none.",
+          "x-environment": "HALO_TEXTURE_OVERRIDE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_log": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log texture uploads.",
+          "x-environment": "HALO_TEXTURE_LOG",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "texture_no_cache": {
+          "type": "boolean",
+          "default": false,
+          "description": "Upload textures again every time they are used.",
+          "x-environment": "HALO_TEXTURE_NO_CACHE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "device_profile": {
+          "type": "string",
+          "default": "",
+          "description": "Which device profile (profiles/ in the app) sets this device's graphics settings: empty chooses by the device; \"none\" uses the built-in defaults; a model identifier (\"AppleTV5,3\") or a Mac's chip name chooses as that device, for trying its profile elsewhere.",
+          "x-environment": "HALO_DEVICE_PROFILE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "frame_log": {
+          "type": "string",
+          "default": "auto",
+          "description": "With the Metal renderer: append to frame-log.txt, in this folder, a line every 5 seconds and at each change of scene class with the frames drawn, frames a second, the 95th and 99th percentile frame times, late frames, the render size, the scene class, the map, memory and thermal state, so a session played by hand can be read afterwards (tools/frame_log.py). \"auto\" (default) logs on an Apple TV only; \"on\" and \"off\" force it.",
+          "x-environment": "HALO_FRAME_LOG",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "test_win_level": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Win the level after this many seconds of its game time, once, as when the player reaches its end: a run nobody plays then goes through the change to the next level. 0 (default) does nothing.",
+          "x-environment": "HALO_TEST_WIN_LEVEL",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "settings_dump": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log every setting a device profile may set at start, with the layer each value came from; false logs only those something set.",
+          "x-environment": "HALO_SETTINGS_DUMP",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

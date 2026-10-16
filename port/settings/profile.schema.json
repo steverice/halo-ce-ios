@@ -1,0 +1,2190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VISR device profile",
+  "description": "Gameplay values, optional menu/cutscene values and external-output values. Only PROFILE_SCENE keys may vary by scene and PROFILE_EXTERNAL keys by output. Run profile_check.py for evidence and cross-file checks.",
+  "type": "object",
+  "properties": {
+    "display": {
+      "type": "object",
+      "properties": {
+        "renderer": {
+          "type": "string",
+          "enum": [
+            "gl",
+            "metal"
+          ],
+          "default": "gl",
+          "description": "What draws the game: \"gl\" (default) OpenGL ES, or \"metal\" Metal. Changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+        },
+        "render_height": {
+          "type": "integer",
+          "minimum": 0.0,
+          "maximum": 4320.0,
+          "default": 0,
+          "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+        },
+        "render_scale": {
+          "type": "number",
+          "minimum": 0.25,
+          "maximum": 1.0,
+          "default": 1.0,
+          "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+        },
+        "upscaler": {
+          "type": "string",
+          "enum": [
+            "bilinear",
+            "metalfx"
+          ],
+          "default": "bilinear",
+          "description": "How a picture rendered below the display's size is scaled up: \"bilinear\" (default), or \"metalfx\" (Metal renderer, on a device: MetalFX's spatial scaler, sharper edges and text for a fraction of a millisecond). Profile values outside the accepted set are refused, not clamped."
+        },
+        "anisotropic_filtering": {
+          "type": "integer",
+          "minimum": 1.0,
+          "maximum": 16.0,
+          "default": 16,
+          "description": "Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16: sharper floors and terrain at a distance, for a few percent of GPU time. Profile values outside the accepted set are refused, not clamped."
+        },
+        "shadow_map_size": {
+          "type": "integer",
+          "minimum": 128.0,
+          "maximum": 1024.0,
+          "default": 512,
+          "description": "The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. Profile values outside the accepted set are refused, not clamped."
+        },
+        "effect_resolution": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the active-camouflage effect at the screen's resolution rather than the Xbox's 320x240. Profile values outside the accepted set are refused, not clamped."
+        },
+        "mirror_resolution": {
+          "type": "string",
+          "enum": [
+            "half",
+            "full"
+          ],
+          "default": "half",
+          "description": "With display.effect_resolution: the reflections in mirror floors and the active camouflage (both drawn into the Xbox's 320x240 target) at \"half\" the screen's resolution each way, as the Xbox had them, or \"full\" (sharper reflections; up to a whole second render of the scene's pixels where a mirror shows). Profile values outside the accepted set are refused, not clamped."
+        },
+        "model_lod": {
+          "type": "string",
+          "enum": [
+            "max",
+            "auto"
+          ],
+          "default": "max",
+          "description": "Which geometry detail level models draw: \"max\" (default) always the highest they have, so they never pop between levels or drop out with distance; \"auto\" picks by on-screen size, as the Xbox did. The console's rasterizer_debug_model_lod overrides it. Profile values outside the accepted set are refused, not clamped."
+        },
+        "lod_scale": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 4.0,
+          "default": 1.0,
+          "description": "HEAD mode and the side-by-side view: a multiplier on the pixel size the game picks model detail and particle distance by; 1.0 is the Xbox's (0.5 to 4). Higher keeps model detail and particles farther out, for the headset's denser pixels, at some frame time. Sprites keep their size. Read at start. Profile values outside the accepted set are refused, not clamped."
+        },
+        "compressed_textures": {
+          "type": "boolean",
+          "default": true,
+          "description": "With the Metal renderer, keep the game's DXT textures compressed on the GPU where it supports them (BC1-3): a quarter to an eighth of the memory, and faster loads. false decodes them, as OpenGL ES must. Profile values outside the accepted set are refused, not clamped."
+        },
+        "high_res_hud": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the HUD (meters, counters, panels, motion sensor, reticles, waypoints, scopes) from the high-res assets (8x the maps' bitmaps); false draws the maps' own bitmaps. Profile values outside the accepted set are refused, not clamped."
+        },
+        "high_res_text": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw the menus' and HUD's text with the fonts in port/assets/fonts (Overpass) at the resolution the game draws at, and the menus' titles from port/assets/titles; false draws the maps' bitmap fonts and titles. Profile values outside the accepted set are refused, not clamped."
+        },
+        "upscaled_textures": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. Takes effect at the next level load. Profile values outside the accepted set are refused, not clamped."
+        },
+        "anti_aliasing": {
+          "type": "string",
+          "enum": [
+            "off",
+            "fxaa",
+            "smaa"
+          ],
+          "default": "off",
+          "description": "Smoothing of jagged edges, which the Xbox did not have: \"off\", or \"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). SMAA is sharper and costs more. Profile values outside the accepted set are refused, not clamped."
+        },
+        "foveation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Apple Vision Pro, display.stereo = \"head\": render through the Compositor's foveation, sharper at the middle of each view than at its edges, at display.render_quality. False renders each view evenly, for comparisons. Set when the immersive space opens. Profile values outside the accepted set are refused, not clamped."
+        },
+        "render_quality": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1.0,
+          "default": 0.6,
+          "description": "With display.foveation: the Compositor's render quality, 0 to 1 (the headset's lowest to its highest): how many pixels the middle of each view gets. Higher is sharper and costs more frame time and memory. In place of display.render_scale for the eyes. The default, 0.6, is the highest quality that held 90 Hz in the 2026-10-07 headset sweep (a10, foveated): 0.7 and 0.8 begin to miss refreshes, 0.9 and 1.0 miss 5 to 9%, and unfoveated rendering ran at 45 Hz. Set when the immersive space opens. Profile values outside the accepted set are refused, not clamped."
+        },
+        "frame_repeat": {
+          "type": "integer",
+          "minimum": 0.0,
+          "maximum": 3.0,
+          "default": 0,
+          "description": "Apple Vision Pro, display.stereo = \"head\" or \"screen\": how many extra display refreshes each frame stays up, 0 to 3: 0 draws a frame every refresh (90 a second), 1 every other (45 a second) for when 90 costs too much. Set when the immersive space opens. Profile values outside the accepted set are refused, not clamped."
+        },
+        "hud_resolution": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1.0,
+          "default": 1.0,
+          "description": "HEAD mode and the side-by-side view: the pixels the HUD, the crosshair and the menus are drawn with, as a fraction of the view's along each axis, 0.5 to 1. Less takes less memory (0.5: a quarter) and looks softer. Read at start. Profile values outside the accepted set are refused, not clamped."
+        },
+        "frame_pacing": {
+          "type": "string",
+          "enum": [
+            "off",
+            "tick",
+            "refresh"
+          ],
+          "default": "off",
+          "description": "How the Metal renderer times frames: \"off\" (default) shows each frame as soon as it's drawn; \"tick\" shows every frame for the same whole number of display refreshes, at a rate that is a multiple of the game's 30 ticks a second (90 or 30 at 90 Hz, 60 or 30 at 60 Hz), dropping to the next rate when frames take too long; \"refresh\" allows any whole number of refreshes (45 at 90 Hz). Experimental: in a visionOS window the pacing can't yet see when frames show. Profile values outside the accepted set are refused, not clamped."
+        },
+        "frame_rate": {
+          "type": "string",
+          "oneOf": [
+            {
+              "enum": [
+                "display",
+                "unlimited"
+              ]
+            },
+            {
+              "pattern": "^(?:[3-9][0-9]|[1-9][0-9]{2}|1000)$"
+            }
+          ],
+          "default": "display",
+          "description": "The most frames a second, in the Mac app: \"display\" (default) draws one frame for each refresh of the display; a number (\"60\", \"240\") holds that rate; \"unlimited\" draws as fast as it can. Above the display's refresh rate, and with \"unlimited\", frames no longer wait for the display, so the picture can tear and the Mac uses more power; a frame the display isn't ready for is drawn and not shown. The game still runs at 30 ticks a second whatever is drawn, and with display.interpolation off it draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro the system paces frames and this is ignored. Profile values outside the accepted set are refused, not clamped."
+        },
+        "async_shaders": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "default": "auto",
+          "description": "How the Metal renderer compiles shaders: \"auto\" (default) on worker threads, skipping a draw for the frames until its pipeline is ready, so the game never waits on the compiler (on Apple Vision Pro a long wait ends the app); a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) compiles each at its first draw instead. \"on\" or \"off\" forces either. Changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+        },
+        "interpolation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. Profile values outside the accepted set are refused, not clamped."
+        }
+      },
+      "additionalProperties": false
+    },
+    "schema": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+    "kind": {
+      "enum": [
+        "class",
+        "model"
+      ]
+    },
+    "status": {
+      "enum": [
+        "tested",
+        "provisional",
+        "below target"
+      ]
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "enum": [
+            "ios",
+            "tvos",
+            "visionos",
+            "mac"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9 ,.-]{1,48}$"
+          }
+        },
+        "chips": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9 ,.-]{1,48}$"
+          }
+        },
+        "gpu_family": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "platform"
+      ]
+    },
+    "scene": {
+      "type": "object",
+      "properties": {
+        "menu": {
+          "type": "object",
+          "properties": {
+            "display": {
+              "type": "object",
+              "properties": {
+                "render_height": {
+                  "type": "integer",
+                  "minimum": 0.0,
+                  "maximum": 4320.0,
+                  "default": 0,
+                  "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+                },
+                "render_scale": {
+                  "type": "number",
+                  "minimum": 0.25,
+                  "maximum": 1.0,
+                  "default": 1.0,
+                  "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+                },
+                "frame_rate": {
+                  "type": "string",
+                  "oneOf": [
+                    {
+                      "enum": [
+                        "display",
+                        "unlimited"
+                      ]
+                    },
+                    {
+                      "pattern": "^(?:[3-9][0-9]|[1-9][0-9]{2}|1000)$"
+                    }
+                  ],
+                  "default": "display",
+                  "description": "The most frames a second, in the Mac app: \"display\" (default) draws one frame for each refresh of the display; a number (\"60\", \"240\") holds that rate; \"unlimited\" draws as fast as it can. Above the display's refresh rate, and with \"unlimited\", frames no longer wait for the display, so the picture can tear and the Mac uses more power; a frame the display isn't ready for is drawn and not shown. The game still runs at 30 ticks a second whatever is drawn, and with display.interpolation off it draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro the system paces frames and this is ignored. Profile values outside the accepted set are refused, not clamped."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "cutscene": {
+          "type": "object",
+          "properties": {
+            "display": {
+              "type": "object",
+              "properties": {
+                "render_height": {
+                  "type": "integer",
+                  "minimum": 0.0,
+                  "maximum": 4320.0,
+                  "default": 0,
+                  "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+                },
+                "render_scale": {
+                  "type": "number",
+                  "minimum": 0.25,
+                  "maximum": 1.0,
+                  "default": 1.0,
+                  "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+                },
+                "frame_rate": {
+                  "type": "string",
+                  "oneOf": [
+                    {
+                      "enum": [
+                        "display",
+                        "unlimited"
+                      ]
+                    },
+                    {
+                      "pattern": "^(?:[3-9][0-9]|[1-9][0-9]{2}|1000)$"
+                    }
+                  ],
+                  "default": "display",
+                  "description": "The most frames a second, in the Mac app: \"display\" (default) draws one frame for each refresh of the display; a number (\"60\", \"240\") holds that rate; \"unlimited\" draws as fast as it can. Above the display's refresh rate, and with \"unlimited\", frames no longer wait for the display, so the picture can tear and the Mac uses more power; a frame the display isn't ready for is drawn and not shown. The game still runs at 30 ticks a second whatever is drawn, and with display.interpolation off it draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro the system paces frames and this is ignored. Profile values outside the accepted set are refused, not clamped."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "external": {
+      "type": "object",
+      "properties": {
+        "display": {
+          "type": "object",
+          "properties": {
+            "render_height": {
+              "type": "integer",
+              "minimum": 0.0,
+              "maximum": 4320.0,
+              "default": 0,
+              "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+            },
+            "output_height": {
+              "type": "integer",
+              "minimum": 0.0,
+              "maximum": 4320.0,
+              "description": "Profile-only output height cap in pixels; zero leaves the external mode uncapped. Profile values outside the accepted set are refused, not clamped."
+            },
+            "render_scale": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 1.0,
+              "default": 1.0,
+              "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+            },
+            "anti_aliasing": {
+              "type": "string",
+              "enum": [
+                "off",
+                "fxaa",
+                "smaa"
+              ],
+              "default": "off",
+              "description": "Smoothing of jagged edges, which the Xbox did not have: \"off\", or \"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). SMAA is sharper and costs more. Profile values outside the accepted set are refused, not clamped."
+            }
+          },
+          "additionalProperties": false
+        },
+        "scene": {
+          "type": "object",
+          "properties": {
+            "menu": {
+              "type": "object",
+              "properties": {
+                "display": {
+                  "type": "object",
+                  "properties": {
+                    "render_height": {
+                      "type": "integer",
+                      "minimum": 0.0,
+                      "maximum": 4320.0,
+                      "default": 0,
+                      "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+                    },
+                    "render_scale": {
+                      "type": "number",
+                      "minimum": 0.25,
+                      "maximum": 1.0,
+                      "default": 1.0,
+                      "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "cutscene": {
+              "type": "object",
+              "properties": {
+                "display": {
+                  "type": "object",
+                  "properties": {
+                    "render_height": {
+                      "type": "integer",
+                      "minimum": 0.0,
+                      "maximum": 4320.0,
+                      "default": 0,
+                      "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+                    },
+                    "render_scale": {
+                      "type": "number",
+                      "minimum": 0.25,
+                      "maximum": 1.0,
+                      "default": 1.0,
+                      "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "display.renderer": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "scene.menu.display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "scene.cutscene.display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "external.display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "external.scene.menu.display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "external.scene.cutscene.display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "external.display.output_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "scene.menu.display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "scene.cutscene.display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "external.display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "external.scene.menu.display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "external.scene.cutscene.display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "display.upscaler": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.anisotropic_filtering": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.shadow_map_size": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.effect_resolution": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.mirror_resolution": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.model_lod": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.lod_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.compressed_textures": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.high_res_hud": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.high_res_text": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.upscaled_textures": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.anti_aliasing": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "external.display.anti_aliasing": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            },
+            "output": {
+              "const": "external"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source",
+                  "output"
+                ]
+              }
+            }
+          ]
+        },
+        "display.foveation": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.render_quality": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.frame_repeat": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.hud_resolution": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.frame_pacing": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.frame_rate": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "scene.menu.display.frame_rate": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "scene.cutscene.display.frame_rate": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.async_shaders": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.interpolation": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "name",
+    "kind",
+    "match"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "class"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "match": {
+            "required": [
+              "gpu_family"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "models"
+                  ]
+                },
+                {
+                  "required": [
+                    "chips"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "match": {
+            "not": {
+              "required": [
+                "gpu_family"
+              ]
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "models"
+                ],
+                "properties": {
+                  "models": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "chips"
+                ],
+                "properties": {
+                  "chips": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
