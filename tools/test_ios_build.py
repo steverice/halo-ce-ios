@@ -32,8 +32,14 @@ exports:
 """
 
 
-def test_the_stub_links_against_the_mac_s_maccatalyst_opengles():
-    stub = ios_build.maccatalyst_stub(STUB)
+@pytest.mark.parametrize("targets", [
+    "[ arm64e-ios, arm64e.x1-ios ]",
+    "[ armv7-ios, armv7s-ios, arm64-ios, arm64e-ios ]",
+])
+def test_the_stub_links_against_the_mac_s_maccatalyst_opengles(targets):
+    # Xcode 27 and 26.6 repeat the same target list at the top and in exports.
+    source = STUB.replace("[ arm64e-ios, arm64e.x1-ios ]", targets)
+    stub = ios_build.maccatalyst_stub(source)
     assert stub.count("[ arm64-maccatalyst, arm64e-maccatalyst ]") == 2
     assert "-ios" not in stub
     assert "install-name:    '/System/iOSSupport/System/Library/Frameworks/OpenGLES.framework/OpenGLES'" in stub
@@ -53,6 +59,13 @@ def test_a_stub_with_another_install_name_is_refused():
 def test_a_stub_naming_an_ios_target_the_rewrite_misses_is_refused():
     with pytest.raises(ValueError, match="iOS target"):
         ios_build.maccatalyst_stub(STUB + "uuids:\n  - target: arm64e-ios\n")
+
+
+def test_a_stub_with_an_unknown_export_target_list_is_refused():
+    source = STUB.replace("  - targets:         [ arm64e-ios, arm64e.x1-ios ]",
+                          "  - targets:         [ arm64e-ios, arm64e.x2-ios ]")
+    with pytest.raises(ValueError, match="iOS target"):
+        ios_build.maccatalyst_stub(source)
 
 
 def test_the_catalyst_build_goes_in_the_checkout_by_default():

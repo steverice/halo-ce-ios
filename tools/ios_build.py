@@ -367,8 +367,11 @@ def app_store_commands(build: Path, system: str, team: str, out: Path, upload: b
             ['xcodebuild', '-exportArchive', '-archivePath', archive, '-exportOptionsPlist', out/'ExportOptions.plist',
              '-exportPath', out, *([] if profile else ['-allowProvisioningUpdates'])]]
 
-# the iPhoneOS SDK's OpenGLES.tbd (Xcode 27), and what the Catalyst link stub says in its place
-IOS_STUB_TARGETS = '[ arm64e-ios, arm64e.x1-ios ]'
+# Known iPhoneOS SDK OpenGLES.tbd target lists (Xcode 26.6 and 27).
+IOS_STUB_TARGETS = (
+    '[ armv7-ios, armv7s-ios, arm64-ios, arm64e-ios ]',
+    '[ arm64e-ios, arm64e.x1-ios ]',
+)
 CATALYST_STUB_TARGETS = '[ arm64-maccatalyst, arm64e-maccatalyst ]'
 IOS_INSTALL_NAME = "'/System/Library/Frameworks/OpenGLES.framework/OpenGLES'"
 CATALYST_INSTALL_NAME = "'/System/iOSSupport/System/Library/Frameworks/OpenGLES.framework/OpenGLES'"
@@ -377,11 +380,12 @@ CATALYST_INSTALL_NAME = "'/System/iOSSupport/System/Library/Frameworks/OpenGLES.
 def maccatalyst_stub(text):
     """the iPhoneOS SDK's OpenGLES.tbd rewritten to link against the Mac's macCatalyst
     OpenGLES.framework. A stub in any other form (a later Xcode's) is refused, not half rewritten."""
-    if IOS_STUB_TARGETS not in text:
-        raise ValueError(f'OpenGLES.tbd does not list {IOS_STUB_TARGETS}')
+    targets = next((targets for targets in IOS_STUB_TARGETS if targets in text), None)
+    if targets is None:
+        raise ValueError('OpenGLES.tbd does not list a known iOS target set')
     if IOS_INSTALL_NAME not in text:
         raise ValueError(f'OpenGLES.tbd does not have the install name {IOS_INSTALL_NAME}')
-    stub = text.replace(IOS_STUB_TARGETS, CATALYST_STUB_TARGETS).replace(IOS_INSTALL_NAME, CATALYST_INSTALL_NAME)
+    stub = text.replace(targets, CATALYST_STUB_TARGETS).replace(IOS_INSTALL_NAME, CATALYST_INSTALL_NAME)
     if '-ios' in stub:
         raise ValueError('OpenGLES.tbd names an iOS target the rewrite does not cover')
     return stub
