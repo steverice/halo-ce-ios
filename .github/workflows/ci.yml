@@ -1,0 +1,58 @@
+name: Tooling
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tooling-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+
+  portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install C probe dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends clang lld libc6-dev-i386 ninja-build openssl
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.11.8'
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: tools/requirements-ci.txt
+      - name: Python tooling, schema, catalog, and Linux probes
+        run: uv run --no-project --with-requirements tools/requirements-ci.txt python tools/ci_test.py --linux --junit reports/tooling.xml
+      - name: Test report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tooling-python-${{ matrix.python }}
+          path: reports/tooling.xml
+          if-no-files-found: error
+          retention-days: 7
