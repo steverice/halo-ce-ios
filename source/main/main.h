@@ -51,6 +51,8 @@ short main_get_difficulty(
 
 boolean main_saving_map(
 	void);
+boolean main_tick_end(
+	void);
 
 void main_save_cancel(
 	void);

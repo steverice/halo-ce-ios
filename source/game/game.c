@@ -126,6 +126,7 @@ struct game_options;
 #include "cache/cache_files.h"
 #include "camera/director.h"
 #include "camera/observer.h"
+#include "camera/camera_scripting.h"
 #include "cseries/errors.h"
 #include "cseries/profile.h"
 #include "cutscene/cinematics.h"
@@ -313,6 +314,13 @@ void game_tick(
 	collision_log_begin_period(0);
 	real_math_reset_precision();
 	profile_enter(game_update_section);
+	/* port: debug.input_record and debug.input_replay take the tick's random seeds as the last tick left them, not as
+	the frames drawn since changed them (port/linux/src/input_replay.c) */
+	{
+		extern void input_replay_tick_begin(void);
+
+		input_replay_tick_begin();
+	}
 
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\game.c",
@@ -367,10 +375,17 @@ void game_tick(
 	players_update_after_game();
 	hud_update();
 	player_effect_update();
+	/* port: the scripted camera's transition time, which scripts wait on, counted in ticks (camera_scripting.c) */
+	scripted_camera_tick();
 	/* port: and at its end, before the frame draws the lights */
 	game_state_check_data_arrays();
 	lights_port_recover();
 
+	{
+		extern void input_replay_tick_end(void);
+
+		input_replay_tick_end();
+	}
 	profile_exit(game_update_section);
 	collision_log_end_period();
 	profile_tick_end();

@@ -10,6 +10,7 @@ recording skipped it.
 */
 
 #include "cseries.h"
+#include "ai/actors.h"
 #include "cutscene/cinematics.h"
 #include "game/game.h"
 #include "game/players.h"
@@ -88,6 +89,38 @@ unsigned char input_replay_player_position(float position[3])
 	position[0] = origin.x;
 	position[1] = origin.y;
 	position[2] = origin.z;
+	return 1;
+}
+
+/* the fight's state, for debug.input_replay_route: whether player 1 is alive, the unit's body and shield, how many
+actors the AI has and how many objects are dead; 0 while there is no player unit */
+unsigned char input_replay_fight_state(float *body, float *shield, long *actors, long *dead_objects)
+{
+	long player_index = local_player_get_player_index(0);
+	struct player_datum *player;
+	struct object_datum *unit;
+	struct data_iterator iterator;
+	struct object_header_datum *header;
+
+	if (player_index == NONE)
+		return 0;
+	player = player_try_and_get(player_index);
+	if (!player || player->unit_index == NONE)
+		return 0;
+	unit = object_try_and_get(player->unit_index);
+	if (!unit)
+		return 0;
+	*body = unit->object.body_vitality;
+	*shield = unit->object.shield_vitality;
+	*actors = 0;
+	data_iterator_new(&iterator, actor_data);
+	while (data_iterator_next(&iterator))
+		(*actors)++;
+	*dead_objects = 0;
+	data_iterator_new(&iterator, object_header_data);
+	while ((header = data_iterator_next(&iterator)))
+		if (header->datum && (header->datum->object.damage_flags & (1 << _object_dead_bit)))
+			(*dead_objects)++;
 	return 1;
 }
 

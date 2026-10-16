@@ -16,17 +16,17 @@ suite = a10-crew
 exit_after = 110
 1 180 -56.41,0.41,0.42 0.5 in the cryo tube
 1 480 -52.45,3.31,0.00 2.0 out of the cryo tube
+state 1 480 alive=1 actors=3 dead=2
 """
 
 LOG = """halo-linux: debug.input_replay: route segment 0 tick 0 at none (recorded action)
 halo-linux: debug.input_replay: route segment 1 tick 180 at -56.41,0.41,0.42 (recorded action)
-halo-linux: debug.input_replay: route segment 1 tick 480 at -52.45,3.31,-0.00 (recorded action)
+halo-linux: debug.input_replay: route segment 1 tick 480 at -52.45,3.31,-0.00 (recorded action; body 0.50 shield 0.00 actors 3 dead 2; seed misses 0; found 00000001 00000002)
 """
 
 
 def verdicts(log):
-    results = route_check.evaluate(route_check.parse_checks(CHECKS), route_check.parse_route(log))
-    return [passed for _, passed, _ in results]
+    return [passed for _, passed, _ in route_check.judge(route_check.parse_checks(CHECKS), log)]
 
 
 parsed = route_check.parse_checks(CHECKS, base=Path("/repo"))
@@ -47,9 +47,12 @@ assert route[(1, 480)] == (-52.45, 3.31, -0.0)
 
 # a replay that follows the route passes; one that leaves the player in the cryo tube, or never reaches the
 # segment, fails
-assert verdicts(LOG) == [True, True]
-assert verdicts(LOG.replace("-52.45,3.31,-0.00", "-56.41,0.41,0.42")) == [True, False]
-assert verdicts(LOG.replace("route segment 1", "route segment 2")) == [False, False]
+assert verdicts(LOG) == [True, True, True]
+assert verdicts(LOG.replace("-52.45,3.31,-0.00", "-56.41,0.41,0.42")) == [True, False, True]
+assert verdicts(LOG.replace("route segment 1", "route segment 2")) == [False, False, False]
+# the fight: a dead player, or a different count of the dead, fails
+assert verdicts(LOG.replace("body 0.50", "body 0.00")) == [True, True, False]
+assert verdicts(LOG.replace("dead 2;", "dead 3;")) == [True, True, False]
 
 for path in sorted((route_check.ROOT / "tools/route_checks").glob("*.checks")):
     assert route_check.parse_checks(path.read_text()).recording.is_file(), path
