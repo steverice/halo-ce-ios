@@ -45,6 +45,16 @@ jobs:
           xcrun --sdk xros --show-sdk-path
           /opt/homebrew/opt/llvm/bin/clang --version
           /opt/homebrew/opt/lld/bin/ld.lld --version
+      - name: Validate Catalyst OpenGLES stub
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          from tools.ios_build import opengles_framework
+          with TemporaryDirectory() as folder:
+              opengles_framework(Path(folder))
+          print("Catalyst OpenGLES stub validated")
+          PY
       - name: Metal compiler for native stereo probes
         run: |
           if ! xcrun --sdk xros metal --version; then
