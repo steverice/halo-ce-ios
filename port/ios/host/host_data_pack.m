@@ -115,6 +115,7 @@ static NSDictionary *PackJSON(NSData *data) {
 @property(nonatomic) NSURLSession *session;
 @property(nonatomic) NSMutableData *download;
 @property(nonatomic) BOOL responseAccepted;
+@property(nonatomic, copy) NSString *responseValidator;
 @end
 
 @implementation HostDataPackStore
@@ -144,7 +145,7 @@ static NSDictionary *PackJSON(NSData *data) {
         // Missing or unusable state (the system may purge Caches file by file) starts the store over, as on a fresh
         // install: every cached generation goes, so none is activated without the state that admitted it.
         for (NSString *name in [manager contentsOfDirectoryAtPath:_root error:NULL]) {
-            if (([self generationName:name] && name.length) || [name hasPrefix:@".stage-"] || [name isEqual:@"state.json"]) {
+            if (([self generationName:name] && name.length) || [name hasPrefix:@".stage-"] || [name isEqual:@"state.json"] || [name isEqual:@"feed-validator.txt"]) {
                 if (![manager removeItemAtPath:[self generationPath:name] error:NULL]) return self;
             }
         }
@@ -242,7 +243,7 @@ static NSDictionary *PackJSON(NSData *data) {
     state[@"quarantined"] = @(MAX(sequence, [state[@"quarantined"] unsignedLongLongValue]));
 }
 - (void)prune {
-    NSSet *keep = [NSSet setWithObjects:_state[@"active"], _state[@"healthy"], _state[@"pending"], @"state.json", nil];
+    NSSet *keep = [NSSet setWithObjects:_state[@"active"], _state[@"healthy"], _state[@"pending"], @"state.json", @"feed-validator.txt", nil];
     for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:_root error:NULL]) {
         if (![keep containsObject:name] && ([self generationName:name] || [name hasPrefix:@".stage-"])) [NSFileManager.defaultManager removeItemAtPath:[self generationPath:name] error:NULL];
     }
@@ -339,20 +340,32 @@ static NSDictionary *PackJSON(NSData *data) {
     }
 } }
 - (NSDictionary *)metadata { @synchronized(self) { return [_identity copy]; } }
+// The file holds the sequence of the last accepted envelope, a newline, then its ETag. It applies only while that
+// sequence is still the highest seen and a snapshot is installed, so a store that started over asks for the full feed.
+- (NSString *)validatorPath { return [_root stringByAppendingPathComponent:@"feed-validator.txt"]; }
+- (NSString *)savedValidator {
+    NSString *text = [NSString stringWithContentsOfFile:self.validatorPath encoding:NSUTF8StringEncoding error:NULL];
+    NSArray *parts = [text componentsSeparatedByString:@"\n"];
+    BOOL installed = [_state[@"active"] length] || [_state[@"pending"] length];
+    return parts.count == 2 && installed && [parts[0] isEqual:[_state[@"highest"] stringValue]] ? parts[1] : nil;
+}
 - (void)checkForUpdateAtURL:(NSURL *)url { @synchronized(self) {
     if (!_stateValid || _session || ![url.scheme.lowercaseString isEqual:@"https"] || !url.host.length || url.user || url.password || url.query || url.fragment) return;
-    NSTimeInterval now = NSDate.date.timeIntervalSince1970;
-    if (now - [_state[@"last_check"] doubleValue] < 86400) return;
-    NSMutableDictionary *next = [_state mutableCopy]; next[@"last_check"] = @(now);
+    // Every launch checks. The request is cheap when the feed is unchanged: it carries the validator saved with the
+    // last accepted envelope, and a 304 answer stops there.
+    NSMutableDictionary *next = [_state mutableCopy]; next[@"last_check"] = @(NSDate.date.timeIntervalSince1970);
     if (![self writeState:next error:NULL]) return;
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;
-    configuration.HTTPShouldSetCookies = NO; configuration.timeoutIntervalForRequest = 30; configuration.timeoutIntervalForResource = 60;
-    _download = [NSMutableData data]; _responseAccepted = NO;
+    configuration.HTTPShouldSetCookies = NO; configuration.timeoutIntervalForRequest = 10; configuration.timeoutIntervalForResource = 30;
+    configuration.waitsForConnectivity = NO;
+    _download = [NSMutableData data]; _responseAccepted = NO; _responseValidator = nil;
     _session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:nil];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    NSString *validator = [self savedValidator];
+    if (validator.length) [request setValue:validator forHTTPHeaderField:@"If-None-Match"];
     [[_session dataTaskWithRequest:request] resume];
 } }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential * _Nullable))completionHandler {
@@ -363,7 +376,11 @@ static NSDictionary *PackJSON(NSData *data) {
     completionHandler(nil);
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler { @synchronized(self) {
-    _responseAccepted = [response isKindOfClass:NSHTTPURLResponse.class] && [(NSHTTPURLResponse *)response statusCode] == 200 && (response.expectedContentLength < 0 || (uint64_t)response.expectedContentLength <= self.envelopeLimit);
+    NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? [(NSHTTPURLResponse *)response statusCode] : 0;
+    NSString *etag = status == 200 ? [(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"ETag"] : nil;
+    _responseValidator = etag.length && etag.length <= 256 && PackMatches(etag, @"^(W/)?\"[\\x21\\x23-\\x7e]*\"\\z") ? etag : nil;
+    if (status != 200 && status != 304) NSLog(@"data-packs: %@ feed answered HTTP %ld; keeping the current snapshot", _kind, (long)status);
+    _responseAccepted = status == 200 && (response.expectedContentLength < 0 || (uint64_t)response.expectedContentLength <= self.envelopeLimit);
     completionHandler(_responseAccepted ? NSURLSessionResponseAllow : NSURLSessionResponseCancel);
 } }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data { @synchronized(self) {
@@ -371,7 +388,13 @@ static NSDictionary *PackJSON(NSData *data) {
     [_download appendData:data];
 } }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error { @synchronized(self) {
-    if (!error && _responseAccepted) @autoreleasepool { [self stageEnvelope:_download error:NULL]; }
+    if (error) NSLog(@"data-packs: %@ feed check ended (%@); keeping the current snapshot", _kind, error.localizedDescription);
+    else if (_responseAccepted) @autoreleasepool {
+        NSError *stageError = nil;
+        if ([self stageEnvelope:_download error:&stageError]) {
+            if (_responseValidator) [[NSString stringWithFormat:@"%@\n%@", _state[@"highest"], _responseValidator] writeToFile:self.validatorPath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+        } else NSLog(@"data-packs: %@ feed not staged (%@); keeping the current snapshot", _kind, stageError.localizedDescription);
+    }
     _download = nil; _session = nil; [session finishTasksAndInvalidate];
 } }
 @end

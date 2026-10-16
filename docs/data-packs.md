@@ -1,6 +1,6 @@
 # Updating profiles and benchmark recordings
 
-An installed app can fetch signed data snapshots without replacing its binary. Profiles and recordings have separate feeds and sequence numbers. Updates are checked in the background at most once a day, staged after validation, and selected at the next launch. A failed launch returns to the last healthy snapshot or the bundled data. A snapshot becomes healthy after a main-menu frame is presented.
+An installed app can fetch signed data snapshots without replacing its binary. Profiles and recordings have separate feeds and sequence numbers. Updates are checked in the background on every launch, with a short timeout and no retry; a failed check only logs one line and leaves the current snapshot in use, and an unchanged feed answers a conditional request with no download. Downloads are staged after validation and selected at the next launch. A failed launch returns to the last healthy snapshot or the bundled data. A snapshot becomes healthy after a main-menu frame is presented.
 
 Device and simulator builds download from the project's feeds on its site, `https://code.steverice.org/visr/packs/CHANNEL/profiles.json` and `.../recordings.json`, and verify against the project's pinned Ed25519 public key (`DATA_PACK_PUBLIC_KEY` in `tools/ios_build.py`). `--tester` selects the `tester` channel; other builds select `stable`. Mac builds (`--mac`, the runner) download nothing unless a key or feed is named. A build of your own can name its own key and feeds, or turn downloads off:
 

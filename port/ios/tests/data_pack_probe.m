@@ -31,6 +31,9 @@ static NSData *Envelope(NSInteger sequence, NSDictionary *changes, NSDictionary 
 }
 static NSInteger requests;
 static NSData *networkEnvelope;
+static NSInteger networkStatus = 200;
+static NSInteger notModified;
+static BOOL networkFails;
 @interface PackProtocol : NSURLProtocol
 @end
 @implementation PackProtocol
@@ -38,9 +41,13 @@ static NSData *networkEnvelope;
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
 - (void)startLoading {
     requests++;
-    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
+    if (networkFails) { [self.client URLProtocol:self didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]]; return; }
+    BOOL matches = [[self.request valueForHTTPHeaderField:@"If-None-Match"] isEqual:@"\"feed-1\""];
+    NSInteger status = matches ? 304 : networkStatus;
+    if (matches) notModified++;
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json", @"ETag": @"\"feed-1\""}];
     [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
-    [self.client URLProtocol:self didLoadData:networkEnvelope];
+    if (status == 200) [self.client URLProtocol:self didLoadData:networkEnvelope];
     [self.client URLProtocolDidFinishLoading:self];
 }
 - (void)stopLoading {}
@@ -230,15 +237,32 @@ int main(int argc, const char **argv) { @autoreleasepool {
     CHECK(requests == 0, "unsafe update URLs do not start requests");
     [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
     WaitForPending(root);
+    for (int attempt = 0; attempt < 200 && ![[NSFileManager defaultManager] fileExistsAtPath:[root stringByAppendingPathComponent:@"feed-validator.txt"]]; attempt++) [NSThread sleepForTimeInterval:0.01];
     CHECK(requests == 1, "HTTPS update is fetched once");
     CHECK([[store beginLaunch] isEqual:@"/bundled"], "network update does not hot swap");
-    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
     store = Store(root);
     CHECK(![[store beginLaunch] isEqual:@"/bundled"], "download activates on next launch");
     [store markHealthy];
     [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
-    [NSThread sleepForTimeInterval:0.05];
-    CHECK(requests == 1, "daily update limit persists across store instances");
+    for (int attempt = 0; attempt < 200 && requests < 2; attempt++) [NSThread sleepForTimeInterval:0.01];
+    CHECK(requests == 2, "every launch checks the feed again");
+    for (int attempt = 0; attempt < 200 && !notModified; attempt++) [NSThread sleepForTimeInterval:0.01];
+    CHECK(notModified == 1, "an unchanged feed answers the saved validator with 304");
+    CHECK([[store beginLaunch] isEqual:[Store(root) beginLaunch]], "a 304 leaves the snapshot in use");
+    [NSThread sleepForTimeInterval:0.3];
+    [[NSFileManager defaultManager] removeItemAtPath:[root stringByAppendingPathComponent:@"feed-validator.txt"] error:NULL];
+    networkStatus = 500;
+    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
+    for (int attempt = 0; attempt < 200 && requests < 3; attempt++) [NSThread sleepForTimeInterval:0.01];
+    [NSThread sleepForTimeInterval:0.3];
+    networkFails = YES;
+    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
+    for (int attempt = 0; attempt < 200 && requests < 4; attempt++) [NSThread sleepForTimeInterval:0.01];
+    [NSThread sleepForTimeInterval:0.3];
+    if (requests != 4) fprintf(stderr, "requests = %ld\n", (long)requests);
+    CHECK(requests == 4, "an HTTP error and a network failure each end one check without retrying");
+    store = Store(root);
+    CHECK(![[store beginLaunch] isEqual:@"/bundled"], "failed checks leave the current snapshot in use");
     method_setImplementation(method, originalConfiguration);
     [[NSFileManager defaultManager] removeItemAtPath:root error:NULL];
     fprintf(stdout, "data_pack_probe: %s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
