@@ -322,6 +322,9 @@ def test_p2p_signatures_and_listings(tmp_path):
     """internet play's Ed25519 (RFC 8032), the X25519 key of a seed, and the
     server browser's listings from host to browser (tools/p2p_lobby_check.c),
     built with the flags ninja gives the platform layer"""
+    if sys.platform != "linux":
+        pytest.skip("requires a Linux runtime to execute its i686 test binary")
+
     import shlex
 
     if not shutil.which("clang") or not shutil.which("ninja") or not Path("build.ninja").is_file():
