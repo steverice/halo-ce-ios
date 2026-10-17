@@ -117,7 +117,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
     "${ROOT}/port/third_party/monocypher/monocypher-ed25519.c"
-    host/host_benchmark.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c"
+    host/host_benchmark.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
     "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_socket_revival.c host/host_natpmp.c host/host_natpmp_packets.c

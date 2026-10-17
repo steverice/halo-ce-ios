@@ -12,6 +12,7 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_benchmark.h"
+#import "host_benchmark_presentation.h"
 #import "host_benchmark_snapshot.h"
 #import "host_data_updates.h"
 #include "host_profile.h"
@@ -53,8 +54,14 @@ static struct benchmark_plan plan;
 static struct benchmark_outcome outcomes[BENCHMARK_RUNS_MAXIMUM];
 static int outcome_count;
 static struct benchmark_run run;
-static int run_open;
-static NSDictionary *run_shader_before;
+static int run_open, run_finishing;
+static struct benchmark_outcome pending_outcome;
+static struct benchmark_summary pending_summary;
+static NSString *pending_note;
+static char *pending_measurements;
+static unsigned long pending_offered, pending_no_drawable, pending_no_picture;
+static void finish_run(NSDictionary *presentation);
+static NSDictionary *run_shader_before, *run_shader_after;
 static NSString *run_shader_directory;
 static NSString *shader_directory(void) {
     char path[4096];
@@ -68,7 +75,7 @@ static NSDate *started;
 static dispatch_source_t sampler;
 static int last_run_throttled;
 static NSDictionary *pinned_snapshot;
-static NSDictionary *run_environment_start, *run_output, *suite_output;
+static NSDictionary *run_environment_start, *run_environment_end, *run_output, *suite_output;
 static unsigned run_output_generation;
 static NSArray<NSString *> *external_modes;
 static NSMutableArray<NSString *> *output_reports;
@@ -324,7 +331,7 @@ static NSString *run_path(int index) {
 
 /* one finished run as a JSON object in its own file; the report is these put together */
 static void write_run(const struct benchmark_run *finished, enum benchmark_status status, NSString *note,
-    const char *measurements) {
+    const char *measurements, NSDictionary *presentation) {
     const struct benchmark_scene *scene = &plan.scenes[finished->scene];
     NSString *text = [NSString stringWithFormat:@"{\"index\":%d,\"stage\":\"%c\",\"scene\":\"%s\",\"map\":\"%s\","
         "\"difficulty\":\"%s\",\"recording\":%@,\"kind\":\"%s\",\"settings\":{\"render_lines\":%ld,"
@@ -337,14 +344,14 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         finished->lines ? finished->lines : (long)window_height, finished->anisotropy, finished->shadow_size,
         finished->model_lod_max ? "max" : "auto",
         benchmark_status_name(status), json_string(note), window_width, window_height, json_object(run_output ?: suite_output ?: output_now()),
-        json_object(@{ @"start": run_environment_start ?: @{}, @"end": environment_now() }), measurements ? "," : "",
+        json_object(@{ @"start": run_environment_start ?: @{}, @"end": run_environment_end ?: environment_now() }), measurements ? "," : "",
         measurements ?: ""];
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
-        host_benchmark_shader_snapshot(run_shader_directory, map));
-    text = json_object(record);
+        run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
+    text = json_object(host_benchmark_measurement_record(record, presentation));
     [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -392,7 +399,7 @@ static NSString *report_summary(void) {
                refreshes or better, or every refresh, on a 60 Hz display) */
             BOOL cutscene = [one[@"kind"] isEqual:@"cutscene"];
 
-            [summary appendFormat:@"%@: %.0f frames a second, %.0f%% of frames on time for %d\n", one[@"scene"],
+            [summary appendFormat:@"%@: %.0f submissions a second, %.0f%% of submission intervals within the %d fps budget\n", one[@"scene"],
                 [one[@"frames_a_second"] doubleValue],
                 100.0 * [one[cutscene ? @"on_time_half" : @"on_time_full"] doubleValue], cutscene ? 30 : 60];
         } else {
@@ -577,7 +584,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
                 write_run(&cut, outcome->status, journal.crash_signal ?
                     [NSString stringWithFormat:@"the app ended during this run with signal %d", journal.crash_signal] :
                     [NSString stringWithFormat:@"the app ended during this run with no signal seen; its last memory sample was "
-                        "%ld MB in use, %ld MB left before the system's limit", journal.last_footprint, journal.last_left], NULL);
+                        "%ld MB in use, %ld MB left before the system's limit", journal.last_footprint, journal.last_left], NULL, nil);
             flag(outcome->status == BENCHMARK_CRASHED ? @"crashed" : @"ended_by_system");
             host_logf(HOST_LOG_INFO, "benchmark: carrying on suite %s after run %d, which %s", report_code, outcome_count - 1,
                 journal.crash_signal ? "crashed" : "the system ended");
@@ -637,6 +644,11 @@ int host_benchmark_next(char *text, unsigned int size) {
     const struct benchmark_scene *scene;
 
     if (!atomic_load(&running)) return 0;
+    if (run_finishing) {
+        NSDictionary *presentation = host_benchmark_presentation_take_report();
+        if (!presentation) return 3;
+        finish_run(presentation);
+    }
     if (output_waiting) {
         if (!host_external_ready() && CFAbsoluteTimeGetCurrent() - output_wait_started < 5.0) return 3;
         output_waiting = 0;
@@ -752,9 +764,14 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->lead, scene->seconds, run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
+    /* <= 2 GiB devices retain a 4 MiB collector; others allow 16 MiB. */
+    host_benchmark_presentation_begin(scene->kind,
+        NSProcessInfo.processInfo.physicalMemory <= (2ULL << 30) ? 65536 : 262144);
     atomic_store(&frames_offered, 0); atomic_store(&frames_no_drawable, 0); atomic_store(&frames_no_picture, 0);
     benchmark_metrics_reset(&metrics, refresh_hertz);
     os_unfair_lock_unlock(&lock);
+    run_shader_after = nil;
+    run_environment_end = nil;
     run_shader_directory = shader_directory();
     run_shader_before = host_benchmark_shader_snapshot(run_shader_directory, scene->map[0] ? @(scene->map) : @"ui");
     benchmark_journal_begin(JOURNAL, run.index, run.key);
@@ -770,6 +787,7 @@ int host_benchmark_next(char *text, unsigned int size) {
 
 void host_benchmark_window(int open, int width, int height) {
     os_unfair_lock_lock(&lock);
+    host_benchmark_presentation_window();
     window_open = open;
     if (open) {
         window_width = width;
@@ -785,11 +803,14 @@ void host_benchmark_end(const char *status_name, const char *note) {
     char *measurements = NULL;
     int status, interrupted;
 
-    if (!run_open) return;
+    if (!run_open || run_finishing) return;
     for (status = 0; status < BENCHMARK_STATUS_COUNT; status++)
         if (!strcmp(status_name, benchmark_status_name((enum benchmark_status)status))) outcome.status = (enum benchmark_status)status;
     os_unfair_lock_lock(&lock);
     window_open = 0;
+    /* Admission closes on this thread before it can return to rendering.
+       The worker never needs the legacy metrics lock. */
+    host_benchmark_presentation_end_async();
     interrupted = window_interrupted;
     benchmark_metrics_summarize(&metrics, &summary);
     if (summary.frames) measurements = benchmark_metrics_json(&metrics);
@@ -826,15 +847,36 @@ void host_benchmark_end(const char *status_name, const char *note) {
     if (outcome.status == BENCHMARK_INTERRUPTED) flag(@"interrupted");
     if (outcome.status == BENCHMARK_THERMAL) flag(@"throttled");
     if (outcome.status == BENCHMARK_DIVERGED) flag(@"diverged");
-    write_run(&run, outcome.status, @(note ?: ""), measurements);
-    free(measurements);
+    pending_offered = atomic_load(&frames_offered);
+    pending_no_drawable = atomic_load(&frames_no_drawable);
+    pending_no_picture = atomic_load(&frames_no_picture);
+    run_environment_end = environment_now();
+    const char *map = plan.scenes[run.scene].map;
+    run_shader_after = host_benchmark_shader_snapshot(run_shader_directory, map[0] ? @(map) : @"ui");
+    pending_outcome = outcome;
+    pending_summary = summary;
+    pending_note = @(note ?: "");
+    pending_measurements = measurements;
+    run_finishing = 1;
+}
+
+/* Only the guest thread writes reports/journals and advances the planner. The
+   existing retry result keeps next-run rendering out until the worker seals. */
+static void finish_run(NSDictionary *presentation) {
+    struct benchmark_outcome outcome = pending_outcome;
+    struct benchmark_summary summary = pending_summary;
+    write_run(&run, outcome.status, pending_note, pending_measurements, presentation);
+    free(pending_measurements);
+    pending_measurements = NULL;
+    pending_note = nil;
+    run_finishing = 0;
     benchmark_journal_end(JOURNAL, run.index, &outcome);
     run_open = 0;
     if (outcome_count < BENCHMARK_RUNS_MAXIMUM) outcomes[outcome_count++] = outcome;
-    host_logf(HOST_LOG_INFO, "benchmark: run %d %s: %zu frames, %.1f a second, frame 99th %.1f ms, CPU 95th %.1f, GPU 95th %.1f, "
+    host_logf(HOST_LOG_INFO, "benchmark: run %d %s: %zu submissions, %.1f a second, submission interval 99th %.1f ms, CPU 95th %.1f, GPU 95th %.1f, "
         "at %.1f Hz, %dx%d, least memory left %ld MB", run.index, benchmark_status_name(outcome.status), summary.frames,
         summary.frames_a_second, outcome.interval_p99, outcome.cpu_p95, outcome.gpu_p95, outcome.refresh_hertz, window_width,
         window_height, outcome.left_least);
-    host_logf(HOST_LOG_INFO, "benchmark: run %d presented %lu frames; %lu had no drawable and %lu no picture", run.index,
-        atomic_load(&frames_offered), atomic_load(&frames_no_drawable), atomic_load(&frames_no_picture));
+    host_logf(HOST_LOG_INFO, "benchmark: run %d offered %lu submissions; %lu had no drawable and %lu no picture", run.index,
+        pending_offered, pending_no_drawable, pending_no_picture);
 }

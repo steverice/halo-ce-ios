@@ -212,6 +212,12 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     '--include-directory=port/runtime', 'port/ios/tests/benchmark_presentation_probe.c',
     'port/runtime/benchmark_presentation.c', '-o', BUILD/'benchmark-presentation-probe')
 run(BUILD/'benchmark-presentation-probe')
+# The real presentation owner: callback lifetime, async drain and JSON semantics.
+run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-fobjc-arc',
+    '-framework', 'Foundation', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/benchmark_presentation_host_probe.m', 'port/ios/host/host_benchmark_presentation.m',
+    'port/runtime/benchmark_presentation.c', '-lz', '-o', BUILD/'benchmark-presentation-host-probe')
+run(BUILD/'benchmark-presentation-host-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/benchmark_startup_probe.c', '-o', BUILD/'benchmark-startup-probe')
 run(BUILD/'benchmark-startup-probe')

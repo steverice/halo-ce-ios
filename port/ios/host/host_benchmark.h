@@ -7,6 +7,21 @@
    _window and _end through guest_host.h. */
 #ifndef HALO_HOST_BENCHMARK_H
 #define HALO_HOST_BENCHMARK_H
+#include <stdint.h>
+#include <stddef.h>
+
+/* Only the primary physical Metal drawable may supply presentation evidence.
+   Configure from the renderer before a run; -1 means unknown policy. */
+enum host_presentation_capability { HOST_PRESENTATION_UNCONFIGURED, HOST_PRESENTATION_METAL,
+    HOST_PRESENTATION_UNSUPPORTED, HOST_PRESENTATION_SIMULATOR, HOST_PRESENTATION_VISIONOS };
+struct host_benchmark_presentation_token { uint64_t generation; size_t index; };
+void host_benchmark_presentation_configure(enum host_presentation_capability capability,
+    int display_synchronized, int allows_tearing);
+/* scene_is_cutscene comes from the current renderer frame context, not the
+   legacy benchmark window. A zero generation means no callback is needed. */
+struct host_benchmark_presentation_token host_benchmark_presentation_reserve(double submitted, int scene_is_cutscene);
+/* Process-lifetime entry point: callbacks capture only the scalar token. */
+void host_benchmark_presentation_complete(struct host_benchmark_presentation_token token, double presented);
 
 /* at launch, before host_install_signal_handlers: the crash marker's signal handlers, which do nothing until a
    suite runs */
