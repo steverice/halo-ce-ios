@@ -207,6 +207,11 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
     'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
 run(BUILD/'benchmark-probe')
+# Actual drawable timestamps stay separate from submission timing.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '--include-directory=port/runtime', 'port/ios/tests/benchmark_presentation_probe.c',
+    'port/runtime/benchmark_presentation.c', '-o', BUILD/'benchmark-presentation-probe')
+run(BUILD/'benchmark-presentation-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/benchmark_startup_probe.c', '-o', BUILD/'benchmark-startup-probe')
 run(BUILD/'benchmark-startup-probe')
