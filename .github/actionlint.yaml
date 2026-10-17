@@ -1,0 +1,5 @@
+# GitHub's public preview label is newer than actionlint's bundled hosted inventory.
+# https://github.com/actions/runner-images/issues/14404
+self-hosted-runner:
+  labels:
+    - xcode-27

@@ -95,6 +95,17 @@ def prepare(args: argparse.Namespace) -> None:
     require_ci()
     source = full_sha(args.source_sha)
     selected = platforms(args.platforms)
+    if __package__:
+        from .release_validation import load_policy, preflight_identity
+    else:
+        from release_validation import load_policy, preflight_identity
+    policy = load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
+    if os.environ.get("RELEASE_PREFLIGHT_IDENTITY") != preflight_identity(
+        source, selected, policy
+    ):
+        raise ValueError(
+            "Source, platforms, or build policy changed after release preflight"
+        )
     run("git", "fetch", "--tags", "origin", "main")
     manifest: dict[str, Any]
     if args.resume_tag:
@@ -106,6 +117,7 @@ def prepare(args: argparse.Namespace) -> None:
             manifest["source_sha"] != source
             or manifest["platforms"] != selected
             or manifest["tag"] != args.resume_tag
+            or manifest.get("build_policy") != policy
         ):
             raise ValueError("Resume inputs differ from the immutable release manifest")
         run("git", "merge-base", "--is-ancestor", "HEAD", "origin/main")
@@ -163,6 +175,7 @@ def prepare(args: argparse.Namespace) -> None:
             "bootstrap_since": args.bootstrap_since,
             "source_date_epoch": stamp,
             "internal_only": True,
+            "build_policy": policy,
         }
         (ROOT / MANIFEST).parent.mkdir(exist_ok=True)
         (ROOT / MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n")
@@ -417,6 +430,22 @@ def archive_identity(
     guest_hash = hashlib.sha256(guest).hexdigest()
     executable = (app / info["CFBundleExecutable"]).read_bytes()
     verify_guest(executable, guest, guest_hash)
+    policy = manifest["build_policy"]
+    if guest_hash != policy["guest_sha256"]:
+        raise ValueError("Actual archived guest differs from the reviewed probe")
+    expected_info = {
+        "DTXcodeBuild": "27B5028f",
+        "DTSDKName": PLATFORMS[platform][1] + "27.2",
+        "CFBundleIdentifier": os.environ["APPLE_BUNDLE_ID"],
+        "HaloDataPackPublicKey": "b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea",
+        "HaloProfileFeedURL": policy["profile_feed_url"],
+        "HaloRecordingFeedURL": policy["recording_feed_url"],
+        "HaloDataPackChannel": "tester",
+    }
+    if any(info.get(name) != value for name, value in expected_info.items()):
+        raise ValueError(
+            "Actual archive toolchain, bundle, or tester feed differs from release policy"
+        )
     return {"bundle_id": info["CFBundleIdentifier"], "guest_sha256": guest_hash}
 
 
@@ -493,6 +522,15 @@ def publish(args: argparse.Namespace) -> None:
             raise ValueError("Published GitHub notes differ from this release")
         print(f"{manifest['tag']} is already published with identical notes")
         return
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    policy = validation.load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
+    if policy != manifest["build_policy"]:
+        raise ValueError("Build policy differs from the immutable release manifest")
+    validation.toolchain(manifest["platforms"])
+    validation.check_feeds(policy)
     journal = read_journal(release["body"], notes)
 
     def checkpoint() -> None:
@@ -520,6 +558,22 @@ def publish(args: argparse.Namespace) -> None:
                 "--build-number",
                 manifest["build_number"],
                 "--tester",
+                "--pgo",
+                "use",
+                "--lto",
+                "full",
+                "--host-pgo",
+                "use",
+                "--bink",
+                "on",
+                "--render-validation",
+                "off",
+                "--data-packs",
+                "on",
+                "--profile-feed-url",
+                policy["profile_feed_url"],
+                "--recording-feed-url",
+                policy["recording_feed_url"],
                 "--benchmark-routes",
                 "off",
                 "--internal-only",
@@ -532,6 +586,9 @@ def publish(args: argparse.Namespace) -> None:
             if platform != "ios":
                 command.append(f"--{platform}")
             run(*command)
+            validation.compare_evidence(
+                validation.inspect_build(ROOT, platform, "app-device"), policy
+            )
             identity = archive_identity(package / "VISR.xcarchive", manifest, platform)
             prior_hashes = {item["guest_sha256"] for item in journal.values()}
             if prior_hashes and prior_hashes != {identity["guest_sha256"]}:

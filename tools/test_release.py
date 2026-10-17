@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from tools import release
+from tools.test_release_validation import policy
 
 
 class FakeAPI:
@@ -316,6 +317,13 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
             "increment": "patch",
         },
     )()
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY",
+        preflight_identity(source, ["ios", "tvos"], policy()),
+    )
     release.prepare(args)
     manifest = json.loads((tmp_path / release.MANIFEST).read_text())
     assert manifest["version"] == "0.1.3"
@@ -359,6 +367,12 @@ def test_prepare_refuses_stale_main_before_any_mutation(
     args = type(
         "Args", (), {"source_sha": "a" * 40, "platforms": "ios", "resume_tag": ""}
     )()
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY", preflight_identity("a" * 40, ["ios"], policy())
+    )
     with pytest.raises(ValueError, match="Main moved"):
         release.prepare(args)
     assert not any(
@@ -402,6 +416,7 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
 ) -> None:
     notes = "## 0.1.3\n\n- Fix input"
     manifest = {
+        "build_policy": policy(),
         "tag": "visr-v0.1.3",
         "version": "0.1.3",
         "build_number": "20261016.010203",
@@ -448,6 +463,11 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
     )
     monkeypatch.setenv("GH_TOKEN", "dummy")
     monkeypatch.setenv("GITHUB_REPOSITORY", "example/app")
+    from tools import release_validation
+
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setattr(release_validation, "toolchain", lambda *_: {})
+    monkeypatch.setattr(release_validation, "check_feeds", lambda *_: None)
     release.publish(type("Args", (), {})())
     assert all(command[:2] == ("git", "rev-parse") for command in commands)
     assert all(call[0] == "GET" for call in apple.calls)
@@ -551,3 +571,17 @@ def test_signing_installs_only_selected_existing_material_and_cleans_it(
     assert not (folder / "AuthKey.p8").exists()
     assert not list(home.rglob("*.mobileprovision"))
     assert ("list-keychains", "-d", "user", "-s", "original.keychain-db") in commands
+
+
+def test_prepare_rejects_unvalidated_policy_before_git_or_version_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.delenv("RELEASE_PREFLIGHT_IDENTITY", raising=False)
+    calls = []
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: calls.append(args))
+    args = type("Args", (), {"source_sha": "a" * 40, "platforms": "ios,tvos"})()
+    with pytest.raises(ValueError, match="after release preflight"):
+        release.prepare(args)
+    assert calls == []
