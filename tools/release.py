@@ -29,10 +29,10 @@ PLATFORMS = {
 MARKER = "\n\n<!-- visr-release-state "
 
 
-def run(*args: str | Path, capture: bool = False) -> str:
+def run(*args: str | Path, capture: bool = False, root: Path | None = None) -> str:
     result = subprocess.run(
         [str(arg) for arg in args],
-        cwd=ROOT,
+        cwd=root if root is not None else ROOT,
         check=True,
         text=True,
         stdout=subprocess.PIPE if capture else None,
@@ -440,7 +440,11 @@ def find_release(api: API, path: str, tag: str) -> dict[str, Any] | None:
 
 
 def archive_identity(
-    archive: Path, manifest: dict[str, Any], platform: str
+    archive: Path,
+    manifest: dict[str, Any],
+    platform: str,
+    *,
+    source_root: Path | None = None,
 ) -> dict[str, str]:
     app = archive / "Products/Applications/VISR.app"
     info = plistlib.loads((app / "Info.plist").read_bytes())
@@ -452,7 +456,9 @@ def archive_identity(
         raise ValueError(
             "Actual archive version, build number, or platform differs from the release manifest"
         )
-    guest = (ROOT / "build/ios/halo_guest.elf").read_bytes()
+    guest = (
+        (source_root if source_root is not None else ROOT) / "build/ios/halo_guest.elf"
+    ).read_bytes()
     guest_hash = hashlib.sha256(guest).hexdigest()
     executable = (app / info["CFBundleExecutable"]).read_bytes()
     verify_guest(executable, guest, guest_hash)
@@ -515,14 +521,60 @@ def verify_guest(executable: bytes, guest: bytes, guest_hash: str) -> None:
         raise ValueError("Actual archived guest differs from the shared guest ELF")
 
 
-def publish(args: argparse.Namespace) -> None:
-    require_ci()
-    manifest = json.loads((ROOT / MANIFEST).read_text())
-    if run("git", "rev-parse", "HEAD", capture=True) != run(
-        "git", "rev-parse", f"{manifest['tag']}^{{commit}}", capture=True
+def require_clean_checkout(root: Path) -> None:
+    if (
+        Path(
+            run("git", "rev-parse", "--show-toplevel", capture=True, root=root)
+        ).resolve()
+        != root
+    ):
+        raise ValueError("Release paths must be checkout roots")
+    if run(
+        "git", "status", "--porcelain", "--untracked-files=all", capture=True, root=root
+    ):
+        raise ValueError("Release controller and application checkouts must be clean")
+
+
+def publish_context(source_root: Path) -> tuple[Path, dict[str, Any]]:
+    """Keep reviewed controller code outside the immutable application checkout."""
+    root, controller = source_root.resolve(), ROOT.resolve()
+    if root != Path(os.environ["GITHUB_WORKSPACE"]).resolve():
+        raise ValueError(
+            "The application must stay in the workflow's original workspace"
+        )
+    if root.is_relative_to(controller) or controller.is_relative_to(root):
+        raise ValueError(
+            "Release controller and application checkouts must be separate"
+        )
+    require_clean_checkout(controller)
+    controller_sha = full_sha(os.environ["GITHUB_SHA"])
+    if run("git", "rev-parse", "HEAD", capture=True, root=controller) != controller_sha:
+        raise ValueError(
+            "Release controller is not the exact triggering workflow commit"
+        )
+    require_clean_checkout(root)
+    manifest = json.loads((root / MANIFEST).read_text())
+    if not re.fullmatch(r"visr-v\d+\.\d+\.\d+", manifest["tag"]):
+        raise ValueError("Release manifest must name an existing VISR release tag")
+    if run("git", "rev-parse", "HEAD", capture=True, root=root) != run(
+        "git", "rev-parse", f"{manifest['tag']}^{{commit}}", capture=True, root=root
     ):
         raise ValueError("Build checkout is not the exact release tag")
-    notes = release_notes((ROOT / "CHANGELOG.md").read_text(), manifest["version"])
+    if run("git", "rev-parse", "HEAD^", capture=True, root=root) != full_sha(
+        manifest["source_sha"]
+    ):
+        raise ValueError("Release commit parent differs from the pinned source")
+    run("git", "merge-base", "--is-ancestor", "HEAD", "origin/main", root=root)
+    print(
+        f"Release controller {controller_sha}; application {manifest['tag']}; source {manifest['source_sha']}"
+    )
+    return root, manifest
+
+
+def publish(args: argparse.Namespace) -> None:
+    require_ci()
+    root, manifest = publish_context(args.source_root)
+    notes = release_notes((root / "CHANGELOG.md").read_text(), manifest["version"])
     if hashlib.sha256(notes.encode()).hexdigest() != manifest["notes_sha256"]:
         raise ValueError("Generated notes hash differs from release manifest")
     github = API("https://api.github.com", os.environ["GH_TOKEN"])
@@ -555,8 +607,8 @@ def publish(args: argparse.Namespace) -> None:
     policy = validation.load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
     if policy != manifest["build_policy"]:
         raise ValueError("Build policy differs from the immutable release manifest")
-    validation.toolchain(manifest["platforms"])
-    validation.check_feeds(policy)
+    validation.toolchain(manifest["platforms"], root=root)
+    validation.check_feeds(policy, root=root)
     journal = read_journal(release["body"], notes)
 
     def checkpoint() -> None:
@@ -569,7 +621,7 @@ def publish(args: argparse.Namespace) -> None:
         record = journal.get(platform)
         if not record or record["state"] == "prepared":
             profile = os.environ[f"PROFILE_UUID_{platform.upper()}"]
-            package = ROOT / "build/release" / platform
+            package = root / "build/release" / platform
             command: list[str | Path] = [
                 sys.executable,
                 "tools/ios_build.py",
@@ -611,11 +663,19 @@ def publish(args: argparse.Namespace) -> None:
             ]
             if platform != "ios":
                 command.append(f"--{platform}")
-            run(*command)
+            run(*command, root=root)
+            require_clean_checkout(root)
+            archive = package / "VISR.xcarchive"
             validation.compare_evidence(
-                validation.inspect_build(ROOT, platform, "app-device"), policy
+                validation.inspect_build(
+                    root,
+                    platform,
+                    "app-device",
+                    app=archive / "Products/Applications/VISR.app",
+                ),
+                policy,
             )
-            identity = archive_identity(package / "VISR.xcarchive", manifest, platform)
+            identity = archive_identity(archive, manifest, platform, source_root=root)
             prior_hashes = {item["guest_sha256"] for item in journal.values()}
             if prior_hashes and prior_hashes != {identity["guest_sha256"]}:
                 raise ValueError(
@@ -637,7 +697,7 @@ def publish(args: argparse.Namespace) -> None:
             # it never creates a second upload or build number automatically.
             record["state"] = "uploading"
             checkpoint()
-            package = ROOT / "build/release" / platform
+            package = root / "build/release" / platform
             options = plistlib.loads((package / "ExportOptions.plist").read_bytes())
             options["destination"] = "upload"
             upload_options = package / "UploadOptions.plist"
@@ -657,6 +717,7 @@ def publish(args: argparse.Namespace) -> None:
                 os.environ["ASC_KEY_ID"],
                 "-authenticationKeyIssuerID",
                 os.environ["ASC_ISSUER_ID"],
+                root=root,
             )
         item = wait_for_build(
             apple,
@@ -689,7 +750,13 @@ def main() -> None:
     prepare_parser.add_argument("--resume-tag", default="")
     prepare_parser.add_argument("--bootstrap-since", default="")
     prepare_parser.add_argument("--bootstrap-version", default="0.1.2")
-    commands.add_parser("publish")
+    publish_parser = commands.add_parser("publish")
+    publish_parser.add_argument(
+        "--source-root",
+        type=Path,
+        required=True,
+        help="Immutable release tag checkout at GITHUB_WORKSPACE; controller remains separate",
+    )
     args = parser.parse_args()
     try:
         prepare(args) if args.command == "prepare" else publish(args)

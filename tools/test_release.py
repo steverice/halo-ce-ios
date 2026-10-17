@@ -282,11 +282,12 @@ def test_published_release_resume_does_not_rebuild_or_republish(
     )
     monkeypatch.setattr(release, "ROOT", tmp_path)
     monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setattr(release, "publish_context", lambda _: (tmp_path, manifest))
     monkeypatch.setattr(release, "run", lambda *_args, **_kwargs: "same-commit")
     monkeypatch.setattr(release, "API", lambda base, token: github)
     monkeypatch.setenv("GH_TOKEN", "dummy")
     monkeypatch.setenv("GITHUB_REPOSITORY", "example/app")
-    release.publish(type("Args", (), {})())
+    release.publish(type("Args", (), {"source_root": tmp_path})())
     assert len(github.calls) == 1
 
 
@@ -476,10 +477,11 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
     monkeypatch.setenv("GITHUB_REPOSITORY", "example/app")
     from tools import release_validation
 
+    monkeypatch.setattr(release, "publish_context", lambda _: (tmp_path, manifest))
     monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
-    monkeypatch.setattr(release_validation, "toolchain", lambda *_: {})
-    monkeypatch.setattr(release_validation, "check_feeds", lambda *_: None)
-    release.publish(type("Args", (), {})())
+    monkeypatch.setattr(release_validation, "toolchain", lambda *_, **__: {})
+    monkeypatch.setattr(release_validation, "check_feeds", lambda *_, **__: None)
+    release.publish(type("Args", (), {"source_root": tmp_path})())
     assert all(command[:2] == ("git", "rev-parse") for command in commands)
     assert all(call[0] == "GET" for call in apple.calls)
     assert github.calls[-1][2] == {"body": notes, "draft": False, "make_latest": "true"}

@@ -99,7 +99,7 @@ def preflight_identity(source: str, selected: list[str], policy: dict[str, str])
     ).hexdigest()
 
 
-def toolchain(selected: list[str]) -> dict[str, str]:
+def toolchain(selected: list[str], *, root: Path | None = None) -> dict[str, str]:
     if host_platform.system() != "Darwin" or host_platform.machine() != "arm64":
         raise ValueError("Release validation requires an Apple silicon Mac")
     version = run("xcodebuild", "-version", capture=True)
@@ -116,7 +116,7 @@ def toolchain(selected: list[str]) -> dict[str, str]:
         "xcrun",
         "llvm-profdata",
         "show",
-        release.ROOT / "pgo/visr_host.profdata",
+        (root if root is not None else release.ROOT) / "pgo/visr_host.profdata",
         capture=True,
     )
     return result
@@ -151,7 +151,7 @@ def build_command(target: str) -> list[str]:
 
 
 def inspect_build(
-    root: Path, target: str, folder: str = "app-unsigned"
+    root: Path, target: str, folder: str = "app-unsigned", *, app: Path | None = None
 ) -> dict[str, str]:
     build = root / "build" / target / folder
     commands = run(
@@ -178,7 +178,7 @@ def inspect_build(
         raise ValueError("Effective guest PGO/full LTO is missing")
     profile = root / profiles[0]
     compiler = next(Path(value) for value in tokens if Path(value).name == "clang")
-    run(compiler.parent / "llvm-profdata", "show", profile, capture=True)
+    run(compiler.parent / "llvm-profdata", "show", profile, capture=True, root=root)
     settings = json.loads(
         run(
             "xcodebuild",
@@ -191,6 +191,7 @@ def inspect_build(
             "-showBuildSettings",
             "-json",
             capture=True,
+            root=root,
         )
     )
     rows = [row["buildSettings"] for row in settings if row.get("target") == "VISR"]
@@ -215,7 +216,7 @@ def inspect_build(
     guest = (root / "build/ios/halo_guest.elf").read_bytes()
     guest_hash = hashlib.sha256(guest).hexdigest()
     sdk = release.PLATFORMS[target][1]
-    app = build / f"Release-{sdk}/VISR.app"
+    app = app if app is not None else build / f"Release-{sdk}/VISR.app"
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if (
         info.get("DTXcodeBuild") != XCODE_BUILD
@@ -242,9 +243,9 @@ def inspect_build(
         "guest_sha256": hashlib.sha256(
             (root / "build/ios/halo_guest.elf").read_bytes()
         ).hexdigest(),
-        "guest_compiler_version": run(compiler, "--version", capture=True).splitlines()[
-            0
-        ],
+        "guest_compiler_version": run(
+            compiler, "--version", capture=True, root=root
+        ).splitlines()[0],
         "guest_profile_sha256": hashlib.sha256(profile.read_bytes()).hexdigest(),
         "host_profile_sha256": hashlib.sha256(host_profile.read_bytes()).hexdigest(),
         "guest_compile_command_sha256": hashlib.sha256(
@@ -296,7 +297,30 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("Release feeds must not redirect")
 
 
-def verify_feed(data: bytes, kind: str, policy: dict[str, str]) -> None:
+def verify_feed(
+    data: bytes, kind: str, policy: dict[str, str], *, root: Path | None = None
+) -> None:
+    if root is not None:
+        # The immutable app supplies its public key, envelope contract, profile
+        # schema and native recording validator. Isolate its imports from the
+        # controller's modules; do not rebind their independent ROOT globals.
+        subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import json, sys; sys.path.insert(0, sys.argv[1]); "
+                "from tools.release_validation import verify_feed; "
+                "verify_feed(sys.stdin.buffer.read(), sys.argv[2], json.loads(sys.argv[3]))",
+                str(root),
+                kind,
+                json.dumps(policy),
+            ],
+            input=data,
+            cwd=root,
+            check=True,
+        )
+        return
     if hashlib.sha256(data).hexdigest() != policy[f"{kind}_feed_sha256"]:
         raise ValueError(f"{kind} feed hash differs from the reviewed envelope")
     payload_kind = {"profile": "profiles", "recording": "recordings"}[kind]
@@ -328,7 +352,7 @@ def verify_feed(data: bytes, kind: str, policy: dict[str, str]) -> None:
     packs.validate_payload(payload, payload_kind, compatibility)
 
 
-def check_feeds(policy: dict[str, str]) -> None:
+def check_feeds(policy: dict[str, str], *, root: Path | None = None) -> None:
     for kind, payload_kind in [("profile", "profiles"), ("recording", "recordings")]:
         limit = ENVELOPE_LIMITS[payload_kind]
         url = policy[f"{kind}_feed_url"]
@@ -338,7 +362,10 @@ def check_feeds(policy: dict[str, str]) -> None:
             data = response.read(limit + 1)
         if len(data) > limit:
             raise ValueError(f"{kind} feed exceeds the app download limit")
-        verify_feed(data, kind, policy)
+        if root is None:
+            verify_feed(data, kind, policy)
+        else:
+            verify_feed(data, kind, policy, root=root)
 
 
 def check_release(

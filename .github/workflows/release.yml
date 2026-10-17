@@ -185,6 +185,10 @@ jobs:
           version: '0.11.8'
       - name: Install build dependencies
         run: brew install cmake ninja llvm lld sdl3 pkgconf
+      - name: Select the reviewed release controller without changing the application tag
+        env:
+          CONTROLLER_SHA: ${{ github.sha }}
+        run: git worktree add --detach "$RUNNER_TEMP/visr-release-controller" "$CONTROLLER_SHA"
       - name: Install existing signing material
         env:
           RELEASE_PLATFORMS: ${{ inputs.platforms }}
@@ -196,7 +200,9 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
         run: python3 tools/release_signing.py install
       - name: Build, upload, reconcile exact TestFlight builds, and publish release
-        run: uv run --python 3.11 --no-project --with-requirements tools/release-requirements.txt python tools/release.py publish
+        run: |
+          uv run --python 3.11 --no-project --with-requirements "$RUNNER_TEMP/visr-release-controller/tools/release-requirements.txt" \
+            python "$RUNNER_TEMP/visr-release-controller/tools/release.py" publish --source-root "$GITHUB_WORKSPACE"
       - name: Remove signing material
         if: always()
         run: python3 tools/release_signing.py cleanup
