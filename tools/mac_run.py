@@ -1246,8 +1246,12 @@ def run(args):
     if args.simulator:
         if args.runner == "native":
             sys.exit("--simulator runs the simulator app; drop --runner native")
+        if args.runner is None:
+            args.runner = "ipad"
         run_simulator(args)
         return
+    if args.runner is None:
+        args.runner = "native"
     if args.runner == "native":
         if args.team or args.xiso:
             sys.exit("--runner native needs no --team, and seeds its data folder from --maps, not --xiso")
@@ -1279,8 +1283,9 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     run_parser = commands.add_parser("run", help="run the game once and collect its results")
     run_parser.add_argument("--team", help="Apple development team ID (--runner ipad only)")
-    run_parser.add_argument("--runner", choices=("ipad", "native"), default="native",
-                            help="native: the Mac Catalyst app (tools/ios_build.py --mac), started with open (the default); "
+    run_parser.add_argument("--runner", choices=("ipad", "native"), default=None,
+                            help="native: the Mac Catalyst app (tools/ios_build.py --mac), started with open "
+                                 "(the default without --simulator); "
                                  'ipad: the "Designed for iPad" app, installed and started by Xcode, which needs --team')
     run_parser.add_argument("--bundle-id",
                             help="ipad: the runner's bundle ID (default org.steverice.visr.macrunner); "

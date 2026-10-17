@@ -914,13 +914,31 @@ def test_fresh_config_flag_and_environment_default(monkeypatch):
     assert parsed_fresh_config(monkeypatch, []) is False
 
 
-def test_the_native_runner_is_the_default_and_ipad_is_asked_for(monkeypatch):
+def test_runner_option_preserves_explicit_choices_and_leaves_default_unset(monkeypatch):
     seen = []
     monkeypatch.setattr(mac_run, "run", lambda args: seen.append(args.runner))
     for argv in ([], ["--runner", "ipad"], ["--runner", "native"]):
         monkeypatch.setattr("sys.argv", ["mac_run.py", "run", "--out", "out"] + argv)
         mac_run.main()
-    assert seen == ["native", "ipad", "native"]
+    assert seen == [None, "ipad", "native"]
+
+
+def test_simulator_selects_ipad_unless_the_runner_was_explicit(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(mac_run, "run_simulator", lambda args: seen.append(("simulator", args.runner)))
+    monkeypatch.setattr(mac_run, "run_native", lambda args: seen.append(("native", args.runner)))
+
+    mac_run.run(native_args(tmp_path, None, simulator="sim-udid", runner=None))
+    mac_run.run(native_args(tmp_path, None, simulator=None, runner=None))
+    mac_run.run(native_args(tmp_path, None, simulator="sim-udid", runner="ipad"))
+
+    assert seen == [("simulator", "ipad"), ("native", "native"), ("simulator", "ipad")]
+
+
+def test_simulator_rejects_explicit_native_runner(monkeypatch):
+    monkeypatch.setattr(mac_run, "run_simulator", lambda args: pytest.fail("launched incompatible runner"))
+    with pytest.raises(SystemExit, match="--simulator runs the simulator app; drop --runner native"):
+        mac_run.run(argparse.Namespace(simulator="sim-udid", runner="native"))
 
 
 def test_native_run_ignores_warnings_but_the_ipad_scheme_keeps_them(tmp_path, monkeypatch, native):
