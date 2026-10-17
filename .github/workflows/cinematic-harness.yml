@@ -1,0 +1,36 @@
+name: Cinematic title harness
+
+on:
+  push:
+    branches: [main, fix-cinematic-harness-1017]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cinematic-harness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cinematic-titles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install 32-bit C runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends clang libc6-dev-i386 gcc-multilib
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.11.8'
+          python-version: '3.11'
+          enable-cache: true
+          cache-dependency-glob: tools/requirements-ci.txt
+      - name: Test cinematic titles
+        run: uv run --no-project --with-requirements tools/requirements-ci.txt python -m pytest --quiet tools/harness/tests/test_cinematic_titles.py

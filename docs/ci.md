@@ -20,6 +20,7 @@ settings; adding these files does not configure them.
 | `test_bmp_files.py`, `test_cache_file_formats.py` | Ubuntu, clang | PR gate; compiles the real parsers and tests generated malformed/valid inputs. Retail map cases keep their existing missing-asset skips. |
 | `test_data_pack.py`, `test_profile_newer.py` | Ubuntu, C compiler | PR gate; compiles shared validators and tests Ed25519 with temporary test keys. No production signing keys. |
 | `test_linux_port.py` | Ubuntu, clang, 32-bit libc headers, `nm` | PR gate for tooling and header/link probes. Tests requiring a configured complete build or maps retain their explicit existing skips. |
+| `test_cinematic_titles.py` | Ubuntu, clang, 32-bit C runtime, pinned pytest | Targeted PR and `main` push gate for the extracted `cinematic_render` function. The cinematic harness validation branch also runs it on push. Its stereo film-bar and prompt HUD checks include negative controls; the other extracted-source modules remain outside this gate. |
 | `test_death_timing.py`, `test_light_storage.py` | Ubuntu, clang, lld, x86 32-bit ELF execution | PR gate as standalone programs, including ordinary/full-LTO storage links. These programs are not pytest test functions. |
 | `settings_schema.py --check`, `profile_check.py`, `profile_catalog_check.py` | Ubuntu, Python 3.11+ | PR gate for generated schema/reference drift and shipped profile/catalog policy. `test_profile_check.py` and `test_route_check.py` also execute their assertions during pytest collection. |
 | `tools/ios_test.py` | ARM64 macOS, Xcode, Homebrew LLVM/lld, SDL3, pkgconf | Existing PR gate in `iOS / build`, run once. Guest ABI, layout, memory, audio handoff, config/profile/data pack, network, timing, stereo math, capture/replay validators, sanitizers, XISO parser and Metal compilation probes. Uses synthetic inputs, not game maps. |
@@ -83,13 +84,14 @@ and compiler caches. There is no new scheduled build or private runner.
 ## Known gaps and first hosted run
 
 A full recursive `pytest tools` run has a recorded baseline of 205 failures
-across 14 extracted-source harness modules. At least one verified failure
-comes from missing declarations for newer stereo/HUD hooks in the extracted
-function fixture. The other failures still need individual diagnosis. They
-are not silently skipped, marked expected failures or accepted by the new
-PR jobs. Repair the harness dependencies as separate work before making
-recursive collection a required PR check. The manual upstream workflow
-continues to run that harness and can still report those failures.
+across 14 extracted-source harness modules. The cinematic title fixture's
+missing stereo/HUD declarations were repaired and its eight focused cases
+passed with a native ABI on macOS. The required 32-bit Linux run remains
+unverified until this workflow runs. The other 13 modules still need individual
+diagnosis. Their failures are not skipped, marked expected failures or accepted
+by the new PR job. Repair those harness dependencies before making recursive
+collection a required PR check. The manual upstream workflow continues to run
+the full harness and can still report those failures.
 
 The first published run must verify both Ubuntu Python versions, the
 standalone ELF probes, Xcode/SDK availability, all seven Apple builds and
