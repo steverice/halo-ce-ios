@@ -44,10 +44,10 @@ Configure `RELEASE_BUILD_POLICY` as a JSON object with exactly these fields:
 | `guest_compiler_version` | Exact first compiler-version line from the probe |
 | `guest_profile_sha256` | Guest profile SHA-256 from the probe |
 | `host_profile_sha256` | Host profile SHA-256 from the probe |
-| `profile_feed_url` | Explicit HTTPS signed tester profile feed URL |
-| `profile_feed_sha256` | SHA-256 of that exact feed envelope |
-| `recording_feed_url` | Explicit HTTPS signed tester recording feed URL for this guest |
-| `recording_feed_sha256` | SHA-256 of that exact feed envelope |
+| `profile_feed_url` | Mutable HTTPS endpoint for the signed tester profile feed |
+| `profile_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
+| `recording_feed_url` | Mutable HTTPS endpoint for the signed tester recording feed for this guest |
+| `recording_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
 
 Verify the recording package against this guest before publishing its feed through the separate data-pack procedure. Release configuration does not publish packs. A generic feed for an older guest does not satisfy this requirement. Changing source timestamps or compilers can change the guest even when gameplay code is unchanged; rerun validation after a source change.
 
@@ -73,7 +73,9 @@ The release job rejects a stale source SHA, unsupported platform, altered recove
 
 ## Builds and TestFlight notes
 
-Publish the probed guest's recording feed from a separate data branch or an external HTTPS endpoint. Committing that feed to `main` changes the source timestamp and guest identity, invalidating the preceding probe. Configure the verified direct URL and envelope hash in `RELEASE_BUILD_POLICY` before dispatching release mode.
+Publish the probed guest's recording feed at a mutable HTTPS endpoint, such as `https://code.steverice.org/visr/packs/tester/recordings-<guest-sha256>.json`, from a separate data branch or hosting deployment. Keep that URL stable while replacing its signed envelope with higher-sequence compatible updates. A guest-specific filename selects compatibility; it does not freeze the feed contents. Never embed a commit-pinned raw GitHub URL or another immutable snapshot URL as a runtime feed: installed apps would never see later updates.
+
+Pin the exact envelope bytes reviewed for the release in `profile_feed_sha256` and `recording_feed_sha256`. These hashes are checked during release validation; runtime updates continue to enforce signatures, compatibility and sequence. Configure the mutable URL and its current envelope hash in `RELEASE_BUILD_POLICY` before dispatching. Committing feed data to the application source on `main` changes its timestamp and guest identity, invalidating the preceding probe. Release policy rejects recognizable full commit-pinned GitHub feed URLs; custom HTTPS hosts still require review for mutability. An already installed app's embedded URL requires a replacement app build to change.
 
 
 Selected platforms build serially in one job and one guest cache. Distribution commands explicitly require guest PGO, full LTO, host PGO, tester mode, routes disabled, movies enabled, render validation disabled, and the reviewed feed URLs. Each archive must match the probe guest, exact Xcode/SDK, bundle ID, and tester feed metadata before upload. The tag supplies `CFBundleShortVersionString`; the source commit's UTC timestamp supplies the stable unique `CFBundleVersion` for that release. Each numeric component omits leading zeros, matching App Store Connect's canonical form. Recovery queries also normalize component padding in older manifests while still requiring the exact app, platform, marketing version, and numeric build identity. `SOURCE_DATE_EPOCH` fixes the guest's compilation date and time across recovery runs. Each actual archived app must match the release version, build number, SDK platform, shared guest ELF load segments, and guest hash. The flow compares archived guest identities across all selected targets. A recovery build with a different toolchain or guest fails that comparison.

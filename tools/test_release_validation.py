@@ -459,6 +459,30 @@ def test_release_policy_rejects_feed_urls_the_archive_builder_refuses(url: str) 
             validation.load_policy(json.dumps({**policy(), field: url}))
 
 
+@pytest.mark.parametrize("field", ["profile_feed_url", "recording_feed_url"])
+@pytest.mark.parametrize("url", [
+    "https://raw.githubusercontent.com/example/app/" + "a" * 40 + "/packs/feed.json",
+    "https://raw.github.com/example/app/" + "A" * 40 + "/packs/feed.json",
+    "https://github.com/example/app/raw/" + "a" * 40 + "/packs/feed.json",
+    "https://github.com/example/app/blob/" + "a" * 40 + "/packs/feed.json",
+    "https://raw.githubusercontent.com/example/app/" + "%61" * 40 + "/packs/feed.json",
+])
+def test_runtime_feed_rejects_commit_pinned_github(field: str, url: str) -> None:
+    with pytest.raises(ValueError, match="runtime feed URL is commit-pinned"):
+        validation.load_policy(json.dumps({**policy(), field: url}))
+
+
+@pytest.mark.parametrize("url", [
+    "https://code.steverice.org/visr/packs/tester/recordings-" + "a" * 64 + ".json",
+    "https://raw.githubusercontent.com/example/app/data/packs/feed.json",
+    "https://raw.githubusercontent.com/example/app/refs/heads/data/packs/feed.json",
+    "https://updates.example.invalid/" + "a" * 40 + "/recordings.json",
+])
+def test_mutable_and_custom_runtime_feeds_keep_the_exact_release_hash(url: str) -> None:
+    pins = {**policy(), "recording_feed_url": url}
+    assert validation.load_policy(json.dumps(pins)) == pins
+
+
 @pytest.mark.parametrize(
     "raw",
     [

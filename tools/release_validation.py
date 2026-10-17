@@ -13,6 +13,7 @@ import re
 import shlex
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,20 @@ def load_policy(value: str) -> dict[str, str]:
     data_pack_definitions(
         DATA_PACK_PUBLIC_KEY, policy["profile_feed_url"], policy["recording_feed_url"]
     )
+    for name in ("profile_feed_url", "recording_feed_url"):
+        url = urllib.parse.urlsplit(policy[name])
+        path = urllib.parse.unquote(url.path).strip("/").split("/")
+        host = (url.hostname or "").rstrip(".").lower()
+        reference = ""
+        if host in ("raw.githubusercontent.com", "raw.github.com") and len(path) >= 4:
+            reference = path[2]
+        elif host == "github.com" and len(path) >= 5 and path[2] in ("raw", "blob"):
+            reference = path[3]
+        if re.fullmatch(r"[0-9a-fA-F]{40}", reference):
+            raise ValueError(
+                f"{name}: runtime feed URL is commit-pinned; use a mutable HTTPS endpoint "
+                "and pin its release-time bytes with the feed SHA-256"
+            )
     return policy
 
 
