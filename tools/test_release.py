@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from tools import release
+from tools.test_release_validation import policy
 
 
 class FakeAPI:
@@ -283,6 +284,7 @@ def test_published_release_resume_does_not_rebuild_or_republish(
 def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(release.time, "strftime", lambda *_: "20261016.000000")
     source = "a" * 40
     baseline = "b" * 40
     calls: list[tuple[Any, ...]] = []
@@ -316,9 +318,17 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
             "increment": "patch",
         },
     )()
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY",
+        preflight_identity(source, ["ios", "tvos"], policy()),
+    )
     release.prepare(args)
     manifest = json.loads((tmp_path / release.MANIFEST).read_text())
     assert manifest["version"] == "0.1.3"
+    assert manifest["build_number"] == "20261016.0"
     assert manifest["source_sha"] == source
     assert manifest["bootstrap_since"] == baseline
     assert manifest["notes_sha256"] == hashlib.sha256(notes.encode()).hexdigest()
@@ -359,6 +369,12 @@ def test_prepare_refuses_stale_main_before_any_mutation(
     args = type(
         "Args", (), {"source_sha": "a" * 40, "platforms": "ios", "resume_tag": ""}
     )()
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY", preflight_identity("a" * 40, ["ios"], policy())
+    )
     with pytest.raises(ValueError, match="Main moved"):
         release.prepare(args)
     assert not any(
@@ -402,6 +418,7 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
 ) -> None:
     notes = "## 0.1.3\n\n- Fix input"
     manifest = {
+        "build_policy": policy(),
         "tag": "visr-v0.1.3",
         "version": "0.1.3",
         "build_number": "20261016.010203",
@@ -448,6 +465,11 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
     )
     monkeypatch.setenv("GH_TOKEN", "dummy")
     monkeypatch.setenv("GITHUB_REPOSITORY", "example/app")
+    from tools import release_validation
+
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setattr(release_validation, "toolchain", lambda *_: {})
+    monkeypatch.setattr(release_validation, "check_feeds", lambda *_: None)
     release.publish(type("Args", (), {})())
     assert all(command[:2] == ("git", "rev-parse") for command in commands)
     assert all(call[0] == "GET" for call in apple.calls)
@@ -507,6 +529,7 @@ def test_signing_installs_only_selected_existing_material_and_cleans_it(
         "Entitlements": {
             "application-identifier": "TESTTEAM.example.app",
             "get-task-allow": False,
+            "com.apple.developer.kernel.extended-virtual-addressing": True,
         },
         "ExpirationDate": datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         + datetime.timedelta(days=1),
@@ -551,3 +574,166 @@ def test_signing_installs_only_selected_existing_material_and_cleans_it(
     assert not (folder / "AuthKey.p8").exists()
     assert not list(home.rglob("*.mobileprovision"))
     assert ("list-keychains", "-d", "user", "-s", "original.keychain-db") in commands
+
+
+def test_prepare_rejects_unvalidated_policy_before_git_or_version_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.delenv("RELEASE_PREFLIGHT_IDENTITY", raising=False)
+    calls = []
+    monkeypatch.setattr(release, "run", lambda *args, **kwargs: calls.append(args))
+    args = type("Args", (), {"source_sha": "a" * 40, "platforms": "ios,tvos"})()
+    with pytest.raises(ValueError, match="after release preflight"):
+        release.prepare(args)
+    assert calls == []
+
+
+def test_exact_app_ignores_prefix_matches_and_consumes_all_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exact = {"id": "exact-app", "attributes": {"bundleId": "org.example.visr"}}
+    prefix = {"id": "prefix-app", "attributes": {"bundleId": "org.example.visr.tvos"}}
+    api = release.API("https://api.appstoreconnect.apple.com", "fixture")
+    responses = FakeAPI(
+        [
+            {
+                "data": [exact, prefix],
+                "links": {"next": api.base + "/v1/apps?cursor=next"},
+            },
+            {
+                "data": [
+                    {
+                        "id": "another-app",
+                        "attributes": {"bundleId": "org.example.other"},
+                    }
+                ]
+            },
+        ]
+    )
+    monkeypatch.setattr(api, "request", responses.request)
+    assert release.exact_app(api, "org.example.visr") == exact
+    assert len(responses.calls) == 2
+    assert "filter%5BbundleId%5D=org.example.visr" in responses.calls[0][1]
+    assert responses.calls[1][1] == "/v1/apps?cursor=next"
+
+
+@pytest.mark.parametrize(
+    "later", [[], [{"id": "duplicate", "attributes": {"bundleId": "org.example.visr"}}]]
+)
+def test_exact_app_rejects_missing_or_duplicate_exact_match(
+    monkeypatch: pytest.MonkeyPatch, later: list[Any]
+) -> None:
+    api = release.API("https://api.appstoreconnect.apple.com", "fixture")
+    initial = {
+        "id": "first",
+        "attributes": {
+            "bundleId": "org.example.visr" if later else "org.example.visr.tvos"
+        },
+    }
+    responses = FakeAPI(
+        [
+            {"data": [initial], "links": {"next": api.base + "/v1/apps?cursor=next"}},
+            {"data": later},
+        ]
+    )
+    monkeypatch.setattr(api, "request", responses.request)
+    with pytest.raises(
+        ValueError, match="exactly one existing App Store Connect record"
+    ):
+        release.exact_app(api, "org.example.visr")
+    assert len(responses.calls) == 2
+
+
+def test_exact_app_refuses_pagination_to_another_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = release.API("https://api.appstoreconnect.apple.com", "fixture")
+    responses = FakeAPI(
+        [{"data": [], "links": {"next": "https://example.invalid/steal-token"}}]
+    )
+    monkeypatch.setattr(api, "request", responses.request)
+    with pytest.raises(ValueError, match="pagination host"):
+        release.exact_app(api, "org.example.visr")
+    assert len(responses.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("padded", "canonical"),
+    [
+        ("20261016.011357", "20261016.11357"),
+        ("20261016.005518", "20261016.5518"),
+        ("20261016.000000", "20261016.0"),
+        ("0001.00.001", "1.0.1"),
+    ],
+)
+def test_build_number_canonicalizes_only_numeric_component_padding(
+    padded: str, canonical: str
+) -> None:
+    assert release.canonical_build_number(padded) == canonical
+    assert release.canonical_build_number(canonical) == canonical
+
+
+@pytest.mark.parametrize(
+    ("requested", "actual"),
+    [
+        ("20261016.011357", "20261016.11357"),
+        ("20261016.005518", "20261016.5518"),
+        ("20261016.000000", "20261016.0"),
+        ("20261016.11357", "20261016.011357"),
+    ],
+)
+def test_exact_build_recovers_padded_manifest_against_apple_canonical_number(
+    requested: str, actual: str
+) -> None:
+    api = FakeAPI([build_page(build=actual)])
+    assert (
+        release.exact_build(api, "app-1", "IOS", "0.1.3", requested)["id"] == "build-1"
+    )
+    query = api.calls[0][1]
+    expected = "20261016." + str(int(requested.split(".")[1]))
+    assert "filter%5Bversion%5D=" + expected + "&" in query
+
+
+def test_canonical_build_number_does_not_match_a_distinct_build() -> None:
+    api = FakeAPI([build_page(build="20261016.11358")])
+    assert release.exact_build(api, "app-1", "IOS", "0.1.3", "20261016.011357") is None
+
+
+@pytest.mark.parametrize("value", ["", "1..2", "-1.2", "1.2a", "1.2.3.4"])
+def test_canonical_build_number_rejects_non_numeric_components(value: str) -> None:
+    with pytest.raises(ValueError, match="numeric components"):
+        release.canonical_build_number(value)
+
+
+@pytest.mark.parametrize("platform", ["ios", "tvos", "visionos"])
+def test_release_profiles_require_the_archive_extended_addressing_entitlement(
+    platform: str,
+) -> None:
+    from tools import release_signing
+
+    key = "com.apple.developer.kernel.extended-virtual-addressing"
+    profile = {
+        "Entitlements": {
+            key: True,
+            "com.apple.developer.kernel.increased-memory-limit": True,
+        }
+    }
+    release_signing.validate_profile_entitlements(profile, platform)
+    for missing in [None, False, 1, "true"]:
+        profile["Entitlements"][key] = missing
+        with pytest.raises(ValueError, match="extended-virtual-addressing"):
+            release_signing.validate_profile_entitlements(profile, platform)
+
+
+def test_vision_release_profile_requires_its_existing_increased_memory_entitlement() -> (
+    None
+):
+    from tools import release_signing
+
+    profile = {
+        "Entitlements": {"com.apple.developer.kernel.extended-virtual-addressing": True}
+    }
+    with pytest.raises(ValueError, match="increased-memory-limit"):
+        release_signing.validate_profile_entitlements(profile, "visionos")

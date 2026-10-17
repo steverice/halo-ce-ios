@@ -4,7 +4,10 @@ import re
 import sys
 from pathlib import Path
 
-import profile_check
+if __package__:
+    from . import profile_check
+else:
+    import profile_check
 
 MAXIMUM_BYTES = 64 * 1024
 IDENTITY = re.compile(r"[A-Za-z0-9 ,.-]{1,48}")

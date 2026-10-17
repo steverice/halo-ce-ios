@@ -70,6 +70,13 @@ def full_sha(value: str) -> str:
     return value
 
 
+def canonical_build_number(value: str) -> str:
+    """App Store Connect removes leading zeros from each numeric build component."""
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", value):
+        raise ValueError("A build number must have one to three numeric components")
+    return ".".join(str(int(component)) for component in value.split("."))
+
+
 def release_notes(changelog: str, version: str) -> str:
     entries = list(re.finditer(r"^## (?!#)", changelog, re.MULTILINE))
     if not entries:
@@ -95,6 +102,17 @@ def prepare(args: argparse.Namespace) -> None:
     require_ci()
     source = full_sha(args.source_sha)
     selected = platforms(args.platforms)
+    if __package__:
+        from .release_validation import load_policy, preflight_identity
+    else:
+        from release_validation import load_policy, preflight_identity
+    policy = load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
+    if os.environ.get("RELEASE_PREFLIGHT_IDENTITY") != preflight_identity(
+        source, selected, policy
+    ):
+        raise ValueError(
+            "Source, platforms, or build policy changed after release preflight"
+        )
     run("git", "fetch", "--tags", "origin", "main")
     manifest: dict[str, Any]
     if args.resume_tag:
@@ -106,6 +124,7 @@ def prepare(args: argparse.Namespace) -> None:
             manifest["source_sha"] != source
             or manifest["platforms"] != selected
             or manifest["tag"] != args.resume_tag
+            or manifest.get("build_policy") != policy
         ):
             raise ValueError("Resume inputs differ from the immutable release manifest")
         run("git", "merge-base", "--is-ancestor", "HEAD", "origin/main")
@@ -151,7 +170,9 @@ def prepare(args: argparse.Namespace) -> None:
         notes = release_notes((ROOT / "CHANGELOG.md").read_text(), version)
         # Git commit time is stable across workflow reruns and follows the existing packaging convention.
         stamp = run("git", "show", "--no-patch", "--format=%ct", source, capture=True)
-        build = time.strftime("%Y%m%d.%H%M%S", time.gmtime(int(stamp)))
+        build = canonical_build_number(
+            time.strftime("%Y%m%d.%H%M%S", time.gmtime(int(stamp)))
+        )
         manifest = {
             "schema": 1,
             "tag": f"visr-v{version}",
@@ -163,6 +184,7 @@ def prepare(args: argparse.Namespace) -> None:
             "bootstrap_since": args.bootstrap_since,
             "source_date_epoch": stamp,
             "internal_only": True,
+            "build_policy": policy,
         }
         (ROOT / MANIFEST).parent.mkdir(exist_ok=True)
         (ROOT / MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n")
@@ -242,6 +264,22 @@ class API:
         raise ValueError("API pagination limit exceeded")
 
 
+def exact_app(api: API, bundle_id: str) -> dict[str, Any]:
+    # App Store Connect's bundle-ID filter can also return prefix matches.
+    # Consume every bounded, same-origin page before establishing uniqueness.
+    query = urllib.parse.urlencode({"filter[bundleId]": bundle_id, "limit": "200"})
+    matches = [
+        item
+        for item in api.collection("/v1/apps?" + query)
+        if item.get("attributes", {}).get("bundleId") == bundle_id
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Actual bundle does not match exactly one existing App Store Connect record"
+        )
+    return matches[0]
+
+
 def apple_token() -> str:
     import jwt
 
@@ -262,6 +300,7 @@ def apple_token() -> str:
 def exact_build(
     api: API, app_id: str, platform: str, version: str, build: str
 ) -> dict[str, Any] | None:
+    build = canonical_build_number(build)
     query = urllib.parse.urlencode(
         {
             "filter[app]": app_id,
@@ -283,7 +322,7 @@ def exact_build(
         release = related[("preReleaseVersions", release_id)]["attributes"]
         if (
             relationship["app"]["data"]["id"] == app_id
-            and item["attributes"]["version"] == build
+            and canonical_build_number(item["attributes"]["version"]) == build
             and release["version"] == version
             and release["platform"] == platform
         ):
@@ -417,6 +456,22 @@ def archive_identity(
     guest_hash = hashlib.sha256(guest).hexdigest()
     executable = (app / info["CFBundleExecutable"]).read_bytes()
     verify_guest(executable, guest, guest_hash)
+    policy = manifest["build_policy"]
+    if guest_hash != policy["guest_sha256"]:
+        raise ValueError("Actual archived guest differs from the reviewed probe")
+    expected_info = {
+        "DTXcodeBuild": "27B5028f",
+        "DTSDKName": PLATFORMS[platform][1] + "27.2",
+        "CFBundleIdentifier": os.environ["APPLE_BUNDLE_ID"],
+        "HaloDataPackPublicKey": "b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea",
+        "HaloProfileFeedURL": policy["profile_feed_url"],
+        "HaloRecordingFeedURL": policy["recording_feed_url"],
+        "HaloDataPackChannel": "tester",
+    }
+    if any(info.get(name) != value for name, value in expected_info.items()):
+        raise ValueError(
+            "Actual archive toolchain, bundle, or tester feed differs from release policy"
+        )
     return {"bundle_id": info["CFBundleIdentifier"], "guest_sha256": guest_hash}
 
 
@@ -493,6 +548,15 @@ def publish(args: argparse.Namespace) -> None:
             raise ValueError("Published GitHub notes differ from this release")
         print(f"{manifest['tag']} is already published with identical notes")
         return
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    policy = validation.load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
+    if policy != manifest["build_policy"]:
+        raise ValueError("Build policy differs from the immutable release manifest")
+    validation.toolchain(manifest["platforms"])
+    validation.check_feeds(policy)
     journal = read_journal(release["body"], notes)
 
     def checkpoint() -> None:
@@ -520,6 +584,22 @@ def publish(args: argparse.Namespace) -> None:
                 "--build-number",
                 manifest["build_number"],
                 "--tester",
+                "--pgo",
+                "use",
+                "--lto",
+                "full",
+                "--host-pgo",
+                "use",
+                "--bink",
+                "on",
+                "--render-validation",
+                "off",
+                "--data-packs",
+                "on",
+                "--profile-feed-url",
+                policy["profile_feed_url"],
+                "--recording-feed-url",
+                policy["recording_feed_url"],
                 "--benchmark-routes",
                 "off",
                 "--internal-only",
@@ -532,24 +612,17 @@ def publish(args: argparse.Namespace) -> None:
             if platform != "ios":
                 command.append(f"--{platform}")
             run(*command)
+            validation.compare_evidence(
+                validation.inspect_build(ROOT, platform, "app-device"), policy
+            )
             identity = archive_identity(package / "VISR.xcarchive", manifest, platform)
             prior_hashes = {item["guest_sha256"] for item in journal.values()}
             if prior_hashes and prior_hashes != {identity["guest_sha256"]}:
                 raise ValueError(
                     "Platforms do not share the same archived guest identity; do not publish a recording pack"
                 )
-            app_query = urllib.parse.urlencode(
-                {"filter[bundleId]": identity["bundle_id"], "limit": "2"}
-            )
-            apps = apple.request("GET", f"/v1/apps?{app_query}")["data"]
-            if (
-                len(apps) != 1
-                or apps[0]["attributes"]["bundleId"] != identity["bundle_id"]
-            ):
-                raise ValueError(
-                    "Actual archived app does not match exactly one existing App Store Connect record"
-                )
-            record = {**identity, "app_id": apps[0]["id"], "state": "prepared"}
+            app = exact_app(apple, identity["bundle_id"])
+            record = {**identity, "app_id": app["id"], "state": "prepared"}
             journal[platform] = record
             checkpoint()
         item = exact_build(

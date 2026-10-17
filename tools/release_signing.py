@@ -32,6 +32,21 @@ def write_secret(path: Path, value: bytes) -> None:
     path.chmod(0o600)
 
 
+def validate_profile_entitlements(profile: dict[str, Any], platform: str) -> None:
+    """Require the capabilities in the exact entitlement file used by release archives."""
+    target = {"ios": "iOS", "tvos": "tvOS", "visionos": "visionOS"}[platform]
+    required = plistlib.loads(
+        (
+            Path(__file__).resolve().parents[1]
+            / "port/ios"
+            / f"VISR-{target}-extended.entitlements"
+        ).read_bytes()
+    )
+    for name, value in required.items():
+        if value is True and profile["Entitlements"].get(name) is not True:
+            raise ValueError(f"{platform} distribution profile must allow {name}")
+
+
 def install(folder: Path) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     state_path = folder / "cleanup.json"
@@ -123,6 +138,7 @@ def install(folder: Path) -> None:
                 raise ValueError(
                     f"{platform} provisioning profile has the wrong platform"
                 )
+            validate_profile_entitlements(profile, platform)
             if not any(
                 hashlib.sha1(cert).hexdigest().upper() in identities
                 for cert in profile["DeveloperCertificates"]
