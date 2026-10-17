@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import os
@@ -14,17 +13,20 @@ import re
 import shlex
 import subprocess
 import sys
-import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 if __package__:
+    from . import data_pack_validation as packs
     from . import release
-    from .ios_build import DATA_PACK_PUBLIC_KEY
+    from .data_pack import ENVELOPE_LIMITS
+    from .ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
 else:
+    import data_pack_validation as packs
     import release
-    from ios_build import DATA_PACK_PUBLIC_KEY
+    from data_pack import ENVELOPE_LIMITS
+    from ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
 
 XCODE_BUILD = "27B5028f"
 SDK_VERSION = "27.2"
@@ -84,16 +86,9 @@ def load_policy(value: str) -> dict[str, str]:
             raise ValueError(f"Missing build policy pin: {name}")
         if name.endswith("sha256") and not re.fullmatch(r"[0-9a-f]{64}", value):
             raise ValueError(f"Invalid SHA-256 build policy pin: {name}")
-        if name.endswith("_url"):
-            url = urllib.parse.urlsplit(value)
-            if (
-                url.scheme != "https"
-                or not url.hostname
-                or url.username
-                or url.password
-                or url.fragment
-            ):
-                raise ValueError(f"Explicit HTTPS feed required: {name}")
+    data_pack_definitions(
+        DATA_PACK_PUBLIC_KEY, policy["profile_feed_url"], policy["recording_feed_url"]
+    )
     return policy
 
 
@@ -304,41 +299,38 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def verify_feed(data: bytes, kind: str, policy: dict[str, str]) -> None:
     if hashlib.sha256(data).hexdigest() != policy[f"{kind}_feed_sha256"]:
         raise ValueError(f"{kind} feed hash differs from the reviewed envelope")
-    envelope = json.loads(data)
-    raw = base64.b64decode(envelope["manifest"], validate=True)
-    manifest = json.loads(raw)
+    payload_kind = {"profile": "profiles", "recording": "recordings"}[kind]
+    limit = ENVELOPE_LIMITS[payload_kind]
+    if len(data) > limit:
+        raise ValueError(f"{kind} feed exceeds the app download limit")
+    envelope = packs.decode_json(data)
+    if set(envelope) != {"manifest", "signature", "payload"}:
+        raise ValueError("Pack envelope has invalid fields")
+    raw = packs.decode_base64(envelope["manifest"], 65536)
+    signature = packs.decode_base64(envelope["signature"], 64)
+    if len(signature) != 64:
+        raise ValueError("Pack signature must be exactly 64 bytes")
+    manifest = packs.decode_json(raw)
     compatibility = (
         "profiles-2"
         if kind == "profile"
         else "benchmark-replay-1:" + policy["guest_sha256"]
     )
-    if (
-        manifest.get("compatibility") != compatibility
-        or manifest.get("channel") != "tester"
-    ):
-        raise ValueError(
-            f"{kind} feed compatibility/channel differs from this tester guest"
-        )
-    if (
-        manifest.get("schema") != 1
-        or manifest.get("minimum_engine") != 1
-        or manifest.get("maximum_engine") != 1
-        or manifest.get("kind")
-        != {"profile": "profiles", "recording": "recordings"}[kind]
-    ):
-        raise ValueError(f"{kind} feed has an unsupported manifest")
+    packs.validate_manifest(manifest, payload_kind, "tester", compatibility)
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
     Ed25519PublicKey.from_public_bytes(bytes.fromhex(DATA_PACK_PUBLIC_KEY)).verify(
-        base64.b64decode(envelope["signature"], validate=True), raw
+        signature, raw
     )
-    payload = base64.b64decode(envelope["payload"], validate=True)
+    payload = packs.decode_base64(envelope["payload"], limit)
     if hashlib.sha256(payload).hexdigest() != manifest["sha256"]:
         raise ValueError(f"{kind} feed payload hash differs from signed manifest")
+    packs.validate_payload(payload, payload_kind, compatibility)
 
 
 def check_feeds(policy: dict[str, str]) -> None:
-    for kind, limit in [("profile", 4 * 1024**2), ("recording", 24 * 1024**2)]:
+    for kind, payload_kind in [("profile", "profiles"), ("recording", "recordings")]:
+        limit = ENVELOPE_LIMITS[payload_kind]
         url = policy[f"{kind}_feed_url"]
         with urllib.request.build_opener(NoRedirect()).open(
             url, timeout=45

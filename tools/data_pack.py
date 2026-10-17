@@ -17,8 +17,12 @@ import subprocess
 import sys
 import tempfile
 
-import profile_check
-from profile_catalog_check import check_catalog
+if __package__:
+    from . import profile_check
+    from .profile_catalog_check import check_catalog
+else:
+    import profile_check
+    from profile_catalog_check import check_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 MAXIMUM_SEQUENCE = 2**53 - 1
@@ -107,10 +111,22 @@ def read_regular(directory, name, maximum):
         os.close(descriptor)
 
 
+def snapshot_limits(kind):
+    return ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
+        else (160, 4 * 1024 * 1024, 12 * 1024 * 1024))
+
+
+def snapshot_name_allowed(name, kind):
+    if not isinstance(name, str):
+        return False
+    if kind == "profiles":
+        return name == "hardware/catalog.toml" or (len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml")
+    return RECORDING_NAME.fullmatch(name)
+
+
 def snapshot(folder, kind, compatibility=None):
     """Snapshot only allowed files, then validate those exact bytes in a private temporary folder."""
-    maximum_files, maximum_file, maximum_total = ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
-        else (160, 4 * 1024 * 1024, 12 * 1024 * 1024))
+    maximum_files, maximum_file, maximum_total = snapshot_limits(kind)
     files = {}
     descriptor = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -129,9 +145,9 @@ def snapshot(folder, kind, compatibility=None):
                     if name in ("README.md", "TEMPLATE.toml"):
                         read_regular(descriptor, name, maximum_file)
                         continue
-                    allowed = len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml"
+                    allowed = snapshot_name_allowed(name, kind)
                 else:
-                    allowed = RECORDING_NAME.fullmatch(name)
+                    allowed = snapshot_name_allowed(name, kind)
                 if not allowed:
                     raise ValueError(f"{name}: file is not allowed in a {kind} snapshot")
                 files[name] = read_regular(descriptor, name, maximum_file)

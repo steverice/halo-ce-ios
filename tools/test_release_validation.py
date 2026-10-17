@@ -32,6 +32,19 @@ def policy() -> dict[str, str]:
     }
 
 
+def recording_files() -> dict[str, str]:
+    files = {
+        "input": "halo input recording 1\n0 0000 0 0 0 0 0 0 0 0 0 0 0 0\n",
+        "actions": "halo action recording 1\n0 0 00000000 00000000 00000000 00000000 80000000 00000000 ffffffff 0000ffff\n",
+        "seeds": "halo seed recording 1\n0 0 00000000 12345678\n",
+        "route": "map = a10\ndifficulty = normal\nentered = start\nfirst_tick = 0\nplayers = 1\n",
+    }
+    return {
+        "test-route." + name: base64.b64encode(data.encode()).decode()
+        for name, data in files.items()
+    }
+
+
 def test_policy_requires_exact_guest_and_explicit_https_feeds() -> None:
     assert validation.load_policy(json.dumps(policy())) == policy()
     for field, value in [
@@ -73,20 +86,23 @@ def test_probe_command_is_unsigned_and_has_explicit_optimized_tester_policy() ->
 
 
 def test_feed_rejects_changed_bytes_and_wrong_guest() -> None:
+    payload = b'{"files":{}}'
+    manifest = {
+        "schema": 1,
+        "sequence": 1,
+        "notes": "",
+        "kind": "recordings",
+        "channel": "tester",
+        "compatibility": "benchmark-replay-1:" + "f" * 64,
+        "minimum_engine": 1,
+        "maximum_engine": 1,
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
     envelope = json.dumps(
         {
-            "manifest": base64.b64encode(
-                json.dumps(
-                    {
-                        "compatibility": "benchmark-replay-1:" + "f" * 64,
-                        "kind": "recordings",
-                        "channel": "tester",
-                        "schema": 1,
-                        "minimum_engine": 1,
-                        "maximum_engine": 1,
-                    }
-                ).encode()
-            ).decode()
+            "manifest": base64.b64encode(json.dumps(manifest).encode()).decode(),
+            "signature": base64.b64encode(bytes(64)).decode(),
+            "payload": base64.b64encode(payload).decode(),
         }
     ).encode()
     pins = {**policy(), "recording_feed_sha256": hashlib.sha256(envelope).hexdigest()}
@@ -223,10 +239,12 @@ def test_signed_feed_verifies_signature_and_payload(
         "DATA_PACK_PUBLIC_KEY",
         key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
     )
-    payload = b'{"files":{}}'
+    payload = json.dumps({"files": recording_files()}).encode()
     manifest = json.dumps(
         {
             "schema": 1,
+            "sequence": 1,
+            "notes": "💥" * 2048,
             "kind": "recordings",
             "channel": "tester",
             "minimum_engine": 1,
@@ -349,3 +367,109 @@ def test_trusted_source_cleanup_still_runs_after_signing_failure() -> None:
     assert preflight.index("id: trusted-source") < preflight.index(
         "tools/release_signing.py install"
     )
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing-sequence",
+        "missing-notes",
+        "boolean-sequence",
+        "excess-sequence",
+        "wrong-notes-type",
+        "empty-files",
+        "unexpected-payload-field",
+        "unsafe-name",
+        "noncanonical-base64",
+        "invalid-recording-content",
+    ],
+)
+def test_signed_feed_must_pass_the_app_manifest_and_snapshot_contract(
+    fault: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    crypto = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    key = crypto.Ed25519PrivateKey.generate()
+    monkeypatch.setattr(
+        validation,
+        "DATA_PACK_PUBLIC_KEY",
+        key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
+    )
+    payload_value: dict[str, Any] = {"files": recording_files()}
+    manifest: dict[str, Any] = {
+        "schema": 1,
+        "kind": "recordings",
+        "channel": "tester",
+        "sequence": 1,
+        "minimum_engine": 1,
+        "maximum_engine": 1,
+        "compatibility": "benchmark-replay-1:" + "a" * 64,
+        "notes": "",
+    }
+    if fault == "missing-sequence":
+        del manifest["sequence"]
+    elif fault == "missing-notes":
+        del manifest["notes"]
+    elif fault == "boolean-sequence":
+        manifest["sequence"] = True
+    elif fault == "excess-sequence":
+        manifest["sequence"] = 2**53
+    elif fault == "wrong-notes-type":
+        manifest["notes"] = 17
+    elif fault == "empty-files":
+        payload_value["files"] = {}
+    elif fault == "unexpected-payload-field":
+        payload_value["extra"] = 1
+    elif fault == "unsafe-name":
+        payload_value["files"]["../escape.input"] = base64.b64encode(b"x").decode()
+    elif fault == "noncanonical-base64":
+        payload_value["files"]["test-route.input"] = "eA==" + "\n"
+    else:
+        payload_value["files"]["test-route.input"] = base64.b64encode(
+            b"not a recording"
+        ).decode()
+    payload = json.dumps(payload_value).encode()
+    manifest["sha256"] = hashlib.sha256(payload).hexdigest()
+    raw = json.dumps(manifest).encode()
+    data = json.dumps(
+        {
+            name: base64.b64encode(value).decode()
+            for name, value in {
+                "manifest": raw,
+                "signature": key.sign(raw),
+                "payload": payload,
+            }.items()
+        }
+    ).encode()
+    pins = {**policy(), "recording_feed_sha256": hashlib.sha256(data).hexdigest()}
+    with pytest.raises(ValueError):
+        validation.verify_feed(data, "recording", pins)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.invalid/tester/feed.json?channel=tester",
+        "https://example.invalid/tester/a b.json",
+    ],
+)
+def test_release_policy_rejects_feed_urls_the_archive_builder_refuses(url: str) -> None:
+    for field in ("profile_feed_url", "recording_feed_url"):
+        with pytest.raises(ValueError, match="feed URL"):
+            validation.load_policy(json.dumps({**policy(), field: url}))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"schema":1,"schema":1}',
+        b'{"schema":1,"\\u0073chema":1}',
+        b'{"files":{"a":{},"b":[]}}',
+        b'{"files":{"nested":{"deep":1}}}',
+        b'{"files":NaN}',
+    ],
+)
+def test_feed_json_matches_the_runtime_unique_key_and_shape_rules(raw: bytes) -> None:
+    with pytest.raises((ValueError, TypeError)):
+        validation.packs.decode_json(raw)
