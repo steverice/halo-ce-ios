@@ -371,6 +371,7 @@ def app_store_commands(build: Path, system: str, team: str, out: Path, upload: b
 IOS_STUB_TARGETS = (
     frozenset(('armv7-ios', 'armv7s-ios', 'arm64-ios', 'arm64e-ios')),
     frozenset(('arm64e-ios', 'arm64e.x1-ios')),
+    frozenset(('arm64e-ios',)),
 )
 CATALYST_STUB_TARGETS = '[ arm64-maccatalyst, arm64e-maccatalyst ]'
 IOS_INSTALL_NAME = "'/System/Library/Frameworks/OpenGLES.framework/OpenGLES'"

@@ -35,9 +35,10 @@ exports:
 @pytest.mark.parametrize("targets", [
     "[ arm64e-ios, arm64e.x1-ios ]",
     "[ armv7-ios, armv7s-ios, arm64-ios, arm64e-ios ]",
+    "[ arm64e-ios ]",
 ])
 def test_the_stub_links_against_the_mac_s_maccatalyst_opengles(targets):
-    # Both fixtures repeat the same target list at the top and in exports.
+    # Each fixture repeats the same target list at the top and in exports.
     source = STUB.replace("[ arm64e-ios, arm64e.x1-ios ]", targets)
     stub = ios_build.maccatalyst_stub(source)
     assert stub.count("[ arm64-maccatalyst, arm64e-maccatalyst ]") == 2
@@ -49,6 +50,23 @@ def test_the_stub_links_against_the_mac_s_maccatalyst_opengles(targets):
 def test_a_stub_with_other_targets_is_refused():
     with pytest.raises(ValueError, match="does not list"):
         ios_build.maccatalyst_stub(STUB.replace("arm64e.x1-ios", "arm64e.x2-ios"))
+
+
+@pytest.mark.parametrize("targets", [
+    "[ arm64-ios ]", "[ arm64e.x1-ios ]", "[ arm64e.x2-ios ]",
+    "[ arm64e-ios, arm64e-ios ]", "[ arm64e-ios, arm64-ios ]",
+])
+def test_singleton_support_does_not_accept_other_target_sets(targets):
+    source = STUB.replace("[ arm64e-ios, arm64e.x1-ios ]", targets)
+    with pytest.raises(ValueError, match="iOS target"):
+        ios_build.maccatalyst_stub(source)
+
+
+def test_singleton_stub_requires_matching_export_targets():
+    source = STUB.replace("targets:         [ arm64e-ios, arm64e.x1-ios ]",
+                          "targets:         [ arm64e-ios ]", 1)
+    with pytest.raises(ValueError, match="iOS target"):
+        ios_build.maccatalyst_stub(source)
 
 
 def test_a_stub_with_another_install_name_is_refused():
