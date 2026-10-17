@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tools import linux_build, linux_link_check, linux_msvc_semantics, port_settings
+from tools import embed_assets, linux_build, linux_link_check, linux_msvc_semantics, port_settings
 
 
 # ---------- MSVC semantics header
@@ -319,12 +319,18 @@ def test_menu_settings_exist():
 
 
 def test_network_settings_hide_update_toggle_on_mobile():
-    """The automatic updater is unavailable to Apple and Android builds."""
+    """The embedded menu hides the automatic updater on mobile builds."""
     import xml.etree.ElementTree as ElementTree
 
     files = port_settings.settings_files()
     name = "main_menu.settings_select.player_setup.player_profile_edit.network_setup.xml"
-    root = ElementTree.fromstring("\n".join(files[name]))
+    generated = "\n".join(files[name])
+    asset = MENUS / "ce" / name
+    repository = Path(__file__).resolve().parent.parent
+    assert asset.read_text(encoding="utf-8") == generated
+    assert asset.relative_to(repository) in embed_assets.hud_asset_inputs()
+
+    root = ElementTree.fromstring(asset.read_text(encoding="utf-8"))
     options_name = "main_menu/settings_select/player_setup/player_profile_edit/network_setup/options_menu"
     options = root.find(f".//widget[@name='{options_name}']")
     assert options is not None
