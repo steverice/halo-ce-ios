@@ -1,3 +1,16 @@
+## visr-v0.2.1 (2026-10-17)
+
+### feat
+
+- **pages**: publish a reviewed signed recording overlay
+
+### fix
+
+- **release**: verify the published GitHub tag association
+- **release**: keep runtime data feeds mutable
+- **release**: validate archives with a pinned recovery controller
+- **mac**: hide touch controls on Mac
+
 ## visr-v0.2.0 (2026-10-17)
 
 ### feat
