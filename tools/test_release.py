@@ -284,6 +284,7 @@ def test_published_release_resume_does_not_rebuild_or_republish(
 def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(release.time, "strftime", lambda *_: "20261016.000000")
     source = "a" * 40
     baseline = "b" * 40
     calls: list[tuple[Any, ...]] = []
@@ -327,6 +328,7 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     release.prepare(args)
     manifest = json.loads((tmp_path / release.MANIFEST).read_text())
     assert manifest["version"] == "0.1.3"
+    assert manifest["build_number"] == "20261016.0"
     assert manifest["source_sha"] == source
     assert manifest["bootstrap_since"] == baseline
     assert manifest["notes_sha256"] == hashlib.sha256(notes.encode()).hexdigest()
@@ -654,3 +656,51 @@ def test_exact_app_refuses_pagination_to_another_origin(
     with pytest.raises(ValueError, match="pagination host"):
         release.exact_app(api, "org.example.visr")
     assert len(responses.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("padded", "canonical"),
+    [
+        ("20261016.011357", "20261016.11357"),
+        ("20261016.005518", "20261016.5518"),
+        ("20261016.000000", "20261016.0"),
+        ("0001.00.001", "1.0.1"),
+    ],
+)
+def test_build_number_canonicalizes_only_numeric_component_padding(
+    padded: str, canonical: str
+) -> None:
+    assert release.canonical_build_number(padded) == canonical
+    assert release.canonical_build_number(canonical) == canonical
+
+
+@pytest.mark.parametrize(
+    ("requested", "actual"),
+    [
+        ("20261016.011357", "20261016.11357"),
+        ("20261016.005518", "20261016.5518"),
+        ("20261016.000000", "20261016.0"),
+        ("20261016.11357", "20261016.011357"),
+    ],
+)
+def test_exact_build_recovers_padded_manifest_against_apple_canonical_number(
+    requested: str, actual: str
+) -> None:
+    api = FakeAPI([build_page(build=actual)])
+    assert (
+        release.exact_build(api, "app-1", "IOS", "0.1.3", requested)["id"] == "build-1"
+    )
+    query = api.calls[0][1]
+    expected = "20261016." + str(int(requested.split(".")[1]))
+    assert "filter%5Bversion%5D=" + expected + "&" in query
+
+
+def test_canonical_build_number_does_not_match_a_distinct_build() -> None:
+    api = FakeAPI([build_page(build="20261016.11358")])
+    assert release.exact_build(api, "app-1", "IOS", "0.1.3", "20261016.011357") is None
+
+
+@pytest.mark.parametrize("value", ["", "1..2", "-1.2", "1.2a", "1.2.3.4"])
+def test_canonical_build_number_rejects_non_numeric_components(value: str) -> None:
+    with pytest.raises(ValueError, match="numeric components"):
+        release.canonical_build_number(value)

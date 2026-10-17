@@ -70,6 +70,13 @@ def full_sha(value: str) -> str:
     return value
 
 
+def canonical_build_number(value: str) -> str:
+    """App Store Connect removes leading zeros from each numeric build component."""
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,2}", value):
+        raise ValueError("A build number must have one to three numeric components")
+    return ".".join(str(int(component)) for component in value.split("."))
+
+
 def release_notes(changelog: str, version: str) -> str:
     entries = list(re.finditer(r"^## (?!#)", changelog, re.MULTILINE))
     if not entries:
@@ -163,7 +170,9 @@ def prepare(args: argparse.Namespace) -> None:
         notes = release_notes((ROOT / "CHANGELOG.md").read_text(), version)
         # Git commit time is stable across workflow reruns and follows the existing packaging convention.
         stamp = run("git", "show", "--no-patch", "--format=%ct", source, capture=True)
-        build = time.strftime("%Y%m%d.%H%M%S", time.gmtime(int(stamp)))
+        build = canonical_build_number(
+            time.strftime("%Y%m%d.%H%M%S", time.gmtime(int(stamp)))
+        )
         manifest = {
             "schema": 1,
             "tag": f"visr-v{version}",
@@ -291,6 +300,7 @@ def apple_token() -> str:
 def exact_build(
     api: API, app_id: str, platform: str, version: str, build: str
 ) -> dict[str, Any] | None:
+    build = canonical_build_number(build)
     query = urllib.parse.urlencode(
         {
             "filter[app]": app_id,
@@ -312,7 +322,7 @@ def exact_build(
         release = related[("preReleaseVersions", release_id)]["attributes"]
         if (
             relationship["app"]["data"]["id"] == app_id
-            and item["attributes"]["version"] == build
+            and canonical_build_number(item["attributes"]["version"]) == build
             and release["version"] == version
             and release["platform"] == platform
         ):
