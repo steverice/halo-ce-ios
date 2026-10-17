@@ -529,6 +529,7 @@ def test_signing_installs_only_selected_existing_material_and_cleans_it(
         "Entitlements": {
             "application-identifier": "TESTTEAM.example.app",
             "get-task-allow": False,
+            "com.apple.developer.kernel.extended-virtual-addressing": True,
         },
         "ExpirationDate": datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
         + datetime.timedelta(days=1),
@@ -704,3 +705,35 @@ def test_canonical_build_number_does_not_match_a_distinct_build() -> None:
 def test_canonical_build_number_rejects_non_numeric_components(value: str) -> None:
     with pytest.raises(ValueError, match="numeric components"):
         release.canonical_build_number(value)
+
+
+@pytest.mark.parametrize("platform", ["ios", "tvos", "visionos"])
+def test_release_profiles_require_the_archive_extended_addressing_entitlement(
+    platform: str,
+) -> None:
+    from tools import release_signing
+
+    key = "com.apple.developer.kernel.extended-virtual-addressing"
+    profile = {
+        "Entitlements": {
+            key: True,
+            "com.apple.developer.kernel.increased-memory-limit": True,
+        }
+    }
+    release_signing.validate_profile_entitlements(profile, platform)
+    for missing in [None, False, 1, "true"]:
+        profile["Entitlements"][key] = missing
+        with pytest.raises(ValueError, match="extended-virtual-addressing"):
+            release_signing.validate_profile_entitlements(profile, platform)
+
+
+def test_vision_release_profile_requires_its_existing_increased_memory_entitlement() -> (
+    None
+):
+    from tools import release_signing
+
+    profile = {
+        "Entitlements": {"com.apple.developer.kernel.extended-virtual-addressing": True}
+    }
+    with pytest.raises(ValueError, match="increased-memory-limit"):
+        release_signing.validate_profile_entitlements(profile, "visionos")
