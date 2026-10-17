@@ -4,6 +4,7 @@
 #include "host_profile.h"
 
 #include <assert.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -65,6 +66,89 @@ static int unset(const struct host_profile *profile, const char *name)
 	char text[80];
 
 	return !host_profile_value(profile, name, text, sizeof(text));
+}
+
+static int descriptor_count(void)
+{
+	DIR *directory = opendir("/dev/fd");
+	struct dirent *entry;
+	int count = 0;
+
+	assert(directory);
+	while ((entry = readdir(directory)))
+		if (entry->d_name[0] >= '0' && entry->d_name[0] <= '9') count++;
+	closedir(directory);
+	return count;
+}
+
+static void check_file_read_paths(void)
+{
+	char root[] = "/tmp/profile-file-read-XXXXXX";
+	char hardware[256], catalog[256], catalog_target[256], profile_path[256], drop_in[256];
+	FILE *file;
+	struct host_profile profile;
+
+	assert(mkdtemp(root));
+	snprintf(hardware, sizeof(hardware), "%s/hardware", root);
+	assert(!mkdir(hardware, 0700));
+	snprintf(catalog, sizeof(catalog), "%s/catalog.toml", hardware);
+	snprintf(catalog_target, sizeof(catalog_target), "%s/catalog-source.toml", root);
+	file = fopen(catalog_target, "wb"); assert(file);
+	fputs("schema=1\nversion=\"test\"\nhardware=[]\nfallback=[]\n", file);
+	fclose(file);
+	file = fopen(catalog, "wb"); assert(file);
+	fputs("schema=1\nversion=\"test\"\nhardware=[]\nfallback=[]\n", file);
+	fclose(file);
+	assert(host_profile_catalog_validate(root));
+	assert(!unlink(catalog) && !symlink(catalog_target, catalog));
+	assert(!host_profile_catalog_validate(root));
+	assert(!unlink(catalog) && !mkfifo(catalog, 0600));
+	assert(!host_profile_catalog_validate(root));
+	assert(!unlink(catalog));
+	file = fopen(catalog, "wb"); assert(file);
+	assert(!ftruncate(fileno(file), HOST_PROFILE_MAXIMUM_FILE_BYTES + 1));
+	fclose(file);
+	assert(!host_profile_catalog_validate(root));
+	int before = descriptor_count();
+	for (int i = 0; i < 32; i++) assert(!host_profile_catalog_validate(root));
+	assert(descriptor_count() == before);
+
+	snprintf(profile_path, sizeof(profile_path), "%s/profile.toml", root);
+	file = fopen(profile_path, "wb"); assert(file);
+	fputs("schema=1\nname=\"Drop-in\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Test1,1\"]\n[display]\nrender_height=720\n", file);
+	fclose(file);
+	profile = resolve(NULL, device("ios", "Test1,1", "", 1), profile_path, "");
+	assert(profile.drop_in && has(&profile, "display.render_height", "720"));
+	snprintf(drop_in, sizeof(drop_in), "%s/drop-in.toml", root);
+	assert(!symlink(profile_path, drop_in));
+	profile = resolve(NULL, device("ios", "Test1,1", "", 1), drop_in, "");
+	assert(!profile.drop_in && unset(&profile, "display.render_height"));
+	assert(!unlink(drop_in) && !mkfifo(drop_in, 0600));
+	profile = resolve(NULL, device("ios", "Test1,1", "", 1), drop_in, "");
+	assert(!profile.drop_in && unset(&profile, "display.render_height"));
+	before = descriptor_count();
+	for (int i = 0; i < 32; i++)
+	{
+		profile = resolve(NULL, device("ios", "Test1,1", "", 1), drop_in, "");
+		assert(!profile.drop_in);
+	}
+	assert(descriptor_count() == before);
+	assert(!unlink(drop_in));
+	file = fopen(drop_in, "wb"); assert(file);
+	assert(!ftruncate(fileno(file), HOST_PROFILE_MAXIMUM_FILE_BYTES + 1));
+	fclose(file);
+	profile = resolve(NULL, device("ios", "Test1,1", "", 1), drop_in, "");
+	assert(!profile.drop_in && unset(&profile, "display.render_height"));
+	before = descriptor_count();
+	for (int i = 0; i < 32; i++)
+	{
+		profile = resolve(NULL, device("ios", "Test1,1", "", 1), drop_in, "");
+		assert(!profile.drop_in);
+	}
+	assert(descriptor_count() == before);
+	assert(!unlink(drop_in));
+	assert(!unlink(profile_path) && !unlink(catalog) && !unlink(catalog_target));
+	assert(!rmdir(hardware) && !rmdir(root));
 }
 
 static void check_layers(void)
@@ -512,6 +596,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	check_and_newer();
+	check_file_read_paths();
 	check_layers();
 	check_external();
 	check_refusals();

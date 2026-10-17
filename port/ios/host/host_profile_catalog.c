@@ -3,11 +3,14 @@
 #include "host_profile.h"
 #include "tomlc17.h"
 #include "../../linux/src/halo_display.h"
+#include <fcntl.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define CATALOG_LIMIT 128
 
@@ -79,14 +82,19 @@ static int hardware_index(toml_datum_t hardware, const char *id)
 static toml_result_t read_table(const char *path)
 {
 	toml_result_t result = {0};
-	FILE *file = fopen(path, "rb");
+	int descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+	struct stat info;
+	FILE *file;
 	char *text;
-	long size;
-	if (!file) return result;
-	if (fseek(file, 0, SEEK_END) || (size = ftell(file)) < 0 || size > HOST_PROFILE_MAXIMUM_FILE_BYTES ||
-		fseek(file, 0, SEEK_SET)) { fclose(file); return result; }
-	text = malloc((size_t)size + 1);
-	if (text && fread(text, 1, (size_t)size, file) == (size_t)size)
+	size_t size;
+	if (descriptor < 0) return result;
+	if (fstat(descriptor, &info) || !S_ISREG(info.st_mode) || info.st_size < 0 ||
+		info.st_size > HOST_PROFILE_MAXIMUM_FILE_BYTES) { close(descriptor); return result; }
+	file = fdopen(descriptor, "rb");
+	if (!file) { close(descriptor); return result; }
+	size = (size_t)info.st_size;
+	text = malloc(size + 1);
+	if (text && fread(text, 1, size, file) == size)
 	{
 		text[size] = 0;
 		result = toml_parse(text, (int)size);

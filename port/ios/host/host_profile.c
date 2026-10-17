@@ -5,11 +5,13 @@
 #include "tomlc17.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 /* ---------- the settings a profile may set (port/linux/src/port_profile_keys.h) */
 
@@ -165,27 +167,42 @@ static void profile_logf(const struct profile_log *log, const char *format, ...)
 /* the whole file, NUL terminated, or NULL (missing, unreadable or over the size limit); free() it */
 static char *profile_read(const char *path, size_t *size, const struct profile_log *log, const char *label)
 {
-	FILE *file = fopen(path, "rb");
+	int descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+	struct stat info;
+	FILE *file;
 	char *text = NULL;
-	long length;
+	size_t length;
 
-	if (!file)
+	if (descriptor < 0)
 		return NULL;
-	if (fseek(file, 0, SEEK_END) == 0 && (length = ftell(file)) >= 0 && fseek(file, 0, SEEK_SET) == 0)
+	if (fstat(descriptor, &info) || !S_ISREG(info.st_mode) || info.st_size < 0)
 	{
-		if (length > HOST_PROFILE_MAXIMUM_FILE_BYTES)
-			profile_logf(log, "device profile: %s is %ld bytes, over the limit of %d; not read", label, length,
-				HOST_PROFILE_MAXIMUM_FILE_BYTES);
-		else if ((text = malloc((size_t)length + 1)) && fread(text, 1, (size_t)length, file) == (size_t)length)
-		{
-			text[length] = 0;
-			*size = (size_t)length;
-		}
-		else
-		{
-			free(text);
-			text = NULL;
-		}
+		close(descriptor);
+		return NULL;
+	}
+	if (info.st_size > HOST_PROFILE_MAXIMUM_FILE_BYTES)
+	{
+		profile_logf(log, "device profile: %s is %lld bytes, over the limit of %d; not read", label,
+			(long long)info.st_size, HOST_PROFILE_MAXIMUM_FILE_BYTES);
+		close(descriptor);
+		return NULL;
+	}
+	file = fdopen(descriptor, "rb");
+	if (!file)
+	{
+		close(descriptor);
+		return NULL;
+	}
+	length = (size_t)info.st_size;
+	if ((text = malloc(length + 1)) && fread(text, 1, length, file) == length)
+	{
+		text[length] = 0;
+		*size = length;
+	}
+	else
+	{
+		free(text);
+		text = NULL;
 	}
 	fclose(file);
 	return text;
