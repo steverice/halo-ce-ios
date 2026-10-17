@@ -209,7 +209,7 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
         "draft": True,
         "body": publisher.draft_body(notes, {}),
     }
-    github = FakeAPI([[draft], {}, {}, {}, {}])
+    github = FakeAPI([[draft], {}, {}, {}, {}, {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []}])
     apple = FakeAPI(
         [
             [{"id": "app-1", "attributes": {"bundleId": "example.visr"}}],
@@ -325,7 +325,7 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
         "uploading",
         "complete",
     ]
-    assert github.calls[-1][2] == {"body": notes, "draft": False, "make_latest": "true"}
+    assert github.calls[-2][2] == {"tag_name": manifest["tag"], "body": notes, "draft": False, "make_latest": "true"}
     assert any(
         call[0] == "POST" and call[1] == "/v1/betaBuildLocalizations"
         for call in apple.calls

@@ -733,8 +733,16 @@ def publish(args: argparse.Namespace) -> None:
     github.request(
         "PATCH",
         f"{path}/{release['id']}",
-        {"body": notes, "draft": False, "make_latest": "true"},
+        {"tag_name": manifest["tag"], "body": notes, "draft": False, "make_latest": "true"},
     )
+    published = github.request("GET", f"{path}/{release['id']}")
+    if (
+        published.get("tag_name") != manifest["tag"]
+        or published.get("body") != notes
+        or published.get("draft") is not False
+        or published.get("assets") != []
+    ):
+        raise ValueError("Published GitHub tag, notes, draft state or assets differ from the release manifest")
     print(f"{manifest['tag']}: GitHub release published without assets")
 
 

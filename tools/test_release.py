@@ -450,7 +450,7 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
         "draft": True,
         "body": release.draft_body(notes, journal),
     }
-    github = FakeAPI([[draft], {}, {}, {}])
+    github = FakeAPI([[draft], {}, {}, {}, {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []}])
     apple = FakeAPI(
         [
             build_page(),
@@ -484,7 +484,8 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
     release.publish(type("Args", (), {"source_root": tmp_path})())
     assert all(command[:2] == ("git", "rev-parse") for command in commands)
     assert all(call[0] == "GET" for call in apple.calls)
-    assert github.calls[-1][2] == {"body": notes, "draft": False, "make_latest": "true"}
+    assert github.calls[-2][2] == {"tag_name": manifest["tag"], "body": notes, "draft": False, "make_latest": "true"}
+    assert github.calls[-1][:2] == ("GET", "/repos/example/app/releases/release-1")
 
 
 def test_verify_guest_checks_real_macho_section_bytes() -> None:
