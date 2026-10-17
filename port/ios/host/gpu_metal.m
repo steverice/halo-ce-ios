@@ -31,6 +31,7 @@ build with render validation; nothing otherwise */
 #include "metal_compile_async.h"
 #include "metal_compile_progress.h"
 #include "host_benchmark.h"
+#include "gpu_metal_presentation.h"
 #include "halo_display.h"
 #include "host_external.h"
 
@@ -5463,10 +5464,12 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
 		BOOL unsynced;
+		int presentation_transition = frame_log.skip_transition;
 		/* the frame's dealings with the pacer (host_frame_pacer.h), which
 		decides when it may start toward the display and how long it stays */
 		struct frame_pacer_frame paced;
 
+		gpu_metal_presentation_attempt(frame_context.scene_class == 2, presentation_transition);
 		command_buffer();
 		pass_finish(YES);
 #if TARGET_OS_VISION
@@ -5517,6 +5520,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		whole one (metal_hold_frame) */
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
 		unsynced = frame_rate_sync();
+		gpu_metal_presentation_configure(layer);
 		waited = CACurrentMediaTime();
 		/* display.frame_rate's cap; its sleep counts as waiting, not as the
 		frame's CPU time */
@@ -5603,6 +5607,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				frame_log.height = (unsigned)picture.height;
 				frame_context_wait();
 				hold = pacing_schedule(drawable, &next_frame_due);
+				gpu_metal_presentation_observe(drawable, CACurrentMediaTime(), frame_context.scene_class == 2,
+					presentation_transition);
 
 #if HALO_FRAME_PACING
 				/* (display.frame_pacing's own holds are whole refreshes
@@ -6003,6 +6009,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		layer.device = device;
 		layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
 		layer.framebufferOnly = YES;
+		gpu_metal_presentation_configure(layer);
 		textures = [MetalTable new];
 		buffers = [MetalTable new];
 		shaders = [MetalTable new];

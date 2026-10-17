@@ -218,6 +218,15 @@ run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     'port/ios/tests/benchmark_presentation_host_probe.m', 'port/ios/host/host_benchmark_presentation.m',
     'port/runtime/benchmark_presentation.c', 'port/runtime/benchmark_metrics.c', '-lz', '-o', BUILD/'benchmark-presentation-host-probe')
 run(BUILD/'benchmark-presentation-host-probe')
+# The real drawable adapter with deterministic callback delivery; the owner is not mocked.
+for definition in ('HALO_FRAME_PACING=0', 'HALO_FRAME_PACING=1',
+                   'PRESENTATION_TEST_SIMULATOR=1', 'PRESENTATION_TEST_VISIONOS=1'):
+    run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+        '-fobjc-arc', '-D'+definition, '-framework', 'Foundation', '-framework', 'QuartzCore',
+        '-framework', 'Metal', '--include-directory=port/ios/host', '--include-directory=port/runtime',
+        'port/ios/tests/benchmark_presentation_drawable_probe.m', 'port/ios/host/host_benchmark_presentation.m',
+        'port/runtime/benchmark_presentation.c', '-lz', '-o', BUILD/'benchmark-presentation-drawable-probe')
+    run(BUILD/'benchmark-presentation-drawable-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/benchmark_startup_probe.c', '-o', BUILD/'benchmark-startup-probe')
 run(BUILD/'benchmark-startup-probe')

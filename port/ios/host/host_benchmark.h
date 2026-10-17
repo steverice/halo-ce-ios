@@ -20,6 +20,11 @@ void host_benchmark_presentation_configure(enum host_presentation_capability cap
 /* scene_is_cutscene comes from the current renderer frame context, not the
    legacy benchmark window. A zero generation means no callback is needed. */
 struct host_benchmark_presentation_token host_benchmark_presentation_reserve(double submitted, int scene_is_cutscene);
+/* Observe each primary present attempt, even without a drawable. Only a
+   gameplay run's cutscene closes a segment; eligible missing frames remain gaps. */
+void host_benchmark_presentation_scene(int scene_is_cutscene);
+/* Deliberately excluded transition: break adjacency without reserving a frame. */
+void host_benchmark_presentation_exclude(void);
 /* Process-lifetime entry point: callbacks capture only the scalar token. */
 void host_benchmark_presentation_complete(struct host_benchmark_presentation_token token, double presented);
 

@@ -68,6 +68,19 @@ struct host_benchmark_presentation_token host_benchmark_presentation_reserve(dou
     pthread_mutex_unlock(&mutex);
     return (struct host_benchmark_presentation_token){ result.generation, result.index };
 }
+void host_benchmark_presentation_scene(int cutscene) {
+    pthread_mutex_lock(&mutex);
+    if (active && admitted && !draining && capability == HOST_PRESENTATION_METAL &&
+        kind == BENCHMARK_SCENE_GAMEPLAY && cutscene)
+        benchmark_presentation_close_segment(&collector);
+    pthread_mutex_unlock(&mutex);
+}
+void host_benchmark_presentation_exclude(void) {
+    pthread_mutex_lock(&mutex);
+    if (active && admitted && !draining && capability == HOST_PRESENTATION_METAL)
+        benchmark_presentation_close_segment(&collector);
+    pthread_mutex_unlock(&mutex);
+}
 void host_benchmark_presentation_complete(struct host_benchmark_presentation_token token, double presented) {
     pthread_mutex_lock(&mutex);
     if (!token.generation || token.generation != generation) rejected_generation++;
