@@ -18,4 +18,6 @@ NSDictionary *host_benchmark_presentation_diagnostics(void);
 /* Applies only to newly written records. Existing resumed files keep their
    original semantics; recovered interrupted runs have no captured evidence. */
 NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictionary *presentation);
+/* Human summary of the serialized legacy submission measurements. */
+NSString *host_benchmark_submission_summary(NSDictionary *record);
 #endif

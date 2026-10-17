@@ -395,13 +395,7 @@ static NSString *report_summary(void) {
 
         if (![one isKindOfClass:NSDictionary.class] || ![one[@"stage"] isEqual:@"A"]) continue;
         if ([one[@"status"] isEqual:@"ok"]) {
-            /* "on time" against the scene's own target: 30 for a cutscene, 60 for the rest (a frame every two
-               refreshes or better, or every refresh, on a 60 Hz display) */
-            BOOL cutscene = [one[@"kind"] isEqual:@"cutscene"];
-
-            [summary appendFormat:@"%@: %.0f submissions a second, %.0f%% of submission intervals within the %d fps budget\n", one[@"scene"],
-                [one[@"frames_a_second"] doubleValue],
-                100.0 * [one[cutscene ? @"on_time_half" : @"on_time_full"] doubleValue], cutscene ? 30 : 60];
+            [summary appendString:host_benchmark_submission_summary(one)];
         } else {
             NSDictionary *said = @{ @"skipped": @"not run on this device", @"diverged": @"the replay left its route",
                 @"thermal": @"the device got too hot", @"interrupted": @"interrupted", @"crashed": @"the app stopped",

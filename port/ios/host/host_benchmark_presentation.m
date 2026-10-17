@@ -216,3 +216,10 @@ NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictiona
         @"status": @"unavailable_recovered_run" };
     return result;
 }
+
+NSString *host_benchmark_submission_summary(NSDictionary *record) {
+    BOOL cutscene = [record[@"kind"] isEqual:@"cutscene"];
+    return [NSString stringWithFormat:@"%@: %.0f submissions a second, %.0f%% of submission intervals in rounded bins of %@ inferred refresh%@\n",
+        record[@"scene"], [record[@"frames_a_second"] doubleValue],
+        100.0 * [record[cutscene ? @"on_time_half" : @"on_time_full"] doubleValue], cutscene ? @"1 or 2" : @"1", cutscene ? @"es" : @""];
+}

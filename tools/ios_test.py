@@ -216,7 +216,7 @@ run(BUILD/'benchmark-presentation-probe')
 run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-fobjc-arc',
     '-framework', 'Foundation', '-Iport/ios/host', '-Iport/runtime',
     'port/ios/tests/benchmark_presentation_host_probe.m', 'port/ios/host/host_benchmark_presentation.m',
-    'port/runtime/benchmark_presentation.c', '-lz', '-o', BUILD/'benchmark-presentation-host-probe')
+    'port/runtime/benchmark_presentation.c', 'port/runtime/benchmark_metrics.c', '-lz', '-o', BUILD/'benchmark-presentation-host-probe')
 run(BUILD/'benchmark-presentation-host-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/benchmark_startup_probe.c', '-o', BUILD/'benchmark-startup-probe')

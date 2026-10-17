@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #include "host_benchmark_presentation.h"
+#include "benchmark_metrics.h"
 #include <float.h>
 #include <math.h>
 #include <pthread.h>
@@ -113,6 +114,32 @@ int main(void) { @autoreleasepool {
     CHECK(host_benchmark_presentation_take_report()==nil);
     NSDictionary *diagnostics=host_benchmark_presentation_diagnostics();
     CHECK([diagnostics[@"rejected_generation"] intValue]>=1 && [diagnostics[@"rejected_after_finalize"] intValue]>=1);
+    /* Exercise the serialized metrics and the actual report legend together.
+       Both intervals exceed their strict 60/30 fps budgets but round into
+       the historical on_time bins. A strict-budget label would be false. */
+    const double intervals[] = { 24, 40 };
+    NSArray *kinds = @[ @"gameplay", @"cutscene" ];
+    NSArray *names = @[ @"24ms", @"40ms" ];
+    NSArray *expected = @[
+        @"24ms: 42 submissions a second, 100% of submission intervals in rounded bins of 1 inferred refresh\n",
+        @"40ms: 25 submissions a second, 100% of submission intervals in rounded bins of 1 or 2 inferred refreshes\n" ];
+    for (int i=0; i<2; i++) {
+        struct benchmark_metrics metrics = { 0 };
+        benchmark_metrics_reset(&metrics,60);
+        benchmark_metrics_frame(&metrics,intervals[i],1,1);
+        char *members=benchmark_metrics_json(&metrics);
+        NSString *json=[NSString stringWithFormat:@"{%s}",members];
+        NSMutableDictionary *record=[[NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
+            options:NSJSONReadingMutableContainers error:NULL] mutableCopy];
+        record[@"scene"]=names[i]; record[@"kind"]=kinds[i];
+        CHECK([record[@"interval_ms"][@"mean"] doubleValue]==intervals[i]);
+        CHECK([record[i ? @"on_time_half" : @"on_time_full"] doubleValue]==1);
+        CHECK([record[@"shown_refreshes"][i] intValue]==1);
+        NSString *legend=host_benchmark_submission_summary(record);
+        CHECK([legend isEqual:expected[i]]);
+        fprintf(stderr,"%s",legend.UTF8String);
+        free(members); benchmark_metrics_free(&metrics);
+    }
     fprintf(stderr,"presentation host: %d checks, %d failures\n",checks,failures);
     return failures?1:0;
 } }
