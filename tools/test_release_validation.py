@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ed25519 as crypto
 
 from tools import release_validation as validation
 
@@ -229,7 +230,6 @@ def test_preflight_identity_changes_with_source_platforms_or_policy() -> None:
 def test_signed_feed_verifies_signature_and_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    crypto = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
@@ -387,7 +387,6 @@ def test_trusted_source_cleanup_still_runs_after_signing_failure() -> None:
 def test_signed_feed_must_pass_the_app_manifest_and_snapshot_contract(
     fault: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    crypto = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
     key = crypto.Ed25519PrivateKey.generate()

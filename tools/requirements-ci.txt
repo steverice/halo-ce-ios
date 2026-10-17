@@ -2,6 +2,10 @@ attrs==26.1.0
     # via
     #   jsonschema
     #   referencing
+cffi==2.1.1
+    # via cryptography
+cryptography==50.0.2
+    # via -r tools/requirements-ci.in
 iniconfig==2.3.1
     # via pytest
 jsonschema==4.26.0
@@ -12,6 +16,8 @@ packaging==26.3
     # via pytest
 pluggy==1.7.0
     # via pytest
+pycparser==3.11
+    # via cffi
 pygments==2.21.0
     # via pytest
 pytest==9.1.1

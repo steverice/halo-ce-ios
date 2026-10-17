@@ -1,3 +1,4 @@
 # Test dependencies only; the app's build dependencies remain in ios_build.py.
 pytest>=8.4,<10
 jsonschema>=4.25,<5
+cryptography>=50,<51
