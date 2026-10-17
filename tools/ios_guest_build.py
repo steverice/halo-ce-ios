@@ -173,6 +173,11 @@ def ios_guest_configure_inputs() -> List[Path]:
     return [Path(__file__), PORT_DIR / "guest" / "runtime", Path("port/ios/host"), LINUX_DIR / "src"]
 
 
+def stable_converter_interpreter(executable: str) -> Path:
+    """Resolve a venv executable to its base interpreter for the stdlib-only converter."""
+    return Path(executable).resolve()
+
+
 def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     if not getattr(sln, "ios", False):
         return
@@ -206,6 +211,9 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     n.variable("guest_cc", guest_cc)
     n.variable("guest_tool_bin", str(toolchain / "bin"))
     n.variable("guest_linker", sln.ios_lld)
+    # The assembly converter uses only the standard library. Resolve uv's temporary venv symlink so a new
+    # environment does not change every guest C compile command in Ninja's build log.
+    n.variable("python_converter", f'"{stable_converter_interpreter(sys.executable)}"')
 
     # ---------- generated headers and sources
 
@@ -264,7 +272,7 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     n.rule(
         name="guest_cc",
         command=(f"{compile_launcher(sln)}$guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
-                 f"{python} {converter} $out.darwin.s $out.s && "
+                 f"$python_converter {converter} $out.darwin.s $out.s && "
                  f"$guest_cc --target=aarch64-none-elf -c $out.s -o $out"),
         description="IOS CC $out",
         depfile="$out.d",
