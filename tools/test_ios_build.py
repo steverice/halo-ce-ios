@@ -212,6 +212,15 @@ def test_data_pack_public_key_must_be_exactly_32_hex_bytes(key):
         ios_build.data_pack_definitions(key, '', '')
 
 
+def test_mac_marketing_version_reaches_cmake_configuration(monkeypatch, tmp_path):
+    import plistlib
+
+    configure = configure_with(monkeypatch, tmp_path, '--mac', '--marketing-version', '2.4.6')
+    assert '-DHALO_MARKETING_VERSION=2.4.6' in configure
+    mac_info = plistlib.loads((Path(__file__).resolve().parents[1] / 'port/ios/Info-macOS.plist').read_bytes())
+    assert mac_info['CFBundleShortVersionString'] == '$(HALO_MARKETING_VERSION)'
+
+
 @pytest.mark.parametrize('url', [
     'http://packs.example/p.json', 'https:///p.json', 'https://user@packs.example/p.json',
     'https://user:password@packs.example/p.json', 'https://packs.example/p.json?id=device',
