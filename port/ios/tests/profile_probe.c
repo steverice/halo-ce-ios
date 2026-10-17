@@ -251,6 +251,13 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, sibling, NULL, "");
 	assert(profile.inherited && has(&profile, "display.mirror_resolution", "half"));
 	assert(!strcmp(profile.model_file, "ipad-pro-m1.toml"));
+	/* The measured first-generation 12.9-inch iPad uses its own 720-line model profile. The neighboring
+	   cellular identifier keeps the class defaults until it is measured. */
+	profile = resolve(shipped, device("ios", "iPad6,7", "", 3), NULL, "");
+	assert(!strcmp(profile.model_file, "ipad-pro-12-9-1st.toml") &&
+		has(&profile, "display.render_height", "720") && has(&profile, "display.renderer", "metal"));
+	profile = resolve(shipped, device("ios", "iPad6,8", "", 3), NULL, "");
+	assert(!profile.model_file[0] && !has(&profile, "display.render_height", "720"));
 	profile = resolve(shipped, device("mac", "Mac14,5", "Apple M2 Max", 8), NULL, "");
 	assert(profile.count == 2 && has(&profile, "display.model_lod", "max") &&
 		has(&profile, "display.compressed_textures", "true"));
