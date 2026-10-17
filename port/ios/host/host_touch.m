@@ -248,6 +248,8 @@ void host_ios_touch_attach(SDL_Window *window) {
     }
     [native makeKeyAndVisible];
     host_ios_require_landscape(native);
+    /* Keep the shared controller bridge active while Mac input uses no touch overlay. */
+    if(NSProcessInfo.processInfo.isMacCatalystApp || NSProcessInfo.processInfo.isiOSAppOnMac)return;
     UIView *root=native.rootViewController.view;
     HaloControls *controls=[[HaloControls alloc]initWithFrame:root.bounds];
     [root addSubview:controls];
