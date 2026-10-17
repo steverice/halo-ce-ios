@@ -207,6 +207,9 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
     'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
 run(BUILD/'benchmark-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/benchmark_startup_probe.c', '-o', BUILD/'benchmark-startup-probe')
+run(BUILD/'benchmark-startup-probe')
 # The optional host overlay's bounded timing window, including unavailable GPU samples.
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/frame_counter_probe.c', 'port/ios/host/host_frame_counter_stats.c', '-o', BUILD/'frame-counter-probe')

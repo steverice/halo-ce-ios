@@ -47,6 +47,8 @@ double input_replay_timeline(void);
 void benchmark_scenario_load(const char *map, const char *difficulty);
 unsigned char benchmark_scenario_at_menu(void);
 unsigned char benchmark_scenario_player_position(float *position);
+/* source/interface/ui_widget.c: cleared when the ordinary UI pump joins the startup worker */
+unsigned char filesystem_check_thread_is_active(void);
 /* port/linux/game/scene_class.c: the menu, a cutscene or gameplay, this frame (port_config.h's CONFIG_SCENE_ values) */
 int halo_scene_class(void);
 /* d3d8_device.c */
@@ -340,6 +342,18 @@ void benchmark_suite_frame(long width, long height)
 		enter(suite_starting);
 	}
 	now = halo_frame_trace_milliseconds();
+	/* The menu scenario can render while its filesystem worker still reads
+	menu tags. Keep the frame loop running so the UI can join that worker,
+	and recheck on the next-run handoff before requesting any map change. */
+	if ((suite.state == suite_starting || suite.state == suite_next) && filesystem_check_thread_is_active())
+	{
+		if (now - suite.entered > START_LIMIT_MILLISECONDS)
+		{
+			platform_log("benchmark suite: startup failed: filesystem initialization did not finish; no map requested");
+			exit(EXIT_FAILURE);
+		}
+		return;
+	}
 	ticks = input_replay_timeline();
 	switch (suite.state)
 	{
@@ -348,7 +362,10 @@ void benchmark_suite_frame(long width, long height)
 		asked for on the launch's first frames (a suite that carries on at a level) crashed the game */
 		if ((benchmark_scenario_at_menu() && now - suite.entered >= MENU_SETTLE_MILLISECONDS) ||
 			now - suite.entered > START_LIMIT_MILLISECONDS)
+		{
+			platform_log("benchmark suite: startup filesystem worker is inactive");
 			enter(suite_next);
+		}
 		break;
 	case suite_next:
 		next_run();
