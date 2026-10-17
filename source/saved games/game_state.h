@@ -43,7 +43,7 @@ boolean game_state_port_saved_game_valid(
 	void);
 void game_state_port_restamp_revert_time(
 	void);
-void game_state_save_to_persistent_storage(
+boolean game_state_save_to_persistent_storage(
 	void);
 boolean game_state_test_persistent_storage(
 	char *map_name,
@@ -128,7 +128,12 @@ boolean game_state_read_header_from_persistent_storage(
 	long header_size,
 	long buffer_size,
 	boolean *corrupted);
-void game_state_write_to_persistent_storage(
+/* port: returns INVALID_HANDLE_VALUE on failure. A successful handle is
+closed by game_state_write_to_persistent_storage, including on write failure. */
+void *game_state_open_persistent_storage(
+	const char *directory);
+boolean game_state_write_to_persistent_storage(
+	void *storage,
 	void *buffer,
 	unsigned long *header_checksum,
 	long header_size,

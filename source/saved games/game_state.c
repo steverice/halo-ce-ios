@@ -372,14 +372,21 @@ void game_state_revert(
 	return;
 }
 
-void game_state_save_to_persistent_storage(
+boolean game_state_save_to_persistent_storage(
 	void)
 {
 	if (player_spawn_count==1)
 	{
+		/* port: reject unusable storage before changing the live game. The
+		writer closes this same handle, without reopening the path. */
+		void *storage = game_state_open_persistent_storage(NULL);
+		if (storage == INVALID_HANDLE_VALUE)
+			return FALSE;
+
 		game_state_note_event("save and quit");
 		game_state_revert();
-		game_state_write_to_persistent_storage(
+		return game_state_write_to_persistent_storage(
+			storage,
 			game_state_globals.base_address,
 			&game_state_globals.header->checksum,
 			sizeof(*game_state_globals.header),
@@ -387,7 +394,7 @@ void game_state_save_to_persistent_storage(
 			GAME_STATE_SIZE);
 	}
 
-	return;
+	return TRUE;
 }
 
 boolean game_state_test_persistent_storage(

@@ -2030,8 +2030,16 @@ static boolean pause_game_quit_to_main_menu(
 	}
 	/* port: a multiplayer map played alone (New Game's MULTIPLAYER maps) is
 	not saved, so it never takes the place of the campaign's saved game */
-	if (main_get_current_solo_level() != NONE)
-		game_state_save_to_persistent_storage();
+	if (main_get_current_solo_level() != NONE && !game_state_save_to_persistent_storage())
+	{
+		/* port: reverting to the checkpoint can restore its unpaused clock.
+		A failed save leaves the pause menu open, so pause the clock again. */
+		game_time_set_paused(TRUE);
+		display_error_text_deferred(
+			L"Unable to save. Check the\r\nsaved game file and\r\navailable storage.",
+			event->controller_index);
+		return FALSE;
+	}
 	main_goto_main_menu();
 	return TRUE;
 }

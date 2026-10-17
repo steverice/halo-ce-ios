@@ -142,8 +142,6 @@ typedef char verify_xbox_game_state_globals_prefix_size[
 static void game_state_header_terminate(
 	void *header,
 	long header_size);
-static HANDLE game_state_open_persistent_storage(
-	const char *directory);
 
 /* ---------- globals */
 
@@ -458,65 +456,72 @@ static void delete_persistent_storage(
 	return;
 }
 
-static HANDLE game_state_open_persistent_storage(
+/* port: an existing save can belong to a different game-state layout. Only
+initialize a file this call created; checking a profile must not erase it. */
+void *game_state_open_persistent_storage(
 	const char *directory)
 {
 	char path[256];
 	byte zeroes[16*1024];
 	HANDLE file;
 	unsigned long bytes_written;
-	boolean success = FALSE;
+	unsigned long size, size_high = 0;
+	boolean created = FALSE;
 
-	if (directory || game_state_get_persistent_storage_path(path))
+	if (!directory && !game_state_get_persistent_storage_path(path))
+		return INVALID_HANDLE_VALUE;
+	if (directory)
+		strcpy(path, directory);
+	strcat(path, "savegame.bin");
+
+	file = CreateFileA(path, GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+	if (file == INVALID_HANDLE_VALUE && GetLastError() == ERROR_FILE_NOT_FOUND)
 	{
-		if (directory)
-		{
-			strcpy(path, directory);
-		}
-		else
-		{
-			game_state_get_persistent_storage_path(path);
-		}
-		strcat(path, "savegame.bin");
-
-		file = CreateFileA(path, GENERIC_READ|GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, 0,
-			NULL);
-		if (file != INVALID_HANDLE_VALUE)
-		{
-			success = TRUE;
-			if (GetFileSize(file, NULL) != GAME_STATE_FILE_SIZE)
-			{
-				memset(zeroes, 0, sizeof(zeroes));
-				if (!WriteFile(file, zeroes, sizeof(zeroes), &bytes_written, NULL) ||
-					bytes_written != sizeof(zeroes) ||
-					SetFilePointer(file, GAME_STATE_FILE_SIZE, NULL, FILE_BEGIN) ==
-						INVALID_SET_FILE_POINTER ||
-					!SetEndOfFile(file))
-				{
-					match_vassert(
-						"c:\\halo\\SOURCE\\saved games\\game_state_xbox.c",
-						491,
-						FALSE,
-						csprintf(temporary,
-							"couldn't resize persistent storage \"%s\"", path));
-					delete_persistent_storage();
-					CloseHandle(file);
-					success = FALSE;
-				}
-			}
-		}
-		else
-		{
-			match_vassert(
-				"c:\\halo\\SOURCE\\saved games\\game_state_xbox.c",
-				498,
-				FALSE,
-				csprintf(temporary, "couldn't open or create persistent storage \"%s\"",
-					path));
-		}
+		/* CREATE_NEW cannot replace a file that appeared after the open. */
+		file = CreateFileA(path, GENERIC_READ|GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL);
+		created = file != INVALID_HANDLE_VALUE;
+	}
+	if (file == INVALID_HANDLE_VALUE)
+	{
+		error(_error_silent, "couldn't open or create persistent storage \"%s\" (#%lu)",
+			path, GetLastError());
+		return INVALID_HANDLE_VALUE;
 	}
 
-	return success ? file : INVALID_HANDLE_VALUE;
+	if (!created)
+	{
+		size = GetFileSize(file, &size_high);
+		if (size == INVALID_FILE_SIZE && GetLastError() != 0)
+		{
+			error(_error_silent, "couldn't read persistent storage size \"%s\" (#%lu)",
+				path, GetLastError());
+		}
+		else if (size_high || size != GAME_STATE_FILE_SIZE)
+		{
+			error(_error_silent, "persistent storage \"%s\" has size 0x%08lx%08lx (expected 0x%08lx); leaving it unchanged",
+				path, size_high, size, (unsigned long)GAME_STATE_FILE_SIZE);
+		}
+		else
+		{
+			return file;
+		}
+		CloseHandle(file);
+		return INVALID_HANDLE_VALUE;
+	}
+
+	memset(zeroes, 0, sizeof(zeroes));
+	if (!WriteFile(file, zeroes, sizeof(zeroes), &bytes_written, NULL) ||
+		bytes_written != sizeof(zeroes) ||
+		SetFilePointer(file, GAME_STATE_FILE_SIZE, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER ||
+		!SetEndOfFile(file))
+	{
+		error(_error_silent, "couldn't initialize persistent storage \"%s\" (#%lu)",
+			path, GetLastError());
+		/* Do not delete by path: it may no longer name the file we created. */
+		CloseHandle(file);
+		return INVALID_HANDLE_VALUE;
+	}
+	return file;
 }
 
 /* port: the strings of a header read from a file end in it (the file is
@@ -610,18 +615,19 @@ boolean game_state_read_header_from_persistent_storage(
 	return result;
 }
 
-void game_state_write_to_persistent_storage(
+boolean game_state_write_to_persistent_storage(
+	void *storage,
 	void *buffer,
 	unsigned long *header_checksum,
 	long header_size,
 	long buffer_size)
 {
 	byte saved_header[2048];
-	HANDLE file;
+	HANDLE file = storage;
+	boolean success = FALSE;
 	unsigned long checksum;
 	unsigned long bytes_written;
 
-	file = game_state_open_persistent_storage(NULL);
 	if (file != INVALID_HANDLE_VALUE)
 	{
 		*header_checksum = 0;
@@ -645,20 +651,18 @@ void game_state_write_to_persistent_storage(
 			!WriteFile(file, saved_header, header_size, &bytes_written, NULL) ||
 			bytes_written != header_size)
 		{
-			match_vassert(
-				"c:\\halo\\SOURCE\\saved games\\game_state_xbox.c",
-				351,
-				FALSE,
-				csprintf(temporary, "failed to write to persistent storage (#%d)",
-					GetLastError()));
-			delete_persistent_storage();
+			error(_error_silent, "failed to write to persistent storage (#%lu)", GetLastError());
+		}
+		else
+		{
+			success = TRUE;
 		}
 
 		memcpy(buffer, saved_header, header_size);
 		CloseHandle(file);
 	}
 
-	return;
+	return success;
 }
 
 void game_state_read_from_persistent_storage(
