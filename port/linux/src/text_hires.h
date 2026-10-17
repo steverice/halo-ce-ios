@@ -35,6 +35,9 @@ struct text_hires_glyph
 	float advance;
 };
 
+/* The committed setting; checked before looking up cached font choices. */
+int text_hires_enabled(void);
+
 /* the font standing for a font tag, sized so that its capitals are
 cap_height units tall, its glyphs rasterized with oversample times the
 display's pixels (for text drawn scaled up); -1 if none, or

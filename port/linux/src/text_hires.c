@@ -74,7 +74,7 @@ static int names_differ(const char *a, const char *b)
 	return tolower((unsigned char)*a) != tolower((unsigned char)*b);
 }
 
-static int text_enabled(void)
+int text_hires_enabled(void)
 {
 	static int enabled;
 	static unsigned long read_at = (unsigned long)-1;
@@ -110,7 +110,7 @@ long text_hires_font(char const *tag_name, float cap_height, float oversample)
 	long font;
 	int x0, y0, x1, y1;
 
-	if (!text_enabled() || !tag_name || cap_height <= 0.0f)
+	if (!text_hires_enabled() || !tag_name || cap_height <= 0.0f)
 		return -1;
 	/* (text is never drawn with fewer pixels than the display's) */
 	if (oversample < 1.0f)
