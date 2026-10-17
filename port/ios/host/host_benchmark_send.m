@@ -14,6 +14,7 @@
 #import <UIKit/UIKit.h>
 #include "ios_host.h"
 #include "host_benchmark.h"
+#import "host_benchmark_snapshot.h"
 #include <zlib.h>
 
 #if !__has_feature(objc_arc)
@@ -43,6 +44,7 @@ static NSString *readable(NSData *report, NSUInteger *frame_values) {
             *frame_values += encoded.length * 3 / 8;
             run[name] = [NSString stringWithFormat:@"(%lu frame times, sent in full)", (unsigned long)(encoded.length * 3 / 8)];
         }
+    host_benchmark_shader_summarize(whole);
     text = [NSJSONSerialization dataWithJSONObject:whole options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
     return text ? [[NSString alloc] initWithData:text encoding:NSUTF8StringEncoding] : nil;
 }
@@ -164,6 +166,7 @@ static NSString *summary_json(NSData *report) {
     NSData *text;
 
     for (NSMutableDictionary *run in whole[@"runs"]) [run removeObjectsForKeys:@[ @"frame_interval", @"frame_cpu", @"frame_gpu" ]];
+    if (whole) host_benchmark_shader_summarize(whole);
     text = whole ? [NSJSONSerialization dataWithJSONObject:whole options:NSJSONWritingSortedKeys error:nil] : nil;
     return text ? [[NSString alloc] initWithData:text encoding:NSUTF8StringEncoding] : @"";
 }
@@ -270,8 +273,8 @@ int host_benchmark_send(const char *report_path, const char *summary, char *mess
 #endif
     controller = [HaloBenchmarkConsentController new];
     controller.summary = [NSString stringWithFormat:@"%s\nThe report holds this device's model, system version, graphics chip and "
-        "display mode, the app's version, and the measurements of each run, with %lu frame times.\nIt does not hold the device's "
-        "name, any account, any address or location, or anything from the game.\nIt goes to the VISR developers through iCloud, "
+        "display mode, the app's version, and the measurements of each run, with %lu frame times and shader compilation descriptors.\nIt does not hold the device's "
+        "name, any account, any address or location, or game assets.\nIt goes to the VISR developers through iCloud, "
         "which records with it the time and two IDs it assigns in this app: one for your iCloud account and one for this device.",
         summary, (unsigned long)frame_values];
     controller.lines = [text componentsSeparatedByString:@"\n"];

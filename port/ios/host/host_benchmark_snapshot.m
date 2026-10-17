@@ -164,3 +164,100 @@ failed:
         userInfo:@{ NSLocalizedDescriptionKey: @"The benchmark recording snapshot could not be copied or verified." }];
     return nil;
 }
+
+/* Capture files are append-only records of compilation requests, not shader source or game assets. */
+NSDictionary *host_benchmark_shader_snapshot(NSString *folder, NSString *map) {
+    NSMutableDictionary *result = [@{ @"format": @1, @"map": map ?: @"", @"status": @"unavailable" } mutableCopy];
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyz0123456789_"];
+    if (!map.length || map.length > 48 || [map rangeOfCharacterFromSet:allowed.invertedSet].location != NSNotFound) {
+        result[@"status"] = @"invalid_map"; return result;
+    }
+    if (!folder.length) { result[@"status"] = @"disabled"; return result; }
+    int fd = open(folder.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (fd < 0) { if (errno == ENOENT) result[@"status"] = @"missing"; return result; }
+    NSString *name = [map stringByAppendingPathExtension:@"txt"];
+    struct stat st;
+    if (fstatat(fd, name.fileSystemRepresentation, &st, AT_SYMLINK_NOFOLLOW)) {
+        if (errno == ENOENT) result[@"status"] = @"missing";
+        close(fd); return result;
+    }
+    NSData *data = read_regular(fd, name.fileSystemRepresentation, 4 * 1024 * 1024);
+    close(fd);
+    NSString *text = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+    if (!text) return result;
+    result[@"status"] = @"captured";
+    result[@"text"] = text;
+    result[@"bytes"] = @(data.length);
+    result[@"sha256"] = digest(data);
+    return result;
+}
+
+NSDictionary *host_benchmark_shader_delta(NSDictionary *before, NSDictionary *after) {
+    NSMutableDictionary *result = [@{ @"format": @1, @"map": after[@"map"] ?: @"",
+        @"scope": @"run_append_interval", @"status": @"unavailable" } mutableCopy];
+    if (!before || !after) return result;
+    if (![before[@"map"] isEqual:after[@"map"]]) { result[@"status"] = @"map_mismatch"; return result; }
+    if (![after[@"status"] isEqual:@"captured"]) { result[@"status"] = after[@"status"]; return result; }
+    NSString *prefix;
+    if ([before[@"status"] isEqual:@"missing"]) prefix = @"";
+    else if ([before[@"status"] isEqual:@"captured"]) prefix = before[@"text"];
+    else { result[@"status"] = @"baseline_unavailable"; return result; }
+    NSString *text = after[@"text"];
+    if (prefix.length && ![text hasPrefix:prefix]) { result[@"status"] = @"changed_baseline"; return result; }
+    if ((prefix.length && ![prefix hasSuffix:@"\n"]) || (text.length && ![text hasSuffix:@"\n"])) {
+        result[@"status"] = @"incomplete_record"; return result;
+    }
+    NSString *added = [text substringFromIndex:prefix.length];
+    NSData *data = [added dataUsingEncoding:NSUTF8StringEncoding];
+    result[@"status"] = added.length ? @"captured" : @"no_new_records";
+    result[@"baseline_sha256"] = before[@"sha256"] ?: digest([NSData data]);
+    result[@"baseline_bytes"] = before[@"bytes"] ?: @0;
+    result[@"text"] = added;
+    result[@"bytes"] = @(data.length);
+    result[@"sha256"] = digest(data);
+    return result;
+}
+
+NSDictionary *host_benchmark_shader_evidence(NSArray<NSDictionary *> *runs, NSArray<NSDictionary *> *previous, NSString *folder) {
+    NSMutableSet<NSString *> *maps = [NSMutableSet set];
+    NSMutableArray *intervals = [NSMutableArray array];
+    NSMutableArray *all_runs = [runs mutableCopy];
+    for (NSDictionary *report in previous) {
+        NSMutableArray *captured_runs = [NSMutableArray array];
+        for (NSDictionary *run in report[@"runs"]) {
+            [all_runs addObject:run];
+            if (run[@"shader_capture"]) [captured_runs addObject:@{ @"index": run[@"index"] ?: @0,
+                @"map": run[@"map"] ?: @"", @"shader_capture": run[@"shader_capture"] }];
+        }
+        [intervals addObject:@{ @"code": report[@"code"] ?: @"", @"app": report[@"app"] ?: @{},
+            @"output": report[@"output"] ?: @{}, @"runs": captured_runs }];
+    }
+    for (NSDictionary *run in all_runs) [maps addObject:[run[@"map"] length] ? run[@"map"] : @"ui"];
+    NSMutableDictionary *dependencies = [NSMutableDictionary dictionary];
+    NSUInteger remaining = 32 * 1024 * 1024;
+    for (NSString *map in [[maps allObjects] sortedArrayUsingSelector:@selector(compare:)]) {
+        NSMutableDictionary *capture = [host_benchmark_shader_snapshot(folder, map) mutableCopy];
+        capture[@"scope"] = @"cumulative_unattributed_dependency_candidates";
+        NSUInteger size = [capture[@"bytes"] unsignedIntegerValue];
+        if (size > remaining) {
+            [capture removeObjectForKey:@"text"]; capture[@"status"] = @"export_limit";
+        } else remaining -= size;
+        dependencies[map] = capture;
+    }
+    return @{ @"shader_dependency_candidates": dependencies, @"shader_output_intervals": intervals };
+}
+
+void host_benchmark_shader_summarize(NSMutableDictionary *report) {
+    NSMutableArray *runs = [report[@"runs"] mutableCopy] ?: [NSMutableArray array];
+    for (NSDictionary *prior in report[@"shader_output_intervals"]) [runs addObjectsFromArray:prior[@"runs"]];
+    NSMutableArray *captures = [NSMutableArray array];
+    for (NSMutableDictionary *run in runs)
+        if ([run[@"shader_capture"] isKindOfClass:NSMutableDictionary.class]) [captures addObject:run[@"shader_capture"]];
+    if ([report[@"shader_dependency_candidates"] isKindOfClass:NSDictionary.class])
+        [captures addObjectsFromArray:[report[@"shader_dependency_candidates"] allValues]];
+    for (NSMutableDictionary *capture in captures) {
+        NSString *text = capture[@"text"];
+        if ([text isKindOfClass:NSString.class]) capture[@"text"] =
+            [NSString stringWithFormat:@"(%lu descriptor bytes, sent in full)", (unsigned long)[text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]];
+    }
+}

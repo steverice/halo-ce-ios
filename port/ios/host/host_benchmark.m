@@ -5,7 +5,7 @@
    run, and report.json once the suite is over. The report holds the device's model
    identifier, system version, GPU and display, the app's version, and each run's
    settings and measurements. It never holds the device's name, an identifier of the
-   device or its owner, an address, a path or anything from the game's data. */
+   device or its owner, an address, a path or game assets. Shader compilation descriptors accompany the measurements. */
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <UIKit/UIKit.h>
@@ -54,6 +54,14 @@ static struct benchmark_outcome outcomes[BENCHMARK_RUNS_MAXIMUM];
 static int outcome_count;
 static struct benchmark_run run;
 static int run_open;
+static NSDictionary *run_shader_before;
+static NSString *run_shader_directory;
+static NSString *shader_directory(void) {
+    char path[4096];
+    host_config_string("debug.shader_list_record", "shader-lists-missed", path, sizeof(path));
+    const char *override = getenv("HALO_SHADER_LIST_RECORD");
+    return @(override ? override : path);
+}
 static char report_code[16];
 static NSMutableArray<NSString *> *flags;
 static NSDate *started;
@@ -332,20 +340,38 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         json_object(@{ @"start": run_environment_start ?: @{}, @"end": environment_now() }), measurements ? "," : "",
         measurements ?: ""];
 
+    NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+    NSString *map = scene->map[0] ? @(scene->map) : @"ui";
+    record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
+        host_benchmark_shader_snapshot(run_shader_directory, map));
+    text = json_object(record);
     [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
 static void write_report(void) {
     NSMutableString *report = [NSMutableString stringWithFormat:@"{%@,\"runs\":[", report_header()];
     int index, written = 0;
+    NSMutableArray *runs = [NSMutableArray array];
 
     for (index = 0; index < outcome_count; index++) {
         NSString *text = [NSString stringWithContentsOfFile:run_path(index) encoding:NSUTF8StringEncoding error:nil];
 
         if (!text) continue;
+        NSDictionary *record = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        if (record) [runs addObject:record];
         [report appendFormat:@"%s\n%@", written++ ? "," : "", text];
     }
-    [report appendString:@"\n]}\n"];
+    NSMutableArray *previous = [NSMutableArray array];
+    NSString *current = [NSString stringWithFormat:@"output-%02lu.json", (unsigned long)external_mode_index];
+    for (NSString *name in output_reports) {
+        if ([name isEqual:current]) continue;
+        NSData *data = [NSData dataWithContentsOfFile:[@FOLDER stringByAppendingPathComponent:name]];
+        NSDictionary *prior = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if (prior) [previous addObject:prior];
+    }
+    NSDictionary *evidence = host_benchmark_shader_evidence(runs, previous, shader_directory());
+    [report appendFormat:@"\n],\"shader_dependency_candidates\":%@,\"shader_output_intervals\":%@}\n",
+        json_object(evidence[@"shader_dependency_candidates"]), json_object(evidence[@"shader_output_intervals"])];
     [report writeToFile:@REPORT atomically:YES encoding:NSUTF8StringEncoding error:nil];
     host_logf(HOST_LOG_INFO, "benchmark: report %s, %d runs, %lu bytes: %s/" REPORT, report_code, written,
         (unsigned long)report.length, NSFileManager.defaultManager.currentDirectoryPath.fileSystemRepresentation);
@@ -729,6 +755,8 @@ int host_benchmark_next(char *text, unsigned int size) {
     atomic_store(&frames_offered, 0); atomic_store(&frames_no_drawable, 0); atomic_store(&frames_no_picture, 0);
     benchmark_metrics_reset(&metrics, refresh_hertz);
     os_unfair_lock_unlock(&lock);
+    run_shader_directory = shader_directory();
+    run_shader_before = host_benchmark_shader_snapshot(run_shader_directory, scene->map[0] ? @(scene->map) : @"ui");
     benchmark_journal_begin(JOURNAL, run.index, run.key);
     run_environment_start = environment_now();
     run_output = output_now();

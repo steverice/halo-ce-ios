@@ -20,3 +20,19 @@ It does not contain game assets, map data or saved state. It does nothing withou
 A recording fits the disc build it was made on. A replay that leaves its route is detected and its run is not used.
 
 Signed recording snapshots can reach installed builds without a new binary. Complete downloaded sets also require `.seeds` for deterministic replay. See [Updating profiles and benchmark recordings](../../docs/data-packs.md).
+
+## Shader evidence in tester reports
+
+Each finished run includes `shader_capture`: a map name, capture status, SHA-256, and complete descriptor records appended between the run's setup and completion. The interval includes map loading and the measured scene. Missing, disabled, unreadable, oversized, replaced, or incomplete capture evidence is explicit; it never implies zero shader misses. Capture files are limited to 4 MiB each and are read between runs, outside the measured frame window.
+
+The report also includes `shader_dependency_candidates`, capped at 32 MiB across maps. These cumulative records can close dependencies after validation against known source records. They can include earlier sessions or builds and must never be merged wholesale or treated as this run's new misses. Existing UI captures may contain old multiplayer records.
+
+Both Apple TV downloads and Send Report preserve these fields in the same compressed JSON. During an external display mode sweep, `shader_output_intervals` also preserves earlier modes' attributed records with their report code, app identity, and output mode. The consent preview and searchable summary show payload sizes instead of descriptor bodies. Before harvesting, validate the report build, map attribution, descriptor hashes and ranges, and pipeline dependencies; deduplicate against the bundled lists. Older reports without these fields still require separate capture files.
+
+Extract a JSON or compressed JSON report into a new evidence folder:
+
+```sh
+python3 tools/benchmark_shaders.py visr-benchmark-REPORT.json.gz --out benchmark-evidence
+```
+
+The tool checks payload SHA-256, byte counts, map/run identity, and prior display-mode app identity. It separates attributed interval files from historical dependency candidates. Descriptor validation and dependency closure are still required before merging; extraction does not modify bundled shader lists.

@@ -11,3 +11,13 @@ NSDictionary *host_benchmark_snapshot_create(NSString *folder, NSArray<NSString 
     NSDictionary *identity, NSDictionary *updates, NSError **error);
 /* SHA-256 of sorted JSON, also used for the resolved device profile's content identity. */
 NSString *host_benchmark_snapshot_digest(id value);
+
+/* Read a bounded, regular map capture without exporting a device path. Snapshot text is cumulative;
+   delta emits only complete records appended between the two snapshots. Missing evidence stays explicit. */
+NSDictionary *host_benchmark_shader_snapshot(NSString *folder, NSString *map);
+NSDictionary *host_benchmark_shader_delta(NSDictionary *before, NSDictionary *after);
+
+/* Assemble current dependency candidates and prior display-mode intervals for one portable report. */
+NSDictionary *host_benchmark_shader_evidence(NSArray<NSDictionary *> *runs, NSArray<NSDictionary *> *previous, NSString *folder);
+/* A deep mutable JSON copy only: replace descriptor bodies in the consent preview/search summary. */
+void host_benchmark_shader_summarize(NSMutableDictionary *report);
