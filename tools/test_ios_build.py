@@ -293,6 +293,15 @@ def test_device_builds_download_from_the_projects_feeds_by_default(monkeypatch, 
     assert f'-DHALO_RECORDING_FEED_URL=https://code.steverice.org/visr/packs/{channel}/recordings.json' in configure
 
 
+@pytest.mark.parametrize('arguments, expected', [
+    (['--benchmark-routes', 'off'], '-DHALO_BENCHMARK_ROUTES=OFF'),
+    ([], '-DHALO_BENCHMARK_ROUTES=ON'),
+])
+def test_mac_builds_pass_benchmark_route_setting(monkeypatch, tmp_path, arguments, expected):
+    configure = configure_with(monkeypatch, tmp_path, '--mac', *arguments)
+    assert expected in configure
+
+
 @pytest.mark.parametrize('arguments', [['--mac'], ['--unsigned', '--data-packs', 'off']])
 def test_the_runner_and_data_packs_off_download_nothing(monkeypatch, tmp_path, arguments):
     configure = configure_with(monkeypatch, tmp_path, *arguments)

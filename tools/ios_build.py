@@ -502,9 +502,11 @@ def build_mac(args, cloud, data_packs=()):
     build=mac_build_folder()
     frameworks=opengles_framework(ROOT/'build/mac/frameworks')
     import time
+    routes = args.benchmark_routes or 'on'
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
         f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',f'-DHALO_BINK={args.bink.upper()}',
+        f'-DHALO_BENCHMARK_ROUTES={routes.upper()}',
         f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
         *([f'-DHALO_MARKETING_VERSION={args.marketing_version}'] if args.marketing_version else []),
