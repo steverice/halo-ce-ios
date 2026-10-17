@@ -112,7 +112,7 @@ SCREENS = {
             ("JOIN FROM CLIPBOARD:", "network.join_from_clipboard", ON_OFF,
              "Join the game of an invite link copied before\nswitching to the game.", None),
             ("CHECK FOR UPDATES:", "update.auto", ON_OFF,
-             "Look for a new version when the game starts.", None),
+             "Look for a new version when the game starts.", "desktop"),
             ("PLAYER NAMES:", "display.player_names",
              [("ALL", "all"), ("ALLIES", "allies"), ("ENEMIES", "enemies"), ("NONE", "none")],
              "In multiplayer, whose names are drawn above their\nheads.", None),

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tools import linux_build, linux_link_check, linux_msvc_semantics
+from tools import linux_build, linux_link_check, linux_msvc_semantics, port_settings
 
 
 # ---------- MSVC semantics header
@@ -316,6 +316,21 @@ def test_menu_settings_exist():
     controls = set(re.findall(r'"(controls\.[a-z_]+)"', (root / "port/linux/src/xinput_sdl.c").read_text()))
     assert controls == {name for name in known if name.startswith("controls.")}
     assert controls == set(re.findall(r'\{ "(controls\.[a-z_]+)", L"', functions))
+
+
+def test_network_settings_hide_update_toggle_on_mobile():
+    """The automatic updater is unavailable to Apple and Android builds."""
+    import xml.etree.ElementTree as ElementTree
+
+    files = port_settings.settings_files()
+    name = "main_menu.settings_select.player_setup.player_profile_edit.network_setup.xml"
+    root = ElementTree.fromstring("\n".join(files[name]))
+    options_name = "main_menu/settings_select/player_setup/player_profile_edit/network_setup/options_menu"
+    options = root.find(f".//widget[@name='{options_name}']")
+    assert options is not None
+    rows = {child.get("widget").rsplit("/", 1)[-1]: child for child in options.findall("child")}
+    assert rows["op_auto"].get("platform") == "desktop"
+    assert rows["op_allow_upnp"].get("platform") is None
 
 
 def test_p2p_signatures_and_listings(tmp_path):
