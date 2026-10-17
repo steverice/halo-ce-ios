@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, constant, function, mutated, read, run, structure  # noqa: E402
 
-CASES = ["drawn-in-the-game", "not-over-a-menu", "time-goes-on-under-a-menu"]
+CASES = ["drawn-in-the-game", "not-over-a-menu", "time-goes-on-under-a-menu", "stereo-letterbox-and-hud"]
 
 # a fault in cinematic_render and the case that must catch it
 NEGATIVE_CONTROLS = {
@@ -17,6 +17,10 @@ NEGATIVE_CONTROLS = {
     "time-stops-under-a-menu": (("active_title->time += game_time_get_paused()",
                                  "active_title->time += ui_widgets_active() || game_time_get_paused()"),
                                 "time-goes-on-under-a-menu"),
+    "stereo-bars-missing": (("halo_stereo_film_letterbox() || halo_stereo_cutscene_immersive_letterbox()",
+                             "FALSE"), "stereo-letterbox-and-hud"),
+    "stereo-hud-wrong-group": (("halo_hud_group_begin(HALO_HUD_GROUP_PROMPT)",
+                                "halo_hud_group_begin(0)"), "stereo-letterbox-and-hud"),
 }
 
 

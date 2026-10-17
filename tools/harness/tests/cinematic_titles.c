@@ -44,6 +44,23 @@ static struct { struct { rectangle2d viewport_bounds; } camera; } render;
 static long quads;
 static void draw_quad(rectangle2d const *bounds, pixel32 color) { quads++; }
 
+/* Stereo and HUD hooks used by the extracted cinematic_render. */
+static struct stereo_frame_data { int eye_count; } stereo_frame;
+static int film_letterbox, immersive_letterbox, hud_split;
+static float title_bars, passed_title_bars;
+static long title_bars_calls, prompt_begins, prompt_ends;
+static int active_hud_group;
+enum { HALO_HUD_GROUP_PROMPT = 4 };
+static const struct stereo_frame_data *halo_stereo_frame(void) { return &stereo_frame; }
+static int halo_stereo_film_letterbox(void) { return film_letterbox; }
+static int halo_stereo_cutscene_immersive_letterbox(void) { return immersive_letterbox; }
+static float halo_cinematic_title_bars(void) { return title_bars; }
+static void halo_stereo_set_title_bars(float bars) { passed_title_bars = bars; title_bars_calls++; }
+static int halo_stereo_hud_split(void) { return hud_split; }
+static void halo_hud_group_begin(int group) { active_hud_group = group; prompt_begins++; }
+static void halo_hud_group_end(void) { active_hud_group = 0; prompt_ends++; }
+static void platform_log(char const *format, ...) { (void)format; }
+
 /* the HUD's font and the scenario's one title, its text in the ingame help text */
 static struct
 {
@@ -68,6 +85,7 @@ static struct string_list help_text = { { 1 } };
 static long draws;
 static real drawn_alpha;
 static pixel32 shadow, drawn_shadow;
+static int drawn_hud_group;
 static void pixel32_to_real_argb_color(pixel32 pixel, real_argb_color *color)
 {
 	color->alpha = (real)((pixel >> 24) & 0xFF) / 255.0f;
@@ -82,7 +100,8 @@ static void draw_string_set_draw_mode(long font_index, short style, short justif
 }
 static void rasterizer_text_set_shadow_color(pixel32 color) { shadow = color; }
 static short halo_screen_width(void) { return 640; }
-#define rasterizer_draw_unicode_string(bounds, style, color, flags, string) (draws++, drawn_shadow = shadow)
+#define rasterizer_draw_unicode_string(bounds, style, color, flags, string) \
+	(draws++, drawn_shadow = shadow, drawn_hud_group = active_hud_group)
 
 #include "under_test.inc"
 
@@ -159,6 +178,28 @@ int main(int argc, char **argv)
 		CHECK(slot->title_index == NONE, "the title's slot is still taken after its 10 ticks under a menu");
 		menu_up = FALSE;
 		CHECK(frame() == 0, "an ended title was drawn after the menu was gone");
+		return 0;
+	}
+	CASE("stereo-letterbox-and-hud")
+	{
+		queue_title(1000000.0f, 1.0f);
+		globals_data.show_letterbox = TRUE;
+		render.camera.viewport_bounds.y1 = 480;
+		stereo_frame.eye_count = 2;
+		film_letterbox = TRUE;
+		title_bars = 0.5f;
+		hud_split = TRUE;
+		CHECK(frame() == 1, "the stereo title was not drawn exactly once");
+		CHECK(title_bars_calls == 1 && passed_title_bars == 0.5f,
+			"the film's title bars were not passed to stereo");
+		CHECK(quads == 2, "%ld letterbox bars drawn for the stereo film", quads);
+		CHECK(prompt_begins == 1 && prompt_ends == 1 && drawn_hud_group == HALO_HUD_GROUP_PROMPT,
+			"the title was not drawn within one prompt HUD span");
+		film_letterbox = FALSE;
+		quads = 0;
+		CHECK(frame() == 1, "the title stopped drawing without a film letterbox");
+		CHECK(title_bars_calls == 2 && passed_title_bars == 0.0f && quads == 0,
+			"the letterbox remained after the film ended");
 		return 0;
 	}
 	fprintf(stderr, "unknown case: %s\n", case_name);
