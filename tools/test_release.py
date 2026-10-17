@@ -101,6 +101,15 @@ def test_repository_changelog_parser_preserves_existing_gitmoji_and_types() -> N
         )
 
 
+@pytest.mark.parametrize("heading", ["0.2.0", "visr-v0.2.0"])
+def test_notes_accept_commitizen_bump_heading_without_rewriting(heading: str) -> None:
+    entry = f"## {heading} (2026-10-16)\n\n### fix\n\n- preserve generated notes"
+    assert release.release_notes(entry + "\n\n## visr-v0.1.2\nold", "0.2.0") == entry
+    for wrong in ("0.2.1", "0.2", "0.20.0"):
+        with pytest.raises(ValueError, match="does not match"):
+            release.release_notes(entry, wrong)
+
+
 def test_notes_are_exact_generated_entry() -> None:
     entry = "## 0.1.3 (2026-10-16)\n\n### perf\n\n- warm maps"
     assert release.release_notes(entry + "\n\n## 0.1.2\nold", "0.1.3") == entry
@@ -288,7 +297,7 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     source = "a" * 40
     baseline = "b" * 40
     calls: list[tuple[Any, ...]] = []
-    notes = "## 0.1.3\n\n### perf\n\n- Warm maps"
+    notes = "## visr-v0.1.3\n\n### perf\n\n- Warm maps"
 
     def fake_run(*args: Any, **kwargs: Any) -> str:
         calls.append(args)

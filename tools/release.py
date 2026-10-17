@@ -84,7 +84,7 @@ def release_notes(changelog: str, version: str) -> str:
     notes = changelog[
         entries[0].start() : entries[1].start() if len(entries) > 1 else len(changelog)
     ].strip()
-    if not re.match(rf"^## {re.escape(version)}(?:\s|$)", notes):
+    if not re.match(rf"^## (?:visr-v)?{re.escape(version)}(?:\s|$)", notes):
         raise ValueError("Generated release entry does not match the selected version")
     if len(notes) > 4000:
         raise ValueError(
