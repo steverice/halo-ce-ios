@@ -5,7 +5,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import plistlib
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -262,3 +265,87 @@ def test_signed_feed_verifies_signature_and_payload(
             "recording",
             {**pins, "recording_feed_sha256": hashlib.sha256(bad).hexdigest()},
         )
+
+
+def test_rejected_source_never_runs_secret_job_cleanup(tmp_path: Path) -> None:
+    """Model GitHub's failure/default/always conditions with a real rejected Git source."""
+    workflow = (validation.release.ROOT / ".github/workflows/release.yml").read_text()
+    preflight = workflow.split("\n  preflight:\n", 1)[1].split("\n  prepare:\n", 1)[0]
+    guard = preflight.split(
+        "- name: Verify source is on main before using credentials", 1
+    )[1].split("\n      - ", 1)[0]
+    cleanup = preflight.split("- name: Remove signing material", 1)[1]
+    condition = re.search(r"^        if: (.+)$", cleanup, re.MULTILINE)
+    assert condition is not None
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(
+            ["git", *args], cwd=tmp_path, text=True, stderr=subprocess.PIPE
+        ).strip()
+
+    git("init", "--initial-branch=main")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    script = tmp_path / "tools/release_signing.py"
+    script.parent.mkdir()
+    script.write_text(
+        'import os\nfrom pathlib import Path\nPath(os.environ["PROBE_MARKER"]).unlink(missing_ok=True)\n'
+    )
+    git("add", "--", "tools/release_signing.py")
+    git("commit", "--message", "trusted fixture")
+    trusted = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/main", trusted)
+    script.write_text(
+        'import os\nfrom pathlib import Path\nPath(os.environ["PROBE_MARKER"]).write_text(os.environ["ASC_PRIVATE_KEY"])\n'
+    )
+    git("add", "--", "tools/release_signing.py")
+    git("commit", "--message", "untrusted fixture")
+    rejected = git("rev-parse", "HEAD")
+    marker = tmp_path / "secret-executed"
+    env = {
+        "PATH": os.environ["PATH"],
+        "SOURCE_SHA": rejected,
+        "ASC_PRIVATE_KEY": "fixture-secret",
+        "PROBE_MARKER": str(marker),
+    }
+    command = re.search(r"^        run: (.+)$", guard, re.MULTILINE)
+    assert command is not None
+    result = subprocess.run(
+        command.group(1),
+        cwd=tmp_path,
+        env=env,
+        shell=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode != 0  # This source is not on the protected main history.
+    # GitHub's always() ignores prior failure unless the cleanup has the explicit trust gate.
+    if condition.group(1) == "always()":
+        subprocess.run(
+            [validation.sys.executable, str(script), "cleanup"],
+            cwd=tmp_path,
+            env=env,
+            check=True,
+        )
+    else:
+        gate = re.fullmatch(
+            r"always\(\) && steps\.([a-z-]+)\.outcome == 'success'", condition.group(1)
+        )
+        assert gate is not None
+        assert f"id: {gate.group(1)}" in guard
+    assert not marker.exists(), (
+        "Rejected source executed repository cleanup with release secrets"
+    )
+
+
+def test_trusted_source_cleanup_still_runs_after_signing_failure() -> None:
+    workflow = (validation.release.ROOT / ".github/workflows/release.yml").read_text()
+    preflight = workflow.split("\n  preflight:\n", 1)[1].split("\n  prepare:\n", 1)[0]
+    cleanup = preflight.split("- name: Remove signing material", 1)[1]
+    condition = re.search(r"^        if: (.+)$", cleanup, re.MULTILINE)
+    assert condition is not None
+    assert condition.group(1) == "always() && steps.trusted-source.outcome == 'success'"
+    assert "if: success()" not in cleanup
+    assert preflight.index("id: trusted-source") < preflight.index(
+        "tools/release_signing.py install"
+    )
