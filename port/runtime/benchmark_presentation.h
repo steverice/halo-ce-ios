@@ -5,7 +5,9 @@
 
 #include "benchmark_metrics.h"
 
-#define BENCHMARK_PRESENTATION_CAPACITY_MAX 65536
+/* Maximum allocation is 16 MiB for records and sorting scratch on 64-bit
+   hosts. Smaller devices may request a smaller budget at reset. */
+#define BENCHMARK_PRESENTATION_CAPACITY_MAX 262144
 
 /* index is the immutable zero-based submission sequence within generation. */
 struct benchmark_presentation_token { uint64_t generation; size_t index; };
@@ -19,7 +21,9 @@ enum benchmark_presentation_result {
 enum benchmark_presentation_span {
     BENCHMARK_PRESENTATION_NO_SPAN,
     BENCHMARK_PRESENTATION_INTERVAL,
-    BENCHMARK_PRESENTATION_UNKNOWN_GAP
+    BENCHMARK_PRESENTATION_UNKNOWN_GAP,
+    /* Positive endpoints whose millisecond difference is not representable. */
+    BENCHMARK_PRESENTATION_INVALID_GAP
 };
 struct benchmark_presentation_record {
     uint64_t segment;
@@ -29,15 +33,19 @@ struct benchmark_presentation_record {
        endpoints, including spans >= 50 ms, separately from normal intervals. */
     enum benchmark_presentation_span span;
     size_t previous_index;
+    /* Unavailable for INVALID_GAP: storage stays zero, but consumers must
+       emit an unavailable duration (for example JSON null), not zero ms. */
     double milliseconds;
 };
 /* expected = stored + overflow; stored = received + missing. Coverage uses
    expected as its denominator. positive includes finite positive timestamps
-   with order errors; those errors never contribute normal intervals. */
+   with order errors; those errors never contribute normal intervals.
+   invalid counts raw timestamps; invalid_spans counts unrepresentable deltas.
+   invalid_spans are included in unknown_gaps and unknown_stalls. */
 struct benchmark_presentation_summary {
     size_t expected, stored, overflow, received, positive, unpresented;
     size_t missing, invalid, duplicates, bad_tokens, order_errors;
-    size_t intervals, stalls, unknown_gaps, unknown_stalls;
+    size_t intervals, stalls, unknown_gaps, unknown_stalls, invalid_spans;
     int timed_out;
     double callback_coverage, positive_coverage;
     struct benchmark_distribution interval;

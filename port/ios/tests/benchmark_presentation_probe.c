@@ -1,5 +1,6 @@
 /* Synthetic presentation evidence: no drawable, display or callback clock. */
 #include "benchmark_presentation.h"
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -106,6 +107,53 @@ static void bounded(void) {
     CHECK(s->expected==0 && s->intervals==0 && s->callback_coverage==0 && s->interval.mean==0);
     benchmark_presentation_free(&p);
 }
+static void long_uncapped_run(void) {
+    struct benchmark_presentation p = {0};
+    int initialized = benchmark_presentation_reset(&p, 1, 262144);
+    CHECK(initialized);
+    if (!initialized) return;
+    CHECK(!benchmark_presentation_reset(&p, 2, 262145));
+    CHECK(p.capacity == 262144 && p.generation == 1);
+    CHECK(benchmark_presentation_open(&p, 1));
+    /* A long uncapped run must retain callbacks beyond the old 65536 limit,
+       including the last admitted index. Zero callbacks still use storage. */
+    for (size_t i = 0; i < 262144; i++) {
+        struct benchmark_presentation_token t = reserve(&p);
+        CHECK(t.generation == 1 && t.index == i);
+        ACCEPT(&p, t, i == 0 ? 1.0 : i == 262143 ? 181.0 : 0.0);
+    }
+    CHECK(reserve(&p).generation == 0);
+    const struct benchmark_presentation_summary *s = benchmark_presentation_seal(&p, 0);
+    CHECK(s->stored == 262144 && s->expected == 262145 && s->overflow == 1);
+    CHECK(s->received == 262144 && s->positive == 2 && s->unpresented == 262142);
+    CHECK(s->intervals == 0 && s->unknown_gaps == 1 && s->unknown_stalls == 1);
+    CHECK(p.records[262143].previous_index == 0 && NEAR(p.records[262143].milliseconds, 180000));
+    benchmark_presentation_free(&p);
+}
+static void finite_clock_extremes(void) {
+    struct benchmark_presentation p = {0};
+    CHECK(benchmark_presentation_reset(&p, 1, 4)); CHECK(benchmark_presentation_open(&p, 1));
+    struct benchmark_presentation_token a = reserve(&p), b = reserve(&p);
+    ACCEPT(&p, a, 1.0); ACCEPT(&p, b, DBL_MAX);
+    const struct benchmark_presentation_summary *s = benchmark_presentation_seal(&p, 0);
+    CHECK(s->positive == 2 && s->invalid == 0 && s->order_errors == 0);
+    CHECK(s->intervals == 0 && s->invalid_spans == 1 && s->unknown_gaps == 1 && s->unknown_stalls == 1);
+    CHECK(p.records[1].span == BENCHMARK_PRESENTATION_INVALID_GAP);
+    CHECK(p.records[1].previous_index == 0 && p.records[1].presented == DBL_MAX);
+    CHECK(isfinite(p.records[1].milliseconds) && isfinite(s->interval.mean) && isfinite(s->interval.worst));
+    CHECK(benchmark_presentation_reset(&p, 2, 4));
+    double huge_seconds = DBL_MAX / 1024.0;
+    for (uint64_t segment = 1; segment <= 2; segment++) {
+        CHECK(benchmark_presentation_open(&p, segment));
+        a = reserve(&p); b = reserve(&p);
+        ACCEPT(&p, a, 1.0); ACCEPT(&p, b, huge_seconds);
+    }
+    s = benchmark_presentation_seal(&p, 0);
+    CHECK(s->intervals == 2 && s->stalls == 2 && s->invalid_spans == 0);
+    CHECK(isfinite(s->interval.mean) && s->interval.mean / (huge_seconds * 1000.0) > 0.999999);
+    CHECK(s->interval.mean / (huge_seconds * 1000.0) < 1.000001 && isfinite(s->interval.worst));
+    benchmark_presentation_free(&p);
+}
 static void submission_is_not_presentation(void) {
     struct benchmark_presentation p={0};
     struct benchmark_presentation_token tokens[355];
@@ -121,7 +169,7 @@ static void submission_is_not_presentation(void) {
     benchmark_presentation_free(&p);
 }
 int main(void) {
-    reordered(); distribution(); gaps_and_order(); segments_and_reuse(); bounded(); submission_is_not_presentation();
+    reordered(); distribution(); gaps_and_order(); segments_and_reuse(); bounded(); long_uncapped_run(); finite_clock_extremes(); submission_is_not_presentation();
     printf("benchmark presentation: %d checks, %d failures\n",checks,failures);
     return failures ? 1 : 0;
 }

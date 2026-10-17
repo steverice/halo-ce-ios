@@ -111,7 +111,7 @@ const struct benchmark_presentation_summary *benchmark_presentation_seal(struct 
     size_t previous = 0;
     int have_previous = 0;
     uint64_t segment = 0;
-    double sum = 0;
+    double mean = 0;
     for (size_t index = 0; index < p->count; index++) {
         struct benchmark_presentation_record *record = &p->records[index];
         if (segment != record->segment) {
@@ -132,16 +132,27 @@ const struct benchmark_presentation_summary *benchmark_presentation_seal(struct 
                 continue;
             }
             record->previous_index = previous;
-            record->milliseconds = (record->presented - before->presented) * 1000;
-            if (index == previous + 1) {
-                record->span = BENCHMARK_PRESENTATION_INTERVAL;
-                p->sort_buffer[s->intervals++] = record->milliseconds;
-                sum += record->milliseconds;
-                if (record->milliseconds >= BENCHMARK_STALL_MILLISECONDS) s->stalls++;
-            } else {
-                record->span = BENCHMARK_PRESENTATION_UNKNOWN_GAP;
+            double milliseconds = (record->presented - before->presented) * 1000;
+            if (!isfinite(milliseconds)) {
+                /* Preserve the positive endpoints and known long gap, while
+                   marking its millisecond duration unavailable for reports. */
+                record->span = BENCHMARK_PRESENTATION_INVALID_GAP;
+                s->invalid_spans++;
                 s->unknown_gaps++;
-                if (record->milliseconds >= BENCHMARK_STALL_MILLISECONDS) s->unknown_stalls++;
+                s->unknown_stalls++;
+            } else {
+                record->milliseconds = milliseconds;
+                if (index == previous + 1) {
+                    record->span = BENCHMARK_PRESENTATION_INTERVAL;
+                    p->sort_buffer[s->intervals++] = milliseconds;
+                    /* A sum can overflow even when every interval is finite. */
+                    mean += (milliseconds - mean) / s->intervals;
+                    if (milliseconds >= BENCHMARK_STALL_MILLISECONDS) s->stalls++;
+                } else {
+                    record->span = BENCHMARK_PRESENTATION_UNKNOWN_GAP;
+                    s->unknown_gaps++;
+                    if (milliseconds >= BENCHMARK_STALL_MILLISECONDS) s->unknown_stalls++;
+                }
             }
         }
         previous = index;
@@ -154,7 +165,7 @@ const struct benchmark_presentation_summary *benchmark_presentation_seal(struct 
     if (s->intervals) {
         size_t count = s->intervals;
         qsort(p->sort_buffer, count, sizeof(*p->sort_buffer), compare_double);
-        s->interval.mean = sum / count;
+        s->interval.mean = mean;
         s->interval.median = p->sort_buffer[(size_t)ceil(count * 0.5) - 1];
         s->interval.high = p->sort_buffer[(size_t)ceil(count * 0.95) - 1];
         s->interval.higher = p->sort_buffer[(size_t)ceil(count * 0.99) - 1];
