@@ -255,6 +255,22 @@ class API:
         raise ValueError("API pagination limit exceeded")
 
 
+def exact_app(api: API, bundle_id: str) -> dict[str, Any]:
+    # App Store Connect's bundle-ID filter can also return prefix matches.
+    # Consume every bounded, same-origin page before establishing uniqueness.
+    query = urllib.parse.urlencode({"filter[bundleId]": bundle_id, "limit": "200"})
+    matches = [
+        item
+        for item in api.collection("/v1/apps?" + query)
+        if item.get("attributes", {}).get("bundleId") == bundle_id
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Actual bundle does not match exactly one existing App Store Connect record"
+        )
+    return matches[0]
+
+
 def apple_token() -> str:
     import jwt
 
@@ -595,18 +611,8 @@ def publish(args: argparse.Namespace) -> None:
                 raise ValueError(
                     "Platforms do not share the same archived guest identity; do not publish a recording pack"
                 )
-            app_query = urllib.parse.urlencode(
-                {"filter[bundleId]": identity["bundle_id"], "limit": "2"}
-            )
-            apps = apple.request("GET", f"/v1/apps?{app_query}")["data"]
-            if (
-                len(apps) != 1
-                or apps[0]["attributes"]["bundleId"] != identity["bundle_id"]
-            ):
-                raise ValueError(
-                    "Actual archived app does not match exactly one existing App Store Connect record"
-                )
-            record = {**identity, "app_id": apps[0]["id"], "state": "prepared"}
+            app = exact_app(apple, identity["bundle_id"])
+            record = {**identity, "app_id": app["id"], "state": "prepared"}
             journal[platform] = record
             checkpoint()
         item = exact_build(

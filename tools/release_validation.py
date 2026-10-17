@@ -387,17 +387,7 @@ def main() -> None:
         apple = release.API(
             "https://api.appstoreconnect.apple.com", release.apple_token
         )
-        query = urllib.parse.urlencode(
-            {"filter[bundleId]": os.environ["APPLE_BUNDLE_ID"], "limit": "2"}
-        )
-        apps = apple.request("GET", "/v1/apps?" + query)["data"]
-        if (
-            len(apps) != 1
-            or apps[0]["attributes"]["bundleId"] != os.environ["APPLE_BUNDLE_ID"]
-        ):
-            raise ValueError(
-                "API key cannot read exactly one existing app record for this bundle"
-            )
+        release.exact_app(apple, os.environ["APPLE_BUNDLE_ID"])
         release.output(
             "identity",
             preflight_identity(

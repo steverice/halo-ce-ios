@@ -585,3 +585,72 @@ def test_prepare_rejects_unvalidated_policy_before_git_or_version_mutation(
     with pytest.raises(ValueError, match="after release preflight"):
         release.prepare(args)
     assert calls == []
+
+
+def test_exact_app_ignores_prefix_matches_and_consumes_all_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exact = {"id": "exact-app", "attributes": {"bundleId": "org.example.visr"}}
+    prefix = {"id": "prefix-app", "attributes": {"bundleId": "org.example.visr.tvos"}}
+    api = release.API("https://api.appstoreconnect.apple.com", "fixture")
+    responses = FakeAPI(
+        [
+            {
+                "data": [exact, prefix],
+                "links": {"next": api.base + "/v1/apps?cursor=next"},
+            },
+            {
+                "data": [
+                    {
+                        "id": "another-app",
+                        "attributes": {"bundleId": "org.example.other"},
+                    }
+                ]
+            },
+        ]
+    )
+    monkeypatch.setattr(api, "request", responses.request)
+    assert release.exact_app(api, "org.example.visr") == exact
+    assert len(responses.calls) == 2
+    assert "filter%5BbundleId%5D=org.example.visr" in responses.calls[0][1]
+    assert responses.calls[1][1] == "/v1/apps?cursor=next"
+
+
+@pytest.mark.parametrize(
+    "later", [[], [{"id": "duplicate", "attributes": {"bundleId": "org.example.visr"}}]]
+)
+def test_exact_app_rejects_missing_or_duplicate_exact_match(
+    monkeypatch: pytest.MonkeyPatch, later: list[Any]
+) -> None:
+    api = release.API("https://api.appstoreconnect.apple.com", "fixture")
+    initial = {
+        "id": "first",
+        "attributes": {
+            "bundleId": "org.example.visr" if later else "org.example.visr.tvos"
+        },
+    }
+    responses = FakeAPI(
+        [
+            {"data": [initial], "links": {"next": api.base + "/v1/apps?cursor=next"}},
+            {"data": later},
+        ]
+    )
+    monkeypatch.setattr(api, "request", responses.request)
+    with pytest.raises(
+        ValueError, match="exactly one existing App Store Connect record"
+    ):
+        release.exact_app(api, "org.example.visr")
+    assert len(responses.calls) == 2
+
+
+def test_exact_app_refuses_pagination_to_another_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = release.API("https://api.appstoreconnect.apple.com", "fixture")
+    responses = FakeAPI(
+        [{"data": [], "links": {"next": "https://example.invalid/steal-token"}}]
+    )
+    monkeypatch.setattr(api, "request", responses.request)
+    with pytest.raises(ValueError, match="pagination host"):
+        release.exact_app(api, "org.example.visr")
+    assert len(responses.calls) == 1
