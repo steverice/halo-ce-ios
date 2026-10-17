@@ -27,6 +27,18 @@ def security(*args: str, capture: bool = False) -> str:
     return result.stdout.decode().strip() if capture else ""
 
 
+class XcodeManagedProfileError(ValueError):
+    """A safe signing-preflight failure that can be reported without profile data."""
+
+
+def reject_xcode_managed_profile(profile: dict[str, Any], platform: str) -> None:
+    """Reject profiles that cannot be used by the release's manual-signing build."""
+    if profile.get("IsXcodeManaged") is True:
+        raise XcodeManagedProfileError(
+            f"{platform} provisioning profile is Xcode-managed, but release signing requires a manually managed profile"
+        )
+
+
 def write_secret(path: Path, value: bytes) -> None:
     path.write_bytes(value)
     path.chmod(0o600)
@@ -115,6 +127,7 @@ def install(folder: Path) -> None:
             )
             decoded = security("cms", "-D", "-i", str(raw), capture=True)
             profile = plistlib.loads(decoded.encode())
+            reject_xcode_managed_profile(profile, platform)
             entitlements = profile["Entitlements"]
             if (
                 profile["TeamIdentifier"] != [os.environ["APPLE_TEAM_ID"]]
@@ -200,6 +213,8 @@ if __name__ == "__main__":
     folder = Path(os.environ["RUNNER_TEMP"]) / "visr-release-signing"
     try:
         install(folder) if sys.argv[1] == "install" else cleanup(folder)
+    except XcodeManagedProfileError as error:
+        raise SystemExit(str(error)) from None
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
         # Subprocess arguments can contain passwords. Do not print the exception or captured output.
         raise SystemExit(
