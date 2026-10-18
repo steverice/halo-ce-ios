@@ -13,6 +13,11 @@ import sys
 import urllib.parse
 import urllib.request
 
+if __package__:
+    from . import release_signing
+else:
+    import release_signing
+
 ROOT = Path(__file__).resolve().parents[1]
 GL_REVISION = '1cdd228e34966dd6b95bd203e9f84faba0f371a1'
 EGL_REVISION = 'db3425b8246136faccb5e2782b5694960bd6edf1'
@@ -176,7 +181,7 @@ def main():
         parser.error('--marketing-version must have three numeric components')
     if args.build_number and not re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,2}', args.build_number):
         parser.error('--build-number must have one to three numeric components')
-    if args.signing_profile and (not args.team or args.register_device or args.cloud_saves or args.benchmark_upload):
+    if args.signing_profile and (not args.team or args.register_device or args.cloud_saves):
         parser.error('--signing-profile requires --team and cannot change account capabilities or register devices')
     if args.signing_profile and args.upload:
         parser.error('--signing-profile archives/exports only; the CI release helper uploads with API authentication')
@@ -188,8 +193,10 @@ def main():
         parser.error('--archive-only goes with --app-store-package and without --upload')
     if args.tester and args.mac:
         parser.error('--tester is for device and simulator builds')
-    if args.benchmark_upload and (args.simulator or args.unsigned):
-        parser.error('--benchmark-upload needs a signed build: the iCloud entitlement comes from the signature')
+    if args.benchmark_upload and args.simulator:
+        parser.error('--benchmark-upload needs a device build')
+    if args.benchmark_upload and args.app_store_package and not args.signing_profile:
+        parser.error('--benchmark-upload App Store packages require an existing --signing-profile')
     if args.render_height is None:
         # 0: the device profile's (profiles/); a number here overrides every profile
         args.render_height = 0
@@ -201,6 +208,24 @@ def main():
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
     try:
         cloud = cloud_definitions(args.bundle_id, args.cloud_saves, args.cloud_container, args.benchmark_upload)
+    except ValueError as error:
+        parser.error(str(error))
+    cloud_container = next(
+        (
+            item.split("=", 1)[1]
+            for item in cloud
+            if item.startswith("-DHALO_CLOUD_CONTAINER=")
+        ),
+        "iCloud.org.steverice.visr",
+    )
+    try:
+        benchmark_aps = benchmark_upload_aps_environment(
+            args.benchmark_upload,
+            bool(args.app_store_package),
+            args.signing_profile,
+            platform_name,
+            cloud_container,
+        )
     except ValueError as error:
         parser.error(str(error))
     try:
@@ -276,6 +301,8 @@ def main():
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
+    if args.benchmark_upload:
+        command.append(f'-DHALO_BENCHMARK_APS_ENVIRONMENT={benchmark_aps}')
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     command.append(f'-DHALO_TESTER_BUILD={"ON" if args.tester else "OFF"}')
@@ -424,6 +451,31 @@ def opengles_framework(folder):
         sys.exit(f'{source}/OpenGLES.tbd: {error}')
     (framework/'OpenGLES.tbd').write_text(stub)
     return folder
+
+
+def benchmark_upload_aps_environment(
+    enabled: bool,
+    app_store_package: bool,
+    signing_profile: str | None,
+    platform_name: str,
+    container_identifier: str,
+) -> str:
+    if not enabled:
+        return "development"
+    if app_store_package and not signing_profile:
+        raise ValueError(
+            "--benchmark-upload App Store packages require an existing --signing-profile"
+        )
+    if not signing_profile:
+        return "development"
+    profile = release_signing.installed_profile(signing_profile)
+    release_signing.validate_profile_entitlements(
+        profile,
+        platform_name,
+        benchmark_upload=True,
+        container_identifier=container_identifier,
+    )
+    return profile["Entitlements"]["aps-environment"]
 
 
 def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=False):

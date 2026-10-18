@@ -749,3 +749,11 @@ def test_vision_release_profile_requires_its_existing_increased_memory_entitleme
     }
     with pytest.raises(ValueError, match="increased-memory-limit"):
         release_signing.validate_profile_entitlements(profile, "visionos")
+
+
+def test_benchmark_upload_release_argument_defaults_off_and_is_policy_pinned():
+    assert release.benchmark_upload_arguments(policy()) == []
+    assert release.benchmark_upload_arguments({**policy(), "benchmark_upload": "off"}) == []
+    assert release.benchmark_upload_arguments({**policy(), "benchmark_upload": "on"}) == [
+        "--benchmark-upload"
+    ]

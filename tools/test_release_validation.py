@@ -187,10 +187,20 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
     (app / "VISR").write_bytes(b"unsigned-executable")
     monkeypatch.setattr(validation.release, "verify_guest", lambda *_: None)
     host_flags = ""
-
+    upload_enabled = False
+    codesign_calls = []
     def run(*args: Any, **kwargs: Any) -> str:
         if args[:2] == ("ninja", "-t"):
             return "/opt/llvm/bin/clang -flto=full -fprofile-use=pgo/halo_linux.profdata -c source/game/player_control.c\npython tools/ios_guest_lto.py"
+        if args[0] == "codesign":
+            codesign_calls.append(args)
+            return plistlib.dumps(
+                {
+                    "com.apple.developer.icloud-services": ["CloudKit"],
+                    "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+                    "aps-environment": "production",
+                }
+            ).decode()
         if args[0] == "xcodebuild":
             return json.dumps(
                 [
@@ -198,7 +208,7 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
                         "target": "VISR",
                         "buildSettings": {
                             "OTHER_CFLAGS": host_flags,
-                            "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1",
+                            "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1" + (" HALO_BENCHMARK_UPLOAD=1" if upload_enabled else ""),
                         },
                     }
                 ]
@@ -210,6 +220,15 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
         validation.inspect_build(tmp_path, "ios")
     host_flags = "-fprofile-instr-use=" + str(tmp_path / "pgo/visr_host.profdata")
     result = validation.inspect_build(tmp_path, "ios")
+    upload_enabled = True
+    unsigned_probe = validation.inspect_build(tmp_path, "ios", benchmark_upload=True)
+    assert unsigned_probe["benchmark_upload"] == "on"
+    assert not codesign_calls
+    signed_archive = validation.inspect_build(
+        tmp_path, "ios", app=app, benchmark_upload=True
+    )
+    assert signed_archive["benchmark_upload"] == "on"
+    assert len(codesign_calls) == 1
     assert result["guest_sha256"] == hashlib.sha256(b"guest").hexdigest()
     assert (
         result["guest_profile_sha256"] == hashlib.sha256(b"guest-profile").hexdigest()
@@ -496,3 +515,59 @@ def test_mutable_and_custom_runtime_feeds_keep_the_exact_release_hash(url: str) 
 def test_feed_json_matches_the_runtime_unique_key_and_shape_rules(raw: bytes) -> None:
     with pytest.raises((ValueError, TypeError)):
         validation.packs.decode_json(raw)
+
+
+def test_benchmark_upload_policy_defaults_off_and_preserves_legacy_policy() -> None:
+    legacy = policy()
+    assert validation.load_policy(json.dumps(legacy)) == legacy
+    assert validation.benchmark_upload_enabled(legacy) is False
+
+    enabled = {**legacy, "benchmark_upload": "on"}
+    disabled = {**legacy, "benchmark_upload": "off"}
+    assert validation.load_policy(json.dumps(enabled)) == enabled
+    assert validation.benchmark_upload_enabled(enabled) is True
+    assert validation.load_policy(json.dumps(disabled)) == disabled
+    assert validation.benchmark_upload_enabled(disabled) is False
+
+    with pytest.raises(ValueError, match="benchmark_upload"):
+        validation.load_policy(json.dumps({**legacy, "benchmark_upload": "yes"}))
+
+
+def test_benchmark_probe_build_includes_upload_only_when_policy_enables_it() -> None:
+    assert "--benchmark-upload" not in validation.build_command("ios")
+    enabled = validation.build_command("tvos", benchmark_upload=True)
+    assert "--benchmark-upload" in enabled
+    assert enabled[enabled.index("--unsigned") + 1] == "--tester"
+
+
+def test_exported_ipa_uses_the_production_cloudkit_entitlements(tmp_path, monkeypatch):
+    import zipfile
+
+    package = tmp_path / "package"
+    package.mkdir()
+    with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
+        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}))
+    entitlements = {
+        "com.apple.developer.icloud-services": ["CloudKit"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "aps-environment": "production",
+    }
+    monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
+    validation.verify_exported_ipa(package)
+
+
+def test_exported_ipa_rejects_development_aps(tmp_path, monkeypatch):
+    import zipfile
+
+    package = tmp_path / "package"
+    package.mkdir()
+    with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
+        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}))
+    entitlements = {
+        "com.apple.developer.icloud-services": ["CloudKit"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "aps-environment": "development",
+    }
+    monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
+    with pytest.raises(ValueError, match="production APS"):
+        validation.verify_exported_ipa(package)

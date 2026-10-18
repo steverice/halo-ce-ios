@@ -350,3 +350,34 @@ def test_manual_distribution_signing_never_provisions_or_registers(tmp_path: Pat
 def test_manual_signing_requires_bundle_identifier() -> None:
     with pytest.raises(ValueError, match='bundle identifier'):
         ios_build.app_store_options('TEAM', False, profile='PROFILE-UUID')
+
+
+def test_unsigned_release_probe_can_compile_upload_without_cloud_saves(monkeypatch, tmp_path):
+    configure = configure_with(monkeypatch, tmp_path, "--unsigned", "--benchmark-upload")
+    assert "-DHALO_CLOUD_SAVES=OFF" in configure
+    assert "-DHALO_BENCHMARK_UPLOAD=ON" in configure
+    assert "-DHALO_BENCHMARK_APS_ENVIRONMENT=development" in configure
+
+
+def test_manual_upload_package_uses_production_from_the_installed_profile(monkeypatch):
+    from tools import release_signing
+
+    profile = {
+        "Entitlements": {
+            "com.apple.developer.kernel.extended-virtual-addressing": True,
+            "com.apple.developer.icloud-services": ["CloudKit"],
+            "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+            "aps-environment": "production",
+        }
+    }
+    monkeypatch.setattr(release_signing, "installed_profile", lambda _: profile)
+    assert ios_build.benchmark_upload_aps_environment(
+        True, True, "PROFILE", "ios", "iCloud.org.steverice.visr"
+    ) == "production"
+
+
+def test_manual_upload_package_without_profile_is_refused():
+    with pytest.raises(ValueError, match="existing --signing-profile"):
+        ios_build.benchmark_upload_aps_environment(
+            True, True, None, "ios", "iCloud.org.steverice.visr"
+        )

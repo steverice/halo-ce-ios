@@ -31,6 +31,10 @@ class XcodeManagedProfileError(ValueError):
     """A safe signing-preflight failure that can be reported without profile data."""
 
 
+class ProfileCapabilityError(ValueError):
+    """A selected profile cannot sign the reviewed capability set."""
+
+
 def reject_xcode_managed_profile(profile: dict[str, Any], platform: str) -> None:
     """Reject profiles that cannot be used by the release's manual-signing build."""
     if profile.get("IsXcodeManaged") is True:
@@ -44,7 +48,13 @@ def write_secret(path: Path, value: bytes) -> None:
     path.chmod(0o600)
 
 
-def validate_profile_entitlements(profile: dict[str, Any], platform: str) -> None:
+def validate_profile_entitlements(
+    profile: dict[str, Any],
+    platform: str,
+    *,
+    benchmark_upload: bool = False,
+    container_identifier: str = "iCloud.org.steverice.visr",
+) -> None:
     """Require the capabilities in the exact entitlement file used by release archives."""
     target = {"ios": "iOS", "tvos": "tvOS", "visionos": "visionOS"}[platform]
     required = plistlib.loads(
@@ -54,9 +64,45 @@ def validate_profile_entitlements(profile: dict[str, Any], platform: str) -> Non
             / f"VISR-{target}-extended.entitlements"
         ).read_bytes()
     )
+    entitlements = profile.get("Entitlements", {})
     for name, value in required.items():
-        if value is True and profile["Entitlements"].get(name) is not True:
+        if value is True and entitlements.get(name) is not True:
             raise ValueError(f"{platform} distribution profile must allow {name}")
+    if benchmark_upload:
+        services = entitlements.get("com.apple.developer.icloud-services", [])
+        containers = entitlements.get("com.apple.developer.icloud-container-identifiers", [])
+        service_allowed = services == "*" or (
+            isinstance(services, list) and ("CloudKit" in services or "*" in services)
+        )
+        if not service_allowed:
+            raise ProfileCapabilityError(
+                f"{platform} distribution profile must allow the CloudKit service for benchmark uploads"
+            )
+        if container_identifier not in containers:
+            raise ProfileCapabilityError(
+                f"{platform} distribution profile must allow the configured CloudKit container"
+            )
+        if entitlements.get("aps-environment") != "production":
+            raise ProfileCapabilityError(
+                f"{platform} distribution profile must allow production APS for benchmark uploads"
+            )
+
+
+def installed_profile(profile_uuid: str) -> dict[str, Any]:
+    """Read a locally installed profile by UUID without invoking provisioning."""
+    roots = (
+        Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
+        Path.home() / "Library/MobileDevice/Provisioning Profiles",
+    )
+    paths = [root / f"{profile_uuid}.mobileprovision" for root in roots]
+    profile_path = next((path for path in paths if path.is_file()), None)
+    if profile_path is None:
+        raise ValueError("The selected manual signing profile is not installed")
+    try:
+        decoded = security("cms", "-D", "-i", str(profile_path), capture=True)
+        return plistlib.loads(decoded.encode())
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        raise ValueError("The selected manual signing profile could not be read") from None
 
 
 def install(folder: Path) -> None:
@@ -73,6 +119,27 @@ def install(folder: Path) -> None:
         "files": [],
     }
     state_path.write_text(json.dumps(state))
+    if __package__:
+        from . import release_validation as validation
+        from .ios_build import cloud_definitions
+    else:
+        import release_validation as validation
+        from ios_build import cloud_definitions
+    policy_value = os.environ.get("RELEASE_BUILD_POLICY", "")
+    upload_enabled = bool(policy_value) and validation.benchmark_upload_enabled(
+        validation.load_policy(policy_value)
+    )
+    cloud = cloud_definitions(
+        os.environ["APPLE_BUNDLE_ID"], False, None, upload_enabled
+    )
+    container_identifier = next(
+        (
+            item.split("=", 1)[1]
+            for item in cloud
+            if item.startswith("-DHALO_CLOUD_CONTAINER=")
+        ),
+        "iCloud.org.steverice.visr",
+    )
     password = secrets.token_urlsafe(32)
     security("create-keychain", "-p", password, str(keychain))
     security("set-keychain-settings", "-lut", "21600", str(keychain))
@@ -151,7 +218,12 @@ def install(folder: Path) -> None:
                 raise ValueError(
                     f"{platform} provisioning profile has the wrong platform"
                 )
-            validate_profile_entitlements(profile, platform)
+            validate_profile_entitlements(
+                profile,
+                platform,
+                benchmark_upload=upload_enabled,
+                container_identifier=container_identifier,
+            )
             if not any(
                 hashlib.sha1(cert).hexdigest().upper() in identities
                 for cert in profile["DeveloperCertificates"]
@@ -213,7 +285,7 @@ if __name__ == "__main__":
     folder = Path(os.environ["RUNNER_TEMP"]) / "visr-release-signing"
     try:
         install(folder) if sys.argv[1] == "install" else cleanup(folder)
-    except XcodeManagedProfileError as error:
+    except (XcodeManagedProfileError, ProfileCapabilityError) as error:
         raise SystemExit(str(error)) from None
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
         # Subprocess arguments can contain passwords. Do not print the exception or captured output.

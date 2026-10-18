@@ -333,9 +333,16 @@ endif()
 # The device benchmark's report, sent when its tester agrees (host/host_benchmark_send.m): one record in the public
 # database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
 option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to the iCloud container's public database" OFF)
+set(HALO_BENCHMARK_APS_ENVIRONMENT "development" CACHE STRING "APS environment authorized by the benchmark upload signing profile")
 if(HALO_BENCHMARK_UPLOAD)
+    if(NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "development" AND
+       NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "production")
+        message(FATAL_ERROR "HALO_BENCHMARK_APS_ENVIRONMENT must match the selected signing profile")
+    endif()
     target_sources(VISR PRIVATE host/host_benchmark_send.m)
-    target_compile_definitions(VISR PRIVATE "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
+    target_compile_definitions(VISR PRIVATE
+        "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\""
+        HALO_BENCHMARK_UPLOAD=1)
 endif()
 if(HALO_CLOUD_SAVES)
     # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit
@@ -357,7 +364,7 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
     # own subscriptions use it; the app sends and receives no notification of its own). Xcode signs an App Store
     # export with "production" from the distribution profile
     if(HALO_BENCHMARK_UPLOAD)
-        string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>development</string>"
+        string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>${HALO_BENCHMARK_APS_ENVIRONMENT}</string>"
             HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
     endif()
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements" "${HALO_CLOUD_ENTITLEMENTS}")

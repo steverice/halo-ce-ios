@@ -13,9 +13,11 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import urllib.request
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 if __package__:
@@ -77,10 +79,12 @@ def load_policy(value: str) -> dict[str, str]:
         "recording_feed_url",
         "recording_feed_sha256",
     }
-    if not isinstance(policy, dict) or set(policy) != fields:
+    if not isinstance(policy, dict) or set(policy) not in (fields, fields | {"benchmark_upload"}):
         raise ValueError(
             "RELEASE_BUILD_POLICY must contain the exact documented build and feed pins"
         )
+    if "benchmark_upload" in policy and policy["benchmark_upload"] not in {"on", "off"}:
+        raise ValueError("RELEASE_BUILD_POLICY benchmark_upload must be on or off")
     for name in fields:
         value = policy[name]
         if not isinstance(value, str) or not value.strip():
@@ -105,6 +109,11 @@ def load_policy(value: str) -> dict[str, str]:
                 "and pin its release-time bytes with the feed SHA-256"
             )
     return policy
+
+
+def benchmark_upload_enabled(policy: dict[str, str]) -> bool:
+    """Legacy release policies omit benchmark_upload and therefore keep it off."""
+    return policy.get("benchmark_upload", "off") == "on"
 
 
 def preflight_identity(source: str, selected: list[str], policy: dict[str, str]) -> str:
@@ -137,7 +146,7 @@ def toolchain(selected: list[str], *, root: Path | None = None) -> dict[str, str
     return result
 
 
-def build_command(target: str) -> list[str]:
+def build_command(target: str, benchmark_upload: bool = False) -> list[str]:
     # This first-stage artifact establishes the guest identity. It is never signed or distributed.
     return [
         sys.executable,
@@ -159,6 +168,7 @@ def build_command(target: str) -> list[str]:
         "--bink",
         "on",
         "--extended-virtual-addressing",
+        *(["--benchmark-upload"] if benchmark_upload else []),
         "--jobs",
         "3",
         *([f"--{target}"] if target != "ios" else []),
@@ -166,8 +176,14 @@ def build_command(target: str) -> list[str]:
 
 
 def inspect_build(
-    root: Path, target: str, folder: str = "app-unsigned", *, app: Path | None = None
+    root: Path,
+    target: str,
+    folder: str = "app-unsigned",
+    *,
+    app: Path | None = None,
+    benchmark_upload: bool = False,
 ) -> dict[str, str]:
+    signed_app = app is not None
     build = root / "build" / target / folder
     commands = run(
         "ninja", "-t", "commands", "ios_guest", capture=True, root=root
@@ -243,16 +259,17 @@ def inspect_build(
     release.verify_guest(
         (app / info["CFBundleExecutable"]).read_bytes(), guest, guest_hash
     )
-    if any(
-        name + "=1" in definitions
-        for name in (
-            "HALO_CLOUD_SAVES",
-            "HALO_BENCHMARK_UPLOAD",
-            "HALO_RENDER_VALIDATION",
-        )
-    ):
+    cloud_saves = "HALO_CLOUD_SAVES=1" in definitions
+    upload_enabled = "HALO_BENCHMARK_UPLOAD=1" in definitions
+    if cloud_saves or "HALO_RENDER_VALIDATION=1" in definitions:
         raise ValueError(
-            "Release build unexpectedly enables cloud capabilities or render validation"
+            "Release build unexpectedly enables cloud saves or render validation"
+        )
+    if upload_enabled != benchmark_upload:
+        raise ValueError("Release benchmark-upload build differs from the reviewed policy")
+    if benchmark_upload and signed_app:
+        verify_benchmark_upload_entitlements(
+            signed_app_entitlements(app), "iCloud.org.steverice.visr"
         )
     return {
         "guest_sha256": hashlib.sha256(
@@ -271,10 +288,60 @@ def inspect_build(
         "host_pgo": "use",
         "tester": "on",
         "benchmark_routes": "off",
+        "benchmark_upload": "on" if benchmark_upload else "off",
     }
 
 
-def probe(root: Path, source: str, selected: list[str]) -> dict[str, Any]:
+def signed_app_entitlements(app: Path) -> dict[str, Any]:
+    return plistlib.loads(
+        run("codesign", "-d", "--entitlements", ":-", app, capture=True).encode()
+    )
+
+
+def verify_benchmark_upload_entitlements(
+    entitlements: dict[str, Any], container_identifier: str
+) -> None:
+    services = entitlements.get("com.apple.developer.icloud-services", [])
+    containers = entitlements.get("com.apple.developer.icloud-container-identifiers", [])
+    if not isinstance(services, list) or "CloudKit" not in services:
+        raise ValueError("Signed release app is missing the CloudKit service entitlement")
+    if container_identifier not in containers:
+        raise ValueError("Signed release app is missing the configured CloudKit container entitlement")
+    if entitlements.get("aps-environment") != "production":
+        raise ValueError("Signed App Store release must use the production APS environment")
+
+
+def verify_exported_ipa(
+    package: Path, container_identifier: str = "iCloud.org.steverice.visr"
+) -> None:
+    archives = sorted(package.glob("*.ipa"))
+    if len(archives) != 1:
+        raise ValueError("Release export must contain exactly one IPA")
+    with tempfile.TemporaryDirectory(prefix="visr-export-check-") as temporary:
+        with zipfile.ZipFile(archives[0]) as exported:
+            app_info = [
+                name
+                for name in exported.namelist()
+                if name.startswith("Payload/") and name.endswith(".app/Info.plist")
+            ]
+            if len(app_info) != 1:
+                raise ValueError("Release IPA must contain exactly one app")
+            app_root = app_info[0][: -len("/Info.plist")]
+            for member in exported.infolist():
+                if member.filename == app_root or member.filename.startswith(app_root + "/"):
+                    path = PurePosixPath(member.filename)
+                    if path.is_absolute() or ".." in path.parts:
+                        raise ValueError("Release IPA contains an unsafe app path")
+                    exported.extract(member, temporary)
+        app = Path(temporary) / app_root
+        verify_benchmark_upload_entitlements(
+            signed_app_entitlements(app), container_identifier
+        )
+
+
+def probe(
+    root: Path, source: str, selected: list[str], benchmark_upload: bool = False
+) -> dict[str, Any]:
     source = release.full_sha(source)
     if run("git", "rev-parse", "HEAD", capture=True) != source:
         raise ValueError("Probe checkout differs from the reviewed source SHA")
@@ -287,8 +354,13 @@ def probe(root: Path, source: str, selected: list[str]) -> dict[str, Any]:
         "platforms": {},
     }
     for target in selected:
-        run(*build_command(target))
-        report["platforms"][target] = inspect_build(root, target)
+        run(*build_command(target, benchmark_upload))
+        if benchmark_upload:
+            report["platforms"][target] = inspect_build(
+                root, target, benchmark_upload=True
+            )
+        else:
+            report["platforms"][target] = inspect_build(root, target)
     if len({item["guest_sha256"] for item in report["platforms"].values()}) != 1:
         raise ValueError("All selected platforms must use the same guest")
     return report
@@ -303,6 +375,8 @@ def compare_evidence(evidence: dict[str, str], policy: dict[str, str]) -> None:
     ):
         if evidence[name] != policy[name]:
             raise ValueError(f"Actual build differs from reviewed policy: {name}")
+    if evidence.get("benchmark_upload", "off") != policy.get("benchmark_upload", "off"):
+        raise ValueError("Actual benchmark-upload build differs from reviewed policy")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -406,7 +480,10 @@ def main() -> None:
     release.require_ci()
     selected = release.platforms(args.platforms)
     if args.command == "probe":
-        report = probe(release.ROOT, args.source_sha, selected)
+        policy = load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
+        report = probe(
+            release.ROOT, args.source_sha, selected, benchmark_upload_enabled(policy)
+        )
         report["github_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
         report["github_run_attempt"] = os.environ.get("GITHUB_RUN_ATTEMPT", "")
         args.report.parent.mkdir(parents=True, exist_ok=True)

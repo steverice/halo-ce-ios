@@ -29,6 +29,14 @@ PLATFORMS = {
 MARKER = "\n\n<!-- visr-release-state "
 
 
+def benchmark_upload_arguments(policy: dict[str, str]) -> list[str]:
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    return ["--benchmark-upload"] if validation.benchmark_upload_enabled(policy) else []
+
+
 def run(*args: str | Path, capture: bool = False, root: Path | None = None) -> str:
     result = subprocess.run(
         [str(arg) for arg in args],
@@ -654,6 +662,7 @@ def publish(args: argparse.Namespace) -> None:
                 policy["recording_feed_url"],
                 "--benchmark-routes",
                 "off",
+                *benchmark_upload_arguments(policy),
                 "--internal-only",
                 "--extended-virtual-addressing",
                 "--jobs",
@@ -664,6 +673,8 @@ def publish(args: argparse.Namespace) -> None:
             if platform != "ios":
                 command.append(f"--{platform}")
             run(*command, root=root)
+            if validation.benchmark_upload_enabled(policy):
+                validation.verify_exported_ipa(package)
             require_clean_checkout(root)
             archive = package / "VISR.xcarchive"
             validation.compare_evidence(
@@ -672,6 +683,7 @@ def publish(args: argparse.Namespace) -> None:
                     platform,
                     "app-device",
                     app=archive / "Products/Applications/VISR.app",
+                    benchmark_upload=validation.benchmark_upload_enabled(policy),
                 ),
                 policy,
             )

@@ -8,7 +8,7 @@ Run releases through `workflow_dispatch` on `main`. The default `validate` mode 
 
 Create a GitHub environment named `release`. Configure required reviewers, prevent self-review if appropriate, and restrict deployments to `main`. Merely naming the environment in YAML does not enable approval protection. Enable Actions read/write repository permissions and arrange for the release bot to push the generated changelog commit to `main` under the repository's branch rules. If branch protection requires PRs or checks for every bot commit, grant a narrowly scoped bot exception or adapt the preparation step to the required review process before enabling releases. The workflow fails if a push is rejected; it does not bypass branch rules.
 
-Environment approvals authorize that dispatch's version commit, tag push, TestFlight uploads, notes updates, and GitHub publication. The preflight, preparation, and signing jobs use this environment, so GitHub may request approval before each protected stage. The unsigned probe does not receive environment credentials. Normal PR CI does not receive these credentials.
+Environment approvals authorize that dispatch's version commit, tag push, TestFlight uploads, notes updates, and GitHub publication. The unsigned probe, preflight, preparation, and signing jobs use this environment, so GitHub may request approval before each protected stage. The probe receives the nonsecret release policy variable but does not map signing or API credentials into its process. Normal PR CI does not receive these credentials.
 
 Set these environment values. Supply only preexisting credentials and profiles; the workflow does not register devices, create certificates or profiles, enable capabilities, create App Store records, invite testers, or submit external beta/App Store review.
 
@@ -28,7 +28,7 @@ Set these environment values. Supply only preexisting credentials and profiles; 
 
 Use an App Store Connect API key with permission to upload builds and edit beta build localizations for this app. Limit app access where the account supports it. An Admin key is not required by this flow. `GITHUB_TOKEN` supplies repository contents access; no personal GitHub token is required if the repository permits that token to create the release commit and tag. If the repository requires a dedicated bot token, configure and review its scope before changing the workflow.
 
-The signing helper creates a random-password temporary keychain, imports the existing distribution identity, validates profile ownership and expiration, and installs only the selected profiles. The `always()` cleanup step restores the previous keychain search list and deletes its keychain, installed profiles, `.p12`, and API key, including after failures. No signing material is cached or uploaded as an artifact. GitHub-hosted runners are discarded after the job. Do not move this workflow to persistent runners without reviewing interruption and cleanup behavior.
+The signing helper creates a random-password temporary keychain, imports the existing distribution identity, validates profile ownership and expiration, and installs only the selected profiles. When `benchmark_upload` is `on`, each selected profile must also allow CloudKit, the configured container, and production `aps-environment`; a missing capability stops the job before signing. The release build keeps iCloud saves off. The `always()` cleanup step restores the previous keychain search list and deletes its keychain, installed profiles, `.p12`, and API key, including after failures. No signing material is cached or uploaded as an artifact. GitHub-hosted runners are discarded after the job. Do not move this workflow to persistent runners without reviewing interruption and cleanup behavior.
 
 ## Validate before releasing
 
@@ -36,7 +36,7 @@ Dispatch with `mode=validate`, the exact reviewed `source_sha`, and the selected
 
 Download the `release-provenance` artifact. It contains `release-probe.json` and `ios/halo_guest.elf` for independent guest load-segment audits. These validation files are not attached to releases or uploaded to TestFlight. Its JSON records the source SHA, timestamp, workflow run and attempt, exact Xcode/SDKs, actual guest compiler version, profile hashes, compile-command hash, and embedded guest identity for each platform. Checks inspect the generated guest compile command, full LTO stage, resolved host compiler flags, tester/routes definitions, and actual app guest segments. Host PGO fallback is an error. Both platforms must embed the same guest.
 
-Configure `RELEASE_BUILD_POLICY` as a JSON object with exactly these fields:
+Configure `RELEASE_BUILD_POLICY` as a JSON object with the eight required fields below. For new policies, you may add the optional `benchmark_upload` field. Older policies that omit it keep uploads off.
 
 | Field | Reviewed value |
 | --- | --- |
@@ -48,6 +48,9 @@ Configure `RELEASE_BUILD_POLICY` as a JSON object with exactly these fields:
 | `profile_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
 | `recording_feed_url` | Mutable HTTPS endpoint for the signed tester recording feed for this guest |
 | `recording_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
+| `benchmark_upload` | Optional string, either `on` or `off`; omitted means `off` |
+
+With `benchmark_upload=on`, the tester's existing consent screen can send a compressed benchmark report to the app's CloudKit public database. The same policy is bound to the unsigned probe, release manifest, and release build. Signing requires an existing manual App Store profile for the exact CloudKit container and production APS environment. The release never enables cloud saves or changes account capabilities.
 
 Verify the recording package against this guest before publishing its feed through the separate data-pack procedure. Release configuration does not publish packs. A generic feed for an older guest does not satisfy this requirement. Changing source timestamps or compilers can change the guest even when gameplay code is unchanged; rerun validation after a source change.
 
@@ -82,7 +85,7 @@ For Pages, create a reviewed data commit directly on the probed source with exac
 
 Selected platforms build serially in one job and one guest cache. Distribution commands explicitly require guest PGO, full LTO, host PGO, tester mode, routes disabled, movies enabled, render validation disabled, and the reviewed feed URLs. Each archive must match the probe guest, exact Xcode/SDK, bundle ID, and tester feed metadata before upload. The tag supplies `CFBundleShortVersionString`; the source commit's UTC timestamp supplies the stable unique `CFBundleVersion` for that release. Each numeric component omits leading zeros, matching App Store Connect's canonical form. Recovery queries also normalize component padding in older manifests while still requiring the exact app, platform, marketing version, and numeric build identity. `SOURCE_DATE_EPOCH` fixes the guest's compilation date and time across recovery runs. Each actual archived app must match the release version, build number, SDK platform, shared guest ELF load segments, and guest hash. The flow compares archived guest identities across all selected targets. A recovery build with a different toolchain or guest fails that comparison.
 
-The existing packaging implementation uses manual signing with the supplied profile. Export disables Xcode's automatic version/build-number management and sets `testFlightInternalTestingOnly`. Upload uses the existing App Store Connect API key. Archives, exported IPAs, dSYMs, signing material, and game data are not attached to the GitHub release. The actual archived bundle identifier selects the existing App Store Connect app; the script does not assume an app ID.
+The existing packaging implementation uses manual signing with the supplied profile. When benchmark uploads are enabled, validation checks the CloudKit service, exact container, and production APS environment in both the signed archive and exported IPA. Export disables Xcode's automatic version/build-number management and sets `testFlightInternalTestingOnly`. Upload uses the existing App Store Connect API key. Archives, exported IPAs, dSYMs, signing material, and game data are not attached to the GitHub release. The actual archived bundle identifier selects the existing App Store Connect app; the script does not assume an app ID.
 
 The script queries builds using app, platform, marketing version, and build number, then verifies all four fields in the returned relationships. It waits up to 30 minutes per target for that exact build to become `VALID`; `FAILED`, `INVALID`, an unexpected audience, or a timeout fails the job. It never selects the latest arbitrary build. A processed build can still require export compliance or tester-group configuration in App Store Connect. This workflow does not answer those questions or change tester access.
 
