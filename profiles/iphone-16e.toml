@@ -1,0 +1,38 @@
+#:schema ../port/settings/profile.schema.json
+# One quick-suite run per scene on iPhone17,5 at native 2532x1170 and 60 Hz.
+# Menu, a10 opening, and b30 beach reported 59.97, 59.96, and 59.91 fps.
+# These are submitted-frame estimates; physical display delivery was not measured.
+# Reported frame interval p95/p99/worst was 17.3/17.5/17.7, 17.3/17.6/35.0, and
+# 17.4/17.7/27.8 ms. Thermal state stayed nominal, with no thermal changes.
+# The report's `stalls.count` was zero for its over-50-ms frame-interval threshold.
+# This records the measured baseline; no settings sweep or repeat run supports
+# alternate values or an optimization.
+
+schema = 1
+name = "iPhone 16e"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPhone17,5"]
+
+[display]
+anisotropic_filtering = 16
+shadow_map_size = 512
+model_lod = "max"
+
+[evidence."display.anisotropic_filtering"]
+basis = "measured"
+why = "The quick suite recorded 16x at native 2532x1170 in the menu, a10 opening, and b30 beach runs. The report listed 59.97, 59.96, and 59.91 fps at 60 Hz with nominal thermal state; `stalls.count` reported zero frame-interval stalls over 50 ms. This is a measured baseline, not a comparison of filter settings."
+source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b30-beach, 2026-10-18 UTC"
+
+[evidence."display.shadow_map_size"]
+basis = "measured"
+why = "The quick suite recorded a 512 shadow map at native 2532x1170 in the menu, a10 opening, and b30 beach runs. The report listed 59.97, 59.96, and 59.91 fps at 60 Hz with nominal thermal state; `stalls.count` reported zero frame-interval stalls over 50 ms. This is a measured baseline, not a comparison of shadow sizes."
+source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b30-beach, 2026-10-18 UTC"
+
+[evidence."display.model_lod"]
+basis = "measured"
+why = "The quick suite recorded max model detail at native 2532x1170 in the menu, a10 opening, and b30 beach runs. The report listed 59.97, 59.96, and 59.91 fps at 60 Hz with nominal thermal state; `stalls.count` reported zero frame-interval stalls over 50 ms. This is a measured baseline, not a comparison of detail levels."
+source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b30-beach, 2026-10-18 UTC"
