@@ -28,7 +28,14 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 MAXIMUM_SEQUENCE = 2**53 - 1
-ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024, "recordings": 24 * 1024 * 1024}
+RECORDING_MAX_FILES = 160
+RECORDING_MAX_FILE_BYTES = 4 * 1024 * 1024
+# Match the native route grammar: three streams and two short metadata files per
+# route, plus one catalog; include per-file padding/names and both base64 layers.
+_RECORDING_ENVELOPE_CONTENT_MAX = 16 * (3 * RECORDING_MAX_FILE_BYTES + 2 * 4095) + RECORDING_MAX_FILE_BYTES
+_RECORDING_PAYLOAD_MAX = ((_RECORDING_ENVELOPE_CONTENT_MAX + 2) // 3) * 4 + RECORDING_MAX_FILES * 128 + 65536
+ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024,
+                   "recordings": ((_RECORDING_PAYLOAD_MAX + 2) // 3) * 4 + 65536}
 LEGACY_BUILTIN_SCENES = {"menu", "a10-opening", "b30-beach"}
 LEGACY_MAXIMUM_ROUTES = 13
 PROFILE_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.toml")
@@ -135,7 +142,7 @@ def read_regular(directory, name, maximum):
 
 def snapshot_limits(kind):
     return ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
-        else (160, 4 * 1024 * 1024, 12 * 1024 * 1024))
+        else (RECORDING_MAX_FILES, RECORDING_MAX_FILE_BYTES, RECORDING_MAX_FILES * RECORDING_MAX_FILE_BYTES))
 
 
 def snapshot_name_allowed(name, kind, compatibility=None):

@@ -122,8 +122,9 @@ static NSDictionary *PackJSON(NSData *data) {
 @implementation HostDataPackStore
 // The envelope is parsed before its signature is checked, so these bounds are also what an unauthenticated feed
 // can make the app hold. The payload's files are base64 inside the payload, which is base64 again in the envelope:
-// 12 MiB of recordings come to about 21.4 MiB. tools/data_pack.py refuses an envelope above these.
-- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : 24 * 1024 * 1024; }
+// Recording bounds follow the maximum individually valid files, without a separate library-size cap.
+// tools/data_pack.py uses the same base64/JSON allowance.
+- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : HOST_RECORDING_PACK_MAX_ENVELOPE_BYTES; }
 - (NSDictionary *)bundledIdentity { return @{@"kind": _kind, @"channel": _channel, @"compatibility": _compatibility, @"sequence": @0, @"sha256": @"", @"bundled": @YES}; }
 - (NSString *)statePath { return [_root stringByAppendingPathComponent:@"state.json"]; }
 - (NSString *)generationPath:(NSString *)name { return [_root stringByAppendingPathComponent:name]; }

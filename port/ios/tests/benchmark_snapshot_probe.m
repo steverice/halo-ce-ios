@@ -121,6 +121,14 @@ int main(void) {
         NSDictionary *empty = host_benchmark_snapshot_create(target, @[], identity, @{}, &error);
         CHECK(empty != nil && [empty[@"files"] count] == 0);
         CHECK([host_benchmark_snapshot_load(target, identity) isEqual:empty]);
+        NSData *large_input = [NSMutableData dataWithLength:3 * 1024 * 1024 + 64 * 1024];
+        for (int index = 0; index < 4; index++) {
+            NSString *name = [NSString stringWithFormat:@"large-%d.input", index];
+            CHECK([large_input writeToFile:[source stringByAppendingPathComponent:name] atomically:YES]);
+        }
+        NSDictionary *large = host_benchmark_snapshot_create(target, @[ source ], identity, updates, &error);
+        CHECK(large != nil && [host_benchmark_snapshot_load(target, identity) isEqual:large]);
+        CHECK([large[@"files"] count] == 7);
         CHECK([files removeItemAtPath:root error:nil]);
         printf("benchmark_snapshot_probe: %d checks passed\n", checks);
     }

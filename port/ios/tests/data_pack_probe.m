@@ -277,6 +277,38 @@ int main(int argc, const char **argv) { @autoreleasepool {
     CHECK(loggedHTTPFailure && loggedNetworkFailure, "feed failures reach the runtime logger");
     store = Store(root);
     CHECK(![[store beginLaunch] isEqual:@"/bundled"], "failed checks leave the current snapshot in use");
+    // A valid recording library may exceed both former aggregate/download caps.
+    @autoreleasepool {
+        NSString *recordingRoot = NewRoot();
+        NSString *compatibility = @"benchmark-replay-1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        NSString *encoded = [[NSMutableData dataWithLength:3600000] base64EncodedStringWithOptions:0];
+        NSMutableDictionary *recordings = [NSMutableDictionary dictionary];
+        for (int index = 0; index < 4; index++)
+            recordings[[NSString stringWithFormat:@"large-%d.input", index]] = encoded;
+        networkEnvelope = Envelope(1, @{@"kind": @"recordings", @"compatibility": compatibility}, recordings);
+        CHECK(networkEnvelope.length > 24 * 1024 * 1024, "large fixture exceeds former download cap");
+        networkFails = NO; networkStatus = 200;
+        HostDataPackStore *largeStore = [[HostDataPackStore alloc] initWithRoot:recordingRoot bundled:@"/bundled"
+            kind:@"recordings" channel:@"stable" publicKey:[NSData dataWithBytes:publicKey length:32]
+            compatibility:compatibility validator:^BOOL(NSString *folder, NSError **error) {
+                (void)error;
+                return [[NSFileManager defaultManager] fileExistsAtPath:[folder stringByAppendingPathComponent:@"large-3.input"]];
+            }];
+        [largeStore checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/recordings.json"]];
+        for (int attempt = 0; attempt < 1500; attempt++) {
+            NSDictionary *state = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:
+                [recordingRoot stringByAppendingPathComponent:@"state.json"]] options:0 error:NULL];
+            if ([state[@"pending"] length]) break;
+            [NSThread sleepForTimeInterval:0.01];
+        }
+        NSString *generation = [largeStore beginLaunch];
+        CHECK(![generation isEqual:@"/bundled"], "large recording pack downloads, verifies and activates");
+        CHECK([NSData dataWithContentsOfFile:[generation stringByAppendingPathComponent:@"large-3.input"]].length == 3600000,
+            "large recording file survives activation");
+        [largeStore markHealthy];
+        [[NSFileManager defaultManager] removeItemAtPath:recordingRoot error:NULL];
+        networkEnvelope = nil;
+    }
     method_setImplementation(method, originalConfiguration);
     [[NSFileManager defaultManager] removeItemAtPath:root error:NULL];
     fprintf(stdout, "data_pack_probe: %s (%d failures)\n", failures ? "FAIL" : "PASS", failures);

@@ -28,6 +28,27 @@ def test_minimal_recording(tmp_path):
     data_pack.validate_recordings(recording(tmp_path / "recordings"))
 
 
+def large_recording_pack(folder):
+    row = b"0 0000 0 0 0 0 0 0 0 0 0 0 0 0\n"
+    rows = (3_600_000 + len(row) - 1) // len(row)
+    for index in range(4):
+        take = f"large-take-{index}"
+        recording(folder, take)
+        (folder / f"{take}.input").write_bytes(b"halo input recording 1\n" + row * rows)
+    return folder
+
+
+def test_large_recording_snapshot_and_published_envelope(tmp_path):
+    folder = large_recording_pack(tmp_path / "recordings")
+    files = data_pack.snapshot(folder, "recordings", "benchmark-replay-1:" + "a" * 64)
+    assert sum(map(len, files.values())) > 12 * 1024 * 1024
+
+    args = arguments(tmp_path)
+    args[args.index("--input") + 1] = str(folder)
+    data_pack.main(args)
+    assert (tmp_path / "pack.json").stat().st_size > 24 * 1024 * 1024
+
+
 @pytest.mark.parametrize("extension,content", [
     ("input", "wrong header\n"), ("actions", "halo action recording 2\n"),
     ("seeds", "halo seed recording 1\n0 1 0 0\n"),
