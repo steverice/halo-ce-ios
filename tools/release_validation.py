@@ -307,6 +307,8 @@ def verify_benchmark_upload_entitlements(
         raise ValueError("Signed release app is missing the CloudKit service entitlement")
     if container_identifier not in containers:
         raise ValueError("Signed release app is missing the configured CloudKit container entitlement")
+    if entitlements.get("com.apple.developer.icloud-container-environment") != "Production":
+        raise ValueError("Signed App Store release must use the production CloudKit environment")
     if entitlements.get("aps-environment") != "production":
         raise ValueError("Signed App Store release must use the production APS environment")
 

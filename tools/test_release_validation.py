@@ -198,6 +198,7 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
                 {
                     "com.apple.developer.icloud-services": ["CloudKit"],
                     "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+                    "com.apple.developer.icloud-container-environment": "Production",
                     "aps-environment": "production",
                 }
             ).decode()
@@ -550,6 +551,7 @@ def test_exported_ipa_uses_the_production_cloudkit_entitlements(tmp_path, monkey
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
         "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "com.apple.developer.icloud-container-environment": "Production",
         "aps-environment": "production",
     }
     monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
@@ -566,8 +568,29 @@ def test_exported_ipa_rejects_development_aps(tmp_path, monkeypatch):
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
         "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "com.apple.developer.icloud-container-environment": "Production",
         "aps-environment": "development",
     }
     monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
     with pytest.raises(ValueError, match="production APS"):
+        validation.verify_exported_ipa(package)
+
+
+@pytest.mark.parametrize("cloudkit_environment", ["Development", None])
+def test_exported_ipa_rejects_nonproduction_cloudkit_environment(tmp_path, monkeypatch, cloudkit_environment):
+    import zipfile
+
+    package = tmp_path / "package"
+    package.mkdir()
+    with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
+        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}))
+    entitlements = {
+        "com.apple.developer.icloud-services": ["CloudKit"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "aps-environment": "production",
+    }
+    if cloudkit_environment is not None:
+        entitlements["com.apple.developer.icloud-container-environment"] = cloudkit_environment
+    monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
+    with pytest.raises(ValueError, match="production CloudKit environment"):
         validation.verify_exported_ipa(package)
