@@ -139,7 +139,7 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 	struct game_variant *variant;
 	short local;
 	struct mp_benchmark_probe_counts counts[4];
-	int network_players = network_test_suite_network_players();
+	int network_players = network_test_suite_network_players(), i;
 
 	memset(state, 0, sizeof(*state));
 	state->tick = -1;
@@ -190,7 +190,7 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 		struct object_iterator iterator;
 
 		state->synthetic_queue_ready = benchmark_mp_arena_ready();
-		for (int i = 1; i < network_players; i++)
+		for (i = 1; i < network_players; i++)
 		{
 			long *players = machine_get_player_list(i);
 			long player_index = players ? players[0] : NONE;

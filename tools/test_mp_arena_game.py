@@ -60,16 +60,17 @@ static void input_abstraction_get_local_player_preferences(short i,struct game_i
 static void platform_log(const char *format,...) { (void)format; }
 #include "__SOURCE__"
 int main(void) {
+    int i;
     struct benchmark_mp_arena_config cfg={6,1.5f,3.5f,0.4f};
-    for(int i=0;i<32;i++) {players[i].unit_index=i;players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;}
+    for(i=0;i<32;i++) {players[i].unit_index=i;players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;}
     assert(benchmark_mp_arena_configure(&cfg));
     assert(!benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(0)==1&&benchmark_mp_arena_ready());
     assert(positions_set==32);
-    for(int i=0;i<32;i++) assert(benchmark_mp_arena_repositions(i)==1);
+    for(i=0;i<32;i++) assert(benchmark_mp_arena_repositions(i)==1);
     assert(benchmark_mp_arena_tick(1)==1&&positions_set==32);
     struct player_action action={0};
-    for(int i=1;i<32;i++) {
+    for(i=1;i<32;i++) {
         assert(benchmark_mp_arena_action(i,10,&action));
         assert(isfinite(action.desired_facing.yaw)&&isfinite(action.desired_facing.pitch));
         assert(hypotf(action.throttle.i,action.throttle.j)>0&&hypotf(action.throttle.i,action.throttle.j)<=0.76f);
@@ -106,6 +107,6 @@ def test_actual_geometry_staging_respawn_and_input_adapter(tmp_path):
         raise SkipTest("A C compiler is required for the game arena probe")
     path,binary=tmp_path / "arena-game.c",tmp_path / "arena-game"
     path.write_text(HARNESS.replace("__SOURCE__",str(SOURCE)))
-    subprocess.run([compiler,"-O2","-fsanitize=address,undefined","-iquote",str(ROOT / "port/linux/include"),
+    subprocess.run([compiler,"-O2","-std=gnu89","-fms-extensions","-Wno-c99-extensions","-fsanitize=address,undefined","-iquote",str(ROOT / "port/linux/include"),
                     str(path),"-lm","-o",str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

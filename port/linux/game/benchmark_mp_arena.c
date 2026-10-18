@@ -33,7 +33,7 @@ void benchmark_mp_arena_reset(void)
 
 int benchmark_mp_arena_configure(const struct benchmark_mp_arena_config *config)
 {
-	int players = network_test_suite_network_players();
+	int players = network_test_suite_network_players(), i;
 
 	if (arena.enabled || players < 2 || players > 32 || !benchmark_mp_arena_valid(config))
 		return 0;
@@ -41,7 +41,7 @@ int benchmark_mp_arena_configure(const struct benchmark_mp_arena_config *config)
 	arena.players = players;
 	arena.enabled = 1;
 	arena.last_tick = NONE;
-	for (int i = 0; i < players; i++) arena.units[i] = NONE;
+	for (i = 0; i < players; i++) arena.units[i] = NONE;
 	return 1;
 }
 
@@ -97,23 +97,25 @@ static int arena_choose(void)
 {
 	struct scenario *scenario = global_scenario_try_and_get();
 	real_point3d points[32] = { 0 };
+	int start;
 
 	if (!scenario || scenario->players.count <= 0)
 		return 0;
 	/* Bound setup work even for a malformed or unusually large scenario. */
-	for (int start = 0; start < scenario->players.count && start < 128; start++)
+	for (start = 0; start < scenario->players.count && start < 128; start++)
 	{
 		struct player_starting_location *location = TAG_BLOCK_GET_ELEMENT(&scenario->players, start, struct player_starting_location);
+		int direction;
 
 		if (!isfinite(location->position.x) || !isfinite(location->position.y) || !isfinite(location->position.z) || !isfinite(location->facing))
 			continue;
-		for (int direction = 0; direction < 4; direction++)
+		for (direction = 0; direction < 4; direction++)
 		{
 			float facing = location->facing + direction * 1.57079633f;
 			float forward_x = cosf(facing), forward_y = sinf(facing);
-			int valid = 1;
+			int valid = 1, actor;
 
-			for (int actor = 0; actor < arena.players && valid; actor++)
+			for (actor = 0; actor < arena.players && valid; actor++)
 			{
 				float offset[2];
 				real_point3d eye;
@@ -158,13 +160,14 @@ static void arena_place(int actor, struct player_datum *player)
 
 int benchmark_mp_arena_tick(long tick)
 {
+	int i;
 	if (!arena.enabled) return 1;
 	if (arena.failed || tick < 0 || tick < arena.last_tick) return -1;
 	if (tick == arena.last_tick) return arena.ready;
 	arena.last_tick = tick;
 	if (!arena.ready)
 	{
-		for (int i = 0; i < arena.players; i++)
+		for (i = 0; i < arena.players; i++)
 		{
 			struct player_datum *player = arena_player(i);
 
@@ -175,11 +178,11 @@ int benchmark_mp_arena_tick(long tick)
 			}
 		}
 		if (!arena_choose()) { arena.failed = 1; return -1; }
-		for (int i = 0; i < arena.players; i++) arena_place(i, arena_player(i));
+		for (i = 0; i < arena.players; i++) arena_place(i, arena_player(i));
 		arena.ready = 1;
 		return 1;
 	}
-	for (int i = 0; i < arena.players; i++)
+	for (i = 0; i < arena.players; i++)
 	{
 		struct player_datum *player = arena_player(i);
 		real_point3d position;
@@ -245,6 +248,7 @@ int benchmark_mp_arena_gamepad(short port, long tick, struct mp_benchmark_probe_
 	real_point3d position, target = { 0.0f, 0.0f, 0.0f };
 	real_vector3d facing;
 	float yaw, pitch;
+	int i;
 
 	if (!arena.enabled || !arena.ready || arena.failed || port != 0 || !game_time_initialized() || !game_in_progress() ||
 		!mp_benchmark_probe_active() || !(player = arena_player(0)) || player->unit_index == NONE)
@@ -252,7 +256,7 @@ int benchmark_mp_arena_gamepad(short port, long tick, struct mp_benchmark_probe_
 	input_abstraction_get_local_player_preferences(0, &preferences);
 	if (preferences.joystick_controls != 0) { arena.failed = 1; memset(pad, 0, sizeof(*pad)); return 1; }
 	object_get_origin(player->unit_index, &position);
-	for (int i = 1; i < arena.players; i++)
+	for (i = 1; i < arena.players; i++)
 	{
 		target.x += arena.points[i].x / (arena.players - 1);
 		target.y += arena.points[i].y / (arena.players - 1);
