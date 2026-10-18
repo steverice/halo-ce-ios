@@ -44,10 +44,10 @@ def after_map_branch() -> str:
 def suite_functions() -> str:
     pieces = [function(NETWORK_TEST, "int network_test_suite_begin("),
               function(NETWORK_TEST, "void network_test_suite_end(void)")]
-    if "static int network_test_suite_add_one_synthetic_player(" in NETWORK_TEST:
-        pieces.append(function(NETWORK_TEST, "static int network_test_suite_add_one_synthetic_player("))
-    if "static int network_test_suite_prepare_synthetic_player(" in NETWORK_TEST:
-        pieces.append(function(NETWORK_TEST, "static int network_test_suite_prepare_synthetic_player("))
+    if "static int network_test_suite_add_synthetic_players(" in NETWORK_TEST:
+        pieces.append(function(NETWORK_TEST, "static int network_test_suite_add_synthetic_players("))
+    if "static int network_test_suite_prepare_synthetic_players(" in NETWORK_TEST:
+        pieces.append(function(NETWORK_TEST, "static int network_test_suite_prepare_synthetic_players("))
     return "\n\n".join(pieces)
 
 
@@ -179,6 +179,7 @@ static void reset_game(void) {
     now_ms = network_game_settings_update_time = 0;
     network_game_settings_update_pending = FALSE;
 }
+static void benchmark_mp_arena_reset(void) { }
 __NETWORK_TEST_STATE__
 __SUITE_FUNCTIONS__
 __VARIANT_FUNCTION__
@@ -311,7 +312,7 @@ int main(void) {
         if (failure == 1) server.game.machines[15].machine_index = 15;
         if (failure == 2) force_slots_held = -5; /* fail after four successful insertions */
         if (failure == 3) { force_settings_failure = TRUE; now_ms = 250; }
-        CHECK(!network_test_suite_add_one_synthetic_player(&server));
+        CHECK(!network_test_suite_add_synthetic_players(&server));
         CHECK(server.game.player_count == 1 && server.game.machine_count == 1);
         CHECK(server.game.players[0].machine_index == 0);
         for (int i = 1; i < 32; i++) {

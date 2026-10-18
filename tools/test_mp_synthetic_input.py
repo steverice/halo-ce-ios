@@ -104,6 +104,9 @@ static long *machine_get_player_list(long machine_index) {
     return machine_index >= 0 && machine_index < 32 ? machine_players[machine_index] : NULL;
 }
 static int valid_real(float value) { return isfinite(value); }
+static int benchmark_mp_arena_tick(long tick) { (void)tick; return 1; }
+static int benchmark_mp_arena_enabled(void) { return 0; }
+static int benchmark_mp_arena_action(int actor,long tick,struct player_action *action) { (void)actor;(void)tick;(void)action;return 0; }
 void network_test_suite_synthetic_input_tick(long tick);
 __ACTION_VALID__
 __ADD_TICKS__
@@ -129,6 +132,7 @@ int main(void) {
     machine_players[1][0] = (1L << 16) | 1;
     queues[0].identifier = queues[1].identifier = 1;
     network_test.suite_owned = network_test.players_wanted = 1;
+    network_test.mode = _network_test_host;
     game_tick = 10;
     update_server_next_update();
     CHECK(observed.action_count == 2 && observed.actions[1].throttle.j > 0.5f &&
@@ -163,6 +167,7 @@ int main(void) {
         memset(update_server_distributed_inputs, 0, sizeof(update_server_distributed_inputs));
         queue_array.count = count;
         network_test.suite_network_players = count;
+        network_test.mode = _network_test_host;
         for (int i = 0; i < count; i++) {
             queues[i].identifier = i + 1;
             machine_players[i][0] = ((long)(i + 1) << 16) | i;
@@ -189,6 +194,22 @@ int main(void) {
     network_test_suite_synthetic_input_tick(200);
     CHECK(network_test.mode == _network_test_off);
     for (int i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
+    queues[31].identifier = 32;
+    network_test_suite_synthetic_input_tick(201);
+    for (int i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
+    /* Machine IDs and actual salted datum slots need not have the same index. */
+    network_test.mode = _network_test_host;
+    for (int i = 0; i < 32; i++) {
+        queues[i].identifier = i + 1;
+        memset(&queues[i].current_action, 0, sizeof(queues[i].current_action));
+    }
+    for (int i = 0; i < 32; i++) {
+        int slot = (i * 7 + 5) % 32;
+        machine_players[i][0] = ((long)(slot + 1) << 16) | slot;
+    }
+    network_test_suite_synthetic_input_tick(210);
+    CHECK(queues[5].current_action.throttle.j == 0.0f); /* the real local datum */
+    for (int i = 0; i < 32; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
     return failures != 0;
 }
 '''

@@ -94,7 +94,9 @@ static short players_port_local_player_count(void) { return 1; }
 static short main_get_window_count(void) { return 1; }
 static int game_engine_can_score(void) { return 1; }
 static int game_engine_showing_postgame(void) { return 0; }
-static int network_test_suite_two_player_proof_active(void) { return 1; }
+static int benchmark_mp_arena_ready(void) { return 1; }
+static unsigned long network_test_suite_repositions(int actor) { return actor >= 0 && actor < 33 ? 1 : 0; }
+static void network_test_suite_scripted_counts(unsigned long *hits,unsigned long *kills) { *hits = 3; *kills = 1; }
 static int network_test_suite_network_players(void) { return expected_players; }
 static int network_test_suite_map_matches(const char *map) { return strstr(map, "chillout") != NULL; }
 static long local_player_get_player_index(short local) { return local == 0 ? 0 : NONE; }
@@ -155,6 +157,7 @@ int main(void) {
     CHECK(state.local_players == 1 && state.roster == 2 && state.spawned == 2);
     CHECK(state.actors[1].present && state.actors[1].spawned && state.actors[1].position[0] == 12.0f);
     CHECK(state.synthetic_queue_ready && state.projectiles_alive == 1);
+    CHECK(state.actors[1].repositions == 1 && state.scripted_hits == 3 && state.scripted_kills == 1);
     remote_present = 0; queue_ready = 0; projectile_present = 0;
     benchmark_scenario_multiplayer_state(&state);
     CHECK(state.roster == 1 && state.spawned == 1 && !state.synthetic_queue_ready && !state.projectiles_alive);

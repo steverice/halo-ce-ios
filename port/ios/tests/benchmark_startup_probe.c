@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "benchmark_mp_arena.h"
 #define HALO_IOS 1
 #define __HALO_LINUX_PLATFORM_H
 void platform_log(const char *format, ...);
@@ -25,7 +26,8 @@ static int mp_begins, proof_begins, proof_failed, mp_ends, mp_probe_enabled, mp_
 static int suspension_allowed = 1;
 static int replay_suspended, replay_begins, replay_begins_before_suspend, recording_selected;
 static int mp_request, window_opens, window_closes, run_ends;
-static int fatal_reports;
+static int fatal_reports, arena_configures, arena_columns_override = 6;
+static struct benchmark_mp_arena_config configured_arena;
 static char last_end_status[32];
 static struct benchmark_mp_state observed_mp;
 static int exit_status, exit_armed;
@@ -56,9 +58,10 @@ int host_benchmark_start(const char *name, int drawable, int base, int anisotrop
 }
 int host_benchmark_next(char *text, unsigned int size) {
     requests++;
-    if (mp_request) snprintf(text, size, "scene=%s map=chillout difficulty=normal kind=multiplayer_synthetic lead=15 seconds=60 simulation=%s players=%d views=1 game_mode=slayer score_limit=1000 time_limit_minutes=0",
-        mp_request == 2 ? "private-proof-fixture" : "private-local-fixture",
-        mp_request == 2 ? "network_players" : "local_controllers", mp_request == 2 ? 2 : 4);
+    if (mp_request) snprintf(text, size, "scene=%s map=chillout difficulty=normal kind=multiplayer_synthetic lead=15 seconds=60 simulation=%s players=%d views=1 game_mode=slayer score_limit=1000 time_limit_minutes=0 arena_columns=%d arena_spacing=1.5 arena_distance=3.5 arena_radius=0.4",
+        mp_request != 1 ? "private-proof-fixture" : "private-local-fixture",
+        mp_request != 1 ? "network_players" : "local_controllers", mp_request != 1 ? mp_request : 4,
+        mp_request > 4 ? arena_columns_override : 0);
     else if (recording_selected) snprintf(text, size, "scene=startup map=a10 difficulty=normal recording=probe kind=gameplay lead=100 seconds=10");
     else snprintf(text, size, "scene=startup map=a10 difficulty=normal kind=gameplay lead=100 seconds=10");
     return 1;
@@ -80,10 +83,13 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
     int players, int views, int score_limit, int time_limit_minutes) {
     CHECK(!strcmp(map, "chillout") && !strcmp(game_mode, "slayer"));
     CHECK(views == 1 && score_limit == suite.mp_score_limit && time_limit_minutes == suite.mp_time_limit_minutes);
-    if (!strcmp(simulation, "network_players") && players == 2) proof_begins++;
+    if (!strcmp(simulation, "network_players") && players >= 2 && players <= 32) proof_begins++;
     else if (!strcmp(simulation, "local_controllers") && players == 4) mp_begins++;
     else return 0;
     return 1;
+}
+int benchmark_mp_arena_configure(const struct benchmark_mp_arena_config *config) {
+    arena_configures++; configured_arena = *config; return benchmark_mp_arena_valid(config);
 }
 int network_test_suite_failed(void) { return proof_failed; }
 void network_test_suite_end(void) { mp_ends++; }
@@ -122,6 +128,8 @@ static void reset(void) {
     suspension_allowed = 1;
     replay_suspended = replay_begins = replay_begins_before_suspend = recording_selected = 0;
     mp_request = window_opens = window_closes = run_ends = fatal_reports = 0;
+    arena_configures = 0; arena_columns_override = 6;
+    memset(&configured_arena, 0, sizeof(configured_arena));
     last_end_status[0] = 0;
     memset(&observed_mp, 0, sizeof(observed_mp));
     last_log[0] = 0;
@@ -431,6 +439,36 @@ int main(void) {
         suite.mp_distance[count - 1] = 0.0;
         CHECK(!mp_evidence_note(note, sizeof(note)));
     }
+
+    reset();
+    struct benchmark_mp_state staged = {0};
+    staged.actors[0].present = staged.actors[0].spawned = 1;
+    staged.actors[0].throttle = 1.0f;
+    mp_collect(&staged);
+    staged.actors[0].position[0] = 1.0f;
+    staged.actors[0].repositions = 1;
+    mp_collect(&staged);
+    CHECK(suite.mp_distance[0] == 0.0); /* even a short scripted placement cannot count as walking */
+    staged.actors[0].position[0] = 1.1f;
+    mp_collect(&staged);
+    CHECK(suite.mp_distance[0] > 0.09 && suite.mp_distance[0] < 0.11);
+
+    reset(); mp_request = 32;
+    next_run();
+    suite.pending_action = suite_action_mp_begin;
+    benchmark_suite_mainloop_update();
+    CHECK(proof_begins == 1 && arena_configures == 1);
+    CHECK(configured_arena.columns == 6 && configured_arena.spacing == 1.5f && configured_arena.movement_radius == 0.4f);
+    reset(); mp_request = 32; arena_columns_override = 9;
+    next_run();
+    suite.pending_action = suite_action_mp_begin;
+    benchmark_suite_mainloop_update();
+    CHECK(proof_begins == 0 && arena_configures == 0 && suite.mp_action_failed);
+
+    reset(); mp_request = 2;
+    suite.mp_repositions = suite.mp_scripted_hits = suite.mp_scripted_kills = 99;
+    next_run();
+    CHECK(!suite.mp_repositions && !suite.mp_scripted_hits && !suite.mp_scripted_kills);
 
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));

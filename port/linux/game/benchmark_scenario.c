@@ -26,6 +26,8 @@ check that a replay stayed on its route.
 #include <math.h>
 #include <string.h>
 #include "benchmark_mp_state.h"
+#include "benchmark_mp_arena.h"
+#include "network_test_suite.h"
 #include "mp_benchmark_probe.h"
 
 /* starts map (the console's map_name) at a difficulty by the console's name
@@ -94,6 +96,8 @@ static void benchmark_mp_actor_fill(struct benchmark_mp_actor *actor, struct pla
 	if (!player)
 		return;
 	actor->present = 1;
+	actor->repositions = network_test_suite_repositions(player->local_player_index != NONE ?
+		player->local_player_index : player->network_player_data.machine_index);
 	actor->kills = player->statistics.kills[0];
 	actor->deaths = player->statistics.deaths;
 	if (counts)
@@ -185,7 +189,7 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 			update_server_update_actions(update_number, &action_count) : NULL;
 		struct object_iterator iterator;
 
-		state->synthetic_queue_ready = 1;
+		state->synthetic_queue_ready = benchmark_mp_arena_ready();
 		for (int i = 1; i < network_players; i++)
 		{
 			long *players = machine_get_player_list(i);
@@ -208,6 +212,7 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 		while (object_iterator_next(&iterator) != NULL)
 			state->projectiles_alive++;
 	}
+	network_test_suite_scripted_counts(&state->scripted_hits, &state->scripted_kills);
 	state->observer0 = state->actors[0].present && observer_get_camera(0) != NULL;
 	state->probe_active = mp_benchmark_probe_active();
 }

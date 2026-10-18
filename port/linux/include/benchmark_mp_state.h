@@ -10,7 +10,7 @@ struct benchmark_mp_actor
 	float position[3], body, shield;
 	int grenades[2], ammo, weapon_definition, kills, deaths;
 	float throttle;
-	unsigned long fire_requests, jump_requests, grenade_requests;
+	unsigned long fire_requests, jump_requests, grenade_requests, repositions;
 };
 
 struct benchmark_mp_state
@@ -19,6 +19,7 @@ struct benchmark_mp_state
 	int multiplayer, map_ok, slayer, score_limit, time_limit_minutes;
 	int local_players, roster, spawned, view_count, observer0, probe_active, can_score, postgame;
 	int synthetic_queue_ready, projectiles_alive;
+	unsigned long scripted_hits, scripted_kills;
 	struct benchmark_mp_actor actors[BENCHMARK_MP_ACTORS];
 };
 

@@ -41,6 +41,7 @@ static const char *__attribute__((unused)) config_string(const char *name) {
 }
 static int __attribute__((unused)) game_connection(void) { return connection; }
 static void __attribute__((unused)) network_game_abort(void) { aborts++; }
+static void benchmark_mp_arena_reset(void) { }
 __NETWORK_STATE__
 __BEGIN_FUNCTION__
 __GETTER_FUNCTIONS__

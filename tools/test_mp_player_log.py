@@ -40,7 +40,7 @@ struct unit_datum { struct { unsigned long flags,control_flags; float primary_tr
     int grenade_counts[2],current_weapon_index; long weapon_object_indices[4];
     struct vector aiming_vector,looking_vector,throttle;
     struct { int aiming_screen_index,looking_screen_index,state; } animation; } unit; };
-struct player_datum { wchar_t name[12]; long unit_index,team_index,respawn_timer;
+struct player_datum { wchar_t name[12]; long unit_index,team_index,respawn_timer; int local_player_index;
     struct { int kills[4],deaths,friendly_fire_kills; } statistics;
     struct { int machine_index; } network_player_data; };
 struct item_datum { struct { long parent_object_index; unsigned long flags; } object;
@@ -56,6 +56,8 @@ static struct weapon_datum weapon;
 static struct { void *data; } data, *player_data = &data;
 static struct { int suite_owned,suite_network_players; } network_test = {1,32};
 static int actor_lines,summary_lines,seen[32],bad;
+static unsigned long network_test_suite_repositions(int actor) { (void)actor; return 1; }
+static void network_test_suite_scripted_counts(unsigned long *hits,unsigned long *kills) { *hits=3;*kills=1; }
 static long game_time_get(void) { return 90; }
 static void data_iterator_new(struct data_iterator *iterator, void *unused) { (void)unused; iterator->next=0; }
 static void *data_iterator_next(struct data_iterator *iterator) {
@@ -84,15 +86,15 @@ static void platform_log(const char *format,...) {
     char line[8192]; va_list args; va_start(args,format);vsnprintf(line,sizeof(line),format,args);va_end(args);
     if (!strncmp(line,"network test: tick 90 actor player ",35)) {
         int actor=-1; sscanf(line,"network test: tick 90 actor player %d:",&actor);
-        if (actor<0||actor>=32||!strstr(line," m")) bad=1; else seen[actor]++;
+        if (actor<0||actor>=32||!strstr(line," m")||!strstr(line,"reposition1")) bad=1; else seen[actor]++;
         actor_lines++;
-    } else if (strstr(line,"network test: tick 90") && strstr(line,"roster 32 spawned 32 requested 32")) summary_lines++;
+    } else if (strstr(line,"network test: tick 90") && strstr(line,"roster 32 spawned 32 requested 32")&&strstr(line,"scripted_hits 3 scripted_kills 1")) summary_lines++;
 }
 __APPEND__
 __LOG__
 int main(void) {
     for(int i=0;i<32;i++) {
-        players[i].name[0]=L'B';players[i].unit_index=i;players[i].network_player_data.machine_index=i;
+        players[i].name[0]=L'B';players[i].unit_index=i;players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;
         objects[i].object.parent_object_index=NONE;
         for(int j=0;j<4;j++) units[i].unit.weapon_object_indices[j]=j;
     }

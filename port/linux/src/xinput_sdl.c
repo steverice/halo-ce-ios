@@ -41,6 +41,7 @@ drive the controller.
 #include "port_config.h"
 #include "halo_keyboard.h"
 #include "mp_benchmark_probe.h"
+#include "benchmark_mp_arena.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -853,6 +854,7 @@ static void mp_benchmark_probe_gamepad(XINPUT_GAMEPAD *pad, short port)
 	if (!mp_probe_latches_ready)
 		mp_benchmark_probe_reset_controllers();
 	mp_benchmark_probe_sample(mp_benchmark_probe_tick(), port, &mp_probe_latches[port], &input);
+	benchmark_mp_arena_gamepad(port, mp_benchmark_probe_tick(), &input);
 	memset(pad, 0, sizeof(*pad));
 	pad->sThumbLX = input.left_x;
 	pad->sThumbLY = input.left_y;

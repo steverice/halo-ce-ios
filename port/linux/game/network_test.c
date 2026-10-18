@@ -62,6 +62,7 @@ Called from the main loop every frame (main.c).
 #include "tag_files/tag_files.h"
 #include "camera/observer.h"
 #include "network_test_suite.h"
+#include "benchmark_mp_arena.h"
 
 #include "../src/p2p.h" /* port: port/linux/src/p2p.c, p2p_lobby.c */
 
@@ -124,6 +125,7 @@ static struct
 	long score_to_win;
 	short suite_time_limit_minutes;
 	short suite_network_players;
+	unsigned long suite_repositions[32], suite_scripted_hits, suite_scripted_kills;
 	long logged_time;
 	boolean public_game;
 	boolean browsing;
@@ -193,6 +195,18 @@ int network_test_suite_map_matches(const char *map)
 	return !strcmp(base, network_test.map_name);
 }
 
+unsigned long network_test_suite_repositions(int actor)
+{
+	return network_test.suite_owned && actor >= 0 && actor < 32 ?
+		network_test.suite_repositions[actor] + benchmark_mp_arena_repositions(actor) : 0;
+}
+
+void network_test_suite_scripted_counts(unsigned long *hits, unsigned long *kills)
+{
+	*hits = network_test.suite_owned ? network_test.suite_scripted_hits : 0;
+	*kills = network_test.suite_owned ? network_test.suite_scripted_kills : 0;
+}
+
 int network_test_suite_failed(void)
 {
 	return network_test.suite_owned && network_test.mode == _network_test_off;
@@ -205,6 +219,7 @@ void network_test_suite_end(void)
 	if (!network_test.suite_owned)
 		return;
 	abort_game = game_connection() == _game_connection_network_server;
+	benchmark_mp_arena_reset();
 	memset(&network_test, 0, sizeof(network_test));
 	network_test.checked = TRUE;
 	if (abort_game)
@@ -213,7 +228,7 @@ void network_test_suite_end(void)
 
 /* Synthetic participants occupy real game roster slots, but do not create
 transport clients or local controllers. Insert the complete roster atomically. */
-static int network_test_suite_add_one_synthetic_player(struct network_game_server *server)
+static int network_test_suite_add_synthetic_players(struct network_game_server *server)
 {
 	struct network_game *game = network_game_get_game();
 	int added = 0, target = network_test.suite_network_players;
@@ -257,7 +272,7 @@ rollback:
 }
 
 /* A sent local-player request is asynchronous; only the server's actual roster confirms it. */
-static int network_test_suite_prepare_synthetic_player(struct network_game_server *server)
+static int network_test_suite_prepare_synthetic_players(struct network_game_server *server)
 {
 	struct network_game *game;
 
@@ -268,7 +283,7 @@ static int network_test_suite_prepare_synthetic_player(struct network_game_serve
 	game = network_game_server_get_game(server);
 	if (!game || game->player_count == 0)
 		return 0;
-	if (!network_test_suite_add_one_synthetic_player(server))
+	if (!network_test_suite_add_synthetic_players(server))
 		return -1;
 	network_test.suite_synthetic_added = TRUE;
 	platform_log("network test: synthetic roster ready after local player registration");
@@ -281,9 +296,14 @@ void network_test_suite_synthetic_input_tick(long tick)
 	int target = network_test.suite_network_players;
 	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
 
-	if (!network_test.suite_owned || network_test.players_wanted != 1 || target < 2 || target > 32 ||
+	if (!network_test.suite_owned || network_test.mode != _network_test_host || network_test.players_wanted != 1 || target < 2 || target > 32 ||
 		game_connection() != _game_connection_network_server || tick < 0)
 		return;
+	{
+		int prepared = benchmark_mp_arena_tick(tick);
+		if (prepared < 0) goto failed;
+		if (!prepared) return;
+	}
 	/* Validate the complete batch before mutating any queue. A partial roster
 	cannot continue as a smaller successful workload. */
 	for (int i = 1; i < target; i++)
@@ -304,6 +324,11 @@ void network_test_suite_synthetic_input_tick(long tick)
 		action.desired_facing.yaw = (real)((tick + i * 17) % 360) * 0.01f;
 		action.throttle.j = 0.75f;
 		action.primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
+		if (benchmark_mp_arena_enabled())
+		{
+			memset(&action, 0, sizeof(action));
+			benchmark_mp_arena_action(i, tick, &action);
+		}
 		SET_FLAG(action.control_flags, _unit_control_weapon_primary_trigger_bit, action.primary_trigger > 0.0f);
 		action.desired_weapon_index = NONE;
 		action.desired_grenade_index = NONE;
@@ -501,6 +526,9 @@ static void network_test_log_players(
 				game_engine->get_player_score(iterator.datum_index, _get_score_individual) : -1L,
 			player->statistics.kills[0], player->statistics.deaths, player->statistics.friendly_fire_kills, (long)player->team_index,
 			(int)player->network_player_data.machine_index);
+		if (network_test.suite_owned)
+			network_test_append(line, (int)sizeof(line), &length, " reposition%lu",
+				network_test_suite_repositions(player->local_player_index != NONE ? player->local_player_index : player->network_player_data.machine_index));
 		if (network_test.suite_owned && network_test.suite_network_players)
 		{
 			/* One bounded record per actor keeps complete rosters out of the
@@ -511,8 +539,12 @@ static void network_test_log_players(
 		}
 	}
 	if (network_test.suite_owned && network_test.suite_network_players)
-		network_test_append(line, (int)sizeof(line), &length, " roster %d spawned %d requested %d",
-			roster, spawned, network_test.suite_network_players);
+	{
+		unsigned long hits, kills;
+		network_test_suite_scripted_counts(&hits, &kills);
+		network_test_append(line, (int)sizeof(line), &length, " roster %d spawned %d requested %d scripted_hits %lu scripted_kills %lu",
+			roster, spawned, network_test.suite_network_players, hits, kills);
+	}
 	{
 		long sent, received, corrections;
 
@@ -664,6 +696,7 @@ static void network_test_shoot(
 		damage.direction = direction;
 		damage.scale = 1.0f;
 		scenario_location_from_point(&damage.location, &damage.epicenter);
+		if (network_test.suite_owned) network_test.suite_scripted_hits++;
 		object_cause_damage(&damage, target->unit_index, NONE, NONE, NONE, NULL);
 		platform_log("network test: player %ld shoots player %ld",
 			(long)DATUM_INDEX_TO_ABSOLUTE_INDEX(iterator.datum_index), (long)(target - (struct player_datum *)player_data->data));
@@ -678,6 +711,9 @@ teleporter does */
 static void network_test_gather(
 	boolean leave_last)
 {
+	/* Signed arenas own their staging and recovery, with per-actor counters. */
+	if (network_test.suite_owned && benchmark_mp_arena_enabled())
+		return;
 	struct data_iterator iterator;
 	struct player_datum *player;
 	struct player_datum *first = NULL;
@@ -739,6 +775,11 @@ static void network_test_gather(
 				continue;
 		}
 		object_set_position(player->unit_index, &position, NULL, NULL);
+		if (network_test.suite_owned)
+		{
+			int actor = player->local_player_index != NONE ? player->local_player_index : player->network_player_data.machine_index;
+			if (actor >= 0 && actor < 32) network_test.suite_repositions[actor]++;
+		}
 		platform_log("network test: the host brings player %ld near the first",
 			(long)(player - (struct player_datum *)player_data->data));
 	}
@@ -1060,6 +1101,7 @@ void network_test_update(
 			{
 				/* killed by the first player: a kill that scores */
 				platform_log("network test: the first player kills the last");
+				if (network_test.suite_owned) network_test.suite_scripted_kills++;
 				damage_kill_object_for_player(last->unit_index, first_index);
 				/* and picks up a weapon lying about, and two grenades of each kind */
 				{
@@ -1256,7 +1298,7 @@ void network_test_update(
 			}
 			if (network_test.suite_owned && network_test.players_wanted == 1 && network_test.map_set)
 			{
-				int prepared = network_test_suite_prepare_synthetic_player(global_network_game_server_get());
+				int prepared = network_test_suite_prepare_synthetic_players(global_network_game_server_get());
 
 				if (prepared < 0 || (!prepared && network_test.setup_seconds >= network_test.start_delay))
 				{

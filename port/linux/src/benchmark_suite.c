@@ -23,6 +23,7 @@ are the iOS, tvOS, visionOS and Mac app's.
 #include "platform.h"
 #include "port_config.h"
 #include "benchmark_mp_state.h"
+#include "benchmark_mp_arena.h"
 #include "network_test_suite.h"
 
 #include <math.h>
@@ -95,6 +96,7 @@ static struct
 	char scene[48], map[32], difficulty[16], recording[64];
 	char mp_simulation[32], mp_game_mode[16];
 	int mp_players, mp_views, mp_score_limit, mp_time_limit_minutes;
+	struct benchmark_mp_arena_config mp_arena;
 	double lead, seconds;
 	long lines, anisotropy, shadow_size;
 	int model_lod_max;
@@ -124,6 +126,7 @@ static struct
 	unsigned long mp_ammo_spent, mp_grenades_used, mp_damage_changes, mp_deaths, mp_respawns;
 	unsigned long mp_ammo_spent_actor[BENCHMARK_MP_ACTORS];
 	int mp_projectile_seen;
+	unsigned long mp_repositions, mp_scripted_hits, mp_scripted_kills;
 } suite;
 
 void benchmark_suite_multiplayer_fault(const char *note)
@@ -149,6 +152,12 @@ void benchmark_suite_mainloop_update(void)
 		benchmark_scenario_load("", "");
 		break;
 	case suite_action_mp_begin:
+		if ((suite.mp_arena.columns || suite.mp_players > 4) &&
+			(strcmp(suite.mp_simulation, "network_players") || !benchmark_mp_arena_valid(&suite.mp_arena)))
+		{
+			suite.mp_action_failed = 1;
+			break;
+		}
 		if (!input_replay_suite_suspend())
 		{
 			suite.mp_action_failed = 1;
@@ -159,6 +168,12 @@ void benchmark_suite_mainloop_update(void)
 		if (!network_test_suite_begin(suite.mp_simulation, suite.map, suite.mp_game_mode,
 			suite.mp_players, suite.mp_views, suite.mp_score_limit, suite.mp_time_limit_minutes))
 		{
+			mp_benchmark_probe_set_suite_requested(0);
+			suite.mp_action_failed = 1;
+		}
+		else if (suite.mp_arena.columns && !benchmark_mp_arena_configure(&suite.mp_arena))
+		{
+			network_test_suite_end();
 			mp_benchmark_probe_set_suite_requested(0);
 			suite.mp_action_failed = 1;
 		}
@@ -256,6 +271,10 @@ static void mp_collect(const struct benchmark_mp_state *state)
 		suite.mp_previous_valid = 1;
 		return;
 	}
+	if (state->scripted_hits > suite.mp_previous.scripted_hits)
+		suite.mp_scripted_hits += state->scripted_hits - suite.mp_previous.scripted_hits;
+	if (state->scripted_kills > suite.mp_previous.scripted_kills)
+		suite.mp_scripted_kills += state->scripted_kills - suite.mp_previous.scripted_kills;
 	for (local = 0; local < BENCHMARK_MP_ACTORS; local++)
 	{
 		const struct benchmark_mp_actor *before = &suite.mp_previous.actors[local];
@@ -265,7 +284,9 @@ static void mp_collect(const struct benchmark_mp_state *state)
 
 		if (!before->present || !after->present)
 			continue;
-		if (before->spawned && after->spawned && after->throttle > 0.2f)
+		if (after->repositions > before->repositions)
+			suite.mp_repositions += after->repositions - before->repositions;
+		if (before->spawned && after->spawned && after->throttle > 0.2f && after->repositions == before->repositions)
 		{
 			dx = after->position[0] - before->position[0];
 			dy = after->position[1] - before->position[1];
@@ -329,11 +350,13 @@ static int mp_evidence_note(char *note, size_t size)
 		snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
 			"synthetic host local1 synthetic%d one view; moved %d/%d (min %.1f), "
 			"remote firing %d/%d ammo spent %lu (min %lu), projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
+			"scripted hits %lu kills %lu repositions %lu; "
 			"zero external clients; visible opponents require frame review",
 			suite.mp_previous.roster, suite.mp_previous.spawned, suite.mp_previous.local_players,
 			suite.mp_previous.view_count, suite.mp_players - 1, moved, suite.mp_players, minimum_distance,
 			firing, suite.mp_players - 1, remote_ammo, minimum_ammo,
-			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns);
+			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns,
+			suite.mp_scripted_hits, suite.mp_scripted_kills, suite.mp_repositions);
 		return moved == suite.mp_players && firing == suite.mp_players - 1 && suite.mp_projectile_seen &&
 			suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
 	}
@@ -389,7 +412,7 @@ static int start_suite_for_output(void)
 /* takes the next run from the host and starts it; quits when there is none */
 static void next_run(void)
 {
-	char text[512], path[256];
+	char text[1024], path[256];
 	int more = host_benchmark_next(text, sizeof(text));
 
     if(more==4) {
@@ -427,6 +450,10 @@ static void next_run(void)
 	suite.mp_views = (int)number_field(text, "views");
 	suite.mp_score_limit = (int)number_field(text, "score_limit");
 	suite.mp_time_limit_minutes = (int)number_field(text, "time_limit_minutes");
+	suite.mp_arena.columns = (int)number_field(text, "arena_columns");
+	suite.mp_arena.spacing = (float)number_field(text, "arena_spacing");
+	suite.mp_arena.distance = (float)number_field(text, "arena_distance");
+	suite.mp_arena.movement_radius = (float)number_field(text, "arena_radius");
 	suite.lead = number_field(text, "lead");
 	suite.seconds = number_field(text, "seconds");
 	suite.lines = (long)number_field(text, "lines");
@@ -455,6 +482,7 @@ static void next_run(void)
 	suite.mp_ammo_spent = suite.mp_grenades_used = suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 0;
 	memset(suite.mp_ammo_spent_actor, 0, sizeof(suite.mp_ammo_spent_actor));
 	suite.mp_projectile_seen = 0;
+	suite.mp_repositions = suite.mp_scripted_hits = suite.mp_scripted_kills = 0;
 	suite.route_length = 0;
 	suite.route[0] = 0;
 	suite.route_due = 0.0;

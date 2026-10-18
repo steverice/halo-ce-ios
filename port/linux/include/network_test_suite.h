@@ -5,6 +5,8 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 	int players, int views, int score_limit, int time_limit_minutes);
 int network_test_suite_network_players(void);
 int network_test_suite_map_matches(const char *map);
+unsigned long network_test_suite_repositions(int actor);
+void network_test_suite_scripted_counts(unsigned long *hits, unsigned long *kills);
 int network_test_suite_failed(void);
 void network_test_suite_end(void);
 #endif

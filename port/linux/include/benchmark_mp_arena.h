@@ -62,4 +62,13 @@ static inline int benchmark_mp_arena_observer_pad(float yaw_error, float pitch_e
 	pad->fire = tick % 90 < 24;
 	return 1;
 }
+struct player_action;
+void benchmark_mp_arena_reset(void);
+int benchmark_mp_arena_configure(const struct benchmark_mp_arena_config *config);
+int benchmark_mp_arena_enabled(void);
+int benchmark_mp_arena_ready(void);
+int benchmark_mp_arena_tick(long tick);
+int benchmark_mp_arena_action(int actor, long tick, struct player_action *action);
+int benchmark_mp_arena_gamepad(short port, long tick, struct mp_benchmark_probe_pad *pad);
+unsigned long benchmark_mp_arena_repositions(int actor);
 #endif

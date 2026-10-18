@@ -366,6 +366,8 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
             @"expected_synthetic_players": @(!strcmp(scene->simulation, "network_players") ? scene->players - 1 : 0),
             @"expected_external_clients": @0,
             @"score_limit": @(scene->score_limit), @"time_limit_minutes": @(scene->time_limit_minutes),
+            @"requested_arena": @{ @"columns": @(scene->arena_columns), @"spacing_milliunits": @(llround(scene->arena_spacing * 1000)),
+                @"distance_milliunits": @(llround(scene->arena_distance * 1000)), @"movement_radius_milliunits": @(llround(scene->arena_movement_radius * 1000)) },
             @"warmup_ticks": @((long)llround(scene->lead * 30.0)), @"window_ticks": @((long)llround(scene->seconds * 30.0)) };
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
@@ -792,11 +794,13 @@ int host_benchmark_next(char *text, unsigned int size) {
     }
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
+        "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f "
         "lines=%ld anisotropy=%ld shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, scene->seconds, scene->simulation ? scene->simulation : "", scene->players, scene->views,
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
+        scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
