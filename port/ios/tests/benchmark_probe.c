@@ -368,6 +368,35 @@ static void test_multiplayer_terminal_baseline(void) {
         mp_outcomes[mp_count - 1].status = BENCHMARK_FAILED;
         CHECK(!benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &next));
     }
+
+    /* The terminal scene still runs when a filter removes every solo scene. */
+    {
+        struct benchmark_scene only_mp[] = { scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_plan filtered = { BENCHMARK_QUICK, only_mp, 1, facts };
+
+        CHECK(!benchmark_plan_next(&filtered, mp_outcomes, 0, &next));
+        filtered.mode = BENCHMARK_FULL;
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.stage == 'A' && next.scene == 0);
+        mp_outcomes[0] = okay;
+        CHECK(!benchmark_plan_next(&filtered, mp_outcomes, 1, &next));
+    }
+    {
+        struct benchmark_scene no_heavy[] = { probe_scenes[0], scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_plan filtered = { BENCHMARK_FULL, no_heavy, 2, facts };
+
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.scene == 0);
+        mp_outcomes[0] = okay;
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 1, &next) && next.scene == 1 && next.stage == 'A');
+    }
+    {
+        struct benchmark_scene skipped_heavy[] = { probe_scenes[3], scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_plan filtered = { BENCHMARK_FULL, skipped_heavy, 2, facts };
+
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.scene == 0);
+        mp_outcomes[0] = okay;
+        mp_outcomes[0].status = BENCHMARK_SKIPPED;
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 1, &next) && next.scene == 1 && next.stage == 'A');
+    }
 }
 
 /* ---------- journal */

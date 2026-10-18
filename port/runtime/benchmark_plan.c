@@ -175,7 +175,8 @@ static int size_step(struct walk *walk, long lines, int worst, const struct benc
     for (scene = 0; scene < walk->plan->scene_count; scene++) {
         const struct benchmark_outcome *outcome;
 
-        if (!walk->plan->scenes[scene].heavy) continue;
+        if (!walk->plan->scenes[scene].heavy ||
+            walk->plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER) continue;
         outcome = step(walk, 'B', scene, lines, device->anisotropy, device->shadow_size, device->model_lod_max);
         if (!outcome) return 0;
         if (outcome->status == BENCHMARK_SKIPPED) continue;
@@ -211,8 +212,9 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     if (plan->mode == BENCHMARK_QUICK) return 0;
     /* (no heavy scene gave frames: any of them stands in, and its runs will say why) */
     for (scene = 0; worst < 0 && scene < plan->scene_count; scene++)
-        if (plan->scenes[scene].heavy && baseline[scene]->status != BENCHMARK_SKIPPED) worst = scene;
-    if (worst < 0) return 0;
+        if (plan->scenes[scene].kind != BENCHMARK_SCENE_MULTIPLAYER && plan->scenes[scene].heavy &&
+            baseline[scene]->status != BENCHMARK_SKIPPED) worst = scene;
+    if (worst < 0) goto terminal_multiplayer;
 
     /* B: the render size. The ladder's steps up to the display's own height, which is always one of them */
     for (index = 0; index < LADDER_COUNT; index++)
@@ -329,6 +331,7 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
             (baseline[scene]->status == BENCHMARK_THERMAL || baseline[scene]->status == BENCHMARK_INTERRUPTED))
             if (!step(&walk, 'R', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
                 return walk.stopped == 1;
+terminal_multiplayer:
     /* The synthetic multiplayer baseline runs after solo settings are chosen. */
     for (scene = 0; scene < plan->scene_count; scene++)
         if (plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER)
