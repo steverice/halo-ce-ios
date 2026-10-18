@@ -125,6 +125,8 @@ static struct
 	unsigned long mp_fire[BENCHMARK_MP_ACTORS], mp_jump[BENCHMARK_MP_ACTORS], mp_grenade_requests[BENCHMARK_MP_ACTORS];
 	unsigned long mp_ammo_spent, mp_grenades_used, mp_damage_changes, mp_deaths, mp_respawns;
 	unsigned long mp_ammo_spent_actor[BENCHMARK_MP_ACTORS];
+	uint32_t mp_energy_projectiles_actor[BENCHMARK_MP_ACTORS];
+	int mp_energy_invalid;
 	int mp_projectile_seen;
 	unsigned long mp_repositions, mp_scripted_hits, mp_scripted_kills;
 } suite;
@@ -285,6 +287,10 @@ static void mp_collect(const struct benchmark_mp_state *state)
 
 		if (!before->present || !after->present)
 			continue;
+		if (after->energy_projectiles >= before->energy_projectiles)
+			suite.mp_energy_projectiles_actor[local] += after->energy_projectiles - before->energy_projectiles;
+		else
+			suite.mp_energy_invalid = 1;
 		if (after->repositions > before->repositions)
 			suite.mp_repositions += after->repositions - before->repositions;
 		if (before->spawned && after->spawned && after->throttle > 0.2f && after->repositions == before->repositions)
@@ -333,7 +339,8 @@ static int mp_evidence_note(char *note, size_t size)
 	if (!strcmp(suite.mp_simulation, "network_players"))
 	{
 		double minimum_distance = suite.mp_distance[0];
-		unsigned long remote_ammo = 0, minimum_ammo = suite.mp_ammo_spent_actor[1];
+		unsigned long remote_ammo = 0, minimum_ammo = suite.mp_ammo_spent_actor[1], energy_projectiles = 0;
+		int energy_actors = 0;
 		int i;
 
 		if (suite.mp_players < 2 || suite.mp_players > BENCHMARK_MP_ACTORS)
@@ -345,21 +352,23 @@ static int mp_evidence_note(char *note, size_t size)
 			if (i)
 			{
 				remote_ammo += suite.mp_ammo_spent_actor[i];
-				firing += suite.mp_ammo_spent_actor[i] > 0;
+				firing += suite.mp_ammo_spent_actor[i] > 0 || suite.mp_energy_projectiles_actor[i] > 0;
+				energy_projectiles += suite.mp_energy_projectiles_actor[i];
+				energy_actors += suite.mp_energy_projectiles_actor[i] > 0;
 				if (suite.mp_ammo_spent_actor[i] < minimum_ammo) minimum_ammo = suite.mp_ammo_spent_actor[i];
 			}
 		}
 		snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
 			"synthetic host local1 synthetic%d one view; moved %d/%d (min %.1f), "
-			"remote firing %d/%d ammo spent %lu (min %lu), projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
+			"remote firing %d/%d ammo spent %lu (min %lu), successful energy projectiles %lu (actors %d valid %d), projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
 			"scripted hits %lu kills %lu repositions %lu; "
 			"zero external clients; visible opponents require frame review",
 			suite.mp_previous.roster, suite.mp_previous.spawned, suite.mp_previous.local_players,
 			suite.mp_previous.view_count, suite.mp_players - 1, moved, suite.mp_players, minimum_distance,
-			firing, suite.mp_players - 1, remote_ammo, minimum_ammo,
+			firing, suite.mp_players - 1, remote_ammo, minimum_ammo, energy_projectiles, energy_actors, !suite.mp_energy_invalid,
 			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns,
 			suite.mp_scripted_hits, suite.mp_scripted_kills, suite.mp_repositions);
-		return moved == suite.mp_players && firing == suite.mp_players - 1 && suite.mp_projectile_seen &&
+		return !suite.mp_energy_invalid && moved == suite.mp_players && firing == suite.mp_players - 1 && suite.mp_projectile_seen &&
 			suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
 	}
 
@@ -483,6 +492,8 @@ static void next_run(void)
 	memset(suite.mp_grenade_requests, 0, sizeof(suite.mp_grenade_requests));
 	suite.mp_ammo_spent = suite.mp_grenades_used = suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 0;
 	memset(suite.mp_ammo_spent_actor, 0, sizeof(suite.mp_ammo_spent_actor));
+	memset(suite.mp_energy_projectiles_actor, 0, sizeof(suite.mp_energy_projectiles_actor));
+	suite.mp_energy_invalid = 0;
 	suite.mp_projectile_seen = 0;
 	suite.mp_repositions = suite.mp_scripted_hits = suite.mp_scripted_kills = 0;
 	suite.route_length = 0;

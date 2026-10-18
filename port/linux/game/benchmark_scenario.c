@@ -98,6 +98,8 @@ static void benchmark_mp_actor_fill(struct benchmark_mp_actor *actor, struct pla
 	actor->present = 1;
 	actor->repositions = network_test_suite_repositions(player->local_player_index != NONE ?
 		player->local_player_index : player->network_player_data.machine_index);
+	actor->energy_projectiles = network_test_suite_energy_projectiles(player->local_player_index != NONE ?
+		player->local_player_index : player->network_player_data.machine_index);
 	actor->kills = player->statistics.kills[0];
 	actor->deaths = player->statistics.deaths;
 	if (counts)

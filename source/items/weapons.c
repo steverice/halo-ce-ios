@@ -202,6 +202,7 @@ symbols in this file:
 
 #include "cseries.h"
 #include "weapons.h"
+#include "network_test_suite.h"
 
 #include "equipment.h"
 #include "weapon_datum_flags.h"
@@ -2501,6 +2502,10 @@ static void trigger_create_projectiles(
 				projectile_object_index= object_new(&data);
 				if (projectile_object_index!=NONE)
 				{
+					network_test_suite_projectile_created(owner_object_index,
+						network_test_suite_energy_trigger(trigger_definition->magazine_index,
+							weapon_definition->weapon.magazines.count, trigger_definition->rounds_per_shot,
+							trigger_definition->age_generated_per_round));
 					if (inside_bsp)
 					{
 						real_point3d camera_position;

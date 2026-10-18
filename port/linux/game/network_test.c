@@ -133,6 +133,7 @@ static struct
 	boolean suite_synthetic_added;
 	unsigned long suite_setup_input_ticks;
 	boolean suite_setup_input_reported;
+	uint32_t suite_energy_projectiles[32];
 } network_test;
 
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
@@ -201,6 +202,38 @@ unsigned long network_test_suite_repositions(int actor)
 {
 	return network_test.suite_owned && actor >= 0 && actor < 32 ?
 		network_test.suite_repositions[actor] + benchmark_mp_arena_repositions(actor) : 0;
+}
+
+uint32_t network_test_suite_energy_projectiles(int actor)
+{
+	return network_test.suite_owned && actor >= 0 && actor < 32 && actor < network_test.suite_network_players ?
+		network_test.suite_energy_projectiles[actor] : 0;
+}
+
+void network_test_suite_projectile_created(long owner_unit, int energy)
+{
+	long player_index, *players;
+	struct player_datum *player;
+	int actor, i;
+
+	if (!energy || !network_test.suite_owned || network_test.mode != _network_test_host ||
+		network_test.suite_network_players < 2 || network_test.suite_network_players > 32 || owner_unit == NONE ||
+		game_connection() != _game_connection_network_server)
+		return;
+	player_index = player_index_from_unit_index(owner_unit);
+	player = player_index != NONE ? player_try_and_get(player_index) : NULL;
+	if (!player || player->unit_index != owner_unit)
+		return;
+	actor = player->network_player_data.machine_index;
+	if (actor < 0 || actor >= network_test.suite_network_players || player->local_player_index != (actor ? NONE : 0))
+		return;
+	players = machine_get_player_list(actor);
+	if (!players || players[0] != player_index)
+		return;
+	for (i = 1; i < 4; i++)
+		if (players[i] != NONE) return;
+	if (network_test.suite_energy_projectiles[actor] != UINT32_MAX)
+		network_test.suite_energy_projectiles[actor]++;
 }
 
 void network_test_suite_scripted_counts(unsigned long *hits, unsigned long *kills)
@@ -560,8 +593,9 @@ static void network_test_log_players(
 			player->statistics.kills[0], player->statistics.deaths, player->statistics.friendly_fire_kills, (long)player->team_index,
 			(int)player->network_player_data.machine_index);
 		if (network_test.suite_owned)
-			network_test_append(line, (int)sizeof(line), &length, " reposition%lu",
-				network_test_suite_repositions(player->local_player_index != NONE ? player->local_player_index : player->network_player_data.machine_index));
+			network_test_append(line, (int)sizeof(line), &length, " reposition%lu energy_projectiles%u",
+				network_test_suite_repositions(player->local_player_index != NONE ? player->local_player_index : player->network_player_data.machine_index),
+				network_test_suite_energy_projectiles(player->local_player_index != NONE ? player->local_player_index : player->network_player_data.machine_index));
 		if (network_test.suite_owned && network_test.suite_network_players)
 		{
 			/* One bounded record per actor keeps complete rosters out of the

@@ -67,6 +67,7 @@ static struct player_action { unsigned long control_flags; struct {float yaw, pi
     struct {float i, j;} throttle; float primary_trigger; short weapon, grenade, zoom, pad; } actions[33];
 static int remote_present = 1, queue_ready = 1, projectile_present = 1;
 static int expected_players = 2, actual_players = 2;
+static uint32_t network_test_suite_energy_projectiles(int actor) {return (uint32_t)(actor+7);}
 struct data_iterator { int index; long datum_index; };
 static void *player_data;
 static struct player_datum *player_try_and_get(long index);
@@ -158,6 +159,11 @@ int main(void) {
     CHECK(state.actors[1].present && state.actors[1].spawned && state.actors[1].position[0] == 12.0f);
     CHECK(state.synthetic_queue_ready && state.projectiles_alive == 1);
     CHECK(state.actors[1].repositions == 1 && state.scripted_hits == 3 && state.scripted_kills == 1);
+    CHECK(state.actors[1].energy_projectiles == 8 && sizeof(state.actors[1].energy_projectiles)==4);
+    players[1].unit_index=NONE;
+    benchmark_scenario_multiplayer_state(&state);
+    CHECK(!state.actors[1].spawned&&state.actors[1].energy_projectiles==8);
+    players[1].unit_index=1;
     remote_present = 0; queue_ready = 0; projectile_present = 0;
     benchmark_scenario_multiplayer_state(&state);
     CHECK(state.roster == 1 && state.spawned == 1 && !state.synthetic_queue_ready && !state.projectiles_alive);

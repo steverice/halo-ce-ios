@@ -57,6 +57,7 @@ static struct { void *data; } data, *player_data = &data;
 static struct { int suite_owned,suite_network_players; } network_test = {1,32};
 static int actor_lines,summary_lines,seen[32],bad;
 static unsigned long network_test_suite_repositions(int actor) { (void)actor; return 1; }
+static unsigned int network_test_suite_energy_projectiles(int actor) { return (unsigned int)actor; }
 static void network_test_suite_scripted_counts(unsigned long *hits,unsigned long *kills) { *hits=3;*kills=1; }
 static long game_time_get(void) { return 90; }
 static void data_iterator_new(struct data_iterator *iterator, void *unused) { (void)unused; iterator->next=0; }

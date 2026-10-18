@@ -367,24 +367,31 @@ int main(void) {
     observed_mp.actors[1].throttle = 0.75f;
     observed_mp.actors[1].weapon_definition = 1;
     observed_mp.actors[1].ammo = 120;
+    observed_mp.actors[1].energy_projectiles = 17;
     observed_mp.actors[1].position[0] = 20.0f;
     observed_mp.tick = 60; frame(2000);
-    CHECK(!suite.mp_previous_valid && !suite.mp_distance[1] && !suite.mp_ammo_spent_actor[1]);
+    CHECK(!suite.mp_previous_valid && !suite.mp_distance[1] && !suite.mp_ammo_spent_actor[1] && !suite.mp_energy_projectiles_actor[1]);
     observed_mp.synthetic_queue_ready = 1;
     observed_mp.tick = 90; frame(3000);
     observed_mp.tick = 120; frame(4000);
     CHECK(suite.state == suite_lead && !suite.mp_previous_valid);
     observed_mp.actors[1].position[0] = 40.0f;
     observed_mp.actors[1].ammo = 100;
+    observed_mp.actors[1].energy_projectiles = 42;
     suite.lead = 1;
     observed_mp.tick = 150; frame(5000);
     CHECK(suite.state == suite_measuring && window_opens == 1);
-    CHECK(!suite.mp_distance[1] && !suite.mp_ammo_spent_actor[1]);
+    CHECK(!suite.mp_distance[1] && !suite.mp_ammo_spent_actor[1] && !suite.mp_energy_projectiles_actor[1]);
     observed_mp.actors[1].position[0] = 40.5f;
     observed_mp.actors[1].ammo = 99;
+    observed_mp.actors[1].energy_projectiles = 43;
     suite.seconds = 60;
     observed_mp.tick = 151; frame(5033);
     CHECK(suite.mp_distance[1] == 0.5 && suite.mp_ammo_spent_actor[1] == 1);
+    CHECK(suite.mp_energy_projectiles_actor[1] == 1);
+    observed_mp.actors[1].energy_projectiles = 0;
+    observed_mp.tick = 152; frame(5066);
+    CHECK(suite.mp_energy_invalid && suite.mp_energy_projectiles_actor[1] == 1);
 
     reset(); suite.state = suite_loading; suite.mp_scene = suite.mp_host_started = 1;
     observed_mp = (struct benchmark_mp_state){ .tick = 30, .multiplayer = 1, .map_ok = 1, .slayer = 1,
@@ -462,9 +469,27 @@ int main(void) {
         CHECK(strstr(note, count == 32 ? "observed roster 32" : "observed roster 16") != NULL);
         suite.mp_ammo_spent_actor[count - 1] = 0;
         CHECK(!mp_evidence_note(note, sizeof(note)));
+        suite.mp_energy_projectiles_actor[count - 1] = 1;
+        CHECK(mp_evidence_note(note, sizeof(note)));
+        CHECK(strstr(note,"successful energy projectiles 1 (actors 1 valid 1)") != NULL);
+        suite.mp_energy_invalid = 1;
+        CHECK(!mp_evidence_note(note, sizeof(note)));
+        suite.mp_energy_invalid = 0;
+        suite.mp_energy_projectiles_actor[count - 1] = 0;
         suite.mp_ammo_spent_actor[count - 1] = 1;
         suite.mp_distance[count - 1] = 0.0;
         CHECK(!mp_evidence_note(note, sizeof(note)));
+        suite.mp_distance[count - 1] = 10.0;
+        for (int actor=1;actor<count;actor++) {
+            suite.mp_ammo_spent_actor[actor]=0;
+            suite.mp_energy_projectiles_actor[actor]=1;
+        }
+        CHECK(mp_evidence_note(note, sizeof(note)));
+        CHECK(strstr(note,"ammo spent 0 (min 0)") && strstr(note,"scripted hits"));
+        suite.mp_energy_projectiles_actor[count-1]=0;
+        suite.mp_energy_projectiles_actor[0]=10000;
+        suite.mp_fire[count-1]=10000;
+        CHECK(!mp_evidence_note(note,sizeof(note))); /* local projectiles and requests cannot replace a missing remote */
     }
 
     reset();
@@ -496,6 +521,8 @@ int main(void) {
     suite.mp_repositions = suite.mp_scripted_hits = suite.mp_scripted_kills = 99;
     next_run();
     CHECK(!suite.mp_repositions && !suite.mp_scripted_hits && !suite.mp_scripted_kills);
+    for (int actor = 0; actor < BENCHMARK_MP_ACTORS; actor++) CHECK(!suite.mp_energy_projectiles_actor[actor]);
+    CHECK(!suite.mp_energy_invalid);
 
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
