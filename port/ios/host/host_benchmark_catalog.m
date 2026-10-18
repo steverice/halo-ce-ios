@@ -204,13 +204,12 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             id raw_simulation = entry[@"simulation"], raw_mode = entry[@"game_mode"];
             simulation = [raw_simulation isKindOfClass:NSString.class] ? raw_simulation : nil;
             game_mode = [raw_mode isKindOfClass:NSString.class] ? raw_mode : nil;
-            if (!integer_number(entry[@"players"], 2, 4, &players) || (players != 2 && players != 4) ||
+            if (!integer_number(entry[@"players"], 2, 32, &players) ||
                 !simulation || !game_mode || ![game_mode isEqual:@"slayer"] ||
                 !integer_number(entry[@"views"], 1, 1, &views) ||
                 !integer_number(entry[@"score_limit"], 1, 1000, &score) ||
                 !integer_number(entry[@"time_limit_minutes"], 0, 120, &time_limit) ||
                 ([simulation isEqual:@"local_controllers"] && players != 4) ||
-                ([simulation isEqual:@"network_players"] && players != 2) ||
                 (![simulation isEqual:@"local_controllers"] && ![simulation isEqual:@"network_players"]))
                 return catalog_error(error, [NSString stringWithFormat:@"Multiplayer case %@ requests an unsupported workload.", identifier]);
             workload = YES;

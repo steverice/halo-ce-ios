@@ -176,9 +176,21 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 	return 1;
 }
 
-int network_test_suite_two_player_proof_active(void)
+int network_test_suite_network_players(void)
 {
-	return network_test.suite_owned && network_test.mode == _network_test_host && network_test.players_wanted == 1;
+	return network_test.suite_owned && network_test.mode == _network_test_host ? network_test.suite_network_players : 0;
+}
+
+int network_test_suite_map_matches(const char *map)
+{
+	const char *base = map;
+
+	if (!network_test.suite_owned || network_test.mode != _network_test_host || !map)
+		return 0;
+	for (const char *p = map; *p; p++)
+		if (*p == '\\' || *p == '/')
+			base = p + 1;
+	return !strcmp(base, network_test.map_name);
 }
 
 int network_test_suite_failed(void)

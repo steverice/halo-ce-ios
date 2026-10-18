@@ -2,7 +2,7 @@
 #ifndef HALO_BENCHMARK_MP_STATE_H
 #define HALO_BENCHMARK_MP_STATE_H
 
-#define BENCHMARK_MP_ACTORS 4
+#define BENCHMARK_MP_ACTORS 32
 
 struct benchmark_mp_actor
 {

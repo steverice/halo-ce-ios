@@ -80,7 +80,8 @@ unsigned char benchmark_scenario_player_position(float *position)
 	return 1;
 }
 
-int network_test_suite_two_player_proof_active(void);
+int network_test_suite_network_players(void);
+int network_test_suite_map_matches(const char *map);
 
 static void benchmark_mp_actor_fill(struct benchmark_mp_actor *actor, struct player_datum *player,
 	const struct mp_benchmark_probe_counts *counts)
@@ -133,7 +134,8 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 	struct scenario *scenario;
 	struct game_variant *variant;
 	short local;
-	struct mp_benchmark_probe_counts counts[BENCHMARK_MP_ACTORS];
+	struct mp_benchmark_probe_counts counts[4];
+	int network_players = network_test_suite_network_players();
 
 	memset(state, 0, sizeof(*state));
 	state->tick = -1;
@@ -145,7 +147,8 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 		return;
 	state->multiplayer = 1;
 	state->tick = game_time_get();
-	state->map_ok = mp_benchmark_probe_map_matches(main_get_multiplayer_map_name());
+	state->map_ok = network_test_suite_map_matches(main_get_multiplayer_map_name()) ||
+		(!network_players && mp_benchmark_probe_map_matches(main_get_multiplayer_map_name()));
 	variant = game_engine_get_variant();
 	state->slayer = variant && variant->game_engine_index == game_engine_slayer;
 	state->score_limit = variant ? (int)variant->universal_variant.score_to_win : 0;
@@ -155,42 +158,52 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 	state->can_score = game_engine_can_score();
 	state->postgame = game_engine_showing_postgame();
 	mp_benchmark_probe_action_counts(counts);
-	for (local = 0; local < BENCHMARK_MP_ACTORS; local++)
+	/* Cardinality comes from every actual datum, not the bounded report slots. */
 	{
-		long player_index = local_player_get_player_index(local);
-		struct benchmark_mp_actor *actor = &state->actors[local];
+		struct data_iterator iterator;
+		struct player_datum *player;
 
-		if (player_index != NONE)
-			benchmark_mp_actor_fill(actor, player_try_and_get(player_index), &counts[local]);
-		state->roster += actor->present;
-		state->spawned += actor->spawned;
-	}
-	if (network_test_suite_two_player_proof_active() && !state->actors[1].present)
-	{
-		long *players = machine_get_player_list(1);
-		long player_index = players ? players[0] : NONE;
-		struct player_datum *player = player_index != NONE ? player_try_and_get(player_index) : NULL;
-
-		if (player && player->local_player_index == NONE && player->network_player_data.machine_index == 1)
+		data_iterator_new(&iterator, player_data);
+		while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
 		{
-			short action_count = 0;
-			long update_number = update_server_ticked_update_number();
-			struct player_action const *actions = update_number != NONE ?
-				update_server_update_actions(update_number, &action_count) : NULL;
-			short absolute_index = (short)DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
-
-			benchmark_mp_actor_fill(&state->actors[1], player, NULL);
 			state->roster++;
-			state->spawned += state->actors[1].spawned;
-			state->synthetic_queue_ready = actions && absolute_index >= 0 && absolute_index < action_count &&
-				(actions[absolute_index].throttle.i != 0.0f || actions[absolute_index].throttle.j != 0.0f ||
-				actions[absolute_index].primary_trigger != 0.0f);
+			state->spawned += player->unit_index != NONE;
 		}
 	}
-	if (network_test_suite_two_player_proof_active())
+	for (local = 0; local < (network_players ? 1 : 4); local++)
 	{
+		long player_index = local_player_get_player_index(local);
+
+		if (player_index != NONE)
+			benchmark_mp_actor_fill(&state->actors[local], player_try_and_get(player_index), &counts[local]);
+	}
+	if (network_players >= 2 && network_players <= BENCHMARK_MP_ACTORS)
+	{
+		short action_count = 0;
+		long update_number = update_server_ticked_update_number();
+		struct player_action const *actions = update_number != NONE ?
+			update_server_update_actions(update_number, &action_count) : NULL;
 		struct object_iterator iterator;
 
+		state->synthetic_queue_ready = 1;
+		for (int i = 1; i < network_players; i++)
+		{
+			long *players = machine_get_player_list(i);
+			long player_index = players ? players[0] : NONE;
+			struct player_datum *player = player_index != NONE ? player_try_and_get(player_index) : NULL;
+			short absolute_index = player_index != NONE ? (short)DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index) : -1;
+
+			if (!player || player->local_player_index != NONE || player->network_player_data.machine_index != i)
+			{
+				state->synthetic_queue_ready = 0;
+				continue;
+			}
+			benchmark_mp_actor_fill(&state->actors[i], player, NULL);
+			if (!actions || absolute_index < 0 || absolute_index >= action_count ||
+				(actions[absolute_index].throttle.i == 0.0f && actions[absolute_index].throttle.j == 0.0f &&
+				actions[absolute_index].primary_trigger == 0.0f))
+				state->synthetic_queue_ready = 0;
+		}
 		object_iterator_new(&iterator, _object_mask_projectile, 0);
 		while (object_iterator_next(&iterator) != NULL)
 			state->projectiles_alive++;

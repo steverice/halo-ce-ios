@@ -75,3 +75,20 @@ def test_host_loader_rejects_missing_or_idle_catalog_data(tmp_path, catalog_prob
     _write_catalog(tmp_path, _cases())
     idle = run_probe(catalog_probe, tmp_path, "full")
     assert idle.returncode != 0 and "movement or combat" in idle.stderr.lower()
+
+
+@pytest.mark.parametrize("players", [3, 16, 32])
+def test_host_loader_accepts_bounded_network_rosters(tmp_path, catalog_probe, players):
+    _write_catalog(tmp_path, _cases(players=players, gameplay=False))
+    full = run_probe(catalog_probe, tmp_path, "full")
+    assert full.returncode == 0, full.stderr
+    mp = full.stdout.splitlines()[-1].split("\t")
+    assert mp[2:5] == ["network_players", str(players), "1"]
+    quick = run_probe(catalog_probe, tmp_path, "quick")
+    assert quick.returncode == 0 and "mp-chillout-proof" not in quick.stdout
+
+
+def test_host_loader_rejects_network_roster_over_capacity(tmp_path, catalog_probe):
+    _write_catalog(tmp_path, _cases(players=33, gameplay=False))
+    result = run_probe(catalog_probe, tmp_path, "full")
+    assert result.returncode != 0 and "unsupported" in result.stderr

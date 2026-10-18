@@ -12,7 +12,7 @@ static int requested, initialized, in_progress, scoring, forced_single, postgame
 static int local_count, connection, getter_calls, tick_calls;
 static int suite_suspended;
 static int proof_active;
-static const char *network_test, *suite, *record, *replay, *map;
+static const char *network_test, *suite, *record, *replay, *map, *requested_map;
 static struct scenario scenario;
 static struct game_variant variant;
 
@@ -38,7 +38,8 @@ char *main_get_multiplayer_map_name(void) { getter_calls++; return (char *)map; 
 short players_port_local_player_count(void) { getter_calls++; return (short)local_count; }
 long game_time_get(void) { tick_calls++; return 123; }
 int input_replay_suite_suspended(void) { return suite_suspended; }
-int network_test_suite_two_player_proof_active(void) { return proof_active; }
+int network_test_suite_network_players(void) { return proof_active ? 32 : 0; }
+int network_test_suite_map_matches(const char *actual) { return strstr(actual, requested_map) != NULL; }
 
 #define MP_BENCHMARK_CONTEXT_PROBE 1
 #include "../../linux/game/mp_benchmark_context.c"
@@ -54,6 +55,7 @@ static void reset(void)
 	mp_benchmark_probe_set_suite_requested(0);
 	suite_suspended = 0;
 	proof_active = 0;
+	requested_map = "chillout";
 	forced_single = postgame = 0;
 	local_count = 4;
 	connection = _game_connection_network_server;
@@ -117,6 +119,10 @@ int main(void)
 	CHECK(mp_benchmark_probe_active() && mp_benchmark_probe_current_policy() == mp_benchmark_probe_scripted_input);
 	proof_active = 0;
 	CHECK(!mp_benchmark_probe_active());
+	proof_active = 1; map = "levels\\test\\bloodgulch\\bloodgulch";
+	CHECK(!mp_benchmark_probe_active());
+	requested_map = "bloodgulch";
+	CHECK(mp_benchmark_probe_active());
 	proof_active = 1; local_count = 2;
 	CHECK(!mp_benchmark_probe_active());
 	if (failures) fprintf(stderr, "mp_benchmark_context_probe: %d failures\n", failures);

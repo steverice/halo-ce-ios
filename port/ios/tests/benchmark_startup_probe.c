@@ -403,6 +403,35 @@ int main(void) {
     observed_mp.time_limit_minutes = 7; observed_mp.score_limit = 1000;
     CHECK(!mp_match_valid(&observed_mp, 1));
 
+    for (int count = 16; count <= 32; count += 16) {
+        reset(); suite.mp_scene = 1;
+        strcpy(suite.mp_simulation, "network_players"); suite.mp_players = count;
+        observed_mp = (struct benchmark_mp_state){ .multiplayer = 1, .map_ok = 1, .slayer = 1,
+            .score_limit = 1000, .local_players = 1, .roster = count, .spawned = count,
+            .view_count = 1, .observer0 = 1, .probe_active = 1, .synthetic_queue_ready = 1, .can_score = 1 };
+        for (int actor = 0; actor < count; actor++) {
+            observed_mp.actors[actor].present = observed_mp.actors[actor].spawned = 1;
+            suite.mp_distance[actor] = 10.0;
+            suite.mp_ammo_spent_actor[actor] = 1;
+        }
+        CHECK(mp_match_valid(&observed_mp, 1));
+        observed_mp.roster++; CHECK(!mp_match_valid(&observed_mp, 1)); observed_mp.roster--;
+        observed_mp.actors[count - 1].present = 0;
+        CHECK(!mp_match_valid(&observed_mp, 0));
+        observed_mp.actors[count - 1].present = 1;
+        suite.mp_previous = observed_mp;
+        suite.mp_projectile_seen = 1;
+        suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 1;
+        char note[512];
+        CHECK(mp_evidence_note(note, sizeof(note)));
+        CHECK(strstr(note, count == 32 ? "observed roster 32" : "observed roster 16") != NULL);
+        suite.mp_ammo_spent_actor[count - 1] = 0;
+        CHECK(!mp_evidence_note(note, sizeof(note)));
+        suite.mp_ammo_spent_actor[count - 1] = 1;
+        suite.mp_distance[count - 1] = 0.0;
+        CHECK(!mp_evidence_note(note, sizeof(note)));
+    }
+
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
     assert(!rmdir("benchmark"));

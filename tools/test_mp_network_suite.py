@@ -43,6 +43,7 @@ static int __attribute__((unused)) game_connection(void) { return connection; }
 static void __attribute__((unused)) network_game_abort(void) { aborts++; }
 __NETWORK_STATE__
 __BEGIN_FUNCTION__
+__GETTER_FUNCTIONS__
 __END_FUNCTION__
 static int failures;
 #define CHECK(condition) do { if (!(condition)) { \
@@ -90,6 +91,9 @@ int main(void) {
     for (int players = 2; players <= 32; players++) {
         CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
         CHECK(network_test.players_wanted == 1);
+        CHECK(network_test_suite_network_players() == players);
+        CHECK(network_test_suite_map_matches("levels\\test\\bloodgulch\\bloodgulch"));
+        CHECK(!network_test_suite_map_matches("levels\\test\\sidewinder\\sidewinder"));
         CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
         memcpy(snapshot, &network_test, sizeof(network_test));
         CHECK(!network_test_suite_begin("network_players", "sidewinder", "slayer", players, 1, 37, 7));
@@ -111,6 +115,8 @@ def test_private_match_lifecycle() -> None:
     source = HARNESS.replace("__NETWORK_STATE__", SOURCE[state_start:state_end])
     begin = function_source("int network_test_suite_begin(")
     source = source.replace("__BEGIN_FUNCTION__", begin)
+    source = source.replace("__GETTER_FUNCTIONS__", function_source("int network_test_suite_network_players(void)") +
+                            "\n" + function_source("int network_test_suite_map_matches("))
     source = source.replace("__END_FUNCTION__", function_source("void network_test_suite_end(void)"))
     with tempfile.TemporaryDirectory(prefix="mp-network-suite-") as temporary:
         source_path = Path(temporary) / "network_suite.c"

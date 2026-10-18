@@ -60,12 +60,27 @@ struct object_iterator { int index; };
 static struct scenario scenario = { _scenario_type_multiplayer };
 static struct game_variant variant = { game_engine_slayer, { 1000 } };
 static struct game_variant_options options;
-static struct player_datum players[2];
-static struct unit_datum units[2];
-static struct weapon_datum weapons[2];
+static struct player_datum players[33];
+static struct unit_datum units[33];
+static struct weapon_datum weapons[33];
 static struct player_action { unsigned long control_flags; struct {float yaw, pitch;} desired_facing;
-    struct {float i, j;} throttle; float primary_trigger; short weapon, grenade, zoom, pad; } actions[2];
+    struct {float i, j;} throttle; float primary_trigger; short weapon, grenade, zoom, pad; } actions[33];
 static int remote_present = 1, queue_ready = 1, projectile_present = 1;
+static int expected_players = 2, actual_players = 2;
+struct data_iterator { int index; long datum_index; };
+static void *player_data;
+static struct player_datum *player_try_and_get(long index);
+static void data_iterator_new(struct data_iterator *iterator, void *unused) {
+    (void)unused; iterator->index = 0;
+}
+static void *data_iterator_next(struct data_iterator *iterator) {
+    while (iterator->index < actual_players) {
+        iterator->datum_index = iterator->index++;
+        struct player_datum *player = player_try_and_get(iterator->datum_index);
+        if (player) return player;
+    }
+    return NULL;
+}
 static int game_time_initialized(void) { return 1; }
 static int game_in_progress(void) { return 1; }
 static struct scenario *global_scenario_try_and_get(void) { return &scenario; }
@@ -80,11 +95,18 @@ static short main_get_window_count(void) { return 1; }
 static int game_engine_can_score(void) { return 1; }
 static int game_engine_showing_postgame(void) { return 0; }
 static int network_test_suite_two_player_proof_active(void) { return 1; }
+static int network_test_suite_network_players(void) { return expected_players; }
+static int network_test_suite_map_matches(const char *map) { return strstr(map, "chillout") != NULL; }
 static long local_player_get_player_index(short local) { return local == 0 ? 0 : NONE; }
-static long *machine_get_player_list(long machine) { static long list[4] = { 1, NONE, NONE, NONE };
-    return machine == 1 ? list : NULL; }
+static long *machine_get_player_list(long machine) {
+    static long lists[33][4];
+    if (machine < 0 || machine >= expected_players) return NULL;
+    lists[machine][0] = machine;
+    lists[machine][1] = lists[machine][2] = lists[machine][3] = NONE;
+    return lists[machine];
+}
 static struct player_datum *player_try_and_get(long index) {
-    return index >= 0 && index < 2 && (index == 0 || remote_present) ? &players[index] : NULL;
+    return index >= 0 && index < actual_players && (index != 1 || remote_present) ? &players[index] : NULL;
 }
 static void object_get_origin(long index, real_point3d *origin) { *origin = units[index].origin; }
 static struct object_datum *object_get(long index) { return &units[index].object_datum; }
@@ -98,7 +120,7 @@ static void mp_benchmark_probe_action_counts(struct mp_benchmark_probe_counts co
 static long update_server_ticked_update_number(void) { return queue_ready ? 90 : NONE; }
 static const struct player_action *update_server_update_actions(long tick, short *count) {
     if (tick == NONE) return NULL;
-    *count = 2; return actions;
+    *count = expected_players; return actions;
 }
 static void object_iterator_new(struct object_iterator *iterator, int mask, int unused) {
     (void)mask; (void)unused; iterator->index = 0;
@@ -113,7 +135,7 @@ static int failures;
     fprintf(stderr, "MP state line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
-    for (int index = 0; index < 2; index++) {
+    for (int index = 0; index < 33; index++) {
         players[index].unit_index = index;
         players[index].local_player_index = index ? NONE : 0;
         players[index].network_player_data.machine_index = index;
@@ -136,6 +158,27 @@ int main(void) {
     remote_present = 0; queue_ready = 0; projectile_present = 0;
     benchmark_scenario_multiplayer_state(&state);
     CHECK(state.roster == 1 && state.spawned == 1 && !state.synthetic_queue_ready && !state.projectiles_alive);
+    remote_present = queue_ready = projectile_present = 1;
+    for (int count = 16; count <= 32; count += 16) {
+        expected_players = actual_players = count;
+        for (int i = 1; i < count; i++) actions[i].throttle.j = 0.75f;
+        benchmark_scenario_multiplayer_state(&state);
+        CHECK(BENCHMARK_MP_ACTORS == 32);
+        CHECK(state.roster == count && state.spawned == count && state.synthetic_queue_ready);
+        for (int i = 0; i < count && i < BENCHMARK_MP_ACTORS; i++) CHECK(state.actors[i].present && state.actors[i].spawned);
+        actual_players = count + 1;
+        benchmark_scenario_multiplayer_state(&state);
+        CHECK(state.roster == count + 1 && state.spawned == count + 1);
+        actual_players = count;
+        remote_present = 0;
+        benchmark_scenario_multiplayer_state(&state);
+        CHECK(state.roster == count - 1 && state.spawned == count - 1 && !state.synthetic_queue_ready);
+        remote_present = 1;
+        actions[count - 1].throttle.j = 0.0f;
+        benchmark_scenario_multiplayer_state(&state);
+        CHECK(!state.synthetic_queue_ready);
+        actions[count - 1].throttle.j = 0.75f;
+    }
     return failures != 0;
 }
 '''

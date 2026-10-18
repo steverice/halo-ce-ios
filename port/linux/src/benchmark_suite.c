@@ -214,13 +214,19 @@ static double number_field(const char *text, const char *key)
 static int mp_match_valid(const struct benchmark_mp_state *state, int require_spawned)
 {
 	if (!strcmp(suite.mp_simulation, "network_players"))
-		return state->multiplayer && state->map_ok && state->slayer && state->score_limit == suite.mp_score_limit &&
-			state->time_limit_minutes == suite.mp_time_limit_minutes && state->local_players == 1 && state->roster == 2 &&
-			(!require_spawned || state->spawned == 2) && state->actors[0].present && state->actors[1].present &&
-			(!require_spawned || (state->actors[0].spawned && state->actors[1].spawned)) &&
-			(!require_spawned || state->synthetic_queue_ready) &&
-			state->view_count == suite.mp_views && state->observer0 && state->probe_active &&
-			state->can_score && !state->postgame;
+	{
+		if (suite.mp_players < 2 || suite.mp_players > BENCHMARK_MP_ACTORS ||
+			!state->multiplayer || !state->map_ok || !state->slayer || state->score_limit != suite.mp_score_limit ||
+			state->time_limit_minutes != suite.mp_time_limit_minutes || state->local_players != 1 ||
+			state->roster != suite.mp_players || (require_spawned && state->spawned != suite.mp_players) ||
+			(require_spawned && !state->synthetic_queue_ready) || state->view_count != suite.mp_views ||
+			!state->observer0 || !state->probe_active || !state->can_score || state->postgame)
+			return 0;
+		for (int i = 0; i < suite.mp_players; i++)
+			if (!state->actors[i].present || (require_spawned && !state->actors[i].spawned))
+				return 0;
+		return 1;
+	}
 	return state->multiplayer && state->map_ok && state->slayer && state->score_limit == suite.mp_score_limit &&
 		state->time_limit_minutes == suite.mp_time_limit_minutes && state->local_players == 4 && state->roster == 4 &&
 		(!require_spawned || state->spawned == 4) && state->view_count == suite.mp_views && state->observer0 &&
@@ -304,17 +310,31 @@ static int mp_evidence_note(char *note, size_t size)
 
 	if (!strcmp(suite.mp_simulation, "network_players"))
 	{
+		double minimum_distance = suite.mp_distance[0];
+		unsigned long remote_ammo = 0, minimum_ammo = suite.mp_ammo_spent_actor[1];
+
+		if (suite.mp_players < 2 || suite.mp_players > BENCHMARK_MP_ACTORS)
+			return 0;
+		for (int i = 0; i < suite.mp_players; i++)
+		{
+			moved += suite.mp_distance[i] >= 5.0;
+			if (suite.mp_distance[i] < minimum_distance) minimum_distance = suite.mp_distance[i];
+			if (i)
+			{
+				remote_ammo += suite.mp_ammo_spent_actor[i];
+				firing += suite.mp_ammo_spent_actor[i] > 0;
+				if (suite.mp_ammo_spent_actor[i] < minimum_ammo) minimum_ammo = suite.mp_ammo_spent_actor[i];
+			}
+		}
 		snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
-			"synthetic host local1 synthetic1 one view; moved %d/2 (%.1f,%.1f), "
-			"remote ammo spent %lu, projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
+			"synthetic host local1 synthetic%d one view; moved %d/%d (min %.1f), "
+			"remote firing %d/%d ammo spent %lu (min %lu), projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
 			"zero external clients; visible opponents require frame review",
 			suite.mp_previous.roster, suite.mp_previous.spawned, suite.mp_previous.local_players,
-			suite.mp_previous.view_count,
-			(suite.mp_distance[0] >= 5.0) + (suite.mp_distance[1] >= 5.0),
-			suite.mp_distance[0], suite.mp_distance[1], suite.mp_ammo_spent_actor[1],
+			suite.mp_previous.view_count, suite.mp_players - 1, moved, suite.mp_players, minimum_distance,
+			firing, suite.mp_players - 1, remote_ammo, minimum_ammo,
 			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns);
-		return suite.mp_distance[0] >= 5.0 && suite.mp_distance[1] >= 5.0 &&
-			suite.mp_ammo_spent_actor[1] > 0 && suite.mp_projectile_seen &&
+		return moved == suite.mp_players && firing == suite.mp_players - 1 && suite.mp_projectile_seen &&
 			suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
 	}
 
