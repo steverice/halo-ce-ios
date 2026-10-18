@@ -293,7 +293,7 @@ static int network_test_suite_prepare_synthetic_players(struct network_game_serv
 void network_test_suite_synthetic_input_tick(long tick)
 {
 	long player_indices[32];
-	int target = network_test.suite_network_players, i;
+	int target = network_test.suite_network_players, i, duplicate_machine = NONE;
 	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
 
 	if (!network_test.suite_owned || network_test.mode != _network_test_host || network_test.players_wanted != 1 || target < 2 || target > 32 ||
@@ -301,7 +301,12 @@ void network_test_suite_synthetic_input_tick(long tick)
 		return;
 	{
 		int prepared = benchmark_mp_arena_tick(tick);
-		if (prepared < 0) goto failed;
+		if (prepared < 0)
+		{
+			platform_log("network test: arena preparation failed at tick %ld", tick);
+			network_test.mode = _network_test_off;
+			return;
+		}
 		if (!prepared) return;
 	}
 	/* Validate the complete batch before mutating any queue. A partial roster
@@ -316,7 +321,10 @@ void network_test_suite_synthetic_input_tick(long tick)
 		player_indices[i] = players[0];
 		for (j = 1; j < i; j++)
 			if (player_indices[j] == player_indices[i])
+			{
+				duplicate_machine = j;
 				goto failed;
+			}
 	}
 	for (i = 1; i < target; i++)
 	{
@@ -338,7 +346,13 @@ void network_test_suite_synthetic_input_tick(long tick)
 	}
 	return;
 failed:
-	platform_log("network test: incomplete synthetic input roster at tick %ld", tick);
+	{
+		long *players = machine_get_player_list(i);
+
+		platform_log("network test: incomplete synthetic input roster at tick %ld machine %d player %ld second %ld queue ready %d duplicate machine %d",
+			tick, i, players ? players[0] : NONE, players ? players[1] : NONE,
+			players && players[0] != NONE ? update_server_player_queue_ready(players[0]) : 0, duplicate_machine);
+	}
 	network_test.mode = _network_test_off;
 }
 

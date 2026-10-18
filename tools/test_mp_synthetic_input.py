@@ -32,6 +32,7 @@ def function(source: str, signature: str) -> str:
 
 HARNESS = r'''
 #include <math.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,7 +60,8 @@ __WEAPON_CONTROL_ENUM__
 #define match_assert(file, line, expression) do { (void)(file); (void)(line); if (!(expression)) abort(); } while (0)
 enum { _game_connection_local, _game_connection_network_server };
 enum { _network_test_off, _network_test_host };
-static void platform_log(const char *format, ...) { (void)format; }
+static char last_log[512];
+static void platform_log(const char *format, ...) { va_list args;va_start(args,format);vsnprintf(last_log,sizeof(last_log),format,args);va_end(args); }
 struct real_vector2d { float i, j; };
 struct real_euler_angles2d { float yaw, pitch; };
 struct player_action {
@@ -104,7 +106,8 @@ static long *machine_get_player_list(long machine_index) {
     return machine_index >= 0 && machine_index < 32 ? machine_players[machine_index] : NULL;
 }
 static int valid_real(float value) { return isfinite(value); }
-static int benchmark_mp_arena_tick(long tick) { (void)tick; return 1; }
+static int arena_result=1;
+static int benchmark_mp_arena_tick(long tick) { (void)tick; return arena_result; }
 static int benchmark_mp_arena_enabled(void) { return 0; }
 static int benchmark_mp_arena_action(int actor,long tick,struct player_action *action) { (void)actor;(void)tick;(void)action;return 0; }
 void network_test_suite_synthetic_input_tick(long tick);
@@ -211,6 +214,15 @@ int main(void) {
     network_test_suite_synthetic_input_tick(210);
     CHECK(queues[5].current_action.throttle.j == 0.0f); /* the real local datum */
     for (i = 0; i < 32; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
+    network_test.mode=_network_test_host;arena_result=0;last_log[0]=0;
+    network_test_suite_synthetic_input_tick(1);
+    CHECK(network_test.mode==_network_test_host&&!last_log[0]);
+    arena_result=-1;network_test_suite_synthetic_input_tick(1);
+    CHECK(network_test.mode==_network_test_off&&strstr(last_log,"arena preparation failed"));
+    network_test.mode=_network_test_host;arena_result=1;
+    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=0;
+    network_test_suite_synthetic_input_tick(1);
+    CHECK(network_test.mode==_network_test_off&&strstr(last_log,"machine 31")&&strstr(last_log,"queue ready 0"));
     return failures != 0;
 }
 '''

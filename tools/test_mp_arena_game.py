@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "port/linux/game/benchmark_mp_arena.c"
 HARNESS = r'''
 #include <assert.h>
+#include <stdarg.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -57,7 +58,8 @@ static int collision_test_pill(unsigned long flags,const real_point3d*p,const re
 static real_vector3d *player_control_get_facing_direction(short i,real_vector3d *v) { (void)i;v->i=1;v->j=v->k=0;return v; }
 static void input_abstraction_get_local_player_preferences(short i,struct game_input_preferences*p) {
     (void)i;p->joystick_controls=0;p->invert_look=profile_inverted; }
-static void platform_log(const char *format,...) { (void)format; }
+static char last_log[512];
+static void platform_log(const char *format,...) { va_list args;va_start(args,format);vsnprintf(last_log,sizeof(last_log),format,args);va_end(args); }
 #include "__SOURCE__"
 int main(void) {
     int i;
@@ -90,11 +92,14 @@ int main(void) {
     benchmark_mp_arena_reset();assert(!benchmark_mp_arena_repositions(31));
     assert(benchmark_mp_arena_tick(10)==1&&!benchmark_mp_arena_gamepad(0,10,&pad));
     no_ground=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
-    assert(!benchmark_mp_arena_ready());benchmark_mp_arena_reset();
+    assert(!benchmark_mp_arena_ready());assert(strstr(last_log,"arena geometry exhausted"));benchmark_mp_arena_reset();
     no_ground=0;blocked=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);benchmark_mp_arena_reset();
     blocked=0;players[31].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
-    assert(benchmark_mp_arena_tick(451)==-1);benchmark_mp_arena_reset();
+    assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 31"));benchmark_mp_arena_reset();
+    players[31].unit_index=31;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
+    assert(benchmark_mp_arena_tick(1)==-1);assert(strstr(last_log,"arena clock regression")&&strstr(last_log,"previous 20 current 1"));
+    benchmark_mp_arena_reset();
     return 0;
 }
 '''

@@ -97,10 +97,13 @@ static int arena_choose(void)
 {
 	struct scenario *scenario = global_scenario_try_and_get();
 	real_point3d points[32] = { 0 };
-	int start;
+	int start, candidates = 0, ground_rejections = 0, sight_rejections = 0;
 
 	if (!scenario || scenario->players.count <= 0)
+	{
+		platform_log("network test: arena geometry exhausted: scenario has no player starts");
 		return 0;
+	}
 	/* Bound setup work even for a malformed or unusually large scenario. */
 	for (start = 0; start < scenario->players.count && start < 128; start++)
 	{
@@ -115,6 +118,8 @@ static int arena_choose(void)
 			float forward_x = cosf(facing), forward_y = sinf(facing);
 			int valid = 1, actor;
 
+			candidates++;
+
 			for (actor = 0; actor < arena.players && valid; actor++)
 			{
 				float offset[2];
@@ -127,14 +132,17 @@ static int arena_choose(void)
 				points[actor] = location->position;
 				points[actor].x += offset[0];
 				points[actor].y += offset[1];
-				if (!arena_ground(&points[actor])) { valid = 0; break; }
+				if (!arena_ground(&points[actor])) { ground_rejections++; valid = 0; break; }
 				if (!actor) continue;
 				eye = points[0]; eye.z += 0.7f;
 				sight.i = points[actor].x - eye.x;
 				sight.j = points[actor].y - eye.y;
 				sight.k = points[actor].z + 0.7f - eye.z;
 				if (collision_test_vector(_collision_test_for_line_of_sight_flags, &eye, &sight, NONE, &collision))
+				{
+					sight_rejections++;
 					valid = 0;
+				}
 			}
 			if (valid)
 			{
@@ -145,6 +153,8 @@ static int arena_choose(void)
 			}
 		}
 	}
+	platform_log("network test: arena geometry exhausted: %d candidates, %d ground or clearance rejections, %d sight rejections",
+		candidates, ground_rejections, sight_rejections);
 	return 0;
 }
 
@@ -162,7 +172,16 @@ int benchmark_mp_arena_tick(long tick)
 {
 	int i;
 	if (!arena.enabled) return 1;
-	if (arena.failed || tick < 0 || tick < arena.last_tick) return -1;
+	if (arena.failed)
+	{
+		platform_log("network test: arena already failed: previous %ld current %ld", arena.last_tick, tick);
+		return -1;
+	}
+	if (tick < 0 || tick < arena.last_tick)
+	{
+		platform_log("network test: arena clock regression: previous %ld current %ld", arena.last_tick, tick);
+		return -1;
+	}
 	if (tick == arena.last_tick) return arena.ready;
 	arena.last_tick = tick;
 	if (!arena.ready)
@@ -173,7 +192,12 @@ int benchmark_mp_arena_tick(long tick)
 
 			if (!player || player->unit_index == NONE)
 			{
-				if (tick > 450) { arena.failed = 1; return -1; }
+				if (tick > 450)
+				{
+					platform_log("network test: arena readiness timeout: tick %ld actor %d player present %d unit %ld",
+						tick, i, player != NULL, player ? player->unit_index : NONE);
+					arena.failed = 1; return -1;
+				}
 				return 0;
 			}
 		}
@@ -188,11 +212,19 @@ int benchmark_mp_arena_tick(long tick)
 		real_point3d position;
 		float dx, dy, moved_x, moved_y, limit = arena.config.movement_radius * 3.0f + 1.0f;
 
-		if (!player) { arena.failed = 1; return -1; }
+		if (!player)
+		{
+			platform_log("network test: arena lost player: tick %ld actor %d", tick, i);
+			arena.failed = 1; return -1;
+		}
 		if (player->unit_index == NONE) continue;
 		if (player->unit_index != arena.units[i]) { arena_place(i, player); continue; }
 		object_get_origin(player->unit_index, &position);
-		if (!isfinite(position.x) || !isfinite(position.y) || !isfinite(position.z)) { arena.failed = 1; return -1; }
+		if (!isfinite(position.x) || !isfinite(position.y) || !isfinite(position.z))
+		{
+			platform_log("network test: arena invalid position: tick %ld actor %d unit %ld", tick, i, player->unit_index);
+			arena.failed = 1; return -1;
+		}
 		dx = position.x - arena.points[i].x; dy = position.y - arena.points[i].y;
 		moved_x = position.x - arena.previous[i].x; moved_y = position.y - arena.previous[i].y;
 		arena.stuck_ticks[i] = moved_x * moved_x + moved_y * moved_y < 0.000004f ? arena.stuck_ticks[i] + 1 : 0;
