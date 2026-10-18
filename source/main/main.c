@@ -2143,6 +2143,8 @@ static void main_save_map_private(
 			if (main_steps_each_tick())
 			{
 				/* The isolated recording/replay path already runs once per tick. */
+				main_save_last_tick = game_time_get();
+				main_save_clock_valid = TRUE;
 				if (main_globals.ticks_unable_to_save++ >= 240 &&
 					main_globals.save_map_timeout)
 				{

@@ -145,8 +145,24 @@ static void lifecycle(void) {
     initialized = 1; tick = 100; main_save_map_private();
     assert(!check_count && !main_globals.ticks_unable_to_save);
 }
+static void isolation_transition(void) {
+    int i;
+    reset(); safe = 0; main_save_map_safe();
+    for (i = 1; i <= 10; i++) { tick = i; main_save_map_private(); }
+    assert(main_globals.ticks_unable_to_save == 10);
+    isolated = 1;
+    for (i = 11; i <= 20; i++) { tick = i; assert(!main_tick_end()); }
+    assert(main_globals.ticks_unable_to_save == 20);
+    isolated = 0;
+    tick = 21; main_save_map_private();
+    assert(main_globals.ticks_unable_to_save == 21);
+    reset(); safe = 0; isolated = 1; main_save_map_safe();
+    for (i = 1; i <= 10; i++) { tick = i; assert(!main_tick_end()); }
+    isolated = 0; tick = 11; main_save_map_private();
+    assert(main_globals.ticks_unable_to_save == 11);
+}
 int main(void) {
-    rates(); boundaries(); lifecycle();
+    rates(); boundaries(); lifecycle(); isolation_transition();
     puts("PASS: checkpoint timing across render rates and tick batches");
     return 0;
 }
