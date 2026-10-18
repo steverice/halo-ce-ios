@@ -412,6 +412,39 @@ def verify_feed(
             check=True,
         )
         return
+    compatibility = (
+        "profiles-2"
+        if kind == "profile"
+        else "benchmark-catalog-1:" + policy["guest_sha256"]
+    )
+    _verify_feed(data, kind, policy, compatibility)
+
+
+def verify_pages_recording_feed(data: bytes, guest_sha256: str) -> None:
+    """Accept only the two published recording-feed contracts for this guest."""
+    if not re.fullmatch(r"[0-9a-f]{64}", guest_sha256):
+        raise ValueError("Recording feed guest must be an exact lowercase SHA-256")
+    policy = {
+        "guest_sha256": guest_sha256,
+        "recording_feed_sha256": hashlib.sha256(data).hexdigest(),
+    }
+    _verify_feed(
+        data,
+        "recording",
+        policy,
+        (
+            "benchmark-replay-1:" + guest_sha256,
+            "benchmark-catalog-1:" + guest_sha256,
+        ),
+    )
+
+
+def _verify_feed(
+    data: bytes,
+    kind: str,
+    policy: dict[str, str],
+    compatibility: str | tuple[str, ...],
+) -> None:
     if hashlib.sha256(data).hexdigest() != policy[f"{kind}_feed_sha256"]:
         raise ValueError(f"{kind} feed hash differs from the reviewed envelope")
     payload_kind = {"profile": "profiles", "recording": "recordings"}[kind]
@@ -426,12 +459,11 @@ def verify_feed(
     if len(signature) != 64:
         raise ValueError("Pack signature must be exactly 64 bytes")
     manifest = packs.decode_json(raw)
-    compatibility = (
-        "profiles-2"
-        if kind == "profile"
-        else "benchmark-replay-1:" + policy["guest_sha256"]
-    )
-    packs.validate_manifest(manifest, payload_kind, "tester", compatibility)
+    accepted = (compatibility,) if isinstance(compatibility, str) else compatibility
+    if manifest.get("compatibility") not in accepted:
+        raise ValueError("Pack manifest compatibility, kind, or channel differs from this build")
+    selected = manifest["compatibility"]
+    packs.validate_manifest(manifest, payload_kind, "tester", selected)
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
     Ed25519PublicKey.from_public_bytes(bytes.fromhex(DATA_PACK_PUBLIC_KEY)).verify(
@@ -440,7 +472,7 @@ def verify_feed(
     payload = packs.decode_base64(envelope["payload"], limit)
     if hashlib.sha256(payload).hexdigest() != manifest["sha256"]:
         raise ValueError(f"{kind} feed payload hash differs from signed manifest")
-    packs.validate_payload(payload, payload_kind, compatibility)
+    packs.validate_payload(payload, payload_kind, selected)
 
 
 def check_feeds(policy: dict[str, str], *, root: Path | None = None) -> None:

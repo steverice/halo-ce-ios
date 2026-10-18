@@ -24,12 +24,12 @@ def git(*args: str) -> bytes:
 
 def checked_feed(data: bytes, guest: str) -> int:
     # Import only the checked-out main code, never anything from the data commit.
-    from release_validation import packs, verify_feed
+    if __package__:
+        from .release_validation import packs, verify_pages_recording_feed
+    else:
+        from release_validation import packs, verify_pages_recording_feed
 
-    verify_feed(data, "recording", {
-        "guest_sha256": guest,
-        "recording_feed_sha256": hashlib.sha256(data).hexdigest(),
-    })
+    verify_pages_recording_feed(data, guest)
     envelope = packs.decode_json(data)
     return packs.decode_json(packs.decode_base64(envelope["manifest"], 65536))["sequence"]
 

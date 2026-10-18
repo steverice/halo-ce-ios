@@ -248,7 +248,7 @@ def test_preflight_identity_changes_with_source_platforms_or_policy() -> None:
 
 
 def test_signed_feed_verifies_signature_and_payload(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -259,7 +259,21 @@ def test_signed_feed_verifies_signature_and_payload(
         "DATA_PACK_PUBLIC_KEY",
         key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
     )
-    payload = json.dumps({"files": recording_files()}).encode()
+    from tools import data_pack
+    from tools.test_benchmark_catalog import _cases, _recording, _write_catalog
+
+    _recording(tmp_path)
+    _write_catalog(tmp_path, _cases())
+    compatibility = "benchmark-catalog-1:" + "a" * 64
+    files = data_pack.snapshot(tmp_path, "recordings", compatibility)
+    payload = json.dumps(
+        {
+            "files": {
+                name: base64.b64encode(content).decode()
+                for name, content in files.items()
+            }
+        }
+    ).encode()
     manifest = json.dumps(
         {
             "schema": 1,
@@ -269,7 +283,7 @@ def test_signed_feed_verifies_signature_and_payload(
             "channel": "tester",
             "minimum_engine": 1,
             "maximum_engine": 1,
-            "compatibility": "benchmark-replay-1:" + "a" * 64,
+            "compatibility": compatibility,
             "sha256": hashlib.sha256(payload).hexdigest(),
         }
     ).encode()
@@ -303,6 +317,95 @@ def test_signed_feed_verifies_signature_and_payload(
             "recording",
             {**pins, "recording_feed_sha256": hashlib.sha256(bad).hexdigest()},
         )
+
+
+def test_signed_catalog_feed_uses_the_app_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from tools import data_pack
+    from tools.test_benchmark_catalog import _cases, _recording, _write_catalog
+
+    key = crypto.Ed25519PrivateKey.generate()
+    monkeypatch.setattr(
+        validation,
+        "DATA_PACK_PUBLIC_KEY",
+        key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
+    )
+    _recording(tmp_path)
+    _write_catalog(tmp_path, _cases())
+    compatibility = "benchmark-catalog-1:" + "a" * 64
+    files = data_pack.snapshot(tmp_path, "recordings", compatibility)
+    payload = json.dumps(
+        {
+            "files": {
+                name: base64.b64encode(content).decode()
+                for name, content in files.items()
+            }
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+
+    def signed_feed(contract: str, payload: bytes) -> bytes:
+        manifest = json.dumps(
+            {
+                "schema": 1,
+                "sequence": 1,
+                "notes": "qualified catalog",
+                "kind": "recordings",
+                "channel": "tester",
+                "minimum_engine": 1,
+                "maximum_engine": 1,
+                "compatibility": contract,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return json.dumps(
+            {
+                name: base64.b64encode(value).decode()
+                for name, value in {
+                    "manifest": manifest,
+                    "signature": key.sign(manifest),
+                    "payload": payload,
+                }.items()
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+
+    catalog = signed_feed(compatibility, payload)
+    pins = {**policy(), "recording_feed_sha256": hashlib.sha256(catalog).hexdigest()}
+    validation.verify_feed(catalog, "recording", pins)
+
+    legacy_payload = json.dumps(
+        {"files": recording_files()}, sort_keys=True, separators=(",", ":")
+    ).encode()
+    legacy = signed_feed("benchmark-replay-1:" + "a" * 64, legacy_payload)
+    legacy_pins = {**policy(), "recording_feed_sha256": hashlib.sha256(legacy).hexdigest()}
+    with pytest.raises(ValueError, match="compatibility"):
+        validation.verify_feed(legacy, "recording", legacy_pins)
+    from tools.pages_recording_overlay import checked_feed
+
+    assert checked_feed(legacy, "a" * 64) == 1
+    assert checked_feed(catalog, "a" * 64) == 1
+    with pytest.raises(ValueError, match="compatibility"):
+        checked_feed(legacy, "b" * 64)
+
+
+def test_pages_overlay_keeps_the_published_legacy_feed_unchanged() -> None:
+    from tools.pages_recording_overlay import checked_feed
+
+    guest = "4d6924ec86afba868b1fd994bcc323d441b18991ef5367cebca18a6b5cb97d2d"
+    feed = (
+        Path(__file__).resolve().parents[1]
+        / "docs/site/packs/tester"
+        / f"recordings-{guest}.json"
+    )
+    assert checked_feed(feed.read_bytes(), guest) == 3
 
 
 def test_rejected_source_never_runs_secret_job_cleanup(tmp_path: Path) -> None:

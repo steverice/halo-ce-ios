@@ -116,7 +116,7 @@ def validate_payload(payload: bytes, kind: str, compatibility: str) -> None:
     with tempfile.TemporaryDirectory(prefix="visr-release-pack-") as temporary:
         folder = Path(temporary)
         for name, value in encoded.items():
-            if not data_pack.snapshot_name_allowed(name, kind):
+            if not data_pack.snapshot_name_allowed(name, kind, compatibility):
                 raise ValueError("Pack file name is not allowed")
             content = decode_base64(value, maximum_file)
             total += len(content)
