@@ -3036,17 +3036,29 @@ static unsigned exact_borders(const struct gpu_draw *draw)
 	return mask;
 }
 
+/* ClampToZero is available before native border colors, but its alpha is
+opaque for formats without alpha. Use the real storage's format and type:
+even the game's R5G6B5 shadow targets are BGRA8 here. Missing storage must
+stay ineligible before bind_stages substitutes an empty texture. */
+static BOOL zero_border_eligible(const struct gpu_stage *packet, MetalTexture *record)
+{
+	return !border_colors && packet->type == GPU_TEXTURE_2D && record && record->texture &&
+		!record->description.foveated_eye && record->texture.textureType == MTLTextureType2D &&
+		record->texture.pixelFormat == MTLPixelFormatBGRA8Unorm && packet->sampler.border_color == 0 &&
+		(packet->sampler.address_u == GPU_ADDRESS_BORDER || packet->sampler.address_v == GPU_ADDRESS_BORDER);
+}
+
 /* a stage's sampler, mapped as gpu_gl.c maps it on OpenGL ES: every filter
 but POINT is linear, ANISOTROPIC turns on anisotropy, the first level sampled
 is D3D's MAXMIPLEVEL, BORDER addressing clamps to the border (border_colors)
-or the edge, and the LOD bias is the shader's. white: the same with an opaque
-white border, an exact border stage's second sampler. */
-static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, BOOL white)
+or eligible zero border, else the edge, and the LOD bias is the shader's.
+white: an opaque white border, an exact border stage's second sampler. */
+static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, BOOL white, BOOL zero_border)
 {
 	struct
 	{
 		struct gpu_sampler_state state;
-		uint32_t white;
+		uint32_t white, zero_border;
 	} key;
 	NSData *name;
 	id<MTLSamplerState> result;
@@ -3054,6 +3066,7 @@ static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, 
 	memset(&key, 0, sizeof(key));
 	key.state = *state;
 	key.white = white;
+	key.zero_border = zero_border;
 	_Static_assert(sizeof(key) <= FRONT_CACHE_KEY, "the sampler key fits the front cache");
 	if ((result = front_cache_get(&sampler_cache, &key, sizeof(key))))
 		return result;
@@ -3074,6 +3087,7 @@ static id<MTLSamplerState> sampler_state(const struct gpu_sampler_state *state, 
 			modes[axis] = addresses[axis] == GPU_ADDRESS_WRAP ? MTLSamplerAddressModeRepeat :
 				addresses[axis] == GPU_ADDRESS_MIRROR ? MTLSamplerAddressModeMirrorRepeat :
 				addresses[axis] == GPU_ADDRESS_BORDER && border_colors ? MTLSamplerAddressModeClampToBorderColor :
+				addresses[axis] == GPU_ADDRESS_BORDER && zero_border ? MTLSamplerAddressModeClampToZero :
 				MTLSamplerAddressModeClampToEdge;
 		if (border_colors)
 			descriptor.borderColor = white ? MTLSamplerBorderColorOpaqueWhite : border_color(state->border_color);
@@ -3177,13 +3191,14 @@ static void bind_attributes(const struct gpu_draw *draw, const struct draw_attri
 	metal_state_always(&state_cache);
 }
 
-/* each stage's last sampler state and its sampler: consecutive draws mostly
-sample the same way, and comparing 24 bytes costs less than sampler_state's
-hash of its key (4 stages a draw). The samplers dictionary keeps every
-sampler for good, so these needn't retain them. */
+/* each stage's last sampler state, storage eligibility and sampler:
+consecutive draws mostly sample the same way. Eligibility can change with
+the bound texture while the guest state stays the same. The samplers
+dictionary keeps every sampler for good, so these needn't retain them. */
 static struct
 {
 	struct gpu_sampler_state state;
+	uint32_t zero_border;
 	__unsafe_unretained id<MTLSamplerState> sampler;
 } stage_samplers[GPU_STAGE_COUNT];
 
@@ -3203,6 +3218,7 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 		__unsafe_unretained MetalTexture *record = packet->type ? texture_record(packet->texture) : nil;
 		__unsafe_unretained id<MTLTexture> texture = record ? record->texture : nil;
 		__unsafe_unretained id<MTLSamplerState> sampler;
+		BOOL zero_border = zero_border_eligible(packet, record);
 		MTLSize screen, physical;
 
 		if (texture && foveation_sizes(record, &screen, &physical))
@@ -3226,12 +3242,14 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 		if (!packet->type)
 			sampler = empty_sampler;
 		else if (stage_samplers[stage].sampler &&
+			stage_samplers[stage].zero_border == (uint32_t)zero_border &&
 			!memcmp(&stage_samplers[stage].state, &packet->sampler, sizeof(packet->sampler)))
 			sampler = stage_samplers[stage].sampler;
 		else
 		{
-			sampler = sampler_state(&packet->sampler, NO);
+			sampler = sampler_state(&packet->sampler, NO, zero_border);
 			stage_samplers[stage].state = packet->sampler;
+			stage_samplers[stage].zero_border = zero_border;
 			stage_samplers[stage].sampler = sampler;
 		}
 		if (metal_state_object(&state_cache, METAL_STATE_SAMPLER + stage, (__bridge void *)sampler, 0))
@@ -3250,7 +3268,7 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 
 			if (!(exact & (1u << stage)))
 				continue;
-			[encoder setFragmentSamplerState:sampler_state(&draw->stages[stage].sampler, YES) atIndex:GPU_STAGE_COUNT + stage];
+			[encoder setFragmentSamplerState:sampler_state(&draw->stages[stage].sampler, YES, NO) atIndex:GPU_STAGE_COUNT + stage];
 			metal_state_always(&state_cache);
 			colors[stage][0] = (float)((color >> 16) & 0xff) / 255.0f;
 			colors[stage][1] = (float)((color >> 8) & 0xff) / 255.0f;
@@ -3360,14 +3378,15 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 			return 0;
 		}
 #if HALO_RENDER_VALIDATION
-		/* a GPU without border colors (below Apple7): BORDER addressing clamps to the edge */
+		/* below Apple7, only ordinary zero-border BGRA8 stages are handled */
 		if (!border_colors)
 		{
 			int stage;
 
 			for (stage = 0; stage < GPU_STAGE_COUNT; stage++)
 				if (draw->stages[stage].type && (draw->stages[stage].sampler.address_u == GPU_ADDRESS_BORDER ||
-					draw->stages[stage].sampler.address_v == GPU_ADDRESS_BORDER))
+					draw->stages[stage].sampler.address_v == GPU_ADDRESS_BORDER) &&
+					!zero_border_eligible(&draw->stages[stage], texture_record(draw->stages[stage].texture)))
 					GPU_VALIDATION_REPORT(GPU_VALIDATION_BORDER_UNSUPPORTED, 1, "Metal: stage %d: this GPU has no border colors; "
 						"BORDER addressing clamps to the edge", stage);
 		}

@@ -21,6 +21,7 @@ APPLE_PROBES = {
     "test_network_light_state.py",
     "test_network_shader_warmup.py",
     "test_shader_list_warmup.py",
+    "test_metal_border.py",
     "test_checkpoint_timing.py",
 }
 # These are standalone programs, not pytest modules.
