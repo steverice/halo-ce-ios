@@ -1026,7 +1026,7 @@ short cache_copy_get_status(
 		progress);
 
 	if (global_self->blocking)
-		Sleep(16);
+		Sleep(1); /* port: the loading loop waits for VBlank after each status poll */
 
 	if (!flags && global_self->copy_thread)
 	{
