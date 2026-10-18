@@ -56,7 +56,7 @@ static void scene_level(char *level, size_t size)
 {
 	/* (the menu's own map: main_get_map_name still names the level before it) */
 	const char *name = !global_scenario ? NULL : global_scenario->type == _scenario_type_main_menu ? "ui" :
-		main_get_map_name();
+		global_scenario->type == _scenario_type_multiplayer ? main_get_multiplayer_map_name() : main_get_map_name();
 	const char *cursor;
 
 	for (cursor = name; cursor && *cursor; cursor++)

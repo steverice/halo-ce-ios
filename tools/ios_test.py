@@ -277,6 +277,7 @@ for sanitizer in ('thread', 'address,undefined'):
         f'--output={BUILD / "compile-progress-probe"}')
     run(BUILD/'compile-progress-probe')
 run('python3', 'tools/test_loading_progress.py')
+run('python3', 'tools/scene_class_test.py')
 # the Apple host's socket adapter: every address it returns is laid out as the game reads it (a datagram's
 # source read with recvmsg was not, so a host took an internet play joiner's datagrams for its own machine's)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Dst_mtim=st_mtimespec',
