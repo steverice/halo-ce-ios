@@ -69,6 +69,8 @@ enum
 	DISTRIBUTED_INPUT_HISTORY = 4,
 };
 
+boolean update_server_player_queue_ready(long player_index);
+
 /* (the host) a client machine's player's action at the client's tick */
 void update_server_handle_distributed_input(
 	long player_index,

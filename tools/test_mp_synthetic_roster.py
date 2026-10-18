@@ -104,8 +104,8 @@ static int settings_sends, sent_roster_count, local_requests, start_requests;
 static unsigned long now_ms, network_game_settings_update_time;
 static boolean network_game_settings_update_pending;
 enum { NETWORK_GAME_SETTINGS_UPDATE_INTERVAL = 250 };
-static int force_slots_held;
-static int network_game_player_slot_held(long index) { (void)index; return force_slots_held; }
+static int force_slots_held, force_settings_failure;
+static int network_game_player_slot_held(long index) { return force_slots_held == 1 || (force_slots_held < 0 && index >= -force_slots_held); }
 static void network_event(const char *format, ...) { (void)format; }
 static void error(int kind, const char *format, ...) { (void)kind; (void)format; }
 __PLAYER_VALID__
@@ -128,6 +128,7 @@ static unsigned long system_milliseconds(void) { return now_ms; }
 static int network_game_server_send_game_settings_to_all_machines(struct network_game_server *host,
     const void *game, long size) {
     (void)host; (void)size;
+    if (force_settings_failure) return FALSE;
     settings_sends++; sent_roster_count = ((const struct network_game *)game)->player_count;
     network_game_settings_update_pending = FALSE;
     network_game_settings_update_time = now_ms;
@@ -174,7 +175,7 @@ static void reset_game(void) {
     server.game.players[0].controller_index = 0;
     server.game.players[0].player_list_index = 0;
     settings_sends = sent_roster_count = local_requests = start_requests = 0;
-    force_slots_held = 0;
+    force_slots_held = force_settings_failure = 0;
     now_ms = network_game_settings_update_time = 0;
     network_game_settings_update_pending = FALSE;
 }
@@ -282,6 +283,43 @@ int main(void) {
     CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
     CHECK(server.game.machine_count == 1 && server.game.player_count == 1 &&
         server.game.machines[1].machine_index == NONE);
+    network_test_suite_end();
+    for (int count = 2; count <= 32; count += count == 2 ? 14 : 16) {
+        reset_game();
+        CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", count, 1, 37, 7));
+        network_test.setup_seconds = 1.0f; actual_lobby_map_set();
+        network_test.setup_seconds = 2.0f; actual_lobby_after_map();
+        CHECK(network_test.mode == _network_test_host && network_test.players_wanted == 1);
+        CHECK(server.game.machine_count == count && server.game.player_count == count);
+        CHECK(server.joined_transport_machines == 1 && local_requests == 1);
+        for (int i = 0; i < count; i++) {
+            CHECK(server.game.machines[i].machine_index == i);
+            CHECK(server.game.players[i].machine_index == i && server.game.players[i].controller_index == 0);
+            CHECK(i == 0 || server.client_machines[i].flags == 0);
+        }
+        actual_lobby_after_map();
+        CHECK(server.game.machine_count == count && server.game.player_count == count);
+        now_ms = 250;
+        CHECK(network_game_server_flush_game_data_pregame(&server));
+        CHECK(sent_roster_count == count);
+        network_test_suite_end();
+    }
+    for (int failure = 0; failure < 4; failure++) {
+        reset_game();
+        CHECK(network_test_suite_begin("network_players", "sidewinder", "slayer", 32, 1, 37, 7));
+        if (failure == 0) server.game.maximum_players = 31;
+        if (failure == 1) server.game.machines[15].machine_index = 15;
+        if (failure == 2) force_slots_held = -5; /* fail after four successful insertions */
+        if (failure == 3) { force_settings_failure = TRUE; now_ms = 250; }
+        CHECK(!network_test_suite_add_one_synthetic_player(&server));
+        CHECK(server.game.player_count == 1 && server.game.machine_count == 1);
+        CHECK(server.game.players[0].machine_index == 0);
+        for (int i = 1; i < 32; i++) {
+            CHECK(server.game.players[i].machine_index == NONE);
+            CHECK(server.game.machines[i].machine_index == (failure == 1 && i == 15 ? 15 : NONE));
+        }
+        network_test_suite_end();
+    }
     return failures != 0;
 }
 '''

@@ -1133,6 +1133,13 @@ static boolean distributed_add_new_ticks(
 	return TRUE;
 }
 
+/* Suite preflight uses the same salted lookup as distributed input delivery. */
+boolean update_server_player_queue_ready(long player_index)
+{
+	return update_server_globals.initialized && update_server_globals.queues && player_index != NONE &&
+		datum_try_and_get(update_server_globals.queues, player_index) != NULL;
+}
+
 void update_server_handle_distributed_input(
 	long player_index,
 	long tick,

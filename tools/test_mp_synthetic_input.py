@@ -58,6 +58,8 @@ __WEAPON_CONTROL_ENUM__
 #define csmemcpy memcpy
 #define match_assert(file, line, expression) do { (void)(file); (void)(line); if (!(expression)) abort(); } while (0)
 enum { _game_connection_local, _game_connection_network_server };
+enum { _network_test_off, _network_test_host };
+static void platform_log(const char *format, ...) { (void)format; }
 struct real_vector2d { float i, j; };
 struct real_euler_angles2d { float yaw, pitch; };
 struct player_action {
@@ -71,8 +73,8 @@ struct server_update { word action_count; short pad; struct player_action action
 struct update { long update_number; struct server_update update; };
 struct update_server_queue_datum { short identifier, pad; long next_update_number; struct player_action current_action; };
 struct data_array { int count; struct update_server_queue_datum *data; };
-static struct update_server_queue_datum queues[2];
-static struct data_array queue_array = { 2, queues };
+static struct update_server_queue_datum queues[32];
+static struct data_array queue_array = { 32, queues };
 static struct { int initialized; long next_update_number_to_build; struct data_array *queues; } update_server_globals = {
     TRUE, 0, &queue_array
 };
@@ -80,8 +82,8 @@ static struct { boolean valid; long tick, received_time; } update_server_distrib
 static unsigned long update_server_pending_control_flags[MAXIMUM_NUMBER_OF_PLAYERS];
 static struct update current_update;
 static struct server_update observed;
-static long game_tick, machine_players[MAXIMUM_LOCAL_PLAYERS] = { NONE, NONE, NONE, NONE };
-static struct { int suite_owned, players_wanted; } network_test;
+static long game_tick, machine_players[32][MAXIMUM_LOCAL_PLAYERS];
+static struct { int suite_owned, players_wanted, suite_network_players, mode; } network_test;
 static int game_connection(void) { return _game_connection_network_server; }
 static boolean game_time_initialized(void) { return TRUE; }
 static long game_time_get(void) { return game_tick; }
@@ -99,12 +101,13 @@ static void *datum_try_and_get(struct data_array *array, long player_index) {
     return &array->data[absolute];
 }
 static long *machine_get_player_list(long machine_index) {
-    return machine_index == 1 ? machine_players : NULL;
+    return machine_index >= 0 && machine_index < 32 ? machine_players[machine_index] : NULL;
 }
 static int valid_real(float value) { return isfinite(value); }
 void network_test_suite_synthetic_input_tick(long tick);
 __ACTION_VALID__
 __ADD_TICKS__
+__QUEUE_READY__
 __HANDLE_INPUT__
 __SYNTHETIC_INPUT__
 __NEXT_UPDATE__
@@ -120,7 +123,10 @@ static int failures;
     fprintf(stderr, "synthetic input line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
-    machine_players[0] = (1L << 16) | 1;
+    memset(machine_players, 0xff, sizeof(machine_players));
+    queue_array.count = 2;
+    network_test.suite_network_players = 2;
+    machine_players[1][0] = (1L << 16) | 1;
     queues[0].identifier = queues[1].identifier = 1;
     network_test.suite_owned = network_test.players_wanted = 1;
     game_tick = 10;
@@ -134,7 +140,7 @@ int main(void) {
         struct player_action duplicate = queues[1].current_action;
         word flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
         duplicate.throttle.j = -1.0f;
-        update_server_handle_distributed_input(machine_players[0], 10, &duplicate, flags, DISTRIBUTED_INPUT_HISTORY);
+        update_server_handle_distributed_input(machine_players[1][0], 10, &duplicate, flags, DISTRIBUTED_INPUT_HISTORY);
         CHECK(queues[1].current_action.throttle.j > 0.5f);
     }
     game_tick = 60; /* release phase must clear both the analog pull and digital fire flag */
@@ -152,6 +158,37 @@ int main(void) {
     game_tick = 62;
     update_server_next_update();
     CHECK(observed.actions[1].throttle.j == 0.0f && observed.actions[1].primary_trigger == 0.0f);
+    for (int count = 16; count <= 32; count += 16) {
+        memset(queues, 0, sizeof(queues));
+        memset(update_server_distributed_inputs, 0, sizeof(update_server_distributed_inputs));
+        queue_array.count = count;
+        network_test.suite_network_players = count;
+        for (int i = 0; i < count; i++) {
+            queues[i].identifier = i + 1;
+            machine_players[i][0] = ((long)(i + 1) << 16) | i;
+        }
+        game_tick = 100;
+        update_server_next_update();
+        CHECK(observed.action_count == count);
+        for (int i = 1; i < count; i++) {
+            CHECK(observed.actions[i].throttle.j > 0.5f);
+            CHECK(isfinite(observed.actions[i].desired_facing.yaw));
+            CHECK(TEST_FLAG(actual_unit_primary_weapon_flags(observed.actions[i].control_flags), _weapon_control_primary_trigger_bit));
+            CHECK(update_server_distributed_inputs[i].tick == game_tick);
+        }
+        game_tick = 150;
+        update_server_next_update();
+        for (int i = 1; i < count; i++) {
+            CHECK(!actual_unit_primary_weapon_flags(observed.actions[i].control_flags));
+            CHECK(observed.actions[i].primary_trigger == 0.0f);
+        }
+    }
+    network_test.mode = _network_test_host;
+    queues[31].identifier = 0; /* reject the whole batch before touching earlier valid queues */
+    for (int i = 1; i < 31; i++) queues[i].current_action.throttle.j = -0.25f;
+    network_test_suite_synthetic_input_tick(200);
+    CHECK(network_test.mode == _network_test_off);
+    for (int i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
     return failures != 0;
 }
 '''
@@ -177,6 +214,7 @@ def test_suite_input_reaches_host_tick_snapshot() -> None:
         "__UNIT_PRIMARY_GATE__": function(UNITS, "if (TEST_FLAG(unit->unit.control_flags, _unit_control_weapon_primary_trigger_bit))"),
         "__ACTION_VALID__": function(QUEUES, "static boolean distributed_action_valid("),
         "__ADD_TICKS__": function(QUEUES, "static boolean distributed_add_new_ticks("),
+        "__QUEUE_READY__": function(QUEUES, "boolean update_server_player_queue_ready("),
         "__HANDLE_INPUT__": function(QUEUES, "void update_server_handle_distributed_input("),
         "__SYNTHETIC_INPUT__": synthetic,
         "__NEXT_UPDATE__": function(QUEUES, "void update_server_next_update("),

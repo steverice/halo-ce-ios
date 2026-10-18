@@ -49,15 +49,15 @@ static int failures;
     fprintf(stderr, "network suite line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
-    const char *bad_simulations[] = { NULL, "", "network_players", "other" };
+    const char *bad_simulations[] = { NULL, "", "invalid", "other" };
     for (int i = 0; i < 4; i++) {
         CHECK(!network_test_suite_begin(bad_simulations[i], "chillout", "slayer", 4, 1, 1000, 0));
         CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
     }
-    CHECK(!network_test_suite_begin("local_controllers", "bloodgulch", "slayer", 4, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("local_controllers", "../bloodgulch", "slayer", 4, 1, 1000, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "ctf", 4, 1, 1000, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 2, 1000, 0));
-    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 32, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 33, 1, 1000, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 0, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 121));
     CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
@@ -87,6 +87,16 @@ int main(void) {
     CHECK(network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
     network_test_suite_end();
     CHECK(aborts == 1);
+    for (int players = 2; players <= 32; players++) {
+        CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
+        CHECK(network_test.players_wanted == 1);
+        CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
+        memcpy(snapshot, &network_test, sizeof(network_test));
+        CHECK(!network_test_suite_begin("network_players", "sidewinder", "slayer", players, 1, 37, 7));
+        CHECK(!network_test_suite_begin("network_players", "bloodgulch", "slayer", players == 32 ? 2 : players + 1, 1, 37, 7));
+        CHECK(!memcmp(snapshot, &network_test, sizeof(network_test)));
+        network_test_suite_end();
+    }
     return failures ? 1 : 0;
 }
 '''

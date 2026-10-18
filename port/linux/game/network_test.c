@@ -123,6 +123,7 @@ static struct
 	char pickup_weapon[64];
 	long score_to_win;
 	short suite_time_limit_minutes;
+	short suite_network_players;
 	long logged_time;
 	boolean public_game;
 	boolean browsing;
@@ -135,19 +136,27 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 {
 	int local_players;
 
-	/* The roster and input proof currently cover only these two tuples. */
-	if (!simulation || !map || !game_mode || strcmp(map, "chillout") || strcmp(game_mode, "slayer") ||
+	size_t map_length;
+
+	if (!simulation || !map || !game_mode || strcmp(game_mode, "slayer") ||
 		views != 1 || score_limit < 1 || score_limit > 1000 || time_limit_minutes < 0 || time_limit_minutes > 120)
 		return 0;
+	map_length = strlen(map);
+	if (!map_length || map_length >= sizeof(network_test.map_name))
+		return 0;
+	for (size_t i = 0; i < map_length; i++)
+		if (!((map[i] >= 'a' && map[i] <= 'z') || (map[i] >= '0' && map[i] <= '9') || map[i] == '_'))
+			return 0;
 	if (!strcmp(simulation, "local_controllers") && players == 4)
 		local_players = 4;
-	else if (!strcmp(simulation, "network_players") && players == 2)
+	else if (!strcmp(simulation, "network_players") && players >= 2 && players <= 32)
 		local_players = 1;
 	else
 		return 0;
 	if (network_test.suite_owned)
 		return network_test.mode == _network_test_host && network_test.players_wanted == local_players &&
-			network_test.score_to_win == score_limit && network_test.suite_time_limit_minutes == time_limit_minutes;
+			network_test.score_to_win == score_limit && network_test.suite_time_limit_minutes == time_limit_minutes &&
+			network_test.suite_network_players == (local_players == 1 ? players : 0) && !strcmp(network_test.map_name, map);
 	if (*config_string("debug.network_test") || network_test.mode != _network_test_off ||
 		game_connection() != _game_connection_local)
 		return 0;
@@ -158,6 +167,7 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 	snprintf(network_test.map_name, sizeof(network_test.map_name), "%s", map);
 	snprintf(network_test.variant_name, sizeof(network_test.variant_name), "%s", game_mode);
 	network_test.players_wanted = (short)local_players;
+	network_test.suite_network_players = local_players == 1 ? (short)players : 0;
 	network_test.start_delay = 15.0f;
 	network_test.score_to_win = score_limit;
 	network_test.suite_time_limit_minutes = (short)time_limit_minutes;
@@ -189,35 +199,49 @@ void network_test_suite_end(void)
 		network_game_abort();
 }
 
-/* A bounded source proof for a suite-owned remote player with no transport
-machine. The ordinary four-local test still uses its four controllers. */
+/* Synthetic participants occupy real game roster slots, but do not create
+transport clients or local controllers. Insert the complete roster atomically. */
 static int network_test_suite_add_one_synthetic_player(struct network_game_server *server)
 {
 	struct network_game *game = network_game_get_game();
-	struct network_machine machine = { 0 };
-	struct network_player player = { 0 };
+	int added = 0, target = network_test.suite_network_players;
 
-	if (!server || !game || game->machine_count != 1 || game->player_count != 1 ||
-		game->machines[0].machine_index != 0 || game->machines[1].machine_index != NONE ||
-		game->maximum_players < 2)
+	if (!server || !game || target < 2 || target > 32 || game->machine_count != 1 || game->player_count != 1 ||
+		game->machines[0].machine_index != 0 || game->maximum_players < target)
 		return 0;
-	machine.machine_index = 1;
-	machine.name[0] = L'B';
-	machine.name[1] = L'2';
-	player.machine_index = 1;
-	player.controller_index = 0;
-	player.team_index = NONE;
-	player.player_list_index = NONE;
-	player.name[0] = L'B';
-	player.name[1] = L'2';
-	if (!network_game_add_machine(game, &machine))
-		return 0;
-	if (!network_game_add_player(game, &player) || !network_game_server_send_game_data_pregame(server))
+	for (int i = 1; i < target; i++)
+		if (game->machines[i].machine_index != NONE)
+			return 0;
+	for (int i = 0; i < (int)(sizeof(game->players) / sizeof(game->players[0])); i++)
+		if (game->players[i].machine_index != NONE &&
+			(game->players[i].machine_index != 0 || game->players[i].controller_index != 0))
+			return 0;
+	for (int i = 1; i < target; i++)
 	{
-		network_game_remove_machine(game, &machine);
-		return 0;
+		struct network_machine machine = { 0 };
+		struct network_player player = { 0 };
+
+		machine.machine_index = (char)i;
+		machine.name[0] = L'B';
+		machine.name[1] = L'0' + (i + 1) / 10;
+		machine.name[2] = L'0' + (i + 1) % 10;
+		player.machine_index = (char)i;
+		player.controller_index = 0;
+		player.team_index = NONE;
+		player.player_list_index = NONE;
+		memcpy(player.name, machine.name, 3 * sizeof(player.name[0]));
+		if (!network_game_add_machine(game, &machine))
+			goto rollback;
+		added++;
+		if (!network_game_add_player(game, &player))
+			goto rollback;
 	}
-	return 1;
+	if (network_game_server_send_game_data_pregame(server))
+		return 1;
+rollback:
+	for (int i = added; i > 0; i--)
+		network_game_remove_machine(game, &game->machines[i]);
+	return 0;
 }
 
 /* A sent local-player request is asynchronous; only the server's actual roster confirms it. */
@@ -235,30 +259,49 @@ static int network_test_suite_prepare_synthetic_player(struct network_game_serve
 	if (!network_test_suite_add_one_synthetic_player(server))
 		return -1;
 	network_test.suite_synthetic_added = TRUE;
-	platform_log("network test: synthetic player ready after local player registration");
+	platform_log("network test: synthetic roster ready after local player registration");
 	return 1;
 }
 
 void network_test_suite_synthetic_input_tick(long tick)
 {
-	long *players;
-	struct player_action action = { 0 };
+	long player_indices[32];
+	int target = network_test.suite_network_players;
 	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
 
-	if (!network_test.suite_owned || network_test.players_wanted != 1 ||
+	if (!network_test.suite_owned || network_test.players_wanted != 1 || target < 2 || target > 32 ||
 		game_connection() != _game_connection_network_server || tick < 0)
 		return;
-	players = machine_get_player_list(1);
-	if (!players || players[0] == NONE)
-		return;
-	action.desired_facing.yaw = (real)(tick % 360) * 0.01f;
-	action.throttle.j = 0.75f;
-	action.primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
-	SET_FLAG(action.control_flags, _unit_control_weapon_primary_trigger_bit, action.primary_trigger > 0.0f);
-	action.desired_weapon_index = NONE;
-	action.desired_grenade_index = NONE;
-	action.desired_zoom_level = NONE;
-	update_server_handle_distributed_input(players[0], tick, &action, control_flags, DISTRIBUTED_INPUT_HISTORY);
+	/* Validate the complete batch before mutating any queue. A partial roster
+	cannot continue as a smaller successful workload. */
+	for (int i = 1; i < target; i++)
+	{
+		long *players = machine_get_player_list(i);
+
+		if (!players || players[0] == NONE || players[1] != NONE || !update_server_player_queue_ready(players[0]))
+			goto failed;
+		player_indices[i] = players[0];
+		for (int j = 1; j < i; j++)
+			if (player_indices[j] == player_indices[i])
+				goto failed;
+	}
+	for (int i = 1; i < target; i++)
+	{
+		struct player_action action = { 0 };
+
+		action.desired_facing.yaw = (real)((tick + i * 17) % 360) * 0.01f;
+		action.throttle.j = 0.75f;
+		action.primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
+		SET_FLAG(action.control_flags, _unit_control_weapon_primary_trigger_bit, action.primary_trigger > 0.0f);
+		action.desired_weapon_index = NONE;
+		action.desired_grenade_index = NONE;
+		action.desired_zoom_level = NONE;
+		update_server_handle_distributed_input(player_indices[i], tick, &action, control_flags, DISTRIBUTED_INPUT_HISTORY);
+	}
+	return;
+failed:
+	platform_log("network test: incomplete synthetic input roster at tick %ld", tick);
+	network_test.mode = _network_test_off;
 }
 
 /* the variant at the index of the list (copied to name), FALSE past its end */
