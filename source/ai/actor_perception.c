@@ -1965,7 +1965,15 @@ short actor_perception_aiming_vector_test_blockage(
 	}
 
 	if (!(horizontal_aiming_magnitude > 0.0f))
+	{
+		if (friend_direction_to_aiming_vector != NULL)
+		{
+			friend_direction_to_aiming_vector->i = 0.0f;
+			friend_direction_to_aiming_vector->j = 0.0f;
+			friend_direction_to_aiming_vector->k = 0.0f;
+		}
 		goto done;
+	}
 
 	vector_from_points3d(source_position, friend_position, &friend_vector);
 	projection =
@@ -1977,7 +1985,15 @@ short actor_perception_aiming_vector_test_blockage(
 	friend_distance *= 0.8660254f;
 
 	if (!(projection > friend_distance))
+	{
+		if (friend_direction_to_aiming_vector != NULL)
+		{
+			friend_direction_to_aiming_vector->i = 0.0f;
+			friend_direction_to_aiming_vector->j = 0.0f;
+			friend_direction_to_aiming_vector->k = 0.0f;
+		}
 		goto done;
+	}
 
 	projection = -projection;
 	blockage_vector.i =
