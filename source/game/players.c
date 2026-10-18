@@ -262,6 +262,9 @@ symbols in this file:
 #include "objects/damage_effect_definitions.h"
 #include "physics/collisions.h"
 #include "real_math.h"
+#if defined(HALO_IOS)
+#include "render/render.h" /* port: temporary multiplayer probe diagnostic */
+#endif
 #include "render/render_debug.h"
 #include "players.h"
 #include "player_queues_new.h"
@@ -709,9 +712,21 @@ short players_get_respawn_failure(
 	return players_globals->respawn_failure;
 }
 
+#if defined(HALO_IOS)
+__attribute__((noinline)) /* port: temporary multiplayer probe diagnostic */
+#endif
 long local_player_get_player_index(
 	short local_player_index)
 {
+#if defined(HALO_IOS)
+	if (local_player_index < NONE || local_player_index >= MAXIMUM_NUMBER_OF_LOCAL_PLAYERS)
+	{
+		extern void platform_log(char const *format, ...);
+		platform_log("multiplayer probe invalid local player %d, render local %d, window %d, caller %p",
+			(int)local_player_index, (int)render.local_player_index, (int)render.window_index,
+			__builtin_return_address(0));
+	}
+#endif
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\players.c",
 		943,
