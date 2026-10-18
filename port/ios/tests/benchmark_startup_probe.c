@@ -20,6 +20,7 @@ static const char *mode;
 static unsigned char at_menu, worker_active;
 static int readiness_reads, timeline_reads, starts, requests, loads, unsafe_loads, failures;
 static int mp_begins, mp_ends, mp_probe_enabled, mp_probe_resets, suite_suspends, suite_restores;
+static int suspension_allowed = 1;
 static int mp_request, window_opens, window_closes, run_ends;
 static int fatal_reports;
 static char last_end_status[32];
@@ -63,7 +64,7 @@ void host_benchmark_end(const char *status, const char *note) {
     (void)note; run_ends++; snprintf(last_end_status, sizeof(last_end_status), "%s", status);
 }
 void host_benchmark_fault(const char *note) { (void)note; fatal_reports++; }
-int input_replay_suite_suspend(void) { suite_suspends++; return 1; }
+int input_replay_suite_suspend(void) { suite_suspends++; return suspension_allowed; }
 void input_replay_suite_restore(void) { suite_restores++; }
 int network_test_suite_begin_chillout(void) { mp_begins++; return 1; }
 void network_test_suite_end(void) { mp_ends++; }
@@ -89,6 +90,7 @@ static void reset(void) {
     now = 0; mode = "quick"; at_menu = 1; worker_active = 0;
     readiness_reads = timeline_reads = starts = requests = loads = unsafe_loads = 0;
     mp_begins = mp_ends = mp_probe_enabled = mp_probe_resets = suite_suspends = suite_restores = 0;
+    suspension_allowed = 1;
     mp_request = window_opens = window_closes = run_ends = fatal_reports = 0;
     last_end_status[0] = 0;
     memset(&observed_mp, 0, sizeof(observed_mp));
@@ -142,6 +144,12 @@ int main(void) {
     CHECK(starts == 0 && requests == 0 && loads == 0 && readiness_reads == 0 && timeline_reads == 0);
     reset(); worker_active = 1; mode = "invalid";
     CHECK(frame(0) == -1 && suite.state == suite_off && readiness_reads == 0);
+
+    reset(); mode = "full"; suspension_allowed = 0;
+    CHECK(frame(0) == -1 && suite.state == suite_off);
+    CHECK(starts == 0 && requests == 0 && loads == 0 && suite_suspends == 1 && suite_restores == 0);
+    CHECK(strstr(last_log, "active recording") != NULL);
+    CHECK(frame(100000) == -1 && starts == 0 && requests == 0);
 
     reset(); suite.state = suite_off; suite.pending_action = suite_action_mp_begin;
     CHECK(frame(0) == -1 && mp_begins == 0);

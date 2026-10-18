@@ -510,8 +510,9 @@ void benchmark_suite_frame(long width, long height)
 		}
 		if (!input_replay_suite_suspend())
 		{
-			platform_log("benchmark suite: an active recording must finish before the suite starts");
-			exit(EXIT_FAILURE);
+			platform_log("benchmark suite: refused while an active recording is in progress; finish the take before starting a suite");
+			suite.state = suite_off;
+			return;
 		}
 		platform_video_drawable_size(&drawable_width, &drawable_height);
 		if (drawable_height <= 0)

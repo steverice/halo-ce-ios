@@ -290,7 +290,7 @@ int main(void)
 	assert(take.automatic);
 	take.open = TRUE;
 	assert(!input_replay_suite_suspend());
-	assert(take.automatic && !input_replay_suite_suspended());
+	assert(take.open && take.automatic && !input_replay_suite_suspended());
 	take.open = FALSE;
 	assert(input_replay_suite_suspend());
 	assert(input_replay_suite_suspended() && !take.automatic && replay.suite);
