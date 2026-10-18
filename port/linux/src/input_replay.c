@@ -182,14 +182,14 @@ static struct
 } replay;
 static BOOL suite_suspended;
 
-/* Replay state, rather than benchmark settings, controls the native touch overlay. */
+/* A suspended suite owns input even in synthetic scenes without a replay. */
 #ifdef HALO_IOS
 extern void host_touch_replay_active(int active);
 #endif
 static void replay_touch_update(void)
 {
 #ifdef HALO_IOS
-	host_touch_replay_active(*replay.replay_path && !replay.replay_finished);
+	host_touch_replay_active(suite_suspended || (*replay.replay_path && !replay.replay_finished));
 #endif
 }
 

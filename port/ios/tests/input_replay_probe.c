@@ -399,6 +399,31 @@ int main(int argc, char **argv)
 	replay_name = "";
 	configure();
 	assert(!touch_replay_active);
+	/* Suite ownership keeps touch suppressed when a scene has no replay and
+	   when its replay finishes; the configured replay reloads after restore. */
+	replay_name = "./probe.input";
+	replay.configured = FALSE;
+	configure();
+	assert(touch_replay_active);
+	assert(input_replay_suite_suspend());
+	assert(input_replay_suite_suspended() && touch_replay_active);
+	assert(input_replay_begin("./probe.input", 0));
+	assert(touch_replay_active);
+	clock_ready = 1;
+	menu_loaded = 0;
+	clock_tick = REPLAY_TAIL_TICKS + 1;
+	XINPUT_GAMEPAD suite_pad = {0};
+	input_replay_filter(&suite_pad);
+	assert(replay.replay_finished && touch_replay_active);
+	input_replay_suite_restore();
+	assert(!input_replay_suite_suspended() && !touch_replay_active);
+	input_replay_filter(&suite_pad);
+	assert(*replay.replay_path && touch_replay_active);
+	input_replay_begin(NULL, 0);
+	assert(!touch_replay_active);
+	replay_name = "";
+	clock_ready = 0;
+	menu_loaded = 1;
 	/* A suite suspends the effective auto-take without changing its configured value. */
 	record_name = "auto";
 	replay.configured = FALSE;
