@@ -69,7 +69,7 @@ static struct player_datum *arena_player(int actor)
 		player->local_player_index == (actor ? NONE : 0) ? player : NULL;
 }
 
-static int arena_ground(real_point3d *position)
+static int arena_ground(real_point3d *position, int *rejections)
 {
 	real_point3d above = *position, center;
 	real_vector3d down = { 0.0f, 0.0f, -6.0f }, height = { 0.0f, 0.0f, 0.35f };
@@ -78,26 +78,43 @@ static int arena_ground(real_point3d *position)
 
 	above.z += 2.0f;
 	if (!collision_test_vector(FLAG(_collision_test_front_facing_surfaces_bit) | FLAG(_collision_test_structure_bit),
-		&above, &down, NONE, &collision) || collision.plane.n.k < 0.75f)
+		&above, &down, NONE, &collision))
+	{
+		rejections[0]++;
 		return 0;
+	}
+	if (collision.plane.n.k < 0.75f)
+	{
+		rejections[1]++;
+		return 0;
+	}
 	*position = collision.point;
 	position->z += 0.05f;
 	center = *position;
 	center.z += 0.25f;
 	if (collision_test_pill(_collision_test_for_line_of_sight_flags, &center, &height, 0.25f, NONE, &collision))
+	{
+		rejections[2]++;
 		return 0;
+	}
 	above = *position;
 	above.z += 0.7f;
 	scenario_location_from_point(&feet, position);
 	scenario_location_from_point(&head, &above);
-	return feet.cluster_index != NONE && head.cluster_index != NONE;
+	if (feet.cluster_index == NONE || head.cluster_index == NONE)
+	{
+		rejections[3] += feet.cluster_index == NONE;
+		rejections[4] += head.cluster_index == NONE;
+		return 0;
+	}
+	return 1;
 }
 
 static int arena_choose(void)
 {
 	struct scenario *scenario = global_scenario_try_and_get();
 	real_point3d points[32] = { 0 };
-	int start, candidates = 0, ground_rejections = 0, sight_rejections = 0;
+	int start, candidates = 0, ground_rejections[5] = { 0 }, sight_rejections = 0, first_rejected_actor = NONE;
 
 	if (!scenario || scenario->players.count <= 0)
 	{
@@ -132,7 +149,11 @@ static int arena_choose(void)
 				points[actor] = location->position;
 				points[actor].x += offset[0];
 				points[actor].y += offset[1];
-				if (!arena_ground(&points[actor])) { ground_rejections++; valid = 0; break; }
+				if (!arena_ground(&points[actor], ground_rejections))
+				{
+					if (first_rejected_actor == NONE) first_rejected_actor = actor;
+					valid = 0; break;
+				}
 				if (!actor) continue;
 				eye = points[0]; eye.z += 0.7f;
 				sight.i = points[actor].x - eye.x;
@@ -141,6 +162,7 @@ static int arena_choose(void)
 				if (collision_test_vector(_collision_test_for_line_of_sight_flags, &eye, &sight, NONE, &collision))
 				{
 					sight_rejections++;
+					if (first_rejected_actor == NONE) first_rejected_actor = actor;
 					valid = 0;
 				}
 			}
@@ -153,8 +175,8 @@ static int arena_choose(void)
 			}
 		}
 	}
-	platform_log("network test: arena geometry exhausted: %d candidates, %d ground or clearance rejections, %d sight rejections",
-		candidates, ground_rejections, sight_rejections);
+	platform_log("network test: arena geometry exhausted: %d candidates, floor misses %d steep floors %d blocked clearance %d invalid feet clusters %d invalid head clusters %d sight rejections %d first rejected actor %d",
+		candidates, ground_rejections[0], ground_rejections[1], ground_rejections[2], ground_rejections[3], ground_rejections[4], sight_rejections, first_rejected_actor);
 	return 0;
 }
 

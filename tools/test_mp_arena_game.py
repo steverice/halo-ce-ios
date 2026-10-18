@@ -30,7 +30,7 @@ struct player_datum { long unit_index; int local_player_index; struct { int mach
 struct player_action { unsigned long control_flags; struct {float yaw,pitch;} desired_facing;
     struct {float i,j;} throttle; float primary_trigger; short desired_weapon_index,desired_grenade_index,desired_zoom_level; };
 struct game_input_preferences { int joystick_controls,invert_look; };
-static int target=32,positions_set,no_ground,blocked,profile_inverted;
+static int target=32,positions_set,no_ground,blocked,profile_inverted,steep_floor,invalid_cluster,blocked_clearance;
 static struct player_datum players[32];
 static real_point3d positions[64];
 static struct player_starting_location starts[2];
@@ -47,14 +47,14 @@ static struct player_datum *player_try_and_get(long i) { return i>=0&&i<target?&
 static long local_player_get_player_index(int i) { return i==0?0:NONE; }
 static void object_get_origin(long i,real_point3d *p) { *p=positions[i]; }
 static void object_set_position(long i,const real_point3d *p,void*a,void*b) { (void)a;(void)b;positions[i]=*p;positions_set++; }
-static void scenario_location_from_point(struct location*l,const real_point3d*p) { (void)p;l->cluster_index=blocked?NONE:0; }
+static void scenario_location_from_point(struct location*l,const real_point3d*p) { (void)p;l->cluster_index=invalid_cluster?NONE:0; }
 static int collision_test_vector(unsigned long flags,const real_point3d*p,const real_vector3d*v,long ignore,struct collision_result*c) {
     (void)flags;(void)ignore;
-    if(v->k < -1) { if(no_ground)return 0;c->point=*p;c->point.z=0;c->plane.n.k=1;return 1; }
+    if(v->k < -1) { if(no_ground)return 0;c->point=*p;c->point.z=0;c->plane.n.k=steep_floor?0.5f:1;return 1; }
     return blocked;
 }
 static int collision_test_pill(unsigned long flags,const real_point3d*p,const real_vector3d*v,float r,long ignore,struct collision_result*c) {
-    (void)flags;(void)p;(void)v;(void)r;(void)ignore;(void)c;return blocked; }
+    (void)flags;(void)p;(void)v;(void)r;(void)ignore;(void)c;return blocked_clearance; }
 static real_vector3d *player_control_get_facing_direction(short i,real_vector3d *v) { (void)i;v->i=1;v->j=v->k=0;return v; }
 static void input_abstraction_get_local_player_preferences(short i,struct game_input_preferences*p) {
     (void)i;p->joystick_controls=0;p->invert_look=profile_inverted; }
@@ -92,9 +92,15 @@ int main(void) {
     benchmark_mp_arena_reset();assert(!benchmark_mp_arena_repositions(31));
     assert(benchmark_mp_arena_tick(10)==1&&!benchmark_mp_arena_gamepad(0,10,&pad));
     no_ground=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
-    assert(!benchmark_mp_arena_ready());assert(strstr(last_log,"arena geometry exhausted"));benchmark_mp_arena_reset();
+    assert(!benchmark_mp_arena_ready());assert(strstr(last_log,"arena geometry exhausted")&&strstr(last_log,"floor misses 8")&&strstr(last_log,"first rejected actor 0"));benchmark_mp_arena_reset();
     no_ground=0;blocked=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);benchmark_mp_arena_reset();
-    blocked=0;players[31].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
+    blocked=0;steep_floor=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
+    assert(strstr(last_log,"steep floors 8"));benchmark_mp_arena_reset();
+    steep_floor=0;blocked_clearance=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
+    assert(strstr(last_log,"blocked clearance 8"));benchmark_mp_arena_reset();
+    blocked_clearance=0;invalid_cluster=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
+    assert(strstr(last_log,"invalid feet clusters 8")&&strstr(last_log,"invalid head clusters 8"));benchmark_mp_arena_reset();
+    invalid_cluster=0;players[31].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
     assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 31"));benchmark_mp_arena_reset();
     players[31].unit_index=31;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
