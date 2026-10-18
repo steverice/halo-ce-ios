@@ -44,9 +44,12 @@ Called from the main loop every frame (main.c).
 #include "networking/network_game_globals.h"
 #include "networking/network_client_manager.h"
 #include "networking/network_server_manager.h"
+#include "networking/network_server_message_handler.h"
+#include "networking/network_game_manager.h"
 #include "game/game.h"
 #include "game/game_engine.h"
 #include "game/players.h"
+#include "game/player_queues_new.h"
 #include "objects/objects.h"
 #include "units/units.h"
 #include "units/unit_definitions.h"
@@ -145,6 +148,17 @@ int network_test_suite_begin_chillout(void)
 	return 1;
 }
 
+int network_test_suite_begin_two_player_proof(void)
+{
+	if (network_test.suite_owned)
+		return network_test.mode == _network_test_host && network_test.players_wanted == 1;
+	if (!network_test_suite_begin_chillout())
+		return 0;
+	network_test.players_wanted = 1;
+	platform_log("network test: one local and one synthetic player proof");
+	return 1;
+}
+
 void network_test_suite_end(void)
 {
 	int abort_game;
@@ -156,6 +170,58 @@ void network_test_suite_end(void)
 	network_test.checked = TRUE;
 	if (abort_game)
 		network_game_abort();
+}
+
+/* A bounded source proof for a suite-owned remote player with no transport
+machine. The ordinary four-local test still uses its four controllers. */
+static int network_test_suite_add_one_synthetic_player(struct network_game_server *server)
+{
+	struct network_game *game = network_game_get_game();
+	struct network_machine machine = { 0 };
+	struct network_player player = { 0 };
+
+	if (!server || !game || game->machine_count != 1 || game->player_count != 1 ||
+		game->machines[0].machine_index != 0 || game->machines[1].machine_index != NONE ||
+		game->maximum_players < 2)
+		return 0;
+	machine.machine_index = 1;
+	machine.name[0] = L'B';
+	machine.name[1] = L'2';
+	player.machine_index = 1;
+	player.controller_index = 0;
+	player.team_index = NONE;
+	player.player_list_index = NONE;
+	player.name[0] = L'B';
+	player.name[1] = L'2';
+	if (!network_game_add_machine(game, &machine))
+		return 0;
+	if (!network_game_add_player(game, &player) || !network_game_server_send_game_data_pregame(server))
+	{
+		network_game_remove_machine(game, &machine);
+		return 0;
+	}
+	return 1;
+}
+
+void network_test_suite_synthetic_input_tick(long tick)
+{
+	long *players;
+	struct player_action action = { 0 };
+	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
+
+	if (!network_test.suite_owned || network_test.players_wanted != 1 ||
+		game_connection() != _game_connection_network_server || tick < 0)
+		return;
+	players = machine_get_player_list(1);
+	if (!players || players[0] == NONE)
+		return;
+	action.desired_facing.yaw = (real)(tick % 360) * 0.01f;
+	action.throttle.j = 0.75f;
+	action.primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
+	action.desired_weapon_index = NONE;
+	action.desired_grenade_index = NONE;
+	action.desired_zoom_level = NONE;
+	update_server_handle_distributed_input(players[0], tick, &action, control_flags, DISTRIBUTED_INPUT_HISTORY);
 }
 
 /* the variant at the index of the list (copied to name), FALSE past its end */
@@ -1053,6 +1119,13 @@ void network_test_update(
 						variant.universal_variant.score_to_win = network_test.score_to_win;
 					player_ui_set_game_variant(&variant);
 					network_game_server_change_game_variant(global_network_game_server_get(), &variant);
+					if (network_test.suite_owned && network_test.players_wanted == 1 &&
+						!network_test_suite_add_one_synthetic_player(global_network_game_server_get()))
+					{
+						platform_log("network test: synthetic player setup failed");
+						network_test.mode = _network_test_off;
+						return;
+					}
 				}
 				network_test.map_set = TRUE;
 			}

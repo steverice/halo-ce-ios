@@ -117,6 +117,8 @@ symbols in this file:
 #include "networking/network_game_globals.h"
 #include "units/units.h"
 
+void network_test_suite_synthetic_input_tick(long tick);
+
 /* ---------- constants */
 
 enum
@@ -413,6 +415,7 @@ void update_server_next_update(
 	if (game_connection() == _game_connection_network_server)
 	{
 		update_server_take_local_actions();
+		network_test_suite_synthetic_input_tick(game_time_get());
 	}
 	update = update_server_get_update(update_number);
 	match_assert(
