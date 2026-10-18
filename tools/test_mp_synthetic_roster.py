@@ -35,11 +35,19 @@ def lobby_branch() -> str:
     return NETWORK_TEST[start:end]
 
 
+def after_map_branch() -> str:
+    start = NETWORK_TEST.index("\n\t\t\tif (!network_test.player_added", NETWORK_TEST.index("case _network_test_host:"))
+    end = NETWORK_TEST.index("\n\t\t}\n\t\tbreak;\n\tcase _network_test_join:", start)
+    return NETWORK_TEST[start:end]
+
+
 def suite_functions() -> str:
     pieces = [function(NETWORK_TEST, "int network_test_suite_begin("),
               function(NETWORK_TEST, "void network_test_suite_end(void)")]
     if "static int network_test_suite_add_one_synthetic_player(" in NETWORK_TEST:
         pieces.append(function(NETWORK_TEST, "static int network_test_suite_add_one_synthetic_player("))
+    if "static int network_test_suite_prepare_synthetic_player(" in NETWORK_TEST:
+        pieces.append(function(NETWORK_TEST, "static int network_test_suite_prepare_synthetic_player("))
     return "\n\n".join(pieces)
 
 
@@ -92,7 +100,7 @@ struct network_game_server {
     int joined_transport_machines;
 };
 static struct network_game_server server;
-static int settings_sends, sent_roster_count;
+static int settings_sends, sent_roster_count, local_requests, start_requests;
 static unsigned long now_ms, network_game_settings_update_time;
 static boolean network_game_settings_update_pending;
 enum { NETWORK_GAME_SETTINGS_UPDATE_INTERVAL = 250 };
@@ -139,6 +147,11 @@ static void network_game_server_change_game_variant(struct network_game_server *
     (void)variant; network_game_server_send_game_data_pregame(host);
 }
 static void platform_log(const char *format, ...) { (void)format; }
+static void *global_network_game_client_get(void) { return &server; }
+static int network_game_client_add_player(void *client, int controller) {
+    (void)client; (void)controller; local_requests++; return TRUE;
+}
+static void network_game_client_request_immediate_start(void) { start_requests++; }
 static void network_game_server_pause_countdown(struct network_game_server *host, int pause) {
     (void)host; (void)pause;
 }
@@ -160,7 +173,7 @@ static void reset_game(void) {
     server.game.players[0].machine_index = 0;
     server.game.players[0].controller_index = 0;
     server.game.players[0].player_list_index = 0;
-    settings_sends = sent_roster_count = 0;
+    settings_sends = sent_roster_count = local_requests = start_requests = 0;
     force_slots_held = 0;
     now_ms = network_game_settings_update_time = 0;
     network_game_settings_update_pending = FALSE;
@@ -171,11 +184,56 @@ __VARIANT_FUNCTION__
 static void actual_lobby_map_set(void) {
     __MAP_SET_BRANCH__
 }
+static void actual_lobby_after_map(void) {
+    if (network_test.mode != _network_test_host) return;
+    __AFTER_MAP_BRANCH__
+}
 static int failures;
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "synthetic roster line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
+    /* Actual startup joins the machine before its local player request is sent. */
+    reset_game();
+    network_game_invalidate_player(&server.game.players[0]);
+    server.game.player_count = 0;
+    CHECK(network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
+    network_test.setup_seconds = 1.0f;
+    actual_lobby_map_set();
+    CHECK(network_test.mode == _network_test_host && network_test.map_set);
+    CHECK(server.game.machine_count == 1 && server.game.player_count == 0);
+    network_test.setup_seconds = 2.0f;
+    actual_lobby_after_map();
+    CHECK(local_requests == 1 && network_test.player_added);
+    CHECK(network_test.mode == _network_test_host && server.game.player_count == 0 && start_requests == 0);
+    {
+        struct network_player local = { 0 };
+        local.machine_index = 0; local.controller_index = 0;
+        local.team_index = NONE; local.player_list_index = NONE;
+        CHECK(network_game_add_player(&server.game, &local));
+    }
+    network_test.setup_seconds = 3.0f;
+    actual_lobby_after_map();
+    CHECK(network_test.mode == _network_test_host && server.game.player_count == 2 && server.game.machine_count == 2);
+    actual_lobby_after_map();
+    CHECK(server.game.player_count == 2 && server.game.machine_count == 2 && start_requests == 0);
+    network_test.setup_seconds = 15.0f;
+    actual_lobby_after_map();
+    CHECK(network_test.started && start_requests == 1);
+    network_test_suite_end();
+
+    reset_game();
+    network_game_invalidate_player(&server.game.players[0]); server.game.player_count = 0;
+    CHECK(network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
+    network_test.setup_seconds = 1.0f; actual_lobby_map_set();
+    CHECK(network_test.mode == _network_test_host);
+    network_test.setup_seconds = 2.0f; actual_lobby_after_map();
+    CHECK(network_test.mode == _network_test_host && start_requests == 0);
+    network_test.setup_seconds = 15.0f; actual_lobby_after_map();
+    CHECK(network_test.mode == _network_test_off && !network_test.started && start_requests == 0);
+    CHECK(server.game.player_count == 0 && server.game.machine_count == 1);
+    network_test_suite_end();
+
     reset_game();
     CHECK(network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
     CHECK(network_test.players_wanted == 1); /* one real local controller */
@@ -183,6 +241,7 @@ int main(void) {
     actual_lobby_map_set();
     CHECK(network_test.map_set && server.joined_transport_machines == 1);
     CHECK(server.game.variant_options.time_limit == 7);
+    network_test.setup_seconds = 2.0f; actual_lobby_after_map();
     CHECK(server.game.machine_count == 2 && server.game.player_count == 2);
     CHECK(server.game.machines[1].machine_index == 1);
     CHECK(server.game.players[1].machine_index == 1 && server.game.players[1].controller_index == 0);
@@ -218,6 +277,7 @@ int main(void) {
     network_test.setup_seconds = 1.0f;
     force_slots_held = TRUE;
     actual_lobby_map_set();
+    network_test.setup_seconds = 2.0f; actual_lobby_after_map();
     CHECK(network_test.mode == _network_test_off);
     CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
     CHECK(server.game.machine_count == 1 && server.game.player_count == 1 &&
@@ -249,6 +309,7 @@ def test_synthetic_player_reaches_local_client_settings() -> None:
         "__SUITE_FUNCTIONS__": suite_functions(),
         "__VARIANT_FUNCTION__": function(NETWORK_TEST, "static boolean network_test_variant("),
         "__MAP_SET_BRANCH__": lobby_branch(),
+        "__AFTER_MAP_BRANCH__": after_map_branch(),
         "__FLUSH_SETTINGS__": function(GAME_MESSAGES, "boolean network_game_server_flush_game_data_pregame("),
         "__SEND_SETTINGS__": function(GAME_MESSAGES, "boolean network_game_server_send_game_data_pregame("),
     }

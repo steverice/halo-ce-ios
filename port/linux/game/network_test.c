@@ -127,6 +127,7 @@ static struct
 	boolean public_game;
 	boolean browsing;
 	boolean suite_owned;
+	boolean suite_synthetic_added;
 } network_test;
 
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
@@ -216,6 +217,25 @@ static int network_test_suite_add_one_synthetic_player(struct network_game_serve
 		network_game_remove_machine(game, &machine);
 		return 0;
 	}
+	return 1;
+}
+
+/* A sent local-player request is asynchronous; only the server's actual roster confirms it. */
+static int network_test_suite_prepare_synthetic_player(struct network_game_server *server)
+{
+	struct network_game *game;
+
+	if (network_test.suite_synthetic_added)
+		return 1;
+	if (!network_test.player_added || !server)
+		return 0;
+	game = network_game_server_get_game(server);
+	if (!game || game->player_count == 0)
+		return 0;
+	if (!network_test_suite_add_one_synthetic_player(server))
+		return -1;
+	network_test.suite_synthetic_added = TRUE;
+	platform_log("network test: synthetic player ready after local player registration");
 	return 1;
 }
 
@@ -1147,13 +1167,7 @@ void network_test_update(
 							return;
 						}
 					}
-					if (network_test.suite_owned && network_test.players_wanted == 1 &&
-						!network_test_suite_add_one_synthetic_player(global_network_game_server_get()))
-					{
-						platform_log("network test: synthetic player setup failed");
-						network_test.mode = _network_test_off;
-						return;
-					}
+
 				}
 				network_test.map_set = TRUE;
 			}
@@ -1165,6 +1179,20 @@ void network_test_update(
 			{
 				network_game_client_add_player(global_network_game_client_get(), network_test.players_added + 1);
 				network_test.players_added++;
+			}
+			if (network_test.suite_owned && network_test.players_wanted == 1 && network_test.map_set)
+			{
+				int prepared = network_test_suite_prepare_synthetic_player(global_network_game_server_get());
+
+				if (prepared < 0 || (!prepared && network_test.setup_seconds >= network_test.start_delay))
+				{
+					platform_log("network test: synthetic player setup failed%s",
+						prepared == 0 ? " waiting for local player registration" : "");
+					network_test.mode = _network_test_off;
+					return;
+				}
+				if (!prepared)
+					return;
 			}
 			if (network_test.setup_seconds >= network_test.start_delay)
 			{
