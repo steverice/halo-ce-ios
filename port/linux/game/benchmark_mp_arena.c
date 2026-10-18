@@ -20,7 +20,7 @@ void platform_log(const char *format, ...);
 static struct
 {
 	struct benchmark_mp_arena_config config;
-	int enabled, ready, failed, players;
+	int enabled, ready, failed, players, combat;
 	real_point3d points[32], previous[32];
 	long units[32], stuck_ticks[32], last_tick;
 	unsigned long repositions[32];
@@ -53,6 +53,21 @@ int benchmark_mp_arena_enabled(void)
 int benchmark_mp_arena_ready(void)
 {
 	return !arena.enabled || (arena.ready && !arena.failed);
+}
+
+int benchmark_mp_arena_combat_ready(void)
+{
+	return !arena.enabled || (arena.ready && arena.combat && !arena.failed);
+}
+
+int benchmark_mp_arena_begin_combat(void)
+{
+	if (!arena.enabled) return 1;
+	if (!arena.ready || arena.failed) return 0;
+	if (!arena.combat)
+		platform_log("network test: arena combat enabled after host readiness at tick %ld", arena.last_tick);
+	arena.combat = 1;
+	return 1;
 }
 
 unsigned long benchmark_mp_arena_repositions(int actor)
@@ -291,7 +306,7 @@ int benchmark_mp_arena_action(int actor, long tick, struct player_action *action
 	else dx = dy = 0.0f;
 	action->throttle.i = -sinf(yaw) * dx + cosf(yaw) * dy;
 	action->throttle.j = cosf(yaw) * dx + sinf(yaw) * dy;
-	action->primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
+	action->primary_trigger = arena.combat && tick % 90 < 24 ? 1.0f : 0.0f;
 	return 1;
 }
 
@@ -304,9 +319,15 @@ int benchmark_mp_arena_gamepad(short port, long tick, struct mp_benchmark_probe_
 	float yaw, pitch;
 	int i;
 
-	if (!arena.enabled || !arena.ready || arena.failed || port != 0 || !game_time_initialized() || !game_in_progress() ||
-		!mp_benchmark_probe_active() || !(player = arena_player(0)) || player->unit_index == NONE)
+	if (!arena.enabled || arena.failed || port != 0 || !game_time_initialized() || !game_in_progress() ||
+		!mp_benchmark_probe_active())
 		return 0;
+	if (!arena.ready || !(player = arena_player(0)) || player->unit_index == NONE)
+	{
+		int handled = benchmark_mp_arena_observer_pad(0.0f, 0.0f, 0, tick, pad);
+		if (handled) pad->fire = 0;
+		return handled;
+	}
 	input_abstraction_get_local_player_preferences(0, &preferences);
 	if (preferences.joystick_controls != 0) { arena.failed = 1; memset(pad, 0, sizeof(*pad)); return 1; }
 	object_get_origin(player->unit_index, &position);
@@ -319,5 +340,7 @@ int benchmark_mp_arena_gamepad(short port, long tick, struct mp_benchmark_probe_
 	player_control_get_facing_direction(0, &facing);
 	yaw = atan2f(target.y - position.y, target.x - position.x) - atan2f(facing.j, facing.i);
 	pitch = atan2f(target.z - position.z, hypotf(target.x - position.x, target.y - position.y)) - atan2f(facing.k, hypotf(facing.i, facing.j));
-	return benchmark_mp_arena_observer_pad(yaw, pitch, preferences.invert_look, tick, pad);
+	i = benchmark_mp_arena_observer_pad(yaw, pitch, preferences.invert_look, tick, pad);
+	if (i && !arena.combat) pad->fire = 0;
+	return i;
 }

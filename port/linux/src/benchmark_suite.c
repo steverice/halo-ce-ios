@@ -700,8 +700,13 @@ void benchmark_suite_frame(long width, long height)
 						finish("failed", "multiplayer game ticks stopped before warmup");
 					else if (state.tick - suite.mp_first_tick >= 30)
 					{
-						suite.mp_ready_tick = state.tick;
-						enter(suite_lead);
+						if (!benchmark_mp_arena_begin_combat())
+							finish("failed", "the arena could not enable combat after host readiness");
+						else
+						{
+							suite.mp_ready_tick = state.tick;
+							enter(suite_lead);
+						}
 					}
 				}
 			}

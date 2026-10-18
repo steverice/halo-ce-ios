@@ -28,6 +28,8 @@ static int replay_suspended, replay_begins, replay_begins_before_suspend, record
 static int mp_request, window_opens, window_closes, run_ends;
 static int fatal_reports, arena_configures, arena_columns_override = 6;
 static struct benchmark_mp_arena_config configured_arena;
+static int combat_begins;
+int benchmark_mp_arena_begin_combat(void) { combat_begins++; return 1; }
 static char last_end_status[32];
 static struct benchmark_mp_state observed_mp;
 static int exit_status, exit_armed;
@@ -118,6 +120,7 @@ void halo_benchmark_overrides(long lines, long shadow, long anisotropy) { (void)
 void halo_model_lod_set(int max) { (void)max; }
 
 static void reset(void) {
+    combat_begins = 0;
     memset(&suite, 0, sizeof(suite));
     strcpy(suite.map, "chillout"); strcpy(suite.mp_game_mode, "slayer");
     strcpy(suite.mp_simulation, "local_controllers");
@@ -344,9 +347,11 @@ int main(void) {
     observed_mp.actors[1].present = observed_mp.actors[1].spawned = 1;
     frame(1000);
     CHECK(suite.mp_first_tick == 30 && suite.state == suite_loading);
+    CHECK(!combat_begins);
     observed_mp.tick = 60;
     frame(2000);
     CHECK(suite.state == suite_lead && suite.mp_ready_tick == 60);
+    CHECK(combat_begins == 1);
 
     reset(); suite.state = suite_loading; suite.mp_scene = suite.mp_host_started = 1;
     strcpy(suite.mp_simulation, "network_players"); suite.mp_players = 2;

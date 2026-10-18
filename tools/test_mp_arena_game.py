@@ -76,6 +76,7 @@ int main(void) {
         assert(benchmark_mp_arena_action(i,10,&action));
         assert(isfinite(action.desired_facing.yaw)&&isfinite(action.desired_facing.pitch));
         assert(hypotf(action.throttle.i,action.throttle.j)>0&&hypotf(action.throttle.i,action.throttle.j)<=0.76f);
+        assert(action.primary_trigger==0.0f); /* host startup still owns combat */
     }
     /* Following a nearby moving waypoint must still request active walking. */
     real_point3d station=positions[1];
@@ -88,6 +89,10 @@ int main(void) {
     assert(benchmark_mp_arena_tick(2)==1&&positions_set==33&&benchmark_mp_arena_repositions(31)==2);
     struct mp_benchmark_probe_pad pad;
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.left_x);
+    assert(!pad.fire);
+    assert(benchmark_mp_arena_begin_combat()&&benchmark_mp_arena_combat_ready());
+    assert(benchmark_mp_arena_action(1,10,&action)&&action.primary_trigger>0.0f);
+    assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.fire);
     assert(!benchmark_mp_arena_gamepad(1,10,&pad));
     benchmark_mp_arena_reset();assert(!benchmark_mp_arena_repositions(31));
     assert(benchmark_mp_arena_tick(10)==1&&!benchmark_mp_arena_gamepad(0,10,&pad));
@@ -102,6 +107,8 @@ int main(void) {
     assert(strstr(last_log,"invalid feet clusters 8")&&strstr(last_log,"invalid head clusters 8"));benchmark_mp_arena_reset();
     invalid_cluster=0;players[31].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
+    assert(!benchmark_mp_arena_begin_combat()&&!benchmark_mp_arena_combat_ready());
+    assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.left_x&&!pad.fire);
     assert(benchmark_mp_arena_tick(100)==0&&benchmark_mp_arena_tick(450)==0);
     assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 31"));benchmark_mp_arena_reset();
     players[31].unit_index=31;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);

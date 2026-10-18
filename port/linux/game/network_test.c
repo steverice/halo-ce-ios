@@ -1025,6 +1025,11 @@ static void network_test_pickup(
 	}
 }
 
+static int network_test_suite_combat_ready(void)
+{
+	return !network_test.suite_owned || !benchmark_mp_arena_enabled() || benchmark_mp_arena_combat_ready();
+}
+
 void network_test_update(
 	boolean main_menu_loaded,
 	real seconds)
@@ -1042,14 +1047,14 @@ void network_test_update(
 	{
 		network_test.logged_time = game_time_get();
 		network_test_log_players();
-		if (network_test.shoot_interval > 0.0f &&
+		if (network_test_suite_combat_ready() && network_test.shoot_interval > 0.0f &&
 			game_time_get() % MAX(1, (long)(network_test.shoot_interval * TICKS_PER_SECOND)) < TICKS_PER_SECOND)
 		{
 			network_test_shoot();
 		}
 		/* (the host brings the players near a second before they shoot;
 		not the last while the vehicle test has it) */
-		if (network_test.mode == _network_test_host && network_test.shoot_interval > 0.0f &&
+		if (network_test_suite_combat_ready() && network_test.mode == _network_test_host && network_test.shoot_interval > 0.0f &&
 			(game_time_get() + TICKS_PER_SECOND) % MAX(1, (long)(network_test.shoot_interval * TICKS_PER_SECOND)) <
 				TICKS_PER_SECOND)
 		{
@@ -1110,7 +1115,7 @@ void network_test_update(
 		}
 		/* debug.network_test_kill: the host kills the last player every so
 		often, to test deaths and respawns reaching the clients */
-		if (network_test.mode == _network_test_host && network_test.kill_interval > 0.0f &&
+		if (network_test_suite_combat_ready() && network_test.mode == _network_test_host && network_test.kill_interval > 0.0f &&
 			game_time_get() % MAX(1, (long)(network_test.kill_interval * TICKS_PER_SECOND)) < TICKS_PER_SECOND)
 		{
 			struct data_iterator iterator;

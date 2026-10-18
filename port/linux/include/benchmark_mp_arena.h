@@ -86,6 +86,8 @@ void benchmark_mp_arena_reset(void);
 int benchmark_mp_arena_configure(const struct benchmark_mp_arena_config *config);
 int benchmark_mp_arena_enabled(void);
 int benchmark_mp_arena_ready(void);
+int benchmark_mp_arena_begin_combat(void);
+int benchmark_mp_arena_combat_ready(void);
 int benchmark_mp_arena_tick(long tick);
 int benchmark_mp_arena_action(int actor, long tick, struct player_action *action);
 int benchmark_mp_arena_gamepad(short port, long tick, struct mp_benchmark_probe_pad *pad);
