@@ -131,6 +131,8 @@ static struct
 	boolean browsing;
 	boolean suite_owned;
 	boolean suite_synthetic_added;
+	unsigned long suite_setup_input_ticks;
+	boolean suite_setup_input_reported;
 } network_test;
 
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
@@ -293,21 +295,20 @@ static int network_test_suite_prepare_synthetic_players(struct network_game_serv
 void network_test_suite_synthetic_input_tick(long tick)
 {
 	long player_indices[32];
-	int target = network_test.suite_network_players, i, duplicate_machine = NONE;
+	int target = network_test.suite_network_players, i, duplicate_machine = NONE, prepared;
 	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
 
 	if (!network_test.suite_owned || network_test.mode != _network_test_host || network_test.players_wanted != 1 || target < 2 || target > 32 ||
 		game_connection() != _game_connection_network_server || tick < 0)
 		return;
 	{
-		int prepared = benchmark_mp_arena_tick(tick);
+		prepared = benchmark_mp_arena_tick(tick);
 		if (prepared < 0)
 		{
-			platform_log("network test: arena preparation failed at tick %ld", tick);
+			platform_log("network test: arena preparation failed at tick %ld after %lu setup walking batches", tick, network_test.suite_setup_input_ticks);
 			network_test.mode = _network_test_off;
 			return;
 		}
-		if (!prepared) return;
 	}
 	/* Validate the complete batch before mutating any queue. A partial roster
 	cannot continue as a smaller successful workload. */
@@ -316,8 +317,15 @@ void network_test_suite_synthetic_input_tick(long tick)
 		long *players = machine_get_player_list(i);
 		int j;
 
-		if (!players || players[0] == NONE || players[1] != NONE || !update_server_player_queue_ready(players[0]))
+		if (players && players[1] != NONE)
 			goto failed;
+		if (!players || players[0] == NONE || !update_server_player_queue_ready(players[0]))
+		{
+			/* Registration can still be pending before every unit exists. Keep
+			this batch atomic and let the arena's finite readiness deadline apply. */
+			if (!prepared) return;
+			goto failed;
+		}
 		player_indices[i] = players[0];
 		for (j = 1; j < i; j++)
 			if (player_indices[j] == player_indices[i])
@@ -326,14 +334,24 @@ void network_test_suite_synthetic_input_tick(long tick)
 				goto failed;
 			}
 	}
+	/* Normal movement vacates occupied stock starts while later units spawn.
+	Setup input is not measured activity; the arena gate and lead-in still apply. */
+	if (!prepared)
+		network_test.suite_setup_input_ticks++;
+	else if (network_test.suite_setup_input_ticks && !network_test.suite_setup_input_reported)
+	{
+		platform_log("network test: arena ready at tick %ld after %lu setup walking batches for %d remote players; setup excluded from measured activity",
+			tick, network_test.suite_setup_input_ticks, target - 1);
+		network_test.suite_setup_input_reported = TRUE;
+	}
 	for (i = 1; i < target; i++)
 	{
 		struct player_action action = { 0 };
 
 		action.desired_facing.yaw = (real)((tick + i * 17) % 360) * 0.01f;
 		action.throttle.j = 0.75f;
-		action.primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
-		if (benchmark_mp_arena_enabled())
+		action.primary_trigger = prepared && tick % 90 < 24 ? 1.0f : 0.0f;
+		if (prepared && benchmark_mp_arena_enabled())
 		{
 			memset(&action, 0, sizeof(action));
 			benchmark_mp_arena_action(i, tick, &action);

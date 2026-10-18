@@ -85,7 +85,8 @@ static unsigned long update_server_pending_control_flags[MAXIMUM_NUMBER_OF_PLAYE
 static struct update current_update;
 static struct server_update observed;
 static long game_tick, machine_players[32][MAXIMUM_LOCAL_PLAYERS];
-static struct { int suite_owned, players_wanted, suite_network_players, mode; } network_test;
+static struct { int suite_owned, players_wanted, suite_network_players, mode;
+    unsigned long suite_setup_input_ticks;boolean suite_setup_input_reported; } network_test;
 static int game_connection(void) { return _game_connection_network_server; }
 static boolean game_time_initialized(void) { return TRUE; }
 static long game_time_get(void) { return game_tick; }
@@ -111,7 +112,8 @@ static long *machine_get_player_list(long machine_index) {
 static int valid_real(float value) { return isfinite(value); }
 static int arena_result=1;
 static int benchmark_mp_arena_tick(long tick) { (void)tick; return arena_result; }
-static int benchmark_mp_arena_enabled(void) { return 0; }
+static int arena_enabled;
+static int benchmark_mp_arena_enabled(void) { return arena_enabled; }
 static int benchmark_mp_arena_action(int actor,long tick,struct player_action *action) { (void)actor;(void)tick;(void)action;return 0; }
 void network_test_suite_synthetic_input_tick(long tick);
 __ACTION_VALID__
@@ -218,8 +220,44 @@ int main(void) {
     CHECK(queues[5].current_action.throttle.j == 0.0f); /* the real local datum */
     for (i = 0; i < 32; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
     network_test.mode=_network_test_host;arena_result=0;last_log[0]=0;
+    arena_enabled=1;
+    memset(update_server_distributed_inputs,0,sizeof(update_server_distributed_inputs));
+    for(i=0;i<32;i++)memset(&queues[i].current_action,0,sizeof(queues[i].current_action));
     network_test_suite_synthetic_input_tick(1);
     CHECK(network_test.mode==_network_test_host&&!last_log[0]);
+    /* Pending units must receive ordinary walking through the real host queues,
+       freeing occupied stock starts before the all-unit arena readiness gate. */
+    for(i=1;i<32;i++) {
+        int slot=DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[i][0]);
+        CHECK(update_server_distributed_inputs[slot].valid);
+        CHECK(queues[slot].current_action.throttle.j>0.5f);
+        CHECK(!queues[slot].current_action.primary_trigger);
+        CHECK(!actual_unit_primary_weapon_flags(queues[slot].current_action.control_flags));
+    }
+    /* An asynchronous missing queue still waits atomically during setup. */
+    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=0;
+    for(i=0;i<32;i++)queues[i].current_action.throttle.j=-0.25f;
+    network_test_suite_synthetic_input_tick(2);
+    CHECK(network_test.mode==_network_test_host);
+    for(i=0;i<32;i++)CHECK(queues[i].current_action.throttle.j==-0.25f);
+    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=
+        (short)(machine_players[31][0]>>16);
+    CHECK(network_test.suite_setup_input_ticks==1);
+    /* Pending readiness never excuses malformed machine membership. */
+    machine_players[31][1]=machine_players[30][0];
+    network_test_suite_synthetic_input_tick(3);
+    CHECK(network_test.mode==_network_test_off&&strstr(last_log,"second"));
+    machine_players[31][1]=NONE;
+    network_test.mode=_network_test_host;
+    {
+        long saved=machine_players[31][0];
+        machine_players[31][0]=machine_players[30][0];
+        network_test_suite_synthetic_input_tick(4);
+        CHECK(network_test.mode==_network_test_off&&strstr(last_log,"duplicate machine 30"));
+        machine_players[31][0]=saved;
+    }
+    network_test.mode=_network_test_host;
+    arena_enabled=0;
     arena_result=-1;network_test_suite_synthetic_input_tick(1);
     CHECK(network_test.mode==_network_test_off&&strstr(last_log,"arena preparation failed"));
     network_test.mode=_network_test_host;arena_result=1;

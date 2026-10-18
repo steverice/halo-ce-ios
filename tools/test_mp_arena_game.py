@@ -102,6 +102,7 @@ int main(void) {
     assert(strstr(last_log,"invalid feet clusters 8")&&strstr(last_log,"invalid head clusters 8"));benchmark_mp_arena_reset();
     invalid_cluster=0;players[31].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
+    assert(benchmark_mp_arena_tick(100)==0&&benchmark_mp_arena_tick(450)==0);
     assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 31"));benchmark_mp_arena_reset();
     players[31].unit_index=31;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
     assert(benchmark_mp_arena_tick(1)==-1);assert(strstr(last_log,"arena clock regression")&&strstr(last_log,"previous 20 current 1"));

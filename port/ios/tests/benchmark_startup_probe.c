@@ -358,6 +358,28 @@ int main(void) {
     observed_mp.actors[1].present = observed_mp.actors[1].spawned = 1;
     frame(1000);
     CHECK(suite.state == suite_loading && suite.mp_first_tick == -1);
+    /* Walking during spawn setup and warmup cannot count toward measurement. */
+    observed_mp.actors[1].throttle = 0.75f;
+    observed_mp.actors[1].weapon_definition = 1;
+    observed_mp.actors[1].ammo = 120;
+    observed_mp.actors[1].position[0] = 20.0f;
+    observed_mp.tick = 60; frame(2000);
+    CHECK(!suite.mp_previous_valid && !suite.mp_distance[1] && !suite.mp_ammo_spent_actor[1]);
+    observed_mp.synthetic_queue_ready = 1;
+    observed_mp.tick = 90; frame(3000);
+    observed_mp.tick = 120; frame(4000);
+    CHECK(suite.state == suite_lead && !suite.mp_previous_valid);
+    observed_mp.actors[1].position[0] = 40.0f;
+    observed_mp.actors[1].ammo = 100;
+    suite.lead = 1;
+    observed_mp.tick = 150; frame(5000);
+    CHECK(suite.state == suite_measuring && window_opens == 1);
+    CHECK(!suite.mp_distance[1] && !suite.mp_ammo_spent_actor[1]);
+    observed_mp.actors[1].position[0] = 40.5f;
+    observed_mp.actors[1].ammo = 99;
+    suite.seconds = 60;
+    observed_mp.tick = 151; frame(5033);
+    CHECK(suite.mp_distance[1] == 0.5 && suite.mp_ammo_spent_actor[1] == 1);
 
     reset(); suite.state = suite_loading; suite.mp_scene = suite.mp_host_started = 1;
     observed_mp = (struct benchmark_mp_state){ .tick = 30, .multiplayer = 1, .map_ok = 1, .slayer = 1,
