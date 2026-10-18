@@ -579,6 +579,9 @@ void unit_debug_ninja_rope(
 	long unit_index);
 void units_initialize_for_new_map(
 	void);
+/* port: clear transient grenade pose history before restoring a saved game. */
+void unit_animation_cache_invalidate(
+	void);
 void units_dispose_from_old_map(
 	void);
 void units_dispose(

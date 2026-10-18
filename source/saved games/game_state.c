@@ -106,6 +106,7 @@ symbols in this file:
 #include "scenario.h"
 #include "main.h"
 #include "objects.h"
+#include "units.h"
 #include "game_sound.h"
 #include "sound_manager.h"
 #include "observer.h"
@@ -191,6 +192,8 @@ static game_state_before_load_proc before_load_procs[] =
 	cluster_partitions_port_forget,
 	/* port: (the objects are put back: object_bounds_cache.c) */
 	object_bounds_cache_invalidate,
+	/* port: the restored units have their own animation timeline. */
+	unit_animation_cache_invalidate,
 };
 
 static game_state_after_load_proc after_load_procs[] =
