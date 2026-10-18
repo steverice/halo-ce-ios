@@ -9,8 +9,8 @@ struct mp_benchmark_probe_pad
 
 struct mp_benchmark_probe_latch
 {
-	long last_tick, jump_press_tick, grenade_press_tick;
-	unsigned char jump_pending, grenade_pending, previous_fire, previous_jump, previous_grenade;
+	long last_tick, fire_press_tick, jump_press_tick, grenade_press_tick;
+	unsigned char fire_pending, jump_pending, grenade_pending, previous_fire, previous_jump, previous_grenade;
 	unsigned long fire_requests, jump_requests, grenade_requests;
 };
 

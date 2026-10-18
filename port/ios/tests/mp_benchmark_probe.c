@@ -101,6 +101,14 @@ static void test_skipped_discrete_pulses(void)
 	CHECK(latch.jump_requests == 1 && latch.grenade_requests == 1);
 	mp_benchmark_probe_latch_reset(&latch);
 	CHECK(latch.fire_requests == 0 && latch.jump_requests == 0 && latch.grenade_requests == 0);
+	mp_benchmark_probe_sample(30, 0, &latch, &pad);
+	CHECK(!pad.fire);
+	mp_benchmark_probe_sample(120, 0, &latch, &pad); /* crossed tick 90, but missed its 24-tick fire window */
+	CHECK(pad.fire);
+	mp_benchmark_probe_sample(121, 0, &latch, &pad);
+	CHECK(pad.fire);
+	mp_benchmark_probe_sample(121, 0, &latch, &pad);
+	CHECK(!pad.fire && latch.fire_requests == 1);
 }
 
 static void test_virtual_controller_connection(void)
