@@ -130,6 +130,12 @@ run(BUILD / 'touch-replay-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/input_replay_probe.c', '-o', BUILD / 'input-replay-probe')
 run(BUILD / 'input-replay-probe')
+# the private multiplayer workload probe keeps one player-0 view and distinct
+# tick-keyed controller actions without changing normal split-screen play
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-iquote', 'port/linux/include', 'port/ios/tests/mp_benchmark_probe.c',
+    'port/linux/src/mp_benchmark_probe.c', '-o', BUILD / 'mp-benchmark-probe')
+run(BUILD / 'mp-benchmark-probe')
 run('python3', 'tools/test_replay_control.py')
 run('python3', 'tools/test_checkpoint_timing.py')
 run('python3', 'tools/test_route_check.py')

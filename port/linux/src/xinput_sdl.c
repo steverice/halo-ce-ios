@@ -40,6 +40,7 @@ drive the controller.
 #include "sdl_platform.h"
 #include "port_config.h"
 #include "halo_keyboard.h"
+#include "mp_benchmark_probe.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -819,6 +820,23 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 255;
 }
 
+/* This probe is restricted to a four-local-player test match. Game ticks and
+controller ports pick the actions, so display frame rate cannot shift them. */
+static void mp_benchmark_probe_gamepad(XINPUT_GAMEPAD *pad, short port)
+{
+	struct mp_benchmark_probe_pad input;
+
+	mp_benchmark_probe_input(mp_benchmark_probe_tick(), port, &input);
+	memset(pad, 0, sizeof(*pad));
+	pad->sThumbLX = input.left_x;
+	pad->sThumbLY = input.left_y;
+	pad->sThumbRX = input.right_x;
+	pad->sThumbRY = input.right_y;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] = input.fire ? 255 : 0;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_A] = input.jump ? 255 : 0;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = input.grenade ? 255 : 0;
+}
+
 static void wheel_update(void)
 {
 	Uint64 now = SDL_GetTicks();
@@ -1209,7 +1227,10 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		}
 		if (port_gamepad(gamepads, count, 0))
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
-		test_input_gamepad(&state->Gamepad);
+		if (mp_benchmark_probe_active())
+			mp_benchmark_probe_gamepad(&state->Gamepad, port);
+		else
+			test_input_gamepad(&state->Gamepad);
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
 		{
@@ -1237,7 +1258,10 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		/* (split screen without a second gamepad: the scripted player of
 		debug.test_input plays this controller too, ahead of any gamepad,
 		the Mac's touch controls included) */
-		test_input_gamepad(&state->Gamepad);
+		if (mp_benchmark_probe_active())
+			mp_benchmark_probe_gamepad(&state->Gamepad, port);
+		else
+			test_input_gamepad(&state->Gamepad);
 	}
 	else if (port_gamepad(gamepads, count, port))
 	{

@@ -357,6 +357,7 @@ symbols in this file:
 #include "debug_keys.h"
 #include "scenario.h"
 #include "scenario/scenario_definitions.h"
+#include "mp_benchmark_probe.h"
 #include "cache/cache_files.h"
 #include "cache/predicted_resources.h"
 #include "bitmaps/bitmap_group.h"
@@ -1468,7 +1469,8 @@ short main_get_window_count(
 {
 	boolean single_window = game_engine_force_single_screen() || cinematic_in_progress();
 
-	return single_window ? 1 : PIN(local_player_count(), 1, MAXIMUM_WINDOWS);
+	return mp_benchmark_probe_windows(PIN(local_player_count(), 1, MAXIMUM_WINDOWS), single_window,
+		mp_benchmark_probe_active());
 }
 
 static void main_new_map(
@@ -3416,12 +3418,9 @@ static void main_game_render(
 	last_local_player_index = NONE;
 
 	window_count = PIN(local_player_count(), 1, MAXIMUM_LOCAL_PLAYERS);
-	player_window_count = window_count;
-	if (force_single_screen || cinematic_in_progress())
-	{
-		window_count = 1;
-		player_window_count = 1;
-	}
+	player_window_count = mp_benchmark_probe_windows(window_count, force_single_screen || cinematic_in_progress(),
+		mp_benchmark_probe_active());
+	window_count = player_window_count;
 
 	for (window_index = 0; window_index < player_window_count; window_index++)
 	{

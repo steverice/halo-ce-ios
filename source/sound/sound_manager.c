@@ -239,6 +239,7 @@ symbols in this file:
 #include "game/players.h"
 #include "render/render_debug.h"
 #include "scenario/scenario.h"
+#include "mp_benchmark_probe.h"
 #include "tag_files/tag_files.h"
 
 #include <math.h>
@@ -3819,17 +3820,24 @@ static void refresh_listener(
 	struct platform_sound_listener_properties properties;
 	short local_player_index;
 	struct sound_listener *listener;
+	int one_view_probe;
 
 	if (!game_in_progress())
 	{
 		return;
 	}
+	one_view_probe = mp_benchmark_probe_active();
 
 	for (local_player_index = 0;
 		local_player_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS;
 		local_player_index++)
 	{
 		listener = listener_get(local_player_index);
+		if (!mp_benchmark_probe_listener_enabled(local_player_index, one_view_probe))
+		{
+			listener->valid = FALSE;
+			continue;
+		}
 
 		if (local_player_get_player_index(local_player_index) != NONE)
 		{
