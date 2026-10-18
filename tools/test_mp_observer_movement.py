@@ -29,6 +29,9 @@ def test_observer_movement_survives_actual_consumers(tmp_path):
     bipeds = (ROOT / "source/units/bipeds.c").read_text()
     math = (ROOT / "source/math/real_math.h").read_text()
     xinput = (ROOT / "port/linux/src/xinput_sdl.c").read_text()
+    dead_range = xbox.index("GAMEPAD_STICK_DEAD_RANGE")
+    dead_enum_start = xbox.rfind("enum", 0, dead_range)
+    dead_enum_end = xbox.index("};", dead_range) + 2
     layout_start = abstraction.index("case _joystick_controls_default:", abstraction.index("void input_abstraction_update("))
     layout_end = abstraction.index("case _joystick_controls_southpaw:", layout_start)
     source = r'''
@@ -70,6 +73,7 @@ void mp_benchmark_probe_sample(long t,short p,struct mp_benchmark_probe_latch*l,
 int benchmark_mp_arena_gamepad(short port,long t,struct mp_benchmark_probe_pad*out) {
     assert(port==0);return benchmark_mp_arena_observer_pad(requested_yaw,requested_pitch,requested_inversion,t,out);
 }
+__DEAD_RANGE__
 __XINPUT__
 __DEAD_ZONE__
 __NORMALIZATION__
@@ -81,8 +85,8 @@ static real consumed_axes(XINPUT_GAMEPAD *raw,int invert_look,real *before_gate,
     struct {struct {real_vector3d throttle;} unit;} unit={0},*biped=&unit;
     real_vector3d zero={0},*global_zero_vector3d=&zero;
     real_point2d left_stick,right_stick;real left_angle,right_angle;
-    gamepad->sticks[_gamepad_stick_left].x=fix_dead_zone(raw->sThumbLX,9000);
-    gamepad->sticks[1].x=fix_dead_zone(raw->sThumbRX,9000);gamepad->sticks[1].y=fix_dead_zone(raw->sThumbRY,9000);
+    gamepad->sticks[_gamepad_stick_left].x=fix_dead_zone(raw->sThumbLX,GAMEPAD_STICK_DEAD_RANGE);
+    gamepad->sticks[1].x=fix_dead_zone(raw->sThumbRX,GAMEPAD_STICK_DEAD_RANGE);gamepad->sticks[1].y=fix_dead_zone(raw->sThumbRY,GAMEPAD_STICK_DEAD_RANGE);
     __LEFT_STICK__
     __RIGHT_STICK__
     switch(0) { __LAYOUT__ }
@@ -100,7 +104,7 @@ int main(void) {
         tick=i?40:10;mp_benchmark_probe_gamepad(&pad,0);
         after=consumed_axes(&pad,0,&before,&yaw,&pitch);
         printf("observer raw %d normalized %.6f biped %.6f yaw %.6f pitch %.6f\n",pad.sThumbLX,before,after,yaw,pitch);fflush(stdout);
-        assert(yaw>0.05f&&yaw<0.15f&&pitch>0.025f&&pitch<0.08f);
+        assert(fabsf(yaw-requested_yaw)<0.0001f&&fabsf(pitch-requested_pitch)<0.0001f);
         assert(fabsf(after)>=0.1f);
         if(i)assert(previous*after<0);previous=after;
     }
@@ -108,7 +112,7 @@ int main(void) {
         XINPUT_GAMEPAD pad={0};real before,yaw,pitch;
         requested_inversion=inverted;requested_yaw=-0.1f;requested_pitch=-0.05f;
         mp_benchmark_probe_gamepad(&pad,0);consumed_axes(&pad,inverted,&before,&yaw,&pitch);
-        assert(yaw<0&&pitch<0);
+        assert(fabsf(yaw-requested_yaw)<0.0001f&&fabsf(pitch-requested_pitch)<0.0001f);
         requested_yaw=requested_pitch=0;mp_benchmark_probe_gamepad(&pad,0);
         assert(!pad.sThumbRX&&!pad.sThumbRY);consumed_axes(&pad,inverted,&before,&yaw,&pitch);
         assert(yaw==0&&pitch==0);
@@ -123,6 +127,7 @@ int main(void) {
 }
 '''
     replacements = {
+        "__DEAD_RANGE__": xbox[dead_enum_start:dead_enum_end],
         "__XINPUT__": function(xinput, "static void mp_benchmark_probe_gamepad("),
         "__DEAD_ZONE__": function(xbox, "short fix_dead_zone("),
         "__NORMALIZATION__": re.search(r"static real const gamepad_axis_normalization_scale = [^;]+;", abstraction)[0],
