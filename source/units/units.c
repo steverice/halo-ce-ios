@@ -10885,11 +10885,19 @@ static boolean unit_node_is_at_or_below(
 	short node_index,
 	short ancestor_node_index)
 {
-	while (node_index != NONE)
+	short remaining = (short)MIN(model->nodes.count, MAXIMUM_NODES_PER_MODEL);
+
+	/* port: the loader leaves the root's parent alone; only non-root
+	parents belong to the tree. Bound the walk even if a link is bad. */
+	while (remaining-- > 0 && VALID_INDEX(node_index, model->nodes.count))
 	{
 		if (node_index == ancestor_node_index)
 		{
 			return TRUE;
+		}
+		if (node_index == 0)
+		{
+			break;
 		}
 		node_index = TAG_BLOCK_GET_ELEMENT(&model->nodes, node_index, struct model_node)->parent_node_index;
 	}
