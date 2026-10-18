@@ -1,0 +1,26 @@
+/* Guest-only observation of the suite's four-local-player match. */
+#ifndef HALO_BENCHMARK_MP_STATE_H
+#define HALO_BENCHMARK_MP_STATE_H
+
+#define BENCHMARK_MP_ACTORS 4
+
+struct benchmark_mp_actor
+{
+	int present, spawned;
+	float position[3], body, shield;
+	int grenades[2], ammo, weapon_definition, kills, deaths;
+	float throttle;
+	unsigned long fire_requests, jump_requests, grenade_requests;
+};
+
+struct benchmark_mp_state
+{
+	long tick;
+	int multiplayer, map_ok, slayer, score_limit, time_limit_minutes;
+	int local_players, roster, spawned, view_count, observer0, probe_active, can_score, postgame;
+	struct benchmark_mp_actor actors[BENCHMARK_MP_ACTORS];
+};
+
+void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state);
+
+#endif

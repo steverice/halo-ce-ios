@@ -357,6 +357,7 @@ symbols in this file:
 #include "debug_keys.h"
 #include "scenario.h"
 #include "scenario/scenario_definitions.h"
+#include "mp_benchmark_probe.h"
 #include "cache/cache_files.h"
 #include "cache/predicted_resources.h"
 #include "bitmaps/bitmap_group.h"
@@ -1468,7 +1469,8 @@ short main_get_window_count(
 {
 	boolean single_window = game_engine_force_single_screen() || cinematic_in_progress();
 
-	return single_window ? 1 : PIN(local_player_count(), 1, MAXIMUM_WINDOWS);
+	return mp_benchmark_probe_windows(PIN(local_player_count(), 1, MAXIMUM_WINDOWS), single_window,
+		mp_benchmark_probe_active());
 }
 
 static void main_new_map(
@@ -3256,6 +3258,12 @@ void halt_and_catch_fire(
 	char banner[256];
 	char label[96];
 	#endif
+	#ifdef HALO_IOS
+	{
+		extern void benchmark_suite_multiplayer_fault(const char *note);
+		benchmark_suite_multiplayer_fault("guest fatal halt");
+	}
+	#endif
 
 	if (!global_screenshot_count.halt_recursion_lock)
 	{
@@ -3380,6 +3388,14 @@ void halt_and_catch_fire(
 void main_loop_of_death(
 	void)
 {
+#ifdef HALO_IOS
+	/* A fatal path may bypass display_assert; close an active multiplayer
+	benchmark before its blue halt screen can keep presenting frames. */
+	{
+		extern void benchmark_suite_multiplayer_fault(const char *note);
+		benchmark_suite_multiplayer_fault("guest fatal halt");
+	}
+#endif
 	while (TRUE)
 	{
 		input_frame_begin();
@@ -3416,12 +3432,9 @@ static void main_game_render(
 	last_local_player_index = NONE;
 
 	window_count = PIN(local_player_count(), 1, MAXIMUM_LOCAL_PLAYERS);
-	player_window_count = window_count;
-	if (force_single_screen || cinematic_in_progress())
-	{
-		window_count = 1;
-		player_window_count = 1;
-	}
+	player_window_count = mp_benchmark_probe_windows(window_count, force_single_screen || cinematic_in_progress(),
+		mp_benchmark_probe_active());
+	window_count = player_window_count;
 
 	for (window_index = 0; window_index < player_window_count; window_index++)
 	{
@@ -3617,6 +3630,13 @@ void main_loop(
 		input_frame_begin();
 		input_update();
 		input_abstraction_update();
+#ifdef HALO_IOS
+		/* port: drain suite-owned map/network actions outside Present. */
+		{
+			extern void benchmark_suite_mainloop_update(void);
+			benchmark_suite_mainloop_update();
+		}
+#endif
 		shell_idle();
 		event_manager_update();
 		telnet_console_process();

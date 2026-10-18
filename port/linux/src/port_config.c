@@ -778,6 +778,11 @@ static const struct config_setting config_settings[] =
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
 		"empty for none." },
+	{ "debug.multiplayer_benchmark_probe", _config_boolean, "false", "HALO_MULTIPLAYER_BENCHMARK_PROBE",
+		_environment_value, _platform_all,
+		"In a four-local-player automated Chill Out Slayer match, draw only player\n"
+		"1's view and drive the controllers with distinct game-tick scripts.\n"
+		"This provisional probe is off in ordinary play." },
 	{ "debug.network_test_start", _config_real, "15.0", "HALO_NETWORK_TEST_START", _environment_value, _platform_all,
 		"Seconds after hosting that an automated test game starts." },
 	{ "debug.network_test_players", _config_integer, "1", "HALO_NETWORK_TEST_PLAYERS", _environment_value, _platform_all,

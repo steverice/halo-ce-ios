@@ -48,6 +48,7 @@ static double refresh_hertz;
 static double screen_hertz;
 
 static _Atomic int running;
+static _Atomic int fault_seen;
 /* every frame offered to host_benchmark_frame and every frame not shown, since the run began (the end's log line) */
 static _Atomic unsigned long frames_offered, frames_no_drawable, frames_no_picture;
 static struct benchmark_plan plan;
@@ -197,12 +198,14 @@ static void sample(void) {
     long footprint, left;
     int thermal = (int)NSProcessInfo.processInfo.thermalState, open;
 
+    if (!atomic_load(&running)) return;
     memory_now(&footprint, &left);
     os_unfair_lock_lock(&lock);
     open = window_open;
     if (open) benchmark_metrics_sample(&metrics, footprint, left, thermal);
     os_unfair_lock_unlock(&lock);
-    if (run_open && ++tick % 5 == 0) benchmark_journal_memory(JOURNAL, footprint, left);
+    if (atomic_load(&running) && run_open && ++tick % 5 == 0)
+        benchmark_journal_memory(JOURNAL, footprint, left);
 }
 
 static void sampler_start(void) {
@@ -339,7 +342,8 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         "\"render_size\":[%d,%d],\"output\":%@,\"environment\":%@%s%s}",
         finished->index, finished->stage, scene->id, scene->map, scene->difficulty,
         scene->recording ? json_string(@(scene->recording)) : @"null",
-        scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" : "gameplay",
+        scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
+            scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         /* (a baseline run leaves the size to the profile: what it drew at is the setting it ran with) */
         finished->lines ? finished->lines : (long)window_height, finished->anisotropy, finished->shadow_size,
         finished->model_lod_max ? "max" : "auto",
@@ -348,6 +352,10 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         measurements ?: ""];
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+    if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
+        record[@"simulation"] = @{ @"source": @"scripted_four_local", @"local_players": @4, @"views": @1,
+            @"remote_clients": @0, @"score_limit": @1000, @"time_limit_minutes": @0,
+            @"warmup_ticks": @450, @"window_ticks": @1800 };
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
@@ -489,19 +497,28 @@ static void install_scenes(NSArray<NSString *> *only) {
         static struct benchmark_route routes[BENCHMARK_SCENES_MAXIMUM];
         NSString *bundled = @FOLDER "/recordings";
         int count = 0, route_count = 0;
+        const struct benchmark_scene *multiplayer = NULL;
+        int include_multiplayer;
 
         for (index = 0; index < benchmark_suite_scene_count; index++)
-            if (!only || [only containsObject:@(benchmark_suite_scenes[index].id)]) scenes[count++] = benchmark_suite_scenes[index];
+            if (benchmark_suite_scenes[index].kind == BENCHMARK_SCENE_MULTIPLAYER)
+                multiplayer = &benchmark_suite_scenes[index];
+            else if (!only || [only containsObject:@(benchmark_suite_scenes[index].id)])
+                scenes[count++] = benchmark_suite_scenes[index];
+        include_multiplayer = multiplayer && plan.mode == BENCHMARK_FULL &&
+            (!only || [only containsObject:@(multiplayer->id)]);
         for (NSString *name in [[files contentsOfDirectoryAtPath:bundled error:nil] sortedArrayUsingSelector:@selector(compare:)]) {
             NSString *text;
 
-            if (![name.pathExtension isEqualToString:@"route"] || count >= BENCHMARK_SCENES_MAXIMUM) continue;
+            if (![name.pathExtension isEqualToString:@"route"] ||
+                count >= BENCHMARK_SCENES_MAXIMUM - include_multiplayer) continue;
             text = [NSString stringWithContentsOfFile:[bundled stringByAppendingPathComponent:name] encoding:NSUTF8StringEncoding error:nil];
             if (text && benchmark_scene_from_route(text.UTF8String, name.stringByDeletingPathExtension.UTF8String, &routes[route_count])) {
                 if (!only || [only containsObject:@(routes[route_count].id)]) scenes[count++] = routes[route_count++].scene;
             }
             else host_logf(HOST_LOG_INFO, "benchmark: %s is not a route this suite can use", name.UTF8String);
         }
+        if (include_multiplayer) scenes[count++] = *multiplayer;
         plan.scenes = scenes;
         plan.scene_count = count;
     }
@@ -602,6 +619,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
             shadow_size, model_lod_max ? "max" : "auto");
     }
     atomic_store(&marker, benchmark_journal_marker_open(JOURNAL));
+    atomic_store(&fault_seen, 0);
     atomic_store(&running, 1);
     sampler_start();
 
@@ -754,7 +772,8 @@ int host_benchmark_next(char *text, unsigned int size) {
     }
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f lines=%ld anisotropy=%ld "
         "shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
-        scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" : "gameplay",
+        scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
+            scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, scene->seconds, run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
@@ -852,6 +871,48 @@ void host_benchmark_end(const char *status_name, const char *note) {
     pending_note = @(note ?: "");
     pending_measurements = measurements;
     run_finishing = 1;
+}
+
+/* Called on the guest's assertion path. The next guest frame may be the blue
+   halt screen forever, so finalize here rather than waiting for next_run. */
+void host_benchmark_fault(const char *note) {
+    struct benchmark_outcome outcome = { BENCHMARK_FAILED, 0, 0, 0, 0, -1 };
+    int descriptor;
+
+    if (atomic_exchange(&fault_seen, 1)) return;
+    atomic_store(&running, 0);
+    if (!run_open) return;
+    os_unfair_lock_lock(&lock);
+    window_open = 0;
+    os_unfair_lock_unlock(&lock);
+    /* A normal end may already have dispatched its presentation worker. Do
+       not finalize the same collector concurrently; use its report if ready. */
+    free(pending_measurements);
+    pending_measurements = NULL;
+    pending_note = nil;
+    NSDictionary *presentation = run_finishing ? host_benchmark_presentation_take_report() :
+        host_benchmark_presentation_finish(0.0);
+    if (!presentation) presentation = @{ @"supported": NSNull.null, @"capability": @"unknown",
+        @"status": @"unavailable_at_guest_fault", @"interpretation": @"partial_failure_receipt" };
+    else {
+        NSMutableDictionary *partial = [presentation mutableCopy];
+        partial[@"collector_status"] = presentation[@"status"] ?: @"unknown";
+        partial[@"status"] = @"guest_fault_partial";
+        partial[@"interpretation"] = @"partial_failure_receipt";
+        presentation = partial;
+    }
+    run_environment_end = environment_now();
+    const char *map = plan.scenes[run.scene].map;
+    run_shader_after = host_benchmark_shader_snapshot(run_shader_directory, map[0] ? @(map) : @"ui");
+    flag(@"guest_fault");
+    write_run(&run, outcome.status, @(note ?: "guest fatal assertion"), NULL, presentation);
+    benchmark_journal_end(JOURNAL, run.index, &outcome);
+    run_open = run_finishing = 0;
+    if (outcome_count < BENCHMARK_RUNS_MAXIMUM) outcomes[outcome_count++] = outcome;
+    write_report();
+    descriptor = atomic_exchange(&marker, -1);
+    if (descriptor >= 0) close(descriptor);
+    host_logf(HOST_LOG_INFO, "benchmark: run %d failed on guest assertion; partial report saved", run.index);
 }
 
 /* Only the guest thread writes reports/journals and advances the planner. The

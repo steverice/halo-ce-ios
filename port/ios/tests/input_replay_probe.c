@@ -36,11 +36,15 @@ void host_touch_replay_active(int active) {
 static int lip_sync;
 static int timed_benchmark;
 static const char *replay_name = "";
+static const char *record_name = "";
 void platform_log(const char *format, ...) { (void)format; }
 int config_boolean(const char *name) { return (!strcmp(name, "debug.benchmark_lip_sync") && lip_sync) ||
 	(!strcmp(name, "debug.benchmark") && timed_benchmark); }
 long config_integer(const char *name) { (void)name; return 0; }
-const char *config_string(const char *name) { return !strcmp(name, "debug.input_replay") ? replay_name : ""; }
+const char *config_string(const char *name) {
+	if (!strcmp(name, "debug.input_record")) return record_name;
+	return !strcmp(name, "debug.input_replay") ? replay_name : "";
+}
 void config_folder(char *path, size_t size) { snprintf(path, size, "./"); }
 void config_profile_settings_text(char *text, size_t size) { snprintf(text, size, ""); }
 static unsigned char clock_ready, menu_loaded;
@@ -277,6 +281,26 @@ int main(void)
 	replay_name = "";
 	configure();
 	assert(!touch_replay_active);
+	/* A suite suspends the effective auto-take without changing its configured value. */
+	record_name = "auto";
+	replay.configured = FALSE;
+	take.automatic = FALSE;
+	menu_loaded = 1;
+	configure();
+	assert(take.automatic);
+	take.open = TRUE;
+	assert(!input_replay_suite_suspend());
+	assert(take.open && take.automatic && !input_replay_suite_suspended());
+	take.open = FALSE;
+	assert(input_replay_suite_suspend());
+	assert(input_replay_suite_suspended() && !take.automatic && replay.suite);
+	input_replay_suite_restore();
+	assert(!input_replay_suite_suspended() && !replay.suite && !take.automatic);
+	XINPUT_GAMEPAD resumed = {0};
+	input_replay_filter(&resumed);
+	assert(take.automatic && !strcmp(record_name, "auto"));
+	record_name = "";
+	take.automatic = FALSE;
 	unlink("probe.input");
 	unlink("probe.actions");
 	assert(!chdir("/"));

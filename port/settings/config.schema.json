@@ -1710,6 +1710,17 @@
             "desktop"
           ]
         },
+        "multiplayer_benchmark_probe": {
+          "type": "boolean",
+          "default": false,
+          "description": "In a four-local-player automated Chill Out Slayer match, draw only player 1's view and drive the controllers with distinct game-tick scripts. This provisional probe is off in ordinary play.",
+          "x-environment": "HALO_MULTIPLAYER_BENCHMARK_PROBE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "network_test_start": {
           "type": "number",
           "default": 15.0,

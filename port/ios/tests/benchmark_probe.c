@@ -318,6 +318,87 @@ static void test_plan(void) {
     }
 }
 
+static void test_multiplayer_terminal_baseline(void) {
+    struct benchmark_scene scenes[PROBE_SCENE_COUNT + 1];
+    struct benchmark_device facts = { 1080, 540, 16, 512, 1 };
+    struct benchmark_plan solo = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT, facts };
+    struct benchmark_plan with_mp = { BENCHMARK_FULL, scenes, PROBE_SCENE_COUNT + 1, facts };
+    struct benchmark_run solo_runs[BENCHMARK_RUNS_MAXIMUM], mp_runs[BENCHMARK_RUNS_MAXIMUM], next;
+    struct benchmark_outcome solo_outcomes[BENCHMARK_RUNS_MAXIMUM], mp_outcomes[BENCHMARK_RUNS_MAXIMUM];
+    struct benchmark_outcome okay = { BENCHMARK_OK, 16.7, 8.0, 10.0, 60.0, 900 };
+    int solo_count = 0, mp_count = 0, quick_count = 0, index;
+
+    memcpy(scenes, probe_scenes, sizeof(probe_scenes));
+    scenes[PROBE_SCENE_COUNT] = (struct benchmark_scene){
+        "mp-chillout-4", "chillout", "normal", NULL, 15.0, 60.0, (enum benchmark_scene_kind)3, 0
+    };
+    CHECK(BENCHMARK_SUITE_VERSION == 2);
+    CHECK(benchmark_suite_scene_count == 4 && !strcmp(benchmark_suite_scenes[3].id, "mp-chillout-4"));
+
+    with_mp.mode = BENCHMARK_QUICK;
+    while (quick_count < BENCHMARK_RUNS_MAXIMUM &&
+        benchmark_plan_next(&with_mp, mp_outcomes, quick_count, &mp_runs[quick_count])) {
+        mp_outcomes[quick_count++] = okay;
+    }
+    CHECK(quick_count == PROBE_SCENE_COUNT);
+    for (index = 0; index < quick_count; index++) CHECK(mp_runs[index].scene < PROBE_SCENE_COUNT);
+
+    with_mp.mode = BENCHMARK_FULL;
+    while (solo_count < BENCHMARK_RUNS_MAXIMUM &&
+        benchmark_plan_next(&solo, solo_outcomes, solo_count, &solo_runs[solo_count])) {
+        solo_outcomes[solo_count] = okay;
+        if (solo_count == 1) solo_outcomes[solo_count].status = BENCHMARK_THERMAL;
+        solo_count++;
+    }
+    while (mp_count < BENCHMARK_RUNS_MAXIMUM &&
+        benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &mp_runs[mp_count])) {
+        mp_outcomes[mp_count] = okay;
+        if (mp_count == 1) mp_outcomes[mp_count].status = BENCHMARK_THERMAL;
+        mp_count++;
+    }
+    CHECK(solo_count < BENCHMARK_RUNS_MAXIMUM && mp_count == solo_count + 1);
+    for (index = 0; index < solo_count && index < mp_count; index++)
+        CHECK(!strcmp(solo_runs[index].key, mp_runs[index].key));
+    CHECK(solo_count > 0 && solo_runs[solo_count - 1].stage == 'R');
+    CHECK(mp_count > 0 && mp_runs[mp_count - 1].stage == 'A' &&
+        mp_runs[mp_count - 1].scene == PROBE_SCENE_COUNT && mp_runs[mp_count - 1].lines == 0);
+    if (mp_count > 0) {
+        mp_outcomes[mp_count - 1].status = BENCHMARK_SKIPPED;
+        CHECK(!benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &next));
+        mp_outcomes[mp_count - 1].status = BENCHMARK_FAILED;
+        CHECK(!benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &next));
+    }
+
+    /* The terminal scene still runs when a filter removes every solo scene. */
+    {
+        struct benchmark_scene only_mp[] = { scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_plan filtered = { BENCHMARK_QUICK, only_mp, 1, facts };
+
+        CHECK(!benchmark_plan_next(&filtered, mp_outcomes, 0, &next));
+        filtered.mode = BENCHMARK_FULL;
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.stage == 'A' && next.scene == 0);
+        mp_outcomes[0] = okay;
+        CHECK(!benchmark_plan_next(&filtered, mp_outcomes, 1, &next));
+    }
+    {
+        struct benchmark_scene no_heavy[] = { probe_scenes[0], scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_plan filtered = { BENCHMARK_FULL, no_heavy, 2, facts };
+
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.scene == 0);
+        mp_outcomes[0] = okay;
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 1, &next) && next.scene == 1 && next.stage == 'A');
+    }
+    {
+        struct benchmark_scene skipped_heavy[] = { probe_scenes[3], scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_plan filtered = { BENCHMARK_FULL, skipped_heavy, 2, facts };
+
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.scene == 0);
+        mp_outcomes[0] = okay;
+        mp_outcomes[0].status = BENCHMARK_SKIPPED;
+        CHECK(benchmark_plan_next(&filtered, mp_outcomes, 1, &next) && next.scene == 1 && next.stage == 'A');
+    }
+}
+
 /* ---------- journal */
 
 static char journal_path[256];
@@ -495,11 +576,57 @@ static void test_journal(void) {
     unlink(journal_path);
 }
 
+static void test_multiplayer_journal(void) {
+    struct benchmark_device facts = { 2160, 1080, 16, 512, 1 };
+    struct benchmark_scene multiplayer = benchmark_suite_scenes[3];
+    struct benchmark_plan plan = { BENCHMARK_FULL, &multiplayer, 1, facts };
+    struct benchmark_plan builtins = { BENCHMARK_FULL, benchmark_suite_scenes, benchmark_suite_scene_count, facts };
+    struct benchmark_journal journal;
+    struct benchmark_run run, next;
+    struct benchmark_outcome failed = { BENCHMARK_FAILED, 0, 0, 0, 0, -1 };
+
+    snprintf(journal_path, sizeof(journal_path), "%s/visr-benchmark-mp-%d.journal",
+        getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
+    unlink(journal_path);
+    /* This signature is the released version 1 built-in trio. Version 2 adds
+       the multiplayer scene, so its unfinished journal cannot be resumed. */
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "OLDV1", &facts, 0xc2ab7962UL));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && !journal.finished && journal.signature == 0xc2ab7962UL);
+    CHECK(journal.signature != benchmark_plan_signature(&builtins));
+
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "NEWV2", &facts, benchmark_plan_signature(&plan)));
+    CHECK(benchmark_plan_next(&plan, journal.outcomes, 0, &run) && run.stage == 'A' && run.scene == 0);
+    CHECK(benchmark_journal_begin(journal_path, run.index, run.key));
+    CHECK(benchmark_journal_end(journal_path, run.index, &failed));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && !journal.finished && !journal.cut_off && journal.count == 1 &&
+        journal.outcomes[0].status == BENCHMARK_FAILED);
+    CHECK(!benchmark_plan_next(&plan, journal.outcomes, journal.count, &next));
+    CHECK(benchmark_journal_done(journal_path));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.finished);
+
+    /* A process killed in the terminal match is finalized on the next launch;
+       the planner must not replay the match or start another scene. */
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "CUTV2", &facts, benchmark_plan_signature(&plan)));
+    CHECK(benchmark_journal_begin(journal_path, run.index, run.key));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && journal.cut_off && journal.count == 1 && journal.outcomes[0].status == BENCHMARK_KILLED);
+    CHECK(benchmark_journal_end(journal_path, 0, &journal.outcomes[0]));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && !journal.cut_off && journal.count == 1 &&
+        !benchmark_plan_next(&plan, journal.outcomes, journal.count, &next));
+    unlink(journal_path);
+}
+
 int main(void) {
     test_metrics();
     test_routes();
     test_plan();
+    test_multiplayer_terminal_baseline();
     test_journal();
+    test_multiplayer_journal();
     if (failures) {
         fprintf(stderr, "benchmark_probe: %d of %d checks failed\n", failures, checks);
         return 1;

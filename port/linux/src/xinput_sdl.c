@@ -40,6 +40,7 @@ drive the controller.
 #include "sdl_platform.h"
 #include "port_config.h"
 #include "halo_keyboard.h"
+#include "mp_benchmark_probe.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -819,6 +820,62 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 255;
 }
 
+/* This probe is restricted to a four-local-player test match. Game ticks and
+controller ports pick the actions, so display frame rate cannot shift them. */
+static struct mp_benchmark_probe_latch mp_probe_latches[PORT_COUNT];
+static int mp_probe_latches_ready;
+
+void mp_benchmark_probe_reset_controllers(void)
+{
+	short port;
+
+	for (port = 0; port < PORT_COUNT; port++)
+		mp_benchmark_probe_latch_reset(&mp_probe_latches[port]);
+	mp_probe_latches_ready = 1;
+}
+
+void mp_benchmark_probe_action_counts(struct mp_benchmark_probe_counts counts[4])
+{
+	short port;
+
+	for (port = 0; port < PORT_COUNT; port++)
+	{
+		counts[port].fire = mp_probe_latches[port].fire_requests;
+		counts[port].jump = mp_probe_latches[port].jump_requests;
+		counts[port].grenade = mp_probe_latches[port].grenade_requests;
+	}
+}
+
+static void mp_benchmark_probe_gamepad(XINPUT_GAMEPAD *pad, short port)
+{
+	struct mp_benchmark_probe_pad input;
+
+	if (!mp_probe_latches_ready)
+		mp_benchmark_probe_reset_controllers();
+	mp_benchmark_probe_sample(mp_benchmark_probe_tick(), port, &mp_probe_latches[port], &input);
+	memset(pad, 0, sizeof(*pad));
+	pad->sThumbLX = input.left_x;
+	pad->sThumbLY = input.left_y;
+	pad->sThumbRX = input.right_x;
+	pad->sThumbRY = input.right_y;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] = input.fire ? 255 : 0;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_A] = input.jump ? 255 : 0;
+	pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = input.grenade ? 255 : 0;
+}
+
+static enum mp_benchmark_probe_input_policy mp_benchmark_probe_or_test_gamepad(XINPUT_GAMEPAD *pad, short port)
+{
+	enum mp_benchmark_probe_input_policy policy = mp_benchmark_probe_current_policy();
+
+	if (policy == mp_benchmark_probe_scripted_input)
+		mp_benchmark_probe_gamepad(pad, port);
+	else if (policy == mp_benchmark_probe_neutral_input)
+		memset(pad, 0, sizeof(*pad));
+	else
+		test_input_gamepad(pad);
+	return policy;
+}
+
 static void wheel_update(void)
 {
 	Uint64 now = SDL_GetTicks();
@@ -1068,7 +1125,8 @@ static DWORD connected_gamepads(void)
 		if (port_gamepad(gamepads, count, port))
 			mask |= 1UL << port;
 	}
-	return mask;
+	/* The private four-player probe needs handles before the match starts. */
+	return mp_benchmark_probe_device_mask(mask, mp_benchmark_probe_requested());
 }
 
 BOOL WINAPI XGetDeviceChanges(PXPP_DEVICE_TYPE device_type, PDWORD insertions, PDWORD removals)
@@ -1194,6 +1252,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 	if (port == 0)
 	{
 		struct platform_input_state input;
+		enum mp_benchmark_probe_input_policy probe_policy;
 
 		platform_input_read(&input, TRUE);
 		mouse_poll(&input);
@@ -1209,7 +1268,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		}
 		if (port_gamepad(gamepads, count, 0))
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
-		test_input_gamepad(&state->Gamepad);
+		probe_policy = mp_benchmark_probe_or_test_gamepad(&state->Gamepad, port);
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
 		{
@@ -1226,18 +1285,22 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		/* (display.late_look: what the stick was when the game read it; not
 		a test's or a replay's input) */
 		look_read.valid = port_gamepad(gamepads, count, 0) != NULL && !platform_fixed_timestep() &&
+			probe_policy == mp_benchmark_probe_ordinary_input &&
 			!config_string("debug.test_input")[0] && !config_string("debug.input_replay")[0];
 		look_read.x = (float)state->Gamepad.sThumbRX / 32767.0f;
 		look_read.y = (float)state->Gamepad.sThumbRY / 32767.0f;
 		look_read.read_ms = halo_frame_trace_milliseconds();
-		input_replay_filter(&state->Gamepad);
+		if (probe_policy == mp_benchmark_probe_ordinary_input)
+			input_replay_filter(&state->Gamepad);
 	}
-	else if (port < config_integer("debug.network_test_players"))
+	else if (port < config_integer("debug.network_test_players") ||
+		(port > 0 && port < PORT_COUNT && mp_benchmark_probe_requested()))
 	{
 		/* (split screen without a second gamepad: the scripted player of
 		debug.test_input plays this controller too, ahead of any gamepad,
-		the Mac's touch controls included) */
-		test_input_gamepad(&state->Gamepad);
+		the Mac's touch controls included; the private suite owns all four
+		virtual ports without changing the user's configured player count) */
+		mp_benchmark_probe_or_test_gamepad(&state->Gamepad, port);
 	}
 	else if (port_gamepad(gamepads, count, port))
 	{

@@ -110,6 +110,12 @@ def test_spoiled_runs_are_not_evidence_and_flags_are_reported():
     assert any("throttled" in note for note in notes)
 
 
+def test_synthetic_multiplayer_does_not_change_profile_proposals():
+    solo = scenes("A", 1080, 6.0)
+    multiplayer = run(4, "MP", "mp-chillout-4", "multiplayer_synthetic", 2160, gpu=1.0)
+    assert profile_derive.derive([report(solo)]) == profile_derive.derive([report(solo + [multiplayer])])
+
+
 def test_reports_for_two_models_are_refused():
     with pytest.raises(ValueError):
         profile_derive.derive([report(scenes("A", 1080, 6.0)), report(scenes("A", 1080, 6.0), model="AppleTV6,2")])
