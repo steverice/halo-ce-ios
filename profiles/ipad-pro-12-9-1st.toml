@@ -1,0 +1,17 @@
+#:schema ../port/settings/profile.schema.json
+schema = 1
+name = "iPad Pro 12.9-inch (1st generation)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPad6,7"]
+
+[display]
+render_height = 720
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "On c40 at the existing 16x filtering, 512 shadows, and max model detail, 720 lines measured 58.99 rendered/submitted frames a second with status ok and GPU p95 19.8 ms. At 540 lines the same case measured 59.17 with GPU p95 17.7 ms; 720 retains one-third more lines for nearly the same cadence. Native 2048 lines measured 10.80, 1080 measured 33.98, and 1440 measured 19.99 frames a second; those three runs were thermal. The six recorded native-size full-suite gameplay baselines measured 11.08 to 18.11 frames a second and were all thermal. These are app render/submission measurements, not verified physical display presentations. Keep the existing quality settings while evaluating a later quality sweep at 720 lines."
+source = "iPad6,7 benchmark report 6CYGBCXB and isolated c40 reports YSV9Q634, UG5M2U5F, CHJK89G8, 3E8GWT5Y, C5HYN3UP; build 20261017.73635, 2026-10-17"
