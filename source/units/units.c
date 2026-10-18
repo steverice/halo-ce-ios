@@ -1031,6 +1031,7 @@ void units_initialize(
 void units_initialize_for_new_map(
 	void)
 {
+	unit_animation_cache_invalidate();
 	memset(unit_globals, 0, offsetof(struct unit_globals, used_time));
 
 	return;
@@ -10918,6 +10919,52 @@ static long grenade_throw_leg_weight_times[GRENADE_THROW_MAXIMUM_TRACKED_UNITS];
 static real grenade_throw_air_weights[GRENADE_THROW_MAXIMUM_TRACKED_UNITS];
 static long grenade_throw_air_weight_times[GRENADE_THROW_MAXIMUM_TRACKED_UNITS];
 static long grenade_throw_ik_release_times[GRENADE_THROW_MAXIMUM_TRACKED_UNITS];
+static long grenade_throw_unit_indices[GRENADE_THROW_MAXIMUM_TRACKED_UNITS];
+static long grenade_throw_last_time = NONE;
+
+/* port: these poses are transient, not part of a saved game. A new map
+or a restored checkpoint must not inherit another timeline's blending. */
+void unit_animation_cache_invalidate(
+	void)
+{
+	memset(grenade_throw_leg_weights, 0, sizeof(grenade_throw_leg_weights));
+	memset(grenade_throw_leg_weight_times, NONE, sizeof(grenade_throw_leg_weight_times));
+	memset(grenade_throw_air_weights, 0, sizeof(grenade_throw_air_weights));
+	memset(grenade_throw_air_weight_times, NONE, sizeof(grenade_throw_air_weight_times));
+	memset(grenade_throw_ik_release_times, 0, sizeof(grenade_throw_ik_release_times));
+	memset(grenade_throw_unit_indices, NONE, sizeof(grenade_throw_unit_indices));
+	grenade_throw_last_time = NONE;
+
+	return;
+}
+
+static long unit_grenade_throw_cache_index(
+	long unit_index)
+{
+	long absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(unit_index);
+	long now = game_time_get();
+
+	/* port: the distributed clock can also move back without loading. */
+	if (grenade_throw_last_time != NONE && now < grenade_throw_last_time)
+	{
+		unit_animation_cache_invalidate();
+	}
+	grenade_throw_last_time = now;
+	if (absolute_index >= GRENADE_THROW_MAXIMUM_TRACKED_UNITS)
+	{
+		return NONE;
+	}
+	/* port: a datum slot can immediately be reused with a new salt. */
+	if (grenade_throw_unit_indices[absolute_index] != unit_index)
+	{
+		grenade_throw_unit_indices[absolute_index] = unit_index;
+		grenade_throw_leg_weight_times[absolute_index] = NONE;
+		grenade_throw_air_weight_times[absolute_index] = NONE;
+		grenade_throw_ik_release_times[absolute_index] = 0;
+	}
+
+	return absolute_index;
+}
 
 /* a weight eased toward its target by a step a tick; a new throw starts
 at the target */
@@ -10927,7 +10974,7 @@ static real unit_grenade_throw_ease(
 	long unit_index,
 	real target)
 {
-	long absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(unit_index);
+	long absolute_index = unit_grenade_throw_cache_index(unit_index);
 	long now = game_time_get();
 	real weight = target;
 
@@ -10939,7 +10986,7 @@ static real unit_grenade_throw_ease(
 		}
 		else
 		{
-			if (times[absolute_index] == now - 1)
+			if (times[absolute_index] != NONE && times[absolute_index] == now - 1)
 			{
 				real step = 1.f / GRENADE_THROW_BLEND_TICKS;
 
@@ -10961,7 +11008,7 @@ static boolean unit_grenade_throw_releases_vehicle_ik(
 	long unit_index)
 {
 	struct unit_datum *unit = unit_get(unit_index);
-	long absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(unit_index);
+	long absolute_index;
 	long now = game_time_get();
 	long elapsed;
 	boolean releasing =
@@ -10972,6 +11019,7 @@ static boolean unit_grenade_throw_releases_vehicle_ik(
 	{
 		return FALSE;
 	}
+	absolute_index = unit_grenade_throw_cache_index(unit_index);
 	if (absolute_index < 0 || absolute_index >= GRENADE_THROW_MAXIMUM_TRACKED_UNITS)
 	{
 		return releasing;
