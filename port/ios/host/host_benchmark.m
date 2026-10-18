@@ -352,10 +352,17 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         measurements ?: ""];
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
-    if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
-        record[@"simulation"] = @{ @"source": @"scripted_four_local", @"local_players": @4, @"views": @1,
-            @"remote_clients": @0, @"score_limit": @1000, @"time_limit_minutes": @0,
-            @"warmup_ticks": @450, @"window_ticks": @1800 };
+    if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER) {
+        if (!strcmp(scene->id, "mp-chillout-2-proof"))
+            record[@"simulation"] = @{ @"source": @"synthetic_host_player", @"local_players": @1,
+                @"synthetic_players": @1, @"remote_clients": @0, @"views": @1,
+                @"score_limit": @1000, @"time_limit_minutes": @0,
+                @"warmup_ticks": @450, @"window_ticks": @1800 };
+        else
+            record[@"simulation"] = @{ @"source": @"scripted_four_local", @"local_players": @4, @"views": @1,
+                @"remote_clients": @0, @"score_limit": @1000, @"time_limit_minutes": @0,
+                @"warmup_ticks": @450, @"window_ticks": @1800 };
+    }
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
@@ -490,6 +497,9 @@ static NSDictionary *fresh_snapshot(NSDictionary *identity) {
 
 static void install_scenes(NSArray<NSString *> *only) {
     NSFileManager *files = NSFileManager.defaultManager;
+    static const struct benchmark_scene two_player_proof = {
+        "mp-chillout-2-proof", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0
+    };
     int index;
     {
         /* the scenes: the ones that play by themselves, then one for each recorded route the app carries, by name */
@@ -505,6 +515,10 @@ static void install_scenes(NSArray<NSString *> *only) {
                 multiplayer = &benchmark_suite_scenes[index];
             else if (!only || [only containsObject:@(benchmark_suite_scenes[index].id)])
                 scenes[count++] = benchmark_suite_scenes[index];
+        /* The two-player source proof is selectable by an exact Full filter,
+           never as part of the default Full or Quick catalog. */
+        if (plan.mode == BENCHMARK_FULL && only.count == 1 && [only.firstObject isEqual:@"mp-chillout-2-proof"])
+            multiplayer = &two_player_proof;
         include_multiplayer = multiplayer && plan.mode == BENCHMARK_FULL &&
             (!only || [only containsObject:@(multiplayer->id)]);
         for (NSString *name in [[files contentsOfDirectoryAtPath:bundled error:nil] sortedArrayUsingSelector:@selector(compare:)]) {

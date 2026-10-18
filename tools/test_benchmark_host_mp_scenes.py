@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "port/ios/host/host_benchmark.m").read_text()
 
 
-def install_source() -> str:
-    start = SOURCE.index("static void install_scenes(NSArray<NSString *> *only) {")
+def function_source(signature: str) -> str:
+    start = SOURCE.index(signature)
     opening = SOURCE.index("{", start)
     depth = 0
     for position in range(opening, len(SOURCE)):
@@ -24,7 +24,7 @@ def install_source() -> str:
             depth -= 1
             if depth == 0:
                 return SOURCE[start:position + 1]
-    raise ValueError("Unclosed host scene installer")
+    raise ValueError(f"Unclosed host function: {signature}")
 
 
 HARNESS = r'''
@@ -38,6 +38,33 @@ HARNESS = r'''
 static struct benchmark_plan plan;
 static void host_logf(int priority, const char *format, ...) { (void)priority; (void)format; }
 __INSTALL__
+static int window_width = 1280, window_height = 720;
+static NSDictionary *run_output, *suite_output, *run_environment_start, *run_environment_end;
+static NSDictionary *run_shader_before, *run_shader_after;
+static NSString *run_shader_directory;
+static NSString *json_object(id value) {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:value ?: @{} options:0 error:nil];
+    return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+static NSString *json_string(NSString *value) {
+    if (!value) return @"null";
+    NSData *data = [NSJSONSerialization dataWithJSONObject:@[value] options:0 error:nil];
+    NSString *array = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return [array substringWithRange:NSMakeRange(1, array.length - 2)];
+}
+static NSDictionary *output_now(void) { return @{}; }
+static NSDictionary *environment_now(void) { return @{}; }
+static NSString *run_path(int index) { return [NSString stringWithFormat:@"benchmark/run-%02d.json", index]; }
+static NSDictionary *host_benchmark_shader_snapshot(NSString *folder, NSString *map) {
+    (void)folder; (void)map; return @{};
+}
+static NSDictionary *host_benchmark_shader_delta(NSDictionary *before, NSDictionary *after) {
+    (void)before; (void)after; return @{};
+}
+static NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictionary *presentation) {
+    (void)presentation; return record;
+}
+__WRITE_RUN__
 static int failures;
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "host scenes line %d: %s\n", __LINE__, #condition); failures++; \
@@ -52,6 +79,18 @@ int main(void) {
         CHECK(plan.scenes[plan.scene_count - 1].kind == BENCHMARK_SCENE_MULTIPLAYER);
         install_scenes(@[ @"mp-chillout-4" ]);
         CHECK(plan.scene_count == 1 && plan.scenes[0].kind == BENCHMARK_SCENE_MULTIPLAYER);
+        install_scenes(@[ @"mp-chillout-2-proof" ]);
+        CHECK(plan.scene_count == 1 && !strcmp(plan.scenes[0].id, "mp-chillout-2-proof") &&
+            plan.scenes[0].kind == BENCHMARK_SCENE_MULTIPLAYER);
+        struct benchmark_run proof = { 0 }; proof.index = 0; proof.scene = 0; proof.stage = 'A';
+        write_run(&proof, BENCHMARK_FAILED, @"proof", NULL, nil);
+        NSData *bytes = [NSData dataWithContentsOfFile:run_path(0)];
+        NSDictionary *record = bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
+        NSDictionary *simulation = record[@"simulation"];
+        CHECK([simulation[@"local_players"] intValue] == 1 &&
+            [simulation[@"synthetic_players"] intValue] == 1 &&
+            [simulation[@"remote_clients"] intValue] == 0 &&
+            [simulation[@"views"] intValue] == 1);
         plan.mode = BENCHMARK_QUICK;
         install_scenes(nil);
         CHECK(plan.scene_count == benchmark_suite_scene_count - 1);
@@ -91,7 +130,8 @@ def test_host_scene_selection() -> None:
         folder = Path(temporary)
         source = folder / "host_scenes.m"
         binary = folder / "host_scenes"
-        source.write_text(HARNESS.replace("__INSTALL__", install_source()))
+        source.write_text(HARNESS.replace("__INSTALL__", function_source("static void install_scenes(NSArray<NSString *> *only) {"))
+                          .replace("__WRITE_RUN__", function_source("static void write_run(const struct benchmark_run *finished,")))
         subprocess.run([compiler, "-O2", "-fobjc-arc", "-fsanitize=address,undefined", "-framework", "Foundation",
                         "-I", str(ROOT / "port/runtime"), str(source), str(ROOT / "port/runtime/benchmark_plan.c"),
                         "-o", str(binary)], check=True)

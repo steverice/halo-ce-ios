@@ -53,6 +53,8 @@ void benchmark_scenario_load(const char *map, const char *difficulty);
 unsigned char benchmark_scenario_at_menu(void);
 unsigned char benchmark_scenario_player_position(float *position);
 int network_test_suite_begin_chillout(void);
+int network_test_suite_begin_two_player_proof(void);
+int network_test_suite_two_player_proof_failed(void);
 void network_test_suite_end(void);
 void mp_benchmark_probe_set_suite_requested(int requested);
 void mp_benchmark_probe_reset_controllers(void);
@@ -121,6 +123,8 @@ static struct
 	double mp_distance[BENCHMARK_MP_ACTORS];
 	unsigned long mp_fire[BENCHMARK_MP_ACTORS], mp_jump[BENCHMARK_MP_ACTORS], mp_grenade_requests[BENCHMARK_MP_ACTORS];
 	unsigned long mp_ammo_spent, mp_grenades_used, mp_damage_changes, mp_deaths, mp_respawns;
+	unsigned long mp_ammo_spent_actor[BENCHMARK_MP_ACTORS];
+	int mp_projectile_seen;
 } suite;
 
 void benchmark_suite_multiplayer_fault(const char *note)
@@ -153,7 +157,8 @@ void benchmark_suite_mainloop_update(void)
 		}
 		mp_benchmark_probe_set_suite_requested(1);
 		mp_benchmark_probe_reset_controllers();
-		if (!network_test_suite_begin_chillout())
+		if (!(strcmp(suite.scene, "mp-chillout-2-proof") == 0 ?
+			network_test_suite_begin_two_player_proof() : network_test_suite_begin_chillout()))
 		{
 			mp_benchmark_probe_set_suite_requested(0);
 			suite.mp_action_failed = 1;
@@ -209,6 +214,14 @@ static double number_field(const char *text, const char *key)
 
 static int mp_match_valid(const struct benchmark_mp_state *state, int require_spawned)
 {
+	if (!strcmp(suite.scene, "mp-chillout-2-proof"))
+		return state->multiplayer && state->map_ok && state->slayer && state->score_limit == 1000 &&
+			state->time_limit_minutes == 0 && state->local_players == 1 && state->roster == 2 &&
+			(!require_spawned || state->spawned == 2) && state->actors[0].present && state->actors[1].present &&
+			(!require_spawned || (state->actors[0].spawned && state->actors[1].spawned)) &&
+			(!require_spawned || state->synthetic_queue_ready) &&
+			state->view_count == 1 && state->observer0 && state->probe_active &&
+			state->can_score && !state->postgame;
 	return state->multiplayer && state->map_ok && state->slayer && state->score_limit == 1000 &&
 		state->time_limit_minutes == 0 && state->local_players == 4 && state->roster == 4 &&
 		(!require_spawned || state->spawned == 4) && state->view_count == 1 && state->observer0 &&
@@ -228,6 +241,9 @@ static int mp_ticks_advance(const struct benchmark_mp_state *state, double now)
 static void mp_collect(const struct benchmark_mp_state *state)
 {
 	short local;
+
+	if (suite.mp_previous_valid && state->projectiles_alive > 0)
+		suite.mp_projectile_seen = 1;
 
 	if (!suite.mp_previous_valid)
 	{
@@ -261,7 +277,10 @@ static void mp_collect(const struct benchmark_mp_state *state)
 			suite.mp_grenade_requests[local] += after->grenade_requests - before->grenade_requests;
 		if (before->spawned && after->spawned && before->weapon_definition == after->weapon_definition &&
 			before->weapon_definition != -1 && before->ammo > after->ammo)
+		{
 			suite.mp_ammo_spent += (unsigned long)(before->ammo - after->ammo);
+			suite.mp_ammo_spent_actor[local] += (unsigned long)(before->ammo - after->ammo);
+		}
 		if (before->spawned && after->spawned)
 		{
 			if (before->grenades[0] > after->grenades[0])
@@ -283,6 +302,19 @@ static int mp_evidence_note(char *note, size_t size)
 {
 	int moved = 0, firing = 0, local;
 	unsigned long jumps = 0, grenades = 0;
+
+	if (!strcmp(suite.scene, "mp-chillout-2-proof"))
+	{
+		snprintf(note, size, "synthetic host local1 synthetic1 one view; moved %d/2 (%.1f,%.1f), "
+			"remote ammo spent %lu, projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
+			"zero external clients; visible opponents require frame review",
+			(suite.mp_distance[0] >= 5.0) + (suite.mp_distance[1] >= 5.0),
+			suite.mp_distance[0], suite.mp_distance[1], suite.mp_ammo_spent_actor[1],
+			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns);
+		return suite.mp_distance[0] >= 5.0 && suite.mp_distance[1] >= 5.0 &&
+			suite.mp_ammo_spent_actor[1] > 0 && suite.mp_projectile_seen &&
+			suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
+	}
 
 	for (local = 0; local < BENCHMARK_MP_ACTORS; local++)
 	{
@@ -391,6 +423,8 @@ static void next_run(void)
 	memset(suite.mp_jump, 0, sizeof(suite.mp_jump));
 	memset(suite.mp_grenade_requests, 0, sizeof(suite.mp_grenade_requests));
 	suite.mp_ammo_spent = suite.mp_grenades_used = suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 0;
+	memset(suite.mp_ammo_spent_actor, 0, sizeof(suite.mp_ammo_spent_actor));
+	suite.mp_projectile_seen = 0;
 	suite.route_length = 0;
 	suite.route[0] = 0;
 	suite.route_due = 0.0;
@@ -570,8 +604,9 @@ void benchmark_suite_frame(long width, long height)
 		{
 			struct benchmark_mp_state state;
 
-			if (suite.mp_action_failed)
-				finish("failed", "the private match could not start");
+			if (suite.mp_action_failed ||
+				(!strcmp(suite.scene, "mp-chillout-2-proof") && network_test_suite_two_player_proof_failed()))
+				finish("failed", "the private match or synthetic player could not start");
 			else if (!suite.mp_host_started)
 			{
 				if (!benchmark_scenario_at_menu())
@@ -612,7 +647,7 @@ void benchmark_suite_frame(long width, long height)
 				}
 			}
 			if (suite.state == suite_loading && now - suite.entered > LOAD_LIMIT_MILLISECONDS)
-				finish("failed", "four-player multiplayer game did not become ready");
+				finish("failed", "multiplayer game did not become ready");
 			break;
 		}
 		/* loaded: the menu's scenario for a menu scene, or the level's game time running (a replay begun during

@@ -159,6 +159,16 @@ int network_test_suite_begin_two_player_proof(void)
 	return 1;
 }
 
+int network_test_suite_two_player_proof_active(void)
+{
+	return network_test.suite_owned && network_test.mode == _network_test_host && network_test.players_wanted == 1;
+}
+
+int network_test_suite_two_player_proof_failed(void)
+{
+	return network_test.suite_owned && network_test.mode == _network_test_off && network_test.players_wanted == 1;
+}
+
 void network_test_suite_end(void)
 {
 	int abort_game;

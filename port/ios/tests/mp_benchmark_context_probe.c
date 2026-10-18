@@ -11,6 +11,7 @@ struct game_variant { int game_engine_index; };
 static int requested, initialized, in_progress, scoring, forced_single, postgame;
 static int local_count, connection, getter_calls, tick_calls;
 static int suite_suspended;
+static int proof_active;
 static const char *network_test, *suite, *record, *replay, *map;
 static struct scenario scenario;
 static struct game_variant variant;
@@ -37,6 +38,7 @@ char *main_get_multiplayer_map_name(void) { getter_calls++; return (char *)map; 
 short players_port_local_player_count(void) { getter_calls++; return (short)local_count; }
 long game_time_get(void) { tick_calls++; return 123; }
 int input_replay_suite_suspended(void) { return suite_suspended; }
+int network_test_suite_two_player_proof_active(void) { return proof_active; }
 
 #define MP_BENCHMARK_CONTEXT_PROBE 1
 #include "../../linux/game/mp_benchmark_context.c"
@@ -51,6 +53,7 @@ static void reset(void)
 	requested = initialized = in_progress = scoring = 1;
 	mp_benchmark_probe_set_suite_requested(0);
 	suite_suspended = 0;
+	proof_active = 0;
 	forced_single = postgame = 0;
 	local_count = 4;
 	connection = _game_connection_network_server;
@@ -108,6 +111,14 @@ int main(void)
 	mp_benchmark_probe_set_suite_requested(0);
 	CHECK(!mp_benchmark_probe_requested());
 	CHECK(mp_benchmark_probe_current_policy() == mp_benchmark_probe_ordinary_input);
+	reset(); requested = 0; network_test = ""; suite = "full:mp-chillout-2-proof"; record = "auto";
+	local_count = 1; suite_suspended = proof_active = 1;
+	mp_benchmark_probe_set_suite_requested(1);
+	CHECK(mp_benchmark_probe_active() && mp_benchmark_probe_current_policy() == mp_benchmark_probe_scripted_input);
+	proof_active = 0;
+	CHECK(!mp_benchmark_probe_active());
+	proof_active = 1; local_count = 2;
+	CHECK(!mp_benchmark_probe_active());
 	if (failures) fprintf(stderr, "mp_benchmark_context_probe: %d failures\n", failures);
 	return failures ? 1 : 0;
 }

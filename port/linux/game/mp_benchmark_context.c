@@ -16,6 +16,7 @@ int config_boolean(char const *name);
 char const *config_string(char const *name);
 short players_port_local_player_count(void);
 int input_replay_suite_suspended(void);
+int network_test_suite_two_player_proof_active(void);
 static int suite_requested;
 
 void mp_benchmark_probe_set_suite_requested(int requested)
@@ -48,6 +49,10 @@ int mp_benchmark_probe_active(void)
 		!game_engine_can_score() || game_engine_showing_postgame() || game_engine_force_single_screen())
 		return 0;
 	variant = game_engine_get_variant();
+	if (suite_requested && network_test_suite_two_player_proof_active())
+		return variant && variant->game_engine_index == game_engine_slayer &&
+			mp_benchmark_probe_map_matches(main_get_multiplayer_map_name()) &&
+			players_port_local_player_count() == 1 && input_replay_suite_suspended();
 	return mp_benchmark_probe_enabled(
 		1,
 		1,

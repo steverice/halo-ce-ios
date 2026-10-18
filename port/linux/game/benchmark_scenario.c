@@ -13,6 +13,7 @@ check that a replay stayed on its route.
 #include "game/game.h"
 #include "game/game_engine.h"
 #include "game/players.h"
+#include "game/player_queues_new.h"
 #include "camera/observer.h"
 #include "items/weapons.h"
 #include "main/main.h"
@@ -79,6 +80,54 @@ unsigned char benchmark_scenario_player_position(float *position)
 	return 1;
 }
 
+int network_test_suite_two_player_proof_active(void);
+
+static void benchmark_mp_actor_fill(struct benchmark_mp_actor *actor, struct player_datum *player,
+	const struct mp_benchmark_probe_counts *counts)
+{
+	struct unit_datum *unit;
+	real_point3d origin;
+	long weapon_index;
+
+	actor->weapon_definition = NONE;
+	if (!player)
+		return;
+	actor->present = 1;
+	actor->kills = player->statistics.kills[0];
+	actor->deaths = player->statistics.deaths;
+	if (counts)
+	{
+		actor->fire_requests = counts->fire;
+		actor->jump_requests = counts->jump;
+		actor->grenade_requests = counts->grenade;
+	}
+	if (player->unit_index == NONE)
+		return;
+	actor->spawned = 1;
+	object_get_origin(player->unit_index, &origin);
+	actor->position[0] = origin.x;
+	actor->position[1] = origin.y;
+	actor->position[2] = origin.z;
+	actor->body = object_get(player->unit_index)->object.body_vitality;
+	actor->shield = object_get(player->unit_index)->object.shield_vitality;
+	unit = unit_get(player->unit_index);
+	actor->throttle = sqrtf(unit->unit.throttle.i * unit->unit.throttle.i +
+		unit->unit.throttle.j * unit->unit.throttle.j);
+	actor->grenades[0] = unit->unit.grenade_counts[0];
+	actor->grenades[1] = unit->unit.grenade_counts[1];
+	if (unit->unit.current_weapon_index == NONE)
+		return;
+	weapon_index = unit->unit.weapon_object_indices[unit->unit.current_weapon_index];
+	if (weapon_index != NONE)
+	{
+		struct weapon_datum *weapon = weapon_get(weapon_index);
+
+		actor->weapon_definition = weapon->definition_index;
+		actor->ammo = weapon->weapon.magazines[0].rounds_total +
+			weapon->weapon.magazines[0].rounds_loaded;
+	}
+}
+
 void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 {
 	struct scenario *scenario;
@@ -109,48 +158,42 @@ void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state)
 	for (local = 0; local < BENCHMARK_MP_ACTORS; local++)
 	{
 		long player_index = local_player_get_player_index(local);
-		struct player_datum *player;
 		struct benchmark_mp_actor *actor = &state->actors[local];
-		struct unit_datum *unit;
-		real_point3d origin;
-		long weapon_index;
 
-		actor->weapon_definition = NONE;
-		if (player_index == NONE || !(player = player_try_and_get(player_index)))
-			continue;
-		actor->present = 1;
-		state->roster++;
-		actor->kills = player->statistics.kills[0];
-		actor->deaths = player->statistics.deaths;
-		actor->fire_requests = counts[local].fire;
-		actor->jump_requests = counts[local].jump;
-		actor->grenade_requests = counts[local].grenade;
-		if (player->unit_index == NONE)
-			continue;
-		actor->spawned = 1;
-		state->spawned++;
-		object_get_origin(player->unit_index, &origin);
-		actor->position[0] = origin.x;
-		actor->position[1] = origin.y;
-		actor->position[2] = origin.z;
-		actor->body = object_get(player->unit_index)->object.body_vitality;
-		actor->shield = object_get(player->unit_index)->object.shield_vitality;
-		unit = unit_get(player->unit_index);
-		actor->throttle = sqrtf(unit->unit.throttle.i * unit->unit.throttle.i +
-			unit->unit.throttle.j * unit->unit.throttle.j);
-		actor->grenades[0] = unit->unit.grenade_counts[0];
-		actor->grenades[1] = unit->unit.grenade_counts[1];
-		if (unit->unit.current_weapon_index == NONE)
-			continue;
-		weapon_index = unit->unit.weapon_object_indices[unit->unit.current_weapon_index];
-		if (weapon_index != NONE)
+		if (player_index != NONE)
+			benchmark_mp_actor_fill(actor, player_try_and_get(player_index), &counts[local]);
+		state->roster += actor->present;
+		state->spawned += actor->spawned;
+	}
+	if (network_test_suite_two_player_proof_active() && !state->actors[1].present)
+	{
+		long *players = machine_get_player_list(1);
+		long player_index = players ? players[0] : NONE;
+		struct player_datum *player = player_index != NONE ? player_try_and_get(player_index) : NULL;
+
+		if (player && player->local_player_index == NONE && player->network_player_data.machine_index == 1)
 		{
-			struct weapon_datum *weapon = weapon_get(weapon_index);
+			short action_count = 0;
+			long update_number = update_server_ticked_update_number();
+			struct player_action const *actions = update_number != NONE ?
+				update_server_update_actions(update_number, &action_count) : NULL;
+			short absolute_index = (short)DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
 
-			actor->weapon_definition = weapon->definition_index;
-			actor->ammo = weapon->weapon.magazines[0].rounds_total +
-				weapon->weapon.magazines[0].rounds_loaded;
+			benchmark_mp_actor_fill(&state->actors[1], player, NULL);
+			state->roster++;
+			state->spawned += state->actors[1].spawned;
+			state->synthetic_queue_ready = actions && absolute_index >= 0 && absolute_index < action_count &&
+				(actions[absolute_index].throttle.i != 0.0f || actions[absolute_index].throttle.j != 0.0f ||
+				actions[absolute_index].primary_trigger != 0.0f);
 		}
+	}
+	if (network_test_suite_two_player_proof_active())
+	{
+		struct object_iterator iterator;
+
+		object_iterator_new(&iterator, _object_mask_projectile, 0);
+		while (object_iterator_next(&iterator) != NULL)
+			state->projectiles_alive++;
 	}
 	state->observer0 = state->actors[0].present && observer_get_camera(0) != NULL;
 	state->probe_active = mp_benchmark_probe_active();

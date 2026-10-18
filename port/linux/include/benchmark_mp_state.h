@@ -1,4 +1,4 @@
-/* Guest-only observation of the suite's four-local-player match. */
+/* Guest-only observation of a private synthetic multiplayer match. */
 #ifndef HALO_BENCHMARK_MP_STATE_H
 #define HALO_BENCHMARK_MP_STATE_H
 
@@ -18,6 +18,7 @@ struct benchmark_mp_state
 	long tick;
 	int multiplayer, map_ok, slayer, score_limit, time_limit_minutes;
 	int local_players, roster, spawned, view_count, observer0, probe_active, can_score, postgame;
+	int synthetic_queue_ready, projectiles_alive;
 	struct benchmark_mp_actor actors[BENCHMARK_MP_ACTORS];
 };
 
