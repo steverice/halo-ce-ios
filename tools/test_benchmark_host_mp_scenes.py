@@ -107,3 +107,16 @@ def test_host_rejects_missing_scaled_arena(tmp_path, catalog_probe):
     _write_catalog(tmp_path, cases)
     result = run_probe(catalog_probe, tmp_path, "full")
     assert result.returncode != 0 and "arena" in result.stderr.lower()
+
+
+@pytest.mark.parametrize("radius,accepted", [(300, True), (301, False)])
+def test_host_integer_arena_boundary(tmp_path, catalog_probe, radius, accepted):
+    cases = _cases(players=32, gameplay=False)
+    cases["mp-chillout-proof"]["arena"].update(spacing_milliunits=900, movement_radius_milliunits=radius)
+    _write_catalog(tmp_path, cases)
+    result = run_probe(catalog_probe, tmp_path, "full")
+    assert (result.returncode == 0) == accepted, result.stderr
+    if accepted:
+        assert result.stdout.splitlines()[-1].split("\t")[-3:] == ["0.900", "3.500", "0.300"]
+    else:
+        assert "arena" in result.stderr.lower()

@@ -43,6 +43,9 @@ int main(void) {
     assert(!benchmark_mp_arena_offset(&cfg,32,32,1,0,point));
     assert(!benchmark_mp_arena_offset(&cfg,32,1,NAN,0,point));
     assert(!benchmark_mp_arena_offset(&cfg,32,1,0,0,point));
+    cfg.spacing=900/1000.0f;cfg.movement_radius=300/1000.0f;
+    assert(benchmark_mp_arena_valid(&cfg));
+    cfg.movement_radius=301/1000.0f;assert(!benchmark_mp_arena_valid(&cfg));
     cfg.movement_radius=3;assert(!benchmark_mp_arena_valid(&cfg));
     cfg.movement_radius=NAN;assert(!benchmark_mp_arena_valid(&cfg));
     struct mp_benchmark_probe_pad pad;

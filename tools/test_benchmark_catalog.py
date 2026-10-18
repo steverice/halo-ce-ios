@@ -190,3 +190,15 @@ def test_catalog_rejects_unsafe_arena_values(tmp_path, field, value):
     _write_catalog(tmp_path, cases)
     with pytest.raises(benchmark_catalog.CatalogError, match="arena"):
         benchmark_catalog.load_catalog(tmp_path)
+
+
+@pytest.mark.parametrize("radius,accepted", [(300, True), (301, False)])
+def test_signed_integer_arena_boundary(tmp_path, radius, accepted):
+    cases = _cases(players=32, gameplay=False)
+    cases["mp-chillout-proof"]["arena"].update(spacing_milliunits=900, movement_radius_milliunits=radius)
+    _write_catalog(tmp_path, cases)
+    if accepted:
+        assert benchmark_catalog.load_catalog(tmp_path)[-1]["arena"]["movement_radius_milliunits"] == radius
+    else:
+        with pytest.raises(benchmark_catalog.CatalogError, match="arena"):
+            benchmark_catalog.load_catalog(tmp_path)

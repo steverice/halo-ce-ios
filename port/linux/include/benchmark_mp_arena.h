@@ -16,7 +16,9 @@ static inline int benchmark_mp_arena_valid(const struct benchmark_mp_arena_confi
 		config->spacing >= 0.8f && config->spacing <= 3.0f &&
 		config->distance >= 2.0f && config->distance <= 12.0f &&
 		config->movement_radius >= 0.15f && config->movement_radius <= 1.0f &&
-		config->movement_radius <= config->spacing / 3.0f;
+		/* Signed integer milliunits remain authoritative. Allow only derived
+		float roundoff, far below the next valid or invalid integer step. */
+		config->movement_radius * 3.0f <= config->spacing + 0.000001f;
 }
 
 static inline int benchmark_mp_arena_offset(const struct benchmark_mp_arena_config *config,
