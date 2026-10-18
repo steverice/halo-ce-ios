@@ -410,7 +410,7 @@ static void network_test_log_players(
 	struct data_iterator iterator;
 	struct player_datum *player;
 	char line[4096];
-	int length = 0;
+	int length = 0, roster = 0, spawned = 0;
 
 	line[0] = 0;
 	/* (each player's name, once a game: for tests that name a player, such
@@ -442,6 +442,8 @@ static void network_test_log_players(
 	data_iterator_new(&iterator, player_data);
 	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
 	{
+		roster++;
+		spawned += player->unit_index != NONE;
 		if (player->unit_index != NONE)
 		{
 			struct object_datum *object = object_get(player->unit_index);
@@ -499,7 +501,18 @@ static void network_test_log_players(
 				game_engine->get_player_score(iterator.datum_index, _get_score_individual) : -1L,
 			player->statistics.kills[0], player->statistics.deaths, player->statistics.friendly_fire_kills, (long)player->team_index,
 			(int)player->network_player_data.machine_index);
+		if (network_test.suite_owned && network_test.suite_network_players)
+		{
+			/* One bounded record per actor keeps complete rosters out of the
+			shared platform log buffer's truncation path. */
+			platform_log("network test: tick %ld actor%s", game_time_get(), line);
+			length = 0;
+			line[0] = 0;
+		}
 	}
+	if (network_test.suite_owned && network_test.suite_network_players)
+		network_test_append(line, (int)sizeof(line), &length, " roster %d spawned %d requested %d",
+			roster, spawned, network_test.suite_network_players);
 	{
 		long sent, received, corrections;
 
