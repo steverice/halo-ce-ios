@@ -50,6 +50,7 @@ to the recording, a summary to the log, and the game quits.
 #include "platform.h"
 #include "port_config.h"
 #include "input_replay.h"
+#include "../../runtime/replay_environment.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -82,7 +83,7 @@ double halo_frame_trace_milliseconds(void);
 /* how long after the last recorded state a replay ends, in ticks */
 #define REPLAY_TAIL_TICKS 30.0
 
-#define ACTION_HEADER "halo action recording 1"
+#define ACTION_HEADER REPLAY_ACTION_HEADER
 /* a cinematic the replay skipped whose revert has not shown as a step back in this many ticks did not step back:
 the segment begins anyway */
 #define SKIP_REVERT_TICKS 90
@@ -126,6 +127,10 @@ static struct
 	long state_count, next_state;
 	XINPUT_GAMEPAD replay_pad;
 	BOOL replay_finished;
+	struct replay_environment environment;
+	BOOL environment_invalid, environment_owned, environment_final_tick;
+	BOOL record_environment_valid;
+	int record_enhanced_animations;
 	BOOL benchmark;
 	/* the device benchmark's suite (benchmark_suite.c) owns the replays: several in one launch, started with
 	input_replay_begin; it times the frames itself, and the real controller is ignored throughout */
@@ -196,6 +201,8 @@ static void replay_touch_update(void)
 static void replay_finish(void)
 {
 	replay.replay_finished = TRUE;
+	if (!replay.environment_final_tick)
+		replay.environment_owned = FALSE;
 	replay_touch_update();
 }
 
@@ -220,15 +227,18 @@ static void actions_load(void)
 		platform_log("debug.input_replay: no %s; the controller alone drives the replay", replay.replay_actions_path);
 		return;
 	}
-	if (!fgets(line, sizeof(line), file) || strncmp(line, ACTION_HEADER, strlen(ACTION_HEADER)))
+	if (!fgets(line, sizeof(line), file) || !strchr(line, '\n') ||
+		!replay_environment_parse(line, &replay.environment))
 	{
-		platform_log("debug.input_replay: %s isn't an action recording", replay.replay_actions_path);
+		platform_log("debug.input_replay: %s has an invalid action header", replay.replay_actions_path);
+		replay.environment_invalid = TRUE;
+		replay_finish();
 		fclose(file);
 		return;
 	}
 	{
 		/* Older benchmark takes predate this tag and used simulated mouths implicitly. */
-		replay.recorded_original_lip_sync = strstr(line, " lip_sync=original") != NULL;
+		replay.recorded_original_lip_sync = replay.environment.original_lip_sync;
 		platform_log("debug.input_replay: recorded lip sync: %s%s",
 			replay.recorded_original_lip_sync ? "original" : "simulated",
 			strstr(line, " lip_sync=") ? "" : " (legacy take)");
@@ -238,12 +248,9 @@ static void actions_load(void)
 		if (replay.recorded_original_lip_sync)
 			platform_log("debug.input_replay: warning: original audio-driven mouths cannot be reproduced by a silent replay; record benchmark takes with debug.benchmark_lip_sync=true");
 		/* the stereo mode the recording was made in; an older header has none, which reads as off */
-		char recorded[32] = "off";
-		const char *tag = strstr(line, " stereo=");
+		const char *recorded = replay.environment.stereo;
 		const char *run = config_string("display.stereo");
 
-		if (tag)
-			sscanf(tag + strlen(" stereo="), "%31s", recorded);
 		if (!run || !*run)
 			run = "off";
 		/* a10's script flow differs only when one mode skips its look-inversion test (head, side_by_side) and the other doesn't */
@@ -595,6 +602,7 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	take.pauses = 0;
 	take.route[0] = 0;
 	replay.actions_written = 0;
+	replay.record_environment_valid = FALSE;
 	/* a recording of its own: its time and its segments begin here */
 	replay.record_ended = FALSE;
 	replay.segment = 0;
@@ -744,6 +752,7 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 	if (benchmark_lip_sync && replay.recorded_original_lip_sync)
 	{
 		platform_log("benchmark suite: refusing an original-mouth take; record it again with debug.benchmark_lip_sync=true");
+		replay_finish();
 		return 0;
 	}
 	/* (a take's .seeds, both random seeds at every tick; and its .route: the older segment seeds, and whether it
@@ -751,7 +760,7 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 	seeds_load();
 	route_load();
 	replay_touch_update();
-	return replay.state_count > 0;
+	return replay.state_count > 0 && !replay.environment_invalid && !replay.replay_finished;
 }
 
 /* A suite owns effective input without changing the user's saved recording settings. */
@@ -774,6 +783,7 @@ void input_replay_suite_restore(void)
 	if (!suite_suspended)
 		return;
 	input_replay_begin(NULL, 0);
+	replay.await_level = FALSE; /* the released suite no longer owns a level transition */
 	replay.suite = FALSE;
 	replay.configured = FALSE;
 	take.automatic = FALSE;
@@ -894,11 +904,30 @@ static void record_end(const char *why)
 	platform_log("debug.input_record: %s; the recording ends", why);
 }
 
+/* A mode change closes the take before either stream can contain the new mode.
+   Automatic recording stops explicitly too, so a same-second take cannot overwrite it. */
+static int record_environment_ready(void)
+{
+    int enhanced;
+    if (replay.record_ended || (!*replay.record_path && !*replay.record_actions_path)) return 0;
+    enhanced = input_replay_enhanced_animations(config_boolean("game.enhanced_animations") != 0);
+    if (!replay.record_environment_valid) {
+        replay.record_enhanced_animations = enhanced;
+        replay.record_environment_valid = TRUE;
+    } else if (enhanced != replay.record_enhanced_animations) {
+        take_close("enhanced_animation_mode_changed");
+        record_end("enhanced animation mode changed; start a new recording to continue");
+        take.automatic = FALSE;
+        return 0;
+    }
+    return 1;
+}
+
 static void record(const XINPUT_GAMEPAD *pad, double ticks)
 {
 	int index;
 
-	if (replay.record_ended)
+	if (!record_environment_ready())
 		return;
 	if (!replay.record_file)
 	{
@@ -1084,10 +1113,24 @@ unsigned char input_replay_sound_silent(void)
 	return replay.action_count != 0;
 }
 
+/* Consulted on each enhanced-animation decision, outside the configuration cache. */
+int input_replay_enhanced_animations(int configured)
+{
+    return replay.environment_owned ? replay.environment.enhanced_animations : configured;
+}
+
 void input_replay_tick_begin(void)
 {
 	long tick;
 
+	if (!replay.configured)
+		configure();
+	if (game_time_initialized() && !input_replay_main_menu_loaded()) {
+		if (*replay.replay_path && !replay.replay_finished && !replay.environment_invalid &&
+			!awaiting_level((double)game_time_get()))
+			replay.environment_owned = TRUE;
+		record_environment_ready();
+	}
 	if (!tick_seeds_wanted())
 		return;
 	tick = game_time_get();
@@ -1111,6 +1154,11 @@ void input_replay_tick_begin(void)
 
 void input_replay_tick_end(void)
 {
+	/* Only mode ownership is deferred; replay finish/input scheduling stays unchanged. */
+	if (replay.environment_final_tick) {
+		replay.environment_final_tick = FALSE;
+		replay.environment_owned = FALSE;
+	}
 	if (!tick_seeds_wanted() || tick_seeds_begun < 0)
 		return;
 	tick_seeds.valid = TRUE;
@@ -1129,6 +1177,8 @@ void input_replay_tick_action(void *action)
 		configure();
 	take_update();
 	replay.control_pending = replay.control_owned = FALSE;
+	if (replay.environment_invalid || (*replay.replay_path && !replay.state_count))
+		return;
 	if (!*replay.record_actions_path && !*replay.replay_actions_path)
 		return;
 	if (!game_time_initialized() || input_replay_main_menu_loaded())
@@ -1174,7 +1224,7 @@ void input_replay_tick_action(void *action)
 		sample->valid = FALSE;
 	}
 
-	if (*replay.record_actions_path)
+	if (*replay.record_actions_path && record_environment_ready())
 	{
 		int index;
 
@@ -1190,8 +1240,8 @@ void input_replay_tick_action(void *action)
 			{
 				const char *stereo = config_string("display.stereo");
 
-				fprintf(replay.actions_file, "%s lip_sync=%s", ACTION_HEADER,
-					input_replay_benchmark_lip_sync() ? "simulated" : "original");
+				fprintf(replay.actions_file, "%s lip_sync=%s enhanced_animations=%d", ACTION_HEADER,
+					input_replay_benchmark_lip_sync() ? "simulated" : "original", replay.record_enhanced_animations);
 				if (stereo && *stereo && strcmp(stereo, "off"))
 					fprintf(replay.actions_file, " stereo=%s", stereo);
 				fputc('\n', replay.actions_file);
@@ -1280,8 +1330,10 @@ void input_replay_tick_action(void *action)
 		}
 		/* the replay ends with the last recorded action, in the action's own
 		segment, whenever the controller's timeline puts it */
-		if (compare_action_keys(&replay.actions[replay.action_count - 1], replay.segment, tick) <= 0)
+		if (compare_action_keys(&replay.actions[replay.action_count - 1], replay.segment, tick) <= 0) {
+			replay.environment_final_tick = replay.environment_owned;
 			replay_finish();
+		}
 		route_log(tick, applied ? "recorded action" : "no recorded action");
 	}
 	else if (*replay.record_actions_path)

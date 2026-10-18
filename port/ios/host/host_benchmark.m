@@ -340,6 +340,12 @@ static NSString *run_path(int index) {
     return [NSString stringWithFormat:@FOLDER "/run-%02d.json", index];
 }
 
+/* The session snapshot is pinned before execution and retained across resume.
+   Disclose its replay policy without annotating the route/error note channel. */
+static NSDictionary *replay_environment_for_recording(const char *name) {
+    return host_benchmark_snapshot_replay_environment(@FOLDER, pinned_snapshot, @(name));
+}
+
 /* one finished run as a JSON object in its own file; the report is these put together */
 static void write_run(const struct benchmark_run *finished, enum benchmark_status status, NSString *note,
     const char *measurements, NSDictionary *presentation) {
@@ -360,6 +366,8 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         measurements ?: ""];
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+    if (scene->recording && scene->recording[0])
+        record[@"replay_environment"] = replay_environment_for_recording(scene->recording);
     if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
         record[@"simulation"] = @{ @"mode": @(scene->simulation ?: ""), @"requested_players": @(scene->players),
             @"requested_views": @(scene->views), @"game_mode": @(scene->game_mode ?: ""),

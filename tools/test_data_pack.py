@@ -298,7 +298,8 @@ def test_good_optional_metadata_and_checks(tmp_path):
 
 
 @pytest.mark.parametrize("metadata", ["lip_sync=original", "lip_sync=simulated stereo=head",
-                                      "stereo=off lip_sync=simulated"])
+                                      "stereo=off lip_sync=simulated", "enhanced_animations=0",
+                                      "lip_sync=simulated enhanced_animations=1"])
 def test_recording_mouth_metadata(tmp_path, metadata):
     folder = recording(tmp_path / "recordings")
     actions = folder / "test-route.actions"
@@ -307,7 +308,9 @@ def test_recording_mouth_metadata(tmp_path, metadata):
 
 
 @pytest.mark.parametrize("metadata", ["lip_sync=unknown", "lip_sync=original lip_sync=simulated",
-                                      "lip_sync=simulated stereo=off stereo=head"])
+                                      "lip_sync=simulated stereo=off stereo=head", "enhanced_animations=true",
+                                      "enhanced_animations=0 enhanced_animations=1",
+                                      "enhanced_animations=2"])
 def test_recording_refuses_invalid_mouth_metadata(tmp_path, metadata):
     folder = recording(tmp_path / "recordings")
     actions = folder / "test-route.actions"

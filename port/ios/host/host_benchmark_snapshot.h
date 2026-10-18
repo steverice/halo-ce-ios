@@ -21,3 +21,6 @@ NSDictionary *host_benchmark_shader_delta(NSDictionary *before, NSDictionary *af
 NSDictionary *host_benchmark_shader_evidence(NSArray<NSDictionary *> *runs, NSArray<NSDictionary *> *previous, NSString *folder);
 /* A deep mutable JSON copy only: replace descriptor bodies in the consent preview/search summary. */
 void host_benchmark_shader_summarize(NSMutableDictionary *report);
+
+/* Parse only action-header bytes whose hash matches this session's pinned inventory. */
+NSDictionary *host_benchmark_snapshot_replay_environment(NSString *folder, NSDictionary *snapshot, NSString *recording);

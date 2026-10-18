@@ -105,29 +105,8 @@ static int real_number(const char *text, double low, double high, double *value)
 static int header(char **cursor, const char *expected, int metadata)
 {
     char *line = line_next(cursor);
-    size_t length = strlen(expected);
-    int stereo_seen = 0, lip_sync_seen = 0;
     if (!line) return 0;
-    if (!strcmp(line, expected)) return 1;
-    if (!metadata || strncmp(line, expected, length)) return 0;
-    line += length;
-    while (*line) {
-        char *end;
-        if (*line++ != ' ' || !*line) return 0;
-        end = strchr(line, ' ');
-        if (end) *end = 0;
-        if (!strncmp(line, "stereo=", 7) && !stereo_seen++) {
-            const char *value = line + 7;
-            if (strcmp(value, "off") && strcmp(value, "head") && strcmp(value, "side_by_side") && strcmp(value, "screen")) return 0;
-        } else if (!strncmp(line, "lip_sync=", 9) && !lip_sync_seen++) {
-            const char *value = line + 9;
-            if (strcmp(value, "original") && strcmp(value, "simulated")) return 0;
-        } else return 0;
-        if (!end) break;
-        *end = ' ';
-        line = end;
-    }
-    return 1;
+    return metadata ? replay_environment_parse(line, NULL) : !strcmp(line, expected);
 }
 static int input_valid(char *text)
 {

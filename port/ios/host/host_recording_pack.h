@@ -1,6 +1,8 @@
 #ifndef HOST_RECORDING_PACK_H
 #define HOST_RECORDING_PACK_H
 
+#include "../../runtime/replay_environment.h"
+
 /* Benchmark case count is bounded by the generic planner, not by built-in scene definitions. */
 #define HOST_RECORDING_PACK_MAX_ROUTES 16
 #define HOST_RECORDING_PACK_MAX_FILES 160

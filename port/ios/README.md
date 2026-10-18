@@ -491,6 +491,17 @@ older benchmark takes use simulated mouths. Benchmarks refuse takes labeled
 `lip_sync=original`: their audio-driven mouths cannot be reproduced during
 silent replay. Record them again with the benchmark setting enabled.
 
+Action headers also record `enhanced_animations=0` or `enhanced_animations=1`.
+Older takes without this field use original animation behavior while replay owns
+simulation. The recorded mode applies before the first simulation tick and through
+the final action's tick; afterward the current configured mode applies automatically.
+Normal play and synthetic multiplayer keep their configured default of enhanced
+animations on. Changing this setting during capture closes the take before recording
+frames in the new mode. A new recording must be started to continue capture.
+Simulation features added later must preserve this explicit recording-environment
+contract. Benchmark reports disclose the mode from the pinned action header with
+scope `while_replay_owns_simulation`; route notes remain unchanged.
+
 ## Simulator
 
 Build with `--simulator`, then select and boot an ARM64 iPhone or iPad simulator

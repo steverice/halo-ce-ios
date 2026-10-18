@@ -3319,6 +3319,7 @@ void unit_impulse(
 /* the platform layer's (port/linux/src/port_config.c) */
 int config_boolean(const char *name);
 unsigned long config_changes(void);
+int input_replay_enhanced_animations(int configured);
 
 /* port: the animation enhancements (game.enhanced_animations, on unless
 config.toml turns them off) are for the player bipeds (cyborg and
@@ -3345,7 +3346,7 @@ boolean unit_animation_enhanced(
 		read_at = config_changes();
 		enhanced = config_boolean("game.enhanced_animations") != 0;
 	}
-	if (!enhanced)
+	if (!input_replay_enhanced_animations(enhanced))
 	{
 		return FALSE;
 	}

@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -54,6 +55,32 @@ static NSData *read_regular(int directory, const char *name, size_t maximum) {
     }
     close(fd); return data;
 }
+NSDictionary *host_benchmark_snapshot_replay_environment(NSString *folder, NSDictionary *snapshot, NSString *recording) {
+    NSDictionary *unavailable = @{ @"status": @"unavailable", @"scope": @"while_replay_owns_simulation" };
+    NSString *name = [recording stringByAppendingPathExtension:@"actions"];
+    if (!file_name(name)) return unavailable;
+    NSString *expected = snapshot[@"files"][name];
+    if (!hash_valid(expected)) return unavailable;
+    NSString *directory = [folder stringByAppendingPathComponent:@"recordings"];
+    int fd = open(directory.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    NSData *data = fd >= 0 ? read_regular(fd, name.fileSystemRepresentation, HOST_RECORDING_PACK_MAX_FILE_BYTES) : nil;
+    if (fd >= 0) close(fd);
+    if (!data.length || ![digest(data) isEqual:expected]) return unavailable;
+    /* Hash and parse the same bounded read; do not reopen a file after verifying it. */
+    char header[256];
+    const char *newline = memchr(data.bytes, '\n', MIN(data.length, sizeof(header) - 1));
+    if (!newline) return unavailable;
+    size_t length = (size_t)(newline - (const char *)data.bytes) + 1;
+    if (memchr(data.bytes, 0, length)) return unavailable;
+    memcpy(header, data.bytes, length);
+    header[length] = 0;
+    struct replay_environment environment;
+    if (!replay_environment_parse(header, &environment)) return unavailable;
+    return @{ @"status": @"available", @"enhanced_animations": @(environment.enhanced_animations != 0),
+        @"source": environment.enhanced_recorded ? @"recorded" : @"legacy_default",
+        @"scope": @"while_replay_owns_simulation" };
+}
+
 /* Return names from the held directory descriptor; neither a link nor a non-regular entry is ever followed. */
 /* A source folder (local-routes, the bundle) skips what is not a route file (.DS_Store, a README, an empty file);
    the staged snapshot itself must hold route files only. */

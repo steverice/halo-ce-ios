@@ -36,12 +36,15 @@ void host_touch_replay_active(int active) {
 }
 
 static int lip_sync;
+static int enhanced_animations = 1;
+static unsigned long environment_config_changes = 1;
 static int timed_benchmark;
 static const char *replay_name = "";
 static const char *record_name = "";
 void platform_log(const char *format, ...) { (void)format; }
 int config_boolean(const char *name) { return (!strcmp(name, "debug.benchmark_lip_sync") && lip_sync) ||
-	(!strcmp(name, "debug.benchmark") && timed_benchmark); }
+	(!strcmp(name, "debug.benchmark") && timed_benchmark) ||
+	(!strcmp(name, "game.enhanced_animations") && enhanced_animations); }
 long config_integer(const char *name) { (void)name; return 0; }
 const char *config_string(const char *name) {
 	if (!strcmp(name, "debug.input_record")) return record_name;
@@ -276,6 +279,198 @@ static void remove_recording_fixture_files(void)
 	assert(!closedir(directory));
 }
 
+/* PRODUCTION_ENHANCED_CONSUMER */
+static void check_environment_mode(int expected)
+{
+    if (input_replay_enhanced_animations(enhanced_animations) != expected)
+        fprintf(stderr, "mode expected=%d actual=%d tick=%ld owned=%d finished=%d await=%d states=%ld\n",
+            expected, input_replay_enhanced_animations(enhanced_animations), clock_tick,
+            replay.environment_owned, replay.replay_finished, replay.await_level, replay.state_count);
+    assert(input_replay_enhanced_animations(enhanced_animations) == expected);
+#ifdef REPLAY_ENVIRONMENT_CONSUMER
+    assert(unit_animation_enhanced(0) == expected);
+#endif
+}
+
+static void environment_files(const char *metadata)
+{
+    FILE *file = fopen("environment.input", "w");
+    assert(file);
+    fputs("halo input recording 1\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n", file);
+    fclose(file);
+    file = fopen("environment.actions", "w");
+    assert(file);
+    fprintf(file, "halo action recording 1%s\n0 0 0 0 0 0 0 0 0 0\n0 2 0 0 0 0 0 0 0 0\n1 0 1 0 0 0 0 0 0 0\n1 2 2 0 0 0 0 0 0 0\n", metadata);
+    fclose(file);
+}
+
+static void check_replayed_environment(void)
+{
+    unsigned int action[ACTION_WORDS] = {0};
+    const char *invalid[] = {" enhanced_animations=2", " enhanced_animations=true",
+        " enhanced_animations=0 enhanced_animations=1", " stereo=head stereo=off", " unknown=1"};
+    unsigned int i;
+    enhanced_animations = 1;
+    clock_ready = 1;
+    clock_tick = 500;
+    environment_files("");
+    assert(input_replay_begin("./environment.input", 0));
+    check_environment_mode(1); /* old level still owns simulation */
+    input_replay_tick_begin();
+    check_environment_mode(1);
+    clock_tick = 0;
+    input_replay_tick_begin(); /* before AI and before the first action hook */
+    check_environment_mode(0);
+    input_replay_tick_action(action);
+    input_replay_tick_end();
+    check_environment_mode(0);
+    clock_tick = 1;
+    input_replay_tick_begin();
+    input_replay_tick_action(action);
+    input_replay_tick_end();
+    check_environment_mode(0); /* action gap */
+    clock_tick = 0;
+    input_replay_tick_begin();
+    check_environment_mode(0); /* checkpoint/seek retains ownership */
+    input_replay_tick_action(action);
+    assert(action[0] == 1 && replay.segment == 1);
+    input_replay_tick_end();
+    clock_tick = 2;
+    input_replay_tick_begin();
+    input_replay_tick_action(action);
+    assert(action[0] == 2);
+    assert(replay.replay_finished); /* unchanged replay finish timing */
+    check_environment_mode(0); /* units still consume the final action this tick */
+    input_replay_tick_end();
+    check_environment_mode(1);
+    for (i = 0; i < 2; i++) {
+        clock_ready = 0;
+        if (i) { enhanced_animations = 0; environment_config_changes++; }
+        environment_files(i ? " enhanced_animations=1" : " enhanced_animations=0");
+        assert(input_replay_begin("./environment.input", 0));
+        clock_ready = 1;
+        clock_tick = 0;
+        input_replay_tick_begin();
+        check_environment_mode(i);
+        input_replay_begin(NULL, 0);
+        check_environment_mode(i ? 0 : 1); /* next scene/MP: current configured mode */
+        if (i) { enhanced_animations = 1; environment_config_changes++; }
+        check_environment_mode(1);
+    }
+    for (i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        environment_files(invalid[i]);
+        assert(!input_replay_begin("./environment.input", 0));
+        input_replay_tick_begin();
+        check_environment_mode(1);
+    }
+    environment_files(" lip_sync=original enhanced_animations=0");
+    assert(!input_replay_begin("./environment.input", 1));
+    input_replay_tick_begin();
+    check_environment_mode(1);
+    remove("environment.actions");
+    clock_ready = 0;
+    assert(input_replay_begin("./environment.input", 0)); /* optional legacy controller-only take */
+    clock_ready = 1;
+    input_replay_tick_begin();
+    check_environment_mode(0);
+    replay_finish();
+    check_environment_mode(1); /* controller-only tail ends immediately */
+    remove("environment.input");
+    assert(!input_replay_begin("./environment.input", 0));
+    input_replay_tick_begin();
+    check_environment_mode(1);
+    environment_files("");
+    { FILE *file = fopen("environment.input", "w");
+      assert(file); fputs("not an input recording\n", file); fclose(file); }
+    assert(!input_replay_begin("./environment.input", 0));
+    memset(action, 0, sizeof(action));
+    input_replay_tick_begin();
+    input_replay_tick_action(action);
+    assert(action[0] == 0 && !replay.camera_sample.valid);
+    check_environment_mode(1);
+    input_replay_suite_restore();
+    check_environment_mode(1);
+    assert(input_replay_suite_suspend());
+    input_replay_tick_begin();
+    check_environment_mode(1); /* suite ownership alone, including MP, is not replay ownership */
+    input_replay_suite_restore();
+    environment_files(" enhanced_animations=0");
+    replay_name = "./environment.input";
+    clock_ready = 0;
+    replay.configured = 0;
+    input_replay_tick_begin(); /* direct configured entry, before the first simulation tick */
+    check_environment_mode(1);
+    clock_ready = 1;
+    clock_tick = 0;
+    input_replay_tick_begin();
+    check_environment_mode(0);
+    input_replay_suite_restore(); /* not suite-owned: ordinary replay continues */
+    check_environment_mode(0);
+    input_replay_begin(NULL, 0); /* explicit ordinary replay cancellation */
+    replay_name = "";
+    check_environment_mode(1);
+}
+
+static void check_recorded_environment(void)
+{
+    unsigned int action[ACTION_WORDS] = {0};
+    char header[256];
+    XINPUT_GAMEPAD pad = {0};
+    FILE *file;
+    clock_ready = 1;
+    clock_tick = 0;
+    input_replay_begin(NULL, 0);
+    replay.await_level = 0;
+    strcpy(replay.record_path, "environment.input");
+    strcpy(replay.record_actions_path, "environment.actions");
+    enhanced_animations = 1;
+    record(&pad, 0);
+    input_replay_tick_action(action);
+    record_end("probe");
+    file = fopen("environment.actions", "r");
+    assert(file && fgets(header, sizeof(header), file));
+    fclose(file);
+    assert(strstr(header, " enhanced_animations=1"));
+    assert(replay_environment_parse(header, &replay.environment));
+    assert(replay.environment.enhanced_recorded && replay.environment.enhanced_animations);
+    clock_ready = 0;
+    assert(input_replay_begin("./environment.input", 0)); /* actual writer/reader round trip */
+    clock_ready = 1;
+    input_replay_tick_begin();
+    assert(input_replay_enhanced_animations(0));
+    input_replay_begin(NULL, 0);
+    replay.await_level = 0;
+    strcpy(replay.record_path, "environment.input");
+    strcpy(replay.record_actions_path, "environment.actions");
+    enhanced_animations = 0;
+    input_replay_tick_action(action);
+    assert(replay.actions_written == 1);
+    enhanced_animations = 1;
+    input_replay_tick_begin(); /* close before a changed-mode simulation tick */
+    input_replay_tick_action(action);
+    assert(replay.record_ended && !replay.actions_file && replay.actions_written == 1);
+    file = fopen("environment.actions", "r");
+    assert(file && fgets(header, sizeof(header), file));
+    fclose(file);
+    assert(replay_environment_parse(header, &replay.environment));
+    assert(replay.environment.enhanced_recorded && !replay.environment.enhanced_animations);
+    input_replay_begin(NULL, 0);
+    replay.await_level = 0;
+    assert(!mkdir("recordings", 0700));
+    take.automatic = TRUE;
+    input_replay_tick_action(action);
+    assert(take.open && replay.actions_file);
+    enhanced_animations = 0;
+    input_replay_tick_begin();
+    assert(!take.open && !take.automatic && replay.record_ended);
+    input_replay_tick_action(action);
+    assert(!take.open && !replay.actions_file); /* no same-second overwrite/restart */
+    remove_recording_fixture_files();
+    assert(!rmdir("recordings"));
+    enhanced_animations = 1;
+    input_replay_begin(NULL, 0);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc == 2 && !strcmp(argv[1], "--auto-record-suite-camera"))
@@ -285,6 +480,17 @@ int main(int argc, char **argv)
 	char folder[] = "/tmp/visr-replay-probe-XXXXXX";
 	assert(mkdtemp(folder));
 	assert(!chdir(folder));
+	if (argc == 2 && !strcmp(argv[1], "--replay-environment")) {
+        check_replayed_environment();
+        check_recorded_environment();
+        unlink("environment.input");
+        unlink("environment.actions");
+        unlink("environment.seeds");
+        assert(!chdir("/"));
+        assert(!rmdir(folder));
+        puts("replay environment: PASS");
+        return 0;
+    }
 	check_control_pose();
 	clock_tick = 0;
 	lip_sync = 1;
@@ -421,6 +627,7 @@ int main(int argc, char **argv)
 	assert(replay.replay_finished && touch_replay_active);
 	input_replay_suite_restore();
 	assert(!input_replay_suite_suspended() && !touch_replay_active);
+	clock_tick = 0; /* the restored controller-only replay starts before its tail, without a stale suite wait */
 	input_replay_filter(&suite_pad);
 	assert(*replay.replay_path && touch_replay_active);
 	input_replay_begin(NULL, 0);

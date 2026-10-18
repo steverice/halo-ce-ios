@@ -137,6 +137,7 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/input_replay_probe.c', '-o', BUILD / 'input-replay-probe')
 run(BUILD / 'input-replay-probe')
 run(BUILD / 'input-replay-probe', '--auto-record-suite-camera')
+run(BUILD / 'input-replay-probe', '--replay-environment')
 # The omitted-suspension mutant must reproduce the camera/control ownership failure.
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     '-DREPLAY_PROBE_OMIT_SUITE_SUSPEND=1', 'port/ios/tests/input_replay_probe.c',

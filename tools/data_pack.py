@@ -69,7 +69,7 @@ def helper(name, sources, includes=(), dependencies=()):
 def recording_helper():
     return helper("recording-pack-probe", ["port/ios/tests/recording_pack_probe.c",
         "port/ios/host/host_recording_pack.c", "port/runtime/benchmark_plan.c"], dependencies=[
-        "port/ios/host/host_recording_pack.h", "port/runtime/benchmark_plan.h", "port/linux/src/port_profile_keys.h"])
+        "port/ios/host/host_recording_pack.h", "port/runtime/replay_environment.h", "port/runtime/benchmark_plan.h", "port/linux/src/port_profile_keys.h"])
 
 
 def sign_helper():

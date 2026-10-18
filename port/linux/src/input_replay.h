@@ -18,6 +18,8 @@ unsigned char input_replay_camera_sample(struct input_replay_camera_sample *samp
 unsigned char input_replay_apply_control(short local_player_index, float facing[2], short *zoom);
 unsigned char input_replay_controls_facing(short local_player_index);
 unsigned char input_replay_action_camera_active(void);
+/* Effective animation mode only while a validated replay owns simulation. */
+int input_replay_enhanced_animations(int configured);
 int input_replay_suite_suspend(void);
 void input_replay_suite_restore(void);
 int input_replay_suite_suspended(void);
