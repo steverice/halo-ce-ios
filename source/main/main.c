@@ -724,6 +724,9 @@ static char const *scenario_paths[10] =
 static struct _main_globals main_globals = { 0 };
 /* Keep the original globals layout; these clocks belong to pending requests. */
 static long main_loss_last_tick;
+/* port: checkpoint waits use simulation ticks without changing main_globals' saved layout. */
+static long main_save_last_tick;
+static boolean main_save_clock_valid;
 static long main_respawn_last_tick;
 boolean debug_force_frame_rate_update = FALSE;
 boolean debug_no_drawing = FALSE;
@@ -1632,6 +1635,9 @@ void main_save_map_safe(
 		main_globals.ticks_until_next_save_check = 0;
 		main_globals.ticks_unable_to_save = 0;
 		main_globals.safe_intervals = 0;
+		main_save_clock_valid = game_time_initialized();
+		if (main_save_clock_valid)
+			main_save_last_tick = game_time_get();
 	}
 	return;
 }
@@ -1646,6 +1652,9 @@ void main_save_map_no_timeout(
 		main_globals.ticks_until_next_save_check = 0;
 		main_globals.ticks_unable_to_save = 0;
 		main_globals.safe_intervals = 0;
+		main_save_clock_valid = game_time_initialized();
+		if (main_save_clock_valid)
+			main_save_last_tick = game_time_get();
 	}
 	main_globals.save_map_timeout = FALSE;
 	return;
@@ -2107,9 +2116,21 @@ static void main_saving_map_private(
 	return;
 }
 
+static boolean main_steps_each_tick(void);
+
 static void main_save_map_private(
 	void)
 {
+	if (game_time_get_paused())
+	{
+		if (!main_steps_each_tick())
+		{
+			main_save_last_tick = game_time_get();
+			main_save_clock_valid = TRUE;
+		}
+		return;
+	}
+
 	if (!game_time_get_paused())
 	{
 		boolean save_map_safely = main_globals.save_map_safely;
@@ -2117,16 +2138,68 @@ static void main_save_map_private(
 
 		if (save_map_safely)
 		{
-			if (main_globals.ticks_unable_to_save++ >= 240 &&
-				main_globals.save_map_timeout)
+			boolean check_safety = FALSE;
+
+			if (main_steps_each_tick())
 			{
-				if (debug_game_save)
-					console_printf(FALSE, "gave up trying to save");
-				main_globals.saving_map = FALSE;
-				return;
+				/* The isolated recording/replay path already runs once per tick. */
+				if (main_globals.ticks_unable_to_save++ >= 240 &&
+					main_globals.save_map_timeout)
+				{
+					if (debug_game_save)
+						console_printf(FALSE, "gave up trying to save");
+					main_globals.saving_map = FALSE;
+					return;
+				}
+				check_safety = main_globals.ticks_until_next_save_check-- <= 0;
 			}
-			else if (main_globals.ticks_until_next_save_check-- <= 0)
+			else
 			{
+				long now = game_time_get();
+				unsigned long elapsed_ticks;
+				if (!main_save_clock_valid)
+				{
+					main_save_last_tick = now;
+					main_save_clock_valid = TRUE;
+					return;
+				}
+				if (now < main_save_last_tick)
+				{
+					/* A revert can move the clock behind an outstanding request. */
+					main_globals.ticks_until_next_save_check = 0;
+					main_globals.ticks_unable_to_save = 0;
+					main_globals.safe_intervals = 0;
+					main_save_last_tick = now;
+					return;
+				}
+				elapsed_ticks = (unsigned long)now - (unsigned long)main_save_last_tick;
+				main_save_last_tick = now;
+				if (!elapsed_ticks)
+					return;
+
+				if (main_globals.save_map_timeout &&
+					(main_globals.ticks_unable_to_save >= 241 ||
+					elapsed_ticks > 240UL - (unsigned long)main_globals.ticks_unable_to_save))
+				{
+					if (debug_game_save)
+						console_printf(FALSE, "gave up trying to save");
+					main_globals.saving_map = FALSE;
+					return;
+				}
+				/* Saturation avoids overflow while no-timeout requests stay unsafe. */
+				if (main_globals.ticks_unable_to_save >= 241 ||
+					elapsed_ticks >= 241UL - (unsigned long)main_globals.ticks_unable_to_save)
+					main_globals.ticks_unable_to_save = 241;
+				else
+					main_globals.ticks_unable_to_save += elapsed_ticks;
+				check_safety = main_globals.ticks_until_next_save_check <= 0 ||
+					elapsed_ticks > (unsigned long)main_globals.ticks_until_next_save_check;
+				if (!check_safety)
+					main_globals.ticks_until_next_save_check -= elapsed_ticks;
+			}
+			if (check_safety)
+			{
+				/* Multi-tick frames sample only their current safety. */
 				if (game_safe_to_save())
 				{
 					if (main_globals.safe_intervals++ >= 3)
