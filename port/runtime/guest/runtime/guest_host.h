@@ -62,6 +62,8 @@ int host_benchmark_next(char *text, unsigned int size);
 void host_benchmark_window(int open, int width, int height);
 /* the run is over: a status by name (benchmark_plan.h) and a note for the report */
 void host_benchmark_end(const char *status, const char *note);
+/* A fatal guest assertion seals the active run and writes a failed partial report immediately. */
+void host_benchmark_fault(const char *note);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 

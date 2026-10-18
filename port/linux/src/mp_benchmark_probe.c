@@ -66,3 +66,49 @@ void mp_benchmark_probe_input(long tick, short port, struct mp_benchmark_probe_p
 	pad->jump = phase % 150UL < 3UL;
 	pad->grenade = phase % 210UL < 3UL;
 }
+
+void mp_benchmark_probe_latch_reset(struct mp_benchmark_probe_latch *latch)
+{
+	memset(latch, 0, sizeof(*latch));
+	latch->last_tick = -1;
+}
+
+void mp_benchmark_probe_sample(long tick, short port, struct mp_benchmark_probe_latch *latch,
+	struct mp_benchmark_probe_pad *pad)
+{
+	unsigned long phase, previous;
+
+	mp_benchmark_probe_input(tick, port, pad);
+	if (tick < 0 || port < 0 || port >= 4)
+		return;
+	if (tick < latch->last_tick)
+		mp_benchmark_probe_latch_reset(latch);
+	phase = (unsigned long)tick + (unsigned long)port * 53UL;
+	previous = latch->last_tick < 0 ? phase : (unsigned long)latch->last_tick + (unsigned long)port * 53UL;
+	if ((latch->last_tick < 0 && phase % 150UL < 3UL) || phase / 150UL > previous / 150UL)
+	{
+		latch->jump_pending = 1;
+		latch->jump_press_tick = tick;
+	}
+	if ((latch->last_tick < 0 && phase % 210UL < 3UL) || phase / 210UL > previous / 210UL)
+	{
+		latch->grenade_pending = 1;
+		latch->grenade_press_tick = tick;
+	}
+	pad->jump = latch->jump_pending;
+	pad->grenade = latch->grenade_pending;
+	if (pad->fire && !latch->previous_fire)
+		latch->fire_requests++;
+	if (pad->jump && !latch->previous_jump)
+		latch->jump_requests++;
+	if (pad->grenade && !latch->previous_grenade)
+		latch->grenade_requests++;
+	latch->previous_fire = pad->fire;
+	latch->previous_jump = pad->jump;
+	latch->previous_grenade = pad->grenade;
+	if (latch->jump_pending && tick > latch->jump_press_tick)
+		latch->jump_pending = 0;
+	if (latch->grenade_pending && tick > latch->grenade_press_tick)
+		latch->grenade_pending = 0;
+	latch->last_tick = tick;
+}

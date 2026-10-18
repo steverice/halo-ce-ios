@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Suite 1's scenes that nobody plays: they run by themselves. The app adds one scene for each recorded route it
+/* The built-in scenes run by themselves. The app adds one scene for each recorded route it
    carries (benchmark_scene_from_route; port/benchmark/recordings/NAME.route). The probe's own copy of the whole
    suite is in benchmark_probe.c */
 const struct benchmark_scene benchmark_suite_scenes[] = {

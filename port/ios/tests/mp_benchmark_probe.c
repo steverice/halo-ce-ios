@@ -78,6 +78,31 @@ static void test_distinct_tick_input(void)
 	}
 }
 
+static void test_skipped_discrete_pulses(void)
+{
+	struct mp_benchmark_probe_latch latch;
+	struct mp_benchmark_probe_pad pad;
+
+	mp_benchmark_probe_latch_reset(&latch);
+	mp_benchmark_probe_sample(10, 0, &latch, &pad);
+	CHECK(!pad.jump && !pad.grenade);
+	mp_benchmark_probe_sample(153, 0, &latch, &pad);
+	CHECK(pad.jump);
+	mp_benchmark_probe_sample(154, 0, &latch, &pad);
+	CHECK(pad.jump);
+	mp_benchmark_probe_sample(154, 0, &latch, &pad);
+	CHECK(!pad.jump);
+	mp_benchmark_probe_sample(214, 0, &latch, &pad);
+	CHECK(pad.grenade);
+	mp_benchmark_probe_sample(215, 0, &latch, &pad);
+	CHECK(pad.grenade);
+	mp_benchmark_probe_sample(215, 0, &latch, &pad);
+	CHECK(!pad.grenade);
+	CHECK(latch.jump_requests == 1 && latch.grenade_requests == 1);
+	mp_benchmark_probe_latch_reset(&latch);
+	CHECK(latch.fire_requests == 0 && latch.jump_requests == 0 && latch.grenade_requests == 0);
+}
+
 static void test_virtual_controller_connection(void)
 {
 	CHECK(mp_benchmark_probe_device_mask(1UL, 0) == 1UL);
@@ -90,6 +115,7 @@ int main(void)
 {
 	test_view_count();
 	test_distinct_tick_input();
+	test_skipped_discrete_pulses();
 	test_virtual_controller_connection();
 	if (failures) fprintf(stderr, "mp_benchmark_probe: %d failures\n", failures);
 	return failures ? 1 : 0;

@@ -10,6 +10,7 @@ struct game_variant { int game_engine_index; };
 
 static int requested, initialized, in_progress, scoring, forced_single, postgame;
 static int local_count, connection, getter_calls, tick_calls;
+static int suite_suspended;
 static const char *network_test, *suite, *record, *replay, *map;
 static struct scenario scenario;
 static struct game_variant variant;
@@ -35,6 +36,7 @@ struct game_variant *game_engine_get_variant(void) { getter_calls++; return &var
 char *main_get_multiplayer_map_name(void) { getter_calls++; return (char *)map; }
 short players_port_local_player_count(void) { getter_calls++; return (short)local_count; }
 long game_time_get(void) { tick_calls++; return 123; }
+int input_replay_suite_suspended(void) { return suite_suspended; }
 
 #define MP_BENCHMARK_CONTEXT_PROBE 1
 #include "../../linux/game/mp_benchmark_context.c"
@@ -47,6 +49,8 @@ static int failures;
 static void reset(void)
 {
 	requested = initialized = in_progress = scoring = 1;
+	mp_benchmark_probe_set_suite_requested(0);
+	suite_suspended = 0;
 	forced_single = postgame = 0;
 	local_count = 4;
 	connection = _game_connection_network_server;
@@ -93,6 +97,17 @@ int main(void)
 	CHECK(mp_benchmark_probe_active());
 	CHECK(mp_benchmark_probe_current_policy() == mp_benchmark_probe_scripted_input);
 	CHECK(mp_benchmark_probe_tick() == 123 && tick_calls == 1);
+	reset(); requested = 0; network_test = ""; suite = "full"; record = "auto";
+	mp_benchmark_probe_set_suite_requested(1);
+	CHECK(mp_benchmark_probe_requested());
+	CHECK(!mp_benchmark_probe_active());
+	CHECK(mp_benchmark_probe_current_policy() == mp_benchmark_probe_neutral_input);
+	suite_suspended = 1;
+	CHECK(mp_benchmark_probe_active());
+	CHECK(mp_benchmark_probe_current_policy() == mp_benchmark_probe_scripted_input);
+	mp_benchmark_probe_set_suite_requested(0);
+	CHECK(!mp_benchmark_probe_requested());
+	CHECK(mp_benchmark_probe_current_policy() == mp_benchmark_probe_ordinary_input);
 	if (failures) fprintf(stderr, "mp_benchmark_context_probe: %d failures\n", failures);
 	return failures ? 1 : 0;
 }

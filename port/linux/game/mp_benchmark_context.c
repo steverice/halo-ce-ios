@@ -15,12 +15,19 @@
 int config_boolean(char const *name);
 char const *config_string(char const *name);
 short players_port_local_player_count(void);
+int input_replay_suite_suspended(void);
+static int suite_requested;
+
+void mp_benchmark_probe_set_suite_requested(int requested)
+{
+	suite_requested = requested != 0;
+}
 
 int mp_benchmark_probe_requested(void)
 {
-	return config_boolean("debug.multiplayer_benchmark_probe") &&
+	return suite_requested || (config_boolean("debug.multiplayer_benchmark_probe") &&
 		!strcmp(config_string("debug.network_test"), "host:chillout") &&
-		!config_string("debug.benchmark_suite")[0];
+		!config_string("debug.benchmark_suite")[0]);
 }
 
 int mp_benchmark_probe_active(void)
@@ -47,7 +54,8 @@ int mp_benchmark_probe_active(void)
 		variant && variant->game_engine_index == game_engine_slayer &&
 		mp_benchmark_probe_map_matches(main_get_multiplayer_map_name()),
 		players_port_local_player_count(),
-		!config_string("debug.input_record")[0] && !config_string("debug.input_replay")[0]);
+		suite_requested ? input_replay_suite_suspended() :
+			(!config_string("debug.input_record")[0] && !config_string("debug.input_replay")[0]));
 }
 
 enum mp_benchmark_probe_input_policy mp_benchmark_probe_current_policy(void)

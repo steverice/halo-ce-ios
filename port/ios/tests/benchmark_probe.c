@@ -576,12 +576,57 @@ static void test_journal(void) {
     unlink(journal_path);
 }
 
+static void test_multiplayer_journal(void) {
+    struct benchmark_device facts = { 2160, 1080, 16, 512, 1 };
+    struct benchmark_scene multiplayer = benchmark_suite_scenes[3];
+    struct benchmark_plan plan = { BENCHMARK_FULL, &multiplayer, 1, facts };
+    struct benchmark_plan builtins = { BENCHMARK_FULL, benchmark_suite_scenes, benchmark_suite_scene_count, facts };
+    struct benchmark_journal journal;
+    struct benchmark_run run, next;
+    struct benchmark_outcome failed = { BENCHMARK_FAILED, 0, 0, 0, 0, -1 };
+
+    snprintf(journal_path, sizeof(journal_path), "%s/visr-benchmark-mp-%d.journal",
+        getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
+    unlink(journal_path);
+    /* This signature is the released version 1 built-in trio. Version 2 adds
+       the multiplayer scene, so its unfinished journal cannot be resumed. */
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "OLDV1", &facts, 0xc2ab7962UL));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && !journal.finished && journal.signature == 0xc2ab7962UL);
+    CHECK(journal.signature != benchmark_plan_signature(&builtins));
+
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "NEWV2", &facts, benchmark_plan_signature(&plan)));
+    CHECK(benchmark_plan_next(&plan, journal.outcomes, 0, &run) && run.stage == 'A' && run.scene == 0);
+    CHECK(benchmark_journal_begin(journal_path, run.index, run.key));
+    CHECK(benchmark_journal_end(journal_path, run.index, &failed));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && !journal.finished && !journal.cut_off && journal.count == 1 &&
+        journal.outcomes[0].status == BENCHMARK_FAILED);
+    CHECK(!benchmark_plan_next(&plan, journal.outcomes, journal.count, &next));
+    CHECK(benchmark_journal_done(journal_path));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.finished);
+
+    /* A process killed in the terminal match is finalized on the next launch;
+       the planner must not replay the match or start another scene. */
+    CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "CUTV2", &facts, benchmark_plan_signature(&plan)));
+    CHECK(benchmark_journal_begin(journal_path, run.index, run.key));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && journal.cut_off && journal.count == 1 && journal.outcomes[0].status == BENCHMARK_KILLED);
+    CHECK(benchmark_journal_end(journal_path, 0, &journal.outcomes[0]));
+    benchmark_journal_load(journal_path, &journal);
+    CHECK(journal.valid && !journal.cut_off && journal.count == 1 &&
+        !benchmark_plan_next(&plan, journal.outcomes, journal.count, &next));
+    unlink(journal_path);
+}
+
 int main(void) {
     test_metrics();
     test_routes();
     test_plan();
     test_multiplayer_terminal_baseline();
     test_journal();
+    test_multiplayer_journal();
     if (failures) {
         fprintf(stderr, "benchmark_probe: %d of %d checks failed\n", failures, checks);
         return 1;

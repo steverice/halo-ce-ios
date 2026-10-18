@@ -239,7 +239,7 @@ for definition in ('HALO_FRAME_PACING=0', 'HALO_FRAME_PACING=1',
         'port/ios/tests/benchmark_presentation_drawable_probe.m', 'port/ios/host/host_benchmark_presentation.m',
         'port/runtime/benchmark_presentation.c', '-lz', '-o', BUILD/'benchmark-presentation-drawable-probe')
     run(BUILD/'benchmark-presentation-drawable-probe')
-run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-iquote', 'port/linux/include',
     'port/ios/tests/benchmark_startup_probe.c', '-o', BUILD/'benchmark-startup-probe')
 run(BUILD/'benchmark-startup-probe')
 # The optional host overlay's bounded timing window, including unavailable GPU samples.

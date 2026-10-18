@@ -142,6 +142,9 @@ symbols in this file:
 #include "real_math.h"
 #include "byte_swapping.h"
 #include "crc.h"
+#ifdef HALO_IOS
+extern void benchmark_suite_multiplayer_fault(const char *note);
+#endif
 
 /* ---------- constants */
 
@@ -420,6 +423,9 @@ void release_assert_failed(
 		error(_error_log, "EXCEPTION %s in %s,#%ld: %s (release build)", fatal ? "assert" : "warn",
 			file, line, information ? information : "<no reason given>");
 	}
+#ifdef HALO_IOS
+	if (fatal) benchmark_suite_multiplayer_fault("guest fatal assertion");
+#endif
 }
 #endif
 
@@ -439,6 +445,9 @@ void display_assert(
 #else
 	if (fatal)
 	{
+#ifdef HALO_IOS
+		benchmark_suite_multiplayer_fault("guest fatal assertion");
+#endif
 		stack_walk(0);
 	}
 	

@@ -3258,6 +3258,12 @@ void halt_and_catch_fire(
 	char banner[256];
 	char label[96];
 	#endif
+	#ifdef HALO_IOS
+	{
+		extern void benchmark_suite_multiplayer_fault(const char *note);
+		benchmark_suite_multiplayer_fault("guest fatal halt");
+	}
+	#endif
 
 	if (!global_screenshot_count.halt_recursion_lock)
 	{
@@ -3382,6 +3388,14 @@ void halt_and_catch_fire(
 void main_loop_of_death(
 	void)
 {
+#ifdef HALO_IOS
+	/* A fatal path may bypass display_assert; close an active multiplayer
+	benchmark before its blue halt screen can keep presenting frames. */
+	{
+		extern void benchmark_suite_multiplayer_fault(const char *note);
+		benchmark_suite_multiplayer_fault("guest fatal halt");
+	}
+#endif
 	while (TRUE)
 	{
 		input_frame_begin();
@@ -3616,6 +3630,13 @@ void main_loop(
 		input_frame_begin();
 		input_update();
 		input_abstraction_update();
+#ifdef HALO_IOS
+		/* port: drain suite-owned map/network actions outside Present. */
+		{
+			extern void benchmark_suite_mainloop_update(void);
+			benchmark_suite_mainloop_update();
+		}
+#endif
 		shell_idle();
 		event_manager_update();
 		telnet_console_process();

@@ -180,6 +180,7 @@ static struct
 	long jumps;
 	double jumped, moved;
 } replay;
+static BOOL suite_suspended;
 
 /* Replay state, rather than benchmark settings, controls the native touch overlay. */
 #ifdef HALO_IOS
@@ -751,6 +752,38 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 	route_load();
 	replay_touch_update();
 	return replay.state_count > 0;
+}
+
+/* A suite owns effective input without changing the user's saved recording settings. */
+int input_replay_suite_suspend(void)
+{
+	if (suite_suspended)
+		return 1;
+	if (!replay.configured)
+		configure();
+	if (take.open || replay.record_file || replay.actions_file || replay.seeds_file)
+		return 0;
+	suite_suspended = TRUE;
+	take.automatic = FALSE;
+	input_replay_begin(NULL, 0);
+	return 1;
+}
+
+void input_replay_suite_restore(void)
+{
+	if (!suite_suspended)
+		return;
+	input_replay_begin(NULL, 0);
+	replay.suite = FALSE;
+	replay.configured = FALSE;
+	take.automatic = FALSE;
+	suite_suspended = FALSE;
+	replay_touch_update();
+}
+
+int input_replay_suite_suspended(void)
+{
+	return suite_suspended;
 }
 
 /* whether the replay begun last has played to its end (or never loaded) */

@@ -2,8 +2,9 @@
 BENCHMARK_SUITE.C
 
 The device benchmark's suite, inside the game: debug.benchmark_suite =
-"quick" or "full" plays the suite's scenes by itself, several times over at
-different settings, and quits.
+"quick" or "full" plays its scenes by itself, several times over at
+different settings, and quits. Full ends with one scripted four-local-player
+match after the solo adaptation stages.
 
 The app around the game (port/ios/host/host_benchmark.m) decides which run
 comes next, measures every frame, memory and heat, and writes the report;
@@ -21,6 +22,7 @@ are the iOS, tvOS, visionOS and Mac app's.
 
 #include "platform.h"
 #include "port_config.h"
+#include "benchmark_mp_state.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -37,8 +39,11 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 int host_benchmark_next(char *text, unsigned int size);
 void host_benchmark_window(int open, int width, int height);
 void host_benchmark_end(const char *status, const char *note);
+void host_benchmark_fault(const char *note);
 /* input_replay.c */
 int input_replay_begin(const char *name, int benchmark_lip_sync);
+int input_replay_suite_suspend(void);
+void input_replay_suite_restore(void);
 int input_replay_ended(void);
 long input_replay_segment(void);
 double input_replay_length_ticks(void);
@@ -47,6 +52,10 @@ double input_replay_timeline(void);
 void benchmark_scenario_load(const char *map, const char *difficulty);
 unsigned char benchmark_scenario_at_menu(void);
 unsigned char benchmark_scenario_player_position(float *position);
+int network_test_suite_begin_chillout(void);
+void network_test_suite_end(void);
+void mp_benchmark_probe_set_suite_requested(int requested);
+void mp_benchmark_probe_reset_controllers(void);
 /* source/interface/ui_widget.c: cleared when the ordinary UI pump joins the startup worker */
 unsigned char filesystem_check_thread_is_active(void);
 /* port/linux/game/scene_class.c: the menu, a cutscene or gameplay, this frame (port_config.h's CONFIG_SCENE_ values) */
@@ -76,7 +85,9 @@ double halo_frame_trace_milliseconds(void);
 is taken moves a running player a small fraction of this) */
 #define ROUTE_TOLERANCE 2.0
 
-enum suite_state { suite_unasked, suite_off, suite_starting, suite_next, suite_loading, suite_lead, suite_measuring };
+enum suite_state { suite_unasked, suite_off, suite_starting, suite_next, suite_loading, suite_lead, suite_measuring,
+	suite_wait_mp_teardown };
+enum suite_action { suite_action_none, suite_action_menu, suite_action_mp_begin, suite_action_mp_end };
 
 static struct
 {
@@ -101,7 +112,63 @@ static struct
 	const char *next_check;
 	double worst_distance;
 	int diverged;
+	enum suite_action pending_action;
+	int mp_action_failed, mp_host_started, mp_scene, mp_fault_reported;
+	long mp_first_tick, mp_ready_tick, mp_last_tick;
+	double mp_menu_seen_at, mp_advanced_at;
+	struct benchmark_mp_state mp_previous;
+	int mp_previous_valid;
+	double mp_distance[BENCHMARK_MP_ACTORS];
+	unsigned long mp_fire[BENCHMARK_MP_ACTORS], mp_jump[BENCHMARK_MP_ACTORS], mp_grenade_requests[BENCHMARK_MP_ACTORS];
+	unsigned long mp_ammo_spent, mp_grenades_used, mp_damage_changes, mp_deaths, mp_respawns;
 } suite;
+
+void benchmark_suite_multiplayer_fault(const char *note)
+{
+	if (!suite.mp_scene || suite.mp_fault_reported || (suite.state != suite_loading && suite.state != suite_lead &&
+		suite.state != suite_measuring && suite.state != suite_wait_mp_teardown))
+		return;
+	suite.mp_fault_reported = 1;
+	suite.pending_action = suite_action_none;
+	suite.state = suite_off;
+	host_benchmark_fault(note);
+}
+
+/* Present queues map/network work; the next game loop consumes it before network updates. */
+void benchmark_suite_mainloop_update(void)
+{
+	enum suite_action action = suite.pending_action;
+
+	suite.pending_action = suite_action_none;
+	switch (action)
+	{
+	case suite_action_menu:
+		benchmark_scenario_load("", "");
+		break;
+	case suite_action_mp_begin:
+		if (!input_replay_suite_suspend())
+		{
+			suite.mp_action_failed = 1;
+			break;
+		}
+		mp_benchmark_probe_set_suite_requested(1);
+		mp_benchmark_probe_reset_controllers();
+		if (!network_test_suite_begin_chillout())
+		{
+			mp_benchmark_probe_set_suite_requested(0);
+			suite.mp_action_failed = 1;
+		}
+		else suite.mp_host_started = 1;
+		break;
+	case suite_action_mp_end:
+		network_test_suite_end();
+		mp_benchmark_probe_set_suite_requested(0);
+		suite.mp_host_started = 0;
+		break;
+	default:
+		break;
+	}
+}
 
 static void enter(enum suite_state state)
 {
@@ -140,12 +207,111 @@ static double number_field(const char *text, const char *key)
 	return field(text, key, value, sizeof(value)) ? atof(value) : 0.0;
 }
 
+static int mp_match_valid(const struct benchmark_mp_state *state, int require_spawned)
+{
+	return state->multiplayer && state->map_ok && state->slayer && state->score_limit == 1000 &&
+		state->time_limit_minutes == 0 && state->local_players == 4 && state->roster == 4 &&
+		(!require_spawned || state->spawned == 4) && state->view_count == 1 && state->observer0 &&
+		state->probe_active && state->can_score && !state->postgame;
+}
+
+static int mp_ticks_advance(const struct benchmark_mp_state *state, double now)
+{
+	if (state->tick > suite.mp_last_tick)
+	{
+		suite.mp_last_tick = state->tick;
+		suite.mp_advanced_at = now;
+	}
+	return now - suite.mp_advanced_at <= 10000.0;
+}
+
+static void mp_collect(const struct benchmark_mp_state *state)
+{
+	short local;
+
+	if (!suite.mp_previous_valid)
+	{
+		suite.mp_previous = *state;
+		suite.mp_previous_valid = 1;
+		return;
+	}
+	for (local = 0; local < BENCHMARK_MP_ACTORS; local++)
+	{
+		const struct benchmark_mp_actor *before = &suite.mp_previous.actors[local];
+		const struct benchmark_mp_actor *after = &state->actors[local];
+		float dx, dy, dz;
+		double distance;
+
+		if (!before->present || !after->present)
+			continue;
+		if (before->spawned && after->spawned && after->throttle > 0.2f)
+		{
+			dx = after->position[0] - before->position[0];
+			dy = after->position[1] - before->position[1];
+			dz = after->position[2] - before->position[2];
+			distance = sqrt((double)dx * dx + (double)dy * dy + (double)dz * dz);
+			if (distance < 3.0) /* a host gather teleport is not walking */
+				suite.mp_distance[local] += distance;
+		}
+		if (after->fire_requests > before->fire_requests)
+			suite.mp_fire[local] += after->fire_requests - before->fire_requests;
+		if (after->jump_requests > before->jump_requests)
+			suite.mp_jump[local] += after->jump_requests - before->jump_requests;
+		if (after->grenade_requests > before->grenade_requests)
+			suite.mp_grenade_requests[local] += after->grenade_requests - before->grenade_requests;
+		if (before->spawned && after->spawned && before->weapon_definition == after->weapon_definition &&
+			before->weapon_definition != -1 && before->ammo > after->ammo)
+			suite.mp_ammo_spent += (unsigned long)(before->ammo - after->ammo);
+		if (before->spawned && after->spawned)
+		{
+			if (before->grenades[0] > after->grenades[0])
+				suite.mp_grenades_used += (unsigned long)(before->grenades[0] - after->grenades[0]);
+			if (before->grenades[1] > after->grenades[1])
+				suite.mp_grenades_used += (unsigned long)(before->grenades[1] - after->grenades[1]);
+			if (before->body > after->body || before->shield > after->shield)
+				suite.mp_damage_changes++;
+		}
+		if (after->deaths > before->deaths)
+			suite.mp_deaths += (unsigned long)(after->deaths - before->deaths);
+		if (!before->spawned && after->spawned)
+			suite.mp_respawns++;
+	}
+	suite.mp_previous = *state;
+}
+
+static int mp_evidence_note(char *note, size_t size)
+{
+	int moved = 0, firing = 0, local;
+	unsigned long jumps = 0, grenades = 0;
+
+	for (local = 0; local < BENCHMARK_MP_ACTORS; local++)
+	{
+		moved += suite.mp_distance[local] >= 5.0;
+		firing += suite.mp_fire[local] > 0;
+		jumps += suite.mp_jump[local];
+		grenades += suite.mp_grenade_requests[local];
+	}
+	snprintf(note, size, "synthetic local4 one view; moved %d/4 (%.1f,%.1f,%.1f,%.1f), fire %d/4 "
+		"(%lu,%lu,%lu,%lu), jump %lu, grenade requests %lu, ammo spent %lu, grenades used %lu, "
+		"damage changes %lu, deaths %lu, respawns %lu; no remote clients",
+		moved, suite.mp_distance[0], suite.mp_distance[1], suite.mp_distance[2], suite.mp_distance[3],
+		firing, suite.mp_fire[0], suite.mp_fire[1], suite.mp_fire[2], suite.mp_fire[3], jumps, grenades,
+		suite.mp_ammo_spent, suite.mp_grenades_used, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns);
+	return moved == 4 && firing == 4 && jumps > 0 && grenades > 0 && suite.mp_ammo_spent > 0 &&
+		suite.mp_grenades_used > 0 && suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
+}
+
 static void finish(const char *status, const char *note)
 {
 	platform_log("benchmark suite: %s ends: %s%s%s", suite.scene, status, *note ? ", " : "", note);
 	host_benchmark_end(status, note);
 	input_replay_begin(NULL, 0);
-	enter(suite_next);
+	if (suite.mp_scene)
+	{
+		suite.pending_action = suite_action_mp_end;
+		enter(suite_wait_mp_teardown);
+	}
+	else enter(suite_next);
 }
 
 /* A mode change can alter both the drawable and the contextual profile.
@@ -185,12 +351,14 @@ static void next_run(void)
 		halo_benchmark_overrides(0, 0, 0);
 		halo_model_lod_set(-1);
 		benchmark_scenario_load("", "");
+		input_replay_suite_restore();
 		suite.state = suite_off;
 		return;
 	}
 	if (!more)
 	{
 		platform_log("benchmark suite: over; quitting");
+		input_replay_suite_restore();
 		exit(EXIT_SUCCESS);
 	}
 	field(text, "scene", suite.scene, sizeof(suite.scene));
@@ -204,11 +372,25 @@ static void next_run(void)
 	suite.shadow_size = (long)number_field(text, "shadow");
 	suite.model_lod_max = (int)number_field(text, "lod");
 	{
-		char kind[16];
+		char kind[32];
 
-		suite.gameplay = field(text, "kind", kind, sizeof(kind)) && !strcmp(kind, "gameplay");
+		field(text, "kind", kind, sizeof(kind));
+		suite.mp_scene = !strcmp(kind, "multiplayer_synthetic");
+		suite.gameplay = suite.mp_scene || !strcmp(kind, "gameplay");
 		suite.in_cutscene = 0;
 	}
+	suite.pending_action = suite_action_none;
+	suite.mp_action_failed = suite.mp_host_started = 0;
+	suite.mp_fault_reported = 0;
+	suite.mp_first_tick = suite.mp_ready_tick = suite.mp_last_tick = -1;
+	suite.mp_menu_seen_at = suite.mp_advanced_at = 0.0;
+	suite.mp_previous_valid = 0;
+	memset(&suite.mp_previous, 0, sizeof(suite.mp_previous));
+	memset(suite.mp_distance, 0, sizeof(suite.mp_distance));
+	memset(suite.mp_fire, 0, sizeof(suite.mp_fire));
+	memset(suite.mp_jump, 0, sizeof(suite.mp_jump));
+	memset(suite.mp_grenade_requests, 0, sizeof(suite.mp_grenade_requests));
+	suite.mp_ammo_spent = suite.mp_grenades_used = suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 0;
 	suite.route_length = 0;
 	suite.route[0] = 0;
 	suite.route_due = 0.0;
@@ -244,6 +426,12 @@ static void next_run(void)
 	}
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
 	halo_model_lod_set(suite.model_lod_max);
+	if (suite.mp_scene)
+	{
+		if (!benchmark_scenario_at_menu())
+			suite.pending_action = suite_action_menu;
+		return;
+	}
 	/* (a recording begun now waits for its own level's first tick; with none, the controller is ignored) */
 	if (!input_replay_begin(*suite.recording ? path : NULL, 1))
 	{
@@ -320,6 +508,11 @@ void benchmark_suite_frame(long width, long height)
 			suite.state = suite_off;
 			return;
 		}
+		if (!input_replay_suite_suspend())
+		{
+			platform_log("benchmark suite: an active recording must finish before the suite starts");
+			exit(EXIT_FAILURE);
+		}
 		platform_video_drawable_size(&drawable_width, &drawable_height);
 		if (drawable_height <= 0)
 			drawable_height = (int)height;
@@ -337,6 +530,7 @@ void benchmark_suite_frame(long width, long height)
 			(int)config_integer("display.shadow_map_size"), strcmp(config_string("display.model_lod"), "auto") != 0))
 		{
 			platform_log("benchmark suite: the app refused to start it; quitting");
+			input_replay_suite_restore();
 			exit(EXIT_FAILURE);
 		}
 		enter(suite_starting);
@@ -371,6 +565,55 @@ void benchmark_suite_frame(long width, long height)
 		next_run();
 		break;
 	case suite_loading:
+		if (suite.mp_scene)
+		{
+			struct benchmark_mp_state state;
+
+			if (suite.mp_action_failed)
+				finish("failed", "the private match could not start");
+			else if (!suite.mp_host_started)
+			{
+				if (!benchmark_scenario_at_menu())
+				{
+					suite.mp_menu_seen_at = 0.0;
+					if (suite.pending_action == suite_action_none)
+						suite.pending_action = suite_action_menu;
+				}
+				else
+				{
+					if (!suite.mp_menu_seen_at)
+						suite.mp_menu_seen_at = now;
+					if (now - suite.mp_menu_seen_at >= MENU_SETTLE_MILLISECONDS &&
+						suite.pending_action == suite_action_none)
+						suite.pending_action = suite_action_mp_begin;
+				}
+			}
+			else
+			{
+				benchmark_scenario_multiplayer_state(&state);
+				if (state.multiplayer && (!state.map_ok || !state.slayer || state.score_limit != 1000 ||
+					state.time_limit_minutes != 0 || state.postgame))
+					finish("failed", "wrong multiplayer map, variant, limit, or game state");
+				else if (mp_match_valid(&state, 1))
+				{
+					if (suite.mp_first_tick < 0)
+					{
+						suite.mp_first_tick = suite.mp_last_tick = state.tick;
+						suite.mp_advanced_at = now;
+					}
+					else if (!mp_ticks_advance(&state, now))
+						finish("failed", "multiplayer game ticks stopped before warmup");
+					else if (state.tick - suite.mp_first_tick >= 30)
+					{
+						suite.mp_ready_tick = state.tick;
+						enter(suite_lead);
+					}
+				}
+			}
+			if (suite.state == suite_loading && now - suite.entered > LOAD_LIMIT_MILLISECONDS)
+				finish("failed", "four-player multiplayer game did not become ready");
+			break;
+		}
 		/* loaded: the menu's scenario for a menu scene, or the level's game time running (a replay begun during
 		another level holds the recorded time negative until its own level starts) */
 		if (menu ? benchmark_scenario_at_menu() && now - suite.entered >= MENU_SETTLE_MILLISECONDS :
@@ -380,6 +623,25 @@ void benchmark_suite_frame(long width, long height)
 			finish("failed", "the map did not start");
 		break;
 	case suite_lead:
+		if (suite.mp_scene)
+		{
+			struct benchmark_mp_state state;
+
+			benchmark_scenario_multiplayer_state(&state);
+			if (!mp_match_valid(&state, 0) || !mp_ticks_advance(&state, now))
+				finish("failed", "multiplayer match or ticks stopped during warmup");
+			else if (state.tick - suite.mp_ready_tick >= (long)(suite.lead * 30.0))
+			{
+				suite.opened = now;
+				suite.opened_ticks = state.tick;
+				mp_collect(&state);
+				host_benchmark_window(1, (int)width, (int)height);
+				enter(suite_measuring);
+			}
+			else if (now - suite.entered > LOAD_LIMIT_MILLISECONDS + suite.lead * 3000.0)
+				finish("failed", "multiplayer warmup did not finish");
+			break;
+		}
 		/* the route is followed from the level's first tick, so a replay that leaves it during the lead-in is
 		caught before anything is measured */
 		if (!menu)
@@ -400,6 +662,35 @@ void benchmark_suite_frame(long width, long height)
 			finish("failed", "the lead-in never ended");
 		break;
 	case suite_measuring:
+		if (suite.mp_scene)
+		{
+			struct benchmark_mp_state state;
+
+			benchmark_scenario_multiplayer_state(&state);
+			if (!mp_match_valid(&state, 0) || !mp_ticks_advance(&state, now))
+			{
+				host_benchmark_window(0, (int)width, (int)height);
+				finish("failed", "multiplayer match or ticks stopped during measurement");
+			}
+			else
+			{
+				mp_collect(&state);
+				if (state.tick - (long)suite.opened_ticks >= (long)(suite.seconds * 30.0))
+				{
+					char note[512];
+					int useful = mp_evidence_note(note, sizeof(note));
+
+					host_benchmark_window(0, (int)width, (int)height);
+					finish(useful ? "ok" : "failed", note);
+				}
+				else if (now - suite.opened > suite.seconds * 3000.0 + REPLAY_OVERRUN_MILLISECONDS)
+				{
+					host_benchmark_window(0, (int)width, (int)height);
+					finish("failed", "multiplayer measurement overran its tick window");
+				}
+			}
+			break;
+		}
 		if (!menu)
 			route_point(ticks);
 		if (suite.gameplay && (halo_scene_class() == CONFIG_SCENE_CUTSCENE) != suite.in_cutscene)
@@ -430,6 +721,15 @@ void benchmark_suite_frame(long width, long height)
 			the replay left its route */
 			host_benchmark_window(0, (int)width, (int)height);
 			finish("diverged", suite.route);
+		}
+		break;
+	case suite_wait_mp_teardown:
+		if (!suite.mp_host_started && suite.pending_action == suite_action_none && benchmark_scenario_at_menu())
+			enter(suite_next);
+		else if (now - suite.entered > LOAD_LIMIT_MILLISECONDS)
+		{
+			platform_log("benchmark suite: multiplayer teardown did not return to menu");
+			exit(EXIT_FAILURE);
 		}
 		break;
 	default:

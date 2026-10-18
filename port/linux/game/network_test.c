@@ -121,7 +121,42 @@ static struct
 	long logged_time;
 	boolean public_game;
 	boolean browsing;
+	boolean suite_owned;
 } network_test;
+
+int network_test_suite_begin_chillout(void)
+{
+	if (network_test.suite_owned)
+		return 1;
+	if (*config_string("debug.network_test") || network_test.mode != _network_test_off ||
+		game_connection() != _game_connection_local)
+		return 0;
+	memset(&network_test, 0, sizeof(network_test));
+	network_test.checked = TRUE;
+	network_test.suite_owned = TRUE;
+	network_test.mode = _network_test_host;
+	snprintf(network_test.map_name, sizeof(network_test.map_name), "chillout");
+	snprintf(network_test.variant_name, sizeof(network_test.variant_name), "slayer");
+	network_test.players_wanted = 4;
+	network_test.start_delay = 15.0f;
+	network_test.score_to_win = 1000;
+	network_test.shoot_interval = 5.0f;
+	network_test.kill_interval = 25.0f;
+	return 1;
+}
+
+void network_test_suite_end(void)
+{
+	int abort_game;
+
+	if (!network_test.suite_owned)
+		return;
+	abort_game = game_connection() == _game_connection_network_server;
+	memset(&network_test, 0, sizeof(network_test));
+	network_test.checked = TRUE;
+	if (abort_game)
+		network_game_abort();
+}
 
 /* the variant at the index of the list (copied to name), FALSE past its end */
 static boolean network_test_variant(

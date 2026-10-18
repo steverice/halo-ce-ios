@@ -822,11 +822,37 @@ static void test_input_gamepad(XINPUT_GAMEPAD *pad)
 
 /* This probe is restricted to a four-local-player test match. Game ticks and
 controller ports pick the actions, so display frame rate cannot shift them. */
+static struct mp_benchmark_probe_latch mp_probe_latches[PORT_COUNT];
+static int mp_probe_latches_ready;
+
+void mp_benchmark_probe_reset_controllers(void)
+{
+	short port;
+
+	for (port = 0; port < PORT_COUNT; port++)
+		mp_benchmark_probe_latch_reset(&mp_probe_latches[port]);
+	mp_probe_latches_ready = 1;
+}
+
+void mp_benchmark_probe_action_counts(struct mp_benchmark_probe_counts counts[4])
+{
+	short port;
+
+	for (port = 0; port < PORT_COUNT; port++)
+	{
+		counts[port].fire = mp_probe_latches[port].fire_requests;
+		counts[port].jump = mp_probe_latches[port].jump_requests;
+		counts[port].grenade = mp_probe_latches[port].grenade_requests;
+	}
+}
+
 static void mp_benchmark_probe_gamepad(XINPUT_GAMEPAD *pad, short port)
 {
 	struct mp_benchmark_probe_pad input;
 
-	mp_benchmark_probe_input(mp_benchmark_probe_tick(), port, &input);
+	if (!mp_probe_latches_ready)
+		mp_benchmark_probe_reset_controllers();
+	mp_benchmark_probe_sample(mp_benchmark_probe_tick(), port, &mp_probe_latches[port], &input);
 	memset(pad, 0, sizeof(*pad));
 	pad->sThumbLX = input.left_x;
 	pad->sThumbLY = input.left_y;
