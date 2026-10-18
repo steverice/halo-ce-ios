@@ -160,9 +160,10 @@ static int ui_widget_port_cooperative_level_choose(const char *path, short diffi
     (void)path; (void)difficulty; return FALSE;
 }
 static void reset_game(void) {
+    int index;
     memset(&server, 0, sizeof(server));
-    for (int index = 0; index < NETWORK_GAME_MACHINE_SLOTS; index++) server.game.machines[index].machine_index = NONE;
-    for (int index = 0; index < NETWORK_GAME_PLAYER_SLOTS; index++) {
+    for (index = 0; index < NETWORK_GAME_MACHINE_SLOTS; index++) server.game.machines[index].machine_index = NONE;
+    for (index = 0; index < NETWORK_GAME_PLAYER_SLOTS; index++) {
         server.game.players[index].machine_index = NONE;
         server.game.players[index].controller_index = NONE;
         server.game.players[index].player_list_index = NONE;
@@ -358,7 +359,7 @@ def test_synthetic_player_reaches_local_client_settings() -> None:
         path = Path(temporary) / "roster.c"
         binary = Path(temporary) / "roster"
         path.write_text(source)
-        subprocess.run([compiler, "-O2", "-Wall", str(path), "-o", str(binary)], check=True)
+        subprocess.run([compiler, "-O2", "-std=gnu89", "-fms-extensions", "-Wno-c99-extensions", "-Wall", str(path), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
 
 

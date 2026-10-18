@@ -230,6 +230,7 @@ static int mp_match_valid(const struct benchmark_mp_state *state, int require_sp
 {
 	if (!strcmp(suite.mp_simulation, "network_players"))
 	{
+		int i;
 		if (suite.mp_players < 2 || suite.mp_players > BENCHMARK_MP_ACTORS ||
 			!state->multiplayer || !state->map_ok || !state->slayer || state->score_limit != suite.mp_score_limit ||
 			state->time_limit_minutes != suite.mp_time_limit_minutes || state->local_players != 1 ||
@@ -237,7 +238,7 @@ static int mp_match_valid(const struct benchmark_mp_state *state, int require_sp
 			(require_spawned && !state->synthetic_queue_ready) || state->view_count != suite.mp_views ||
 			!state->observer0 || !state->probe_active || !state->can_score || state->postgame)
 			return 0;
-		for (int i = 0; i < suite.mp_players; i++)
+		for (i = 0; i < suite.mp_players; i++)
 			if (!state->actors[i].present || (require_spawned && !state->actors[i].spawned))
 				return 0;
 		return 1;
@@ -333,10 +334,11 @@ static int mp_evidence_note(char *note, size_t size)
 	{
 		double minimum_distance = suite.mp_distance[0];
 		unsigned long remote_ammo = 0, minimum_ammo = suite.mp_ammo_spent_actor[1];
+		int i;
 
 		if (suite.mp_players < 2 || suite.mp_players > BENCHMARK_MP_ACTORS)
 			return 0;
-		for (int i = 0; i < suite.mp_players; i++)
+		for (i = 0; i < suite.mp_players; i++)
 		{
 			moved += suite.mp_distance[i] >= 5.0;
 			if (suite.mp_distance[i] < minimum_distance) minimum_distance = suite.mp_distance[i];

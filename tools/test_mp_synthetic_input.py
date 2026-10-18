@@ -126,6 +126,7 @@ static int failures;
     fprintf(stderr, "synthetic input line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
+    int i;
     memset(machine_players, 0xff, sizeof(machine_players));
     queue_array.count = 2;
     network_test.suite_network_players = 2;
@@ -168,14 +169,14 @@ int main(void) {
         queue_array.count = count;
         network_test.suite_network_players = count;
         network_test.mode = _network_test_host;
-        for (int i = 0; i < count; i++) {
+        for (i = 0; i < count; i++) {
             queues[i].identifier = i + 1;
             machine_players[i][0] = ((long)(i + 1) << 16) | i;
         }
         game_tick = 100;
         update_server_next_update();
         CHECK(observed.action_count == count);
-        for (int i = 1; i < count; i++) {
+        for (i = 1; i < count; i++) {
             CHECK(observed.actions[i].throttle.j > 0.5f);
             CHECK(isfinite(observed.actions[i].desired_facing.yaw));
             CHECK(TEST_FLAG(actual_unit_primary_weapon_flags(observed.actions[i].control_flags), _weapon_control_primary_trigger_bit));
@@ -183,33 +184,33 @@ int main(void) {
         }
         game_tick = 150;
         update_server_next_update();
-        for (int i = 1; i < count; i++) {
+        for (i = 1; i < count; i++) {
             CHECK(!actual_unit_primary_weapon_flags(observed.actions[i].control_flags));
             CHECK(observed.actions[i].primary_trigger == 0.0f);
         }
     }
     network_test.mode = _network_test_host;
     queues[31].identifier = 0; /* reject the whole batch before touching earlier valid queues */
-    for (int i = 1; i < 31; i++) queues[i].current_action.throttle.j = -0.25f;
+    for (i = 1; i < 31; i++) queues[i].current_action.throttle.j = -0.25f;
     network_test_suite_synthetic_input_tick(200);
     CHECK(network_test.mode == _network_test_off);
-    for (int i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
+    for (i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
     queues[31].identifier = 32;
     network_test_suite_synthetic_input_tick(201);
-    for (int i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
+    for (i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
     /* Machine IDs and actual salted datum slots need not have the same index. */
     network_test.mode = _network_test_host;
-    for (int i = 0; i < 32; i++) {
+    for (i = 0; i < 32; i++) {
         queues[i].identifier = i + 1;
         memset(&queues[i].current_action, 0, sizeof(queues[i].current_action));
     }
-    for (int i = 0; i < 32; i++) {
+    for (i = 0; i < 32; i++) {
         int slot = (i * 7 + 5) % 32;
         machine_players[i][0] = ((long)(slot + 1) << 16) | slot;
     }
     network_test_suite_synthetic_input_tick(210);
     CHECK(queues[5].current_action.throttle.j == 0.0f); /* the real local datum */
-    for (int i = 0; i < 32; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
+    for (i = 0; i < 32; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
     return failures != 0;
 }
 '''
@@ -245,7 +246,7 @@ def test_suite_input_reaches_host_tick_snapshot() -> None:
         path = Path(temporary) / "input.c"
         binary = Path(temporary) / "input"
         path.write_text(source)
-        subprocess.run([compiler, "-O2", "-Wall", str(path), "-o", str(binary)], check=True)
+        subprocess.run([compiler, "-O2", "-std=gnu89", "-fms-extensions", "-Wno-c99-extensions", "-Wall", str(path), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
 
 

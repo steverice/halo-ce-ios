@@ -51,8 +51,9 @@ static int failures;
     fprintf(stderr, "network suite line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
+    int i, players;
     const char *bad_simulations[] = { NULL, "", "invalid", "other" };
-    for (int i = 0; i < 4; i++) {
+    for (i = 0; i < 4; i++) {
         CHECK(!network_test_suite_begin(bad_simulations[i], "chillout", "slayer", 4, 1, 1000, 0));
         CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
     }
@@ -89,7 +90,7 @@ int main(void) {
     CHECK(network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
     network_test_suite_end();
     CHECK(aborts == 1);
-    for (int players = 2; players <= 32; players++) {
+    for (players = 2; players <= 32; players++) {
         CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
         CHECK(network_test.players_wanted == 1);
         CHECK(network_test_suite_network_players() == players);
@@ -123,7 +124,7 @@ def test_private_match_lifecycle() -> None:
         source_path = Path(temporary) / "network_suite.c"
         binary = Path(temporary) / "network_suite"
         source_path.write_text(source)
-        subprocess.run([compiler, "-O2", "-Wall", "-Wextra", "-Werror", str(source_path), "-o", str(binary)], check=True)
+        subprocess.run([compiler, "-O2", "-std=gnu89", "-fms-extensions", "-Wno-c99-extensions", "-Wall", "-Wextra", "-Werror", str(source_path), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
 
 

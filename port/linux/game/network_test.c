@@ -138,7 +138,7 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 {
 	int local_players;
 
-	size_t map_length;
+	size_t map_length, i;
 
 	if (!simulation || !map || !game_mode || strcmp(game_mode, "slayer") ||
 		views != 1 || score_limit < 1 || score_limit > 1000 || time_limit_minutes < 0 || time_limit_minutes > 120)
@@ -146,7 +146,7 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 	map_length = strlen(map);
 	if (!map_length || map_length >= sizeof(network_test.map_name))
 		return 0;
-	for (size_t i = 0; i < map_length; i++)
+	for (i = 0; i < map_length; i++)
 		if (!((map[i] >= 'a' && map[i] <= 'z') || (map[i] >= '0' && map[i] <= '9') || map[i] == '_'))
 			return 0;
 	if (!strcmp(simulation, "local_controllers") && players == 4)
@@ -185,11 +185,11 @@ int network_test_suite_network_players(void)
 
 int network_test_suite_map_matches(const char *map)
 {
-	const char *base = map;
+	const char *base = map, *p;
 
 	if (!network_test.suite_owned || network_test.mode != _network_test_host || !map)
 		return 0;
-	for (const char *p = map; *p; p++)
+	for (p = map; *p; p++)
 		if (*p == '\\' || *p == '/')
 			base = p + 1;
 	return !strcmp(base, network_test.map_name);
@@ -231,19 +231,19 @@ transport clients or local controllers. Insert the complete roster atomically. *
 static int network_test_suite_add_synthetic_players(struct network_game_server *server)
 {
 	struct network_game *game = network_game_get_game();
-	int added = 0, target = network_test.suite_network_players;
+	int added = 0, target = network_test.suite_network_players, i;
 
 	if (!server || !game || target < 2 || target > 32 || game->machine_count != 1 || game->player_count != 1 ||
 		game->machines[0].machine_index != 0 || game->maximum_players < target)
 		return 0;
-	for (int i = 1; i < target; i++)
+	for (i = 1; i < target; i++)
 		if (game->machines[i].machine_index != NONE)
 			return 0;
-	for (int i = 0; i < (int)(sizeof(game->players) / sizeof(game->players[0])); i++)
+	for (i = 0; i < (int)(sizeof(game->players) / sizeof(game->players[0])); i++)
 		if (game->players[i].machine_index != NONE &&
 			(game->players[i].machine_index != 0 || game->players[i].controller_index != 0))
 			return 0;
-	for (int i = 1; i < target; i++)
+	for (i = 1; i < target; i++)
 	{
 		struct network_machine machine = { 0 };
 		struct network_player player = { 0 };
@@ -266,7 +266,7 @@ static int network_test_suite_add_synthetic_players(struct network_game_server *
 	if (network_game_server_send_game_data_pregame(server))
 		return 1;
 rollback:
-	for (int i = added; i > 0; i--)
+	for (i = added; i > 0; i--)
 		network_game_remove_machine(game, &game->machines[i]);
 	return 0;
 }
@@ -293,7 +293,7 @@ static int network_test_suite_prepare_synthetic_players(struct network_game_serv
 void network_test_suite_synthetic_input_tick(long tick)
 {
 	long player_indices[32];
-	int target = network_test.suite_network_players;
+	int target = network_test.suite_network_players, i;
 	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
 
 	if (!network_test.suite_owned || network_test.mode != _network_test_host || network_test.players_wanted != 1 || target < 2 || target > 32 ||
@@ -306,18 +306,19 @@ void network_test_suite_synthetic_input_tick(long tick)
 	}
 	/* Validate the complete batch before mutating any queue. A partial roster
 	cannot continue as a smaller successful workload. */
-	for (int i = 1; i < target; i++)
+	for (i = 1; i < target; i++)
 	{
 		long *players = machine_get_player_list(i);
+		int j;
 
 		if (!players || players[0] == NONE || players[1] != NONE || !update_server_player_queue_ready(players[0]))
 			goto failed;
 		player_indices[i] = players[0];
-		for (int j = 1; j < i; j++)
+		for (j = 1; j < i; j++)
 			if (player_indices[j] == player_indices[i])
 				goto failed;
 	}
-	for (int i = 1; i < target; i++)
+	for (i = 1; i < target; i++)
 	{
 		struct player_action action = { 0 };
 
