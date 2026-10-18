@@ -23,10 +23,10 @@ def function(path, name):
     return source[match.start():end]
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verify-regression", action="store_true", help="Require the probe to reject removal of the frame-facing guard")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     pieces = [function("source/game/player_queues_new.c", "update_client_local_player_index")]
     for name in ("player_control_apply_replay", "handle_one_player_input", "player_control_permanent_impulse"):
         pieces.append(function("source/game/player_control.c", name))
@@ -62,6 +62,51 @@ def main():
                 print(result.stdout, end="")
                 if result.returncode:
                     raise AssertionError(result.stderr)
+
+
+def test_replay_control_consumers():
+    main([])
+
+
+def test_auto_record_suite_camera_ownership(tmp_path):
+    source = ROOT / "port/ios/tests/input_replay_probe.c"
+    def build(output, *extra_flags):
+        subprocess.run(["xcrun", "clang", "-O2", "-fsanitize=address,undefined",
+                        "-I" + str(ROOT / "port/linux/src"), *extra_flags,
+                        str(source), "-o", str(output)], cwd=ROOT, check=True)
+
+    fixed = tmp_path / "input-replay-probe"
+    build(fixed)
+    result = subprocess.run([str(fixed), "--auto-record-suite-camera"], cwd=ROOT,
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise AssertionError(result.stderr)
+    assert "auto-record suite camera ownership: PASS" in result.stdout
+
+    omitted = tmp_path / "input-replay-probe-without-suspension"
+    build(omitted, "-DREPLAY_PROBE_OMIT_SUITE_SUSPEND=1")
+    result = subprocess.run([str(omitted), "--auto-record-suite-camera-baseline"], cwd=ROOT,
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise AssertionError(result.stderr)
+    assert "RED reproduced: auto recording owns the action path; camera=0 control=0" in result.stderr
+
+    suite_frame = function("port/linux/src/benchmark_suite.c", "benchmark_suite_frame")
+    next_run = function("port/linux/src/benchmark_suite.c", "next_run")
+    assert suite_frame.index("input_replay_suite_suspend()") < suite_frame.index("next_run();")
+    assert "input_replay_begin(" in next_run
+
+
+def test_benchmark_suite_suspends_before_recorded_scene(tmp_path):
+    output = tmp_path / "benchmark-startup-probe"
+    subprocess.run(["xcrun", "clang", "-O2", "-fsanitize=address,undefined",
+                    "-I" + str(ROOT / "port/linux/src"), "-iquote", str(ROOT / "port/linux/include"),
+                    str(ROOT / "port/ios/tests/benchmark_startup_probe.c"), "-o", str(output)],
+                   cwd=ROOT, check=True)
+    result = subprocess.run([str(output)], cwd=ROOT, capture_output=True, text=True)
+    if result.returncode:
+        raise AssertionError(result.stderr)
+    assert "benchmark startup: PASS" in result.stdout
 
 
 if __name__ == "__main__":

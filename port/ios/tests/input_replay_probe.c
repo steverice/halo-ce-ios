@@ -1,11 +1,13 @@
 /* The complete replay implementation, with the platform and game at its edges stubbed out.
    Benchmark mouth animation must stop when replay ends or the suite clears a scene. */
 #include <assert.h>
+#include <dirent.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 #define HALO_IOS 1
 #define __HALO_LINUX_PLATFORM_H
@@ -162,8 +164,124 @@ static void check_control_pose(void)
 	unlink("camera.input");
 }
 
-int main(void)
+static void remove_recording_fixture_files(void);
+
+static int check_auto_record_suite_camera(int expect_auto_record_collision)
 {
+	char folder[] = "/tmp/visr-auto-camera-XXXXXX";
+	float facing[2] = { -2.0f, 0.7f };
+	short zoom = -1;
+	unsigned int action[ACTION_WORDS] = {0};
+	XINPUT_GAMEPAD pad = {0};
+	FILE *file;
+
+	assert(mkdtemp(folder) && !chdir(folder));
+	assert(!mkdir("recordings", 0700));
+	file = fopen("probe.input", "w");
+	assert(file);
+	fputs("halo input recording 1\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n", file);
+	fclose(file);
+	file = fopen("probe.actions", "w");
+	assert(file);
+	fputs("halo action recording 1 lip_sync=simulated stereo=off\n"
+		"0 10 0 3f800000 bf000000 0 0 0 0 00000002\n"
+		"0 12 0 40c00000 3e800000 0 0 0 0 00000001\n", file);
+	fclose(file);
+
+	record_name = "auto";
+	replay_name = "";
+	replay.configured = FALSE;
+	take.automatic = FALSE;
+	menu_loaded = 1;
+	configure();
+	assert(take.automatic);
+	menu_loaded = 0;
+#ifndef REPLAY_PROBE_OMIT_SUITE_SUSPEND
+	assert(input_replay_suite_suspend());
+#endif
+	assert(input_replay_suite_suspended() != expect_auto_record_collision);
+	assert(take.automatic == expect_auto_record_collision);
+	assert(input_replay_begin("./probe.input", 1));
+	clock_ready = 1;
+	clock_tick = 10;
+	input_replay_filter(&pad);
+	input_replay_tick_action(action);
+	{
+		int control_applied = input_replay_apply_control(0, facing, &zoom);
+		int camera_active = input_replay_action_camera_active();
+
+		if (expect_auto_record_collision)
+		{
+			assert(*replay.record_actions_path);
+			assert(!camera_active && !control_applied);
+			fprintf(stderr, "RED reproduced: auto recording owns the action path; camera=%d control=%d\n",
+				camera_active, control_applied);
+			input_replay_suite_restore();
+			take_close("probe");
+			input_replay_begin(NULL, 0);
+			unlink("probe.input");
+			unlink("probe.actions");
+			remove_recording_fixture_files();
+			assert(!rmdir("recordings"));
+			assert(!chdir("/"));
+			assert(!rmdir(folder));
+			return 0;
+		}
+		assert(!*replay.record_actions_path);
+		assert(camera_active && control_applied);
+		assert(facing[0] == 1.0f && facing[1] == -0.5f && zoom == 2);
+	}
+	assert(input_replay_action_camera_active());
+
+	input_replay_suite_restore();
+	clock_tick = 0;
+	input_replay_filter(&pad);
+	assert(take.automatic && !input_replay_suite_suspended());
+	assert(take.open && replay.record_file);
+	{
+		FILE *recording_file = replay.record_file;
+		long size_before = ftell(recording_file);
+
+		assert(size_before > 0);
+		assert(!input_replay_suite_suspend());
+		assert(take.open && take.automatic && !input_replay_suite_suspended());
+		assert(replay.record_file == recording_file && ftell(recording_file) == size_before);
+	}
+	take_close("probe");
+	input_replay_begin(NULL, 0);
+	unlink("probe.input");
+	unlink("probe.actions");
+	remove_recording_fixture_files();
+	assert(!rmdir("recordings"));
+	assert(!chdir("/"));
+	assert(!rmdir(folder));
+	puts("auto-record suite camera ownership: PASS");
+	return 0;
+}
+
+static void remove_recording_fixture_files(void)
+{
+	DIR *directory = opendir("recordings");
+	struct dirent *entry;
+	char path[600];
+
+	assert(directory);
+	while ((entry = readdir(directory)) != NULL)
+	{
+		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+			continue;
+		snprintf(path, sizeof(path), "recordings/%s", entry->d_name);
+		assert(!remove(path));
+	}
+	assert(!closedir(directory));
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 2 && !strcmp(argv[1], "--auto-record-suite-camera"))
+		return check_auto_record_suite_camera(0);
+	if (argc == 2 && !strcmp(argv[1], "--auto-record-suite-camera-baseline"))
+		return check_auto_record_suite_camera(1);
 	char folder[] = "/tmp/visr-replay-probe-XXXXXX";
 	assert(mkdtemp(folder));
 	assert(!chdir(folder));

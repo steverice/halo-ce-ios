@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define HALO_IOS 1
 #define __HALO_LINUX_PLATFORM_H
@@ -21,6 +23,7 @@ static unsigned char at_menu, worker_active;
 static int readiness_reads, timeline_reads, starts, requests, loads, unsafe_loads, failures;
 static int mp_begins, proof_begins, proof_failed, mp_ends, mp_probe_enabled, mp_probe_resets, suite_suspends, suite_restores;
 static int suspension_allowed = 1;
+static int replay_suspended, replay_begins, replay_begins_before_suspend, recording_selected;
 static int mp_request, window_opens, window_closes, run_ends;
 static int fatal_reports;
 static char last_end_status[32];
@@ -56,6 +59,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     if (mp_request) snprintf(text, size, "scene=%s map=chillout difficulty=normal kind=multiplayer_synthetic lead=15 seconds=60 simulation=%s players=%d views=1 game_mode=slayer score_limit=1000 time_limit_minutes=0",
         mp_request == 2 ? "private-proof-fixture" : "private-local-fixture",
         mp_request == 2 ? "network_players" : "local_controllers", mp_request == 2 ? 2 : 4);
+    else if (recording_selected) snprintf(text, size, "scene=startup map=a10 difficulty=normal recording=probe kind=gameplay lead=100 seconds=10");
     else snprintf(text, size, "scene=startup map=a10 difficulty=normal kind=gameplay lead=100 seconds=10");
     return 1;
 }
@@ -66,8 +70,12 @@ void host_benchmark_end(const char *status, const char *note) {
     (void)note; run_ends++; snprintf(last_end_status, sizeof(last_end_status), "%s", status);
 }
 void host_benchmark_fault(const char *note) { (void)note; fatal_reports++; }
-int input_replay_suite_suspend(void) { suite_suspends++; return suspension_allowed; }
-void input_replay_suite_restore(void) { suite_restores++; }
+int input_replay_suite_suspend(void) {
+    suite_suspends++;
+    if (suspension_allowed) replay_suspended = 1;
+    return suspension_allowed;
+}
+void input_replay_suite_restore(void) { suite_restores++; replay_suspended = 0; }
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
     int players, int views, int score_limit, int time_limit_minutes) {
     CHECK(!strcmp(map, "chillout") && !strcmp(game_mode, "slayer"));
@@ -81,7 +89,14 @@ int network_test_suite_failed(void) { return proof_failed; }
 void network_test_suite_end(void) { mp_ends++; }
 void mp_benchmark_probe_set_suite_requested(int requested) { mp_probe_enabled = requested; }
 void mp_benchmark_probe_reset_controllers(void) { mp_probe_resets++; }
-int input_replay_begin(const char *name, int lip_sync) { (void)name; (void)lip_sync; return 1; }
+int input_replay_begin(const char *name, int lip_sync) {
+    (void)lip_sync;
+    if (name && *name) {
+        replay_begins++;
+        if (!replay_suspended) replay_begins_before_suspend++;
+    }
+    return 1;
+}
 int input_replay_ended(void) { return 0; }
 long input_replay_segment(void) { return 0; }
 double input_replay_length_ticks(void) { return 9000; }
@@ -105,6 +120,7 @@ static void reset(void) {
     readiness_reads = timeline_reads = starts = requests = loads = unsafe_loads = 0;
     mp_begins = proof_begins = proof_failed = mp_ends = mp_probe_enabled = mp_probe_resets = suite_suspends = suite_restores = 0;
     suspension_allowed = 1;
+    replay_suspended = replay_begins = replay_begins_before_suspend = recording_selected = 0;
     mp_request = window_opens = window_closes = run_ends = fatal_reports = 0;
     last_end_status[0] = 0;
     memset(&observed_mp, 0, sizeof(observed_mp));
@@ -116,6 +132,15 @@ static int frame(double milliseconds) {
     exit_armed = 0; return exit_status;
 }
 int main(void) {
+    char folder[] = "/tmp/visr-benchmark-startup-XXXXXX";
+    assert(mkdtemp(folder) && !chdir(folder));
+    assert(!mkdir("benchmark", 0700));
+    assert(!mkdir("benchmark/recordings", 0700));
+    FILE *recording = fopen("benchmark/recordings/probe.input", "w");
+    assert(recording);
+    fputs("probe", recording);
+    fclose(recording);
+
     reset(); worker_active = 1;
     CHECK(frame(0) == -1 && starts == 1);
     CHECK(frame(3500) == -1 && suite.state == suite_starting);
@@ -135,6 +160,10 @@ int main(void) {
     CHECK(frame(3532) == -1 && loads == 1 && requests == 1 && starts == 1);
     frame(3548);
     CHECK(loads == 1 && unsafe_loads == 0);
+
+    reset(); recording_selected = 1;
+    frame(0); frame(3500); frame(3516); frame(3532);
+    CHECK(suite_suspends == 1 && replay_begins == 1 && replay_begins_before_suspend == 0);
 
     reset(); frame(0); frame(3500);
     CHECK(suite.state == suite_next);
@@ -162,6 +191,7 @@ int main(void) {
     reset(); mode = "full"; suspension_allowed = 0;
     CHECK(frame(0) == -1 && suite.state == suite_off);
     CHECK(starts == 0 && requests == 0 && loads == 0 && suite_suspends == 1 && suite_restores == 0);
+    CHECK(replay_begins == 0 && replay_begins_before_suspend == 0);
     CHECK(strstr(last_log, "active recording") != NULL);
     CHECK(frame(100000) == -1 && starts == 0 && requests == 0);
 
@@ -373,6 +403,11 @@ int main(void) {
     observed_mp.time_limit_minutes = 7; observed_mp.score_limit = 1000;
     CHECK(!mp_match_valid(&observed_mp, 1));
 
+    unlink("benchmark/recordings/probe.input");
+    assert(!rmdir("benchmark/recordings"));
+    assert(!rmdir("benchmark"));
+    assert(!chdir("/"));
+    assert(!rmdir(folder));
     if (failures) fprintf(stderr, "benchmark startup: %d failed\n", failures);
     else puts("benchmark startup: PASS (busy worker, timeout, next-frame handoff, ready and ordinary startup)");
     return failures != 0;
