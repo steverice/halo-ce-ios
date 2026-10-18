@@ -360,8 +360,8 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
     if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
-        record[@"simulation"] = @{ @"mode": @(scene->simulation ?: @""), @"requested_players": @(scene->players),
-            @"requested_views": @(scene->views), @"game_mode": @(scene->game_mode ?: @""),
+        record[@"simulation"] = @{ @"mode": @(scene->simulation ?: ""), @"requested_players": @(scene->players),
+            @"requested_views": @(scene->views), @"game_mode": @(scene->game_mode ?: ""),
             @"expected_local_players": @(!strcmp(scene->simulation, "network_players") ? 1 : scene->players),
             @"expected_synthetic_players": @(!strcmp(scene->simulation, "network_players") ? scene->players - 1 : 0),
             @"expected_external_clients": @0,
