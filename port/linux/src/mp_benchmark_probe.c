@@ -2,6 +2,11 @@
 
 #include <string.h>
 
+unsigned long mp_benchmark_probe_device_mask(unsigned long connected, int requested)
+{
+	return requested ? connected | 0x0eUL : connected;
+}
+
 int mp_benchmark_probe_enabled(int requested, int network_host, int multiplayer_map, int local_players,
 	int recording_off)
 {

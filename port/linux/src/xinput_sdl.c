@@ -1099,7 +1099,8 @@ static DWORD connected_gamepads(void)
 		if (port_gamepad(gamepads, count, port))
 			mask |= 1UL << port;
 	}
-	return mask;
+	/* The private four-player probe needs handles before the match starts. */
+	return mp_benchmark_probe_device_mask(mask, mp_benchmark_probe_requested());
 }
 
 BOOL WINAPI XGetDeviceChanges(PXPP_DEVICE_TYPE device_type, PDWORD insertions, PDWORD removals)

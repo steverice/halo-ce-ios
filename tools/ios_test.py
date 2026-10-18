@@ -136,6 +136,7 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     '-iquote', 'port/linux/include', 'port/ios/tests/mp_benchmark_probe.c',
     'port/linux/src/mp_benchmark_probe.c', '-o', BUILD / 'mp-benchmark-probe')
 run(BUILD / 'mp-benchmark-probe')
+run('python3', 'tools/test_mp_benchmark_device_mask.py')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
     '-iquote', 'port/linux/include', 'port/ios/tests/mp_benchmark_context_probe.c',
     'port/linux/src/mp_benchmark_probe.c', '-o', BUILD / 'mp-benchmark-context-probe')

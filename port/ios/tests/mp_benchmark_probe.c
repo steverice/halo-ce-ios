@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+unsigned long mp_benchmark_probe_device_mask(unsigned long connected, int requested);
+
 static int failures;
 #define CHECK(condition) do { if (!(condition)) { \
 	if (failures < 20) fprintf(stderr, "mp_benchmark_probe: line %d: %s\n", __LINE__, #condition); failures++; \
@@ -76,10 +78,19 @@ static void test_distinct_tick_input(void)
 	}
 }
 
+static void test_virtual_controller_connection(void)
+{
+	CHECK(mp_benchmark_probe_device_mask(1UL, 0) == 1UL);
+	CHECK(mp_benchmark_probe_device_mask(3UL, 0) == 3UL);
+	CHECK(mp_benchmark_probe_device_mask(1UL, 1) == 15UL);
+	CHECK(mp_benchmark_probe_device_mask(3UL, 1) == 15UL);
+}
+
 int main(void)
 {
 	test_view_count();
 	test_distinct_tick_input();
+	test_virtual_controller_connection();
 	if (failures) fprintf(stderr, "mp_benchmark_probe: %d failures\n", failures);
 	return failures ? 1 : 0;
 }
