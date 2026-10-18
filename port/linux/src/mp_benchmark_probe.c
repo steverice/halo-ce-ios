@@ -12,7 +12,7 @@ short mp_benchmark_probe_windows(short local_players, int forced_single_screen, 
 {
 	if (forced_single_screen || enabled)
 		return 1;
-	return local_players < 1 ? 1 : local_players > 4 ? 4 : local_players;
+	return local_players;
 }
 
 int mp_benchmark_probe_listener_enabled(short local_player_index, int enabled)
@@ -30,6 +30,13 @@ int mp_benchmark_probe_map_matches(const char *map)
 		if (*map == '\\' || *map == '/')
 			name = map + 1;
 	return !strcmp(name, "chillout");
+}
+
+enum mp_benchmark_probe_input_policy mp_benchmark_probe_policy(int requested, int active)
+{
+	if (!requested)
+		return mp_benchmark_probe_ordinary_input;
+	return active ? mp_benchmark_probe_scripted_input : mp_benchmark_probe_neutral_input;
 }
 
 void mp_benchmark_probe_input(long tick, short port, struct mp_benchmark_probe_pad *pad)

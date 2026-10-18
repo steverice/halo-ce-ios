@@ -136,6 +136,10 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     '-iquote', 'port/linux/include', 'port/ios/tests/mp_benchmark_probe.c',
     'port/linux/src/mp_benchmark_probe.c', '-o', BUILD / 'mp-benchmark-probe')
 run(BUILD / 'mp-benchmark-probe')
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-iquote', 'port/linux/include', 'port/ios/tests/mp_benchmark_context_probe.c',
+    'port/linux/src/mp_benchmark_probe.c', '-o', BUILD / 'mp-benchmark-context-probe')
+run(BUILD / 'mp-benchmark-context-probe')
 run('python3', 'tools/test_replay_control.py')
 run('python3', 'tools/test_checkpoint_timing.py')
 run('python3', 'tools/test_route_check.py')

@@ -25,6 +25,8 @@ static void test_view_count(void)
 	CHECK(mp_benchmark_probe_windows(4, 0, replay) == 4);
 	CHECK(mp_benchmark_probe_windows(4, 1, active) == 1); /* cinematic/postgame */
 	CHECK(mp_benchmark_probe_windows(1, 0, 0) == 1);
+	CHECK(mp_benchmark_probe_windows(0, 0, 0) == 0); /* caller's clamp is authoritative */
+	CHECK(mp_benchmark_probe_windows(7, 0, 0) == 7);
 	CHECK(mp_benchmark_probe_listener_enabled(0, active));
 	CHECK(!mp_benchmark_probe_listener_enabled(1, active));
 	CHECK(!mp_benchmark_probe_listener_enabled(3, active));
@@ -34,6 +36,10 @@ static void test_view_count(void)
 	CHECK(!mp_benchmark_probe_map_matches("levels\\test\\bloodgulch\\bloodgulch"));
 	CHECK(!mp_benchmark_probe_map_matches("chilloutclone"));
 	CHECK(!mp_benchmark_probe_map_matches(""));
+	CHECK(mp_benchmark_probe_policy(0, 0) == mp_benchmark_probe_ordinary_input);
+	CHECK(mp_benchmark_probe_policy(0, 1) == mp_benchmark_probe_ordinary_input);
+	CHECK(mp_benchmark_probe_policy(1, 0) == mp_benchmark_probe_neutral_input);
+	CHECK(mp_benchmark_probe_policy(1, 1) == mp_benchmark_probe_scripted_input);
 }
 
 static void test_distinct_tick_input(void)

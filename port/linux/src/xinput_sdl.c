@@ -837,6 +837,19 @@ static void mp_benchmark_probe_gamepad(XINPUT_GAMEPAD *pad, short port)
 	pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = input.grenade ? 255 : 0;
 }
 
+static enum mp_benchmark_probe_input_policy mp_benchmark_probe_or_test_gamepad(XINPUT_GAMEPAD *pad, short port)
+{
+	enum mp_benchmark_probe_input_policy policy = mp_benchmark_probe_current_policy();
+
+	if (policy == mp_benchmark_probe_scripted_input)
+		mp_benchmark_probe_gamepad(pad, port);
+	else if (policy == mp_benchmark_probe_neutral_input)
+		memset(pad, 0, sizeof(*pad));
+	else
+		test_input_gamepad(pad);
+	return policy;
+}
+
 static void wheel_update(void)
 {
 	Uint64 now = SDL_GetTicks();
@@ -1212,6 +1225,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 	if (port == 0)
 	{
 		struct platform_input_state input;
+		enum mp_benchmark_probe_input_policy probe_policy;
 
 		platform_input_read(&input, TRUE);
 		mouse_poll(&input);
@@ -1227,10 +1241,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		}
 		if (port_gamepad(gamepads, count, 0))
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
-		if (mp_benchmark_probe_active())
-			mp_benchmark_probe_gamepad(&state->Gamepad, port);
-		else
-			test_input_gamepad(&state->Gamepad);
+		probe_policy = mp_benchmark_probe_or_test_gamepad(&state->Gamepad, port);
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
 		{
@@ -1247,21 +1258,20 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		/* (display.late_look: what the stick was when the game read it; not
 		a test's or a replay's input) */
 		look_read.valid = port_gamepad(gamepads, count, 0) != NULL && !platform_fixed_timestep() &&
+			probe_policy == mp_benchmark_probe_ordinary_input &&
 			!config_string("debug.test_input")[0] && !config_string("debug.input_replay")[0];
 		look_read.x = (float)state->Gamepad.sThumbRX / 32767.0f;
 		look_read.y = (float)state->Gamepad.sThumbRY / 32767.0f;
 		look_read.read_ms = halo_frame_trace_milliseconds();
-		input_replay_filter(&state->Gamepad);
+		if (probe_policy == mp_benchmark_probe_ordinary_input)
+			input_replay_filter(&state->Gamepad);
 	}
 	else if (port < config_integer("debug.network_test_players"))
 	{
 		/* (split screen without a second gamepad: the scripted player of
 		debug.test_input plays this controller too, ahead of any gamepad,
 		the Mac's touch controls included) */
-		if (mp_benchmark_probe_active())
-			mp_benchmark_probe_gamepad(&state->Gamepad, port);
-		else
-			test_input_gamepad(&state->Gamepad);
+		mp_benchmark_probe_or_test_gamepad(&state->Gamepad, port);
 	}
 	else if (port_gamepad(gamepads, count, port))
 	{
