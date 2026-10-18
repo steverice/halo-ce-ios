@@ -276,7 +276,10 @@ int main(void) {
         suite.mp_projectile_seen = 1;
         CHECK(!mp_evidence_note(note, sizeof(note)));
         suite.mp_ammo_spent_actor[1] = 1;
+        suite.mp_previous.roster = suite.mp_previous.spawned = 2;
+        suite.mp_previous.local_players = suite.mp_previous.view_count = 1;
         CHECK(mp_evidence_note(note, sizeof(note)) && strstr(note, "local1 synthetic1") != NULL);
+        CHECK(strstr(note, "observed roster 2 spawned 2 local 1 views 1") != NULL);
     }
 
     reset(); suite.state = suite_measuring; suite.mp_scene = 1;

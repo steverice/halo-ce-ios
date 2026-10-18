@@ -304,9 +304,12 @@ static int mp_evidence_note(char *note, size_t size)
 
 	if (!strcmp(suite.mp_simulation, "network_players"))
 	{
-		snprintf(note, size, "synthetic host local1 synthetic1 one view; moved %d/2 (%.1f,%.1f), "
+		snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
+			"synthetic host local1 synthetic1 one view; moved %d/2 (%.1f,%.1f), "
 			"remote ammo spent %lu, projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
 			"zero external clients; visible opponents require frame review",
+			suite.mp_previous.roster, suite.mp_previous.spawned, suite.mp_previous.local_players,
+			suite.mp_previous.view_count,
 			(suite.mp_distance[0] >= 5.0) + (suite.mp_distance[1] >= 5.0),
 			suite.mp_distance[0], suite.mp_distance[1], suite.mp_ammo_spent_actor[1],
 			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns);
@@ -322,10 +325,12 @@ static int mp_evidence_note(char *note, size_t size)
 		jumps += suite.mp_jump[local];
 		grenades += suite.mp_grenade_requests[local];
 	}
-	snprintf(note, size, "synthetic local4 one view; moved %d/4 (%.1f,%.1f,%.1f,%.1f), fire %d/4 "
+	snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
+		"synthetic local4 one view; moved %d/4 (%.1f,%.1f,%.1f,%.1f), fire %d/4 "
 		"(%lu,%lu,%lu,%lu), jump %lu, grenade requests %lu, ammo spent %lu, grenades used %lu, "
 		"damage changes %lu, deaths %lu, respawns %lu; no remote clients",
-		moved, suite.mp_distance[0], suite.mp_distance[1], suite.mp_distance[2], suite.mp_distance[3],
+		suite.mp_previous.roster, suite.mp_previous.spawned, suite.mp_previous.local_players,
+		suite.mp_previous.view_count, moved, suite.mp_distance[0], suite.mp_distance[1], suite.mp_distance[2], suite.mp_distance[3],
 		firing, suite.mp_fire[0], suite.mp_fire[1], suite.mp_fire[2], suite.mp_fire[3], jumps, grenades,
 		suite.mp_ammo_spent, suite.mp_grenades_used, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns);
 	return moved == 4 && firing == 4 && jumps > 0 && grenades > 0 && suite.mp_ammo_spent > 0 &&

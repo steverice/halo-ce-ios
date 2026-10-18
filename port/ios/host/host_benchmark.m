@@ -362,9 +362,9 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
     if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
         record[@"simulation"] = @{ @"mode": @(scene->simulation ?: @""), @"requested_players": @(scene->players),
             @"requested_views": @(scene->views), @"game_mode": @(scene->game_mode ?: @""),
-            @"local_players": @(!strcmp(scene->simulation, "network_players") ? 1 : scene->players),
-            @"synthetic_players": @(!strcmp(scene->simulation, "network_players") ? scene->players - 1 : 0),
-            @"external_clients": @0,
+            @"expected_local_players": @(!strcmp(scene->simulation, "network_players") ? 1 : scene->players),
+            @"expected_synthetic_players": @(!strcmp(scene->simulation, "network_players") ? scene->players - 1 : 0),
+            @"expected_external_clients": @0,
             @"score_limit": @(scene->score_limit), @"time_limit_minutes": @(scene->time_limit_minutes),
             @"warmup_ticks": @((long)llround(scene->lead * 30.0)), @"window_ticks": @((long)llround(scene->seconds * 30.0)) };
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
