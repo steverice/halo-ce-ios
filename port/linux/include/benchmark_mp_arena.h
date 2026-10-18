@@ -2,6 +2,7 @@
 #ifndef BENCHMARK_MP_ARENA_H
 #define BENCHMARK_MP_ARENA_H
 #include "mp_benchmark_probe.h"
+#include <math.h>
 #include <string.h>
 
 struct benchmark_mp_arena_config
@@ -44,9 +45,19 @@ static inline int benchmark_mp_arena_offset(const struct benchmark_mp_arena_conf
 	return 1;
 }
 
+/* Encode only the synthetic observer's intent through the Xbox axis dead zone. */
+static inline short benchmark_mp_arena_observer_axis(float wanted)
+{
+	int raw;
+	if (wanted == 0.0f) return 0;
+	raw = (int)(9000.0f + (32767.0f - 9000.0f) * fabsf(wanted) + 0.5f);
+	return (short)(wanted < 0.0f ? -raw : raw);
+}
+
 static inline int benchmark_mp_arena_observer_pad(float yaw_error, float pitch_error, int invert_look,
 	long tick, struct mp_benchmark_probe_pad *pad)
 {
+	float magnitude, maximum, scale;
 	if (!pad || !(yaw_error >= -100.0f && yaw_error <= 100.0f) ||
 		!(pitch_error >= -3.2f && pitch_error <= 3.2f) || tick < 0)
 		return 0;
@@ -58,9 +69,15 @@ static inline int benchmark_mp_arena_observer_pad(float yaw_error, float pitch_e
 	if (pitch_error < -0.65f) pitch_error = -0.65f;
 	memset(pad, 0, sizeof(*pad));
 	/* input_abstraction's default layout negates the right stick's yaw. */
-	pad->right_x = (short)(-yaw_error * 32767.0f);
-	pad->right_y = (short)((invert_look ? -pitch_error : pitch_error) * 32767.0f);
-	pad->left_x = tick % 120 < 60 ? 11000 : -11000;
+	/* input_abstraction expands the stick's circle to a square. Encode its
+	desired result before the normal per-axis dead zone and that expansion. */
+	magnitude = hypotf(yaw_error, pitch_error);
+	maximum = fmaxf(fabsf(yaw_error), fabsf(pitch_error));
+	scale = magnitude > 0.0f ? maximum / magnitude : 0.0f;
+	pad->right_x = benchmark_mp_arena_observer_axis(-yaw_error * scale);
+	pad->right_y = benchmark_mp_arena_observer_axis((invert_look ? -pitch_error : pitch_error) * scale);
+	/* Reverse each second to reduce observer drift between arena checks. */
+	pad->left_x = tick % 60 < 30 ? 16000 : -16000;
 	pad->fire = tick % 90 < 24;
 	return 1;
 }

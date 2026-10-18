@@ -91,7 +91,10 @@ static boolean game_time_initialized(void) { return TRUE; }
 static long game_time_get(void) { return game_tick; }
 static int input_replay_sim_isolated(void) { return FALSE; }
 static long player_control_take_frame_action_flags(void) { return 0; }
-static void update_server_take_local_actions(void) { }
+static struct {struct {struct player_action actions[MAXIMUM_LOCAL_PLAYERS];} saved_action_collection;} update_client_globals;
+static long local_player_get_player_index(short local) { return local==0?machine_players[0][0]:NONE; }
+static void *datum_try_and_get(struct data_array *array,long player_index);
+__TAKE_LOCAL_ACTIONS__
 static struct update *update_server_get_update(long number) { (void)number; return &current_update; }
 static void update_client_handle_server_update(const struct server_update *update, long number) {
     (void)number; observed = *update;
@@ -223,6 +226,13 @@ int main(void) {
     queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=0;
     network_test_suite_synthetic_input_tick(1);
     CHECK(network_test.mode==_network_test_off&&strstr(last_log,"machine 31")&&strstr(last_log,"queue ready 0"));
+    /* In a fresh game, the actual local-action copy survives the remote hook. */
+    memset(update_server_distributed_inputs,0,sizeof(update_server_distributed_inputs));
+    for(i=0;i<32;i++)queues[i].identifier=i+1;
+    network_test.mode=_network_test_host;arena_result=1;
+    update_client_globals.saved_action_collection.actions[0].throttle.j=0.2945f;
+    game_tick=220;update_server_next_update();
+    CHECK(observed.actions[5].throttle.j==0.2945f);
     return failures != 0;
 }
 '''
@@ -252,6 +262,7 @@ def test_suite_input_reaches_host_tick_snapshot() -> None:
         "__HANDLE_INPUT__": function(QUEUES, "void update_server_handle_distributed_input("),
         "__SYNTHETIC_INPUT__": synthetic,
         "__NEXT_UPDATE__": function(QUEUES, "void update_server_next_update("),
+        "__TAKE_LOCAL_ACTIONS__": function(QUEUES, "static void update_server_take_local_actions(\n\tvoid)\n{"),
     }.items():
         source = source.replace(key, value)
     with tempfile.TemporaryDirectory(prefix="mp-synthetic-input-") as temporary:
