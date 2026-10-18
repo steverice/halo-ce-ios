@@ -1025,8 +1025,13 @@ short cache_copy_get_status(
 		574,
 		progress);
 
+#ifdef HALO_IOS
 	if (global_self->blocking)
-		Sleep(1); /* port: the loading loop waits for VBlank after each status poll */
+		Sleep(1); /* port: yield; the loading loop's VBlank throttle paces the frame */
+#else
+	if (global_self->blocking)
+		Sleep(16);
+#endif
 
 	if (!flags && global_self->copy_thread)
 	{

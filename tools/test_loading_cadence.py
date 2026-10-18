@@ -1,10 +1,14 @@
 """Exercise production loading polling against async completion and VBlank clocks."""
 from pathlib import Path
+import shutil
 import subprocess
+import sys
 import tempfile
+import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+COMPILER = shutil.which("clang") or shutil.which("cc")
 
 
 def test_blocking_cache_poll_keeps_loading_frames_on_consecutive_refreshes():
@@ -158,12 +162,67 @@ int main(void) {
         binary = Path(directory) / "probe"
         probe.write_text(harness + cache_poll + driver)
         subprocess.run([
-            "xcrun", "clang", "-O2", "-Wall", "-Wextra", "-Werror",
-            "-fsanitize=address,undefined", str(probe), f"--output={binary}",
+            COMPILER, "-DHALO_IOS=1", "-O2", "-Wall", "-Wextra", "-Werror",
+            "-fsanitize=address,undefined", str(probe), "-o", str(binary),
         ], check=True)
         subprocess.run([str(binary)], check=True)
 
 
+def test_non_apple_cache_poll_retains_the_upstream_yield():
+    source = (ROOT / "source/cache/cache_files_decompress_windows.c").read_text()
+    start = source.index("short cache_copy_get_status(")
+    end = source.index("\nvoid cache_copy_end(", start)
+    actual = source[start:end]
+    harness = r'''
+#include <assert.h>
+typedef float real;
+typedef void *HANDLE;
+struct cache_file_header { unsigned long size; };
+struct simple_decompressor_definition {
+    int blocking;
+    unsigned long flags;
+    HANDLE copy_thread;
+    struct cache_file_header header;
+    HANDLE copy_complete_event;
+    HANDLE progress_update_event;
+    real read_progress;
+};
+static struct simple_decompressor_definition state = { 1, 0, (HANDLE)3, { 1 }, (HANDLE)1, (HANDLE)2, 0 };
+static struct simple_decompressor_definition *global_self = &state;
+static unsigned long waited_ms;
+static unsigned long cache_copy_get_flags(void) { return global_self->flags; }
+static unsigned long WaitForSingleObject(HANDLE event, unsigned long timeout) {
+    (void)event; (void)timeout; return 1;
+}
+static void Sleep(unsigned long milliseconds) { waited_ms = milliseconds; }
+#define match_assert(file, line, expression) assert(expression)
+enum cache_copy_status {
+    _cache_copy_bad_file_failure, _cache_copy_read_failure, _cache_copy_write_failure,
+    _cache_copy_in_progress, _cache_copy_finished
+};
+enum { _copy_write_failed_bit, _copy_read_failed_bit, _copy_bad_file_bit };
+#define TEST_FLAG(flags, bit) (((flags) & (1UL << (bit))) != 0)
+'''
+    driver = r'''
+int main(void) {
+    real progress = 0;
+    assert(cache_copy_get_status(&progress) == _cache_copy_in_progress);
+    assert(waited_ms == 16);
+    return 0;
+}
+'''
+    with tempfile.TemporaryDirectory(prefix="loading-non-apple-") as directory:
+        probe = Path(directory) / "probe.c"
+        binary = Path(directory) / "probe"
+        probe.write_text(harness + actual + driver)
+        subprocess.run([
+            COMPILER, "-O2", "-Wall", "-Wextra", "-Werror", str(probe),
+            "-o", str(binary),
+        ], check=True)
+        subprocess.run([str(binary)], check=True)
+
+
+@unittest.skipUnless(sys.platform == "darwin", "the Apple Sleep wrapper runs only on Apple hosts")
 def test_apple_sleep_wrapper_yields_for_the_requested_millisecond():
     source = (ROOT / "port/linux/src/xbox_kernel.c").read_text()
     start = source.index("DWORD WINAPI SleepEx(")
@@ -210,7 +269,14 @@ int main(void) {
         binary = Path(directory) / "probe"
         probe.write_text(harness + actual + driver)
         subprocess.run([
-            "xcrun", "clang", "-O2", "-Wall", "-Wextra", "-Werror",
-            "-fsanitize=address,undefined", str(probe), f"--output={binary}",
+            COMPILER, "-O2", "-Wall", "-Wextra", "-Werror",
+            "-fsanitize=address,undefined", str(probe), "-o", str(binary),
         ], check=True)
         subprocess.run([str(binary)], check=True)
+
+
+if __name__ == "__main__":
+    test_blocking_cache_poll_keeps_loading_frames_on_consecutive_refreshes()
+    test_non_apple_cache_poll_retains_the_upstream_yield()
+    if sys.platform == "darwin":
+        test_apple_sleep_wrapper_yields_for_the_requested_millisecond()
