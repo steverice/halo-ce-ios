@@ -53,8 +53,9 @@ int host_benchmark_start(const char *name, int drawable, int base, int anisotrop
 }
 int host_benchmark_next(char *text, unsigned int size) {
     requests++;
-    if (mp_request) snprintf(text, size, "scene=%s map=chillout difficulty=normal kind=multiplayer_synthetic lead=15 seconds=60",
-        mp_request == 2 ? "mp-chillout-2-proof" : "mp-chillout-4");
+    if (mp_request) snprintf(text, size, "scene=%s map=chillout difficulty=normal kind=multiplayer_synthetic lead=15 seconds=60 simulation=%s players=%d views=1 game_mode=slayer score_limit=1000 time_limit_minutes=0",
+        mp_request == 2 ? "private-proof-fixture" : "private-local-fixture",
+        mp_request == 2 ? "network_players" : "local_controllers", mp_request == 2 ? 2 : 4);
     else snprintf(text, size, "scene=startup map=a10 difficulty=normal kind=gameplay lead=100 seconds=10");
     return 1;
 }
@@ -67,9 +68,16 @@ void host_benchmark_end(const char *status, const char *note) {
 void host_benchmark_fault(const char *note) { (void)note; fatal_reports++; }
 int input_replay_suite_suspend(void) { suite_suspends++; return suspension_allowed; }
 void input_replay_suite_restore(void) { suite_restores++; }
-int network_test_suite_begin_chillout(void) { mp_begins++; return 1; }
-int network_test_suite_begin_two_player_proof(void) { proof_begins++; return 1; }
-int network_test_suite_two_player_proof_failed(void) { return proof_failed; }
+int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
+    int players, int views, int score_limit, int time_limit_minutes) {
+    CHECK(!strcmp(map, "chillout") && !strcmp(game_mode, "slayer"));
+    CHECK(views == 1 && score_limit == suite.mp_score_limit && time_limit_minutes == suite.mp_time_limit_minutes);
+    if (!strcmp(simulation, "network_players") && players == 2) proof_begins++;
+    else if (!strcmp(simulation, "local_controllers") && players == 4) mp_begins++;
+    else return 0;
+    return 1;
+}
+int network_test_suite_failed(void) { return proof_failed; }
 void network_test_suite_end(void) { mp_ends++; }
 void mp_benchmark_probe_set_suite_requested(int requested) { mp_probe_enabled = requested; }
 void mp_benchmark_probe_reset_controllers(void) { mp_probe_resets++; }
@@ -90,6 +98,9 @@ void halo_model_lod_set(int max) { (void)max; }
 
 static void reset(void) {
     memset(&suite, 0, sizeof(suite));
+    strcpy(suite.map, "chillout"); strcpy(suite.mp_game_mode, "slayer");
+    strcpy(suite.mp_simulation, "local_controllers");
+    suite.mp_players = 4; suite.mp_views = 1; suite.mp_score_limit = 1000;
     now = 0; mode = "quick"; at_menu = 1; worker_active = 0;
     readiness_reads = timeline_reads = starts = requests = loads = unsafe_loads = 0;
     mp_begins = proof_begins = proof_failed = mp_ends = mp_probe_enabled = mp_probe_resets = suite_suspends = suite_restores = 0;
@@ -257,7 +268,7 @@ int main(void) {
     }
     CHECK(run_ends == 1 && !strcmp(last_end_status, "ok") && window_closes == 1);
 
-    reset(); suite.mp_scene = 1; strcpy(suite.scene, "mp-chillout-2-proof");
+    reset(); suite.mp_scene = 1; strcpy(suite.mp_simulation, "network_players"); suite.mp_players = 2;
     suite.mp_distance[0] = suite.mp_distance[1] = 10.0;
     suite.mp_ammo_spent = suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 1;
     { char note[512];
@@ -283,7 +294,7 @@ int main(void) {
     CHECK(run_ends == 1 && !strcmp(last_end_status, "failed") && suite.state == suite_wait_mp_teardown);
 
     reset(); suite.state = suite_loading; suite.mp_scene = suite.mp_host_started = 1;
-    snprintf(suite.scene, sizeof(suite.scene), "mp-chillout-2-proof");
+    strcpy(suite.mp_simulation, "network_players"); suite.mp_players = 2;
     suite.mp_first_tick = suite.mp_last_tick = -1;
     observed_mp = (struct benchmark_mp_state){ .tick = 30, .multiplayer = 1, .map_ok = 1, .slayer = 1,
         .score_limit = 1000, .local_players = 1, .roster = 2, .spawned = 2, .view_count = 1,
@@ -297,7 +308,7 @@ int main(void) {
     CHECK(suite.state == suite_lead && suite.mp_ready_tick == 60);
 
     reset(); suite.state = suite_loading; suite.mp_scene = suite.mp_host_started = 1;
-    snprintf(suite.scene, sizeof(suite.scene), "mp-chillout-2-proof");
+    strcpy(suite.mp_simulation, "network_players"); suite.mp_players = 2;
     suite.mp_first_tick = suite.mp_last_tick = -1;
     observed_mp = (struct benchmark_mp_state){ .tick = 30, .multiplayer = 1, .map_ok = 1, .slayer = 1,
         .score_limit = 1000, .local_players = 1, .roster = 2, .spawned = 2, .view_count = 1,
@@ -332,13 +343,32 @@ int main(void) {
     CHECK(run_ends == 1 && !strcmp(last_end_status, "failed") && window_closes == 1);
 
     reset(); suite.state = suite_loading; suite.mp_scene = 1;
-    snprintf(suite.scene, sizeof(suite.scene), "mp-chillout-2-proof");
+    strcpy(suite.mp_simulation, "network_players"); suite.mp_players = 2;
     suite.pending_action = suite_action_mp_begin;
     benchmark_suite_mainloop_update();
     CHECK(proof_begins == 1 && mp_begins == 0 && suite.mp_host_started == 1);
     proof_failed = 1;
     frame(1000);
     CHECK(run_ends == 1 && !strcmp(last_end_status, "failed") && suite.state == suite_wait_mp_teardown);
+
+    /* Catalog IDs are labels; typed fields alone choose and validate the match. */
+    reset(); suite.state = suite_loading; suite.mp_scene = 1;
+    strcpy(suite.scene, "arbitrary-catalog-label");
+    strcpy(suite.mp_simulation, "network_players"); suite.mp_players = 2;
+    suite.mp_score_limit = 37; suite.mp_time_limit_minutes = 7;
+    suite.pending_action = suite_action_mp_begin;
+    benchmark_suite_mainloop_update();
+    CHECK(proof_begins == 1 && suite.mp_host_started);
+    observed_mp = (struct benchmark_mp_state){ .multiplayer = 1, .map_ok = 1, .slayer = 1,
+        .score_limit = 37, .time_limit_minutes = 7, .local_players = 1, .roster = 2, .spawned = 2,
+        .view_count = 1, .observer0 = 1, .probe_active = 1, .synthetic_queue_ready = 1, .can_score = 1 };
+    observed_mp.actors[0].present = observed_mp.actors[1].present = 1;
+    observed_mp.actors[0].spawned = observed_mp.actors[1].spawned = 1;
+    CHECK(mp_match_valid(&observed_mp, 1));
+    observed_mp.time_limit_minutes = 0;
+    CHECK(!mp_match_valid(&observed_mp, 1));
+    observed_mp.time_limit_minutes = 7; observed_mp.score_limit = 1000;
+    CHECK(!mp_match_valid(&observed_mp, 1));
 
     if (failures) fprintf(stderr, "benchmark startup: %d failed\n", failures);
     else puts("benchmark startup: PASS (busy worker, timeout, next-frame handoff, ready and ordinary startup)");

@@ -36,14 +36,10 @@ def lobby_branch() -> str:
 
 
 def suite_functions() -> str:
-    pieces = [function(NETWORK_TEST, "int network_test_suite_begin_chillout(void)"),
+    pieces = [function(NETWORK_TEST, "int network_test_suite_begin("),
               function(NETWORK_TEST, "void network_test_suite_end(void)")]
     if "static int network_test_suite_add_one_synthetic_player(" in NETWORK_TEST:
         pieces.append(function(NETWORK_TEST, "static int network_test_suite_add_one_synthetic_player("))
-    if "int network_test_suite_begin_two_player_proof(void)" in NETWORK_TEST:
-        pieces.append(function(NETWORK_TEST, "int network_test_suite_begin_two_player_proof(void)"))
-    else:
-        pieces.append("static int network_test_suite_begin_two_player_proof(void) { return network_test_suite_begin_chillout(); }")
     return "\n\n".join(pieces)
 
 
@@ -80,7 +76,9 @@ struct network_player {
     char machine_index, controller_index, team_index, player_list_index;
 };
 struct game_variant { struct { short score_to_win; } universal_variant; };
+struct game_variant_options { short time_limit; };
 struct network_game {
+    struct game_variant_options variant_options;
     short machine_count, player_count;
     byte maximum_players;
     struct network_machine machines[NETWORK_GAME_MACHINE_SLOTS];
@@ -179,11 +177,12 @@ static int failures;
 } } while (0)
 int main(void) {
     reset_game();
-    CHECK(network_test_suite_begin_two_player_proof());
+    CHECK(network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
     CHECK(network_test.players_wanted == 1); /* one real local controller */
     network_test.setup_seconds = 1.0f;
     actual_lobby_map_set();
     CHECK(network_test.map_set && server.joined_transport_machines == 1);
+    CHECK(server.game.variant_options.time_limit == 7);
     CHECK(server.game.machine_count == 2 && server.game.player_count == 2);
     CHECK(server.game.machines[1].machine_index == 1);
     CHECK(server.game.players[1].machine_index == 1 && server.game.players[1].controller_index == 0);
@@ -215,12 +214,12 @@ int main(void) {
 
     reset_game();
     memset(&network_test, 0, sizeof(network_test));
-    CHECK(network_test_suite_begin_two_player_proof());
+    CHECK(network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
     network_test.setup_seconds = 1.0f;
     force_slots_held = TRUE;
     actual_lobby_map_set();
     CHECK(network_test.mode == _network_test_off);
-    CHECK(!network_test_suite_begin_two_player_proof());
+    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 37, 7));
     CHECK(server.game.machine_count == 1 && server.game.player_count == 1 &&
         server.game.machines[1].machine_index == NONE);
     return failures != 0;

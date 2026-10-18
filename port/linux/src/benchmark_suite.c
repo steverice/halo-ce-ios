@@ -3,8 +3,8 @@ BENCHMARK_SUITE.C
 
 The device benchmark's suite, inside the game: debug.benchmark_suite =
 "quick" or "full" plays its scenes by itself, several times over at
-different settings, and quits. Full ends with one scripted four-local-player
-match after the solo adaptation stages.
+different settings, and quits. Downloaded multiplayer workloads run after
+the solo adaptation stages.
 
 The app around the game (port/ios/host/host_benchmark.m) decides which run
 comes next, measures every frame, memory and heat, and writes the report;
@@ -23,6 +23,7 @@ are the iOS, tvOS, visionOS and Mac app's.
 #include "platform.h"
 #include "port_config.h"
 #include "benchmark_mp_state.h"
+#include "network_test_suite.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -52,10 +53,6 @@ double input_replay_timeline(void);
 void benchmark_scenario_load(const char *map, const char *difficulty);
 unsigned char benchmark_scenario_at_menu(void);
 unsigned char benchmark_scenario_player_position(float *position);
-int network_test_suite_begin_chillout(void);
-int network_test_suite_begin_two_player_proof(void);
-int network_test_suite_two_player_proof_failed(void);
-void network_test_suite_end(void);
 void mp_benchmark_probe_set_suite_requested(int requested);
 void mp_benchmark_probe_reset_controllers(void);
 /* source/interface/ui_widget.c: cleared when the ordinary UI pump joins the startup worker */
@@ -96,6 +93,8 @@ static struct
 	enum suite_state state;
 	/* the run in hand */
 	char scene[48], map[32], difficulty[16], recording[64];
+	char mp_simulation[32], mp_game_mode[16];
+	int mp_players, mp_views, mp_score_limit, mp_time_limit_minutes;
 	double lead, seconds;
 	long lines, anisotropy, shadow_size;
 	int model_lod_max;
@@ -157,8 +156,8 @@ void benchmark_suite_mainloop_update(void)
 		}
 		mp_benchmark_probe_set_suite_requested(1);
 		mp_benchmark_probe_reset_controllers();
-		if (!(strcmp(suite.scene, "mp-chillout-2-proof") == 0 ?
-			network_test_suite_begin_two_player_proof() : network_test_suite_begin_chillout()))
+		if (!network_test_suite_begin(suite.mp_simulation, suite.map, suite.mp_game_mode,
+			suite.mp_players, suite.mp_views, suite.mp_score_limit, suite.mp_time_limit_minutes))
 		{
 			mp_benchmark_probe_set_suite_requested(0);
 			suite.mp_action_failed = 1;
@@ -214,17 +213,17 @@ static double number_field(const char *text, const char *key)
 
 static int mp_match_valid(const struct benchmark_mp_state *state, int require_spawned)
 {
-	if (!strcmp(suite.scene, "mp-chillout-2-proof"))
-		return state->multiplayer && state->map_ok && state->slayer && state->score_limit == 1000 &&
-			state->time_limit_minutes == 0 && state->local_players == 1 && state->roster == 2 &&
+	if (!strcmp(suite.mp_simulation, "network_players"))
+		return state->multiplayer && state->map_ok && state->slayer && state->score_limit == suite.mp_score_limit &&
+			state->time_limit_minutes == suite.mp_time_limit_minutes && state->local_players == 1 && state->roster == 2 &&
 			(!require_spawned || state->spawned == 2) && state->actors[0].present && state->actors[1].present &&
 			(!require_spawned || (state->actors[0].spawned && state->actors[1].spawned)) &&
 			(!require_spawned || state->synthetic_queue_ready) &&
-			state->view_count == 1 && state->observer0 && state->probe_active &&
+			state->view_count == suite.mp_views && state->observer0 && state->probe_active &&
 			state->can_score && !state->postgame;
-	return state->multiplayer && state->map_ok && state->slayer && state->score_limit == 1000 &&
-		state->time_limit_minutes == 0 && state->local_players == 4 && state->roster == 4 &&
-		(!require_spawned || state->spawned == 4) && state->view_count == 1 && state->observer0 &&
+	return state->multiplayer && state->map_ok && state->slayer && state->score_limit == suite.mp_score_limit &&
+		state->time_limit_minutes == suite.mp_time_limit_minutes && state->local_players == 4 && state->roster == 4 &&
+		(!require_spawned || state->spawned == 4) && state->view_count == suite.mp_views && state->observer0 &&
 		state->probe_active && state->can_score && !state->postgame;
 }
 
@@ -303,7 +302,7 @@ static int mp_evidence_note(char *note, size_t size)
 	int moved = 0, firing = 0, local;
 	unsigned long jumps = 0, grenades = 0;
 
-	if (!strcmp(suite.scene, "mp-chillout-2-proof"))
+	if (!strcmp(suite.mp_simulation, "network_players"))
 	{
 		snprintf(note, size, "synthetic host local1 synthetic1 one view; moved %d/2 (%.1f,%.1f), "
 			"remote ammo spent %lu, projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
@@ -397,6 +396,12 @@ static void next_run(void)
 	field(text, "map", suite.map, sizeof(suite.map));
 	field(text, "difficulty", suite.difficulty, sizeof(suite.difficulty));
 	field(text, "recording", suite.recording, sizeof(suite.recording));
+	field(text, "simulation", suite.mp_simulation, sizeof(suite.mp_simulation));
+	field(text, "game_mode", suite.mp_game_mode, sizeof(suite.mp_game_mode));
+	suite.mp_players = (int)number_field(text, "players");
+	suite.mp_views = (int)number_field(text, "views");
+	suite.mp_score_limit = (int)number_field(text, "score_limit");
+	suite.mp_time_limit_minutes = (int)number_field(text, "time_limit_minutes");
 	suite.lead = number_field(text, "lead");
 	suite.seconds = number_field(text, "seconds");
 	suite.lines = (long)number_field(text, "lines");
@@ -439,7 +444,7 @@ static void next_run(void)
 		snprintf(path, sizeof(path), RECORDINGS "/%s.input", suite.recording);
 		if (access(path, R_OK))
 		{
-			finish("skipped", "the recording is not on this device");
+			finish("skipped", "the catalog recording is not available in this snapshot");
 			return;
 		}
 	}
@@ -604,8 +609,7 @@ void benchmark_suite_frame(long width, long height)
 		{
 			struct benchmark_mp_state state;
 
-			if (suite.mp_action_failed ||
-				(!strcmp(suite.scene, "mp-chillout-2-proof") && network_test_suite_two_player_proof_failed()))
+			if (suite.mp_action_failed || network_test_suite_failed())
 				finish("failed", "the private match or synthetic player could not start");
 			else if (!suite.mp_host_started)
 			{
@@ -627,8 +631,8 @@ void benchmark_suite_frame(long width, long height)
 			else
 			{
 				benchmark_scenario_multiplayer_state(&state);
-				if (state.multiplayer && (!state.map_ok || !state.slayer || state.score_limit != 1000 ||
-					state.time_limit_minutes != 0 || state.postgame))
+				if (state.multiplayer && (!state.map_ok || !state.slayer || state.score_limit != suite.mp_score_limit ||
+					state.time_limit_minutes != suite.mp_time_limit_minutes || state.postgame))
 					finish("failed", "wrong multiplayer map, variant, limit, or game state");
 				else if (mp_match_valid(&state, 1))
 				{

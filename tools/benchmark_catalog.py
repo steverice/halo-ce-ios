@@ -1,0 +1,237 @@
+"""Strict validation for benchmark cases carried by signed recording packs."""
+import json
+import math
+import os
+import re
+import stat
+import struct
+from pathlib import Path
+
+CATALOG_NAME = "benchmark-catalog.json"
+CATALOG_SCHEMA = 1
+MAXIMUM_CASES = 16
+MAXIMUM_CATALOG_BYTES = 256 * 1024
+CASE_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,45}[a-z0-9])?\Z")
+MAP_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,29}[a-z0-9])?\Z")
+RECORDING_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?\Z")
+DIFFICULTIES = {"easy", "normal", "hard", "impossible"}
+KINDS = {"menu", "cutscene", "gameplay", "multiplayer"}
+PLAYERS = {2, 4}
+COMMON_FIELDS = {"kind", "order", "map", "difficulty", "recording", "lead", "window"}
+MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
+
+
+class CatalogError(ValueError):
+    """The signed benchmark catalog is missing or malformed."""
+
+
+def _pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise CatalogError(f"catalog contains duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
+def _read_regular(path, maximum):
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError as error:
+        raise CatalogError(f"{path.name} is missing") from error
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= maximum:
+            raise CatalogError(f"{path.name} is not a bounded regular file")
+        chunks = []
+        remaining = info.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(65536, remaining))
+            if not chunk:
+                raise CatalogError(f"{path.name} changed while reading")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if os.read(descriptor, 1):
+            raise CatalogError(f"{path.name} changed while reading")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def _canonical(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _number(value, name, minimum, maximum, *, positive=False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise CatalogError(f"catalog {name} must be a finite number")
+    if value < minimum or value > maximum or (positive and value == 0):
+        raise CatalogError(f"catalog {name} is outside its supported range")
+    return float(value)
+
+
+def _text(value, name, pattern, *, empty=False):
+    if not isinstance(value, str) or (not value and not empty) or (value and not pattern.fullmatch(value)):
+        raise CatalogError(f"catalog {name} is invalid")
+    return value
+
+
+def _route(folder, recording):
+    route_path = folder / f"{recording}.route"
+    route_bytes = _read_regular(route_path, 4095)
+    try:
+        route_text = route_bytes.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise CatalogError(f"{recording}.route is not ASCII") from error
+    values = {}
+    segment_seeds = []
+    for line in route_text.splitlines():
+        if not line:
+            continue
+        if " = " not in line:
+            raise CatalogError(f"{recording}.route has a malformed field")
+        key, value = line.split(" = ", 1)
+        if key == "segment_seed":
+            segment_seeds.append(value)
+            continue
+        if key in values:
+            raise CatalogError(f"{recording}.route repeats {key}")
+        values[key] = value
+    try:
+        route = {
+            "scene": values.get("scene", recording),
+            "kind": values.get("kind", "gameplay"),
+            "map": values["map"],
+            "difficulty": values["difficulty"],
+            "entered": values["entered"],
+            "first_tick": int(values["first_tick"]),
+            "lead": float(values.get("lead", 0)),
+            "window": float(values.get("window", values.get("seconds", 0))),
+        }
+    except (KeyError, ValueError) as error:
+        raise CatalogError(f"{recording}.route lacks required replay fields") from error
+    if (route["kind"] not in {"gameplay", "cutscene"} or route["entered"] not in {"start", "console"} or
+            route["first_tick"] not in {0, 1} or not math.isfinite(route["lead"]) or not math.isfinite(route["window"])):
+        raise CatalogError(f"{recording}.route is not a fresh replayable route")
+    for extension in ("input", "actions", "seeds"):
+        _read_regular(folder / f"{recording}.{extension}", 4 * 1024 * 1024)
+    return route
+
+
+def _active_window(folder, recording, lead, window):
+    path = folder / f"{recording}.actions"
+    data = _read_regular(path, 4 * 1024 * 1024)
+    try:
+        lines = data.decode("ascii").splitlines()
+    except UnicodeDecodeError as error:
+        raise CatalogError(f"{recording}.actions is not ASCII") from error
+    if not lines or not lines[0].startswith("halo action recording 1"):
+        raise CatalogError(f"{recording}.actions has an invalid header")
+    start, end = lead * 30.0, (lead + window) * 30.0
+    active = False
+    for ordinal, line in enumerate(lines[1:]):
+        if ordinal < start or ordinal > end:
+            continue
+        fields = line.split()
+        if len(fields) != 10:
+            raise CatalogError(f"{recording}.actions has a malformed action")
+        try:
+            words = [int(word, 16) for word in fields[2:]]
+            throttle = (struct.unpack("<f", struct.pack("<I", words[3]))[0],
+                        struct.unpack("<f", struct.pack("<I", words[4]))[0])
+            trigger = struct.unpack("<f", struct.pack("<I", words[5]))[0]
+        except (ValueError, struct.error) as error:
+            raise CatalogError(f"{recording}.actions has an invalid player action") from error
+        if all(math.isfinite(value) for value in (*throttle, trigger)) and (math.hypot(*throttle) > 0.1 or trigger > 0.05):
+            active = True
+    return active
+
+
+def load_catalog(folder):
+    """Load cases in catalog order and validate their exact route references and selected windows."""
+    root = Path(folder)
+    try:
+        raw = _read_regular(root / CATALOG_NAME, MAXIMUM_CATALOG_BYTES)
+        document = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs,
+                              parse_constant=lambda value: (_ for _ in ()).throw(CatalogError(f"invalid number {value}")))
+    except FileNotFoundError as error:
+        raise CatalogError("signed benchmark catalog is missing") from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CatalogError("benchmark catalog is not valid UTF-8 JSON") from error
+    if _canonical(document) != raw:
+        raise CatalogError("benchmark catalog must use canonical JSON")
+    if not isinstance(document, dict) or set(document) != {"schema", "cases"} or document.get("schema") != CATALOG_SCHEMA:
+        raise CatalogError("benchmark catalog has an unsupported schema or fields")
+    cases = document["cases"]
+    if not isinstance(cases, dict) or not 1 <= len(cases) <= MAXIMUM_CASES:
+        raise CatalogError("benchmark catalog must contain 1 to 16 cases")
+    prepared = []
+    orders = set()
+    recorded_maps = set()
+    has_gameplay = False
+    for case_id, case in cases.items():
+        _text(case_id, "case ID", CASE_ID)
+        if not isinstance(case, dict) or "kind" not in case:
+            raise CatalogError(f"case {case_id} must be an object with a kind")
+        kind = case["kind"]
+        if not isinstance(kind, str) or kind not in KINDS:
+            raise CatalogError(f"case {case_id} has an unsupported kind")
+        fields = COMMON_FIELDS | (MULTIPLAYER_FIELDS if kind == "multiplayer" else set())
+        if set(case) != fields:
+            raise CatalogError(f"case {case_id} has missing or unsupported fields")
+        order = case["order"]
+        if isinstance(order, bool) or not isinstance(order, int) or not 0 <= order < MAXIMUM_CASES or order in orders:
+            raise CatalogError(f"case {case_id} has an invalid or duplicate order")
+        orders.add(order)
+        map_name = _text(case["map"], f"{case_id} map", MAP_NAME, empty=kind == "menu")
+        difficulty = case["difficulty"]
+        if not isinstance(difficulty, str) or difficulty not in DIFFICULTIES:
+            raise CatalogError(f"case {case_id} has an unsupported difficulty")
+        lead = _number(case["lead"], f"{case_id} lead", 0, 3600)
+        window = _number(case["window"], f"{case_id} window", 0, 3600, positive=True)
+        recording = case["recording"]
+        if recording is not None:
+            _text(recording, f"{case_id} recording", RECORDING_NAME)
+            if map_name in recorded_maps:
+                raise CatalogError(f"catalog selects more than one recording per level: {map_name}")
+            recorded_maps.add(map_name)
+            route = _route(root, recording)
+            if (route["scene"] != case_id or route["map"] != map_name or route["difficulty"] != difficulty or
+                    route["kind"] != kind or abs(route["lead"] - lead) > 1e-6 or abs(route["window"] - window) > 1e-6):
+                raise CatalogError(f"case {case_id} does not match its recording route")
+        elif kind == "gameplay":
+            raise CatalogError(f"gameplay case {case_id} requires a recording")
+        elif kind in {"cutscene", "multiplayer"} and not map_name:
+            raise CatalogError(f"case {case_id} requires a map")
+        elif kind == "menu" and (map_name or recording is not None):
+            raise CatalogError(f"menu case {case_id} cannot select a map or recording")
+        if kind == "multiplayer":
+            simulation = case["simulation"]
+            players = case["players"]
+            if not isinstance(simulation, str) or simulation not in {"local_controllers", "network_players"}:
+                raise CatalogError(f"multiplayer case {case_id} has an unsupported simulation mode")
+            if isinstance(players, bool) or not isinstance(players, int) or players not in PLAYERS:
+                raise CatalogError(f"multiplayer case {case_id} has an unsupported players value")
+            if (simulation == "local_controllers" and players != 4) or (simulation == "network_players" and players != 2):
+                raise CatalogError(f"multiplayer case {case_id} players do not match its simulation mode")
+            if isinstance(case["views"], bool) or not isinstance(case["views"], int) or case["views"] != 1:
+                raise CatalogError(f"multiplayer case {case_id} requests an unsupported view count")
+            if not isinstance(case["game_mode"], str) or case["game_mode"] != "slayer":
+                raise CatalogError(f"multiplayer case {case_id} requests an unsupported game mode")
+            score = case["score_limit"]
+            if isinstance(score, bool) or not isinstance(score, int) or not 1 <= score <= 1000:
+                raise CatalogError(f"multiplayer case {case_id} has an unsupported score limit")
+            time_limit = case["time_limit_minutes"]
+            if isinstance(time_limit, bool) or not isinstance(time_limit, int) or not 0 <= time_limit <= 120:
+                raise CatalogError(f"multiplayer case {case_id} has an unsupported time limit")
+        if kind == "gameplay":
+            has_gameplay = True
+            if not _active_window(root, recording, lead, window):
+                raise CatalogError(f"gameplay case {case_id} has no movement or combat input in its measured window")
+        prepared.append({"id": case_id, **case})
+    if orders != set(range(len(cases))):
+        raise CatalogError("catalog order must be contiguous from zero")
+    if not has_gameplay and not any(case["kind"] == "multiplayer" for case in prepared):
+        raise CatalogError("catalog must include gameplay or a supported multiplayer workload")
+    prepared.sort(key=lambda case: case["order"])
+    return prepared

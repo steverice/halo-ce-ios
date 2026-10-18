@@ -1,8 +1,8 @@
 #ifndef HOST_RECORDING_PACK_H
 #define HOST_RECORDING_PACK_H
 
-/* Downloaded snapshots must fit beside the three built-in benchmark scenes. */
-#define HOST_RECORDING_PACK_MAX_ROUTES 13
+/* Benchmark case count is bounded by the generic planner, not by built-in scene definitions. */
+#define HOST_RECORDING_PACK_MAX_ROUTES 16
 #define HOST_RECORDING_PACK_MAX_FILES 160
 #define HOST_RECORDING_PACK_MAX_FILE_BYTES (4 * 1024 * 1024)
 #define HOST_RECORDING_PACK_MAX_TOTAL_BYTES (12 * 1024 * 1024)

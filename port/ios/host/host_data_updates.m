@@ -4,6 +4,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #include "host_profile.h"
 #include "host_recording_pack.h"
+#import "host_benchmark_catalog.h"
 #ifndef HALO_GUEST_SHA256
 #include "guest_image.h"
 #endif
@@ -96,9 +97,10 @@ static void initialize(void)
             if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Invalid profile snapshot"}];
             return valid;
         });
-        recordings = store(@"recordings", bundledRecordings, @"benchmark-replay-1:" HALO_GUEST_SHA256, ^BOOL(NSString *folder, NSError **error) {
-            BOOL valid = host_recording_pack_validate(folder.fileSystemRepresentation, NULL);
-            if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:2 userInfo:@{NSLocalizedDescriptionKey: @"Invalid recording snapshot"}];
+        recordings = store(@"recordings", bundledRecordings, @"benchmark-catalog-1:" HALO_GUEST_SHA256, ^BOOL(NSString *folder, NSError **error) {
+            BOOL valid = host_recording_pack_validate(folder.fileSystemRepresentation, NULL) &&
+                host_benchmark_catalog_validate_folder(folder, error);
+            if (!valid && error && !*error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:2 userInfo:@{NSLocalizedDescriptionKey: @"Invalid recording snapshot"}];
             return valid;
         });
         profileFolder = [profiles beginLaunch];

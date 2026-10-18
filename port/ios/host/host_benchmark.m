@@ -15,11 +15,13 @@
 #import "host_benchmark_presentation.h"
 #import "host_benchmark_snapshot.h"
 #import "host_data_updates.h"
+#import "host_benchmark_catalog.h"
 #include "host_profile.h"
 #include "host_config.h"
 #include "host_external.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
+#include <math.h>
 #include <mach/mach.h>
 #include <os/lock.h>
 #include <os/proc.h>
@@ -76,6 +78,7 @@ static NSDate *started;
 static dispatch_source_t sampler;
 static int last_run_throttled;
 static NSDictionary *pinned_snapshot;
+static NSString *catalog_status, *catalog_note;
 static NSDictionary *run_environment_start, *run_environment_end, *run_output, *suite_output;
 static unsigned run_output_generation;
 static NSArray<NSString *> *external_modes;
@@ -301,7 +304,8 @@ static NSString *report_header(void) {
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
         "\"external_modes_complete\":%s,\"output\":%@,\"output_reports\":%@,\"requested_output\":%@,\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
         "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
-        "\"model_lod\":\"%s\"},\"data_updates\":%@,\"recording_snapshot\":%@,\"profile_sha256\":%@,\"flags\":%@",
+        "\"model_lod\":\"%s\"},\"data_updates\":%@,\"recording_snapshot\":%@,\"profile_sha256\":%@,"
+        "\"benchmark_catalog\":{\"status\":%@,\"sha256\":%@,\"note\":%@},\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
         [minutes stringFromDate:started ?: NSDate.date],
         json_string(model_identifier()), json_string(@(chip)), platform_name(), (long)version.majorVersion,
@@ -325,6 +329,9 @@ static NSString *report_header(void) {
         plan.device.model_lod_max ? "max" : "auto",
         json_object(pinned_snapshot[@"updates"]), json_string(pinned_snapshot[@"sha256"]),
         json_string(pinned_snapshot[@"identity"][@"profile_sha256"]),
+        json_string(catalog_status ?: @"unavailable"),
+        json_string(pinned_snapshot[@"identity"][@"catalog_sha256"] ?: @"unavailable"),
+        json_string(catalog_note ?: @""),
         [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:flags options:0 error:nil] encoding:NSUTF8StringEncoding]];
 }
 
@@ -352,17 +359,14 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         measurements ?: ""];
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
-    if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER) {
-        if (!strcmp(scene->id, "mp-chillout-2-proof"))
-            record[@"simulation"] = @{ @"source": @"synthetic_host_player", @"local_players": @1,
-                @"synthetic_players": @1, @"remote_clients": @0, @"views": @1,
-                @"score_limit": @1000, @"time_limit_minutes": @0,
-                @"warmup_ticks": @450, @"window_ticks": @1800 };
-        else
-            record[@"simulation"] = @{ @"source": @"scripted_four_local", @"local_players": @4, @"views": @1,
-                @"remote_clients": @0, @"score_limit": @1000, @"time_limit_minutes": @0,
-                @"warmup_ticks": @450, @"window_ticks": @1800 };
-    }
+    if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
+        record[@"simulation"] = @{ @"mode": @(scene->simulation ?: @""), @"requested_players": @(scene->players),
+            @"requested_views": @(scene->views), @"game_mode": @(scene->game_mode ?: @""),
+            @"local_players": @(!strcmp(scene->simulation, "network_players") ? 1 : scene->players),
+            @"synthetic_players": @(!strcmp(scene->simulation, "network_players") ? scene->players - 1 : 0),
+            @"external_clients": @0,
+            @"score_limit": @(scene->score_limit), @"time_limit_minutes": @(scene->time_limit_minutes),
+            @"warmup_ticks": @((long)llround(scene->lead * 30.0)), @"window_ticks": @((long)llround(scene->seconds * 30.0)) };
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
@@ -450,8 +454,17 @@ static int cooled(void) {
     return NSProcessInfo.processInfo.thermalState <= NSProcessInfoThermalStateNominal;
 }
 
-/* A resumed journal must describe the same guest, resolved profile and baseline settings. Recording update
-   identities stay in the snapshot metadata, not here: a newly active pack cannot replace an unfinished suite. */
+static NSString *active_catalog_sha256(void) {
+    NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
+    NSDictionary *updates = host_data_updates_metadata();
+    NSDictionary *recording_update = updates[@"recordings"];
+    if (![recording_update isKindOfClass:NSDictionary.class] || [recording_update[@"bundled"] boolValue]) return @"unavailable";
+    NSString *folder = host_recording_update_folder(bundled);
+    return host_benchmark_catalog_file_sha256(folder) ?: @"unavailable";
+}
+
+/* A resumed journal must describe the same guest, catalog, resolved profile and baseline settings. The pinned
+   snapshot still owns the exact replay files, so a later feed update cannot replace an unfinished suite. */
 static NSDictionary *snapshot_identity(const char *mode) {
     const struct host_profile *profile = host_device_profile();
     NSMutableArray *values = [NSMutableArray array];
@@ -464,31 +477,27 @@ static NSDictionary *snapshot_identity(const char *mode) {
         @"inherited": @(profile->inherited), @"source_hardware": @(profile->source_hardware),
         @"target_hardware": @(profile->target_hardware), @"source_tier": @(profile->source_tier),
         @"target_tier": @(profile->target_tier), @"catalog_version": @(profile->catalog_version) };
-    struct benchmark_plan builtins = { .mode = plan.mode, .scenes = benchmark_suite_scenes, .scene_count = benchmark_suite_scene_count };
     return @{ @"guest": @HALO_GUEST_SHA256, @"profile_sha256": host_benchmark_snapshot_digest(resolved),
+        @"catalog_sha256": active_catalog_sha256(),
         @"output_mode": external_modes.count ? external_modes[external_mode_index] : @"",
-        @"suite": @(BENCHMARK_SUITE_VERSION), @"builtins": @(benchmark_plan_signature(&builtins)), @"mode": @(mode),
+        @"suite": @(BENCHMARK_SUITE_VERSION), @"mode": @(mode),
         @"app_build": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"",
         @"device": @[ @(plan.device.drawable_lines), @(plan.device.base_lines), @(plan.device.anisotropy),
             @(plan.device.shadow_size), @(plan.device.model_lod_max) ] };
 }
 
 static NSDictionary *fresh_snapshot(NSDictionary *identity) {
-    NSFileManager *files = NSFileManager.defaultManager;
     NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
     NSString *selected = host_recording_update_folder(bundled);
     NSMutableArray *sources = [NSMutableArray array];
     NSMutableDictionary *updates = [host_data_updates_metadata() mutableCopy];
     if (!updates) updates = [NSMutableDictionary dictionary];
-#ifdef HALO_BENCHMARK_NO_ROUTES
-    /* This build option suppresses bundled recordings, while a validated downloaded pack still participates. */
-    if ([selected isEqual:bundled]) selected = nil;
-#endif
-    if (selected && (![selected isEqual:bundled] || [files fileExistsAtPath:selected])) [sources addObject:selected];
-    NSString *local = @FOLDER "/local-routes";
-    BOOL local_routes = [files contentsOfDirectoryAtPath:local error:nil].count != 0;
-    if (local_routes) [sources addObject:local];
-    updates[@"local_routes"] = @(local_routes);
+    NSDictionary *recording_update = updates[@"recordings"];
+    BOOL signed_feed = [recording_update isKindOfClass:NSDictionary.class] && ![recording_update[@"bundled"] boolValue];
+    BOOL has_catalog = signed_feed && selected && [NSFileManager.defaultManager
+        fileExistsAtPath:[selected stringByAppendingPathComponent:@HOST_BENCHMARK_CATALOG_NAME]];
+    if (has_catalog) [sources addObject:selected];
+    updates[@"benchmark_catalog_status"] = has_catalog ? @"signed" : @"unavailable";
     NSError *error = nil;
     NSDictionary *snapshot = host_benchmark_snapshot_create(@FOLDER, sources, identity, updates, &error);
     if (!snapshot) host_logf(HOST_LOG_INFO, "benchmark: cannot prepare recording snapshot: %s", error.localizedDescription.UTF8String);
@@ -496,46 +505,43 @@ static NSDictionary *fresh_snapshot(NSDictionary *identity) {
 }
 
 static void install_scenes(NSArray<NSString *> *only) {
-    NSFileManager *files = NSFileManager.defaultManager;
-    static const struct benchmark_scene two_player_proof = {
-        "mp-chillout-2-proof", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0
-    };
-    int index;
-    {
-        /* the scenes: the ones that play by themselves, then one for each recorded route the app carries, by name */
-        static struct benchmark_scene scenes[BENCHMARK_SCENES_MAXIMUM];
-        static struct benchmark_route routes[BENCHMARK_SCENES_MAXIMUM];
-        NSString *bundled = @FOLDER "/recordings";
-        int count = 0, route_count = 0;
-        const struct benchmark_scene *multiplayer = NULL;
-        int include_multiplayer;
+    static struct host_benchmark_catalog catalog;
+    static struct benchmark_scene selected[BENCHMARK_SCENES_MAXIMUM];
+    const char *filters[BENCHMARK_SCENES_MAXIMUM];
+    int filter_count = (int)only.count;
+    NSError *error = nil;
+    NSString *folder = @FOLDER "/recordings";
 
-        for (index = 0; index < benchmark_suite_scene_count; index++)
-            if (benchmark_suite_scenes[index].kind == BENCHMARK_SCENE_MULTIPLAYER)
-                multiplayer = &benchmark_suite_scenes[index];
-            else if (!only || [only containsObject:@(benchmark_suite_scenes[index].id)])
-                scenes[count++] = benchmark_suite_scenes[index];
-        /* The two-player source proof is selectable by an exact Full filter,
-           never as part of the default Full or Quick catalog. */
-        if (plan.mode == BENCHMARK_FULL && only.count == 1 && [only.firstObject isEqual:@"mp-chillout-2-proof"])
-            multiplayer = &two_player_proof;
-        include_multiplayer = multiplayer && plan.mode == BENCHMARK_FULL &&
-            (!only || [only containsObject:@(multiplayer->id)]);
-        for (NSString *name in [[files contentsOfDirectoryAtPath:bundled error:nil] sortedArrayUsingSelector:@selector(compare:)]) {
-            NSString *text;
-
-            if (![name.pathExtension isEqualToString:@"route"] ||
-                count >= BENCHMARK_SCENES_MAXIMUM - include_multiplayer) continue;
-            text = [NSString stringWithContentsOfFile:[bundled stringByAppendingPathComponent:name] encoding:NSUTF8StringEncoding error:nil];
-            if (text && benchmark_scene_from_route(text.UTF8String, name.stringByDeletingPathExtension.UTF8String, &routes[route_count])) {
-                if (!only || [only containsObject:@(routes[route_count].id)]) scenes[count++] = routes[route_count++].scene;
-            }
-            else host_logf(HOST_LOG_INFO, "benchmark: %s is not a route this suite can use", name.UTF8String);
-        }
-        if (include_multiplayer) scenes[count++] = *multiplayer;
-        plan.scenes = scenes;
-        plan.scene_count = count;
+    catalog_status = @"available";
+    catalog_note = @"";
+    if (filter_count > BENCHMARK_SCENES_MAXIMUM) {
+        catalog_status = @"unavailable";
+        catalog_note = @"Too many benchmark cases were selected.";
+        plan.scene_count = 0;
+        plan.scenes = selected;
+        return;
     }
+    BOOL loaded = host_benchmark_catalog_load(folder, &catalog, &error);
+    NSString *loaded_sha = loaded ? [NSString stringWithUTF8String:catalog.sha256] : nil;
+    if (!loaded || ![loaded_sha isEqualToString:pinned_snapshot[@"identity"][@"catalog_sha256"]]) {
+        catalog_status = @"unavailable";
+        catalog_note = error.localizedDescription ?: @"The signed benchmark catalog identity does not match the snapshot.";
+        host_logf(HOST_LOG_INFO, "benchmark: catalog unavailable: %s", catalog_note.UTF8String);
+        plan.scene_count = 0;
+        plan.scenes = selected;
+        return;
+    }
+    for (int index = 0; index < filter_count; index++) filters[index] = only[index].UTF8String;
+    int count = benchmark_scenes_select(plan.mode, catalog.scenes, catalog.count,
+        only ? filters : NULL, filter_count, selected, BENCHMARK_SCENES_MAXIMUM);
+    if (count <= 0) {
+        catalog_status = @"unavailable";
+        catalog_note = count < 0 ? @"The catalog case list exceeded runtime capacity." : @"No catalog cases matched this selection.";
+        host_logf(HOST_LOG_INFO, "benchmark: %s", catalog_note.UTF8String);
+        count = 0;
+    }
+    plan.scenes = selected;
+    plan.scene_count = count;
 }
 
 int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
@@ -582,6 +588,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     /* "quick:a10-crew,c40-bridge": only the scenes named after the colon */
     NSArray<NSString *> *only = strchr(mode, ':') ? [@(strchr(mode, ':') + 1) componentsSeparatedByString:@","] : nil;
     install_scenes(only);
+    if ([catalog_status isEqual:@"unavailable"]) flag(@"benchmark_catalog_unavailable");
     if (pinned_resume && !(journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
         journal.device.drawable_lines == plan.device.drawable_lines && journal.device.base_lines == plan.device.base_lines &&
         journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&
@@ -659,7 +666,6 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     if (only) flag(@"scenes_filtered");
     /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
     if (host_device_profile()->drop_in) flag(@"drop_in_profile");
-    if ([pinned_snapshot[@"updates"][@"local_routes"] boolValue]) flag(@"local_routes");
 #if TARGET_OS_SIMULATOR
     flag(@"simulator");
 #endif
@@ -784,11 +790,14 @@ int host_benchmark_next(char *text, unsigned int size) {
             return 0;
         }
     }
-    snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f lines=%ld anisotropy=%ld "
-        "shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+    snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
+        "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
+        "lines=%ld anisotropy=%ld shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
-        scene->lead, scene->seconds, run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
+        scene->lead, scene->seconds, scene->simulation ? scene->simulation : "", scene->players, scene->views,
+        scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
+        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
     /* <= 2 GiB devices retain a 4 MiB collector; others allow 16 MiB. */

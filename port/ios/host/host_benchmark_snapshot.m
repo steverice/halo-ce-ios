@@ -27,6 +27,7 @@ static BOOL hash_valid(id value) {
         [value rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"].invertedSet].location == NSNotFound;
 }
 static BOOL file_name(NSString *name) {
+    if ([name isEqual:@"benchmark-catalog.json"]) return YES;
     NSString *base = name.stringByDeletingPathExtension;
     static NSSet *extensions;
     static dispatch_once_t once;
@@ -126,12 +127,15 @@ NSDictionary *host_benchmark_snapshot_create(NSString *folder, NSArray<NSString 
     NSUInteger total = 0;
     if (error) *error = nil;
     if (![files createDirectoryAtPath:stage withIntermediateDirectories:YES attributes:@{ NSFilePosixPermissions: @0700 } error:error]) return nil;
-    for (NSString *source in sources) {
+    for (NSUInteger source_index = 0; source_index < sources.count; source_index++) {
+        NSString *source = sources[source_index];
         int fd = open(source.fileSystemRepresentation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
         NSArray *names = fd >= 0 ? inventory_in(fd, NO, YES) : nil;
         if (!names) { if (fd >= 0) close(fd); goto failed; }
         BOOL good = YES;
         for (NSString *name in names) {
+            /* Case definitions come only from the first (signed catalog) source, never user-local routes. */
+            if (source_index && [name isEqual:@"benchmark-catalog.json"]) continue;
             NSData *data = read_regular(fd, name.fileSystemRepresentation, HOST_RECORDING_PACK_MAX_FILE_BYTES);
             if (!data.length || total - [lengths[name] unsignedIntegerValue] + data.length > HOST_RECORDING_PACK_MAX_TOTAL_BYTES ||
                 (!lengths[name] && lengths.count >= HOST_RECORDING_PACK_MAX_FILES)) { good = NO; break; }

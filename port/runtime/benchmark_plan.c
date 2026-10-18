@@ -5,18 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The built-in scenes run by themselves. The app adds one scene for each recorded route it
-   carries (benchmark_scene_from_route; port/benchmark/recordings/NAME.route). The probe's own copy of the whole
-   suite is in benchmark_probe.c */
-const struct benchmark_scene benchmark_suite_scenes[] = {
-    { "menu", "", "normal", NULL, 5.0, 30.0, BENCHMARK_SCENE_MENU, 0 },
-    { "a10-opening", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0 },
-    /* the landing cutscene is about 75 s; then the beach, standing still */
-    { "b30-beach", "b30", "easy", NULL, 85.0, 60.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
-    { "mp-chillout-4", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0 },
-};
-const int benchmark_suite_scene_count = (int)(sizeof(benchmark_suite_scenes) / sizeof(benchmark_suite_scenes[0]));
-
 /* the value of "key = value" in a route file's text, quotes and spaces trimmed; 0 if the key is not there */
 static int route_value(const char *text, const char *key, char *value, size_t size) {
     size_t length = strlen(key);
@@ -76,6 +64,31 @@ int benchmark_scene_from_route(const char *text, const char *recording, struct b
     return 1;
 }
 
+static int scene_selected(const struct benchmark_scene *scene, const char *const *only, int only_count) {
+    int index;
+    if (!only || !only_count) return 1;
+    for (index = 0; index < only_count; index++)
+        if (only[index] && !strcmp(scene->id, only[index])) return 1;
+    return 0;
+}
+
+int benchmark_scenes_select(enum benchmark_mode mode, const struct benchmark_scene *catalog, int catalog_count,
+    const char *const *only, int only_count, struct benchmark_scene *output, int capacity) {
+    int count = 0, index;
+
+    if (!catalog || catalog_count < 0 || catalog_count > BENCHMARK_SCENES_MAXIMUM || only_count < 0 ||
+        (only_count && !only) || !output || capacity < 0)
+        return -1;
+    for (index = 0; index < catalog_count; index++) {
+        const struct benchmark_scene *scene = &catalog[index];
+        if ((mode == BENCHMARK_QUICK && scene->kind == BENCHMARK_SCENE_MULTIPLAYER) ||
+            !scene_selected(scene, only, only_count)) continue;
+        if (count >= capacity) return -1;
+        output[count++] = *scene;
+    }
+    return count;
+}
+
 static const long ladder_lines[] = { 540, 720, 1080, 1440, 2160 };
 #define LADDER_COUNT ((int)(sizeof(ladder_lines) / sizeof(ladder_lines[0])))
 #define SIZE_STEPS_MAXIMUM 3
@@ -102,8 +115,10 @@ unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
     for (scene = 0; scene < plan->scene_count; scene++) {
         const struct benchmark_scene *one = &plan->scenes[scene];
 
-        snprintf(text, sizeof(text), "%s|%s|%s|%s|%.2f|%.2f|%d|%d;", one->id, one->map, one->difficulty,
-            one->recording ? one->recording : "", one->lead, one->seconds, (int)one->kind, one->heavy);
+        snprintf(text, sizeof(text), "%s|%s|%s|%s|%.2f|%.2f|%d|%d|%s|%d|%d|%s|%d|%d;",
+            one->id, one->map, one->difficulty, one->recording ? one->recording : "", one->lead, one->seconds,
+            (int)one->kind, one->heavy, one->simulation ? one->simulation : "", one->players, one->views,
+            one->game_mode ? one->game_mode : "", one->score_limit, one->time_limit_minutes);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
     }
     return hash;

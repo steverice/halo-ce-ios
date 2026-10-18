@@ -18,15 +18,19 @@ import sys
 import tempfile
 
 if __package__:
+    from . import benchmark_catalog
     from . import profile_check
     from .profile_catalog_check import check_catalog
 else:
+    import benchmark_catalog
     import profile_check
     from profile_catalog_check import check_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 MAXIMUM_SEQUENCE = 2**53 - 1
 ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024, "recordings": 24 * 1024 * 1024}
+LEGACY_BUILTIN_SCENES = {"menu", "a10-opening", "b30-beach"}
+LEGACY_MAXIMUM_ROUTES = 13
 PROFILE_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.toml")
 RECORDING_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?\.(?:input|actions|seeds|route|checks)")
 
@@ -67,12 +71,30 @@ def sign_helper():
         "port/third_party/monocypher/monocypher.h", "port/third_party/monocypher/monocypher-ed25519.h"])
 
 
-def validate_recordings(folder):
+def validate_recordings(folder, compatibility=None):
     result = subprocess.run([str(recording_helper()), str(folder)], capture_output=True, text=True)
     if result.returncode not in (0, 1):
         raise RuntimeError(result.stderr.strip() or "recording validator failed")
     if result.returncode:
         raise ValueError(result.stderr.strip() or "recording snapshot rejected")
+    catalog_path = Path(folder) / benchmark_catalog.CATALOG_NAME
+    if compatibility and compatibility.startswith("benchmark-catalog-1:"):
+        benchmark_catalog.load_catalog(folder)
+    elif catalog_path.exists():
+        raise ValueError("benchmark-catalog.json requires benchmark-catalog-1 compatibility")
+    else:
+        # Preserve the exact old-client feed contract in the publisher only. New app code has no built-in case IDs.
+        routes = sorted(Path(folder).glob("*.route"))
+        if len(routes) > LEGACY_MAXIMUM_ROUTES:
+            raise ValueError("benchmark-replay-1 snapshots support at most 13 routes")
+        for route in routes:
+            scene = route.stem
+            for line in route.read_text(encoding="ascii").splitlines():
+                if line.startswith("scene = "):
+                    scene = line[8:]
+                    break
+            if scene in LEGACY_BUILTIN_SCENES:
+                raise ValueError(f"{route.name}: scene conflicts with a legacy benchmark case")
 
 
 def validate_profiles(folder):
@@ -116,12 +138,13 @@ def snapshot_limits(kind):
         else (160, 4 * 1024 * 1024, 12 * 1024 * 1024))
 
 
-def snapshot_name_allowed(name, kind):
+def snapshot_name_allowed(name, kind, compatibility=None):
     if not isinstance(name, str):
         return False
     if kind == "profiles":
         return name == "hardware/catalog.toml" or (len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml")
-    return RECORDING_NAME.fullmatch(name)
+    return ((compatibility and compatibility.startswith("benchmark-catalog-1:") and name == benchmark_catalog.CATALOG_NAME)
+        or RECORDING_NAME.fullmatch(name))
 
 
 def snapshot(folder, kind, compatibility=None):
@@ -145,9 +168,9 @@ def snapshot(folder, kind, compatibility=None):
                     if name in ("README.md", "TEMPLATE.toml"):
                         read_regular(descriptor, name, maximum_file)
                         continue
-                    allowed = snapshot_name_allowed(name, kind)
+                    allowed = snapshot_name_allowed(name, kind, compatibility)
                 else:
-                    allowed = snapshot_name_allowed(name, kind)
+                    allowed = snapshot_name_allowed(name, kind, compatibility)
                 if not allowed:
                     raise ValueError(f"{name}: file is not allowed in a {kind} snapshot")
                 files[name] = read_regular(descriptor, name, maximum_file)
@@ -164,7 +187,10 @@ def snapshot(folder, kind, compatibility=None):
             target = validated / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        (validate_profiles if kind == "profiles" else validate_recordings)(validated)
+        if kind == "profiles":
+            validate_profiles(validated)
+        else:
+            validate_recordings(validated, compatibility)
         if kind == "profiles" and compatibility == "profiles-1":
             for name in files:
                 if name == "hardware/catalog.toml":
@@ -205,9 +231,9 @@ def main(arguments=None):
         raise ValueError("sequence must be a positive integer at most 2^53 - 1")
     if args.minimum_engine != 1 or args.maximum_engine != 1:
         raise ValueError("this publisher supports only minimum_engine = maximum_engine = 1")
-    expected = "profiles-[12]" if args.kind == "profiles" else r"benchmark-replay-1:[0-9a-f]{64}"
+    expected = "profiles-[12]" if args.kind == "profiles" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}"
     if not re.fullmatch(expected, args.compatibility):
-        raise ValueError("compatibility must be profiles-1 or profiles-2, or benchmark-replay-1: plus the exact lowercase guest SHA-256")
+        raise ValueError("compatibility must be profiles-1 or profiles-2, or benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256")
     if len(args.notes.encode("utf-8")) > 4096:
         raise ValueError("notes must be at most 4096 UTF-8 bytes")
     files = snapshot(args.input, args.kind, args.compatibility)

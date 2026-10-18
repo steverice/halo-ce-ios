@@ -274,7 +274,7 @@ static int checks_valid(char *text)
 
 int host_recording_pack_validate(const char *folder, void (*log)(const char *))
 {
-    int fd = -1, count = 0, file_count = 0, ok = 0, i;
+    int fd = -1, count = 0, file_count = 0, catalog_count = 0, ok = 0, i;
     uint64_t total = 0;
     DIR *directory = NULL;
     struct dirent *entry;
@@ -291,6 +291,11 @@ int host_recording_pack_validate(const char *folder, void (*log)(const char *))
             !S_ISREG(st.st_mode) || st.st_size <= 0 || st.st_size > HOST_RECORDING_PACK_MAX_FILE_BYTES) goto done;
         total += (uint64_t)st.st_size;
         if (total > HOST_RECORDING_PACK_MAX_TOTAL_BYTES) goto done;
+        if (!strcmp(entry->d_name, "benchmark-catalog.json")) {
+            if (++catalog_count > 1) goto done;
+            errno = 0;
+            continue;
+        }
         dot = strrchr(entry->d_name, '.');
         if (!dot || !(length = (size_t)(dot - entry->d_name)) || length > 48) goto done;
         memcpy(base, entry->d_name, length); base[length] = 0;
@@ -305,7 +310,7 @@ int host_recording_pack_validate(const char *folder, void (*log)(const char *))
         routes[index].mask |= 1u << extension;
         errno = 0;
     }
-    if (errno || !count || count + benchmark_suite_scene_count > BENCHMARK_SCENES_MAXIMUM) goto done;
+    if (errno || (!count && !catalog_count) || count > BENCHMARK_SCENES_MAXIMUM) goto done;
     for (i = 0; i < count; i++) {
         char path[64], *contents[5] = {0}; int extension, valid = 1;
         if ((routes[i].mask & 15) != 15) goto done;
@@ -320,8 +325,6 @@ int host_recording_pack_validate(const char *folder, void (*log)(const char *))
         if (!valid) goto done;
         for (extension = 0; extension < i; extension++)
             if (!strcmp(routes[i].scene, routes[extension].scene)) goto done;
-        for (extension = 0; extension < benchmark_suite_scene_count; extension++)
-            if (!strcmp(routes[i].scene, benchmark_suite_scenes[extension].id)) goto done;
     }
     ok = 1;
 done:

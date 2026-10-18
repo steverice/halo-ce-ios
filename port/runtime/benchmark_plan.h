@@ -47,6 +47,9 @@ struct benchmark_scene {
     enum benchmark_scene_kind kind;
     /* part of the resolution sweep */
     int heavy;
+    /* Multiplayer workload parameters; zero or NULL for other scene kinds. */
+    const char *simulation, *game_mode;
+    int players, views, score_limit, time_limit_minutes;
 };
 
 /* what the plan needs to know about the device and its profile's values */
@@ -91,11 +94,10 @@ struct benchmark_route {
     char id[48], map[32], difficulty[16], recording[64];
 };
 int benchmark_scene_from_route(const char *text, const char *recording, struct benchmark_route *route);
-
-/* the suite's scenes that play by themselves (suite 1); the app adds its recorded routes */
-extern const struct benchmark_scene benchmark_suite_scenes[];
-extern const int benchmark_suite_scene_count;
-#define BENCHMARK_SUITE_VERSION 2
+/* Select an ordered subset of a validated signed catalog. No scenes are supplied by the engine. */
+int benchmark_scenes_select(enum benchmark_mode mode, const struct benchmark_scene *catalog, int catalog_count,
+    const char *const *only, int only_count, struct benchmark_scene *output, int capacity);
+#define BENCHMARK_SUITE_VERSION 3
 
 /* 1 and *next: the run after the count finished ones; 0: the suite is over */
 int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmark_outcome *finished, int count,

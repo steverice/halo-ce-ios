@@ -61,6 +61,7 @@ Called from the main loop every frame (main.c).
 #include "scenario/scenario.h"
 #include "tag_files/tag_files.h"
 #include "camera/observer.h"
+#include "network_test_suite.h"
 
 #include "../src/p2p.h" /* port: port/linux/src/p2p.c, p2p_lobby.c */
 
@@ -121,16 +122,31 @@ static struct
 	real pickup_time;
 	char pickup_weapon[64];
 	long score_to_win;
+	short suite_time_limit_minutes;
 	long logged_time;
 	boolean public_game;
 	boolean browsing;
 	boolean suite_owned;
 } network_test;
 
-int network_test_suite_begin_chillout(void)
+int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
+	int players, int views, int score_limit, int time_limit_minutes)
 {
+	int local_players;
+
+	/* The roster and input proof currently cover only these two tuples. */
+	if (!simulation || !map || !game_mode || strcmp(map, "chillout") || strcmp(game_mode, "slayer") ||
+		views != 1 || score_limit < 1 || score_limit > 1000 || time_limit_minutes < 0 || time_limit_minutes > 120)
+		return 0;
+	if (!strcmp(simulation, "local_controllers") && players == 4)
+		local_players = 4;
+	else if (!strcmp(simulation, "network_players") && players == 2)
+		local_players = 1;
+	else
+		return 0;
 	if (network_test.suite_owned)
-		return 1;
+		return network_test.mode == _network_test_host && network_test.players_wanted == local_players &&
+			network_test.score_to_win == score_limit && network_test.suite_time_limit_minutes == time_limit_minutes;
 	if (*config_string("debug.network_test") || network_test.mode != _network_test_off ||
 		game_connection() != _game_connection_local)
 		return 0;
@@ -138,24 +154,14 @@ int network_test_suite_begin_chillout(void)
 	network_test.checked = TRUE;
 	network_test.suite_owned = TRUE;
 	network_test.mode = _network_test_host;
-	snprintf(network_test.map_name, sizeof(network_test.map_name), "chillout");
-	snprintf(network_test.variant_name, sizeof(network_test.variant_name), "slayer");
-	network_test.players_wanted = 4;
+	snprintf(network_test.map_name, sizeof(network_test.map_name), "%s", map);
+	snprintf(network_test.variant_name, sizeof(network_test.variant_name), "%s", game_mode);
+	network_test.players_wanted = (short)local_players;
 	network_test.start_delay = 15.0f;
-	network_test.score_to_win = 1000;
+	network_test.score_to_win = score_limit;
+	network_test.suite_time_limit_minutes = (short)time_limit_minutes;
 	network_test.shoot_interval = 5.0f;
 	network_test.kill_interval = 25.0f;
-	return 1;
-}
-
-int network_test_suite_begin_two_player_proof(void)
-{
-	if (network_test.suite_owned)
-		return network_test.mode == _network_test_host && network_test.players_wanted == 1;
-	if (!network_test_suite_begin_chillout())
-		return 0;
-	network_test.players_wanted = 1;
-	platform_log("network test: one local and one synthetic player proof");
 	return 1;
 }
 
@@ -164,9 +170,9 @@ int network_test_suite_two_player_proof_active(void)
 	return network_test.suite_owned && network_test.mode == _network_test_host && network_test.players_wanted == 1;
 }
 
-int network_test_suite_two_player_proof_failed(void)
+int network_test_suite_failed(void)
 {
-	return network_test.suite_owned && network_test.mode == _network_test_off && network_test.players_wanted == 1;
+	return network_test.suite_owned && network_test.mode == _network_test_off;
 }
 
 void network_test_suite_end(void)
@@ -1129,6 +1135,18 @@ void network_test_update(
 						variant.universal_variant.score_to_win = network_test.score_to_win;
 					player_ui_set_game_variant(&variant);
 					network_game_server_change_game_variant(global_network_game_server_get(), &variant);
+					if (network_test.suite_owned)
+					{
+						struct network_game *game = network_game_server_get_game(global_network_game_server_get());
+
+						/* Suite limits belong to this private match, not the saved menu gametype. */
+						game->variant_options.time_limit = network_test.suite_time_limit_minutes;
+						if (!network_game_server_send_game_data_pregame(global_network_game_server_get()))
+						{
+							network_test.mode = _network_test_off;
+							return;
+						}
+					}
 					if (network_test.suite_owned && network_test.players_wanted == 1 &&
 						!network_test_suite_add_one_synthetic_player(global_network_game_server_get()))
 					{

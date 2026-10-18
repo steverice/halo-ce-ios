@@ -204,7 +204,10 @@ static NSDictionary *PackJSON(NSData *data) {
     NSMutableDictionary *files = [NSMutableDictionary dictionary];
     NSUInteger total = 0;
     for (NSString *name in encoded) {
-        BOOL allowed = profiles ? ([name isEqual:@"hardware/catalog.toml"] || (name.length < 64 && PackMatches(name, @"^[a-z0-9]+(-[a-z0-9]+)*\\.toml\\z") && ![name isEqual:@"device-profile.toml"])) : PackMatches(name, @"^[a-z0-9][a-z0-9-]{0,47}\\.(input|actions|seeds|route|checks)\\z");
+        BOOL catalogCompatibility = [_compatibility hasPrefix:@"benchmark-catalog-1:"];
+        BOOL allowed = profiles ? ([name isEqual:@"hardware/catalog.toml"] || (name.length < 64 && PackMatches(name, @"^[a-z0-9]+(-[a-z0-9]+)*\\.toml\\z") && ![name isEqual:@"device-profile.toml"])) :
+            (PackMatches(name, @"^[a-z0-9][a-z0-9-]{0,47}\\.(input|actions|seeds|route|checks)\\z") ||
+                (catalogCompatibility && [name isEqual:@"benchmark-catalog.json"]));
         NSData *file = allowed ? PackBase64(encoded[name], fileLimit) : nil;
         if (!file || file.length > totalLimit - total) { PackError(error, @"Pack file name, content, or size is invalid"); return nil; }
         total += file.length; files[name] = file;

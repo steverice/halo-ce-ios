@@ -86,14 +86,13 @@ static void test_metrics(void) {
     benchmark_metrics_free(&metrics);
 }
 
-/* ---------- the suite the plan is walked with: three scenes that play by themselves and two recorded routes */
+/* ---------- the suite the plan is walked with: two controls and two recorded routes */
 
 static const struct benchmark_scene probe_scenes[] = {
-    { "menu", "", "normal", NULL, 5.0, 30.0, BENCHMARK_SCENE_MENU, 0 },
-    { "a10-opening", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0 },
-    { "a10-crew", "a10", "hard", "a10-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
-    { "b30-beach", "b30", "easy", NULL, 85.0, 60.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
-    { "c40-bridge", "c40", "easy", "c40-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
+    { "menu", "", "normal", NULL, 5.0, 30.0, BENCHMARK_SCENE_MENU, 0, NULL, NULL, 0, 0, 0, 0 },
+    { "a10-opening", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0, NULL, NULL, 0, 0, 0, 0 },
+    { "a10-crew", "a10", "hard", "a10-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1, NULL, NULL, 0, 0, 0, 0 },
+    { "c40-bridge", "c40", "easy", "c40-bench", 0.0, 0.0, BENCHMARK_SCENE_GAMEPLAY, 1, NULL, NULL, 0, 0, 0, 0 },
 };
 #define PROBE_SCENE_COUNT ((int)(sizeof(probe_scenes) / sizeof(probe_scenes[0])))
 
@@ -123,6 +122,30 @@ static void test_routes(void) {
     CHECK(!benchmark_scene_from_route("", "x", &route));
 }
 
+static void test_catalog_scene_selection(void) {
+    static const struct benchmark_scene catalog[] = {
+        { "menu-case", "", "normal", NULL, 1.0, 10.0, BENCHMARK_SCENE_MENU, 0, NULL, NULL, 0, 0, 0, 0 },
+        { "cutscene-case", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0, NULL, NULL, 0, 0, 0, 0 },
+        { "active-gameplay", "b30", "hard", "take-b30", 0.0, 60.0, BENCHMARK_SCENE_GAMEPLAY, 1, NULL, NULL, 0, 0, 0, 0 },
+        { "two-player-proof", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0,
+            "network_players", "slayer", 2, 1, 1000, 0 },
+        { "four-local-smoke", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0,
+            "local_controllers", "slayer", 4, 1, 1000, 0 },
+    };
+    const char *filtered_ids[] = { "cutscene-case", "two-player-proof" };
+    struct benchmark_scene selected[BENCHMARK_SCENES_MAXIMUM];
+    int count;
+
+    count = benchmark_scenes_select(BENCHMARK_QUICK, catalog, 5, NULL, 0, selected, BENCHMARK_SCENES_MAXIMUM);
+    CHECK(count == 3 && selected[2].kind == BENCHMARK_SCENE_GAMEPLAY);
+    count = benchmark_scenes_select(BENCHMARK_FULL, catalog, 5, NULL, 0, selected, BENCHMARK_SCENES_MAXIMUM);
+    CHECK(count == 5 && selected[3].players == 2 && selected[4].players == 4);
+    count = benchmark_scenes_select(BENCHMARK_QUICK, catalog, 5, filtered_ids, 2, selected, BENCHMARK_SCENES_MAXIMUM);
+    CHECK(count == 1 && !strcmp(selected[0].id, "cutscene-case"));
+    count = benchmark_scenes_select(BENCHMARK_FULL, catalog, 5, filtered_ids, 2, selected, BENCHMARK_SCENES_MAXIMUM);
+    CHECK(count == 2 && selected[1].kind == BENCHMARK_SCENE_MULTIPLAYER);
+}
+
 /* ---------- a made-up device, to walk the plan with */
 
 struct pretend {
@@ -144,7 +167,6 @@ static struct benchmark_outcome pretend_run(const struct pretend *device, const 
     gpu *= run->shadow_size >= 512 ? 1.0 : run->shadow_size >= 256 ? 0.93 : 0.9;
     gpu *= run->model_lod_max ? 1.0 : 0.95;
     if (scene->kind != BENCHMARK_SCENE_GAMEPLAY) gpu *= 0.4;
-    if (!strcmp(scene->id, "b30-beach")) gpu *= 1.2;
     outcome.gpu_p95 = gpu;
     outcome.cpu_p95 = device->cpu;
     /* under vsync a frame takes whole refreshes */
@@ -221,7 +243,7 @@ static void test_plan(void) {
        is tried, the confirmation runs at the size that held */
     {
         struct benchmark_device facts = { 1080, 1080, 16, 512, 1 };
-        struct pretend device = { 30.0, 9.0, 59.94, 1080, -1, BENCHMARK_OK };   /* holds at 540 only with cheaper settings */
+        struct pretend device = { 40.0, 9.0, 59.94, 1080, -1, BENCHMARK_OK };   /* holds at 540 only with cheaper settings */
 
         count = walk_suite(BENCHMARK_FULL, &facts, &device, runs, outcomes);
         CHECK(count > PROBE_SCENE_COUNT && count < BENCHMARK_RUNS_MAXIMUM);
@@ -299,7 +321,7 @@ static void test_plan(void) {
             }
             count++;
         }
-        CHECK(count < BENCHMARK_RUNS_MAXIMUM && last_of_stage(runs, count, 'E'));
+        CHECK(count == PROBE_SCENE_COUNT && count_stage(runs, count, 'A') == count);
         for (run = runs; run < runs + count; run++)
             CHECK(run->stage == 'A' || run->stage == 'B' || !probe_scenes[run->scene].recording);
     }
@@ -330,10 +352,10 @@ static void test_multiplayer_terminal_baseline(void) {
 
     memcpy(scenes, probe_scenes, sizeof(probe_scenes));
     scenes[PROBE_SCENE_COUNT] = (struct benchmark_scene){
-        "mp-chillout-4", "chillout", "normal", NULL, 15.0, 60.0, (enum benchmark_scene_kind)3, 0
+        "mp-proof", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0,
+        "network_players", "slayer", 2, 1, 1000, 0
     };
-    CHECK(BENCHMARK_SUITE_VERSION == 2);
-    CHECK(benchmark_suite_scene_count == 4 && !strcmp(benchmark_suite_scenes[3].id, "mp-chillout-4"));
+    CHECK(BENCHMARK_SUITE_VERSION == 3);
 
     with_mp.mode = BENCHMARK_QUICK;
     while (quick_count < BENCHMARK_RUNS_MAXIMUM &&
@@ -389,7 +411,7 @@ static void test_multiplayer_terminal_baseline(void) {
         CHECK(benchmark_plan_next(&filtered, mp_outcomes, 1, &next) && next.scene == 1 && next.stage == 'A');
     }
     {
-        struct benchmark_scene skipped_heavy[] = { probe_scenes[3], scenes[PROBE_SCENE_COUNT] };
+        struct benchmark_scene skipped_heavy[] = { probe_scenes[2], scenes[PROBE_SCENE_COUNT] };
         struct benchmark_plan filtered = { BENCHMARK_FULL, skipped_heavy, 2, facts };
 
         CHECK(benchmark_plan_next(&filtered, mp_outcomes, 0, &next) && next.scene == 0);
@@ -578,9 +600,9 @@ static void test_journal(void) {
 
 static void test_multiplayer_journal(void) {
     struct benchmark_device facts = { 2160, 1080, 16, 512, 1 };
-    struct benchmark_scene multiplayer = benchmark_suite_scenes[3];
+    struct benchmark_scene multiplayer = { "mp-proof", "chillout", "normal", NULL, 15.0, 60.0,
+        BENCHMARK_SCENE_MULTIPLAYER, 0, "network_players", "slayer", 2, 1, 1000, 0 };
     struct benchmark_plan plan = { BENCHMARK_FULL, &multiplayer, 1, facts };
-    struct benchmark_plan builtins = { BENCHMARK_FULL, benchmark_suite_scenes, benchmark_suite_scene_count, facts };
     struct benchmark_journal journal;
     struct benchmark_run run, next;
     struct benchmark_outcome failed = { BENCHMARK_FAILED, 0, 0, 0, 0, -1 };
@@ -588,12 +610,11 @@ static void test_multiplayer_journal(void) {
     snprintf(journal_path, sizeof(journal_path), "%s/visr-benchmark-mp-%d.journal",
         getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp", (int)getpid());
     unlink(journal_path);
-    /* This signature is the released version 1 built-in trio. Version 2 adds
-       the multiplayer scene, so its unfinished journal cannot be resumed. */
+    /* A journal from the compiled-case suite cannot resume against a catalog plan. */
     CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "OLDV1", &facts, 0xc2ab7962UL));
     benchmark_journal_load(journal_path, &journal);
     CHECK(journal.valid && !journal.finished && journal.signature == 0xc2ab7962UL);
-    CHECK(journal.signature != benchmark_plan_signature(&builtins));
+    CHECK(journal.signature != benchmark_plan_signature(&plan));
 
     CHECK(benchmark_journal_start(journal_path, BENCHMARK_FULL, "NEWV2", &facts, benchmark_plan_signature(&plan)));
     CHECK(benchmark_plan_next(&plan, journal.outcomes, 0, &run) && run.stage == 'A' && run.scene == 0);
@@ -623,6 +644,7 @@ static void test_multiplayer_journal(void) {
 int main(void) {
     test_metrics();
     test_routes();
+    test_catalog_scene_selection();
     test_plan();
     test_multiplayer_terminal_baseline();
     test_journal();

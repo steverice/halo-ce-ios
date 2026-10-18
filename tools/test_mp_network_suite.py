@@ -49,17 +49,34 @@ static int failures;
     fprintf(stderr, "network suite line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
+    const char *bad_simulations[] = { NULL, "", "network_players", "other" };
+    for (int i = 0; i < 4; i++) {
+        CHECK(!network_test_suite_begin(bad_simulations[i], "chillout", "slayer", 4, 1, 1000, 0));
+        CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
+    }
+    CHECK(!network_test_suite_begin("local_controllers", "bloodgulch", "slayer", 4, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("local_controllers", "chillout", "ctf", 4, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 2, 1000, 0));
+    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 32, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 0, 0));
+    CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 121));
+    CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
     configured = "join";
-    CHECK(!network_test_suite_begin_chillout());
+    CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
     CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
     configured = "";
-    CHECK(network_test_suite_begin_chillout());
-    CHECK(network_test_suite_begin_chillout());
+    CHECK(network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
+    CHECK(network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
     CHECK(network_test.checked && network_test.suite_owned && network_test.mode == _network_test_host);
     CHECK(!strcmp(network_test.map_name, "chillout") && !strcmp(network_test.variant_name, "slayer"));
     CHECK(network_test.players_wanted == 4 && network_test.start_delay == 15.0f);
     CHECK(network_test.score_to_win == 1000 && network_test.shoot_interval == 5.0f &&
         network_test.kill_interval == 25.0f && !network_test.public_game);
+    unsigned char snapshot[sizeof(network_test)];
+    memcpy(snapshot, &network_test, sizeof(network_test));
+    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 2, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 25, 7));
+    CHECK(!memcmp(snapshot, &network_test, sizeof(network_test)));
     connection = _game_connection_network_server;
     network_test_suite_end();
     CHECK(network_test.checked && network_test.mode == _network_test_off && !network_test.suite_owned);
@@ -67,7 +84,7 @@ int main(void) {
     network_test_suite_end();
     CHECK(aborts == 1);
     connection = _game_connection_local;
-    CHECK(network_test_suite_begin_chillout());
+    CHECK(network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
     network_test_suite_end();
     CHECK(aborts == 1);
     return failures ? 1 : 0;
@@ -82,7 +99,8 @@ def test_private_match_lifecycle() -> None:
     state_start = SOURCE.index("static struct\n{")
     state_end = SOURCE.index("} network_test;", state_start) + len("} network_test;")
     source = HARNESS.replace("__NETWORK_STATE__", SOURCE[state_start:state_end])
-    source = source.replace("__BEGIN_FUNCTION__", function_source("int network_test_suite_begin_chillout(void)"))
+    begin = function_source("int network_test_suite_begin(")
+    source = source.replace("__BEGIN_FUNCTION__", begin)
     source = source.replace("__END_FUNCTION__", function_source("void network_test_suite_end(void)"))
     with tempfile.TemporaryDirectory(prefix="mp-network-suite-") as temporary:
         source_path = Path(temporary) / "network_suite.c"
