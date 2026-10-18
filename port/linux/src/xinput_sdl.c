@@ -1293,11 +1293,13 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		if (probe_policy == mp_benchmark_probe_ordinary_input)
 			input_replay_filter(&state->Gamepad);
 	}
-	else if (port < config_integer("debug.network_test_players"))
+	else if (port < config_integer("debug.network_test_players") ||
+		(port > 0 && port < PORT_COUNT && mp_benchmark_probe_requested()))
 	{
 		/* (split screen without a second gamepad: the scripted player of
 		debug.test_input plays this controller too, ahead of any gamepad,
-		the Mac's touch controls included) */
+		the Mac's touch controls included; the private suite owns all four
+		virtual ports without changing the user's configured player count) */
 		mp_benchmark_probe_or_test_gamepad(&state->Gamepad, port);
 	}
 	else if (port_gamepad(gamepads, count, port))
