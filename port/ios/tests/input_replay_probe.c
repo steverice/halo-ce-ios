@@ -399,6 +399,10 @@ int main(int argc, char **argv)
 	replay_name = "";
 	configure();
 	assert(!touch_replay_active);
+	assert(input_replay_suite_suspend());
+	assert(input_replay_suite_suspended() && touch_replay_active);
+	input_replay_suite_restore();
+	assert(!input_replay_suite_suspended() && !touch_replay_active);
 	/* Suite ownership keeps touch suppressed when a scene has no replay and
 	   when its replay finishes; the configured replay reloads after restore. */
 	replay_name = "./probe.input";
