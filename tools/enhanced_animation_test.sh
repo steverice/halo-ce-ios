@@ -2,7 +2,7 @@
 # Native, asset-free checks of the actual animation helpers and load callbacks.
 set -eu
 probe_root=$(cd "${BASH_SOURCE[0]%/*}/.." && pwd)
-probe_dir=$(mktemp -d -t enhanced-animation-test)
+probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/enhanced-animation-test.XXXXXXXX")
 trap 'rm -r -f "$probe_dir"' EXIT
 
 awk '/^static short \*node_link\(/ || /^static short \*node_chain_walk\(/ || /^static boolean node_tree_check\(/ {copy=1} copy {print} copy && /^}/ {copy=0}' \
