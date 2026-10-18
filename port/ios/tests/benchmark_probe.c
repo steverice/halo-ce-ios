@@ -318,6 +318,58 @@ static void test_plan(void) {
     }
 }
 
+static void test_multiplayer_terminal_baseline(void) {
+    struct benchmark_scene scenes[PROBE_SCENE_COUNT + 1];
+    struct benchmark_device facts = { 1080, 540, 16, 512, 1 };
+    struct benchmark_plan solo = { BENCHMARK_FULL, probe_scenes, PROBE_SCENE_COUNT, facts };
+    struct benchmark_plan with_mp = { BENCHMARK_FULL, scenes, PROBE_SCENE_COUNT + 1, facts };
+    struct benchmark_run solo_runs[BENCHMARK_RUNS_MAXIMUM], mp_runs[BENCHMARK_RUNS_MAXIMUM], next;
+    struct benchmark_outcome solo_outcomes[BENCHMARK_RUNS_MAXIMUM], mp_outcomes[BENCHMARK_RUNS_MAXIMUM];
+    struct benchmark_outcome okay = { BENCHMARK_OK, 16.7, 8.0, 10.0, 60.0, 900 };
+    int solo_count = 0, mp_count = 0, quick_count = 0, index;
+
+    memcpy(scenes, probe_scenes, sizeof(probe_scenes));
+    scenes[PROBE_SCENE_COUNT] = (struct benchmark_scene){
+        "mp-chillout-4", "chillout", "normal", NULL, 15.0, 60.0, (enum benchmark_scene_kind)3, 0
+    };
+    CHECK(BENCHMARK_SUITE_VERSION == 2);
+    CHECK(benchmark_suite_scene_count == 4 && !strcmp(benchmark_suite_scenes[3].id, "mp-chillout-4"));
+
+    with_mp.mode = BENCHMARK_QUICK;
+    while (quick_count < BENCHMARK_RUNS_MAXIMUM &&
+        benchmark_plan_next(&with_mp, mp_outcomes, quick_count, &mp_runs[quick_count])) {
+        mp_outcomes[quick_count++] = okay;
+    }
+    CHECK(quick_count == PROBE_SCENE_COUNT);
+    for (index = 0; index < quick_count; index++) CHECK(mp_runs[index].scene < PROBE_SCENE_COUNT);
+
+    with_mp.mode = BENCHMARK_FULL;
+    while (solo_count < BENCHMARK_RUNS_MAXIMUM &&
+        benchmark_plan_next(&solo, solo_outcomes, solo_count, &solo_runs[solo_count])) {
+        solo_outcomes[solo_count] = okay;
+        if (solo_count == 1) solo_outcomes[solo_count].status = BENCHMARK_THERMAL;
+        solo_count++;
+    }
+    while (mp_count < BENCHMARK_RUNS_MAXIMUM &&
+        benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &mp_runs[mp_count])) {
+        mp_outcomes[mp_count] = okay;
+        if (mp_count == 1) mp_outcomes[mp_count].status = BENCHMARK_THERMAL;
+        mp_count++;
+    }
+    CHECK(solo_count < BENCHMARK_RUNS_MAXIMUM && mp_count == solo_count + 1);
+    for (index = 0; index < solo_count && index < mp_count; index++)
+        CHECK(!strcmp(solo_runs[index].key, mp_runs[index].key));
+    CHECK(solo_count > 0 && solo_runs[solo_count - 1].stage == 'R');
+    CHECK(mp_count > 0 && mp_runs[mp_count - 1].stage == 'A' &&
+        mp_runs[mp_count - 1].scene == PROBE_SCENE_COUNT && mp_runs[mp_count - 1].lines == 0);
+    if (mp_count > 0) {
+        mp_outcomes[mp_count - 1].status = BENCHMARK_SKIPPED;
+        CHECK(!benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &next));
+        mp_outcomes[mp_count - 1].status = BENCHMARK_FAILED;
+        CHECK(!benchmark_plan_next(&with_mp, mp_outcomes, mp_count, &next));
+    }
+}
+
 /* ---------- journal */
 
 static char journal_path[256];
@@ -499,6 +551,7 @@ int main(void) {
     test_metrics();
     test_routes();
     test_plan();
+    test_multiplayer_terminal_baseline();
     test_journal();
     if (failures) {
         fprintf(stderr, "benchmark_probe: %d of %d checks failed\n", failures, checks);

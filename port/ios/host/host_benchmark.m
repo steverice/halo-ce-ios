@@ -491,7 +491,8 @@ static void install_scenes(NSArray<NSString *> *only) {
         int count = 0, route_count = 0;
 
         for (index = 0; index < benchmark_suite_scene_count; index++)
-            if (!only || [only containsObject:@(benchmark_suite_scenes[index].id)]) scenes[count++] = benchmark_suite_scenes[index];
+            if (benchmark_suite_scenes[index].kind != BENCHMARK_SCENE_MULTIPLAYER &&
+                (!only || [only containsObject:@(benchmark_suite_scenes[index].id)])) scenes[count++] = benchmark_suite_scenes[index];
         for (NSString *name in [[files contentsOfDirectoryAtPath:bundled error:nil] sortedArrayUsingSelector:@selector(compare:)]) {
             NSString *text;
 

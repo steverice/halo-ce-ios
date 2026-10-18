@@ -13,6 +13,7 @@ const struct benchmark_scene benchmark_suite_scenes[] = {
     { "a10-opening", "a10", "normal", NULL, 2.0, 60.0, BENCHMARK_SCENE_CUTSCENE, 0 },
     /* the landing cutscene is about 75 s; then the beach, standing still */
     { "b30-beach", "b30", "easy", NULL, 85.0, 60.0, BENCHMARK_SCENE_GAMEPLAY, 1 },
+    { "mp-chillout-4", "chillout", "normal", NULL, 15.0, 60.0, BENCHMARK_SCENE_MULTIPLAYER, 0 },
 };
 const int benchmark_suite_scene_count = (int)(sizeof(benchmark_suite_scenes) / sizeof(benchmark_suite_scenes[0]));
 
@@ -198,6 +199,7 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
 
     /* A: every scene as the device's profile has it */
     for (scene = 0; scene < plan->scene_count; scene++) {
+        if (plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER) continue;
         /* (0 lines: the render size is left to the device's profile, which may have its own for the menu and for
            cutscenes; base_lines is what it gives gameplay, where the sweep starts) */
         baseline[scene] = step(&walk, 'A', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max);
@@ -297,7 +299,8 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     for (scene = 0; scene < plan->scene_count; scene++) {
         int steps = plan->scenes[scene].kind == BENCHMARK_SCENE_CUTSCENE ? 2 : 1;
 
-        if (plan->scenes[scene].kind == BENCHMARK_SCENE_GAMEPLAY || baseline[scene]->status == BENCHMARK_SKIPPED) continue;
+        if (plan->scenes[scene].kind == BENCHMARK_SCENE_GAMEPLAY ||
+            plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER || baseline[scene]->status == BENCHMARK_SKIPPED) continue;
         for (index = chosen + 1; index < ladder_count && index <= chosen + steps; index++) {
             const struct benchmark_outcome *outcome = step(&walk, 'D', scene, ladder[index], anisotropy, shadow_size,
                 model_lod_max);
@@ -316,14 +319,20 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     if (lines != base_lines || anisotropy != device->anisotropy || shadow_size != device->shadow_size ||
         model_lod_max != device->model_lod_max)
         for (scene = 0; scene < plan->scene_count; scene++) {
-            if (baseline[scene]->status == BENCHMARK_SKIPPED) continue;
+            if (plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER || baseline[scene]->status == BENCHMARK_SKIPPED) continue;
             if (!step(&walk, 'E', scene, lines, anisotropy, shadow_size, model_lod_max)) return walk.stopped == 1;
         }
 
     /* R: a baseline run that heat or an interruption spoiled, once more */
     for (scene = 0; scene < plan->scene_count; scene++)
-        if (baseline[scene]->status == BENCHMARK_THERMAL || baseline[scene]->status == BENCHMARK_INTERRUPTED)
+        if (plan->scenes[scene].kind != BENCHMARK_SCENE_MULTIPLAYER &&
+            (baseline[scene]->status == BENCHMARK_THERMAL || baseline[scene]->status == BENCHMARK_INTERRUPTED))
             if (!step(&walk, 'R', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
+                return walk.stopped == 1;
+    /* The synthetic multiplayer baseline runs after solo settings are chosen. */
+    for (scene = 0; scene < plan->scene_count; scene++)
+        if (plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER)
+            if (!step(&walk, 'A', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
                 return walk.stopped == 1;
     return 0;
 }

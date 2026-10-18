@@ -33,7 +33,8 @@ enum benchmark_status {
     BENCHMARK_STATUS_COUNT
 };
 
-enum benchmark_scene_kind { BENCHMARK_SCENE_MENU, BENCHMARK_SCENE_CUTSCENE, BENCHMARK_SCENE_GAMEPLAY };
+enum benchmark_scene_kind { BENCHMARK_SCENE_MENU, BENCHMARK_SCENE_CUTSCENE, BENCHMARK_SCENE_GAMEPLAY,
+    BENCHMARK_SCENE_MULTIPLAYER };
 
 struct benchmark_scene {
     const char *id, *map;
@@ -94,7 +95,7 @@ int benchmark_scene_from_route(const char *text, const char *recording, struct b
 /* the suite's scenes that play by themselves (suite 1); the app adds its recorded routes */
 extern const struct benchmark_scene benchmark_suite_scenes[];
 extern const int benchmark_suite_scene_count;
-#define BENCHMARK_SUITE_VERSION 1
+#define BENCHMARK_SUITE_VERSION 2
 
 /* 1 and *next: the run after the count finished ones; 0: the suite is over */
 int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmark_outcome *finished, int count,
