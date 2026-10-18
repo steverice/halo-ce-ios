@@ -111,7 +111,7 @@ const char *host_benchmark_menu(void) {
     }
     switch (ask(@"VISR", @"The benchmark plays parts of the game by itself and measures how well this device runs them. "
         "Start it, then leave the device alone until it says it has finished.",
-        @[ @"Play", @"Run benchmark: quick (about 10 minutes)", @"Run benchmark: full (about 45 minutes)" ])) {
+        @[ @"Play", @"Quick benchmark", @"Full benchmark" ])) {
     case 1: host_logf(HOST_LOG_INFO, "benchmark menu: quick"); return "quick";
     case 2: host_logf(HOST_LOG_INFO, "benchmark menu: full"); return "full";
     default: return NULL;
