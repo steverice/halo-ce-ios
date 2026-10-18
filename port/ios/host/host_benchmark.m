@@ -12,6 +12,7 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_benchmark.h"
+#include "host_benchmark_page_policy.h"
 #import "host_benchmark_presentation.h"
 #import "host_benchmark_snapshot.h"
 #import "host_data_updates.h"
@@ -718,9 +719,11 @@ int host_benchmark_next(char *text, unsigned int size) {
     }
     if (output_failed || !benchmark_plan_next(&plan, outcomes, outcome_count, &run)) {
         const char *page = getenv("HALO_BENCHMARK_PAGE");
+        int page_minutes = host_benchmark_page_minutes(page);
+        int completion_screen_requested = page && atoi(page) > 0;
 #ifdef HALO_TESTER_BUILD
-        /* a tester has no other way to get the report off the device */
-        if (!page) page = "30";
+        /* Internal tester builds offer local download as a fallback. */
+        if (!page) completion_screen_requested = 1;
 #endif
         int descriptor = atomic_exchange(&marker, -1);
 
@@ -765,14 +768,11 @@ int host_benchmark_next(char *text, unsigned int size) {
             summary = [NSString stringWithFormat:@"%s\n%@", message, summary];
         }
 #endif
-        int shown = page && atoi(page) > 0;
-
-        if (shown) host_benchmark_page(REPORT, summary.UTF8String, report_code, atoi(page));
+        if (page_minutes > 0) host_benchmark_page(REPORT, summary.UTF8String, report_code, page_minutes);
         atomic_store(&running, 0);
         suite_request = nil;
-        /* a person pressed Done on the report: the game goes back to its main menu (2). With no report screen (a runner
-           or a scripted launch) nobody is there to press anything, and the game quits (0) */
-        return shown ? 2 : 0;
+        /* A requested completion screen returns to the main menu (2); a runner or scripted launch quits (0). */
+        return completion_screen_requested ? 2 : 0;
     }
     scene = &plan.scenes[run.scene];
     if (outcome_count) {

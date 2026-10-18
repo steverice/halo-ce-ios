@@ -26,6 +26,12 @@ run('python3', 'tools/ios_embed_guest.py', BUILD/'probe.elf', BUILD/'embed')
 run('xcrun','clang','-O2',f'-I{BUILD}/embed','port/ios/tests/probe_runner.c',
     'port/ios/host/guest_call.S',BUILD/'embed/guest_image.S','-o',BUILD/'runner')
 run(BUILD/'runner')
+# The report page is available only in tester builds; an environment setting cannot turn it on in a normal app.
+run('xcrun', 'clang', '-O2', 'port/ios/tests/benchmark_page_policy_probe.c', '-o', BUILD/'benchmark-page-policy-normal-probe')
+run(BUILD/'benchmark-page-policy-normal-probe')
+run('xcrun', 'clang', '-O2', '-DHALO_TESTER_BUILD=1', 'port/ios/tests/benchmark_page_policy_probe.c',
+    '-o', BUILD/'benchmark-page-policy-tester-probe')
+run(BUILD/'benchmark-page-policy-tester-probe')
 # gpu.h crosses the guest/host boundary (step 4): the host's layout of its structs, as
 # _Static_asserts, must hold under the guest's arm64_32 flags too
 run('xcrun', 'clang', '-O2', '-Iport/linux/src', 'port/ios/tests/gpu_layout_probe.c', '-o', BUILD / 'gpu-layout-probe')
@@ -206,9 +212,9 @@ required('source/main/main.c', 'network_away_update(main_globals.main_menu_loade
 required('port/ios/host/host_gpu_dispatch.c', 'if (!metal_backend)', 'host_benchmark_frame(returned - last_returned',
          'metal_backend = TARGET_OS_VISION || (flags & GPU_INITIALIZE_METAL) ? 1 : 0;')
 required('port/ios/host/gpu_metal.m', 'host_benchmark_frame(interval,')
-# and its Done button: the report screen's end returns the game to its main menu (2), and only a run with no report
-# screen (a runner, a scripted launch) quits
-required('port/ios/host/host_benchmark.m', 'return shown ? 2 : 0;')
+# and its Done button: a requested completion screen returns the game to its main menu (2), and only a run with no
+# screen requested (a runner, a scripted launch) quits
+required('port/ios/host/host_benchmark.m', 'return completion_screen_requested ? 2 : 0;')
 required('port/linux/src/benchmark_suite.c', 'if (more == 2)', 'benchmark_scenario_load("", "");',
          'halo_benchmark_overrides(0, 0, 0);', 'halo_model_lod_set(-1);')
 # halo://join links the app is opened with (host_join_link.h)
