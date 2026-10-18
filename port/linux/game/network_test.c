@@ -254,6 +254,7 @@ void network_test_suite_synthetic_input_tick(long tick)
 	action.desired_facing.yaw = (real)(tick % 360) * 0.01f;
 	action.throttle.j = 0.75f;
 	action.primary_trigger = tick % 90 < 24 ? 1.0f : 0.0f;
+	SET_FLAG(action.control_flags, _unit_control_weapon_primary_trigger_bit, action.primary_trigger > 0.0f);
 	action.desired_weapon_index = NONE;
 	action.desired_grenade_index = NONE;
 	action.desired_zoom_level = NONE;
@@ -413,6 +414,11 @@ static void network_test_log_players(
 				(int)unit->unit.animation.aiming_screen_index, (int)unit->unit.animation.looking_screen_index,
 				(int)unit->unit.animation.state,
 				sqrt(unit->unit.throttle.i * unit->unit.throttle.i + unit->unit.throttle.j * unit->unit.throttle.j));
+			if (network_test.suite_owned)
+				network_test_append(line, (int)sizeof(line), &length, " current%d fire%d pull%.2f",
+					(int)unit->unit.current_weapon_index,
+					(int)TEST_FLAG(unit->unit.control_flags, _unit_control_weapon_primary_trigger_bit),
+					unit->unit.primary_trigger);
 			for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
 			{
 				long weapon_index = unit->unit.weapon_object_indices[slot];

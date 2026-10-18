@@ -11,6 +11,9 @@ from unittest import SkipTest
 ROOT = Path(__file__).resolve().parents[1]
 QUEUES = (ROOT / "source/game/player_queues_new.c").read_text()
 NETWORK_TEST = (ROOT / "port/linux/game/network_test.c").read_text()
+UNITS = (ROOT / "source/units/units.c").read_text()
+UNIT_HEADER = (ROOT / "source/units/units.h").read_text()
+WEAPON_HEADER = (ROOT / "source/items/weapons.h").read_text()
 
 
 def function(source: str, signature: str) -> str:
@@ -39,6 +42,11 @@ typedef unsigned short word;
 #define TRUE 1
 #define FALSE 0
 #define NONE -1
+#define FLAG(bit) (1UL << (bit))
+#define TEST_FLAG(flags, bit) (((flags) & FLAG(bit)) != 0)
+#define SET_FLAG(flags, bit, value) do { if (value) (flags) |= FLAG(bit); else (flags) &= ~FLAG(bit); } while (0)
+__UNIT_CONTROL_ENUM__
+__WEAPON_CONTROL_ENUM__
 #define MAXIMUM_NUMBER_OF_PLAYERS 128
 #define MAXIMUM_LOCAL_PLAYERS 4
 #define MAXIMUM_WEAPONS_PER_UNIT 4
@@ -100,6 +108,13 @@ __ADD_TICKS__
 __HANDLE_INPUT__
 __SYNTHETIC_INPUT__
 __NEXT_UPDATE__
+static long actual_unit_primary_weapon_flags(unsigned long control_flags) {
+    struct { struct { unsigned long control_flags; } unit; } body, *unit = &body;
+    unit->unit.control_flags = control_flags;
+    long flags = 0;
+    __UNIT_PRIMARY_GATE__
+    return flags;
+}
 static int failures;
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "synthetic input line %d: %s\n", __LINE__, #condition); failures++; \
@@ -112,6 +127,8 @@ int main(void) {
     update_server_next_update();
     CHECK(observed.action_count == 2 && observed.actions[1].throttle.j > 0.5f &&
         observed.actions[1].primary_trigger > 0.5f);
+    CHECK(TEST_FLAG(observed.actions[1].control_flags, _unit_control_weapon_primary_trigger_bit));
+    CHECK(TEST_FLAG(actual_unit_primary_weapon_flags(observed.actions[1].control_flags), _weapon_control_primary_trigger_bit));
     CHECK(update_server_distributed_inputs[1].valid && update_server_distributed_inputs[1].tick == 10);
     {
         struct player_action duplicate = queues[1].current_action;
@@ -120,14 +137,19 @@ int main(void) {
         update_server_handle_distributed_input(machine_players[0], 10, &duplicate, flags, DISTRIBUTED_INPUT_HISTORY);
         CHECK(queues[1].current_action.throttle.j > 0.5f);
     }
+    game_tick = 60; /* release phase must clear both the analog pull and digital fire flag */
+    update_server_next_update();
+    CHECK(observed.actions[1].primary_trigger == 0.0f);
+    CHECK(!TEST_FLAG(observed.actions[1].control_flags, _unit_control_weapon_primary_trigger_bit));
+    CHECK(!actual_unit_primary_weapon_flags(observed.actions[1].control_flags));
     network_test.suite_owned = 0;
     memset(&queues[1].current_action, 0, sizeof(queues[1].current_action));
-    game_tick = 11;
+    game_tick = 61;
     update_server_next_update();
     CHECK(observed.actions[1].throttle.j == 0.0f && observed.actions[1].primary_trigger == 0.0f);
     network_test.suite_owned = 1;
     queues[1].identifier = 0; /* missing datum queue must stay inert */
-    game_tick = 12;
+    game_tick = 62;
     update_server_next_update();
     CHECK(observed.actions[1].throttle.j == 0.0f && observed.actions[1].primary_trigger == 0.0f);
     return failures != 0;
@@ -143,7 +165,16 @@ def test_suite_input_reaches_host_tick_snapshot() -> None:
     if "void network_test_suite_synthetic_input_tick(" in NETWORK_TEST:
         synthetic = function(NETWORK_TEST, "void network_test_suite_synthetic_input_tick(")
     source = HARNESS
+    def control_enum(header, first):
+        name = header.index(first)
+        start = header.rfind("enum", 0, name)
+        end = header.index("};", name) + 2
+        return header[start:end]
+
     for key, value in {
+        "__UNIT_CONTROL_ENUM__": control_enum(UNIT_HEADER, "_unit_control_crouch_modifier_bit"),
+        "__WEAPON_CONTROL_ENUM__": control_enum(WEAPON_HEADER, "_weapon_control_integrated_light_bit"),
+        "__UNIT_PRIMARY_GATE__": function(UNITS, "if (TEST_FLAG(unit->unit.control_flags, _unit_control_weapon_primary_trigger_bit))"),
         "__ACTION_VALID__": function(QUEUES, "static boolean distributed_action_valid("),
         "__ADD_TICKS__": function(QUEUES, "static boolean distributed_add_new_ticks("),
         "__HANDLE_INPUT__": function(QUEUES, "void update_server_handle_distributed_input("),
