@@ -48,7 +48,7 @@ def test_host_loader_selects_signed_catalog_cases_by_type_and_mode(tmp_path, cat
     ]
     mp = rows[-1].split("\t")
     assert mp[1:6] == ["3", "network_players", "2", "1", "slayer"]
-    assert mp[6:] == ["1000", "0"]
+    assert mp[6:8] == ["1000", "0"]
 
     quick = run_probe(catalog_probe, tmp_path, "quick")
     assert quick.returncode == 0, quick.stderr
@@ -92,3 +92,18 @@ def test_host_loader_rejects_network_roster_over_capacity(tmp_path, catalog_prob
     _write_catalog(tmp_path, _cases(players=33, gameplay=False))
     result = run_probe(catalog_probe, tmp_path, "full")
     assert result.returncode != 0 and "unsupported" in result.stderr
+
+
+def test_host_preserves_signed_arena_parameters(tmp_path, catalog_probe):
+    _write_catalog(tmp_path, _cases(players=32, gameplay=False))
+    result = run_probe(catalog_probe, tmp_path, "full")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[-1].split("\t")[-4:] == ["6", "1.500", "3.500", "0.400"]
+
+
+def test_host_rejects_missing_scaled_arena(tmp_path, catalog_probe):
+    cases = _cases(players=32, gameplay=False)
+    cases["mp-chillout-proof"].pop("arena")
+    _write_catalog(tmp_path, cases)
+    result = run_probe(catalog_probe, tmp_path, "full")
+    assert result.returncode != 0 and "arena" in result.stderr.lower()

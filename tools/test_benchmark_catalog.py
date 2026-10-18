@@ -48,6 +48,8 @@ def _cases(*, players=2, gameplay=True, multiplayer=True):
     if gameplay:
         cases["b30-warthog-fight"] = {"kind": "gameplay", "order": 2, "map": "b30", "difficulty": "hard",
                                        "recording": "take-b30", "lead": 0, "window": 1}
+    if multiplayer and players >= 16:
+        cases["mp-chillout-proof"]["arena"] = {"columns": 6, "spacing_milliunits": 1500, "distance_milliunits": 3500, "movement_radius_milliunits": 400}
     return cases
 
 
@@ -170,3 +172,21 @@ def test_multiplayer_only_signed_pack_needs_no_placeholder_routes(tmp_path):
     _write_catalog(tmp_path, _cases(gameplay=False))
     files = data_pack.snapshot(tmp_path, "recordings", "benchmark-catalog-1:" + "b" * 64)
     assert set(files) == {"benchmark-catalog.json"}
+
+
+def test_catalog_requires_signed_arena_for_scaled_rosters(tmp_path):
+    cases = _cases(players=32, gameplay=False)
+    cases["mp-chillout-proof"].pop("arena")
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError, match="arena"):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
+@pytest.mark.parametrize("field,value", [("columns", 0), ("columns", 9), ("spacing_milliunits", 100),
+    ("distance_milliunits", 30000), ("movement_radius_milliunits", 3000), ("movement_radius_milliunits", True)])
+def test_catalog_rejects_unsafe_arena_values(tmp_path, field, value):
+    cases = _cases(players=32, gameplay=False)
+    cases["mp-chillout-proof"]["arena"][field] = value
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError, match="arena"):
+        benchmark_catalog.load_catalog(tmp_path)

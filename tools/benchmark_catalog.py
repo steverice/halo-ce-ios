@@ -177,6 +177,8 @@ def load_catalog(folder):
         if not isinstance(kind, str) or kind not in KINDS:
             raise CatalogError(f"case {case_id} has an unsupported kind")
         fields = COMMON_FIELDS | (MULTIPLAYER_FIELDS if kind == "multiplayer" else set())
+        if kind == "multiplayer" and "arena" in case:
+            fields |= {"arena"}
         if set(case) != fields:
             raise CatalogError(f"case {case_id} has missing or unsupported fields")
         order = case["order"]
@@ -214,6 +216,20 @@ def load_catalog(folder):
                 raise CatalogError(f"multiplayer case {case_id} has an unsupported players value")
             if (simulation == "local_controllers" and players != 4) or (simulation == "network_players" and not 2 <= players <= 32):
                 raise CatalogError(f"multiplayer case {case_id} players do not match its simulation mode")
+            arena = case.get("arena")
+            if players > 4 and arena is None:
+                raise CatalogError(f"multiplayer case {case_id} requires a signed arena")
+            if arena is not None:
+                ranges = {"columns": (1, 8), "spacing_milliunits": (800, 3000),
+                          "distance_milliunits": (2000, 12000), "movement_radius_milliunits": (150, 1000)}
+                if simulation != "network_players" or not isinstance(arena, dict) or set(arena) != set(ranges):
+                    raise CatalogError(f"multiplayer case {case_id} has an unsupported arena")
+                for field, (minimum, maximum) in ranges.items():
+                    value = arena[field]
+                    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                        raise CatalogError(f"multiplayer case {case_id} has invalid arena {field}")
+                if arena["movement_radius_milliunits"] * 3 > arena["spacing_milliunits"]:
+                    raise CatalogError(f"multiplayer case {case_id} has overlapping arena movement bounds")
             if isinstance(case["views"], bool) or not isinstance(case["views"], int) or case["views"] != 1:
                 raise CatalogError(f"multiplayer case {case_id} requests an unsupported view count")
             if not isinstance(case["game_mode"], str) or case["game_mode"] != "slayer":

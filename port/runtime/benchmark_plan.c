@@ -108,17 +108,18 @@ const char *benchmark_mode_name(enum benchmark_mode mode) {
 
 unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
     unsigned long hash = 2166136261UL + BENCHMARK_SUITE_VERSION;
-    char text[256];
+    char text[512];
     int scene;
     const char *at;
 
     for (scene = 0; scene < plan->scene_count; scene++) {
         const struct benchmark_scene *one = &plan->scenes[scene];
 
-        snprintf(text, sizeof(text), "%s|%s|%s|%s|%.2f|%.2f|%d|%d|%s|%d|%d|%s|%d|%d;",
+        snprintf(text, sizeof(text), "%s|%s|%s|%s|%.2f|%.2f|%d|%d|%s|%d|%d|%s|%d|%d|%d|%.6f|%.6f|%.6f;",
             one->id, one->map, one->difficulty, one->recording ? one->recording : "", one->lead, one->seconds,
             (int)one->kind, one->heavy, one->simulation ? one->simulation : "", one->players, one->views,
-            one->game_mode ? one->game_mode : "", one->score_limit, one->time_limit_minutes);
+            one->game_mode ? one->game_mode : "", one->score_limit, one->time_limit_minutes,
+            one->arena_columns, one->arena_spacing, one->arena_distance, one->arena_movement_radius);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
     }
     return hash;

@@ -50,6 +50,8 @@ struct benchmark_scene {
     /* Multiplayer workload parameters; zero or NULL for other scene kinds. */
     const char *simulation, *game_mode;
     int players, views, score_limit, time_limit_minutes;
+    int arena_columns;
+    double arena_spacing, arena_distance, arena_movement_radius;
 };
 
 /* what the plan needs to know about the device and its profile's values */

@@ -22,9 +22,11 @@ int main(int argc, char **argv) {
         if (count < 0) return 1;
         printf("sha256=%s\n", catalog.sha256);
         for (int index = 0; index < count; index++)
-            printf("%s\t%d\t%s\t%d\t%d\t%s\t%d\t%d\n", selected[index].id, selected[index].kind,
+            printf("%s\t%d\t%s\t%d\t%d\t%s\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\n", selected[index].id, selected[index].kind,
                 selected[index].simulation ?: "", selected[index].players, selected[index].views,
-                selected[index].game_mode ?: "", selected[index].score_limit, selected[index].time_limit_minutes);
+                selected[index].game_mode ?: "", selected[index].score_limit, selected[index].time_limit_minutes,
+                selected[index].arena_columns, selected[index].arena_spacing, selected[index].arena_distance,
+                selected[index].arena_movement_radius);
     }
     return 0;
 }

@@ -166,7 +166,8 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         NSDictionary *entry = [raw isKindOfClass:NSDictionary.class] ? raw : nil;
         NSString *kind = entry[@"kind"], *map = nil, *difficulty = nil, *recording = nil;
         NSInteger order = -1, players = 0, views = 0, score = 0, time_limit = 0;
-        double lead, window;
+        double lead, window, arena_spacing = 0, arena_distance = 0, arena_radius = 0;
+        NSInteger arena_columns = 0;
         BOOL has_recording = entry[@"recording"] && entry[@"recording"] != NSNull.null;
         if (!safe_name(identifier, 47, NO) || !entry || ![kind isKindOfClass:NSString.class] ||
             !integer_number(entry[@"order"], 0, BENCHMARK_SCENES_MAXIMUM - 1, &order) || orders[order] ||
@@ -179,6 +180,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         NSMutableSet *expected = [common mutableCopy];
         if ([kind isEqual:@"multiplayer"])
             [expected unionSet:[NSSet setWithArray:@[@"simulation", @"players", @"views", @"game_mode", @"score_limit", @"time_limit_minutes"]]];
+        if ([kind isEqual:@"multiplayer"] && entry[@"arena"]) [expected addObject:@"arena"];
         if (![[NSSet setWithArray:entry.allKeys] isEqualToSet:expected])
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has missing or unsupported fields.", identifier]);
         BOOL menu = [kind isEqual:@"menu"], cutscene = [kind isEqual:@"cutscene"];
@@ -212,6 +214,21 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
                 ([simulation isEqual:@"local_controllers"] && players != 4) ||
                 (![simulation isEqual:@"local_controllers"] && ![simulation isEqual:@"network_players"]))
                 return catalog_error(error, [NSString stringWithFormat:@"Multiplayer case %@ requests an unsupported workload.", identifier]);
+            id arena = entry[@"arena"];
+            if (players > 4 && !arena)
+                return catalog_error(error, @"Scaled multiplayer requires a signed arena.");
+            if (arena) {
+                NSInteger spacing, distance, radius;
+                NSSet *keys = [NSSet setWithArray:@[@"columns", @"spacing_milliunits", @"distance_milliunits", @"movement_radius_milliunits"]];
+                if (![simulation isEqual:@"network_players"] || ![arena isKindOfClass:NSDictionary.class] ||
+                    ![[NSSet setWithArray:[arena allKeys]] isEqualToSet:keys] ||
+                    !integer_number(arena[@"columns"], 1, 8, &arena_columns) ||
+                    !integer_number(arena[@"spacing_milliunits"], 800, 3000, &spacing) ||
+                    !integer_number(arena[@"distance_milliunits"], 2000, 12000, &distance) ||
+                    !integer_number(arena[@"movement_radius_milliunits"], 150, 1000, &radius) || radius * 3 > spacing)
+                    return catalog_error(error, @"Multiplayer arena parameters are unsupported.");
+                arena_spacing = spacing / 1000.0; arena_distance = distance / 1000.0; arena_radius = radius / 1000.0;
+            }
             workload = YES;
         }
         int index = (int)order;
@@ -231,6 +248,8 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         scene->game_mode = multiplayer ? built.game_modes[index] : NULL;
         scene->players = (int)players; scene->views = (int)views;
         scene->score_limit = (int)score; scene->time_limit_minutes = (int)time_limit;
+        scene->arena_columns = (int)arena_columns; scene->arena_spacing = arena_spacing;
+        scene->arena_distance = arena_distance; scene->arena_movement_radius = arena_radius;
         if (scene->recording && !route_matches(folder, scene, error)) return NO;
         if (gameplay && !gameplay_active_in_window(folder, recording, lead, window))
             return catalog_error(error, [NSString stringWithFormat:@"Gameplay case %@ has no movement or combat input in its measured window.", identifier]);
