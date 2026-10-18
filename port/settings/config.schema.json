@@ -1240,6 +1240,17 @@
             "desktop"
           ]
         },
+        "enhanced_animations": {
+          "type": "boolean",
+          "default": true,
+          "description": "The player bipeds' grenade throws keep their legs moving (crouched, in the air and in a vehicle's seat too), riders' hands leave the grips to throw and reload, and a player turns with the aim while throwing; false: the original animations, which freeze the legs and stand a rider up.",
+          "x-environment": "HALO_ENHANCED_ANIMATIONS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "custom_edition": {
           "type": "boolean",
           "default": true,
