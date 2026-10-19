@@ -25,24 +25,28 @@ if __package__:
     from . import data_pack_validation as packs
     from .data_pack import ENVELOPE_LIMITS
     from .ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
+    from .guest_epoch import ENVIRONMENT, FIELD, parse_guest_epoch
 else:
     import benchmark_catalog
     import data_pack_validation as packs
     import release
     from data_pack import ENVELOPE_LIMITS
     from ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
+    from guest_epoch import ENVIRONMENT, FIELD, parse_guest_epoch
 
 XCODE_BUILD = "27B5028f"
 SDK_VERSION = "27.2"
 
 
-def run(*args: str | Path, capture: bool = False, root: Path | None = None) -> str:
+def run(*args: str | Path, capture: bool = False, root: Path | None = None,
+        env: dict[str, str] | None = None) -> str:
     result = subprocess.run(
         [str(arg) for arg in args],
         cwd=root or release.ROOT,
         check=True,
         text=True,
         stdout=subprocess.PIPE if capture else None,
+        env=env,
     )
     return result.stdout.strip() if capture else ""
 
@@ -75,6 +79,10 @@ def require_asset_policy(policy: dict[str, Any]) -> None:
         raise ValueError("New releases require device-profile and shader asset pins")
 
 
+def require_guest_epoch_policy(policy: dict[str, Any]) -> str:
+    return parse_guest_epoch(policy.get(FIELD))
+
+
 def load_policy(value: str) -> dict[str, Any]:
     policy = json.loads(value or "{}")
     fields = {
@@ -92,7 +100,7 @@ def load_policy(value: str) -> dict[str, Any]:
         "shader_feed_url",
         "shader_feed_sha256",
     }
-    if not isinstance(policy, dict) or set(policy) - {"benchmark_upload"} not in (
+    if not isinstance(policy, dict) or set(policy) - {"benchmark_upload", FIELD} not in (
         fields,
         asset_fields,
     ):
@@ -101,6 +109,8 @@ def load_policy(value: str) -> dict[str, Any]:
         )
     if "benchmark_upload" in policy and policy["benchmark_upload"] not in {"on", "off"}:
         raise ValueError("RELEASE_BUILD_POLICY benchmark_upload must be on or off")
+    if FIELD in policy:
+        parse_guest_epoch(policy[FIELD])
     for name in set(policy) - {"benchmark_upload", "profile_feed_sha256s"}:
         value = policy[name]
         if not isinstance(value, str) or not value.strip():
@@ -212,6 +222,7 @@ def inspect_build(
     *,
     app: Path | None = None,
     benchmark_upload: bool = False,
+    guest_source_date_epoch: str | None = None,
 ) -> dict[str, str]:
     signed_app = app is not None
     build = root / "build" / target / folder
@@ -226,6 +237,11 @@ def inspect_build(
     if len(compiled) != 1:
         raise ValueError("Cannot identify the effective guest compile command")
     tokens = shlex.split(compiled[0])
+    epochs = {parse_guest_epoch(value.split("=", 1)[1]) for value in tokens
+              if value.startswith("SOURCE_DATE_EPOCH=")}
+    if len(epochs) > 1 or (guest_source_date_epoch is not None
+                         and epochs != {parse_guest_epoch(guest_source_date_epoch)}):
+        raise ValueError("Effective guest compile epoch differs from reviewed epoch")
     profiles = [
         value.split("=", 1)[1]
         for value in tokens
@@ -304,6 +320,7 @@ def inspect_build(
             signed_app_entitlements(app), "iCloud.org.steverice.visr"
         )
     return {
+        **({FIELD: next(iter(epochs))} if epochs else {}),
         "guest_sha256": hashlib.sha256(
             (root / "build/ios/halo_guest.elf").read_bytes()
         ).hexdigest(),
@@ -389,33 +406,38 @@ def verify_exported_ipa(
 
 
 def probe(
-    root: Path, source: str, selected: list[str], benchmark_upload: bool = False
+    root: Path, source: str, selected: list[str], benchmark_upload: bool = False,
+    guest_source_date_epoch: str | None = None,
 ) -> dict[str, Any]:
     source = release.full_sha(source)
     if run("git", "rev-parse", "HEAD", capture=True) != source:
         raise ValueError("Probe checkout differs from the reviewed source SHA")
     stamp = run("git", "show", "--no-patch", "--format=%ct", source, capture=True)
-    os.environ["SOURCE_DATE_EPOCH"] = stamp
+    epoch = parse_guest_epoch(guest_source_date_epoch if guest_source_date_epoch is not None else stamp)
+    build_env = {**os.environ, "SOURCE_DATE_EPOCH": stamp, ENVIRONMENT: epoch}
     report: dict[str, Any] = {
         "source_sha": source,
         "source_date_epoch": stamp,
+        FIELD: epoch,
         "toolchain": toolchain(selected),
         "platforms": {},
     }
     for target in selected:
-        run(*build_command(target, benchmark_upload))
+        run(*build_command(target, benchmark_upload), env=build_env)
         if benchmark_upload:
             report["platforms"][target] = inspect_build(
-                root, target, benchmark_upload=True
+                root, target, benchmark_upload=True, guest_source_date_epoch=epoch
             )
         else:
-            report["platforms"][target] = inspect_build(root, target)
+            report["platforms"][target] = inspect_build(root, target, guest_source_date_epoch=epoch)
     if len({item["guest_sha256"] for item in report["platforms"].values()}) != 1:
         raise ValueError("All selected platforms must use the same guest")
     return report
 
 
 def compare_evidence(evidence: dict[str, str], policy: dict[str, str]) -> None:
+    if FIELD in policy and evidence.get(FIELD) != require_guest_epoch_policy(policy):
+        raise ValueError("Actual guest compile epoch differs from reviewed policy")
     for name in (
         "guest_sha256",
         "guest_compiler_version",
@@ -634,6 +656,8 @@ def check_feeds(
 def check_release(
     report: dict[str, Any], policy: dict[str, str], selected: list[str]
 ) -> dict[str, Any]:
+    if FIELD in policy and report.get(FIELD) != require_guest_epoch_policy(policy):
+        raise ValueError("Probe guest epoch differs from reviewed policy")
     check_credentials(os.environ, selected)
     if set(report["platforms"]) != set(selected):
         raise ValueError("Probe platforms differ from release selection")
@@ -769,13 +793,19 @@ def main() -> None:
         command.add_argument("--source-sha", required=True)
         command.add_argument("--platforms", default="ios,tvos")
         command.add_argument("--report", type=Path, required=True)
+        if name == "probe":
+            command.add_argument("--guest-source-date-epoch")
     args = parser.parse_args()
     release.require_ci()
     selected = release.platforms(args.platforms)
     if args.command == "probe":
+        if (args.guest_source_date_epoch is not None
+                and os.environ.get("RELEASE_WORKFLOW_MODE") != "validate"):
+            raise ValueError("Guest epoch override is permitted only for unsigned validate mode")
         policy = load_policy(os.environ.get("RELEASE_BUILD_POLICY", ""))
         report = probe(
-            release.ROOT, args.source_sha, selected, benchmark_upload_enabled(policy)
+            release.ROOT, args.source_sha, selected, benchmark_upload_enabled(policy),
+            args.guest_source_date_epoch if args.guest_source_date_epoch is not None else policy.get(FIELD),
         )
         report["github_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
         report["github_run_attempt"] = os.environ.get("GITHUB_RUN_ATTEMPT", "")
@@ -785,6 +815,9 @@ def main() -> None:
         report = json.loads(args.report.read_text())
         if report["source_sha"] != release.full_sha(args.source_sha):
             raise ValueError("Probe report source differs from dispatch")
+        if FIELD in report and report.get("source_date_epoch") != run(
+                "git", "show", "--no-patch", "--format=%ct", args.source_sha, capture=True):
+            raise ValueError("Probe actual source timestamp differs from source commit")
         recording_context = check_release(
             report, load_policy(os.environ.get("RELEASE_BUILD_POLICY", "")), selected
         )

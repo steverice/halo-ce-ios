@@ -21,6 +21,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .guest_epoch import ENVIRONMENT as GUEST_EPOCH_ENV, FIELD as GUEST_EPOCH_FIELD, parse_guest_epoch
+else:
+    from guest_epoch import ENVIRONMENT as GUEST_EPOCH_ENV, FIELD as GUEST_EPOCH_FIELD, parse_guest_epoch
+
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = Path(".release/current.json")
 PLATFORMS = {
@@ -55,13 +60,25 @@ def benchmark_upload_arguments(policy: dict[str, str]) -> list[str]:
     return ["--benchmark-upload"] if validation.benchmark_upload_enabled(policy) else []
 
 
-def run(*args: str | Path, capture: bool = False, root: Path | None = None) -> str:
+def manifest_guest_epoch(manifest: dict[str, Any]) -> str:
+    policy = manifest["build_policy"]
+    if GUEST_EPOCH_FIELD not in manifest and GUEST_EPOCH_FIELD not in policy:
+        return parse_guest_epoch(manifest["source_date_epoch"])
+    epoch = parse_guest_epoch(manifest.get(GUEST_EPOCH_FIELD))
+    if epoch != parse_guest_epoch(policy.get(GUEST_EPOCH_FIELD)):
+        raise ValueError("Guest epoch differs from immutable build policy")
+    return epoch
+
+
+def run(*args: str | Path, capture: bool = False, root: Path | None = None,
+        env: dict[str, str] | None = None) -> str:
     result = subprocess.run(
         [str(arg) for arg in args],
         cwd=root if root is not None else ROOT,
         check=True,
         text=True,
         stdout=subprocess.PIPE if capture else None,
+        env=env,
     )
     return result.stdout.strip() if capture else ""
 
@@ -642,6 +659,7 @@ def prepare(args: argparse.Namespace) -> None:
             raise ValueError("Resume requires an existing VISR release tag")
         run("git", "checkout", "--detach", f"refs/tags/{args.resume_tag}")
         manifest = json.loads((ROOT / MANIFEST).read_text())
+        manifest_guest_epoch(manifest)
         if (
             manifest["source_sha"] != source
             or manifest["platforms"] != selected
@@ -654,6 +672,7 @@ def prepare(args: argparse.Namespace) -> None:
             raise ValueError("Release commit parent differs from the pinned source")
     else:
         validation.require_asset_policy(policy)
+        validation.require_guest_epoch_policy(policy)
         if run("git", "rev-parse", "origin/main", capture=True) != source:
             raise ValueError("Main moved; review and dispatch again with its exact SHA")
         run("git", "checkout", "--detach", source)
@@ -731,6 +750,7 @@ def prepare(args: argparse.Namespace) -> None:
             "testflight_summary_model": summary_model,
             "bootstrap_since": args.bootstrap_since,
             "source_date_epoch": stamp,
+            GUEST_EPOCH_FIELD: policy[GUEST_EPOCH_FIELD],
             "internal_only": True,
             "build_policy": policy,
         }
@@ -1105,6 +1125,7 @@ def publish_context(source_root: Path) -> tuple[Path, dict[str, Any]]:
         )
     require_clean_checkout(root)
     manifest = json.loads((root / MANIFEST).read_text())
+    manifest_guest_epoch(manifest)
     if not re.fullmatch(r"visr-v\d+\.\d+\.\d+", manifest["tag"]):
         raise ValueError("Release manifest must name an existing VISR release tag")
     if run("git", "rev-parse", "HEAD", capture=True, root=root) != run(
@@ -1168,7 +1189,12 @@ def publish(args: argparse.Namespace) -> None:
             "PATCH", f"{path}/{release['id']}", {"body": draft_body(notes, journal)}
         )
 
-    os.environ["SOURCE_DATE_EPOCH"] = manifest["source_date_epoch"]
+    guest_epoch = manifest_guest_epoch(manifest)
+    build_env = {**os.environ, "SOURCE_DATE_EPOCH": manifest["source_date_epoch"]}
+    if GUEST_EPOCH_FIELD in manifest:
+        build_env[GUEST_EPOCH_ENV] = guest_epoch
+    else:
+        build_env.pop(GUEST_EPOCH_ENV, None)
     for platform in manifest["platforms"]:
         record = journal.get(platform)
         if not record or record["state"] == "prepared":
@@ -1221,7 +1247,7 @@ def publish(args: argparse.Namespace) -> None:
             ]
             if platform != "ios":
                 command.append(f"--{platform}")
-            run(*command, root=root)
+            run(*command, root=root, env=build_env)
             if validation.benchmark_upload_enabled(policy):
                 validation.verify_exported_ipa(package)
             require_clean_checkout(root)
@@ -1233,6 +1259,7 @@ def publish(args: argparse.Namespace) -> None:
                     "app-device",
                     app=archive / "Products/Applications/VISR.app",
                     benchmark_upload=validation.benchmark_upload_enabled(policy),
+                    guest_source_date_epoch=guest_epoch if GUEST_EPOCH_FIELD in manifest else None,
                 ),
                 policy,
             )

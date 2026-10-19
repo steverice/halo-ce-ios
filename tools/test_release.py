@@ -15,7 +15,11 @@ from typing import Any, Self
 import pytest
 
 from tools import release
-from tools.test_release_assets import asset_policy as policy
+from tools.test_release_assets import asset_policy
+
+
+def policy():
+    return {**asset_policy(), "guest_source_date_epoch": "1792392070"}
 
 
 def recording_summary_context() -> dict[str, Any]:
@@ -936,6 +940,7 @@ def test_publish_uses_summary_for_testflight_and_full_entry_for_github(
     )
     manifest = {
         "build_policy": policy(),
+        "guest_source_date_epoch": policy()["guest_source_date_epoch"],
         "tag": "visr-v0.3.0",
         "version": "0.3.0",
         "build_number": "20261018.135056",
@@ -1125,6 +1130,7 @@ def test_prepare_resume_reuses_pinned_summary_without_provider_call(
     )
     manifest = {
         "build_policy": policy(),
+        "guest_source_date_epoch": policy()["guest_source_date_epoch"],
         "tag": "visr-v0.3.0",
         "version": "0.3.0",
         "build_number": "20261018.135056",
@@ -1699,6 +1705,7 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
     notes = "## 0.1.3\n\n- Fix input"
     manifest = {
         "build_policy": policy(),
+        "guest_source_date_epoch": policy()["guest_source_date_epoch"],
         "tag": "visr-v0.1.3",
         "version": "0.1.3",
         "build_number": "20261016.010203",

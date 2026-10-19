@@ -16,6 +16,7 @@ from .linux_build import (LINUX_PROFILE, MUSL_MATH_DIR, STB_VORBIS_SOURCE, XDK_I
                           game_sources, lto_mode, musl_math_cflags, musl_math_sources, pgo_mode, pgo_profile, profile_use_flags,
                           xdk_headers)
 from .ninja_syntax import Writer
+from .guest_epoch import ENVIRONMENT, guest_epoch_prefix
 
 PORT_DIR = Path("port/runtime")
 LINUX_DIR = Path("port/linux")
@@ -181,6 +182,7 @@ def stable_converter_interpreter(executable: str) -> Path:
 def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     if not getattr(sln, "ios", False):
         return
+    epoch_prefix = guest_epoch_prefix(os.environ.get(ENVIRONMENT))
     config_path = LINUX_DIR / "port.json"
     if not config_path.is_file():
         return
@@ -271,23 +273,23 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
 
     n.rule(
         name="guest_cc",
-        command=(f"{compile_launcher(sln)}$guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
+        command=(f"{epoch_prefix}{compile_launcher(sln)}$guest_cc -MMD -MF $out.d $cflags -S $in -o $out.darwin.s && "
                  f"$python_converter {converter} $out.darwin.s $out.s && "
-                 f"$guest_cc --target=aarch64-none-elf -c $out.s -o $out"),
+                 f"{epoch_prefix}$guest_cc --target=aarch64-none-elf -c $out.s -o $out"),
         description="IOS CC $out",
         depfile="$out.d",
         deps="gcc",
     )
     n.rule(
         name="guest_bc",
-        command=f"{compile_launcher(sln)}$guest_cc -MMD -MF $out.d $cflags -flto=full -c $in -o $out",
+        command=f"{epoch_prefix}{compile_launcher(sln)}$guest_cc -MMD -MF $out.d $cflags -flto=full -c $in -o $out",
         description="IOS BC $out",
         depfile="$out.d",
         deps="gcc",
     )
     n.rule(
         name="guest_as",
-        command="$guest_cc --target=aarch64-none-elf -c $in -o $out",
+        command=f"{epoch_prefix}$guest_cc --target=aarch64-none-elf -c $in -o $out",
         description="IOS AS $out",
     )
 
@@ -469,10 +471,10 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
         whole_o = obj_dir / "lto" / "whole.o"
         n.rule(
             name="guest_lto",
-            command=(f"{python} tools/ios_guest_lto.py --llvm-bin $guest_tool_bin --keep {keep} --cflags '$cflags' "
+            command=(f"{epoch_prefix}{python} tools/ios_guest_lto.py --llvm-bin $guest_tool_bin --keep {keep} --cflags '$cflags' "
                      f"--work {guest_dir}/lto --out $out.darwin.s @$out.rsp && "
                      f"{python} {converter} $out.darwin.s $out.s && "
-                     f"$guest_cc --target=aarch64-none-elf -c $out.s -o $out"),
+                     f"{epoch_prefix}$guest_cc --target=aarch64-none-elf -c $out.s -o $out"),
             description="IOS LTO $out",
             rspfile="$out.rsp",
             rspfile_content="$in_newline",

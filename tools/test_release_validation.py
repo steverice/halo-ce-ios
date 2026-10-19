@@ -130,7 +130,7 @@ def test_probe_never_calls_release_mutation_helpers(
     monkeypatch.setattr(validation, "run", run)
     monkeypatch.setattr(validation, "toolchain", lambda *_: {"xcode_build": "27B5028f"})
     monkeypatch.setattr(
-        validation, "inspect_build", lambda *_: {"guest_sha256": "a" * 64}
+        validation, "inspect_build", lambda *_, **__: {"guest_sha256": "a" * 64}
     )
     report = validation.probe(tmp_path, source, ["ios", "tvos"])
     assert (
@@ -159,7 +159,7 @@ def test_probe_rejects_different_platform_guests(
     monkeypatch.setattr(
         validation,
         "inspect_build",
-        lambda root, platform, *_: {"guest_sha256": platform},
+        lambda root, platform, *_, **__: {"guest_sha256": platform},
     )
     with pytest.raises(ValueError, match="same guest"):
         validation.probe(tmp_path, source, ["ios", "tvos"])

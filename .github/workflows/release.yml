@@ -16,6 +16,9 @@ on:
         description: 'Existing App Store platforms: ios,tvos,visionos (comma-separated)'
         default: 'ios,tvos'
         type: string
+      guest_source_date_epoch:
+        description: 'Unsigned validate only: candidate guest compile epoch; never changes production policy'
+        type: string
       increment:
         description: 'Commitizen version increment'
         type: choice
@@ -63,10 +66,17 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           RELEASE_PLATFORMS: ${{ inputs.platforms }}
           RELEASE_BUILD_POLICY: ${{ vars.RELEASE_BUILD_POLICY }}
+          RELEASE_WORKFLOW_MODE: ${{ inputs.mode }}
+          VALIDATE_GUEST_EPOCH: ${{ inputs.guest_source_date_epoch }}
         run: |
           brew install cmake ninja llvm lld sdl3 pkgconf
+          epoch_args=()
+          if [ -n "$VALIDATE_GUEST_EPOCH" ]; then
+            test "$RELEASE_WORKFLOW_MODE" = validate
+            epoch_args=(--guest-source-date-epoch "$VALIDATE_GUEST_EPOCH")
+          fi
           uv run --python 3.11 --no-project --with-requirements tools/release-requirements.txt python tools/release_validation.py probe \
-            --source-sha "$SOURCE_SHA" --platforms "$RELEASE_PLATFORMS" --report build/release-probe.json
+            --source-sha "$SOURCE_SHA" --platforms "$RELEASE_PLATFORMS" --report build/release-probe.json "${epoch_args[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-provenance
@@ -141,7 +151,7 @@ jobs:
       - name: Require all selected existing credentials
         run: python3 -c 'import os; from tools.release import platforms; from tools.release_validation import check_credentials; check_credentials(os.environ, platforms(os.environ["RELEASE_PLATFORMS"]))'
       - name: Require reviewed device-profile and shader feeds for a new release
-        run: python3 -c 'import os; from tools.release_validation import load_policy, require_asset_policy; policy = load_policy(os.environ["RELEASE_BUILD_POLICY"]); os.environ.get("RELEASE_RESUME_TAG") or require_asset_policy(policy)'
+        run: python3 -c 'import os; from tools.release_validation import load_policy, require_asset_policy, require_guest_epoch_policy; policy = load_policy(os.environ["RELEASE_BUILD_POLICY"]); os.environ.get("RELEASE_RESUME_TAG") or (require_asset_policy(policy), require_guest_epoch_policy(policy))'
       - name: Validate existing distribution identity and profiles
         run: python3 tools/release_signing.py install
       - name: Verify reviewed guest, feeds, toolchain, and App Store access before any tag

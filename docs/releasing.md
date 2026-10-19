@@ -39,15 +39,16 @@ The signing helper creates a random-password temporary keychain, imports the exi
 
 ## Validate before releasing
 
-Dispatch with `mode=validate`, the exact reviewed `source_sha`, and the selected platforms. The workflow checks out that source, fixes `SOURCE_DATE_EPOCH` to its commit timestamp, and builds unsigned tester apps with guest PGO, full LTO, host PGO, movies enabled, and benchmark routes disabled. Signed data packs are disabled in this probe because the guest-specific recording feed cannot be selected until the guest identity is known. Probe apps are not distribution artifacts.
+Dispatch with `mode=validate`, the exact reviewed `source_sha`, and the selected platforms. The workflow checks out that source, records its actual commit timestamp as `source_date_epoch`, and builds unsigned tester apps with guest PGO, full LTO, host PGO, movies enabled, and benchmark routes disabled. Signed data packs are disabled in this probe because the guest-specific recording feed cannot be selected until the guest identity is known. Probe apps are not distribution artifacts.
 
 Download the `release-provenance` artifact. It contains `release-probe.json` and `ios/halo_guest.elf` for independent guest load-segment audits. These validation files are not attached to releases or uploaded to TestFlight. Its JSON records the source SHA, timestamp, workflow run and attempt, exact Xcode/SDKs, actual guest compiler version, profile hashes, compile-command hash, and embedded guest identity for each platform. Checks inspect the generated guest compile command, full LTO stage, resolved host compiler flags, tester/routes definitions, and actual app guest segments. Host PGO fallback is an error. Both platforms must embed the same guest.
 
-Configure `RELEASE_BUILD_POLICY` as a JSON object with the eight required fields below. For new policies, you may add the optional `benchmark_upload` field. Older policies that omit it keep uploads off.
+Configure `RELEASE_BUILD_POLICY` as a JSON object with the required fields below. For new policies, you may add the optional `benchmark_upload` field. Older policies that omit it keep uploads off.
 
 | Field | Reviewed value |
 | --- | --- |
 | `guest_sha256` | Common guest SHA-256 from the probe |
+| `guest_source_date_epoch` | Explicit guest compile epoch in canonical decimal seconds, 1..253402300799 |
 | `guest_compiler_version` | Exact first compiler-version line from the probe |
 | `guest_profile_sha256` | Guest profile SHA-256 from the probe |
 | `host_profile_sha256` | Host profile SHA-256 from the probe |
@@ -59,11 +60,13 @@ Configure `RELEASE_BUILD_POLICY` as a JSON object with the eight required fields
 | `recording_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
 | `benchmark_upload` | Optional string, either `on` or `off`; omitted means `off` |
 
+New releases also require `guest_source_date_epoch`. The immutable manifest records this separately from the actual source commit timestamp and build number. Only Apple guest compile/LTO commands receive the pinned reproducibility epoch, so Ninja detects an epoch change and rebuilds stale bitcode. Host builds retain the actual source epoch. A data-only main commit can therefore preserve an already qualified guest, but the successor validation must still prove its actual ELF, compiler and profile hashes. The optional workflow `guest_source_date_epoch` input is accepted only in unsigned `validate` mode to test a candidate without changing production policy. Release preflight requires report and policy epochs to agree. Old immutable manifests lacking both the guest field and policy pin use their own recorded source epoch; ambient time never replaces it.
+
 New release policies require device-keyed profile pins and a shader feed pin. For example, `profile_feed_sha256s` maps `ios/iPhone18,1/_` to that shard's envelope hash. The release verifier downloads every pinned shard and checks its exact target-bound compatibility; the app requests only its own shard. Shader verification checks `shader-lists-1` and complete map-local descriptor dependencies. See [signed data updates](data-packs.md) for publication and resource limits.
 
 With `benchmark_upload=on`, the tester's existing consent screen can send a compressed benchmark report to the app's CloudKit public database. The same policy is bound to the unsigned probe, release manifest, and release build. Signing requires an existing manual App Store profile for the exact CloudKit container and production APS environment. The release never enables cloud saves or changes account capabilities.
 
-Verify the recording package against this guest before publishing its feed through the separate data-pack procedure. Release configuration does not publish packs. A generic feed for an older guest does not satisfy this requirement. Changing source timestamps or compilers can change the guest even when gameplay code is unchanged; rerun validation after a source change.
+Verify the recording package against this guest before publishing its feed through the separate data-pack procedure. Release configuration does not publish packs. A generic feed for an older guest does not satisfy this requirement. Changing guest compilation inputs, compilers or the pinned guest epoch can change the guest. Revalidate the actual successor source before reusing a qualified guest; a timestamp or manifest edit alone does not establish compatibility.
 
 In `release` mode, the workflow repeats the unsigned probe, then validates existing signing material and API access before preparation can push anything. It checks the reviewed profile/compiler/guest pins, tester channel, Ed25519 signatures, payload hashes, engine compatibility, and guest-specific recording compatibility. Feeds must match their reviewed envelope hashes and must not redirect. A digest binds the preflight source, platform selection, and build policy to preparation, so changing an environment value between approval stages stops preparation.
 
