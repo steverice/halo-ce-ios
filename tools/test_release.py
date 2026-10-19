@@ -353,7 +353,7 @@ def test_release_summary_instructions_keep_report_sending_policy_conditional() -
     [
         lambda context: context.update(guest_sha256="0" * 64),
         lambda context: context.update(envelope_sha256="0" * 64),
-        lambda context: context["cases"][0].update(players=33),
+        lambda context: context["cases"][0].update(players=129),
         lambda context: context["cases"][0].update(recording="private.take"),
     ],
 )
