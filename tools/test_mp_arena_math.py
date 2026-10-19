@@ -39,7 +39,7 @@ int main(void) {
         }
     }
     float point[2];
-    assert(!benchmark_mp_arena_offset(&cfg,33,1,1,0,point));
+    assert(!benchmark_mp_arena_offset(&cfg,129,1,1,0,point));
     assert(!benchmark_mp_arena_offset(&cfg,32,32,1,0,point));
     assert(!benchmark_mp_arena_offset(&cfg,32,1,NAN,0,point));
     assert(!benchmark_mp_arena_offset(&cfg,32,1,0,0,point));
