@@ -468,6 +468,7 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-I
     'port/ios/tests/stereo_head_probe.c', 'port/ios/host/host_stereo_head.c',
     '-o', BUILD/'stereo-head-probe')
 run(BUILD/'stereo-head-probe')
+run('python3', 'tools/test_dead_spectator_head.py')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Iport/linux/src', '-Iport/ios/host',
     '-Iport/ios/tests', 'port/ios/tests/replay_stereo_entry_probe.c', 'port/ios/host/host_stereo_head.c',
     '-o', BUILD/'replay-stereo-entry-probe')

@@ -807,7 +807,8 @@ static void third_person_begin(void)
 	own with the script holding its look, or a scripted one in first-person
 	mode) takes the same path: the head turns its picture, never the look */
 	int look_disabled = head_frame && halo_look_disabled_first_person();
-	int third_person = head_frame && ((!vehicle_screen && halo_third_person_camera()) || look_disabled);
+	int third_person = head_frame && ((!vehicle_screen && halo_third_person_camera()) ||
+		halo_coop_dead_camera() || look_disabled);
 
 	if (third_person && !third_person_head) {
 		/* (with the yaw a seat's limit refused, which the eye cameras had

@@ -34,6 +34,7 @@ int halo_scripted_director_camera(void) { return game_director_camera; }
 int halo_level_first_tick_pending(void) { return 0; }
 int halo_level_start_campaign(void) { return 0; }
 int halo_third_person_camera(void) { return game_third_person; }
+int halo_coop_dead_camera(void) { return 0; }
 int halo_cutscene_camera_first_person(void) { return 0; }
 float halo_cutscene_camera_field_of_view(void) { return 1.2217305f; }
 int halo_look_disabled_first_person(void) { return 0; }

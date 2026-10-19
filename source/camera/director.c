@@ -314,6 +314,14 @@ director_perspective director_peek_perspective(
 	return _director_perspective_neutral;
 }
 
+boolean director_dead_camera_active(
+	short local_player_index)
+{
+	if (local_player_index < 0 || local_player_index >= MAXIMUM_NUMBER_OF_LOCAL_PLAYERS)
+		return FALSE;
+	return director_get(local_player_index)->camera_proc == (director_camera_update_proc)dead_camera_update;
+}
+
 director_perspective director_get_perspective(
 	short local_player_index)
 {

@@ -572,6 +572,7 @@ int halo_cinematic_screen(void);
 int halo_scripted_camera(void);
 int halo_scripted_director_camera(void);
 int halo_third_person_camera(void);
+int halo_coop_dead_camera(void);
 /* A first-person cutscene camera: the director's own first person (the
 look on or off) or a scripted camera in first-person mode. HEAD mode's film
 is only for the others (stereo.c) */

@@ -18,6 +18,7 @@ picture.
 #include "cseries.h"
 #include "camera/camera_scripting.h"
 #include "camera/director.h"
+#include "coop_spectate.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
 #include "game/players.h"
@@ -64,6 +65,17 @@ seat whose camera isn't first person */
 int halo_third_person_camera(void)
 {
 	return director_peek_perspective(0) == _director_perspective_third_person;
+}
+
+/* A network co-op player with no unit watches through the game's dead
+camera, whether it targets the local corpse or a teammate. Its head turns
+the picture locally; a scripted host camera does not pass this test. */
+int halo_coop_dead_camera(void)
+{
+	long player_index = local_player_get_player_index(0);
+
+	return coop_spectating() && player_index != NONE && player_get(player_index)->unit_index == NONE &&
+		director_dead_camera_active(0);
 }
 
 /* A first-person cutscene camera (the stereo spec's session 4 "Cutscenes"):

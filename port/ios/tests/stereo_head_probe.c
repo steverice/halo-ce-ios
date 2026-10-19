@@ -136,6 +136,12 @@ static unsigned long probe_clock;
 unsigned long platform_clock_frames(void) { return ++probe_clock; }
 double halo_frame_trace_milliseconds(void) { return 0.0; }
 int halo_third_person_camera(void) { return game_third_person; }
+/* The focused dead-camera probe can replace this with the production
+camera procedure and network predicate. */
+#ifndef HALO_STEREO_SOURCE_DEAD_CAMERA
+static int game_dead_camera;
+int halo_coop_dead_camera(void) { return game_dead_camera; }
+#endif
 int halo_cutscene_camera_first_person(void) { return game_first_person; }
 /* the cutscene camera's horizontal field of view (Task 12k): 70 degrees unless a case sets it */
 static float game_field_of_view = 1.2217305f;
@@ -176,6 +182,7 @@ static float probe_screen_yaw;
 static float pose[3][3];
 static struct host_stereo_head head;
 static int host_closed;
+static int host_unanchored;
 /* the Compositor frames the game asked for */
 static unsigned long host_frames;
 
@@ -191,7 +198,10 @@ void host_stereo_frame(struct halo_stereo_frame *frame)
 		return;
 	}
 	frame->eye_count = 2;
-	host_stereo_head_turn(&head, pose[0], pose[1], pose[2], frame);
+	if (host_unanchored)
+		host_stereo_head_hold(&head, frame);
+	else
+		host_stereo_head_turn(&head, pose[0], pose[1], pose[2], frame);
 	/* SCREEN eyes (the film in HEAD mode): 64 mm apart, 4 m behind the
 	camera, frusta through the edges of a screen 4.6 m wide */
 	if (frame->mode == HALO_STEREO_SCREEN) {
