@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+"""Stage reviewed signed feeds without rolling back prior Pages data updates.
+
+The publication receipt is for the publisher alone. It only names bounded signed
+asset paths and hashes; the app continues to request its individual feed URLs.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import tempfile
+import urllib.error
+import urllib.request
+from typing import Literal, overload
+
+if __package__:
+    from . import pages_recording_overlay as legacy
+    from . import release_validation as validation
+    from .data_pack import ENVELOPE_LIMITS, profile_target_parts
+else:
+    import pages_recording_overlay as legacy
+    import release_validation as validation
+    from data_pack import ENVELOPE_LIMITS, profile_target_parts
+
+ROOT = Path(__file__).resolve().parents[1]
+SITE_URL = "https://code.steverice.org/visr"
+PREFIX = "docs/site/packs/tester/"
+RECEIPT = PREFIX + "publication.json"
+MARKER = PREFIX + "publication-format.txt"
+MARKER_DATA = b"visr-signed-assets-1\n"
+RECORDING = PREFIX + "recordings.json"
+SHADER = PREFIX + "shaders.json"
+MAX_ASSETS = 256
+MAX_RECEIPT = 65536
+MAX_TOTAL = 512 * 1024 * 1024
+
+
+def allowed_asset(path: str) -> tuple[str, str | None]:
+    if not isinstance(path, str) or not path.startswith(PREFIX):
+        raise ValueError("Only tester signed asset paths may be overlaid")
+    if path == RECORDING or legacy.FEED_PATH.fullmatch(path):
+        return "recording", None
+    if path == SHADER:
+        return "shader", None
+    profile = re.fullmatch(re.escape(PREFIX) + r"profiles/(.+)\.json", path)
+    if profile:
+        target = profile[1]
+        profile_target_parts(target)
+        return "profile", target
+    raise ValueError(
+        "Only canonical profile, shader and recording feeds may be overlaid"
+    )
+
+
+def limit_for(path: str) -> int:
+    kind, _ = allowed_asset(path)
+    return ENVELOPE_LIMITS[
+        {"profile": "profiles", "shader": "shaders", "recording": "recordings"}[kind]
+    ]
+
+
+def verify_asset(path: str, data: bytes) -> dict:
+    kind, target = allowed_asset(path)
+    if not 0 < len(data) <= limit_for(path):
+        raise ValueError("Asset envelope exceeds its bounded size")
+    digest = hashlib.sha256(data).hexdigest()
+    if kind == "recording":
+        domain, guest, sequence = legacy.mutable_recording_domain(
+            data, require_catalog=path == RECORDING
+        )
+        match = legacy.FEED_PATH.fullmatch(path)
+        if match and match[1] != guest:
+            raise ValueError("Recording filename differs from signed guest domain")
+        return {"compatibility": domain, "sequence": sequence}
+    if kind == "profile":
+        assert target is not None
+        validation.verify_feed(
+            data,
+            kind,
+            {"profile_feed_sha256s": {target: digest}},
+            profile_target=target,
+        )
+        domain = "device-profiles-1:" + target
+    else:
+        validation.verify_feed(data, kind, {"shader_feed_sha256": digest})
+        domain = "shader-lists-1"
+    envelope = validation.packs.decode_json(data)
+    manifest = validation.packs.decode_json(
+        validation.packs.decode_base64(envelope["manifest"], 65536)
+    )
+    return {"compatibility": domain, "sequence": manifest["sequence"]}
+
+
+def parse_receipt(data: bytes) -> dict[str, str]:
+    if not 0 < len(data) <= MAX_RECEIPT:
+        raise ValueError("Publication receipt exceeds its bounded size")
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Publication receipt contains duplicate keys")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=unique)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("Publication receipt is invalid JSON") from error
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"schema", "assets"}
+        or type(value["schema"]) is not int
+        or value["schema"] != 1
+    ):
+        raise ValueError("Publication receipt has invalid fields")
+    assets = value["assets"]
+    if (
+        not isinstance(assets, dict)
+        or not 1 <= len(assets) <= MAX_ASSETS
+        or RECORDING not in assets
+    ):
+        raise ValueError("Publication receipt must retain the known recording feed")
+    for path, digest in assets.items():
+        allowed_asset(path)
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("Publication receipt contains an invalid asset hash")
+    return assets
+
+
+@overload
+def fetch(path: str, maximum: int, *, optional: Literal[False] = False) -> bytes: ...
+
+
+@overload
+def fetch(path: str, maximum: int, *, optional: Literal[True]) -> bytes | None: ...
+
+
+def fetch(path: str, maximum: int, *, optional: bool = False) -> bytes | None:
+    # The sole generated metadata endpoint is not an allowed overlay path.
+    if path not in {RECEIPT, MARKER}:
+        allowed_asset(path)
+    url = SITE_URL + "/" + path.removeprefix("docs/site/")
+    if not url.startswith("https://"):
+        raise ValueError("Published asset downloads require HTTPS")
+    try:
+        with urllib.request.build_opener(validation.NoRedirect()).open(
+            url, timeout=45
+        ) as response:
+            data = response.read(maximum + 1)
+    except urllib.error.HTTPError as error:
+        if optional and error.code == 404:
+            return None
+        raise ValueError("Required published asset is unavailable: " + path) from error
+    if not 0 < len(data) <= maximum:
+        raise ValueError("Published asset exceeds its bounded size")
+    return data
+
+
+def check_budget(assets: dict[str, bytes]) -> None:
+    if not 1 <= len(assets) <= MAX_ASSETS or sum(map(len, assets.values())) > MAX_TOTAL:
+        raise ValueError("Publication assets exceed their bounded total size")
+
+
+def live_assets() -> dict[str, bytes]:
+    receipt = fetch(RECEIPT, MAX_RECEIPT, optional=True)
+    marker = fetch(MARKER, len(MARKER_DATA), optional=True)
+    if receipt is None:
+        # The only supported pre-receipt deployment already has recordings.json.
+        if marker is not None:
+            raise ValueError(
+                "Publication receipt is missing for deployed signed assets"
+            )
+        raw = fetch(RECORDING, limit_for(RECORDING))
+        verify_asset(RECORDING, raw)
+        return {RECORDING: raw}
+    if marker != MARKER_DATA:
+        raise ValueError("Publication format marker is missing or invalid")
+    result = {}
+    for path, digest in parse_receipt(receipt).items():
+        raw = fetch(path, limit_for(path))
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError("Published envelope differs from receipt hash: " + path)
+        verify_asset(path, raw)
+        result[path] = raw
+        check_budget(result)
+    return result
+
+
+def trusted_source() -> str:
+    source = os.environ.get("GITHUB_SHA", "")
+    if (
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        or os.environ.get("GITHUB_REF") != "refs/heads/main"
+        or os.environ.get("GITHUB_EVENT_NAME") not in {"push", "workflow_dispatch"}
+        or not re.fullmatch(r"[0-9a-f]{40}", source)
+    ):
+        raise ValueError("Asset staging requires the trusted main workflow")
+    if legacy.git("rev-parse", "HEAD").decode().strip() != source or legacy.git(
+        "status", "--porcelain", "--untracked-files=all"
+    ):
+        raise ValueError("Site source must be the exact clean workflow checkout")
+    return source
+
+
+def read_source(path: Path, maximum: int) -> bytes:
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= maximum:
+        raise ValueError("Asset must be a bounded regular file")
+    data = path.read_bytes()
+    if len(data) != info.st_size:
+        raise ValueError("Asset changed while reading")
+    return data
+
+
+def source_assets() -> dict[str, bytes]:
+    result = {}
+    directory = ROOT / PREFIX
+    for path in sorted(directory.rglob("*.json")):
+        name = path.relative_to(ROOT).as_posix()
+        if (
+            name == RECORDING
+            or name == SHADER
+            or legacy.FEED_PATH.fullmatch(name)
+            or name.startswith(PREFIX + "profiles/")
+        ):
+            result[name] = read_source(path, limit_for(name))
+            verify_asset(name, result[name])
+            check_budget(result)
+    return result
+
+
+def candidate_assets(commit: str) -> dict[str, bytes]:
+    source = trusted_source()
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    if (
+        os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+        or not re.fullmatch(r"[0-9a-f]{40}", commit)
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository)
+    ):
+        raise ValueError("Asset overlays require an exact reviewed manual data commit")
+    legacy.git(
+        "fetch",
+        "--no-tags",
+        "--depth=2",
+        "--no-write-fetch-head",
+        f"https://github.com/{repository}.git",
+        commit,
+    )
+    if legacy.git(
+        "rev-list", "--parents", "--max-count=1", commit
+    ).decode().split() != [commit, source]:
+        raise ValueError(
+            "Asset commit must have exactly the workflow main as its parent"
+        )
+    paths = legacy.git(
+        "diff", "--name-only", "--no-renames", "-z", source, commit, "--"
+    ).split(b"\0")
+    if not paths or paths[-1] != b"" or not 1 <= len(paths) - 1 <= MAX_ASSETS:
+        raise ValueError("Asset commit has invalid path count")
+    result = {}
+    for encoded in paths[:-1]:
+        path = encoded.decode("ascii")
+        if path in result:
+            raise ValueError("Asset commit repeats a path")
+        maximum = limit_for(path)
+        entry = legacy.git("ls-tree", commit, "--", path).decode().split()
+        if len(entry) != 4 or entry[:2] != ["100644", "blob"] or entry[3] != path:
+            raise ValueError("Asset commit must contain regular nonexecutable feeds")
+        size = int(legacy.git("cat-file", "-s", entry[2]))
+        if not 0 < size <= maximum:
+            raise ValueError("Asset envelope exceeds bounded size")
+        raw = legacy.git("cat-file", "blob", entry[2])
+        if len(raw) != size:
+            raise ValueError("Asset blob size changed")
+        verify_asset(path, raw)
+        result[path] = raw
+        check_budget(result)
+    return result
+
+
+def advance(path: str, old: bytes, new: bytes) -> None:
+    a, b = verify_asset(path, old), verify_asset(path, new)
+    if (
+        old != new
+        and a["compatibility"] == b["compatibility"]
+        and b["sequence"] <= a["sequence"]
+    ):
+        raise ValueError("Replacement asset needs a higher signed sequence")
+
+
+def stage_site(
+    *,
+    asset_commit: str = "",
+    recording_commit: str = "",
+    destination: Path | None = None,
+) -> Path:
+    trusted_source()
+    if asset_commit and recording_commit:
+        raise ValueError("Select one reviewed data commit")
+    source = source_assets()
+    live = live_assets()
+    selected = dict(source)
+    for path, raw in live.items():
+        if path in source:
+            a, b = verify_asset(path, source[path]), verify_asset(path, raw)
+            if a["compatibility"] == b["compatibility"]:
+                if a["sequence"] > b["sequence"]:
+                    continue
+                advance(path, source[path], raw)
+        selected[path] = raw
+    candidates = candidate_assets(asset_commit) if asset_commit else {}
+    if recording_commit:
+        path, raw, _ = legacy.overlay(recording_commit)
+        candidates = {path: raw}
+    for path, raw in candidates.items():
+        verify_asset(path, raw)
+        for previous in (source, live):
+            if path in previous:
+                advance(path, previous[path], raw)
+        selected[path] = raw
+    check_budget(selected)
+    if RECORDING not in selected:
+        raise ValueError("Publication must preserve the known recording feed")
+    receipt = (
+        json.dumps(
+            {
+                "schema": 1,
+                "assets": {
+                    path: hashlib.sha256(raw).hexdigest()
+                    for path, raw in sorted(selected.items())
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        + b"\n"
+    )
+    parse_receipt(receipt)
+    destination = destination or ROOT / "build/pages"
+    if destination.exists():
+        raise ValueError("Staging destination already exists")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".pages-assets-", dir=destination.parent))
+    try:
+        shutil.copytree(ROOT / "docs/site", temporary, dirs_exist_ok=True)
+        for path, raw in selected.items():
+            target = temporary / path.removeprefix("docs/site/")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(raw)
+        target = temporary / RECEIPT.removeprefix("docs/site/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(receipt)
+        (temporary / MARKER.removeprefix("docs/site/")).write_bytes(MARKER_DATA)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return destination
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--asset-commit", default="")
+    parser.add_argument("--recording-commit", default="")
+    args = parser.parse_args()
+    result = stage_site(
+        asset_commit=args.asset_commit, recording_commit=args.recording_commit
+    )
+    receipt = (result / "packs/tester/publication.json").read_bytes()
+    print(
+        json.dumps(
+            {
+                "source_sha": os.environ["GITHUB_SHA"],
+                "asset_commit": args.asset_commit,
+                "recording_commit": args.recording_commit,
+                "receipt_sha256": hashlib.sha256(receipt).hexdigest(),
+                "assets": len(parse_receipt(receipt)),
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

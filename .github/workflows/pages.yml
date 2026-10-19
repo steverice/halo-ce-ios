@@ -1,17 +1,21 @@
 name: Pages
 
 # Publishes the static landing page in docs/site to GitHub Pages. There is no
-# application build step. An optional signed feed is validated before upload. Enable it under
+# application build step. Signed asset feeds are validated before upload. Enable it under
 # Settings > Pages > Source: GitHub Actions.
 
 on:
   push:
     branches: [main]
-    paths: ['docs/site/**', '.github/workflows/pages.yml', 'tools/pages_recording_overlay.py']
+    paths: ['docs/site/**', '.github/workflows/pages.yml', 'tools/pages_recording_overlay.py', 'tools/pages_asset_overlay.py']
   workflow_dispatch:
     inputs:
       recording_commit:
         description: 'Reviewed one-file recording-feed commit whose parent is this main SHA'
+        required: false
+        type: string
+      asset_commit:
+        description: 'Reviewed signed asset-feed commit whose parent is this main SHA'
         required: false
         type: string
 
@@ -28,6 +32,7 @@ jobs:
   deploy:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -38,19 +43,15 @@ jobs:
           persist-credentials: false
       - uses: actions/configure-pages@v5
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: github.event_name == 'workflow_dispatch' && inputs.recording_commit != ''
         with:
           version: '0.11.8'
-      - name: Stage the main site and optional reviewed recording feed
+      - name: Preserve signed data and stage reviewed asset updates
         env:
           RECORDING_COMMIT: ${{ inputs.recording_commit }}
+          ASSET_COMMIT: ${{ inputs.asset_commit }}
         run: |
-          if [ -n "$RECORDING_COMMIT" ]; then
-            uv run --python 3.11 --no-project --with-requirements tools/release-requirements.txt \
-              python tools/pages_recording_overlay.py --recording-commit "$RECORDING_COMMIT"
-          else
-            python3 tools/pages_recording_overlay.py
-          fi
+          uv run --python 3.11 --no-project --with-requirements tools/release-requirements.txt \
+            python tools/pages_asset_overlay.py --recording-commit "$RECORDING_COMMIT" --asset-commit "$ASSET_COMMIT"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/pages
