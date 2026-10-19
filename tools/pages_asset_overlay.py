@@ -23,11 +23,11 @@ from typing import Literal, overload
 if __package__:
     from . import pages_recording_overlay as legacy
     from . import release_validation as validation
-    from .data_pack import ENVELOPE_LIMITS, profile_target_parts
+    from .data_pack import ENVELOPE_LIMITS, MAXIMUM_SEQUENCE, profile_target_parts
 else:
     import pages_recording_overlay as legacy
     import release_validation as validation
-    from data_pack import ENVELOPE_LIMITS, profile_target_parts
+    from data_pack import ENVELOPE_LIMITS, MAXIMUM_SEQUENCE, profile_target_parts
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_URL = "https://code.steverice.org/visr"
@@ -37,6 +37,7 @@ MARKER = PREFIX + "publication-format.txt"
 MARKER_DATA = b"visr-signed-assets-1\n"
 RECORDING = PREFIX + "recordings.json"
 SHADER = PREFIX + "shaders.json"
+LEGACY_PROFILE_INDEX = PREFIX + "profiles-2.json"
 MAX_ASSETS = 256
 MAX_RECEIPT = 65536
 MAX_TOTAL = 512 * 1024 * 1024
@@ -237,6 +238,82 @@ def source_assets() -> dict[str, bytes]:
     return result
 
 
+def checked_in_assets() -> dict[str, bytes]:
+    """Return the exact signed feeds checked into the current main site."""
+    directory = ROOT / PREFIX
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError("Checked-in tester asset directory is missing or invalid")
+
+    marker = read_source(ROOT / MARKER, len(MARKER_DATA))
+    if marker != MARKER_DATA:
+        raise ValueError("Checked-in publication format marker is missing or invalid")
+    receipt_raw = read_source(ROOT / RECEIPT, MAX_RECEIPT)
+    receipt = parse_receipt(receipt_raw)
+    if SHADER not in receipt:
+        raise ValueError("Publication receipt must retain the shader feed")
+
+    assets = {}
+    found_paths = set()
+    for current, directories, files in os.walk(directory, followlinks=False):
+        parent = Path(current)
+        for name in directories:
+            child = parent / name
+            if child.is_symlink():
+                raise ValueError("Tester asset directories cannot be symbolic links")
+            relative = child.relative_to(ROOT).as_posix()
+            if relative != PREFIX + "profiles" and not relative.startswith(
+                PREFIX + "profiles/"
+            ):
+                raise ValueError("Unexpected directory under the tester asset root")
+        for name in files:
+            path = parent / name
+            relative = path.relative_to(ROOT).as_posix()
+            if path.is_symlink():
+                raise ValueError("Tester assets cannot be symbolic links")
+            if relative in {RECEIPT, MARKER, LEGACY_PROFILE_INDEX}:
+                continue
+            if not relative.endswith(".json"):
+                raise ValueError("Unexpected file under the tester asset root")
+            try:
+                allowed_asset(relative)
+            except ValueError as error:
+                raise ValueError(
+                    "Tester contains a path that is not an allowed signed asset path"
+                ) from error
+            found_paths.add(relative)
+            assets[relative] = read_source(path, limit_for(relative))
+
+    if found_paths != set(receipt):
+        raise ValueError("Checked-in signed asset paths do not match the receipt")
+    for path, data in assets.items():
+        if hashlib.sha256(data).hexdigest() != receipt[path]:
+            raise ValueError("Checked-in asset differs from its receipt hash: " + path)
+        metadata = verify_asset(path, data)
+        sequence = metadata.get("sequence")
+        if type(sequence) is not int or not 1 <= sequence <= MAXIMUM_SEQUENCE:
+            raise ValueError("Checked-in asset has an invalid signed sequence: " + path)
+    check_budget(assets)
+    return assets
+
+
+def stage_main_site(*, destination: Path | None = None) -> Path:
+    """Validate and stage only the site and signed feeds checked into main."""
+    trusted_source()
+    checked_in_assets()
+    destination = destination or ROOT / "build/pages"
+    if destination.exists():
+        raise ValueError("Staging destination already exists")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=".pages-main-assets-", dir=destination.parent))
+    try:
+        shutil.copytree(ROOT / "docs/site", temporary, dirs_exist_ok=True)
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return destination
+
+
 def candidate_assets(commit: str) -> dict[str, bytes]:
     source = trusted_source()
     repository = os.environ.get("GITHUB_REPOSITORY", "")
@@ -368,21 +445,16 @@ def stage_site(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--asset-commit", default="")
-    parser.add_argument("--recording-commit", default="")
-    args = parser.parse_args()
-    result = stage_site(
-        asset_commit=args.asset_commit, recording_commit=args.recording_commit
-    )
+    parser.parse_args()
+    result = stage_main_site()
     receipt = (result / "packs/tester/publication.json").read_bytes()
     print(
         json.dumps(
             {
                 "source_sha": os.environ["GITHUB_SHA"],
-                "asset_commit": args.asset_commit,
-                "recording_commit": args.recording_commit,
                 "receipt_sha256": hashlib.sha256(receipt).hexdigest(),
                 "assets": len(parse_receipt(receipt)),
+                "checked_in_main_assets": True,
             }
         )
     )

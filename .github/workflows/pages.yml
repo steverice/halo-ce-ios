@@ -7,17 +7,16 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ['docs/site/**', '.github/workflows/pages.yml', 'tools/pages_recording_overlay.py', 'tools/pages_asset_overlay.py']
+    paths:
+      - 'docs/site/**'
+      - '.github/workflows/pages.yml'
+      - 'tools/pages_asset_overlay.py'
+      - 'tools/pages_recording_overlay.py'
+      - 'tools/release_validation.py'
+      - 'tools/data_pack.py'
+      - 'tools/data_pack_sign.c'
+      - 'port/third_party/monocypher/**'
   workflow_dispatch:
-    inputs:
-      recording_commit:
-        description: 'Reviewed one-file recording-feed commit whose parent is this main SHA'
-        required: false
-        type: string
-      asset_commit:
-        description: 'Reviewed signed asset-feed commit whose parent is this main SHA'
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -45,13 +44,10 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.11.8'
-      - name: Preserve signed data and stage reviewed asset updates
-        env:
-          RECORDING_COMMIT: ${{ inputs.recording_commit }}
-          ASSET_COMMIT: ${{ inputs.asset_commit }}
+      - name: Validate and stage checked-in main assets
         run: |
           uv run --python 3.11 --no-project --with-requirements tools/release-requirements.txt \
-            python tools/pages_asset_overlay.py --recording-commit "$RECORDING_COMMIT" --asset-commit "$ASSET_COMMIT"
+            python tools/pages_asset_overlay.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/pages
