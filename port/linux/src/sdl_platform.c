@@ -758,6 +758,8 @@ int platform_window_sizes(long *widths, long *heights, int maximum)
 /* the window's size (platform_window_size_setting), as the window was made
 or last resized: platform_display_apply */
 static long platform_window_width = -1, platform_window_height = -1;
+/* the last configured mode; F11 can change the window independently */
+static int platform_window_mode = _display_mode_windowed;
 #endif
 BOOL platform_renderer_metal(void)
 {
@@ -863,6 +865,7 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 	}
 #if !defined(HALO_ANDROID) && !defined(HALO_ILP32)
 	platform_fullscreen_requested = platform_fullscreen_setting();
+	platform_window_mode = platform_display_mode();
 	platform_fullscreen_kind_apply();
 #endif
 	platform_gl_context = SDL_GL_CreateContext(platform_window);
@@ -906,14 +909,18 @@ and borderless's resolution are taken up between frames
 void platform_display_apply(void)
 {
 #if !defined(HALO_ANDROID) && !defined(HALO_ILP32)
-	BOOL fullscreen = platform_fullscreen_setting();
+	int mode = platform_display_mode();
 	long width, height;
 
 	if (!platform_window)
 		return;
 	platform_fullscreen_kind_apply();
-	if (platform_window_fullscreen() != (fullscreen != FALSE))
-		platform_window_set_fullscreen(fullscreen);
+	/* Saving unrelated settings must preserve the window mode chosen by F11. */
+	if (mode != platform_window_mode)
+	{
+		platform_window_mode = mode;
+		platform_window_set_fullscreen(platform_fullscreen_setting());
+	}
 	platform_window_size_setting(&width, &height);
 	if (width != platform_window_width || height != platform_window_height)
 	{
