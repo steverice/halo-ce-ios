@@ -797,6 +797,18 @@ static int pack_regular(const char *path, int directory)
 	struct stat info;
 	return !lstat(path, &info) && (directory ? S_ISDIR(info.st_mode) : S_ISREG(info.st_mode));
 }
+static int profile_path_join(char *path, size_t capacity, const char *folder, const char *name)
+{
+	size_t folder_length, name_length;
+	if (!path || !folder || !name || capacity < 2) return 0;
+	folder_length = strlen(folder);
+	name_length = strlen(name);
+	if (folder_length > capacity - 2 || name_length > capacity - folder_length - 2) return 0;
+	memcpy(path, folder, folder_length);
+	path[folder_length] = '/';
+	memcpy(path + folder_length + 1, name, name_length + 1);
+	return 1;
+}
 static int pack_heading(toml_datum_t table, const char *file, struct profile_file *description, const struct profile_log *log)
 {
 	if (!profile_describe(table, file, "", "", description, log)) return 0;
@@ -857,7 +869,11 @@ static int profile_validate_folder(const char *folder, const struct host_device 
 		if (!strcmp(name, ".") || !strcmp(name, "..")) continue;
 		/* Source folders also hold contributor documentation; the pack envelope excludes it. */
 		if (!strcmp(name, "README.md") || !strcmp(name, "TEMPLATE.toml")) continue;
-		snprintf(path, sizeof(path), "%s/%s", folder, name);
+		if (!profile_path_join(path, sizeof(path), folder, name))
+		{
+			profile_logf(&log, "profile update: path too long for validation buffer");
+			goto done;
+		}
 		if (!strcmp(name, "hardware"))
 		{
 			if (!pack_regular(path, 1)) goto done;
@@ -870,7 +886,11 @@ static int profile_validate_folder(const char *folder, const struct host_device 
 				if (strcmp(item->d_name, "catalog.toml")) only_catalog = 0; else catalogs++;
 			}
 			closedir(hardware);
-			snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+			if (!profile_path_join(path, sizeof(path), folder, "hardware/catalog.toml"))
+			{
+				profile_logf(&log, "profile update: path too long for validation buffer");
+				goto done;
+			}
 			if (!only_catalog || catalogs != 1 || !pack_regular(path, 0)) goto done;
 			continue;
 		}

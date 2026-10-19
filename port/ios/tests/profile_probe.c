@@ -5,6 +5,7 @@
 
 #include <assert.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -602,6 +603,52 @@ static void check_and_newer(void)
 	rmdir(folder); snprintf(folder, sizeof(folder), "%s", previous);
 }
 
+static void check_long_profile_path(void)
+{
+	char root[] = "/tmp/profile-path-XXXXXX", folder_path[1024], next[1024];
+	char filename[64], component[181];
+	size_t root_length, folder_length;
+	char *separator;
+	int directory, file, accepted, reported;
+
+	assert(mkdtemp(root));
+	root_length = strlen(root);
+	strcpy(folder_path, root);
+	while ((folder_length = strlen(folder_path)) < 960)
+	{
+		size_t component_length = 180;
+		if (folder_length + 1 + component_length > 960)
+			component_length = 960 - folder_length - 1;
+		memset(component, 'd', component_length);
+		component[component_length] = 0;
+		memcpy(next, folder_path, folder_length);
+		next[folder_length] = '/';
+		memcpy(next + folder_length + 1, component, component_length + 1);
+		assert(!mkdir(next, 0700));
+		strcpy(folder_path, next);
+	}
+	memset(filename, 'a', sizeof(filename) - 6);
+	memcpy(filename + sizeof(filename) - 6, ".toml", 6);
+	directory = open(folder_path, O_RDONLY | O_DIRECTORY); assert(directory >= 0);
+	file = openat(directory, filename, O_CREAT | O_EXCL | O_WRONLY, 0600); assert(file >= 0);
+	assert(!close(file));
+	logged[0] = 0;
+	accepted = host_profile_validate_folder(folder_path, log_line);
+	reported = strstr(logged, "profile update: path too long") != NULL;
+	assert(!unlinkat(directory, filename, 0));
+	assert(!close(directory));
+	while (strcmp(folder_path, root))
+	{
+		assert(!rmdir(folder_path));
+		separator = strrchr(folder_path, '/');
+		assert(separator && (size_t)(separator - folder_path) >= root_length);
+		*separator = 0;
+	}
+	assert(!rmdir(root));
+	assert(!accepted);
+	assert(reported);
+}
+
 int main(int argc, char **argv)
 {
 	char command[128];
@@ -620,6 +667,7 @@ int main(int argc, char **argv)
 	check_capability_fallback();
 	check_minimum_height_envelope();
 	check_refresh_envelope();
+	check_long_profile_path();
 	if (argc > 1)
 		check_shipped(argv[1]);
 	snprintf(command, sizeof(command), "rm -r %s", folder);
