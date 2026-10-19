@@ -83,6 +83,9 @@ def main():
     target.add_argument('--tvos', action='store_true', help='build for Apple TV instead of iPhone/iPad')
     target.add_argument('--visionos', action='store_true', help='build for Apple Vision Pro (Metal only) instead of iPhone/iPad')
     target.add_argument('--mac', action='store_true', help='build the iOS host for Mac Catalyst, ad hoc signed (the native Mac runner)')
+    parser.add_argument('--renderer', choices=('both', 'metal'),
+                        help='renderer backends to compile: both (default except visionOS) lets config.toml select OpenGL ES or Metal; '
+                             'metal omits OpenGL ES sources, headers and framework')
     parser.add_argument('--render-height', type=int,
                         help='tvOS and visionOS: internal render height in pixels, 0 for native '
                              '(default 1080 on tvOS; native on visionOS, which follows the window\'s size)')
@@ -203,6 +206,9 @@ def main():
     if args.extended_virtual_addressing and args.mac:
         parser.error(EXTENDED_ADDRESSING_MAC_ERROR)
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
+    renderer = args.renderer.upper() if args.renderer else ('METAL' if args.visionos else 'BOTH')
+    if args.visionos and renderer != 'METAL':
+        parser.error('--visionos supports only --renderer metal')
     args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
     if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
@@ -242,13 +248,13 @@ def main():
         parser.error('--bundle-id must be a reverse-DNS identifier (e.g. com.example.halo)')
     if args.jobs < 1:
         parser.error('--jobs must be positive')
-    include=ROOT/'build/ios/gl_include'
-    # visionOS has no OpenGL ES; its build leaves the GL backend out
-    for name,(registry,revision,source) in ({} if args.visionos else HEADERS).items():
-        target=include/name;target.parent.mkdir(parents=True,exist_ok=True)
-        url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
-        data=urllib.request.urlopen(url,timeout=30).read()
-        if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
+    if renderer == 'BOTH':
+        include=ROOT/'build/ios/gl_include'
+        for name,(registry,revision,source) in HEADERS.items():
+            target=include/name;target.parent.mkdir(parents=True,exist_ok=True)
+            url=f'https://raw.githubusercontent.com/KhronosGroup/{registry}/{revision}/{source}'
+            data=urllib.request.urlopen(url,timeout=30).read()
+            if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
     validation = args.render_validation == 'on'
     run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld,
         *(['--render-validation'] if validation else []))
@@ -297,7 +303,7 @@ def main():
     command=['cmake','-S','port/ios','-B',build,'-G','Xcode',f'-DCMAKE_SYSTEM_NAME={system}',
              f'-DCMAKE_OSX_SYSROOT={sdk}','-DCMAKE_OSX_ARCHITECTURES=arm64',f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment}',
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
-             f'-DHALO_RENDER_HEIGHT={args.render_height}', f'-DHALO_BINK={args.bink.upper()}',
+             f'-DHALO_RENDER_HEIGHT={args.render_height}', f'-DHALO_RENDERER={renderer}', f'-DHALO_BINK={args.bink.upper()}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
@@ -552,12 +558,13 @@ def mac_build_folder(environment=None):
 def build_mac(args, cloud, data_packs=()):
     """The iOS project built for Mac Catalyst: configured as iOS, built with the macOS SDK"""
     build=mac_build_folder()
-    frameworks=opengles_framework(ROOT/'build/mac/frameworks')
+    renderer = args.renderer.upper() if args.renderer else 'BOTH'
+    frameworks = opengles_framework(ROOT/'build/mac/frameworks') if renderer == 'BOTH' else ''
     import time
     routes = args.benchmark_routes or 'on'
     run('cmake','-S','port/ios','-B',build,'-G','Xcode','-DCMAKE_SYSTEM_NAME=iOS','-DCMAKE_OSX_SYSROOT=iphoneos',
         '-DCMAKE_OSX_ARCHITECTURES=arm64','-DCMAKE_OSX_DEPLOYMENT_TARGET=16.0',f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}',
-        f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_GLES_FRAMEWORKS={frameworks}',f'-DHALO_BINK={args.bink.upper()}',
+        f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}','-DHALO_MAC=ON',f'-DHALO_RENDERER={renderer}',f'-DHALO_GLES_FRAMEWORKS={frameworks}',f'-DHALO_BINK={args.bink.upper()}',
         f'-DHALO_BENCHMARK_ROUTES={routes.upper()}',
         f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',

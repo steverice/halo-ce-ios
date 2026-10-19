@@ -221,6 +221,67 @@ def test_mac_marketing_version_reaches_cmake_configuration(monkeypatch, tmp_path
     assert mac_info['CFBundleShortVersionString'] == '$(HALO_MARKETING_VERSION)'
 
 
+def test_metal_renderer_selection_skips_gl_headers_and_catalyst_framework(monkeypatch, tmp_path):
+    import sys
+
+    commands = []
+    framework_calls = []
+    monkeypatch.setattr(ios_build, 'ROOT', tmp_path)
+    monkeypatch.setattr(ios_build, 'HEADERS', {'GLES3/gl32.h': ('registry', 'revision', 'source')})
+    monkeypatch.setattr(ios_build.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(ios_build.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(ios_build, 'run', lambda *command: commands.append([str(part) for part in command]))
+    monkeypatch.setattr(ios_build.shutil, 'copyfile', lambda *args: None)
+    monkeypatch.setattr(ios_build, 'opengles_framework', lambda *args: framework_calls.append(args))
+    monkeypatch.setattr(ios_build.urllib.request, 'urlopen', lambda *args, **kwargs: pytest.fail('unexpected GLES header download'))
+    monkeypatch.setattr(sys, 'argv', ['ios_build.py', '--mac', '--renderer', 'metal', '--host-pgo=off'])
+
+    ios_build.main()
+
+    configure = next(command for command in commands if command[0] == 'cmake' and '-S' in command)
+    assert '-DHALO_RENDERER=METAL' in configure
+    assert not framework_calls
+
+
+def test_default_renderer_selection_keeps_both_backends_except_on_visionos(monkeypatch, tmp_path):
+    import sys
+
+    configure = configure_with(monkeypatch, tmp_path, '--unsigned')
+    assert '-DHALO_RENDERER=BOTH' in configure
+
+    configure = configure_with(monkeypatch, tmp_path, '--simulator', '--visionos')
+    assert '-DHALO_RENDERER=METAL' in configure
+
+
+def test_non_metal_visionos_renderer_choice_is_rejected(monkeypatch, tmp_path, capsys):
+    import sys
+
+    monkeypatch.setattr(ios_build, 'ROOT', tmp_path)
+    monkeypatch.setattr(ios_build.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(ios_build.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(sys, 'argv', ['ios_build.py', '--simulator', '--visionos', '--renderer', 'both'])
+
+    with pytest.raises(SystemExit) as failure:
+        ios_build.main()
+
+    assert failure.value.code == 2
+    assert '--visionos supports only --renderer metal' in capsys.readouterr().err
+
+
+def test_metal_only_cmake_gate_covers_gl_backend_sources_headers_and_link():
+    cmake = (ios_build.ROOT / 'port/ios/CMakeLists.txt').read_text()
+
+    assert 'if(NOT HALO_VISIONOS AND HALO_RENDERER STREQUAL "BOTH")' in cmake
+    gl_block = cmake.split('if(NOT HALO_VISIONOS AND HALO_RENDERER STREQUAL "BOTH")', 1)[1].split('\nendif()', 1)[0]
+    assert 'gpu_gl.c' in gl_block
+    assert 'gl_functions.c' in gl_block
+    assert 'build/ios/gl_include' in gl_block
+    assert 'OpenGLES' in gl_block
+    assert 'set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)' in cmake
+    assert 'if(HALO_MAC AND HALO_RENDERER STREQUAL "BOTH")' in cmake
+    assert 'target_compile_definitions(VISR PRIVATE HALO_METAL_ONLY=1)' in cmake
+
+
 @pytest.mark.parametrize('url', [
     'http://packs.example/p.json', 'https:///p.json', 'https://user@packs.example/p.json',
     'https://user:password@packs.example/p.json', 'https://packs.example/p.json?id=device',

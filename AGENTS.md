@@ -39,9 +39,11 @@ python3 tools/ios_build.py --mac                            # the Mac app
 python3 tools/ios_build.py --visionos --team TEAM_ID --bundle-id BUNDLE_ID   # signed device build
 ```
 
-The build script downloads SDL, musl and the Khronos headers itself. Builds are
-slow; build only the targets a change touches, and pass `--jobs` when sharing a
-machine.
+Use `--renderer metal` when a build only needs to test Metal. That build omits
+the OpenGL ES backend and Khronos headers; visionOS uses Metal by default. Use
+the default `both` backends when testing OpenGL ES or comparing both renderers.
+The build script downloads SDL and musl itself. Builds are slow; build only the
+targets a change touches, and pass `--jobs` when sharing a machine.
 
 ## Test
 

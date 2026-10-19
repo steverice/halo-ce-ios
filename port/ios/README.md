@@ -42,9 +42,10 @@ python3 tools/ios_build.py --unsigned --ipa dist/VISR-iOS-unsigned.ipa
 python3 tools/ios_build.py --unsigned --bink off
 ```
 
-The script fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
+The default build fetches pinned Khronos headers, SDL release-3.4.16 and musl 1.2.5,
 compiles the guest, embeds it into signed application text, and builds the host.
 Specify `--llvm` and `--lld` for non-default toolchain locations.
+
 Game assertions remain enabled. An Xcode `Release` host configuration does not
 disable the game's assertions. The game code is link-time optimized: the game,
 the platform layer and the bundled libraries are compiled to bitcode and
@@ -75,6 +76,22 @@ only unsigned builds are suitable for this project's public release workflow.
 Code signing and provisioning must succeed
 before installation. No jailbreak, JIT entitlement, or writable executable
 memory is used.
+
+### Metal-only builds
+
+The default build includes both OpenGL ES and Metal on iOS, iPadOS, Apple TV
+and Mac Catalyst. Use `--renderer metal` when testing only Metal. This omits
+the OpenGL ES backend, skips the Khronos header downloads, and does not create
+or link the Catalyst OpenGLES framework. The app selects Metal even if an
+existing `config.toml` requests OpenGL ES.
+
+```sh
+python3 tools/ios_build.py --simulator --renderer metal
+python3 tools/ios_build.py --mac --renderer metal
+```
+
+Use the default build or `--renderer both` when testing OpenGL ES or comparing
+both backends. visionOS always uses Metal and rejects `--renderer both`.
 
 ## Install and add game data
 

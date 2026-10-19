@@ -282,6 +282,11 @@ static const struct gpu_backend *capture_wrap(const struct gpu_backend *chosen, 
 
 void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
+#if defined(HALO_METAL_ONLY)
+	if (!(flags & GPU_INITIALIZE_METAL))
+		platform_log("display.renderer requests OpenGL ES, but this build includes Metal only; using Metal");
+	flags |= GPU_INITIALIZE_METAL;
+#endif
 #if TARGET_OS_VISION
 	/* host_main.m sets HALO_RENDERER=metal, which overrides config.toml */
 	if (!(flags & GPU_INITIALIZE_METAL))

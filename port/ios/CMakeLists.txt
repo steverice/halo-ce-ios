@@ -8,6 +8,24 @@ endif()
 set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr" CACHE STRING "App bundle identifier")
 # Mac Catalyst (tools/ios_build.py --mac): configured as iOS, built with -sdk macosx SUPPORTS_MACCATALYST=YES
 option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
+# tools/ios_build.py --renderer: Metal is always present; BOTH also includes OpenGL ES.
+if(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
+    set(HALO_RENDERER_DEFAULT "METAL")
+else()
+    set(HALO_RENDERER_DEFAULT "BOTH")
+endif()
+set(HALO_RENDERER "${HALO_RENDERER_DEFAULT}" CACHE STRING "Apple renderer backends: BOTH or METAL")
+set_property(CACHE HALO_RENDERER PROPERTY STRINGS BOTH METAL)
+if(NOT HALO_RENDERER STREQUAL "BOTH" AND NOT HALO_RENDERER STREQUAL "METAL")
+    message(FATAL_ERROR "HALO_RENDERER must be BOTH or METAL, got '${HALO_RENDERER}'")
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "visionOS" AND NOT HALO_RENDERER STREQUAL "METAL")
+    message(FATAL_ERROR "visionOS supports only HALO_RENDERER=METAL")
+endif()
+if(HALO_RENDERER STREQUAL "METAL")
+    # SDL's UIKit OpenGL ES implementation is unnecessary when the game only builds Metal.
+    set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
+endif()
 # tools/ios_build.py --render-validation: every call into the GPU backend is checked first
 # (port/linux/src/gpu_validate.h). Off, the app's code is what it is without the option.
 option(HALO_RENDER_VALIDATION "Check every call into the GPU backend (debug.render_validation)" OFF)
@@ -30,7 +48,7 @@ set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
 # App Store Connect demand NSCameraUsageDescription (ITMS-90683).
 set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
 add_subdirectory("${ROOT}/build/third_party/SDL3" sdl3 EXCLUDE_FROM_ALL)
-if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+if(CMAKE_SYSTEM_NAME STREQUAL "tvOS" AND HALO_RENDERER STREQUAL "BOTH")
     # SDL's CMake forces SDL_OPENGLES off for tvOS, but its UIKit GL ES code is
     # shared with iOS and tvOS still ships OpenGLES.framework (SDL's own Xcode
     # config, SDL_build_config_ios.h, enables it). The sources are always
@@ -44,7 +62,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
     target_sources(SDL3-static PRIVATE "${ROOT}/build/third_party/SDL3/src/joystick/virtual/SDL_virtualjoystick.c")
     target_compile_definitions(SDL3-static PRIVATE SDL_JOYSTICK_VIRTUAL=1)
 endif()
-if(HALO_MAC)
+if(HALO_MAC AND HALO_RENDERER STREQUAL "BOTH")
     # SDL's UIKit GL files import OpenGLES headers the MacOSX SDK lacks (tools/ios_build.py opengles_framework)
     target_compile_options(SDL3-static PRIVATE "-F${HALO_GLES_FRAMEWORKS}")
     target_compile_definitions(SDL3-static PRIVATE GLES_SILENCE_DEPRECATION=1)
@@ -130,6 +148,9 @@ file(GLOB HALO_MBEDTLS_SOURCES CONFIGURE_DEPENDS "${ROOT}/port/third_party/mbedt
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/posix_dtls.c" ${HALO_MBEDTLS_SOURCES})
 target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/mbedtls/include")
 target_compile_definitions(VISR PRIVATE HALO_IOS=1 st_mtim=st_mtimespec st_atim=st_atimespec st_ctim=st_ctimespec)
+if(HALO_RENDERER STREQUAL "METAL")
+    target_compile_definitions(VISR PRIVATE HALO_METAL_ONLY=1)
+endif()
 # The Metal renderer's presentation pacing (host/gpu_metal.m: frames in flight,
 # a minimum time on screen, the game's 60 Hz blank following the display link;
 # tools/ios_build.py --frame-pacing). On by default except for a Vision Pro,
@@ -149,7 +170,7 @@ if(HALO_RENDER_VALIDATION)
     target_sources(VISR PRIVATE host/gpu_validate.c host/gpu_capture.c host/gpu_replay.c host/host_render_replay.c)
     target_compile_definitions(VISR PRIVATE HALO_RENDER_VALIDATION=1)
 endif()
-if(NOT HALO_VISIONOS)
+if(NOT HALO_VISIONOS AND HALO_RENDERER STREQUAL "BOTH")
     # the GL backend (step 4): OpenGL ES through gl.h's pointer table, resolved by name
     target_sources(VISR PRIVATE "${ROOT}/port/linux/src/gpu_gl.c" "${ROOT}/port/linux/src/gl_functions.c")
     target_include_directories(VISR PRIVATE "${ROOT}/build/ios/gl_include")
