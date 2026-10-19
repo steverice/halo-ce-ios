@@ -51,11 +51,15 @@ Configure `RELEASE_BUILD_POLICY` as a JSON object with the eight required fields
 | `guest_compiler_version` | Exact first compiler-version line from the probe |
 | `guest_profile_sha256` | Guest profile SHA-256 from the probe |
 | `host_profile_sha256` | Host profile SHA-256 from the probe |
-| `profile_feed_url` | Mutable HTTPS endpoint for the signed tester profile feed |
-| `profile_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
+| `profile_feed_url` | Mutable HTTPS base directory for device-keyed signed tester profiles |
+| `profile_feed_sha256s` | Object mapping each canonical `platform/model/chip-key` to the SHA-256 of its reviewed envelope |
+| `shader_feed_url` | Mutable HTTPS endpoint for signed additive shader lists |
+| `shader_feed_sha256` | SHA-256 of the reviewed shader envelope |
 | `recording_feed_url` | Mutable HTTPS endpoint for the signed tester recording feed for this guest |
 | `recording_feed_sha256` | SHA-256 of the exact envelope reviewed for this release |
 | `benchmark_upload` | Optional string, either `on` or `off`; omitted means `off` |
+
+New release policies require device-keyed profile pins and a shader feed pin. For example, `profile_feed_sha256s` maps `ios/iPhone18,1/_` to that shard's envelope hash. The release verifier downloads every pinned shard and checks its exact target-bound compatibility; the app requests only its own shard. Shader verification checks `shader-lists-1` and complete map-local descriptor dependencies. See [signed data updates](data-packs.md) for publication and resource limits.
 
 With `benchmark_upload=on`, the tester's existing consent screen can send a compressed benchmark report to the app's CloudKit public database. The same policy is bound to the unsigned probe, release manifest, and release build. Signing requires an existing manual App Store profile for the exact CloudKit container and production APS environment. The release never enables cloud saves or changes account capabilities.
 
@@ -85,7 +89,7 @@ The release job rejects a stale source SHA, unsupported platform, altered recove
 
 Publish the probed guest's recording feed at a mutable HTTPS endpoint, such as `https://code.steverice.org/visr/packs/tester/recordings-<guest-sha256>.json`, from a separate data branch or hosting deployment. Keep that URL stable while replacing its signed envelope with higher-sequence compatible updates. A guest-specific filename selects compatibility; it does not freeze the feed contents. Never embed a commit-pinned raw GitHub URL or another immutable snapshot URL as a runtime feed: installed apps would never see later updates.
 
-Pin the exact envelope bytes reviewed for the release in `profile_feed_sha256` and `recording_feed_sha256`. These hashes are checked during release validation; runtime updates continue to enforce signatures, compatibility and sequence. Configure the mutable URL and its current envelope hash in `RELEASE_BUILD_POLICY` before dispatching. Committing feed data to the application source on `main` changes its timestamp and guest identity, invalidating the preceding probe. Release policy rejects recognizable full commit-pinned GitHub feed URLs; custom HTTPS hosts still require review for mutability. An already installed app's embedded URL requires a replacement app build to change.
+Pin the exact envelope bytes reviewed for the release in `profile_feed_sha256s`, `shader_feed_sha256`, and `recording_feed_sha256`. These hashes are checked during release validation; runtime updates continue to enforce signatures, compatibility and sequence. Configure the mutable URL and its current envelope hash in `RELEASE_BUILD_POLICY` before dispatching. Committing feed data to the application source on `main` changes its timestamp and guest identity, invalidating the preceding probe. Release policy rejects recognizable full commit-pinned GitHub feed URLs; custom HTTPS hosts still require review for mutability. An already installed app's embedded URL requires a replacement app build to change.
 
 For Pages, create a reviewed data commit directly on the probed source with exactly one changed file: the existing mutable `docs/site/packs/tester/recordings.json` path or a guest-specific `recordings-<guest-sha256>.json` path. A mutable feed must use signed `benchmark-catalog-1:<guest-sha256>` compatibility; the overlay derives its guest from the verified manifest. Source and deployed old feeds must validate, and rollback checks apply only within the same compatibility domain. The guest-specific path remains supported. Push the data commit on a separate data branch, then dispatch the Pages workflow from unchanged `main` with that commit's full SHA as `recording_commit`. The workflow verifies the data commit's parent and sole regular-file change, validates the bounded signed envelope and native recording contract, overlays only the JSON into the site artifact, and executes no code from the data commit. After release preparation creates its metadata commit and tag, persist the identical feed file to `main` so ordinary Pages deployments retain it. This does not change deployment protection rules or the application's pinned source.
 

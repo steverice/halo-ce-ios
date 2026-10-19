@@ -103,8 +103,9 @@ const char *host_device_profile_install(const char *data_root)
 	const char *environment = getenv("HALO_DEVICE_PROFILE");
 	NSString *folder = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"profiles"];
 
-	folder = host_profile_update_folder(folder);
 	host_device_identify(&device);
+	NSString *bundledFolder = folder;
+	folder = host_profile_update_folder(folder);
 	if (device.pixel_width)
 		snprintf(display, sizeof(display), ", %dx%d at %d Hz", device.pixel_width, device.pixel_height, device.refresh_rate);
 	host_logf(HOST_LOG_INFO, "device: %s%s%s (%s%s, GPU family %d \"%s\", %u MB%s)",
@@ -117,6 +118,7 @@ const char *host_device_profile_install(const char *data_root)
 	else
 		host_config_string("debug.device_profile", "", selector, sizeof(selector));
 	snprintf(drop_in, sizeof(drop_in), "%s/device-profile.toml", data_root);
+	if (selector[0]) folder = bundledFolder;
 	host_profile_resolve(&device, folder.fileSystemRepresentation, drop_in, selector, log_line, &installed_profile);
 	host_config_set_profile(installed_value);
 	host_profile_encode(&installed_profile, values, sizeof(values));

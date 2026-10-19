@@ -110,6 +110,14 @@ int main(int argc, const char **argv) { @autoreleasepool {
     if (argc == 3 && strcmp(argv[1], "--read-fifo") == 0) {
         return [[Store([NSString stringWithUTF8String:argv[2]]) beginLaunch] isEqual:@"/bundled"] ? 0 : 2;
     }
+    NSString *shaderRoot = NewRoot();
+    HostDataPackStore *shaderStore = [[HostDataPackStore alloc] initWithRoot:shaderRoot bundled:@"/bundled" kind:@"shaders" channel:@"stable" publicKey:[NSData dataWithBytes:publicKey length:32] compatibility:@"shader-lists-1" validator:^BOOL(NSString *folder, NSError **error) {
+        (void)error;
+        return [NSFileManager.defaultManager fileExistsAtPath:[folder stringByAppendingPathComponent:@"a10.txt"]];
+    }];
+    CHECK([shaderStore stageEnvelope:Envelope(1, @{@"kind": @"shaders", @"compatibility": @"shader-lists-1"}, @{@"a10.txt": @"eA=="}) error:NULL], "signed shader additions stage through the shared store");
+    CHECK([[shaderStore beginLaunch] hasPrefix:shaderRoot], "shader additions activate on a new launch");
+    [NSFileManager.defaultManager removeItemAtPath:shaderRoot error:NULL];
     NSString *root = NewRoot();
     HostDataPackStore *store = Store(root);
     CHECK([[store beginLaunch] isEqual:@"/bundled"], "fresh launch uses bundled data");

@@ -195,7 +195,7 @@ def test_benchmark_upload_takes_the_container_without_turning_cloud_saves_on():
 
 def test_data_pack_networking_defaults_are_explicitly_empty():
     assert ios_build.data_pack_definitions('', '', '') == [
-        '-DHALO_DATA_PACK_PUBLIC_KEY=', '-DHALO_PROFILE_FEED_URL=', '-DHALO_RECORDING_FEED_URL=']
+        '-DHALO_DATA_PACK_PUBLIC_KEY=', '-DHALO_PROFILE_FEED_URL=', '-DHALO_RECORDING_FEED_URL=', '-DHALO_SHADER_FEED_URL=']
 
 
 def test_data_pack_configuration_accepts_public_key_and_https_feeds():
@@ -203,7 +203,7 @@ def test_data_pack_configuration_accepts_public_key_and_https_feeds():
                                            'https://packs.example/recordings.json') == [
         '-DHALO_DATA_PACK_PUBLIC_KEY=' + 'ab' * 32,
         '-DHALO_PROFILE_FEED_URL=https://packs.example/profiles.json',
-        '-DHALO_RECORDING_FEED_URL=https://packs.example/recordings.json']
+        '-DHALO_RECORDING_FEED_URL=https://packs.example/recordings.json', '-DHALO_SHADER_FEED_URL=']
 
 
 @pytest.mark.parametrize('key', ['ab' * 31, 'ab' * 33, 'zz' * 32, 'ab' * 32 + '\n'])
@@ -350,8 +350,9 @@ def configure_with(monkeypatch, tmp_path, *arguments):
 def test_device_builds_download_from_the_projects_feeds_by_default(monkeypatch, tmp_path, arguments, channel):
     configure = configure_with(monkeypatch, tmp_path, *arguments)
     assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
-    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/profiles-2.json' in configure
+    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/profiles' in configure
     assert f'-DHALO_RECORDING_FEED_URL=https://code.steverice.org/visr/packs/{channel}/recordings.json' in configure
+    assert f'-DHALO_SHADER_FEED_URL=https://code.steverice.org/visr/packs/{channel}/shaders.json' in configure
 
 
 @pytest.mark.parametrize('arguments, expected', [

@@ -31,6 +31,7 @@ build with render validation; nothing otherwise */
 #include "metal_compile_async.h"
 #include "metal_compile_progress.h"
 #include "host_benchmark.h"
+#import "host_data_updates.h"
 #include "gpu_metal_presentation.h"
 #include "halo_display.h"
 #include "host_external.h"
@@ -2656,7 +2657,8 @@ static uint32_t gpu_metal_warm_list_read(const char *name, char *text, uint32_t 
 	@autoreleasepool
 	{
 		NSString *path = [[NSBundle mainBundle] pathForResource:@(name) ofType:@"txt" inDirectory:@"shader-lists"];
-		NSData *list = path ? [NSData dataWithContentsOfFile:path] : nil;
+		NSData *list = host_shader_update_list(name);
+		if (!list) list = path ? [NSData dataWithContentsOfFile:path] : nil;
 
 		if (!list)
 			return 0;

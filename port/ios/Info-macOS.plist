@@ -71,6 +71,8 @@
 	<string>$(HALO_DATA_PACK_PUBLIC_KEY)</string>
 	<key>HaloProfileFeedURL</key>
 	<string>$(HALO_PROFILE_FEED_URL)</string>
+	<key>HaloShaderFeedURL</key>
+	<string>$(HALO_SHADER_FEED_URL)</string>
 	<key>HaloRecordingFeedURL</key>
 	<string>$(HALO_RECORDING_FEED_URL)</string>
 </dict>

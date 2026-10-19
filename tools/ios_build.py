@@ -144,6 +144,7 @@ def main():
                              "project's own")
     parser.add_argument('--profile-feed-url', metavar='URL',
                         help='the HTTPS address of the signed profile update envelope, in place of the default')
+    parser.add_argument('--shader-feed-url', metavar='URL', help='the HTTPS signed additive shader-list envelope')
     parser.add_argument('--recording-feed-url', metavar='URL',
                         help='the HTTPS address of the signed benchmark recording update envelope, in place of the default')
     parser.add_argument('--internal-only', action='store_true',
@@ -504,31 +505,32 @@ def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=
 
 def data_pack_settings(args):
     """the key and feed URLs a build gets: the project's own unless named, none with --data-packs off"""
-    explicit = [args.data_pack_public_key, args.profile_feed_url, args.recording_feed_url]
+    explicit = [args.data_pack_public_key, args.profile_feed_url, args.recording_feed_url, args.shader_feed_url]
     named = any(value is not None for value in explicit)
     enabled = args.data_packs == 'on' or (args.data_packs is None and (named or not args.mac))
     if not enabled:
         if named:
             raise ValueError('--data-packs off leaves out the key and feed URLs; drop them, or use --data-packs on')
-        return '', '', ''
+        return '', '', '', ''
     channel = 'tester' if args.tester else 'stable'
     return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
-            DATA_PACK_FEED.format(channel=channel, kind='profiles-2') if args.profile_feed_url is None else args.profile_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind='profiles').removesuffix('.json') if args.profile_feed_url is None else args.profile_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None
-            else args.recording_feed_url)
+            else args.recording_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind='shaders') if args.shader_feed_url is None else args.shader_feed_url)
 
 
-def data_pack_definitions(public_key, profile_feed_url, recording_feed_url):
+def data_pack_definitions(public_key, profile_feed_url, recording_feed_url, shader_feed_url=""):
     """the CMake definitions for signed data updates (docs/data-packs.md), all three always named so CMake's cache
     cannot keep an earlier value; empty values leave downloads off"""
     if public_key and not re.fullmatch(r'[0-9A-Fa-f]{64}', public_key):
         raise ValueError('--data-pack-public-key must be the 32-byte Ed25519 public key as 64 hex digits')
-    for name, url in (('--profile-feed-url', profile_feed_url), ('--recording-feed-url', recording_feed_url)):
+    for name, url in (('--profile-feed-url', profile_feed_url), ('--recording-feed-url', recording_feed_url), ('--shader-feed-url', shader_feed_url)):
         if url and not feed_url_valid(url):
             raise ValueError(f'{name}: a feed URL must be https:// with a host, and without credentials, a query, '
                              'a fragment, spaces or characters outside a plain URL')
     return [f'-DHALO_DATA_PACK_PUBLIC_KEY={public_key.lower()}', f'-DHALO_PROFILE_FEED_URL={profile_feed_url}',
-            f'-DHALO_RECORDING_FEED_URL={recording_feed_url}']
+            f'-DHALO_RECORDING_FEED_URL={recording_feed_url}', f'-DHALO_SHADER_FEED_URL={shader_feed_url}']
 
 
 def feed_url_valid(url):

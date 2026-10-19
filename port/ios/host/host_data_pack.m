@@ -2,6 +2,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #include "../../third_party/monocypher/monocypher-ed25519.h"
 #include "host_recording_pack.h"
+#include "host_shader_pack.h"
 #include "host.h"
 #include <sys/stat.h>
 #include <math.h>
@@ -124,7 +125,7 @@ static NSDictionary *PackJSON(NSData *data) {
 // can make the app hold. The payload's files are base64 inside the payload, which is base64 again in the envelope:
 // Recording bounds follow the maximum individually valid files, without a separate library-size cap.
 // tools/data_pack.py uses the same base64/JSON allowance.
-- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : HOST_RECORDING_PACK_MAX_ENVELOPE_BYTES; }
+- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : [_kind isEqual:@"shaders"] ? HOST_SHADER_PACK_MAX_ENVELOPE_BYTES : HOST_RECORDING_PACK_MAX_ENVELOPE_BYTES; }
 - (NSDictionary *)bundledIdentity { return @{@"kind": _kind, @"channel": _channel, @"compatibility": _compatibility, @"sequence": @0, @"sha256": @"", @"bundled": @YES}; }
 - (NSString *)statePath { return [_root stringByAppendingPathComponent:@"state.json"]; }
 - (NSString *)generationPath:(NSString *)name { return [_root stringByAppendingPathComponent:name]; }
@@ -136,7 +137,7 @@ static NSDictionary *PackJSON(NSData *data) {
     _root = [root copy]; _bundled = [bundled copy]; _kind = [kind copy]; _channel = [channel copy];
     _publicKey = [key copy]; _compatibility = [compatibility copy]; _validator = [validator copy];
     _identity = [self bundledIdentity]; _launchFolder = _bundled;
-    if (!([kind isEqual:@"profiles"] || [kind isEqual:@"recordings"]) ||
+    if (!([kind isEqual:@"profiles"] || [kind isEqual:@"recordings"] || [kind isEqual:@"shaders"]) ||
         !([channel isEqual:@"stable"] || [channel isEqual:@"tester"]) || key.length != 32 || !validator || ![root isAbsolutePath]) return self;
     NSFileManager *manager = NSFileManager.defaultManager;
     if (![manager fileExistsAtPath:_root] && ![manager createDirectoryAtPath:_root withIntermediateDirectories:YES attributes:nil error:NULL]) return self;
@@ -198,15 +199,15 @@ static NSDictionary *PackJSON(NSData *data) {
     NSDictionary *payload = PackJSON(payloadBytes);
     if (!PackKeys(payload, @[@"files"]) || ![payload[@"files"] isKindOfClass:NSDictionary.class]) { PackError(error, @"Pack payload has invalid fields"); return nil; }
     NSDictionary *encoded = payload[@"files"];
-    BOOL profiles = [_kind isEqual:@"profiles"];
-    NSUInteger fileLimit = profiles ? 64 * 1024 : HOST_RECORDING_PACK_MAX_FILE_BYTES;
-    NSUInteger totalLimit = profiles ? 2 * 1024 * 1024 : HOST_RECORDING_PACK_MAX_TOTAL_BYTES;
-    if (!encoded.count || encoded.count > (profiles ? 129 : 160)) { PackError(error, @"Pack file count exceeds its limit"); return nil; }
+    BOOL profiles = [_kind isEqual:@"profiles"], shaders = [_kind isEqual:@"shaders"];
+    NSUInteger fileLimit = profiles ? 64 * 1024 : shaders ? HOST_SHADER_PACK_MAX_FILE_BYTES : HOST_RECORDING_PACK_MAX_FILE_BYTES;
+    NSUInteger totalLimit = profiles ? 2 * 1024 * 1024 : shaders ? HOST_SHADER_PACK_MAX_TOTAL_BYTES : HOST_RECORDING_PACK_MAX_TOTAL_BYTES;
+    if (!encoded.count || encoded.count > (profiles ? 129 : shaders ? HOST_SHADER_PACK_MAX_MAPS : 160)) { PackError(error, @"Pack file count exceeds its limit"); return nil; }
     NSMutableDictionary *files = [NSMutableDictionary dictionary];
     NSUInteger total = 0;
     for (NSString *name in encoded) {
         BOOL catalogCompatibility = [_compatibility hasPrefix:@"benchmark-catalog-1:"];
-        BOOL allowed = profiles ? ([name isEqual:@"hardware/catalog.toml"] || (name.length < 64 && PackMatches(name, @"^[a-z0-9]+(-[a-z0-9]+)*\\.toml\\z") && ![name isEqual:@"device-profile.toml"])) :
+        BOOL allowed = shaders ? (PackMatches(name, @"^[a-z0-9][a-z0-9_-]{0,62}\\.txt\\z")) : profiles ? ([name isEqual:@"hardware/catalog.toml"] || (name.length < 64 && PackMatches(name, @"^[a-z0-9]+(-[a-z0-9]+)*\\.toml\\z") && ![name isEqual:@"device-profile.toml"])) :
             (PackMatches(name, @"^[a-z0-9][a-z0-9-]{0,47}\\.(input|actions|seeds|route|checks)\\z") ||
                 (catalogCompatibility && [name isEqual:@"benchmark-catalog.json"]));
         NSData *file = allowed ? PackBase64(encoded[name], fileLimit) : nil;
