@@ -401,16 +401,48 @@ static void online_coop_body_borrow_target(void) {
     coop_spectate_draw(0);
     assert(drawn_count==1&&wcsstr(drawn_text,L"JOINING THE GAME")!=NULL);
 }
+static void online_coop_scripted_camera_selection(void) {
+    int cycle;
+
+    setup_coop_death();
+    objects[1].object.parent_object_index=102;
+    units[102].unit.driver_object_index=NONE;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    for(cycle=0;cycle<3;cycle++) {
+        assert(!coop_spectate_watching_rider(0));
+        assert(coop_spectate_camera_unit(0,TRUE,FALSE,TRUE)==NONE);
+        assert(!coop_spectate_watching_rider(0));
+    }
+    tick=40;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    tick=91;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    tick=92;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==101);
+    for(cycle=0;cycle<3;cycle++) {
+        assert(coop_spectate_watching_rider(0));
+        assert(coop_spectate_camera_unit(0,TRUE,FALSE,TRUE)==NONE);
+        assert(coop_spectate_watching_rider(0));
+    }
+
+    setup_coop_death();
+    objects[1].object.parent_object_index=102;
+    units[102].unit.driver_object_index=NONE;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    object_exists[0]=FALSE;
+    assert(coop_spectate_camera_unit(0,TRUE,FALSE,TRUE)==NONE);
+    assert(coop_spectate_watching_rider(0));
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==101);
+}
 int main(void) {
 #ifdef COOP_GRACE_ONLY
     online_coop_death_camera_grace();
     online_coop_second_death_hud_rider();
     online_coop_body_borrow_target();
+    online_coop_scripted_camera_selection();
     puts("PASS: network co-op corpse-view grace and lifecycle boundaries");
 #else
     rates();clock_and_lifecycle();coop_blocked();cameras();online_coop_death_camera_grace();
     online_coop_second_death_hud_rider();
     online_coop_body_borrow_target();
+    online_coop_scripted_camera_selection();
     puts("PASS: fixed-tick delays, render-only/catch-up frames, pause/cinematics, clock reset,");
     puts("      2-4 player co-op, blocked retry/overflow, immediate retry and dead-camera fallback");
 #endif

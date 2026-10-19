@@ -65,7 +65,8 @@ static long coop_spectate_watched[MAXIMUM_LOCAL_PLAYERS] = { NONE, NONE, NONE, N
 struct coop_spectate_camera_grace
 {
 	boolean active;
-	boolean corpse_view_active;
+	/* The local target resumes on the corpse after a scripted camera ends. */
+	boolean corpse_target_selected;
 	long player_index;
 	long scenario_index;
 	long dead_unit_index;
@@ -194,7 +195,7 @@ long coop_spectate_camera_unit(
 	if (!network_coop)
 	{
 		grace->active = FALSE;
-		grace->corpse_view_active = FALSE;
+		grace->corpse_target_selected = FALSE;
 		return NONE;
 	}
 
@@ -203,7 +204,7 @@ long coop_spectate_camera_unit(
 	if (!player || player->unit_index != NONE)
 	{
 		grace->active = FALSE;
-		grace->corpse_view_active = FALSE;
+		grace->corpse_target_selected = FALSE;
 		return NONE;
 	}
 
@@ -211,7 +212,7 @@ long coop_spectate_camera_unit(
 	if (!has_died)
 	{
 		grace->active = FALSE;
-		grace->corpse_view_active = FALSE;
+		grace->corpse_target_selected = FALSE;
 		teammate = camera_available ? coop_spectate_unit(local_player_index) : NONE;
 		return teammate;
 	}
@@ -228,6 +229,7 @@ long coop_spectate_camera_unit(
 		grace->dead_unit_index = corpse;
 		grace->last_tick = now;
 		grace->elapsed_ticks = 0;
+		grace->corpse_target_selected = FALSE;
 	}
 
 	if (!camera_available || game_time_get_paused())
@@ -245,24 +247,24 @@ long coop_spectate_camera_unit(
 		grace->last_tick = now;
 	}
 
-	if (!camera_available)
-	{
-		grace->corpse_view_active = FALSE;
-		return NONE;
-	}
-
-	/* An expired body is not a reason to keep restarting the grace period. */
+	/* Validate before the scripted-camera return: a deleted corpse cannot
+	keep suppressing the remembered teammate while the script owns the view. */
 	if (corpse == NONE || !object_try_and_get(corpse))
-		grace->elapsed_ticks = COOP_CORPSE_VIEW_TICKS;
-
-	if (grace->elapsed_ticks < COOP_CORPSE_VIEW_TICKS)
 	{
-		grace->corpse_view_active = TRUE;
+		grace->elapsed_ticks = COOP_CORPSE_VIEW_TICKS;
+		grace->corpse_target_selected = FALSE;
+	}
+	if (!camera_available)
+		return NONE;
+
+	if (grace->elapsed_ticks < COOP_CORPSE_VIEW_TICKS && corpse != NONE && object_try_and_get(corpse))
+	{
+		grace->corpse_target_selected = TRUE;
 		return corpse;
 	}
 
 	teammate = coop_spectate_unit(local_player_index);
-	grace->corpse_view_active = teammate == NONE && corpse != NONE && object_try_and_get(corpse);
+	grace->corpse_target_selected = teammate == NONE && corpse != NONE && object_try_and_get(corpse);
 	return teammate != NONE ? teammate : (corpse != NONE && object_try_and_get(corpse) ? corpse : NONE);
 }
 
@@ -279,7 +281,7 @@ boolean coop_spectate_watching_rider(
 		return FALSE;
 	grace = &coop_spectate_camera_graces[local_player_index];
 	/* Keep the old rider exception unless the camera is actually on the corpse. */
-	if (grace->corpse_view_active)
+	if (grace->corpse_target_selected)
 		return FALSE;
 	self = local_player_get_player_index(local_player_index);
 	watched = coop_spectate_watched[local_player_index];
@@ -303,7 +305,7 @@ boolean coop_spectate_nothing_to_watch(
 	if (local_player_index < 0 || local_player_index >= MAXIMUM_LOCAL_PLAYERS)
 		return FALSE;
 	/* A live body camera is already a local view; don't replace it with the host's. */
-	if (coop_spectate_camera_graces[local_player_index].corpse_view_active)
+	if (coop_spectate_camera_graces[local_player_index].corpse_target_selected)
 		return FALSE;
 	self = local_player_get_player_index(local_player_index);
 
@@ -376,7 +378,7 @@ void coop_spectate_draw(
 	wchar_t text[96];
 	wchar_t const *hint;
 	if (local_player_index < 0 || local_player_index >= MAXIMUM_LOCAL_PLAYERS ||
-		coop_spectate_camera_graces[local_player_index].corpse_view_active)
+		coop_spectate_camera_graces[local_player_index].corpse_target_selected)
 		return;
 	watched = coop_spectate_watched[local_player_index];
 
