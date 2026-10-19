@@ -68,7 +68,14 @@ def check_credentials(env: Any, selected: list[str]) -> None:
         raise ValueError("Missing release configuration: " + ", ".join(missing))
 
 
-def load_policy(value: str) -> dict[str, str]:
+def require_asset_policy(policy: dict[str, Any]) -> None:
+    if not {"profile_feed_sha256s", "shader_feed_url", "shader_feed_sha256"} <= set(
+        policy
+    ):
+        raise ValueError("New releases require device-profile and shader asset pins")
+
+
+def load_policy(value: str) -> dict[str, Any]:
     policy = json.loads(value or "{}")
     fields = {
         "guest_sha256",
@@ -80,16 +87,21 @@ def load_policy(value: str) -> dict[str, str]:
         "recording_feed_url",
         "recording_feed_sha256",
     }
-    if not isinstance(policy, dict) or set(policy) not in (
+    asset_fields = (fields - {"profile_feed_sha256"}) | {
+        "profile_feed_sha256s",
+        "shader_feed_url",
+        "shader_feed_sha256",
+    }
+    if not isinstance(policy, dict) or set(policy) - {"benchmark_upload"} not in (
         fields,
-        fields | {"benchmark_upload"},
+        asset_fields,
     ):
         raise ValueError(
             "RELEASE_BUILD_POLICY must contain the exact documented build and feed pins"
         )
     if "benchmark_upload" in policy and policy["benchmark_upload"] not in {"on", "off"}:
         raise ValueError("RELEASE_BUILD_POLICY benchmark_upload must be on or off")
-    for name in fields:
+    for name in set(policy) - {"benchmark_upload", "profile_feed_sha256s"}:
         value = policy[name]
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing build policy pin: {name}")
@@ -98,7 +110,21 @@ def load_policy(value: str) -> dict[str, str]:
     data_pack_definitions(
         DATA_PACK_PUBLIC_KEY, policy["profile_feed_url"], policy["recording_feed_url"]
     )
-    for name in ("profile_feed_url", "recording_feed_url"):
+    if "profile_feed_sha256s" in policy:
+        targets = policy["profile_feed_sha256s"]
+        if not isinstance(targets, dict) or not 1 <= len(targets) <= 256:
+            raise ValueError("Profile target pins must be a bounded nonempty object")
+        base = urllib.parse.unquote(
+            urllib.parse.urlsplit(policy["profile_feed_url"]).path
+        )
+        if any(part in {".", ".."} for part in base.split("/")):
+            raise ValueError("Profile feed base must not contain traversal")
+        for target, digest in targets.items():
+            packs.data_pack.profile_target_parts(target)
+            if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                raise ValueError("Invalid profile target SHA-256 pin")
+        data_pack_definitions(DATA_PACK_PUBLIC_KEY, "", policy["shader_feed_url"])
+    for name in (name for name in policy if name.endswith("_feed_url")):
         url = urllib.parse.urlsplit(policy[name])
         path = urllib.parse.unquote(url.path).strip("/").split("/")
         host = (url.hostname or "").rstrip(".").lower()
@@ -410,7 +436,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def verify_feed(
-    data: bytes, kind: str, policy: dict[str, str], *, root: Path | None = None
+    data: bytes,
+    kind: str,
+    policy: dict[str, Any],
+    *,
+    root: Path | None = None,
+    profile_target: str | None = None,
 ) -> dict[str, Any] | None:
     if root is not None:
         # The immutable app supplies its public key, envelope contract, profile
@@ -424,22 +455,40 @@ def verify_feed(
                 (
                     "import json, sys; sys.path.insert(0, sys.argv[1]); "
                     "from tools.release_validation import verify_feed; "
-                    "verify_feed(sys.stdin.buffer.read(), sys.argv[2], json.loads(sys.argv[3]))"
+                    "verify_feed(sys.stdin.buffer.read(), sys.argv[2], json.loads(sys.argv[3]), "
+                    "**json.loads(sys.argv[4]))"
                 ),
                 str(root),
                 kind,
                 json.dumps(policy),
+                json.dumps(
+                    {"profile_target": profile_target}
+                    if profile_target is not None
+                    else {}
+                ),
             ],
             input=data,
             cwd=root,
             check=True,
         )
         return None
-    compatibility = (
-        "profiles-2"
-        if kind == "profile"
-        else "benchmark-catalog-1:" + policy["guest_sha256"]
-    )
+    if kind == "profile" and "profile_feed_sha256s" in policy:
+        packs.data_pack.profile_target_parts(profile_target)
+        if profile_target not in policy["profile_feed_sha256s"]:
+            raise ValueError("Profile target is not pinned")
+        policy = {
+            **policy,
+            "profile_feed_sha256": policy["profile_feed_sha256s"][profile_target],
+        }
+        compatibility = "device-profiles-1:" + profile_target
+    elif kind == "shader":
+        compatibility = "shader-lists-1"
+    else:
+        compatibility = (
+            "profiles-2"
+            if kind == "profile"
+            else "benchmark-catalog-1:" + policy["guest_sha256"]
+        )
     return _verify_feed(data, kind, policy, compatibility)
 
 
@@ -470,7 +519,11 @@ def _verify_feed(
 ) -> dict[str, Any] | None:
     if hashlib.sha256(data).hexdigest() != policy[f"{kind}_feed_sha256"]:
         raise ValueError(f"{kind} feed hash differs from the reviewed envelope")
-    payload_kind = {"profile": "profiles", "recording": "recordings"}[kind]
+    payload_kind = {
+        "profile": "profiles",
+        "recording": "recordings",
+        "shader": "shaders",
+    }[kind]
     limit = ENVELOPE_LIMITS[payload_kind]
     if len(data) > limit:
         raise ValueError(f"{kind} feed exceeds the app download limit")
@@ -530,12 +583,26 @@ def _verify_feed(
 
 
 def check_feeds(
-    policy: dict[str, str], *, root: Path | None = None
+    policy: dict[str, Any], *, root: Path | None = None
 ) -> dict[str, Any] | None:
     recording_context = None
-    for kind, payload_kind in [("profile", "profiles"), ("recording", "recordings")]:
+    feeds = []
+    if "profile_feed_sha256s" in policy:
+        feeds += [
+            (
+                "profile",
+                "profiles",
+                policy["profile_feed_url"].rstrip("/") + "/" + target + ".json",
+                target,
+            )
+            for target in sorted(policy["profile_feed_sha256s"])
+        ]
+        feeds.append(("shader", "shaders", policy["shader_feed_url"], None))
+    else:
+        feeds.append(("profile", "profiles", policy["profile_feed_url"], None))
+    feeds.append(("recording", "recordings", policy["recording_feed_url"], None))
+    for kind, payload_kind, url, profile_target in feeds:
         limit = ENVELOPE_LIMITS[payload_kind]
-        url = policy[f"{kind}_feed_url"]
         with urllib.request.build_opener(NoRedirect()).open(
             url, timeout=45
         ) as response:
@@ -543,11 +610,20 @@ def check_feeds(
         if len(data) > limit:
             raise ValueError(f"{kind} feed exceeds the app download limit")
         if root is None:
-            verified = verify_feed(data, kind, policy)
+            verified = (
+                verify_feed(data, kind, policy, profile_target=profile_target)
+                if profile_target is not None
+                else verify_feed(data, kind, policy)
+            )
             if kind == "recording":
                 recording_context = verified
         else:
-            verify_feed(data, kind, policy, root=root)
+            if profile_target is not None:
+                verify_feed(
+                    data, kind, policy, root=root, profile_target=profile_target
+                )
+            else:
+                verify_feed(data, kind, policy, root=root)
     if root is not None:
         return None
     if not isinstance(recording_context, dict):

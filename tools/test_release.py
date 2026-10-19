@@ -15,7 +15,7 @@ from typing import Any, Self
 import pytest
 
 from tools import release
-from tools.test_release_validation import policy
+from tools.test_release_assets import asset_policy as policy
 
 
 def recording_summary_context() -> dict[str, Any]:

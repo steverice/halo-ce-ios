@@ -653,6 +653,7 @@ def prepare(args: argparse.Namespace) -> None:
         if run("git", "rev-parse", "HEAD^", capture=True) != source:
             raise ValueError("Release commit parent differs from the pinned source")
     else:
+        validation.require_asset_policy(policy)
         if run("git", "rev-parse", "origin/main", capture=True) != source:
             raise ValueError("Main moved; review and dispatch again with its exact SHA")
         run("git", "checkout", "--detach", source)
@@ -1022,6 +1023,8 @@ def archive_identity(
         "HaloRecordingFeedURL": policy["recording_feed_url"],
         "HaloDataPackChannel": "tester",
     }
+    if "shader_feed_url" in policy:
+        expected_info["HaloShaderFeedURL"] = policy["shader_feed_url"]
     if any(info.get(name) != value for name, value in expected_info.items()):
         raise ValueError(
             "Actual archive toolchain, bundle, or tester feed differs from release policy"
@@ -1204,6 +1207,11 @@ def publish(args: argparse.Namespace) -> None:
                 "--benchmark-routes",
                 "off",
                 *benchmark_upload_arguments(policy),
+                *(
+                    ["--shader-feed-url", policy["shader_feed_url"]]
+                    if "shader_feed_url" in policy
+                    else []
+                ),
                 "--internal-only",
                 "--extended-virtual-addressing",
                 "--jobs",

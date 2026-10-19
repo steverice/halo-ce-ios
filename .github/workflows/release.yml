@@ -119,6 +119,7 @@ jobs:
       APPLE_PROFILE_VISIONOS_BASE64: ${{ secrets.APPLE_PROFILE_VISIONOS_BASE64 }}
       RELEASE_PLATFORMS: ${{ inputs.platforms }}
       RELEASE_BUILD_POLICY: ${{ vars.RELEASE_BUILD_POLICY }}
+      RELEASE_RESUME_TAG: ${{ inputs.resume_tag }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -139,6 +140,8 @@ jobs:
           path: evidence
       - name: Require all selected existing credentials
         run: python3 -c 'import os; from tools.release import platforms; from tools.release_validation import check_credentials; check_credentials(os.environ, platforms(os.environ["RELEASE_PLATFORMS"]))'
+      - name: Require reviewed device-profile and shader feeds for a new release
+        run: python3 -c 'import os; from tools.release_validation import load_policy, require_asset_policy; policy = load_policy(os.environ["RELEASE_BUILD_POLICY"]); os.environ.get("RELEASE_RESUME_TAG") or require_asset_policy(policy)'
       - name: Validate existing distribution identity and profiles
         run: python3 tools/release_signing.py install
       - name: Verify reviewed guest, feeds, toolchain, and App Store access before any tag
