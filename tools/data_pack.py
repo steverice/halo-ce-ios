@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import zlib
 
 if __package__:
     from . import benchmark_catalog
@@ -27,6 +28,9 @@ else:
     from profile_catalog_check import check_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
+SHADER_INDEX_LIMIT = 65536
+SHADER_COMPRESSED_FILE_LIMIT = 4 * 1024 * 1024
+SHADER_COMPRESSED_TOTAL_LIMIT = 8 * 1024 * 1024
 MAXIMUM_SEQUENCE = 2**53 - 1
 RECORDING_MAX_FILES = 160
 RECORDING_MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -341,7 +345,7 @@ def main(arguments=None):
     if args.minimum_engine != 1 or args.maximum_engine != 1:
         raise ValueError("this publisher supports only minimum_engine = maximum_engine = 1")
     expected = (r"device-profiles-1:.+|profiles-[12]" if args.kind == "profiles" else
-                "shader-lists-1" if args.kind == "shaders" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}")
+                "shader-lists-[12]" if args.kind == "shaders" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}")
     if not re.fullmatch(expected, args.compatibility):
         raise ValueError("compatibility must be profiles-1 or profiles-2, or benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256")
     if len(args.notes.encode("utf-8")) > 4096:
@@ -355,7 +359,23 @@ def main(arguments=None):
         if args.device_platform or args.device_model or args.device_chip:
             raise ValueError("device arguments require device-profiles-1 compatibility")
         files = snapshot(args.input, args.kind, args.compatibility)
-    payload = canonical({"files": {name: base64.b64encode(content).decode("ascii") for name, content in files.items()}})
+    assets = {}
+    if args.kind == "shaders" and args.compatibility == "shader-lists-2":
+        encoded = {}
+        compressed_total = 0
+        for name, content in files.items():
+            compressed = zlib.compress(content, level=9)
+            if len(compressed) > SHADER_COMPRESSED_FILE_LIMIT:
+                raise ValueError("compressed shader map exceeds its size limit")
+            compressed_total += len(compressed)
+            digest = hashlib.sha256(compressed).hexdigest()
+            assets[digest + ".zlib"] = compressed
+            encoded[name] = ":".join((hashlib.sha256(content).hexdigest(), str(len(content)), digest, str(len(compressed))))
+        if compressed_total > SHADER_COMPRESSED_TOTAL_LIMIT:
+            raise ValueError("compressed shader maps exceed total size limit")
+        payload = canonical({"files": encoded})
+    else:
+        payload = canonical({"files": {name: base64.b64encode(content).decode("ascii") for name, content in files.items()}})
     manifest = canonical({"schema": 1, "kind": args.kind, "channel": args.channel, "sequence": args.sequence,
         "minimum_engine": args.minimum_engine, "maximum_engine": args.maximum_engine,
         "compatibility": args.compatibility, "sha256": hashlib.sha256(payload).hexdigest(), "notes": args.notes})
@@ -370,6 +390,17 @@ def main(arguments=None):
     # the app refuses a larger download before it checks the signature (host_data_pack.m, envelopeLimit)
     if len(envelope) + 1 > ENVELOPE_LIMITS[args.kind]:
         raise ValueError(f"envelope exceeds the app's {ENVELOPE_LIMITS[args.kind]} byte download limit")
+    if assets:
+        if len(envelope) + 1 > SHADER_INDEX_LIMIT:
+            raise ValueError("shader index exceeds its download limit")
+        destination = args.output.parent / "shader-maps"
+        destination.mkdir(exist_ok=True)
+        if destination.is_symlink() or not destination.is_dir():
+            raise ValueError("shader asset directory must be a regular directory")
+        # Publish immutable content before the index that references it. Retain old assets
+        # so an interrupted publisher never invalidates an already served index.
+        for name, content in assets.items():
+            atomic_write(destination / name, content)
     atomic_write(args.output, envelope + b"\n")
     print(f"Wrote {args.kind} sequence {args.sequence}: {len(files)} files, {len(envelope) + 1} bytes")
     return 0

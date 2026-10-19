@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <zlib.h>
 
 static const uint64_t PackMaxSequence = 9007199254740991ULL;
 static BOOL PackError(NSError **error, NSString *message) {
@@ -106,6 +107,45 @@ static NSDictionary *PackJSON(NSData *data) {
     return [value isKindOfClass:NSDictionary.class] ? value : nil;
 }
 
+// Descriptor grammar stays flat so duplicate-key and nesting admission is unchanged.
+static NSDictionary *PackShaderIndex(NSDictionary *payload) {
+    if (!PackKeys(payload, @[@"files"]) || ![payload[@"files"] isKindOfClass:NSDictionary.class]) return nil;
+    NSDictionary *encoded = payload[@"files"];
+    if (!encoded.count || encoded.count > HOST_SHADER_PACK_MAX_MAPS) return nil;
+    NSMutableDictionary *assets = [NSMutableDictionary dictionary];
+    NSUInteger rawTotal = 0, compressedTotal = 0;
+    for (NSString *name in encoded) {
+        id descriptor = encoded[name];
+        if (!PackMatches(name, @"^[a-z0-9][a-z0-9_-]{0,62}\\.txt\\z") ||
+            !PackMatches(descriptor, @"^[0-9a-f]{64}:[1-9][0-9]{0,6}:[0-9a-f]{64}:[1-9][0-9]{0,6}\\z")) return nil;
+        NSArray *parts = [descriptor componentsSeparatedByString:@":"];
+        NSUInteger raw = [parts[1] integerValue], compressed = [parts[3] integerValue];
+        if (raw > HOST_SHADER_PACK_MAX_FILE_BYTES || compressed > HOST_SHADER_PACK_MAX_COMPRESSED_FILE_BYTES ||
+            raw > HOST_SHADER_PACK_MAX_TOTAL_BYTES - rawTotal || compressed > HOST_SHADER_PACK_MAX_COMPRESSED_TOTAL_BYTES - compressedTotal) return nil;
+        rawTotal += raw; compressedTotal += compressed;
+        assets[name] = @[parts[0], @(raw), parts[2], @(compressed)];
+    }
+    return assets;
+}
+static BOOL PackShaderRaw(NSData *raw, NSArray *descriptor) {
+    return raw && raw.length == [descriptor[1] unsignedIntegerValue] && [PackSHA256(raw) isEqual:descriptor[0]];
+}
+static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
+    if (compressed.length != [descriptor[3] unsignedIntegerValue] || ![PackSHA256(compressed) isEqual:descriptor[2]]) return nil;
+    // Allocate a bounded output once. The extra byte detects expansion past the signed size.
+    NSMutableData *raw = [NSMutableData dataWithLength:[descriptor[1] unsignedIntegerValue] + 1];
+    z_stream stream = {0};
+    stream.next_in = (Bytef *)compressed.bytes; stream.avail_in = (uInt)compressed.length;
+    stream.next_out = raw.mutableBytes; stream.avail_out = (uInt)raw.length;
+    if (inflateInit(&stream) != Z_OK) return nil;
+    int status = inflate(&stream, Z_FINISH);
+    BOOL valid = status == Z_STREAM_END && stream.total_in == compressed.length && stream.total_out == [descriptor[1] unsignedIntegerValue];
+    inflateEnd(&stream);
+    if (!valid) return nil;
+    raw.length = [descriptor[1] unsignedIntegerValue];
+    return PackShaderRaw(raw, descriptor) ? raw : nil;
+}
+
 @interface HostDataPackStore () <NSURLSessionDataDelegate>
 @property(nonatomic, copy) NSString *root, *bundled, *kind, *channel, *compatibility;
 @property(nonatomic, copy) NSData *publicKey;
@@ -118,6 +158,12 @@ static NSDictionary *PackJSON(NSData *data) {
 @property(nonatomic) NSMutableData *download;
 @property(nonatomic) BOOL responseAccepted;
 @property(nonatomic, copy) NSString *responseValidator;
+@property(nonatomic) NSURL *feedURL;
+@property(nonatomic) NSData *indexEnvelope;
+@property(nonatomic) NSDictionary *indexPack;
+@property(nonatomic) NSMutableDictionary *mapFiles;
+@property(nonatomic, copy) NSString *mapName;
+@property(nonatomic) NSUInteger transferBytes;
 @end
 
 @implementation HostDataPackStore
@@ -125,7 +171,8 @@ static NSDictionary *PackJSON(NSData *data) {
 // can make the app hold. The payload's files are base64 inside the payload, which is base64 again in the envelope:
 // Recording bounds follow the maximum individually valid files, without a separate library-size cap.
 // tools/data_pack.py uses the same base64/JSON allowance.
-- (NSUInteger)envelopeLimit { return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : [_kind isEqual:@"shaders"] ? HOST_SHADER_PACK_MAX_ENVELOPE_BYTES : HOST_RECORDING_PACK_MAX_ENVELOPE_BYTES; }
+- (BOOL)shaderIndex { return [_kind isEqual:@"shaders"] && [_compatibility isEqual:@"shader-lists-2"]; }
+- (NSUInteger)envelopeLimit { if (self.shaderIndex) return HOST_SHADER_PACK_MAX_INDEX_BYTES; return [_kind isEqual:@"profiles"] ? 4 * 1024 * 1024 : [_kind isEqual:@"shaders"] ? HOST_SHADER_PACK_MAX_ENVELOPE_BYTES : HOST_RECORDING_PACK_MAX_ENVELOPE_BYTES; }
 - (NSDictionary *)bundledIdentity { return @{@"kind": _kind, @"channel": _channel, @"compatibility": _compatibility, @"sequence": @0, @"sha256": @"", @"bundled": @YES}; }
 - (NSString *)statePath { return [_root stringByAppendingPathComponent:@"state.json"]; }
 - (NSString *)generationPath:(NSString *)name { return [_root stringByAppendingPathComponent:name]; }
@@ -198,6 +245,11 @@ static NSDictionary *PackJSON(NSData *data) {
     if (authenticated) *authenticated = manifest;
     NSDictionary *payload = PackJSON(payloadBytes);
     if (!PackKeys(payload, @[@"files"]) || ![payload[@"files"] isKindOfClass:NSDictionary.class]) { PackError(error, @"Pack payload has invalid fields"); return nil; }
+    if (self.shaderIndex) {
+        NSDictionary *assets = PackShaderIndex(payload);
+        if (!assets) { PackError(error, @"Shader index descriptors exceed their bounds or are malformed"); return nil; }
+        return @{@"manifest": manifest, @"assets": assets};
+    }
     NSDictionary *encoded = payload[@"files"];
     BOOL profiles = [_kind isEqual:@"profiles"], shaders = [_kind isEqual:@"shaders"];
     NSUInteger fileLimit = profiles ? 64 * 1024 : shaders ? HOST_SHADER_PACK_MAX_FILE_BYTES : HOST_RECORDING_PACK_MAX_FILE_BYTES;
@@ -222,7 +274,17 @@ static NSDictionary *PackJSON(NSData *data) {
     NSString *filesPath = [folder stringByAppendingPathComponent:@"files"];
     if (!PackNode(folder, YES) || !PackNode(filesPath, YES)) return nil;
     NSDictionary *pack = [self verifyEnvelope:PackRead([folder stringByAppendingPathComponent:@"envelope.json"], self.envelopeLimit) authenticated:NULL error:NULL];
-    NSDictionary *manifest = pack[@"manifest"], *files = pack[@"files"];
+    NSDictionary *manifest = pack[@"manifest"];
+    NSMutableDictionary *files = [pack[@"files"] mutableCopy];
+    if (pack[@"assets"]) {
+        files = [NSMutableDictionary dictionary];
+        for (NSString *map in pack[@"assets"]) {
+            NSArray *descriptor = pack[@"assets"][map];
+            NSData *bytes = PackRead([filesPath stringByAppendingPathComponent:map], [descriptor[1] unsignedIntegerValue]);
+            if (!PackShaderRaw(bytes, descriptor)) return nil;
+            files[map] = bytes;
+        }
+    }
     if (!pack || ![[NSString stringWithFormat:@"%@-%@", manifest[@"sequence"], manifest[@"sha256"]] isEqual:name]) return nil;
     NSMutableSet *expected = [NSMutableSet setWithArray:files.allKeys];
     if (files[@"hardware/catalog.toml"]) [expected addObject:@"hardware"];
@@ -307,6 +369,17 @@ static NSDictionary *PackJSON(NSData *data) {
     next[@"highest"] = @(sequence);
     if ([self writeState:next error:NULL]) [self prune];
 }
+- (NSData *)cachedShaderMap:(NSString *)map descriptor:(NSArray *)descriptor {
+    for (NSString *field in @[@"active", @"healthy", @"pending"]) {
+        NSString *name = _state[field];
+        if (!name.length) continue;
+        NSString *folder = [[self generationPath:name] stringByAppendingPathComponent:@"files"];
+        if (!PackNode([self generationPath:name], YES) || !PackNode(folder, YES)) continue;
+        NSData *raw = PackRead([folder stringByAppendingPathComponent:map], [descriptor[1] unsignedIntegerValue]);
+        if (PackShaderRaw(raw, descriptor)) return raw;
+    }
+    return nil;
+}
 - (BOOL)stageEnvelope:(NSData *)data error:(NSError **)error { @synchronized(self) {
     if (!_stateValid) return PackError(error, @"Pack state is unavailable or malformed");
     NSDictionary *authenticated = nil;
@@ -315,7 +388,19 @@ static NSDictionary *PackJSON(NSData *data) {
         if (authenticated) [self rejectManifest:authenticated];
         return NO;
     }
-    NSDictionary *manifest = pack[@"manifest"], *files = pack[@"files"];
+    NSMutableDictionary *files = [pack[@"files"] mutableCopy];
+    if (pack[@"assets"]) {
+        files = [NSMutableDictionary dictionary];
+        for (NSString *map in pack[@"assets"]) {
+            NSData *raw = [self cachedShaderMap:map descriptor:pack[@"assets"][map]];
+            if (!raw) return PackError(error, @"Shader index requires a missing map download");
+            files[map] = raw;
+        }
+    }
+    return [self stageVerifiedEnvelope:data pack:pack files:files error:error];
+} }
+- (BOOL)stageVerifiedEnvelope:(NSData *)data pack:(NSDictionary *)pack files:(NSDictionary *)files error:(NSError **)error {
+    NSDictionary *manifest = pack[@"manifest"];
     if ([manifest[@"sequence"] unsignedLongLongValue] <= [_state[@"highest"] unsignedLongLongValue]) return PackError(error, @"Pack sequence was already seen");
     NSString *name = [NSString stringWithFormat:@"%@-%@", manifest[@"sequence"], manifest[@"sha256"]];
     NSString *temporary = [self generationPath:[@".stage-" stringByAppendingString:NSUUID.UUID.UUIDString]];
@@ -348,7 +433,7 @@ static NSDictionary *PackJSON(NSData *data) {
     } @finally {
         if (!success) [manager removeItemAtPath:temporary error:NULL];
     }
-} }
+}
 - (NSDictionary *)metadata { @synchronized(self) { return [_identity copy]; } }
 // The file holds the sequence of the last accepted envelope, a newline, then its ETag. It applies only while that
 // sequence is still the highest seen and a snapshot is installed, so a store that started over asks for the full feed.
@@ -368,8 +453,9 @@ static NSDictionary *PackJSON(NSData *data) {
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;
-    configuration.HTTPShouldSetCookies = NO; configuration.timeoutIntervalForRequest = 10; configuration.timeoutIntervalForResource = 30;
+    configuration.HTTPShouldSetCookies = NO; configuration.HTTPAdditionalHeaders = @{}; configuration.timeoutIntervalForRequest = 10; configuration.timeoutIntervalForResource = 30;
     configuration.waitsForConnectivity = NO;
+    _feedURL = url; _transferBytes = 0; _indexEnvelope = nil; _indexPack = nil; _mapFiles = nil; _mapName = nil;
     _download = [NSMutableData data]; _responseAccepted = NO; _responseValidator = nil;
     _session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:nil];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
@@ -384,27 +470,70 @@ static NSDictionary *PackJSON(NSData *data) {
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler {
     // Refuse every redirect, including same-host redirects, to keep the endpoint fixed.
     completionHandler(nil);
+    [task cancel];
+}
+- (NSUInteger)downloadLimit { return _mapName ? [_indexPack[@"assets"][_mapName][3] unsignedIntegerValue] : self.envelopeLimit; }
+- (BOOL)nextShaderMap {
+    for (NSString *map in [[_indexPack[@"assets"] allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+        if (_mapFiles[map]) continue;
+        NSArray *descriptor = _indexPack[@"assets"][map];
+        NSData *cached = [self cachedShaderMap:map descriptor:descriptor];
+        if (cached) { _mapFiles[map] = cached; continue; }
+        _mapName = map; _download = [NSMutableData data]; _responseAccepted = NO;
+        NSURL *url = [[[_feedURL URLByDeletingLastPathComponent] URLByAppendingPathComponent:@"shader-maps"]
+            URLByAppendingPathComponent:[descriptor[2] stringByAppendingString:@".zlib"]];
+        // Construct a fresh request: no feed validators, credentials or headers carry over.
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+        [request setValue:@"application/octet-stream" forHTTPHeaderField:@"Accept"];
+        [[_session dataTaskWithRequest:request] resume];
+        return YES;
+    }
+    _mapName = nil;
+    return NO;
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler { @synchronized(self) {
     NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? [(NSHTTPURLResponse *)response statusCode] : 0;
     NSString *etag = status == 200 ? [(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"ETag"] : nil;
-    _responseValidator = etag.length && etag.length <= 256 && PackMatches(etag, @"^(W/)?\"[\\x21\\x23-\\x7e]*\"\\z") ? etag : nil;
+    if (!_mapName) _responseValidator = etag.length && etag.length <= 256 && PackMatches(etag, @"^(W/)?\"[\\x21\\x23-\\x7e]*\"\\z") ? etag : nil;
     if (status != 200 && status != 304) host_logf(HOST_LOG_WARN, "data-packs: %s feed answered HTTP %ld; keeping the current snapshot", _kind.UTF8String, (long)status);
-    _responseAccepted = status == 200 && (response.expectedContentLength < 0 || (uint64_t)response.expectedContentLength <= self.envelopeLimit);
+    _responseAccepted = status == 200 && (response.expectedContentLength < 0 || (uint64_t)response.expectedContentLength <= self.downloadLimit);
     completionHandler(_responseAccepted ? NSURLSessionResponseAllow : NSURLSessionResponseCancel);
 } }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data { @synchronized(self) {
-    if (!_responseAccepted || data.length > self.envelopeLimit - _download.length) { _responseAccepted = NO; [_download setLength:0]; [task cancel]; return; }
-    [_download appendData:data];
+    NSUInteger totalLimit = self.shaderIndex ? HOST_SHADER_PACK_MAX_INDEX_BYTES + HOST_SHADER_PACK_MAX_COMPRESSED_TOTAL_BYTES : self.envelopeLimit;
+    if (!_responseAccepted || data.length > self.downloadLimit - _download.length || data.length > totalLimit - _transferBytes) { _responseAccepted = NO; [_download setLength:0]; [task cancel]; return; }
+    _transferBytes += data.length; [_download appendData:data];
 } }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error { @synchronized(self) {
+    (void)task;
+    NSError *stageError = nil;
+    BOOL staged = NO;
     if (error) host_logf(HOST_LOG_WARN, "data-packs: %s feed check ended (%s); keeping the current snapshot", _kind.UTF8String, error.localizedDescription.UTF8String);
     else if (_responseAccepted) @autoreleasepool {
-        NSError *stageError = nil;
-        if ([self stageEnvelope:_download error:&stageError]) {
+        if (self.shaderIndex) {
+            if (!_indexPack) {
+                NSDictionary *authenticated = nil;
+                _indexPack = [self verifyEnvelope:_download authenticated:&authenticated error:&stageError];
+                if (!_indexPack && authenticated) [self rejectManifest:authenticated];
+                if (_indexPack && [_indexPack[@"manifest"][@"sequence"] unsignedLongLongValue] <= [_state[@"highest"] unsignedLongLongValue]) {
+                    _indexPack = nil; PackError(&stageError, @"Pack sequence was already seen");
+                }
+                if (_indexPack) { _indexEnvelope = _download; _mapFiles = [NSMutableDictionary dictionary]; }
+            } else {
+                NSData *raw = PackShaderInflate(_download, _indexPack[@"assets"][_mapName]);
+                if (raw) _mapFiles[_mapName] = raw;
+                else { _indexPack = nil; PackError(&stageError, @"Shader download stream, hash or size is invalid"); }
+            }
+            if (_indexPack) {
+                if ([self nextShaderMap]) return;
+                staged = [self stageVerifiedEnvelope:_indexEnvelope pack:_indexPack files:_mapFiles error:&stageError];
+            }
+        } else staged = [self stageEnvelope:_download error:&stageError];
+        if (staged) {
             if (_responseValidator) [[NSString stringWithFormat:@"%@\n%@", _state[@"highest"], _responseValidator] writeToFile:self.validatorPath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         } else host_logf(HOST_LOG_WARN, "data-packs: %s feed not staged (%s); keeping the current snapshot", _kind.UTF8String, stageError.localizedDescription.UTF8String);
     }
-    _download = nil; _session = nil; [session finishTasksAndInvalidate];
+    _download = nil; _session = nil; _indexEnvelope = nil; _indexPack = nil; _mapFiles = nil; _mapName = nil; _feedURL = nil;
+    [session finishTasksAndInvalidate];
 } }
 @end

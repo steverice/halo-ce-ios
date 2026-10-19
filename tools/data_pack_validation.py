@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import zlib
 import json
 import re
 import tempfile
@@ -104,11 +106,66 @@ def validate_manifest(
         )
 
 
-def validate_payload(payload: bytes, kind: str, compatibility: str) -> dict[str, bytes]:
+def shader_index(payload: bytes) -> dict[str, tuple[str, int, str, int]]:
+    if len(payload) > data_pack.SHADER_INDEX_LIMIT:
+        raise ValueError("Shader index payload exceeds its limit")
+    decoded = decode_json(payload)
+    if set(decoded) != {"files"} or not isinstance(decoded["files"], dict):
+        raise ValueError("Shader index has invalid fields")
+    if not 1 <= len(decoded["files"]) <= 32:
+        raise ValueError("Shader index map count exceeds its limit")
+    result = {}
+    raw_total = compressed_total = 0
+    for name, value in decoded["files"].items():
+        if not data_pack.snapshot_name_allowed(name, "shaders") or not isinstance(value, str):
+            raise ValueError("Shader index filename or descriptor is invalid")
+        match = re.fullmatch(r"([0-9a-f]{64}):([1-9][0-9]{0,6}):([0-9a-f]{64}):([1-9][0-9]{0,6})", value)
+        if not match:
+            raise ValueError("Shader descriptor is invalid")
+        raw_hash, raw_size, compressed_hash, compressed_size = match.groups()
+        raw_size, compressed_size = int(raw_size), int(compressed_size)
+        if raw_size > 4 * 1024 * 1024 or compressed_size > data_pack.SHADER_COMPRESSED_FILE_LIMIT:
+            raise ValueError("Shader descriptor exceeds its per-file limit")
+        raw_total += raw_size
+        compressed_total += compressed_size
+        if raw_total > 8 * 1024 * 1024 or compressed_total > data_pack.SHADER_COMPRESSED_TOTAL_LIMIT:
+            raise ValueError("Shader index total exceeds its limit")
+        result[name] = (raw_hash, raw_size, compressed_hash, compressed_size)
+    return result
+
+
+def decode_shader_asset(content: bytes, descriptor: tuple[str, int, str, int]) -> bytes:
+    raw_hash, raw_size, compressed_hash, compressed_size = descriptor
+    if len(content) != compressed_size or hashlib.sha256(content).hexdigest() != compressed_hash:
+        raise ValueError("Compressed shader map hash or size differs from signed index")
+    decoder = zlib.decompressobj()
+    try:
+        # One byte beyond the signed size detects expansion without growing beyond the cap.
+        raw = decoder.decompress(content, raw_size + 1)
+    except zlib.error as error:
+        raise ValueError("Invalid compressed shader map") from error
+    if (not decoder.eof or decoder.unused_data or decoder.unconsumed_tail or len(raw) != raw_size
+            or hashlib.sha256(raw).hexdigest() != raw_hash):
+        raise ValueError("Shader map stream, raw hash, or size differs from signed index")
+    return raw
+
+
+def validate_payload(payload: bytes, kind: str, compatibility: str, *, shader_assets: dict[str, bytes] | None = None) -> dict[str, bytes]:
     decoded = decode_json(payload)
     if set(decoded) != {"files"} or not isinstance(decoded["files"], dict):
         raise ValueError("Pack payload has invalid fields")
     encoded = decoded["files"]
+    if kind == "shaders" and compatibility == "shader-lists-2":
+        index = shader_index(payload)
+        if shader_assets is None:
+            raise ValueError("Shader index requires its compressed map assets")
+        files = {}
+        for name, descriptor in index.items():
+            asset = descriptor[2] + ".zlib"
+            if asset not in shader_assets:
+                raise ValueError("Signed shader map asset is missing: " + asset)
+            files[name] = decode_shader_asset(shader_assets[asset], descriptor)
+        encoded = {name: base64.b64encode(content).decode("ascii") for name, content in files.items()}
     maximum_files, maximum_file, maximum_total = data_pack.snapshot_limits(kind)
     if not 1 <= len(encoded) <= maximum_files:
         raise ValueError("Pack file count exceeds its limit")

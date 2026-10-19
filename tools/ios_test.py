@@ -104,24 +104,30 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror',
     'port/ios/tests/recording_pack_probe.c', 'port/ios/host/host_recording_pack.c',
     'port/runtime/benchmark_plan.c', '-o', BUILD / 'recording-pack-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Iport/runtime/include',
-    '-framework', 'Foundation', 'port/ios/tests/data_pack_probe.m', 'port/ios/host/host_data_pack.m',
+    '-framework', 'Foundation', '-lz', 'port/ios/tests/data_pack_probe.m', 'port/ios/host/host_data_pack.m',
     'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
     '-o', BUILD / 'data-pack-probe')
 run(BUILD / 'data-pack-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Wl,-dead_strip',
     '-Iport/ios/host', '-Iport/linux/src', '-Iport/runtime/include', '-framework', 'Foundation',
-    'port/ios/tests/data_pack_launch_probe.m', 'port/ios/host/host_data_pack.m',
+    '-lz', 'port/ios/tests/data_pack_launch_probe.m', 'port/ios/host/host_data_pack.m',
     'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
     '-o', BUILD / 'data-pack-launch-probe')
 run(BUILD / 'data-pack-launch-probe')
 run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
     '-Iport/ios/host', '-Iport/runtime/include', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
-    'port/ios/tests/data_updates_probe.m', 'port/ios/host/host_data_pack.m',
+    '-lz', 'port/ios/tests/data_updates_probe.m', 'port/ios/host/host_data_pack.m',
     'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/ios/host/host_profile_delivery.c',
     'port/ios/host/host_recording_pack.c', 'port/ios/host/host_shader_pack.c', 'port/ios/host/host_benchmark_catalog.m', 'port/runtime/benchmark_plan.c',
     'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'data-updates-probe')
 run(BUILD / 'data-updates-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks',
+    '-Iport/runtime/include', '-framework', 'Foundation', '-lz', 'port/ios/tests/shader_download_probe.m',
+    'port/ios/host/host_data_pack.m', 'port/ios/host/host_shader_pack.c',
+    'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
+    '-o', BUILD / 'shader-download-probe')
+run(BUILD / 'shader-download-probe')
 # a benchmark session keeps the recordings it started with, byte for byte, across an update and a relaunch
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Iport/ios/host',
     '-framework', 'Foundation', 'port/ios/tests/benchmark_snapshot_probe.m', 'port/ios/host/host_benchmark_snapshot.m',

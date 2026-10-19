@@ -50,6 +50,8 @@ def allowed_asset(path: str) -> tuple[str, str | None]:
         return "recording", None
     if path == SHADER:
         return "shader", None
+    if re.fullmatch(re.escape(PREFIX) + r"shader-maps/[0-9a-f]{64}\.zlib", path):
+        return "shader-map", None
     profile = re.fullmatch(re.escape(PREFIX) + r"profiles/(.+)\.json", path)
     if profile:
         target = profile[1]
@@ -62,6 +64,8 @@ def allowed_asset(path: str) -> tuple[str, str | None]:
 
 def limit_for(path: str) -> int:
     kind, _ = allowed_asset(path)
+    if kind == "shader-map":
+        return validation.packs.data_pack.SHADER_COMPRESSED_FILE_LIMIT
     return ENVELOPE_LIMITS[
         {"profile": "profiles", "shader": "shaders", "recording": "recordings"}[kind]
     ]
@@ -72,6 +76,10 @@ def verify_asset(path: str, data: bytes) -> dict:
     if not 0 < len(data) <= limit_for(path):
         raise ValueError("Asset envelope exceeds its bounded size")
     digest = hashlib.sha256(data).hexdigest()
+    if kind == "shader-map":
+        if path != PREFIX + "shader-maps/" + digest + ".zlib":
+            raise ValueError("Shader asset filename differs from its content hash")
+        return {"compatibility": "shader-map", "sequence": 1}
     if kind == "recording":
         domain, guest, sequence = legacy.mutable_recording_domain(
             data, require_catalog=path == RECORDING
@@ -90,13 +98,37 @@ def verify_asset(path: str, data: bytes) -> dict:
         )
         domain = "device-profiles-1:" + target
     else:
-        validation.verify_feed(data, kind, {"shader_feed_sha256": digest})
+        metadata = validation.verify_feed(data, kind, {"shader_feed_sha256": digest}, shader_index_only=True)
+        if metadata:
+            return metadata
         domain = "shader-lists-1"
     envelope = validation.packs.decode_json(data)
     manifest = validation.packs.decode_json(
         validation.packs.decode_base64(envelope["manifest"], 65536)
     )
     return {"compatibility": domain, "sequence": manifest["sequence"]}
+
+
+def verify_shader_bundle(assets: dict[str, bytes]) -> None:
+    """Only an authenticated index may admit compressed map bytes into publication."""
+    maps = {path: raw for path, raw in assets.items() if path.startswith(PREFIX + "shader-maps/")}
+    if SHADER not in assets:
+        if maps:
+            raise ValueError("Shader assets require their signed index")
+        return
+    metadata = verify_asset(SHADER, assets[SHADER])
+    if metadata["compatibility"] != "shader-lists-2":
+        if maps:
+            raise ValueError("Legacy shader feed cannot authenticate compressed assets")
+        return
+    envelope = validation.packs.decode_json(assets[SHADER])
+    payload = validation.packs.decode_base64(envelope["payload"], validation.packs.data_pack.SHADER_INDEX_LIMIT)
+    index = validation.packs.shader_index(payload)
+    expected = {PREFIX + "shader-maps/" + descriptor[2] + ".zlib" for descriptor in index.values()}
+    if set(maps) != expected:
+        raise ValueError("Published shader assets differ from the signed index")
+    validation.verify_feed(assets[SHADER], "shader", {"shader_feed_sha256": hashlib.sha256(assets[SHADER]).hexdigest()},
+        shader_assets={Path(path).name: raw for path, raw in maps.items()})
 
 
 def parse_receipt(data: bytes) -> dict[str, str]:
@@ -192,6 +224,7 @@ def live_assets() -> dict[str, bytes]:
         verify_asset(path, raw)
         result[path] = raw
         check_budget(result)
+    verify_shader_bundle(result)
     return result
 
 
@@ -224,17 +257,19 @@ def read_source(path: Path, maximum: int) -> bytes:
 def source_assets() -> dict[str, bytes]:
     result = {}
     directory = ROOT / PREFIX
-    for path in sorted(directory.rglob("*.json")):
+    for path in sorted(directory.rglob("*")):
         name = path.relative_to(ROOT).as_posix()
         if (
             name == RECORDING
             or name == SHADER
             or legacy.FEED_PATH.fullmatch(name)
-            or name.startswith(PREFIX + "profiles/")
+            or (name.startswith(PREFIX + "profiles/") and path.is_file())
+            or (name.startswith(PREFIX + "shader-maps/") and path.is_file())
         ):
             result[name] = read_source(path, limit_for(name))
             verify_asset(name, result[name])
             check_budget(result)
+    verify_shader_bundle(result)
     return result
 
 
@@ -261,7 +296,7 @@ def checked_in_assets() -> dict[str, bytes]:
             if child.is_symlink():
                 raise ValueError("Tester asset directories cannot be symbolic links")
             relative = child.relative_to(ROOT).as_posix()
-            if relative != PREFIX + "profiles" and not relative.startswith(
+            if relative not in {PREFIX + "profiles", PREFIX + "shader-maps"} and not relative.startswith(
                 PREFIX + "profiles/"
             ):
                 raise ValueError("Unexpected directory under the tester asset root")
@@ -272,7 +307,7 @@ def checked_in_assets() -> dict[str, bytes]:
                 raise ValueError("Tester assets cannot be symbolic links")
             if relative in {RECEIPT, MARKER, LEGACY_PROFILE_INDEX}:
                 continue
-            if not relative.endswith(".json"):
+            if not relative.endswith((".json", ".zlib")):
                 raise ValueError("Unexpected file under the tester asset root")
             try:
                 allowed_asset(relative)
@@ -293,6 +328,7 @@ def checked_in_assets() -> dict[str, bytes]:
         if type(sequence) is not int or not 1 <= sequence <= MAXIMUM_SEQUENCE:
             raise ValueError("Checked-in asset has an invalid signed sequence: " + path)
     check_budget(assets)
+    verify_shader_bundle(assets)
     return assets
 
 
@@ -403,7 +439,15 @@ def stage_site(
             if path in previous:
                 advance(path, previous[path], raw)
         selected[path] = raw
+    # Drop old immutable maps only after the selected index is known. Deployments
+    # stage the complete set together; a new index never references partial data.
+    if SHADER in selected and verify_asset(SHADER, selected[SHADER])["compatibility"] == "shader-lists-2":
+        envelope = validation.packs.decode_json(selected[SHADER])
+        index = validation.packs.shader_index(validation.packs.decode_base64(envelope["payload"], 65536))
+        keep = {PREFIX + "shader-maps/" + item[2] + ".zlib" for item in index.values()}
+        selected = {path: raw for path, raw in selected.items() if not path.startswith(PREFIX + "shader-maps/") or path in keep}
     check_budget(selected)
+    verify_shader_bundle(selected)
     if RECORDING not in selected:
         raise ValueError("Publication must preserve the known recording feed")
     receipt = (
@@ -428,6 +472,9 @@ def stage_site(
     temporary = Path(tempfile.mkdtemp(prefix=".pages-assets-", dir=destination.parent))
     try:
         shutil.copytree(ROOT / "docs/site", temporary, dirs_exist_ok=True)
+        copied_maps = temporary / "packs/tester/shader-maps"
+        if copied_maps.exists():
+            shutil.rmtree(copied_maps)
         for path, raw in selected.items():
             target = temporary / path.removeprefix("docs/site/")
             target.parent.mkdir(parents=True, exist_ok=True)

@@ -464,8 +464,12 @@ def verify_feed(
     *,
     root: Path | None = None,
     profile_target: str | None = None,
+    shader_assets: dict[str, bytes] | None = None,
+    shader_index_only: bool = False,
 ) -> dict[str, Any] | None:
     if root is not None:
+        if shader_assets is not None or shader_index_only:
+            raise ValueError("Immutable release verification requires complete shader acquisition")
         # The immutable app supplies its public key, envelope contract, profile
         # schema and native recording validator. Isolate its imports from the
         # controller's modules; do not rebind their independent ROOT globals.
@@ -504,14 +508,14 @@ def verify_feed(
         }
         compatibility = "device-profiles-1:" + profile_target
     elif kind == "shader":
-        compatibility = "shader-lists-1"
+        compatibility = ("shader-lists-1", "shader-lists-2")
     else:
         compatibility = (
             "profiles-2"
             if kind == "profile"
             else "benchmark-catalog-1:" + policy["guest_sha256"]
         )
-    return _verify_feed(data, kind, policy, compatibility)
+    return _verify_feed(data, kind, policy, compatibility, shader_assets=shader_assets, shader_index_only=shader_index_only)
 
 
 def verify_pages_recording_feed(data: bytes, guest_sha256: str) -> None:
@@ -538,6 +542,9 @@ def _verify_feed(
     kind: str,
     policy: dict[str, str],
     compatibility: str | tuple[str, ...],
+    *,
+    shader_assets: dict[str, bytes] | None = None,
+    shader_index_only: bool = False,
 ) -> dict[str, Any] | None:
     if hashlib.sha256(data).hexdigest() != policy[f"{kind}_feed_sha256"]:
         raise ValueError(f"{kind} feed hash differs from the reviewed envelope")
@@ -572,7 +579,34 @@ def _verify_feed(
     payload = packs.decode_base64(envelope["payload"], limit)
     if hashlib.sha256(payload).hexdigest() != manifest["sha256"]:
         raise ValueError(f"{kind} feed payload hash differs from signed manifest")
-    files = packs.validate_payload(payload, payload_kind, selected)
+    if kind == "shader" and selected == "shader-lists-2":
+        if len(data) > packs.data_pack.SHADER_INDEX_LIMIT:
+            raise ValueError("Shader index exceeds the app download limit")
+        index = packs.shader_index(payload)
+        if shader_index_only:
+            # Pages first authenticates every envelope, then validates the complete
+            # asset set together. This flag is never used by release acquisition.
+            return {"compatibility": selected, "sequence": manifest["sequence"]}
+        if shader_assets is None:
+            base = urllib.parse.urlsplit(policy.get("shader_feed_url", ""))
+            if (base.scheme != "https" or not base.hostname or base.username or base.password
+                    or base.query or base.fragment):
+                raise ValueError("Shader assets require a trusted HTTPS feed URL")
+            shader_assets = {}
+            total = 0
+            for descriptor in index.values():
+                asset = descriptor[2] + ".zlib"
+                if asset in shader_assets:
+                    continue
+                url = urllib.parse.urljoin(policy["shader_feed_url"], "shader-maps/" + asset)
+                with urllib.request.build_opener(NoRedirect()).open(url, timeout=45) as response:
+                    content = response.read(descriptor[3] + 1)
+                total += len(content)
+                if len(content) != descriptor[3] or total > packs.data_pack.SHADER_COMPRESSED_TOTAL_LIMIT:
+                    raise ValueError("Shader asset download exceeds its signed size or aggregate limit")
+                shader_assets[asset] = content
+    files = (packs.validate_payload(payload, payload_kind, selected, shader_assets=shader_assets)
+        if selected == "shader-lists-2" else packs.validate_payload(payload, payload_kind, selected))
     if (
         kind != "recording"
         or selected != "benchmark-catalog-1:" + policy["guest_sha256"]

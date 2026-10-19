@@ -42,16 +42,22 @@ An optional `capacity.toml` reserves schema 1 with optional `validated_maximum_p
 
 ## Additive shader lists
 
-A shader envelope uses kind `shaders` and compatibility `shader-lists-1`. This identifier describes the shader descriptor ABI independently of the replay guest hash. Its files are map-specific `.txt` lists, with complete vertex and pixel dependencies for every pipeline in that map. Prepare additions from correctly attributed captures; do not assign mixed UI or multiplayer pipelines to another map.
+A shader feed uses kind `shaders` and compatibility `shader-lists-2`, independently of the replay guest hash. The source and bundled map-specific `.txt` lists stay plain text. The publisher emits a small signed index and compressed per-map downloads, with complete vertex and pixel dependencies for every pipeline in that map. Prepare additions from correctly attributed captures; do not assign mixed UI or multiplayer pipelines to another map.
 
 ```sh
 python3 tools/data_pack.py --kind shaders --channel tester \
-  --sequence 1 --compatibility shader-lists-1 \
+  --sequence 1 --compatibility shader-lists-2 \
   --input /private/path/validated-shader-additions \
   --signing-key /private/path/signing-seed --output shaders.json
 ```
 
-The native validator checks descriptor shapes and ranges, 252-byte pixel keys and their FNV-1a hashes, vertex variants and packed masks, attribute formats, four-bit border masks, legacy alpha defaults, and map-local pipeline dependencies. Conflicting shader definitions are rejected. Each snapshot allows at most 32 maps, 4 MiB per file, 8 MiB total decoded files, and a 16 MiB envelope; each map permits at most 8192 descriptors. The bundled and downloaded union permits at most 16384 descriptors per map.
+The native validator checks descriptor shapes and ranges, 252-byte pixel keys and their FNV-1a hashes, vertex variants and packed masks, attribute formats, four-bit border masks, legacy alpha defaults, and map-local pipeline dependencies. Conflicting shader definitions are rejected. Each snapshot allows at most 32 maps, 4 MiB per decoded file, 8 MiB total decoded files, and a 64 KiB index envelope. Compressed downloads allow at most 4 MiB per map and 8 MiB total. Each map permits at most 8192 descriptors. The bundled and downloaded union permits at most 16384 descriptors per map.
+
+The index retains the signed envelope's manifest, signature, and payload fields. Its payload is `{"files":{"a10.txt":"RAW_SHA256:RAW_BYTES:COMPRESSED_SHA256:COMPRESSED_BYTES"}}`. Hashes use lowercase SHA-256 and sizes use positive decimal integers without leading zeros. A map downloads from `shader-maps/COMPRESSED_SHA256.zlib` alongside the feed. The zlib stream must end exactly at its declared raw length, without trailing bytes. The signed index authenticates both representations. Asset URLs cannot select another host or directory.
+
+The publisher writes compressed assets before atomically replacing its local index and leaves existing asset files in that output directory. Generate each Pages publication in a fresh staging directory and include exactly the indexed assets and updated publication receipt in the same commit. A Pages deployment replaces the site snapshot; a client using a previous index may briefly receive a missing-asset response. That failure keeps the healthy snapshot and retries the current feed on the next check. Local publisher write ordering does not guarantee asset retention across deployments. Unchanged maps keep the same content address. Clients recheck retained raw files against the index and download only missing or changed maps. Corrupt retained files are downloaded again. All downloads run in the existing background update check; map loading and frame rendering do not fetch data. Partial downloads never activate. A complete set must pass the same native dependency validator before it becomes a pending snapshot for the next launch.
+
+Offline publication tools can still validate `shader-lists-1` envelopes. Clients using the per-map format require a `shader-lists-2` feed at the existing shader URL.
 
 At launch the host freezes a canonical, deduplicated union of bundled records and downloaded additions. Bundled lists always remain. Existing local shader captures are appended by the game as before. Invalid or missing additions fall back to bundled lists.
 
