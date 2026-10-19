@@ -191,7 +191,7 @@ def test_current_release_assets_are_checked_in_and_exact():
     assert len(recordings) == 3
     assert set(assets) == set(overlay.parse_receipt((root / RECEIPT).read_bytes()))
     assert hashlib.sha256(assets[RECORDING]).hexdigest() == (
-        "59f2290a1a4bb9ba06af314c299237322d135a09b2a76b0ff7c111ba9b68ee0b"
+        "a5b73d72c366629d980efa7febe2c40c8099d131284530a12647abf121e8e3cd"
     )
     assert hashlib.sha256(assets[RECORDING_OLD]).hexdigest() == (
         "69655d46646b69f259e66803204e840306a32740fffe904ce9517550c4650956"
@@ -206,9 +206,9 @@ def test_current_release_assets_are_checked_in_and_exact():
     payload = overlay.validation.packs.decode_json(
         overlay.validation.packs.decode_base64(envelope["payload"], 16 * 1024 * 1024)
     )
-    assert manifest["sequence"] == 2
+    assert manifest["sequence"] == 3
     assert manifest["compatibility"] == "shader-lists-1"
-    assert len(payload["files"]) == 14
+    assert len(payload["files"]) == 15
     assert "b40.txt" in payload["files"]
 
 
