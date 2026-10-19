@@ -21,6 +21,10 @@ so the audio callback is handed to a thread that has one.
 
 #include <SDL3/SDL.h>
 #include <limits.h>
+#if HALO_NATIVE_MAC
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include <pthread.h>
 #include <string.h>
 #include "ios_host.h"
@@ -137,8 +141,44 @@ int64_t host_sdl_thread_id(void)
 backend draws into (gpu_metal.m) */
 static SDL_MetalView metal_view;
 
+#if HALO_NATIVE_MAC
+/* The shared ILP32 guest requests fullscreen on every Apple target. Native Mac
+   defaults to a resizable window while honoring the existing explicit Mac settings. */
+static SDL_WindowFlags native_window_flags(SDL_WindowFlags flags)
+{
+    char mode[32], fullscreen[16];
+    const char *environment = getenv("HALO_DISPLAY_MODE");
+    int wanted = 0;
+
+    host_config_string("display.mode", "", mode, sizeof(mode));
+    if (environment && *environment) snprintf(mode, sizeof(mode), "%s", environment);
+    if (*mode)
+    {
+        wanted = !strcmp(mode, "fullscreen") || !strcmp(mode, "borderless");
+        if (!wanted && strcmp(mode, "windowed"))
+            host_logf(HOST_LOG_WARN, "Unknown native display.mode %s; using a window", mode);
+    }
+    else
+    {
+        environment = getenv("HALO_FULLSCREEN");
+        host_config_string("display.fullscreen", "false", fullscreen, sizeof(fullscreen));
+        if (environment) snprintf(fullscreen, sizeof(fullscreen), "%s", environment);
+        wanted = !strcmp(fullscreen, "true") || !strcmp(fullscreen, "1");
+    }
+    flags = (flags & ~SDL_WINDOW_FULLSCREEN) | SDL_WINDOW_RESIZABLE;
+    return wanted ? flags | SDL_WINDOW_FULLSCREEN : flags;
+}
+#endif
+
 uint32_t host_sdl_create_window(const char *title, int width, int height, int64_t flags)
 {
+#if HALO_NATIVE_MAC
+    SDL_WindowFlags requested = (SDL_WindowFlags)flags;
+    flags = (int64_t)native_window_flags(requested);
+    host_logf(HOST_LOG_INFO, "Native SDL window flags: requested 0x%llx, effective 0x%llx (%s)",
+        (unsigned long long)requested, (unsigned long long)flags,
+        (flags & SDL_WINDOW_FULLSCREEN) ? "explicit fullscreen" : "resizable window");
+#endif
 	SDL_Window *window = SDL_CreateWindow(title, width, height, (SDL_WindowFlags)flags);
 
 	/* a GL window gets its view, and then its touch controls, from
