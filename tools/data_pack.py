@@ -47,7 +47,7 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
 
 
-def helper(name, sources, includes=(), dependencies=()):
+def helper(name, sources, includes=(), dependencies=(), libraries=()):
     """Build shared C validation/signing code, atomically, without external crypto dependencies."""
     sources = [ROOT / source for source in sources]
     tracked = sources + [ROOT / path for path in dependencies]
@@ -59,7 +59,7 @@ def helper(name, sources, includes=(), dependencies=()):
     os.close(descriptor)
     try:
         subprocess.run(["cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-D_DARWIN_C_SOURCE=1", "-O1", "-Wall", "-Wextra", "-Werror",
-                        *[f"-I{ROOT / path}" for path in includes], *map(str, sources), "-o", temporary], check=True)
+                        *[f"-I{ROOT / path}" for path in includes], *map(str, sources), *libraries, "-o", temporary], check=True)
         os.chmod(temporary, 0o755)
         os.replace(temporary, destination)
     finally:
@@ -83,7 +83,7 @@ def profile_delivery_helper():
     return helper("profile-delivery-probe", ["port/ios/tests/profile_delivery_probe.c",
         "port/ios/host/host_profile.c", "port/ios/host/host_profile_catalog.c", "port/ios/host/host_profile_delivery.c",
         "port/third_party/tomlc17/tomlc17.c"], ["port/ios/host", "port/third_party/tomlc17"],
-        ["port/ios/host/host_profile.h", "port/linux/src/port_profile_keys.h", "port/linux/src/halo_display.h"])
+        ["port/ios/host/host_profile.h", "port/linux/src/port_profile_keys.h", "port/linux/src/halo_display.h"], libraries=["-lm"])
 
 
 def device_profile_key(platform, model, chip=""):
