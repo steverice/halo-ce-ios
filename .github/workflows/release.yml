@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Validate unsigned provenance, or perform an approved release'
+        description: 'Validate unsigned provenance, check Claude identity, or perform an approved release'
         type: choice
-        options: [validate, release]
+        options: [validate, auth, release]
         default: validate
       source_sha:
-        description: 'Reviewed full main commit SHA (source SHA when resuming)'
-        required: true
+        description: 'Reviewed full main commit SHA (not needed for auth check; original source SHA when resuming)'
+        required: false
         type: string
       platforms:
         description: 'Existing App Store platforms: ios,tvos,visionos (comma-separated)'
@@ -45,7 +45,7 @@ env:
 
 jobs:
   probe:
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode != 'auth' && github.ref == 'refs/heads/main'
     runs-on: xcode-27
     timeout-minutes: 180
     environment: release
@@ -75,6 +75,27 @@ jobs:
             build/ios/halo_guest.elf
           if-no-files-found: error
           retention-days: 30
+
+  identity-check:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'auth' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+      ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+      ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify Claude workload identity without making an API inference request
+        run: python3 tools/release.py identity-check
 
   preflight:
     needs: probe
@@ -137,6 +158,7 @@ jobs:
     environment: release
     permissions:
       contents: write
+      id-token: write
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
     steps:
@@ -154,7 +176,10 @@ jobs:
           RELEASE_BUILD_POLICY: ${{ vars.RELEASE_BUILD_POLICY }}
           RELEASE_PREFLIGHT_IDENTITY: ${{ needs.preflight.outputs.identity }}
           RELEASE_RECORDING_CONTEXT: ${{ needs.preflight.outputs.recording_context }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           RELEASE_SUMMARY_MODEL: ${{ vars.RELEASE_SUMMARY_MODEL }}
           INCREMENT: ${{ inputs.increment }}
           RESUME_TAG: ${{ inputs.resume_tag }}

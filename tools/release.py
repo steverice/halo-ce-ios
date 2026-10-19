@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +36,15 @@ SUMMARY_TARGET_CHARS = 3000
 SUMMARY_OUTPUT_TOKENS = 4096
 SUMMARY_RESPONSE_LIMIT = 1_048_576
 SUMMARY_TIMEOUT_SECONDS = 60
+WIF_TIMEOUT_SECONDS = 20
+WIF_RESPONSE_LIMIT = 32_768
+WIF_ASSERTION_LIMIT = 16_384
 DEFAULT_SUMMARY_MODEL = "claude-sonnet-5-5"
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_OAUTH_TOKEN_URL = "https://api.anthropic.com/v1/oauth/token"
 ANTHROPIC_API_VERSION = "2023-06-01"
+ANTHROPIC_OIDC_AUDIENCE = "https://api.anthropic.com"
+ANTHROPIC_WIF_SCOPES = frozenset({"workspace:inference", "workspace:developer"})
 
 
 def benchmark_upload_arguments(policy: dict[str, str]) -> list[str]:
@@ -256,7 +264,7 @@ def release_summary_instructions(
     )
 
 
-class _NoAnthropicRedirect(urllib.request.HTTPRedirectHandler):
+class _NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self,
         request: urllib.request.Request,
@@ -269,10 +277,231 @@ class _NoAnthropicRedirect(urllib.request.HTTPRedirectHandler):
         raise urllib.error.HTTPError(
             request.full_url,
             code,
-            "Anthropic summary redirects are not allowed",
+            "Credential endpoint redirects are not allowed",
             headers,
             None,
         )
+
+
+def _wif_configuration(environ: Mapping[str, str]) -> dict[str, str]:
+    required = {
+        "ACTIONS_ID_TOKEN_REQUEST_URL": "GitHub OIDC request URL",
+        "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "GitHub OIDC request credential",
+        "ANTHROPIC_FEDERATION_RULE_ID": "Anthropic federation rule ID",
+        "ANTHROPIC_ORGANIZATION_ID": "Anthropic organization ID",
+        "ANTHROPIC_SERVICE_ACCOUNT_ID": "Anthropic service account ID",
+        "ANTHROPIC_WORKSPACE_ID": "Anthropic workspace ID",
+    }
+    values = {name: environ.get(name, "").strip() for name in required}
+    missing = [label for name, label in required.items() if not values[name]]
+    if missing:
+        raise ValueError(
+            f"Workload identity configuration is missing: {', '.join(missing)}"
+        )
+    if not re.fullmatch(r"fdrl_[A-Za-z0-9]+", values["ANTHROPIC_FEDERATION_RULE_ID"]):
+        raise ValueError("Anthropic federation rule ID is malformed")
+    if not re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        values["ANTHROPIC_ORGANIZATION_ID"],
+    ):
+        raise ValueError("Anthropic organization ID is malformed")
+    if not re.fullmatch(r"svac_[A-Za-z0-9]+", values["ANTHROPIC_SERVICE_ACCOUNT_ID"]):
+        raise ValueError("Anthropic service account ID is malformed")
+    if not re.fullmatch(r"wrkspc_[A-Za-z0-9]+", values["ANTHROPIC_WORKSPACE_ID"]):
+        raise ValueError("Anthropic workspace ID is malformed")
+    endpoint = urllib.parse.urlsplit(values["ACTIONS_ID_TOKEN_REQUEST_URL"])
+    try:
+        endpoint_port = endpoint.port
+    except ValueError:
+        endpoint_port = -1
+    if (
+        endpoint.scheme != "https"
+        or not endpoint.hostname
+        or not endpoint.hostname.lower().endswith(".actions.githubusercontent.com")
+        or endpoint.username is not None
+        or endpoint.password is not None
+        or endpoint_port not in (None, 443)
+        or endpoint.fragment
+        or any(key == "audience" for key, _ in urllib.parse.parse_qsl(endpoint.query))
+    ):
+        raise ValueError("GitHub OIDC request URL is invalid")
+    return values
+
+
+def _require_release_wif_job(environ: Mapping[str, str]) -> None:
+    expected = {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_REPOSITORY": "steverice/visr",
+        "GITHUB_WORKFLOW_REF": "steverice/visr/.github/workflows/release.yml@refs/heads/main",
+    }
+    if any(environ.get(name) != value for name, value in expected.items()):
+        raise ValueError(
+            "Workload identity is restricted to the release workflow_dispatch on main"
+        )
+    if environ.get("GITHUB_JOB") not in {"identity-check", "prepare"}:
+        raise ValueError("Workload identity is unavailable to this release job")
+
+
+def _open_json_response(
+    opener: Any,
+    request: urllib.request.Request,
+    *,
+    timeout: int,
+    limit: int,
+    label: str,
+) -> dict[str, Any]:
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            raw = response.read(limit + 1)
+    except urllib.error.HTTPError as error:
+        raise ValueError(
+            f"{label} returned HTTP {error.code}; authentication stopped"
+        ) from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise ValueError(
+            f"{label} request failed or timed out; authentication stopped"
+        ) from None
+    if len(raw) > limit:
+        raise ValueError(f"{label} response exceeded its size limit")
+    try:
+        decoded = json.loads(raw.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError(f"{label} returned invalid JSON") from None
+    if not isinstance(decoded, dict):
+        raise TypeError(f"{label} returned malformed JSON")
+    return decoded
+
+
+def _github_oidc_claims(assertion: str) -> dict[str, Any]:
+    parts = assertion.split(".")
+    if len(parts) != 3 or len(assertion) > WIF_ASSERTION_LIMIT:
+        raise ValueError("GitHub OIDC endpoint returned a malformed token")
+    try:
+        payload = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+        claims = json.loads(payload.decode("utf-8", errors="strict"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        raise ValueError("GitHub OIDC endpoint returned a malformed token") from None
+    if not isinstance(claims, dict):
+        raise TypeError("GitHub OIDC endpoint returned malformed token claims")
+    expected = {
+        "iss": "https://token.actions.githubusercontent.com",
+        "sub": "repo:steverice/visr:environment:release",
+        "repository": "steverice/visr",
+        "repository_owner": "steverice",
+        "ref": "refs/heads/main",
+        "event_name": "workflow_dispatch",
+        "workflow_ref": "steverice/visr/.github/workflows/release.yml@refs/heads/main",
+        "environment": "release",
+    }
+    audience = claims.get("aud")
+    audiences = audience if isinstance(audience, list) else [audience]
+    if (
+        any(claims.get(name) != value for name, value in expected.items())
+        or ANTHROPIC_OIDC_AUDIENCE not in audiences
+    ):
+        raise ValueError(
+            "GitHub OIDC token does not match the protected release workflow"
+        )
+    return claims
+
+
+def exchange_anthropic_access_token(
+    *,
+    environ: Mapping[str, str] | None = None,
+    opener: Any | None = None,
+) -> tuple[str, dict[str, int | str]]:
+    """Exchange one fresh GitHub assertion for a short-lived, inference-scoped Claude token."""
+    environment = os.environ if environ is None else environ
+    settings = _wif_configuration(environment)
+    _require_release_wif_job(environment)
+    request_url = settings["ACTIONS_ID_TOKEN_REQUEST_URL"]
+    parts = urllib.parse.urlsplit(request_url)
+    query = (
+        parts.query
+        + ("&" if parts.query else "")
+        + urllib.parse.urlencode({"audience": ANTHROPIC_OIDC_AUDIENCE})
+    )
+    oidc_url = urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, query, "")
+    )
+    client = opener or urllib.request.build_opener(_NoCredentialRedirect())
+    oidc_request = urllib.request.Request(
+        oidc_url,
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer " + settings["ACTIONS_ID_TOKEN_REQUEST_TOKEN"],
+        },
+        method="GET",
+    )
+    oidc_result = _open_json_response(
+        client,
+        oidc_request,
+        timeout=WIF_TIMEOUT_SECONDS,
+        limit=WIF_RESPONSE_LIMIT,
+        label="GitHub OIDC endpoint",
+    )
+    assertion = oidc_result.get("value")
+    if not isinstance(assertion, str) or not assertion:
+        raise ValueError("GitHub OIDC endpoint returned no token")
+    _github_oidc_claims(assertion)
+    exchange_request = urllib.request.Request(
+        ANTHROPIC_OAUTH_TOKEN_URL,
+        data=json.dumps(
+            {
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+                "federation_rule_id": settings["ANTHROPIC_FEDERATION_RULE_ID"],
+                "organization_id": settings["ANTHROPIC_ORGANIZATION_ID"],
+                "service_account_id": settings["ANTHROPIC_SERVICE_ACCOUNT_ID"],
+                "workspace_id": settings["ANTHROPIC_WORKSPACE_ID"],
+            },
+            separators=(",", ":"),
+        ).encode("utf-8"),
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method="POST",
+    )
+    result = _open_json_response(
+        client,
+        exchange_request,
+        timeout=WIF_TIMEOUT_SECONDS,
+        limit=WIF_RESPONSE_LIMIT,
+        label="Anthropic token exchange",
+    )
+    token = result.get("access_token")
+    expiry = result.get("expires_in")
+    scope = result.get("scope")
+    if (
+        not isinstance(token, str)
+        or not token.startswith("sk-ant-oat01-")
+        or any(character.isspace() for character in token)
+        or result.get("token_type") != "Bearer"
+        or isinstance(expiry, bool)
+        or not isinstance(expiry, int)
+        or expiry < 1
+        or not isinstance(scope, str)
+        or scope not in ANTHROPIC_WIF_SCOPES
+    ):
+        raise ValueError(
+            "Anthropic token exchange returned invalid or over-scoped credentials"
+        )
+    return token, {"scope": scope, "expires_in": expiry}
+
+
+def require_wif_configuration(environ: Mapping[str, str] | None = None) -> None:
+    """Fail before release metadata changes when the protected job lacks WIF setup."""
+    environment = os.environ if environ is None else environ
+    _wif_configuration(environment)
+    _require_release_wif_job(environment)
+
+
+def identity_check() -> None:
+    _token, metadata = exchange_anthropic_access_token()
+    print(
+        "Anthropic workload identity authentication succeeded "
+        f"(scope={metadata['scope']}, expires_in={metadata['expires_in']}s)"
+    )
 
 
 def anthropic_release_summary(
@@ -285,11 +514,6 @@ def anthropic_release_summary(
     model: str | None = None,
 ) -> str:
     """Generate one fail-closed summary without logging request or response data."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError(
-            "ANTHROPIC_API_KEY must be configured as a release-environment secret"
-        )
     selected_model = model or release_summary_model()
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,79}", selected_model):
         raise ValueError("Release summary model is invalid")
@@ -319,18 +543,20 @@ def anthropic_release_summary(
         },
         ensure_ascii=False,
     ).encode("utf-8")
+    require_wif_configuration()
+    opener = urllib.request.build_opener(_NoCredentialRedirect())
+    access_token, _metadata = exchange_anthropic_access_token(opener=opener)
     request = urllib.request.Request(
         ANTHROPIC_MESSAGES_URL,
         data=payload,
         headers={
             "Accept": "application/json",
-            "X-Api-Key": api_key,
+            "Authorization": "Bearer " + access_token,
             "Anthropic-Version": ANTHROPIC_API_VERSION,
             "Content-Type": "application/json",
         },
         method="POST",
     )
-    opener = urllib.request.build_opener(_NoAnthropicRedirect())
     try:
         with opener.open(request, timeout=SUMMARY_TIMEOUT_SECONDS) as response:
             raw = response.read(SUMMARY_RESPONSE_LIMIT + 1)
@@ -431,10 +657,7 @@ def prepare(args: argparse.Namespace) -> None:
         catalog_context = validation.validate_recording_summary_context(
             os.environ.get("RELEASE_RECORDING_CONTEXT", ""), policy
         )
-        if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
-            raise ValueError(
-                "ANTHROPIC_API_KEY must be configured as a release-environment secret"
-            )
+        require_wif_configuration()
         summary_model = release_summary_model()
         tags = run("git", "tag", "--list", "visr-v*", capture=True).splitlines()
         for tag in tags:
@@ -1100,15 +1323,22 @@ def main() -> None:
         required=True,
         help="Immutable release tag checkout at GITHUB_WORKSPACE; controller remains separate",
     )
+    commands.add_parser("identity-check")
     args = parser.parse_args()
     try:
-        prepare(args) if args.command == "prepare" else publish(args)
+        if args.command == "prepare":
+            prepare(args)
+        elif args.command == "publish":
+            publish(args)
+        else:
+            identity_check()
     except (
         ValueError,
         OSError,
         subprocess.CalledProcessError,
         TimeoutError,
         KeyError,
+        TypeError,
     ) as error:
         parser.exit(1, f"Release stopped: {error}\n")
 

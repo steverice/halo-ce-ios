@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -42,6 +43,67 @@ def recording_summary_context() -> dict[str, Any]:
             },
         ],
     }
+
+
+def _configure_wif_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "ACTIONS_ID_TOKEN_REQUEST_URL",
+        "https://pipelines.actions.githubusercontent.com/test-id?api-version=2",
+    )
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "github-request-token-fixture")
+    monkeypatch.setenv("ANTHROPIC_FEDERATION_RULE_ID", "fdrl_test")
+    monkeypatch.setenv(
+        "ANTHROPIC_ORGANIZATION_ID", "00000000-0000-0000-0000-000000000000"
+    )
+    monkeypatch.setenv("ANTHROPIC_SERVICE_ACCOUNT_ID", "svac_test")
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_test")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "steverice/visr")
+    monkeypatch.setenv(
+        "GITHUB_WORKFLOW_REF",
+        "steverice/visr/.github/workflows/release.yml@refs/heads/main",
+    )
+    monkeypatch.setenv("GITHUB_JOB", "prepare")
+
+
+def _github_oidc_jwt_fixture(**changes: Any) -> str:
+    claims: dict[str, Any] = {
+        "iss": "https://token.actions.githubusercontent.com",
+        "aud": "https://api.anthropic.com",
+        "sub": "repo:steverice/visr:environment:release",
+        "repository": "steverice/visr",
+        "repository_owner": "steverice",
+        "ref": "refs/heads/main",
+        "event_name": "workflow_dispatch",
+        "workflow_ref": "steverice/visr/.github/workflows/release.yml@refs/heads/main",
+        "environment": "release",
+    }
+    claims.update(changes)
+    payload = (
+        base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+    )
+    return f"header.{payload}.signature"
+
+
+@pytest.fixture(autouse=True)
+def _release_wif_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure_wif_environment(monkeypatch)
+
+
+def _stub_wif_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        release,
+        "exchange_anthropic_access_token",
+        lambda **_kwargs: (
+            "sk-ant-oat01-test-access-token",
+            {
+                "scope": "workspace:inference",
+                "expires_in": 600,
+            },
+        ),
+    )
 
 
 class FakeAPI:
@@ -281,7 +343,8 @@ def test_anthropic_summary_uses_messages_api_and_release_facts(
             calls.append((request, timeout))
             return FakeResponse()
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    _stub_wif_access_token(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "legacy-key-must-not-win")
     monkeypatch.setenv("RELEASE_SUMMARY_MODEL", "claude-sonnet-5-5")
     monkeypatch.setattr(
         release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
@@ -299,7 +362,10 @@ def test_anthropic_summary_uses_messages_api_and_release_facts(
     assert len(calls) == 1
     request, timeout = calls[0]
     assert request.full_url == "https://api.anthropic.com/v1/messages"
-    assert request.get_header("X-api-key") == "test-api-key"
+    assert (
+        request.get_header("Authorization") == "Bearer sk-ant-oat01-test-access-token"
+    )
+    assert request.get_header("X-api-key") is None
     assert request.get_header("Anthropic-version") == "2023-06-01"
     assert timeout == 60
     payload = json.loads(request.data)
@@ -378,10 +444,25 @@ def test_recording_summary_context_requires_complete_preflight_output(
         validate_recording_summary_context(value, policy())
 
 
-def test_anthropic_summary_requires_release_secret_before_network(
+def test_anthropic_summary_requires_wif_configuration_before_network(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for name in (
+        "ACTIONS_ID_TOKEN_REQUEST_URL",
+        "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+        "ANTHROPIC_FEDERATION_RULE_ID",
+        "ANTHROPIC_ORGANIZATION_ID",
+        "ANTHROPIC_SERVICE_ACCOUNT_ID",
+        "ANTHROPIC_WORKSPACE_ID",
+        "GITHUB_ACTIONS",
+        "GITHUB_EVENT_NAME",
+        "GITHUB_REF",
+        "GITHUB_REPOSITORY",
+        "GITHUB_WORKFLOW_REF",
+        "GITHUB_JOB",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "legacy-key-must-not-be-used")
     monkeypatch.setattr(
         release.urllib.request,
         "build_opener",
@@ -389,7 +470,7 @@ def test_anthropic_summary_requires_release_secret_before_network(
             "provider must not be called without a configured key"
         ),
     )
-    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+    with pytest.raises(ValueError, match="Workload identity configuration"):
         release.anthropic_release_summary(
             "## 0.3.0\n\n### feat\n\n- Add maps.",
             version="0.3.0",
@@ -479,7 +560,7 @@ def test_anthropic_summary_fails_closed_on_incomplete_refused_or_oversized_outpu
             assert timeout == 60
             return FakeResponse()
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    _stub_wif_access_token(monkeypatch)
     monkeypatch.setattr(
         release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
     )
@@ -492,10 +573,11 @@ def test_anthropic_summary_fails_closed_on_incomplete_refused_or_oversized_outpu
         )
 
 
-def test_anthropic_summary_error_does_not_expose_key_or_response_body(
+def test_anthropic_summary_error_does_not_expose_legacy_key_or_response_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    secret = "test-api-key"
+    secret = "legacy-api-key-must-not-be-used"
+    _stub_wif_access_token(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
 
     class FakeOpener:
@@ -550,7 +632,7 @@ def test_anthropic_summary_accepts_output_between_target_and_hard_limit(
             assert timeout == 60
             return FakeResponse()
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    _stub_wif_access_token(monkeypatch)
     monkeypatch.setattr(
         release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
     )
@@ -583,7 +665,7 @@ def test_anthropic_summary_rejects_malformed_response_json(
             assert timeout == 60
             return FakeResponse()
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    _stub_wif_access_token(monkeypatch)
     monkeypatch.setattr(
         release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
     )
@@ -614,7 +696,7 @@ def test_anthropic_summary_response_byte_budget_fails_closed(
             assert timeout == 60
             return FakeResponse()
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    _stub_wif_access_token(monkeypatch)
     monkeypatch.setattr(
         release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
     )
@@ -635,6 +717,7 @@ def test_anthropic_summary_timeout_fails_without_revealing_provider_data(
             assert timeout == 60
             raise TimeoutError("secret response body and test-api-key")
 
+    _stub_wif_access_token(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
     monkeypatch.setattr(
         release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
@@ -654,10 +737,10 @@ def test_anthropic_redirect_handler_refuses_cross_host_redirect() -> None:
     request = release.urllib.request.Request(
         release.ANTHROPIC_MESSAGES_URL,
         data=b"{}",
-        headers={"X-Api-Key": "test-api-key"},
+        headers={"Authorization": "Bearer short-lived-token"},
         method="POST",
     )
-    handler = release._NoAnthropicRedirect()
+    handler = release._NoCredentialRedirect()
     with pytest.raises(urllib.error.HTTPError) as error:
         handler.redirect_request(
             request,
@@ -981,7 +1064,6 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
         },
     )()
     monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
     monkeypatch.setenv(
         "RELEASE_RECORDING_CONTEXT", json.dumps(recording_summary_context())
     )
@@ -1083,7 +1165,21 @@ def test_prepare_resume_reuses_pinned_summary_without_provider_call(
         "RELEASE_PREFLIGHT_IDENTITY",
         preflight_identity(source, ["ios", "tvos"], policy()),
     )
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    for name in (
+        "ACTIONS_ID_TOKEN_REQUEST_URL",
+        "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+        "ANTHROPIC_FEDERATION_RULE_ID",
+        "ANTHROPIC_ORGANIZATION_ID",
+        "ANTHROPIC_SERVICE_ACCOUNT_ID",
+        "ANTHROPIC_WORKSPACE_ID",
+        "GITHUB_ACTIONS",
+        "GITHUB_EVENT_NAME",
+        "GITHUB_REF",
+        "GITHUB_REPOSITORY",
+        "GITHUB_WORKFLOW_REF",
+        "GITHUB_JOB",
+    ):
+        monkeypatch.delenv(name, raising=False)
     args = type(
         "Args",
         (),
@@ -1131,7 +1227,7 @@ def test_prepare_refuses_stale_main_before_any_mutation(
     )
 
 
-def test_prepare_requires_summary_secret_before_version_or_tag_changes(
+def test_prepare_requires_wif_config_before_version_or_tag_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = "a" * 40
@@ -1150,7 +1246,7 @@ def test_prepare_requires_summary_secret_before_version_or_tag_changes(
     monkeypatch.setenv(
         "RELEASE_RECORDING_CONTEXT", json.dumps(recording_summary_context())
     )
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_FEDERATION_RULE_ID", raising=False)
     from tools.release_validation import preflight_identity
 
     monkeypatch.setenv(
@@ -1169,13 +1265,287 @@ def test_prepare_requires_summary_secret_before_version_or_tag_changes(
         },
     )()
 
-    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+    with pytest.raises(ValueError, match="Workload identity configuration"):
         release.prepare(args)
 
     assert not any(
         call[:2] in [("cz", "bump"), ("git", "tag"), ("git", "commit"), ("git", "push")]
         for call in calls
     )
+
+
+@pytest.mark.parametrize("scope", ["workspace:inference", "workspace:developer"])
+def test_workload_identity_exchange_uses_github_assertion_and_workspace_scope(
+    monkeypatch: pytest.MonkeyPatch, scope: str
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    assertion = _github_oidc_jwt_fixture()
+    access_token = "sk-ant-oat01-fixture-access-token"
+    responses = [
+        json.dumps({"value": assertion}).encode(),
+        json.dumps(
+            {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 600,
+                "scope": scope,
+            }
+        ).encode(),
+    ]
+    requests: list[Any] = []
+
+    class FakeResponse:
+        def __init__(self, body: bytes) -> None:
+            self.body = body
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, limit: int = -1) -> bytes:
+            assert len(self.body) <= limit
+            return self.body
+
+    class FakeOpener:
+        def open(self, request: Any, timeout: int) -> FakeResponse:
+            requests.append((request, timeout))
+            return FakeResponse(responses.pop(0))
+
+    token, metadata = release.exchange_anthropic_access_token(opener=FakeOpener())
+
+    assert token == access_token
+    assert metadata == {"scope": scope, "expires_in": 600}
+    assert len(requests) == 2
+    oidc_request, oidc_timeout = requests[0]
+    assert oidc_request.full_url.startswith(
+        "https://pipelines.actions.githubusercontent.com/test-id?api-version=2&"
+    )
+    assert "audience=https%3A%2F%2Fapi.anthropic.com" in oidc_request.full_url
+    assert (
+        oidc_request.get_header("Authorization")
+        == "Bearer github-request-token-fixture"
+    )
+    assert oidc_timeout == release.WIF_TIMEOUT_SECONDS
+    exchange_request, exchange_timeout = requests[1]
+    assert exchange_request.full_url == "https://api.anthropic.com/v1/oauth/token"
+    assert exchange_request.get_header("Content-type") == "application/json"
+    assert "Authorization" not in exchange_request.header_items()
+    assert exchange_timeout == release.WIF_TIMEOUT_SECONDS
+    assert json.loads(exchange_request.data) == {
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": assertion,
+        "federation_rule_id": "fdrl_test",
+        "organization_id": "00000000-0000-0000-0000-000000000000",
+        "service_account_id": "svac_test",
+        "workspace_id": "wrkspc_test",
+    }
+
+
+def test_auth_only_identity_check_exchanges_without_message_request(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    token = "sk-ant-oat01-do-not-print"
+    monkeypatch.setattr(
+        release,
+        "exchange_anthropic_access_token",
+        lambda **_kwargs: (token, {"scope": "workspace:inference", "expires_in": 600}),
+    )
+    monkeypatch.setattr(
+        release,
+        "anthropic_release_summary",
+        lambda *_args, **_kwargs: pytest.fail("auth-only mode must not call Messages"),
+    )
+
+    release.identity_check()
+
+    output = capsys.readouterr().out
+    assert "authentication succeeded" in output.lower()
+    assert "workspace:inference" in output
+    assert token not in output
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ANTHROPIC_FEDERATION_RULE_ID", ""),
+        ("ANTHROPIC_ORGANIZATION_ID", "not-a-uuid"),
+        ("ANTHROPIC_SERVICE_ACCOUNT_ID", ""),
+        ("ANTHROPIC_WORKSPACE_ID", ""),
+        ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", ""),
+    ],
+)
+def test_workload_identity_exchange_rejects_missing_or_malformed_config_before_network(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: str
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    monkeypatch.setenv(field, value)
+    monkeypatch.setattr(
+        release.urllib.request,
+        "build_opener",
+        lambda *_args: pytest.fail("invalid WIF configuration must fail before HTTP"),
+    )
+
+    with pytest.raises(ValueError):
+        release.exchange_anthropic_access_token()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("GITHUB_EVENT_NAME", "push", "restricted to the release workflow_dispatch"),
+        (
+            "GITHUB_REF",
+            "refs/heads/feature",
+            "restricted to the release workflow_dispatch",
+        ),
+        (
+            "GITHUB_REPOSITORY",
+            "other/repo",
+            "restricted to the release workflow_dispatch",
+        ),
+        (
+            "GITHUB_WORKFLOW_REF",
+            "other/repo/.github/workflows/release.yml@refs/heads/main",
+            "restricted to the release workflow_dispatch",
+        ),
+        ("GITHUB_JOB", "testflight", "unavailable to this release job"),
+    ],
+)
+def test_workload_identity_requires_exact_release_dispatch_context_before_network(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: str, message: str
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    monkeypatch.setenv(field, value)
+    monkeypatch.setattr(
+        release.urllib.request,
+        "build_opener",
+        lambda *_args: pytest.fail("untrusted workflow context must fail before HTTP"),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        release.exchange_anthropic_access_token()
+
+
+def test_workload_identity_rejects_oidc_claim_mismatch_before_exchange(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    requests: list[Any] = []
+
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int = -1) -> bytes:
+            return json.dumps(
+                {"value": _github_oidc_jwt_fixture(ref="refs/heads/other")}
+            ).encode()
+
+    class FakeOpener:
+        def open(self, request: Any, timeout: int) -> FakeResponse:
+            requests.append(request)
+            return FakeResponse()
+
+    with pytest.raises(
+        ValueError, match="does not match the protected release workflow"
+    ):
+        release.exchange_anthropic_access_token(opener=FakeOpener())
+    assert len(requests) == 1
+
+
+def test_workload_identity_rejects_overbroad_scope_without_exposing_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    access_token = "sk-ant-oat01-overbroad-fixture-token"
+    responses = [
+        json.dumps({"value": _github_oidc_jwt_fixture()}).encode(),
+        json.dumps(
+            {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 600,
+                "scope": "org:admin",
+            }
+        ).encode(),
+    ]
+
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int = -1) -> bytes:
+            return responses.pop(0)
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> FakeResponse:
+            assert timeout == release.WIF_TIMEOUT_SECONDS
+            return FakeResponse()
+
+    with pytest.raises(ValueError, match="over-scoped credentials") as error:
+        release.exchange_anthropic_access_token(opener=FakeOpener())
+    assert access_token not in str(error.value)
+
+
+def test_workload_identity_timeout_does_not_expose_github_request_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    request_credential = "github-request-credential-fixture"
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", request_credential)
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> Any:
+            assert timeout == release.WIF_TIMEOUT_SECONDS
+            raise TimeoutError(request_credential)
+
+    with pytest.raises(ValueError, match="failed or timed out") as error:
+        release.exchange_anthropic_access_token(opener=FakeOpener())
+    assert request_credential not in str(error.value)
+
+
+def test_workload_identity_exchange_error_does_not_expose_tokens_or_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_wif_environment(monkeypatch)
+    secret = "fixture-private-provider-response"
+
+    class FakeOpener:
+        def open(self, request: Any, timeout: int) -> Any:
+            if request.full_url.startswith(
+                "https://pipelines.actions.githubusercontent.com/"
+            ):
+                return type(
+                    "Response",
+                    (),
+                    {
+                        "__enter__": lambda self: self,
+                        "__exit__": lambda self, *_args: None,
+                        "read": lambda self, _limit=-1: json.dumps(
+                            {"value": _github_oidc_jwt_fixture()}
+                        ).encode(),
+                    },
+                )()
+            raise urllib.error.HTTPError(
+                request.full_url,
+                401,
+                "Unauthorized",
+                {},
+                io.BytesIO(secret.encode()),
+            )
+
+    with pytest.raises(ValueError) as error:
+        release.exchange_anthropic_access_token(opener=FakeOpener())
+    assert secret not in str(error.value)
+    assert "401" in str(error.value)
 
 
 def test_prepare_requires_preflight_catalog_context_before_version_changes(
@@ -1194,7 +1564,6 @@ def test_prepare_requires_preflight_catalog_context_before_version_changes(
     monkeypatch.setattr(release, "run", fake_run)
     monkeypatch.setattr(release, "ROOT", tmp_path)
     monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
     monkeypatch.delenv("RELEASE_RECORDING_CONTEXT", raising=False)
     from tools.release_validation import preflight_identity
 
@@ -1239,7 +1608,6 @@ def test_prepare_requires_verified_catalog_context_before_version_changes(
     monkeypatch.setattr(release, "run", fake_run)
     monkeypatch.setattr(release, "ROOT", tmp_path)
     monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
     monkeypatch.delenv("RELEASE_RECORDING_CONTEXT", raising=False)
     from tools.release_validation import preflight_identity
 
