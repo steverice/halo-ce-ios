@@ -63,7 +63,8 @@ static char last_log[512];
 static void platform_log(const char *format,...) { va_list args;va_start(args,format);vsnprintf(last_log,sizeof(last_log),format,args);va_end(args); }
 #include "__SOURCE__"
 int main(void) {
-    int i;
+    int i,j;
+    const int smaller_rosters[]={32,64,90};
     struct benchmark_mp_arena_config cfg={6,1.5f,3.5f,0.4f};
     for(i=0;i<128;i++) {players[i].unit_index=i;players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;}
     assert(benchmark_mp_arena_configure(&cfg));
@@ -110,9 +111,21 @@ int main(void) {
     assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
     assert(!benchmark_mp_arena_begin_combat()&&!benchmark_mp_arena_combat_ready());
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.left_x&&!pad.fire);
-    assert(benchmark_mp_arena_tick(100)==0&&benchmark_mp_arena_tick(450)==0);
-    assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 127"));benchmark_mp_arena_reset();
-    players[127].unit_index=127;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
+    assert(benchmark_mp_arena_tick(100)==0&&benchmark_mp_arena_tick(450)==0&&benchmark_mp_arena_tick(639)==0);
+    players[127].unit_index=127;
+    assert(benchmark_mp_arena_tick(640)==1&&benchmark_mp_arena_ready()&&positions_set==257);
+    benchmark_mp_arena_reset();players[127].unit_index=NONE;
+    assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(640)==0);
+    assert(benchmark_mp_arena_tick(641)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 127"));benchmark_mp_arena_reset();
+    players[127].unit_index=127;
+    for(j=0;j<3;j++) {
+        target=smaller_rosters[j];
+        players[target-1].unit_index=NONE;
+        assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(450)==0);
+        assert(benchmark_mp_arena_tick(451)==-1&&strstr(last_log,"arena readiness timeout"));
+        benchmark_mp_arena_reset();players[target-1].unit_index=target-1;
+    }
+    target=128;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
     assert(benchmark_mp_arena_tick(1)==-1);assert(strstr(last_log,"arena clock regression")&&strstr(last_log,"previous 20 current 1"));
     benchmark_mp_arena_reset();
     return 0;

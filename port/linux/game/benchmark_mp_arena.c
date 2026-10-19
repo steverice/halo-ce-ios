@@ -223,13 +223,15 @@ int benchmark_mp_arena_tick(long tick)
 	arena.last_tick = tick;
 	if (!arena.ready)
 	{
+		long readiness_deadline = arena.players * 5 > 450 ? arena.players * 5 : 450;
+
 		for (i = 0; i < arena.players; i++)
 		{
 			struct player_datum *player = arena_player(i);
 
 			if (!player || player->unit_index == NONE)
 			{
-				if (tick > 450)
+				if (tick > readiness_deadline)
 				{
 					platform_log("network test: arena readiness timeout: tick %ld actor %d player present %d unit %ld",
 						tick, i, player != NULL, player ? player->unit_index : NONE);
