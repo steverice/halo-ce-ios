@@ -143,3 +143,112 @@ def test_actual_geometry_staging_respawn_and_input_adapter(tmp_path):
     subprocess.run([compiler,"-O2","-std=gnu89","-fms-extensions","-Wno-c99-extensions","-fsanitize=address,undefined","-iquote",str(ROOT / "port/linux/include"),
                     str(path),"-lm","-o",str(binary)],check=True)
     subprocess.run([str(binary)],check=True)
+
+
+def _actual_function(path, name):
+    text = path.read_text()
+    start = text.index("\n" + name + "(") if "\n" + name + "(" in text else -1
+    if start < 0:
+        import re
+        match = re.search(r"^(?:static )?(?:real|long) " + name + r"\(", text, re.M)
+        assert match, name
+        start = match.start()
+    else:
+        start = text.rfind("\n", 0, start) + 1
+    opening = text.index("{", start)
+    depth = 1
+    end = opening + 1
+    while depth:
+        depth += (text[end] == "{") - (text[end] == "}")
+        end += 1
+    return text[start:end]
+
+
+def test_actual_spawn_occupancy_releases_before_full_arena_readiness(tmp_path):
+    """Use stock distance rating and start selection with the actual arena adapter."""
+    prefix = HARNESS.split("int main(void)")[0]
+    prefix = prefix.replace("long unit_index; int local_player_index;", "long unit_index; int team_index; int local_player_index;")
+    prefix = prefix.replace("} players; };", "} players; struct { int count; void *address; } ai_encounters; };")
+    engine = ROOT / "source/game/game_engine.c"
+    players_source = ROOT / "source/game/players.c"
+    stock = r"""
+#define TRUE 1
+#define FALSE 0
+#define DATUM_INDEX_TO_ABSOLUTE_INDEX(x) (x)
+#define PIN(x,lo,hi) ((x)<(lo)?(lo):(x)>(hi)?(hi):(x))
+typedef int boolean;
+static struct { struct { int teams; } universal_variant; } global_variant;
+static int game_engine=1, player_data;
+struct data_iterator { int index; };
+struct encounter_definition { struct { int count; } player_starting_locations; };
+static struct { int selected_squad_index; } ai_debug={NONE};
+static struct player_datum *player_get(long i) { return &players[i]; }
+static void data_iterator_new(struct data_iterator *it,int data) { (void)data; it->index=0; }
+static void *data_iterator_next(struct data_iterator *it) { return it->index<target?&players[it->index++]:NULL; }
+static float distance3d(const real_point3d *a,const real_point3d *b) { return sqrtf((a->x-b->x)*(a->x-b->x)+(a->y-b->y)*(a->y-b->y)+(a->z-b->z)*(a->z-b->z)); }
+static struct scenario *global_scenario_get(void) { return &scenario; }
+static struct player_starting_location *player_get_starting_location(int i) { return &starts[i]; }
+static int game_engine_running(void) { return 1; }
+static float real_random_range(float lo,float hi) { return (lo+hi)*0.5f; }
+__RATING__
+static real game_engine_get_starting_location_rating(long p,const struct player_starting_location *s) { return game_engine_get_distance_rating_for_spawn(p,&s->position); }
+__SELECTION__
+int main(void) {
+    int i;
+    struct benchmark_mp_arena_config cfg={6,1.5f,3.5f,0.4f};
+    struct player_action action={0};
+    struct mp_benchmark_probe_pad pad;
+    starts[1].position.x=100.0f;
+    for(i=0;i<128;i++) {
+        players[i].unit_index=NONE; players[i].team_index=i;
+        players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;
+    }
+    players[0].unit_index=0; positions[0]=starts[0].position;
+    players[1].unit_index=1; positions[1]=starts[1].position;
+    assert(find_best_starting_location_index(2)==NONE); /* both stock starts occupied */
+    assert(benchmark_mp_arena_configure(&cfg));
+    assert(benchmark_mp_arena_tick(0)==0);
+    assert(positions_set==2); /* move local and first remote before all units exist */
+    assert(find_best_starting_location_index(2)==1); /* actual stock selector can spawn again */
+    assert(!benchmark_mp_arena_ready()&&!benchmark_mp_arena_begin_combat());
+    assert(!benchmark_mp_arena_action(1,0,&action));
+    assert(benchmark_mp_arena_gamepad(0,0,&pad)&&!pad.fire);
+    /* Missing/replaced units during setup must be staged again. */
+    players[1].unit_index=NONE;
+    no_ground=1; /* validated geometry is retained while units are still arriving */
+    assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
+    players[1].unit_index=1;positions[1]=starts[1].position;
+    assert(find_best_starting_location_index(2)==NONE);
+    assert(benchmark_mp_arena_tick(2)==0&&benchmark_mp_arena_repositions(1)==2);
+    no_ground=0;
+    assert(find_best_starting_location_index(2)==1);
+    players[1].unit_index=NONE;
+    assert(benchmark_mp_arena_tick(3)==0);
+    players[1].unit_index=128;positions[128]=starts[1].position;
+    assert(benchmark_mp_arena_tick(4)==0&&benchmark_mp_arena_repositions(1)==3);
+    for(i=2;i<128;i++) {
+        assert(find_best_starting_location_index(i)==1);
+        players[i].unit_index=i;positions[i]=starts[1].position;
+        assert(benchmark_mp_arena_tick(i+3)==(i==127));
+        assert(benchmark_mp_arena_ready()==(i==127));
+        assert(benchmark_mp_arena_repositions(i)==1);
+        assert(!benchmark_mp_arena_combat_ready());
+    }
+    assert(benchmark_mp_arena_ready()&&benchmark_mp_arena_begin_combat());
+    /* Invalid full geometry fails before touching even an available unit. */
+    benchmark_mp_arena_reset();no_ground=1;positions_set=0;players[127].unit_index=NONE;
+    assert(benchmark_mp_arena_configure(&cfg));
+    assert(benchmark_mp_arena_tick(0)==-1&&positions_set==0&&!benchmark_mp_arena_ready());
+    return 0;
+}
+"""
+    stock = stock.replace("__RATING__", _actual_function(engine, "game_engine_get_distance_rating_for_spawn"))
+    stock = stock.replace("__SELECTION__", _actual_function(players_source, "find_best_starting_location_index"))
+    path,binary=tmp_path / "arena-stock-spawn.c",tmp_path / "arena-stock-spawn"
+    path.write_text((prefix + stock).replace("__SOURCE__",str(SOURCE)))
+    compiler = shutil.which("clang") or shutil.which("cc")
+    if not compiler:
+        raise SkipTest("A C compiler is required for the game arena probe")
+    subprocess.run([compiler,"-O2","-std=gnu89","-fms-extensions","-Wno-c99-extensions","-fsanitize=address,undefined","-iquote",str(ROOT / "port/linux/include"),
+                    str(path),"-lm","-o",str(binary)],check=True)
+    subprocess.run([str(binary)],check=True)

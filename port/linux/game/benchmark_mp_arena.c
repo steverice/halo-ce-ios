@@ -20,7 +20,7 @@ void platform_log(const char *format, ...);
 static struct
 {
 	struct benchmark_mp_arena_config config;
-	int enabled, ready, failed, players, combat;
+	int enabled, geometry_ready, ready, failed, players, combat;
 	real_point3d points[BENCHMARK_MP_MAXIMUM_PLAYERS], previous[BENCHMARK_MP_MAXIMUM_PLAYERS];
 	long units[BENCHMARK_MP_MAXIMUM_PLAYERS], stuck_ticks[BENCHMARK_MP_MAXIMUM_PLAYERS], last_tick;
 	unsigned long repositions[BENCHMARK_MP_MAXIMUM_PLAYERS];
@@ -207,7 +207,7 @@ static void arena_place(int actor, struct player_datum *player)
 
 int benchmark_mp_arena_tick(long tick)
 {
-	int i;
+	int i, missing_actor = NONE;
 	if (!arena.enabled) return 1;
 	if (arena.failed)
 	{
@@ -221,29 +221,12 @@ int benchmark_mp_arena_tick(long tick)
 	}
 	if (tick == arena.last_tick) return arena.ready;
 	arena.last_tick = tick;
-	if (!arena.ready)
+	if (!arena.geometry_ready)
 	{
-		long readiness_deadline = arena.players * 5 > 450 ? arena.players * 5 : 450;
-
-		for (i = 0; i < arena.players; i++)
-		{
-			struct player_datum *player = arena_player(i);
-
-			if (!player || player->unit_index == NONE)
-			{
-				if (tick > readiness_deadline)
-				{
-					platform_log("network test: arena readiness timeout: tick %ld actor %d player present %d unit %ld",
-						tick, i, player != NULL, player ? player->unit_index : NONE);
-					arena.failed = 1; return -1;
-				}
-				return 0;
-			}
-		}
+		/* Validate every destination before moving any unit. Staging each
+		spawn as it appears releases stock starts for the remaining players. */
 		if (!arena_choose()) { arena.failed = 1; return -1; }
-		for (i = 0; i < arena.players; i++) arena_place(i, arena_player(i));
-		arena.ready = 1;
-		return 1;
+		arena.geometry_ready = 1;
 	}
 	for (i = 0; i < arena.players; i++)
 	{
@@ -251,12 +234,18 @@ int benchmark_mp_arena_tick(long tick)
 		real_point3d position;
 		float dx, dy, moved_x, moved_y, limit = arena.config.movement_radius * 3.0f + 1.0f;
 
-		if (!player)
+		if (!player || player->unit_index == NONE)
 		{
-			platform_log("network test: arena lost player: tick %ld actor %d", tick, i);
-			arena.failed = 1; return -1;
+			if (!player && arena.ready)
+			{
+				platform_log("network test: arena lost player: tick %ld actor %d", tick, i);
+				arena.failed = 1; return -1;
+			}
+			if (missing_actor == NONE) missing_actor = i;
+			/* A missing unit may return with the same datum; stage it again. */
+			arena.units[i] = NONE;
+			continue;
 		}
-		if (player->unit_index == NONE) continue;
 		if (player->unit_index != arena.units[i]) { arena_place(i, player); continue; }
 		object_get_origin(player->unit_index, &position);
 		if (!isfinite(position.x) || !isfinite(position.y) || !isfinite(position.z))
@@ -270,6 +259,24 @@ int benchmark_mp_arena_tick(long tick)
 		arena.previous[i] = position;
 		if (dx * dx + dy * dy > limit * limit || arena.stuck_ticks[i] >= 90 || fabsf(position.z - arena.points[i].z) > 2.0f)
 			arena_place(i, player);
+	}
+	if (!arena.ready)
+	{
+		long readiness_deadline = arena.players * 5 > 450 ? arena.players * 5 : 450;
+
+		if (missing_actor != NONE)
+		{
+			if (tick > readiness_deadline)
+			{
+				struct player_datum *player = arena_player(missing_actor);
+
+				platform_log("network test: arena readiness timeout: tick %ld actor %d player present %d unit %ld",
+					tick, missing_actor, player != NULL, player ? player->unit_index : NONE);
+				arena.failed = 1; return -1;
+			}
+			return 0;
+		}
+		arena.ready = 1;
 	}
 	return 1;
 }
