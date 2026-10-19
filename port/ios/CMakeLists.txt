@@ -22,10 +22,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "visionOS" AND NOT HALO_RENDERER STREQUAL "METAL")
     message(FATAL_ERROR "visionOS supports only HALO_RENDERER=METAL")
 endif()
-if(HALO_RENDERER STREQUAL "METAL")
-    # SDL's UIKit OpenGL ES implementation is unnecessary when the game only builds Metal.
-    set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
-endif()
+include("${CMAKE_CURRENT_LIST_DIR}/RendererBackendOptions.cmake")
 # tools/ios_build.py --render-validation: every call into the GPU backend is checked first
 # (port/linux/src/gpu_validate.h). Off, the app's code is what it is without the option.
 option(HALO_RENDER_VALIDATION "Check every call into the GPU backend (debug.render_validation)" OFF)

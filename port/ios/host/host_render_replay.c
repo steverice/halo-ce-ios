@@ -25,6 +25,7 @@ reached the backend.
 
 #include "ios_host.h"
 #include "host.h"
+#include "renderer_build.h"
 
 #include <TargetConditionals.h>
 
@@ -222,14 +223,15 @@ void host_render_replay(void)
 	replay.last_frame = header.first_frame + header.frame_count - 1;
 	platform_log("render replay: %s (%s, frames %u to %u, made on %s) with %s", path, header.label, header.first_frame,
 		replay.last_frame, header.guest_sha256, replay.metal ? "Metal" : "OpenGL ES");
-#if TARGET_OS_VISION
-	if (!replay.metal)
 	{
-		snprintf(result.error, sizeof(result.error), "an OpenGL ES capture cannot be replayed on visionOS, which has no OpenGL ES");
-		status = -1;
-		goto report;
+		const char *renderer_error = host_render_replay_rejection(replay.metal, TARGET_OS_VISION);
+		if (renderer_error)
+		{
+			snprintf(result.error, sizeof(result.error), "%s", renderer_error);
+			status = -1;
+			goto report;
+		}
 	}
-#endif
 	/* the window, and for OpenGL ES the context, as sdl_platform.c makes them */
 	if (replay.metal)
 	{

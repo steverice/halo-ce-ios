@@ -11,6 +11,9 @@ and the debug keyboard that the game's console reads.
 
 #include "platform.h"
 #include "sdl_platform.h"
+#ifdef HALO_IOS
+#include "renderer_build.h"
+#endif
 #ifndef HALO_IOS
 /* on iOS the GL backend, and GL, run in the host (gpu_gl.c, step 4) */
 #include "gl.h"
@@ -694,7 +697,7 @@ BOOL platform_renderer_metal(void)
 	{
 		const char *renderer = config_string("display.renderer");
 
-		metal = !strcmp(renderer, "metal");
+		metal = host_renderer_selects_metal(renderer);
 		if (!metal && strcmp(renderer, "gl"))
 			platform_log("display.renderer \"%s\" is neither \"gl\" nor \"metal\"; using \"gl\"", renderer);
 	}

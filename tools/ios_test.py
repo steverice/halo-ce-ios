@@ -263,6 +263,7 @@ run(BUILD/'frame-counter-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
 run(BUILD/'metal-state-probe')
+run('python3', 'tools/renderer_build_probe.py')
 run('python3', 'tools/test_metal_border.py')
 # render validation (port/ios/host/gpu_validate.c): deliberately bad draws through a backend that draws
 # nothing, each checked for its named reason; then that a build without the option has none of it

@@ -34,7 +34,7 @@ void platform_log(const char *format, ...) __attribute__((format(printf, 1, 2)))
 
 extern const struct gpu_backend gpu_backend_metal;
 /* nothing calls gpu.h before gpu_initialize (d3d8_device.c's gl_initialize) */
-#if TARGET_OS_VISION
+#if TARGET_OS_VISION || defined(HALO_METAL_ONLY)
 static const struct gpu_backend *backend = &gpu_backend_metal;
 #else
 extern const struct gpu_backend gpu_backend_gl;
@@ -291,6 +291,8 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 	/* host_main.m sets HALO_RENDERER=metal, which overrides config.toml */
 	if (!(flags & GPU_INITIALIZE_METAL))
 		host_fatal("visionOS draws with Metal only, but display.renderer isn't \"metal\"");
+	backend = &gpu_backend_metal;
+#elif defined(HALO_METAL_ONLY)
 	backend = &gpu_backend_metal;
 #else
 	backend = (flags & GPU_INITIALIZE_METAL) ? &gpu_backend_metal : &gpu_backend_gl;

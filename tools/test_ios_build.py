@@ -277,7 +277,7 @@ def test_metal_only_cmake_gate_covers_gl_backend_sources_headers_and_link():
     assert 'gl_functions.c' in gl_block
     assert 'build/ios/gl_include' in gl_block
     assert 'OpenGLES' in gl_block
-    assert 'set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)' in cmake
+    assert 'include("${CMAKE_CURRENT_LIST_DIR}/RendererBackendOptions.cmake")' in cmake
     assert 'if(HALO_MAC AND HALO_RENDERER STREQUAL "BOTH")' in cmake
     assert 'target_compile_definitions(VISR PRIVATE HALO_METAL_ONLY=1)' in cmake
 

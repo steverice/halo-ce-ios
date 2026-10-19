@@ -10,6 +10,7 @@
 #include "host_benchmark.h"
 #include "host_external.h"
 #include "host_cloud_saves.h"
+#include "renderer_build.h"
 #if !TARGET_OS_TV
 #include "host_texture_settings.h"
 #endif
@@ -411,25 +412,24 @@ int main(int argc,char **argv) {
         env[env_count++]="HALO_HOST_MAC=1";env[env_count++]=env_max_fps;
 #endif
 #if TARGET_OS_VISION
-        /* No OpenGL ES on visionOS: the environment overrides config.toml's
-           display.renderer. The aspect is pinned to 16:9, since a visionOS
-           window's size is only a request and the game takes its aspect from
-           the first drawable it sees. */
-        env[env_count++]="HALO_RENDERER=metal";
+        /* The aspect is pinned to 16:9, since a visionOS window's size is only a request and the game takes its aspect
+           from the first drawable it sees. */
         env[env_count++]="HALO_SCREEN_WIDTH=852";
 #endif
-#if TARGET_OS_TV
-        /* The renderer and upscaled textures are the device profile's (profiles/apple-tv.toml: Metal, and no
-           upscaled textures). HALO_RENDERER in the app's own environment (devicectl's
-           DEVICECTL_CHILD_HALO_RENDERER=gl, simctl's SIMCTL_CHILD_) still chooses, for a comparison run. */
-        char env_renderer[32];
+        /* Choose the guest renderer before its environment snapshot and window creation. A Metal-only build overrides
+           the player's config and any launch-time OpenGL request. */
+        static char env_renderer[32];
         const char *launch_renderer=getenv("HALO_RENDERER");
-        if(launch_renderer&&(!strcmp(launch_renderer,"gl")||!strcmp(launch_renderer,"metal"))){
-            snprintf(env_renderer,sizeof(env_renderer),"HALO_RENDERER=%s",launch_renderer);
+        const char *guest_renderer=host_renderer_guest_value(TARGET_OS_VISION,TARGET_OS_TV,launch_renderer);
+        if(guest_renderer){
+            snprintf(env_renderer,sizeof(env_renderer),"HALO_RENDERER=%s",guest_renderer);
             env[env_count++]=env_renderer;
+#if HALO_METAL_ONLY
+            host_logf(HOST_LOG_INFO,"renderer: Metal-only build forces Metal for the game window and GPU backend");
+#elif TARGET_OS_TV
             host_logf(HOST_LOG_INFO,"tvOS: %s from the launch's environment",env_renderer);
-        }
 #endif
+        }
 #if TARGET_OS_TV || TARGET_OS_VISION
         char env_render[64];
         /* A build made with tools/ios_build.py --render-height N draws at N whatever the device's profile says
