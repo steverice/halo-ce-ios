@@ -540,7 +540,9 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 			/* (TEMPLATE.toml is the contributor's starting point, not a profile) */
 			if (length > 5 && length < sizeof(names[0]) && !strcmp(entry->d_name + length - 5, ".toml") &&
 				strcmp(entry->d_name, "TEMPLATE.toml") && strcmp(entry->d_name, "capacity.toml"))
-				snprintf(names[name_count++], sizeof(names[0]), "%s", entry->d_name);
+			{
+				memcpy(names[name_count++], entry->d_name, length + 1);
+			}
 		}
 		closedir(directory);
 		/* (in name order, so the choice never depends on the folder's own order) */

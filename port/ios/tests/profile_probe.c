@@ -153,7 +153,7 @@ static void check_file_read_paths(void)
 
 static void check_layers(void)
 {
-	char drop_in[256], missing[256], encoded[4096];
+	char drop_in[256], missing[256], encoded[4096], boundary_name[64], overlong_name[65];
 	struct host_profile profile;
 
 	write_file("old.toml", "schema = 1\nname = \"Old\"\nkind = \"class\"\n[match]\nplatform = \"tvos\"\n"
@@ -212,6 +212,23 @@ static void check_layers(void)
 	assert(has(&profile, "display.frame_rate", "240") && !profile.class_file[0]);
 	profile = resolve(folder, device("mac", "Mac99,1", "Apple M9 Pro", 12), missing, "");
 	assert(profile.count == 0 && strstr(logged, "no class profile, no model profile"));
+
+	/* A 63-byte profile filename fits; a 64-byte filename is outside the buffer. */
+	memset(boundary_name, 'a', sizeof(boundary_name) - 6);
+	memcpy(boundary_name + sizeof(boundary_name) - 6, ".toml", 6);
+	memset(overlong_name, 'b', sizeof(overlong_name) - 6);
+	memcpy(overlong_name + sizeof(overlong_name) - 6, ".toml", 6);
+	write_file(boundary_name, "schema = 1\nname = \"Boundary\"\nkind = \"model\"\n[match]\nplatform = \"tvos\"\n"
+		"models = [\"Box1,1\"]\n[display]\nrender_height = 1440\n");
+	write_file(overlong_name, "schema = 1\nname = \"Overlong\"\nkind = \"model\"\n[match]\nplatform = \"tvos\"\n"
+		"models = [\"Box1,1\"]\n[display]\nrender_height = 2160\n");
+	profile = resolve(folder, device("tvos", "Box1,1", "", 2), missing, "");
+	assert(!strcmp(profile.model_file, boundary_name) && has(&profile, "display.render_height", "1440"));
+	assert(!strstr(logged, overlong_name));
+	snprintf(drop_in, sizeof(drop_in), "%s/%s", folder, boundary_name);
+	assert(!unlink(drop_in));
+	snprintf(drop_in, sizeof(drop_in), "%s/%s", folder, overlong_name);
+	assert(!unlink(drop_in));
 
 	/* the drop-in file over both, key by key, and announced */
 	snprintf(drop_in, sizeof(drop_in), "%s/device-profile.toml", folder);
