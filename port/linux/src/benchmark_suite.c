@@ -790,6 +790,7 @@ void benchmark_suite_frame(long width, long height)
 			{
 				suite.opened = now;
 				suite.opened_ticks = state.tick;
+				platform_log("benchmark suite: multiplayer measured start scene=%s tick=%ld", suite.scene, state.tick);
 				mp_collect(&state);
 				benchmark_graphics_window(1, (int)width, (int)height);
 				enter(suite_measuring);
@@ -837,6 +838,7 @@ void benchmark_suite_frame(long width, long height)
 					char note[512];
 					int useful = mp_evidence_note(note, sizeof(note));
 
+					platform_log("benchmark suite: multiplayer measured end scene=%s start=%ld tick=%ld", suite.scene, (long)suite.opened_ticks, state.tick);
 					benchmark_graphics_window(0, (int)width, (int)height);
 					finish(useful ? "ok" : "failed", note);
 				}

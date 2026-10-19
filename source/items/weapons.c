@@ -2502,6 +2502,8 @@ static void trigger_create_projectiles(
 				projectile_object_index= object_new(&data);
 				if (projectile_object_index!=NONE)
 				{
+					/* port: attribute success to this producer's actual weapon object. */
+					network_test_suite_weapon_projectile_created(owner_object_index, weapon_index, projectile_object_index);
 					network_test_suite_projectile_created(owner_object_index,
 						network_test_suite_energy_trigger(trigger_definition->magazine_index,
 							weapon_definition->weapon.magazines.count, trigger_definition->rounds_per_shot,

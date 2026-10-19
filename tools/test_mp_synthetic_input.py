@@ -144,10 +144,12 @@ static unsigned long update_server_pending_control_flags[MAXIMUM_NUMBER_OF_PLAYE
 static struct update current_update;
 static struct server_update observed;
 static long game_tick, machine_players[128][MAXIMUM_LOCAL_PLAYERS];
+__TRACE_TYPE__
 static struct { int suite_owned, players_wanted, suite_network_players, mode;
     unsigned long suite_setup_input_ticks;boolean suite_setup_input_reported;
     long suite_weapon_units[128];int suite_weapon_ready[128];
-    long suite_weapon_definitions[6];int suite_weapon_definitions_ready; } network_test;
+    long suite_weapon_definitions[6];int suite_weapon_definitions_ready;
+    struct network_test_weapon_trace suite_weapon_trace[128]; } network_test;
 static int game_connection(void) { return _game_connection_network_server; }
 static boolean game_time_initialized(void) { return TRUE; }
 static long game_time_get(void) { return game_tick; }
@@ -433,8 +435,9 @@ def test_suite_input_reaches_host_tick_snapshot() -> None:
         return header[start:end]
 
     for key, value in {
+        "__TRACE_TYPE__": NETWORK_TEST[NETWORK_TEST.index("struct network_test_weapon_trace\n{"):NETWORK_TEST.index("};", NETWORK_TEST.index("struct network_test_weapon_trace\n{"))+2],
         "__WEAPON_FIXTURES__": WEAPON_FIXTURES.replace("__ITEM_INVENTORY__", function(ITEMS, "void item_in_unit_inventory(")).replace("__IMMEDIATE_DELETE__", function(OBJECTS, "void object_delete_immediately(")),
-        "__BOT_WEAPON__": function(NETWORK_TEST, "static void network_test_suite_clear_bot_weapons(") + function(NETWORK_TEST, "static short network_test_suite_bot_weapon(") if "static short network_test_suite_bot_weapon(" in NETWORK_TEST else "",
+        "__BOT_WEAPON__": function(NETWORK_TEST, "static void network_test_suite_clear_bot_weapons(") + function(NETWORK_TEST, "static void network_test_suite_observe_weapon(") + function(NETWORK_TEST, "static short network_test_suite_bot_weapon(") if "static short network_test_suite_bot_weapon(" in NETWORK_TEST else "",
         "__UNIT_CONTROL_ENUM__": control_enum(UNIT_HEADER, "_unit_control_crouch_modifier_bit"),
         "__WEAPON_CONTROL_ENUM__": control_enum(WEAPON_HEADER, "_weapon_control_integrated_light_bit"),
         "__UNIT_DESIRED_WEAPON__": function(function(UNITS, "void unit_control("), "if (control_data->weapon_index!=NONE)"),
