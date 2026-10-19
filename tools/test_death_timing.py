@@ -25,9 +25,11 @@ def function(source, name):
 
 PRELUDE = r'''
 #include <assert.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <float.h>
+#include <wchar.h>
 typedef int boolean;
 typedef float real;
 typedef unsigned char byte;
@@ -39,6 +41,7 @@ typedef struct {real yaw,pitch;} real_euler_angles2d;
 #define NONE (-1)
 #define MIN(a,b) ((a)<(b)?(a):(b))
 #define MAX(a,b) ((a)>(b)?(a):(b))
+#define NUMBEROF(a) (sizeof(a)/sizeof((a)[0]))
 #define FLAG(b) (1u<<(b))
 #define TEST_FLAG(v,b) ((v)&FLAG(b))
 #define _pi 3.14159265358979323846f
@@ -48,6 +51,7 @@ typedef struct {real yaw,pitch;} real_euler_angles2d;
 #define MAXIMUM_GAMEPADS 8
 #define FIRST_GAMEPAD_ANALOG_BUTTON 0
 #define COOP_CORPSE_VIEW_TICKS 92
+#define _object_mask_unit 2
 enum {_gamepad_analog_button_a=0};
 #define match_assert(...) ((void)0)
 static struct {short loss_timer,respawn_timer;boolean lost_map,respawn,saving_map,reset_map,revert_map;long switch_to_structure_bsp_index;} main_globals;
@@ -56,16 +60,21 @@ static long tick;
 static int paused,cinematic,reverts,attempts,spawns,teleports,player_count=2;
 static long global_scenario_index=1;
 static int projectiles,enemies,airborne,vehicle_moving,spawn_failed,teleport_failed,multiplayer;
+static int drawn_count;
+static wchar_t drawn_text[128];
 static struct {int respawn_failure,respawn_failed;} players_state,*players_globals=&players_state;
 struct player_datum {
     long unit_index,team_index,dead_unit_index;
     struct {short deaths;} statistics;
     struct {short controller_index;} network_player_data;
+    wchar_t name[16];
 };
 static struct player_datum players[4];
-struct object_datum {struct {real_point3d bounding_sphere_center;} object;};
+struct object_datum {struct {real_point3d bounding_sphere_center;long parent_object_index;} object;};
 static struct object_datum objects[4];
 static boolean object_exists[4]={TRUE,TRUE,TRUE,TRUE};
+struct unit_datum {struct {long driver_object_index,player_index;} unit;};
+static struct unit_datum units[104];
 struct gamepad_state {short buttons[32];};
 static struct gamepad_state gamepads[MAXIMUM_GAMEPADS];
 struct observer_result {real_point3d position;};
@@ -104,8 +113,10 @@ static struct object_datum *object_get(long i) {return object_try_and_get(i);}
 static long object_get_ultimate_parent(long i) {return vehicle_moving ? 999 : i;}
 static struct biped_datum *biped_try_and_get(long i) {(void)i;biped.biped.flags=airborne;return &biped;}
 static void *object_try_and_get_and_verify_type(long i,int mask) {
+    if(mask==_object_mask_unit) return object_try_and_get(i);
     (void)i;(void)mask;vehicle.vehicle.unknown_state=vehicle_moving;return &vehicle;
 }
+static struct unit_datum *unit_get(long i) {assert(i>=0&&i<104);return &units[i];}
 static int dangerous_projectiles_near_player(void) {return projectiles;}
 static int any_unit_is_dangerous(void) {return 0;}
 static int ai_enemies_attacking_player(void) {return enemies;}
@@ -123,6 +134,15 @@ static struct gamepad_state *input_get_gamepad_state(short i) {
 static byte input_abstraction_port_accept(short i) {(void)i;return 0;}
 static struct observer_result const *observer_get_camera(short i) {(void)i;return &observer;}
 static real real_local_random_range(real minimum,real maximum) {(void)maximum;return minimum;}
+static boolean players_coop_waiting_to_start(long i) {(void)i;return FALSE;}
+static int usnprintf(wchar_t *buffer,size_t size,wchar_t const *format,...) {
+    va_list args;wchar_t const *name,*hint;int result;(void)format;
+    va_start(args,format);name=va_arg(args,wchar_t const *);hint=va_arg(args,wchar_t const *);va_end(args);
+    result=swprintf(buffer,size,L"SPECTATING %.12ls   (A: NEXT)\r\n%ls",name,hint);return result;
+}
+static void draw_bottom_text(wchar_t const *text) {
+    drawn_count++;wcsncpy(drawn_text,text,NUMBEROF(drawn_text)-1);drawn_text[NUMBEROF(drawn_text)-1]=0;
+}
 static void game_state_revert(void) {reverts++;}
 static real_vector3d zero_vector,*global_zero_vector3d=&zero_vector;
 static void vector3d_from_euler_angles2d(real_vector3d *v,const real_euler_angles2d *a) {
@@ -142,6 +162,7 @@ static void reset(int count) {
     for(i=0;i<MAXIMUM_LOCAL_PLAYERS;i++) coop_spectate_watched[i]=NONE;
     tick=main_loss_last_tick=main_respawn_last_tick=0;
     global_scenario_index=1;
+    drawn_count=0;drawn_text[0]=0;
     paused=cinematic=reverts=attempts=spawns=teleports=0;
     projectiles=enemies=airborne=vehicle_moving=spawn_failed=teleport_failed=multiplayer=0;
     player_count=count;
@@ -326,12 +347,63 @@ static void online_coop_death_camera_grace(void) {
     tick=291;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
     tick=292;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==101);
 }
+static void online_coop_second_death_hud_rider(void) {
+    int stale_hud=0,stale_rider=0,script_rider=0;
+
+    setup_coop_death();
+    wcscpy(players[1].name,L"Rider");
+    objects[1].object.parent_object_index=102;
+    units[102].unit.driver_object_index=NONE;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    tick=92;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==101);
+    assert(coop_spectate_watched[0]==1);
+    assert(coop_spectate_watching_rider(0));
+
+    players[0].unit_index=100;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==NONE);
+    players[0].unit_index=NONE;players[0].dead_unit_index=103;players[0].statistics.deaths=2;
+    tick=93;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==103);
+    assert(coop_spectate_watched[0]==1);
+    drawn_count=0;coop_spectate_draw(0);
+    stale_hud=drawn_count != 0;
+    stale_rider=coop_spectate_watching_rider(0);
+
+    tick=184;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==103);
+    stale_rider=stale_rider||coop_spectate_watching_rider(0);
+    tick=185;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==101);
+    assert(coop_spectate_watching_rider(0));
+    drawn_count=0;coop_spectate_draw(0);
+    assert(drawn_count==1&&wcsstr(drawn_text,L"SPECTATING Rider")!=NULL);
+
+    script_rider=0;
+    assert(coop_spectate_camera_unit(0,TRUE,FALSE,TRUE)==NONE);
+    script_rider=coop_spectate_watching_rider(0);
+    if (stale_hud) puts("FAIL: second death HUD still names the previous teammate during corpse view");
+    if (stale_rider) puts("FAIL: prior rider target still requests the borrowed-camera exception during corpse view");
+    if (script_rider) puts("FAIL: scripted camera still sees the remembered rider target as active");
+    assert(!stale_hud&&!stale_rider&&!script_rider);
+}
+static void online_coop_body_borrow_target(void) {
+    setup_coop_death();
+    players[1].unit_index=NONE;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    assert(!coop_spectate_nothing_to_watch(0));
+    tick=92;assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==100);
+    assert(!coop_spectate_nothing_to_watch(0));
+    object_exists[0]=FALSE;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==NONE);
+    assert(coop_spectate_nothing_to_watch(0));
+}
 int main(void) {
 #ifdef COOP_GRACE_ONLY
     online_coop_death_camera_grace();
+    online_coop_second_death_hud_rider();
+    online_coop_body_borrow_target();
     puts("PASS: network co-op corpse-view grace and lifecycle boundaries");
 #else
     rates();clock_and_lifecycle();coop_blocked();cameras();online_coop_death_camera_grace();
+    online_coop_second_death_hud_rider();
+    online_coop_body_borrow_target();
     puts("PASS: fixed-tick delays, render-only/catch-up frames, pause/cinematics, clock reset,");
     puts("      2-4 player co-op, blocked retry/overflow, immediate retry and dead-camera fallback");
 #endif
@@ -371,7 +443,7 @@ def main():
     coop_globals_start = coop_source.index('static long coop_spectate_watched')
     coop_globals_end = coop_source.index('/* ---------- private code */', coop_globals_start)
     unit += coop_source[coop_globals_start:coop_globals_end]
-    for name in ('next_living_player', 'next_pressed', 'coop_spectate_unit'):
+    for name in ('next_living_player', 'next_pressed', 'unit_is_passenger', 'coop_spectate_unit'):
         unit += function(coop_source, name)
     if 'long coop_spectate_camera_unit(' in coop_source:
         unit += function(coop_source, 'coop_spectate_camera_unit')
@@ -383,6 +455,8 @@ static long coop_spectate_camera_unit(short local_player_index,boolean network_c
     return network_coop && camera_available ? coop_spectate_unit(local_player_index) : NONE;
 }
 '''
+    for name in ('coop_spectate_watching_rider', 'coop_spectate_nothing_to_watch', 'coop_spectate_draw'):
+        unit += function(coop_source, name)
     if args.coop_grace_only:
         unit += '\n#define COOP_GRACE_ONLY 1\n'
     unit += TESTS
