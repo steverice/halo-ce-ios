@@ -206,7 +206,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             id raw_simulation = entry[@"simulation"], raw_mode = entry[@"game_mode"];
             simulation = [raw_simulation isKindOfClass:NSString.class] ? raw_simulation : nil;
             game_mode = [raw_mode isKindOfClass:NSString.class] ? raw_mode : nil;
-            if (!integer_number(entry[@"players"], 2, 32, &players) ||
+            if (!integer_number(entry[@"players"], 2, 128, &players) ||
                 !simulation || !game_mode || ![game_mode isEqual:@"slayer"] ||
                 !integer_number(entry[@"views"], 1, 1, &views) ||
                 !integer_number(entry[@"score_limit"], 1, 1000, &score) ||

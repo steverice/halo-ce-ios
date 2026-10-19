@@ -77,7 +77,7 @@ def test_host_loader_rejects_missing_or_idle_catalog_data(tmp_path, catalog_prob
     assert idle.returncode != 0 and "movement or combat" in idle.stderr.lower()
 
 
-@pytest.mark.parametrize("players", [3, 16, 32])
+@pytest.mark.parametrize("players", [3, 16, 32, 64, 128])
 def test_host_loader_accepts_bounded_network_rosters(tmp_path, catalog_probe, players):
     _write_catalog(tmp_path, _cases(players=players, gameplay=False))
     full = run_probe(catalog_probe, tmp_path, "full")
@@ -89,7 +89,7 @@ def test_host_loader_accepts_bounded_network_rosters(tmp_path, catalog_probe, pl
 
 
 def test_host_loader_rejects_network_roster_over_capacity(tmp_path, catalog_probe):
-    _write_catalog(tmp_path, _cases(players=33, gameplay=False))
+    _write_catalog(tmp_path, _cases(players=129, gameplay=False))
     result = run_probe(catalog_probe, tmp_path, "full")
     assert result.returncode != 0 and "unsupported" in result.stderr
 

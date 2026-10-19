@@ -31,6 +31,7 @@ HARNESS = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define HALO_PORT_MAXIMUM_NETWORK_PLAYERS 128
 #include "benchmark_mp_state.h"
 #define NONE -1
 #define DATUM_INDEX_TO_ABSOLUTE_INDEX(index) (index)
@@ -60,11 +61,11 @@ struct object_iterator { int index; };
 static struct scenario scenario = { _scenario_type_multiplayer };
 static struct game_variant variant = { game_engine_slayer, { 1000 } };
 static struct game_variant_options options;
-static struct player_datum players[33];
-static struct unit_datum units[33];
-static struct weapon_datum weapons[33];
+static struct player_datum players[129];
+static struct unit_datum units[129];
+static struct weapon_datum weapons[129];
 static struct player_action { unsigned long control_flags; struct {float yaw, pitch;} desired_facing;
-    struct {float i, j;} throttle; float primary_trigger; short weapon, grenade, zoom, pad; } actions[33];
+    struct {float i, j;} throttle; float primary_trigger; short weapon, grenade, zoom, pad; } actions[129];
 static int remote_present = 1, queue_ready = 1, projectile_present = 1;
 static int expected_players = 2, actual_players = 2;
 static uint32_t network_test_suite_energy_projectiles(int actor) {return (uint32_t)(actor+7);}
@@ -102,7 +103,7 @@ static int network_test_suite_network_players(void) { return expected_players; }
 static int network_test_suite_map_matches(const char *map) { return strstr(map, "chillout") != NULL; }
 static long local_player_get_player_index(short local) { return local == 0 ? 0 : NONE; }
 static long *machine_get_player_list(long machine) {
-    static long lists[33][4];
+    static long lists[129][4];
     if (machine < 0 || machine >= expected_players) return NULL;
     lists[machine][0] = machine;
     lists[machine][1] = lists[machine][2] = lists[machine][3] = NONE;
@@ -138,7 +139,7 @@ static int failures;
     fprintf(stderr, "MP state line %d: %s\n", __LINE__, #condition); failures++; \
 } } while (0)
 int main(void) {
-    for (int index = 0; index < 33; index++) {
+    for (int index = 0; index < 129; index++) {
         players[index].unit_index = index;
         players[index].local_player_index = index ? NONE : 0;
         players[index].network_player_data.machine_index = index;
@@ -154,6 +155,9 @@ int main(void) {
     }
     actions[1].throttle.j = 0.75f; actions[1].primary_trigger = 1.0f;
     struct benchmark_mp_state state;
+    CHECK(sizeof(state) < 16 * 1024);
+    fprintf(stderr, "benchmark_mp_state_size=%lu bytes actor_limit=%d\n",
+        (unsigned long)sizeof(state), BENCHMARK_MP_ACTORS);
     benchmark_scenario_multiplayer_state(&state);
     CHECK(state.local_players == 1 && state.roster == 2 && state.spawned == 2);
     CHECK(state.actors[1].present && state.actors[1].spawned && state.actors[1].position[0] == 12.0f);
@@ -168,11 +172,11 @@ int main(void) {
     benchmark_scenario_multiplayer_state(&state);
     CHECK(state.roster == 1 && state.spawned == 1 && !state.synthetic_queue_ready && !state.projectiles_alive);
     remote_present = queue_ready = projectile_present = 1;
-    for (int count = 16; count <= 32; count += 16) {
+    for (int count = 16; count <= 128; count *= 2) {
         expected_players = actual_players = count;
         for (int i = 1; i < count; i++) actions[i].throttle.j = 0.75f;
         benchmark_scenario_multiplayer_state(&state);
-        CHECK(BENCHMARK_MP_ACTORS == 32);
+        CHECK(BENCHMARK_MP_ACTORS == 128);
         CHECK(state.roster == count && state.spawned == count && state.synthetic_queue_ready);
         for (int i = 0; i < count && i < BENCHMARK_MP_ACTORS; i++) CHECK(state.actors[i].present && state.actors[i].spawned);
         actual_players = count + 1;
@@ -188,6 +192,9 @@ int main(void) {
         CHECK(!state.synthetic_queue_ready);
         actions[count - 1].throttle.j = 0.75f;
     }
+    expected_players = actual_players = 129;
+    benchmark_scenario_multiplayer_state(&state);
+    CHECK(state.roster == 129 && state.spawned == 129 && !state.synthetic_queue_ready);
     return failures != 0;
 }
 '''

@@ -13,6 +13,7 @@ HARNESS = r'''
 #include <stdio.h>
 #include <string.h>
 #define BENCHMARK_MP_ARENA_PROBE 1
+#define HALO_PORT_MAXIMUM_NETWORK_PLAYERS 128
 #define NONE -1
 #define FLAG(i) (1UL<<(i))
 #define _collision_test_front_facing_surfaces_bit 0
@@ -30,9 +31,9 @@ struct player_datum { long unit_index; int local_player_index; struct { int mach
 struct player_action { unsigned long control_flags; struct {float yaw,pitch;} desired_facing;
     struct {float i,j;} throttle; float primary_trigger; short desired_weapon_index,desired_grenade_index,desired_zoom_level; };
 struct game_input_preferences { int joystick_controls,invert_look; };
-static int target=32,positions_set,no_ground,blocked,profile_inverted,steep_floor,invalid_cluster,blocked_clearance;
-static struct player_datum players[32];
-static real_point3d positions[64];
+static int target=128,positions_set,no_ground,blocked,profile_inverted,steep_floor,invalid_cluster,blocked_clearance;
+static struct player_datum players[128];
+static real_point3d positions[129];
 static struct player_starting_location starts[2];
 static struct scenario scenario={ {2,starts} };
 static int network_test_suite_network_players(void) { return target; }
@@ -40,7 +41,7 @@ static int game_time_initialized(void) { return 1; }
 static int game_in_progress(void) { return 1; }
 static int mp_benchmark_probe_active(void) { return 1; }
 static struct scenario *global_scenario_try_and_get(void) { return &scenario; }
-static long *machine_get_player_list(long machine) { static long lists[32][4];
+static long *machine_get_player_list(long machine) { static long lists[128][4];
     if(machine<0||machine>=target)return NULL;lists[machine][0]=machine;
     lists[machine][1]=lists[machine][2]=lists[machine][3]=NONE;return lists[machine]; }
 static struct player_datum *player_try_and_get(long i) { return i>=0&&i<target?&players[i]:NULL; }
@@ -64,15 +65,15 @@ static void platform_log(const char *format,...) { va_list args;va_start(args,fo
 int main(void) {
     int i;
     struct benchmark_mp_arena_config cfg={6,1.5f,3.5f,0.4f};
-    for(i=0;i<32;i++) {players[i].unit_index=i;players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;}
+    for(i=0;i<128;i++) {players[i].unit_index=i;players[i].local_player_index=i?NONE:0;players[i].network_player_data.machine_index=i;}
     assert(benchmark_mp_arena_configure(&cfg));
     assert(!benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(0)==1&&benchmark_mp_arena_ready());
-    assert(positions_set==32);
-    for(i=0;i<32;i++) assert(benchmark_mp_arena_repositions(i)==1);
-    assert(benchmark_mp_arena_tick(1)==1&&positions_set==32);
+    assert(positions_set==128);
+    for(i=0;i<128;i++) assert(benchmark_mp_arena_repositions(i)==1);
+    assert(benchmark_mp_arena_tick(1)==1&&positions_set==128);
     struct player_action action={0};
-    for(i=1;i<32;i++) {
+    for(i=1;i<128;i++) {
         assert(benchmark_mp_arena_action(i,10,&action));
         assert(isfinite(action.desired_facing.yaw)&&isfinite(action.desired_facing.pitch));
         assert(hypotf(action.throttle.i,action.throttle.j)>0&&hypotf(action.throttle.i,action.throttle.j)<=0.76f);
@@ -85,8 +86,8 @@ int main(void) {
     assert(benchmark_mp_arena_action(1,10,&action));
     assert(hypotf(action.throttle.i,action.throttle.j)>0.2f);
     positions[1]=station;
-    players[31].unit_index=40;
-    assert(benchmark_mp_arena_tick(2)==1&&positions_set==33&&benchmark_mp_arena_repositions(31)==2);
+    players[127].unit_index=40;
+    assert(benchmark_mp_arena_tick(2)==1&&positions_set==129&&benchmark_mp_arena_repositions(127)==2);
     struct mp_benchmark_probe_pad pad;
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.left_x);
     assert(!pad.fire);
@@ -94,7 +95,7 @@ int main(void) {
     assert(benchmark_mp_arena_action(1,10,&action)&&action.primary_trigger>0.0f);
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.fire);
     assert(!benchmark_mp_arena_gamepad(1,10,&pad));
-    benchmark_mp_arena_reset();assert(!benchmark_mp_arena_repositions(31));
+    benchmark_mp_arena_reset();assert(!benchmark_mp_arena_repositions(127));
     assert(benchmark_mp_arena_tick(10)==1&&!benchmark_mp_arena_gamepad(0,10,&pad));
     no_ground=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
     assert(!benchmark_mp_arena_ready());assert(strstr(last_log,"arena geometry exhausted")&&strstr(last_log,"floor misses 8")&&strstr(last_log,"first rejected actor 0"));benchmark_mp_arena_reset();
@@ -105,13 +106,13 @@ int main(void) {
     assert(strstr(last_log,"blocked clearance 8"));benchmark_mp_arena_reset();
     blocked_clearance=0;invalid_cluster=1;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(1)==-1);
     assert(strstr(last_log,"invalid feet clusters 8")&&strstr(last_log,"invalid head clusters 8"));benchmark_mp_arena_reset();
-    invalid_cluster=0;players[31].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
+    invalid_cluster=0;players[127].unit_index=NONE;assert(benchmark_mp_arena_configure(&cfg));
     assert(benchmark_mp_arena_tick(1)==0&&!benchmark_mp_arena_ready());
     assert(!benchmark_mp_arena_begin_combat()&&!benchmark_mp_arena_combat_ready());
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.left_x&&!pad.fire);
     assert(benchmark_mp_arena_tick(100)==0&&benchmark_mp_arena_tick(450)==0);
-    assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 31"));benchmark_mp_arena_reset();
-    players[31].unit_index=31;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
+    assert(benchmark_mp_arena_tick(451)==-1);assert(strstr(last_log,"arena readiness timeout")&&strstr(last_log,"actor 127"));benchmark_mp_arena_reset();
+    players[127].unit_index=127;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
     assert(benchmark_mp_arena_tick(1)==-1);assert(strstr(last_log,"arena clock regression")&&strstr(last_log,"previous 20 current 1"));
     benchmark_mp_arena_reset();
     return 0;

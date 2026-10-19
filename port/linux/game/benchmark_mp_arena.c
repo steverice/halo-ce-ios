@@ -21,9 +21,9 @@ static struct
 {
 	struct benchmark_mp_arena_config config;
 	int enabled, ready, failed, players, combat;
-	real_point3d points[32], previous[32];
-	long units[32], stuck_ticks[32], last_tick;
-	unsigned long repositions[32];
+	real_point3d points[BENCHMARK_MP_MAXIMUM_PLAYERS], previous[BENCHMARK_MP_MAXIMUM_PLAYERS];
+	long units[BENCHMARK_MP_MAXIMUM_PLAYERS], stuck_ticks[BENCHMARK_MP_MAXIMUM_PLAYERS], last_tick;
+	unsigned long repositions[BENCHMARK_MP_MAXIMUM_PLAYERS];
 } arena;
 
 void benchmark_mp_arena_reset(void)
@@ -35,7 +35,7 @@ int benchmark_mp_arena_configure(const struct benchmark_mp_arena_config *config)
 {
 	int players = network_test_suite_network_players(), i;
 
-	if (arena.enabled || players < 2 || players > 32 || !benchmark_mp_arena_valid(config))
+	if (arena.enabled || players < 2 || players > BENCHMARK_MP_MAXIMUM_PLAYERS || !benchmark_mp_arena_valid(config))
 		return 0;
 	arena.config = *config;
 	arena.players = players;
@@ -128,7 +128,7 @@ static int arena_ground(real_point3d *position, int *rejections)
 static int arena_choose(void)
 {
 	struct scenario *scenario = global_scenario_try_and_get();
-	real_point3d points[32] = { 0 };
+	real_point3d points[BENCHMARK_MP_MAXIMUM_PLAYERS] = { 0 };
 	int start, candidates = 0, ground_rejections[5] = { 0 }, sight_rejections = 0, first_rejected_actor = NONE;
 
 	if (!scenario || scenario->players.count <= 0)
@@ -137,7 +137,7 @@ static int arena_choose(void)
 		return 0;
 	}
 	/* Bound setup work even for a malformed or unusually large scenario. */
-	for (start = 0; start < scenario->players.count && start < 128; start++)
+	for (start = 0; start < scenario->players.count && start < BENCHMARK_MP_MAXIMUM_PLAYERS; start++)
 	{
 		struct player_starting_location *location = TAG_BLOCK_GET_ELEMENT(&scenario->players, start, struct player_starting_location);
 		int direction;

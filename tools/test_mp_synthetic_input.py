@@ -49,6 +49,7 @@ typedef unsigned short word;
 __UNIT_CONTROL_ENUM__
 __WEAPON_CONTROL_ENUM__
 #define MAXIMUM_NUMBER_OF_PLAYERS 128
+#define BENCHMARK_MP_MAXIMUM_PLAYERS 128
 #define MAXIMUM_LOCAL_PLAYERS 4
 #define MAXIMUM_WEAPONS_PER_UNIT 4
 #define NUMBER_OF_UNIT_GRENADE_TYPES 2
@@ -75,8 +76,8 @@ struct server_update { word action_count; short pad; struct player_action action
 struct update { long update_number; struct server_update update; };
 struct update_server_queue_datum { short identifier, pad; long next_update_number; struct player_action current_action; };
 struct data_array { int count; struct update_server_queue_datum *data; };
-static struct update_server_queue_datum queues[32];
-static struct data_array queue_array = { 32, queues };
+static struct update_server_queue_datum queues[128];
+static struct data_array queue_array = { 128, queues };
 static struct { int initialized; long next_update_number_to_build; struct data_array *queues; } update_server_globals = {
     TRUE, 0, &queue_array
 };
@@ -84,7 +85,7 @@ static struct { boolean valid; long tick, received_time; } update_server_distrib
 static unsigned long update_server_pending_control_flags[MAXIMUM_NUMBER_OF_PLAYERS];
 static struct update current_update;
 static struct server_update observed;
-static long game_tick, machine_players[32][MAXIMUM_LOCAL_PLAYERS];
+static long game_tick, machine_players[128][MAXIMUM_LOCAL_PLAYERS];
 static struct { int suite_owned, players_wanted, suite_network_players, mode;
     unsigned long suite_setup_input_ticks;boolean suite_setup_input_reported; } network_test;
 static int game_connection(void) { return _game_connection_network_server; }
@@ -107,7 +108,7 @@ static void *datum_try_and_get(struct data_array *array, long player_index) {
     return &array->data[absolute];
 }
 static long *machine_get_player_list(long machine_index) {
-    return machine_index >= 0 && machine_index < 32 ? machine_players[machine_index] : NULL;
+    return machine_index >= 0 && machine_index < 128 ? machine_players[machine_index] : NULL;
 }
 static int valid_real(float value) { return isfinite(value); }
 static int arena_result=1;
@@ -171,7 +172,7 @@ int main(void) {
     game_tick = 62;
     update_server_next_update();
     CHECK(observed.actions[1].throttle.j == 0.0f && observed.actions[1].primary_trigger == 0.0f);
-    for (int count = 16; count <= 32; count += 16) {
+    for (int count = 16; count <= 128; count *= 2) {
         memset(queues, 0, sizeof(queues));
         memset(update_server_distributed_inputs, 0, sizeof(update_server_distributed_inputs));
         queue_array.count = count;
@@ -198,36 +199,36 @@ int main(void) {
         }
     }
     network_test.mode = _network_test_host;
-    queues[31].identifier = 0; /* reject the whole batch before touching earlier valid queues */
-    for (i = 1; i < 31; i++) queues[i].current_action.throttle.j = -0.25f;
+    queues[127].identifier = 0; /* reject the whole batch before touching earlier valid queues */
+    for (i = 1; i < 127; i++) queues[i].current_action.throttle.j = -0.25f;
     network_test_suite_synthetic_input_tick(200);
     CHECK(network_test.mode == _network_test_off);
-    for (i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
-    queues[31].identifier = 32;
+    for (i = 1; i < 127; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
+    queues[127].identifier = 128;
     network_test_suite_synthetic_input_tick(201);
-    for (i = 1; i < 31; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
+    for (i = 1; i < 127; i++) CHECK(queues[i].current_action.throttle.j == -0.25f);
     /* Machine IDs and actual salted datum slots need not have the same index. */
     network_test.mode = _network_test_host;
-    for (i = 0; i < 32; i++) {
+    for (i = 0; i < 128; i++) {
         queues[i].identifier = i + 1;
         memset(&queues[i].current_action, 0, sizeof(queues[i].current_action));
     }
-    for (i = 0; i < 32; i++) {
-        int slot = (i * 7 + 5) % 32;
+    for (i = 0; i < 128; i++) {
+        int slot = (i * 7 + 5) % 128;
         machine_players[i][0] = ((long)(slot + 1) << 16) | slot;
     }
     network_test_suite_synthetic_input_tick(210);
     CHECK(queues[5].current_action.throttle.j == 0.0f); /* the real local datum */
-    for (i = 0; i < 32; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
+    for (i = 0; i < 128; i++) if (i != 5) CHECK(queues[i].current_action.throttle.j > 0.5f);
     network_test.mode=_network_test_host;arena_result=0;last_log[0]=0;
     arena_enabled=1;
     memset(update_server_distributed_inputs,0,sizeof(update_server_distributed_inputs));
-    for(i=0;i<32;i++)memset(&queues[i].current_action,0,sizeof(queues[i].current_action));
+    for(i=0;i<128;i++)memset(&queues[i].current_action,0,sizeof(queues[i].current_action));
     network_test_suite_synthetic_input_tick(1);
     CHECK(network_test.mode==_network_test_host&&!last_log[0]);
     /* Pending units must receive ordinary walking through the real host queues,
        freeing occupied stock starts before the all-unit arena readiness gate. */
-    for(i=1;i<32;i++) {
+    for(i=1;i<128;i++) {
         int slot=DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[i][0]);
         CHECK(update_server_distributed_inputs[slot].valid);
         CHECK(queues[slot].current_action.throttle.j>0.5f);
@@ -235,38 +236,38 @@ int main(void) {
         CHECK(!actual_unit_primary_weapon_flags(queues[slot].current_action.control_flags));
     }
     /* An asynchronous missing queue still waits atomically during setup. */
-    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=0;
-    for(i=0;i<32;i++)queues[i].current_action.throttle.j=-0.25f;
+    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[127][0])].identifier=0;
+    for(i=0;i<128;i++)queues[i].current_action.throttle.j=-0.25f;
     network_test_suite_synthetic_input_tick(2);
     CHECK(network_test.mode==_network_test_host);
-    for(i=0;i<32;i++)CHECK(queues[i].current_action.throttle.j==-0.25f);
-    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=
-        (short)(machine_players[31][0]>>16);
+    for(i=0;i<128;i++)CHECK(queues[i].current_action.throttle.j==-0.25f);
+    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[127][0])].identifier=
+        (short)(machine_players[127][0]>>16);
     CHECK(network_test.suite_setup_input_ticks==1);
     /* Pending readiness never excuses malformed machine membership. */
-    machine_players[31][1]=machine_players[30][0];
+    machine_players[127][1]=machine_players[126][0];
     network_test_suite_synthetic_input_tick(3);
     CHECK(network_test.mode==_network_test_off&&strstr(last_log,"second"));
-    machine_players[31][1]=NONE;
+    machine_players[127][1]=NONE;
     network_test.mode=_network_test_host;
     {
-        long saved=machine_players[31][0];
-        machine_players[31][0]=machine_players[30][0];
+        long saved=machine_players[127][0];
+        machine_players[127][0]=machine_players[126][0];
         network_test_suite_synthetic_input_tick(4);
-        CHECK(network_test.mode==_network_test_off&&strstr(last_log,"duplicate machine 30"));
-        machine_players[31][0]=saved;
+        CHECK(network_test.mode==_network_test_off&&strstr(last_log,"duplicate machine 126"));
+        machine_players[127][0]=saved;
     }
     network_test.mode=_network_test_host;
     arena_enabled=0;
     arena_result=-1;network_test_suite_synthetic_input_tick(1);
     CHECK(network_test.mode==_network_test_off&&strstr(last_log,"arena preparation failed"));
     network_test.mode=_network_test_host;arena_result=1;
-    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[31][0])].identifier=0;
+    queues[DATUM_INDEX_TO_ABSOLUTE_INDEX(machine_players[127][0])].identifier=0;
     network_test_suite_synthetic_input_tick(1);
-    CHECK(network_test.mode==_network_test_off&&strstr(last_log,"machine 31")&&strstr(last_log,"queue ready 0"));
+    CHECK(network_test.mode==_network_test_off&&strstr(last_log,"machine 127")&&strstr(last_log,"queue ready 0"));
     /* In a fresh game, the actual local-action copy survives the remote hook. */
     memset(update_server_distributed_inputs,0,sizeof(update_server_distributed_inputs));
-    for(i=0;i<32;i++)queues[i].identifier=i+1;
+    for(i=0;i<128;i++)queues[i].identifier=i+1;
     network_test.mode=_network_test_host;arena_result=1;
     update_client_globals.saved_action_collection.actions[0].throttle.j=0.2945f;
     game_tick=220;update_server_next_update();

@@ -44,6 +44,8 @@ def after_map_branch() -> str:
 def suite_functions() -> str:
     pieces = [function(NETWORK_TEST, "int network_test_suite_begin("),
               function(NETWORK_TEST, "void network_test_suite_end(void)")]
+    if "static int network_test_synthetic_machine_name(" in NETWORK_TEST:
+        pieces.insert(1, function(NETWORK_TEST, "static int network_test_synthetic_machine_name("))
     if "static int network_test_suite_add_synthetic_players(" in NETWORK_TEST:
         pieces.append(function(NETWORK_TEST, "static int network_test_suite_add_synthetic_players("))
     if "static int network_test_suite_prepare_synthetic_players(" in NETWORK_TEST:
@@ -68,6 +70,7 @@ typedef unsigned short word;
 #define MAXIMUM_LOCAL_PLAYERS 4
 #define NETWORK_GAME_MACHINE_SLOTS 128
 #define NETWORK_GAME_PLAYER_SLOTS 128
+#define BENCHMARK_MP_MAXIMUM_PLAYERS 128
 #define NETWORK_SERVER_MANAGER_FILE "network_server_manager.c"
 #define VALID_INDEX(index, maximum) ((index) >= 0 && (index) < (maximum))
 #define TEST_FLAG(flags, bit) (((flags) & (1UL << (bit))) != 0)
@@ -287,7 +290,7 @@ int main(void) {
     CHECK(server.game.machine_count == 1 && server.game.player_count == 1 &&
         server.game.machines[1].machine_index == NONE);
     network_test_suite_end();
-    for (int count = 2; count <= 32; count += count == 2 ? 14 : 16) {
+    for (int count = 2; count <= 128; count *= 2) {
         reset_game();
         CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", count, 1, 37, 7));
         network_test.setup_seconds = 1.0f; actual_lobby_map_set();
@@ -300,6 +303,15 @@ int main(void) {
             CHECK(server.game.players[i].machine_index == i && server.game.players[i].controller_index == 0);
             CHECK(i == 0 || server.client_machines[i].flags == 0);
         }
+        CHECK(!wcscmp(server.game.machines[1].name, L"B002"));
+        CHECK(server.game.machines[count - 1].name[1] == L'0' + count / 100 &&
+            server.game.machines[count - 1].name[2] == L'0' + (count / 10) % 10 &&
+            server.game.machines[count - 1].name[3] == L'0' + count % 10);
+        for (int player_name_index = 1; player_name_index < count; player_name_index++)
+            CHECK(!wcscmp(server.game.machines[player_name_index].name, server.game.players[player_name_index].name));
+        for (int check_i = 1; check_i < count; check_i++)
+            for (int check_j = check_i + 1; check_j < count; check_j++)
+                CHECK(wcscmp(server.game.machines[check_i].name, server.game.machines[check_j].name) != 0);
         actual_lobby_after_map();
         CHECK(server.game.machine_count == count && server.game.player_count == count);
         now_ms = 250;
@@ -317,9 +329,9 @@ int main(void) {
         CHECK(!network_test_suite_add_synthetic_players(&server));
         CHECK(server.game.player_count == 1 && server.game.machine_count == 1);
         CHECK(server.game.players[0].machine_index == 0);
-        for (int i = 1; i < 32; i++) {
-            CHECK(server.game.players[i].machine_index == NONE);
-            CHECK(server.game.machines[i].machine_index == (failure == 1 && i == 15 ? 15 : NONE));
+        for (int rollback_index = 1; rollback_index < 128; rollback_index++) {
+            CHECK(server.game.players[rollback_index].machine_index == NONE);
+            CHECK(server.game.machines[rollback_index].machine_index == (failure == 1 && rollback_index == 15 ? 15 : NONE));
         }
         network_test_suite_end();
     }

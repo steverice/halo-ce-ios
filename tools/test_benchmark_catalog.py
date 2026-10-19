@@ -74,7 +74,7 @@ def test_catalog_accepts_four_player_handler_value(tmp_path):
     assert next(case for case in benchmark_catalog.load_catalog(tmp_path) if case["kind"] == "multiplayer")["players"] == 4
 
 
-@pytest.mark.parametrize("players", [2, 3, 16, 32])
+@pytest.mark.parametrize("players", [2, 3, 16, 32, 64, 128])
 def test_catalog_accepts_bounded_network_rosters(tmp_path, players):
     _write_catalog(tmp_path, _cases(players=players, gameplay=False))
     cases = benchmark_catalog.load_catalog(tmp_path)
@@ -86,6 +86,12 @@ def test_multiplayer_only_catalog_needs_no_campaign_recording(tmp_path):
     _write_catalog(tmp_path, _cases(gameplay=False))
     cases = benchmark_catalog.load_catalog(tmp_path)
     assert len(cases) == 3 and all(case["kind"] != "gameplay" for case in cases)
+
+
+def test_catalog_rejects_network_roster_over_native_capacity(tmp_path):
+    _write_catalog(tmp_path, _cases(players=129, gameplay=False))
+    with pytest.raises(benchmark_catalog.CatalogError, match="players"):
+        benchmark_catalog.load_catalog(tmp_path)
 
 
 def test_missing_catalog_fails_closed(tmp_path):
@@ -122,7 +128,7 @@ def test_catalog_accepts_legacy_fresh_start_and_repeated_segment_seeds(tmp_path)
 
 @pytest.mark.parametrize("cases,reason", [
     (_cases(gameplay=False, multiplayer=False), "supported multiplayer workload"),
-    (_cases(players=33), "players"),
+    (_cases(players=129), "players"),
     (_cases() | {"bad-id!": {"kind": "menu", "order": 4, "map": "", "difficulty": "normal",
                              "recording": None, "lead": 0, "window": 1}}, "ID"),
 ])

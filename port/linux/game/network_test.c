@@ -125,7 +125,7 @@ static struct
 	long score_to_win;
 	short suite_time_limit_minutes;
 	short suite_network_players;
-	unsigned long suite_repositions[32], suite_scripted_hits, suite_scripted_kills;
+	unsigned long suite_repositions[BENCHMARK_MP_MAXIMUM_PLAYERS], suite_scripted_hits, suite_scripted_kills;
 	long logged_time;
 	boolean public_game;
 	boolean browsing;
@@ -133,7 +133,7 @@ static struct
 	boolean suite_synthetic_added;
 	unsigned long suite_setup_input_ticks;
 	boolean suite_setup_input_reported;
-	uint32_t suite_energy_projectiles[32];
+	uint32_t suite_energy_projectiles[BENCHMARK_MP_MAXIMUM_PLAYERS];
 } network_test;
 
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
@@ -154,7 +154,7 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
 			return 0;
 	if (!strcmp(simulation, "local_controllers") && players == 4)
 		local_players = 4;
-	else if (!strcmp(simulation, "network_players") && players >= 2 && players <= 32)
+	else if (!strcmp(simulation, "network_players") && players >= 2 && players <= BENCHMARK_MP_MAXIMUM_PLAYERS)
 		local_players = 1;
 	else
 		return 0;
@@ -200,14 +200,28 @@ int network_test_suite_map_matches(const char *map)
 
 unsigned long network_test_suite_repositions(int actor)
 {
-	return network_test.suite_owned && actor >= 0 && actor < 32 ?
+	return network_test.suite_owned && actor >= 0 && actor < BENCHMARK_MP_MAXIMUM_PLAYERS ?
 		network_test.suite_repositions[actor] + benchmark_mp_arena_repositions(actor) : 0;
 }
 
 uint32_t network_test_suite_energy_projectiles(int actor)
 {
-	return network_test.suite_owned && actor >= 0 && actor < 32 && actor < network_test.suite_network_players ?
+	return network_test.suite_owned && actor >= 0 && actor < BENCHMARK_MP_MAXIMUM_PLAYERS && actor < network_test.suite_network_players ?
 		network_test.suite_energy_projectiles[actor] : 0;
+}
+
+static int network_test_synthetic_machine_name(wchar_t *name, size_t capacity, int machine_index)
+{
+	int serial = machine_index + 1;
+
+	if (!name || capacity < 5 || machine_index < 1 || machine_index >= BENCHMARK_MP_MAXIMUM_PLAYERS)
+		return 0;
+	name[0] = L'B';
+	name[1] = L'0' + serial / 100;
+	name[2] = L'0' + (serial / 10) % 10;
+	name[3] = L'0' + serial % 10;
+	name[4] = 0;
+	return 1;
 }
 
 void network_test_suite_projectile_created(long owner_unit, int energy)
@@ -217,7 +231,7 @@ void network_test_suite_projectile_created(long owner_unit, int energy)
 	int actor, i;
 
 	if (!energy || !network_test.suite_owned || network_test.mode != _network_test_host ||
-		network_test.suite_network_players < 2 || network_test.suite_network_players > 32 || owner_unit == NONE ||
+		network_test.suite_network_players < 2 || network_test.suite_network_players > BENCHMARK_MP_MAXIMUM_PLAYERS || owner_unit == NONE ||
 		game_connection() != _game_connection_network_server)
 		return;
 	player_index = player_index_from_unit_index(owner_unit);
@@ -268,7 +282,7 @@ static int network_test_suite_add_synthetic_players(struct network_game_server *
 	struct network_game *game = network_game_get_game();
 	int added = 0, target = network_test.suite_network_players, i;
 
-	if (!server || !game || target < 2 || target > 32 || game->machine_count != 1 || game->player_count != 1 ||
+	if (!server || !game || target < 2 || target > BENCHMARK_MP_MAXIMUM_PLAYERS || game->machine_count != 1 || game->player_count != 1 ||
 		game->machines[0].machine_index != 0 || game->maximum_players < target)
 		return 0;
 	for (i = 1; i < target; i++)
@@ -284,14 +298,14 @@ static int network_test_suite_add_synthetic_players(struct network_game_server *
 		struct network_player player = { 0 };
 
 		machine.machine_index = (char)i;
-		machine.name[0] = L'B';
-		machine.name[1] = L'0' + (i + 1) / 10;
-		machine.name[2] = L'0' + (i + 1) % 10;
+		if (!network_test_synthetic_machine_name(machine.name,
+			sizeof(machine.name) / sizeof(machine.name[0]), i))
+			goto rollback;
 		player.machine_index = (char)i;
 		player.controller_index = 0;
 		player.team_index = NONE;
 		player.player_list_index = NONE;
-		memcpy(player.name, machine.name, 3 * sizeof(player.name[0]));
+		memcpy(player.name, machine.name, 5 * sizeof(player.name[0]));
 		if (!network_game_add_machine(game, &machine))
 			goto rollback;
 		added++;
@@ -327,11 +341,11 @@ static int network_test_suite_prepare_synthetic_players(struct network_game_serv
 
 void network_test_suite_synthetic_input_tick(long tick)
 {
-	long player_indices[32];
+	long player_indices[BENCHMARK_MP_MAXIMUM_PLAYERS];
 	int target = network_test.suite_network_players, i, duplicate_machine = NONE, prepared;
 	unsigned short control_flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
 
-	if (!network_test.suite_owned || network_test.mode != _network_test_host || network_test.players_wanted != 1 || target < 2 || target > 32 ||
+	if (!network_test.suite_owned || network_test.mode != _network_test_host || network_test.players_wanted != 1 || target < 2 || target > BENCHMARK_MP_MAXIMUM_PLAYERS ||
 		game_connection() != _game_connection_network_server || tick < 0)
 		return;
 	{
@@ -845,7 +859,7 @@ static void network_test_gather(
 		if (network_test.suite_owned)
 		{
 			int actor = player->local_player_index != NONE ? player->local_player_index : player->network_player_data.machine_index;
-			if (actor >= 0 && actor < 32) network_test.suite_repositions[actor]++;
+			if (actor >= 0 && actor < BENCHMARK_MP_MAXIMUM_PLAYERS) network_test.suite_repositions[actor]++;
 		}
 		platform_log("network test: the host brings player %ld near the first",
 			(long)(player - (struct player_datum *)player_data->data));

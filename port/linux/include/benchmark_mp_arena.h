@@ -2,6 +2,7 @@
 #ifndef BENCHMARK_MP_ARENA_H
 #define BENCHMARK_MP_ARENA_H
 #include "mp_benchmark_probe.h"
+#include "benchmark_mp_limits.h"
 #include <math.h>
 #include <string.h>
 
@@ -29,7 +30,7 @@ static inline int benchmark_mp_arena_offset(const struct benchmark_mp_arena_conf
 	int columns;
 	float distance, lateral;
 
-	if (!benchmark_mp_arena_valid(config) || !position || players < 2 || players > 32 || actor < 0 || actor >= players ||
+	if (!benchmark_mp_arena_valid(config) || !position || players < 2 || players > BENCHMARK_MP_MAXIMUM_PLAYERS || actor < 0 || actor >= players ||
 		!(length >= 0.99f && length <= 1.01f))
 		return 0;
 	if (!actor)

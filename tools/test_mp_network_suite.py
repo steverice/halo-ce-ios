@@ -44,14 +44,16 @@ static int __attribute__((unused)) game_connection(void) { return connection; }
 static void __attribute__((unused)) network_game_abort(void) { aborts++; }
 static void benchmark_mp_arena_reset(void) { }
 struct player_datum {long unit_index;int local_player_index;struct {int machine_index;} network_player_data;};
-static struct player_datum actors[32];
-static long actor_indices[32],machine_players[32][4],owner_player;
+static struct player_datum actors[128];
+static long actor_indices[128],machine_players[128][4],owner_player;
 static long player_index_from_unit_index(long unit) {(void)unit;return owner_player;}
 static struct player_datum *player_try_and_get(long index) {
-    int i;for(i=0;i<32;i++)if(actor_indices[i]==index)return &actors[i];return NULL;
+    int i;for(i=0;i<128;i++)if(actor_indices[i]==index)return &actors[i];return NULL;
 }
-static long *machine_get_player_list(long machine) {return machine>=0&&machine<32?machine_players[machine]:NULL;}
+static long *machine_get_player_list(long machine) {return machine>=0&&machine<128?machine_players[machine]:NULL;}
 #define NONE -1
+#define HALO_PORT_MAXIMUM_NETWORK_PLAYERS 128
+#define BENCHMARK_MP_MAXIMUM_PLAYERS 128
 __NETWORK_STATE__
 __BEGIN_FUNCTION__
 __GETTER_FUNCTIONS__
@@ -70,7 +72,7 @@ int main(void) {
     CHECK(!network_test_suite_begin("local_controllers", "../bloodgulch", "slayer", 4, 1, 1000, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "ctf", 4, 1, 1000, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 2, 1000, 0));
-    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 33, 1, 1000, 0));
+    CHECK(!network_test_suite_begin("network_players", "chillout", "slayer", 129, 1, 1000, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 0, 0));
     CHECK(!network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 121));
     CHECK(network_test.mode == _network_test_off && !network_test.suite_owned);
@@ -100,7 +102,7 @@ int main(void) {
     CHECK(network_test_suite_begin("local_controllers", "chillout", "slayer", 4, 1, 1000, 0));
     network_test_suite_end();
     CHECK(aborts == 1);
-    for (players = 2; players <= 32; players++) {
+    for (players = 2; players <= 128; players++) {
         CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
         CHECK(network_test.players_wanted == 1);
         CHECK(network_test_suite_network_players() == players);
@@ -109,42 +111,42 @@ int main(void) {
         CHECK(network_test_suite_begin("network_players", "bloodgulch", "slayer", players, 1, 37, 7));
         memcpy(snapshot, &network_test, sizeof(network_test));
         CHECK(!network_test_suite_begin("network_players", "sidewinder", "slayer", players, 1, 37, 7));
-        CHECK(!network_test_suite_begin("network_players", "bloodgulch", "slayer", players == 32 ? 2 : players + 1, 1, 37, 7));
+        CHECK(!network_test_suite_begin("network_players", "bloodgulch", "slayer", players == 128 ? 129 : players + 1, 1, 37, 7));
         CHECK(!memcmp(snapshot, &network_test, sizeof(network_test)));
         network_test_suite_end();
     }
-    CHECK(network_test_suite_begin("network_players","bloodgulch","slayer",32,1,1000,0));
+    CHECK(network_test_suite_begin("network_players","bloodgulch","slayer",128,1,1000,0));
     connection=_game_connection_network_server;
-    for(i=0;i<32;i++) {
+    for(i=0;i<128;i++) {
         actors[i].unit_index=500+i;actors[i].local_player_index=i?NONE:0;
         actors[i].network_player_data.machine_index=i;actor_indices[i]=((long)(i+1)<<16)|i;
         machine_players[i][0]=actor_indices[i];
         machine_players[i][1]=machine_players[i][2]=machine_players[i][3]=NONE;
     }
-    owner_player=actor_indices[31];
-    network_test_suite_projectile_created(531,0);CHECK(!network_test_suite_energy_projectiles(31));
-    network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==1);
-    network_test_suite_projectile_created(530,1);CHECK(network_test_suite_energy_projectiles(31)==1);
-    owner_player^=1L<<16;network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==1);
-    owner_player=actor_indices[31];actors[31].local_player_index=0;
-    network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==1);
-    actors[31].local_player_index=NONE;actors[31].network_player_data.machine_index=30;
-    network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==1);
-    actors[31].network_player_data.machine_index=31;machine_players[31][2]=actor_indices[30];
-    network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==1);
-    machine_players[31][2]=NONE;connection=_game_connection_local;
-    network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==1);
+    owner_player=actor_indices[127];
+    network_test_suite_projectile_created(627,0);CHECK(!network_test_suite_energy_projectiles(127));
+    network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==1);
+    network_test_suite_projectile_created(626,1);CHECK(network_test_suite_energy_projectiles(127)==1);
+    owner_player^=1L<<16;network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==1);
+    owner_player=actor_indices[127];actors[127].local_player_index=0;
+    network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==1);
+    actors[127].local_player_index=NONE;actors[127].network_player_data.machine_index=126;
+    network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==1);
+    actors[127].network_player_data.machine_index=127;machine_players[127][2]=actor_indices[126];
+    network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==1);
+    machine_players[127][2]=NONE;connection=_game_connection_local;
+    network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==1);
     connection=_game_connection_network_server;network_test.suite_owned=0;
-    network_test_suite_projectile_created(531,1);CHECK(network_test.suite_energy_projectiles[31]==1);
+    network_test_suite_projectile_created(627,1);CHECK(network_test.suite_energy_projectiles[127]==1);
     network_test.suite_owned=1;owner_player=actor_indices[0];network_test_suite_projectile_created(500,1);
-    CHECK(network_test_suite_energy_projectiles(0)==1&&network_test_suite_energy_projectiles(31)==1);
-    CHECK(!network_test_suite_energy_projectiles(-1)&&!network_test_suite_energy_projectiles(32));
-    owner_player=actor_indices[31];network_test.suite_energy_projectiles[31]=UINT32_MAX;
-    network_test_suite_projectile_created(531,1);CHECK(network_test_suite_energy_projectiles(31)==UINT32_MAX);
+    CHECK(network_test_suite_energy_projectiles(0)==1&&network_test_suite_energy_projectiles(127)==1);
+    CHECK(!network_test_suite_energy_projectiles(-1)&&!network_test_suite_energy_projectiles(128));
+    owner_player=actor_indices[127];network_test.suite_energy_projectiles[127]=UINT32_MAX;
+    network_test_suite_projectile_created(627,1);CHECK(network_test_suite_energy_projectiles(127)==UINT32_MAX);
     network_test_suite_end();
     connection=_game_connection_local; /* confirmed asynchronous teardown before the next map */
-    CHECK(network_test_suite_begin("network_players","sidewinder","slayer",32,1,1000,0));
-    for(i=0;i<32;i++)CHECK(!network_test_suite_energy_projectiles(i));
+    CHECK(network_test_suite_begin("network_players","sidewinder","slayer",128,1,1000,0));
+    for(i=0;i<128;i++)CHECK(!network_test_suite_energy_projectiles(i));
     network_test_suite_end();
     return failures ? 1 : 0;
 }

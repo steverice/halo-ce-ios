@@ -2,8 +2,9 @@
 #ifndef HALO_BENCHMARK_MP_STATE_H
 #define HALO_BENCHMARK_MP_STATE_H
 #include <stdint.h>
+#include "benchmark_mp_limits.h"
 
-#define BENCHMARK_MP_ACTORS 32
+#define BENCHMARK_MP_ACTORS BENCHMARK_MP_MAXIMUM_PLAYERS
 
 struct benchmark_mp_actor
 {

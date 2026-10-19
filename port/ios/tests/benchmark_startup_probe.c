@@ -85,7 +85,7 @@ int network_test_suite_begin(const char *simulation, const char *map, const char
     int players, int views, int score_limit, int time_limit_minutes) {
     CHECK(!strcmp(map, "chillout") && !strcmp(game_mode, "slayer"));
     CHECK(views == 1 && score_limit == suite.mp_score_limit && time_limit_minutes == suite.mp_time_limit_minutes);
-    if (!strcmp(simulation, "network_players") && players >= 2 && players <= 32) proof_begins++;
+    if (!strcmp(simulation, "network_players") && players >= 2 && players <= 128) proof_begins++;
     else if (!strcmp(simulation, "local_controllers") && players == 4) mp_begins++;
     else return 0;
     return 1;
@@ -445,7 +445,7 @@ int main(void) {
     observed_mp.time_limit_minutes = 7; observed_mp.score_limit = 1000;
     CHECK(!mp_match_valid(&observed_mp, 1));
 
-    for (int count = 16; count <= 32; count += 16) {
+    for (int count = 16; count <= 128; count *= 2) {
         reset(); suite.mp_scene = 1;
         strcpy(suite.mp_simulation, "network_players"); suite.mp_players = count;
         observed_mp = (struct benchmark_mp_state){ .multiplayer = 1, .map_ok = 1, .slayer = 1,
@@ -466,7 +466,9 @@ int main(void) {
         suite.mp_damage_changes = suite.mp_deaths = suite.mp_respawns = 1;
         char note[512];
         CHECK(mp_evidence_note(note, sizeof(note)));
-        CHECK(strstr(note, count == 32 ? "observed roster 32" : "observed roster 16") != NULL);
+        char expected_roster[32];
+        snprintf(expected_roster, sizeof(expected_roster), "observed roster %d", count);
+        CHECK(strstr(note, expected_roster) != NULL);
         suite.mp_ammo_spent_actor[count - 1] = 0;
         CHECK(!mp_evidence_note(note, sizeof(note)));
         suite.mp_energy_projectiles_actor[count - 1] = 1;
@@ -505,13 +507,13 @@ int main(void) {
     mp_collect(&staged);
     CHECK(suite.mp_distance[0] > 0.09 && suite.mp_distance[0] < 0.11);
 
-    reset(); mp_request = 32;
+    reset(); mp_request = 128;
     next_run();
     suite.pending_action = suite_action_mp_begin;
     benchmark_suite_mainloop_update();
     CHECK(proof_begins == 1 && arena_configures == 1);
     CHECK(configured_arena.columns == 6 && configured_arena.spacing == 1.5f && configured_arena.movement_radius == 0.4f);
-    reset(); mp_request = 32; arena_columns_override = 9;
+    reset(); mp_request = 128; arena_columns_override = 9;
     next_run();
     suite.pending_action = suite_action_mp_begin;
     benchmark_suite_mainloop_update();

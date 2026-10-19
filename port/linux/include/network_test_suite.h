@@ -3,6 +3,7 @@
 #define NETWORK_TEST_SUITE_H
 #include <stdint.h>
 #include <math.h>
+#include "benchmark_mp_limits.h"
 /* Some battery weapons have a dummy magazine that consumes zero rounds. */
 static inline int network_test_suite_energy_trigger(int magazine, int magazines, int rounds, float age)
 {

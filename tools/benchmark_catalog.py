@@ -16,7 +16,7 @@ MAP_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,29}[a-z0-9])?\Z")
 RECORDING_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?\Z")
 DIFFICULTIES = {"easy", "normal", "hard", "impossible"}
 KINDS = {"menu", "cutscene", "gameplay", "multiplayer"}
-PLAYERS = range(2, 33)
+PLAYERS = range(2, 129)
 COMMON_FIELDS = {"kind", "order", "map", "difficulty", "recording", "lead", "window"}
 MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
 
@@ -214,7 +214,7 @@ def load_catalog(folder):
                 raise CatalogError(f"multiplayer case {case_id} has an unsupported simulation mode")
             if isinstance(players, bool) or not isinstance(players, int) or players not in PLAYERS:
                 raise CatalogError(f"multiplayer case {case_id} has an unsupported players value")
-            if (simulation == "local_controllers" and players != 4) or (simulation == "network_players" and not 2 <= players <= 32):
+            if (simulation == "local_controllers" and players != 4) or (simulation == "network_players" and not 2 <= players <= 128):
                 raise CatalogError(f"multiplayer case {case_id} players do not match its simulation mode")
             arena = case.get("arena")
             if players > 4 and arena is None:

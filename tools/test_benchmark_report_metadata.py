@@ -41,6 +41,12 @@ int main(void) {
         assert([result[@"expected_local_players"] intValue] == 4 && [result[@"expected_synthetic_players"] intValue] == 0);
         scene.kind = BENCHMARK_SCENE_GAMEPLAY;
         assert(metadata(&scene) == nil);
+        scene.kind = BENCHMARK_SCENE_MULTIPLAYER; scene.simulation = "network_players"; scene.players = 128;
+        result = metadata(&scene);
+        assert([result[@"requested_players"] intValue] == 128 && [result[@"expected_synthetic_players"] intValue] == 127);
+        NSData *serialized = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+        NSDictionary *decoded = [NSJSONSerialization JSONObjectWithData:serialized options:0 error:nil];
+        assert([decoded[@"requested_players"] intValue] == 128 && [decoded[@"expected_synthetic_players"] intValue] == 127);
     }
     return 0;
 }
