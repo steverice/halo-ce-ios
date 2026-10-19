@@ -104,7 +104,7 @@ def validate_manifest(
         )
 
 
-def validate_payload(payload: bytes, kind: str, compatibility: str) -> None:
+def validate_payload(payload: bytes, kind: str, compatibility: str) -> dict[str, bytes]:
     decoded = decode_json(payload)
     if set(decoded) != {"files"} or not isinstance(decoded["files"], dict):
         raise ValueError("Pack payload has invalid fields")
@@ -126,4 +126,4 @@ def validate_payload(payload: bytes, kind: str, compatibility: str) -> None:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
         # Reuse the publisher's exact profile/catalog and native recording validators.
-        data_pack.snapshot(folder, kind, compatibility)
+        return data_pack.snapshot(folder, kind, compatibility)

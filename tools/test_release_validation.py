@@ -10,7 +10,7 @@ import plistlib
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519 as crypto
@@ -189,6 +189,7 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
     host_flags = ""
     upload_enabled = False
     codesign_calls = []
+
     def run(*args: Any, **kwargs: Any) -> str:
         if args[:2] == ("ninja", "-t"):
             return "/opt/llvm/bin/clang -flto=full -fprofile-use=pgo/halo_linux.profdata -c source/game/player_control.c\npython tools/ios_guest_lto.py"
@@ -197,7 +198,9 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
             return plistlib.dumps(
                 {
                     "com.apple.developer.icloud-services": ["CloudKit"],
-                    "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+                    "com.apple.developer.icloud-container-identifiers": [
+                        "iCloud.org.steverice.visr"
+                    ],
                     "com.apple.developer.icloud-container-environment": "Production",
                     "aps-environment": "production",
                 }
@@ -209,7 +212,8 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
                         "target": "VISR",
                         "buildSettings": {
                             "OTHER_CFLAGS": host_flags,
-                            "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1" + (" HALO_BENCHMARK_UPLOAD=1" if upload_enabled else ""),
+                            "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1"
+                            + (" HALO_BENCHMARK_UPLOAD=1" if upload_enabled else ""),
                         },
                     }
                 ]
@@ -248,7 +252,8 @@ def test_preflight_identity_changes_with_source_platforms_or_policy() -> None:
 
 
 def test_signed_feed_verifies_signature_and_payload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -334,7 +339,30 @@ def test_signed_catalog_feed_uses_the_app_contract(
         key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex(),
     )
     _recording(tmp_path)
-    _write_catalog(tmp_path, _cases())
+    cases = _cases(players=16, gameplay=False)
+    cases["mp-chillout-proof"]["order"] = 2
+    cases["mp-bloodgulch-proof"] = {
+        "kind": "multiplayer",
+        "order": 3,
+        "map": "bloodgulch",
+        "difficulty": "normal",
+        "recording": None,
+        "lead": 15,
+        "window": 60,
+        "simulation": "network_players",
+        "players": 32,
+        "views": 1,
+        "game_mode": "slayer",
+        "score_limit": 1000,
+        "time_limit_minutes": 0,
+        "arena": {
+            "columns": 6,
+            "spacing_milliunits": 1500,
+            "distance_milliunits": 3500,
+            "movement_radius_milliunits": 400,
+        },
+    }
+    _write_catalog(tmp_path, cases)
     compatibility = "benchmark-catalog-1:" + "a" * 64
     files = data_pack.snapshot(tmp_path, "recordings", compatibility)
     payload = json.dumps(
@@ -379,13 +407,30 @@ def test_signed_catalog_feed_uses_the_app_contract(
 
     catalog = signed_feed(compatibility, payload)
     pins = {**policy(), "recording_feed_sha256": hashlib.sha256(catalog).hexdigest()}
-    validation.verify_feed(catalog, "recording", pins)
+    summary_context = validation.verify_feed(catalog, "recording", pins)
+    assert summary_context is not None
+    assert summary_context["guest_sha256"] == "a" * 64
+    assert summary_context["envelope_sha256"] == pins["recording_feed_sha256"]
+    multiplayer = [
+        case for case in summary_context["cases"] if case["kind"] == "multiplayer"
+    ]
+    assert [(case["map"], case["players"]) for case in multiplayer] == [
+        ("chillout", 16),
+        ("bloodgulch", 32),
+    ]
+    assert all(
+        set(case) == {"id", "kind", "map", "players"}
+        for case in summary_context["cases"]
+    )
 
     legacy_payload = json.dumps(
         {"files": recording_files()}, sort_keys=True, separators=(",", ":")
     ).encode()
     legacy = signed_feed("benchmark-replay-1:" + "a" * 64, legacy_payload)
-    legacy_pins = {**policy(), "recording_feed_sha256": hashlib.sha256(legacy).hexdigest()}
+    legacy_pins = {
+        **policy(),
+        "recording_feed_sha256": hashlib.sha256(legacy).hexdigest(),
+    }
     with pytest.raises(ValueError, match="compatibility"):
         validation.verify_feed(legacy, "recording", legacy_pins)
     from tools.pages_recording_overlay import checked_feed
@@ -394,6 +439,139 @@ def test_signed_catalog_feed_uses_the_app_contract(
     assert checked_feed(catalog, "a" * 64) == 1
     with pytest.raises(ValueError, match="compatibility"):
         checked_feed(legacy, "b" * 64)
+
+
+def test_check_feeds_returns_facts_for_the_exact_downloaded_recording_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy_values = policy()
+    downloads = {
+        policy_values["profile_feed_url"]: b"profile-envelope",
+        policy_values["recording_feed_url"]: b"signed-recording-envelope",
+    }
+    calls: list[tuple[str, bytes]] = []
+    summary = recording_context = {
+        "schema": 1,
+        "guest_sha256": policy_values["guest_sha256"],
+        "envelope_sha256": policy_values["recording_feed_sha256"],
+        "payload_sha256": "f" * 64,
+        "catalog_sha256": "1" * 64,
+        "compatibility": "benchmark-catalog-1:" + policy_values["guest_sha256"],
+        "cases": [
+            {
+                "id": "mp-current",
+                "kind": "multiplayer",
+                "map": "bloodgulch",
+                "players": 32,
+            }
+        ],
+    }
+
+    class Response:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, limit: int) -> bytes:
+            return downloads[self.url][:limit]
+
+    class Opener:
+        def open(self, url: str, timeout: int) -> Response:
+            assert timeout == 45
+            return Response(url)
+
+    def verify(
+        data: bytes, kind: str, _policy: dict[str, str]
+    ) -> dict[str, Any] | None:
+        calls.append((kind, data))
+        return recording_context if kind == "recording" else None
+
+    monkeypatch.setattr(
+        validation.urllib.request, "build_opener", lambda *_args: Opener()
+    )
+    monkeypatch.setattr(validation, "verify_feed", verify)
+
+    assert validation.check_feeds(policy_values) == summary
+    assert calls == [
+        ("profile", downloads[policy_values["profile_feed_url"]]),
+        ("recording", downloads[policy_values["recording_feed_url"]]),
+    ]
+
+
+def test_release_workflow_passes_preflight_catalog_context_to_prepare() -> None:
+    workflow = (validation.release.ROOT / ".github/workflows/release.yml").read_text()
+    preflight = workflow.split("\n  preflight:\n", 1)[1].split("\n  prepare:\n", 1)[0]
+    prepare = workflow.split("\n  prepare:\n", 1)[1].split("\n  testflight:\n", 1)[0]
+    assert (
+        "recording_context: ${{ steps.check.outputs.recording_context }}" in preflight
+    )
+    assert (
+        "RELEASE_RECORDING_CONTEXT: ${{ needs.preflight.outputs.recording_context }}"
+        in prepare
+    )
+
+
+def test_check_command_emits_verified_catalog_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = {
+        "schema": 1,
+        "guest_sha256": policy()["guest_sha256"],
+        "envelope_sha256": policy()["recording_feed_sha256"],
+        "payload_sha256": "f" * 64,
+        "catalog_sha256": "1" * 64,
+        "compatibility": "benchmark-catalog-1:" + policy()["guest_sha256"],
+        "cases": [
+            {
+                "id": "mp-current",
+                "kind": "multiplayer",
+                "map": "bloodgulch",
+                "players": 32,
+            }
+        ],
+    }
+    source = "a" * 40
+    report = tmp_path / "release-probe.json"
+    report.write_text(json.dumps({"source_sha": source}))
+    outputs: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "release_validation.py",
+            "check",
+            "--source-sha",
+            source,
+            "--platforms",
+            "ios",
+            "--report",
+            str(report),
+        ],
+    )
+    monkeypatch.setattr(validation.release, "require_ci", lambda: None)
+    monkeypatch.setattr(validation, "check_release", lambda *_args: context)
+    monkeypatch.setattr(validation, "preflight_identity", lambda *_args: "identity")
+    monkeypatch.setattr(validation.release, "API", lambda *_args: object())
+    monkeypatch.setattr(validation.release, "exact_app", lambda *_args: {})
+    monkeypatch.setattr(
+        validation.release, "output", lambda name, value: outputs.append((name, value))
+    )
+    monkeypatch.setenv("APPLE_BUNDLE_ID", "org.example.visr")
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+
+    validation.main()
+
+    assert outputs == [
+        ("identity", "identity"),
+        (
+            "recording_context",
+            json.dumps(context, sort_keys=True, separators=(",", ":")),
+        ),
+    ]
 
 
 def test_pages_overlay_keeps_the_published_legacy_feed_unchanged() -> None:
@@ -583,24 +761,34 @@ def test_release_policy_rejects_feed_urls_the_archive_builder_refuses(url: str) 
 
 
 @pytest.mark.parametrize("field", ["profile_feed_url", "recording_feed_url"])
-@pytest.mark.parametrize("url", [
-    "https://raw.githubusercontent.com/example/app/" + "a" * 40 + "/packs/feed.json",
-    "https://raw.github.com/example/app/" + "A" * 40 + "/packs/feed.json",
-    "https://github.com/example/app/raw/" + "a" * 40 + "/packs/feed.json",
-    "https://github.com/example/app/blob/" + "a" * 40 + "/packs/feed.json",
-    "https://raw.githubusercontent.com/example/app/" + "%61" * 40 + "/packs/feed.json",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://raw.githubusercontent.com/example/app/"
+        + "a" * 40
+        + "/packs/feed.json",
+        "https://raw.github.com/example/app/" + "A" * 40 + "/packs/feed.json",
+        "https://github.com/example/app/raw/" + "a" * 40 + "/packs/feed.json",
+        "https://github.com/example/app/blob/" + "a" * 40 + "/packs/feed.json",
+        "https://raw.githubusercontent.com/example/app/"
+        + "%61" * 40
+        + "/packs/feed.json",
+    ],
+)
 def test_runtime_feed_rejects_commit_pinned_github(field: str, url: str) -> None:
     with pytest.raises(ValueError, match="runtime feed URL is commit-pinned"):
         validation.load_policy(json.dumps({**policy(), field: url}))
 
 
-@pytest.mark.parametrize("url", [
-    "https://code.steverice.org/visr/packs/tester/recordings-" + "a" * 64 + ".json",
-    "https://raw.githubusercontent.com/example/app/data/packs/feed.json",
-    "https://raw.githubusercontent.com/example/app/refs/heads/data/packs/feed.json",
-    "https://updates.example.invalid/" + "a" * 40 + "/recordings.json",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://code.steverice.org/visr/packs/tester/recordings-" + "a" * 64 + ".json",
+        "https://raw.githubusercontent.com/example/app/data/packs/feed.json",
+        "https://raw.githubusercontent.com/example/app/refs/heads/data/packs/feed.json",
+        "https://updates.example.invalid/" + "a" * 40 + "/recordings.json",
+    ],
+)
 def test_mutable_and_custom_runtime_feeds_keep_the_exact_release_hash(url: str) -> None:
     pins = {**policy(), "recording_feed_url": url}
     assert validation.load_policy(json.dumps(pins)) == pins
@@ -650,14 +838,21 @@ def test_exported_ipa_uses_the_production_cloudkit_entitlements(tmp_path, monkey
     package = tmp_path / "package"
     package.mkdir()
     with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
-        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}))
+        exported.writestr(
+            "Payload/VISR.app/Info.plist",
+            plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}),
+        )
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
-        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "com.apple.developer.icloud-container-identifiers": [
+            "iCloud.org.steverice.visr"
+        ],
         "com.apple.developer.icloud-container-environment": "Production",
         "aps-environment": "production",
     }
-    monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
+    monkeypatch.setattr(
+        validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode()
+    )
     validation.verify_exported_ipa(package)
 
 
@@ -667,33 +862,51 @@ def test_exported_ipa_rejects_development_aps(tmp_path, monkeypatch):
     package = tmp_path / "package"
     package.mkdir()
     with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
-        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}))
+        exported.writestr(
+            "Payload/VISR.app/Info.plist",
+            plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}),
+        )
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
-        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "com.apple.developer.icloud-container-identifiers": [
+            "iCloud.org.steverice.visr"
+        ],
         "com.apple.developer.icloud-container-environment": "Production",
         "aps-environment": "development",
     }
-    monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
+    monkeypatch.setattr(
+        validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode()
+    )
     with pytest.raises(ValueError, match="production APS"):
         validation.verify_exported_ipa(package)
 
 
 @pytest.mark.parametrize("cloudkit_environment", ["Development", None])
-def test_exported_ipa_rejects_nonproduction_cloudkit_environment(tmp_path, monkeypatch, cloudkit_environment):
+def test_exported_ipa_rejects_nonproduction_cloudkit_environment(
+    tmp_path, monkeypatch, cloudkit_environment
+):
     import zipfile
 
     package = tmp_path / "package"
     package.mkdir()
     with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
-        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}))
+        exported.writestr(
+            "Payload/VISR.app/Info.plist",
+            plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}),
+        )
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
-        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "com.apple.developer.icloud-container-identifiers": [
+            "iCloud.org.steverice.visr"
+        ],
         "aps-environment": "production",
     }
     if cloudkit_environment is not None:
-        entitlements["com.apple.developer.icloud-container-environment"] = cloudkit_environment
-    monkeypatch.setattr(validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode())
+        entitlements["com.apple.developer.icloud-container-environment"] = (
+            cloudkit_environment
+        )
+    monkeypatch.setattr(
+        validation, "run", lambda *args, **kwargs: plistlib.dumps(entitlements).decode()
+    )
     with pytest.raises(ValueError, match="production CloudKit environment"):
         validation.verify_exported_ipa(package)

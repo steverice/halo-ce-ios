@@ -3,17 +3,45 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import tomllib
 import urllib.error
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
 from tools import release
 from tools.test_release_validation import policy
+
+
+def recording_summary_context() -> dict[str, Any]:
+    current_policy = policy()
+    guest = current_policy["guest_sha256"]
+    return {
+        "schema": 1,
+        "guest_sha256": guest,
+        "envelope_sha256": current_policy["recording_feed_sha256"],
+        "payload_sha256": "f" * 64,
+        "catalog_sha256": "1" * 64,
+        "compatibility": "benchmark-catalog-1:" + guest,
+        "cases": [
+            {
+                "id": "mp-chillout-proof",
+                "kind": "multiplayer",
+                "map": "chillout",
+                "players": 16,
+            },
+            {
+                "id": "mp-bloodgulch-proof",
+                "kind": "multiplayer",
+                "map": "bloodgulch",
+                "players": 32,
+            },
+        ],
+    }
 
 
 class FakeAPI:
@@ -115,8 +143,531 @@ def test_notes_are_exact_generated_entry() -> None:
     assert release.release_notes(entry + "\n\n## 0.1.2\nold", "0.1.3") == entry
     with pytest.raises(ValueError, match="does not match"):
         release.release_notes(entry, "0.2.0")
-    with pytest.raises(ValueError, match="4000"):
-        release.release_notes("## 0.1.3\n" + "x" * 4000, "0.1.3")
+
+
+def test_full_release_entry_can_exceed_testflight_note_limit() -> None:
+    entry = "## 0.3.0\n\n### Full changelog\n\n" + "x" * 8_500
+    assert release.release_notes(entry, "0.3.0") == entry
+
+
+def test_testflight_summary_is_inserted_before_unchanged_details() -> None:
+    details = "### feat\n\n- Add bigger multiplayer battles.\n\n### fix\n\n- Keep recorded animation settings."
+    entry = "## 0.3.0 (2026-10-18)\n\n" + details
+    summary = "- Play larger multiplayer battles.\n- Replays now preserve recorded animation settings."
+
+    inserted = release.insert_testflight_summary(entry, summary)
+
+    assert inserted == (
+        "## 0.3.0 (2026-10-18)\n\n"
+        "### Summary\n\n"
+        "- Play larger multiplayer battles.\n- Replays now preserve recorded animation settings.\n\n"
+        "### Full changelog\n\n" + details
+    )
+    assert release.extract_testflight_summary(inserted) == summary
+
+
+def test_changelog_summary_insertion_preserves_older_entries() -> None:
+    summary = "Try larger multiplayer battles."
+    changelog = (
+        "## 0.3.0 (2026-10-18)\n\n### feat\n\n- Add multiplayer cases.\n\n"
+        "## 0.2.1 (2026-10-17)\n\n### fix\n\n- Keep the older release text.\n"
+    )
+
+    inserted = release.insert_testflight_summary_into_changelog(
+        changelog, "0.3.0", summary
+    )
+
+    assert inserted.split("\n\n## 0.2.1", 1)[1] == changelog.split("\n\n## 0.2.1", 1)[1]
+    assert release.release_notes(
+        inserted, "0.3.0"
+    ) == release.insert_testflight_summary(
+        "## 0.3.0 (2026-10-18)\n\n### feat\n\n- Add multiplayer cases.", summary
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", " \n ", b"\xff", "x" * 4_001, "summary\n### Full changelog\nforged", 42],
+)
+def test_testflight_summary_rejects_invalid_output(value: str | bytes | int) -> None:
+    error = TypeError if isinstance(value, int) else ValueError
+    with pytest.raises(error):
+        release.validate_testflight_summary(value)
+
+
+def test_summary_insertion_refuses_to_overwrite_an_existing_summary() -> None:
+    entry = "## 0.3.0\n\n### Summary\n\nExisting human text\n\n### Full changelog\n\n### feat\n\n- A change"
+    with pytest.raises(ValueError, match="already contains"):
+        release.insert_testflight_summary(entry, "A replacement summary")
+    with pytest.raises(ValueError, match="Markdown headings"):
+        release.insert_testflight_summary(
+            "## 0.3.0\n\n### feat\n\n- A change", "  # Hidden heading"
+        )
+
+
+def test_new_manifest_pins_summary_and_rejects_hash_or_content_mismatch() -> None:
+    details = "### feat\n\n- Add a multiplayer case."
+    summary = "Play a new multiplayer case."
+    notes = release.release_notes(
+        release.insert_testflight_summary("## 0.3.0\n\n" + details, summary),
+        "0.3.0",
+    )
+    manifest = {
+        "notes_sha256": hashlib.sha256(notes.encode()).hexdigest(),
+        "testflight_summary": summary,
+        "testflight_summary_sha256": hashlib.sha256(summary.encode()).hexdigest(),
+        "testflight_summary_model": "claude-sonnet-5-5",
+    }
+
+    assert release.testflight_summary_for_release(notes, manifest) == summary
+    with pytest.raises(ValueError, match="summary hash"):
+        release.testflight_summary_for_release(
+            notes, {**manifest, "testflight_summary_sha256": "0" * 64}
+        )
+    changed = notes.replace("Play a new multiplayer case.", "Unverified new feature.")
+    with pytest.raises(ValueError, match="summary differs"):
+        release.testflight_summary_for_release(changed, manifest)
+    indented_heading = "  ## Not a summary\n\n" + summary
+    with pytest.raises(ValueError, match="Markdown heading"):
+        release.testflight_summary_for_release(
+            notes,
+            {
+                **manifest,
+                "testflight_summary": indented_heading,
+                "testflight_summary_sha256": hashlib.sha256(
+                    indented_heading.encode()
+                ).hexdigest(),
+            },
+        )
+
+
+def test_legacy_manifest_reuses_full_note_only_within_testflight_limit() -> None:
+    notes = "## 0.2.1\n\n### fix\n\n- Preserve the existing TestFlight note."
+    assert release.testflight_summary_for_release(notes, {"version": "0.2.1"}) == notes
+    with pytest.raises(ValueError, match="Legacy TestFlight note exceeds"):
+        release.testflight_summary_for_release("## 0.2.1\n" + "x" * 4_001, {})
+
+
+def test_anthropic_summary_uses_messages_api_and_release_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = "Play larger multiplayer battles."
+    body = json.dumps(
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "end_turn",
+            "content": [
+                {"type": "thinking", "thinking": "private reasoning content"},
+                {"type": "redacted_thinking", "data": "redacted block"},
+                {"type": "text", "text": summary},
+            ],
+        }
+    ).encode()
+    calls: list[tuple[Any, int]] = []
+
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int = -1) -> bytes:
+            return body
+
+    class FakeOpener:
+        def open(self, request: Any, timeout: int) -> FakeResponse:
+            calls.append((request, timeout))
+            return FakeResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setenv("RELEASE_SUMMARY_MODEL", "claude-sonnet-5-5")
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+
+    result = release.anthropic_release_summary(
+        "## 0.3.0\n\n### feat\n\n- The early multiplayer prototype supported two and four players.",
+        version="0.3.0",
+        selected_platforms=["ios", "tvos"],
+        benchmark_upload=False,
+        catalog_context=recording_summary_context(),
+    )
+
+    assert result == summary
+    assert len(calls) == 1
+    request, timeout = calls[0]
+    assert request.full_url == "https://api.anthropic.com/v1/messages"
+    assert request.get_header("X-api-key") == "test-api-key"
+    assert request.get_header("Anthropic-version") == "2023-06-01"
+    assert timeout == 60
+    payload = json.loads(request.data)
+    assert payload["model"] == "claude-sonnet-5-5"
+    assert payload["max_tokens"] == 4_096
+    assert payload["thinking"] == {"type": "adaptive"}
+    assert payload["output_config"] == {"effort": "low"}
+    assert "American English" in payload["system"]
+    assert "untrusted" in payload["system"].lower()
+    assert "newest-first" in payload["system"]
+    assert (
+        "current benchmark case IDs, maps, kinds, and multiplayer player counts"
+        in payload["system"]
+    )
+    assert "4 to 8 short bullets" in payload["system"]
+    assert (
+        "If the final numerical limit is ambiguous, omit the number"
+        in payload["system"]
+    )
+    assert "CloudKit" not in payload["system"]
+    assert "disabled" not in payload["system"].lower()
+    facts = json.loads(payload["messages"][0]["content"])
+    assert facts["selected_platforms"] == ["ios", "tvos"]
+    assert facts["benchmark_upload_enabled"] is False
+    assert "two and four players" in facts["changelog_entry"]
+    assert [
+        case["players"] for case in facts["verified_recording_catalog"]["cases"]
+    ] == [
+        16,
+        32,
+    ]
+
+
+def test_release_summary_instructions_keep_report_sending_policy_conditional() -> None:
+    disabled = release.release_summary_instructions(
+        False, ["ios"], has_recording_catalog=True
+    )
+    enabled = release.release_summary_instructions(
+        True, ["ios"], has_recording_catalog=True
+    )
+    absent = release.release_summary_instructions(
+        False, ["ios"], has_recording_catalog=False
+    )
+    assert "The boolean policy value is internal metadata" in disabled
+    assert "Mention it only when the changelog clearly describes it" in enabled
+    assert "do not infer current benchmark case counts" in absent
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda context: context.update(guest_sha256="0" * 64),
+        lambda context: context.update(envelope_sha256="0" * 64),
+        lambda context: context["cases"][0].update(players=33),
+        lambda context: context["cases"][0].update(recording="private.take"),
+    ],
+)
+def test_recording_summary_context_rejects_unbound_or_malformed_facts(
+    mutate: Any,
+) -> None:
+    from tools.release_validation import validate_recording_summary_context
+
+    context = recording_summary_context()
+    mutate(context)
+    with pytest.raises(ValueError):
+        validate_recording_summary_context(json.dumps(context), policy())
+
+
+@pytest.mark.parametrize("value", ["", "not json", '{"schema": 1}'])
+def test_recording_summary_context_requires_complete_preflight_output(
+    value: str,
+) -> None:
+    from tools.release_validation import validate_recording_summary_context
+
+    with pytest.raises(ValueError):
+        validate_recording_summary_context(value, policy())
+
+
+def test_anthropic_summary_requires_release_secret_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(
+        release.urllib.request,
+        "build_opener",
+        lambda *_args: pytest.fail(
+            "provider must not be called without a configured key"
+        ),
+    )
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios"],
+            benchmark_upload=False,
+        )
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_release_summary_model_defaults_when_environment_value_is_empty(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is None:
+        monkeypatch.delenv("RELEASE_SUMMARY_MODEL", raising=False)
+    else:
+        monkeypatch.setenv("RELEASE_SUMMARY_MODEL", value)
+    assert release.release_summary_model() == "claude-sonnet-5-5"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "max_tokens",
+            "content": [{"type": "text", "text": "cut off"}],
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "refusal",
+            "content": [{"type": "refusal", "text": "No."}],
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "tool_use",
+            "content": [{"type": "tool_use", "id": "tool-1", "name": "unused"}],
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "end_turn",
+            "content": [
+                {"type": "text", "text": "summary"},
+                {"type": "tool_use", "id": "tool-1", "name": "unused"},
+            ],
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "x" * 4_001}],
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "  \n"}],
+        },
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": "  # TestFlight heading"}],
+        },
+    ],
+)
+def test_anthropic_summary_fails_closed_on_incomplete_refused_or_oversized_output(
+    response: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = json.dumps(response).encode()
+
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int = -1) -> bytes:
+            return body
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> FakeResponse:
+            assert timeout == 60
+            return FakeResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+    with pytest.raises(ValueError):
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios", "tvos"],
+            benchmark_upload=False,
+        )
+
+
+def test_anthropic_summary_error_does_not_expose_key_or_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "test-api-key"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> Any:
+            assert timeout == 60
+            raise urllib.error.HTTPError(
+                "https://api.anthropic.com/v1/messages",
+                503,
+                "Unavailable",
+                {},
+                io.BytesIO(secret.encode()),
+            )
+
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+    with pytest.raises(ValueError, match="HTTP 503") as error:
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios", "tvos"],
+            benchmark_upload=False,
+        )
+    assert secret not in str(error.value)
+
+
+def test_anthropic_summary_accepts_output_between_target_and_hard_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = "x" * 3_500
+    body = json.dumps(
+        {
+            "type": "message",
+            "role": "assistant",
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": summary}],
+        }
+    ).encode()
+
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int = -1) -> bytes:
+            return body
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> FakeResponse:
+            assert timeout == 60
+            return FakeResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+    assert (
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios", "tvos"],
+            benchmark_upload=False,
+        )
+        == summary
+    )
+
+
+def test_anthropic_summary_rejects_malformed_response_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int = -1) -> bytes:
+            return b"not-json"
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> FakeResponse:
+            assert timeout == 60
+            return FakeResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+    with pytest.raises(ValueError, match="invalid JSON"):
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios", "tvos"],
+            benchmark_upload=False,
+        )
+
+
+def test_anthropic_summary_response_byte_budget_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, limit: int = -1) -> bytes:
+            return b"x" * limit
+
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> FakeResponse:
+            assert timeout == 60
+            return FakeResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+    with pytest.raises(ValueError, match="response exceeded"):
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios", "tvos"],
+            benchmark_upload=False,
+        )
+
+
+def test_anthropic_summary_timeout_fails_without_revealing_provider_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeOpener:
+        def open(self, _request: Any, timeout: int) -> Any:
+            assert timeout == 60
+            raise TimeoutError("secret response body and test-api-key")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setattr(
+        release.urllib.request, "build_opener", lambda *_handlers: FakeOpener()
+    )
+    with pytest.raises(ValueError, match="failed or timed out") as error:
+        release.anthropic_release_summary(
+            "## 0.3.0\n\n### feat\n\n- Add maps.",
+            version="0.3.0",
+            selected_platforms=["ios", "tvos"],
+            benchmark_upload=False,
+        )
+    assert "test-api-key" not in str(error.value)
+    assert "secret response body" not in str(error.value)
+
+
+def test_anthropic_redirect_handler_refuses_cross_host_redirect() -> None:
+    request = release.urllib.request.Request(
+        release.ANTHROPIC_MESSAGES_URL,
+        data=b"{}",
+        headers={"X-Api-Key": "test-api-key"},
+        method="POST",
+    )
+    handler = release._NoAnthropicRedirect()
+    with pytest.raises(urllib.error.HTTPError) as error:
+        handler.redirect_request(
+            request,
+            io.BytesIO(),
+            302,
+            "Found",
+            {},
+            "https://attacker.example/collect",
+        )
+    assert error.value.url == release.ANTHROPIC_MESSAGES_URL
 
 
 @pytest.mark.parametrize("value", ["mac", "ios,ios", "ios,", "ios, tvos", ""])
@@ -291,6 +842,88 @@ def test_published_release_resume_does_not_rebuild_or_republish(
     assert len(github.calls) == 1
 
 
+def test_publish_uses_summary_for_testflight_and_full_entry_for_github(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    summary = "Try the new campaign and multiplayer cases."
+    details = "### feat\n\n- " + ("Preserve complete release detail. " * 150)
+    notes = release.release_notes(
+        release.insert_testflight_summary("## 0.3.0\n\n" + details, summary),
+        "0.3.0",
+    )
+    manifest = {
+        "build_policy": policy(),
+        "tag": "visr-v0.3.0",
+        "version": "0.3.0",
+        "build_number": "20261018.135056",
+        "platforms": ["ios"],
+        "source_date_epoch": "1792356656",
+        "notes_sha256": hashlib.sha256(notes.encode()).hexdigest(),
+        "testflight_summary": summary,
+        "testflight_summary_sha256": hashlib.sha256(summary.encode()).hexdigest(),
+        "testflight_summary_model": "claude-sonnet-5-5",
+    }
+    (tmp_path / ".release").mkdir()
+    (tmp_path / release.MANIFEST).write_text(json.dumps(manifest))
+    (tmp_path / "CHANGELOG.md").write_text(notes)
+    journal = {"ios": {"state": "complete", "app_id": "app-1", "guest_sha256": "guest"}}
+    draft = {
+        "id": "release-1",
+        "tag_name": manifest["tag"],
+        "assets": [],
+        "draft": True,
+        "body": release.draft_body(notes, journal),
+    }
+    github = FakeAPI(
+        [
+            [draft],
+            {},
+            {},
+            {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []},
+        ]
+    )
+    apple = FakeAPI(
+        [
+            build_page(version="0.3.0", build="20261018.135056"),
+            build_page(version="0.3.0", build="20261018.135056"),
+            [localization(None)],
+            {},
+            [localization(summary)],
+        ]
+    )
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setattr(release, "publish_context", lambda _: (tmp_path, manifest))
+    monkeypatch.setattr(release, "run", lambda *_args, **_kwargs: "same-commit")
+    monkeypatch.setattr(
+        release, "API", lambda base, _token: github if "github" in base else apple
+    )
+    monkeypatch.setattr(release, "apple_token", lambda: "test-token")
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/app")
+    from tools import release_validation
+
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setattr(release_validation, "toolchain", lambda *_, **__: {})
+    monkeypatch.setattr(release_validation, "check_feeds", lambda *_, **__: None)
+
+    release.publish(type("Args", (), {"source_root": tmp_path})())
+
+    testflight_write = next(
+        call
+        for call in apple.calls
+        if call[0] in {"POST", "PATCH"}
+        and call[1].startswith("/v1/betaBuildLocalizations")
+    )
+    assert testflight_write[2]["data"]["attributes"]["whatsNew"] == summary
+    github_publish = [
+        call
+        for call in github.calls
+        if call[0] == "PATCH" and call[1].endswith("/release-1")
+    ][-1]
+    assert github_publish[2]["body"] == notes
+
+
 def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -298,7 +931,9 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     source = "a" * 40
     baseline = "b" * 40
     calls: list[tuple[Any, ...]] = []
-    notes = "## visr-v0.1.3\n\n### perf\n\n- Warm maps"
+    generated_notes = "## visr-v0.1.3\n\n### perf\n\n- Warm maps"
+    summary = "Try the newly warmed campaign maps."
+    summary_requests: list[tuple[str, str, bool, dict[str, Any]]] = []
 
     def fake_run(*args: Any, **kwargs: Any) -> str:
         calls.append(args)
@@ -307,7 +942,7 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
         if args[:3] == ("cz", "bump", "--get-next"):
             return "0.1.3"
         if args[:2] == ("cz", "bump"):
-            (tmp_path / "CHANGELOG.md").write_text(notes)
+            (tmp_path / "CHANGELOG.md").write_text(generated_notes)
         if args[:3] == ("git", "show", "--no-patch"):
             return "1760576523"
         return ""
@@ -316,6 +951,23 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     monkeypatch.setattr(release, "require_ci", lambda: None)
     monkeypatch.setattr(release, "run", fake_run)
     monkeypatch.setattr(release, "output", lambda *_args: None)
+
+    def summarize(
+        notes: str,
+        *,
+        version: str,
+        selected_platforms: list[str],
+        benchmark_upload: bool,
+        catalog_context: dict[str, Any],
+        model: str | None = None,
+    ) -> str:
+        summary_requests.append((version, notes, benchmark_upload, catalog_context))
+        assert selected_platforms == ["ios", "tvos"]
+        assert [case["players"] for case in catalog_context["cases"]] == [16, 32]
+        assert model == "claude-sonnet-5-5"
+        return summary
+
+    monkeypatch.setattr(release, "anthropic_release_summary", summarize)
     args = type(
         "Args",
         (),
@@ -329,6 +981,11 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
         },
     )()
     monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.setenv(
+        "RELEASE_RECORDING_CONTEXT", json.dumps(recording_summary_context())
+    )
+    monkeypatch.setenv("RELEASE_SUMMARY_MODEL", "claude-sonnet-5-5")
     from tools.release_validation import preflight_identity
 
     monkeypatch.setenv(
@@ -337,11 +994,22 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
     )
     release.prepare(args)
     manifest = json.loads((tmp_path / release.MANIFEST).read_text())
+    notes = release.release_notes((tmp_path / "CHANGELOG.md").read_text(), "0.1.3")
     assert manifest["version"] == "0.1.3"
     assert manifest["build_number"] == "20261016.0"
     assert manifest["source_sha"] == source
     assert manifest["bootstrap_since"] == baseline
     assert manifest["notes_sha256"] == hashlib.sha256(notes.encode()).hexdigest()
+    assert manifest["testflight_summary"] == summary
+    assert (
+        manifest["testflight_summary_sha256"]
+        == hashlib.sha256(summary.encode()).hexdigest()
+    )
+    assert manifest["testflight_summary_model"] == "claude-sonnet-5-5"
+    assert summary_requests == [
+        ("0.1.3", generated_notes, False, recording_summary_context())
+    ]
+    assert release.testflight_summary_for_release(notes, manifest) == summary
     pushes = [call for call in calls if call[:2] == ("git", "push")]
     assert pushes == [
         (
@@ -363,6 +1031,76 @@ def test_prepare_bootstrap_generates_one_version_and_atomic_push(
         "--increment",
         "PATCH",
     ) in calls
+
+
+def test_prepare_resume_reuses_pinned_summary_without_provider_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = "a" * 40
+    summary = "Play larger multiplayer battles."
+    notes = release.insert_testflight_summary(
+        "## 0.3.0\n\n### feat\n\n- Add multiplayer cases.", summary
+    )
+    manifest = {
+        "build_policy": policy(),
+        "tag": "visr-v0.3.0",
+        "version": "0.3.0",
+        "build_number": "20261018.135056",
+        "source_sha": source,
+        "platforms": ["ios", "tvos"],
+        "notes_sha256": hashlib.sha256(notes.encode()).hexdigest(),
+        "testflight_summary": summary,
+        "testflight_summary_sha256": hashlib.sha256(summary.encode()).hexdigest(),
+        "testflight_summary_model": "claude-sonnet-5-5",
+        "source_date_epoch": "1792356656",
+    }
+    (tmp_path / ".release").mkdir()
+    (tmp_path / release.MANIFEST).write_text(json.dumps(manifest))
+    (tmp_path / "CHANGELOG.md").write_text(notes)
+    calls: list[tuple[Any, ...]] = []
+    outputs: list[tuple[str, str]] = []
+
+    def fake_run(*args: Any, **_kwargs: Any) -> str:
+        calls.append(args)
+        if args[:3] == ("git", "rev-parse", "HEAD^"):
+            return source
+        return ""
+
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setattr(release, "run", fake_run)
+    monkeypatch.setattr(release, "output", lambda *args: outputs.append(args))
+    monkeypatch.setattr(
+        release,
+        "anthropic_release_summary",
+        lambda *_args, **_kwargs: pytest.fail("resume must reuse the pinned summary"),
+    )
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.delenv("RELEASE_RECORDING_CONTEXT", raising=False)
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY",
+        preflight_identity(source, ["ios", "tvos"], policy()),
+    )
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    args = type(
+        "Args",
+        (),
+        {
+            "source_sha": source,
+            "platforms": "ios,tvos",
+            "resume_tag": "visr-v0.3.0",
+            "bootstrap_since": "",
+            "bootstrap_version": "0.1.2",
+            "increment": "auto",
+        },
+    )()
+
+    release.prepare(args)
+
+    assert outputs == [("tag", "visr-v0.3.0")]
+    assert not any(call[:2] in [("cz", "bump"), ("git", "push")] for call in calls)
 
 
 def test_prepare_refuses_stale_main_before_any_mutation(
@@ -389,6 +1127,143 @@ def test_prepare_refuses_stale_main_before_any_mutation(
         release.prepare(args)
     assert not any(
         call[:2] in [("cz", "bump"), ("git", "push"), ("git", "commit")]
+        for call in calls
+    )
+
+
+def test_prepare_requires_summary_secret_before_version_or_tag_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = "a" * 40
+    calls: list[Any] = []
+
+    def fake_run(*args: Any, **_kwargs: Any) -> str:
+        calls.append(args)
+        if args[:3] == ("git", "rev-parse", "origin/main"):
+            return source
+        return ""
+
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setattr(release, "run", fake_run)
+    monkeypatch.setattr(release, "ROOT", Path("/unused/release-root"))
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setenv(
+        "RELEASE_RECORDING_CONTEXT", json.dumps(recording_summary_context())
+    )
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY", preflight_identity(source, ["ios"], policy())
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "source_sha": source,
+            "platforms": "ios",
+            "resume_tag": "",
+            "bootstrap_since": "",
+            "bootstrap_version": "0.1.2",
+            "increment": "auto",
+        },
+    )()
+
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        release.prepare(args)
+
+    assert not any(
+        call[:2] in [("cz", "bump"), ("git", "tag"), ("git", "commit"), ("git", "push")]
+        for call in calls
+    )
+
+
+def test_prepare_requires_preflight_catalog_context_before_version_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = "a" * 40
+    calls: list[Any] = []
+
+    def fake_run(*args: Any, **_kwargs: Any) -> str:
+        calls.append(args)
+        if args[:3] == ("git", "rev-parse", "origin/main"):
+            return source
+        return ""
+
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setattr(release, "run", fake_run)
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.delenv("RELEASE_RECORDING_CONTEXT", raising=False)
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY", preflight_identity(source, ["ios"], policy())
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "source_sha": source,
+            "platforms": "ios",
+            "resume_tag": "",
+            "bootstrap_since": "",
+            "bootstrap_version": "0.1.2",
+            "increment": "auto",
+        },
+    )()
+
+    with pytest.raises(ValueError, match="catalog context is missing"):
+        release.prepare(args)
+
+    assert not any(
+        call[:2] in [("cz", "bump"), ("git", "tag"), ("git", "commit"), ("git", "push")]
+        for call in calls
+    )
+
+
+def test_prepare_requires_verified_catalog_context_before_version_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = "a" * 40
+    calls: list[Any] = []
+
+    def fake_run(*args: Any, **_kwargs: Any) -> str:
+        calls.append(args)
+        if args[:3] == ("git", "rev-parse", "origin/main"):
+            return source
+        return ""
+
+    monkeypatch.setattr(release, "require_ci", lambda: None)
+    monkeypatch.setattr(release, "run", fake_run)
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(policy()))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-api-key")
+    monkeypatch.delenv("RELEASE_RECORDING_CONTEXT", raising=False)
+    from tools.release_validation import preflight_identity
+
+    monkeypatch.setenv(
+        "RELEASE_PREFLIGHT_IDENTITY", preflight_identity(source, ["ios"], policy())
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "source_sha": source,
+            "platforms": "ios",
+            "resume_tag": "",
+            "bootstrap_since": "",
+            "bootstrap_version": "0.1.2",
+            "increment": "auto",
+        },
+    )()
+
+    with pytest.raises(ValueError, match="context is missing"):
+        release.prepare(args)
+
+    assert not any(
+        call[:2] in [("cz", "bump"), ("git", "tag"), ("git", "commit"), ("git", "push")]
         for call in calls
     )
 
@@ -450,7 +1325,15 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
         "draft": True,
         "body": release.draft_body(notes, journal),
     }
-    github = FakeAPI([[draft], {}, {}, {}, {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []}])
+    github = FakeAPI(
+        [
+            [draft],
+            {},
+            {},
+            {},
+            {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []},
+        ]
+    )
     apple = FakeAPI(
         [
             build_page(),
@@ -484,7 +1367,12 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
     release.publish(type("Args", (), {"source_root": tmp_path})())
     assert all(command[:2] == ("git", "rev-parse") for command in commands)
     assert all(call[0] == "GET" for call in apple.calls)
-    assert github.calls[-2][2] == {"tag_name": manifest["tag"], "body": notes, "draft": False, "make_latest": "true"}
+    assert github.calls[-2][2] == {
+        "tag_name": manifest["tag"],
+        "body": notes,
+        "draft": False,
+        "make_latest": "true",
+    }
     assert github.calls[-1][:2] == ("GET", "/repos/example/app/releases/release-1")
 
 
@@ -753,7 +1641,10 @@ def test_vision_release_profile_requires_its_existing_increased_memory_entitleme
 
 def test_benchmark_upload_release_argument_defaults_off_and_is_policy_pinned():
     assert release.benchmark_upload_arguments(policy()) == []
-    assert release.benchmark_upload_arguments({**policy(), "benchmark_upload": "off"}) == []
-    assert release.benchmark_upload_arguments({**policy(), "benchmark_upload": "on"}) == [
-        "--benchmark-upload"
-    ]
+    assert (
+        release.benchmark_upload_arguments({**policy(), "benchmark_upload": "off"})
+        == []
+    )
+    assert release.benchmark_upload_arguments(
+        {**policy(), "benchmark_upload": "on"}
+    ) == ["--benchmark-upload"]

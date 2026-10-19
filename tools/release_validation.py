@@ -21,11 +21,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 if __package__:
+    from . import benchmark_catalog, release
     from . import data_pack_validation as packs
-    from . import release
     from .data_pack import ENVELOPE_LIMITS
     from .ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
 else:
+    import benchmark_catalog
     import data_pack_validation as packs
     import release
     from data_pack import ENVELOPE_LIMITS
@@ -79,7 +80,10 @@ def load_policy(value: str) -> dict[str, str]:
         "recording_feed_url",
         "recording_feed_sha256",
     }
-    if not isinstance(policy, dict) or set(policy) not in (fields, fields | {"benchmark_upload"}):
+    if not isinstance(policy, dict) or set(policy) not in (
+        fields,
+        fields | {"benchmark_upload"},
+    ):
         raise ValueError(
             "RELEASE_BUILD_POLICY must contain the exact documented build and feed pins"
         )
@@ -266,7 +270,9 @@ def inspect_build(
             "Release build unexpectedly enables cloud saves or render validation"
         )
     if upload_enabled != benchmark_upload:
-        raise ValueError("Release benchmark-upload build differs from the reviewed policy")
+        raise ValueError(
+            "Release benchmark-upload build differs from the reviewed policy"
+        )
     if benchmark_upload and signed_app:
         verify_benchmark_upload_entitlements(
             signed_app_entitlements(app), "iCloud.org.steverice.visr"
@@ -302,15 +308,28 @@ def verify_benchmark_upload_entitlements(
     entitlements: dict[str, Any], container_identifier: str
 ) -> None:
     services = entitlements.get("com.apple.developer.icloud-services", [])
-    containers = entitlements.get("com.apple.developer.icloud-container-identifiers", [])
+    containers = entitlements.get(
+        "com.apple.developer.icloud-container-identifiers", []
+    )
     if not isinstance(services, list) or "CloudKit" not in services:
-        raise ValueError("Signed release app is missing the CloudKit service entitlement")
+        raise ValueError(
+            "Signed release app is missing the CloudKit service entitlement"
+        )
     if container_identifier not in containers:
-        raise ValueError("Signed release app is missing the configured CloudKit container entitlement")
-    if entitlements.get("com.apple.developer.icloud-container-environment") != "Production":
-        raise ValueError("Signed App Store release must use the production CloudKit environment")
+        raise ValueError(
+            "Signed release app is missing the configured CloudKit container entitlement"
+        )
+    if (
+        entitlements.get("com.apple.developer.icloud-container-environment")
+        != "Production"
+    ):
+        raise ValueError(
+            "Signed App Store release must use the production CloudKit environment"
+        )
     if entitlements.get("aps-environment") != "production":
-        raise ValueError("Signed App Store release must use the production APS environment")
+        raise ValueError(
+            "Signed App Store release must use the production APS environment"
+        )
 
 
 def verify_exported_ipa(
@@ -330,7 +349,9 @@ def verify_exported_ipa(
                 raise ValueError("Release IPA must contain exactly one app")
             app_root = app_info[0][: -len("/Info.plist")]
             for member in exported.infolist():
-                if member.filename == app_root or member.filename.startswith(app_root + "/"):
+                if member.filename == app_root or member.filename.startswith(
+                    app_root + "/"
+                ):
                     path = PurePosixPath(member.filename)
                     if path.is_absolute() or ".." in path.parts:
                         raise ValueError("Release IPA contains an unsafe app path")
@@ -390,7 +411,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def verify_feed(
     data: bytes, kind: str, policy: dict[str, str], *, root: Path | None = None
-) -> None:
+) -> dict[str, Any] | None:
     if root is not None:
         # The immutable app supplies its public key, envelope contract, profile
         # schema and native recording validator. Isolate its imports from the
@@ -400,9 +421,11 @@ def verify_feed(
                 sys.executable,
                 "-I",
                 "-c",
-                "import json, sys; sys.path.insert(0, sys.argv[1]); "
-                "from tools.release_validation import verify_feed; "
-                "verify_feed(sys.stdin.buffer.read(), sys.argv[2], json.loads(sys.argv[3]))",
+                (
+                    "import json, sys; sys.path.insert(0, sys.argv[1]); "
+                    "from tools.release_validation import verify_feed; "
+                    "verify_feed(sys.stdin.buffer.read(), sys.argv[2], json.loads(sys.argv[3]))"
+                ),
                 str(root),
                 kind,
                 json.dumps(policy),
@@ -411,13 +434,13 @@ def verify_feed(
             cwd=root,
             check=True,
         )
-        return
+        return None
     compatibility = (
         "profiles-2"
         if kind == "profile"
         else "benchmark-catalog-1:" + policy["guest_sha256"]
     )
-    _verify_feed(data, kind, policy, compatibility)
+    return _verify_feed(data, kind, policy, compatibility)
 
 
 def verify_pages_recording_feed(data: bytes, guest_sha256: str) -> None:
@@ -444,7 +467,7 @@ def _verify_feed(
     kind: str,
     policy: dict[str, str],
     compatibility: str | tuple[str, ...],
-) -> None:
+) -> dict[str, Any] | None:
     if hashlib.sha256(data).hexdigest() != policy[f"{kind}_feed_sha256"]:
         raise ValueError(f"{kind} feed hash differs from the reviewed envelope")
     payload_kind = {"profile": "profiles", "recording": "recordings"}[kind]
@@ -461,7 +484,9 @@ def _verify_feed(
     manifest = packs.decode_json(raw)
     accepted = (compatibility,) if isinstance(compatibility, str) else compatibility
     if manifest.get("compatibility") not in accepted:
-        raise ValueError("Pack manifest compatibility, kind, or channel differs from this build")
+        raise ValueError(
+            "Pack manifest compatibility, kind, or channel differs from this build"
+        )
     selected = manifest["compatibility"]
     packs.validate_manifest(manifest, payload_kind, "tester", selected)
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -472,10 +497,42 @@ def _verify_feed(
     payload = packs.decode_base64(envelope["payload"], limit)
     if hashlib.sha256(payload).hexdigest() != manifest["sha256"]:
         raise ValueError(f"{kind} feed payload hash differs from signed manifest")
-    packs.validate_payload(payload, payload_kind, selected)
+    files = packs.validate_payload(payload, payload_kind, selected)
+    if (
+        kind != "recording"
+        or selected != "benchmark-catalog-1:" + policy["guest_sha256"]
+    ):
+        return None
+    catalog_raw = files.get("benchmark-catalog.json")
+    if catalog_raw is None:
+        raise ValueError("Verified recording catalog is missing its catalog file")
+    catalog = json.loads(catalog_raw.decode("utf-8"))
+    cases = catalog["cases"]
+    return {
+        "schema": 1,
+        "guest_sha256": policy["guest_sha256"],
+        "envelope_sha256": hashlib.sha256(data).hexdigest(),
+        "payload_sha256": manifest["sha256"],
+        "catalog_sha256": hashlib.sha256(catalog_raw).hexdigest(),
+        "compatibility": selected,
+        "cases": [
+            {
+                "id": case_id,
+                "kind": case["kind"],
+                "map": case["map"],
+                "players": case.get("players"),
+            }
+            for case_id, case in sorted(
+                cases.items(), key=lambda entry: entry[1]["order"]
+            )
+        ],
+    }
 
 
-def check_feeds(policy: dict[str, str], *, root: Path | None = None) -> None:
+def check_feeds(
+    policy: dict[str, str], *, root: Path | None = None
+) -> dict[str, Any] | None:
+    recording_context = None
     for kind, payload_kind in [("profile", "profiles"), ("recording", "recordings")]:
         limit = ENVELOPE_LIMITS[payload_kind]
         url = policy[f"{kind}_feed_url"]
@@ -486,20 +543,146 @@ def check_feeds(policy: dict[str, str], *, root: Path | None = None) -> None:
         if len(data) > limit:
             raise ValueError(f"{kind} feed exceeds the app download limit")
         if root is None:
-            verify_feed(data, kind, policy)
+            verified = verify_feed(data, kind, policy)
+            if kind == "recording":
+                recording_context = verified
         else:
             verify_feed(data, kind, policy, root=root)
+    if root is not None:
+        return None
+    if not isinstance(recording_context, dict):
+        raise TypeError("Signed benchmark catalog facts are unavailable")
+    return recording_context
 
 
 def check_release(
     report: dict[str, Any], policy: dict[str, str], selected: list[str]
-) -> None:
+) -> dict[str, Any]:
     check_credentials(os.environ, selected)
     if set(report["platforms"]) != set(selected):
         raise ValueError("Probe platforms differ from release selection")
     for item in report["platforms"].values():
         compare_evidence(item, policy)
-    check_feeds(policy)
+    context = check_feeds(policy)
+    if not isinstance(context, dict):
+        raise TypeError("Signed benchmark catalog facts are unavailable")
+    return context
+
+
+def validate_recording_summary_context(
+    value: str, policy: dict[str, str]
+) -> dict[str, Any]:
+    """Validate the bounded catalog facts emitted by signed-feed preflight."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Verified benchmark catalog context is missing")
+    try:
+        encoded = value.encode("utf-8", errors="strict")
+    except (AttributeError, UnicodeEncodeError) as error:
+        raise ValueError(
+            "Verified benchmark catalog context is not UTF-8 text"
+        ) from error
+    if len(encoded) > 16_384:
+        raise ValueError("Verified benchmark catalog context exceeds its size limit")
+
+    def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError(
+                    "Verified benchmark catalog context has duplicate fields"
+                )
+            result[key] = item
+        return result
+
+    try:
+        context = json.loads(
+            encoded.decode("utf-8"),
+            object_pairs_hook=unique_pairs,
+            parse_constant=lambda item: (_ for _ in ()).throw(
+                ValueError("Verified benchmark catalog context has invalid numbers")
+            ),
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(
+            "Verified benchmark catalog context is invalid JSON"
+        ) from error
+    expected_fields = {
+        "schema",
+        "guest_sha256",
+        "envelope_sha256",
+        "payload_sha256",
+        "catalog_sha256",
+        "compatibility",
+        "cases",
+    }
+    if not isinstance(context, dict) or set(context) != expected_fields:
+        raise ValueError("Verified benchmark catalog context has invalid fields")
+    if type(context["schema"]) is not int or context["schema"] != 1:
+        raise ValueError("Verified benchmark catalog context has an unsupported schema")
+    if context["guest_sha256"] != policy["guest_sha256"]:
+        raise ValueError(
+            "Verified benchmark catalog context guest differs from release policy"
+        )
+    if context["envelope_sha256"] != policy["recording_feed_sha256"]:
+        raise ValueError(
+            "Verified benchmark catalog context feed hash differs from release policy"
+        )
+    if context["compatibility"] != "benchmark-catalog-1:" + policy["guest_sha256"]:
+        raise ValueError(
+            "Verified benchmark catalog context compatibility differs from release policy"
+        )
+    for name in ("guest_sha256", "envelope_sha256", "payload_sha256", "catalog_sha256"):
+        if not isinstance(context[name], str) or not re.fullmatch(
+            r"[0-9a-f]{64}", context[name]
+        ):
+            raise ValueError("Verified benchmark catalog context has an invalid hash")
+    cases = context["cases"]
+    if (
+        not isinstance(cases, list)
+        or not 1 <= len(cases) <= benchmark_catalog.MAXIMUM_CASES
+    ):
+        raise ValueError("Verified benchmark catalog context has an invalid case list")
+    seen: set[str] = set()
+    for case in cases:
+        if not isinstance(case, dict) or set(case) != {"id", "kind", "map", "players"}:
+            raise ValueError(
+                "Verified benchmark catalog context case has invalid fields"
+            )
+        case_id, kind, map_name, players = (
+            case["id"],
+            case["kind"],
+            case["map"],
+            case["players"],
+        )
+        if (
+            not isinstance(case_id, str)
+            or not benchmark_catalog.CASE_ID.fullmatch(case_id)
+            or case_id in seen
+        ):
+            raise ValueError(
+                "Verified benchmark catalog context has an invalid case ID"
+            )
+        seen.add(case_id)
+        if not isinstance(kind, str) or kind not in benchmark_catalog.KINDS:
+            raise ValueError(
+                "Verified benchmark catalog context has an invalid case kind"
+            )
+        if (
+            not isinstance(map_name, str)
+            or (map_name and not benchmark_catalog.MAP_NAME.fullmatch(map_name))
+            or (kind == "menu") != (map_name == "")
+        ):
+            raise ValueError(
+                "Verified benchmark catalog context has an invalid case map"
+            )
+        if kind == "multiplayer":
+            if type(players) is not int or players not in benchmark_catalog.PLAYERS:
+                raise ValueError(
+                    "Verified benchmark catalog context has an invalid player count"
+                )
+        elif players is not None:
+            raise ValueError("Non-multiplayer catalog case has a player count")
+    return context
 
 
 def main() -> None:
@@ -526,7 +709,7 @@ def main() -> None:
         report = json.loads(args.report.read_text())
         if report["source_sha"] != release.full_sha(args.source_sha):
             raise ValueError("Probe report source differs from dispatch")
-        check_release(
+        recording_context = check_release(
             report, load_policy(os.environ.get("RELEASE_BUILD_POLICY", "")), selected
         )
         apple = release.API(
@@ -540,6 +723,10 @@ def main() -> None:
                 selected,
                 load_policy(os.environ.get("RELEASE_BUILD_POLICY", "")),
             ),
+        )
+        release.output(
+            "recording_context",
+            json.dumps(recording_context, sort_keys=True, separators=(",", ":")),
         )
         print("Build, feeds, signing configuration, and existing app access validated")
 

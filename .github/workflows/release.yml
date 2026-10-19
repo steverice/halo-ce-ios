@@ -84,6 +84,7 @@ jobs:
     environment: release
     outputs:
       identity: ${{ steps.check.outputs.identity }}
+      recording_context: ${{ steps.check.outputs.recording_context }}
     env:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_BUNDLE_ID: ${{ vars.APPLE_BUNDLE_ID }}
@@ -152,6 +153,9 @@ jobs:
           RELEASE_PLATFORMS: ${{ inputs.platforms }}
           RELEASE_BUILD_POLICY: ${{ vars.RELEASE_BUILD_POLICY }}
           RELEASE_PREFLIGHT_IDENTITY: ${{ needs.preflight.outputs.identity }}
+          RELEASE_RECORDING_CONTEXT: ${{ needs.preflight.outputs.recording_context }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RELEASE_SUMMARY_MODEL: ${{ vars.RELEASE_SUMMARY_MODEL }}
           INCREMENT: ${{ inputs.increment }}
           RESUME_TAG: ${{ inputs.resume_tag }}
           BOOTSTRAP_SINCE: ${{ inputs.bootstrap_since }}
