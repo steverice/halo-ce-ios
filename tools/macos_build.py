@@ -15,7 +15,7 @@ def validate_native(args):
                  'app_store_package', 'upload', 'tester', 'simulator', 'ipa', 'signing_profile',
                  'extended_virtual_addressing')
     if any(getattr(args, name, None) for name in forbidden):
-        raise ValueError('native macOS currently supports local unsigned development builds only')
+        raise ValueError('native macOS currently supports local ad hoc development builds only')
 
 
 def native_commands(args, data_packs):
@@ -50,7 +50,10 @@ def build_native(args, data_packs):
     configure, build = native_commands(args, data_packs)
     ios_build.run(*configure)
     ios_build.run(*build)
-    print(f'App: {ROOT}/build/macos/app-native/host/Release/VISR.app')
+    app = ROOT / 'build/macos/app-native/host/Release/VISR.app'
+    ios_build.run('codesign', '--force', '--sign', '-', app)
+    ios_build.run('codesign', '--verify', '--deep', '--strict', app)
+    print(f'App: {app}')
 
 
 if __name__ == '__main__':

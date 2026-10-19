@@ -1,8 +1,11 @@
-"""Native macOS command contract: separate SDK and local-only development product."""
+"""Native macOS command contract: separate SDK and local ad hoc development product."""
+import builtins
+import subprocess
 from types import SimpleNamespace
 from pathlib import Path
 import pytest
 from tools import macos_build
+from tools import ios_build
 
 
 def options(**changes):
@@ -36,3 +39,45 @@ def test_native_uses_macos_sdk_and_separate_product():
 def test_native_rejects_other_platform_and_account_flows(change):
     with pytest.raises(ValueError):
         macos_build.validate_native(options(**change))
+
+
+def test_build_native_signs_and_verifies_bundle_before_reporting_success(monkeypatch):
+    app = macos_build.ROOT / 'build/macos/app-native/host/Release/VISR.app'
+    events = []
+    monkeypatch.setattr(macos_build, 'native_commands', lambda args, packs: (['configure'], ['build']))
+    monkeypatch.setattr(ios_build, 'run', lambda *command: events.append(('run', command)))
+    monkeypatch.setattr(builtins, 'print', lambda *args, **kwargs: events.append(('print', args)))
+
+    macos_build.build_native(options(), [])
+
+    assert events == [
+        ('run', ('configure',)),
+        ('run', ('build',)),
+        ('run', ('codesign', '--force', '--sign', '-', app)),
+        ('run', ('codesign', '--verify', '--deep', '--strict', app)),
+        ('print', (f'App: {app}',)),
+    ]
+
+
+def test_build_native_does_not_report_success_when_strict_verification_fails(monkeypatch):
+    events = []
+    app = macos_build.ROOT / 'build/macos/app-native/host/Release/VISR.app'
+    monkeypatch.setattr(macos_build, 'native_commands', lambda args, packs: (['configure'], ['build']))
+
+    def run(*command):
+        events.append(command)
+        if command[:2] == ('codesign', '--verify'):
+            raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(ios_build, 'run', run)
+    monkeypatch.setattr(builtins, 'print', lambda *args, **kwargs: events.append(('print', *args)))
+
+    with pytest.raises(subprocess.CalledProcessError):
+        macos_build.build_native(options(), [])
+
+    assert events == [
+        ('configure',),
+        ('build',),
+        ('codesign', '--force', '--sign', '-', app),
+        ('codesign', '--verify', '--deep', '--strict', app),
+    ]

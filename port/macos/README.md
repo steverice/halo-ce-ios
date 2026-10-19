@@ -6,7 +6,7 @@ The AppKit target uses the macOS SDK, SDL3's Cocoa window and Metal view, and th
 python3 tools/macos_build.py --renderer metal
 ```
 
-The development product is `build/macos/app-native/host/Release/VISR.app`. It is unsigned. This target does not provision, upload, or enable CloudKit. It does not bundle benchmark recordings. Signed profile and recording feeds are off by default; explicit data-pack inputs use the existing verification path.
+The development product is `build/macos/app-native/host/Release/VISR.app`. The build signs it ad hoc for local development and verifies the completed bundle. It does not use an Apple signing identity or provisioning profile. This target does not provision, upload, or enable CloudKit. It does not bundle benchmark recordings. Signed profile and recording feeds are off by default; explicit data-pack inputs use the existing verification path.
 
 On first launch, choose an original Xbox PAL or NTSC-US ISO or XISO. The importer validates and stages the maps before replacing incomplete data. The original disc image stays unchanged. Native Mac starts in a resizable window. Set `display.fullscreen = true` or `display.mode = "fullscreen"` for an explicit fullscreen launch; `display.mode = "windowed"` selects the window. `HALO_DISPLAY_MODE` and `HALO_FULLSCREEN` provide launch overrides. Keyboard, mouse, controllers, and audio use SDL. Command-Q and closing the game window use the game's quit path.
 
