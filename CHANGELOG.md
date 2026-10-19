@@ -1,3 +1,217 @@
+## visr-v0.2.2 (2026-10-19)
+
+### Summary
+
+- Run the benchmark suite on the new multiplayer cases: Chill Out with 16 players, Blood Gulch with 32 and 64 players, and Sidewinder with 32 and 128 players.
+- Try the gameplay benchmarks across A10, A50, B30, B40, C10, C20, C40, and D40, and see how the runs behave.
+- Watch for smoother loading and less shader hitching in campaign and multiplayer, especially on Chill Out, Blood Gulch, Sidewinder, and D40.
+- Check that multiplayer benchmark scenes show staged arenas, that combat starts once the roster is ready, and that touch controls stay hidden while a benchmark owns input.
+- Confirm map-copy loading keeps up with screen refresh and no longer misses every other update.
+- Check that the benchmark report screen with the QR code appears only in tester builds.
+- Look at the menus on iOS: the updater option should no longer appear.
+- Replays should keep the animation mode they were recorded with, and grenade animations should look right after timeline changes.
+
+### Full changelog
+
+### feat
+
+- **data**: download shader maps by content identity — `shader-lists-2` compresses maps and reuses verified cached lists
+- **benchmark**: capture resolved graphics settings and actual upscaling
+- **ios**: download device profiles and additive shader lists
+- **data**: validate signed device shards and shader additions
+- **shaders**: add validated Sidewinder capture records
+- **shaders**: add validated Sidewinder setup records
+- **shaders**: bundle validated map captures
+- **ios**: add Metal-only renderer build option — skip GLES dependencies for Metal checks
+- **release**: federate Claude summary authentication — use scoped GitHub identity instead of a long-lived key
+- **release**: ground TestFlight summaries in signed catalog facts — `anthropic_release_summary` uses preflight cases so old prototype counts cannot override current support
+- **pages**: overlay the mutable benchmark catalog feed
+- **benchmark**: support 128-player synthetic matches — extend `network_players` catalogs and proof paths through the native roster limit
+- **benchmarks**: update tester data packs
+- **shader**: add validated campaign map records
+- **replay**: preserve the recorded animation mode
+- **shaders**: warm additional D40 replay variants
+- **benchmark**: stage visible network engagement arenas
+- **benchmark**: define bounded engagement arenas in signed data
+- **benchmark**: observe bounded signed network workloads
+- **benchmark**: bound synthetic network rosters to 32 participants
+- **bench**: connect signed catalogs to private match execution
+- **multiplayer**: add filtered two-player benchmark proof
+- **multiplayer**: prove suite-owned remote player actions
+- **release**: enable benchmark report uploads — `benchmark_upload` pins manual CloudKit signing and keeps saves off
+- **benchmark**: add a terminal four-player Full scene
+- **benchmark**: plan a terminal synthetic multiplayer baseline — preserve solo run order
+- **benchmark**: probe one-view four-player play — `mp_benchmark_probe` scripts distinct tick inputs
+- **metal**: observe primary drawable presentation independently of pacing
+- **benchmark**: own presentation callbacks and report measurement semantics
+- **benchmark**: collect independent presentation timestamps
+
+### fix
+
+- **data**: align shader publication receipt with signed assets
+- **data**: link profile snapshot validation with `libm`
+- **profiles**: reject truncated validation paths
+- **profiles**: copy filenames using checked length
+- **ios**: keep host renderer helpers out of guest code — guest builds lack host headers
+- **ios**: enforce Metal-only renderer selection — `host_main` must choose Metal before guest startup
+- **benchmark**: stage spawned units before arena readiness
+- **benchmark**: scale `benchmark_mp_arena_tick` readiness deadline — large rosters may still be spawning after 450 ticks
+- **release**: validate immutable GitHub OIDC subjects
+- **tests**: support GNU test environments
+- **ios**: gate benchmark QR screen to tester builds — normal builds must not expose the local report page
+- **benchmark**: observe successful energy projectiles
+- **benchmark**: defer combat until roster readiness
+- **benchmark**: deliver setup walking before arena readiness
+- **ios**: hide touch controls while a benchmark suite owns input — synthetic multiplayer scenes do not start a replay
+- **benchmarks**: calibrate observer controller input
+- **ai**: initialize line-of-fire direction on early returns
+- **benchmark**: honor guest compiler loop scopes
+- **release**: validate signed catalog feeds and legacy overlays — keep the app contract fixed
+- **release**: require the Production CloudKit environment — validate exported app entitlements
+- **benchmark**: preserve signed integer arena boundaries
+- **animation**: discard grenade pose history across datum and timeline changes
+- **animation**: bound the grenade pose ancestry walk — stop at the root before reading its unused parent
+- **metal**: preserve zero texture borders on older GPUs
+- **multiplayer**: press digital fire for synthetic player actions
+- **benchmark**: remove unsupported duration estimates from menu labels
+- **loading**: limit the short poll yield to Apple targets — keep desktop polling unchanged
+- **loading**: keep map-copy polls inside VBlank cadence — `cache_copy_get_status` no longer misses every other refresh
+- **multiplayer**: wait for local registration before synthetic setup
+- **bench**: box multiplayer report fields as C strings
+- **bench**: separate expected actors from observed match state
+- **benchmark**: remove the aggregate recording library cap
+- **benchmark**: preserve active recordings when a suite is refused
+- **multiplayer**: route suite-owned virtual controllers by port
+- **benchmark**: latch fire across skipped game ticks
+- **benchmark**: keep terminal multiplayer after skipped solo scenes — filtered Full still runs it
+- **ios**: use visible windows for dividers — `interface_splitscreen_render` keeps one-view play whole
+- **input**: connect scripted multiplayer probe controllers — `connected_gamepads` advertises virtual ports before the match
+- **benchmark**: guard `mp_benchmark_probe` before game startup and through postgame input
+- **main**: keep checkpoint clock current through replay isolation — pending saves no longer recount ticks
+- **main**: count checkpoint waits in simulation ticks — rendered frames advanced safe-save timing
+- **render**: label multiplayer frames with the active map — `scene_level` used the stale solo name for network maps
+- **ios**: hide updater row in embedded menu — asset builds read the checked-in XML
+- **build**: keep guest converter command stable across uv runs
+- **ios**: hide unavailable updater toggle on mobile — the updater is not built for Apple or Android
+- **tools**: skip Linux binary probe on macOS — its i686 executable needs a Linux runtime
+- **profiles**: bind profile reads to validated file descriptors
+- **release**: reject profiles marked `IsXcodeManaged` before manual signing
+- **build**: pass benchmark route setting to Mac builds
+- **ios**: propagate marketing version to Mac Catalyst bundle
+- **saves**: preserve incompatible checkpoints on profile checks
+- **mac-runner**: infer the runner from simulator selection
+- **menus**: preserve upstream multiplayer spacing during regeneration
+- **benchmark**: label inferred refresh bins without claiming frame budgets
+- **benchmark**: bound long presentation runs and finite summaries
+
+### perf
+
+- **shaders**: add validated gameplay shader records
+- **shaders**: warm additional D40 combat pipelines
+- **shaders**: warm additional varied bot combat pipelines
+- **shaders**: warm varied multiplayer weapon pipelines
+- **shaders**: warm two additional Chill Out pipelines
+- **shaders**: warm additional campaign and multiplayer pipelines
+- **shaders**: warm validated UI pipeline records
+- **shaders**: warm validated Damnation gameplay pipelines
+- **shaders**: merge validated Blood Gulch warmup additions
+- **shaders**: add multiplayer map captures
+- **shaders**: warm validated B30 shader variants
+- **metal**: warm remaining large-map battle shaders
+- **metal**: warm active large-map combat shaders
+- **metal**: warm large-map multiplayer setup shaders
+- **shaders**: warm active multiplayer effects on Chill Out
+- **shaders**: warm an additional Chill Out pipeline
+- **shaders**: warm active multiplayer effects on Chill Out
+- **shaders**: warm an additional Chill Out pipeline
+- add validated shader entries for `d40`
+- add validated Chill Out shader entries
+- **shaders**: warm validated synthetic-player effects
+- **shaders**: warm observed B30 and B40 replay pipelines
+- **shaders**: warm validated Chill Out combat pipelines
+- **shaders**: restore reviewed campaign and multiplayer warmups
+- **shaders**: warm validated `c20` and `d20` pipelines
+- **shaders**: warm observed A10 pipeline
+- **shaders**: warm validated tower replay pipelines
+- **shaders**: warm validated iPhone benchmark pipeline misses
+- **shaders**: warm validated `c20` and `d20` pipelines
+- **shaders**: warm observed A10 pipeline
+- **profiles**: select 720-line rendering for first-generation iPad Pro
+- **shaders**: warm validated tower replay pipelines
+- **shaders**: warm validated iPhone benchmark pipeline misses
+- **shaders**: combine validated campaign captures
+- **shaders**: add validated replay pipelines
+- **shaders**: bundle validated replay pipelines
+- **shaders**: warm validated native benchmark pipelines
+
+### build
+
+- **shaders**: publish newly captured campaign shaders
+- **shaders**: publish validated combat shader updates
+- **shaders**: add workload warmup records to `shader-lists`
+- **data**: publish compressed shader map updates
+- **data**: update signed workload and shader feeds
+- **shaders**: include additional campaign pipeline variants
+- **shaders**: include replay pipeline variants for `b30` and `c10`
+- **shaders**: include additional `b30` pipeline variants
+- **release**: pin the guest epoch independently of source metadata
+- **pages**: serve checked-in signed assets
+- **benchmarks**: add qualified Maw replay snapshot
+- **data**: publish six curated campaign benchmark recordings
+
+### revert
+
+- **ios**: remove temporary probe lookup tracing — restore `local_player_get_player_index`
+- **render**: defer screen fog correction until its FOV dependency is ported
+
+### docs
+
+- **config**: generate references for `game.enhanced_animations`
+
+### test
+
+- **data**: pin the current signed shader sequence
+- **pages**: match the published recording and shader assets
+- **mp**: use the true invalid arena player boundary
+- **release**: reject player counts above the catalog ceiling — use 129 for the invalid boundary case
+- **ios**: check touch suppression on suite entry — `input_replay_probe.c` covers scenes without a replay
+- **benchmarks**: bind observer checks to controller consumers
+- **benchmark**: preserve complete network player telemetry
+- **replay**: run camera ownership regression in native checks
+- **replay**: preserve camera ownership during auto recording
+- **motion-sensor**: exercise `motion_sensor_update` with three and four local players — catch scan overflows
+- **harness**: restore `cinematic_render` coverage with stereo and HUD test doubles
+
+### ci
+
+- **harness**: run cinematic title tests with a 32-bit Linux runtime
+
+### chore
+
+- **pages**: preserve signed asset feed overlays
+- **release**: pin device profile shards and shader updates
+- **shaders**: add D40 pipeline variant — record the captured blend configuration
+- **benchmarks**: identify arena geometry rejection causes
+- **benchmarks**: distinguish multiplayer startup failures
+- **profiles**: record iPhone 16e baseline at 60 fps
+- **ios**: trace invalid probe player lookup — preserve the `local_player_get_player_index` assertion
+- **shaders**: add Chill Out shader records — warm variants compiled in four-player gameplay
+- **shaders**: drop unattributed Chill Out shader entries
+- **shaders**: add Chill Out multiplayer shader misses
+- **shaders**: add B30 gameplay shader misses — new captures referenced pipelines absent from its warmup list
+- **profiles**: add measured 720-line rendering for the first-generation iPad Pro
+- **profiles**: exclude provisional iPad profile from release candidate
+
+### merge
+
+- integrate calibrated multiplayer observer input
+- integrate bounded multiplayer startup diagnostics
+- integrate corrected multiplayer build source
+- integrate corrected enhanced player animations
+- **benchmark**: integrate the multiplayer benchmark suite
+- align next TestFlight candidate with public main
+- integrate reviewed upstream rendering and game fixes
+
 ## visr-v0.2.1 (2026-10-17)
 
 ### feat
