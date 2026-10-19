@@ -72,7 +72,7 @@ def _github_oidc_jwt_fixture(**changes: Any) -> str:
     claims: dict[str, Any] = {
         "iss": "https://token.actions.githubusercontent.com",
         "aud": "https://api.anthropic.com",
-        "sub": "repo:steverice/visr:environment:release",
+        "sub": "repo:steverice@1423851/visr@1408152155:environment:release",
         "repository": "steverice/visr",
         "repository_owner": "steverice",
         "ref": "refs/heads/main",
@@ -1451,11 +1451,38 @@ def test_workload_identity_rejects_oidc_claim_mismatch_before_exchange(
             requests.append(request)
             return FakeResponse()
 
-    with pytest.raises(
-        ValueError, match="does not match the protected release workflow"
-    ):
+    with pytest.raises(ValueError, match="claim validation failed: ref"):
         release.exchange_anthropic_access_token(opener=FakeOpener())
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("claim", "value", "expected_name"),
+    [
+        ("sub", "repo:steverice/visr:environment:release", "sub"),
+        (
+            "sub",
+            "repo:other@1423851/visr@1408152155:environment:release",
+            "sub",
+        ),
+        ("environment", "other", "environment"),
+    ],
+)
+def test_workload_identity_rejects_wrong_subject_and_reports_claim_name_only(
+    claim: str, value: str, expected_name: str
+) -> None:
+    sentinel = "private-claim-value-must-not-appear"
+    supplied = sentinel if value == "other" else value
+    with pytest.raises(ValueError) as error:
+        release._github_oidc_claims(_github_oidc_jwt_fixture(**{claim: supplied}))
+    assert expected_name in str(error.value)
+    assert sentinel not in str(error.value)
+
+
+def test_workload_identity_accepts_github_immutable_subject_claim() -> None:
+    assert release._github_oidc_claims(_github_oidc_jwt_fixture())["sub"] == (
+        "repo:steverice@1423851/visr@1408152155:environment:release"
+    )
 
 
 def test_workload_identity_rejects_overbroad_scope_without_exposing_token(

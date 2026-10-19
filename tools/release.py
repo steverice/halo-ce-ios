@@ -387,7 +387,7 @@ def _github_oidc_claims(assertion: str) -> dict[str, Any]:
         raise TypeError("GitHub OIDC endpoint returned malformed token claims")
     expected = {
         "iss": "https://token.actions.githubusercontent.com",
-        "sub": "repo:steverice/visr:environment:release",
+        "sub": "repo:steverice@1423851/visr@1408152155:environment:release",
         "repository": "steverice/visr",
         "repository_owner": "steverice",
         "ref": "refs/heads/main",
@@ -397,12 +397,14 @@ def _github_oidc_claims(assertion: str) -> dict[str, Any]:
     }
     audience = claims.get("aud")
     audiences = audience if isinstance(audience, list) else [audience]
-    if (
-        any(claims.get(name) != value for name, value in expected.items())
-        or ANTHROPIC_OIDC_AUDIENCE not in audiences
-    ):
+    mismatched = sorted(
+        name for name, value in expected.items() if claims.get(name) != value
+    )
+    if ANTHROPIC_OIDC_AUDIENCE not in audiences:
+        mismatched.append("aud")
+    if mismatched:
         raise ValueError(
-            "GitHub OIDC token does not match the protected release workflow"
+            "GitHub OIDC token claim validation failed: " + ", ".join(mismatched)
         )
     return claims
 
