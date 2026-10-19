@@ -1,11 +1,11 @@
 /*
 COOP_SPECTATE.C
 
-Spectating in network co-op. A dead player watches a living teammate
-until they respawn (players.c respawns them beside a teammate once it is
-safe). The campaign's dead camera would watch the body; instead this
-follows a teammate from behind, and A (jump on the keyboard) switches to
-the next one. director.c and hud.c call in here.
+Spectating in network co-op. A dead player sees their own body briefly,
+then watches a living teammate until they respawn (players.c respawns them
+beside a teammate once it is safe). The teammate camera follows from behind,
+and A (jump on the keyboard) switches to the next one. director.c and hud.c
+call in here.
 
 It also draws the line telling players about the vote to skip a cutscene
 (network_coop.c counts the votes).
@@ -21,6 +21,7 @@ It also draws the line telling players about the vote to skip a cutscene
 #include "objects/objects.h"
 #include "rasterizer/rasterizer.h"
 #include "render/render.h"
+#include "scenario/scenario.h"
 #include "text/draw_string.h"
 #include "text/font_group.h"
 #include "text/unicode.h"
@@ -53,10 +54,25 @@ in front, far enough back to see all of what holds them */
 #define SPECTATE_HELD_DISTANCE 2.0f
 #define SPECTATE_HELD_PITCH -0.1f
 
+/* show the body before switching to a teammate, as the campaign camera does */
+#define COOP_CORPSE_VIEW_TICKS 92
+
 /* ---------- globals */
 
 /* the player each local player is watching, or NONE */
 static long coop_spectate_watched[MAXIMUM_LOCAL_PLAYERS] = { NONE, NONE, NONE, NONE };
+
+struct coop_spectate_camera_grace
+{
+	boolean active;
+	long player_index;
+	long scenario_index;
+	long dead_unit_index;
+	long last_tick;
+	unsigned long elapsed_ticks;
+};
+
+static struct coop_spectate_camera_grace coop_spectate_camera_graces[MAXIMUM_LOCAL_PLAYERS];
 
 /* input_abstraction.c: how many ticks the keyboard's jump key has been held */
 byte input_abstraction_port_accept(short controller_index);
@@ -152,6 +168,90 @@ long coop_spectate_unit(
 	}
 
 	return *watched != NONE ? player_get(*watched)->unit_index : NONE;
+}
+
+/* The dead camera normally switches at a wall-clock delay when it starts
+without a target. Give online co-op the same body interval as the campaign,
+counted in simulation ticks, while keeping the choice local to this view. */
+long coop_spectate_camera_unit(
+	short local_player_index,
+	boolean network_coop,
+	boolean camera_available,
+	boolean has_died)
+{
+	struct coop_spectate_camera_grace *grace;
+	struct player_datum *player;
+	long player_index;
+	long now;
+	long corpse;
+	unsigned long elapsed;
+	long teammate;
+
+	if (local_player_index < 0 || local_player_index >= MAXIMUM_LOCAL_PLAYERS)
+		return NONE;
+	grace = &coop_spectate_camera_graces[local_player_index];
+	if (!network_coop)
+	{
+		grace->active = FALSE;
+		return NONE;
+	}
+
+	player_index = local_player_get_player_index(local_player_index);
+	player = player_index != NONE ? player_try_and_get(player_index) : NULL;
+	if (!player || player->unit_index != NONE)
+	{
+		grace->active = FALSE;
+		return NONE;
+	}
+
+	/* A player waiting for their first spawn keeps the existing spectator path. */
+	if (!has_died)
+	{
+		grace->active = FALSE;
+		return camera_available ? coop_spectate_unit(local_player_index) : NONE;
+	}
+
+	now = game_time_get();
+	corpse = player->dead_unit_index;
+	if (!grace->active || grace->player_index != player_index ||
+		grace->scenario_index != global_scenario_index || grace->dead_unit_index != corpse ||
+		now < grace->last_tick)
+	{
+		grace->active = TRUE;
+		grace->player_index = player_index;
+		grace->scenario_index = global_scenario_index;
+		grace->dead_unit_index = corpse;
+		grace->last_tick = now;
+		grace->elapsed_ticks = 0;
+	}
+
+	if (!camera_available || game_time_get_paused())
+	{
+		/* A scripted or paused view does not consume the visible body interval. */
+		grace->last_tick = now;
+	}
+	else
+	{
+		elapsed = (unsigned long)now - (unsigned long)grace->last_tick;
+		if (elapsed >= COOP_CORPSE_VIEW_TICKS - grace->elapsed_ticks)
+			grace->elapsed_ticks = COOP_CORPSE_VIEW_TICKS;
+		else
+			grace->elapsed_ticks += elapsed;
+		grace->last_tick = now;
+	}
+
+	if (!camera_available)
+		return NONE;
+
+	/* An expired body is not a reason to keep restarting the grace period. */
+	if (corpse == NONE || !object_try_and_get(corpse))
+		grace->elapsed_ticks = COOP_CORPSE_VIEW_TICKS;
+
+	if (grace->elapsed_ticks < COOP_CORPSE_VIEW_TICKS)
+		return corpse;
+
+	teammate = coop_spectate_unit(local_player_index);
+	return teammate != NONE ? teammate : (corpse != NONE && object_try_and_get(corpse) ? corpse : NONE);
 }
 
 boolean coop_spectate_watching_rider(

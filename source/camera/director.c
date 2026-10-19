@@ -720,6 +720,12 @@ static void director_choose_camera_game(
 	{
 		long player_index = local_player_get_player_index(local_player_index);
 		struct player_datum *player = player_get(player_index);
+		boolean network_coop = coop_spectating();
+		long watched_unit_index = coop_spectate_camera_unit(
+			local_player_index,
+			network_coop,
+			!*director_camera_scripted,
+			player->statistics.deaths > 0);
 		/* port: and a network co-op player who hasn't spawned yet, waiting for
 		the level's first checkpoint, watches too */
 		boolean use_dead_camera = player->unit_index == NONE &&
@@ -736,8 +742,7 @@ static void director_choose_camera_game(
 			if (use_dead_camera)
 			{
 				/* port: a dead network co-op player watches a living teammate
-				(port/linux/game/coop_spectate.c), or its own body if nobody is alive */
-				long watched_unit_index = coop_spectating() ? coop_spectate_unit(local_player_index) : NONE;
+				(port/linux/game/coop_spectate.c) after a short view of its own body */
 
 				if (director->camera_proc != (director_camera_update_proc)dead_camera_update ||
 					(watched_unit_index != NONE &&
@@ -752,7 +757,7 @@ static void director_choose_camera_game(
 						(director_camera_update_proc)dead_camera_update,
 						TRUE);
 				}
-				if (watched_unit_index != NONE)
+				if (watched_unit_index != NONE && watched_unit_index != player->dead_unit_index)
 					coop_spectate_camera((struct dead_camera *)director->camera_data);
 			}
 			else if (director->camera_proc == (director_camera_update_proc)dead_camera_update)
