@@ -68,8 +68,14 @@ int host_benchmark_next(char *text, unsigned int size) {
     else snprintf(text, size, "scene=startup map=a10 difficulty=normal kind=gameplay lead=100 seconds=10");
     return 1;
 }
+static unsigned long graphics_test_revision;
+static int graphics_serializations, graphics_deliveries, graphics_window_active;
+unsigned long config_changes(void) { return graphics_test_revision; }
+int host_external_active(void) { return 0; }
+int config_graphics_settings_json(int scene, char *text, size_t size) { (void)scene; graphics_serializations++; snprintf(text,size,"{}"); return 1; }
+void host_benchmark_graphics(const char *json) { CHECK(graphics_window_active && json[0]); graphics_deliveries++; }
 void host_benchmark_window(int open, int width, int height) {
-    (void)width; (void)height; if (open) window_opens++; else window_closes++;
+    (void)width; (void)height; graphics_window_active = open; if (open) window_opens++; else window_closes++;
 }
 void host_benchmark_end(const char *status, const char *note) {
     (void)note; run_ends++; snprintf(last_end_status, sizeof(last_end_status), "%s", status);
@@ -120,6 +126,8 @@ void halo_benchmark_overrides(long lines, long shadow, long anisotropy) { (void)
 void halo_model_lod_set(int max) { (void)max; }
 
 static void reset(void) {
+    graphics_window_open = 0; graphics_test_revision = 0;
+    graphics_serializations = graphics_deliveries = graphics_window_active = 0;
     combat_begins = 0;
     memset(&suite, 0, sizeof(suite));
     strcpy(suite.map, "chillout"); strcpy(suite.mp_game_mode, "slayer");
@@ -298,6 +306,7 @@ int main(void) {
     observed_mp.tick = 630; observed_mp.actors[1].spawned = 1;
     observed_mp.synthetic_queue_ready = 1;
     frame(32000);
+    int mp_graphics_before = graphics_deliveries; graphics_test_revision++;
     for (int step = 1; step <= 20; step++) {
         observed_mp.tick = 630 + step * 90;
         for (int player = 0; player < 2; player++)
@@ -306,6 +315,7 @@ int main(void) {
         observed_mp.actors[1].shield = 0.75f;
         observed_mp.projectiles_alive = step == 1;
         frame(32000 + step * 3000);
+        if (step == 1) CHECK(graphics_deliveries == mp_graphics_before + 1);
     }
     CHECK(run_ends == 1 && !strcmp(last_end_status, "ok") && window_closes == 1);
 
@@ -526,6 +536,18 @@ int main(void) {
     for (int actor = 0; actor < BENCHMARK_MP_ACTORS; actor++) CHECK(!suite.mp_energy_projectiles_actor[actor]);
     CHECK(!suite.mp_energy_invalid);
 
+    reset();
+    benchmark_graphics_window(1,1280,720);
+    CHECK(graphics_serializations == 1 && graphics_deliveries == 1 && graphics_window_active);
+    suite.state = suite_measuring; suite.seconds = 600; suite.map[0] = 0;
+    for (int index = 1; index <= 100; index++) frame(index);
+    CHECK(graphics_serializations == 1 && graphics_deliveries == 1);
+    graphics_test_revision++; frame(101);
+    CHECK(graphics_serializations == 2 && graphics_deliveries == 2);
+    graphics_test_revision++; frame(102); /* restore the value at another revision */
+    CHECK(graphics_serializations == 3 && graphics_deliveries == 3);
+    benchmark_graphics_window(0,1280,720);
+    CHECK(graphics_serializations == 4 && graphics_deliveries == 4 && !graphics_window_active);
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
     assert(!rmdir("benchmark"));

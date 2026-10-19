@@ -7,6 +7,7 @@ host_exit
 host_benchmark_start
 host_benchmark_next
 host_benchmark_window
+host_benchmark_graphics
 host_benchmark_end
 host_benchmark_fault
 host_get_tp

@@ -32,6 +32,8 @@ config_origin_decide.
 int host_external_active(void);
 #endif
 #include <ctype.h>
+#include <math.h>
+#include <locale.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2829,6 +2831,97 @@ void config_profile_settings_text(char *text, size_t size)
 		}
 		length += (size_t)written;
 	}
+}
+
+/* Capture the typed resolver rather than reinterpreting config.toml on the host. */
+struct graphics_json { char *text; size_t size, length; int valid; };
+static void graphics_append(struct graphics_json *json, const char *format, ...)
+{
+	if (!json->valid) return;
+	va_list arguments; va_start(arguments,format);
+	int count = vsnprintf(json->text+json->length,json->size-json->length,format,arguments);
+	va_end(arguments);
+	if (count < 0 || (size_t)count >= json->size-json->length) json->valid = 0;
+	else json->length += (size_t)count;
+}
+static void graphics_string(struct graphics_json *json, const char *value)
+{
+	if (!value) value = "";
+	if (strlen(value) > CONFIG_GRAPHICS_MAXIMUM_STRING_BYTES) { json->valid = 0; return; }
+	graphics_append(json,"\"");
+	for (const unsigned char *c = (const unsigned char *)value; *c; c++)
+	{
+		if (*c < 32) graphics_append(json,"\\u%04x",*c);
+		else if (*c == '"' || *c == '\\') graphics_append(json,"\\%c",*c);
+		else graphics_append(json,"%c",*c);
+	}
+	graphics_append(json,"\"");
+}
+/* printf's decimal separator is locale-sensitive. Normalize it without changing the process locale.
+   Validate the resulting JSON number grammar; unsupported formatting fails the whole capture explicitly. */
+static void graphics_real(struct graphics_json *json, double value)
+{
+	char literal[64];
+	if (!isfinite(value)) { json->valid = 0; return; }
+	int written = snprintf(literal,sizeof(literal),"%.17g",value);
+	if (written < 0 || (size_t)written >= sizeof(literal)) { json->valid = 0; return; }
+	const char *point = localeconv()->decimal_point;
+	char *separator = point && *point ? strstr(literal,point) : NULL;
+	if (separator && strcmp(point,".")) {
+		size_t length = strlen(point);
+		memmove(separator+1,separator+length,strlen(separator+length)+1); *separator = '.';
+	}
+	const char *cursor = literal;
+	if (*cursor == '-') cursor++;
+	if (*cursor == '0') cursor++;
+	else { if (*cursor < '1' || *cursor > '9') { json->valid = 0; return; } while (*cursor >= '0' && *cursor <= '9') cursor++; }
+	if (*cursor == '.') { cursor++; if (*cursor < '0' || *cursor > '9') { json->valid = 0; return; } while (*cursor >= '0' && *cursor <= '9') cursor++; }
+	if (*cursor == 'e' || *cursor == 'E') { cursor++; if (*cursor == '+' || *cursor == '-') cursor++; if (*cursor < '0' || *cursor > '9') { json->valid = 0; return; } while (*cursor >= '0' && *cursor <= '9') cursor++; }
+	if (*cursor) { json->valid = 0; return; }
+	graphics_append(json,"%s%s",literal,strpbrk(literal,".eE") ? "" : ".0");
+}
+
+static int graphics_setting(const char *name)
+{
+	if (!strncmp(name,"display.",8)) return 1;
+#define CAPTURE_NAME(key) if (!strcmp(name,key)) return 1;
+	GRAPHICS_CAPTURE_DEBUG_KEYS(CAPTURE_NAME)
+#undef CAPTURE_NAME
+	return 0;
+}
+int config_graphics_settings_json(int scene, char *text, size_t size)
+{
+	struct graphics_json json = { text, size < CONFIG_GRAPHICS_MAXIMUM_BYTES ? size : CONFIG_GRAPHICS_MAXIMUM_BYTES, 0, 1 };
+	unsigned count = 0;
+	if (!text || !size) return 0;
+	text[0] = 0;
+	if (scene < 0 || scene >= NUMBER_OF_CONFIG_SCENES) return 0;
+	(void)config_boolean("debug.settings_dump");
+	int external = 0;
+#ifdef HALO_ILP32
+	external = host_external_active();
+#endif
+	graphics_append(&json,"{\"schema\":1,\"scene\":\"%s\",\"configuration_revision\":%lu,\"external_output\":%s,\"values\":{",
+		config_scene_name(scene),config_changes(),external ? "true" : "false");
+	for (size_t index = 0; json.valid && index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting *setting = &config_settings[index];
+		if (!(setting->platforms & CONFIG_PLATFORM) || !graphics_setting(setting->name)) continue;
+		if (++count > CONFIG_GRAPHICS_MAXIMUM_KEYS) { json.valid = 0; break; }
+		const struct config_value *value = config_scene_value(setting->name,setting->type,scene);
+		graphics_append(&json,"%s",count > 1 ? "," : "");
+		graphics_string(&json,setting->name); graphics_append(&json,":");
+		switch (setting->type)
+		{
+		case _config_boolean: graphics_append(&json,"%s",value->boolean ? "true" : "false"); break;
+		case _config_integer: graphics_append(&json,"%ld",value->integer); break;
+		case _config_real: graphics_real(&json,value->real); break;
+		case _config_string: graphics_string(&json,value->string); break;
+		}
+	}
+	graphics_append(&json,"}}");
+	if (!json.valid) text[0] = 0;
+	return json.valid;
 }
 
 int config_scene_describe(int scene, char *text, size_t size)

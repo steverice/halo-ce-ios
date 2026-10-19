@@ -418,8 +418,11 @@ static BOOL busy(uint64_t used)
 	return used > atomic_load(&completed_serial);
 }
 
+static unsigned frame_upscale_paths;
+
 /* waits for the frame slot about to be reused, once per frame, before
 anything writes into its transient memory */
+
 static void frame_begin(void)
 {
 	CFTimeInterval waited;
@@ -431,6 +434,7 @@ static void frame_begin(void)
 	pacing_waited += CACurrentMediaTime() - waited;
 	transient_reset(&streams[frame_slot]);
 	transient_reset(&snapshots[frame_slot]);
+	frame_upscale_paths = 0;
 	frame_started = 1;
 }
 
@@ -1727,7 +1731,7 @@ drawable is scaled up by MetalFX's spatial scaler (edge-aware, with
 sharpening) into upscaled, which the present quad then draws 1:1, rather
 than stretched by the quad's bilinear sampler. The scaler is made again when
 either size changes. */
-static BOOL metalfx_wanted;
+static BOOL metalfx_wanted, metalfx_requested;
 #ifdef HAVE_METALFX
 static id<MTLFXSpatialScaler> upscaler API_AVAILABLE(ios(16.0), tvos(16.0), visionos(1.0));
 #endif
@@ -4101,8 +4105,11 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	period = refresh_period;
 	os_unfair_lock_unlock(&pacing_lock);
 	/* the device benchmark (host_benchmark.m): every presented frame while a run's window is open */
-    if(!frame_log.skip_transition)
-	host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0);
+	if (!frame_log.skip_transition)
+	{
+		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
+		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0);
+	}
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 		return 0.0;
 	if (!pacing_allowed(pacing.refreshes, period))
@@ -5095,6 +5102,13 @@ static void gpu_metal_flush(void)
 display.upscaler asks for it, else the back buffer itself */
 static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output);
 
+static unsigned scene_upscale_path(long source_width, long source_height, long output_width, long output_height, int metalfx_encoded)
+{
+	if (source_width <= 0 || source_height <= 0 || output_width <= 0 || output_height <= 0) return HOST_UPSCALER_UNKNOWN;
+	if (metalfx_encoded) return HOST_UPSCALER_METALFX;
+	return source_width != output_width || source_height != output_height ? HOST_UPSCALER_BILINEAR : HOST_UPSCALER_NONE;
+}
+
 static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long height)
 {
 	return upscale_into(back_buffer, width, height, nil);
@@ -5434,6 +5448,9 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		whole_clear.flags = GPU_CLEAR_COLOR;
 		if (!pass_begin(destination, 0, whole && !scaled ? &whole_clear : NULL))
 			return;
+		unsigned observed_path = picture ? scene_upscale_path((long)source_record->texture.width, (long)source_record->texture.height,
+			(long)scissor.width, (long)scissor.height, picture != source_record->texture) : HOST_UPSCALER_UNKNOWN;
+		if (observed_path != HOST_UPSCALER_NONE) frame_upscale_paths |= observed_path;
 		native_pass.color = destination;
 		if (scaled)
 			return;
@@ -5527,7 +5544,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				height = window_height;
 				width = window_height * (long)record->description.width / (long)record->description.height;
 			}
-			picture = upscale(foveation_picture(record), width, height);
+			id<MTLTexture> source_picture = foveation_picture(record);
+			picture = upscale(source_picture, width, height);
+			unsigned observed_path = picture ? scene_upscale_path((long)source_picture.width, (long)source_picture.height,
+				width, height, picture != source_picture) : HOST_UPSCALER_UNKNOWN;
+			if (observed_path != HOST_UPSCALER_NONE) frame_upscale_paths |= observed_path;
 			use_texture(record);
 			commit(YES);
 			host_theater_present(queue, picture);
@@ -5598,7 +5619,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			}
 #endif
 			/* (debug.rate_map_test: the back buffer resolved first) */
-			picture = upscale(foveation_picture(record), width, height);
+			id<MTLTexture> source_picture = foveation_picture(record);
+			picture = upscale(source_picture, width, height);
+			unsigned observed_path = picture ? scene_upscale_path((long)source_picture.width, (long)source_picture.height,
+				width, height, picture != source_picture) : HOST_UPSCALER_UNKNOWN;
+			if (observed_path != HOST_UPSCALER_NONE) frame_upscale_paths |= observed_path;
 			pass.colorAttachments[0].texture = drawable.texture;
 			pass.colorAttachments[0].loadAction = MTLLoadActionClear;
 			pass.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -5984,7 +6009,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		memset(capabilities, 0, sizeof(*capabilities));
 		metal_debug = (flags & GPU_INITIALIZE_DEBUG) != 0;
 		visibility_wait = (flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0;
-		metalfx_wanted = (flags & GPU_INITIALIZE_METALFX) != 0;
+		metalfx_requested = metalfx_wanted = (flags & GPU_INITIALIZE_METALFX) != 0;
 		metal_state_initialize(&state_cache, !(flags & GPU_INITIALIZE_NO_STATE_CACHE));
 		specialize_off = (flags & GPU_INITIALIZE_NO_SPECIALIZE) != 0;
 		async_compiles = (flags & GPU_INITIALIZE_ASYNC_SHADERS) != 0;

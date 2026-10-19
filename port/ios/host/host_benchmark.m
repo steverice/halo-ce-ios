@@ -22,6 +22,7 @@
 #include "host_external.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
+#include "../../runtime/graphics_capture.h"
 #include <math.h>
 #include <mach/mach.h>
 #include <os/lock.h>
@@ -157,6 +158,104 @@ int host_benchmark_running(void) {
 }
 
 /* ---------- measuring */
+
+static unsigned upscaler_requests, upscaler_paths;
+static uint64_t upscaler_frames[5];
+void host_benchmark_upscaler(const char *requested, unsigned effective_paths)
+{
+    if (!atomic_load(&running)) return;
+    os_unfair_lock_lock(&lock);
+    if (window_open) {
+        upscaler_requests |= !strcmp(requested,"metalfx") ? HOST_UPSCALER_METALFX :
+            !strcmp(requested,"bilinear") ? HOST_UPSCALER_BILINEAR : HOST_UPSCALER_UNKNOWN;
+        unsigned path = effective_paths && !(effective_paths & ~15u) ? effective_paths : HOST_UPSCALER_UNKNOWN;
+        upscaler_paths |= path;
+        int index = path == HOST_UPSCALER_NONE ? 0 : path == HOST_UPSCALER_BILINEAR ? 1 :
+            path == HOST_UPSCALER_METALFX ? 2 : path == HOST_UPSCALER_UNKNOWN ? 4 : 3;
+        upscaler_frames[index]++;
+    }
+    os_unfair_lock_unlock(&lock);
+}
+static NSString *upscaler_name(unsigned paths)
+{
+    if (!paths || paths == HOST_UPSCALER_UNKNOWN) return @"unknown";
+    if (paths == HOST_UPSCALER_NONE) return @"none";
+    if (paths == HOST_UPSCALER_BILINEAR) return @"bilinear";
+    if (paths == HOST_UPSCALER_METALFX) return @"metalfx";
+    return @"mixed";
+}
+static NSDictionary *upscaler_metadata(void)
+{
+    os_unfair_lock_lock(&lock);
+    NSDictionary *value = @{@"requested": upscaler_name(upscaler_requests), @"effective": upscaler_name(upscaler_paths),
+        @"none_frames": @(upscaler_frames[0]), @"bilinear_frames": @(upscaler_frames[1]),
+        @"metalfx_frames": @(upscaler_frames[2]), @"mixed_frames": @(upscaler_frames[3]), @"unknown_frames": @(upscaler_frames[4])};
+    os_unfair_lock_unlock(&lock);
+    return value;
+}
+
+static NSDictionary *graphics_first, *graphics_last;
+static BOOL graphics_changed;
+static NSUInteger graphics_snapshots, graphics_invalid;
+static BOOL graphics_key_allowed(NSString *name)
+{
+    if (![name isKindOfClass:NSString.class] || name.length > 64) return NO;
+    if ([name hasPrefix:@"display."]) return YES;
+#define GRAPHICS_ALLOWED(key) if ([name isEqualToString:@key]) return YES;
+    GRAPHICS_CAPTURE_DEBUG_KEYS(GRAPHICS_ALLOWED)
+#undef GRAPHICS_ALLOWED
+    return NO;
+}
+static BOOL graphics_snapshot_valid(NSDictionary *snapshot)
+{
+    NSSet *keys = [NSSet setWithArray:@[@"schema",@"scene",@"configuration_revision",@"external_output",@"values"]];
+    if (![snapshot isKindOfClass:NSDictionary.class] || ![[NSSet setWithArray:snapshot.allKeys] isEqual:keys] ||
+        ![snapshot[@"schema"] isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)snapshot[@"schema"]) == CFBooleanGetTypeID() ||
+        [snapshot[@"schema"] doubleValue] != 1 || ![@[@"gameplay",@"menu",@"cutscene"] containsObject:snapshot[@"scene"]] ||
+        ![snapshot[@"configuration_revision"] isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)snapshot[@"configuration_revision"]) == CFBooleanGetTypeID() ||
+        CFNumberIsFloatType((__bridge CFNumberRef)snapshot[@"configuration_revision"]) ||
+        [snapshot[@"configuration_revision"] doubleValue] < 0 || [snapshot[@"configuration_revision"] doubleValue] > 9007199254740991.0 ||
+        ![snapshot[@"external_output"] isKindOfClass:NSNumber.class] ||
+        CFGetTypeID((__bridge CFTypeRef)snapshot[@"external_output"]) != CFBooleanGetTypeID()) return NO;
+    NSDictionary *values = snapshot[@"values"];
+    if (![values isKindOfClass:NSDictionary.class] || !values.count || values.count > CONFIG_GRAPHICS_MAXIMUM_KEYS) return NO;
+    for (NSString *name in values) {
+        if (!graphics_key_allowed(name)) return NO;
+        id value = values[name];
+        if ([value isKindOfClass:NSString.class]) {
+            if ([value lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > CONFIG_GRAPHICS_MAXIMUM_STRING_BYTES) return NO;
+        } else if (![value isKindOfClass:NSNumber.class] || !isfinite([value doubleValue])) return NO;
+    }
+    return YES;
+}
+void host_benchmark_graphics(const char *json)
+{
+    if (!atomic_load(&running)) return;
+    size_t length = json ? strnlen(json,CONFIG_GRAPHICS_MAXIMUM_BYTES) : 0;
+    NSDictionary *snapshot = length && length < CONFIG_GRAPHICS_MAXIMUM_BYTES ?
+        [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:json length:length] options:0 error:NULL] : nil;
+    BOOL valid = graphics_snapshot_valid(snapshot);
+    os_unfair_lock_lock(&lock);
+    if (window_open) {
+        if (valid) {
+            if (graphics_last && (![graphics_last[@"values"] isEqual:snapshot[@"values"]] ||
+                ![graphics_last[@"scene"] isEqual:snapshot[@"scene"]] ||
+                ![graphics_last[@"external_output"] isEqual:snapshot[@"external_output"]])) graphics_changed = YES;
+            if (!graphics_first) graphics_first = snapshot;
+            graphics_last = snapshot; graphics_snapshots++;
+        } else graphics_invalid++;
+    }
+    os_unfair_lock_unlock(&lock);
+}
+static NSDictionary *graphics_metadata(void)
+{
+    os_unfair_lock_lock(&lock);
+    NSDictionary *result = @{@"available": @(graphics_first != nil), @"first": graphics_first ?: @{}, @"last": graphics_last ?: @{},
+        @"changed": @(graphics_changed), @"snapshots": @(graphics_snapshots), @"invalid_snapshots": @(graphics_invalid)};
+    os_unfair_lock_unlock(&lock);
+    return result;
+}
 
 void host_benchmark_frame_unshown(int why) {
     if (!atomic_load(&running)) return;
@@ -366,6 +465,12 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
         measurements ?: ""];
 
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+    NSDictionary *upscaler = upscaler_metadata();
+    record[@"upscaler"] = upscaler;
+    record[@"graphics"] = graphics_metadata();
+    NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
+    settings[@"upscaler_requested"] = upscaler[@"requested"];
+    record[@"settings"] = settings;
     if (scene->recording && scene->recording[0])
         record[@"replay_environment"] = replay_environment_for_recording(scene->recording);
     if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
@@ -817,6 +922,8 @@ int host_benchmark_next(char *text, unsigned int size) {
         NSProcessInfo.processInfo.physicalMemory <= (2ULL << 30) ? 65536 : 262144);
     atomic_store(&frames_offered, 0); atomic_store(&frames_no_drawable, 0); atomic_store(&frames_no_picture, 0);
     benchmark_metrics_reset(&metrics, refresh_hertz);
+    upscaler_requests = upscaler_paths = 0; memset(upscaler_frames,0,sizeof(upscaler_frames));
+    graphics_first = graphics_last = nil; graphics_changed = NO; graphics_snapshots = graphics_invalid = 0;
     os_unfair_lock_unlock(&lock);
     run_shader_after = nil;
     run_environment_end = nil;

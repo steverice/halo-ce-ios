@@ -40,6 +40,8 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 /* 1: a run to carry out; 0: the suite is over and the game quits; 2: over, and the game goes back to its main menu */
 int host_benchmark_next(char *text, unsigned int size);
 void host_benchmark_window(int open, int width, int height);
+void host_benchmark_graphics(const char *json);
+int host_external_active(void);
 void host_benchmark_end(const char *status, const char *note);
 void host_benchmark_fault(const char *note);
 /* input_replay.c */
@@ -391,8 +393,36 @@ static int mp_evidence_note(char *note, size_t size)
 		suite.mp_grenades_used > 0 && suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
 }
 
+/* The window is updated every frame, but serialize only at boundaries or resolver/context changes. */
+static int graphics_window_open;
+static int graphics_scene, graphics_external;
+static unsigned long graphics_revision;
+static void benchmark_graphics_window(int open, int width, int height)
+{
+	int scene = halo_scene_class(), external = host_external_active();
+	unsigned long revision = config_changes();
+	int publish = open ? !graphics_window_open || scene != graphics_scene || external != graphics_external || revision != graphics_revision : graphics_window_open;
+	if (open && !graphics_window_open) host_benchmark_window(open,width,height);
+	if (publish)
+	{
+		char json[CONFIG_GRAPHICS_MAXIMUM_BYTES];
+		if (!config_graphics_settings_json(scene,json,sizeof(json))) json[0] = 0;
+		host_benchmark_graphics(json);
+		graphics_scene = scene; graphics_external = external; graphics_revision = config_changes();
+	}
+	if (!open) host_benchmark_window(open,width,height);
+	graphics_window_open = open;
+}
+
+static void benchmark_graphics_observe(int width, int height)
+{
+	if (graphics_window_open && (config_changes() != graphics_revision || halo_scene_class() != graphics_scene ||
+		host_external_active() != graphics_external)) benchmark_graphics_window(1,width,height);
+}
+
 static void finish(const char *status, const char *note)
 {
+	if (graphics_window_open) benchmark_graphics_window(0,0,0);
 	platform_log("benchmark suite: %s ends: %s%s%s", suite.scene, status, *note ? ", " : "", note);
 	host_benchmark_end(status, note);
 	input_replay_begin(NULL, 0);
@@ -746,7 +776,7 @@ void benchmark_suite_frame(long width, long height)
 				suite.opened = now;
 				suite.opened_ticks = state.tick;
 				mp_collect(&state);
-				host_benchmark_window(1, (int)width, (int)height);
+				benchmark_graphics_window(1, (int)width, (int)height);
 				enter(suite_measuring);
 			}
 			else if (now - suite.entered > LOAD_LIMIT_MILLISECONDS + suite.lead * 3000.0)
@@ -764,7 +794,7 @@ void benchmark_suite_frame(long width, long height)
 			suite.opened = now;
 			suite.opened_ticks = ticks;
 			suite.in_cutscene = suite.gameplay && halo_scene_class() == CONFIG_SCENE_CUTSCENE;
-			host_benchmark_window(!suite.in_cutscene, (int)width, (int)height);
+			benchmark_graphics_window(!suite.in_cutscene, (int)width, (int)height);
 			enter(suite_measuring);
 		}
 		else if (*suite.recording && input_replay_ended())
@@ -773,6 +803,7 @@ void benchmark_suite_frame(long width, long height)
 			finish("failed", "the lead-in never ended");
 		break;
 	case suite_measuring:
+		benchmark_graphics_observe((int)width,(int)height);
 		if (suite.mp_scene)
 		{
 			struct benchmark_mp_state state;
@@ -780,7 +811,7 @@ void benchmark_suite_frame(long width, long height)
 			benchmark_scenario_multiplayer_state(&state);
 			if (!mp_match_valid(&state, 0) || !mp_ticks_advance(&state, now))
 			{
-				host_benchmark_window(0, (int)width, (int)height);
+				benchmark_graphics_window(0, (int)width, (int)height);
 				finish("failed", "multiplayer match or ticks stopped during measurement");
 			}
 			else
@@ -791,12 +822,12 @@ void benchmark_suite_frame(long width, long height)
 					char note[512];
 					int useful = mp_evidence_note(note, sizeof(note));
 
-					host_benchmark_window(0, (int)width, (int)height);
+					benchmark_graphics_window(0, (int)width, (int)height);
 					finish(useful ? "ok" : "failed", note);
 				}
 				else if (now - suite.opened > suite.seconds * 3000.0 + REPLAY_OVERRUN_MILLISECONDS)
 				{
-					host_benchmark_window(0, (int)width, (int)height);
+					benchmark_graphics_window(0, (int)width, (int)height);
 					finish("failed", "multiplayer measurement overran its tick window");
 				}
 			}
@@ -807,22 +838,22 @@ void benchmark_suite_frame(long width, long height)
 		if (suite.gameplay && (halo_scene_class() == CONFIG_SCENE_CUTSCENE) != suite.in_cutscene)
 		{
 			suite.in_cutscene = !suite.in_cutscene;
-			host_benchmark_window(!suite.in_cutscene, (int)width, (int)height);
+			benchmark_graphics_window(!suite.in_cutscene, (int)width, (int)height);
 		}
 		if (suite.diverged)
 		{
-			host_benchmark_window(0, (int)width, (int)height);
+			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("diverged", suite.route);
 		}
 		else if (menu ? now - suite.opened >= suite.seconds * 1000.0 :
 			suite.seconds > 0.0 ? ticks - suite.opened_ticks >= suite.seconds * 30.0 : input_replay_ended())
 		{
-			host_benchmark_window(0, (int)width, (int)height);
+			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("ok", suite.route);
 		}
 		else if (*suite.recording && suite.seconds > 0.0 && input_replay_ended())
 		{
-			host_benchmark_window(0, (int)width, (int)height);
+			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("ok", suite.route);
 		}
 		else if (now - suite.opened > (suite.seconds > 0.0 ? suite.seconds * 1000.0 * 3.0 :
@@ -830,7 +861,7 @@ void benchmark_suite_frame(long width, long height)
 		{
 			/* the game time stopped (a death the recording did not have, a script waiting on something else):
 			the replay left its route */
-			host_benchmark_window(0, (int)width, (int)height);
+			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("diverged", suite.route);
 		}
 		break;

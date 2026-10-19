@@ -31,6 +31,13 @@ void host_benchmark_presentation_complete(struct host_benchmark_presentation_tok
 /* at launch, before host_install_signal_handlers: the crash marker's signal handlers, which do nothing until a
    suite runs */
 void host_benchmark_install(void);
+/* Actual primary scene/final scaling paths observed in one frame, independent of the request. */
+enum host_upscaler_path { HOST_UPSCALER_NONE = 1, HOST_UPSCALER_BILINEAR = 2,
+    HOST_UPSCALER_METALFX = 4, HOST_UPSCALER_UNKNOWN = 8 };
+void host_benchmark_upscaler(const char *requested, unsigned effective_paths);
+/* Bounded typed configuration from the guest resolver during an open measurement window. */
+void host_benchmark_graphics(const char *json);
+
 /* the Metal backend, at each present: seconds since the last one, the frame's CPU and GPU seconds (negative:
    unknown), and the display's refresh period (0: unknown) */
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period);

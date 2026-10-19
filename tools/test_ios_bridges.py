@@ -54,3 +54,24 @@ def test_replay_touch_notification_preserves_the_integer_flag():
     name, source = ios_bridges.bridge("void", "host_touch_replay_active", "int active")
     assert name == "host_touch_replay_active"
     assert "host_touch_replay_active(a0);" in source
+
+
+def test_graphics_snapshot_bridge_translates_the_guest_string(tmp_path):
+    import subprocess
+    name, bridge = ios_bridges.bridge("void", "host_benchmark_graphics", "const char *json")
+    assert name == "host_benchmark_graphics"
+    probe = tmp_path / "graphics_bridge.c"
+    probe.write_text(r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+static char captured[32];
+static const char payload[] = "{\"schema\":1}";
+static void *host_pointer(uint64_t address) { assert(address == 0x1234); return (void *)payload; }
+static void host_benchmark_graphics(const char *json) { snprintf(captured,sizeof(captured),"%s",json); }
+'''.replace("#include <assert.h>", "#include <assert.h>\n#include <stdio.h>") + bridge + r'''
+int main(void) { ios_bridge_host_benchmark_graphics(0x1234); assert(!strcmp(captured,payload)); return 0; }
+''')
+    binary = tmp_path / "graphics_bridge"
+    subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(probe), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)

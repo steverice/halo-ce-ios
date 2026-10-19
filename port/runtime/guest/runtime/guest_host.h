@@ -60,6 +60,8 @@ between runs; 0 once the suite is over and its report written */
 int host_benchmark_next(char *text, unsigned int size);
 /* the measured window opens (1) or closes (0); the render size it drew at */
 void host_benchmark_window(int open, int width, int height);
+/* Bounded resolved graphics JSON, published only during an open measured window. */
+void host_benchmark_graphics(const char *json);
 /* the run is over: a status by name (benchmark_plan.h) and a note for the report */
 void host_benchmark_end(const char *status, const char *note);
 /* A fatal guest assertion seals the active run and writes a failed partial report immediately. */
