@@ -127,6 +127,8 @@ int host_ios_gamepad_button(SDL_Gamepad *pad, int button) { return SDL_GetGamepa
 void host_lifecycle_install(void) {}
 int host_lifecycle_in_background(void) { return 0; }
 void host_lifecycle_hold(void) {}
+/* Native Mac play keeps running outside the foreground; its guest clock never subtracts suspended time. */
+unsigned long long host_lifecycle_background_milliseconds(void) { return 0; }
 void host_external_install(void) {}
 void host_external_attach(void *window, int metal) { (void)metal; host_macos_window_ready(window); }
 void host_external_poll(void) {}
