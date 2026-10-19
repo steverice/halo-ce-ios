@@ -47,6 +47,8 @@
 	<string>$(HALO_PROFILE_FEED_URL)</string>
 	<key>HaloRecordingFeedURL</key>
 	<string>$(HALO_RECORDING_FEED_URL)</string>
+	<key>HaloShaderFeedURL</key>
+	<string>$(HALO_SHADER_FEED_URL)</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>

@@ -81,3 +81,16 @@ def test_build_native_does_not_report_success_when_strict_verification_fails(mon
         ('codesign', '--force', '--sign', '-', app),
         ('codesign', '--verify', '--deep', '--strict', app),
     ]
+
+
+def test_native_metadata_preserves_shared_signed_download_feed_keys():
+    import plistlib
+
+    info = plistlib.loads((macos_build.ROOT / 'port/macos/Info.plist').read_bytes())
+    for key, setting in (
+        ('HaloDataPackPublicKey', 'HALO_DATA_PACK_PUBLIC_KEY'),
+        ('HaloProfileFeedURL', 'HALO_PROFILE_FEED_URL'),
+        ('HaloRecordingFeedURL', 'HALO_RECORDING_FEED_URL'),
+        ('HaloShaderFeedURL', 'HALO_SHADER_FEED_URL'),
+    ):
+        assert info[key] == f'$({setting})'
