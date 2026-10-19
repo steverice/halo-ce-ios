@@ -89,14 +89,17 @@ run(BUILD / 'config-origins-probe')
 # device profiles: which files a device gets and in what order, what a profile may not set, and the shipped
 # profiles for the devices measured so far (port/ios/host/host_profile.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
-    'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/third_party/tomlc17/tomlc17.c',
+    'port/ios/tests/profile_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/ios/host/host_profile_delivery.c', 'port/third_party/tomlc17/tomlc17.c',
     '-o', BUILD / 'profile-probe')
 run(BUILD / 'profile-probe', ROOT / 'profiles')
 # Downloaded snapshots must pass the same bounded validators as the publisher.
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
-    'port/ios/tests/profile_pack_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c',
+    'port/ios/tests/profile_pack_probe.c', 'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/ios/host/host_profile_delivery.c',
     'port/third_party/tomlc17/tomlc17.c', '-o', BUILD / 'profile-pack-probe')
 run(BUILD / 'profile-pack-probe', ROOT / 'profiles')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror',
+    'port/ios/tests/shader_pack_probe.c', 'port/ios/host/host_shader_pack.c', '-o', BUILD / 'shader-pack-probe')
+run(BUILD / 'shader-pack-probe', ROOT / 'port/shader-lists')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror',
     'port/ios/tests/recording_pack_probe.c', 'port/ios/host/host_recording_pack.c',
     'port/runtime/benchmark_plan.c', '-o', BUILD / 'recording-pack-probe')
@@ -114,8 +117,8 @@ run(BUILD / 'data-pack-launch-probe')
 run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
     '-Iport/ios/host', '-Iport/runtime/include', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
     'port/ios/tests/data_updates_probe.m', 'port/ios/host/host_data_pack.m',
-    'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c',
-    'port/ios/host/host_recording_pack.c', 'port/ios/host/host_benchmark_catalog.m', 'port/runtime/benchmark_plan.c',
+    'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/ios/host/host_profile_delivery.c',
+    'port/ios/host/host_recording_pack.c', 'port/ios/host/host_shader_pack.c', 'port/ios/host/host_benchmark_catalog.m', 'port/runtime/benchmark_plan.c',
     'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'data-updates-probe')
 run(BUILD / 'data-updates-probe')

@@ -88,3 +88,10 @@ int host_profile_inherit(const struct host_device *device, const char *folder,
 /* Downloaded profile snapshots are accepted only as a complete valid set. */
 int host_profile_validate_folder(const char *folder, void (*log)(const char *));
 int host_profile_catalog_validate(const char *folder);
+
+/* Profile envelopes bind to exactly one canonical platform/model/chip key. */
+int host_profile_device_key(const struct host_device *device, char *key, size_t size);
+int host_profile_validate_device_folder(const char *folder, const struct host_device *device, void (*log)(const char *));
+int host_profile_capacity_validate(const char *path);
+
+int host_profile_catalog_device_validate(const char *folder, const struct host_device *device, const char *profile);

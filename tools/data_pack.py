@@ -35,7 +35,8 @@ RECORDING_MAX_FILE_BYTES = 4 * 1024 * 1024
 _RECORDING_ENVELOPE_CONTENT_MAX = 16 * (3 * RECORDING_MAX_FILE_BYTES + 2 * 4095) + RECORDING_MAX_FILE_BYTES
 _RECORDING_PAYLOAD_MAX = ((_RECORDING_ENVELOPE_CONTENT_MAX + 2) // 3) * 4 + RECORDING_MAX_FILES * 128 + 65536
 ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024,
-                   "recordings": ((_RECORDING_PAYLOAD_MAX + 2) // 3) * 4 + 65536}
+                   "recordings": ((_RECORDING_PAYLOAD_MAX + 2) // 3) * 4 + 65536,
+                   "shaders": 16 * 1024 * 1024}
 LEGACY_BUILTIN_SCENES = {"menu", "a10-opening", "b30-beach"}
 LEGACY_MAXIMUM_ROUTES = 13
 PROFILE_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.toml")
@@ -76,6 +77,95 @@ def sign_helper():
     return helper("data-pack-sign", ["tools/data_pack_sign.c", "port/third_party/monocypher/monocypher.c",
         "port/third_party/monocypher/monocypher-ed25519.c"], ["port/third_party/monocypher"], [
         "port/third_party/monocypher/monocypher.h", "port/third_party/monocypher/monocypher-ed25519.h"])
+
+
+def profile_delivery_helper():
+    return helper("profile-delivery-probe", ["port/ios/tests/profile_delivery_probe.c",
+        "port/ios/host/host_profile.c", "port/ios/host/host_profile_catalog.c", "port/ios/host/host_profile_delivery.c",
+        "port/third_party/tomlc17/tomlc17.c"], ["port/ios/host", "port/third_party/tomlc17"],
+        ["port/ios/host/host_profile.h", "port/linux/src/port_profile_keys.h", "port/linux/src/halo_display.h"])
+
+
+def device_profile_key(platform, model, chip=""):
+    if not all(isinstance(value, str) and "\0" not in value for value in (platform, model, chip)):
+        raise ValueError("invalid hardware identifier")
+    result = subprocess.run([str(profile_delivery_helper()), "key", platform, model, chip], capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError("invalid or noncanonical hardware identifier")
+    return result.stdout.strip()
+
+
+def profile_target_parts(target):
+    if not isinstance(target, str) or len(target) > 160:
+        raise ValueError("invalid profile target")
+    parts = target.split("/")
+    if len(parts) != 3:
+        raise ValueError("profile target needs platform/model/chip")
+    platform, model, encoded = parts
+    chip = encoded.replace("-", " ") if platform == "mac" else ""
+    if device_profile_key(platform, model, chip) != target:
+        raise ValueError("profile target is not canonical")
+    return platform, model, chip
+
+
+def validate_shaders(folder):
+    probe = helper("shader-pack-probe", ["port/ios/tests/shader_pack_probe.c", "port/ios/host/host_shader_pack.c"],
+                   dependencies=["port/ios/host/host_shader_pack.h"])
+    result = subprocess.run([str(probe), str(folder)], capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or "shader snapshot rejected")
+
+
+def validate_device_profiles(folder, target):
+    platform, model, chip = profile_target_parts(target)
+    result = subprocess.run([str(profile_delivery_helper()), "validate", str(folder), platform, model, chip], capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or "device profile snapshot rejected")
+
+
+def device_profile_snapshot(folder, platform, model, chip=""):
+    """Publish one target's class, selected model, and conservative inheritance source closure."""
+    target = device_profile_key(platform, model, chip)
+    folder = Path(folder)
+    source = snapshot(folder, "profiles", "profiles-2")
+    tables = {name: profile_check.load_toml(folder / name) for name in source if name.endswith(".toml") and "/" not in name}
+    # Ask the actual resolver for exact/and_newer precedence; do not recreate it in Python.
+    result = subprocess.run([str(profile_delivery_helper()), "select", str(folder), platform, model, chip],
+                            capture_output=True, text=True, check=True)
+    selected = result.stdout.splitlines()
+    selected_model = selected[1] if len(selected) > 1 else ""
+    keep = {name for name, table in tables.items() if table["kind"] == "class" and table["match"]["platform"] == platform}
+    if selected_model:
+        keep.add(selected_model)
+    catalog = profile_check.load_toml(folder / "hardware/catalog.toml")
+    hardware, fallbacks = [], []
+    if not selected_model:
+        candidates = [h for h in catalog["hardware"] if h["platform"] == platform and
+                      (not h.get("models") or model in h["models"]) and (not h.get("chips") or chip in h["chips"])]
+        if candidates:
+            current = candidates[0]
+            by_id = {h["id"]: h for h in catalog["hardware"]}
+            fallbacks = [f for f in catalog["fallback"] if by_id[f["hardware"]]["platform"] == platform and
+                         by_id[f["hardware"]].get("tier", 0) <= current.get("tier", 0)]
+            identifiers = {current["id"]} | {f["hardware"] for f in fallbacks}
+            hardware = [h for h in catalog["hardware"] if h["id"] in identifiers]
+            keep.update(f["profile"] for f in fallbacks)
+    lines = ["schema = 1", "version = " + json.dumps(catalog["version"])]
+    for name, values in (("hardware", hardware), ("fallback", fallbacks)):
+        if not values:
+            lines.append(name + " = []")
+    for name, values in (("hardware", hardware), ("fallback", fallbacks)):
+        for table in values:
+            lines.append("[[" + name + "]]")
+            lines.extend(key + " = " + json.dumps(value, ensure_ascii=True) for key, value in table.items())
+    files = {name: source[name] for name in sorted(keep)}
+    files["hardware/catalog.toml"] = ("\n".join(lines) + "\n").encode("ascii")
+    with tempfile.TemporaryDirectory(prefix="visr-device-profile-") as temporary:
+        root = Path(temporary)
+        for name, content in files.items():
+            path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
+        validate_device_profiles(root, target)
+    return files
 
 
 def validate_recordings(folder, compatibility=None):
@@ -141,6 +231,8 @@ def read_regular(directory, name, maximum):
 
 
 def snapshot_limits(kind):
+    if kind == "shaders":
+        return 32, 4 * 1024 * 1024, 8 * 1024 * 1024
     return ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
         else (RECORDING_MAX_FILES, RECORDING_MAX_FILE_BYTES, RECORDING_MAX_FILES * RECORDING_MAX_FILE_BYTES))
 
@@ -148,8 +240,10 @@ def snapshot_limits(kind):
 def snapshot_name_allowed(name, kind, compatibility=None):
     if not isinstance(name, str):
         return False
+    if kind == "shaders":
+        return re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}\.txt", name) is not None
     if kind == "profiles":
-        return name == "hardware/catalog.toml" or (len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml")
+        return name == "hardware/catalog.toml" or (compatibility and compatibility.startswith("device-profiles-1:") and name == "capacity.toml") or (len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml")
     return ((compatibility and compatibility.startswith("benchmark-catalog-1:") and name == benchmark_catalog.CATALOG_NAME)
         or RECORDING_NAME.fullmatch(name))
 
@@ -194,8 +288,13 @@ def snapshot(folder, kind, compatibility=None):
             target = validated / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        if kind == "profiles":
-            validate_profiles(validated)
+        if kind == "shaders":
+            validate_shaders(validated)
+        elif kind == "profiles":
+            if compatibility and compatibility.startswith("device-profiles-1:"):
+                validate_device_profiles(validated, compatibility.split(":", 1)[1])
+            else:
+                validate_profiles(validated)
         else:
             validate_recordings(validated, compatibility)
         if kind == "profiles" and compatibility == "profiles-1":
@@ -223,7 +322,7 @@ def atomic_write(path, contents):
 
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kind", required=True, choices=("profiles", "recordings"))
+    parser.add_argument("--kind", required=True, choices=("profiles", "recordings", "shaders"))
     parser.add_argument("--channel", required=True, choices=("stable", "tester"))
     parser.add_argument("--sequence", required=True, type=int)
     parser.add_argument("--compatibility", required=True)
@@ -231,6 +330,9 @@ def main(arguments=None):
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--signing-key", required=True, type=Path)
     parser.add_argument("--notes", default="")
+    parser.add_argument("--device-platform")
+    parser.add_argument("--device-model")
+    parser.add_argument("--device-chip", default="")
     parser.add_argument("--minimum-engine", type=int, default=1)
     parser.add_argument("--maximum-engine", type=int, default=1)
     args = parser.parse_args(arguments)
@@ -238,12 +340,21 @@ def main(arguments=None):
         raise ValueError("sequence must be a positive integer at most 2^53 - 1")
     if args.minimum_engine != 1 or args.maximum_engine != 1:
         raise ValueError("this publisher supports only minimum_engine = maximum_engine = 1")
-    expected = "profiles-[12]" if args.kind == "profiles" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}"
+    expected = (r"device-profiles-1:.+|profiles-[12]" if args.kind == "profiles" else
+                "shader-lists-1" if args.kind == "shaders" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}")
     if not re.fullmatch(expected, args.compatibility):
         raise ValueError("compatibility must be profiles-1 or profiles-2, or benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256")
     if len(args.notes.encode("utf-8")) > 4096:
         raise ValueError("notes must be at most 4096 UTF-8 bytes")
-    files = snapshot(args.input, args.kind, args.compatibility)
+    if args.kind == "profiles" and args.compatibility.startswith("device-profiles-1:"):
+        platform, model, chip = profile_target_parts(args.compatibility.split(":", 1)[1])
+        if (args.device_platform is not None and args.device_platform != platform) or (args.device_model is not None and args.device_model != model) or (args.device_chip and args.device_chip != chip):
+            raise ValueError("device arguments differ from signed compatibility target")
+        files = device_profile_snapshot(args.input, platform, model, chip)
+    else:
+        if args.device_platform or args.device_model or args.device_chip:
+            raise ValueError("device arguments require device-profiles-1 compatibility")
+        files = snapshot(args.input, args.kind, args.compatibility)
     payload = canonical({"files": {name: base64.b64encode(content).decode("ascii") for name, content in files.items()}})
     manifest = canonical({"schema": 1, "kind": args.kind, "channel": args.channel, "sequence": args.sequence,
         "minimum_engine": args.minimum_engine, "maximum_engine": args.maximum_engine,

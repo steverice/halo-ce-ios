@@ -323,3 +323,31 @@ done:
 	toml_free(catalog);
 	return valid;
 }
+
+/* A device shard carries only its target and the conservative source envelope it may inherit. */
+int host_profile_catalog_device_validate(const char *folder, const struct host_device *device, const char *profile)
+{
+    char path[1024]; int valid = 0, target = -1;
+    snprintf(path,sizeof(path),"%s/hardware/catalog.toml",folder);
+    toml_result_t catalog = read_table(path);
+    if (!catalog.ok || !valid_catalog(catalog.toptab)) goto done;
+    toml_datum_t hardware = field(catalog.toptab,"hardware"), fallbacks = field(catalog.toptab,"fallback");
+    for (int i = 0; i < hardware.u.arr.size; i++) if (identity(hardware.u.arr.elem[i],device)) target = i;
+    for (int i = 0; i < fallbacks.u.arr.size; i++) {
+        toml_datum_t f = fallbacks.u.arr.elem[i];
+        int source = hardware_index(hardware,string(f,"hardware"));
+        if (target < 0 || source < 0 || strcmp(string(hardware.u.arr.elem[source],"platform"),device->platform) ||
+            number(hardware.u.arr.elem[source],"tier",1,1000000) > number(hardware.u.arr.elem[target],"tier",1,1000000)) goto done;
+    }
+    for (int i = 0; i < hardware.u.arr.size; i++) {
+        if (i == target) continue;
+        int used = 0;
+        for (int j = 0; j < fallbacks.u.arr.size; j++) if (!strcmp(string(fallbacks.u.arr.elem[j],"hardware"),string(hardware.u.arr.elem[i],"id"))) used = 1;
+        if (!used) goto done;
+    }
+    if (profile) {
+        for (int i = 0; i < fallbacks.u.arr.size; i++) if (!strcmp(string(fallbacks.u.arr.elem[i],"profile"),profile)) valid = 1;
+    } else valid = 1;
+done:
+    toml_free(catalog); return valid;
+}

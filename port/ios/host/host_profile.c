@@ -502,7 +502,7 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 	const char *selector, void (*log_line)(const char *line), struct host_profile *profile)
 {
 	enum { MAXIMUM_FILES = 128 };
-	struct profile_log log = { log_line };
+	struct profile_log log = { log_line, NULL };
 	char (*names)[64] = NULL;
 	int name_count = 0, index;
 	const char *model = device->model, *chip = device->chip;
@@ -539,7 +539,7 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 
 			/* (TEMPLATE.toml is the contributor's starting point, not a profile) */
 			if (length > 5 && length < sizeof(names[0]) && !strcmp(entry->d_name + length - 5, ".toml") &&
-				strcmp(entry->d_name, "TEMPLATE.toml"))
+				strcmp(entry->d_name, "TEMPLATE.toml") && strcmp(entry->d_name, "capacity.toml"))
 				snprintf(names[name_count++], sizeof(names[0]), "%s", entry->d_name);
 		}
 		closedir(directory);
@@ -575,7 +575,7 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 			if (!class_pass)
 				profile_logf(&log, "device profile: %s does not parse (%s); not used", file, result.errmsg);
 		}
-		else if (profile_describe(result.toptab, file, model, chip, &described, class_pass ? &(struct profile_log){ NULL } : &log))
+		else if (profile_describe(result.toptab, file, model, chip, &described, class_pass ? &(struct profile_log){ NULL, NULL } : &log))
 		{
 			if (!class_pass && !described.is_class && described.names_device &&
 				(selector && *selector ? 1 : !strcmp(described.platform, platform)))
@@ -838,7 +838,7 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 	return 1;
 }
 
-int host_profile_validate_folder(const char *folder, void (*log_line)(const char *))
+static int profile_validate_folder(const char *folder, const struct host_device *device, void (*log_line)(const char *))
 {
 	enum { LIMIT = 128 };
 	toml_result_t *tables = calloc(LIMIT, sizeof(*tables));
@@ -872,13 +872,15 @@ int host_profile_validate_folder(const char *folder, void (*log_line)(const char
 			if (!only_catalog || catalogs != 1 || !pack_regular(path, 0)) goto done;
 			continue;
 		}
+		if (!strcmp(name, "capacity.toml")) { if (!host_profile_capacity_validate(path)) goto done; continue; }
 		if (!pack_filename(name) || count == LIMIT || !pack_regular(path, 0)) goto done;
 		size_t size = 0; char *text = profile_read(path, &size, &log, name);
 		if (!text || memchr(text, 0, size)) { free(text); goto done; }
 		tables[count] = toml_parse(text, (int)size); free(text);
 		if (!tables[count].ok) { toml_free(tables[count]); goto done; }
 		int current = count++;
-		if (!pack_heading(tables[current].toptab, name, &heads[current], &log)) goto done;
+		if (!pack_heading(tables[current].toptab, name, &heads[current], &log) ||
+			(device && strcmp(heads[current].platform, device->platform))) goto done;
 		struct host_profile values = {0};
 		profile_add_settings(&values, tables[current].toptab, "pack", name, NULL, 0, &log);
 		if (errors) goto done;
@@ -888,6 +890,7 @@ int host_profile_validate_folder(const char *folder, void (*log_line)(const char
 		for (int family = 1; family <= 32; family++)
 		{
 			const char *platform = (const char *const[]){"ios","tvos","visionos","mac"}[p]; int holders = 0;
+			if (device && strcmp(platform, device->platform)) continue;
 			for (int i = 0; i < count; i++) if (heads[i].is_class && !strcmp(heads[i].platform, platform) &&
 				heads[i].family_minimum <= family && (!heads[i].family_maximum || heads[i].family_maximum >= family)) holders++;
 			if (holders != 1) goto done;
@@ -907,10 +910,29 @@ int host_profile_validate_folder(const char *folder, void (*log_line)(const char
 			!strcmp(heads[i].platform, heads[j].platform) && !strcmp(heads[i].newer_line, heads[j].newer_line) &&
 			heads[i].newer_generation == heads[j].newer_generation && heads[i].newer_tier == heads[j].newer_tier) goto done;
 	valid = host_profile_catalog_validate(folder);
+    if (valid && device) {
+        valid = host_profile_catalog_device_validate(folder, device, NULL);
+        for (int i = 0; valid && i < count; i++) if (!heads[i].is_class) {
+            struct profile_file target;
+            valid = profile_describe(tables[i].toptab, heads[i].file, device->model, device->chip, &target, &log) &&
+                (target.names_device || host_profile_catalog_device_validate(folder, device, heads[i].file));
+        }
+    }
 done:
 	if (directory) closedir(directory);
 	for (int i = 0; tables && i < count; i++) toml_free(tables[i]);
 	free(tables); free(heads);
 	if (!valid && log_line) log_line("profile update: incomplete or invalid profile snapshot rejected");
 	return valid;
+}
+
+int host_profile_validate_folder(const char *folder, void (*log_line)(const char *))
+{
+    return profile_validate_folder(folder, NULL, log_line);
+}
+int host_profile_validate_device_folder(const char *folder, const struct host_device *device, void (*log_line)(const char *))
+{
+    char key[192];
+    if (!device || !host_profile_device_key(device, key, sizeof(key))) return 0;
+    return profile_validate_folder(folder, device, log_line);
 }
