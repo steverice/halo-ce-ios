@@ -361,7 +361,7 @@ static int mp_evidence_note(char *note, size_t size)
 			}
 		}
 		snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
-			"synthetic host local1 synthetic%d one view; moved %d/%d (min %.1f), "
+			"synthetic host local1 synthetic%d one view; bot weapon workload 2; moved %d/%d (min %.1f), "
 			"remote firing %d/%d ammo spent %lu (min %lu), successful energy projectiles %lu (actors %d valid %d), projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
 			"scripted hits %lu kills %lu repositions %lu; "
 			"zero external clients; visible opponents require frame review",
