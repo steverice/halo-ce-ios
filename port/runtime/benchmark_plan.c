@@ -97,13 +97,13 @@ static const long shadow_values[] = { 512, 256, 128 };
 
 const char *benchmark_status_name(enum benchmark_status status) {
     static const char *const names[BENCHMARK_STATUS_COUNT] = { "ok", "skipped", "diverged", "thermal", "interrupted", "crashed",
-        "killed", "failed" };
+        "killed", "failed", "partial" };
 
     return (unsigned)status < BENCHMARK_STATUS_COUNT ? names[status] : "failed";
 }
 
 const char *benchmark_mode_name(enum benchmark_mode mode) {
-    return mode == BENCHMARK_FULL ? "full" : "quick";
+    return mode == BENCHMARK_UNIFIED ? "full-unified" : mode == BENCHMARK_FULL ? "full" : "quick";
 }
 
 unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
@@ -212,6 +212,14 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     int heavier_only, lighter_only;
 
     if (plan->scene_count > BENCHMARK_SCENES_MAXIMUM) return 0;
+    /* The tester pass follows signed catalog order exactly, once at profile defaults.
+       Catalog publishers choose the first taxing campaign and multiplayer ordering. */
+    if (plan->mode == BENCHMARK_UNIFIED) {
+        for (scene = 0; scene < plan->scene_count; scene++)
+            if (!step(&walk, 'A', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
+                return walk.stopped == 1;
+        return 0;
+    }
     base_lines = device->base_lines > 0 && device->base_lines < device->drawable_lines ? device->base_lines : device->drawable_lines;
 
     /* A: every scene as the device's profile has it */

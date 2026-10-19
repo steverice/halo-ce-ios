@@ -1,5 +1,4 @@
-/* The tester build's first screen (tools/ios_build.py --tester): Play, or Run
-   benchmark, quick or full; and, when the last benchmark was cut off (a crash, or
+/* The tester build's first screen (tools/ios_build.py --tester): Play or Benchmark; and, when the last benchmark was cut off (a crash, or
    the system ending the app), the question whether to carry on. Buttons a Siri
    Remote's focus, a controller or a touch can press. Ordinary builds do not
    compile this in: there the benchmark is debug.benchmark_suite's alone. */
@@ -17,6 +16,9 @@
 @property(nonatomic, copy) NSArray<NSString *> *choices;
 @property(nonatomic) NSInteger chosen;
 @end
+
+static NSString *delivery_status;
+void host_benchmark_menu_status(const char *message) { delivery_status=message ? @(message) : nil; }
 
 @implementation HaloBenchmarkMenuController
 - (void)viewDidLoad {
@@ -42,6 +44,9 @@
     text.numberOfLines = 0;
     text.textAlignment = NSTextAlignmentCenter;
     [stack addArrangedSubview:text];
+    UIStackView *buttons=[UIStackView new];
+    buttons.axis=UILayoutConstraintAxisHorizontal; buttons.spacing=36;
+    [stack addArrangedSubview:buttons];
     for (NSString *choice in self.choices) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
 
@@ -49,7 +54,7 @@
         button.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
         button.tag = index++;
         [button addTarget:self action:@selector(pressed:) forControlEvents:UIControlEventPrimaryActionTriggered];
-        [stack addArrangedSubview:button];
+        [buttons addArrangedSubview:button];
     }
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
@@ -109,11 +114,20 @@ const char *host_benchmark_menu(void) {
             return benchmark_mode_name(journal.mode);
         }
     }
-    switch (ask(@"VISR", @"The benchmark plays parts of the game by itself and measures how well this device runs them. "
-        "Start it, then leave the device alone until it says it has finished.",
-        @[ @"Play", @"Quick benchmark", @"Full benchmark" ])) {
-    case 1: host_logf(HOST_LOG_INFO, "benchmark menu: quick"); return "quick";
-    case 2: host_logf(HOST_LOG_INFO, "benchmark menu: full"); return "full";
+#ifdef HALO_BENCHMARK_CLOUD
+    static BOOL attempted_pending;
+    if(!attempted_pending) {
+        char message[256];
+        const char *saved=[NSFileManager.defaultManager fileExistsAtPath:@"benchmark/report.json"] ? "benchmark/report.json" : NULL;
+        host_benchmark_send(saved,NULL,message,sizeof(message));
+        if(message[0])delivery_status=@(message);
+    }
+    attempted_pending=YES;
+#endif
+    NSString *detail=@"The benchmark plays the game by itself and measures this device. Finish at any time. Benchmark data uploads automatically through iCloud.";
+    if(delivery_status.length)detail=[detail stringByAppendingFormat:@"\n\n%@",delivery_status];
+    switch (ask(@"VISR", detail, @[ @"Play", @"Benchmark" ])) {
+    case 1: host_logf(HOST_LOG_INFO, "benchmark menu: unified"); return "full-unified";
     default: return NULL;
     }
 }

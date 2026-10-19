@@ -25,6 +25,7 @@ static int readiness_reads, timeline_reads, starts, requests, loads, unsafe_load
 static int mp_begins, proof_begins, proof_failed, mp_ends, mp_probe_enabled, mp_probe_resets, suite_suspends, suite_restores;
 static int suspension_allowed = 1;
 static int replay_suspended, replay_begins, replay_begins_before_suspend, recording_selected;
+static int finish_requested;
 static int mp_request, window_opens, window_closes, run_ends;
 static int fatal_reports, arena_configures, arena_columns_override = 6;
 static struct benchmark_mp_arena_config configured_arena;
@@ -59,6 +60,7 @@ int host_benchmark_start(const char *name, int drawable, int base, int anisotrop
     (void)name; (void)drawable; (void)base; (void)anisotropy; (void)shadow; (void)lod; starts++; return 1;
 }
 int host_benchmark_next(char *text, unsigned int size) {
+    if (!text && !size) return finish_requested ? 5 : 0;
     requests++;
     if (mp_request) snprintf(text, size, "scene=%s map=chillout difficulty=normal kind=multiplayer_synthetic lead=15 seconds=60 simulation=%s players=%d views=1 game_mode=slayer score_limit=1000 time_limit_minutes=0 arena_columns=%d arena_spacing=1.5 arena_distance=3.5 arena_radius=0.4",
         mp_request != 1 ? "private-proof-fixture" : "private-local-fixture",
@@ -548,6 +550,37 @@ int main(void) {
     CHECK(graphics_serializations == 3 && graphics_deliveries == 3);
     benchmark_graphics_window(0,1280,720);
     CHECK(graphics_serializations == 4 && graphics_deliveries == 4 && !graphics_window_active);
+    /* Normal completion reaches the game menu before interstitials or native completion. */
+    reset();
+    suite.state = suite_measuring;
+    finish("ok", "");
+    CHECK(suite.state==suite_wait_mp_teardown && suite.pending_action==suite_action_menu && requests==0);
+    benchmark_suite_frame(1280,720);
+    CHECK(requests==0);
+    benchmark_suite_mainloop_update();
+    CHECK(at_menu && loads==1);
+    benchmark_suite_frame(1280,720);
+    CHECK(suite.state==suite_next && requests==0);
+    reset(); finish_requested = 1;
+    suite.state = suite_measuring; suite.gameplay = 1;
+    graphics_window_open = graphics_window_active = 1;
+    benchmark_suite_frame(1280,720);
+    CHECK(run_ends == 1 && !strcmp(last_end_status,"partial"));
+    CHECK(!graphics_window_open && suite.state == suite_wait_mp_teardown && suite.pending_action == suite_action_menu);
+    benchmark_suite_mainloop_update();
+    CHECK(at_menu && suite.pending_action==suite_action_none);
+    benchmark_suite_frame(1280,720);
+    CHECK(suite.state==suite_next);
+    finish_requested = 0;
+    reset(); finish_requested = 1;
+    suite.state = suite_lead; suite.mp_scene = suite.mp_host_started = 1;
+    strcpy(suite.mp_simulation,"network_players"); suite.mp_players = 32;
+    benchmark_suite_frame(1280,720);
+    CHECK(run_ends == 1 && !strcmp(last_end_status,"partial"));
+    CHECK(suite.state == suite_wait_mp_teardown && suite.pending_action == suite_action_mp_end);
+    benchmark_suite_mainloop_update();
+    CHECK(mp_ends == 1 && !mp_probe_enabled && !suite.mp_host_started);
+    finish_requested = 0;
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
     assert(!rmdir("benchmark"));

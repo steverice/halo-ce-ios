@@ -113,7 +113,7 @@ void benchmark_journal_load(const char *path, struct benchmark_journal *journal)
             &journal->device.base_lines, &journal->device.anisotropy, &journal->device.shadow_size,
             &journal->device.model_lod_max, &journal->signature) == 8) {
             journal->valid = 1;
-            journal->mode = !strcmp(mode, "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
+            journal->mode = !strcmp(mode, "full-unified") ? BENCHMARK_UNIFIED : !strcmp(mode, "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
             snprintf(journal->id, sizeof(journal->id), "%s", id);
         } else if (!journal->valid) {
             break;

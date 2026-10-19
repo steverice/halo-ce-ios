@@ -431,7 +431,12 @@ static void finish(const char *status, const char *note)
 		suite.pending_action = suite_action_mp_end;
 		enter(suite_wait_mp_teardown);
 	}
-	else enter(suite_next);
+    else {
+        /* Every case leaves its campaign before interstitials, upload or a native
+           menu can block the frame loop. This also covers Finish between cases. */
+        suite.pending_action = suite_action_menu;
+        enter(suite_wait_mp_teardown);
+    }
 }
 
 /* A mode change can alter both the drawable and the contextual profile.
@@ -671,6 +676,16 @@ void benchmark_suite_frame(long width, long height)
 		}
 		enter(suite_starting);
 	}
+    /* A control query through the existing import does not advance the planner.
+       Finish uses the normal case end and multiplayer teardown before returning. */
+    if (suite.state != suite_off && suite.state != suite_unasked &&
+        host_benchmark_next(NULL, 0) == 5) {
+        if (suite.state == suite_loading || suite.state == suite_lead || suite.state == suite_measuring) {
+            finish("partial", "Finish requested; this case contains only the available partial measurements");
+            return;
+        }
+        if (suite.state == suite_starting) enter(suite_next);
+    }
 	now = halo_frame_trace_milliseconds();
 	/* The menu scenario can render while its filesystem worker still reads
 	menu tags. Keep the frame loop running so the UI can join that worker,
@@ -870,7 +885,7 @@ void benchmark_suite_frame(long width, long height)
 			enter(suite_next);
 		else if (now - suite.entered > LOAD_LIMIT_MILLISECONDS)
 		{
-			platform_log("benchmark suite: multiplayer teardown did not return to menu");
+			platform_log("benchmark suite: scene teardown did not return to menu");
 			exit(EXIT_FAILURE);
 		}
 		break;

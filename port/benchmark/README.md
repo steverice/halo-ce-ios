@@ -21,13 +21,21 @@ A recording fits the disc build it was made on. A replay that leaves its route i
 
 Signed recording snapshots can reach installed builds without a new binary. Complete downloaded sets also require `.seeds` for deterministic replay. See [Updating profiles and benchmark recordings](../../docs/data-packs.md).
 
+## Tester benchmark
+
+The tester launch screen offers **Play** and **Benchmark**. Benchmark follows the signed catalog once at the device profile's settings: its selected campaign stress case, the multiplayer workloads, then the remaining campaign replays. Developer `quick` and `full` suites retain their adaptive planning. `full-unified` selects the tester pass explicitly.
+
+The lower-right overlay shows current render FPS and **Finish**. Finish on the overlay or between cases ends the suite, preserves available measurements from the active case with `status: "partial"`, and returns to Play/Benchmark. A partial case does not qualify as a completed workload. Presentation callbacks and missing or zero timestamps retain their own evidence fields; render FPS does not prove physical display FPS.
+
+When benchmark upload is enabled, completion automatically queues the complete report before trying CloudKit. Offline and timed-out attempts remain in `benchmark/outbox`; a subsequent launch or completion retries them under the same record identity. The menu reports pending data. Reports already confirmed by CloudKit retain local copies and delivery receipts. Starting another suite cannot replace a report that could not be preserved. If an interrupted suite cannot resume after an app, guest, profile, or catalog change, its journal, run files, and recording snapshot are copied and verified under `benchmark/history` before a new suite starts.
+
 ## Shader evidence in tester reports
 
 Each finished run includes `shader_capture`: a map name, capture status, SHA-256, and complete descriptor records appended between the run's setup and completion. The interval includes map loading and the measured scene. Missing, disabled, unreadable, oversized, replaced, or incomplete capture evidence is explicit; it never implies zero shader misses. Capture files are limited to 4 MiB each and are read between runs, outside the measured frame window.
 
 The report also includes `shader_dependency_candidates`, capped at 32 MiB across maps. These cumulative records can close dependencies after validation against known source records. They can include earlier sessions or builds and must never be merged wholesale or treated as this run's new misses. Existing UI captures may contain old multiplayer records.
 
-Both Apple TV downloads and Send Report preserve these fields in the same compressed JSON. During an external display mode sweep, `shader_output_intervals` also preserves earlier modes' attributed records with their report code, app identity, and output mode. The consent preview and searchable summary show payload sizes instead of descriptor bodies. Before harvesting, validate the report build, map attribution, descriptor hashes and ranges, and pipeline dependencies; deduplicate against the bundled lists. Older reports without these fields still require separate capture files.
+Both Apple TV downloads and automatic uploads preserve these fields in the same compressed JSON. During an external display mode sweep, `shader_output_intervals` also preserves earlier modes' attributed records with their report code, app identity, and output mode. The searchable summary shows payload sizes instead of descriptor bodies. Before harvesting, validate the report build, map attribution, descriptor hashes and ranges, and pipeline dependencies; deduplicate against the bundled lists. Older reports without these fields still require separate capture files.
 
 Extract a JSON or compressed JSON report into a new evidence folder:
 

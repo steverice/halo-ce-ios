@@ -338,7 +338,7 @@ static UIImage *qr_image(NSString *text) {
     text.numberOfLines = 0;
     text.textAlignment = NSTextAlignmentCenter;
 #if TARGET_OS_TV
-    stop.text = @"Leave the device alone until the benchmark says it has finished. Press Back now to stop it.";
+    stop.text = @"Choose Finish or press Back to save available data and return to the menu.";
 #else
     stop.text = @"Leave the device alone until the benchmark says it has finished.";
 #endif
@@ -347,19 +347,17 @@ static UIImage *qr_image(NSString *text) {
     stop.numberOfLines = 0;
     stop.textAlignment = NSTextAlignmentCenter;
     for (UILabel *label in @[ title, text, stop ]) [stack addArrangedSubview:label];
-#if !TARGET_OS_TV
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    [button setTitle:@"Stop benchmark" forState:UIControlStateNormal];
+    [button setTitle:@"Finish" forState:UIControlStateNormal];
     [button addTarget:self action:@selector(stop:) forControlEvents:UIControlEventPrimaryActionTriggered];
     [button.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
     [stack addArrangedSubview:button];
-#endif
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
         [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor multiplier:0.8]]];
 }
-- (void)stop:(UIButton *)button { (void)button; self.stopped = YES; }
+- (void)stop:(UIButton *)button { (void)button; host_benchmark_request_finish(); self.stopped = YES; }
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
     for (UIPress *press in presses)
         if (press.type == UIPressTypeMenu) { self.stopped = YES; return; }
@@ -385,7 +383,7 @@ int host_benchmark_notice(const char *heading, const char *detail, double second
         window.rootViewController = controller;
         [window makeKeyAndVisible];
     }
-    while (!controller.stopped && CFAbsoluteTimeGetCurrent() < end && !(until && until())) {
+    while (!controller.stopped && !host_benchmark_finish_requested() && CFAbsoluteTimeGetCurrent() < end && !(until && until())) {
         @autoreleasepool {
             if (CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, true) == kCFRunLoopRunFinished) usleep(100000);
 #if !TARGET_OS_TV
@@ -393,7 +391,7 @@ int host_benchmark_notice(const char *heading, const char *detail, double second
 #endif
         }
     }
-    stopped = controller.stopped;
+    stopped = controller.stopped || host_benchmark_finish_requested();
     window.hidden = YES;
     window.rootViewController = nil;
     return stopped;
@@ -439,4 +437,63 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     window.hidden = YES;
     window.rootViewController = nil;
     host_logf(HOST_LOG_INFO, "benchmark: the report screen closed");
+}
+
+/* A window that accepts only the Finish control keeps the game surface usable. */
+@interface HaloBenchmarkOverlayWindow : UIWindow
+@end
+@implementation HaloBenchmarkOverlayWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit=[super hitTest:point withEvent:event];
+    for(UIView *view=hit;view;view=view.superview)if([view isKindOfClass:UIControl.class])return hit;
+    return nil;
+}
+@end
+@interface HaloBenchmarkOverlayController : UIViewController
+@property(nonatomic,strong) UILabel *status;
+@property(nonatomic,strong) NSTimer *timer;
+@end
+@implementation HaloBenchmarkOverlayController
+- (void)viewDidLoad {
+    [super viewDidLoad]; self.view.backgroundColor=UIColor.clearColor;
+    UIStackView *panel=[UIStackView new]; panel.axis=UILayoutConstraintAxisVertical; panel.spacing=4;
+    panel.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.78]; panel.layer.cornerRadius=10;
+    panel.layoutMargins=UIEdgeInsetsMake(10,14,10,14); panel.layoutMarginsRelativeArrangement=YES;
+    panel.translatesAutoresizingMaskIntoConstraints=NO;
+    self.status=[UILabel new]; self.status.textColor=UIColor.whiteColor; self.status.numberOfLines=0;
+    self.status.font=[UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
+    self.status.text=@"Benchmarking…\nRender FPS: —";
+    UIButton *finish=[UIButton buttonWithType:UIButtonTypeSystem];
+    [finish setTitle:@"Finish" forState:UIControlStateNormal];
+    [finish.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
+    [finish addTarget:self action:@selector(finish:) forControlEvents:UIControlEventPrimaryActionTriggered];
+    [panel addArrangedSubview:self.status]; [panel addArrangedSubview:finish]; [self.view addSubview:panel];
+    [NSLayoutConstraint activateConstraints:@[
+        [panel.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-12],
+        [panel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-12]]];
+    __weak HaloBenchmarkOverlayController *weak=self;
+    self.timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
+        (void)timer; double fps=0; host_benchmark_live(&fps);
+        weak.status.text=host_benchmark_finish_requested() ? @"Finishing…" : fps>0 ?
+            [NSString stringWithFormat:@"Benchmarking…\nRender FPS: %.0f",fps] : @"Benchmarking…\nRender FPS: —";
+    }];
+}
+- (void)finish:(UIButton *)button { button.enabled=NO; host_benchmark_request_finish(); }
+@end
+static HaloBenchmarkOverlayWindow *benchmark_overlay;
+void host_benchmark_overlay_show(int visible) {
+    if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ host_benchmark_overlay_show(visible); }); return; }
+    if(!visible) {
+        [((HaloBenchmarkOverlayController *)benchmark_overlay.rootViewController).timer invalidate];
+        benchmark_overlay.hidden=YES; benchmark_overlay.rootViewController=nil; benchmark_overlay=nil; return;
+    }
+    if(benchmark_overlay)return;
+    for(UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {
+        if(![candidate isKindOfClass:UIWindowScene.class] || candidate.activationState!=UISceneActivationStateForegroundActive)continue;
+        benchmark_overlay=[[HaloBenchmarkOverlayWindow alloc] initWithWindowScene:(UIWindowScene *)candidate];
+        benchmark_overlay.frame=((UIWindowScene *)candidate).coordinateSpace.bounds;
+        benchmark_overlay.windowLevel=UIWindowLevelNormal+1;
+        benchmark_overlay.rootViewController=[HaloBenchmarkOverlayController new];
+        [benchmark_overlay makeKeyAndVisible]; break;
+    }
 }

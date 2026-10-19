@@ -49,13 +49,20 @@ void host_benchmark_compile(double seconds);
 /* 1 while a suite runs */
 int host_benchmark_running(void);
 
-/* host_benchmark_menu.m, tester builds only: the first screen. "quick" or "full" when a benchmark was chosen (or one
-   that was cut off is to carry on), NULL to play */
+/* Tester entry screen. "full-unified" starts the signed baseline pass; legacy
+   journal modes can resume. NULL chooses Play. */
 const char *host_benchmark_menu(void);
+void host_benchmark_menu_status(const char *message);
+/* The UI only sets a latch; the guest owns partial sealing and replay/match teardown. */
+void host_benchmark_request_finish(void);
+int host_benchmark_finish_requested(void);
+void host_benchmark_live(double *frames_per_second);
+void host_benchmark_overlay_show(int visible);
 
-/* host_benchmark_send.m, builds that can send (HALO_BENCHMARK_CLOUD names the iCloud container): shows what the
-   report holds, asks, and on Send saves it to the container's public database. 1 if it was sent; message gets a
-   sentence for the screen either way */
+
+/* Queue an immutable report and attempt automatic CloudKit delivery for at most
+   twelve seconds. NULL report_path retries pending reports. Failed attempts stay
+   queued; the message describes confirmed delivery or pending local data. */
 int host_benchmark_send(const char *report_path, const char *summary, char *message, unsigned long size);
 
 /* host_benchmark_page.m: a still screen between runs, for up to seconds or until `until` (when given) returns

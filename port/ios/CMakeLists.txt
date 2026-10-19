@@ -132,7 +132,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_shader_pack.c host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m host/host_benchmark_catalog.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
     "${ROOT}/port/third_party/monocypher/monocypher-ed25519.c"
-    host/host_benchmark.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
+    host/host_benchmark.m host/host_benchmark_outbox.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
     "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_socket_revival.c host/host_natpmp.c host/host_natpmp_packets.c
@@ -349,7 +349,7 @@ set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_
 if(HALO_DEVELOPMENT_TEAM)
     set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${HALO_DEVELOPMENT_TEAM}")
 endif()
-# The device benchmark's report, sent when its tester agrees (host/host_benchmark_send.m): one record in the public
+# Automatic benchmark report delivery (host/host_benchmark_send.m): one record in the public
 # database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
 option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to the iCloud container's public database" OFF)
 set(HALO_BENCHMARK_APS_ENVIRONMENT "development" CACHE STRING "APS environment authorized by the benchmark upload signing profile")

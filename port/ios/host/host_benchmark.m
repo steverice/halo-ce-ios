@@ -17,6 +17,7 @@
 #import "host_benchmark_snapshot.h"
 #import "host_data_updates.h"
 #import "host_benchmark_catalog.h"
+#import "host_benchmark_outbox.h"
 #include "host_profile.h"
 #include "host_config.h"
 #include "host_external.h"
@@ -51,7 +52,16 @@ static double refresh_hertz;
 /* the screen's own rate, for a presenter that reports no refresh period (the Mac's) */
 static double screen_hertz;
 
-static _Atomic int running;
+static _Atomic int running, finish_requested;
+static double live_interval, live_sample_time;
+void host_benchmark_request_finish(void) { atomic_store(&finish_requested,1); }
+int host_benchmark_finish_requested(void) { return atomic_load(&finish_requested); }
+void host_benchmark_live(double *fps) {
+    os_unfair_lock_lock(&lock);
+    *fps=live_interval>0 && CFAbsoluteTimeGetCurrent()-live_sample_time<1.5 ? 1.0/live_interval : 0;
+    os_unfair_lock_unlock(&lock);
+}
+
 static _Atomic int fault_seen;
 /* every frame offered to host_benchmark_frame and every frame not shown, since the run began (the end's log line) */
 static _Atomic unsigned long frames_offered, frames_no_drawable, frames_no_picture;
@@ -65,7 +75,8 @@ static struct benchmark_summary pending_summary;
 static NSString *pending_note;
 static char *pending_measurements;
 static unsigned long pending_offered, pending_no_drawable, pending_no_picture;
-static void finish_run(NSDictionary *presentation);
+static BOOL finish_run(NSDictionary *presentation);
+static NSDictionary *pending_presentation;
 static NSDictionary *run_shader_before, *run_shader_after;
 static NSString *run_shader_directory;
 static NSString *shader_directory(void) {
@@ -267,6 +278,10 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
     os_unfair_lock_lock(&lock);
+    if(isfinite(interval) && interval>0) {
+        live_interval=live_interval>0 ? live_interval*0.8+interval*0.2 : interval;
+        live_sample_time=CFAbsoluteTimeGetCurrent();
+    }
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
@@ -446,7 +461,7 @@ static NSDictionary *replay_environment_for_recording(const char *name) {
 }
 
 /* one finished run as a JSON object in its own file; the report is these put together */
-static void write_run(const struct benchmark_run *finished, enum benchmark_status status, NSString *note,
+static BOOL write_run(const struct benchmark_run *finished, enum benchmark_status status, NSString *note,
     const char *measurements, NSDictionary *presentation) {
     const struct benchmark_scene *scene = &plan.scenes[finished->scene];
     NSString *text = [NSString stringWithFormat:@"{\"index\":%d,\"stage\":\"%c\",\"scene\":\"%s\",\"map\":\"%s\","
@@ -487,10 +502,10 @@ static void write_run(const struct benchmark_run *finished, enum benchmark_statu
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
     text = json_object(host_benchmark_measurement_record(record, presentation));
-    [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
-static void write_report(void) {
+static BOOL write_report(void) {
     NSMutableString *report = [NSMutableString stringWithFormat:@"{%@,\"runs\":[", report_header()];
     int index, written = 0;
     NSMutableArray *runs = [NSMutableArray array];
@@ -498,9 +513,10 @@ static void write_report(void) {
     for (index = 0; index < outcome_count; index++) {
         NSString *text = [NSString stringWithContentsOfFile:run_path(index) encoding:NSUTF8StringEncoding error:nil];
 
-        if (!text) continue;
+        if (!text) return NO;
         NSDictionary *record = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
-        if (record) [runs addObject:record];
+        if (!record) return NO;
+        [runs addObject:record];
         [report appendFormat:@"%s\n%@", written++ ? "," : "", text];
     }
     NSMutableArray *previous = [NSMutableArray array];
@@ -514,9 +530,10 @@ static void write_report(void) {
     NSDictionary *evidence = host_benchmark_shader_evidence(runs, previous, shader_directory());
     [report appendFormat:@"\n],\"shader_dependency_candidates\":%@,\"shader_output_intervals\":%@}\n",
         json_object(evidence[@"shader_dependency_candidates"]), json_object(evidence[@"shader_output_intervals"])];
-    [report writeToFile:@REPORT atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    if(![report writeToFile:@REPORT atomically:YES encoding:NSUTF8StringEncoding error:nil])return NO;
     host_logf(HOST_LOG_INFO, "benchmark: report %s, %d runs, %lu bytes: %s/" REPORT, report_code, written,
         (unsigned long)report.length, NSFileManager.defaultManager.currentDirectoryPath.fileSystemRepresentation);
+    return YES;
 }
 
 /* a few lines a person can read: each baseline scene's frame rate */
@@ -534,7 +551,7 @@ static NSString *report_summary(void) {
         } else {
             NSDictionary *said = @{ @"skipped": @"not run on this device", @"diverged": @"the replay left its route",
                 @"thermal": @"the device got too hot", @"interrupted": @"interrupted", @"crashed": @"the app stopped",
-                @"killed": @"the app was stopped by the system", @"failed": @"did not run" };
+                @"killed": @"the app was stopped by the system", @"failed": @"did not run", @"partial": @"finished early; partial measurements retained" };
 
             [summary appendFormat:@"%@: %@\n", one[@"scene"], said[one[@"status"]] ?: one[@"status"]];
         }
@@ -690,14 +707,23 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     }
     output_failed = 0;
     mkdir(FOLDER, 0755);
-    plan.mode = !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
+    /* Preserve the previous report before any new suite can replace its run files. */
+    NSData *previous=[NSData dataWithContentsOfFile:@REPORT];
+    if(previous && !host_benchmark_outbox_store(@FOLDER "/outbox",previous,NULL)) {
+        host_logf(HOST_LOG_INFO,"benchmark: cannot preserve previous report; refusing to replace it");
+        return 0;
+    }
+    plan.mode = !strcmp(mode,"full-unified") ? BENCHMARK_UNIFIED : !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
     plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
     benchmark_journal_load(JOURNAL, &journal);
     NSDictionary *identity = snapshot_identity(mode);
     pinned_snapshot = journal.valid && !journal.finished ? host_benchmark_snapshot_load(@FOLDER, identity) : nil;
     NSString *journal_pin = [NSString stringWithContentsOfFile:@JOURNAL_SNAPSHOT encoding:NSUTF8StringEncoding error:nil];
     BOOL pinned_resume = pinned_snapshot && [journal_pin isEqual:pinned_snapshot[@"sha256"]];
-    if (!pinned_resume) pinned_snapshot = fresh_snapshot(identity);
+    if (!pinned_resume) {
+        if(journal.valid && !journal.finished && journal.count>0 && !host_benchmark_archive_interrupted(@FOLDER,NULL))return 0;
+        pinned_snapshot = fresh_snapshot(identity);
+    }
     if (!pinned_snapshot) return 0;
     flags = [NSMutableArray array];
     started = NSDate.date;
@@ -710,6 +736,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&
         journal.device.model_lod_max == plan.device.model_lod_max)) {
         pinned_resume = NO;
+        if(!host_benchmark_archive_interrupted(@FOLDER,NULL))return 0;
         pinned_snapshot = fresh_snapshot(identity);
         if (!pinned_snapshot) return 0;
         install_scenes(only);
@@ -757,7 +784,10 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     }
     atomic_store(&marker, benchmark_journal_marker_open(JOURNAL));
     atomic_store(&fault_seen, 0);
+    atomic_store(&finish_requested,0);
+    live_interval=live_sample_time=0;
     atomic_store(&running, 1);
+    if(plan.mode==BENCHMARK_UNIFIED)host_benchmark_overlay_show(1);
     sampler_start();
 
     /* conditions: a warm device gets time to cool, then runs flagged; the display's rate is recorded as it is */
@@ -767,8 +797,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         if (host_benchmark_notice("The device is warm", "Waiting for it to cool before measuring, for up to five minutes.",
             COOL_WAIT_SECONDS, cooled)) {
             host_logf(HOST_LOG_INFO, "benchmark: stopped from the screen before the first run");
-            atomic_store(&running, 0);
-            return 0;
+            host_benchmark_request_finish();
         }
         if (process.thermalState > NSProcessInfoThermalStateNominal) flag(@"warm_at_start");
     }
@@ -777,7 +806,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     if (!output_waiting && screen_hertz != 60.0) flag(@"refresh_not_60");
     if(external_modes.count && !output_waiting && host_external_ready() &&
         host_benchmark_notice("Display mode selected","Waiting for the display to settle before measuring.",PAUSE_SECONDS,NULL)) {
-        atomic_store(&running,0);return 0;
+        host_benchmark_request_finish();
     }
     if (only) flag(@"scenes_filtered");
     /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
@@ -791,13 +820,14 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 int host_benchmark_next(char *text, unsigned int size) {
     const struct benchmark_scene *scene;
 
+    if(!text && !size)return atomic_load(&finish_requested) ? 5 : 0;
     if (!atomic_load(&running)) return 0;
     if (run_finishing) {
-        NSDictionary *presentation = host_benchmark_presentation_take_report();
-        if (!presentation) return 3;
-        finish_run(presentation);
+        if(!pending_presentation)pending_presentation=host_benchmark_presentation_take_report();
+        if (!pending_presentation || !finish_run(pending_presentation)) return 3;
+        pending_presentation=nil;
     }
-    if (output_waiting) {
+    if (output_waiting && !atomic_load(&finish_requested)) {
         if (!host_external_ready() && CFAbsoluteTimeGetCurrent() - output_wait_started < 5.0) return 3;
         output_waiting = 0;
         suite_output = output_now();
@@ -826,11 +856,11 @@ int host_benchmark_next(char *text, unsigned int size) {
             return 4;
         }
         if (host_benchmark_notice("Display mode selected", "Waiting for the display to settle before measuring.", PAUSE_SECONDS, NULL)) {
-            atomic_store(&running, 0);
-            return 0;
+            host_benchmark_request_finish();
+            return host_benchmark_next(text,size);
         }
     }
-    if (output_failed || !benchmark_plan_next(&plan, outcomes, outcome_count, &run)) {
+    if (atomic_load(&finish_requested) || output_failed || !benchmark_plan_next(&plan, outcomes, outcome_count, &run)) {
         const char *page = getenv("HALO_BENCHMARK_PAGE");
         int page_minutes = host_benchmark_page_minutes(page);
         int completion_screen_requested = page && atoi(page) > 0;
@@ -840,15 +870,15 @@ int host_benchmark_next(char *text, unsigned int size) {
 #endif
         int descriptor = atomic_exchange(&marker, -1);
 
-        benchmark_journal_done(JOURNAL);
+        if(atomic_load(&finish_requested))flag(@"finished_early");
         if (descriptor >= 0) close(descriptor);
         if (external_modes.count) {
             NSString *path = [NSString stringWithFormat:@FOLDER "/output-%02lu.json", (unsigned long)external_mode_index];
             [output_reports addObject:path.lastPathComponent];
-            write_report();
+            if(!write_report())return 3;
             [NSFileManager.defaultManager removeItemAtPath:path error:nil];
             [NSFileManager.defaultManager copyItemAtPath:@REPORT toPath:path error:nil];
-            if (external_mode_index + 1 < external_modes.count) {
+            if (!atomic_load(&finish_requested) && external_mode_index + 1 < external_modes.count) {
                 external_mode_index++;
                 /* Each mode owns its outcomes, flags and report identity, even
                    when negotiation fails before a replan can start any run. */
@@ -865,11 +895,17 @@ int host_benchmark_next(char *text, unsigned int size) {
                 output_wait_started = CFAbsoluteTimeGetCurrent();
                 return 3;
             }
-        } else write_report();
+        } else if(!write_report())return 3;
+        benchmark_journal_done(JOURNAL);
         NSString *summary = report_summary();
+        host_benchmark_overlay_show(0);
+        NSError *preservation_error=nil;
+        BOOL preserved=host_benchmark_outbox_store(@FOLDER "/outbox",[NSData dataWithContentsOfFile:@REPORT],&preservation_error)!=nil;
+        if(!preserved)host_logf(HOST_LOG_INFO,"benchmark: report remains at report.json; outbox preservation failed: %s",
+            preservation_error.localizedDescription.UTF8String ?: "unknown error");
 #ifdef HALO_BENCHMARK_CLOUD
-        /* a build that can send: the report is shown and the question asked first (a tester build always asks;
-           elsewhere HALO_BENCHMARK_SEND=1 in the launch's environment does) */
+        /* Tester benchmarks deliver automatically; scripted builds opt in with
+           their existing launch setting. The outbox precedes every attempt. */
 #ifndef HALO_TESTER_BUILD
         if (getenv("HALO_BENCHMARK_SEND"))
 #endif
@@ -879,11 +915,24 @@ int host_benchmark_next(char *text, unsigned int size) {
             host_benchmark_send(REPORT, summary.UTF8String, message, sizeof(message));
             host_logf(HOST_LOG_INFO, "benchmark: %s", message);
             summary = [NSString stringWithFormat:@"%s\n%@", message, summary];
+#ifdef HALO_TESTER_BUILD
+            host_benchmark_menu_status(message);
+#endif
         }
 #endif
-        if (page_minutes > 0) host_benchmark_page(REPORT, summary.UTF8String, report_code, page_minutes);
+        if (plan.mode!=BENCHMARK_UNIFIED && page_minutes > 0) host_benchmark_page(REPORT, summary.UTF8String, report_code, page_minutes);
         atomic_store(&running, 0);
         suite_request = nil;
+#ifdef HALO_TESTER_BUILD
+        if(plan.mode==BENCHMARK_UNIFIED) {
+#ifndef HALO_BENCHMARK_CLOUD
+            host_benchmark_menu_status(preserved ? "Benchmark data saved on this device. Cloud upload is unavailable in this build." :
+                "Could not queue the report. The original is retained; another benchmark cannot replace it.");
+#endif
+            const char *again=host_benchmark_menu();
+            return again ? 4 : 2;
+        }
+#endif
         /* A requested completion screen returns to the main menu (2); a runner or scripted launch quits (0). */
         return completion_screen_requested ? 2 : 0;
     }
@@ -901,8 +950,8 @@ int host_benchmark_next(char *text, unsigned int size) {
         if (host_benchmark_notice(heading, detail, last_run_throttled ? PAUSE_AFTER_THROTTLE_SECONDS : PAUSE_SECONDS, NULL)) {
             host_logf(HOST_LOG_INFO, "benchmark: stopped from the screen before run %d; the journal keeps what is done", run.index);
             flag(@"stopped");
-            atomic_store(&running, 0);
-            return 0;
+            host_benchmark_request_finish();
+            return host_benchmark_next(text,size);
         }
     }
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
@@ -1059,10 +1108,17 @@ void host_benchmark_fault(const char *note) {
 
 /* Only the guest thread writes reports/journals and advances the planner. The
    existing retry result keeps next-run rendering out until the worker seals. */
-static void finish_run(NSDictionary *presentation) {
+static BOOL finish_run(NSDictionary *presentation) {
     struct benchmark_outcome outcome = pending_outcome;
     struct benchmark_summary summary = pending_summary;
-    write_run(&run, outcome.status, pending_note, pending_measurements, presentation);
+    if(outcome.status==BENCHMARK_PARTIAL) {
+        NSMutableDictionary *partial=[presentation mutableCopy];
+        partial[@"collector_status"]=presentation[@"status"] ?: @"unknown";
+        partial[@"status"]=@"user_finished_partial";
+        partial[@"interpretation"]=@"partial_measurement_not_complete_workload";
+        presentation=partial;
+    }
+    if(!write_run(&run, outcome.status, pending_note, pending_measurements, presentation))return NO;
     free(pending_measurements);
     pending_measurements = NULL;
     pending_note = nil;
@@ -1076,4 +1132,5 @@ static void finish_run(NSDictionary *presentation) {
         window_height, outcome.left_least);
     host_logf(HOST_LOG_INFO, "benchmark: run %d offered %lu submissions; %lu had no drawable and %lu no picture", run.index,
         pending_offered, pending_no_drawable, pending_no_picture);
+    return YES;
 }

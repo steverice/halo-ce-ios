@@ -641,7 +641,34 @@ static void test_multiplayer_journal(void) {
     unlink(journal_path);
 }
 
+static void test_unified_catalog_pass(void) {
+    const struct benchmark_scene scenes[] = {
+        { .id="taxing", .map="c10", .difficulty="normal", .kind=BENCHMARK_SCENE_GAMEPLAY, .heavy=1 },
+        { .id="mp", .map="bloodgulch", .difficulty="normal", .kind=BENCHMARK_SCENE_MULTIPLAYER },
+        { .id="remaining", .map="a10", .difficulty="normal", .kind=BENCHMARK_SCENE_GAMEPLAY, .heavy=1 }
+    };
+    struct benchmark_plan plan = { BENCHMARK_UNIFIED, scenes, 3, { 1080, 720, 4, 256, 0 } };
+    struct benchmark_outcome outcomes[3] = {{ .status=BENCHMARK_THERMAL }, { .status=BENCHMARK_FAILED }, { .status=BENCHMARK_OK }};
+    struct benchmark_run next;
+    for (int i=0; i<3; i++) {
+        CHECK(benchmark_plan_next(&plan,outcomes,i,&next));
+        CHECK(next.scene==i && next.index==i && next.stage=='A' && next.lines==0);
+    }
+    CHECK(!benchmark_plan_next(&plan,outcomes,3,&next));
+    CHECK(!strcmp(benchmark_mode_name(BENCHMARK_UNIFIED),"full-unified"));
+    CHECK(!strcmp(benchmark_status_name(BENCHMARK_PARTIAL),"partial"));
+    char path[]="/tmp/visr-unified-journal-XXXXXX";
+    int fd=mkstemp(path); CHECK(fd>=0); if(fd>=0)close(fd);
+    CHECK(benchmark_journal_start(path,BENCHMARK_UNIFIED,"UNIFIED",&plan.device,benchmark_plan_signature(&plan)));
+    struct benchmark_journal journal;
+    benchmark_journal_load(path,&journal);
+    CHECK(journal.valid && journal.mode==BENCHMARK_UNIFIED);
+    unlink(path);
+
+}
+
 int main(void) {
+    test_unified_catalog_pass();
     test_metrics();
     test_routes();
     test_catalog_scene_selection();

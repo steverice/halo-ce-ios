@@ -19,7 +19,7 @@
 /* megabytes that must stay free before the system's limit for a run to count as meeting its target */
 #define BENCHMARK_MEMORY_FLOOR 300
 
-enum benchmark_mode { BENCHMARK_QUICK, BENCHMARK_FULL };
+enum benchmark_mode { BENCHMARK_QUICK, BENCHMARK_FULL, BENCHMARK_UNIFIED };
 
 enum benchmark_status {
     BENCHMARK_OK,
@@ -30,6 +30,7 @@ enum benchmark_status {
     BENCHMARK_CRASHED,       /* a signal ended the app during the run */
     BENCHMARK_KILLED,        /* the app ended during the run with no signal seen: the system, most likely for memory */
     BENCHMARK_FAILED,        /* the run never produced frames (a map that did not load, a timeout) */
+    BENCHMARK_PARTIAL,       /* Finish ended this case; available measurements are retained, never qualified */
     BENCHMARK_STATUS_COUNT
 };
 

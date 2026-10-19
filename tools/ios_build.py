@@ -106,7 +106,7 @@ def main():
                         help='--cloud-saves: the iCloud container (default iCloud.org.steverice.visr for the '
                              'org.steverice.visr bundle IDs; required with any other bundle ID)')
     parser.add_argument('--benchmark-upload', action='store_true',
-                        help='let the device benchmark send its report, when its tester agrees, to the public database '
+                        help='let the device benchmark automatically send its report to the public database '
                              'of the iCloud container (--cloud-container, or the project\'s own). Signs with the iCloud '
                              'entitlement as --cloud-saves does, without turning cloud saves on')
     parser.add_argument('--bink', choices=('on', 'off'), default='on',
@@ -115,7 +115,7 @@ def main():
                              'which skips the movies (default on)')
     parser.add_argument('--ipa', type=Path, help='also package the device app at this path')
     parser.add_argument('--tester', action='store_true',
-                        help='a tester build: the Run benchmark row at launch, and the privacy manifest that declares '
+                        help='a tester build: Play and Benchmark at launch, and the privacy manifest that declares '
                              'the benchmark report (port/ios/privacy)')
     parser.add_argument('--benchmark-routes', choices=('on','off'),
                         help="bundle the device benchmark's recorded routes and run them as scenes (default on; off "
