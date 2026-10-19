@@ -17,8 +17,9 @@ def main():
     if host_main.index('host_renderer_guest_value') > host_main.index('copy_string(env[i])'):
         raise SystemExit('host_main selects the guest renderer after its environment snapshot')
     sdl_platform = (ROOT / 'port/linux/src/sdl_platform.c').read_text()
-    if 'host_renderer_selects_metal(renderer)' not in sdl_platform:
-        raise SystemExit('SDL window selection does not use the build-aware renderer policy')
+    if 'const char *renderer = config_string("display.renderer");' not in sdl_platform or \
+            'metal = !strcmp(renderer, "metal");' not in sdl_platform:
+        raise SystemExit('SDL window selection does not use the renderer received in the guest environment')
     replay_source = (ROOT / 'port/ios/host/host_render_replay.c').read_text()
     if replay_source.index('host_render_replay_rejection') > replay_source.index('window = host_sdl_create_window'):
         raise SystemExit('render replay can create an OpenGL window before rejecting an unsupported capture')

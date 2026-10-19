@@ -7,11 +7,6 @@
 #define HALO_METAL_ONLY 0
 #endif
 
-static inline int host_renderer_selects_metal(const char *renderer)
-{
-	return HALO_METAL_ONLY || (renderer && !strcmp(renderer, "metal"));
-}
-
 static inline const char *host_renderer_guest_value(int visionos, int tvos, const char *launch_renderer)
 {
 	if (HALO_METAL_ONLY || visionos)
