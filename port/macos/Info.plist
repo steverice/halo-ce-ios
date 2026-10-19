@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>VISR</string>
+	<key>CFBundleExecutable</key>
+	<string>VISR</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>VISR</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(HALO_MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>halo</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>$(HALO_BUILD_NUMBER)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.action-games</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>VISR uses Bluetooth only to connect game controllers.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>VISR uses your local network to find and join system link games on this Wi-Fi network, and to host games for nearby players.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_halo-ce._udp</string>
+	</array>
+	<key>HaloDataPackChannel</key>
+	<string>$(HALO_DATA_PACK_CHANNEL)</string>
+	<key>HaloDataPackPublicKey</key>
+	<string>$(HALO_DATA_PACK_PUBLIC_KEY)</string>
+	<key>HaloProfileFeedURL</key>
+	<string>$(HALO_PROFILE_FEED_URL)</string>
+	<key>HaloRecordingFeedURL</key>
+	<string>$(HALO_RECORDING_FEED_URL)</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>

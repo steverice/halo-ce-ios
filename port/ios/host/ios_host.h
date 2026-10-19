@@ -20,7 +20,7 @@ thread (the caller then shows SDL's box); waits */
 int host_alert(const char *title, const char *message, const char *first, const char *second);
 /* a share sheet is up over the game (host_share.m): the game's input waits */
 int host_window_up(void);
-#ifdef __OBJC__
+#if defined(__OBJC__) && !HALO_NATIVE_MAC
 @class UIWindow;
 /* a window of its own at the alert level on the game's scene, shown and key */
 UIWindow *host_present_window(void);

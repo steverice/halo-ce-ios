@@ -1,6 +1,11 @@
 /* Start the statically compiled guest on the iOS UI thread and persist its log. */
 #import <Foundation/Foundation.h>
+#if HALO_NATIVE_MAC
+#import <AppKit/AppKit.h>
+#include "host_macos.h"
+#else
 #import <UIKit/UIKit.h>
+#endif
 #import <Metal/Metal.h>
 #include "ios_host.h"
 #include "guest_image.h"
@@ -11,7 +16,7 @@
 #include "host_external.h"
 #include "host_cloud_saves.h"
 #include "renderer_build.h"
-#if !TARGET_OS_TV
+#if !TARGET_OS_TV && !HALO_NATIVE_MAC
 #include "host_texture_settings.h"
 #endif
 #include "../../linux/include/halo_port_limits.h" /* HALO_PORT_NETWORK_VERSION, for the log */
@@ -71,7 +76,7 @@ static void memory_log_start(void) {
     dispatch_source_set_event_handler(timer,^{
         task_vm_info_data_t info;mach_msg_type_number_t count=TASK_VM_INFO_COUNT;
         if(task_info(mach_task_self(),TASK_VM_INFO,(task_info_t)&info,&count)!=KERN_SUCCESS)return;
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
         host_logf(HOST_LOG_INFO,"memory: footprint %llu MB, peak %llu MB",
             (unsigned long long)info.phys_footprint>>20,(unsigned long long)info.ledger_phys_footprint_peak>>20);
 #else
@@ -126,6 +131,7 @@ which is global: the running game would never run the main run loop again,
 so no UIKit event, lifecycle notification or main-queue block would reach it.
 host_extra_scene_poll, from the game's event poll, turns the pump back on and
 closes the extra scene. */
+#if !HALO_NATIVE_MAC
 static int extra_scene_pending;
 
 /* the scene holding the game's window, or nil before it exists */
@@ -232,20 +238,29 @@ void host_extra_scene_test(void) {
 #endif
 }
 
+#endif /* UIKit scene recovery */
+
 int main(int argc,char **argv) {
     (void)argc;(void)argv;
+    #if !HALO_NATIVE_MAC
     static int entered;
     if(entered++){
         host_logf(HOST_LOG_WARN,"another window scene connected and asked to start the game while it runs (start %d); ignored",entered);
         extra_scene_pending=1;
         return 0;
     }
+    #endif
     @autoreleasepool {
+#if HALO_NATIVE_MAC
+        host_macos_install();
+#endif
         host_external_install();
 #if TARGET_OS_TV
         /* tvOS apps may only write to Caches (purgeable). */
         NSString *documents=[NSSearchPathForDirectoriesInDomains(NSCachesDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"Halo"];
         [NSFileManager.defaultManager createDirectoryAtPath:documents withIntermediateDirectories:YES attributes:nil error:nil];
+#elif HALO_NATIVE_MAC
+        NSString *documents=@(host_macos_data_root());
 #elif TARGET_OS_MACCATALYST
         /* Not sandboxed, so NSDocumentDirectory would be the user's own ~/Documents:
            HALO_DATA_ROOT (a runner's data folder), else Application Support/<bundle ID>. */
@@ -255,6 +270,10 @@ int main(int argc,char **argv) {
         [NSFileManager.defaultManager createDirectoryAtPath:documents withIntermediateDirectories:YES attributes:nil error:nil];
 #else
         NSString *documents=NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject;
+#endif
+#if HALO_NATIVE_MAC
+        if (strlen(documents.fileSystemRepresentation) + sizeof("/save") >= sizeof(data_root))
+            host_fatal("The game data folder path is too long");
 #endif
         snprintf(data_root,sizeof(data_root),"%s",documents.fileSystemRepresentation);
         snprintf(save_root,sizeof(save_root),"%s/save",data_root);mkdir(save_root,0755);
@@ -303,7 +322,9 @@ int main(int argc,char **argv) {
                 }
                 host_exit(0);}];
 #endif
+#if !HALO_NATIVE_MAC
         UIApplication.sharedApplication.idleTimerDisabled=YES;
+#endif
         /* iCloud saves (nothing without HALO_CLOUD_SAVES): begun before the import screen, whose
            time on a new or purged device is also the time the saves take to come back */
         host_cloud_saves_start(data_root,save_root);
@@ -328,7 +349,7 @@ int main(int argc,char **argv) {
 #ifdef HALO_TESTER_BUILD
         if(!benchmark_suite&&!getenv("HALO_RUNNER"))benchmark_suite=host_benchmark_menu();
 #endif
-#if !TARGET_OS_TV
+#if !TARGET_OS_TV && !HALO_NATIVE_MAC
         /* the Settings app's texture pane: acted on now and at every return to the foreground */
         host_texture_settings_observe(data_root);
 #endif
@@ -351,7 +372,9 @@ int main(int argc,char **argv) {
         SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"0");
         /* Keep the Siri Remote out of the player ports; Halo needs a real controller. */
         SDL_SetHint(SDL_HINT_TV_REMOTE_AS_JOYSTICK,"0");
+#if !HALO_NATIVE_MAC
         if(!SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_GAMEPAD))host_fatal("SDL initialization: %s",SDL_GetError());
+#endif
         host_ios_touch_initialize();
         const SDL_DisplayMode *mode=SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
         int width=640,pixel_width=640,pixel_height=480;
@@ -399,7 +422,7 @@ int main(int argc,char **argv) {
             [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String?:"");
         env[env_count++]=env_build;
         mkdir("recordings",0755);
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
         /* the Mac app can end itself, so its menus keep Quit (menu_files.c's platform="quit"); on an iPhone, an
            iPad, an Apple TV and a Vision Pro the system closes the app and the menus have none */
         env[env_count++]="HALO_APP_CAN_QUIT=1";
@@ -408,7 +431,11 @@ int main(int argc,char **argv) {
            with the display's own highest rate among its choices
            (port/linux/game/menu_tags.c). */
         static char env_max_fps[48];
+#if HALO_NATIVE_MAC
+        snprintf(env_max_fps,sizeof(env_max_fps),"HALO_DISPLAY_MAX_FPS=%.0f",host_macos_refresh_rate());
+#else
         snprintf(env_max_fps,sizeof(env_max_fps),"HALO_DISPLAY_MAX_FPS=%ld",(long)UIScreen.mainScreen.maximumFramesPerSecond);
+#endif
         env[env_count++]="HALO_HOST_MAC=1";env[env_count++]=env_max_fps;
 #endif
 #if TARGET_OS_VISION

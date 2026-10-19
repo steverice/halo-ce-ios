@@ -133,7 +133,7 @@ static void frame_rate_initialize(uint32_t flags)
 
 	if (!rate)
 		return;
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 	if (rate == GPU_INITIALIZE_FRAME_RATE_UNLIMITED)
 	{
 		frame_rate.unlimited = 1;

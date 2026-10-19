@@ -82,6 +82,7 @@ def main():
     target = parser.add_mutually_exclusive_group()
     target.add_argument('--tvos', action='store_true', help='build for Apple TV instead of iPhone/iPad')
     target.add_argument('--visionos', action='store_true', help='build for Apple Vision Pro (Metal only) instead of iPhone/iPad')
+    target.add_argument('--native-mac', action='store_true', help='build the separate local macOS AppKit host')
     target.add_argument('--mac', action='store_true', help='build the iOS host for Mac Catalyst, ad hoc signed (the native Mac runner)')
     parser.add_argument('--renderer', choices=('both', 'metal'),
                         help='renderer backends to compile: both (default except visionOS) lets config.toml select OpenGL ES or Metal; '
@@ -171,7 +172,7 @@ def main():
     args = parser.parse_args()
     if platform.system() != 'Darwin' or platform.machine() != 'arm64':
         parser.error('an Apple Silicon Mac with full Xcode is required')
-    if not args.simulator and not args.unsigned and not args.team and not args.mac:
+    if not args.simulator and not args.unsigned and not args.team and not args.mac and not args.native_mac:
         parser.error('use --team YOUR_TEAM_ID to sign, or --unsigned to sign later')
     if args.team and (args.unsigned or args.simulator):
         parser.error('--team is only used for signed device builds')
@@ -207,10 +208,21 @@ def main():
     if args.extended_virtual_addressing and args.mac:
         parser.error(EXTENDED_ADDRESSING_MAC_ERROR)
     platform_name = 'tvos' if args.tvos else 'visionos' if args.visionos else 'mac' if args.mac else 'ios'
-    renderer = args.renderer.upper() if args.renderer else ('METAL' if args.visionos else 'BOTH')
+    renderer = args.renderer.upper() if args.renderer else ('METAL' if args.visionos or args.native_mac else 'BOTH')
     if args.visionos and renderer != 'METAL':
         parser.error('--visionos supports only --renderer metal')
-    args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
+    args.bundle_id = args.bundle_id or ('org.steverice.visr.native' if args.native_mac else 'org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
+    if args.native_mac:
+        if args.data_packs is None:
+            args.data_packs = 'off'
+        if __package__:
+            from .macos_build import validate_native
+        else:
+            from macos_build import validate_native
+        try:
+            validate_native(args)
+        except ValueError as error:
+            parser.error(str(error))
     if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
     try:
@@ -291,6 +303,13 @@ def main():
         shutil.copyfile(ROOT/'port/third_party/ffmpeg-bink/COPYING.LGPLv2.1', ffmpeg_license)
     else:
         ffmpeg_license.unlink(missing_ok=True)
+    if args.native_mac:
+        if __package__:
+            from .macos_build import build_native
+        else:
+            from macos_build import build_native
+        build_native(args, data_packs)
+        return
     if args.mac:
         build_mac(args, cloud, data_packs)
         return

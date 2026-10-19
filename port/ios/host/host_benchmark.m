@@ -8,7 +8,13 @@
    device or its owner, an address, a path or game assets. Shader compilation descriptors accompany the measurements. */
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#if HALO_NATIVE_MAC
+#import <AppKit/AppKit.h>
+#include "host_macos.h"
+#include <SDL3/SDL.h>
+#else
 #import <UIKit/UIKit.h>
+#endif
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_benchmark.h"
@@ -123,7 +129,7 @@ static NSDictionary *output_now(void) {
 static NSDictionary *environment_now(void) {
     float level = -1;
     NSString *charging = @"unavailable";
-#if !TARGET_OS_TV && !TARGET_OS_VISION && !TARGET_OS_MACCATALYST
+#if !TARGET_OS_TV && !TARGET_OS_VISION && !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
     UIDevice.currentDevice.batteryMonitoringEnabled = YES;
     level = UIDevice.currentDevice.batteryLevel;
     switch (UIDevice.currentDevice.batteryState) {
@@ -309,7 +315,7 @@ static void memory_now(long *footprint, long *left) {
     *footprint = *left = -1;
     if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) == KERN_SUCCESS)
         *footprint = (long)(info.phys_footprint >> 20);
-#if !TARGET_OS_MACCATALYST && !TARGET_OS_SIMULATOR
+#if !TARGET_OS_MACCATALYST && !TARGET_OS_SIMULATOR && !HALO_NATIVE_MAC
     *left = (long)(os_proc_available_memory() >> 20);
 #endif
 }
@@ -337,7 +343,12 @@ static void sampler_start(void) {
     dispatch_source_set_timer(sampler, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), NSEC_PER_SEC, NSEC_PER_SEC / 10);
     dispatch_source_set_event_handler(sampler, ^{ sample(); });
     dispatch_resume(sampler);
-    [NSNotificationCenter.defaultCenter addObserverForName:UISceneDidEnterBackgroundNotification object:nil queue:nil
+#if HALO_NATIVE_MAC
+    NSNotificationName inactive=NSApplicationDidResignActiveNotification;
+#else
+    NSNotificationName inactive=UISceneDidEnterBackgroundNotification;
+#endif
+    [NSNotificationCenter.defaultCenter addObserverForName:inactive object:nil queue:nil
         usingBlock:^(NSNotification *notification) {
             (void)notification;
             os_unfair_lock_lock(&lock);
@@ -369,7 +380,7 @@ static NSString *model_identifier(void) {
     const char *simulated = getenv("SIMULATOR_MODEL_IDENTIFIER");
 
     return [NSString stringWithFormat:@"%s (simulator)", simulated ? simulated : "unknown"];
-#elif TARGET_OS_MACCATALYST
+#elif TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
     sysctlbyname("hw.model", text, &size, NULL, 0);
 #else
     sysctlbyname("hw.machine", text, &size, NULL, 0);
@@ -382,7 +393,7 @@ static NSString *platform_name(void) {
     return @"tvos";
 #elif TARGET_OS_VISION
     return @"visionos";
-#elif TARGET_OS_MACCATALYST
+#elif TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
     return @"mac";
 #else
     return @"ios";
@@ -413,7 +424,7 @@ static NSString *report_header(void) {
     minutes.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     minutes.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
     minutes.dateFormat = @"yyyy-MM-dd'T'HH:mm'Z'";
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
     sysctlbyname("machdep.cpu.brand_string", chip, &chip_size, NULL, 0);
 #else
     (void)chip_size;
@@ -572,7 +583,9 @@ static void flag(NSString *name) {
 
 /* the main screen's highest rate and its size in pixels; visionOS has no screen (UIScreen): its displays run at 90 */
 static double screen_rate(void) {
-#if TARGET_OS_VISION
+#if HALO_NATIVE_MAC
+    return host_macos_refresh_rate();
+#elif TARGET_OS_VISION
     return 90.0;
 #else
     return (double)UIScreen.mainScreen.maximumFramesPerSecond;
@@ -580,7 +593,12 @@ static double screen_rate(void) {
 }
 
 static void screen_size(double *width, double *height) {
-#if TARGET_OS_VISION
+#if HALO_NATIVE_MAC
+    int w=0,h=0;
+    SDL_Window *window=host_sdl_window();
+    if(window)SDL_GetWindowSizeInPixels(window,&w,&h);
+    *width=w;*height=h;
+#elif TARGET_OS_VISION
     *width = *height = 0.0;
 #else
     *width = UIScreen.mainScreen.nativeBounds.size.width;

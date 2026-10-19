@@ -1,7 +1,15 @@
 /* What this device is, and the device profile chosen for it (host_profile.h). */
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#if HALO_NATIVE_MAC
+#include <SDL3/SDL.h>
+#endif
+#if HALO_NATIVE_MAC
+#import <AppKit/AppKit.h>
+#include "host_macos.h"
+#else
 #import <UIKit/UIKit.h>
+#endif
 #include "host_profile.h"
 #import "host_data_updates.h"
 #include "host_config.h"
@@ -28,7 +36,7 @@ void host_device_identify(struct host_device *device)
 	snprintf(device->platform, sizeof(device->platform), "tvos");
 #elif TARGET_OS_VISION
 	snprintf(device->platform, sizeof(device->platform), "visionos");
-#elif TARGET_OS_MACCATALYST
+#elif TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 	snprintf(device->platform, sizeof(device->platform), "mac");
 #else
 	snprintf(device->platform, sizeof(device->platform), "ios");
@@ -41,7 +49,7 @@ void host_device_identify(struct host_device *device)
 		device->simulator = 1;
 		snprintf(device->model, sizeof(device->model), "%s", model ? model : "");
 	}
-#elif TARGET_OS_MACCATALYST
+#elif TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 	/* (hw.machine is "arm64" on a Mac; one Mac identifier ships with several chips, so the chip is read too) */
 	sysctl_string("hw.model", device->model, sizeof(device->model));
 	sysctl_string("machdep.cpu.brand_string", device->chip, sizeof(device->chip));
@@ -65,7 +73,13 @@ void host_device_identify(struct host_device *device)
 					device->gpu_family = family;
 			}
 		}
-#if !TARGET_OS_VISION
+#if HALO_NATIVE_MAC
+        {
+            SDL_Window *window=host_sdl_window();
+            if (window) SDL_GetWindowSizeInPixels(window,&device->pixel_width,&device->pixel_height);
+            device->refresh_rate=(int)host_macos_refresh_rate();
+        }
+#elif !TARGET_OS_VISION
 		{
 			UIScreen *screen = UIScreen.mainScreen;
 

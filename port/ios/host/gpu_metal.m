@@ -20,7 +20,12 @@ Every entry point runs in an autorelease pool: the guest runs on the UI thread
 but never returns to its run loop, which would otherwise drain them.
 */
 
+#if HALO_NATIVE_MAC
+#import <AppKit/AppKit.h>
+#include "host_macos.h"
+#else
 #import <UIKit/UIKit.h>
+#endif
 #include "host_external.h"
 #include "gpu.h"
 #include "ios_host.h"
@@ -3797,8 +3802,15 @@ static void pacing_start(uint32_t flags)
 		return;
     output_initialize_flags=flags;
     dispatch_semaphore_t started=dispatch_semaphore_create(0);
+#if HALO_NATIVE_MAC
+    /* AppKit window access stays on the main thread. The owned worker only schedules the link. */
+    CADisplayLink *native_link=host_macos_display_link([PacingClock new],@selector(refresh:));
+    float native_rate=(float)host_macos_refresh_rate();
+#endif
 	NSThread *thread = [[NSThread alloc] initWithBlock:^{
-#if TARGET_OS_VISION
+#if HALO_NATIVE_MAC
+        CADisplayLink *link=native_link;
+#elif TARGET_OS_VISION
         CADisplayLink *link=[CADisplayLink displayLinkWithTarget:[PacingClock new] selector:@selector(refresh:)];
 #else
         UIScreen *screen=(__bridge UIScreen *)host_external_screen();
@@ -3810,7 +3822,11 @@ static void pacing_start(uint32_t flags)
 		/* ask for 120 Hz, which the system clamps to what the screen can do: a ProMotion
 		iPhone otherwise stays at 60 Hz, even with CADisableMinimumFrameDurationOnPhone
 		(Info.plist) */
+#if HALO_NATIVE_MAC
+        float rate=native_rate;
+#else
         float rate=(float)screen.maximumFramesPerSecond;
+#endif
         if(rate<60)rate=60;
 		link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80,rate), rate, rate);
 #endif
@@ -4200,7 +4216,7 @@ tear, and host_frame_rate_limit holds the cap. The display's rate is the
 pacing clock's, which starts a few frames in (not at all with
 debug.fixed_timestep, where only "unlimited" lifts the wait). Returns
 whether frames go unsynchronized. */
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 static struct
 {
 	dispatch_semaphore_t wanted;
@@ -4214,7 +4230,7 @@ the thread then asks for the next one. (With again NO it hands back one
 left over from before frames went back to waiting for the display.) */
 static id<CAMetalDrawable> free_drawable_take(BOOL again)
 {
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 	void *taken;
 
 	if (!free_drawables.wanted)
@@ -4387,7 +4403,7 @@ static void companion_present(BOOL main_shown)
 
 static BOOL frame_rate_sync(void)
 {
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 	double cap = host_frame_rate_cap();
 	CFTimeInterval period;
 	BOOL sync;
@@ -4447,7 +4463,7 @@ static struct
 	_Atomic(void *) ready;
 } system_frames;
 
-API_AVAILABLE(ios(17.0), tvos(17.0), macCatalyst(17.0))
+API_AVAILABLE(ios(17.0), tvos(17.0), macCatalyst(17.0), macos(14.0))
 @interface SystemFrames : NSObject <CAMetalDisplayLinkDelegate>
 @end
 
@@ -4470,7 +4486,7 @@ static void system_frames_start(void)
 {
 	if (!frame_pacer_wants_system_source())
 		return;
-	if (@available(iOS 17.0, tvOS 17.0, macCatalyst 17.0, *))
+	if (@available(iOS 17.0, tvOS 17.0, macCatalyst 17.0, macOS 14.0, *))
 	{
 		int latency = frame_pacer_in_flight();
 		NSThread *thread;
@@ -4478,6 +4494,9 @@ static void system_frames_start(void)
 		system_frames.came = dispatch_semaphore_create(0);
         dispatch_semaphore_t started=dispatch_semaphore_create(0);
         CAMetalLayer *output_layer=layer;
+#if HALO_NATIVE_MAC
+        float native_rate=(float)host_macos_refresh_rate();
+#endif
 		thread = [[NSThread alloc] initWithBlock:^{
 			CAMetalDisplayLink *link = [[CAMetalDisplayLink alloc] initWithMetalLayer:output_layer];
 			SystemFrames *frames_delegate = [SystemFrames new];
@@ -4485,7 +4504,9 @@ static void system_frames_start(void)
 			link.delegate = frames_delegate;
 			if (latency)
 				link.preferredFrameLatency = (float)latency;
-#if TARGET_OS_VISION
+#if HALO_NATIVE_MAC
+            float rate=native_rate;
+#elif TARGET_OS_VISION
             float rate=120;
 #else
             float rate=(float)((__bridge UIScreen *)host_external_screen()).maximumFramesPerSecond;
@@ -6108,7 +6129,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		/* vertex shaders: no fast math. The GLSL is highp, and the compiler
 		mustn't reorder its arithmetic; invariance keeps a position computed in
 		two passes identical, as GLSL's invariant gl_Position does */
-		if (@available(iOS 18.0, tvOS 18.0, visionOS 2.0, *))
+		if (@available(iOS 18.0, tvOS 18.0, visionOS 2.0, macOS 15.0, *))
 			compile_options.mathMode = MTLMathModeSafe;
 		else
 			compile_options.fastMathEnabled = NO;
@@ -6124,7 +6145,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		pixel_compile_options = [compile_options copy];
 		/* (relaxed math needs GPU family Apple4, an A11, or a Mac: an A8 or A9
 		keeps the vertex shaders' options) */
-		if (@available(iOS 18.0, tvOS 18.0, visionOS 2.0, *))
+		if (@available(iOS 18.0, tvOS 18.0, visionOS 2.0, macOS 15.0, *))
 		{
 			/* HALO_METAL_PIXEL_MATH in the app's environment, or a file named
 			metal-pixel-math in the data folder (as tools make stderr.log), names

@@ -24,6 +24,9 @@ so the audio callback is handed to a thread that has one.
 #include <pthread.h>
 #include <string.h>
 #include "ios_host.h"
+#if HALO_NATIVE_MAC
+#include "host_macos_event.h"
+#endif
 #include "host_join_link.h"
 #include "host_external.h"
 
@@ -324,7 +327,10 @@ int host_sdl_poll_event(void *event)
 			return 0;
 	}
 	while (held_back(&host_event));
-#if HALO_FRAME_PACING && TARGET_OS_MACCATALYST
+#if HALO_NATIVE_MAC
+    host_macos_normalize_event(&host_event);
+#endif
+#if HALO_FRAME_PACING && (TARGET_OS_MACCATALYST || HALO_NATIVE_MAC)
 	/* the Mac app's F8: the frame pacer's late start on and off while
 	playing, to feel the difference (display.late_start) */
 	if (host_event.type == SDL_EVENT_KEY_DOWN && !host_event.key.repeat && host_event.key.scancode == SDL_SCANCODE_F8)

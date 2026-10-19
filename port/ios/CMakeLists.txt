@@ -8,8 +8,17 @@ endif()
 set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr" CACHE STRING "App bundle identifier")
 # Mac Catalyst (tools/ios_build.py --mac): configured as iOS, built with -sdk macosx SUPPORTS_MACCATALYST=YES
 option(HALO_MAC "Mac Catalyst build of the iOS host" OFF)
+option(HALO_NATIVE_MAC "Native macOS AppKit host" OFF)
+if(HALO_NATIVE_MAC)
+    if(HALO_MAC OR NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        message(FATAL_ERROR "HALO_NATIVE_MAC requires a separate macOS SDK target")
+    endif()
+    if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_TESTER_BUILD)
+        message(FATAL_ERROR "Native macOS currently supports local development only")
+    endif()
+endif()
 # tools/ios_build.py --renderer: Metal is always present; BOTH also includes OpenGL ES.
-if(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
+if(HALO_NATIVE_MAC OR CMAKE_SYSTEM_NAME STREQUAL "visionOS")
     set(HALO_RENDERER_DEFAULT "METAL")
 else()
     set(HALO_RENDERER_DEFAULT "BOTH")
@@ -19,7 +28,7 @@ set_property(CACHE HALO_RENDERER PROPERTY STRINGS BOTH METAL)
 if(NOT HALO_RENDERER STREQUAL "BOTH" AND NOT HALO_RENDERER STREQUAL "METAL")
     message(FATAL_ERROR "HALO_RENDERER must be BOTH or METAL, got '${HALO_RENDERER}'")
 endif()
-if(CMAKE_SYSTEM_NAME STREQUAL "visionOS" AND NOT HALO_RENDERER STREQUAL "METAL")
+if((HALO_NATIVE_MAC OR CMAKE_SYSTEM_NAME STREQUAL "visionOS") AND NOT HALO_RENDERER STREQUAL "METAL")
     message(FATAL_ERROR "visionOS supports only HALO_RENDERER=METAL")
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/RendererBackendOptions.cmake")
@@ -68,7 +77,14 @@ endif()
 # app replaces it and keeps its Documents, or on tvOS its Caches (the imported game)
 set(HALO_BUILD_NUMBER 6 CACHE STRING "CFBundleVersion")
 set(HALO_MARKETING_VERSION "0.1.2" CACHE STRING "CFBundleShortVersionString supplied by the CI release tag")
-if(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+if(HALO_NATIVE_MAC)
+    set(HALO_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/../macos")
+    set(HALO_PLATFORM_SOURCES "${HALO_NATIVE_DIR}/host_macos_services.m"
+        "${HALO_NATIVE_DIR}/host_macos_import.m")
+    set(HALO_INFO_PLIST "${HALO_NATIVE_DIR}/Info.plist")
+    set(HALO_RENDER_HEIGHT 0 CACHE STRING "Internal render height")
+    set(HALO_DEVICE_FAMILY "")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
     # Controllers only, no Files app: the XISO arrives from a browser
     # (host/host_tv_import.m).
     set(HALO_TVOS ON)
@@ -137,6 +153,14 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
     "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_socket_revival.c host/host_natpmp.c host/host_natpmp_packets.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
+if(HALO_NATIVE_MAC)
+    get_target_property(HALO_NATIVE_SOURCES VISR SOURCES)
+    list(REMOVE_ITEM HALO_NATIVE_SOURCES host/host_external.m host/host_share.m host/host_lifecycle.m
+        host/host_frame_counter.m host/host_benchmark_page.m)
+    set_property(TARGET VISR PROPERTY SOURCES "${HALO_NATIVE_SOURCES}")
+    target_compile_definitions(VISR PRIVATE HALO_NATIVE_MAC=1)
+    target_include_directories(VISR PRIVATE "${HALO_NATIVE_DIR}")
+endif()
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
     "${ROOT}/build/ios/embedded" "${ROOT}/port/third_party/tomlc17")
@@ -220,13 +244,20 @@ foreach(flag ${HALO_HOST_PGO_FLAGS})
     target_compile_options(VISR PRIVATE "$<$<NOT:$<COMPILE_LANGUAGE:Swift>>:${flag}>")
     target_compile_options(SDL3-static PRIVATE "${flag}")
 endforeach()
-target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "-framework UIKit"
+if(HALO_NATIVE_MAC)
+    set(HALO_UI_FRAMEWORK "-framework AppKit")
+else()
+    set(HALO_UI_FRAMEWORK "-framework UIKit")
+endif()
+target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "${HALO_UI_FRAMEWORK}"
     "-framework Metal" "-framework AVFAudio" "-framework QuartzCore" "-framework Network" "-framework CoreImage" z)
 # display.upscaler = "metalfx" (gpu_metal.m); the simulators have no MetalFX
 if(NOT CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
     target_link_libraries(VISR PRIVATE "-weak_framework MetalFX")
 endif()
-if(HALO_TVOS)
+if(HALO_NATIVE_MAC)
+    target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers")
+elseif(HALO_TVOS)
     target_link_libraries(VISR PRIVATE "-framework Network" "-framework CoreImage")
     set_source_files_properties(Assets-tvOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # An Apple TV HD (A8, 2 GB) has no free 4 GB at a multiple of 4 GB for the
@@ -333,7 +364,10 @@ set_source_files_properties(${HALO_HARDWARE_CATALOG} PROPERTIES MACOSX_PACKAGE_L
 file(GLOB HALO_SHADER_LISTS CONFIGURE_DEPENDS "${ROOT}/port/shader-lists/*.txt")
 target_sources(VISR PRIVATE ${HALO_SHADER_LISTS})
 set_source_files_properties(${HALO_SHADER_LISTS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/shader-lists)
-set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_INFO_PLIST}"
+if(NOT IS_ABSOLUTE "${HALO_INFO_PLIST}")
+    set(HALO_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/${HALO_INFO_PLIST}")
+endif()
+set_target_properties(VISR PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${HALO_INFO_PLIST}"
     XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC YES
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${HALO_BUNDLE_IDENTIFIER}"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "${HALO_DEVICE_FAMILY}"
