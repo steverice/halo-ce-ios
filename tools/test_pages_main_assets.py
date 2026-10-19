@@ -206,7 +206,7 @@ def test_current_release_assets_are_checked_in_and_exact():
     payload = overlay.validation.packs.decode_json(
         overlay.validation.packs.decode_base64(envelope["payload"], 16 * 1024 * 1024)
     )
-    assert manifest["sequence"] == 4
+    assert manifest["sequence"] == 6
     assert manifest["compatibility"] == "shader-lists-2"
     assert len(payload["files"]) == 15
     assert "b40.txt" in payload["files"]
