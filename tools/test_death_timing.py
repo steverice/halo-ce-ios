@@ -62,6 +62,7 @@ static long global_scenario_index=1;
 static int projectiles,enemies,airborne,vehicle_moving,spawn_failed,teleport_failed,multiplayer;
 static int drawn_count;
 static wchar_t drawn_text[128];
+static boolean waiting_to_start;
 static struct {int respawn_failure,respawn_failed;} players_state,*players_globals=&players_state;
 struct player_datum {
     long unit_index,team_index,dead_unit_index;
@@ -134,7 +135,7 @@ static struct gamepad_state *input_get_gamepad_state(short i) {
 static byte input_abstraction_port_accept(short i) {(void)i;return 0;}
 static struct observer_result const *observer_get_camera(short i) {(void)i;return &observer;}
 static real real_local_random_range(real minimum,real maximum) {(void)maximum;return minimum;}
-static boolean players_coop_waiting_to_start(long i) {(void)i;return FALSE;}
+static boolean players_coop_waiting_to_start(long i) {(void)i;return waiting_to_start;}
 static int usnprintf(wchar_t *buffer,size_t size,wchar_t const *format,...) {
     va_list args;wchar_t const *name,*hint;int result;(void)format;
     va_start(args,format);name=va_arg(args,wchar_t const *);hint=va_arg(args,wchar_t const *);va_end(args);
@@ -162,7 +163,7 @@ static void reset(int count) {
     for(i=0;i<MAXIMUM_LOCAL_PLAYERS;i++) coop_spectate_watched[i]=NONE;
     tick=main_loss_last_tick=main_respawn_last_tick=0;
     global_scenario_index=1;
-    drawn_count=0;drawn_text[0]=0;
+    drawn_count=0;drawn_text[0]=0;waiting_to_start=FALSE;
     paused=cinematic=reverts=attempts=spawns=teleports=0;
     projectiles=enemies=airborne=vehicle_moving=spawn_failed=teleport_failed=multiplayer=0;
     player_count=count;
@@ -380,8 +381,8 @@ static void online_coop_second_death_hud_rider(void) {
     script_rider=coop_spectate_watching_rider(0);
     if (stale_hud) puts("FAIL: second death HUD still names the previous teammate during corpse view");
     if (stale_rider) puts("FAIL: prior rider target still requests the borrowed-camera exception during corpse view");
-    if (script_rider) puts("FAIL: scripted camera still sees the remembered rider target as active");
-    assert(!stale_hud&&!stale_rider&&!script_rider);
+    if (!script_rider) puts("FAIL: scripted camera lost the existing remembered-rider exception");
+    assert(!stale_hud&&!stale_rider&&script_rider);
 }
 static void online_coop_body_borrow_target(void) {
     setup_coop_death();
@@ -393,6 +394,12 @@ static void online_coop_body_borrow_target(void) {
     object_exists[0]=FALSE;
     assert(coop_spectate_camera_unit(0,TRUE,TRUE,TRUE)==NONE);
     assert(coop_spectate_nothing_to_watch(0));
+
+    reset(2);players[0].unit_index=NONE;players[1].unit_index=NONE;
+    waiting_to_start=TRUE;
+    assert(coop_spectate_camera_unit(0,TRUE,TRUE,FALSE)==NONE);
+    coop_spectate_draw(0);
+    assert(drawn_count==1&&wcsstr(drawn_text,L"JOINING THE GAME")!=NULL);
 }
 int main(void) {
 #ifdef COOP_GRACE_ONLY

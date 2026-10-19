@@ -66,7 +66,6 @@ struct coop_spectate_camera_grace
 {
 	boolean active;
 	boolean corpse_view_active;
-	boolean following_teammate;
 	long player_index;
 	long scenario_index;
 	long dead_unit_index;
@@ -196,7 +195,6 @@ long coop_spectate_camera_unit(
 	{
 		grace->active = FALSE;
 		grace->corpse_view_active = FALSE;
-		grace->following_teammate = FALSE;
 		return NONE;
 	}
 
@@ -206,7 +204,6 @@ long coop_spectate_camera_unit(
 	{
 		grace->active = FALSE;
 		grace->corpse_view_active = FALSE;
-		grace->following_teammate = FALSE;
 		return NONE;
 	}
 
@@ -216,7 +213,6 @@ long coop_spectate_camera_unit(
 		grace->active = FALSE;
 		grace->corpse_view_active = FALSE;
 		teammate = camera_available ? coop_spectate_unit(local_player_index) : NONE;
-		grace->following_teammate = teammate != NONE;
 		return teammate;
 	}
 
@@ -252,7 +248,6 @@ long coop_spectate_camera_unit(
 	if (!camera_available)
 	{
 		grace->corpse_view_active = FALSE;
-		grace->following_teammate = FALSE;
 		return NONE;
 	}
 
@@ -263,12 +258,10 @@ long coop_spectate_camera_unit(
 	if (grace->elapsed_ticks < COOP_CORPSE_VIEW_TICKS)
 	{
 		grace->corpse_view_active = TRUE;
-		grace->following_teammate = FALSE;
 		return corpse;
 	}
 
 	teammate = coop_spectate_unit(local_player_index);
-	grace->following_teammate = teammate != NONE;
 	grace->corpse_view_active = teammate == NONE && corpse != NONE && object_try_and_get(corpse);
 	return teammate != NONE ? teammate : (corpse != NONE && object_try_and_get(corpse) ? corpse : NONE);
 }
@@ -285,8 +278,8 @@ boolean coop_spectate_watching_rider(
 	if (local_player_index < 0 || local_player_index >= MAXIMUM_LOCAL_PLAYERS)
 		return FALSE;
 	grace = &coop_spectate_camera_graces[local_player_index];
-	/* The remembered target can differ from the camera during the corpse view or a script. */
-	if (!grace->following_teammate)
+	/* Keep the old rider exception unless the camera is actually on the corpse. */
+	if (grace->corpse_view_active)
 		return FALSE;
 	self = local_player_get_player_index(local_player_index);
 	watched = coop_spectate_watched[local_player_index];
