@@ -12,4 +12,4 @@
 - [ ] No signing material, keys or personal paths
 - [ ] Commits follow Conventional Commits (see CONTRIBUTING.md)
 - [ ] New third-party code keeps its license file and is listed in NOTICE.md
-- [ ] I can dedicate this contribution under CC0 1.0
+- [ ] I can license this contribution under Apache-2.0

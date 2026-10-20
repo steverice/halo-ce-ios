@@ -279,7 +279,9 @@ def main():
     notices = ROOT/'build/ios/licenses'
     notices.mkdir(parents=True, exist_ok=True)
     for source, name in (
-        ('LICENSE.md', 'Project-CC0.txt'),
+        ('LICENSE', 'Project-Apache-2.0.txt'),
+        ('LICENSES/CC0-1.0.txt', 'Origin-Projects-CC0.txt'),
+        ('NOTICE.md', 'NOTICE-VISR.txt'),
         ('port/ios/THIRD_PARTY.md', 'NOTICE.txt'),
         ('build/third_party/SDL3/LICENSE.txt', 'SDL.txt'),
         ('build/third_party/musl-1.2.5/COPYRIGHT', 'musl.txt'),

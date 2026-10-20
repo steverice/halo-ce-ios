@@ -3,7 +3,7 @@
 This iOS port builds on [cybersecurity/halo-ce-universal](https://github.com/cybersecurity/halo-ce-universal),
 the native ports in [bnunu/halo-1](https://github.com/bnunu/halo-1), and the
 decompilation work in [punpckhdq/halo](https://github.com/punpckhdq/halo).
-The inherited project license is [CC0 1.0](../../LICENSE.md).
+VISR is licensed under [Apache-2.0](../../LICENSE). It includes code that originated in CC0 1.0 projects, credited in [NOTICE.md](../../NOTICE.md).
 
 The app includes SDL 3.4.16 (zlib license), portions of musl 1.2.5 (see its
 COPYRIGHT for the MIT license and component notices), KCP (MIT), tomlc17

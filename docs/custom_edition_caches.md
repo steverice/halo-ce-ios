@@ -493,7 +493,7 @@ file the same as the host's; with `network.map_download` off, or a host with
   but their model parts have its 0x68-byte layout and their shader types its
   numbering, which makes them a check on what the conversion produces.
 
-OpenSauce and Reclaimer are GPL-3.0 and this repository is CC0: no code from
+OpenSauce and Reclaimer are GPL-3.0 and this repository is Apache-2.0: no code from
 either was copied. They were read as documentation of the file formats, and
 every layout used was then checked against the sample maps.
 

@@ -162,10 +162,12 @@ listed in [NOTICE.md](NOTICE.md).
 
 ## License
 
-The code is under CC0 1.0 (see [LICENSE.md](LICENSE.md)). Third-party
-components keep their own licenses, listed in [NOTICE.md](NOTICE.md). The CC0
-dedication covers only what its contributors could dedicate. It does not
-grant any rights to Microsoft's game, its assets or its trademarks.
+VISR is licensed under Apache-2.0 (see [LICENSE](LICENSE)). It includes code
+that originated in CC0 1.0 projects, credited in [NOTICE.md](NOTICE.md), which
+also lists the third-party components that keep their own licenses. Halo, its game content
+and its trademarks are the property of Microsoft. VISR contains no game assets,
+grants no rights in Microsoft's property, and requires players to supply their
+own copy of the game.
 
 ## Legal
 

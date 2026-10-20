@@ -1,10 +1,19 @@
 # Notices
 
-VISR's own code, and the code it inherits from its upstream projects, is under
-CC0 1.0 (see [LICENSE.md](LICENSE.md)). The components below keep their own
-licenses. Each one's full license text sits next to its source in this
-repository, and the Apple builds copy the notices of what they link into the
-app's `Licenses` folder (`tools/ios_build.py`).
+VISR is licensed under Apache-2.0 (see [LICENSE](LICENSE)). It includes code
+that originated in CC0 1.0 projects (punpckhdq/halo, bnunu/halo-1, OpenCE,
+NicholasDominici/halo-ce-ios and pfista/halo-og, listed below), whose original
+code remains available from those projects under CC0 1.0. VISR's commits before
+the change that added this notice were published under CC0 1.0. The CC0 1.0
+text is kept at [LICENSES/CC0-1.0.txt](LICENSES/CC0-1.0.txt) for reference.
+
+Halo, its game content and its trademarks are the property of Microsoft. VISR
+contains no game assets, grants no rights in Microsoft's property, and requires
+players to supply their own copy of the game.
+
+The components below keep their own licenses. Each one's full license text sits
+next to its source in this repository, and the Apple builds copy the notices of
+what they link into the app's `Licenses` folder (`tools/ios_build.py`).
 
 ## Upstream projects
 
@@ -90,5 +99,5 @@ The HUD, menu and title pictures in `port/assets/` are high-resolution redraws
 made for OpenCE, not files from the game. The app icon's helmet, visor and brow
 outlines are traced from a frame of the game (see `port/ios/ICON.md`). The menu
 layouts and strings in `port/assets/menus/` are generated from the game's tags.
-None of the licenses above, CC0 included, grants any rights to Microsoft's
+None of the licenses above, CC0 and Apache-2.0 included, grants any rights to Microsoft's
 game, its assets or its trademarks.
