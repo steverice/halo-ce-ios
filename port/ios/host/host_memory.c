@@ -94,15 +94,37 @@ void host_low_unmap(void *address,size_t size) {
     memset(allocated+(p-POOL_START)/PAGE,0,pages);
     pthread_mutex_unlock(&lock);
 }
+/* A fixed request inside the pool takes exactly the pages asked for, if they
+   are all free (Custom Edition's tag cache is linked to 0x40440000). */
+static long low_map_fixed(uint32_t p,size_t size,long taken) {
+    size_t first=(p-POOL_START)/PAGE,pages=rounded(size)/PAGE;
+    pthread_mutex_lock(&lock);
+    for (size_t i=first;i<first+pages;i++) if (allocated[i]) { pthread_mutex_unlock(&lock); return taken; }
+    if (mmap(host_pointer(p),pages*PAGE,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANON|MAP_FIXED,-1,0)!=host_pointer(p)) { pthread_mutex_unlock(&lock); return -12; }
+    memset(allocated+first,1,pages);
+    pthread_mutex_unlock(&lock); return 0;
+}
 int host_low_owns(uintptr_t p,size_t n) {
     return host_arena && p>=host_arena && p-host_arena+n<=0x100000000ull;
 }
 
+static int guest_range_valid(uint64_t address,uint64_t size) {
+    return size && address<0x100000000ull && size<=0x100000000ull-address;
+}
+
 /* Linux mmap constants are deliberately decoded here instead of using Darwin's. */
 long host_guest_mmap(uint64_t address,uint64_t size,int protection,int flags,int fd,int64_t offset) {
-    if (!size || size>0x70000000ull || address+size>0x100000000ull) return -22;
+    if (!guest_range_valid(address,size) || size>0x70000000ull) return -22;
     void *p;
-    if (flags & (0x10|0x100000)) {
+    int low_allocation=0;
+    if ((flags & (0x10|0x100000)) && !(address&(PAGE-1)) && address>=POOL_START && address+size<=POOL_END) {
+        /* MAP_FIXED_NOREPLACE fails with EEXIST as on Linux; a plain MAP_FIXED
+           is refused too rather than clobber another allocation. */
+        long error=low_map_fixed((uint32_t)address,size,flags&0x100000?-17:-22);
+        if (error) return error;
+        p=host_pointer(address);
+        low_allocation=1;
+    } else if (flags & (0x10|0x100000)) {
         if (!in_window((uint32_t)address,size)) return -22;
         p=host_pointer(address);
         uint32_t first=(uint32_t)address & ~(PAGE-1);
@@ -112,23 +134,30 @@ long host_guest_mmap(uint64_t address,uint64_t size,int protection,int flags,int
     } else {
         p=host_low_map(size,PROT_READ|PROT_WRITE);
         if (!p) return -12;
+        low_allocation=1;
     }
     if (!(flags&0x20) && fd>=0) {
         ssize_t n=pread(fd,p,size,offset);
-        if (n<0) return -5;
+        if (n<0) {
+            if (low_allocation) host_low_unmap(p,size);
+            return -5;
+        }
     }
     /* Xbox 4 KB allocations can share an Apple page: protection of the
        physical window is handled by the coarser write tracker. */
-    if (!in_window(guest_pointer(p),size) && mprotect(p,rounded(size),protection & ~PROT_EXEC)) return -12;
+    if (!in_window(guest_pointer(p),size) && mprotect(p,rounded(size),protection & ~PROT_EXEC)) {
+        if (low_allocation) host_low_unmap(p,size);
+        return -12;
+    }
     return guest_pointer(p);
 }
 long host_guest_munmap(uint64_t address,uint64_t size) {
-    if (address+size>0x100000000ull) return -22;
+    if (!guest_range_valid(address,size)) return -22;
     if (in_window(address,size)) return 0;
     host_low_unmap(host_pointer(address),size); return 0;
 }
 long host_guest_mprotect(uint64_t address,uint64_t size,int protection) {
-    if (address+size>0x100000000ull || !size) return -22;
+    if (!guest_range_valid(address,size)) return -22;
     uint32_t first=(uint32_t)address & ~(PAGE-1);
     if(in_window((uint32_t)address,size) && !(protection&PROT_WRITE)) {
         /* Xbox allocations/protection boundaries are 4 KB. Rounding a read-only

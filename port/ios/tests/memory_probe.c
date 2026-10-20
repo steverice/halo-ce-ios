@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <sched.h>
+#include <stdint.h>
+#include <string.h>
 #include <sys/mman.h>
 
 void host_logf(int level,const char *format,...) {
@@ -37,6 +39,35 @@ int main(void) {
     unsigned *p=host_low_map(16384,PROT_READ|PROT_WRITE);*p=1234;
     host_low_unmap(p,16384);p=host_low_map(16384,PROT_READ|PROT_WRITE);
     if(*p)return 3;
-    printf("PASS: concurrent page tracking, generation %u; reused mmap zeroed\n",generation);
+    /* Custom Edition's tag cache: Linux MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE|
+       MAP_FIXED_NOREPLACE at 0x40440000, inside the pool. Overlaps are refused. */
+    if(host_guest_mmap(0x40440000,0x1700000,PROT_READ|PROT_WRITE,0x104022,-1,0)!=0x40440000)return 5;
+    *(volatile unsigned *)host_pointer(0x41b3fffc)=7;
+    if(host_guest_mmap(0x41b3c000,0x8000,PROT_READ|PROT_WRITE,0x100022,-1,0)!=-17)return 6;
+    if(host_guest_mmap(0x41b3c000,0x8000,PROT_READ|PROT_WRITE,0x32,-1,0)!=-22)return 6;
+    if(host_guest_munmap(0x40440000,0x1700000))return 7;
+    if(host_guest_mmap(0x40440000,0x1700000,PROT_READ|PROT_WRITE,0x104022,-1,0)!=0x40440000)return 7;
+    if(*(volatile unsigned *)host_pointer(0x41b3fffc))return 7;
+    /* A failed file-backed fixed map must release its low-pool allocation. */
+    if(host_guest_mmap(0x42000000,0x4000,PROT_READ,0x100002,999999,0)!=-5)return 8;
+    if(host_guest_mmap(0x42000000,0x4000,PROT_READ|PROT_WRITE,0x100022,-1,0)!=0x42000000)return 9;
+    if(host_guest_mprotect(0x42000000,0x4000,PROT_READ|PROT_WRITE))return 10;
+    if(host_guest_munmap(0x42000000,0x4000))return 11;
+    FILE *file=tmpfile();if(!file)return 16;
+    const char bytes[]="CE-map-data";
+    if(fwrite(bytes,1,sizeof(bytes),file)!=sizeof(bytes)||fflush(file))return 17;
+    if(host_guest_mmap(0x43000000,0x4000,PROT_READ|PROT_WRITE,0x100002,fileno(file),0)!=0x43000000)return 18;
+    if(memcmp(host_pointer(0x43000000),bytes,sizeof(bytes)))return 19;
+    if(host_guest_munmap(0x43000000,0x4000))return 20;
+    fclose(file);
+    if(host_guest_mmap(0x43000000,0x4000,-1,0x100022,-1,0)!=-12)return 21;
+    if(host_guest_mmap(0x43000000,0x4000,PROT_READ|PROT_WRITE,0x100022,-1,0)!=0x43000000)return 22;
+    if(host_guest_munmap(0x43000000,0x4000))return 23;
+    if(host_guest_mmap(0x40441000,0x4000,PROT_READ|PROT_WRITE,0x100022,-1,0)!=-22)return 12;
+    /* A wrapped 64-bit request must never become a low-pool bitmap index. */
+    if(host_guest_mmap(UINT64_MAX-0x3fff,0x8000,PROT_READ|PROT_WRITE,0x100022,-1,0)!=-22)return 13;
+    if(host_guest_munmap(UINT64_MAX-0x3fff,0x8000)!=-22)return 14;
+    if(host_guest_mprotect(UINT64_MAX-0x3fff,0x8000,PROT_READ)!=-22)return 15;
+    printf("PASS: concurrent page tracking, generation %u; reused mmap zeroed; fixed pool mapping\n",generation);
     return 0;
 }
