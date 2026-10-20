@@ -155,8 +155,6 @@ do not attach game files or disc images. Security problems go through
 - [xemu](https://xemu.app/), the Xbox emulator, whose model of the Xbox GPU's
   pixel shaders the shader translators follow
 
-The XISO importer builds on [extract-xiso](https://github.com/XboxDev/extract-xiso).
-This product includes software developed by in <in@fishtank.com>.
 
 The fonts are Overpass and OpenCE (SIL Open Font License 1.1) and Newtown by
 Roger White (public domain). The third-party libraries and their licenses are

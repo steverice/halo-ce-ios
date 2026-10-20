@@ -21,7 +21,6 @@ app's `Licenses` folder (`tools/ios_build.py`).
 | Component | License | Location | In the Apple apps |
 | --- | --- | --- | --- |
 | [FFmpeg](https://ffmpeg.org/) 9.0.2, its Bink demuxer and decoders only | LGPL-2.1-or-later | `port/third_party/ffmpeg-bink/COPYING.LGPLv2.1`, `port/third_party/ffmpeg-bink/` | Yes, unless built with `--bink off` |
-| [extract-xiso](https://github.com/XboxDev/extract-xiso) | BSD-style, 4 clauses, with an advertising clause | `port/third_party/extract-xiso/LICENSE.TXT`, `port/runtime/xiso.c`, `port/linux/src/xiso.c` | Yes |
 | [Expat](https://libexpat.github.io/) | MIT | `port/third_party/expat/COPYING` | Yes |
 | [KCP](https://github.com/skywind3000/kcp) | MIT | `port/third_party/kcp/LICENSE` | Yes |
 | [Monocypher](https://monocypher.org/) | BSD-2-Clause or CC0 1.0 | `port/third_party/monocypher/LICENCE.md` | Yes |
@@ -78,10 +77,6 @@ its own notice.
 | [Overpass](https://overpassfont.org/) | SIL Open Font License 1.1 | `port/assets/fonts/Overpass-OFL.txt` |
 | OpenCE (Newtown, respaced) | SIL Open Font License 1.1 | `port/assets/fonts/OpenCE-OFL.txt` |
 | Newtown by Roger White | Public domain | `port/assets/fonts/Newtown-LICENSE.txt` |
-
-## Required acknowledgement
-
-This product includes software developed by in <in@fishtank.com>.
 
 ## Game content and trademarks
 
