@@ -10,6 +10,10 @@ SCREEN mode, opens the Compositor's frame and fills the eyes (and in HEAD
 mode the head's turn) from it; eye_count stays 0 without one, and on every
 other platform */
 void host_stereo_frame(struct halo_stereo_frame *frame);
+int host_stereo_last_head(float back[3], float position[3]);
+float host_stereo_room_yaw_offset(void);
+void host_stereo_room_vector(float vector[3]);
+int host_stereo_room_recenter_pending(void);
 /* the eyes' picture size in pixels while the head drives the view (the view's
 size in the Compositor's texture); 0 otherwise */
 int host_stereo_picture_size(int *width, int *height);
@@ -67,14 +71,20 @@ inside the director's frame (cutscene_forward and cutscene_up in the
 device's frame at the render, cutscene_tangents its half tangents) they stay
 sharp, outside they show a quarter-size blur of themselves, darkened and
 desaturated by cutscene_dim, over a soft edge; the HUD layer goes whole on
-the frame (a menu keeps the usual layout) */
+the frame (a menu keeps the usual layout). look_dim and look_blur (0 to 1,
+a seat's look fade, display.seat_look_fade) veil the eyes' pictures
+(halo_stereo_veil.h: toward the same blur, then desaturated and darkened)
+and darken the zoomed picture and the HUD's pieces, the crosshair's
+included, by the same dim; a menu's UI quad stays as it is */
 void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLTexture> right,
 	id<MTLTexture> left_depth, id<MTLTexture> right_depth, __unsafe_unretained id<MTLTexture> const *hud_layers,
 	const float (*hud_group_extent)[4], float hud_aspect, int hud_ui, const float reticle[3],
+	const struct host_stereo_hud_aim *aim,
 	const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
 	float far_meters, float brightness, float vignette, float ui_dim, int expanding, float expansion,
 	float expansion_bars, const float fade[4], int cutscene, const float cutscene_forward[3],
-	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim);
+	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim, float look_dim,
+	float look_blur);
 /* HEAD mode without eyes this frame (a load: a mono picture), or with a
 menu over the film (the main menu's scripted scene, the pause menu in a
 cutscene): 1 while the Compositor's frame host_stereo_frame opened can take

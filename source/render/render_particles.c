@@ -304,6 +304,21 @@ void render_particles(
 								node_matrix,
 								&particle->direction,
 								&direction);
+							/* port: controller aim: a particle on the local player's own young
+							projectile is drawn with it, toward the drawn gun's muzzle
+							(port/linux/game/projectile_offset.c); a local copy */
+							if (!TEST_FLAG(particle->flags, _particle_datum_attached_to_local_player_bit))
+							{
+								int halo_projectile_offset(long, float *);
+								float offset[3];
+
+								if (halo_projectile_offset(particle->object_index, offset))
+								{
+									position.x += offset[0];
+									position.y += offset[1];
+									position.z += offset[2];
+								}
+							}
 						}
 						else
 						{

@@ -176,6 +176,8 @@ and its offset from the camera in world units */
 #define HALO_STEREO_SIDE_BY_SIDE_OFFSET 0.0105f
 /* the HUD's plane (host_stereo_hud.h, HOST_STEREO_HUD_DISTANCE) */
 #define HALO_STEREO_ZOOM_DISTANCE_METERS 2.0f
+#define HALO_STEREO_HUD_DISTANCE_MIN 1.0f
+#define HALO_STEREO_HUD_DISTANCE_MAX 4.0f
 /* render.c's eye loop, before the eyes and after halo_stereo_head_orient:
 whether the local player is zoomed this frame; returns 1 if the frame
 renders the zoomed pass in place of the eyes. The pass waits while the last
@@ -192,6 +194,9 @@ each the widest of the frame's eyes' (left or right, up or down), out to
 where that eye's edge meets the HUD's plane from the eye's own place, so
 the presenter's quad there covers both eyes' views */
 void halo_stereo_zoom_view(float tangents[2]);
+/* The drawing controller checks the overlap visible to both eyes. */
+#define HALO_STEREO_SHARED_VIEW_DEGREES 40.0f
+void halo_stereo_shared_view(float tangents[4]);
 /* the zoom layer's screen-sized targets against an eye's, across and up:
 the view's span over the narrowest eye's, so the zoomed picture has the
 eyes' pixels per tangent (and so per degree) over the whole view */
@@ -242,6 +247,7 @@ head-tracked third-person seat, and in a first-person seat whose yaw limit
 holds the aim back from the head, it stays the game's camera, where the gun
 aims */
 void halo_stereo_zoom_orient(float forward[3], float up[3]);
+void halo_stereo_zoom_reticle(const float aim[3], const float forward[3], const float up[3], float magnification);
 
 /* render.c sets this around what draws a menu, the console or the progress
 bar into the HUD layer: in HEAD mode the presenter then puts the whole layer
@@ -267,6 +273,8 @@ a first-person seat whose yaw limit holds the aim back from the head, the
 game camera's forward, which the gun follows, in the picture the head turned
 (halo_stereo_head_orient). For the presenter's reticle (gpu_stereo_present) */
 void halo_stereo_reticle(float direction[3]);
+/* A world direction in an eye camera's frame: x right, y up, z back. */
+void halo_stereo_eyes_frame_vector(const float forward[3], const float up[3], const float vector[3], float out[3]);
 /* the HUD pass's projection this frame (render.c): its half tangents across
 and up, centered on the eye cameras' forward; 0 before it runs. The
 presenter's catch-all quad shows the HUD layer at that size, so what the
@@ -336,6 +344,24 @@ float halo_stereo_vignette(void);
 120 degrees per second (0 to 1, more is full) and the time since, in seconds: it eases
 toward the share, in over 0.1 s and out over 0.2 s */
 float halo_stereo_vignette_ease(float strength, float turn_fraction, float time_delta);
+/* display.seat_look_fade: in HEAD mode's full view, in a first-person seat
+whose limit holds the aim back from the head (halo_stereo_seat_yaw_clamp),
+how far the presenter veils the eyes (halo_stereo_veil.h) and the HUD's
+pieces this frame: dim (0 to 1, 1 black) and blur (0 to 1, toward the
+eyes' blur; 0 with display.seat_look_fade_blur off); both 0 elsewhere. The
+world keeps following the head: only the picture fades */
+void halo_stereo_seat_look_fade(float *dim, float *blur);
+/* cinematic_screen.c: 1 while local player 0 sits in a10's cryo pod (the
+seat's own unit is the level's cryotube), whose look fade has its own angles
+and stops short of black (display.pod_look_fade_start, _end and _dim) */
+int halo_seat_cryo_pod(void);
+int halo_seat_first_person_passenger(void);
+int halo_zoom_ordinary_aim_ray(short local_player_index, float ray[3]);
+/* the fade's next value from its value now, how far the head is past the
+seat's limit (radians, 0 or more), the fade's start and black angles past
+it (radians) and the time since (seconds): it eases toward a smoothstep of
+the angle from start to black, at most 1 in 0.25 s either way */
+float halo_stereo_seat_look_fade_ease(float fade, float past, float start, float black, float time_delta);
 /* HEAD mode's render (source/render/render.c): gives a camera the head's yaw
 at render time (the game camera's yaw less the head yaw it holds,
 halo_stereo_camera_head_yaw, plus the head's yaw now: what the look took
@@ -346,6 +372,10 @@ third-person camera (unless display.stereo_vehicle_screen puts it on the
 screen) it turns the game's camera by the head's yaw and change of pitch
 since that camera began, and gives it the head's roll: the picture only */
 void halo_stereo_head_orient(float forward[3], float up[3]);
+/* The eye cameras' orientation and vertical offset after head orientation. */
+float halo_stereo_eye_yaw(void);
+float halo_stereo_eye_raise(void);
+void halo_stereo_eye_frame(float forward[3], float up[3]);
 /* HEAD mode's head yaw in the game's camera (render_interpolation.c). The head
 yaw the look has taken so far, all told (radians, left positive, wrapped to
 -pi..pi): the game's camera holds it as of the frame the camera was posed.
@@ -572,6 +602,7 @@ int halo_cinematic_screen(void);
 int halo_scripted_camera(void);
 int halo_scripted_director_camera(void);
 int halo_third_person_camera(void);
+int halo_coop_dead_camera(void);
 /* A first-person cutscene camera: the director's own first person (the
 look on or off) or a scripted camera in first-person mode. HEAD mode's film
 is only for the others (stereo.c) */

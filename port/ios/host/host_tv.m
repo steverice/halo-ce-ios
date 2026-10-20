@@ -134,7 +134,7 @@ int host_ios_gamepads(uint32_t *out,int capacity) {
     primary_hardware=0;
     if(capacity>0 && remote_id)out[used++]=remote_id;
     for(int i=0;i<count;i++) {
-        if(ids[i]==remote_id)continue;
+        if(ids[i]==remote_id || host_sdl_controller_aim_owns((uint32_t)ids[i]))continue;
         if(!primary_hardware) {
             primary_hardware=ids[i];
             if(!SDL_GetGamepadFromID(ids[i]))SDL_OpenGamepad(ids[i]);

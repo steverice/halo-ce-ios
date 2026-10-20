@@ -2862,17 +2862,35 @@ static void rasterizer_first_person_eye(
 and back (halo_stereo_weapon_offset): the window's view as it began, its
 camera moved up by down and forward by back, the projection unchanged. The
 headset's taller view shows the arms' cut edge, which the Xbox's kept below
-the frame */
+the frame. While a hand aims, the gun is turned to its sightline
+(halo_controller_weapon_frame, first_person_weapons.c): down and back are
+along the turned gun's up and forward, so the offset gun stays under the
+hand's line instead of drifting off it as the hand turns from the head */
 static void rasterizer_first_person_offset(
 	real down,
 	real back)
 {
+	int halo_controller_weapon_frame(short, const float *, const float *, float *, float *);
 	real_vector3d camera_move;
 	real_vector3d view_move;
+	real_vector3d forward = global_window_parameters.camera.forward;
+	real_vector3d up = global_window_parameters.camera.up;
+	float turned_forward[3];
+	float turned_up[3];
 
-	camera_move.i = global_window_parameters.camera.up.i * down + global_window_parameters.camera.forward.i * back;
-	camera_move.j = global_window_parameters.camera.up.j * down + global_window_parameters.camera.forward.j * back;
-	camera_move.k = global_window_parameters.camera.up.k * down + global_window_parameters.camera.forward.k * back;
+	if (halo_controller_weapon_frame(render.local_player_index, &global_window_parameters.camera.forward.i,
+		&global_window_parameters.camera.up.i, turned_forward, turned_up) == 1)
+	{
+		forward.i = turned_forward[0];
+		forward.j = turned_forward[1];
+		forward.k = turned_forward[2];
+		up.i = turned_up[0];
+		up.j = turned_up[1];
+		up.k = turned_up[2];
+	}
+	camera_move.i = up.i * down + forward.i * back;
+	camera_move.j = up.j * down + forward.j * back;
+	camera_move.k = up.k * down + forward.k * back;
 	global_window_parameters.frustum.world_to_view = first_person_saved_world_to_view;
 	matrix4x3_transform_vector(&first_person_saved_world_to_view, &camera_move, &view_move);
 	global_window_parameters.frustum.world_to_view.position.x -= view_move.i;

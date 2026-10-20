@@ -187,7 +187,9 @@ struct update_client_queue_datum
 	short desired_weapon_index;
 	short desired_grenade_index;
 	short desired_zoom_level;
-	short pad2;
+	/* port: the action's pad (players.h: controller aim's hand flag and
+	facing offset), in what was this struct's padding */
+	short action_pad;
 };
 
 struct update_server_globals
@@ -450,11 +452,13 @@ void update_server_next_update(
 			sizeof(struct player_action));
 		update->update.actions[queue_index].control_flags |= update_server_pending_control_flags[queue_index];
 		update_server_pending_control_flags[queue_index] = 0;
-		/* port: the scripts' action tests the frames since the last tick saw, carried by the action while a take is
-		recorded or replayed (player_control.c, player_control_frame_action_flags) */
-		update->update.actions[queue_index].pad = 0;
+		/* port: local recording's tutorial flags use the upper control halfword
+		until dequeue; pad belongs to tracked aim. Only the local snapshot gets
+		these flags, never the saved input that distributed clients send. */
 		if (queue_index == 0 && game_connection() == _game_connection_local && input_replay_sim_isolated())
-			update->update.actions[queue_index].pad = (short)player_control_take_frame_action_flags();
+			update->update.actions[queue_index].control_flags =
+				(update->update.actions[queue_index].control_flags & 0xffffUL) |
+				((unsigned long)player_control_take_frame_action_flags() << 16);
 		/* port: a client machine's player whose input has stopped coming
 		(its network lost, until the host drops it) stands still, its
 		buttons and trigger let go, where it faces: its last input held
@@ -739,6 +743,9 @@ static boolean update_client_dequeue_distributed(
 		actions[queue_index].desired_weapon_index = action.desired_weapon_index;
 		actions[queue_index].desired_grenade_index = action.desired_grenade_index;
 		actions[queue_index].desired_zoom_level = action.desired_zoom_level;
+		/* port: network controller aim uses ordinary facing; the distributed
+		packet carries no hand metadata or pad. */
+		actions[queue_index].pad = 0;
 	}
 	update_client_globals.next_update_number_to_dequeue += 1;
 	return TRUE;
@@ -780,7 +787,7 @@ boolean update_client_dequeue(
 			queue->desired_weapon_index = action->desired_weapon_index;
 			queue->desired_grenade_index = action->desired_grenade_index;
 			queue->desired_zoom_level = action->desired_zoom_level;
-			queue->pad2 = action->pad;
+			queue->action_pad = action->pad; /* port: controller aim */
 			match_assert(
 				"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 				0x1C9,
@@ -807,7 +814,7 @@ boolean update_client_dequeue(
 		actions[queue_index].desired_weapon_index = queue->desired_weapon_index;
 		actions[queue_index].desired_grenade_index = queue->desired_grenade_index;
 		actions[queue_index].desired_zoom_level = queue->desired_zoom_level;
-		actions[queue_index].pad = queue->pad2;
+		actions[queue_index].pad = queue->action_pad; /* port: controller aim */
 		match_assert(
 			"c:\\halo\\SOURCE\\game\\player_queues_new.c",
 			0x1E6,
@@ -832,7 +839,9 @@ boolean update_client_dequeue(
 		player_control_apply_replay(update_client_local_player_index(0));
 		/* (the action tests the action carries, as the take recorded them or replays them: player_control.c) */
 		if (input_replay_sim_isolated())
-			player_control_action_test_note_tick((unsigned short)actions[0].pad);
+			player_control_action_test_note_tick((unsigned short)(actions[0].control_flags >> 16));
+		/* The unit and any later consumer see only the sixteen game control bits. */
+		actions[0].control_flags &= 0xffffUL;
 	}
 	update_client_globals.next_update_number_to_dequeue += 1;
 

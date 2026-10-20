@@ -68,6 +68,7 @@ brings bars in for titles (cinematics.c), following the held film.
 #include "../src/halo_stereo.h"
 #include "../src/halo_stereo_window.h"
 #include "../src/halo_stereo_cutscene.h"
+#include "../src/halo_spatial.h"
 
 /* port/linux/src/port_config.c */
 const char *config_string(const char *name);
@@ -196,6 +197,8 @@ before the next */
 over the head-tracked frames (head_yaw_now), and the part of them the look has
 taken (head_yaw_taken, halo_stereo_head_look) */
 static float head_yaw_now, head_yaw_taken;
+static float eye_yaw, eye_raise;
+static float eye_forward[3] = { 1.0f, 0.0f, 0.0f }, eye_up[3] = { 0.0f, 0.0f, 1.0f };
 /* a seat's yaw limit (halo_stereo_seat_yaw_clamp): the head's yaw the look
 handed the game on this call of player_control_update (once a frame), which
 the seat's clamp consumes. And the yaw the eye cameras show that the look
@@ -227,6 +230,33 @@ static float seat_cut_elapsed;
 /* a fold larger than this is covered by the cut; a smaller one's step is
 under the stick's deadband: 2 degrees */
 #define SEAT_CUT_FOLD (2.0f * 3.14159265f / 180.0f)
+/* display.seat_look_fade (halo_stereo_seat_look_fade): past a seat's limit
+the view fades toward black as the head turns on, so nobody looks all the
+way around a seat they can't aim around, while the world keeps following
+the head. The settings (read once, mapping_settings): on, blur too, and the
+angles past the limit (radians) where it starts and where it's black.
+Whether the seat's clamp ran since the last look (a limited seat; kept
+while the game is paused, when neither runs), the fade now (0 to 1) and
+the stage last logged (0 clear, 1 fading, 2 black) */
+static int seat_look_fade_setting = 1, seat_look_fade_blur_setting = 1;
+static float seat_look_fade_start = 0.08726646f, seat_look_fade_black = 0.7853982f;
+static int seat_limited;
+/* The local head's yaw off the seat marker after its last aim clamp. */
+static float seat_head_yaw_offset;
+static float seat_look_fade_now;
+static int seat_look_fade_logged;
+static int seat_look_fade_passenger;
+/* a10's cryo pod (halo_seat_cryo_pod) has the fade's own angles and never
+goes black: display.pod_look_fade_start and _end (radians past the limit),
+and display.pod_look_fade_dim, the most the view darkens there, the blur
+still reaching full. A black view in the pod, before the player has moved
+at all, read as the game having stopped (headset session, 2026-10-12).
+seat_look_fade_pod: this frame's limited seat is the pod */
+static float pod_look_fade_start = 0.2617994f, pod_look_fade_end = 1.2217305f, pod_look_fade_dim = 0.85f;
+static int seat_look_fade_pod;
+/* the fade moves at most this much a second (1 in 0.25 s): a step in the
+angle (a fold, a seat's first frame) never flashes the view */
+#define SEAT_LOOK_FADE_RATE 4.0f
 /* what render_interpolation.c said of this frame's camera
 (halo_stereo_camera_head_yaw): the head yaw it holds, its blend and how it was
 made; camera_noted is 0 until it says */
@@ -574,6 +604,29 @@ static void mapping_settings(void)
 		platform_log("stereo: debug.cutscene_immersive: a cutscene's third-person film immersive, telephoto under "
 			"%.1f degrees across on the film, the outside dimmed by %.2f", cutscene_immersive_min_fov * 360.0f / TWO_PI,
 			cutscene_outside_dim);
+	seat_look_fade_setting = config_boolean("display.seat_look_fade") != 0;
+	seat_look_fade_blur_setting = config_boolean("display.seat_look_fade_blur") != 0;
+	seat_look_fade_start = clamped_setting("display.seat_look_fade_start",
+		(float)config_real("display.seat_look_fade_start"), 0.0f, 90.0f, "degrees past the seat's limit");
+	seat_look_fade_black = clamped_setting("display.seat_look_fade_black",
+		(float)config_real("display.seat_look_fade_black"), fminf(seat_look_fade_start + 1.0f, 180.0f), 180.0f,
+		"degrees past the seat's limit");
+	platform_log("stereo: display.seat_look_fade %s: past a seat's limit the view %s from %.1f degrees, black at "
+		"%.1f", seat_look_fade_setting ? "true" : "false", seat_look_fade_blur_setting ? "blurs and dims" : "dims",
+		seat_look_fade_start, seat_look_fade_black);
+	seat_look_fade_start *= TWO_PI / 360.0f;
+	seat_look_fade_black *= TWO_PI / 360.0f;
+	pod_look_fade_start = clamped_setting("display.pod_look_fade_start",
+		(float)config_real("display.pod_look_fade_start"), 0.0f, 90.0f, "degrees past the pod's limit");
+	pod_look_fade_end = clamped_setting("display.pod_look_fade_end",
+		(float)config_real("display.pod_look_fade_end"), fminf(pod_look_fade_start + 1.0f, 180.0f), 180.0f,
+		"degrees past the pod's limit");
+	pod_look_fade_dim = clamped_setting("display.pod_look_fade_dim", (float)config_real("display.pod_look_fade_dim"),
+		0.0f, 1.0f, "of black");
+	platform_log("stereo: in a10's cryo pod the fade runs from %.1f to %.1f degrees past the limit, to %.2f of black",
+		pod_look_fade_start, pod_look_fade_end, pod_look_fade_dim);
+	pod_look_fade_start *= TWO_PI / 360.0f;
+	pod_look_fade_end *= TWO_PI / 360.0f;
 	stereo_stats = config_boolean("debug.gpu_stats") != 0;
 	head_yaw_log = config_boolean("debug.head_yaw_log") != 0;
 	lod_scale_setting = clamped_setting("display.lod_scale", (float)config_real("display.lod_scale"),
@@ -807,7 +860,8 @@ static void third_person_begin(void)
 	own with the script holding its look, or a scripted one in first-person
 	mode) takes the same path: the head turns its picture, never the look */
 	int look_disabled = head_frame && halo_look_disabled_first_person();
-	int third_person = head_frame && ((!vehicle_screen && halo_third_person_camera()) || look_disabled);
+	int third_person = head_frame && ((!vehicle_screen && halo_third_person_camera()) ||
+		halo_coop_dead_camera() || look_disabled);
 
 	if (third_person && !third_person_head) {
 		/* (with the yaw a seat's limit refused, which the eye cameras had
@@ -866,26 +920,27 @@ z back): straight ahead unless halo_stereo_head_orient turned a third-person
 camera */
 static float reticle_direction[3] = { 0.0f, 0.0f, -1.0f };
 
+void halo_stereo_eyes_frame_vector(const float forward[3], const float up[3], const float vector[3], float out[3])
+{
+	float right[3] = { forward[1] * up[2] - forward[2] * up[1], forward[2] * up[0] - forward[0] * up[2],
+		forward[0] * up[1] - forward[1] * up[0] };
+
+	out[0] = vector[0] * right[0] + vector[1] * right[1] + vector[2] * right[2];
+	out[1] = vector[0] * up[0] + vector[1] * up[1] + vector[2] * up[2];
+	out[2] = -(vector[0] * forward[0] + vector[1] * forward[1] + vector[2] * forward[2]);
+}
+
 /* the game camera's forward (aim) in the frame of the eye camera whose forward
 and up are given; NULLs: straight ahead */
 static void reticle_set(const float aim[3], const float forward[3], const float up[3])
 {
-	float right[3];
-
 	if (!aim) {
 		reticle_direction[0] = 0.0f;
 		reticle_direction[1] = 0.0f;
 		reticle_direction[2] = -1.0f;
 		return;
 	}
-	/* the world's z is up and its yaw is left positive, so right is forward
-	cross up */
-	right[0] = forward[1] * up[2] - forward[2] * up[1];
-	right[1] = forward[2] * up[0] - forward[0] * up[2];
-	right[2] = forward[0] * up[1] - forward[1] * up[0];
-	reticle_direction[0] = aim[0] * right[0] + aim[1] * right[1] + aim[2] * right[2];
-	reticle_direction[1] = aim[0] * up[0] + aim[1] * up[1] + aim[2] * up[2];
-	reticle_direction[2] = -(aim[0] * forward[0] + aim[1] * forward[1] + aim[2] * forward[2]);
+	halo_stereo_eyes_frame_vector(forward, up, aim, reticle_direction);
 }
 
 /* the HUD pass's projection: half tangents across and up (render.c), 0
@@ -911,9 +966,72 @@ void halo_stereo_reticle(float direction[3])
 	direction[2] = reticle_direction[2];
 }
 
+float halo_stereo_seat_look_fade_ease(float fade, float past, float start, float black, float time_delta)
+{
+	float t = black > start ? (past - start) / (black - start) : (past > start ? 1.0f : 0.0f);
+	float step = fmaxf(0.0f, time_delta) * SEAT_LOOK_FADE_RATE;
+
+	t = fmaxf(0.0f, fminf(1.0f, t));
+	t = t * t * (3.0f - 2.0f * t);
+	return fade < t ? fminf(t, fade + step) : fmaxf(t, fade - step);
+}
+
+/* display.seat_look_fade, once a frame after the head's yaw is in: how far
+the eye cameras turn past the aim, which a seat's limit holds back (the
+yaw they keep, and this frame's turn the look hasn't asked for yet), on a
+frame the head drives the first-person look in a limited seat; elsewhere
+the fade eases out */
+static void seat_look_fade_update(int head_look_frame, float time_delta)
+{
+	float past = 0.0f;
+	float start = seat_look_fade_start, black = seat_look_fade_black;
+	int stage;
+
+	seat_look_fade_passenger = 0;
+	if (seat_look_fade_setting && head_look_frame && seat_limited) {
+		seat_look_fade_passenger = halo_seat_first_person_passenger();
+		if (seat_look_fade_passenger) {
+			/* Passenger eyes may turn 135 degrees to either side of the
+			seat marker even when the weapon's arc is narrower. */
+			past = fmaxf(0.0f, fabsf(remainderf(seat_head_yaw_offset + head_pending_yaw, TWO_PI)) -
+				135.0f * (3.14159265f / 180.0f));
+			start = 0.0f;
+			black = 45.0f * (3.14159265f / 180.0f);
+		} else
+			past = fabsf(remainderf(head_seat_leftover + head_pending_yaw, TWO_PI));
+		/* (kept while the fade eases out after the seat is left) */
+		seat_look_fade_pod = halo_seat_cryo_pod();
+	}
+	seat_look_fade_now = halo_stereo_seat_look_fade_ease(seat_look_fade_now, past,
+		seat_look_fade_pod ? pod_look_fade_start : start,
+		seat_look_fade_pod ? pod_look_fade_end : black, time_delta);
+	/* (without the full view it's gone at once: nothing to ease) */
+	if (!head_look_frame)
+		seat_look_fade_now = 0.0f;
+	stage = seat_look_fade_now >= 1.0f ? 2 : seat_look_fade_now > 0.0f ? 1 : 0;
+	if (stage != seat_look_fade_logged) {
+		platform_log("stereo: a seat's look fade: %s, the head %.1f degrees past the %s%s",
+			stage == 2 ? (seat_look_fade_pod ? "darkest" : "black") : stage == 1 ? "fading" : "clear",
+			past * RADIANS_TO_DEGREES, seat_look_fade_passenger ? "head arc" : "aim",
+			seat_look_fade_pod ? " (the cryo pod)" : "");
+		seat_look_fade_logged = stage;
+	}
+}
+
+void halo_stereo_seat_look_fade(float *dim, float *blur)
+{
+	float fade = stereo_frame.mode == HALO_STEREO_HEAD && stereo_frame.eye_count == 2 ? seat_look_fade_now : 0.0f;
+
+	/* (the pod's fade stops short of black) */
+	*dim = seat_look_fade_pod ? fade * pod_look_fade_dim : fade;
+	/* the blur full half way to black, so the picture softens before it
+	darkens */
+	*blur = seat_look_fade_blur_setting ? fminf(1.0f, 2.0f * fade) : 0.0f;
+}
+
 void halo_stereo_frame_begin(void)
 {
-	int film, screen, on_screen, head_look_frame, cutscene, live_reason, settle_frame = 0;
+	int film, screen, on_screen, head_look_frame = 0, cutscene, live_reason, settle_frame = 0;
 	/* split screen keeps the mono path: render.c's eye loop runs only with
 	one window, so the frame has no eyes for any other hook to act on (the
 	cutscene's bars, the screen's framing, the head's look) */
@@ -1278,13 +1396,17 @@ void halo_stereo_frame_begin(void)
 		}
 	} else
 		third_person_head = 0;
+	seat_look_fade_update(head_look_frame, time_delta);
 	/* display.eye_height_offset: the full view's eyes raised along the
 	camera's up (the film and SCREEN gameplay keep theirs) */
+	eye_raise = 0.0f;
 	if (stereo_frame.eye_count == 2 && !film && !screen &&
 		(stereo_frame.mode == HALO_STEREO_HEAD || stereo_frame.mode == HALO_STEREO_SIDE_BY_SIDE)) {
 		stereo_frame.eyes[0].offset[1] += eye_height_offset_setting;
 		stereo_frame.eyes[1].offset[1] += eye_height_offset_setting;
+		eye_raise = eye_height_offset_setting;
 	}
+	halo_controller_sample_draw();
 	/* without eyes (the space closed, a load) the next zoom logs again, and
 	no menu holds the zoomed pass back */
 	if (stereo_frame.eye_count != 2) {
@@ -1523,6 +1645,22 @@ int halo_stereo_repeat_pass(void)
 /* the zoom: HEAD mode's full view and the side-by-side view (the Mac's
 stand-in for it), never the screen (SCREEN gameplay, the film), where the
 game's own zoom shows as in mono */
+/* The guest and host read the same start-of-run HUD setting. Keep the
+zoom image's frustum and network reticle boundary on its actual plane. */
+static float zoom_plane_meters;
+static float zoom_plane_distance(void)
+{
+	if (!(zoom_plane_meters > 0.0f)) {
+		float configured = (float)config_real("display.hud_distance");
+
+		if (configured != configured)
+			configured = HALO_STEREO_ZOOM_DISTANCE_METERS;
+		zoom_plane_meters = fmaxf(HALO_STEREO_HUD_DISTANCE_MIN,
+			fminf(HALO_STEREO_HUD_DISTANCE_MAX, configured));
+	}
+	return zoom_plane_meters;
+}
+
 int halo_stereo_zoom_begin(int zoomed)
 {
 	int mode = stereo_frame.mode;
@@ -1541,7 +1679,7 @@ int halo_stereo_zoom_begin(int zoomed)
 		if (zoom_frame)
 			platform_log("stereo: zoomed: one mono zoomed pass fills the view, the eyes' passes skipped: the view's "
 				"half tangents %.3f by %.3f, each over the zoom's magnification, shown %.1f m ahead", view[0], view[1],
-				HALO_STEREO_ZOOM_DISTANCE_METERS);
+				zoom_plane_distance());
 		else
 			platform_log("stereo: unzoomed: the eyes' passes");
 	}
@@ -1557,7 +1695,7 @@ void halo_stereo_set_ui_shown(int shown)
 
 void halo_stereo_zoom_view(float tangents[2])
 {
-	float distance = HALO_STEREO_ZOOM_DISTANCE_METERS;
+	float distance = zoom_plane_distance();
 	int eye;
 
 	tangents[0] = tangents[1] = 0.0f;
@@ -1571,6 +1709,30 @@ void halo_stereo_zoom_view(float tangents[2])
 		tangents[0] = fmaxf(tangents[0], across);
 		tangents[1] = fmaxf(tangents[1], rise);
 	}
+}
+
+void halo_stereo_shared_view(float tangents[4])
+{
+	float distance = zoom_plane_distance();
+	int eye, side;
+
+	for (eye = 0; eye < 2; eye++) {
+		const struct halo_stereo_eye *e = &stereo_frame.eyes[eye];
+		float x = e->offset[0] * METERS_PER_UNIT;
+		float y = e->offset[1] * METERS_PER_UNIT;
+		float edges[4] = {
+			(e->left * distance - x) / distance,
+			(e->right * distance + x) / distance,
+			(e->up * distance + y) / distance,
+			(e->down * distance - y) / distance
+		};
+
+		for (side = 0; side < 4; side++)
+			if (eye == 0 || edges[side] < tangents[side])
+				tangents[side] = edges[side];
+	}
+	for (side = 0; side < 4; side++)
+		tangents[side] = fmaxf(tangents[side], 0.0f);
 }
 
 void halo_stereo_zoom_density(float scale[2])
@@ -1804,6 +1966,8 @@ int halo_stereo_head_look(short gamepad_index, float current_pitch, float *yaw, 
 	not while the director holds the facing (the debug camera's controls,
 	director_update_controls): the game drops the frame's turn there, so the
 	leftover stays the eyes' until a look the game takes */
+	/* (a limited seat, for the look fade, until its clamp runs again) */
+	seat_limited = 0;
 	if (!camera_held_facing || halo_director_inhibited_facing()) {
 		head_request = head_pending_yaw;
 		head_fold = 0.0f;
@@ -1875,6 +2039,7 @@ int halo_stereo_seat_yaw_clamp(short local_player_index, float *desired_yaw, flo
 
 	if (local_player_index != 0 || !head_tracking(0) || yaw_minimum > yaw_maximum)
 		return 0;
+	seat_limited = 1;
 	/* the look before this turn, off the marker (the game's yaw is 0..2 pi,
 	the marker's -pi..pi), dragged by the seat's own motion as in mono */
 	yaw = seat_nearest_bound(remainderf(yaw_before - marker_yaw, TWO_PI), yaw_minimum, yaw_maximum);
@@ -1894,6 +2059,7 @@ int halo_stereo_seat_yaw_clamp(short local_player_index, float *desired_yaw, flo
 	through player_control_permanent_impulse, carries no head yaw and must
 	keep what the first held back) */
 	head_seat_leftover = remainderf(head_seat_leftover + refused, TWO_PI);
+	seat_head_yaw_offset = remainderf(yaw + head_seat_leftover, TWO_PI);
 	head_yaw_taken = remainderf(head_yaw_taken - refused, TWO_PI);
 	/* (the leftover the look folded in, taken back: no fold landed) */
 	head_fold = 0.0f;
@@ -2057,7 +2223,7 @@ static void cutscene_orient(float forward[3], float up[3])
 	reticle_set(NULL, NULL, NULL);
 }
 
-void halo_stereo_head_orient(float forward[3], float up[3])
+static void head_orient(float forward[3], float up[3])
 {
 	float yaw, pitch, camera_yaw;
 	float aim[3] = { forward[0], forward[1], forward[2] };
@@ -2138,12 +2304,61 @@ void halo_stereo_head_orient(float forward[3], float up[3])
 		reticle_set(NULL, NULL, NULL);
 }
 
+void halo_stereo_head_orient(float forward[3], float up[3])
+{
+	float along;
+	int axis;
+
+	head_orient(forward, up);
+	eye_yaw = atan2f(forward[1], forward[0]);
+	along = up[0] * forward[0] + up[1] * forward[1] + up[2] * forward[2];
+	for (axis = 0; axis < 3; axis++)
+	{
+		eye_forward[axis] = forward[axis];
+		eye_up[axis] = up[axis] - along * forward[axis];
+	}
+	normalize(eye_forward);
+	normalize(eye_up);
+}
+
+float halo_stereo_eye_yaw(void) { return eye_yaw; }
+float halo_stereo_eye_raise(void) { return eye_raise; }
+void halo_stereo_eye_frame(float forward[3], float up[3])
+{
+	memcpy(forward, eye_forward, sizeof(eye_forward));
+	memcpy(up, eye_up, sizeof(eye_up));
+}
+
 void halo_stereo_zoom_orient(float forward[3], float up[3])
 {
 	/* (the zoom looks along the gun: in a seat whose limit holds the aim
 	back from the head, the game camera's forward, as in third person) */
 	if (!third_person_head && head_seat_leftover == 0.0f)
 		halo_stereo_head_orient(forward, up);
+}
+
+/* The zoom picture occupies a head-locked plane, but its pixels are from
+the zoom camera. Project the ordinary unit aim (before autoaim changes a
+shot) through that camera, then expand its tangent by the picture's zoom.
+The unzoomed reticle continues to use the eye camera's frame. */
+void halo_stereo_zoom_reticle(const float aim[3], const float forward[3], const float up[3], float magnification)
+{
+	float ray[3], x, y, length;
+
+	if (!aim)
+		aim = forward;
+	halo_stereo_eyes_frame_vector(forward, up, aim, ray);
+	if (ray[2] >= -1e-6f) {
+		reticle_direction[0] = reticle_direction[1] = 0.0f;
+		reticle_direction[2] = 1.0f;
+		return;
+	}
+	x = ray[0] / -ray[2] * fmaxf(1.0f, magnification);
+	y = ray[1] / -ray[2] * fmaxf(1.0f, magnification);
+	length = sqrtf(x * x + y * y + 1.0f);
+	reticle_direction[0] = x / length;
+	reticle_direction[1] = y / length;
+	reticle_direction[2] = -1.0f / length;
 }
 
 void halo_stereo_set_depth_range(float z_near, float z_far)

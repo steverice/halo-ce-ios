@@ -344,6 +344,76 @@
             "apple"
           ]
         },
+        "seat_look_fade": {
+          "type": "boolean",
+          "default": true,
+          "description": "With display.stereo = \"head\": in a first-person seat whose aim has a limit (a Warthog's passenger seat, the Pelican's bench, a10's cryo pod), looking past the limit fades the view and the HUD toward black as the head turns on, while the world still moves with the head. False lets the head look all the way around. Read at start.",
+          "x-environment": "HALO_SEAT_LOOK_FADE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "seat_look_fade_start": {
+          "type": "number",
+          "default": 5.0,
+          "description": "With display.seat_look_fade: how many degrees past the seat's limit the fade begins (0 to 90). Read at start.",
+          "x-environment": "HALO_SEAT_LOOK_FADE_START",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "seat_look_fade_black": {
+          "type": "number",
+          "default": 45.0,
+          "description": "With display.seat_look_fade: how many degrees past the seat's limit the view is black (1 to 180, past display.seat_look_fade_start). Read at start.",
+          "x-environment": "HALO_SEAT_LOOK_FADE_BLACK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "pod_look_fade_start": {
+          "type": "number",
+          "default": 15.0,
+          "description": "As display.seat_look_fade_start, for a10's cryo pod alone: how many degrees past the pod's limit the fade begins (0 to 90). Read at start.",
+          "x-environment": "HALO_POD_LOOK_FADE_START",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "pod_look_fade_end": {
+          "type": "number",
+          "default": 70.0,
+          "description": "In a10's cryo pod: how many degrees past the pod's limit the fade is at its darkest (1 to 180, past display.pod_look_fade_start). Read at start.",
+          "x-environment": "HALO_POD_LOOK_FADE_END",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "pod_look_fade_dim": {
+          "type": "number",
+          "default": 0.85,
+          "description": "In a10's cryo pod: the most the view darkens past the limit, 0.0 to 1.0 (1.0 is black). The blur still reaches full. Read at start.",
+          "x-environment": "HALO_POD_LOOK_FADE_DIM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "seat_look_fade_blur": {
+          "type": "boolean",
+          "default": true,
+          "description": "With display.seat_look_fade: blur the view as it fades, the blur full half way to black; false only dims it. Read at start.",
+          "x-environment": "HALO_SEAT_LOOK_FADE_BLUR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "film_depth_share": {
           "type": "number",
           "default": 0.25,
@@ -885,6 +955,247 @@
             "apple"
           ]
         },
+        "aim": {
+          "type": "string",
+          "default": "controller",
+          "description": "With display.stereo = \"head\": what aims, \"head\" (the view's center) or \"controller\" (default; the aiming hand's Sense controller). Aiming uses the head when tracking is unavailable in local play. In network play, aim holds its last valid hand direction (or the unit's direction before the first tracked pose); a seat uses stick aim. Anything else aims with the head.",
+          "x-environment": "HALO_AIM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_hand": {
+          "type": "string",
+          "default": "right",
+          "description": "With input.aim = \"controller\": the aiming hand, \"right\" (default) or \"left\" (the buttons mirror).",
+          "x-environment": "HALO_AIM_HAND",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_pitch_offset": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With input.aim = \"controller\": degrees the barrel ray and gun tilt down from the aim axis (-10 to 45), for aiming from the hip with the forearm low. Hold Back (Create) and push the right stick or the D-pad up or down to change it by a degree for the session (the stick alone while debug.render_scale_dpad or debug.hud_distance_cycle has the D-pad).",
+          "x-environment": "HALO_AIM_PITCH_OFFSET",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_assist": {
+          "type": "number",
+          "default": 1.0,
+          "description": "With input.aim = \"controller\": how much of the game's bullet autoaim a hand-aimed shot keeps, 0.0 to 2.0. It scales the cone around the aim inside which a shot bends onto a target and the reticle turns red: 1.0 is the game's own for each weapon, 0.0 leaves every shot where the hand points. Single player only: a network or multiplayer game always plays at 1.0. Hold Back (Create) and push the right stick right or left to change it by 0.5 for the session.",
+          "x-environment": "HALO_AIM_ASSIST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_steady": {
+          "type": "number",
+          "default": 0.0,
+          "description": "With input.aim = \"controller\": how much a hand's tremor is smoothed while its aim is on a target (inside the autoaim cone, most where the reticle is red) and the weapon is not zoomed, 0.0 to 2.0: 0.0 none (default), 1.0 moderate, 2.0 strong. It lengthens the time a small move of the hand takes to reach the reticle; the aim is never pulled toward the target and a larger move arrives at once. Multiplied by input.aim_assist, so no assist means no steadying. Single player only. Zoomed, input.aim_steady_zoom_2x and input.aim_steady_zoom_8x apply. Hold Back (Create) and click the right stick to cycle through these settings by zoom, then off, 1.0 and 2.0 at every zoom, for the session.",
+          "x-environment": "HALO_AIM_STEADY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_steady_zoom_2x": {
+          "type": "number",
+          "default": 1.0,
+          "description": "As input.aim_steady, for a weapon zoomed up to 2x (default 1.0).",
+          "x-environment": "HALO_AIM_STEADY_ZOOM_2X",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_steady_zoom_8x": {
+          "type": "number",
+          "default": 2.0,
+          "description": "As input.aim_steady, for a weapon zoomed 8x or more (default 2.0); between 2x and 8x the strength is in proportion.",
+          "x-environment": "HALO_AIM_STEADY_ZOOM_8X",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "controller_rumble": {
+          "type": "number",
+          "default": 1.0,
+          "description": "How strongly the game's rumble plays on a gamepad (0 to 2: 1 is the game's own strength, 0 is off). With input.aim = \"controller\" it plays on the Sense controllers: the pad's heavy left motor on the other hand's controller and its light right motor on the aiming hand's.",
+          "x-environment": "HALO_CONTROLLER_RUMBLE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "blast_rumble": {
+          "type": "boolean",
+          "default": true,
+          "description": "A blast that shakes the view but has no rumble of its own in the game's data (a grenade's shock wave beyond 7 m) rumbles the gamepad's heavy motor, at half the blast's strength at your distance for as long as the shake lasts. False keeps the original: no rumble from such blasts.",
+          "x-environment": "HALO_BLAST_RUMBLE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "laser": {
+          "type": "string",
+          "default": "off",
+          "description": "HEAD mode with controller aim: a line from the gun's muzzle to the reticle. \"off\" (default), \"close\" (only while the reticle's surface is within input.laser_distance, where a hand held below the eyes makes the reticle slide down a surface as you walk up to it) or \"on\" (always). In any mode it shows while the gun's line passes something the eye's line doesn't. Hold Back (Create) and pull the right trigger to cycle off, close and on for the session; the trigger doesn't fire while Back is held.",
+          "x-environment": "HALO_LASER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "reticle_ease": {
+          "type": "number",
+          "default": 0.05,
+          "description": "HEAD mode with controller aim: the time, in seconds, over which the reticle moves along the gun's line when that line goes from a far surface onto a near one or back (0.0 to 0.3; default 0.05; 0.0 steps at once, as before). The gun is below your eyes, so its line meets a near enemy lower than the ground behind it, and the reticle stepped as it crossed the enemy's outline. The shots follow the eased reticle. Hold Back (Create) and press Y (Triangle) to switch it off and on.",
+          "x-environment": "HALO_RETICLE_EASE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "weapon_turn_limit": {
+          "type": "number",
+          "default": 25.0,
+          "description": "input.first_person_arms \"limited\": the most the turned model turns across the view from its center, in degrees (0 to 90; 0 leaves the turn alone).",
+          "x-environment": "HALO_WEAPON_TURN_LIMIT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "weapon_roll_limit": {
+          "type": "number",
+          "default": 15.0,
+          "description": "input.first_person_arms \"limited\": the most the turned model rolls, in degrees (0 to 90; 0 leaves the roll alone).",
+          "x-environment": "HALO_WEAPON_ROLL_LIMIT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "weapon_smoothing": {
+          "type": "number",
+          "default": 0.08,
+          "description": "HEAD mode with controller aim: the time, in seconds, over which the first-person gun and arms follow the hand (0.0 to 0.5; default 0.08; 0.0 follows it directly, as before). It takes the hand's tremor and the small steps of the aim point out of the model's motion; a larger move catches up faster. Only the drawn model is smoothed: the reticle and the shots follow the hand directly. Hold Back (Create) and click the left stick to switch it off and on for the session.",
+          "x-environment": "HALO_WEAPON_SMOOTHING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "first_person_arms": {
+          "type": "string",
+          "default": "solved",
+          "description": "HEAD mode with controller aim: how the first-person gun and arms follow the hand. \"turned\": the whole model is turned onto the hand's line at the eyes (as before; a hand pointed to the side brings the arms in from the side of the view). \"limited\": the same, with the turn held within 25 degrees and the roll within 15, the model sinking out of view beyond. \"solved\" (default): the shoulders stay with the view, the gun turns at its grip onto the hand's line within input.arms_turn_limit, input.arms_up_limit, input.arms_down_limit and input.arms_roll_limit, the hands stay on it and the arms bend to follow. The reticle and the shots follow the hand in every mode. Hold Back (Create) and push the left stick right or left to cycle the modes for the session.",
+          "x-environment": "HALO_FIRST_PERSON_ARMS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "arms_follow": {
+          "type": "number",
+          "default": 0.5,
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how much of the hand's movement away from its usual place (its average over the last ten seconds) moves the gun, 0.0 (the gun stays where the animation puts it) to 1.0 (it moves with the hand, as far as the arm reaches); default 0.5. Hold Back (Create) and press A (Cross) to switch between 0.0 and 0.5.",
+          "x-environment": "HALO_ARMS_FOLLOW",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "arms_turn_limit": {
+          "type": "number",
+          "default": 35,
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how far across the view, in degrees, the drawn gun turns with the hand (0 to 90; default 35). It follows the hand exactly to 70% of this and eases to it beyond; the reticle and the shots go on. Hold Back (Create) and press X (Square) to switch between 35 and 45.",
+          "x-environment": "HALO_ARMS_TURN_LIMIT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "arms_up_limit": {
+          "type": "number",
+          "default": 40,
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how far above the view's center, in degrees, the drawn gun turns (0 to 89; default 40), eased as input.arms_turn_limit is.",
+          "x-environment": "HALO_ARMS_UP_LIMIT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "arms_down_limit": {
+          "type": "number",
+          "default": 50,
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how far below the view's center, in degrees, the drawn gun turns (0 to 89; default 50), eased as input.arms_turn_limit is.",
+          "x-environment": "HALO_ARMS_DOWN_LIMIT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "arms_roll_limit": {
+          "type": "number",
+          "default": 60,
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how far the drawn gun rolls about its barrel with the hand, in degrees either way (0 to 180; default 60), eased as input.arms_turn_limit is; the forearm takes half of the wrist's twist.",
+          "x-environment": "HALO_ARMS_ROLL_LIMIT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "head_magnetism": {
+          "type": "boolean",
+          "default": false,
+          "description": "HEAD mode: false (default), the game's aim magnetism never turns or slows the view (with a stick it drags the look after a target while you move, which in the headset turns the world by itself). true, the game's own magnetism while the head aims. The red reticle and the bullets' bend toward a target are the same either way.",
+          "x-environment": "HALO_HEAD_MAGNETISM",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "zoom_takeover": {
+          "type": "boolean",
+          "default": false,
+          "description": "HEAD mode with controller aim, zoomed: false (default), the reticle stays where the gun points, and when the gun points outside the zoomed picture there is no reticle; the shots follow the gun either way. true, the head takes the aim and the reticle jumps to the center as the gun's line leaves the part of the zoomed picture both eyes see.",
+          "x-environment": "HALO_ZOOM_TAKEOVER",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_origin_raise": {
+          "type": "number",
+          "default": 0.0,
+          "description": "HEAD mode with controller aim: where the aim ray starts, from 0.0 (the hand, default) to 1.0 (the eyes), along the line between them; the ray keeps the hand's direction. A hand held below the eyes makes the reticle slide down a surface as you walk up to it; a raised origin slides less, and at 1.0 not at all, but the reticle then sits above where the controller itself points, by the height raised. The reticle, the shots, aim assist, the zoom and the laser all follow it. Hold Back (Create) and pull the left trigger to raise it by 0.1, or press the left shoulder (the other hand's grip on a Sense controller) to lower it; the value is saved here.",
+          "x-environment": "HALO_AIM_ORIGIN_RAISE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "laser_distance": {
+          "type": "number",
+          "default": 3.0,
+          "description": "With input.laser = \"close\": how near the reticle's surface is, in meters from the eyes (1 to 20), for the line to show. It fades in over the last half meter inside this distance.",
+          "x-environment": "HALO_LASER_DISTANCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "stick_dead_zone": {
           "type": "number",
           "default": 0.27,
@@ -939,742 +1250,89 @@
       },
       "additionalProperties": false
     },
-    "streamer": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Hide offensive words in names and text from other players, maps, and mods as stars.",
-          "x-environment": "HALO_STREAMER_MODE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "slurs": {
-          "type": "string",
-          "default": "mild",
-          "description": "With streamer.enabled, hide slurs at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
-          "x-environment": "HALO_STREAMER_SLURS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "swearing": {
-          "type": "string",
-          "default": "strong",
-          "description": "With streamer.enabled, hide swearing at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
-          "x-environment": "HALO_STREAMER_SWEARING",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "insults": {
-          "type": "string",
-          "default": "off",
-          "description": "With streamer.enabled, hide insults at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
-          "x-environment": "HALO_STREAMER_INSULTS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "audio": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Play sound.",
-          "x-environment": "HALO_NO_AUDIO",
-          "x-environment-style": "set_is_false",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "volume": {
-          "type": "number",
-          "default": 1.0,
-          "description": "The volume of everything, 0.0 to 1.0.",
-          "x-environment": "HALO_VOLUME",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "music_volume": {
-          "type": "number",
-          "default": 1.0,
-          "description": "The music's volume, 0.0 to 1.0 (of audio.volume).",
-          "x-environment": "HALO_MUSIC_VOLUME",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "effects_volume": {
-          "type": "number",
-          "default": 1.0,
-          "description": "The volume of every other sound (effects and speech), 0.0 to 1.0 (of audio.volume).",
-          "x-environment": "HALO_EFFECTS_VOLUME",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "loose_sounds": {
-          "type": "boolean",
-          "default": false,
-          "description": "For those making sounds: play each of a map's sounds that has a Halo PC sound tag file of its name under the data root's tags folder (tags/sound/.../name.sound) from that file. At the console, loose_sounds_reload reads the files again and loose_sounds false gives the map's sounds back.",
-          "x-environment": "HALO_LOOSE_SOUNDS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "controls": {
-      "type": "object",
-      "properties": {
-        "move_forward": {
-          "type": "string",
-          "default": "W",
-          "description": "The keyboard and mouse's controls, which Settings > Controls Setup changes: up to two keys or buttons each, separated by a comma. Keys by their names (\"W\", \"Space\", \"Left Ctrl\", \"F1\"), and \"Mouse Left\", \"Mouse Right\", \"Mouse Middle\", \"Mouse 4\", \"Mouse 5\", \"Wheel\" (either way), \"Wheel Up\" and \"Wheel Down\"; empty for none. Moving forward:",
-          "x-environment": "HALO_KEY_MOVE_FORWARD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "move_backward": {
-          "type": "string",
-          "default": "S",
-          "description": "Moving backward.",
-          "x-environment": "HALO_KEY_MOVE_BACKWARD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "strafe_left": {
-          "type": "string",
-          "default": "A",
-          "description": "Moving left.",
-          "x-environment": "HALO_KEY_STRAFE_LEFT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "strafe_right": {
-          "type": "string",
-          "default": "D",
-          "description": "Moving right.",
-          "x-environment": "HALO_KEY_STRAFE_RIGHT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "jump": {
-          "type": "string",
-          "default": "Space",
-          "description": "Jumping (and skipping cutscenes).",
-          "x-environment": "HALO_KEY_JUMP",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "crouch": {
-          "type": "string",
-          "default": "Left Ctrl, C",
-          "description": "Crouching.",
-          "x-environment": "HALO_KEY_CROUCH",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "fire": {
-          "type": "string",
-          "default": "Mouse Left",
-          "description": "Firing.",
-          "x-environment": "HALO_KEY_FIRE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "throw_grenade": {
-          "type": "string",
-          "default": "Mouse Right, G",
-          "description": "Throwing a grenade.",
-          "x-environment": "HALO_KEY_THROW_GRENADE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "melee": {
-          "type": "string",
-          "default": "F, Mouse 4",
-          "description": "Melee attack.",
-          "x-environment": "HALO_KEY_MELEE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "reload": {
-          "type": "string",
-          "default": "R",
-          "description": "Reloading.",
-          "x-environment": "HALO_KEY_RELOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "zoom": {
-          "type": "string",
-          "default": "Z, Mouse Middle",
-          "description": "Zooming the scope.",
-          "x-environment": "HALO_KEY_ZOOM",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "switch_weapon": {
-          "type": "string",
-          "default": "Wheel, 1",
-          "description": "Switching weapons.",
-          "x-environment": "HALO_KEY_SWITCH_WEAPON",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "switch_grenade": {
-          "type": "string",
-          "default": "X",
-          "description": "Switching grenades.",
-          "x-environment": "HALO_KEY_SWITCH_GRENADE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "action": {
-          "type": "string",
-          "default": "E",
-          "description": "The action: picking up (held: swapping weapons), entering and leaving vehicles, pressing switches; never reloading (the controller's X does when there is nothing to act on).",
-          "x-environment": "HALO_KEY_ACTION",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "flashlight": {
-          "type": "string",
-          "default": "Q",
-          "description": "The flashlight.",
-          "x-environment": "HALO_KEY_FLASHLIGHT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "scoreboard": {
-          "type": "string",
-          "default": "Tab",
-          "description": "Showing the scores (the controller's Back).",
-          "x-environment": "HALO_KEY_SCOREBOARD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "pause": {
-          "type": "string",
-          "default": "Escape",
-          "description": "The pause menu (the controller's Start).",
-          "x-environment": "HALO_KEY_PAUSE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "game": {
-      "type": "object",
-      "properties": {
-        "console_log": {
-          "type": "string",
-          "default": "important",
-          "description": "What the game's console shows on screen of what it logs: \"important\" (bans, players dropped for cheating, what refuses a command, and the asserts that stop the game), \"all\" (every line, the game's own chatter too), or \"none\" (the asserts that stop the game only). What a command prints shows whatever this is, and debug.txt has every line.",
-          "x-environment": "HALO_CONSOLE_LOG",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "language": {
-          "type": "string",
-          "default": "",
-          "description": "The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\"; empty for English. The game data decides what is translated.",
-          "x-environment": "HALO_LANGUAGE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "loading_screen": {
-          "type": "string",
-          "default": "auto",
-          "description": "The loading screen over a campaign level's load: the last frame blurring away, the ring's picture lit from left to right as the load goes, and its tone, until the level is read and its shaders are compiled. \"auto\" (default) shows it except in a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) and except in stereo; \"on\" or \"off\" forces either. The picture is your disc's: a maps folder imported before the importer took it gets it from tools/loading_picture.py.",
-          "x-environment": "HALO_LOADING_SCREEN",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "loading_screen_seconds": {
-          "type": "number",
-          "default": 1.5,
-          "description": "The least time the loading screen stays up, in seconds (0 to 30), so a level that is ready at once doesn't flash it.",
-          "x-environment": "HALO_LOADING_SCREEN_SECONDS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "enhanced_animations": {
-          "type": "boolean",
-          "default": true,
-          "description": "The player bipeds' grenade throws keep their legs moving (crouched, in the air and in a vehicle's seat too), riders' hands leave the grips to throw and reload, and a player turns with the aim while throwing; false: the original animations, which freeze the legs and stand a rider up.",
-          "x-environment": "HALO_ENHANCED_ANIMATIONS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "custom_edition": {
-          "type": "boolean",
-          "default": true,
-          "description": "Load and run Halo Custom Edition maps (not those that need OpenSauce): put them and Custom Edition's bitmaps.map, sounds.map and loc.map in the custom_maps folder beside the maps folder; the map lists show them as CUSTOM SINGLEPLAYER and CUSTOM MULTIPLAYER. Their tags are checked as the game's own maps' are before they run; false refuses them (docs/custom_edition_caches.md).",
-          "x-environment": "HALO_CUSTOM_EDITION",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "paths": {
-      "type": "object",
-      "properties": {
-        "data": {
-          "type": "string",
-          "default": "",
-          "description": "The folder holding the game data's maps folder; empty looks in the working directory and its assets folder. Windows paths are easiest in single quotes: 'C:\\Games\\Halo'.",
-          "x-environment": "HALO_DATA_ROOT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "desktop"
-          ]
-        },
-        "saves": {
-          "type": "string",
-          "default": "",
-          "description": "Where saved games and profiles go; empty for the usual place (~/.local/share/halo-linux, or %APPDATA%\\halo on Windows).",
-          "x-environment": "HALO_SAVE_ROOT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "desktop"
-          ]
-        },
-        "custom_edition": {
-          "type": "string",
-          "default": "",
-          "description": "A Halo Custom Edition install whose maps folder is looked in after the custom_maps folder for Custom Edition maps and their bitmaps.map, sounds.map and loc.map (game.custom_edition); empty for none.",
-          "x-environment": "HALO_CUSTOM_EDITION_ROOT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "network": {
-      "type": "object",
-      "properties": {
-        "address": {
-          "type": "string",
-          "default": "",
-          "description": "This machine's IPv4 address for system link, for a machine on several networks; empty chooses one.",
-          "x-environment": "HALO_NET_ADDRESS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "broadcast": {
-          "type": "string",
-          "default": "",
-          "description": "Comma-separated IPv4 addresses system link sends its announcements to instead of the local network's broadcast address (for VPNs); empty for the local network.",
-          "x-environment": "HALO_NET_BROADCAST",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "lan_broadcast": {
-          "type": "string",
-          "default": "auto",
-          "description": "System link by broadcast, which finds games of every system: \"auto\" where this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices either way.",
-          "x-environment": "HALO_NET_LAN_BROADCAST",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple"
-          ]
-        },
-        "online": {
-          "type": "boolean",
-          "default": false,
-          "description": "Internet play: hosting makes an invite link (logged, and put on the clipboard) that lets whoever has it join over the internet; opening a link (or copying one before switching to the game) joins. Only people with the invite can join. Off keeps system link to the local network.",
-          "x-environment": "HALO_NET_ONLINE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "online_ask": {
-          "type": "boolean",
-          "default": false,
-          "description": "While network.online is false: ask whether to turn Internet Play on the first time Create Game > Internet, Join Game > Server Browser or Direct Link is opened, saying which servers it reaches and what they see. Asked once: either answer, and a join link's question, writes false here.",
-          "x-environment": "HALO_NET_ONLINE_ASK",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple"
-          ]
-        },
-        "join_from_clipboard": {
-          "type": "boolean",
-          "default": false,
-          "description": "Join the game of an invite link found on the clipboard when the game comes to the front.",
-          "x-environment": "HALO_NET_JOIN_FROM_CLIPBOARD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "tunnel_port": {
-          "type": "integer",
-          "default": 0,
-          "description": "The UDP port internet play uses; 0 picks one. A fixed one can be forwarded on the router, for networks whose NAT stops connections.",
-          "x-environment": "HALO_NET_TUNNEL_PORT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "allow_upnp": {
-          "type": "boolean",
-          "default": true,
-          "description": "Let internet play ask the router (UPnP; on Apple devices NAT-PMP or PCP) to forward its port, for networks whose NAT stops connections: when a player joins this machine's game, and when joining a game takes too long. False never asks.",
-          "x-environment": "HALO_NET_ALLOW_UPNP",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "background_grace": {
-          "type": "integer",
-          "default": 60,
-          "description": "Seconds the other players of an internet game wait for this machine when its app goes to the background (an Apple device suspends it, its game held) before they drop it.",
-          "x-environment": "HALO_NET_BACKGROUND_GRACE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "public_lobby": {
-          "type": "boolean",
-          "default": true,
-          "description": "The server browser: public games are listed through the signalling brokers, and Join Game > Server Browser shows them. False lists no game of this machine's and shows none.",
-          "x-environment": "HALO_NET_PUBLIC_LOBBY",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "host_public": {
-          "type": "boolean",
-          "default": false,
-          "description": "Whether a new game of Create Game > Internet starts as PUBLIC (listed in everyone's server browser: anyone can see and join it) or, false, PRIVATE (only players with its invite link can join). Server Setup's LISTING changes it for each game.",
-          "x-environment": "HALO_NET_HOST_PUBLIC",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "map_share": {
-          "type": "boolean",
-          "default": true,
-          "description": "Hosting: send a player who joins without the game's Custom Edition map the map (from custom_maps), and the resource maps it needs that the player lacks (bitmaps.map, sounds.map, loc.map). The game's other players help (network.map_seed).",
-          "x-environment": "HALO_NET_MAP_SHARE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "map_share_upload": {
-          "type": "integer",
-          "default": 1024,
-          "description": "Hosting: the most kilobytes a second the host sends of maps (16 to 65536), so that the game's own traffic keeps the rest of the upload.",
-          "x-environment": "HALO_NET_MAP_SHARE_UPLOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "map_seed": {
-          "type": "boolean",
-          "default": false,
-          "description": "Playing in another's game: help send its map to players who join without it, as a torrent's peers do (the pieces this machine has, at most network.map_seed_upload). While it does, in a game on a Custom Edition map, this machine takes connections on TCP port 5153. Off by default on Apple builds.",
-          "x-environment": "HALO_NET_MAP_SEED",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "map_seed_upload": {
-          "type": "integer",
-          "default": 256,
-          "description": "Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536).",
-          "x-environment": "HALO_NET_MAP_SEED_UPLOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "map_download": {
-          "type": "boolean",
-          "default": false,
-          "description": "Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. Off by default on Apple builds. It governs receiving only: sending maps to others is network.map_share (a host) and network.map_seed (a player in another's game).",
-          "x-environment": "HALO_NET_MAP_DOWNLOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "coop_public": {
-          "type": "boolean",
-          "default": false,
-          "description": "Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here.",
-          "x-environment": "HALO_NET_COOP_PUBLIC",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_friendly_fire": {
-          "type": "string",
-          "default": "on",
-          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Their AI allies they always can, as in the campaign.",
-          "x-environment": "HALO_NET_COOP_FRIENDLY_FIRE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_player_collisions": {
-          "type": "boolean",
-          "default": true,
-          "description": "Whether the players of an online co-op game bump into each other; false, they walk through each other (the AI's characters they still bump into). Server Setup's PLAYER COLLISIONS in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_PLAYER_COLLISIONS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_enemies_mode": {
-          "type": "string",
-          "default": "per_player",
-          "description": "Online co-op's extra enemies: \"none\", \"per_player\" (each squad of enemies grows by coop_enemies for each player past the first) or \"multiplier\" (each is coop_enemies_multiplier times as large, for any number of players). Server Setup's EXTRA ENEMIES in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_ENEMIES_MODE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_enemies": {
-          "type": "integer",
-          "default": 50,
-          "description": "Online co-op's extra enemies per player, a percentage: for each player past the first, each squad of enemies a level places gets this much of itself more (100: as many again; 25 to 200). Server Setup's PER PLAYER in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_ENEMIES",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_enemies_multiplier": {
-          "type": "integer",
-          "default": 2,
-          "description": "Online co-op's static multiplier of its enemies: each squad of enemies a level places is this many times as large (2 to 32). Server Setup's MULTIPLIER in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_ENEMIES_MULTIPLIER",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "brokers_file": {
-          "type": "string",
-          "default": "brokers.txt",
-          "description": "The file of the public MQTT brokers through which the machines of an invite find each other (its messages are encrypted), beside this file unless a full path: one host:port on each line, up to 4. Updates replace brokers.txt: keep a list of your own under another name.",
-          "x-environment": "HALO_NET_BROKERS_FILE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "stun_servers": {
-          "type": "string",
-          "default": "stun.l.google.com:19302,stun.cloudflare.com:3478",
-          "description": "Public STUN servers that tell this machine its internet address; comma-separated host:port.",
-          "x-environment": "HALO_NET_STUN",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "discord": {
-      "type": "object",
-      "properties": {
-        "application_id": {
-          "type": "string",
-          "default": "1553978809840050229",
-          "description": "The Discord application internet play invites go through while the Discord desktop client runs; empty for none.",
-          "x-environment": "HALO_DISCORD_APPLICATION",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "update": {
-      "type": "object",
-      "properties": {
-        "auto": {
-          "type": "boolean",
-          "default": true,
-          "description": "Look for a new version when the game starts, and offer to update to it; false never looks (the game's \"Do not ask again\" writes false here).",
-          "x-environment": "HALO_UPDATE_AUTO",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
     "debug": {
       "type": "object",
       "properties": {
+        "test_controller": {
+          "type": "string",
+          "default": "",
+          "description": "A synthetic right Sense controller in place of the real ones, to check controller aim on the Mac and in the simulator: \"fixed:<yaw>,<pitch>\" holds it still in the room at those degrees from the room's forward (yaw right, pitch up positive; \"fixed:30,0\"), \"sweep\" turns it 30 degrees each way over 4 s, and \"loss:<seconds>\" holds it at fixed:0,0 but untracked for that long every 10 s, then orientation-only as long (up to 5). Empty for none; leave it empty on a headset.",
+          "x-environment": "HALO_TEST_CONTROLLER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "controller_record": {
+          "type": "string",
+          "default": "",
+          "description": "Write every pose sample the host hands the game (both hands, the buttons, the head's yaw) to NAME.poses in the data folder (a headset's Documents folder), flushed once a second. Empty for none. Play it back with debug.controller_replay.",
+          "x-environment": "HALO_CONTROLLER_RECORD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "controller_replay": {
+          "type": "string",
+          "default": "",
+          "description": "Answer the game's pose samples from NAME.poses (debug.controller_record) instead of the controllers or debug.test_controller, each kind in its own order, holding the last at the end; works on any host. The side-by-side view then aims with the replayed hand as it does for debug.test_controller. Empty for none.",
+          "x-environment": "HALO_CONTROLLER_REPLAY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "controller_aim_axes": {
+          "type": "string",
+          "default": "",
+          "description": "The Sense controller's aim axes as measured, \"<forward>,<up>\" (each one of +x, -x, +y, -y, +z and -z, on different lines; \"-z,+y\"), in place of the built-in ones; empty for the built-in ones. Anything else is logged once and the built-in axes stand.",
+          "x-environment": "HALO_CONTROLLER_AIM_AXES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "controller_correction": {
+          "type": "string",
+          "default": "none",
+          "description": "The Sense controllers' pose correction from ARKit: \"none\" (default) or \"rendered\" (aligned with passthrough), to compare the two for lag and swim.",
+          "x-environment": "HALO_CONTROLLER_CORRECTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "controller_axes": {
+          "type": "boolean",
+          "default": false,
+          "description": "HEAD mode with Sense controllers (visionOS 27): log the right controller's aim and grip axes in the head's frame twice a second (\"spatial: right aim x (...) y (...) z (...) grip ...\"), to measure which of the aim's axes points along the barrel.",
+          "x-environment": "HALO_CONTROLLER_AXES",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_trace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Controller aim: log a line every drawn frame while a hand aims, with the sightline's and the first-person gun's yaw and pitch, the reticle's distance, the action's blend and gate and the magnification.",
+          "x-environment": "HALO_AIM_TRACE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_steady_level": {
+          "type": "number",
+          "default": -1.0,
+          "description": "Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. Negative uses the game's.",
+          "x-environment": "HALO_AIM_STEADY_LEVEL",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "external_mode": {
           "type": "string",
           "default": "",
@@ -2652,6 +2310,739 @@
           "x-environment-style": "set_is_true",
           "x-platforms": [
             "apple"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "streamer": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide offensive words in names and text from other players, maps, and mods as stars.",
+          "x-environment": "HALO_STREAMER_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "slurs": {
+          "type": "string",
+          "default": "mild",
+          "description": "With streamer.enabled, hide slurs at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
+          "x-environment": "HALO_STREAMER_SLURS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "swearing": {
+          "type": "string",
+          "default": "strong",
+          "description": "With streamer.enabled, hide swearing at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
+          "x-environment": "HALO_STREAMER_SWEARING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "insults": {
+          "type": "string",
+          "default": "off",
+          "description": "With streamer.enabled, hide insults at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
+          "x-environment": "HALO_STREAMER_INSULTS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Play sound.",
+          "x-environment": "HALO_NO_AUDIO",
+          "x-environment-style": "set_is_false",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "volume": {
+          "type": "number",
+          "default": 1.0,
+          "description": "The volume of everything, 0.0 to 1.0.",
+          "x-environment": "HALO_VOLUME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "music_volume": {
+          "type": "number",
+          "default": 1.0,
+          "description": "The music's volume, 0.0 to 1.0 (of audio.volume).",
+          "x-environment": "HALO_MUSIC_VOLUME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "effects_volume": {
+          "type": "number",
+          "default": 1.0,
+          "description": "The volume of every other sound (effects and speech), 0.0 to 1.0 (of audio.volume).",
+          "x-environment": "HALO_EFFECTS_VOLUME",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "loose_sounds": {
+          "type": "boolean",
+          "default": false,
+          "description": "For those making sounds: play each of a map's sounds that has a Halo PC sound tag file of its name under the data root's tags folder (tags/sound/.../name.sound) from that file. At the console, loose_sounds_reload reads the files again and loose_sounds false gives the map's sounds back.",
+          "x-environment": "HALO_LOOSE_SOUNDS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "controls": {
+      "type": "object",
+      "properties": {
+        "move_forward": {
+          "type": "string",
+          "default": "W",
+          "description": "The keyboard and mouse's controls, which Settings > Controls Setup changes: up to two keys or buttons each, separated by a comma. Keys by their names (\"W\", \"Space\", \"Left Ctrl\", \"F1\"), and \"Mouse Left\", \"Mouse Right\", \"Mouse Middle\", \"Mouse 4\", \"Mouse 5\", \"Wheel\" (either way), \"Wheel Up\" and \"Wheel Down\"; empty for none. Moving forward:",
+          "x-environment": "HALO_KEY_MOVE_FORWARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "move_backward": {
+          "type": "string",
+          "default": "S",
+          "description": "Moving backward.",
+          "x-environment": "HALO_KEY_MOVE_BACKWARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "strafe_left": {
+          "type": "string",
+          "default": "A",
+          "description": "Moving left.",
+          "x-environment": "HALO_KEY_STRAFE_LEFT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "strafe_right": {
+          "type": "string",
+          "default": "D",
+          "description": "Moving right.",
+          "x-environment": "HALO_KEY_STRAFE_RIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "jump": {
+          "type": "string",
+          "default": "Space",
+          "description": "Jumping (and skipping cutscenes).",
+          "x-environment": "HALO_KEY_JUMP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "crouch": {
+          "type": "string",
+          "default": "Left Ctrl, C",
+          "description": "Crouching.",
+          "x-environment": "HALO_KEY_CROUCH",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "fire": {
+          "type": "string",
+          "default": "Mouse Left",
+          "description": "Firing.",
+          "x-environment": "HALO_KEY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "throw_grenade": {
+          "type": "string",
+          "default": "Mouse Right, G",
+          "description": "Throwing a grenade.",
+          "x-environment": "HALO_KEY_THROW_GRENADE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "melee": {
+          "type": "string",
+          "default": "F, Mouse 4",
+          "description": "Melee attack.",
+          "x-environment": "HALO_KEY_MELEE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "reload": {
+          "type": "string",
+          "default": "R",
+          "description": "Reloading.",
+          "x-environment": "HALO_KEY_RELOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "zoom": {
+          "type": "string",
+          "default": "Z, Mouse Middle",
+          "description": "Zooming the scope.",
+          "x-environment": "HALO_KEY_ZOOM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "switch_weapon": {
+          "type": "string",
+          "default": "Wheel, 1",
+          "description": "Switching weapons.",
+          "x-environment": "HALO_KEY_SWITCH_WEAPON",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "switch_grenade": {
+          "type": "string",
+          "default": "X",
+          "description": "Switching grenades.",
+          "x-environment": "HALO_KEY_SWITCH_GRENADE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "default": "E",
+          "description": "The action: picking up (held: swapping weapons), entering and leaving vehicles, pressing switches; never reloading (the controller's X does when there is nothing to act on).",
+          "x-environment": "HALO_KEY_ACTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "flashlight": {
+          "type": "string",
+          "default": "Q",
+          "description": "The flashlight.",
+          "x-environment": "HALO_KEY_FLASHLIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "scoreboard": {
+          "type": "string",
+          "default": "Tab",
+          "description": "Showing the scores (the controller's Back).",
+          "x-environment": "HALO_KEY_SCOREBOARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "pause": {
+          "type": "string",
+          "default": "Escape",
+          "description": "The pause menu (the controller's Start).",
+          "x-environment": "HALO_KEY_PAUSE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "game": {
+      "type": "object",
+      "properties": {
+        "console_log": {
+          "type": "string",
+          "default": "important",
+          "description": "What the game's console shows on screen of what it logs: \"important\" (bans, players dropped for cheating, what refuses a command, and the asserts that stop the game), \"all\" (every line, the game's own chatter too), or \"none\" (the asserts that stop the game only). What a command prints shows whatever this is, and debug.txt has every line.",
+          "x-environment": "HALO_CONSOLE_LOG",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "language": {
+          "type": "string",
+          "default": "",
+          "description": "The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\"; empty for English. The game data decides what is translated.",
+          "x-environment": "HALO_LANGUAGE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "loading_screen": {
+          "type": "string",
+          "default": "auto",
+          "description": "The loading screen over a campaign level's load: the last frame blurring away, the ring's picture lit from left to right as the load goes, and its tone, until the level is read and its shaders are compiled. \"auto\" (default) shows it except in a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) and except in stereo; \"on\" or \"off\" forces either. The picture is your disc's: a maps folder imported before the importer took it gets it from tools/loading_picture.py.",
+          "x-environment": "HALO_LOADING_SCREEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "loading_screen_seconds": {
+          "type": "number",
+          "default": 1.5,
+          "description": "The least time the loading screen stays up, in seconds (0 to 30), so a level that is ready at once doesn't flash it.",
+          "x-environment": "HALO_LOADING_SCREEN_SECONDS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "enhanced_animations": {
+          "type": "boolean",
+          "default": true,
+          "description": "The player bipeds' grenade throws keep their legs moving (crouched, in the air and in a vehicle's seat too), riders' hands leave the grips to throw and reload, and a player turns with the aim while throwing; false: the original animations, which freeze the legs and stand a rider up.",
+          "x-environment": "HALO_ENHANCED_ANIMATIONS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "custom_edition": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load and run Halo Custom Edition maps (not those that need OpenSauce): put them and Custom Edition's bitmaps.map, sounds.map and loc.map in the custom_maps folder beside the maps folder; the map lists show them as CUSTOM SINGLEPLAYER and CUSTOM MULTIPLAYER. Their tags are checked as the game's own maps' are before they run; false refuses them (docs/custom_edition_caches.md).",
+          "x-environment": "HALO_CUSTOM_EDITION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "default": "",
+          "description": "The folder holding the game data's maps folder; empty looks in the working directory and its assets folder. Windows paths are easiest in single quotes: 'C:\\Games\\Halo'.",
+          "x-environment": "HALO_DATA_ROOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "saves": {
+          "type": "string",
+          "default": "",
+          "description": "Where saved games and profiles go; empty for the usual place (~/.local/share/halo-linux, or %APPDATA%\\halo on Windows).",
+          "x-environment": "HALO_SAVE_ROOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        },
+        "custom_edition": {
+          "type": "string",
+          "default": "",
+          "description": "A Halo Custom Edition install whose maps folder is looked in after the custom_maps folder for Custom Edition maps and their bitmaps.map, sounds.map and loc.map (game.custom_edition); empty for none.",
+          "x-environment": "HALO_CUSTOM_EDITION_ROOT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "default": "",
+          "description": "This machine's IPv4 address for system link, for a machine on several networks; empty chooses one.",
+          "x-environment": "HALO_NET_ADDRESS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "broadcast": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated IPv4 addresses system link sends its announcements to instead of the local network's broadcast address (for VPNs); empty for the local network.",
+          "x-environment": "HALO_NET_BROADCAST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "lan_broadcast": {
+          "type": "string",
+          "default": "auto",
+          "description": "System link by broadcast, which finds games of every system: \"auto\" where this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices either way.",
+          "x-environment": "HALO_NET_LAN_BROADCAST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "online": {
+          "type": "boolean",
+          "default": false,
+          "description": "Internet play: hosting makes an invite link (logged, and put on the clipboard) that lets whoever has it join over the internet; opening a link (or copying one before switching to the game) joins. Only people with the invite can join. Off keeps system link to the local network.",
+          "x-environment": "HALO_NET_ONLINE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "online_ask": {
+          "type": "boolean",
+          "default": false,
+          "description": "While network.online is false: ask whether to turn Internet Play on the first time Create Game > Internet, Join Game > Server Browser or Direct Link is opened, saying which servers it reaches and what they see. Asked once: either answer, and a join link's question, writes false here.",
+          "x-environment": "HALO_NET_ONLINE_ASK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "join_from_clipboard": {
+          "type": "boolean",
+          "default": false,
+          "description": "Join the game of an invite link found on the clipboard when the game comes to the front.",
+          "x-environment": "HALO_NET_JOIN_FROM_CLIPBOARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "tunnel_port": {
+          "type": "integer",
+          "default": 0,
+          "description": "The UDP port internet play uses; 0 picks one. A fixed one can be forwarded on the router, for networks whose NAT stops connections.",
+          "x-environment": "HALO_NET_TUNNEL_PORT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "allow_upnp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let internet play ask the router (UPnP; on Apple devices NAT-PMP or PCP) to forward its port, for networks whose NAT stops connections: when a player joins this machine's game, and when joining a game takes too long. False never asks.",
+          "x-environment": "HALO_NET_ALLOW_UPNP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "background_grace": {
+          "type": "integer",
+          "default": 60,
+          "description": "Seconds the other players of an internet game wait for this machine when its app goes to the background (an Apple device suspends it, its game held) before they drop it.",
+          "x-environment": "HALO_NET_BACKGROUND_GRACE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "public_lobby": {
+          "type": "boolean",
+          "default": true,
+          "description": "The server browser: public games are listed through the signalling brokers, and Join Game > Server Browser shows them. False lists no game of this machine's and shows none.",
+          "x-environment": "HALO_NET_PUBLIC_LOBBY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "host_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether a new game of Create Game > Internet starts as PUBLIC (listed in everyone's server browser: anyone can see and join it) or, false, PRIVATE (only players with its invite link can join). Server Setup's LISTING changes it for each game.",
+          "x-environment": "HALO_NET_HOST_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "map_share": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hosting: send a player who joins without the game's Custom Edition map the map (from custom_maps), and the resource maps it needs that the player lacks (bitmaps.map, sounds.map, loc.map). The game's other players help (network.map_seed).",
+          "x-environment": "HALO_NET_MAP_SHARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_share_upload": {
+          "type": "integer",
+          "default": 1024,
+          "description": "Hosting: the most kilobytes a second the host sends of maps (16 to 65536), so that the game's own traffic keeps the rest of the upload.",
+          "x-environment": "HALO_NET_MAP_SHARE_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_seed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Playing in another's game: help send its map to players who join without it, as a torrent's peers do (the pieces this machine has, at most network.map_seed_upload). While it does, in a game on a Custom Edition map, this machine takes connections on TCP port 5153. Off by default on Apple builds.",
+          "x-environment": "HALO_NET_MAP_SEED",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "map_seed_upload": {
+          "type": "integer",
+          "default": 256,
+          "description": "Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536).",
+          "x-environment": "HALO_NET_MAP_SEED_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_download": {
+          "type": "boolean",
+          "default": false,
+          "description": "Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. Off by default on Apple builds. It governs receiving only: sending maps to others is network.map_share (a host) and network.map_seed (a player in another's game).",
+          "x-environment": "HALO_NET_MAP_DOWNLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "coop_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here.",
+          "x-environment": "HALO_NET_COOP_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_friendly_fire": {
+          "type": "string",
+          "default": "on",
+          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Their AI allies they always can, as in the campaign.",
+          "x-environment": "HALO_NET_COOP_FRIENDLY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_player_collisions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the players of an online co-op game bump into each other; false, they walk through each other (the AI's characters they still bump into). Server Setup's PLAYER COLLISIONS in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_PLAYER_COLLISIONS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies_mode": {
+          "type": "string",
+          "default": "per_player",
+          "description": "Online co-op's extra enemies: \"none\", \"per_player\" (each squad of enemies grows by coop_enemies for each player past the first) or \"multiplier\" (each is coop_enemies_multiplier times as large, for any number of players). Server Setup's EXTRA ENEMIES in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies": {
+          "type": "integer",
+          "default": 50,
+          "description": "Online co-op's extra enemies per player, a percentage: for each player past the first, each squad of enemies a level places gets this much of itself more (100: as many again; 25 to 200). Server Setup's PER PLAYER in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies_multiplier": {
+          "type": "integer",
+          "default": 2,
+          "description": "Online co-op's static multiplier of its enemies: each squad of enemies a level places is this many times as large (2 to 32). Server Setup's MULTIPLIER in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES_MULTIPLIER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "brokers_file": {
+          "type": "string",
+          "default": "brokers.txt",
+          "description": "The file of the public MQTT brokers through which the machines of an invite find each other (its messages are encrypted), beside this file unless a full path: one host:port on each line, up to 4. Updates replace brokers.txt: keep a list of your own under another name.",
+          "x-environment": "HALO_NET_BROKERS_FILE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "stun_servers": {
+          "type": "string",
+          "default": "stun.l.google.com:19302,stun.cloudflare.com:3478",
+          "description": "Public STUN servers that tell this machine its internet address; comma-separated host:port.",
+          "x-environment": "HALO_NET_STUN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "discord": {
+      "type": "object",
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "default": "1553978809840050229",
+          "description": "The Discord application internet play invites go through while the Discord desktop client runs; empty for none.",
+          "x-environment": "HALO_DISCORD_APPLICATION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "update": {
+      "type": "object",
+      "properties": {
+        "auto": {
+          "type": "boolean",
+          "default": true,
+          "description": "Look for a new version when the game starts, and offer to update to it; false never looks (the game's \"Do not ask again\" writes false here).",
+          "x-environment": "HALO_UPDATE_AUTO",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
           ]
         }
       },

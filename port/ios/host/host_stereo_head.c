@@ -15,6 +15,19 @@ static float wrapped(float angle)
 	return angle;
 }
 
+void host_stereo_head_recenter(struct host_stereo_head *head)
+{
+	head->recenter = 1;
+}
+
+void host_stereo_head_room_vector(const struct host_stereo_head *head, float vector[3])
+{
+	float x = vector[0], y = vector[1];
+	float c = cosf(head->room_yaw_offset), s = sinf(head->room_yaw_offset);
+	vector[0] = c * x - s * y;
+	vector[1] = s * x + c * y;
+}
+
 void host_stereo_head_turn(struct host_stereo_head *head, const float right[3], const float up[3],
 	const float back[3], struct halo_stereo_frame *frame)
 {
@@ -33,6 +46,21 @@ void host_stereo_head_turn(struct host_stereo_head *head, const float right[3], 
 	past the limit, else forward's. Crossing the limit with the head tilted
 	then doesn't step the view by the tilt */
 	float yaw_from_right = atan2f(-right[2], right[0]);
+	yaw = wrapped(yaw + head->room_yaw_offset);
+	yaw_from_right = wrapped(yaw_from_right + head->room_yaw_offset);
+	if (head->recenter)
+	{
+		if (head->room_known)
+		{
+			float delta = fabsf(pitch) >= HEAD_YAW_PITCH_LIMIT || fabsf(head->pitch) >= HEAD_YAW_PITCH_LIMIT ?
+				wrapped(head->yaw_from_right - yaw_from_right) : wrapped(head->yaw - yaw);
+			head->room_yaw_offset = wrapped(head->room_yaw_offset + delta);
+			yaw = wrapped(yaw + delta);
+			yaw_from_right = wrapped(yaw_from_right + delta);
+		}
+		head->recenter = 0;
+		frame->head_yaw = 0.0f;
+	}
 
 	/* the yaw is a turn since the last frame (the body's yaw is the game's,
 	which the stick turns too); the pitch and roll are the head's own, so the
@@ -53,6 +81,7 @@ void host_stereo_head_turn(struct host_stereo_head *head, const float right[3], 
 	head->pitch = pitch;
 	head->roll = roll;
 	head->known = 1;
+	head->room_known = 1;
 }
 
 void host_stereo_head_hold(const struct host_stereo_head *head, struct halo_stereo_frame *frame)

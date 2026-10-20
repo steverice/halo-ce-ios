@@ -700,9 +700,20 @@ void first_person_weapon_center_flashlight(
 
 		if (first_person_weapon->visible)
 		{
+			/* port: controller aim (port/linux/game/controller_aim_game.c):
+			while a hand aims the gun turns to it, but the armor's light is
+			mounted on the helmet: it shines from render.camera, the head's
+			view, not from the weapon's marker */
+			int halo_controller_hand_aiming(short);
 			struct object_marker marker;
 
-			if (first_person_weapon_get_marker_by_name(
+			if (halo_controller_hand_aiming(local_player_index)==1)
+			{
+				*position= render.camera.position;
+				*forward= render.camera.forward;
+				*up= render.camera.up;
+			}
+			else if (first_person_weapon_get_marker_by_name(
 				first_person_weapon->weapon_index,
 				"flashlight",
 				&marker,
@@ -1452,20 +1463,90 @@ static void first_person_weapon_build_node_matrices(
 			}
 		}
 
-		animation_graph_node_matrices_from_orientations(
-			weapon_definition->weapon.interface_definition.first_person_animations.index,
-			first_person_weapon->node_matrices,
-			first_person_weapon->node_orientations,
-			&render.camera.position,
-			&render.camera.forward,
-			&render.camera.up);
-		/* the pose between the last two ticks (render_interpolation.c) */
-		/* port: no more nodes than the weapon's matrices hold (a map's count) */
-		render_interpolation_first_person(
-			local_player_index,
-			first_person_weapon->node_matrices,
-			(short)MIN(animation_graph->nodes.count, MAXIMUM_NODES_PER_ANIMATION),
-			&render.camera);
+		/* port: controller aim (port/linux/game/controller_aim_game.c): while
+		a hand aims, the gun and the arms turn to the hand's sightline, still
+		camera-mounted at render.camera's position (milestone 1); or, with
+		input.first_person_arms "solved", the frame stands (the call returns 0)
+		and the pose is re-posed at the grip below. Both calls
+		take the turned camera: render_interpolation_first_person blends the
+		nodes in the frame of the camera it is given, so given the head's, the
+		turn from the head to the aim would be inside the blended pose, and the
+		gun would trail the hand by up to a tick and snap on a fast sweep */
+		{
+			int halo_controller_weapon_frame(short, const float *, const float *, float *, float *);
+			struct render_camera weapon_camera= render.camera;
+			float forward[3];
+			float up[3];
+
+			if (halo_controller_weapon_frame(
+				local_player_index,
+				&render.camera.forward.i,
+				&render.camera.up.i,
+				forward,
+				up)==1)
+			{
+				weapon_camera.forward.i= forward[0];
+				weapon_camera.forward.j= forward[1];
+				weapon_camera.forward.k= forward[2];
+				weapon_camera.up.i= up[0];
+				weapon_camera.up.j= up[1];
+				weapon_camera.up.k= up[2];
+			}
+			animation_graph_node_matrices_from_orientations(
+				weapon_definition->weapon.interface_definition.first_person_animations.index,
+				first_person_weapon->node_matrices,
+				first_person_weapon->node_orientations,
+				&weapon_camera.position,
+				&weapon_camera.forward,
+				&weapon_camera.up);
+			/* the pose between the last two ticks (render_interpolation.c) */
+			/* port: no more nodes than the weapon's matrices hold (a map's count) */
+			render_interpolation_first_person(
+				local_player_index,
+				first_person_weapon->node_matrices,
+				(short)MIN(animation_graph->nodes.count, MAXIMUM_NODES_PER_ANIMATION),
+				&weapon_camera);
+			/* port: the solved arms (port/linux/game/first_person_arms.c): the
+			gun turned at its grip onto the hand's frame, the hands kept on it,
+			the arms solved from the shoulders, on this frame's matrices (the
+			muzzle and ejection markers then read the drawn gun). The left
+			palm's place is the model's "left hand cyborg" marker in the base
+			pose, when the weapon has one */
+			{
+				int halo_first_person_arms_apply(short, struct real_matrix4x3 *, short, const void *, long,
+					const float *, int);
+				struct object_marker left_marker;
+				float left_grip[3]= { 0.0f, 0.0f, 0.0f };
+				int left_grip_valid= 0;
+
+				if (first_person_weapon->weapon_node_remapping_table_valid &&
+					weapon_definition->weapon.interface_definition.first_person_model.index!=NONE &&
+					model_get_marker_by_name(
+						weapon_definition->weapon.interface_definition.first_person_model.index,
+						"left hand cyborg",
+						NULL,
+						first_person_weapon->weapon_node_remapping_table,
+						(short)animation_graph->nodes.count,
+						first_person_weapon->node_matrices,
+						FALSE,
+						&left_marker,
+						1)>0)
+				{
+					left_grip[0]= left_marker.matrix.position.x;
+					left_grip[1]= left_marker.matrix.position.y;
+					left_grip[2]= left_marker.matrix.position.z;
+					left_grip_valid= 1;
+				}
+				halo_first_person_arms_apply(
+					local_player_index,
+					first_person_weapon->node_matrices,
+					(short)MIN(animation_graph->nodes.count, MAXIMUM_NODES_PER_ANIMATION),
+					animation_graph->nodes.address,
+					animation_graph->nodes.count,
+					left_grip,
+					left_grip_valid);
+			}
+		}
 	}
 
 	return;
@@ -1981,6 +2062,8 @@ static void first_person_weapon_update(
 
 		if (first_person_weapon->rendered)
 		{
+			/* port: controller aim: the tick's hand flag (players.c's) */
+			int halo_player_hand_aim(long);
 			real_vector2d turning;
 
 			accelerate_to_position(
@@ -2011,6 +2094,20 @@ static void first_person_weapon_update(
 
 			turning.i= PIN(turning.i, -1.0f, 1.0f);
 			turning.j= PIN(turning.j, -1.0f, 1.0f);
+			/* port: controller aim (port/linux/game/controller_aim_game.c):
+			while a hand aims the gun turns with the hand, not the head, and
+			the turning sway is the head's turn (render_facing, the view's):
+			an ordinary head turn on a headset would pin it and take the
+			barrel off the reticle while the hand holds still. Its target is
+			zero, so it settles by its own acceleration rather than snapping.
+			The walking sway (position, above) stays. The flag is the tick's
+			action's, as players.c and units.c read it */
+			if (unit->unit.player_index!=NONE &&
+				halo_player_hand_aim(DATUM_INDEX_TO_ABSOLUTE_INDEX(unit->unit.player_index)))
+			{
+				turning.i= 0.0f;
+				turning.j= 0.0f;
+			}
 
 			accelerate_to_position(
 				&first_person_weapon->turning.i,

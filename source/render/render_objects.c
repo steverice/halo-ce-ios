@@ -632,6 +632,8 @@ static void render_object_list(
 				shadow's another, both set back along the facing */
 				real_matrix4x3 const *node_matrices = legs ? legs_node_matrices :
 					legs_shadow ? legs_shadow_node_matrices : object_get_node_matrices(object_index);
+				/* port: the center moves with a drawn projectile, below. */
+				real_point3d bounding_sphere_center;
 
 				if (first_person_body && definition->object.model.index != NONE)
 				{
@@ -666,6 +668,29 @@ static void render_object_list(
 						node_matrices,
 						(short)(object->object.node_matrices.size / (short)sizeof(real_matrix4x3)),
 						&render.camera.position);
+				}
+				/* port: controller aim: the local player's own projectile, while young, draws a
+				render-only copy moved toward the drawn gun's muzzle, and its bounding sphere with it
+				(port/linux/game/projectile_offset.c) */
+				{
+					real_matrix4x3 const *halo_projectile_matrices(long, real_matrix4x3 const *, short);
+					int halo_projectile_offset(long, float *);
+					real_matrix4x3 const *object_node_matrices = node_matrices;
+
+					bounding_sphere_center = object->object.bounding_sphere_center;
+					node_matrices = halo_projectile_matrices(
+						object_index,
+						node_matrices,
+						(short)(object->object.node_matrices.size / (short)sizeof(real_matrix4x3)));
+					if (node_matrices != object_node_matrices)
+					{
+						float offset[3];
+
+						halo_projectile_offset(object_index, offset);
+						bounding_sphere_center.x += offset[0];
+						bounding_sphere_center.y += offset[1];
+						bounding_sphere_center.z += offset[2];
+					}
 				}
 
 				match_assert(
@@ -769,7 +794,7 @@ static void render_object_list(
 						object->object.outgoing_change_colors,
 						object->object.outgoing_function_values,
 						data->lighting,
-						&object->object.bounding_sphere_center,
+						&bounding_sphere_center,
 						object->object.bounding_sphere_radius,
 						&model_effect,
 						object_index,
@@ -791,7 +816,7 @@ static void render_object_list(
 						object->object.outgoing_change_colors,
 						object->object.outgoing_function_values,
 						data->lighting,
-						&object->object.bounding_sphere_center,
+						&bounding_sphere_center,
 						object->object.bounding_sphere_radius,
 						NULL,
 						object_index,

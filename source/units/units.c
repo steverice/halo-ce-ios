@@ -872,6 +872,9 @@ void unit_cause_melee_damage(
 	short region_index,
 	short material_index,
 	real_vector3d const *object_normal);
+/* port: controller aim (port/linux/game/controller_aim_game.c): whether a
+tracked hand aims this player's newest action */
+extern int halo_player_hand_aim(long player_absolute_index);
 
 static char const *base_seat_label_get(short base_seat_index);
 static short seat_label_to_base_seat_index(char const *seat_label);
@@ -5834,7 +5837,21 @@ boolean unit_update(
 		aiming_angular_acceleration_limit = aim_scale*unit_definition->unit.aiming_acceleration_maximum/(TICKS_PER_SECOND*TICKS_PER_SECOND);
 		last_aiming_vector = unit->unit.aiming_vector;
 
-		if (aiming_velocity_limit==0.f && aiming_angular_acceleration_limit==0.f)
+		/* port: controller aim (port/linux/game/controller_aim_game.c): a
+		player's unit aimed by a tracked hand (its newest action's hand flag)
+		aims and looks exactly where the action says. The body turns with the
+		head, so the hand may aim more than 90 degrees off the body's forward:
+		no aiming clip, no euler screen, no rate limits */
+		if (unit->unit.player_index != NONE &&
+			halo_player_hand_aim(DATUM_INDEX_TO_ABSOLUTE_INDEX(unit->unit.player_index)))
+		{
+			match_assert_valid_real_normal3d("c:\\halo\\SOURCE\\units\\units.c", 993, &unit->unit.desired_aiming_vector);
+
+			unit->unit.aiming_vector = unit->unit.desired_aiming_vector;
+			unit->unit.aiming_velocity = *global_zero_vector3d;
+			unit_verify_vectors(unit_index, "unit-update-aim-hand");
+		}
+		else if (aiming_velocity_limit==0.f && aiming_angular_acceleration_limit==0.f)
 		{
 			match_assert_valid_real_normal3d("c:\\halo\\SOURCE\\units\\units.c", 993, &unit->unit.desired_aiming_vector);
 			
@@ -5887,7 +5904,16 @@ boolean unit_update(
 			real looking_velocity_limit = (aim_scale*unit_definition->unit.looking_velocity_maximum)/((real)TICKS_PER_SECOND);
 			real looking_angular_acceleration_limit = (aim_scale*unit_definition->unit.looking_acceleration_maximum)/900.f;
 
-			if (looking_velocity_limit==0.f && looking_angular_acceleration_limit==0.f)
+			/* port: and its look unclipped too (controller aim, above) */
+			if (unit->unit.player_index != NONE &&
+				halo_player_hand_aim(DATUM_INDEX_TO_ABSOLUTE_INDEX(unit->unit.player_index)))
+			{
+				unit->unit.looking_vector = unit->unit.desired_looking_vector;
+				unit->unit.looking_velocity = *global_zero_vector3d;
+
+				unit_verify_vectors(unit_index, "unit-update-look-hand");
+			}
+			else if (looking_velocity_limit==0.f && looking_angular_acceleration_limit==0.f)
 			{
 				unit->unit.looking_vector = unit->unit.desired_looking_vector;
 				unit_clip_to_aiming_bounds(unit_index, &unit->unit.looking_vector, FALSE);

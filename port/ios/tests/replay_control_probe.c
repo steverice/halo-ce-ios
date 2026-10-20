@@ -45,7 +45,7 @@ struct player_action {
 	real_vector2d throttle;
 	float primary_trigger;
 	unsigned long control_flags;
-	short desired_weapon_index, desired_grenade_index, desired_zoom_level;
+	short desired_weapon_index, desired_grenade_index, desired_zoom_level, pad;
 };
 struct unit_datum {
 	long definition_index;
@@ -85,8 +85,12 @@ static int cinematic_in_progress(void) { return 0; }
 static short weapon_rotate_zoom_level(long index, short zoom) { (void)index; return zoom + 1; }
 static void player_control_modify_desired_angles(short local, float yaw, float pitch)
 { controls[local].desired_angles.yaw += yaw; controls[local].desired_angles.pitch += pitch; }
+int halo_controller_action_aim(short local, float look_yaw, float look_pitch, unsigned long flags, float *yaw, float *pitch, short *pad)
+{ (void)local; (void)look_yaw; (void)look_pitch; (void)flags; (void)yaw; (void)pitch; (void)pad; return 0; }
+static int unit_exit_seat_holds_unzoomed(long index) { (void)index; return 0; }
 static int player_ui_autolevel_enabled(short local) { (void)local; return 0; }
 static int halo_stereo_head_drives_look(short local) { (void)local; return 0; }
+int halo_controller_network_head_camera(short local) { (void)local; return 0; }
 static void update_client_queue(const struct player_action *action) { queued = *action; }
 struct observer_result { real_vector3d forward, up; };
 static struct observer_result direct_cameras[2];

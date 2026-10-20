@@ -11,17 +11,21 @@
 struct replay_environment {
     int enhanced_animations, enhanced_recorded, original_lip_sync;
     const char *stereo;
+    int action_version, controller_aim;
 };
 
 /* One strict grammar for the guest reader, native validator and report reader.
    Accept a whole header with an optional line ending, without modifying its bytes. */
 static inline int replay_environment_parse(const char *line, struct replay_environment *environment)
 {
-    struct replay_environment parsed = {0, 0, 0, "off"};
-    size_t prefix = sizeof(REPLAY_ACTION_HEADER) - 1;
-    int lip_seen = 0, stereo_seen = 0;
-    if (!line || strncmp(line, REPLAY_ACTION_HEADER, prefix)) return 0;
+    struct replay_environment parsed = {0, 0, 0, "off", 1, 0};
+    const char *header = "halo action recording ";
+    size_t prefix = strlen(header);
+    int lip_seen = 0, stereo_seen = 0, aim_seen = 0;
+    if (!line || strncmp(line, header, prefix)) return 0;
     line += prefix;
+    if (*line != '1' && *line != '2') return 0;
+    parsed.action_version = *line++ - '0';
     while (*line && *line != '\r' && *line != '\n') {
         const char *end;
         size_t length;
@@ -43,6 +47,9 @@ static inline int replay_environment_parse(const char *line, struct replay_envir
             parsed.stereo = REPLAY_TOKEN("stereo=head") ? "head" :
                 REPLAY_TOKEN("stereo=side_by_side") ? "side_by_side" :
                 REPLAY_TOKEN("stereo=screen") ? "screen" : "off";
+        } else if (REPLAY_TOKEN("aim=controller")) {
+            if (aim_seen++ || parsed.action_version != 2) return 0;
+            parsed.controller_aim = 1;
         } else return 0;
 #undef REPLAY_TOKEN
         line = end;
@@ -50,6 +57,8 @@ static inline int replay_environment_parse(const char *line, struct replay_envir
     if (*line == '\r') line++;
     if (*line == '\n') line++;
     if (*line) return 0;
+    if (parsed.action_version == 2 && (!parsed.controller_aim ||
+        (strcmp(parsed.stereo, "head") && strcmp(parsed.stereo, "side_by_side")))) return 0;
     if (environment) *environment = parsed;
     return 1;
 }

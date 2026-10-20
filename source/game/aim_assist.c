@@ -562,12 +562,20 @@ long player_aim_projectile(
 
 	if (unit_get_aim_assist_parameters(aiming_unit_index, unit_get_zoom_level(aiming_unit_index), &parameters))
 	{
+		/* port: controller aim (port/linux/game/controller_aim_game.c): a
+		shot a tracked hand aims (this tick's action's hand flag) takes its
+		autoaim cone at input.aim_assist's strength; every other shot, and
+		every shot of a network or multiplayer game, at the game's own */
+		extern float halo_aim_assist_player_strength(long player_absolute_index);
+		extern void halo_aim_assist_apply(float strength, float *autoaim_angle, float *deviation_angle);
 		real_point3d camera_position;
 		real_vector3d camera_direction;
 		real_vector3d target_direction;
 		real_vector3d collision_direction;
 		real autoaim_level;
 
+		halo_aim_assist_apply(halo_aim_assist_player_strength(DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index)),
+			&parameters.autoaim_angle, &parameters.deviation_angle);
 		director_camera_deterministic(player->unit_index, &camera_position, &camera_direction);
 		target_direction= *direction;
 		autoaim_level= 0.f;
@@ -662,8 +670,33 @@ long local_player_aim_assist(
 		{
 			struct observer_result const *camera= observer_get_camera(local_player_index);
 			struct aim_assist_target target;
+			/* port: controller aim (port/linux/game/controller_aim_game.c): while a
+			tracked hand aims, the query looks from the eye along the hand's aim,
+			so autoaim, magnetism's level and the target are what the gun points
+			at; otherwise along the camera, as before */
+			extern int halo_controller_aim_ray(short local_player_index, float origin[3], float direction[3]);
+			/* and with the autoaim cone the hand's shot will take
+			(input.aim_assist), so the reticle is red where a shot bends */
+			extern float halo_aim_assist_local_strength(short local_player_index);
+			extern void halo_aim_assist_apply(float strength, float *autoaim_angle, float *deviation_angle);
+			real_point3d const *query_origin= &camera->position;
+			real_vector3d const *query_forward= &camera->forward;
+			float hand_origin[3];
+			float hand_direction[3];
+			real_point3d hand_point;
+			real_vector3d hand_vector;
 
-			if (aim_assist(&parameters, &camera->position, &camera->forward, aiming_unit_index, player->team_index, &target))
+			if (halo_controller_aim_ray(local_player_index, hand_origin, hand_direction))
+			{
+				set_real_point3d(&hand_point, hand_origin[0], hand_origin[1], hand_origin[2]);
+				set_real_vector3d(&hand_vector, hand_direction[0], hand_direction[1], hand_direction[2]);
+				query_origin= &hand_point;
+				query_forward= &hand_vector;
+				halo_aim_assist_apply(halo_aim_assist_local_strength(local_player_index),
+					&parameters.autoaim_angle, &parameters.deviation_angle);
+			}
+
+			if (aim_assist(&parameters, query_origin, query_forward, aiming_unit_index, player->team_index, &target))
 			{
 				real_vector3d velocity, target_velocity, magnetism_velocity;
 
