@@ -217,6 +217,10 @@ struct host_stereo_hud_aim
 	int zoomed;
 };
 
+/* Keep zero as the guest's hidden-reticle sentinel. Only a visible world
+reticle needs near/far clipping; scoped reticles use the zoom plane. */
+void host_stereo_hud_aim_depth_clamp(struct host_stereo_hud_aim *aim, float near_meters, float far_meters);
+
 /* The zoom (halo_stereo.h, "Zoom fills the view"): the zoomed picture
 whole on an opaque head-locked quad straight ahead on the HUD's plane,
 distance away (the placement's), tangents (the guest's halo_stereo_zoom_view:

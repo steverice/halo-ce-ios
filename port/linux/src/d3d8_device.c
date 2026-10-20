@@ -1300,9 +1300,9 @@ static void stereo_reticle_aimed(struct gpu_stereo_present *present)
 		return;
 	if (present->zoom)
 	{
-		/* the zoomed picture is head-locked straight ahead, so where it
-		shows the sightline is already in the eyes' frame; the quad sits on
-		the picture's plane, HALO_STEREO_ZOOM_DISTANCE_METERS ahead */
+		/* The zoomed picture is head-locked straight ahead, so its
+		sightline is already in the eyes' frame. The host intersects that
+		ray with the live HUD plane. */
 		int shown = halo_controller_zoom_reticle(sightline);
 
 		if (shown == 2)
@@ -1316,7 +1316,6 @@ static void stereo_reticle_aimed(struct gpu_stereo_present *present)
 		}
 		if (!shown || !(sightline[2] < -1e-3f))
 			return;
-		distance = HALO_STEREO_ZOOM_DISTANCE_METERS / -sightline[2];
 	}
 	else
 	{
@@ -1336,7 +1335,10 @@ static void stereo_reticle_aimed(struct gpu_stereo_present *present)
 	/* (head and hand opposite at the ease's midpoint: the hand's) */
 	if (!(length > 1e-3f))
 		memcpy(present->reticle, sightline, sizeof(sightline));
-	present->reticle_distance = distance * blend + HEAD_LOCKED_RETICLE_METERS * (1.0f - blend);
+	/* In a scope this is a visible marker, not a meter distance. The host
+	uses its live HUD distance for both the zoom image and reticle. */
+	present->reticle_distance = present->zoom ? 1.0f :
+		distance * blend + HEAD_LOCKED_RETICLE_METERS * (1.0f - blend);
 	present->reticle_world = 1;
 	present->reticle_dim = draw->dim != 0;
 	if (present->zoom)

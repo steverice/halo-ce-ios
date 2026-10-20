@@ -394,6 +394,13 @@ int host_stereo_hud_layout(float layout_width, int ui, const float reticle[3], c
 		piece_distance, quads);
 }
 
+void host_stereo_hud_aim_depth_clamp(struct host_stereo_hud_aim *aim, float near_meters, float far_meters)
+{
+	if (!aim || !aim->world || aim->zoomed || !(aim->distance > 0.0f) || !(far_meters > 0.0f))
+		return;
+	aim->distance = fmaxf(near_meters * 1.05f, fminf(far_meters * 0.95f, aim->distance));
+}
+
 int host_stereo_hud_layout_aimed(float layout_width, int ui, const float reticle[3],
 	const struct host_stereo_hud_aim *aim, const float hud_tangents[2], const float (*group_extent)[4],
 	const struct host_stereo_hud_placement *placement, const float piece_distance[HOST_STEREO_HUD_PIECE_COUNT],
@@ -401,11 +408,20 @@ int host_stereo_hud_layout_aimed(float layout_width, int ui, const float reticle
 {
 	size_t index;
 	int count = 0;
+	float scoped_distance = 0.0f;
 
 	if (!(layout_width > 0.0f))
 		layout_width = 640.0f;
 	if (!placement)
 		placement = &default_placement;
+	/* The scope image is on the HUD plane. A ray's distance to that plane
+	depends on its angle; the same point then projects for both eyes. */
+	if (aim && aim->zoomed && reticle && reticle[2] < -1e-4f && placement->distance > 0.0f)
+	{
+		float length = sqrtf(reticle[0] * reticle[0] + reticle[1] * reticle[1] + reticle[2] * reticle[2]);
+		if (isfinite(length) && length > 0.0f)
+			scoped_distance = length * placement->distance / -reticle[2];
+	}
 	if (aim && aim->world)
 	{
 		int pinned;
@@ -431,7 +447,9 @@ int host_stereo_hud_layout_aimed(float layout_width, int ui, const float reticle
 				}
 			}
 		}
-		if (host_stereo_hud_reticle_world_pin(layout_width, reticle, aim->distance, !aim->zoomed, &quads[count],
+		if (host_stereo_hud_reticle_world_pin(layout_width, reticle,
+			aim->zoomed ? (aim->distance > 0.0f ? scoped_distance : 0.0f) : aim->distance,
+			!aim->zoomed, &quads[count],
 			&pinned))
 		{
 			/* off the view's edge it's small and dim (the spec's "Out of view") */
@@ -440,6 +458,7 @@ int host_stereo_hud_layout_aimed(float layout_width, int ui, const float reticle
 		}
 	}
 	else if (host_stereo_hud_reticle(layout_width, NULL, reticle,
+		aim && aim->zoomed ? scoped_distance :
 		piece_distance ? piece_distance[HOST_STEREO_HUD_PIECE_RETICLE] : placement->distance, &quads[count]))
 		count++;
 	for (index = 0; index < SLOT_COUNT; index++)

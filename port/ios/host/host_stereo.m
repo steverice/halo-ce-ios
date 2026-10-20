@@ -2056,9 +2056,7 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 		if (aim)
 		{
 			aimed = *aim;
-			if (aimed.world && depth_range.x > 0.0f)
-				aimed.distance = fmaxf(depth_range.y * 1.05f,
-					fminf(depth_range.x * 0.95f, aimed.distance));
+			host_stereo_hud_aim_depth_clamp(&aimed, depth_range.y, depth_range.x);
 		}
 		int quad_count = hud_shown ? host_stereo_hud_layout_aimed(layout_width, hud_ui, reticle,
 			aim ? &aimed : NULL, hud_tangents,
