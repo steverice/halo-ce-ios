@@ -58,6 +58,8 @@ int posix_https_request(const char *url, const char *form, int form_size, char *
         NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:address
             cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:timeout];
         [request setValue:@"VISR" forHTTPHeaderField:@"User-Agent"];
+        // NSURLSession adds the device's languages as Accept-Language; an empty one sends none (checked on the wire)
+        [request setValue:@"" forHTTPHeaderField:@"Accept-Language"];
         if (form) {
             request.HTTPMethod = @"POST";
             request.HTTPBody = [NSData dataWithBytes:form length:(NSUInteger)form_size];
