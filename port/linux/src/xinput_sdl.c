@@ -149,8 +149,8 @@ static void render_scale_dpad(XINPUT_GAMEPAD *pad)
 		XINPUT_GAMEPAD_DPAD_RIGHT);
 }
 /* controller aim's pitch offset (input.aim_pitch_offset,
-port/linux/game/controller_aim_game.c), ruling 12's live chord: while a hand
-aims and Back is held (the Sense controllers' Create), the right stick
+port/linux/game/controller_aim_game.c), the live chord behind
+debug.sense_tuning_chord: while a hand aims and Back is held (the Sense controllers' Create), the right stick
 pushed past PITCH_CHORD_PUSH up or down (and let back inside
 PITCH_CHORD_RELEASE before the next), or the D-pad's up or down (a
 DualSense's), steps it by a degree, down tilting the barrel further down.
@@ -184,6 +184,7 @@ those presses (no grenade or weapon switch, no jump) */
 #define LASER_CHORD_RELEASE 40
 static void aim_pitch_offset_chord(XINPUT_GAMEPAD *pad)
 {
+	static int enabled = -1;
 	static WORD previous;
 	static int stick_armed = 1;
 	static int assist_armed = 1;
@@ -194,9 +195,14 @@ static void aim_pitch_offset_chord(XINPUT_GAMEPAD *pad)
 		WORD pressed;
 	float stick;
 	float assist_stick;
-	int chord = (pad->wButtons & XINPUT_GAMEPAD_BACK) && halo_controller_hand_aiming(0);
+	int chord;
 	int index;
 
+	if (enabled < 0)
+		enabled = config_boolean("debug.sense_tuning_chord");
+	if (!enabled)
+		return;
+	chord = (pad->wButtons & XINPUT_GAMEPAD_BACK) && halo_controller_hand_aiming(0);
 	for (index = 0; index < 6; index++)
 	{
 		int value = pad->bAnalogButtons[pulls[index]];

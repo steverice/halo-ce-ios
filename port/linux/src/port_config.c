@@ -392,8 +392,9 @@ static const struct config_setting config_settings[] =
 	{ "input.aim_pitch_offset", _config_real, "0.0", "HALO_AIM_PITCH_OFFSET", _environment_value, _platform_ios,
 		"With input.aim = \"controller\": degrees the barrel ray and gun tilt down\n"
 		"from the aim axis (-10 to 45), for aiming from the hip with the forearm\n"
-		"low. Hold Back (Create) and push the right stick or the D-pad up or down\n"
-		"to change it by a degree for the session (the stick alone while\n"
+		"low. With debug.sense_tuning_chord, hold Back (Create) and push the right\n"
+		"stick or the D-pad up or down to change it by a degree for the session\n"
+		"(the stick alone while\n"
 		"debug.render_scale_dpad or debug.hud_distance_cycle has the D-pad)." },
 	{ "input.aim_assist", _config_real, "1.0", "HALO_AIM_ASSIST", _environment_value, _platform_ios,
 		"With input.aim = \"controller\": how much of the game's bullet autoaim a\n"
@@ -401,7 +402,7 @@ static const struct config_setting config_settings[] =
 		"inside which a shot bends onto a target and the reticle turns red: 1.0\n"
 		"is the game's own for each weapon, 0.0 leaves every shot where the hand\n"
 		"points. Single player only: a network or multiplayer game always plays\n"
-		"at 1.0. Hold Back (Create) and push the right stick right or left to\n"
+		"at 1.0. With debug.sense_tuning_chord, hold Back (Create) and push the right stick right or left to\n"
 		"change it by 0.5 for the session." },
 	{ "input.aim_steady", _config_real, "0.0", "HALO_AIM_STEADY", _environment_value, _platform_ios,
 		"With input.aim = \"controller\": how much a hand's tremor is smoothed\n"
@@ -412,7 +413,7 @@ static const struct config_setting config_settings[] =
 		"the target and a larger move arrives at once. Multiplied by\n"
 		"input.aim_assist, so no assist means no steadying. Single player only.\n"
 		"Zoomed, input.aim_steady_zoom_2x and input.aim_steady_zoom_8x apply.\n"
-		"Hold Back (Create) and click the right stick to cycle through these\n"
+		"With debug.sense_tuning_chord, hold Back (Create) and click the right stick to cycle through these\n"
 		"settings by zoom, then off, 1.0 and 2.0 at every zoom, for the session." },
 	{ "input.aim_steady_zoom_2x", _config_real, "1.0", "HALO_AIM_STEADY_ZOOM_2X", _environment_value, _platform_ios,
 		"As input.aim_steady, for a weapon zoomed up to 2x (default 1.0)." },
@@ -435,7 +436,7 @@ static const struct config_setting config_settings[] =
 		"is within input.laser_distance, where a hand held below the eyes makes\n"
 		"the reticle slide down a surface as you walk up to it) or \"on\"\n"
 		"(always). In any mode it shows while the gun's line passes something\n"
-		"the eye's line doesn't. Hold Back (Create) and pull the right trigger\n"
+		"the eye's line doesn't. With debug.sense_tuning_chord, hold Back (Create) and pull the right trigger\n"
 		"to cycle off, close and on for the session; the trigger doesn't fire\n"
 		"while Back is held." },
 	{ "input.reticle_ease", _config_real, "0.05", "HALO_RETICLE_EASE", _environment_value, _platform_ios,
@@ -458,7 +459,7 @@ static const struct config_setting config_settings[] =
 		"0.0 follows it directly, as before). It takes the hand's tremor and the\n"
 		"small steps of the aim point out of the model's motion; a larger move\n"
 		"catches up faster. Only the drawn model is smoothed: the reticle and\n"
-		"the shots follow the hand directly. Hold Back (Create) and click the\n"
+		"the shots follow the hand directly. With debug.sense_tuning_chord, hold Back (Create) and click the\n"
 		"left stick to switch it off and on for the session." },
 	{ "input.first_person_arms", _config_string, "\"solved\"", "HALO_FIRST_PERSON_ARMS", _environment_value, _platform_ios,
 		"HEAD mode with controller aim: how the first-person gun and arms\n"
@@ -471,20 +472,20 @@ static const struct config_setting config_settings[] =
 		"input.arms_turn_limit, input.arms_up_limit, input.arms_down_limit and\n"
 		"input.arms_roll_limit, the hands stay on it and the arms bend to\n"
 		"follow. The reticle and the shots follow the hand in every mode.\n"
-		"Hold Back (Create) and push the left stick right or left to cycle the\n"
+		"With debug.sense_tuning_chord, hold Back (Create) and push the left stick right or left to cycle the\n"
 		"modes for the session." },
 	{ "input.arms_follow", _config_real, "0.5", "HALO_ARMS_FOLLOW", _environment_value, _platform_ios,
 		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
 		"how much of the hand's movement away from its usual place (its\n"
 		"average over the last ten seconds) moves the gun, 0.0 (the gun stays\n"
 		"where the animation puts it) to 1.0 (it moves with the hand, as far as\n"
-		"the arm reaches); default 0.5. Hold Back (Create) and press A (Cross)\n"
+		"the arm reaches); default 0.5. With debug.sense_tuning_chord, hold Back (Create) and press A (Cross)\n"
 		"to switch between 0.0 and 0.5." },
 	{ "input.arms_turn_limit", _config_real, "35", "HALO_ARMS_TURN_LIMIT", _environment_value, _platform_ios,
 		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
 		"how far across the view, in degrees, the drawn gun turns with the\n"
 		"hand (0 to 90; default 35). It follows the hand exactly to 70% of\n"
-		"this and eases to it beyond; the reticle and the shots go on. Hold\n"
+		"this and eases to it beyond; the reticle and the shots go on. With debug.sense_tuning_chord, hold\n"
 		"Back (Create) and press X (Square) to switch between 35 and 45." },
 	{ "input.arms_up_limit", _config_real, "40", "HALO_ARMS_UP_LIMIT", _environment_value, _platform_ios,
 		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
@@ -518,7 +519,7 @@ static const struct config_setting config_settings[] =
 		"slide down a surface as you walk up to it; a raised origin slides less,\n"
 		"and at 1.0 not at all, but the reticle then sits above where the\n"
 		"controller itself points, by the height raised. The reticle, the shots,\n"
-		"aim assist, the zoom and the laser all follow it. Hold Back (Create)\n"
+		"aim assist, the zoom and the laser all follow it. With debug.sense_tuning_chord, hold Back (Create)\n"
 		"and pull the left trigger to raise it by 0.1, or press the left\n"
 		"shoulder (the other hand's grip on a Sense controller) to lower it; the\n"
 		"value is saved here." },
@@ -995,6 +996,11 @@ static const struct config_setting config_settings[] =
 		"While Back is held, the D-pad's left and right step the render scale\n"
 		"(display.render_scale) down and up by 0.05 as the game runs, shown on\n"
 		"screen for two seconds; the game doesn't see the D-pad meanwhile." },
+	{ "debug.sense_tuning_chord", _config_boolean, "false", "HALO_SENSE_TUNING_CHORD", _environment_value, _platform_ios,
+		"While a hand aims and Back (Create) is held, controller buttons change aim and\n"
+		"arms tuning as the game runs (laser mode, aim assist, steadying, pitch offset,\n"
+		"origin raise, reticle easing, arms, gun smoothing), and the game sees neither\n"
+		"stick meanwhile. Off, Back with those buttons is ordinary game input." },
 	{ "debug.input_record", _config_string, "\"\"", "HALO_INPUT_RECORD", _environment_value, _platform_all,
 		"Record controller 1 while a map plays, to <name>.input in the data folder\n"
 		"(port/linux/src/input_replay.c); empty records nothing." },

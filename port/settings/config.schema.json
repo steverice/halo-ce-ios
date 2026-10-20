@@ -978,7 +978,7 @@
         "aim_pitch_offset": {
           "type": "number",
           "default": 0.0,
-          "description": "With input.aim = \"controller\": degrees the barrel ray and gun tilt down from the aim axis (-10 to 45), for aiming from the hip with the forearm low. Hold Back (Create) and push the right stick or the D-pad up or down to change it by a degree for the session (the stick alone while debug.render_scale_dpad or debug.hud_distance_cycle has the D-pad).",
+          "description": "With input.aim = \"controller\": degrees the barrel ray and gun tilt down from the aim axis (-10 to 45), for aiming from the hip with the forearm low. With debug.sense_tuning_chord, hold Back (Create) and push the right stick or the D-pad up or down to change it by a degree for the session (the stick alone while debug.render_scale_dpad or debug.hud_distance_cycle has the D-pad).",
           "x-environment": "HALO_AIM_PITCH_OFFSET",
           "x-environment-style": "value",
           "x-platforms": [
@@ -988,7 +988,7 @@
         "aim_assist": {
           "type": "number",
           "default": 1.0,
-          "description": "With input.aim = \"controller\": how much of the game's bullet autoaim a hand-aimed shot keeps, 0.0 to 2.0. It scales the cone around the aim inside which a shot bends onto a target and the reticle turns red: 1.0 is the game's own for each weapon, 0.0 leaves every shot where the hand points. Single player only: a network or multiplayer game always plays at 1.0. Hold Back (Create) and push the right stick right or left to change it by 0.5 for the session.",
+          "description": "With input.aim = \"controller\": how much of the game's bullet autoaim a hand-aimed shot keeps, 0.0 to 2.0. It scales the cone around the aim inside which a shot bends onto a target and the reticle turns red: 1.0 is the game's own for each weapon, 0.0 leaves every shot where the hand points. Single player only: a network or multiplayer game always plays at 1.0. With debug.sense_tuning_chord, hold Back (Create) and push the right stick right or left to change it by 0.5 for the session.",
           "x-environment": "HALO_AIM_ASSIST",
           "x-environment-style": "value",
           "x-platforms": [
@@ -998,7 +998,7 @@
         "aim_steady": {
           "type": "number",
           "default": 0.0,
-          "description": "With input.aim = \"controller\": how much a hand's tremor is smoothed while its aim is on a target (inside the autoaim cone, most where the reticle is red) and the weapon is not zoomed, 0.0 to 2.0: 0.0 none (default), 1.0 moderate, 2.0 strong. It lengthens the time a small move of the hand takes to reach the reticle; the aim is never pulled toward the target and a larger move arrives at once. Multiplied by input.aim_assist, so no assist means no steadying. Single player only. Zoomed, input.aim_steady_zoom_2x and input.aim_steady_zoom_8x apply. Hold Back (Create) and click the right stick to cycle through these settings by zoom, then off, 1.0 and 2.0 at every zoom, for the session.",
+          "description": "With input.aim = \"controller\": how much a hand's tremor is smoothed while its aim is on a target (inside the autoaim cone, most where the reticle is red) and the weapon is not zoomed, 0.0 to 2.0: 0.0 none (default), 1.0 moderate, 2.0 strong. It lengthens the time a small move of the hand takes to reach the reticle; the aim is never pulled toward the target and a larger move arrives at once. Multiplied by input.aim_assist, so no assist means no steadying. Single player only. Zoomed, input.aim_steady_zoom_2x and input.aim_steady_zoom_8x apply. With debug.sense_tuning_chord, hold Back (Create) and click the right stick to cycle through these settings by zoom, then off, 1.0 and 2.0 at every zoom, for the session.",
           "x-environment": "HALO_AIM_STEADY",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1049,7 +1049,7 @@
         "laser": {
           "type": "string",
           "default": "off",
-          "description": "HEAD mode with controller aim: a line from the gun's muzzle to the reticle. \"off\" (default), \"close\" (only while the reticle's surface is within input.laser_distance, where a hand held below the eyes makes the reticle slide down a surface as you walk up to it) or \"on\" (always). In any mode it shows while the gun's line passes something the eye's line doesn't. Hold Back (Create) and pull the right trigger to cycle off, close and on for the session; the trigger doesn't fire while Back is held.",
+          "description": "HEAD mode with controller aim: a line from the gun's muzzle to the reticle. \"off\" (default), \"close\" (only while the reticle's surface is within input.laser_distance, where a hand held below the eyes makes the reticle slide down a surface as you walk up to it) or \"on\" (always). In any mode it shows while the gun's line passes something the eye's line doesn't. With debug.sense_tuning_chord, hold Back (Create) and pull the right trigger to cycle off, close and on for the session; the trigger doesn't fire while Back is held.",
           "x-environment": "HALO_LASER",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1089,7 +1089,7 @@
         "weapon_smoothing": {
           "type": "number",
           "default": 0.08,
-          "description": "HEAD mode with controller aim: the time, in seconds, over which the first-person gun and arms follow the hand (0.0 to 0.5; default 0.08; 0.0 follows it directly, as before). It takes the hand's tremor and the small steps of the aim point out of the model's motion; a larger move catches up faster. Only the drawn model is smoothed: the reticle and the shots follow the hand directly. Hold Back (Create) and click the left stick to switch it off and on for the session.",
+          "description": "HEAD mode with controller aim: the time, in seconds, over which the first-person gun and arms follow the hand (0.0 to 0.5; default 0.08; 0.0 follows it directly, as before). It takes the hand's tremor and the small steps of the aim point out of the model's motion; a larger move catches up faster. Only the drawn model is smoothed: the reticle and the shots follow the hand directly. With debug.sense_tuning_chord, hold Back (Create) and click the left stick to switch it off and on for the session.",
           "x-environment": "HALO_WEAPON_SMOOTHING",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1099,7 +1099,7 @@
         "first_person_arms": {
           "type": "string",
           "default": "solved",
-          "description": "HEAD mode with controller aim: how the first-person gun and arms follow the hand. \"turned\": the whole model is turned onto the hand's line at the eyes (as before; a hand pointed to the side brings the arms in from the side of the view). \"limited\": the same, with the turn held within 25 degrees and the roll within 15, the model sinking out of view beyond. \"solved\" (default): the shoulders stay with the view, the gun turns at its grip onto the hand's line within input.arms_turn_limit, input.arms_up_limit, input.arms_down_limit and input.arms_roll_limit, the hands stay on it and the arms bend to follow. The reticle and the shots follow the hand in every mode. Hold Back (Create) and push the left stick right or left to cycle the modes for the session.",
+          "description": "HEAD mode with controller aim: how the first-person gun and arms follow the hand. \"turned\": the whole model is turned onto the hand's line at the eyes (as before; a hand pointed to the side brings the arms in from the side of the view). \"limited\": the same, with the turn held within 25 degrees and the roll within 15, the model sinking out of view beyond. \"solved\" (default): the shoulders stay with the view, the gun turns at its grip onto the hand's line within input.arms_turn_limit, input.arms_up_limit, input.arms_down_limit and input.arms_roll_limit, the hands stay on it and the arms bend to follow. The reticle and the shots follow the hand in every mode. With debug.sense_tuning_chord, hold Back (Create) and push the left stick right or left to cycle the modes for the session.",
           "x-environment": "HALO_FIRST_PERSON_ARMS",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1109,7 +1109,7 @@
         "arms_follow": {
           "type": "number",
           "default": 0.5,
-          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how much of the hand's movement away from its usual place (its average over the last ten seconds) moves the gun, 0.0 (the gun stays where the animation puts it) to 1.0 (it moves with the hand, as far as the arm reaches); default 0.5. Hold Back (Create) and press A (Cross) to switch between 0.0 and 0.5.",
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how much of the hand's movement away from its usual place (its average over the last ten seconds) moves the gun, 0.0 (the gun stays where the animation puts it) to 1.0 (it moves with the hand, as far as the arm reaches); default 0.5. With debug.sense_tuning_chord, hold Back (Create) and press A (Cross) to switch between 0.0 and 0.5.",
           "x-environment": "HALO_ARMS_FOLLOW",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1119,7 +1119,7 @@
         "arms_turn_limit": {
           "type": "number",
           "default": 35,
-          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how far across the view, in degrees, the drawn gun turns with the hand (0 to 90; default 35). It follows the hand exactly to 70% of this and eases to it beyond; the reticle and the shots go on. Hold Back (Create) and press X (Square) to switch between 35 and 45.",
+          "description": "HEAD mode with controller aim, input.first_person_arms \"solved\": how far across the view, in degrees, the drawn gun turns with the hand (0 to 90; default 35). It follows the hand exactly to 70% of this and eases to it beyond; the reticle and the shots go on. With debug.sense_tuning_chord, hold Back (Create) and press X (Square) to switch between 35 and 45.",
           "x-environment": "HALO_ARMS_TURN_LIMIT",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1179,7 +1179,7 @@
         "aim_origin_raise": {
           "type": "number",
           "default": 0.0,
-          "description": "HEAD mode with controller aim: where the aim ray starts, from 0.0 (the hand, default) to 1.0 (the eyes), along the line between them; the ray keeps the hand's direction. A hand held below the eyes makes the reticle slide down a surface as you walk up to it; a raised origin slides less, and at 1.0 not at all, but the reticle then sits above where the controller itself points, by the height raised. The reticle, the shots, aim assist, the zoom and the laser all follow it. Hold Back (Create) and pull the left trigger to raise it by 0.1, or press the left shoulder (the other hand's grip on a Sense controller) to lower it; the value is saved here.",
+          "description": "HEAD mode with controller aim: where the aim ray starts, from 0.0 (the hand, default) to 1.0 (the eyes), along the line between them; the ray keeps the hand's direction. A hand held below the eyes makes the reticle slide down a surface as you walk up to it; a raised origin slides less, and at 1.0 not at all, but the reticle then sits above where the controller itself points, by the height raised. The reticle, the shots, aim assist, the zoom and the laser all follow it. With debug.sense_tuning_chord, hold Back (Create) and pull the left trigger to raise it by 0.1, or press the left shoulder (the other hand's grip on a Sense controller) to lower it; the value is saved here.",
           "x-environment": "HALO_AIM_ORIGIN_RAISE",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1348,6 +1348,16 @@
           "default": false,
           "description": "While Back is held, the D-pad's left and right step the render scale (display.render_scale) down and up by 0.05 as the game runs, shown on screen for two seconds; the game doesn't see the D-pad meanwhile.",
           "x-environment": "HALO_RENDER_SCALE_DPAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "sense_tuning_chord": {
+          "type": "boolean",
+          "default": false,
+          "description": "While a hand aims and Back (Create) is held, controller buttons change aim and arms tuning as the game runs (laser mode, aim assist, steadying, pitch offset, origin raise, reticle easing, arms, gun smoothing), and the game sees neither stick meanwhile. Off, Back with those buttons is ordinary game input.",
+          "x-environment": "HALO_SENSE_TUNING_CHORD",
           "x-environment-style": "value",
           "x-platforms": [
             "apple"

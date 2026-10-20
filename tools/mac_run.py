@@ -228,6 +228,7 @@ DEFAULTS = {
     "debug.texture_no_cache": "false",
     "debug.terminal_on_screen": "false",
     "debug.render_scale_dpad": "false",
+    "debug.sense_tuning_chord": "false",
     "debug.foveation_eye_passes": "true",
     "debug.rate_map_test": "false",
     "debug.network_test": '""',

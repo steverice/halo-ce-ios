@@ -7,13 +7,7 @@ from test_mp_synthetic_input import function
 
 ROOT = Path(__file__).resolve().parents[1]
 
-
-def test_aim_chord_consumes_buttons_until_release(tmp_path):
-    compiler = shutil.which("clang") or shutil.which("cc")
-    assert compiler, "a C compiler is required"
-    source = (ROOT / "port/linux/src/xinput_sdl.c").read_text()
-    chord = function(source, "static void aim_pitch_offset_chord(")
-    fixture = r'''
+FIXTURE = r'''
 #include <assert.h>
 #include <math.h>
 typedef unsigned short WORD;
@@ -42,7 +36,45 @@ static void halo_controller_pitch_offset_step(int direction){ pitch+=direction; 
 static void halo_aim_steady_cycle(void){ steady++; }
 static void halo_controller_weapon_smoothing_toggle(void){}
 static void halo_controller_arms_cycle(int direction){ (void)direction; }
+static int config_boolean(const char *name){ (void)name; return @ENABLED@; }
 '''
+
+
+def build_and_run(tmp_path, name, enabled, main):
+    compiler = shutil.which("clang") or shutil.which("cc")
+    assert compiler, "a C compiler is required"
+    source = (ROOT / "port/linux/src/xinput_sdl.c").read_text()
+    chord = function(source, "static void aim_pitch_offset_chord(")
+    source_file = tmp_path / (name + ".c")
+    binary = tmp_path / name
+    source_file.write_text(FIXTURE.replace("@ENABLED@", str(enabled)) + chord + main)
+    compile_result = subprocess.run([compiler, "-std=gnu11", "-O1", "-fsanitize=address,undefined",
+                                     str(source_file), "-lm", "-o", str(binary)], capture_output=True, text=True)
+    assert compile_result.returncode == 0, compile_result.stderr
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_aim_chord_is_ordinary_input_without_the_debug_setting(tmp_path):
+    main = r'''
+int main(void){
+ XINPUT_GAMEPAD pad={0};
+ pad.wButtons=XINPUT_GAMEPAD_BACK|XINPUT_GAMEPAD_RIGHT_THUMB;
+ pad.sThumbRY=30000;
+ pad.sThumbLX=30000;
+ pad.bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER]=255;
+ pad.bAnalogButtons[XINPUT_GAMEPAD_A]=255;
+ aim_pitch_offset_chord(&pad);
+ assert(laser==0 && pitch==0 && steady==0 && follow==0);
+ assert(pad.sThumbRY==30000 && pad.sThumbLX==30000 && (pad.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB));
+ assert(pad.bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER]==255 && pad.bAnalogButtons[XINPUT_GAMEPAD_A]==255);
+ return 0;
+}
+'''
+    build_and_run(tmp_path, "controller_chord_off", 0, main)
+
+
+def test_aim_chord_consumes_buttons_until_release(tmp_path):
     main = r'''
 int main(void){
  XINPUT_GAMEPAD pad={0};
@@ -67,11 +99,4 @@ int main(void){
  return 0;
 }
 '''
-    source_file = tmp_path / "controller_chord.c"
-    binary = tmp_path / "controller_chord"
-    source_file.write_text(fixture + chord + main)
-    compile_result = subprocess.run([compiler, "-std=gnu11", "-O1", "-fsanitize=address,undefined",
-                                     str(source_file), "-lm", "-o", str(binary)], capture_output=True, text=True)
-    assert compile_result.returncode == 0, compile_result.stderr
-    result = subprocess.run([str(binary)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    build_and_run(tmp_path, "controller_chord", 1, main)
