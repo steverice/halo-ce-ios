@@ -307,6 +307,14 @@ enum
 
 static void network_player_log_idle_action(long player_index, unsigned long control_flags);
 
+/* port: controller aim (port/linux/game/controller_aim_game.c): the pad of
+each player's newest action, kept for unit_update's aiming clip and this
+file's tests, and its hand flag and facing offset (players.h) */
+extern void halo_player_hand_aim_set(long player_absolute_index, short pad);
+extern int halo_action_facing_unpack(short pad, float *delta_yaw);
+extern int halo_player_hand_aim(long player_absolute_index);
+extern int halo_player_hand_aim_delta(long player_absolute_index, float *delta_yaw);
+
 /* whether this machine decides pickups: not a client of the distributed
 netcode, whose players' weapons, grenades and power-ups are the host's
 (port/linux/game/network_distributed.c) */
@@ -4382,17 +4390,43 @@ static void player_examine_nearby_device(
 	struct unit_datum *unit;
 	struct device_datum *device;
 	real_point3d camera;
+	boolean aimed;
+	float hand_delta_yaw;
 
 	player = player_get(player_index);
 	unit = unit_get(player->unit_index);
 	device = device_get(device_index);
 	unit_get_camera_position(player->unit_index, &camera);
-	if (fast_vector_intersects_sphere(
+	aimed = fast_vector_intersects_sphere(
 		&camera,
 		&unit->unit.aiming_vector,
 		&device->object.bounding_sphere_center,
 		device->object.bounding_sphere_radius) &&
-		device_frontfacing(device_index, &camera, &unit->unit.aiming_vector) &&
+		device_frontfacing(device_index, &camera, &unit->unit.aiming_vector);
+	/* port: controller aim (port/linux/game/controller_aim_game.c): while a
+	tracked hand aims, a control panel answers the look as well as the aim:
+	the aim turned about +Z by the action's look yaw less its aim yaw (the
+	head's yaw at the aim's pitch). It comes from the action, so the test
+	stays deterministic */
+	if (!aimed &&
+		halo_player_hand_aim(DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index)) &&
+		halo_player_hand_aim_delta(DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index), &hand_delta_yaw))
+	{
+		real cosine = (real)cos(hand_delta_yaw);
+		real sine = (real)sin(hand_delta_yaw);
+		real_vector3d look;
+
+		look.i = unit->unit.aiming_vector.i * cosine - unit->unit.aiming_vector.j * sine;
+		look.j = unit->unit.aiming_vector.i * sine + unit->unit.aiming_vector.j * cosine;
+		look.k = unit->unit.aiming_vector.k;
+		aimed = fast_vector_intersects_sphere(
+			&camera,
+			&look,
+			&device->object.bounding_sphere_center,
+			device->object.bounding_sphere_radius) &&
+			device_frontfacing(device_index, &camera, &look);
+	}
+	if (aimed &&
 		device_can_change_position(device_index))
 	{
 		player_set_action_result(
@@ -4761,6 +4795,9 @@ void players_update_before_game(
 	short action_index;
 
 	profile_enter(PLAYERS_UPDATE_BEFORE_GAME_PROFILE);
+	/* port: every field defined, pad among them (a slot the dequeue
+	doesn't fill stays zero, the original game's action) */
+	csmemset(actions, 0, sizeof(actions));
 	players_coop_note_on_foot();
 	players_coop_rescue_stranded();
 	if (update_client_dequeue(actions))
@@ -4812,6 +4849,9 @@ void players_update_before_game(
 				"c:\\halo\\SOURCE\\game\\players.c",
 				0x262,
 				(NONE == action->desired_zoom_level) || ((action->desired_zoom_level >= 0)));
+			/* port: no hand aims for a player whose action this tick doesn't
+			reach the unit (no unit, input disabled); set below when it does */
+			halo_player_hand_aim_set(DATUM_INDEX_TO_ABSOLUTE_INDEX(iterator.datum_index), 0);
 
 			if (player->unit_index == NONE && !game_in_editor())
 			{
@@ -4915,12 +4955,38 @@ void players_update_before_game(
 
 					control_data.control_flags =
 						(word)(action->control_flags & ~FLAG(UNIT_CONTROL_PORT_ACTION_ONLY_BIT));
-					player_aiming_vector_from_facing(
-						iterator.datum_index,
-						&control_data.aiming_vector,
-						&action->desired_facing);
-					control_data.facing_vector =
-						control_data.looking_vector = control_data.aiming_vector;
+					/* port: controller aim: a tracked hand's aim (pad's hand flag)
+					is world angles, so it takes no turn into a vehicle's frame;
+					the facing and the look are the head's, the aim turned about +Z
+					by the look's yaw less the aim's, at the aim's pitch */
+					halo_player_hand_aim_set(DATUM_INDEX_TO_ABSOLUTE_INDEX(iterator.datum_index), action->pad);
+					{
+						float hand_delta_yaw;
+
+						if (halo_action_facing_unpack(action->pad, &hand_delta_yaw))
+						{
+							real cosine = (real)cos(hand_delta_yaw);
+							real sine = (real)sin(hand_delta_yaw);
+
+							vector3d_from_euler_angles2d(&control_data.aiming_vector, &action->desired_facing);
+							control_data.facing_vector.i =
+								control_data.aiming_vector.i * cosine - control_data.aiming_vector.j * sine;
+							control_data.facing_vector.j =
+								control_data.aiming_vector.i * sine + control_data.aiming_vector.j * cosine;
+							control_data.facing_vector.k = control_data.aiming_vector.k;
+							normalize3d(&control_data.facing_vector);
+							control_data.looking_vector = control_data.facing_vector;
+						}
+						else
+						{
+							player_aiming_vector_from_facing(
+								iterator.datum_index,
+								&control_data.aiming_vector,
+								&action->desired_facing);
+							control_data.facing_vector =
+								control_data.looking_vector = control_data.aiming_vector;
+						}
+					}
 					control_data.throttle.i = action->throttle.i;
 					control_data.throttle.j = action->throttle.j;
 					control_data.throttle.k = 0.f;

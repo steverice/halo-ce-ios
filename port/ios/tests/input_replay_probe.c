@@ -28,6 +28,13 @@ void platform_log(const char *format, ...);
 
 #include "input_replay.c"
 
+int halo_controller_unit_state(float position[3], float *facing_yaw, float *aim_yaw)
+{ (void)position; (void)facing_yaw; (void)aim_yaw; return 0; }
+int halo_controller_run_aimed(void) { return 0; }
+static int controller_configured;
+static const char *replay_probe_stereo_mode = "";
+int halo_controller_aim_configured(void) { return controller_configured; }
+
 static int touch_replay_active;
 static int touch_changes;
 void host_touch_replay_active(int active) {
@@ -47,6 +54,7 @@ int config_boolean(const char *name) { return (!strcmp(name, "debug.benchmark_li
 	(!strcmp(name, "game.enhanced_animations") && enhanced_animations); }
 long config_integer(const char *name) { (void)name; return 0; }
 const char *config_string(const char *name) {
+	if (!strcmp(name,"display.stereo")) return replay_probe_stereo_mode;
 	if (!strcmp(name, "debug.input_record")) return record_name;
 	return !strcmp(name, "debug.input_replay") ? replay_name : "";
 }
@@ -68,6 +76,77 @@ unsigned char input_replay_player_position(float position[3]) { (void)position; 
 unsigned char input_replay_fight_state(float *body, float *shield, long *actors, long *dead_objects)
 { (void)body; (void)shield; (void)actors; (void)dead_objects; return 0; }
 double halo_frame_trace_milliseconds(void) { return 0; }
+
+static void check_controller_action_format(void)
+{
+	struct replay_environment environment;
+	assert(replay_environment_parse("halo action recording 1 enhanced_animations=1", &environment));
+	assert(environment.action_version == 1 && !environment.controller_aim && environment.enhanced_animations);
+	assert(replay_environment_parse("halo action recording 2 stereo=head aim=controller lip_sync=simulated enhanced_animations=1", &environment));
+	assert(environment.action_version == 2 && environment.controller_aim && environment.enhanced_animations);
+	const char *bad[] = {"halo action recording 2", "halo action recording 2 stereo=head aim=controllerX",
+		"halo action recording 2 stereo=head aim=controller aim=controller", "halo action recording 12",
+		"halo action recording 2 stereo=off aim=controller", "halo action recording 1 aim=controller",
+		"halo action recording 2 stereo=head aim=controller unknown=1",
+		"halo action recording 2 stereo=head aim=controller enhanced_animations=2"};
+	for (unsigned i=0; i<sizeof(bad)/sizeof(*bad); i++) assert(!replay_environment_parse(bad[i], &environment));
+	const char *headers[] = {"halo action recording 1", "halo action recording 2 stereo=head aim=controller"};
+	for (int version=1; version<=2; version++) {
+		FILE *file=fopen("controller.input", "w"); assert(file);
+		fputs("halo input recording 1\n0 0 0 0 0 0 0 0 0 0 0 0 0 0\n", file); fclose(file);
+		file=fopen("controller.actions", "w"); assert(file);
+		fprintf(file,"%s\n0 10 0 3f800000 bf000000 0 0 0 0 ffff0002\n",headers[version-1]); fclose(file);
+		clock_ready=0;
+		assert(input_replay_begin("./controller.input",0));
+		assert(replay.action_count==1);
+		assert(replay.actions[0].words[7] == (version==1 ? 2u : 0xffff0002u));
+		input_replay_begin(NULL,0);
+	}
+	FILE *file=fopen("controller.actions", "w"); assert(file);
+	fputs("halo action recording 2 stereo=head aim=controller\n0 10 0 3f800000 bf000000 0 0 0 0 00020002\n",file); fclose(file);
+	input_replay_begin("./controller.input",0);
+	assert(replay.environment_invalid);
+	assert(!input_replay_action_camera_active());
+	input_replay_begin(NULL,0);
+	file=fopen("controller.actions", "w"); assert(file);
+	fputs("halo action recording 2 stereo=head aim=controller",file);
+	for (int i=0;i<300;i++) fputc(' ',file);
+	fputc('\n',file); fclose(file);
+	input_replay_begin("./controller.input",0);
+	assert(replay.environment_invalid);
+	input_replay_begin(NULL,0);
+	unlink("controller.actions"); unlink("controller.input");
+	puts("controller action format: PASS");
+}
+
+static void check_recorded_action_metadata(void)
+{
+    for (int version=1;version<=2;version++) {
+        unsigned int action[ACTION_WORDS]={0x03428001u,0x3f800000u,0,0,0,0,0,2};
+        XINPUT_GAMEPAD pad={0};
+        char header[256];long segment,tick;unsigned int words[ACTION_WORDS];
+        input_replay_begin(NULL,0);clock_ready=1;clock_tick=0;
+        replay.await_level=0;controller_configured=version==2;replay_probe_stereo_mode=version==2?"head":"";
+        strcpy(replay.record_path,"metadata.input");strcpy(replay.record_actions_path,"metadata.actions");
+        if(version==2)action[7]=0xc0010002u;
+        record(&pad,0);input_replay_tick_action(action);record_end("metadata probe");
+        FILE *file=fopen("metadata.actions","r");assert(file && fgets(header,sizeof(header),file));
+        assert(fscanf(file,"%ld %ld %x %x %x %x %x %x %x %x",&segment,&tick,
+            &words[0],&words[1],&words[2],&words[3],&words[4],&words[5],&words[6],&words[7])==10);fclose(file);
+        /* Preserve v1's existing on-disk tutorial slot; v2 must carry both independently. */
+        assert(words[0]==(version==1?0x8001u:0x03428001u));
+        assert(words[7]==(version==1?0x03420002u:0xc0010002u));
+        clock_ready=0;assert(input_replay_begin("./metadata.input",0));
+        assert(replay.action_count==1 && replay.actions[0].words[0]==0x03428001u);
+        assert(replay.actions[0].words[7]==(version==1?2u:0xc0010002u));
+        clock_ready=1;clock_tick=0;memset(action,0,sizeof(action));input_replay_tick_action(action);
+        assert(action[0]==0x03428001u && action[7]==(version==1?2u:0xc0010002u));
+        input_replay_begin(NULL,0);
+    }
+    controller_configured=0;replay_probe_stereo_mode="";clock_ready=0;
+    unlink("metadata.input");unlink("metadata.actions");unlink("metadata.seeds");
+    puts("controller and tutorial metadata: PASS");
+}
 
 static void check_control_pose(void)
 {
@@ -491,6 +570,8 @@ int main(int argc, char **argv)
         puts("replay environment: PASS");
         return 0;
     }
+	check_recorded_action_metadata();
+	check_controller_action_format();
 	check_control_pose();
 	clock_tick = 0;
 	lip_sync = 1;

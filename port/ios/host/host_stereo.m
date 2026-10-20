@@ -43,6 +43,7 @@ Elsewhere host_stereo_frame leaves the frame mono. */
 #include "host_stereo_hud.h"
 #include "halo_stereo_window.h"
 #include "halo_stereo_cutscene.h"
+#include "halo_stereo_veil.h"
 
 /* one world unit in meters */
 #define METERS_PER_UNIT 3.048f
@@ -83,6 +84,8 @@ static unsigned long memory_foveated_frames;
 static NSTimeInterval memory_last_frame_at;
 /* the head's last pose, while ARKit places it */
 static struct host_stereo_head head;
+static atomic_int world_recenter_active, world_recenter_pending;
+static float head_last_back[3], head_last_position[3];
 static unsigned long stereo_frames;
 /* frames on the screen, presents, and whether the depth range warning was
 logged, since the space opened: the once-only logs repeat for each opening
@@ -154,7 +157,18 @@ static NSString *const shader_source =
 	"struct eye_uniforms { uint decode_srgb; float depth_scale; float depth_floor; float brightness; float vignette;\n"
 	"	float4 tangents; float vignette_inner; float vignette_outer; uint expanding; float bars; float4 window;\n"
 	"	float4 tint; float tint_depth; float4x4 screen_from_view; uint cutscene; float4 frame;\n"
-	"	float4x4 frame_from_view; };\n"
+	"	float4x4 frame_from_view; float4 look; };\n"
+	/* the eyes' veil (halo_stereo_veil.h): the picture toward its blur by
+	share, then desaturated and darkened by dim, for whatever veils it */
+	HALO_STEREO_VEIL_STRING(HALO_STEREO_VEIL_SOURCE) "\n"
+	"static float3 eye_veil(float3 color, float3 blur, float share, float dim)\n"
+	"{\n"
+	"	float sharp_luma = halo_stereo_veil_luma(color.r, color.g, color.b);\n"
+	"	float blurred_luma = halo_stereo_veil_luma(blur.r, blur.g, blur.b);\n"
+	"	return float3(halo_stereo_veil(color.r, blur.r, sharp_luma, blurred_luma, share, dim),\n"
+	"		halo_stereo_veil(color.g, blur.g, sharp_luma, blurred_luma, share, dim),\n"
+	"		halo_stereo_veil(color.b, blur.b, sharp_luma, blurred_luma, share, dim));\n"
+	"}\n"
 	/* Task 12k's immersive cutscene (halo_stereo_cutscene.h): 0 inside the
 	director's frame to 1 outside it, at the view's coordinate */
 	HALO_STEREO_CUTSCENE_STRING(HALO_STEREO_CUTSCENE_SOURCE) "\n"
@@ -207,6 +221,11 @@ static NSString *const shader_source =
 	"		float keep = 1.0 - u.frame.w;\n"
 	"		color = mix(color, (luma + (blur - luma) * keep) * keep, outside);\n"
 	"	}\n"
+	/* a seat's look fade (display.seat_look_fade): the whole view veiled,
+	look.x the dim and look.y the blur's share (0 where no blur is read) */
+	"	if (u.look.x > 0.0 || u.look.y > 0.0)\n"
+	"		color = eye_veil(color, u.look.y > 0.0 ? blurred.sample(linear, coordinate).rgb : color, u.look.y,\n"
+	"			u.look.x);\n"
 	"	if (u.decode_srgb)\n"
 	"		color = select(pow((color + 0.055) / 1.055, 2.4), color / 12.92, color <= 0.04045);\n"
 	"	float edge = u.vignette > 0.0 ? host_stereo_vignette_edge(coordinate.x, coordinate.y, u.tangents.x,\n"
@@ -295,7 +314,7 @@ static NSString *const shader_source =
 	and its center and half extents in its frame, which clip_from_frame
 	takes to the view */
 	"struct hud_uniforms { float4x4 clip_from_frame; float4 source; float4 center; float4 x_axis; float4 y_axis;\n"
-	"	uint decode_srgb; float brightness; uint opaque; };\n"
+	"	uint decode_srgb; float brightness; uint opaque; float opacity; float4 solid; uint use_solid; };\n"
 	"vertex picture_vertex hud_vertex(uint index [[vertex_id]], constant hud_uniforms &u [[buffer(0)]])\n"
 	"{\n"
 	"	float2 corner = float2(index & 1, index >> 1);\n"
@@ -318,13 +337,14 @@ static NSString *const shader_source =
 	/* only inside the quad's rectangle: linear filtering at its edge would
 	take a sliver of what's beside it */
 	"	float2 half_texel = 0.5 / float2(hud.get_width(), hud.get_height());\n"
-	"	float4 color = hud.sample(linear, clamp(in.coordinate, u.source.xy + half_texel, u.source.zw - half_texel));\n"
+	"	float4 color = u.use_solid ? float4(u.solid.rgb, 0.0) :\n"
+	"		hud.sample(linear, clamp(in.coordinate, u.source.xy + half_texel, u.source.zw - half_texel));\n"
 	"	float covered = u.opaque ? 1.0 : 1.0 - color.a;\n"
 	"	if (max(covered, max(color.r, max(color.g, color.b))) < 1.0 / 255.0)\n"
 	"		discard_fragment();\n"
 	"	if (u.decode_srgb)\n"
 	"		color.rgb = select(pow((color.rgb + 0.055) / 1.055, 2.4), color.rgb / 12.92, color.rgb <= 0.04045);\n"
-	"	return float4(color.rgb * u.brightness, covered);\n"
+	"	return float4(color.rgb * u.brightness * u.opacity, covered * u.opacity);\n"
 	"}\n"
 	/* the HUD's depth (host_stereo_hud_depth_ease): over each of a view's
 	pieces' rectangles of the eye's depth (physical texels, x0 y0 x1 y1, the
@@ -699,6 +719,9 @@ struct eye_uniforms
 	uint32_t cutscene;
 	simd_float4 frame;
 	simd_float4x4 frame_from_view;
+	/* a seat's look fade: the dim and the blur's share (0 without the
+	blur); the rest unused */
+	simd_float4 look;
 };
 
 /* blur_fragment's: one tap's step (normalized), the taps each side, sigma */
@@ -716,7 +739,12 @@ struct hud_uniforms
 	uint32_t decode_srgb;
 	float brightness;
 	uint32_t opaque;
+	float opacity;
+	simd_float4 solid;
+	uint32_t use_solid;
 };
+
+static const simd_float4 laser_color = { 0.45f, 0.75f, 1.0f, 1.0f };
 
 static BOOL prepare(id<MTLDevice> device, MTLPixelFormat color, MTLPixelFormat depth)
 {
@@ -882,8 +910,19 @@ static void head_turn(struct halo_stereo_frame *frame, simd_float4x4 origin_from
 	float right[3] = { origin_from_device.columns[0].x, origin_from_device.columns[0].y, origin_from_device.columns[0].z };
 	float up[3] = { origin_from_device.columns[1].x, origin_from_device.columns[1].y, origin_from_device.columns[1].z };
 	float back[3] = { origin_from_device.columns[2].x, origin_from_device.columns[2].y, origin_from_device.columns[2].z };
+	int recenter_active = atomic_load(&world_recenter_active);
+	int recenter_pending = !recenter_active && atomic_exchange(&world_recenter_pending, 0);
 
+	if (recenter_active || recenter_pending)
+		host_stereo_head_recenter(&head);
 	host_stereo_head_turn(&head, right, up, back, frame);
+	if (recenter_pending)
+		host_logf(HOST_LOG_INFO, "stereo: room recentered; yaw correction %.2f degrees",
+			head.room_yaw_offset * 180.0f / (float)M_PI);
+	memcpy(head_last_back, back, sizeof(back));
+	head_last_position[0] = origin_from_device.columns[3].x;
+	head_last_position[1] = origin_from_device.columns[3].y;
+	head_last_position[2] = origin_from_device.columns[3].z;
 }
 
 /* debug.head_sweep, read once (head_sweep): the synthetic head's amplitude
@@ -1249,6 +1288,7 @@ static void stereo_frame(struct halo_stereo_frame *frame) API_AVAILABLE(visionos
 		else
 			host_stereo_head_hold(&head, frame);
 	}
+	host_spatial_frame(drawable, anchored ? &origin_from_device : NULL);
 	frame->eye_count = 2;
 	if (stereo_frames++ == 0)
 		host_logf(HOST_LOG_INFO, "stereo: the head drives the view; %zu view%s of %dx%d, %s", views,
@@ -1328,12 +1368,28 @@ void host_stereo_frame(struct halo_stereo_frame *frame)
 	frame->foveated_height = 0;
 #if TARGET_OS_VISION
 	head_frame_open = 0;
+	host_spatial_frame(NULL, NULL);
 	eye_rate_maps[0] = eye_rate_maps[1] = nil;
 	eye_rate_map_parameters[0] = eye_rate_map_parameters[1] = nil;
 	foveated_allocated_width = foveated_allocated_height = 0;
 	if (@available(visionOS 26.0, *))
 		stereo_frame(frame);
 #endif
+}
+
+int host_stereo_last_head(float back[3], float position[3])
+{
+#if TARGET_OS_VISION
+	if (head.known)
+	{
+		memcpy(back, head_last_back, sizeof(head_last_back));
+		memcpy(position, head_last_position, sizeof(head_last_position));
+		return 1;
+	}
+#endif
+	(void)back;
+	(void)position;
+	return 0;
 }
 
 int host_stereo_picture_size(int *width, int *height)
@@ -1448,6 +1504,10 @@ static void hud_draw(id<MTLRenderCommandEncoder> encoder, __unsafe_unretained id
 		uniforms.decode_srgb = decode_srgb;
 		uniforms.brightness = brightness;
 		uniforms.opaque = opaque || quad->opaque;
+		uniforms.opacity = quad->laser ? HOST_STEREO_HUD_LASER_OPACITY * quad->laser_opacity :
+			quad->dim ? 0.5f : 1.0f;
+		uniforms.solid = laser_color;
+		uniforms.use_solid = quad->laser != 0;
 		[encoder setFragmentTexture:layers[quad->layer] atIndex:0];
 		[encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
 		[encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
@@ -1916,10 +1976,11 @@ static int cutscene_blur(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLTexture> right,
 	id<MTLTexture> left_depth, id<MTLTexture> right_depth, __unsafe_unretained id<MTLTexture> const *hud_layers,
 	const float (*hud_group_extent)[4], float hud_aspect, int hud_ui, const float reticle[3],
-	const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
+	const struct host_stereo_hud_aim *aim, const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
 	float far_meters, float brightness, float vignette, float ui_dim, int expanding, float expansion,
 	float expansion_bars, const float fade[4], int cutscene, const float cutscene_forward[3],
-	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim)
+	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim, float look_dim,
+	float look_blur)
 {
 	id<MTLTexture> hud = hud_layers[HOST_STEREO_HUD_LAYER_HUD];
 	/* the HUD's pieces need its layer or the UI's (a pause can leave the
@@ -1991,7 +2052,14 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 				hud_depth_logged[piece] = hud_depth_distance[piece];
 			}
 		}
-		int quad_count = hud_shown ? host_stereo_hud_layout(layout_width, hud_ui, reticle, hud_tangents,
+		struct host_stereo_hud_aim aimed = {0};
+		if (aim)
+		{
+			aimed = *aim;
+			host_stereo_hud_aim_depth_clamp(&aimed, depth_range.y, depth_range.x);
+		}
+		int quad_count = hud_shown ? host_stereo_hud_layout_aimed(layout_width, hud_ui, reticle,
+			aim ? &aimed : NULL, hud_tangents,
 			hud_group_extent, hud_placement(), depth_settings->enabled ? hud_depth_distance : NULL, quads) : 0;
 		/* the immersive cutscene (Task 12k): the HUD layer (its titles and
 		bars) whole on the director's frame, as on the film's screen, at the
@@ -1999,8 +2067,14 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 		if (cutscene && hud && !hud_ui)
 			quad_count = cutscene_hud_quad(cutscene_forward, cutscene_up, cutscene_tangents, hud_placement()->distance,
 				quads);
-		/* and its blur, once a frame for both eyes, before the views */
-		int cutscene_blurred = cutscene && cutscene_blur(queue, left, right);
+		/* a seat's look fade (display.seat_look_fade): the dim and the
+		blur's share */
+		look_dim = fmaxf(0.0f, fminf(1.0f, look_dim));
+		look_blur = fmaxf(0.0f, fminf(1.0f, look_blur));
+		/* and the blur, once a frame for both eyes, before the views: the
+		immersive cutscene's outside, or a seat's look fade */
+		int eyes_blurred = (cutscene || look_blur > 0.0f) && cutscene_blur(queue, left, right);
+		int cutscene_blurred = cutscene && eyes_blurred;
 		/* while the cutscene window expands, the HUD's pieces and the
 		crosshairs wait for it to cover the view (they would hang over the
 		room outside it); a menu's UI quad shows, as the eyes darken for it */
@@ -2136,6 +2210,9 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 					brightness * (decode_srgb ? powf(ui_keep, 2.2f) : ui_keep),
 					fmaxf(0.0f, fminf(1.0f, vignette)), view_tangents(drawable, view_index),
 					HOST_STEREO_VIGNETTE_CLEAR_SHARE * vignette_outer, vignette_outer };
+				/* a seat's look fade darkens the HUD's pieces and the zoomed
+				picture as the eyes', in linear light on an sRGB target */
+				float look_keep = decode_srgb ? powf(1.0f - look_dim, 2.2f) : 1.0f - look_dim;
 				simd_float4x4 projection = cp_drawable_compute_projection(drawable,
 					cp_axis_direction_convention_right_up_back, view_index);
 
@@ -2155,6 +2232,7 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 						HALO_STEREO_CUTSCENE_SOFT_EDGE, fmaxf(0.0f, fminf(1.0f, cutscene_dim)) };
 					eye_uniforms.frame_from_view = simd_mul(frame_from_device, device_from_view);
 				}
+				eye_uniforms.look = (simd_float4){ look_dim, eyes_blurred ? look_blur : 0.0f, 0.0f, 0.0f };
 				/* the window this frame: from the screen as this eye sees it
 				toward the end, never smaller than its last frame's */
 				if (expanding)
@@ -2235,7 +2313,7 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 					[encoder setFragmentTexture:colors[eye] atIndex:0];
 					[encoder setFragmentTexture:depths[eye] atIndex:1];
 					/* (the eye's own picture where no blur is read) */
-					[encoder setFragmentTexture:cutscene_blurred ? blur_targets[eye][0] : colors[eye] atIndex:2];
+					[encoder setFragmentTexture:eyes_blurred ? blur_targets[eye][0] : colors[eye] atIndex:2];
 					[encoder setFragmentSamplerState:linear_sampler atIndex:0];
 					[encoder setFragmentSamplerState:nearest_sampler atIndex:1];
 					[encoder setFragmentBytes:&eye_uniforms length:sizeof(eye_uniforms) atIndex:0];
@@ -2249,18 +2327,26 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 				{
 					simd_float4x4 clip_from_device = simd_mul(projection, simd_inverse(cp_view_get_transform(view)));
 
-					/* (dimmed as the eye's picture would be: the cut's fade and the
-					widgets' dim, eye_uniforms.brightness) */
+					/* (dimmed as the eye's picture would be: the cut's fade, the
+					widgets' dim and a seat's look fade, eye_uniforms.brightness) */
 					if (zoom_shown)
 					{
 						__unsafe_unretained id<MTLTexture> zoom_layers[1] = { zoom };
 
 						hud_draw(encoder, zoom_layers, 1, &zoom_quad, 1, clip_from_device, level, decode_srgb,
-							eye_uniforms.brightness, 1);
+							eye_uniforms.brightness * look_keep, 1);
 					}
-					if (quad_count > 0)
-						hud_draw(encoder, hud_layers, HOST_STEREO_HUD_LAYER_COUNT, quads, quad_count, clip_from_device,
-							level, decode_srgb, brightness, 0);
+					/* the HUD's pieces and the crosshair fade with a seat's look
+					fade; a menu's UI quad, last, never does */
+					int faded = quad_count;
+					while (faded > 0 && quads[faded - 1].layer == HOST_STEREO_HUD_LAYER_UI)
+						faded--;
+					if (faded > 0)
+						hud_draw(encoder, hud_layers, HOST_STEREO_HUD_LAYER_COUNT, quads, faded, clip_from_device,
+							level, decode_srgb, brightness * look_keep, 0);
+					if (quad_count > faded)
+						hud_draw(encoder, hud_layers, HOST_STEREO_HUD_LAYER_COUNT, quads + faded, quad_count - faded,
+							clip_from_device, level, decode_srgb, brightness, 0);
 				}
 				[encoder endEncoding];
 			}
@@ -2279,6 +2365,8 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 	(void)cutscene_up;
 	(void)cutscene_tangents;
 	(void)cutscene_dim;
+	(void)look_dim;
+	(void)look_blur;
 	(void)expanding;
 	(void)expansion;
 	(void)expansion_bars;
@@ -2421,5 +2509,42 @@ void host_stereo_present_ui(id<MTLCommandQueue> queue, id<MTLTexture> picture, i
 	(void)picture;
 	(void)hud;
 	(void)brightness;
+#endif
+}
+
+void host_stereo_world_recenter(int active)
+{
+#if TARGET_OS_VISION
+	atomic_store(&world_recenter_pending, 1);
+	atomic_store(&world_recenter_active, active != 0);
+#else
+	(void)active;
+#endif
+}
+
+float host_stereo_room_yaw_offset(void)
+{
+#if TARGET_OS_VISION
+	return head.room_yaw_offset;
+#else
+	return 0.0f;
+#endif
+}
+
+void host_stereo_room_vector(float vector[3])
+{
+#if TARGET_OS_VISION
+	host_stereo_head_room_vector(&head, vector);
+#else
+	(void)vector;
+#endif
+}
+
+int host_stereo_room_recenter_pending(void)
+{
+#if TARGET_OS_VISION
+	return atomic_load(&world_recenter_active) || atomic_load(&world_recenter_pending);
+#else
+	return 0;
 #endif
 }

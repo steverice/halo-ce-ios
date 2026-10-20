@@ -19,6 +19,14 @@ the player is alive or nobody else is */
 long coop_spectate_unit(
 	short local_player_index);
 
+/* the dead player's body during the short network co-op death view, then
+the current teammate; camera availability excludes scripted views */
+long coop_spectate_camera_unit(
+	short local_player_index,
+	boolean network_coop,
+	boolean camera_available,
+	boolean has_died);
+
 /* TRUE if the teammate this local player is spectating (while dead or not
 yet spawned) rides in an AI-driven vehicle, such as an insertion Pelican.
 network_coop.c then shows that seat instead of the scripted camera. */

@@ -22,7 +22,12 @@ static struct {struct {int alternate_shots_loaded;} weapon;} body,*weapon=&body;
 static int next_object=7,evidence,recorded_owner;
 static long owner_object_index=42,target_object_index=NONE,weapon_index=3;
 static short trigger_index;
-static int inside_bsp,tracer=1,data;
+static int inside_bsp,tracer=1;
+static struct { struct {float i,j,k;} forward; } data;
+static struct projectile { struct {real_point3d position;} object; } projectile;
+static struct projectile *object_get(long index) {(void)index;return &projectile;}
+void halo_projectile_spawned(long index,long owner,const float *position,const float *forward)
+{(void)index;(void)owner;(void)position;(void)forward;}
 static long object_new(void *p) {(void)p;return next_object;}
 static void unit_get_camera_position(long i,real_point3d*p) {(void)i;p->x=p->y=p->z=0;}
 static void object_force_inside_bsp(long i,const real_point3d*p) {(void)i;(void)p;}

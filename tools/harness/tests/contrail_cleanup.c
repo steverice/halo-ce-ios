@@ -111,6 +111,12 @@ static pixel32 real_argb_color_to_pixel32(real_argb_color const *color)
 { (void)color; return 0xFFFFFFFFUL; }
 static void normalize2d(real_vector2d *vector) { (void)vector; }
 static void normalize3d(real_vector3d *vector) { (void)vector; }
+int halo_projectile_point_offset(long object_index, long contrail_index, long point_index,
+    const float *position, float *offset)
+{
+    (void)object_index; (void)contrail_index; (void)point_index; (void)position; (void)offset;
+    return 0;
+}
 #define PIN(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
 #define VALID_INDEX(index, limit) ((index) >= 0 && (index) < (limit))
 #define NUMBER_OF_OBJECT_CHANGE_COLORS 4
@@ -139,7 +145,7 @@ static void check_run(short render_type, int expected_draws, int expected_errors
     definition.states.data = states;
     definition.render_type = render_type;
     next_index += 7;
-    render_contrail(&contrail, &definition, 0);
+    render_contrail(&contrail, &definition, 0, 17);
 
     CHECK(draws == expected_draws, "draw count %d", draws);
     CHECK(errors == expected_errors, "error count %d", errors);

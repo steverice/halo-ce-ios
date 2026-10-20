@@ -34,12 +34,14 @@ head-driven look, no 3D film, no screen framing. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "halo_stereo.h"
 #include "host_stereo_head.h"
 #include "host_stereo_vignette.h"
 #include "halo_stereo_window.h"
+#include "halo_stereo_veil.h"
 
 /* the eye shader's vignette mask, as C */
 HOST_STEREO_VIGNETTE_SOURCE
@@ -53,6 +55,7 @@ static char last_log[256];
 /* the film's settings, and what the game shows: the letterbox, a scripted
 camera */
 static double setting_film_depth_share = 0.25, setting_film_convergence = 1.75;
+static double setting_hud_distance = 2.0;
 /* display.stereo, and the window's drawable size (the side-by-side view's) */
 static const char *setting_stereo = "head";
 static int probe_drawable[2];
@@ -102,6 +105,18 @@ double config_real(const char *name)
 		return 1.0;
 	if (!strcmp(name, "debug.screen_lean"))
 		return 0.0;
+	if (!strcmp(name, "display.seat_look_fade_start"))
+		return 5.0;
+	if (!strcmp(name, "display.seat_look_fade_black"))
+		return 45.0;
+	if (!strcmp(name, "display.pod_look_fade_start"))
+		return 15.0;
+	if (!strcmp(name, "display.pod_look_fade_end"))
+		return 70.0;
+	if (!strcmp(name, "display.pod_look_fade_dim"))
+		return 0.85;
+	if (!strcmp(name, "display.hud_distance"))
+		return setting_hud_distance;
 	return setting_snap_angle;
 }
 int config_boolean(const char *name) { return !strcmp(name, "input.comfort_vignette") && setting_comfort_vignette; }
@@ -129,6 +144,10 @@ int halo_scripted_camera(void) { return game_scripted_camera; }
 int halo_scripted_director_camera(void) { return 0; }
 int halo_level_first_tick_pending(void) { return 0; }
 int halo_level_start_campaign(void) { return 0; }
+static int game_cryo_pod;
+int halo_seat_cryo_pod(void) { return game_cryo_pod; }
+static int game_first_person_passenger;
+int halo_seat_first_person_passenger(void) { return game_first_person_passenger; }
 int platform_fixed_timestep(void) { return 1; }
 /* the frame clock (debug.fixed_timestep: 1/30 s a frame), a frame each
 time stereo.c reads it (once a frame) */
@@ -136,6 +155,12 @@ static unsigned long probe_clock;
 unsigned long platform_clock_frames(void) { return ++probe_clock; }
 double halo_frame_trace_milliseconds(void) { return 0.0; }
 int halo_third_person_camera(void) { return game_third_person; }
+/* The focused dead-camera probe can replace this with the production
+camera procedure and network predicate. */
+#ifndef HALO_STEREO_SOURCE_DEAD_CAMERA
+static int game_dead_camera;
+int halo_coop_dead_camera(void) { return game_dead_camera; }
+#endif
 int halo_cutscene_camera_first_person(void) { return game_first_person; }
 /* the cutscene camera's horizontal field of view (Task 12k): 70 degrees unless a case sets it */
 static float game_field_of_view = 1.2217305f;
@@ -159,6 +184,7 @@ void halo_screen_commit_stereo_scale(void) {}
 /* main.c's player windows: 1 unless a case splits the screen */
 static short probe_windows = 1;
 short main_get_window_count(void) { return probe_windows; }
+void halo_controller_sample_draw(void) {}
 
 #include "../../linux/game/stereo.c"
 
@@ -176,6 +202,7 @@ static float probe_screen_yaw;
 static float pose[3][3];
 static struct host_stereo_head head;
 static int host_closed;
+static int host_unanchored;
 /* the Compositor frames the game asked for */
 static unsigned long host_frames;
 
@@ -191,7 +218,10 @@ void host_stereo_frame(struct halo_stereo_frame *frame)
 		return;
 	}
 	frame->eye_count = 2;
-	host_stereo_head_turn(&head, pose[0], pose[1], pose[2], frame);
+	if (host_unanchored)
+		host_stereo_head_hold(&head, frame);
+	else
+		host_stereo_head_turn(&head, pose[0], pose[1], pose[2], frame);
 	/* SCREEN eyes (the film in HEAD mode): 64 mm apart, 4 m behind the
 	camera, frusta through the edges of a screen 4.6 m wide */
 	if (frame->mode == HALO_STEREO_SCREEN) {
@@ -349,6 +379,11 @@ static void restart(const char *turn, double snap_angle, double smooth_turn_spee
 	seat_cut_requested = 0;
 	camera_held_facing = 0;
 	fold_wait_frames = 0;
+	seat_limited = 0;
+	seat_look_fade_now = 0.0f;
+	seat_look_fade_logged = 0;
+	seat_look_fade_pod = 0;
+	game_cryo_pod = 0;
 	set_pose(0.0f, 0.0f, 0.0f);
 	/* a frame with the Compositor's eyes: the head drives the view */
 	halo_stereo_frame_begin();
@@ -2876,8 +2911,314 @@ static void immersive_cutscene(void)
 		cutscene_frame();
 }
 
-int main(void)
+/* display.seat_look_fade: the seat's 45 degree limit, the fade from 5
+degrees past it to black at 45 (the defaults); the world keeps following the
+head throughout (seat_yaw_limit checks that with the fade off, and the fade
+changes nothing the eye cameras do) */
+static void seat_look_fade(void)
 {
+	struct seat_run run;
+	float head = 0.0f, dim, blur, last, worst_step = 0.0f, body0, expected;
+	int frame, held = 1;
+
+	printf("a seat's look fade (display.seat_look_fade, 5 to 45 deg past the limit):\n");
+	seat_start(&run, "snap");
+	seat_look_fade_setting = 1;
+	seat_look_fade_blur_setting = 1;
+	seat_look_fade_start = 5.0f * DEGREES;
+	seat_look_fade_black = 45.0f * DEGREES;
+	seat_hold(&run, head, 3);
+	body0 = run.body;
+	seat_turn_to(&run, &head, 48.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  3 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(dim == 0.0f && blur == 0.0f, "inside the fade's start the view is clear");
+	seat_turn_to(&run, &head, 70.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  25 deg past: dim %.3f, blur %.3f, the body %.4f deg from its start\n", dim, blur,
+		remainderf(run.body - body0, 360.0f));
+	check(fabsf(dim - 0.5f) < 1e-3f && blur > 0.998f, "half way to black: half dimmed, fully blurred");
+	check(fabsf(remainderf(run.body - body0, 360.0f)) < 0.01f, "and the world still holds still in the room");
+	seat_turn_to(&run, &head, 100.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  55 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(dim == 1.0f, "past the black angle the view is black");
+	/* paused: neither the look nor the clamp runs; the head turns further */
+	for (frame = 0; frame < 30; frame++) {
+		set_pose((100.0f + (float)frame) * DEGREES, 0.0f, 0.0f);
+		halo_stereo_frame_begin();
+		halo_stereo_seat_look_fade(&dim, &blur);
+		held &= dim == 1.0f;
+	}
+	set_pose(100.0f * DEGREES, 0.0f, 0.0f);
+	halo_stereo_frame_begin();
+	check(held, "paused in the seat, the fade holds");
+	seat_look_fade_blur_setting = 0;
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 1.0f && blur == 0.0f, "display.seat_look_fade_blur false: dimmed, never blurred");
+	seat_look_fade_blur_setting = 1;
+	/* back inside the limit at once: eased out, never a flash */
+	last = 1.0f;
+	for (frame = 0; frame < 30; frame++) {
+		seat_step(&run, 0.0f, 0.0f);
+		halo_stereo_seat_look_fade(&dim, &blur);
+		worst_step = fmaxf(worst_step, fabsf(dim - last));
+		last = dim;
+	}
+	printf("  the head back to 0 in a frame: the fade's largest change a frame %.3f, now %.3f\n", worst_step, dim);
+	check(worst_step <= SEAT_LOOK_FADE_RATE / 30.0f + 1e-4f && dim == 0.0f,
+		"a jump in the head's angle eases the fade (at most 1 in 0.25 s), down to clear");
+	/* a smoothstep in between */
+	expected = halo_stereo_seat_look_fade_ease(0.0f, 15.0f * DEGREES, 5.0f * DEGREES, 45.0f * DEGREES, 10.0f);
+	check(fabsf(expected - 0.15625f) < 1e-4f, "10 deg into the 40 deg ramp: a smoothstep's 0.156");
+	/* leaving the seat with the head past the limit: the fade goes */
+	head = 0.0f;
+	seat_turn_to(&run, &head, 80.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	seated = 0;
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  out of the seat: dim %.3f\n", dim);
+	check(dim == 0.0f, "out of the seat (no clamp) the view is clear");
+	/* a10's cryo pod: its own angles (15 to 70 degrees past the limit), and
+	never black: 0.85 at the most, the blur full */
+	seat_start(&run, "snap");
+	game_cryo_pod = 1;
+	pod_look_fade_start = 15.0f * DEGREES;
+	pod_look_fade_end = 70.0f * DEGREES;
+	pod_look_fade_dim = 0.85f;
+	head = 0.0f;
+	seat_turn_to(&run, &head, 58.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  the pod, 13 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(dim == 0.0f && blur == 0.0f, "the pod: clear inside 15 degrees past the limit (a seat fades from 5)");
+	seat_turn_to(&run, &head, 87.5f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  the pod, 42.5 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(fabsf(dim - 0.425f) < 2e-3f && blur > 0.998f, "the pod: half way, half of 0.85 and fully blurred");
+	seat_turn_to(&run, &head, 160.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	printf("  the pod, 115 deg past: dim %.3f, blur %.3f\n", dim, blur);
+	check(fabsf(dim - 0.85f) < 1e-4f && blur == 1.0f, "the pod: never darker than 0.85, however far the head turns");
+	game_cryo_pod = 0;
+	seat_look_fade_pod = 0;
+	seated = 0;
+	seat_hold(&run, head, 30);
+	/* the setting off */
+	seat_start(&run, "snap");
+	seat_look_fade_setting = 0;
+	head = 0.0f;
+	seat_turn_to(&run, &head, 120.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && blur == 0.0f, "display.seat_look_fade false: never faded");
+	seated = 0;
+	/* the presenter's veil (halo_stereo_veil.h): fully blurred, it's the
+	immersive cutscene's dimmed outside; nothing blurred or dimmed, the
+	picture; dim 1, black */
+	{
+		const float sharp[3] = { 0.8f, 0.4f, 0.1f }, blurred[3] = { 0.3f, 0.6f, 0.9f };
+		float dimmed[3], worst = 0.0f, sharp_luma = halo_stereo_veil_luma(sharp[0], sharp[1], sharp[2]);
+		float blurred_luma = halo_stereo_veil_luma(blurred[0], blurred[1], blurred[2]);
+		int channel;
+
+		halo_stereo_cutscene_dimmed(blurred, 0.6f, dimmed);
+		for (channel = 0; channel < 3; channel++) {
+			worst = fmaxf(worst, fabsf(halo_stereo_veil(sharp[channel], blurred[channel], sharp_luma, blurred_luma,
+				1.0f, 0.6f) - dimmed[channel]));
+			worst = fmaxf(worst, fabsf(halo_stereo_veil(sharp[channel], blurred[channel], sharp_luma, blurred_luma,
+				0.0f, 0.0f) - sharp[channel]));
+			worst = fmaxf(worst, fabsf(halo_stereo_veil(sharp[channel], blurred[channel], sharp_luma, blurred_luma,
+				0.5f, 1.0f)));
+		}
+		check(worst < 1e-6f, "the veil: the cutscene's dimmed outside fully blurred, the picture unveiled, black at "
+			"dim 1");
+	}
+	seat_look_fade_setting = 0;
+}
+
+/* The passenger's visible view belongs to the head, not the seat weapon's
+aim arc. A 270-degree head arc remains clear through 135 degrees each way. */
+static void passenger_head_arc(void)
+{
+	struct seat_run run;
+	float head = 0.0f, dim, blur;
+	float desired;
+
+	seat_start(&run, "snap");
+	game_first_person_passenger = 1;
+	seat_look_fade_setting = 1;
+	seat_look_fade_start = 5.0f * DEGREES;
+	seat_look_fade_black = 45.0f * DEGREES;
+	seat_turn_to(&run, &head, 130.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && fabsf(remainderf(run.facing_yaw / DEGREES - 45.0f, 360.0f)) < 0.01f,
+		"passenger at 130 degrees: full view while weapon aim stays at its 45-degree bound");
+	seat_turn_to(&run, &head, 150.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim > 0.0f && dim < 1.0f, "passenger past 135 degrees: comfort fade begins");
+	seat_turn_to(&run, &head, 180.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 1.0f, "passenger at 180 degrees: head arc ends in black");
+	game_first_person_passenger = 0;
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 1.0f, "same aim bound in another limited seat keeps its earlier fade");
+	seated = 0;
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f, "leaving the passenger seat clears the fade");
+	seat_start(&run, "snap");
+	game_first_person_passenger = 1;
+	seat_turn_to(&run, &head, -130.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f, "passenger's opposite 135-degree side remains clear");
+	/* The seat marker can face away from world zero and rotate with the
+	vehicle. Both positions are 130 degrees off their own seat marker. */
+	seat_limited = 0;
+	head_seat_leftover = head_pending_yaw = 0.0f;
+	head_request = head_yaw_taken = 130.0f * DEGREES;
+	seat_look_fade_now = 0.0f;
+	desired = 160.0f * DEGREES;
+	halo_stereo_seat_yaw_clamp(0, &desired, 30.0f * DEGREES, 130.0f * DEGREES,
+		30.0f * DEGREES, -45.0f * DEGREES, 45.0f * DEGREES);
+	seat_look_fade_update(1, 1.0f);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && fabsf(seat_head_yaw_offset / DEGREES - 130.0f) < 0.01f,
+		"passenger head arc uses the seat marker, not world zero or weapon aim");
+	desired = 105.0f * DEGREES;
+	halo_stereo_seat_yaw_clamp(0, &desired, desired, 0.0f,
+		60.0f * DEGREES, -45.0f * DEGREES, 45.0f * DEGREES);
+	seat_look_fade_update(1, 1.0f);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && fabsf(seat_head_yaw_offset / DEGREES - 130.0f) < 0.01f,
+		"a turning vehicle keeps the passenger's head arc seat-relative");
+	game_first_person_passenger = 0;
+	seated = 0;
+}
+
+/* The shot ray is the unit's settled aiming vector before target bending.
+The zoom picture uses zoom_camera, so its scope reticle must project that
+ray in zoom_camera's frame, including the magnification. */
+static void game_camera_forward(float yaw, float pitch, float forward[3], float up[3])
+{
+	forward[0] = cosf(pitch) * cosf(yaw);
+	forward[1] = cosf(pitch) * sinf(yaw);
+	forward[2] = sinf(pitch);
+	up[0] = -sinf(pitch) * cosf(yaw);
+	up[1] = -sinf(pitch) * sinf(yaw);
+	up[2] = cosf(pitch);
+}
+
+static void zoom_reticle_case(const char *name, float requested_yaw, float game_pitch,
+	float head_pitch, float ray_yaw, float magnification, float expected_across)
+{
+	float desired = requested_yaw * DEGREES;
+	float camera_forward[3], camera_up[3], zoom_forward[3], zoom_up[3];
+	float shot[3], shot_up[3], reticle[3];
+	float across, upward;
+
+	stereo_frame.mode = HALO_STEREO_HEAD;
+	stereo_frame.eye_count = 2;
+	third_person_head = 0;
+	cutscene_immersive = 0;
+	film_frame = 0;
+	camera_noted = 0;
+	head_request = desired;
+	head_yaw_taken = desired;
+	head_seat_leftover = head_pending_yaw = 0.0f;
+	head_pitch_now = head_pitch * DEGREES;
+	seat_limited = 0;
+	if (!halo_stereo_seat_yaw_clamp(0, &desired, 0.0f, desired, 0.0f,
+		-45.0f * DEGREES, 45.0f * DEGREES))
+		check(0, "zoom reticle: seat clamp active");
+	/* The same orientation `render_player_frame_stereo` copies before it
+	turns the eyes; the shot ray is independent of the head. */
+	game_camera_forward(desired, game_pitch * DEGREES, camera_forward, camera_up);
+	game_camera_forward(ray_yaw * DEGREES, game_pitch * DEGREES, shot, shot_up);
+	memcpy(zoom_forward, camera_forward, sizeof(zoom_forward));
+	memcpy(zoom_up, camera_up, sizeof(zoom_up));
+	halo_stereo_zoom_orient(zoom_forward, zoom_up);
+	halo_stereo_head_orient(camera_forward, camera_up);
+	halo_stereo_zoom_reticle(shot, zoom_forward, zoom_up, magnification);
+	halo_stereo_reticle(reticle);
+	across = reticle[0] / -reticle[2];
+	upward = reticle[1] / -reticle[2];
+	printf("  %s: reticle tangents %.4f across, %.4f up; expected %.4f across, 0 up\n",
+		name, across, upward, expected_across);
+	check(fabsf(across - expected_across) < 0.002f && fabsf(upward) < 0.002f, name);
+	(void)shot_up;
+}
+
+static void zoom_reticle_alignment(void)
+{
+	zoom_reticle_case("inside arc: settled 2x reticle stays centered", 20.0f, 10.0f, 10.0f,
+		20.0f, 2.0f, 0.0f);
+	zoom_reticle_case("seat bound plus head pitch: settled 2x reticle stays centered", 50.0f, 0.0f, 10.0f,
+		45.0f, 2.0f, 0.0f);
+	zoom_reticle_case("seat bound plus head pitch: settled 10x reticle stays centered", 50.0f, 0.0f, 10.0f,
+		45.0f, 10.0f, 0.0f);
+	zoom_reticle_case("seat bound: aim lag at 2x follows the simulated ray", 50.0f, 0.0f, 10.0f,
+		43.0f, 2.0f, 0.06984f);
+	zoom_reticle_case("seat bound: aim lag at 10x follows the simulated ray", 50.0f, 0.0f, 10.0f,
+		43.0f, 10.0f, 0.3492f);
+}
+
+static void shared_scope_view_checks(void)
+{
+	float view[4], expected[4];
+	float distance = (float)setting_hud_distance;
+	struct halo_stereo_eye *left = &stereo_frame.eyes[0];
+	struct halo_stereo_eye *right = &stereo_frame.eyes[1];
+	int side;
+
+	memset(stereo_frame.eyes, 0, sizeof(stereo_frame.eyes));
+	stereo_frame.eye_count = 2;
+	left->left = 0.7f;
+	left->right = 0.9f;
+	left->up = left->down = 0.8f;
+	left->offset[0] = -0.03f / METERS_PER_UNIT;
+	right->left = 0.85f;
+	right->right = 0.75f;
+	right->up = 0.75f;
+	right->down = 0.85f;
+	right->offset[0] = 0.025f / METERS_PER_UNIT;
+	right->offset[1] = 0.005f / METERS_PER_UNIT;
+	expected[0] = 0.7f + 0.03f / distance;
+	expected[1] = 0.75f + 0.025f / distance;
+	expected[2] = 0.75f + 0.005f / distance;
+	expected[3] = 0.8f;
+	halo_stereo_shared_view(view);
+	for (side = 0; side < 4; side++)
+		check(fabsf(view[side] - expected[side]) < 1e-5f,
+			"network scope uses both asymmetric eye frusta at the configured HUD plane");
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 3 && strcmp(argv[1], "--shared-scope-view") == 0) {
+		setting_hud_distance = atof(argv[2]);
+		shared_scope_view_checks();
+		return failures ? 1 : 0;
+	}
+	if (argc == 2 && strcmp(argv[1], "--passenger-head-arc") == 0) {
+		passenger_head_arc();
+		return failures ? 1 : 0;
+	}
+	if (argc == 2 && strcmp(argv[1], "--zoom-reticle-alignment") == 0) {
+		zoom_reticle_alignment();
+		return failures ? 1 : 0;
+	}
 	pole_crossing();
 	pole();
 	pan("level pan at 0 deg pitch", 0.0f, 0.0f);
@@ -2899,6 +3240,8 @@ int main(void)
 	glide();
 	seat_yaw_limit();
 	seat_leftover_kept();
+	seat_look_fade();
+	passenger_head_arc();
 	third_person_ends();
 	first_person_cutscenes();
 	released_cutscene();

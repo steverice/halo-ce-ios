@@ -358,6 +358,10 @@ static void player_control_modify_desired_angles(
 	short local_player_index,
 	real delta_yaw,
 	real delta_pitch);
+/* port: (controller_aim_game.c calls it too) */
+real player_control_seat_yaw_clamped(
+	short local_player_index,
+	real yaw);
 static void player_action_clear(
 	struct input_blob *input);
 static void player_control_action_test_check_reset_input_blob(
@@ -397,6 +401,9 @@ limits were stepped once per input update, a tick on the Xbox, so they step
 by the ticks the frame lasted; an impulse applied from a tick steps by one. */
 static real player_control_angle_step_ticks = 1.f;
 static real player_control_autolevel_time[MAXIMUM_NUMBER_OF_LOCAL_PLAYERS];
+/* port: network seat aim takes stick input before local HMD look is added. */
+static real_euler_angles2d network_seat_stick_delta[MAXIMUM_NUMBER_OF_LOCAL_PLAYERS];
+extern int halo_controller_network_head_camera(short local_player_index);
 
 /* ---------- public code */
 
@@ -842,6 +849,35 @@ static void handle_one_player_input(
 		action.desired_zoom_level = player->zoom_level;
 		action.throttle = player->throttle;
 		action.primary_trigger = player->primary_trigger;
+		{
+			/* port: controller aim (port/linux/game/controller_aim_game.c): while
+			a tracked hand aims, the action carries its aim and pad its flag and
+			the look's yaw less the aim's (players.h); the look itself,
+			player->desired_angles, stays the head's. pad was uninitialized */
+			extern int halo_controller_action_aim(short local_player_index, float look_yaw, float look_pitch,
+				unsigned long control_flags, float *yaw, float *pitch, short *pad);
+			float yaw;
+			float pitch;
+			short pad;
+
+			if (halo_controller_action_aim(
+				local_player_index,
+				player->desired_angles.yaw,
+				player->desired_angles.pitch,
+				player->control_flags,
+				&yaw,
+				&pitch,
+				&pad))
+			{
+				action.desired_facing.yaw = yaw;
+				action.desired_facing.pitch = pitch;
+				action.pad = pad;
+			}
+			else
+			{
+				action.pad = 0;
+			}
+		}
 
 		match_assert_valid_real(
 			"c:\\halo\\SOURCE\\game\\player_control.c",
@@ -1092,6 +1128,8 @@ static void get_local_player_input_blob(
 {
 	long player_index = local_player_get_player_index(local_player_index);
 
+	network_seat_stick_delta[local_player_index].yaw = 0.f;
+	network_seat_stick_delta[local_player_index].pitch = 0.f;
 	player_action_clear(input);
 	if (player_index != NONE)
 	{
@@ -1183,7 +1221,9 @@ static void get_local_player_input_blob(
 				alone: the pitch it drops mustn't speed the turn) or not at all */
 				if (replay_head_look)
 					halo_stereo_replay_look(gamepad_index, clamped_yaw);
-				else
+				else if (!halo_controller_network_head_camera(local_player_index) ||
+					player->unit_index == NONE ||
+					unit_get(player->unit_index)->object.parent_object_index == NONE)
 					halo_stereo_stick_look(gamepad_index,
 					constants->look_function.count > 1 ?
 						evaluate_piecewise_linear_function(
@@ -1297,6 +1337,32 @@ static void get_local_player_input_blob(
 								control->magnetism_level = 0.f;
 							}
 						}
+						{
+							/* port: nor while a tracked hand aims (port/linux/game/
+							controller_aim_game.c): magnetism would turn the look, not
+							the aim. The target and autoaim stay */
+							extern int halo_controller_hand_aiming(short local_player_index);
+
+							if (halo_controller_hand_aiming(local_player_index) ||
+								halo_controller_network_head_camera(local_player_index))
+							{
+								control->magnetism_level = 0.f;
+							}
+						}
+						{
+							/* port: nor while the head drives the look (HEAD mode,
+							port/linux/game/controller_aim_game.c): adhesion adds the
+							target's motion to the look whenever the player moves, and
+							the look's yaw is the world's, so the view would turn by
+							itself around a head that holds still. The target and
+							autoaim stay */
+							extern int halo_head_look_no_magnetism(short gamepad_index, float level);
+
+							if (halo_head_look_no_magnetism(gamepad_index, control->magnetism_level))
+							{
+								control->magnetism_level = 0.f;
+							}
+						}
 						if (player_magnetism_flag && control->magnetism_level > 0.f &&
 							(fabs(clamped_yaw) > _real_epsilon ||
 							fabs(clamped_pitch) > _real_epsilon ||
@@ -1357,6 +1423,9 @@ static void get_local_player_input_blob(
 							input->facing_delta.pitch += mouse_pitch;
 						}
 					}
+					/* port: seat gameplay keeps this ordinary stick delta. The
+					following HMD addition changes only the local camera's look. */
+					network_seat_stick_delta[local_player_index] = input->facing_delta;
 					{
 						/* port: head-tracked stereo (port/linux/game/stereo.c): the
 						head's turn adds to the look as the mouse's does, but unscaled
@@ -1822,7 +1891,7 @@ load have them, not with the ticks: while a take is recorded or replayed (input_
 controller (the take's input, played on its timeline) and live play's set the flags at different ticks, and the
 replayed tick actions don't set them at all, so a10's tutorial moved on at another tick in the replay than in the
 take. So a frame's actions are kept in player_control_frame_action_flags instead, the next tick's action carries
-them (its pad, which update_server_next_update fills from player_control_take_frame_action_flags), a take records
+them (the upper control halfword, which update_server_next_update fills from player_control_take_frame_action_flags), a take records
 them with the action and a replay hands them back with it, and the tick notes them where the action is taken
 (player_control_action_test_note_tick, from update_client_dequeue). */
 extern unsigned char input_replay_sim_isolated(void);
@@ -2010,6 +2079,171 @@ void player_control_permanent_impulse(
 
 /* ---------- private code */
 
+/* port: the seat's yaw arc: the seat marker's world yaw and the arc's
+bounds off it. FALSE on foot or in a seat without an arc */
+static boolean player_control_seat_yaw_arc(
+	short local_player_index,
+	real *marker_yaw,
+	real *yaw_minimum,
+	real *yaw_maximum)
+{
+	struct player_control_unit_camera_info camera_info;
+
+	player_control_get_unit_camera_info(local_player_index, &camera_info);
+	if (camera_info.seat_index != NONE)
+	{
+		struct unit_datum *unit = unit_get(camera_info.unit_index);
+		struct unit_definition *definition = unit_definition_get(unit->definition_index);
+		struct unit_seat *seat = TAG_BLOCK_GET_ELEMENT(
+			&definition->unit.seats,
+			camera_info.seat_index,
+			struct unit_seat);
+
+		if (seat->yaw_minimum != 0.f || seat->yaw_maximum != 0.f)
+		{
+			struct object_marker marker;
+			real_euler_angles2d marker_angles;
+
+			object_get_marker_by_name(
+				camera_info.unit_index,
+				seat->marker_name,
+				&marker,
+				1);
+			euler_angles2d_from_vector3d(&marker_angles, &marker.matrix.forward);
+			*marker_yaw = marker_angles.yaw;
+			*yaw_minimum = seat->yaw_minimum;
+			*yaw_maximum = seat->yaw_maximum;
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+/* port: the game's seat clamp on a world yaw: outside the arc around the
+seat marker's yaw, the nearer bound */
+static real player_control_yaw_in_seat_arc(
+	real yaw,
+	real marker_yaw,
+	real seat_yaw_minimum,
+	real seat_yaw_maximum)
+{
+	real yaw_minimum = marker_yaw + seat_yaw_minimum;
+	real yaw_maximum = marker_yaw + seat_yaw_maximum;
+	real arc = signed_angular_difference(yaw_minimum, yaw_maximum);
+	real to_maximum = signed_angular_difference(yaw, yaw_maximum);
+	real to_minimum = signed_angular_difference(yaw_minimum, yaw);
+
+	if (arc < 0.f)
+	{
+		arc += _pi * 2.f;
+	}
+
+	if (!(to_maximum >= 0.f && to_maximum < arc) &&
+		!(to_minimum >= 0.f && to_minimum < arc))
+	{
+		if (fabs(to_minimum) < fabs(to_maximum))
+		{
+			yaw = yaw_minimum;
+		}
+		else
+		{
+			yaw = yaw_maximum;
+		}
+	}
+
+	return yaw;
+}
+
+/* port: the seat's yaw arc on a world yaw, around the seat marker's world
+yaw: the stick's (player_control_modify_desired_angles) and a tracked hand's
+aim (port/linux/game/controller_aim_game.c), so the two clamp alike. The
+yaw unchanged on foot or in a seat without an arc */
+real player_control_seat_yaw_clamped(
+	short local_player_index,
+	real yaw)
+{
+	real marker_yaw;
+	real yaw_minimum;
+	real yaw_maximum;
+
+	if (player_control_seat_yaw_arc(local_player_index, &marker_yaw, &yaw_minimum, &yaw_maximum))
+	{
+		yaw = player_control_yaw_in_seat_arc(yaw, marker_yaw, yaw_minimum, yaw_maximum);
+	}
+
+	return yaw;
+}
+
+/* port: ordinary seat-relative facing, independent of the local headset.
+The same camera/seat bounds used below constrain it before it goes on the
+wire. No world-space hand angle is passed off as a seat-relative angle. */
+void player_control_network_seat_facing(short local_player_index, float *yaw, float *pitch)
+{
+	static long previous_unit = NONE, previous_parent = NONE;
+	static short previous_seat = NONE;
+	static real_euler_angles2d facing;
+	long unit_index = player_control_get_unit_index(local_player_index);
+	struct unit_datum *unit = unit_index != NONE ? unit_get(unit_index) : NULL;
+	struct player_control_unit_camera_info info;
+	real pitch_minimum = -DEGREES_TO_RADIANS(85.5f);
+	real pitch_maximum = DEGREES_TO_RADIANS(85.5f);
+	real marker_yaw, minimum, maximum;
+
+	*yaw = *pitch = 0.f;
+	if (!unit || unit->object.parent_object_index == NONE)
+	{
+		previous_unit = previous_parent = NONE;
+		previous_seat = NONE;
+		return;
+	}
+	player_control_get_unit_camera_info(local_player_index, &info);
+	if (previous_unit != unit_index || previous_parent != unit->object.parent_object_index ||
+		previous_seat != unit->unit.parent_seat_index)
+	{
+		struct unit_datum *parent = unit_get(unit->object.parent_object_index);
+
+		euler_angles2d_from_vector3d(&facing, &parent->object.forward);
+		if (player_control_seat_yaw_arc(local_player_index, &marker_yaw, &minimum, &maximum))
+			facing.yaw = marker_yaw;
+		facing.pitch = 0.f;
+		previous_unit = unit_index;
+		previous_parent = unit->object.parent_object_index;
+		previous_seat = unit->unit.parent_seat_index;
+	}
+	if (!director_inhibited_input(local_player_index) && !director_inhibited_facing(local_player_index) &&
+		player_control_camera_control_is_active())
+	{
+		facing.yaw += network_seat_stick_delta[local_player_index].yaw;
+		facing.pitch += network_seat_stick_delta[local_player_index].pitch;
+	}
+	facing.yaw = player_control_seat_yaw_clamped(local_player_index, facing.yaw);
+	facing.yaw = (real)fmod(facing.yaw + _pi * 2.f, _pi * 2.f);
+	if (info.camera && (info.camera->pitch_maximum != 0.f || info.camera->pitch_minimum != 0.f))
+	{
+		struct unit_datum *camera_unit = unit_get(info.unit_index);
+
+		pitch_minimum = info.camera->pitch_minimum;
+		pitch_maximum = info.camera->pitch_maximum;
+		if (info.seat_index != NONE && camera_unit->object.up.k > 0.2f)
+		{
+			real_euler_angles2d level = {facing.yaw, 0.f};
+			real_vector3d forward;
+			real tilt;
+
+			vector3d_from_euler_angles2d(&forward, &level);
+			tilt = _pi / 2.f - angle_between_vectors3d(&forward, &camera_unit->object.up);
+			pitch_minimum -= tilt;
+			pitch_maximum -= tilt;
+		}
+		pitch_minimum = PIN(pitch_minimum, -DEGREES_TO_RADIANS(85.5f), DEGREES_TO_RADIANS(85.5f));
+		pitch_maximum = PIN(pitch_maximum, -DEGREES_TO_RADIANS(85.5f), DEGREES_TO_RADIANS(85.5f));
+	}
+	facing.pitch = PIN(facing.pitch, pitch_minimum, pitch_maximum);
+	*yaw = facing.yaw;
+	*pitch = facing.pitch;
+}
+
 static void player_control_modify_desired_angles(
 	short local_player_index,
 	real delta_yaw,
@@ -2025,6 +2259,10 @@ static void player_control_modify_desired_angles(
 	real pitch_maximum = DEGREES_TO_RADIANS(85.5f);
 	/* port: the look before this turn, for head-tracked stereo's seat clamp */
 	real yaw_before;
+	/* port: the seat's arc */
+	real marker_yaw;
+	real seat_yaw_minimum;
+	real seat_yaw_maximum;
 
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\player_control.c",
@@ -2034,67 +2272,24 @@ static void player_control_modify_desired_angles(
 
 	yaw_before = player->desired_angles.yaw;
 	player->desired_angles.yaw += delta_yaw;
-	if (camera_info.seat_index != NONE)
+	/* port: head-tracked stereo (port/linux/game/stereo.c) clamps the head's
+	share of the turn itself, keeping what the bounds refuse for the view;
+	otherwise the seat's arc, the clamp a tracked hand's aim shares */
+	if (player_control_seat_yaw_arc(local_player_index, &marker_yaw, &seat_yaw_minimum, &seat_yaw_maximum) &&
+		!halo_stereo_seat_yaw_clamp(
+			local_player_index,
+			&player->desired_angles.yaw,
+			yaw_before,
+			delta_yaw,
+			marker_yaw,
+			seat_yaw_minimum,
+			seat_yaw_maximum))
 	{
-		struct unit_datum *unit = unit_get(camera_info.unit_index);
-		struct unit_definition *definition = unit_definition_get(unit->definition_index);
-		struct unit_seat *seat = TAG_BLOCK_GET_ELEMENT(
-			&definition->unit.seats,
-			camera_info.seat_index,
-			struct unit_seat);
-
-		if (seat->yaw_minimum != 0.f || seat->yaw_maximum != 0.f)
-		{
-			struct object_marker marker;
-			real_euler_angles2d marker_angles;
-			real yaw_minimum;
-			real yaw_maximum;
-			real arc;
-			real to_maximum;
-			real to_minimum;
-
-			object_get_marker_by_name(
-				camera_info.unit_index,
-				seat->marker_name,
-				&marker,
-				1);
-			euler_angles2d_from_vector3d(&marker_angles, &marker.matrix.forward);
-			/* port: head-tracked stereo (port/linux/game/stereo.c) clamps the
-			head's share of the turn itself, keeping what the bounds refuse
-			for the view; otherwise the game's clamp */
-			if (!halo_stereo_seat_yaw_clamp(
-				local_player_index,
-				&player->desired_angles.yaw,
-				yaw_before,
-				delta_yaw,
-				marker_angles.yaw,
-				seat->yaw_minimum,
-				seat->yaw_maximum))
-			{
-				yaw_minimum = marker_angles.yaw + seat->yaw_minimum;
-				yaw_maximum = marker_angles.yaw + seat->yaw_maximum;
-				arc = signed_angular_difference(yaw_minimum, yaw_maximum);
-				to_maximum = signed_angular_difference(player->desired_angles.yaw, yaw_maximum);
-				to_minimum = signed_angular_difference(yaw_minimum, player->desired_angles.yaw);
-				if (arc < 0.f)
-				{
-					arc += _pi * 2.f;
-				}
-
-				if (!(to_maximum >= 0.f && to_maximum < arc) &&
-					!(to_minimum >= 0.f && to_minimum < arc))
-				{
-					if (fabs(to_minimum) < fabs(to_maximum))
-					{
-						player->desired_angles.yaw = yaw_minimum;
-					}
-					else
-					{
-						player->desired_angles.yaw = yaw_maximum;
-					}
-				}
-			}
-		}
+		player->desired_angles.yaw = player_control_yaw_in_seat_arc(
+			player->desired_angles.yaw,
+			marker_yaw,
+			seat_yaw_minimum,
+			seat_yaw_maximum);
 	}
 
 	while (player->desired_angles.yaw < 0.f)

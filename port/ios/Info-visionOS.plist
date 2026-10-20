@@ -39,9 +39,15 @@
 			<key>ProfileName</key>
 			<string>ExtendedGamepad</string>
 		</dict>
+		<dict>
+			<key>ProfileName</key>
+			<string>SpatialGamepad</string>
+		</dict>
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSAccessoryTrackingUsageDescription</key>
+	<string>VISR uses your PlayStation VR2 Sense controllers' position to aim your weapon.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>VISR uses Bluetooth only to connect game controllers.</string>
 	<key>NSLocalNetworkUsageDescription</key>

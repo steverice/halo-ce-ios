@@ -813,13 +813,17 @@ static struct observer_result const *render_interpolation_direct_camera(
 	static unsigned long read_at = (unsigned long)-1;
 	struct observer_result *direct;
 	long unit_index;
+	extern int halo_controller_network_head_camera(short local_player_index);
 
 	if (read_at != config_changes())
 	{
 		read_at = config_changes();
 		enabled = config_boolean("display.direct_camera");
 	}
-	if (!enabled || !observer || input_replay_controls_facing(local_player_index) ||
+	/* Network hand aim is ordinary simulated facing. The headset keeps the
+	head even with direct_camera off and after tracking has eased back out. */
+	if ((!enabled && !halo_controller_network_head_camera(local_player_index)) ||
+		!observer || input_replay_controls_facing(local_player_index) ||
 		director_get_perspective(local_player_index) != _director_perspective_first_person ||
 		director_inhibited_facing(local_player_index) ||
 		cinematic_in_progress())

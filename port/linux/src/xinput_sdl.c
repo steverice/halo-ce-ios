@@ -42,6 +42,7 @@ drive the controller.
 #include "halo_keyboard.h"
 #include "mp_benchmark_probe.h"
 #include "benchmark_mp_arena.h"
+#include "halo_spatial.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -146,6 +147,135 @@ static void render_scale_dpad(XINPUT_GAMEPAD *pad)
 		halo_render_scale_step(1);
 	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT |
 		XINPUT_GAMEPAD_DPAD_RIGHT);
+}
+/* controller aim's pitch offset (input.aim_pitch_offset,
+port/linux/game/controller_aim_game.c), ruling 12's live chord: while a hand
+aims and Back is held (the Sense controllers' Create), the right stick
+pushed past PITCH_CHORD_PUSH up or down (and let back inside
+PITCH_CHORD_RELEASE before the next), or the D-pad's up or down (a
+DualSense's), steps it by a degree, down tilting the barrel further down.
+render_scale_dpad runs first, so with debug.render_scale_dpad or
+debug.hud_distance_cycle on the D-pad is theirs and only the stick steps it.
+The same chord with the right stick pushed right or left steps the hand's
+aim assist (input.aim_assist) up or down by half, and a click of the right
+stick cycles on-target steadying (input.aim_steady) off, default and strong,
+so their settings compare in one run. While Back is held the game sees
+neither the right stick nor its click (the zoom). A pull of the right
+trigger with Back held takes the laser (input.laser) to its next mode, off,
+close and on; that pull is the game's no more until the trigger is let go,
+Back or not, so it never fires, and a trigger already down when Back goes
+down keeps firing. The left trigger and the left shoulder (White; the other
+hand's grip on a Sense controller) likewise step the aim ray's origin
+(input.aim_origin_raise) a tenth toward the eyes and back toward the hand,
+throwing no grenade and leaving the flashlight alone. A click of the left
+stick switches the first-person gun's smoothing (input.weapon_smoothing) on
+and off, and the game doesn't see that click (the crouch). The left stick
+pushed right or left (and let back before the next) cycles the first-person
+arms' mode (input.first_person_arms) forward or back; the game doesn't see
+the left stick while Back is held (no walking). Y (Triangle on a Sense
+controller) switches the reticle's easing across an outline
+(input.reticle_ease) on and off, X (Square) steps the solved arms' turn
+limit (input.arms_turn_limit) through 35 and 45 degrees, and A (Cross) the
+arms' follow (input.arms_follow) through 0 and 0.5; the game sees none of
+those presses (no grenade or weapon switch, no jump) */
+#define PITCH_CHORD_PUSH 0.7f
+#define PITCH_CHORD_RELEASE 0.3f
+#define LASER_CHORD_PULL 128
+#define LASER_CHORD_RELEASE 40
+static void aim_pitch_offset_chord(XINPUT_GAMEPAD *pad)
+{
+	static WORD previous;
+	static int stick_armed = 1;
+	static int assist_armed = 1;
+	/* the triggers, left shoulder, Y, X and A */
+	static const int pulls[6] = { XINPUT_GAMEPAD_RIGHT_TRIGGER, XINPUT_GAMEPAD_LEFT_TRIGGER, XINPUT_GAMEPAD_WHITE,
+		XINPUT_GAMEPAD_Y, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_A };
+	static int pull_down[6], pull_taken[6];
+		WORD pressed;
+	float stick;
+	float assist_stick;
+	int chord = (pad->wButtons & XINPUT_GAMEPAD_BACK) && halo_controller_hand_aiming(0);
+	int index;
+
+	for (index = 0; index < 6; index++)
+	{
+		int value = pad->bAnalogButtons[pulls[index]];
+
+		if (value < LASER_CHORD_RELEASE)
+			pull_down[index] = pull_taken[index] = 0;
+		else if (value >= LASER_CHORD_PULL && !pull_down[index])
+		{
+			pull_down[index] = 1;
+			if (chord)
+			{
+				if (index == 0)
+					halo_controller_laser_cycle();
+				else if (index == 3)
+					halo_controller_reticle_ease_toggle();
+				else if (index == 4)
+					halo_controller_arms_turn_limit_cycle();
+				else if (index == 5)
+					halo_controller_arms_follow_cycle();
+				else
+					halo_controller_origin_raise_step(index == 1 ? 1 : -1);
+				pull_taken[index] = 1;
+			}
+		}
+		/* (taken, or a pull under way with Back held: the game sees nothing on the way to the chord) */
+		if (pull_taken[index] || (chord && !pull_down[index]))
+			pad->bAnalogButtons[pulls[index]] = 0;
+	}
+	if (!chord)
+	{
+		previous = 0;
+		stick_armed = 1;
+		assist_armed = 1;
+		return;
+	}
+	assist_stick = (float)pad->sThumbRX / 32767.0f;
+	if (assist_armed && fabsf(assist_stick) > PITCH_CHORD_PUSH)
+	{
+		halo_aim_assist_step(assist_stick > 0.0f ? 1 : -1);
+		assist_armed = 0;
+	}
+	else if (!assist_armed && fabsf(assist_stick) < PITCH_CHORD_RELEASE)
+		assist_armed = 1;
+	pressed = pad->wButtons & ~previous;
+	previous = pad->wButtons;
+	stick = (float)pad->sThumbRY / 32767.0f;
+	if (stick_armed && fabsf(stick) > PITCH_CHORD_PUSH)
+	{
+		halo_controller_pitch_offset_step(stick > 0.0f ? -1 : 1);
+		stick_armed = 0;
+	}
+	else if (!stick_armed && fabsf(stick) < PITCH_CHORD_RELEASE)
+		stick_armed = 1;
+	if (pressed & XINPUT_GAMEPAD_DPAD_UP)
+		halo_controller_pitch_offset_step(-1);
+	if (pressed & XINPUT_GAMEPAD_DPAD_DOWN)
+		halo_controller_pitch_offset_step(1);
+	if (pressed & XINPUT_GAMEPAD_RIGHT_THUMB)
+		halo_aim_steady_cycle();
+	if (pressed & XINPUT_GAMEPAD_LEFT_THUMB)
+		halo_controller_weapon_smoothing_toggle();
+	{
+		static int arms_armed = 1;
+		float arms_stick = (float)pad->sThumbLX / 32767.0f;
+
+		if (arms_armed && fabsf(arms_stick) > PITCH_CHORD_PUSH)
+		{
+			halo_controller_arms_cycle(arms_stick > 0.0f ? 1 : -1);
+			arms_armed = 0;
+		}
+		else if (!arms_armed && fabsf(arms_stick) < PITCH_CHORD_RELEASE)
+			arms_armed = 1;
+	}
+	pad->sThumbRX = 0;
+	pad->sThumbRY = 0;
+	pad->sThumbLX = 0;
+	pad->sThumbLY = 0;
+	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_RIGHT_THUMB |
+		XINPUT_GAMEPAD_LEFT_THUMB);
 }
 /* port/linux/game/menu_functions.c: two or more players on this machine
 (co-op, or split screen in a network game) */
@@ -1105,6 +1235,45 @@ static void sdl_gamepad_state(SDL_Gamepad *gamepad, XINPUT_GAMEPAD *pad)
 	}
 }
 
+/* controller aim's Sense controllers (host_spatial.m maps them onto the
+Xbox gamepad by the spec's table, read at the poses' instant, into the game
+sample): merged into port 0 the way sdl_gamepad_state merges a gamepad, the
+buttons ORed, the larger analog value, a stick only where pushed further.
+In menus Circle (the table's X, action and reload) is B, as the Xbox's menus
+take B for back, and the grip's B (melee) is left out */
+static void sense_gamepad_state(BOOL menus, XINPUT_GAMEPAD *pad)
+{
+	const struct halo_spatial_sample *sample = halo_controller_game_sample();
+	BYTE analog[8];
+	SHORT left_x, left_y, right_x, right_y;
+	int index;
+
+	if (!sample || sample->gamepad_valid != 1)
+		return;
+	memcpy(analog, sample->gamepad.analog, sizeof(analog));
+	if (menus)
+	{
+		analog[XINPUT_GAMEPAD_B] = analog[XINPUT_GAMEPAD_X];
+		analog[XINPUT_GAMEPAD_X] = 0;
+	}
+	pad->wButtons |= sample->gamepad.buttons;
+	for (index = 0; index < 8; index++)
+	{
+		if (analog[index] > pad->bAnalogButtons[index])
+			pad->bAnalogButtons[index] = analog[index];
+	}
+	left_x = sample->gamepad.thumb[0];
+	left_y = sample->gamepad.thumb[1];
+	right_x = sample->gamepad.thumb[2];
+	right_y = sample->gamepad.thumb[3];
+	stick_dead_zone(&left_x, &left_y);
+	stick_dead_zone(&right_x, &right_y);
+	if (abs(left_x) > abs(pad->sThumbLX)) pad->sThumbLX = left_x;
+	if (abs(left_y) > abs(pad->sThumbLY)) pad->sThumbLY = left_y;
+	if (abs(right_x) > abs(pad->sThumbRX)) pad->sThumbRX = right_x;
+	if (abs(right_y) > abs(pad->sThumbRY)) pad->sThumbRY = right_y;
+}
+
 /* ---------- XAPI */
 
 VOID WINAPI XInitDevices(DWORD preallocation_type_count, PXDEVICE_PREALLOC_TYPE preallocation_types)
@@ -1256,6 +1425,9 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		struct platform_input_state input;
 		enum mp_benchmark_probe_input_policy probe_policy;
 
+		/* the tracked controllers' poses and buttons of this instant, for
+		this frame (controller_aim_game.c; once a frame) */
+		halo_controller_sample_game();
 		platform_input_read(&input, TRUE);
 		mouse_poll(&input);
 		wheel_update();
@@ -1270,6 +1442,10 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		}
 		if (port_gamepad(gamepads, count, 0))
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
+		/* the Sense controllers, before the test input and the replay
+		filter, so recordings see them; Create (Back) held with the right
+		stick reaches the pitch offset's chord below, not the game */
+		sense_gamepad_state(input.menus != FALSE, &state->Gamepad);
 		probe_policy = mp_benchmark_probe_or_test_gamepad(&state->Gamepad, port);
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
@@ -1282,6 +1458,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		external_mode_chord(&state->Gamepad);
 #endif
 		render_scale_dpad(&state->Gamepad);
+		aim_pitch_offset_chord(&state->Gamepad);
 		anti_aliasing_chord(&state->Gamepad);
 
 		/* (display.late_look: what the stick was when the game read it; not
@@ -1337,6 +1514,10 @@ DWORD WINAPI XInputSetState(HANDLE device, PXINPUT_FEEDBACK feedback)
 		SDL_RumbleGamepad(port_gamepad(gamepads, count, port), feedback->Rumble.wLeftMotorSpeed,
 			feedback->Rumble.wRightMotorSpeed, 100);
 	}
+	/* the Sense controllers, merged into port 0, are not SDL's gamepads:
+	the motors reach them through controller aim's feedback to the host */
+	if (port == 0)
+		halo_controller_rumble(feedback->Rumble.wLeftMotorSpeed, feedback->Rumble.wRightMotorSpeed);
 	return ERROR_SUCCESS;
 }
 

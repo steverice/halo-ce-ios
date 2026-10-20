@@ -26,6 +26,7 @@ so the audio callback is handed to a thread that has one.
 #include <stdlib.h>
 #endif
 #include <pthread.h>
+#include <stdatomic.h>
 #include <string.h>
 #include "ios_host.h"
 #if HALO_NATIVE_MAC
@@ -334,6 +335,19 @@ int host_sdl_poll_event(void *event)
 	if (test_extra_scene && polls == 1800)
 		host_logf(HOST_LOG_INFO, "debug.test_extra_scene: config.toml's display.theater_distance reads %.2f",
 			host_config_real("display.theater_distance", -1.0));
+	{
+		int count = 0, held = 0;
+		SDL_JoystickID *ids = SDL_GetGamepads(&count);
+
+		for (int index = 0; ids && index < count && !held; index++)
+		{
+			SDL_Gamepad *gamepad = SDL_GetGamepadFromID(ids[index]);
+			held = gamepad && SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_BACK) &&
+				SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_START);
+		}
+		SDL_free(ids);
+		host_theater_chord(held || host_spatial_sense_menus_held());
+	}
 	/* debug.test_theater_reopen: the immersive space closed, then opened again
 	from the window's button */
 	{
@@ -386,6 +400,32 @@ int host_sdl_poll_event(void *event)
 
 /* ---------- gamepads */
 
+static atomic_int rumble_held;
+
+int host_sdl_controller_aim_owns(uint32_t id)
+{
+	const char *name = SDL_GetGamepadNameForID((SDL_JoystickID)id);
+	return name && strstr(name, "VR2 Sense") && host_spatial_owns_sense_controllers();
+}
+
+void host_sdl_rumble_hold(int hold)
+{
+	int count = 0;
+	SDL_JoystickID *ids;
+
+	atomic_store(&rumble_held, hold != 0);
+	if (!hold)
+		return;
+	ids = SDL_GetGamepads(&count);
+	for (int index = 0; ids && index < count; index++)
+	{
+		SDL_Gamepad *gamepad = SDL_GetGamepadFromID(ids[index]);
+		if (gamepad)
+			SDL_RumbleGamepad(gamepad, 0, 0, 0);
+	}
+	SDL_free(ids);
+}
+
 int host_sdl_get_gamepads(uint32_t *ids, int capacity)
 {
 	return host_ios_gamepads(ids, capacity);
@@ -433,6 +473,8 @@ int host_sdl_rumble_gamepad(uint32_t gamepad, uint32_t low, uint32_t high, uint3
 {
 	SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
+	if (atomic_load(&rumble_held))
+		low = high = milliseconds = 0;
 	return object ? SDL_RumbleGamepad(object, (Uint16)low, (Uint16)high, milliseconds) : 0;
 }
 

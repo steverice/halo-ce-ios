@@ -527,6 +527,20 @@ struct gpu_stereo_present
 	glide (halo_stereo_cut_requested); when it drops, the view comes up as
 	after any cut */
 	int32_t cut_requested;
+	/* display.seat_look_fade (halo_stereo_seat_look_fade): HEAD mode's
+	full view past a seat's limit, the eyes veiled (halo_stereo_veil.h) by
+	seat_look_dim (0 to 1, 1 black) and seat_look_blur (0 to 1, toward
+	their blur), and the HUD's pieces and the zoomed picture dimmed with
+	them; a menu's UI quad never is */
+	float seat_look_dim;
+	float seat_look_blur;
+	/* Tracked gun presentation in the eyes' frame. */
+	float reticle_distance;
+	int32_t reticle_world;
+	int32_t reticle_dim;
+	int32_t laser;
+	float laser_from[3];
+	float laser_opacity;
 };
 
 /* display.native_hud: source, a render target, drawn over the whole of

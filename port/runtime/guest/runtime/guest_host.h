@@ -17,6 +17,7 @@ layouts).
 
 #include "gpu.h"
 #include "halo_stereo.h"
+#include "halo_spatial.h"
 
 /* Whether the current output is an external display (context values are never saved). */
 int host_external_active(void);
@@ -188,6 +189,10 @@ struct halo_stereo_frame crosses as it is (tools/ios_test.py pins its layout). *
 /* HEAD mode, at the game's frame begin: opens the Compositor's next frame and
 fills the eyes and the head's turn from it; eye_count stays 0 without one */
 void host_stereo_frame(struct halo_stereo_frame *frame);
+
+/* Fixed-width spatial samples and feedback cross the host/guest boundary unchanged. */
+void host_spatial_sample(int kind, struct halo_spatial_sample *sample);
+void host_spatial_feedback(const struct halo_spatial_feedback *feedback);
 
 /* ---------- Bink movies (guest_bink.c; the host's port/ios/host/host_bink.c)
 

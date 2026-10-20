@@ -9,6 +9,13 @@ import SwiftUI
 import UIKit
 
 @available(visionOS 26.0, *)
+@Observable
+final class TheaterHands {
+    static let shared = TheaterHands()
+    var visibility: Visibility = .automatic
+}
+
+@available(visionOS 26.0, *)
 struct TheaterLayerConfiguration: CompositorLayerConfiguration {
     func makeConfiguration(capabilities: LayerRenderer.Capabilities,
                            configuration: inout LayerRenderer.Configuration) {
@@ -58,9 +65,17 @@ final class TheaterSceneDelegate: UIResponder, UIHostingSceneDelegate {
             CompositorLayer(configuration: TheaterLayerConfiguration()) { renderer in
                 host_theater_attach(Unmanaged.passUnretained(renderer).toOpaque())
             }
+            .onWorldRecenter { phase in
+                switch phase {
+                case .began: host_stereo_world_recenter(1)
+                case .ended: host_stereo_world_recenter(0)
+                @unknown default: break
+                }
+            }
         }
         // display.theater_environment: the room around the screen, or the dark
         .immersionStyle(selection: .constant(Self.environment), in: .mixed, .full)
+        .upperLimbVisibility(TheaterHands.shared.visibility)
     }
 
     /* a join link opened while the space is the active scene: the game's, as
@@ -68,6 +83,15 @@ final class TheaterSceneDelegate: UIResponder, UIHostingSceneDelegate {
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         for context in URLContexts {
             context.url.absoluteString.withCString { host_join_link_open($0) }
+        }
+    }
+}
+
+@_cdecl("host_theater_set_upper_limbs")
+public func host_theater_set_upper_limbs(_ visible: Int32) {
+    DispatchQueue.main.async {
+        if #available(visionOS 26.0, *) {
+            TheaterHands.shared.visibility = visible != 0 ? .automatic : .hidden
         }
     }
 }

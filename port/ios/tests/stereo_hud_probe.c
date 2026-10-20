@@ -1178,6 +1178,93 @@ static void zoom_checks(void)
 	check(host_stereo_hud_zoom(none, HOST_STEREO_HUD_DISTANCE_DEFAULT, &quad) == 0, "without a view's tangents there's none");
 }
 
+static void scoped_reticle_plane_checks(void)
+{
+	const float ray[3] = { 0.3492f, 0.12f, -1.0f };
+	const float distances[] = { 1.5f, 1.75f, 2.0f };
+	const float eye_offsets[2][2] = { { -0.032f, 0.004f }, { 0.029f, -0.003f } };
+	const float eye_frusta[2][4] = { { 0.71f, 0.91f, 0.75f, 0.81f },
+		{ 0.86f, 0.76f, 0.78f, 0.74f } };
+	struct host_stereo_hud_placement placement = HOST_STEREO_HUD_PLACEMENT_DEFAULT;
+	struct host_stereo_hud_aim aim = { 0 };
+	struct host_stereo_hud_quad quads[HOST_STEREO_HUD_MAXIMUM_QUADS];
+	size_t i;
+
+	for (i = 0; i < sizeof(distances) / sizeof(distances[0]); i++)
+	{
+		float distance = distances[i];
+		int eye;
+
+		placement.distance = distance;
+		aim.zoomed = 1;
+		aim.world = 0;
+		check(host_stereo_hud_layout_aimed(640.0f, 0, ray, &aim, hud_tangents, NULL, &placement, NULL,
+			quads) > 0, "ordinary scoped reticle is laid out");
+		check(fabsf(quads[0].center[2] + distance) < 1e-4f &&
+			fabsf(quads[0].center[0] - ray[0] * distance) < 1e-4f &&
+			fabsf(quads[0].center[1] - ray[1] * distance) < 1e-4f,
+			"ordinary scoped ray meets the live zoom plane");
+		for (eye = 0; eye < 2; eye++)
+		{
+			float left = eye_frusta[eye][0], right = eye_frusta[eye][1];
+			float up = eye_frusta[eye][2], down = eye_frusta[eye][3];
+			float expected_u = (ray[0] - eye_offsets[eye][0] / distance + left) / (left + right);
+			float expected_v = (up - ray[1] + eye_offsets[eye][1] / distance) / (up + down);
+			float actual_u = ((quads[0].center[0] - eye_offsets[eye][0]) / -quads[0].center[2] + left) /
+				(left + right);
+			float actual_v = (up - (quads[0].center[1] - eye_offsets[eye][1]) / -quads[0].center[2]) /
+				(up + down);
+			check(fabsf(actual_u - expected_u) < 1e-4f && fabsf(actual_v - expected_v) < 1e-4f,
+				"each asymmetric eye sees the ordinary reticle on the matching zoom pixel");
+		}
+
+		aim.world = 1;
+		/* The old guest assumes a fixed 2 m zoom plane. The host's live
+		placement must win even if that old distance reaches this boundary. */
+		aim.distance = 2.0f * sqrtf(ray[0] * ray[0] + ray[1] * ray[1] + 1.0f);
+		check(host_stereo_hud_layout_aimed(640.0f, 0, ray, &aim, hud_tangents, NULL, &placement, NULL,
+			quads) > 0, "tracked scoped reticle is laid out");
+		check(fabsf(quads[0].center[2] + distance) < 1e-4f &&
+			fabsf(quads[0].center[0] - ray[0] * distance) < 1e-4f &&
+			fabsf(quads[0].center[1] - ray[1] * distance) < 1e-4f,
+			"tracked scoped ray meets the same live zoom plane");
+		for (eye = 0; eye < 2; eye++)
+		{
+			float left = eye_frusta[eye][0], right = eye_frusta[eye][1];
+			float up = eye_frusta[eye][2], down = eye_frusta[eye][3];
+			float expected_u = (ray[0] - eye_offsets[eye][0] / distance + left) / (left + right);
+			float expected_v = (up - ray[1] + eye_offsets[eye][1] / distance) / (up + down);
+			float actual_u = ((quads[0].center[0] - eye_offsets[eye][0]) / -quads[0].center[2] + left) /
+				(left + right);
+			float actual_v = (up - (quads[0].center[1] - eye_offsets[eye][1]) / -quads[0].center[2]) /
+				(up + down);
+			check(fabsf(actual_u - expected_u) < 1e-4f && fabsf(actual_v - expected_v) < 1e-4f,
+				"each asymmetric eye sees the tracked reticle on the matching zoom pixel");
+		}
+	}
+}
+
+/* The presenter maps the guest's zero-distance hidden sentinel before
+near/far clipping. Exercise the same clamp that the host calls. */
+static void scoped_hidden_clamp_checks(void)
+{
+	struct host_stereo_hud_aim hidden = { 0 };
+	struct host_stereo_hud_aim world = { 0 };
+	struct host_stereo_hud_aim scoped = { 0 };
+
+	hidden.world = hidden.zoomed = 1;
+	host_stereo_hud_aim_depth_clamp(&hidden, 1.0f, 10.0f);
+	check(hidden.distance == 0.0f, "hidden scoped reticle stays hidden through the host depth clamp");
+	world.world = 1;
+	world.distance = 0.5f;
+	host_stereo_hud_aim_depth_clamp(&world, 1.0f, 10.0f);
+	check(fabsf(world.distance - 1.05f) < 1e-6f, "visible world reticle stays inside the near plane");
+	scoped.world = scoped.zoomed = 1;
+	scoped.distance = 2.0f;
+	host_stereo_hud_aim_depth_clamp(&scoped, 1.0f, 1.5f);
+	check(scoped.distance == 2.0f, "visible scoped reticle keeps its plane marker");
+}
+
 static void level_checks(void)
 {
 	float yaws[] = { 0.0f, 40.0f, -120.0f, 179.0f };
@@ -1324,6 +1411,8 @@ int main(int argc, char **argv)
 	reticle_checks();
 	placement_checks();
 	zoom_checks();
+	scoped_reticle_plane_checks();
+	scoped_hidden_clamp_checks();
 	distance_checks();
 	depth_ease_checks();
 	depth_deadband_checks();

@@ -138,6 +138,9 @@ director_perspective director_get_perspective(
 /* port: director_get_perspective's answer, read without storing it */
 director_perspective director_peek_perspective(
 	short local_player_index);
+/* The active dead-camera procedure, independent of its neutral perspective. */
+boolean director_dead_camera_active(
+	short local_player_index);
 
 short director_desired_perspective(
 	long unit_index,

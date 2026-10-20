@@ -39,8 +39,25 @@ back (a checkpoint revert, the next level), so a replay whose revert comes a
 frame later than the recording's still lines up. Its header is "halo action
 recording 1", plus " stereo=head" when display.stereo wasn't off (head, screen
 or side_by_side; an older header reads as off), then one line per tick:
-segment, tick and the action's eight 32-bit words in hex. Action-backed replay temporarily bypasses the direct camera so observer
-interpolation presents the recorded facing without late controller input.
+segment, tick and the action's eight 32-bit words in hex. A run that aims
+with a hand (input.aim "controller", display.stereo head or side_by_side, and
+debug.test_controller or a Sense controller configured, decided at the first
+tick) writes "halo action recording 2 stereo=<mode> aim=controller"; every
+other run writes version 1, so older readers and the benchmark tooling still
+read head-aim runs. The words are the simulation's action: the facing words
+are the aim (the hand's, when the action's pad says so, else the head's look),
+pad (the eighth word's upper 16 bits) is the look's offset from that aim (bit 0
+the hand flag, bits 1-15 the look's yaw less the aim's), and the throttle is
+the stick's, in the head's frame. Version 1 uses pad for tutorial action
+tests; those bits move to the upper control halfword while replay runs, and
+never become a hand flag. Version 2 keeps pad for the hand and stores
+tutorial tests in the upper control halfword. Action-backed replay
+temporarily bypasses the direct camera so observer interpolation presents
+the recorded facing without late controller input.
+
+A recording and a replay each log, when they end, "debug.input_replay: ended
+at tick T, unit at (x y z) facing yaw Y aim yaw A" for the local player's
+unit as the last recorded tick began, so two runs can be compared.
 
 With debug.benchmark, a replay's frames are timed from the first recorded
 state to the last; then the report goes to benchmark-<name>-<time>.txt next
@@ -78,12 +95,16 @@ extern unsigned char input_replay_player_position(float position[3]);
 extern unsigned char input_replay_fight_state(float *body, float *shield, long *actors, long *dead_objects);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
+/* port/linux/game/controller_aim_game.c (halo_spatial.h) */
+extern int halo_controller_run_aimed(void);
+extern int halo_controller_aim_configured(void);
+extern int halo_controller_unit_state(float position[3], float *facing_yaw, float *aim_yaw);
 
 #define RECORDING_HEADER "halo input recording 1"
 /* how long after the last recorded state a replay ends, in ticks */
 #define REPLAY_TAIL_TICKS 30.0
 
-#define ACTION_HEADER REPLAY_ACTION_HEADER
+#define ACTION_HEADER "halo action recording"
 /* a cinematic the replay skipped whose revert has not shown as a step back in this many ticks did not step back:
 the segment begins anyway */
 #define SKIP_REVERT_TICKS 90
@@ -178,6 +199,13 @@ static struct
 	tick reverts to that same tick (a fast load, or debug.fixed_timestep), which the tick alone cannot show */
 	BOOL skip_pending;
 	long skip_tick;
+	/* the local player's unit as the latest tick's dequeue found it, for the
+	end-of-run line, and whether that line has been logged */
+	BOOL unit_known, ended_logged, exit_hooked;
+	long unit_tick;
+	float unit_position[3], unit_facing_yaw, unit_aim_yaw;
+	/* the header's version a recording was written in */
+	int actions_version;
 	/* the game time's jumps back seen frame by frame (the ticks' own
 	segment count can miss one: a cinematic can stop the player updates
 	right after its checkpoint), when the last came, and when the game
@@ -221,6 +249,8 @@ static void actions_load(void)
 	FILE *file = fopen(replay.replay_actions_path, "r");
 	char line[256];
 	long capacity = 0;
+	int version = 0;
+	BOOL controller_aim = FALSE;
 
 	if (!file)
 	{
@@ -247,6 +277,9 @@ static void actions_load(void)
 			platform_log("debug.input_replay: warning: this take needs debug.benchmark_lip_sync=true to match its simulated mouths; this replay may diverge");
 		if (replay.recorded_original_lip_sync)
 			platform_log("debug.input_replay: warning: original audio-driven mouths cannot be reproduced by a silent replay; record benchmark takes with debug.benchmark_lip_sync=true");
+		version = replay.environment.action_version;
+		controller_aim = replay.environment.controller_aim;
+		platform_log("input replay: actions aim=%s", controller_aim ? "controller" : "head");
 		/* the stereo mode the recording was made in; an older header has none, which reads as off */
 		const char *recorded = replay.environment.stereo;
 		const char *run = config_string("display.stereo");
@@ -267,6 +300,23 @@ static void actions_load(void)
 		if (sscanf(line, "%ld %ld %x %x %x %x %x %x %x %x", &action.segment, &action.tick,
 			&w[0], &w[1], &w[2], &w[3], &w[4], &w[5], &w[6], &w[7]) != 2 + ACTION_WORDS)
 			continue;
+		/* Version 1 stores tutorial flags in pad. Translate them to the local
+		queue's control metadata, leaving no hand flag. Version 2 keeps pad for
+		tracked aim and stores tutorial flags in the upper control halfword. */
+		if (version == 1)
+		{
+			w[0] = (w[0] & 0xffffu) | (w[7] & 0xffff0000u);
+			w[7] &= 0xffffu;
+		}
+		else if ((w[7] >> 16) && !(w[7] & 0x00010000u))
+		{
+			/* All fifteen delta bits belong to a hand action. Without its
+			flag the only valid pad is zero (controller_facing_pack). */
+			replay.environment_invalid = TRUE;
+			replay_finish();
+			platform_log("debug.input_replay: invalid controller action pad");
+			break;
+		}
 		if (replay.action_count == capacity)
 		{
 			capacity = capacity ? capacity * 2 : 4096;
@@ -889,9 +939,37 @@ static double game_ticks(void)
 	return ticks + replay.timeline_offset;
 }
 
+/* the end-of-run line, once: the local player's unit as the last tick that
+took an action began (snapshotted at each tick's dequeue, so a recording
+cut off by the game's exit and a replay that reached its last action report
+the same moment) */
+static void log_ended(void)
+{
+	if (replay.ended_logged)
+		return;
+	replay.ended_logged = TRUE;
+	if (replay.unit_known)
+		platform_log("debug.input_replay: ended at tick %ld, unit at (%.4f %.4f %.4f) facing yaw %.2f aim yaw %.2f",
+			replay.unit_tick, replay.unit_position[0], replay.unit_position[1], replay.unit_position[2],
+			replay.unit_facing_yaw, replay.unit_aim_yaw);
+	else
+		platform_log("debug.input_replay: ended at tick %ld, no unit", replay.last_action_tick);
+	if (*replay.record_actions_path && replay.actions_version == 1 && halo_controller_run_aimed())
+		platform_log("debug.input_record: warning: a hand aimed, but %s was written as version 1 (the configuration"
+			" didn't say a hand would aim at the first tick)", replay.record_actions_path);
+}
+
+static void exit_hook(void)
+{
+	/* a recording the game's exit cuts off (debug.exit_after, closing the window) */
+	if (*replay.record_actions_path && replay.actions_file)
+		log_ended();
+}
+
 /* ends a recording: both files close, and nothing more is written */
 static void record_end(const char *why)
 {
+	log_ended();
 	if (replay.record_file)
 		fclose(replay.record_file);
 	if (replay.actions_file)
@@ -1223,6 +1301,14 @@ void input_replay_tick_action(void *action)
 		sample->tick = tick;
 		sample->valid = FALSE;
 	}
+	/* the unit as this tick begins, for the end-of-run line */
+	replay.unit_known = halo_controller_unit_state(replay.unit_position, &replay.unit_facing_yaw, &replay.unit_aim_yaw);
+	replay.unit_tick = tick;
+	if (*replay.record_actions_path && !replay.exit_hooked)
+	{
+		replay.exit_hooked = TRUE;
+		atexit(exit_hook);
+	}
 
 	if (*replay.record_actions_path && record_environment_ready())
 	{
@@ -1239,11 +1325,18 @@ void input_replay_tick_action(void *action)
 			}
 			{
 				const char *stereo = config_string("display.stereo");
+				/* a hand's aim can start after this tick, so the version
+				follows the configuration (a hand could aim here) */
+				int aims = stereo && (!strcmp(stereo, "head") || !strcmp(stereo, "side_by_side")) &&
+					halo_controller_aim_configured();
 
-				fprintf(replay.actions_file, "%s lip_sync=%s enhanced_animations=%d", ACTION_HEADER,
+				replay.actions_version = aims ? 2 : 1;
+				fprintf(replay.actions_file, "%s %d lip_sync=%s enhanced_animations=%d", ACTION_HEADER, replay.actions_version,
 					input_replay_benchmark_lip_sync() ? "simulated" : "original", replay.record_enhanced_animations);
 				if (stereo && *stereo && strcmp(stereo, "off"))
 					fprintf(replay.actions_file, " stereo=%s", stereo);
+				if (aims)
+					fprintf(replay.actions_file, " aim=controller");
 				fputc('\n', replay.actions_file);
 			}
 			{
@@ -1268,6 +1361,13 @@ void input_replay_tick_action(void *action)
 			fflush(replay.seeds_file);
 		}
 		memcpy(words, action, sizeof(words));
+		/* Keep existing head-aim recordings byte-compatible. Only version 2
+		needs both tutorial flags and the independent tracked-hand halfword. */
+		if (replay.actions_version == 1)
+		{
+			words[7] = (words[7] & 0xffffu) | (words[0] & 0xffff0000u);
+			words[0] &= 0xffffu;
+		}
 		replay.actions_written++;
 		fprintf(replay.actions_file, "%ld %ld", replay.segment, tick);
 		for (index = 0; index < ACTION_WORDS; index++)
@@ -1333,6 +1433,7 @@ void input_replay_tick_action(void *action)
 		if (compare_action_keys(&replay.actions[replay.action_count - 1], replay.segment, tick) <= 0) {
 			replay.environment_final_tick = replay.environment_owned;
 			replay_finish();
+			log_ended();
 		}
 		route_log(tick, applied ? "recorded action" : "no recorded action");
 	}
@@ -1479,6 +1580,7 @@ void input_replay_frame(long width, long height)
 	{
 		if (replay.suite)
 			return;
+		log_ended();
 		benchmark_report(width, height);
 		platform_log("debug.benchmark: the replay ended; quitting");
 		exit(EXIT_SUCCESS);

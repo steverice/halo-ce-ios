@@ -2513,6 +2513,17 @@ static void trigger_create_projectiles(
 						unit_get_camera_position(owner_object_index, &camera_position);
 						object_force_inside_bsp(projectile_object_index, &camera_position);
 					}
+					/* port: controller aim draws the local player's own projectiles from
+					the drawn gun's muzzle (port/linux/game/projectile_offset.c): the shot's
+					origin (where the projectile is, inside the map) and direction are
+					recorded there, render-only, when a hand aims and the owner is local
+					player 0's unit. The call writes only that table */
+					{
+						void halo_projectile_spawned(long, long, const float *, const float *);
+
+						halo_projectile_spawned(projectile_object_index, owner_object_index,
+							&object_get(projectile_object_index)->object.position.x, &data.forward.i);
+					}
 					if (target_object_index!=NONE)
 					{
 						projectile_set_target_object_index(projectile_object_index, target_object_index);

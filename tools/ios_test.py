@@ -39,6 +39,53 @@ with open(BUILD / 'gpu_layout_check.h', 'w') as layout_check:
     subprocess.run([str(BUILD / 'gpu-layout-probe')], cwd=ROOT, check=True, stdout=layout_check)
 run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
     '-fno-stack-protector', '-ffreestanding', '-Iport/linux/src', '-fsyntax-only', '-x', 'c', BUILD / 'gpu_layout_check.h')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/spatial_pose_probe.c', '-o', BUILD / 'spatial-pose-probe')
+run(BUILD / 'spatial-pose-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/spatial_gamepad_probe.c', '-o', BUILD / 'spatial-gamepad-probe')
+run(BUILD / 'spatial-gamepad-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/spatial_recenter_probe.c', '-o', BUILD / 'spatial-recenter-probe')
+run(BUILD / 'spatial-recenter-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    '-Iport/runtime/include', 'port/ios/tests/spatial_record_probe.c', '-o', BUILD / 'spatial-record-probe')
+run(BUILD / 'spatial-record-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/controller_aim_probe.c', 'port/ios/host/host_stereo_head.c', 'port/ios/host/host_spatial_pose.c',
+    '-o', BUILD / 'controller-aim-probe')
+run(BUILD / 'controller-aim-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined',
+    'port/ios/tests/first_person_arms_probe.c', '-o', BUILD / 'first-person-arms-probe')
+run(BUILD / 'first-person-arms-probe')
+
+def extracted_definition(path, name, kind='function'):
+    source = (ROOT / path).read_text(encoding='latin-1')
+    pattern = r'^struct ' + name + r'\s*\{' if kind == 'struct' else \
+        r'^(?:static |__inline )?[\w *]+?\b' + name + r'\(\s*[^;{]*\)\s*\{'
+    match = re.search(pattern, source, re.M)
+    if not match:
+        raise SystemExit(f'{path}: no {kind} {name}')
+    end = source.index('{', match.start()) + 1
+    depth = 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    if kind == 'struct':
+        end = source.index(';', end) + 1
+    return source[match.start():end].replace('__inline', 'static', 1)
+
+(BUILD / 'aim_assist').mkdir(exist_ok=True)
+(BUILD / 'aim_assist/aim_assist_under_test.inc').write_text('\n\n'.join(
+    [extracted_definition('source/math/real_math.c', name) for name in
+     ('rotate_vector_about_axis', 'fast_normals_interpolate', 'pin_normal_to_cone3d')] +
+    [extracted_definition('source/game/aim_assist.c', 'aim_assist_target', 'struct')] +
+    [extracted_definition('source/game/aim_assist.c', name) for name in
+     ('compute_attenuation', 'compute_composite_attenuation', 'unit_get_aim_assist_parameters',
+      'object_compute_autoaim_target', 'aim_assist_compute_target', 'player_aim_projectile')]) + '\n')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wno-unused-function', f'-I{BUILD}/aim_assist',
+    'port/ios/tests/aim_assist_probe.c', '-o', BUILD / 'aim-assist-probe')
+run(BUILD / 'aim-assist-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/external_mode_probe.c', 'port/ios/host/host_external_mode.c',
     '-o', BUILD/'external-mode-probe')
@@ -468,6 +515,11 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-I
     'port/ios/tests/stereo_head_probe.c', 'port/ios/host/host_stereo_head.c',
     '-o', BUILD/'stereo-head-probe')
 run(BUILD/'stereo-head-probe')
+for distance in ('1.5', '1.75', '2.0'):
+    run(BUILD/'stereo-head-probe', '--shared-scope-view', distance)
+run('python3', 'tools/test_dead_spectator_head.py')
+run('python3', 'tools/test_stereo_passenger.py')
+run('python3', 'tools/test_stereo_camera_wiring.py')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Iport/linux/src', '-Iport/ios/host',
     '-Iport/ios/tests', 'port/ios/tests/replay_stereo_entry_probe.c', 'port/ios/host/host_stereo_head.c',
     '-o', BUILD/'replay-stereo-entry-probe')
@@ -488,6 +540,15 @@ if latch_calls != [ROOT / 'source/main/main.c'] or not re.search(
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host', '-Iport/linux/src',
     'port/ios/tests/stereo_hud_probe.c', 'port/ios/host/host_stereo_hud.c', '-o', BUILD/'stereo-hud-probe')
 run(BUILD/'stereo-hud-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/tracked_hud_probe.c', 'port/ios/host/host_stereo_hud.c', '-o', BUILD/'tracked-hud-probe')
+run(BUILD/'tracked-hud-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/first_person_arms_probe.c', '-lm', '-o', BUILD/'first-person-arms-probe')
+run(BUILD/'first-person-arms-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/projectile_offset_probe.c', '-lm', '-o', BUILD/'projectile-offset-probe')
+run(BUILD/'projectile-offset-probe')
 # the HUD split by the function that draws each element: nested spans, the catch-all, the corner
 # fallback and each frame's reset (the probe includes port/linux/game/hud_group.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
