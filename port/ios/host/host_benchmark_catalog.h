@@ -18,3 +18,4 @@ struct host_benchmark_catalog {
 BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog *catalog, NSError **error);
 BOOL host_benchmark_catalog_validate_folder(NSString *folder, NSError **error);
 NSString *host_benchmark_catalog_file_sha256(NSString *folder);
+NSUInteger host_benchmark_menu_choice_count(NSString *selected_folder);
