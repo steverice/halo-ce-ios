@@ -554,9 +554,7 @@ static unsigned long render_targets_made;
 
 /* ---------- the device */
 
-#ifdef HALO_ILP32
 #define VISIBILITY_ALL_SAMPLES 1000000
-#endif
 
 struct gl_device
 {

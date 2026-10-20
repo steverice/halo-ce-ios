@@ -1,10 +1,12 @@
 # Continuous integration
 
 Pull requests and pushes to `main` run the portable tooling suite on Ubuntu
-24.04 with Python 3.11 and 3.14. The Apple workflow runs native regressions
-and builds on ARM64 `macos-26` for changes outside Markdown, `docs/` and
-`research/`. Both workflows can also be started manually. New pushes cancel
-older runs for the same branch.
+24.04 with Python 3.11 and 3.14. Shared source and build changes also compile
+a complete 32-bit x86 Linux release in an Arch container, then check its ELF
+header and the recorded network format. The Apple workflow runs native
+regressions and builds on ARM64 `macos-26` for changes outside Markdown,
+`docs/` and `research/`. These workflows can also be started manually. New
+pushes cancel older runs for the same branch.
 
 The PR jobs use read-only repository permissions and do not require signing
 identities, Apple accounts, cloud containers or repository secrets. Checkout
@@ -22,13 +24,14 @@ settings; adding these files does not configure them.
 | `test_linux_port.py` | Ubuntu, clang, 32-bit libc headers, `nm` | PR gate for tooling and header/link probes. Tests requiring a configured complete build or maps retain their explicit existing skips. |
 | `test_cinematic_titles.py` | Ubuntu, clang, 32-bit C runtime, pinned pytest | Targeted PR and `main` push gate for the extracted `cinematic_render` function. The cinematic harness validation branch also runs it on push. Its stereo film-bar and prompt HUD checks include negative controls; the other extracted-source modules remain outside this gate. |
 | `test_death_timing.py`, `test_light_storage.py` | Ubuntu, clang, lld, x86 32-bit ELF execution | PR gate as standalone programs, including ordinary/full-LTO storage links. These programs are not pytest test functions. |
+| `ci_build.py linux release` | Ubuntu 24.04, Arch container with clang/lld, 32-bit glibc and SDL3 | PR and `main` push gate for changes to shared source, port, build tools or its workflow. Compiles and links the complete native Linux game, verifies an ELF32 x86 executable, and runs the recorded network format, signed lobby, Unicode line-break and orphaned-sound probes. No game data or game launch. |
 | `settings_schema.py --check`, `profile_check.py`, `profile_catalog_check.py` | Ubuntu, Python 3.11+ | PR gate for generated schema/reference drift and shipped profile/catalog policy. `test_profile_check.py` and `test_route_check.py` also execute their assertions during pytest collection. |
 | `tools/ios_test.py` | ARM64 macOS, Xcode, Homebrew LLVM/lld, SDL3, pkgconf | Existing PR gate in `iOS / build`, run once. Guest ABI, layout, memory, audio handoff, config/profile/data pack, network, timing, stereo math, capture/replay validators, sanitizers, XISO parser and Metal compilation probes. Uses synthetic inputs, not game maps. |
 | `test_menu_cancel.py`, `test_network_light_state.py`, `test_network_shader_warmup.py`, `test_shader_list_warmup.py` | macOS, `xcrun`, SDL3 where needed | Run by `ios_test.py`; deliberately excluded from the Ubuntu target because they invoke Apple's compiler driver. |
 | `bink_test.py --if-present` | macOS, Xcode | Existing native gate compiles the decoder. Movie decoding is unavailable without a legally supplied movie/disc image; successful compilation does not establish decoding coverage. |
 | `ios_build.py --unsigned` and `--simulator`, with iOS/tvOS/visionOS selectors | ARM64 macOS, Xcode device and simulator SDKs, Homebrew build dependencies | Existing automatic builds and artifacts for all three platforms. iOS and tvOS fail the workflow on error. visionOS retains its pre-existing advisory `continue-on-error` until a successful hosted run is reviewed and the policy is changed. |
 | `ios_build.py --mac` | ARM64 macOS, Xcode Mac Catalyst SDK | Added to the iOS build job; reuses its guest build and tools. Build only, no game launch. |
-| `ci_build.py linux debug/release`, `test_linux_port.py`, `tools/harness`, `test_light_storage.py` | Arch container on Ubuntu, multilib clang/lld/SDL3 | Existing manual `Upstream desktop` workflow. Full extracted-source harness remains here; see baseline failures below. |
+| `ci_build.py linux debug/release`, `test_linux_port.py`, `tools/harness`, `test_light_storage.py` | Arch container on Ubuntu, multilib clang/lld/SDL3 | Existing manual `Upstream desktop` workflow. Its debug build and full extracted-source harness remain separate from the release compile gate; see baseline failures below. |
 | `ci_build.py windows debug/release`, `test_light_storage.py` | Windows 2025, LLVM, Visual Studio x86 libraries/SDK, ninja, ccache | Existing manual `Upstream desktop` workflow. Full build is currently affected by known port compile failures; it is not represented as a passing PR gate. |
 | Shader translator golden comparisons, `mac_run.py`, `replay_check.py`, renderer frame comparisons, multiplayer sessions | Controlled Apple hardware, GPU-specific baselines, legally held game assets, recordings and display session | Physical/private validation. Keep outside public Actions. Tests of their parsers and orchestration are in the portable/native suites; rendered output and real synchronization are not. |
 | Device benchmarks, cloud-save integration, controller/head tracking, external displays, audio output, thermal/performance measurements | Exact physical device and suitable accounts/peripherals | Attended device validation. Hosted compile/probe success does not replace these checks. |
@@ -94,8 +97,10 @@ collection a required PR check. The manual upstream workflow continues to run
 the full harness and can still report those failures.
 
 The first published run must verify both Ubuntu Python versions, the
-standalone ELF probes, Xcode/SDK availability, all seven Apple builds and
-their artifact paths. Local validation cannot prove GitHub image behavior.
+standalone ELF probes, the Arch container's 32-bit headers and SDL3, the
+complete Linux release link and ELF check, Xcode/SDK availability, all seven
+Apple builds and their artifact paths. Local validation cannot prove GitHub
+image behavior.
 Review the visionOS result before proposing removal of its existing
 advisory status. Do not treat a skipped missing-map/movie test as a measured
 pass or infer real game rendering from a build.

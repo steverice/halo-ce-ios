@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from unittest import SkipTest
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "port/linux/game/benchmark_mp_arena.c"
 HARNESS = r'''
@@ -76,7 +78,7 @@ int main(void) {
     struct player_action action={0};
     for(i=1;i<128;i++) {
         assert(benchmark_mp_arena_action(i,10,&action));
-        assert(isfinite(action.desired_facing.yaw)&&isfinite(action.desired_facing.pitch));
+        assert(__builtin_isfinite(action.desired_facing.yaw)&&__builtin_isfinite(action.desired_facing.pitch));
         assert(hypotf(action.throttle.i,action.throttle.j)>0&&hypotf(action.throttle.i,action.throttle.j)<=0.76f);
         assert(action.primary_trigger==0.0f); /* host startup still owns combat */
     }
@@ -128,19 +130,37 @@ int main(void) {
     target=128;assert(benchmark_mp_arena_configure(&cfg));assert(benchmark_mp_arena_tick(20)==1);
     assert(benchmark_mp_arena_tick(1)==-1);assert(strstr(last_log,"arena clock regression")&&strstr(last_log,"previous 20 current 1"));
     benchmark_mp_arena_reset();
+    {
+        const float nonfinite[]={__builtin_nanf(""),__builtin_inff()};
+        for(j=0;j<2;j++) {
+            starts[0].position.x=starts[1].position.x=nonfinite[j];
+            assert(benchmark_mp_arena_configure(&cfg));
+            assert(benchmark_mp_arena_tick(1)==-1&&strstr(last_log,"arena geometry exhausted"));
+            benchmark_mp_arena_reset();
+            starts[0].position.x=starts[1].position.x=0;
+            assert(benchmark_mp_arena_configure(&cfg));
+            assert(benchmark_mp_arena_tick(1)==1);
+            positions[1].x=nonfinite[j];
+            assert(benchmark_mp_arena_tick(2)==-1&&strstr(last_log,"arena invalid position"));
+            positions[1].x=0;
+            benchmark_mp_arena_reset();
+        }
+    }
     return 0;
 }
 '''
 
 
-def test_actual_geometry_staging_respawn_and_input_adapter(tmp_path):
+@pytest.mark.parametrize("strict_math", [False, True])
+def test_actual_geometry_staging_respawn_and_input_adapter(tmp_path, strict_math):
     assert SOURCE.is_file(), "The generic game arena adapter is not implemented"
     compiler = shutil.which("clang") or shutil.which("cc")
     if not compiler:
         raise SkipTest("A C compiler is required for the game arena probe")
     path,binary=tmp_path / "arena-game.c",tmp_path / "arena-game"
     path.write_text(HARNESS.replace("__SOURCE__",str(SOURCE)))
-    subprocess.run([compiler,"-O2","-std=gnu89","-fms-extensions","-Wno-c99-extensions","-fsanitize=address,undefined","-iquote",str(ROOT / "port/linux/include"),
+    flags = ["-D__STRICT_ANSI__"] if strict_math else []
+    subprocess.run([compiler,"-O2","-std=gnu89",*flags,"-fms-extensions","-Wno-c99-extensions","-fsanitize=address,undefined","-iquote",str(ROOT / "port/linux/include"),
                     str(path),"-lm","-o",str(binary)],check=True)
     subprocess.run([str(binary)],check=True)
 
