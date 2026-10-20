@@ -233,6 +233,9 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
         tmp_path, "ios", app=app, benchmark_upload=True
     )
     assert signed_archive["benchmark_upload"] == "on"
+    (app / "VISR").write_bytes(b"executable " + validation.LOCAL_CATALOG_NOTE)
+    with pytest.raises(ValueError, match="unsigned local benchmark catalog"):
+        validation.inspect_build(tmp_path, "ios", benchmark_upload=True)
     assert len(codesign_calls) == 1
     assert result["guest_sha256"] == hashlib.sha256(b"guest").hexdigest()
     assert (

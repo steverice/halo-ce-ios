@@ -18,7 +18,7 @@ RESOLUTION_KEY = "display.render_lines"
 REPORT_SETTINGS = {"render_lines": RESOLUTION_KEY, "anisotropic_filtering": "display.anisotropic_filtering",
                    "shadow_map_size": "display.shadow_map_size", "model_lod": "display.model_lod"}
 FIELDS = ["report", "index", "device", "chip", "workload", "settings", "render_width", "render_height",
-          "simulation_cpu_ms", "render_cpu_ms", "gpu_ms", "thermal", "timing_basis"]
+          "simulation_cpu_ms", "render_cpu_ms", "gpu_ms", "thermal", "timing_basis", "catalog_signed"]
 
 
 @dataclass
@@ -36,6 +36,8 @@ class Run:
     thermal: int
     timing_basis: str
     index: int = 0
+    # False for a run from a development build's unsigned local catalog (benchmark/local-routes)
+    catalog_signed: bool = True
 
 
 @dataclass
@@ -89,7 +91,8 @@ def runs_from_report(report, name=""):
                           simulation_cpu_ms=_mean(run.get("simulation_cpu_ms")) or 0.0,
                           render_cpu_ms=_mean(run.get("render_cpu_ms")) or 0.0,
                           gpu_ms=_mean(run.get("gpu_ms")) or 0.0, thermal=int(thermal),
-                          timing_basis=run.get("timing_basis", ""), index=int(run.get("index", position))))
+                          timing_basis=run.get("timing_basis", ""), index=int(run.get("index", position)),
+                          catalog_signed=bool(run.get("catalog_signed", report.get("catalog_signed", True)))))
     return result
 
 
@@ -101,7 +104,8 @@ def read_runs(path):
                     workload=row["workload"], settings=json.loads(row["settings"]),
                     render_width=int(row["render_width"]), render_height=int(row["render_height"]),
                     simulation_cpu_ms=float(row["simulation_cpu_ms"]), render_cpu_ms=float(row["render_cpu_ms"]),
-                    gpu_ms=float(row["gpu_ms"]), thermal=int(row["thermal"]), timing_basis=row["timing_basis"])
+                    gpu_ms=float(row["gpu_ms"]), thermal=int(row["thermal"]), timing_basis=row["timing_basis"],
+                    catalog_signed=row.get("catalog_signed", "true") != "false")
                 for row in csv.DictReader(handle)]
 
 
@@ -115,7 +119,8 @@ def write_runs(path, runs):
         for (_, _), run in sorted(merged.items()):
             writer.writerow([run.report, run.index, run.device, run.chip, run.workload,
                              json.dumps(run.settings, sort_keys=True), run.render_width, run.render_height,
-                             run.simulation_cpu_ms, run.render_cpu_ms, run.gpu_ms, run.thermal, run.timing_basis])
+                             run.simulation_cpu_ms, run.render_cpu_ms, run.gpu_ms, run.thermal, run.timing_basis,
+                             "true" if run.catalog_signed else "false"])
 
 
 def _megapixels(run):

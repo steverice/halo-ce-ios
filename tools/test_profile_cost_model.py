@@ -83,3 +83,25 @@ def test_runs_from_report():
     [item] = model.runs_from_report(report, "r")
     assert (item.simulation_cpu_ms, item.render_cpu_ms, item.gpu_ms, item.render_height) == (4, 5, 6, 540)
     assert item.settings["display.shadow_map_size"] == "512"
+
+
+def test_runs_keep_catalog_signed(tmp_path):
+    report = {"code": "LOC", "catalog_signed": False, "device": {"model": "Mac0,0"}, "runs": [
+        {"index": 0, "scene": "check", "status": "ok", "render_size": [960, 540], "gpu_ms": {"mean": 6},
+         "catalog_signed": False, "timing_basis": model.BASIS},
+        {"index": 1, "scene": "check", "status": "ok", "render_size": [960, 540], "gpu_ms": {"mean": 6}}]}
+    unsigned, inherited = model.runs_from_report(report, "loc")
+    assert unsigned.catalog_signed is False and inherited.catalog_signed is False
+    assert model.runs_from_report({"runs": [{"index": 0, "status": "ok"}]})[0].catalog_signed is True
+    path = tmp_path / "runs.csv"
+    model.write_runs(path, [unsigned, run(index=5)])
+    assert [r.catalog_signed for r in model.read_runs(path)] == [False, True]
+    assert "catalog_signed" in path.read_text().splitlines()[0]
+
+
+def test_runs_csv_without_catalog_signed_column(tmp_path):
+    path = tmp_path / "runs.csv"
+    model.write_runs(path, [run(index=0)])
+    lines = path.read_text().splitlines()
+    path.write_text("\n".join(line.rsplit(",", 1)[0] for line in lines) + "\n")
+    assert model.read_runs(path)[0].catalog_signed is True

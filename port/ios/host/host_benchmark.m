@@ -512,6 +512,11 @@ static int gpu_family(id<MTLDevice> device) {
 }
 
 /* the report's first members: the device, the app and the suite; never a name or an identifier of the device */
+/* whether the pinned snapshot's catalog came from a signed recordings pack */
+static BOOL catalog_signed(void) {
+    return [pinned_snapshot[@"updates"][@"benchmark_catalog_status"] isEqual:@"signed"];
+}
+
 static NSString *report_header(void) {
     NSProcessInfo *process = NSProcessInfo.processInfo;
     NSOperatingSystemVersion version = process.operatingSystemVersion;
@@ -538,7 +543,7 @@ static NSString *report_header(void) {
         "\"external_modes_complete\":%s,\"output\":%@,\"output_reports\":%@,\"requested_output\":%@,\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
         "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
         "\"model_lod\":\"%s\"},\"data_updates\":%@,\"recording_snapshot\":%@,\"profile_sha256\":%@,"
-        "\"benchmark_catalog\":{\"status\":%@,\"sha256\":%@,\"note\":%@},\"flags\":%@",
+        "\"benchmark_catalog\":{\"status\":%@,\"sha256\":%@,\"note\":%@},\"catalog_signed\":%s,\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
         [minutes stringFromDate:started ?: NSDate.date],
         json_string(model_identifier()), json_string(@(chip)), platform_name(), (long)version.majorVersion,
@@ -564,7 +569,7 @@ static NSString *report_header(void) {
         json_string(pinned_snapshot[@"identity"][@"profile_sha256"]),
         json_string(catalog_status ?: @"unavailable"),
         json_string(pinned_snapshot[@"identity"][@"catalog_sha256"] ?: @"unavailable"),
-        json_string(catalog_note ?: @""),
+        json_string(catalog_note ?: @""), catalog_signed() ? "true" : "false",
         [[NSString alloc] initWithData:[NSJSONSerialization dataWithJSONObject:flags options:0 error:nil] encoding:NSUTF8StringEncoding]];
 }
 
@@ -601,6 +606,7 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSDictionary *upscaler = upscaler_metadata();
     record[@"upscaler"] = upscaler;
     record[@"graphics"] = graphics_metadata();
+    record[@"catalog_signed"] = @(catalog_signed());
     NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
     settings[@"upscaler_requested"] = upscaler[@"requested"];
     record[@"settings"] = settings;
@@ -712,13 +718,29 @@ static int cooled(void) {
     return NSProcessInfo.processInfo.thermalState <= NSProcessInfoThermalStateNominal;
 }
 
+/* A build that carries routes (the Mac runner, development builds; never a tester or release build, which
+   tools/release_validation.py checks) runs an unsigned local catalog when no signed one was downloaded:
+   benchmark/local-routes with its own benchmark-catalog.json (tools/replay_check.py writes one). Every report
+   from it says catalog_signed false. nil when there is none or the build cannot have one. */
+static NSString *local_catalog_folder(void) {
+#if HALO_BENCHMARK_NO_ROUTES
+    return nil;
+#else
+    NSString *local = @FOLDER "/local-routes";
+    return [NSFileManager.defaultManager fileExistsAtPath:[local stringByAppendingPathComponent:@HOST_BENCHMARK_CATALOG_NAME]] ?
+        local : nil;
+#endif
+}
+
 static NSString *active_catalog_sha256(void) {
     NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
     NSDictionary *updates = host_data_updates_metadata();
     NSDictionary *recording_update = updates[@"recordings"];
-    if (![recording_update isKindOfClass:NSDictionary.class] || [recording_update[@"bundled"] boolValue]) return @"unavailable";
-    NSString *folder = host_recording_update_folder(bundled);
-    return host_benchmark_catalog_file_sha256(folder) ?: @"unavailable";
+    BOOL signed_feed = [recording_update isKindOfClass:NSDictionary.class] && ![recording_update[@"bundled"] boolValue];
+    NSString *sha = signed_feed ? host_benchmark_catalog_file_sha256(host_recording_update_folder(bundled)) : nil;
+    NSString *local = sha ? nil : local_catalog_folder();
+    if (local) sha = host_benchmark_catalog_file_sha256(local);
+    return sha ?: @"unavailable";
 }
 
 /* A resumed journal must describe the same guest, catalog, resolved profile and baseline settings. The pinned
@@ -756,6 +778,12 @@ static NSDictionary *fresh_snapshot(NSDictionary *identity) {
         fileExistsAtPath:[selected stringByAppendingPathComponent:@HOST_BENCHMARK_CATALOG_NAME]];
     if (has_catalog) [sources addObject:selected];
     updates[@"benchmark_catalog_status"] = has_catalog ? @"signed" : @"unavailable";
+    NSString *local = has_catalog ? nil : local_catalog_folder();
+    if (local) {
+        [sources addObject:local];
+        updates[@"benchmark_catalog_status"] = @"local_unsigned";
+        host_logf(HOST_LOG_INFO, "benchmark: " HOST_BENCHMARK_LOCAL_CATALOG_NOTE);
+    }
     NSError *error = nil;
     NSDictionary *snapshot = host_benchmark_snapshot_create(@FOLDER, sources, identity, updates, &error);
     if (!snapshot) host_logf(HOST_LOG_INFO, "benchmark: cannot prepare recording snapshot: %s", error.localizedDescription.UTF8String);
@@ -857,6 +885,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     NSArray<NSString *> *only = strchr(mode, ':') ? [@(strchr(mode, ':') + 1) componentsSeparatedByString:@","] : nil;
     install_scenes(only);
     if ([catalog_status isEqual:@"unavailable"]) flag(@"benchmark_catalog_unavailable");
+    else if (!catalog_signed()) flag(@"benchmark_catalog_unsigned");
     if (pinned_resume && !(journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
         journal.device.drawable_lines == plan.device.drawable_lines && journal.device.base_lines == plan.device.base_lines &&
         journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&

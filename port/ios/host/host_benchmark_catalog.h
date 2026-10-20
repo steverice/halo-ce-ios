@@ -2,6 +2,9 @@
 #include "../../runtime/benchmark_plan.h"
 
 #define HOST_BENCHMARK_CATALOG_NAME "benchmark-catalog.json"
+/* logged when a build that carries routes runs benchmark/local-routes' unsigned catalog; release validation
+   (tools/release_validation.py) refuses an app whose executable holds this text */
+#define HOST_BENCHMARK_LOCAL_CATALOG_NOTE "unsigned local catalog: benchmark/local-routes (development builds only)"
 
 struct host_benchmark_catalog {
     int count;

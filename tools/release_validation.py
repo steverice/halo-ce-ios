@@ -38,6 +38,9 @@ XCODE_BUILD = "27B5028f"
 SDK_VERSION = "27.2"
 
 
+# host_benchmark_catalog.h's HOST_BENCHMARK_LOCAL_CATALOG_NOTE: present only in builds that carry routes
+LOCAL_CATALOG_NOTE = b"unsigned local catalog: benchmark/local-routes (development builds only)"
+
 def run(*args: str | Path, capture: bool = False, root: Path | None = None,
         env: dict[str, str] | None = None) -> str:
     result = subprocess.run(
@@ -302,9 +305,12 @@ def inspect_build(
         raise ValueError(
             "Actual unsigned/signed app was built with a different toolchain"
         )
-    release.verify_guest(
-        (app / info["CFBundleExecutable"]).read_bytes(), guest, guest_hash
-    )
+    executable = (app / info["CFBundleExecutable"]).read_bytes()
+    release.verify_guest(executable, guest, guest_hash)
+    if LOCAL_CATALOG_NOTE in executable:
+        raise ValueError(
+            "Release build carries the unsigned local benchmark catalog path"
+        )
     cloud_saves = "HALO_CLOUD_SAVES=1" in definitions
     upload_enabled = "HALO_BENCHMARK_UPLOAD=1" in definitions
     if cloud_saves or "HALO_RENDER_VALIDATION=1" in definitions:

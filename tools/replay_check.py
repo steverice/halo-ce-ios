@@ -6,23 +6,24 @@ at a controller.
 
 1. Records a take: the game's scripted test input (debug.test_input = "bot:N") plays the map while the automatic
    recorder (debug.input_record = "auto") writes recordings/take-MAP-TIME.{input,actions,seeds,route}.
-2. Replays the take through the device benchmark's suite at two frame rates (display.frame_rate), twice over:
-   with the take's .seeds file (both random seeds set at every tick) and without it (only the .route's seeds).
-   Each replay notes player 1's position every 300 ticks.
-3. Compares the two frame rates' routes in each pair (tools/benchmark_routes.py) and prints where they part.
+2. Replays the take, with its .seeds file (both random seeds set at every tick), through the device benchmark's
+   suite at two frame rates (display.frame_rate), from an unsigned local catalog (write_local_routes; a build
+   that carries routes runs it, and its reports say catalog_signed false). Each replay notes player 1's position
+   every 300 ticks.
+3. Compares the two frame rates' routes (tools/benchmark_routes.py) and prints where they part.
 
 With --offscreen the second replay of each pair is the benchmark's offscreen mode (debug.benchmark_offscreen: one
 tick a frame, as fast as the Mac draws) in place of an unlimited frame rate, so the check says whether that mode
 replays as real time does.
 
-The expected result, if per-tick seeds are what makes a replay hold: without .seeds the two replays part, with
-.seeds they do not. Exit status 0 when the with-seeds pair agrees, 1 when it parts, 2 when a step failed.
+Exit status 0 when the pair agrees, 1 when it parts, 2 when a step failed.
 
 Needs tools/ios_build.py --mac first. Everything is written under FOLDER; the take is tried as a drop-in route in
 the runner's data folder (benchmark/local-routes), which this removes again.
 """
 
 import argparse
+import json
 import plistlib
 import shutil
 import subprocess
@@ -30,11 +31,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import benchmark_catalog  # noqa: E402
 import benchmark_routes  # noqa: E402
 import mac_run  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 RATES = ("30", "unlimited")
+# the suite runs only a catalog's cases, and a catalog case needs its .seeds file, so a replay without the take's
+# per-tick seeds is no longer run
+LABELS = ("with-seeds",)
 
 
 def runner(out, *options):
@@ -55,10 +60,29 @@ def newest_take(folder, map_name):
     return None
 
 
-def route_text(take_route, scene):
-    """the take's .route as a suite scene's: named, and measured from its first tick to its end"""
+def route_text(take_route, scene, window):
+    """the take's .route as a suite scene's: named, and measured for window seconds from its first tick"""
     kept = [line for line in take_route.read_text().splitlines() if not line.startswith(("scene", "lead", "window", "kind"))]
-    return "\n".join([f"scene = {scene}", "kind = gameplay", "lead = 0", "window = 0", *kept]) + "\n"
+    return "\n".join([f"scene = {scene}", "kind = gameplay", "lead = 0", f"window = {window}", *kept]) + "\n"
+
+
+def write_local_routes(take, local, scene):
+    """the take as benchmark/local-routes: its files under the scene's name, a route measured over all but its last
+    second, and the unsigned benchmark-catalog.json a build that carries routes runs it from (host_benchmark.m's
+    local_catalog_folder; such reports say catalog_signed false). Raises benchmark_catalog.CatalogError when the
+    app would refuse it."""
+    local.mkdir(parents=True, exist_ok=True)
+    for suffix in (".input", ".actions", ".seeds"):
+        shutil.copyfile(take.with_suffix(suffix), local / f"{scene}{suffix}")
+    ticks = len(take.with_suffix(".actions").read_text().splitlines()) - 1
+    window = max(1, ticks // 30 - 1)
+    values = dict(line.split(" = ", 1) for line in take.with_suffix(".route").read_text().splitlines() if " = " in line)
+    (local / f"{scene}.route").write_text(route_text(take.with_suffix(".route"), scene, window))
+    catalog = {"schema": benchmark_catalog.CATALOG_SCHEMA, "cases": {scene: {
+        "kind": "gameplay", "order": 0, "map": values["map"], "difficulty": values["difficulty"], "recording": scene,
+        "lead": 0, "window": window}}}
+    (local / benchmark_catalog.CATALOG_NAME).write_bytes(benchmark_catalog._canonical(catalog))
+    benchmark_catalog.load_catalog(local)
 
 
 def main():
@@ -85,6 +109,8 @@ def main():
     if take is None:
         # the recording run: real time (a take is of a played session), the bot at the controller
         status = runner(args.out / "record", "--exit-after", str(args.seconds), "--set", 'debug.input_record="auto"',
+                        # (the suite refuses a take with the original audio-driven mouths)
+                        "--set", "debug.benchmark_lip_sync=true",
                         "--set", f'debug.test_input="bot:{args.bot}"', "--init", f"game_difficulty_set {args.difficulty}",
                         "--init", f"map_name {args.map}")
         take = newest_take(args.out / "record" / "recordings", args.map)
@@ -101,12 +127,9 @@ def main():
     local = data / "benchmark" / "local-routes"
     results = {}
     try:
-        for label, with_seeds in (("without-seeds", False), ("with-seeds", True)):
+        for label in LABELS:
             shutil.rmtree(local, ignore_errors=True)
-            local.mkdir(parents=True)
-            for suffix in (".input", ".actions") + ((".seeds",) if with_seeds else ()):
-                shutil.copyfile(take.with_suffix(suffix), local / f"check{suffix}")
-            (local / "check.route").write_text(route_text(take.with_suffix(".route"), "check"))
+            write_local_routes(take, local, "check")
             for rate in rates:
                 out = args.out / f"{label}-{rate}"
                 mode = (["--set", "debug.benchmark_offscreen=true"] if rate == "offscreen" else
@@ -117,7 +140,7 @@ def main():
         shutil.rmtree(local, ignore_errors=True)
 
     verdicts = {}
-    for label in ("without-seeds", "with-seeds"):
+    for label in LABELS:
         reports = [results[(label, rate)] for rate in rates]
         verdicts[label] = "failed"
         if not all(report.is_file() for report in reports):

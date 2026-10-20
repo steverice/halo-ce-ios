@@ -930,7 +930,7 @@ def prepare(args, documents, rewrite=False):
         # the device benchmark's suite ends the game itself when its last run is over
         settings["debug.benchmark_suite"] = f'"{args.benchmark_suite}"'
         settings["debug.exit_after"] = "0.0"
-        shutil.rmtree(documents / "benchmark", ignore_errors=True)
+        clear_benchmark_folder(documents / "benchmark")
     for assignment in args.set:
         key, value = assignment.split("=", 1)
         settings[key.strip()] = value.strip()
@@ -1020,6 +1020,20 @@ def run_simulator(args):
     if not finished:
         sys.exit(f"the game was still running {limit} seconds after launch and was stopped; logs are in {args.out}")
     print(f"results: {args.out}")
+
+
+def clear_benchmark_folder(folder):
+    """a suite's earlier journal, runs and report gone, and its snapshot; benchmark/local-routes stays, the drop-in
+    routes and unsigned catalog a build that carries routes runs (tools/replay_check.py writes them)"""
+    if not folder.is_dir():
+        return
+    for entry in folder.iterdir():
+        if entry.name == "local-routes":
+            continue
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
 
 
 def native_app_default(environment=None):
