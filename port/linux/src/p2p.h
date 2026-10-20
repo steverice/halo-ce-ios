@@ -237,12 +237,19 @@ struct p2p_listing
 	short ping;
 	/* it has a password: its invite is sealed with it (p2p_listing_unlock) */
 	unsigned char locked;
+	/* the host's network version, and whether this build can join it
+	(halo_network_join.h): a game of another version is listed, with its
+	version, and not joined. from_delta: Delta's list gave it, not the
+	signalling brokers */
+	short network_version;
+	unsigned char joinable, from_delta;
 	unsigned char key_hash[P2P_LISTING_KEY_HASH_SIZE];
 	unsigned char signing_key[P2P_LISTING_SIGNING_KEY_SIZE];
 	unsigned char sealed_token[P2P_LISTING_SEALED_TOKEN_SIZE];
 };
-/* a copy of the public games found, in the order shown (the most players
-first; then those not failed, the open ones, by name); returns their count */
+/* a copy of the public games found, in the order shown (those this build
+can join first, then the most players; then those not failed, the open
+ones, by name); returns their count */
 int p2p_lobby_games(struct p2p_listing *games, int maximum_count);
 /* the public games heard while browsing that the list leaves out, since
 their network version is not this build's: those of a newer one, and of an

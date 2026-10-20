@@ -369,7 +369,29 @@ void p2p_peer_name(int peer, char *name);
 /* the tunnel's socket's port (network byte order) */
 unsigned short p2p_tunnel_local_port(void);
 
+/* ---------- p2p_delta.c: Delta's public game list (delta_list.h) */
+
+/* the server browser opened or closed, or asked again; the p2p thread's, under
+p2p_lock */
+void p2p_delta_browse(int on);
+void p2p_delta_refresh(void);
+/* the p2p thread's pass, under p2p_lock: starts the thread that asks the list
+once the browser is open or the game hosted is to be listed */
+void p2p_delta_update(void);
+/* the game quits: the game hosted is withdrawn from the list; not under
+p2p_lock */
+void p2p_delta_quit(void);
+
 /* ---------- p2p_lobby.c: public games' listings */
+
+/* the games Delta's list gave (p2p_delta.c), which the browser shows with the
+brokers' (those on a broker's slot too are shown once); under p2p_lock */
+struct delta_game;
+struct delta_announce;
+void p2p_lobby_delta_games(const struct delta_game *games, int count);
+/* the game hosted, as Delta's list is to have it, if it is listed in the
+server browser without a password: 1, else 0; under p2p_lock */
+int p2p_lobby_delta_wanted(struct delta_announce *announce);
 
 /* the p2p thread's pass: the token of the game hosted for the internet
 (NULL if none) and its player counts */

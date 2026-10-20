@@ -3749,9 +3749,18 @@ static void lobby_browser_update(struct widget_instance *list)
 		text_set(named(row, "server_item_type", 0), game_type_name(game->engine_type));
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%d/%d", game->player_count, game->maximum_player_count);
 		text_set(named(row, "server_item_players", 0), text);
-		/* (no ping yet: its host is reached only on joining) */
-		text_set(named(row, "server_item_ping", 0), game->failed ? L"FAILED" : !game->open ? L"CLOSED" :
-			game->in_progress ? L"LIVE" : L"-");
+		/* (no ping yet: its host is reached only on joining. A game of another network version, from Delta's
+		list, shows it) */
+		if (!game->joinable && !game->failed)
+		{
+			usnprintf(text, ROW_TEXT_LENGTH - 1, L"V%d", game->network_version);
+			text_set(named(row, "server_item_ping", 0), text);
+		}
+		else
+		{
+			text_set(named(row, "server_item_ping", 0), game->failed ? L"FAILED" : !game->open ? L"CLOSED" :
+				game->in_progress ? L"LIVE" : L"-");
+		}
 		/* (the lock: a game with a password. Its bitmap's first frame is
 		empty, the PC version's for no lock; the next is the lock, in the
 		menus' blue) */
@@ -3859,10 +3868,18 @@ static void lobby_browser_update(struct widget_instance *list)
 			wchar_t gametype[P2P_LISTING_GAMETYPE_SIZE + 1];
 
 			text_to_wide(game->gametype, gametype, NUMBEROF(gametype));
-			usnprintf(text, NUMBEROF(text) - 1, L"%s: %d %s of %d%s%s", gametype, game->player_count,
-				game->player_count == 1 ? L"player" : L"players", game->maximum_player_count,
-				!game->open ? L", full or starting" : game->in_progress ? L", under way" : L"",
-				game->locked ? L", password" : L"");
+			if (!game->joinable)
+			{
+				usnprintf(text, NUMBEROF(text) - 1, L"%s: network version %d, this build plays %d", gametype,
+					game->network_version, HALO_PORT_NETWORK_VERSION);
+			}
+			else
+			{
+				usnprintf(text, NUMBEROF(text) - 1, L"%s: %d %s of %d%s%s", gametype, game->player_count,
+					game->player_count == 1 ? L"player" : L"players", game->maximum_player_count,
+					!game->open ? L", full or starting" : game->in_progress ? L", under way" : L"",
+					game->locked ? L", password" : L"");
+			}
 		}
 		else
 			text[0] = 0;
@@ -3956,7 +3973,7 @@ static boolean lobby_browser_select(struct widget_instance *widget, short contro
 	if (index >= lobby_browser.count)
 		return campaign_fail();
 	game = &lobby_browser.games[index];
-	if (!game->open || !config_boolean("network.online"))
+	if (!game->open || !game->joinable || !config_boolean("network.online"))
 		return campaign_fail();
 	/* (a game with a password: its screen asks for it, then joins) */
 	if (game->locked)

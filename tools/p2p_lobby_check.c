@@ -20,6 +20,7 @@ failures.
 
 #include "p2p_internal.h"
 #include "halo_port_limits.h"
+#include "delta_list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,6 +84,8 @@ void p2p_signal_lobby_publish(const unsigned char *listing, int size, int closin
 	publish_count++;
 }
 void p2p_signal_lobby_quit(void) {}
+void p2p_delta_browse(int on) { (void)on; }
+void p2p_delta_refresh(void) {}
 
 /* the p2p thread's calls: under p2p_lock, as there (p2p_lobby_update lets
 go of it while it checks signatures) */
@@ -231,6 +234,83 @@ static void hear(const unsigned char *payload, int size, int retained, const cha
 	lobby_update(hosting_token, 3, 16);
 }
 
+/* Delta's list: the game hosted as it is announced, and the list's games shown with the brokers' (own_invite: the
+64 hex digits of the game hosted, which the browser has taken) */
+static void delta_checks(const char *own_invite)
+{
+	static const char *const other = "00112233445566778899aabbccddeeff00000000000000000000000000000001";
+	static const char *const newer = "ffeeddccbbaa99887766554433221100000000000000000000000000000002ab";
+	struct delta_announce announce;
+	struct delta_game list[4];
+	struct p2p_listing shown[8];
+	unsigned char hash[P2P_KEY_HASH_SIZE], identifier[P2P_IDENTIFIER_SIZE];
+	int count, wanted, index;
+
+	pthread_mutex_lock(&p2p_lock);
+	wanted = p2p_lobby_delta_wanted(&announce);
+	pthread_mutex_unlock(&p2p_lock);
+	check(wanted && !strcmp(announce.invite, own_invite), "the game hosted is announced with its invite");
+	check(wanted && !strcmp(announce.name, "Test game") && !strcmp(announce.map, "bloodgulch") &&
+		announce.engine == 2 && announce.players == 3 && announce.maximum_players == 16 && announce.open &&
+		announce.teams && announce.version == HALO_PORT_NETWORK_VERSION, "the game hosted is announced as it is");
+
+	memset(list, 0, sizeof(list));
+	strcpy(list[0].invite, other);
+	strcpy(list[0].name, "Same version");
+	strcpy(list[0].map, "damnation");
+	list[0].players = 5;
+	list[0].maximum_players = 16;
+	list[0].open = 1;
+	list[0].version = HALO_PORT_NETWORK_VERSION;
+	strcpy(list[1].invite, newer);
+	strcpy(list[1].name, "Newer");
+	list[1].players = 20;
+	list[1].maximum_players = 32;
+	list[1].version = 32;
+	/* this machine's own game, listed there too: not shown twice */
+	strcpy(list[2].invite, own_invite);
+	strcpy(list[2].name, "Mine");
+	list[2].version = HALO_PORT_NETWORK_VERSION;
+	pthread_mutex_lock(&p2p_lock);
+	p2p_lobby_delta_games(list, 3);
+	pthread_mutex_unlock(&p2p_lock);
+	count = p2p_lobby_games(shown, 8);
+	/* (the one that can be joined, then the one that cannot be, though it has more players) */
+	check(count == 2, "the browser shows two of Delta's games, and not the one hosted here");
+	check(count == 2 && !strcmp(shown[0].name, "Same version") && shown[0].from_delta && shown[0].joinable &&
+		shown[0].network_version == HALO_PORT_NETWORK_VERSION && shown[0].open, "Delta's game of this version");
+	check(count == 2 && !strcmp(shown[0].invite + 12, other), "Delta's game is joined by its invite");
+	check(count == 2 && !strcmp(shown[1].name, "Newer") && shown[1].from_delta && !shown[1].joinable &&
+		shown[1].network_version == 32 && shown[1].player_count == 20,
+		"a game of another version is shown, not joinable");
+	for (index = 0; index < P2P_KEY_HASH_SIZE; index++)
+	{
+		unsigned int byte;
+
+		sscanf(other + 2 * index, "%2x", &byte);
+		hash[index] = (unsigned char)byte;
+	}
+	p2p_identifier_from_hash(hash, identifier);
+	check(count == 2 && !memcmp(shown[0].identifier, identifier, P2P_IDENTIFIER_SIZE),
+		"Delta's game has the identifier its host's broker listing would");
+	/* forgotten when not given again, and when the browser closes */
+	clock_now += 59000;
+	count = p2p_lobby_games(shown, 8);
+	check(count == 2, "Delta's games are kept for a minute");
+	clock_now += 2000;
+	count = p2p_lobby_games(shown, 8);
+	check(count == 0, "Delta's games are forgotten after a minute");
+	pthread_mutex_lock(&p2p_lock);
+	p2p_lobby_delta_games(list, 2);
+	pthread_mutex_unlock(&p2p_lock);
+	count = p2p_lobby_games(shown, 8);
+	check(count == 2, "Delta's games are given again");
+	p2p_lobby_browse(0);
+	p2p_lobby_browse(1);
+	count = p2p_lobby_games(shown, 8);
+	check(count == 0, "Delta's games are forgotten with the browser's");
+}
+
 static void lobby_checks(void)
 {
 	static const unsigned char token[P2P_TOKEN_SIZE] = { 7, 7, 7 };
@@ -296,6 +376,7 @@ static void lobby_checks(void)
 	clock_now += 91000;
 	lobby_update(token, 3, 16);
 	check(games(NULL) == 0, "a listing unheard for 90 s expires");
+	delta_checks(expected_invite + 12);
 	/* signed long ago, published again by someone who kept it: ignored,
 	live or retained */
 	restamp(published, published_size, -2 * 3600, old);

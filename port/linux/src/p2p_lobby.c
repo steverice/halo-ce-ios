@@ -61,6 +61,8 @@ of MAXIMUM_QUEUED; the rest is dropped (hosts publish again).
 #include "p2p_internal.h"
 #include "halo_port_limits.h"
 #include "halo_network_version.h"
+#include "halo_network_join.h"
+#include "delta_list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,12 +91,16 @@ enum
 	/* the games of other network versions counted (p2p_lobby_other_versions) */
 	MAXIMUM_OTHERS = 64,
 	MAXIMUM_QUEUED = 64,
+	/* Delta's list's games shown (p2p_lobby_delta_games) */
+	MAXIMUM_DELTA_GAMES = 128,
 
 	/* milliseconds */
 	REPUBLISH_INTERVAL = 30000,
 	TRIGGER_INTERVAL = 5000,
 	QUERY_JITTER = 2000,
 	GAME_EXPIRY = 90000,
+	/* Delta's games are asked for every 15 seconds: one not given again in this long is gone */
+	DELTA_EXPIRY = 60000,
 	TOMBSTONE_TIME = 600000,
 	VERIFY_BUDGET = 2,
 	/* seconds */
@@ -201,6 +207,10 @@ static struct
 	struct tombstone tombstones[MAXIMUM_TOMBSTONES];
 	int next_tombstone;
 	struct other others[MAXIMUM_OTHERS];
+	/* Delta's list's games, as last given, and when */
+	struct p2p_listing delta_games[MAXIMUM_DELTA_GAMES];
+	int delta_count;
+	unsigned long delta_time;
 	/* the identifiers of games joining failed */
 	unsigned char failed[MAXIMUM_GAMES][P2P_IDENTIFIER_SIZE];
 	int failed_count;
@@ -781,6 +791,9 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->in_progress = (listing->flags & _listing_in_progress) != 0;
 	shown->has_teams = (listing->flags & _listing_has_teams) != 0;
 	shown->ping = -1;
+	shown->network_version = HALO_PORT_NETWORK_VERSION;
+	shown->joinable = 1;
+	shown->from_delta = 0;
 }
 
 /* A retained slot may outlive its host; a live slot can also be republished
@@ -993,9 +1006,11 @@ void p2p_lobby_browse(int on)
 			memset(lobby.games, 0, sizeof(lobby.games));
 			memset(lobby.others, 0, sizeof(lobby.others));
 			lobby.queue_count = 0;
+			lobby.delta_count = 0;
 		}
 		lobby.query_wanted = on;
 		p2p_signal_lobby_topics(lobby.listed, on);
+		p2p_delta_browse(on);
 	}
 	pthread_mutex_unlock(&p2p_lock);
 }
@@ -1004,7 +1019,10 @@ void p2p_lobby_refresh(void)
 {
 	pthread_mutex_lock(&p2p_lock);
 	if (lobby.browsing)
+	{
 		lobby.query_wanted = 1;
+		p2p_delta_refresh();
+	}
 	pthread_mutex_unlock(&p2p_lock);
 }
 
@@ -1019,6 +1037,8 @@ static int listing_order(const void *first, const void *second)
 {
 	const struct p2p_listing *a = first, *b = second;
 
+	if (a->joinable != b->joinable)
+		return b->joinable - a->joinable;
 	if (a->player_count != b->player_count)
 		return b->player_count - a->player_count;
 	if (a->failed != b->failed)
@@ -1031,7 +1051,7 @@ static int listing_order(const void *first, const void *second)
 int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 {
 	int count = 0;
-	int index;
+	int index, delta;
 
 	pthread_mutex_lock(&p2p_lock);
 	for (index = 0; index < MAXIMUM_GAMES && count < maximum_count; index++)
@@ -1039,6 +1059,24 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 		if (!lobby.games[index].used)
 			continue;
 		games[count] = lobby.games[index].listing;
+		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
+		count++;
+	}
+	/* Delta's list's games, those not on a broker's slot as well (the same
+	host: the same key hash, so the same identifier) */
+	if (lobby.delta_count && elapsed(lobby.delta_time, DELTA_EXPIRY))
+		lobby.delta_count = 0;
+	for (delta = 0; delta < lobby.delta_count && count < maximum_count; delta++)
+	{
+		int shown;
+
+		for (shown = 0; shown < count && memcmp(games[shown].identifier, lobby.delta_games[delta].identifier,
+			P2P_IDENTIFIER_SIZE); shown++)
+		{
+		}
+		if (shown < count)
+			continue;
+		games[count] = lobby.delta_games[delta];
 		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
 		count++;
 	}
@@ -1063,6 +1101,74 @@ void p2p_lobby_other_versions(int *newer, int *older)
 			(*older)++;
 	}
 	pthread_mutex_unlock(&p2p_lock);
+}
+
+void p2p_lobby_delta_games(const struct delta_game *games, int count)
+{
+	unsigned char own[P2P_KEY_HASH_SIZE];
+	int index;
+
+	lobby.delta_count = 0;
+	if (!lobby.browsing)
+		return;
+	p2p_key_hash(p2p_public_key(), own);
+	for (index = 0; index < count && lobby.delta_count < MAXIMUM_DELTA_GAMES; index++)
+	{
+		const struct delta_game *game = &games[index];
+		struct p2p_listing *shown = &lobby.delta_games[lobby.delta_count];
+		unsigned char hash[P2P_KEY_HASH_SIZE];
+		int digit;
+
+		memset(shown, 0, sizeof(*shown));
+		for (digit = 0; digit < P2P_KEY_HASH_SIZE; digit++)
+		{
+			int high = game->invite[2 * digit], low = game->invite[2 * digit + 1];
+
+			hash[digit] = (unsigned char)(((high <= '9' ? high - '0' : high - 'a' + 10) << 4) |
+				(low <= '9' ? low - '0' : low - 'a' + 10));
+		}
+		/* (this machine's own game, listed there: not shown to itself) */
+		if (!memcmp(hash, own, P2P_KEY_HASH_SIZE))
+			continue;
+		snprintf(shown->invite, sizeof(shown->invite), "halo://join/%s", game->invite);
+		p2p_identifier_from_hash(hash, shown->identifier);
+		sanitize(shown->name, P2P_LISTING_NAME_SIZE, game->name, P2P_LISTING_NAME_SIZE);
+		sanitize(shown->map, P2P_LISTING_MAP_SIZE, game->map, P2P_LISTING_MAP_SIZE);
+		sanitize(shown->gametype, P2P_LISTING_GAMETYPE_SIZE, game->gametype, P2P_LISTING_GAMETYPE_SIZE);
+		shown->player_count = (unsigned char)(game->players > 255 ? 255 : game->players);
+		shown->maximum_player_count = (unsigned char)(game->maximum_players > 255 ? 255 : game->maximum_players);
+		shown->engine_type = (unsigned char)(game->engine > 255 ? 255 : game->engine);
+		shown->open = (unsigned char)game->open;
+		shown->in_progress = (unsigned char)game->in_progress;
+		shown->has_teams = (unsigned char)game->teams;
+		shown->ping = -1;
+		shown->network_version = (short)game->version;
+		shown->joinable = (unsigned char)halo_network_joinable(game->version);
+		shown->from_delta = 1;
+		lobby.delta_count++;
+	}
+	lobby.delta_time = p2p_now() ? p2p_now() : 1;
+}
+
+int p2p_lobby_delta_wanted(struct delta_announce *announce)
+{
+	unsigned char bytes[P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE];
+
+	if (!lobby.listed || !lobby.public || lobby.has_password || !lobby.map[0] || !lobby.name[0])
+		return 0;
+	memset(announce, 0, sizeof(*announce));
+	p2p_key_hash(p2p_public_key(), bytes);
+	memcpy(bytes + P2P_KEY_HASH_SIZE, lobby.token, P2P_TOKEN_SIZE);
+	p2p_hex(bytes, sizeof(bytes), announce->invite);
+	snprintf(announce->name, sizeof(announce->name), "%s", lobby.name);
+	snprintf(announce->map, sizeof(announce->map), "%s", lobby.map);
+	announce->engine = lobby.engine_type;
+	announce->players = lobby.player_count;
+	announce->maximum_players = lobby.maximum_player_count;
+	announce->open = (lobby.flags & _listing_open) != 0;
+	announce->teams = (lobby.flags & _listing_has_teams) != 0;
+	announce->version = HALO_PORT_NETWORK_VERSION;
+	return 1;
 }
 
 int p2p_listing_unlock(struct p2p_listing *listing, const char *password)
