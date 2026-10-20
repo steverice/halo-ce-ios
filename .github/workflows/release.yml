@@ -39,7 +39,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: visr-release
+  group: ${{ inputs.mode == 'validate' && format('visr-validate-{0}', inputs.source_sha) || 'visr-release' }}
   cancel-in-progress: false
 
 # The xcode-27 image inventory includes this exact build. Never follow its default Xcode.
