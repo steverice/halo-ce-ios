@@ -293,11 +293,16 @@ static unsigned long stage_mode(const struct nv2a_pixel_shader_key *key, int sta
 	return (key->texture_modes >> (5 * stage)) & 0x1f;
 }
 
-/* A DOT_ZW stage replaces the fragment depth with two stages' dot quotient. */
-static BOOL replaces_depth(const struct nv2a_pixel_shader_key *key)
+/* Early depth tests make the ES visibility counter count only passing samples.
+Keep that test's existing flat-card depth: publishing a DOT_ZW depth there
+would be incompatible with early_fragment_tests and count failed samples. */
+static BOOL writes_replaced_depth(const struct nv2a_dialect *dialect,
+	const struct nv2a_pixel_shader_key *key)
 {
 	int stage;
 
+	if (dialect->es && key->count_samples)
+		return FALSE;
 	for (stage = 1; stage < 4; stage++)
 	{
 		if (stage_mode(key, stage) == _mode_dot_zw)
@@ -495,7 +500,7 @@ static void texture_stage(struct xgpu_text *text, const struct nv2a_dialect *dia
 		dot_input(text, state, stage);
 		xgpu_text_append(text, ");\n\tt%d = vec4(0.0);\n", stage);
 		/* The stage expresses depth in units of the Xbox's 24-bit buffer. */
-		if (stage >= 1)
+		if (stage >= 1 && writes_replaced_depth(dialect, key))
 			xgpu_text_append(text,
 				"\treplaced_depth = dot%d > 0.0 ? clamp(dot%d / dot%d / 16777215.0, 0.0, 1.0) : 1.0;\n",
 				stage, stage - 1, stage);
@@ -593,7 +598,7 @@ char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const stru
 	DWORD final_abcd = state[D3DRS_PSFINALCOMBINERINPUTSABCD];
 	DWORD final_efg = state[D3DRS_PSFINALCOMBINERINPUTSEFG];
 	int stage;
-	BOOL writes_depth = replaces_depth(key);
+	BOOL writes_depth = writes_replaced_depth(dialect, key);
 
 	if (combiner_count > 8)
 		combiner_count = 8;
