@@ -11,6 +11,7 @@ static inline int network_test_suite_energy_trigger(int magazine, int magazines,
 		(magazine >= 0 && magazine < magazines && rounds == 0));
 }
 void network_test_suite_projectile_created(long owner_unit, int energy);
+void network_test_suite_weapon_projectile_created(long owner_unit, long weapon_index, long projectile_index);
 uint32_t network_test_suite_energy_projectiles(int actor);
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
 	int players, int views, int score_limit, int time_limit_minutes);

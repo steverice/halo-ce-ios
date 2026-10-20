@@ -344,7 +344,7 @@ def test_synthetic_player_reaches_local_client_settings() -> None:
     compiler = shutil.which("clang") or shutil.which("cc")
     if compiler is None:
         raise SkipTest("A C compiler is required for the synthetic roster probe")
-    state_start = NETWORK_TEST.index("static struct\n{")
+    state_start = NETWORK_TEST.index("struct network_test_weapon_trace\n{")
     state_end = NETWORK_TEST.index("} network_test;", state_start) + len("} network_test;")
     source = HARNESS
     replacements = {

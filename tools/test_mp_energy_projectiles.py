@@ -19,7 +19,7 @@ typedef struct {float x,y,z;} real_point3d;
 static struct {int magazine_index,rounds_per_shot,firing_noise;float age_generated_per_round;} trigger_data={0,0,0,0.002f},*trigger_definition=&trigger_data;
 static struct {struct {struct {int count;} magazines;} weapon;} definition={{{1}}},*weapon_definition=&definition;
 static struct {struct {int alternate_shots_loaded;} weapon;} body,*weapon=&body;
-static int next_object=7,evidence,recorded_owner;
+static int next_object=7,evidence,recorded_owner,produced,produced_owner,produced_weapon,produced_projectile;
 static long owner_object_index=42,target_object_index=NONE,weapon_index=3;
 static short trigger_index;
 static int inside_bsp,tracer=1;
@@ -34,6 +34,7 @@ static void object_force_inside_bsp(long i,const real_point3d*p) {(void)i;(void)
 static void projectile_set_target_object_index(long i,long t) {(void)i;(void)t;}
 static void projectile_kill_tracer(long i) {(void)i;}
 void network_test_suite_projectile_created(long owner,int energy) {if(energy){evidence++;recorded_owner=(int)owner;}}
+void network_test_suite_weapon_projectile_created(long owner,long firing_weapon,long projectile) {produced++;produced_owner=(int)owner;produced_weapon=(int)firing_weapon;produced_projectile=(int)projectile;}
 static void create(void) {long projectile_object_index=object_new(&data);__CREATED__}
 static void trigger_create_projectiles(long w,short t) {(void)w;(void)t;create();}
 #define _ai_unit_effect_shooting 1
@@ -49,11 +50,11 @@ int main(void) {
     assert(!network_test_suite_energy_trigger(NONE,3,0,0.002f));
     assert(!network_test_suite_energy_trigger(NONE,0,0,__builtin_nanf("")));
     assert(!network_test_suite_energy_trigger(NONE,0,0,__builtin_inff()));
-    fire(1,0);assert(!evidence); /* real misfire branch cannot create a projectile */
-    next_object=NONE;fire(0,0);assert(!evidence);
+    fire(1,0);assert(!evidence&&!produced); /* real misfire branch cannot create a projectile */
+    next_object=NONE;fire(0,0);assert(!evidence&&!produced);
     next_object=7;fire(0,1);assert(!evidence); /* charging alternate ammunition */
-    fire(0,0);assert(evidence==1&&recorded_owner==42);
-    trigger_definition->rounds_per_shot=1;fire(0,0);assert(evidence==1); /* hybrid consumes rounds */
+    fire(0,0);assert(evidence==1&&recorded_owner==42);assert(produced==1&&produced_owner==42&&produced_weapon==3&&produced_projectile==7);
+    trigger_definition->rounds_per_shot=1;fire(0,0);assert(evidence==1&&produced==2); /* hybrid consumes rounds */
     trigger_definition->rounds_per_shot=0;trigger_definition->magazine_index=1;
     fire(0,0);assert(evidence==1); /* malformed index, even with positive age */
     trigger_definition->magazine_index=NONE;fire(0,0);assert(evidence==2);

@@ -94,6 +94,15 @@ enum
 	_network_test_browse,
 };
 
+struct network_test_weapon_trace
+{
+	int ready;
+	long unit_index, weapon_index, definition_index;
+	short slot;
+	unsigned long generation, reported_slots;
+	uint32_t projectiles;
+};
+
 static struct
 {
 	boolean checked;
@@ -134,6 +143,11 @@ static struct
 	unsigned long suite_setup_input_ticks;
 	boolean suite_setup_input_reported;
 	uint32_t suite_energy_projectiles[BENCHMARK_MP_MAXIMUM_PLAYERS];
+	long suite_weapon_units[BENCHMARK_MP_MAXIMUM_PLAYERS];
+	int suite_weapon_ready[BENCHMARK_MP_MAXIMUM_PLAYERS];
+	long suite_weapon_definitions[6];
+	int suite_weapon_definitions_ready;
+	struct network_test_weapon_trace suite_weapon_trace[BENCHMARK_MP_MAXIMUM_PLAYERS];
 } network_test;
 
 int network_test_suite_begin(const char *simulation, const char *map, const char *game_mode,
@@ -339,6 +353,196 @@ static int network_test_suite_prepare_synthetic_players(struct network_game_serv
 	return 1;
 }
 
+
+/* Unlike unit_delete_all_weapons, remove the current weapon too. Immediate
+object deletion notifies the unit before replacement needs its inventory slots. */
+static void network_test_suite_clear_bot_weapons(long unit_index)
+{
+	short slot;
+
+	for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
+	{
+		struct unit_datum *unit = unit_try_and_get(unit_index);
+		long weapon_index = unit ? unit->unit.weapon_object_indices[slot] : NONE;
+
+		if (weapon_index != NONE) object_delete_immediately(weapon_index);
+	}
+}
+
+
+/* Observe the readied object, including changes that finish between input ticks.
+A respawn establishes a new baseline rather than pretending it was a weapon swap. */
+static void network_test_suite_observe_weapon(int actor, long unit_index)
+{
+	struct unit_datum *unit = unit_try_and_get(unit_index);
+	struct network_test_weapon_trace *trace = &network_test.suite_weapon_trace[actor];
+	struct weapon_datum *weapon;
+	long weapon_index;
+	short slot;
+
+	if (!unit || TEST_FLAG(unit->object.damage_flags, _object_dead_bit)) return;
+	slot = unit->unit.current_weapon_index;
+	if (slot < 0 || slot >= MAXIMUM_WEAPONS_PER_UNIT) return;
+	weapon_index = unit->unit.weapon_object_indices[slot];
+	weapon = weapon_try_and_get(weapon_index);
+	if (!weapon || !TEST_FLAG(weapon->item.flags, _item_attached_to_unit_bit) ||
+		weapon->object.owner_player_index != unit->unit.player_index) return;
+	if (!trace->ready || trace->unit_index != unit_index)
+	{
+		memset(trace, 0, sizeof(*trace));
+		trace->ready = 1;
+		trace->unit_index = unit_index;
+	}
+	else if (trace->weapon_index != weapon_index)
+	{
+		if (trace->slot != slot && trace->definition_index != weapon->definition_index)
+		{
+			trace->generation++;
+			platform_log("network test: bot actual switch actor %d tick %ld unit %lx generation %lu from_slot %d from_weapon %lx from_definition %lx to_slot %d to_weapon %lx to_definition %lx",
+				actor, game_time_get(), unit_index, trace->generation, trace->slot,
+				trace->weapon_index, trace->definition_index, slot, weapon_index, weapon->definition_index);
+		}
+		else trace->generation = 0;
+		trace->reported_slots = 0;
+	}
+	trace->weapon_index = weapon_index;
+	trace->definition_index = weapon->definition_index;
+	trace->slot = slot;
+}
+
+/* The producer supplies its firing weapon, not whichever weapon is held when a
+charged projectile finishes. Log only the first success per firing slot/generation. */
+void network_test_suite_weapon_projectile_created(long owner_unit, long weapon_index, long projectile_index)
+{
+	long player_index, *players;
+	struct player_datum *player;
+	struct unit_datum *unit;
+	struct weapon_datum *weapon;
+	struct object_datum *projectile;
+	struct network_test_weapon_trace *trace;
+	int actor, i;
+	short slot;
+
+	if (!network_test.suite_owned || network_test.mode != _network_test_host ||
+		network_test.suite_network_players < 2 || network_test.suite_network_players > BENCHMARK_MP_MAXIMUM_PLAYERS ||
+		owner_unit == NONE || weapon_index == NONE || projectile_index == NONE || game_connection() != _game_connection_network_server) return;
+	player_index = player_index_from_unit_index(owner_unit);
+	player = player_index != NONE ? player_try_and_get(player_index) : NULL;
+	if (!player || player->unit_index != owner_unit) return;
+	actor = player->network_player_data.machine_index;
+	if (actor < 1 || actor >= network_test.suite_network_players || player->local_player_index != NONE) return;
+	players = machine_get_player_list(actor);
+	if (!players || players[0] != player_index) return;
+	for (i = 1; i < 4; i++) if (players[i] != NONE) return;
+	unit = unit_try_and_get(owner_unit);
+	weapon = weapon_try_and_get(weapon_index);
+	projectile = object_try_and_get(projectile_index);
+	if (!unit || TEST_FLAG(unit->object.damage_flags, _object_dead_bit) || !weapon || !projectile ||
+		projectile->object.type != _object_type_projectile || projectile->object.owner_object_index != owner_unit ||
+		!TEST_FLAG(weapon->item.flags, _item_attached_to_unit_bit) || weapon->object.owner_player_index != player_index ||
+		(weapon->object.parent_object_index != NONE && weapon->object.parent_object_index != owner_unit)) return;
+	for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
+		if (unit->unit.weapon_object_indices[slot] == weapon_index) break;
+	if (slot == MAXIMUM_WEAPONS_PER_UNIT) return;
+	network_test_suite_observe_weapon(actor, owner_unit);
+	trace = &network_test.suite_weapon_trace[actor];
+	if (!trace->ready || trace->unit_index != owner_unit) return;
+	if (trace->projectiles != UINT32_MAX) trace->projectiles++;
+	if (!trace->generation || TEST_FLAG(trace->reported_slots, slot)) return;
+	SET_FLAG(trace->reported_slots, slot, TRUE);
+	platform_log("network test: bot actual projectile actor %d tick %ld unit %lx generation %lu firing_slot %d weapon %lx definition %lx projectile %lx current_slot %d current_weapon %lx current_definition %lx matched %d total %u",
+		actor, game_time_get(), owner_unit, trace->generation, slot, weapon_index, weapon->definition_index,
+		projectile_index, trace->slot, trace->weapon_index, trace->definition_index,
+		weapon_index == trace->weapon_index, trace->projectiles);
+}
+
+/* Workload revision 2 uses real, distinct carried weapons. Never retain a slot
+across a respawn: the salted unit and both owned weapon objects must still match. */
+static short network_test_suite_bot_weapon(int actor, long player_index, long tick)
+{
+	static const char *const names[] = {
+		"weapons\\pistol\\pistol", "weapons\\assault rifle\\assault rifle",
+		"weapons\\plasma rifle\\plasma rifle", "weapons\\plasma pistol\\plasma pistol",
+		"weapons\\needler\\needler", "weapons\\shotgun\\shotgun"
+	};
+	struct player_datum *player = player_try_and_get(player_index);
+	struct unit_datum *unit = player ? unit_try_and_get(player->unit_index) : NULL;
+	long definitions[2];
+	short slots[2] = { NONE, NONE }, slot, selected;
+	int n;
+
+	if (!unit || TEST_FLAG(unit->object.damage_flags, _object_dead_bit))
+		return NONE;
+	/* Resolve the map's tags once, outside the per-actor tick hot path. */
+	if (!network_test.suite_weapon_definitions_ready)
+	{
+		for (n = 0; n < 6; n++)
+		{
+			int previous;
+
+			network_test.suite_weapon_definitions[n] = tag_loaded(WEAPON_DEFINITION_TAG, names[n]);
+			if (network_test.suite_weapon_definitions[n] == NONE)
+			{
+				platform_log("network test: bot weapon workload 2 missing definition %s", names[n]);
+				return -2;
+			}
+			for (previous = 0; previous < n; previous++)
+				if (network_test.suite_weapon_definitions[previous] == network_test.suite_weapon_definitions[n]) return -2;
+		}
+		network_test.suite_weapon_definitions_ready = 1;
+	}
+	for (n = 0; n < 2; n++)
+		definitions[n] = network_test.suite_weapon_definitions[(actor + n * 3) % 6];
+	if (!network_test.suite_weapon_ready[actor] || network_test.suite_weapon_units[actor] != player->unit_index)
+	{
+		network_test_suite_clear_bot_weapons(player->unit_index);
+		for (n = 0; n < 2; n++)
+		{
+			struct object_placement_data placement;
+			long weapon_index;
+
+			object_placement_data_new(&placement, definitions[n], player->unit_index);
+			weapon_index = object_new(&placement);
+			if (weapon_index == NONE)
+			{
+				network_test_suite_clear_bot_weapons(player->unit_index);
+				return -2;
+			}
+			if (!unit_add_weapon_to_inventory(player->unit_index, weapon_index, _unit_add_weapon_starting))
+			{
+				object_delete_immediately(weapon_index);
+				network_test_suite_clear_bot_weapons(player->unit_index);
+				return -2;
+			}
+		}
+		network_test.suite_weapon_units[actor] = player->unit_index;
+		network_test.suite_weapon_ready[actor] = 1;
+		platform_log("network test: bot weapon workload 2 actor %d unit %lx definitions %lx/%lx (%s / %s)",
+			actor, player->unit_index, definitions[0], definitions[1], tag_get_name(definitions[0]), tag_get_name(definitions[1]));
+	}
+	/* Object creation can compact the pool; do not retain the old unit pointer. */
+	unit = unit_try_and_get(player->unit_index);
+	if (!unit) return -2;
+	for (slot = 0; slot < MAXIMUM_WEAPONS_PER_UNIT; slot++)
+	{
+		struct weapon_datum *weapon = weapon_try_and_get(unit->unit.weapon_object_indices[slot]);
+
+		/* Stowed weapons are detached; item_in_unit_inventory records their
+		owner and inventory flag, while the readied weapon is attached. */
+		if (!weapon || !TEST_FLAG(weapon->item.flags, _item_attached_to_unit_bit) ||
+			weapon->object.owner_player_index != unit->unit.player_index ||
+			(weapon->object.parent_object_index != NONE && weapon->object.parent_object_index != player->unit_index)) continue;
+		for (n = 0; n < 2; n++)
+			if (weapon->definition_index == definitions[n]) slots[n] = slot;
+	}
+	if (slots[0] == NONE || slots[1] == NONE || slots[0] == slots[1]) return -2;
+	/* Coprime actor offsets spread changes throughout the six-second period.
+	Hold the requested slot through its ready animation, rather than a one-tick pulse. */
+	selected = (short)(((tick + actor * 37) / (6 * TICKS_PER_SECOND)) % 2);
+	network_test_suite_observe_weapon(actor, player->unit_index);
+	return slots[selected];
+}
+
 void network_test_suite_synthetic_input_tick(long tick)
 {
 	long player_indices[BENCHMARK_MP_MAXIMUM_PLAYERS];
@@ -404,7 +608,13 @@ void network_test_suite_synthetic_input_tick(long tick)
 			benchmark_mp_arena_action(i, tick, &action);
 		}
 		SET_FLAG(action.control_flags, _unit_control_weapon_primary_trigger_bit, action.primary_trigger > 0.0f);
-		action.desired_weapon_index = NONE;
+		action.desired_weapon_index = prepared ? network_test_suite_bot_weapon(i, player_indices[i], tick) : NONE;
+		if (action.desired_weapon_index < NONE)
+		{
+			platform_log("network test: bot weapon workload 2 inventory failed actor %d tick %ld", i, tick);
+			network_test.mode = _network_test_off;
+			return;
+		}
 		action.desired_grenade_index = NONE;
 		action.desired_zoom_level = NONE;
 		update_server_handle_distributed_input(player_indices[i], tick, &action, control_flags, DISTRIBUTED_INPUT_HISTORY);

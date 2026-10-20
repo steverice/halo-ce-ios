@@ -366,7 +366,7 @@ static int mp_evidence_note(char *note, size_t size)
 			}
 		}
 		snprintf(note, size, "observed roster %d spawned %d local %d views %d; "
-			"synthetic host local1 synthetic%d one view; moved %d/%d (min %.1f), "
+			"synthetic host local1 synthetic%d one view; bot weapon workload 2; moved %d/%d (min %.1f), "
 			"remote firing %d/%d ammo spent %lu (min %lu), successful energy projectiles %lu (actors %d valid %d), projectile seen %d, damage changes %lu, deaths %lu, respawns %lu; "
 			"scripted hits %lu kills %lu repositions %lu; "
 			"zero external clients; visible opponents require frame review",
@@ -843,6 +843,7 @@ void benchmark_suite_frame(long width, long height)
 			{
 				suite.opened = now;
 				suite.opened_ticks = state.tick;
+				platform_log("benchmark suite: multiplayer measured start scene=%s tick=%ld", suite.scene, state.tick);
 				mp_collect(&state);
 				benchmark_graphics_window(1, (int)width, (int)height);
 				enter(suite_measuring);
@@ -890,6 +891,7 @@ void benchmark_suite_frame(long width, long height)
 					char note[512];
 					int useful = mp_evidence_note(note, sizeof(note));
 
+					platform_log("benchmark suite: multiplayer measured end scene=%s start=%ld tick=%ld", suite.scene, (long)suite.opened_ticks, state.tick);
 					benchmark_graphics_window(0, (int)width, (int)height);
 					finish(useful ? "ok" : "failed", note);
 				}
