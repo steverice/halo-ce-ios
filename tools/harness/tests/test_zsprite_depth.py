@@ -77,6 +77,7 @@ def test_dot_zw_depth_generation_for_gl_and_metal():
         subprocess.run([
             "clang", "--target=i686-linux-gnu", "-m32", "-no-pie",
             "-std=gnu11", "-fms-extensions", "-fshort-wchar", "-malign-double",
+            "-DHALO_LINUX_PLATFORM_LAYER",
             "-Wall", "-Wextra",
             "-Wno-macro-redefined", "-Wno-ignored-attributes",
             "-include", "port/linux/include/halo_linux_prefix.h",
