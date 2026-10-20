@@ -57,6 +57,7 @@ Only the host runs the AI, so all of this is the host's.
 
 /* port_config.c's */
 long config_integer(char const *name);
+double config_real(char const *name);
 char const *config_string(char const *name);
 
 /* ---------- constants */
