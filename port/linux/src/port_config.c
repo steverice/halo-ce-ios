@@ -1006,6 +1006,14 @@ static const struct config_setting config_settings[] =
 		"While Back is held, the D-pad's left and right step the render scale\n"
 		"(display.render_scale) down and up by 0.05 as the game runs, shown on\n"
 		"screen for two seconds; the game doesn't see the D-pad meanwhile." },
+	{ "debug.knob_cycle", _config_boolean, "false", "HALO_KNOB_CYCLE", _environment_value, _platform_ios,
+		"While Back is held, the D-pad's up and down choose a quality setting\n"
+		"(render height, shadow map size, anisotropic filtering, model detail,\n"
+		"anti-aliasing, effect resolution, mirror resolution) and left and right\n"
+		"step its value as the game runs, from the next frame, shown on screen for\n"
+		"two seconds and logged as \"knob: <setting>=<value>\". The game doesn't see\n"
+		"the D-pad meanwhile, and debug.render_scale_dpad, debug.external_mode and\n"
+		"debug.sense_tuning_chord's D-pad step get none of its presses. Not saved." },
 	{ "debug.sense_tuning_chord", _config_boolean, "false", "HALO_SENSE_TUNING_CHORD", _environment_value, _platform_ios,
 		"While a hand aims and Back (Create) is held, controller buttons change aim and\n"
 		"arms tuning as the game runs (laser mode, aim assist, steadying, pitch offset,\n"

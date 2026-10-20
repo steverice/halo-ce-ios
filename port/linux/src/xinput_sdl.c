@@ -43,6 +43,7 @@ drive the controller.
 #include "mp_benchmark_probe.h"
 #include "benchmark_mp_arena.h"
 #include "halo_spatial.h"
+#include "knob_cycle.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -148,6 +149,64 @@ static void render_scale_dpad(XINPUT_GAMEPAD *pad)
 	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT |
 		XINPUT_GAMEPAD_DPAD_RIGHT);
 }
+/* d3d8_device.c */
+int halo_knob_apply(const char *name, const char *value);
+void halo_knob_message(const char *text);
+
+static void knob_current(const struct knob *knob, char *text, unsigned long size)
+{
+	if (knob->kind == KNOB_INTEGER)
+		snprintf(text, size, "%ld", config_integer(knob->name));
+	else if (knob->kind == KNOB_BOOLEAN)
+		snprintf(text, size, "%s", config_boolean(knob->name) ? "true" : "false");
+	else
+		snprintf(text, size, "%s", config_string(knob->name));
+}
+
+/* debug.knob_cycle: while Back is held, the D-pad's up and down choose a quality setting (render lines, shadow map
+size, anisotropy, model detail, anti-aliasing, effect and mirror resolution; knob_cycle.h) and left and right step
+its value, applied from the next frame and shown on screen for two seconds. The game never sees the D-pad while
+Back is held. It runs ahead of the other D-pad chords (debug.render_scale_dpad, debug.external_mode and
+debug.sense_tuning_chord's D-pad pitch step), which get no D-pad presses while it is on. */
+static void knob_cycle_chord(XINPUT_GAMEPAD *pad)
+{
+	static int enabled = -1;
+	static WORD previous;
+	static struct knob_state state;
+	WORD pressed;
+	int select_delta, value_delta;
+	char label[96];
+	const char *name = NULL, *value = NULL;
+
+	if (enabled < 0)
+	{
+		enabled = config_boolean("debug.knob_cycle");
+		knob_state_reset(&state);
+	}
+	if (!enabled)
+		return;
+	if (!(pad->wButtons & XINPUT_GAMEPAD_BACK))
+	{
+		previous = 0;
+		return;
+	}
+	pressed = pad->wButtons & ~previous;
+	previous = pad->wButtons;
+	select_delta = (pressed & XINPUT_GAMEPAD_DPAD_DOWN) ? 1 : (pressed & XINPUT_GAMEPAD_DPAD_UP) ? -1 : 0;
+	value_delta = (pressed & XINPUT_GAMEPAD_DPAD_RIGHT) ? 1 : (pressed & XINPUT_GAMEPAD_DPAD_LEFT) ? -1 : 0;
+	if (select_delta || value_delta)
+	{
+		if (knob_cycle_press(&state, select_delta, value_delta, knob_current, label, sizeof(label), &name, &value))
+		{
+			halo_knob_apply(name, value);
+			platform_log("knob: %s=%s", name, value);
+		}
+		halo_knob_message(label);
+	}
+	pad->wButtons &= (WORD)~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN | XINPUT_GAMEPAD_DPAD_LEFT |
+		XINPUT_GAMEPAD_DPAD_RIGHT);
+}
+
 /* controller aim's pitch offset (input.aim_pitch_offset,
 port/linux/game/controller_aim_game.c), the live chord behind
 debug.sense_tuning_chord: while a hand aims and Back is held (the Sense controllers' Create), the right stick
@@ -1460,6 +1519,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			stick_aimed_ms = SDL_GetTicks();
 			pthread_mutex_unlock(&mouse_lock);
 		}
+		knob_cycle_chord(&state->Gamepad);
 #ifdef HALO_IOS
 		external_mode_chord(&state->Gamepad);
 #endif

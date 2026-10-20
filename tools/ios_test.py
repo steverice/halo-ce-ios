@@ -90,6 +90,9 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/external_mode_probe.c', 'port/ios/host/host_external_mode.c',
     '-o', BUILD/'external-mode-probe')
 run(BUILD/'external-mode-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/knob_cycle_probe.c', '-o', BUILD/'knob-cycle-probe')
+run(BUILD/'knob-cycle-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/external_request_probe.c', 'port/ios/host/host_external_mode.c',
     '-o', BUILD/'external-request-probe')

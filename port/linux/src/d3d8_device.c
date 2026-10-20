@@ -209,6 +209,12 @@ static double render_scale_live = -1.0;
 height in lines (the next frame's halo_screen_commit draws at it, as a render scale step does), the shadow maps'
 size and the anisotropy; 0 leaves the setting in force */
 static long benchmark_render_lines, benchmark_shadow_size, benchmark_anisotropy;
+/* debug.knob_cycle (halo_knob_apply): the same settings changed while the game runs, in place of the settings; the
+benchmark's values come first. 0 leaves the setting in force, and for the effect and mirror targets -1 */
+static long knob_render_lines, knob_shadow_size, knob_anisotropy;
+/* the frame the offscreen targets of an older size are freed on (knob_targets_release); 0 for none */
+static unsigned long knob_release_frame;
+static int knob_effect_resolution = -1, knob_mirror_full = -1;
 /* Values observed in renderer operations since the current benchmark run began.
    Zero means this run has not established an actual shadow target or sampler. */
 static long benchmark_shadow_target_observed, benchmark_sampler_max_observed;
@@ -252,6 +258,9 @@ it (the console's lines show only while the console is open) */
 last switched, and the text, for two seconds */
 static double anti_aliasing_changed_milliseconds = -1.0;
 static const char *anti_aliasing_label;
+/* debug.knob_cycle's label (halo_knob_message), outside a game, and when it was set */
+static double knob_message_milliseconds = -1.0;
+static char knob_message_text[96];
 
 void halo_render_scale_overlay(void)
 {
@@ -260,6 +269,8 @@ void halo_render_scale_overlay(void)
 	if (anti_aliasing_changed_milliseconds >= 0.0 &&
 		halo_frame_trace_milliseconds() - anti_aliasing_changed_milliseconds <= 2000.0)
 		render_debug_string(0, anti_aliasing_label);
+	if (knob_message_milliseconds >= 0.0 && halo_frame_trace_milliseconds() - knob_message_milliseconds <= 2000.0)
+		render_debug_string(0, knob_message_text);
 	if (render_scale_changed_milliseconds < 0.0 ||
 		halo_frame_trace_milliseconds() - render_scale_changed_milliseconds > 2000.0)
 		return;
@@ -285,6 +296,9 @@ void halo_render_scale_step(int direction)
 
 static int head_eyes_frame(void);
 static BOOL native_hud_active(void);
+
+/* source/models/models.c */
+void halo_model_lod_set(int is_max);
 
 /* port/linux/game/scene_class.c */
 int halo_scene_class(void);
@@ -338,7 +352,7 @@ static void screen_mode_choose(long *width, float scale[2], float native[2])
 		takes the scale's place */
 		double render_scale = render_scale_now();
 
-		if (benchmark_render_lines > 0)
+		if (benchmark_render_lines > 0 || knob_render_lines > 0)
 			render_scale = 1.0;
 		if (render_scale >= 0.25 && render_scale < 1.0 && !(head_eyes_frame() && halo_stereo_frame()->foveated))
 		{
@@ -347,7 +361,7 @@ static void screen_mode_choose(long *width, float scale[2], float native[2])
 		}
 	}
 	pixels = halo_display_render_size(drawable_width, drawable_height, *width,
-		requested_width, benchmark_render_lines > 0 ? benchmark_render_lines :
+		requested_width, benchmark_render_lines > 0 ? benchmark_render_lines : knob_render_lines > 0 ? knob_render_lines :
 		config_scene_integer("display.render_height", halo_scene_class()), screen_maximum_texture_size);
 	{
 		/* head-tracked stereo: the screen's targets are the eyes' pictures,
@@ -975,18 +989,20 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 	}
 	if (width == 128 && height == 128 && (format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
 	{
-		scale[0] = scale[1] = (float)(benchmark_shadow_size > 0 ? benchmark_shadow_size : shadow_size) / 128.0f;
+		scale[0] = scale[1] = (float)(benchmark_shadow_size > 0 ? benchmark_shadow_size :
+			knob_shadow_size > 0 ? knob_shadow_size : shadow_size) / 128.0f;
 	}
-	else if (width == 320 && height == 240 && effect_resolution)
+	else if (width == 320 && height == 240 && (knob_effect_resolution >= 0 ? knob_effect_resolution : effect_resolution))
 	{
 		float dense[2];
+		float factor = knob_mirror_full >= 0 ? (knob_mirror_full ? 2.0f : 1.0f) : effect_factor;
 
 		/* (foveated eye passes: at the eyes' density without foveation, not
 		the rate maps' screen size, which the full-rate center reaches only
 		there) */
 		screen_scale_dense(dense);
-		scale[0] = dense[1] * effect_factor;
-		scale[1] = dense[1] * effect_factor;
+		scale[0] = dense[1] * factor;
+		scale[1] = dense[1] * factor;
 	}
 }
 
@@ -1644,7 +1660,7 @@ static void anti_aliasing_read(void)
 	if (anti_aliasing_live >= 0)
 	{
 		method = anti_aliasing_live;
-		setting = method == _anti_aliasing_fxaa ? "fxaa" : "off";
+		setting = method == _anti_aliasing_fxaa ? "fxaa" : method == _anti_aliasing_smaa ? "smaa" : "off";
 	}
 	if (method == anti_aliasing_method)
 		return;
@@ -1762,6 +1778,65 @@ void halo_anti_aliasing_toggle(void)
 	platform_log("anti-aliasing: %s (the live chord, until the app quits)", anti_aliasing_label);
 	if (device.gl_ready)
 		anti_aliasing_read();
+}
+
+/* debug.knob_cycle's anti-aliasing: the method named ("off", "fxaa" or "smaa") from the next frame, until the app quits */
+static void anti_aliasing_live_set(const char *method)
+{
+	if (anti_aliasing_method < 0)
+		anti_aliasing_read();
+	anti_aliasing_live = !strcmp(method, "fxaa") ? _anti_aliasing_fxaa : !strcmp(method, "smaa") ? _anti_aliasing_smaa :
+		_anti_aliasing_off;
+	if (device.gl_ready)
+		anti_aliasing_read();
+}
+
+/* One setting of debug.knob_cycle's chord (xinput_sdl.c), by its config name and the text of its new value, changed
+from the next frame (the targets that depend on it are allocated again) and until the app quits. Returns 0 for a
+setting the chord does not change. The render height has no effect under foveated head-tracked stereo, where the
+Compositor's rate maps size the eyes. */
+int halo_knob_apply(const char *name, const char *value)
+{
+	if (!strcmp(name, "display.render_height"))
+		knob_render_lines = atol(value);
+	else if (!strcmp(name, "display.shadow_map_size"))
+		knob_shadow_size = atol(value);
+	else if (!strcmp(name, "display.anisotropic_filtering"))
+		knob_anisotropy = atol(value);
+	else if (!strcmp(name, "display.model_lod"))
+		halo_model_lod_set(strcmp(value, "auto") != 0);
+	else if (!strcmp(name, "display.anti_aliasing"))
+		anti_aliasing_live_set(value);
+	else if (!strcmp(name, "display.effect_resolution"))
+		knob_effect_resolution = !strcmp(value, "true");
+	else if (!strcmp(name, "display.mirror_resolution"))
+		knob_mirror_full = !strcmp(value, "full");
+	else
+		return 0;
+	/* the new targets are allocated by the next frames; the old ones go two seconds on */
+	knob_release_frame = device.frame + 120;
+	return 1;
+}
+
+/* the chord's label for two seconds: in a game the HUD's message line, elsewhere the debug text */
+void halo_knob_message(const char *text)
+{
+	if (game_in_progress())
+	{
+		wchar_t message[96];
+		unsigned int index;
+
+		for (index = 0; index + 1 < sizeof(message) / sizeof(*message) && text[index]; index++)
+			message[index] = (unsigned char)text[index];
+		message[index] = 0;
+		hud_print_message(0, message);
+		knob_message_milliseconds = -1.0;
+	}
+	else
+	{
+		snprintf(knob_message_text, sizeof(knob_message_text), "%s", text);
+		knob_message_milliseconds = halo_frame_trace_milliseconds();
+	}
 }
 
 /* the pass over the view's rectangle of the scene's target (halo_render_scene_end) */
@@ -3695,10 +3770,14 @@ static void sampler_state_fill(int stage, BOOL mipmapped, BOOL hires, struct gpu
 		}
 		if (benchmark_anisotropy > 0)
 			anisotropy = benchmark_anisotropy;
-		if (anisotropy > 1 && sampler->min_filter == GPU_FILTER_LINEAR && sampler->mip_filter != GPU_FILTER_NONE)
 		{
-			sampler->min_filter = GPU_FILTER_ANISOTROPIC;
-			sampler->max_anisotropy = (uint32_t)anisotropy;
+			long used = knob_anisotropy > 0 ? knob_anisotropy : anisotropy;
+
+			if (used > 1 && sampler->min_filter == GPU_FILTER_LINEAR && sampler->mip_filter != GPU_FILTER_NONE)
+			{
+				sampler->min_filter = GPU_FILTER_ANISOTROPIC;
+				sampler->max_anisotropy = (uint32_t)used;
+			}
 		}
 	}
 	if (sampler->mip_filter != GPU_FILTER_NONE &&
@@ -5935,6 +6014,53 @@ static void stereo_targets_release(void)
 		platform_log("stereo: stereo stopped; freed %lu eye and HUD targets (%lu MB)", freed, bytes >> 20);
 }
 
+/* debug.knob_cycle: the shadow, effect and mirror targets (128x128 and 320x240) whose size is not the one in force
+now are freed, once, two seconds after a change (the new ones have been allocated by then; the backend holds a
+texture until the frames using it are done) */
+static void knob_targets_release(void)
+{
+	struct render_target_entry **link = &render_targets;
+	unsigned long freed = 0;
+
+	knob_release_frame = 0;
+	recent_render_targets_forget();
+	while (*link)
+	{
+		struct render_target_entry *entry = *link;
+		float scale[2] = { 1.0f, 1.0f };
+
+		if (entry->layer == HALO_STEREO_LAYER_MONO && !entry->target.foveated_eye &&
+			entry->target.data != device.back_buffer.Data && entry->target.data != device.depth_buffer.Data &&
+			((entry->target.width == 128 && entry->target.height == 128) ||
+				(entry->target.width == 320 && entry->target.height == 240)))
+			offscreen_target_scale(entry->target.width, entry->target.height,
+				entry->target.depth ? D3DFMT_D24S8 : D3DFMT_R5G6B5, scale);
+		else
+		{
+			link = &entry->next;
+			continue;
+		}
+		if (entry->target.scale[0] == scale[0] && entry->target.scale[1] == scale[1])
+		{
+			link = &entry->next;
+			continue;
+		}
+		{
+			struct render_target_entry **bucket = render_target_bucket(entry->target.data);
+
+			while (*bucket != entry)
+				bucket = &(*bucket)->next_in_bucket;
+			*bucket = entry->next_in_bucket;
+		}
+		*link = entry->next;
+		gpu_texture_destroy(entry->target.texture);
+		free(entry);
+		freed++;
+	}
+	if (freed)
+		platform_log("knob: freed %lu offscreen targets of an older size", freed);
+}
+
 /* display.native_hud: a display-sized back buffer nothing has drawn into for
 two seconds' frames goes (the layer turned off, or the window changed size
 and another took its place) */
@@ -6317,6 +6443,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	companion_records_reset(&companion_records);
 	if (device.frame % 60 == 0)
 		native_targets_release();
+	if (knob_release_frame && device.frame >= knob_release_frame)
+		knob_targets_release();
 	device.frame++;
 	input_replay_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
 	benchmark_suite_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
