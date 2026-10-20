@@ -6,9 +6,12 @@
 #include "../port/ios/host/host_sdl.c"
 
 static SDL_WindowFlags captured;
+static char captured_title[32];
 static char fake_window;
 SDL_Window *SDL_CreateWindow(const char *title,int width,int height,SDL_WindowFlags flags) {
-    assert(title && width==1000 && height==700);captured=flags;return (SDL_Window *)&fake_window;
+    assert(title && width==1000 && height==700);
+    snprintf(captured_title,sizeof(captured_title),"%s",title);
+    captured=flags;return (SDL_Window *)&fake_window;
 }
 SDL_MetalView SDL_Metal_CreateView(SDL_Window *window) { assert(window==(SDL_Window *)&fake_window);return &fake_window; }
 const char *SDL_GetError(void) { return "test"; }
@@ -20,11 +23,13 @@ static void config(const char *text) {
 }
 static void create(int fullscreen) {
     SDL_WindowFlags request=SDL_WINDOW_METAL|SDL_WINDOW_HIGH_PIXEL_DENSITY|SDL_WINDOW_HIDDEN|SDL_WINDOW_FULLSCREEN;
-    assert(host_sdl_create_window("VISR",1000,700,(int64_t)request));
+    assert(host_sdl_create_window("Halo",1000,700,(int64_t)request));
 #if HALO_NATIVE_MAC
+    assert(!strcmp(captured_title,"VISR"));
     assert(!!(captured&SDL_WINDOW_FULLSCREEN)==fullscreen);
     assert(captured&SDL_WINDOW_RESIZABLE);
 #else
+    assert(!strcmp(captured_title,"Halo"));
     (void)fullscreen;assert(captured==request);
 #endif
     assert(captured&SDL_WINDOW_METAL);assert(captured&SDL_WINDOW_HIGH_PIXEL_DENSITY);assert(captured&SDL_WINDOW_HIDDEN);

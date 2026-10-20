@@ -175,6 +175,8 @@ uint32_t host_sdl_create_window(const char *title, int width, int height, int64_
 #if HALO_NATIVE_MAC
     SDL_WindowFlags requested = (SDL_WindowFlags)flags;
     flags = (int64_t)native_window_flags(requested);
+    /* The shared guest supplies its original title; the native app has its own name. */
+    title = "VISR";
     host_logf(HOST_LOG_INFO, "Native SDL window flags: requested 0x%llx, effective 0x%llx (%s)",
         (unsigned long long)requested, (unsigned long long)flags,
         (flags & SDL_WINDOW_FULLSCREEN) ? "explicit fullscreen" : "resizable window");
