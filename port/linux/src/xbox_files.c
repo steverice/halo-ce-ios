@@ -26,6 +26,7 @@ matched case-insensitively, like the Xbox's FATX volumes.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 /* ---------- paths */
@@ -160,6 +161,9 @@ const char *platform_save_root(void)
 
 		if (*environment)
 			snprintf(root, sizeof(root), "%s", environment);
+		else if (config_benchmark_isolated())
+			/* a benchmark suite's saves are scratch, not the player's */
+			snprintf(root, sizeof(root), "%s/benchmark/run/save", platform_data_root());
 #ifdef _WIN32
 		/* the Windows build (port/windows) keeps saves in the roaming
 		application data folder */
@@ -210,6 +214,12 @@ void platform_translate_path(const char *xbox_path, char *host_path, unsigned lo
 	const char *cursor = xbox_path;
 	unsigned long length;
 
+	if (config_benchmark_isolated() && !strcasecmp(xbox_path, "d:\\init.txt"))
+	{
+		/* a benchmark suite runs the console commands its launch put in benchmark/run/, not the player's */
+		snprintf(host_path, host_path_size, "%s/benchmark/run/init.txt", platform_data_root());
+		return;
+	}
 	snprintf(resolved, sizeof(resolved), "%s", platform_data_root());
 	if (((cursor[0] >= 'a' && cursor[0] <= 'z') || (cursor[0] >= 'A' && cursor[0] <= 'Z')) && cursor[1] == ':')
 	{

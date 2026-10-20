@@ -23,6 +23,10 @@ const char *config_string(const char *name);
 /* a boolean setting read again from config.toml, for settings another
 process changes while the game runs; the environment still wins */
 int config_reload_boolean(const char *name);
+/* whether this launch is a benchmark suite (HALO_BENCHMARK_SUITE set in the launch's environment). Such a
+launch takes its settings from the environment alone: nothing is written to config.toml or config.origins,
+the saves go to benchmark/run/save in the data folder, and init.txt is read from benchmark/run/ */
+int config_benchmark_isolated(void);
 /* sets a setting from its value as text ("true", "60", "1.5", "all"), and
 writes it into config.toml (only its line changes); 1 on success */
 int config_write(const char *name, const char *value);

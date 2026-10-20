@@ -490,6 +490,11 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_ILP32', '-I
     '-Iport/third_party/tomlc17', *shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'sdl3'], text=True)),
     'port/ios/tests/config_reload_probe.c', 'port/third_party/tomlc17/tomlc17.c', '-o', BUILD/'config-reload-probe')
 run(BUILD/'config-reload-probe')
+# a benchmark suite's launch leaves config.toml and config.origins alone (port/linux/src/port_config.c)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_ILP32', '-Iport/linux/src',
+    '-Iport/third_party/tomlc17', *shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'sdl3'], text=True)),
+    'port/ios/tests/benchmark_isolation_probe.c', 'port/third_party/tomlc17/tomlc17.c', '-o', BUILD/'benchmark-isolation-probe')
+run(BUILD/'benchmark-isolation-probe')
 # bp and bpf on the GPU (port/ios/host/texture_refine.m); skips itself where there is no Metal device
 run('xcrun', 'clang', '-O2', '-fobjc-arc', '-Iport/ios/host', 'port/ios/tests/texture_refine_probe.m',
     'port/ios/host/texture_refine.m', '-framework', 'Foundation', '-framework', 'Metal', '-o', BUILD/'texture-refine-probe')

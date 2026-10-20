@@ -27,6 +27,8 @@ static void publish_size(NSString *directory)
    writes nothing: the first launch neither overwrites a hand edit nor writes config.toml before the game does */
 static void apply_switch(NSUserDefaults *defaults)
 {
+	if (getenv("HALO_BENCHMARK_SUITE") && *getenv("HALO_BENCHMARK_SUITE"))
+		return;   /* a benchmark suite leaves config.toml alone */
 	BOOL wanted = [defaults boolForKey:@"upscaled_textures"];
 	id applied = [defaults objectForKey:@"upscaled_textures_applied"];
 

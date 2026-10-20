@@ -1583,8 +1583,18 @@ static char *config_read_file(const char *path, size_t *size)
 #endif
 }
 
+int config_benchmark_isolated(void)
+{
+	const char *suite = getenv("HALO_BENCHMARK_SUITE");
+
+	return suite && *suite;
+}
+
 static int config_write_file(const char *path, const char *text)
 {
+	/* port: a benchmark suite never changes the player's settings (its own come from the environment) */
+	if (config_benchmark_isolated())
+		return 1;
 #ifdef HALO_ILP32
 	FILE *file = fopen(path, "wb");
 	int written;

@@ -141,7 +141,7 @@ void host_cloud_saves_start(const char *data_root, const char *save_root) {
     [defaults registerDefaults:@{ @"cloud_saves": @YES, @"cloud_saves_restore": @NO, @"cloud_saves_delete": @NO,
         @"cloud_saves_status": @"Off" }];
     /* a test run (tools/mac_run.py) plays with a data folder of its own and must not reach an account */
-    if (environment[@"HALO_RUNNER"] || [environment[@"HALO_CLOUD_SAVES"] isEqualToString:@"0"]) {
+    if (environment[@"HALO_RUNNER"] || [environment[@"HALO_BENCHMARK_SUITE"] length] || [environment[@"HALO_CLOUD_SAVES"] isEqualToString:@"0"]) {
         host_logf(HOST_LOG_INFO, "cloud saves: off for this run");
         return;
     }

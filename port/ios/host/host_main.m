@@ -278,6 +278,13 @@ int main(int argc,char **argv) {
 #endif
         snprintf(data_root,sizeof(data_root),"%s",documents.fileSystemRepresentation);
         snprintf(save_root,sizeof(save_root),"%s/save",data_root);mkdir(save_root,0755);
+        /* a benchmark suite's saves and profile are scratch, so a run leaves the player's untouched */
+        if(getenv("HALO_BENCHMARK_SUITE")&&*getenv("HALO_BENCHMARK_SUITE")){
+            char run[1100];
+            snprintf(run,sizeof(run),"%s/benchmark",data_root);mkdir(run,0755);
+            snprintf(run,sizeof(run),"%s/benchmark/run",data_root);mkdir(run,0755);
+            snprintf(save_root,sizeof(save_root),"%s/benchmark/run/save",data_root);mkdir(save_root,0755);
+        }
         chdir(data_root);
         log_file=fopen("ios-runtime.log","w");setvbuf(stderr,NULL,_IONBF,0);
         /* internet play's MQTT brokers (network.brokers_file, p2p_signal.c): the app's
@@ -407,7 +414,7 @@ int main(int argc,char **argv) {
         snprintf(env_width,sizeof(env_width),"HALO_DISPLAY_WIDTH=%d",width);
         snprintf(env_pixel_width,sizeof(env_pixel_width),"HALO_DISPLAY_PIXEL_WIDTH=%d",pixel_width);
         snprintf(env_pixel_height,sizeof(env_pixel_height),"HALO_DISPLAY_PIXEL_HEIGHT=%d",pixel_height);
-        const char *env[20];size_t env_count=0;
+        const char *env[256];size_t env_count=0;
         env[env_count++]=env_data;env[env_count++]=env_save;env[env_count++]=env_width;
         env[env_count++]=env_pixel_width;env[env_count++]=env_pixel_height;
         /* This device's profile (profiles/, host_profile.h): its values go to the game as one variable, which
@@ -489,6 +496,21 @@ int main(int argc,char **argv) {
         if(external_mode && *external_mode) {
             snprintf(env_external,sizeof(env_external),"HALO_EXTERNAL_MODE=%s",external_mode);
             env[env_count++]=env_external;
+        }
+        /* a benchmark suite takes every setting from its launch's environment: each HALO_ variable the host
+           has not already set is passed on, so the run needs no change to config.toml */
+        if(benchmark_suite&&*benchmark_suite){
+            extern char **environ;
+            for(char **launch=environ;launch&&*launch&&env_count<250;launch++){
+                if(strncmp(*launch,"HALO_",5))continue;
+                const char *equals=strchr(*launch,'=');
+                if(!equals)continue;
+                size_t name_length=(size_t)(equals-*launch);
+                int known=0;
+                for(size_t i=0;i<env_count;i++)
+                    if(!strncmp(env[i],*launch,name_length)&&env[i][name_length]=='=')known=1;
+                if(!known)env[env_count++]=*launch;
+            }
         }
         env[env_count++]="TZ=UTC0";env[env_count++]=NULL;
         uint32_t *environment=host_low_map(sizeof(uint32_t)*env_count,PROT_READ|PROT_WRITE);

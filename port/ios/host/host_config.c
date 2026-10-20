@@ -11,16 +11,45 @@ Settings app's switch sets (host_texture_settings.m), keeping every other line. 
 #include <stdlib.h>
 #include <string.h>
 
+/* a benchmark suite's launch environment, which wins over the file as it does in the game: HALO_ and the
+key in capitals, bar the two settings the game names otherwise */
+static const char *launch_value(const char *name)
+{
+	const char *suite = getenv("HALO_BENCHMARK_SUITE"), *dot = strchr(name, '.');
+	char variable[96];
+	size_t index;
+
+	if (!suite || !*suite || !dot)
+		return NULL;
+	if (!strcmp(name, "display.mode"))
+		return getenv("HALO_DISPLAY_MODE");
+	if (!strcmp(name, "network.lan_broadcast"))
+		return getenv("HALO_NET_LAN_BROADCAST");
+	if (strlen(dot + 1) + 6 > sizeof(variable))
+		return NULL;
+	memcpy(variable, "HALO_", 5);
+	for (index = 0; dot[1 + index]; index++)
+		variable[5 + index] = (char)toupper((unsigned char)dot[1 + index]);
+	variable[5 + index] = 0;
+	return getenv(variable);
+}
+
 /* the raw value text of section.key (quotes kept), or 0 if it isn't there */
 static int config_value(const char *name, char *value, size_t size)
 {
 	const char *dot = strchr(name, '.');
+	const char *launch = launch_value(name);
 	char line[512], section[64] = "";
 	FILE *file;
 	int found = 0;
 
 	if (!dot)
 		return 0;
+	if (launch)
+	{
+		snprintf(value, size, "%s", launch);
+		return 1;
+	}
 	file = fopen("config.toml", "r");
 	if (!file)
 		return 0;
@@ -126,6 +155,8 @@ int host_config_write_boolean(const char *name, int value)
 
 	if (!dot || (size_t)(dot - name) >= sizeof(section) || strlen(dot + 1) >= sizeof(key))
 		return 0;
+	if (getenv("HALO_BENCHMARK_SUITE") && *getenv("HALO_BENCHMARK_SUITE"))
+		return 0;   /* a benchmark suite leaves config.toml alone */
 	memcpy(section, name, (size_t)(dot - name));
 	section[dot - name] = 0;
 	snprintf(key, sizeof(key), "%s", dot + 1);
