@@ -60,4 +60,5 @@ jobs:
             tools/harness/tests/test_unicode_line_breaks.py \
             tools/harness/tests/test_sound_orphan.py \
             tools/harness/tests/test_queue_reset.py \
-            tools/harness/tests/test_coop_monitor.py
+            tools/harness/tests/test_coop_monitor.py \
+            tools/harness/tests/test_button_presets.py
