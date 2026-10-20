@@ -17,6 +17,7 @@ CLANG = shutil.which("clang")
 
 pytestmark = pytest.mark.skipif(not CLANG, reason="needs clang")
 
+TEST_ENV = {"HALO_TEST_ALLOW_LOCAL_HTTP": "1"}
 LIST = {"games": [{"invite": "a" * 64, "name": "Test", "map": "bloodgulch", "version": 29}]}
 
 
@@ -145,7 +146,7 @@ def server():
 
 def request(transport, server, path, *arguments):
     result = subprocess.run([str(transport), f"http://127.0.0.1:{server.server_address[1]}{path}", *arguments],
-                            capture_output=True, text=True, timeout=30)
+                            capture_output=True, text=True, timeout=30, env=TEST_ENV)
     assert result.returncode == 0, result.stderr
     fields = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
     return int(fields["status"]), fields.get("error", ""), fields.get("body", "")
@@ -196,19 +197,19 @@ def test_a_slow_server_times_out(transport, server):
 def test_only_this_machine_may_be_plain(transport, server):
     port = server.server_address[1]
     for url in (f"http://192.0.2.1:{port}/v1/games", "http://halo.example/v1/games", "ftp://127.0.0.1/x", "nonsense"):
-        result = subprocess.run([str(transport), url], capture_output=True, text=True, timeout=30)
+        result = subprocess.run([str(transport), url], capture_output=True, text=True, timeout=30, env=TEST_ENV)
         assert result.stdout.startswith("status=0\n"), (url, result.stdout)
     # TLS to a server that does not speak it is a failure
     status, error, body = request(transport, server, "/v1/games")
     result = subprocess.run([str(transport), f"https://127.0.0.1:{port}/v1/games", "-", "1024", "1000"],
-                            capture_output=True, text=True, timeout=30)
+                            capture_output=True, text=True, timeout=30, env=TEST_ENV)
     assert result.stdout.startswith("status=0\n")
     assert [item["path"] for item in server.requests].count("/v1/games") == 1
 
 
 def test_the_thread_browses_announces_and_withdraws(worker, server):
     result = subprocess.run([str(worker)], capture_output=True, text=True, timeout=60,
-                            env={"HALO_DELTA_URL": f"http://127.0.0.1:{server.server_address[1]}/"})
+                            env={**TEST_ENV, "HALO_DELTA_URL": f"http://127.0.0.1:{server.server_address[1]}/"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "GAMES 1 Test bloodgulch 29" in result.stdout
     assert "PHASE quit" in result.stdout
@@ -229,6 +230,12 @@ def test_the_thread_browses_announces_and_withdraws(worker, server):
         ("POST", "/v1/withdraw", f"invite={invite['c']}"),
     ], result.stdout
     assert {item["agent"] for item in server.requests} == {"VISR"}
+
+
+def test_plain_http_needs_the_test_hook(transport, server):
+    url = f"http://127.0.0.1:{server.server_address[1]}/v1/games"
+    result = subprocess.run([str(transport), url], capture_output=True, text=True, timeout=30, env={})
+    assert result.stdout.startswith("status=0\n") and not server.requests
 
 
 def test_the_probe_of_the_list_and_announcing(tmp_path):

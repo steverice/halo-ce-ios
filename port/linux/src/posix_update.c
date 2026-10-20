@@ -110,10 +110,10 @@ static void set_error(char *error, int error_size, const char *what, int code)
 	}
 }
 
-/* https://host[:port][/path], or http:// for this machine alone (a test's
-server): *secure says which */
+/* https://host[:port][/path], or, if allow_plain, http:// for this machine
+alone (a test's server): *secure says which */
 static int parse_url(const char *url, char *host, size_t host_size, char *port, size_t port_size, char *path,
-	size_t path_size, int *secure)
+	size_t path_size, int *secure, int allow_plain)
 {
 	const char *start, *end, *colon;
 
@@ -122,7 +122,7 @@ static int parse_url(const char *url, char *host, size_t host_size, char *port, 
 		*secure = 1;
 		start = url + 8;
 	}
-	else if (strncasecmp(url, "http://", 7) == 0)
+	else if (allow_plain && strncasecmp(url, "http://", 7) == 0)
 	{
 		*secure = 0;
 		start = url + 7;
@@ -444,7 +444,10 @@ static int https_exchange(struct connection *connection, const char *url, const 
 	const char *agent = download->memory ? REQUEST_USER_AGENT : UPDATE_USER_AGENT;
 	int have_length = 0, chunked = 0, status = 0, secure = 1;
 
-	if (!parse_url(url, host, sizeof(host), port, sizeof(port), path, sizeof(path), &secure))
+	/* (plain http reaches only this machine's own server, and only where a test asks for it: the updater's
+	every hop is https) */
+	if (!parse_url(url, host, sizeof(host), port, sizeof(port), path, sizeof(path), &secure,
+		download->memory && getenv("HALO_TEST_ALLOW_LOCAL_HTTP")))
 	{
 		snprintf(error, (size_t)error_size, "not an https:// address: %s", url);
 		return 0;
@@ -614,7 +617,7 @@ int update_download(const char *url, const char *path, update_progress_proc prog
 				char host[256], port[16], path_part[2048];
 				int secure;
 
-				parse_url(current, host, sizeof(host), port, sizeof(port), path_part, sizeof(path_part), &secure);
+				parse_url(current, host, sizeof(host), port, sizeof(port), path_part, sizeof(path_part), &secure, 0);
 				snprintf(current, sizeof(current), "https://%s:%s%s", host, port, location);
 			}
 			else

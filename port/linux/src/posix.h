@@ -167,7 +167,8 @@ step. Returns the HTTP status, or 0 if there was none, and why in error
 bytes, with its end after it; a larger body is a failure); any other status
 leaves it empty. Redirects are not followed. Where there is no TLS it fails.
 Linux alone also takes an http:// url of this machine (127.0.0.1,
-localhost), which a test's server answers. More than one thread may ask at
+localhost), which a test's server answers, when the environment variable
+HALO_TEST_ALLOW_LOCAL_HTTP is set. More than one thread may ask at
 once */
 int posix_https_request(const char *url, const char *form, int form_size, char *response, int response_size,
 	int timeout_milliseconds, char *error, int error_size);
