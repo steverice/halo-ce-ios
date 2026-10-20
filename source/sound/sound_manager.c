@@ -3235,13 +3235,25 @@ static void process_looping_sounds(
 	return;
 }
 
+/* port: the fade's 300 ms wait, in real time under debug.fixed_timestep, whose
+clock advances only as frames are presented and none is presented here: the
+wait never ended (port/linux/src/xbox_kernel.c) */
+int platform_fixed_timestep(void);
+double halo_frame_trace_milliseconds(void);
+
+static unsigned long sound_dispose_milliseconds(
+	void)
+{
+	return platform_fixed_timestep() ? (unsigned long)halo_frame_trace_milliseconds() : system_milliseconds();
+}
+
 void sound_dispose_from_old_map(
 	void)
 {
 	if (!sound_manager_globals.paused &&
 		sound_is_active())
 	{
-		long start_time = (long)system_milliseconds();
+		long start_time = (long)sound_dispose_milliseconds();
 		long sound_index = data_next_index(sound_data, NONE);
 
 		if (sound_index != NONE)
@@ -3263,7 +3275,7 @@ void sound_dispose_from_old_map(
 			stop_time = (real)start_time + 300.f;
 			while (!done)
 			{
-				if ((real)system_milliseconds() < stop_time)
+				if ((real)sound_dispose_milliseconds() < stop_time)
 				{
 					sound_idle();
 				}
