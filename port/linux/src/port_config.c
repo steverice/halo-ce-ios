@@ -379,6 +379,199 @@ static const struct config_setting config_settings[] =
 	{ "input.comfort_vignette", _config_boolean, "false", "HALO_COMFORT_VIGNETTE", _environment_value, _platform_ios,
 		"With input.turn = \"smooth\": darken the edges of the view while the stick\n"
 		"turns it, for comfort." },
+	{ "input.aim", _config_string, "\"controller\"", "HALO_AIM", _environment_value, _platform_ios,
+		"With display.stereo = \"head\": what aims, \"head\" (the view's center)\n"
+		"or \"controller\" (default; the aiming hand's Sense controller). Aiming\n"
+		"uses the head when tracking is unavailable in local play. In network\n"
+		"play, aim holds its last valid hand direction (or the unit's direction\n"
+		"before the first tracked pose); a seat uses stick aim. Anything else\n"
+		"aims with the head." },
+	{ "input.aim_hand", _config_string, "\"right\"", "HALO_AIM_HAND", _environment_value, _platform_ios,
+		"With input.aim = \"controller\": the aiming hand, \"right\" (default) or\n"
+		"\"left\" (the buttons mirror)." },
+	{ "input.aim_pitch_offset", _config_real, "0.0", "HALO_AIM_PITCH_OFFSET", _environment_value, _platform_ios,
+		"With input.aim = \"controller\": degrees the barrel ray and gun tilt down\n"
+		"from the aim axis (-10 to 45), for aiming from the hip with the forearm\n"
+		"low. Hold Back (Create) and push the right stick or the D-pad up or down\n"
+		"to change it by a degree for the session (the stick alone while\n"
+		"debug.render_scale_dpad or debug.hud_distance_cycle has the D-pad)." },
+	{ "input.aim_assist", _config_real, "1.0", "HALO_AIM_ASSIST", _environment_value, _platform_ios,
+		"With input.aim = \"controller\": how much of the game's bullet autoaim a\n"
+		"hand-aimed shot keeps, 0.0 to 2.0. It scales the cone around the aim\n"
+		"inside which a shot bends onto a target and the reticle turns red: 1.0\n"
+		"is the game's own for each weapon, 0.0 leaves every shot where the hand\n"
+		"points. Single player only: a network or multiplayer game always plays\n"
+		"at 1.0. Hold Back (Create) and push the right stick right or left to\n"
+		"change it by 0.5 for the session." },
+	{ "input.aim_steady", _config_real, "0.0", "HALO_AIM_STEADY", _environment_value, _platform_ios,
+		"With input.aim = \"controller\": how much a hand's tremor is smoothed\n"
+		"while its aim is on a target (inside the autoaim cone, most where the\n"
+		"reticle is red) and the weapon is not zoomed, 0.0 to 2.0: 0.0 none\n"
+		"(default), 1.0 moderate, 2.0 strong. It lengthens the time a small move\n"
+		"of the hand takes to reach the reticle; the aim is never pulled toward\n"
+		"the target and a larger move arrives at once. Multiplied by\n"
+		"input.aim_assist, so no assist means no steadying. Single player only.\n"
+		"Zoomed, input.aim_steady_zoom_2x and input.aim_steady_zoom_8x apply.\n"
+		"Hold Back (Create) and click the right stick to cycle through these\n"
+		"settings by zoom, then off, 1.0 and 2.0 at every zoom, for the session." },
+	{ "input.aim_steady_zoom_2x", _config_real, "1.0", "HALO_AIM_STEADY_ZOOM_2X", _environment_value, _platform_ios,
+		"As input.aim_steady, for a weapon zoomed up to 2x (default 1.0)." },
+	{ "input.aim_steady_zoom_8x", _config_real, "2.0", "HALO_AIM_STEADY_ZOOM_8X", _environment_value, _platform_ios,
+		"As input.aim_steady, for a weapon zoomed 8x or more (default 2.0);\n"
+		"between 2x and 8x the strength is in proportion." },
+	{ "input.controller_rumble", _config_real, "1.0", "HALO_CONTROLLER_RUMBLE", _environment_value, _platform_ios,
+		"How strongly the game's rumble plays on a gamepad (0 to 2: 1 is the\n"
+		"game's own strength, 0 is off). With input.aim = \"controller\" it plays\n"
+		"on the Sense controllers: the pad's heavy left motor on the other hand's\n"
+		"controller and its light right motor on the aiming hand's." },
+	{ "input.blast_rumble", _config_boolean, "true", "HALO_BLAST_RUMBLE", _environment_value, _platform_all,
+		"A blast that shakes the view but has no rumble of its own in the game's\n"
+		"data (a grenade's shock wave beyond 7 m) rumbles the gamepad's heavy\n"
+		"motor, at half the blast's strength at your distance for as long as\n"
+		"the shake lasts. False keeps the original: no rumble from such blasts." },
+	{ "input.laser", _config_string, "\"off\"", "HALO_LASER", _environment_value, _platform_ios,
+		"HEAD mode with controller aim: a line from the gun's muzzle to the\n"
+		"reticle. \"off\" (default), \"close\" (only while the reticle's surface\n"
+		"is within input.laser_distance, where a hand held below the eyes makes\n"
+		"the reticle slide down a surface as you walk up to it) or \"on\"\n"
+		"(always). In any mode it shows while the gun's line passes something\n"
+		"the eye's line doesn't. Hold Back (Create) and pull the right trigger\n"
+		"to cycle off, close and on for the session; the trigger doesn't fire\n"
+		"while Back is held." },
+	{ "input.reticle_ease", _config_real, "0.05", "HALO_RETICLE_EASE", _environment_value, _platform_ios,
+		"HEAD mode with controller aim: the time, in seconds, over which the\n"
+		"reticle moves along the gun's line when that line goes from a far\n"
+		"surface onto a near one or back (0.0 to 0.3; default 0.05; 0.0 steps at\n"
+		"once, as before). The gun is below your eyes, so its line meets a near\n"
+		"enemy lower than the ground behind it, and the reticle stepped as it\n"
+		"crossed the enemy's outline. The shots follow the eased reticle. Hold\n"
+		"Back (Create) and press Y (Triangle) to switch it off and on." },
+	{ "input.weapon_turn_limit", _config_real, "25.0", "HALO_WEAPON_TURN_LIMIT", _environment_value, _platform_ios,
+		"input.first_person_arms \"limited\": the most the turned model turns across the\n"
+		"view from its center, in degrees (0 to 90; 0 leaves the turn alone)." },
+	{ "input.weapon_roll_limit", _config_real, "15.0", "HALO_WEAPON_ROLL_LIMIT", _environment_value, _platform_ios,
+		"input.first_person_arms \"limited\": the most the turned model rolls, in degrees\n"
+		"(0 to 90; 0 leaves the roll alone)." },
+	{ "input.weapon_smoothing", _config_real, "0.08", "HALO_WEAPON_SMOOTHING", _environment_value, _platform_ios,
+		"HEAD mode with controller aim: the time, in seconds, over which the\n"
+		"first-person gun and arms follow the hand (0.0 to 0.5; default 0.08;\n"
+		"0.0 follows it directly, as before). It takes the hand's tremor and the\n"
+		"small steps of the aim point out of the model's motion; a larger move\n"
+		"catches up faster. Only the drawn model is smoothed: the reticle and\n"
+		"the shots follow the hand directly. Hold Back (Create) and click the\n"
+		"left stick to switch it off and on for the session." },
+	{ "input.first_person_arms", _config_string, "\"solved\"", "HALO_FIRST_PERSON_ARMS", _environment_value, _platform_ios,
+		"HEAD mode with controller aim: how the first-person gun and arms\n"
+		"follow the hand. \"turned\": the whole model is turned onto the hand's\n"
+		"line at the eyes (as before; a hand pointed to the side brings the\n"
+		"arms in from the side of the view). \"limited\": the same, with the\n"
+		"turn held within 25 degrees and the roll within 15, the model sinking\n"
+		"out of view beyond. \"solved\" (default): the shoulders stay with the\n"
+		"view, the gun turns at its grip onto the hand's line within\n"
+		"input.arms_turn_limit, input.arms_up_limit, input.arms_down_limit and\n"
+		"input.arms_roll_limit, the hands stay on it and the arms bend to\n"
+		"follow. The reticle and the shots follow the hand in every mode.\n"
+		"Hold Back (Create) and push the left stick right or left to cycle the\n"
+		"modes for the session." },
+	{ "input.arms_follow", _config_real, "0.5", "HALO_ARMS_FOLLOW", _environment_value, _platform_ios,
+		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
+		"how much of the hand's movement away from its usual place (its\n"
+		"average over the last ten seconds) moves the gun, 0.0 (the gun stays\n"
+		"where the animation puts it) to 1.0 (it moves with the hand, as far as\n"
+		"the arm reaches); default 0.5. Hold Back (Create) and press A (Cross)\n"
+		"to switch between 0.0 and 0.5." },
+	{ "input.arms_turn_limit", _config_real, "35", "HALO_ARMS_TURN_LIMIT", _environment_value, _platform_ios,
+		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
+		"how far across the view, in degrees, the drawn gun turns with the\n"
+		"hand (0 to 90; default 35). It follows the hand exactly to 70% of\n"
+		"this and eases to it beyond; the reticle and the shots go on. Hold\n"
+		"Back (Create) and press X (Square) to switch between 35 and 45." },
+	{ "input.arms_up_limit", _config_real, "40", "HALO_ARMS_UP_LIMIT", _environment_value, _platform_ios,
+		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
+		"how far above the view's center, in degrees, the drawn gun turns\n"
+		"(0 to 89; default 40), eased as input.arms_turn_limit is." },
+	{ "input.arms_down_limit", _config_real, "50", "HALO_ARMS_DOWN_LIMIT", _environment_value, _platform_ios,
+		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
+		"how far below the view's center, in degrees, the drawn gun turns\n"
+		"(0 to 89; default 50), eased as input.arms_turn_limit is." },
+	{ "input.arms_roll_limit", _config_real, "60", "HALO_ARMS_ROLL_LIMIT", _environment_value, _platform_ios,
+		"HEAD mode with controller aim, input.first_person_arms \"solved\":\n"
+		"how far the drawn gun rolls about its barrel with the hand, in degrees\n"
+		"either way (0 to 180; default 60), eased as input.arms_turn_limit is;\n"
+		"the forearm takes half of the wrist's twist." },
+	{ "input.head_magnetism", _config_boolean, "false", "HALO_HEAD_MAGNETISM", _environment_set_is_true, _platform_ios,
+		"HEAD mode: false (default), the game's aim magnetism never turns or\n"
+		"slows the view (with a stick it drags the look after a target while\n"
+		"you move, which in the headset turns the world by itself). true, the\n"
+		"game's own magnetism while the head aims. The red reticle and the\n"
+		"bullets' bend toward a target are the same either way." },
+	{ "input.zoom_takeover", _config_boolean, "false", "HALO_ZOOM_TAKEOVER", _environment_set_is_true, _platform_ios,
+		"HEAD mode with controller aim, zoomed: false (default), the reticle\n"
+		"stays where the gun points, and when the gun points outside the zoomed\n"
+		"picture there is no reticle; the shots follow the gun either way. true,\n"
+		"the head takes the aim and the reticle jumps to the center as the gun's\n"
+		"line leaves the part of the zoomed picture both eyes see." },
+	{ "input.aim_origin_raise", _config_real, "0.0", "HALO_AIM_ORIGIN_RAISE", _environment_value, _platform_ios,
+		"HEAD mode with controller aim: where the aim ray starts, from 0.0 (the\n"
+		"hand, default) to 1.0 (the eyes), along the line between them; the ray\n"
+		"keeps the hand's direction. A hand held below the eyes makes the reticle\n"
+		"slide down a surface as you walk up to it; a raised origin slides less,\n"
+		"and at 1.0 not at all, but the reticle then sits above where the\n"
+		"controller itself points, by the height raised. The reticle, the shots,\n"
+		"aim assist, the zoom and the laser all follow it. Hold Back (Create)\n"
+		"and pull the left trigger to raise it by 0.1, or press the left\n"
+		"shoulder (the other hand's grip on a Sense controller) to lower it; the\n"
+		"value is saved here." },
+	{ "input.laser_distance", _config_real, "3.0", "HALO_LASER_DISTANCE", _environment_value, _platform_ios,
+		"With input.laser = \"close\": how near the reticle's surface is, in\n"
+		"meters from the eyes (1 to 20), for the line to show. It fades in over\n"
+		"the last half meter inside this distance." },
+	{ "debug.test_controller", _config_string, "\"\"", "HALO_TEST_CONTROLLER", _environment_value, _platform_ios,
+		"A synthetic right Sense controller in place of the real ones, to check\n"
+		"controller aim on the Mac and in the simulator: \"fixed:<yaw>,<pitch>\"\n"
+		"holds it still in the room at those degrees from the room's forward\n"
+		"(yaw right, pitch up positive; \"fixed:30,0\"), \"sweep\" turns it 30\n"
+		"degrees each way over 4 s, and \"loss:<seconds>\" holds it at fixed:0,0\n"
+		"but untracked for that long every 10 s, then orientation-only as long\n"
+		"(up to 5). Empty for none; leave it empty on a headset." },
+	{ "debug.controller_record", _config_string, "\"\"", "HALO_CONTROLLER_RECORD", _environment_value,
+		_platform_ios,
+		"Write every pose sample the host hands the game (both hands, the\n"
+		"buttons, the head's yaw) to NAME.poses in the data folder (a\n"
+		"headset's Documents folder), flushed once a second. Empty for none.\n"
+		"Play it back with debug.controller_replay." },
+	{ "debug.controller_replay", _config_string, "\"\"", "HALO_CONTROLLER_REPLAY", _environment_value,
+		_platform_ios,
+		"Answer the game's pose samples from NAME.poses (debug.controller_record)\n"
+		"instead of the controllers or debug.test_controller, each kind in its\n"
+		"own order, holding the last at the end; works on any host. The side-by-side\n"
+		"view then aims with the replayed hand as it does for debug.test_controller.\n"
+		"Empty for none." },
+	{ "debug.controller_aim_axes", _config_string, "\"\"", "HALO_CONTROLLER_AIM_AXES", _environment_value,
+		_platform_ios,
+		"The Sense controller's aim axes as measured, \"<forward>,<up>\" (each\n"
+		"one of +x, -x, +y, -y, +z and -z, on different lines; \"-z,+y\"), in\n"
+		"place of the built-in ones; empty for the built-in ones. Anything else\n"
+		"is logged once and the built-in axes stand." },
+	{ "debug.controller_correction", _config_string, "\"none\"", "HALO_CONTROLLER_CORRECTION", _environment_value,
+		_platform_ios,
+		"The Sense controllers' pose correction from ARKit: \"none\" (default)\n"
+		"or \"rendered\" (aligned with passthrough), to compare the two for lag\n"
+		"and swim." },
+	{ "debug.controller_axes", _config_boolean, "false", "HALO_CONTROLLER_AXES", _environment_set_is_true,
+		_platform_ios,
+		"HEAD mode with Sense controllers (visionOS 27): log the right\n"
+		"controller's aim and grip axes in the head's frame twice a second\n"
+		"(\"spatial: right aim x (...) y (...) z (...) grip ...\"), to measure\n"
+		"which of the aim's axes points along the barrel." },
+	{ "debug.aim_trace", _config_boolean, "false", "HALO_AIM_TRACE", _environment_set_is_true, _platform_ios,
+		"Controller aim: log a line every drawn frame while a hand aims, with the\n"
+		"sightline's and the first-person gun's yaw and pitch, the reticle's\n"
+		"distance, the action's blend and gate and the magnification." },
+	{ "debug.aim_steady_level", _config_real, "-1.0", "HALO_AIM_STEADY_LEVEL", _environment_value, _platform_ios,
+		"Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a\n"
+		"target the hand's aim counts as (1.0 a red reticle), in place of the\n"
+		"game's own targeting. Negative uses the game's." },
 	{ "display.theater_width", _config_real, "60.0", "HALO_THEATER_WIDTH", _environment_value, _platform_ios,
 		"With display.immersive: how much of the view the screen spans, in degrees\n"
 		"across (the headset's view is about 100; 60 is the front of a cinema).\n"

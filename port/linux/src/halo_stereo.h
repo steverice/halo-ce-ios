@@ -176,6 +176,8 @@ and its offset from the camera in world units */
 #define HALO_STEREO_SIDE_BY_SIDE_OFFSET 0.0105f
 /* the HUD's plane (host_stereo_hud.h, HOST_STEREO_HUD_DISTANCE) */
 #define HALO_STEREO_ZOOM_DISTANCE_METERS 2.0f
+#define HALO_STEREO_HUD_DISTANCE_MIN 1.0f
+#define HALO_STEREO_HUD_DISTANCE_MAX 4.0f
 /* render.c's eye loop, before the eyes and after halo_stereo_head_orient:
 whether the local player is zoomed this frame; returns 1 if the frame
 renders the zoomed pass in place of the eyes. The pass waits while the last
@@ -192,6 +194,9 @@ each the widest of the frame's eyes' (left or right, up or down), out to
 where that eye's edge meets the HUD's plane from the eye's own place, so
 the presenter's quad there covers both eyes' views */
 void halo_stereo_zoom_view(float tangents[2]);
+/* The drawing controller checks the overlap visible to both eyes. */
+#define HALO_STEREO_SHARED_VIEW_DEGREES 40.0f
+void halo_stereo_shared_view(float tangents[4]);
 /* the zoom layer's screen-sized targets against an eye's, across and up:
 the view's span over the narrowest eye's, so the zoomed picture has the
 eyes' pixels per tangent (and so per degree) over the whole view */

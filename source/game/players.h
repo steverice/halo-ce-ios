@@ -58,6 +58,10 @@ struct player_action
 	short desired_weapon_index;
 	short desired_grenade_index;
 	short desired_zoom_level;
+	/* port: controller aim (port/linux/game/controller_aim_game.c): bit 0,
+	desired_facing is a tracked hand's aim; bits 1-15, the look's yaw less
+	the aim's in steps of pi/16384 (players.c turns the facing and looking
+	vectors back to the look by it). 0 is the original game */
 	short pad;
 };
 

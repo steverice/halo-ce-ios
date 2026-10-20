@@ -39,9 +39,9 @@ presenter puts:
 /* how far ahead the HUD and the UI rest, in meters: display.hud_distance
 (struct host_stereo_hud_placement's distance), its default and its range.
 Every piece keeps its angular size at any distance */
-#define HOST_STEREO_HUD_DISTANCE_DEFAULT 2.0f
-#define HOST_STEREO_HUD_DISTANCE_MIN 1.0f
-#define HOST_STEREO_HUD_DISTANCE_MAX 4.0f
+#define HOST_STEREO_HUD_DISTANCE_DEFAULT HALO_STEREO_ZOOM_DISTANCE_METERS
+#define HOST_STEREO_HUD_DISTANCE_MIN HALO_STEREO_HUD_DISTANCE_MIN
+#define HOST_STEREO_HUD_DISTANCE_MAX HALO_STEREO_HUD_DISTANCE_MAX
 
 /* The radius, in degrees from the view's center with the head level, that
 the UI stays inside, horizontally and vertically: foveation's sharp region

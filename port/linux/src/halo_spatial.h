@@ -250,10 +250,6 @@ void halo_aim_steady_cycle(void);
 the eyes (direction 1) or back toward the hand (-1), within 0 to 1; logged,
 shown and written to the config, so the next launch keeps it */
 void halo_controller_origin_raise_step(int direction);
-/* for xinput_sdl.c's live chord: stereo's lens flares counted by each eye
-(display.stereo_flare_counting, d3d8_device.c) on and off for the session;
-logged and shown */
-void halo_controller_flare_counting_toggle(void);
 /* for xinput_sdl.c's live chord: the laser (input.laser,
 port/linux/game/controller_aim.h) to its next mode, off, close and on, for
 the session; logged and shown */

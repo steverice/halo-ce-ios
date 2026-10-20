@@ -1645,6 +1645,22 @@ int halo_stereo_repeat_pass(void)
 /* the zoom: HEAD mode's full view and the side-by-side view (the Mac's
 stand-in for it), never the screen (SCREEN gameplay, the film), where the
 game's own zoom shows as in mono */
+/* The guest and host read the same start-of-run HUD setting. Keep the
+zoom image's frustum and network reticle boundary on its actual plane. */
+static float zoom_plane_meters;
+static float zoom_plane_distance(void)
+{
+	if (!(zoom_plane_meters > 0.0f)) {
+		float configured = (float)config_real("display.hud_distance");
+
+		if (configured != configured)
+			configured = HALO_STEREO_ZOOM_DISTANCE_METERS;
+		zoom_plane_meters = fmaxf(HALO_STEREO_HUD_DISTANCE_MIN,
+			fminf(HALO_STEREO_HUD_DISTANCE_MAX, configured));
+	}
+	return zoom_plane_meters;
+}
+
 int halo_stereo_zoom_begin(int zoomed)
 {
 	int mode = stereo_frame.mode;
@@ -1663,7 +1679,7 @@ int halo_stereo_zoom_begin(int zoomed)
 		if (zoom_frame)
 			platform_log("stereo: zoomed: one mono zoomed pass fills the view, the eyes' passes skipped: the view's "
 				"half tangents %.3f by %.3f, each over the zoom's magnification, shown %.1f m ahead", view[0], view[1],
-				HALO_STEREO_ZOOM_DISTANCE_METERS);
+				zoom_plane_distance());
 		else
 			platform_log("stereo: unzoomed: the eyes' passes");
 	}
@@ -1679,7 +1695,7 @@ void halo_stereo_set_ui_shown(int shown)
 
 void halo_stereo_zoom_view(float tangents[2])
 {
-	float distance = HALO_STEREO_ZOOM_DISTANCE_METERS;
+	float distance = zoom_plane_distance();
 	int eye;
 
 	tangents[0] = tangents[1] = 0.0f;
@@ -1693,6 +1709,30 @@ void halo_stereo_zoom_view(float tangents[2])
 		tangents[0] = fmaxf(tangents[0], across);
 		tangents[1] = fmaxf(tangents[1], rise);
 	}
+}
+
+void halo_stereo_shared_view(float tangents[4])
+{
+	float distance = zoom_plane_distance();
+	int eye, side;
+
+	for (eye = 0; eye < 2; eye++) {
+		const struct halo_stereo_eye *e = &stereo_frame.eyes[eye];
+		float x = e->offset[0] * METERS_PER_UNIT;
+		float y = e->offset[1] * METERS_PER_UNIT;
+		float edges[4] = {
+			(e->left * distance - x) / distance,
+			(e->right * distance + x) / distance,
+			(e->up * distance + y) / distance,
+			(e->down * distance - y) / distance
+		};
+
+		for (side = 0; side < 4; side++)
+			if (eye == 0 || edges[side] < tangents[side])
+				tangents[side] = edges[side];
+	}
+	for (side = 0; side < 4; side++)
+		tangents[side] = fmaxf(tangents[side], 0.0f);
 }
 
 void halo_stereo_zoom_density(float scale[2])

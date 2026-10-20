@@ -34,6 +34,7 @@ head-driven look, no 3D film, no screen framing. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "halo_stereo.h"
@@ -54,6 +55,7 @@ static char last_log[256];
 /* the film's settings, and what the game shows: the letterbox, a scripted
 camera */
 static double setting_film_depth_share = 0.25, setting_film_convergence = 1.75;
+static double setting_hud_distance = 2.0;
 /* display.stereo, and the window's drawable size (the side-by-side view's) */
 static const char *setting_stereo = "head";
 static int probe_drawable[2];
@@ -114,7 +116,7 @@ double config_real(const char *name)
 	if (!strcmp(name, "display.pod_look_fade_dim"))
 		return 0.85;
 	if (!strcmp(name, "display.hud_distance"))
-		return 2.0;
+		return setting_hud_distance;
 	return setting_snap_angle;
 }
 int config_boolean(const char *name) { return !strcmp(name, "input.comfort_vignette") && setting_comfort_vignette; }
@@ -3172,8 +3174,43 @@ static void zoom_reticle_alignment(void)
 		43.0f, 10.0f, 0.3492f);
 }
 
+static void shared_scope_view_checks(void)
+{
+	float view[4], expected[4];
+	float distance = (float)setting_hud_distance;
+	struct halo_stereo_eye *left = &stereo_frame.eyes[0];
+	struct halo_stereo_eye *right = &stereo_frame.eyes[1];
+	int side;
+
+	memset(stereo_frame.eyes, 0, sizeof(stereo_frame.eyes));
+	stereo_frame.eye_count = 2;
+	left->left = 0.7f;
+	left->right = 0.9f;
+	left->up = left->down = 0.8f;
+	left->offset[0] = -0.03f / METERS_PER_UNIT;
+	right->left = 0.85f;
+	right->right = 0.75f;
+	right->up = 0.75f;
+	right->down = 0.85f;
+	right->offset[0] = 0.025f / METERS_PER_UNIT;
+	right->offset[1] = 0.005f / METERS_PER_UNIT;
+	expected[0] = 0.7f + 0.03f / distance;
+	expected[1] = 0.75f + 0.025f / distance;
+	expected[2] = 0.75f + 0.005f / distance;
+	expected[3] = 0.8f;
+	halo_stereo_shared_view(view);
+	for (side = 0; side < 4; side++)
+		check(fabsf(view[side] - expected[side]) < 1e-5f,
+			"network scope uses both asymmetric eye frusta at the configured HUD plane");
+}
+
 int main(int argc, char **argv)
 {
+	if (argc == 3 && strcmp(argv[1], "--shared-scope-view") == 0) {
+		setting_hud_distance = atof(argv[2]);
+		shared_scope_view_checks();
+		return failures ? 1 : 0;
+	}
 	if (argc == 2 && strcmp(argv[1], "--passenger-head-arc") == 0) {
 		passenger_head_arc();
 		return failures ? 1 : 0;
