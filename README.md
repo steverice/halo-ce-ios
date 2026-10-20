@@ -164,11 +164,10 @@ listed in [NOTICE.md](NOTICE.md).
 
 ## License
 
-The code is under CC0 1.0, the same as every upstream project (see
-[LICENSE.md](LICENSE.md)). Third-party components keep their own licenses,
-listed in [NOTICE.md](NOTICE.md). The CC0 dedication covers only what its
-contributors could dedicate. It does not grant any rights to Microsoft's game,
-its assets or its trademarks.
+The code is under CC0 1.0 (see [LICENSE.md](LICENSE.md)). Third-party
+components keep their own licenses, listed in [NOTICE.md](NOTICE.md). The CC0
+dedication covers only what its contributors could dedicate. It does not
+grant any rights to Microsoft's game, its assets or its trademarks.
 
 ## Legal
 
