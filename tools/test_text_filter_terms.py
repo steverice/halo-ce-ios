@@ -22,8 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tools" / "harness" / "tests"))
 import text_filter_terms  # noqa: E402
-from harness import build  # noqa: E402
-from test_text_filter import censor, generated  # noqa: E402
+from test_text_filter import censor  # noqa: E402
 
 ASSETS = ROOT / "port" / "assets" / "text_filter"
 MAPS = ROOT / "assets" / "maps"
@@ -38,7 +37,8 @@ def rot13(text):
 
 @pytest.fixture(scope="module")
 def matcher():
-    return build("text_filter", generated(real=True))
+    with text_filter_terms.host_matcher() as executable:
+        yield executable
 
 
 def hidden(matcher, texts, levels):

@@ -45,12 +45,15 @@ as letters, from Python's Unicode names (its version is recorded).
 
 import argparse
 import codecs
+from contextlib import contextmanager
 import csv
 import gzip
 import hashlib
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -315,16 +318,30 @@ def write_fold():
     FOLD_INC.write_text("\n".join(lines))
 
 
-def check(texts):
-    """the matcher's censoring of each text (all groups at mild), built as
-    the harness builds it"""
+@contextmanager
+def host_matcher():
+    """Build the data-check matcher for this host; gameplay ABI probes use the 32-bit harness."""
     sys.path.insert(0, str(ROOT / "tools"))
     sys.path.insert(0, str(ROOT / "tools" / "harness" / "tests"))
-    from harness import build  # noqa: E402
     from test_text_filter import generated  # noqa: E402
-    executable = build("text_filter", generated(real=True))
-    result = subprocess.run([str(executable), "--censor", "1", "1", "1"], input="\n".join(texts) + "\n",
-                            capture_output=True, text=True, check=True)
+
+    with tempfile.TemporaryDirectory(prefix="visr-text-filter-") as directory:
+        work = Path(directory)
+        for name, source in generated(real=True):
+            (work / name).write_text(source)
+        executable = work / "text_filter"
+        command = [os.environ.get("CC", "clang"), "-std=gnu99", "-O2", "-Wall", "-Werror",
+                   "-Wno-unused-function", "-Wno-unused-variable", "-I", str(ROOT / "tools/harness/include"),
+                   "-I", str(work), str(ROOT / "tools/harness/tests/text_filter.c"), "-o", str(executable), "-lm"]
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        yield executable
+
+
+def check(texts):
+    """Censor each text with the production matcher and checked-in word table."""
+    with host_matcher() as executable:
+        result = subprocess.run([str(executable), "--censor", "1", "1", "1"], input="\n".join(texts) + "\n",
+                                capture_output=True, text=True, check=True)
     return result.stdout.splitlines()
 
 
