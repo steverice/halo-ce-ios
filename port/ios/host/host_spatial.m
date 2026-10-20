@@ -57,6 +57,13 @@ controller aim owns them. */
 #include "host_theater.h"
 #endif
 
+/* The Sense tracking APIs are only complete in the visionOS 27 SDK. */
+#if TARGET_OS_VISION && __VISION_OS_VERSION_MAX_ALLOWED >= 270000
+#define HOST_SPATIAL_SENSE_SDK 1
+#else
+#define HOST_SPATIAL_SENSE_SDK 0
+#endif
+
 /* the aim location's axes (HOST_SPATIAL_AXIS_*) that are the barrel and its
 up. ARKit doesn't document them: these are measured on the PlayStation VR2
 Sense controllers (headset session 1, 2026-10-07: the axes step of
@@ -142,9 +149,12 @@ static double seconds_now(void)
 #if TARGET_OS_VISION
 /* the tracker (a HostSpatialTracker, visionOS 27), made at the first sample
 in HEAD mode with input.aim = "controller" and no synthetic hand */
+#if HOST_SPATIAL_SENSE_SDK
 static id tracker;
-/* visionOS 26 in that case: controller aim can't run (logged once) */
+#endif
+/* An older SDK leaves controller aim on the existing head-aim path. */
 static int needs_27;
+#if HOST_SPATIAL_SENSE_SDK
 static void tracker_start(void);
 /* the game's rumble: input.controller_rumble, and for the log the largest
 intensities mapped onto the hands since the last line, and when that was */
@@ -153,6 +163,7 @@ static float rumble_peak[2];
 static double rumble_logged;
 /* at most one "spatial: rumble" line in this many seconds */
 #define RUMBLE_LOG_SECONDS 1.0
+#endif
 #endif
 
 static void read_settings(void)
@@ -199,6 +210,7 @@ static void read_settings(void)
 	host_config_string("debug.controller_axes", "false", value, sizeof(value));
 	axes_log = !strcmp(value, "true");
 #if TARGET_OS_VISION
+#if HOST_SPATIAL_SENSE_SDK
 	rumble_strength = (float)host_config_real("input.controller_rumble", 1.0);
 	if (!(rumble_strength >= 0.0f && rumble_strength <= HOST_SPATIAL_RUMBLE_STRENGTH_MAXIMUM))
 	{
@@ -211,10 +223,17 @@ static void read_settings(void)
 	}
 	if (aim_controller && head_mode && !synthetic_on && !replay_on)
 		tracker_start();
+#else
+	if (aim_controller && head_mode && !synthetic_on && !replay_on)
+	{
+		needs_27 = 1;
+		host_logf(HOST_LOG_INFO, "spatial: controller aim needs the visionOS 27 SDK; aiming with the head");
+	}
+#endif
 #endif
 }
 
-#if TARGET_OS_VISION
+#if HOST_SPATIAL_SENSE_SDK
 /* ---------- visionOS 27: the Sense controllers through ARKit */
 
 /* the drawing sample's axes log (debug.controller_axes): twice a second */
@@ -1109,6 +1128,16 @@ static void tracker_sample(int kind, struct halo_spatial_sample *sample, const f
 }
 #endif
 
+#if TARGET_OS_VISION && !HOST_SPATIAL_SENSE_SDK
+void host_spatial_frame(cp_drawable_t drawable, const simd_float4x4 *origin_from_device)
+{
+	(void)drawable;
+	(void)origin_from_device;
+	if (!settings_read)
+		read_settings();
+}
+#endif
+
 void host_spatial_sample(int kind, struct halo_spatial_sample *sample)
 {
 	float back[3], position[3] = { 0.0f, 0.0f, 0.0f };
@@ -1146,7 +1175,9 @@ void host_spatial_sample(int kind, struct halo_spatial_sample *sample)
 #if TARGET_OS_VISION
 		if (needs_27)
 			sample->reason = HALO_SPATIAL_NEEDS_27;
+#if HOST_SPATIAL_SENSE_SDK
 		tracker_sample(kind, sample, position);
+#endif
 #else
 		(void)kind;
 #endif
@@ -1213,12 +1244,12 @@ void host_spatial_feedback(const struct halo_spatial_feedback *feedback)
 	{
 		feedback_buzz_serial = feedback->buzz_serial;
 		host_logf(HOST_LOG_INFO, "spatial: buzz");
-#if TARGET_OS_VISION
+#if HOST_SPATIAL_SENSE_SDK
 		if (@available(visionOS 27.0, *))
 			[(HostSpatialTracker *)tracker buzz];
 #endif
 	}
-#if TARGET_OS_VISION
+#if HOST_SPATIAL_SENSE_SDK
 	if (tracker)
 	{
 		struct host_spatial_rumble rumble;
