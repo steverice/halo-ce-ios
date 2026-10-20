@@ -322,7 +322,39 @@ void host_benchmark_frame_unshown(int why) {
     atomic_fetch_add(why ? &frames_no_picture : &frames_no_drawable, 1);
 }
 
-void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period) {
+/* the game's marks since the last present, on the pacing's clock: when the open phase began, and the seconds summed
+   in ticks [0] and in the render [1] */
+static os_unfair_lock split_lock = OS_UNFAIR_LOCK_INIT;
+static double split_began[2], split_seconds[2];
+static int split_ticks, split_marked;
+
+void host_frame_cpu_phase(int phase, int ticks) {
+    double now = CACurrentMediaTime();
+    int which = phase >= HOST_FRAME_RENDER_BEGIN;
+
+    os_unfair_lock_lock(&split_lock);
+    if (phase == HOST_FRAME_SIMULATION_BEGIN || phase == HOST_FRAME_RENDER_BEGIN) split_began[which] = now;
+    else if (split_began[which] > 0.0) {
+        split_seconds[which] += now - split_began[which];
+        split_began[which] = 0.0;
+        split_marked = 1;
+        if (phase == HOST_FRAME_SIMULATION_END && ticks > 0) split_ticks += ticks;
+    }
+    os_unfair_lock_unlock(&split_lock);
+}
+
+void host_frame_cpu_split(double *simulation, double *render, int *ticks) {
+    os_unfair_lock_lock(&split_lock);
+    *simulation = split_marked ? split_seconds[0] : -1.0;
+    *render = split_marked ? split_seconds[1] : -1.0;
+    *ticks = split_ticks;
+    split_seconds[0] = split_seconds[1] = 0.0;
+    split_ticks = split_marked = 0;
+    os_unfair_lock_unlock(&split_lock);
+}
+
+void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period, double simulation_cpu,
+    double render_cpu, int ticks) {
     host_frame_counter_sample(interval, cpu, gpu);
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
@@ -331,7 +363,8 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
-        benchmark_metrics_frame(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0);
+        benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
+            simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0, ticks);
     }
     os_unfair_lock_unlock(&lock);
 }

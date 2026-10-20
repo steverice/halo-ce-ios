@@ -96,6 +96,40 @@ static const struct benchmark_scene probe_scenes[] = {
 };
 #define PROBE_SCENE_COUNT ((int)(sizeof(probe_scenes) / sizeof(probe_scenes[0])))
 
+/* each frame's CPU time split into the simulation's ticks and the render, where the frame knew them */
+static void test_metrics_split(void) {
+    struct benchmark_metrics metrics = { 0 };
+    struct benchmark_summary summary;
+    char *json;
+    int index;
+
+    benchmark_metrics_reset(&metrics, 60.0);
+    for (index = 0; index < 10; index++) benchmark_metrics_frame_split(&metrics, 16.7, 11.0, 8.0, 4.0, 6.0, index & 1 ? 2 : 1);
+    benchmark_metrics_frame(&metrics, 16.7, 11.0, 8.0);   /* a frame that did not know its split */
+    benchmark_metrics_summarize(&metrics, &summary);
+    CHECK(summary.frames == 11 && summary.split_frames == 10);
+    CHECK(NEAR(summary.cpu.mean, 11.0, 1e-9));
+    CHECK(NEAR(summary.simulation_cpu.mean, 4.0, 1e-9) && NEAR(summary.simulation_cpu.high, 4.0, 1e-9));
+    CHECK(NEAR(summary.render_cpu.mean, 6.0, 1e-9) && NEAR(summary.render_cpu.worst, 6.0, 1e-9));
+    CHECK(NEAR(summary.ticks_per_frame, 1.5, 1e-9));
+    json = benchmark_metrics_json(&metrics);
+    CHECK(json && strstr(json, "\"cpu_ms\":{\"mean\":11.00,"));
+    CHECK(json && strstr(json, "\"simulation_cpu_ms\":{\"mean\":4.00,\"median\":4.0,\"p95\":4.0,\"p99\":4.0,\"worst\":4.0}"));
+    CHECK(json && strstr(json, "\"render_cpu_ms\":{\"mean\":6.00,"));
+    CHECK(json && strstr(json, "\"ticks_per_frame\":1.50"));
+    free(json);
+    benchmark_metrics_free(&metrics);
+
+    /* no split at all: the fields are there and say so */
+    benchmark_metrics_reset(&metrics, 60.0);
+    benchmark_metrics_frame(&metrics, 16.7, 11.0, 8.0);
+    json = benchmark_metrics_json(&metrics);
+    CHECK(json && strstr(json, "\"simulation_cpu_ms\":null") && strstr(json, "\"render_cpu_ms\":null") &&
+        strstr(json, "\"ticks_per_frame\":null"));
+    free(json);
+    benchmark_metrics_free(&metrics);
+}
+
 static void test_routes(void) {
     struct benchmark_route route;
 
@@ -670,6 +704,7 @@ static void test_unified_catalog_pass(void) {
 int main(void) {
     test_unified_catalog_pass();
     test_metrics();
+    test_metrics_split();
     test_routes();
     test_catalog_scene_selection();
     test_plan();

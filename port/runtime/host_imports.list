@@ -104,6 +104,7 @@ host_bink_audio_skip
 
 host_errno
 host_data_updates_frame_ready
+host_frame_cpu_phase
 
 # Wired external display lifecycle and test controls
 host_external_active

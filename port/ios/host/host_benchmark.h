@@ -39,8 +39,17 @@ void host_benchmark_upscaler(const char *requested, unsigned effective_paths);
 void host_benchmark_graphics(const char *json);
 
 /* the Metal backend, at each present: seconds since the last one, the frame's CPU and GPU seconds (negative:
-   unknown), and the display's refresh period (0: unknown) */
-void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period);
+   unknown), the display's refresh period (0: unknown), and the parts of the CPU time spent running the
+   simulation's ticks and rendering, with the ticks it ran (host_frame_cpu_split) */
+void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period, double simulation_cpu,
+    double render_cpu, int ticks);
+/* the game's marks around game_time_update and its render (main.c), through guest_host.h: phase 0 and 1 begin and
+   end the ticks (ticks: how many ran), 2 and 3 the render */
+enum { HOST_FRAME_SIMULATION_BEGIN, HOST_FRAME_SIMULATION_END, HOST_FRAME_RENDER_BEGIN, HOST_FRAME_RENDER_END };
+void host_frame_cpu_phase(int phase, int ticks);
+/* at a present: the seconds spent in ticks and in the render since the last present, and the ticks run, then
+   cleared; simulation and render negative when the game marked neither */
+void host_frame_cpu_split(double *simulation, double *render, int *ticks);
 /* the Metal backend, for each frame it could not show (why: 0 no drawable, 1 no picture): counted so a run that
    measured nothing can say whether the display handed out no drawables */
 void host_benchmark_frame_unshown(int why);

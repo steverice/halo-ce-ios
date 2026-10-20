@@ -9,15 +9,18 @@
 
 void benchmark_metrics_free(struct benchmark_metrics *metrics) {
     free(metrics->interval); free(metrics->cpu); free(metrics->gpu);
+    free(metrics->simulation); free(metrics->render);
     memset(metrics, 0, sizeof(*metrics));
 }
 
 void benchmark_metrics_reset(struct benchmark_metrics *metrics, double refresh_hertz) {
     uint16_t *interval = metrics->interval, *cpu = metrics->cpu, *gpu = metrics->gpu;
-    size_t capacity = metrics->capacity;
+    uint16_t *simulation = metrics->simulation, *render = metrics->render;
+    size_t capacity = metrics->capacity, split_capacity = metrics->split_capacity;
 
     memset(metrics, 0, sizeof(*metrics));
     metrics->interval = interval; metrics->cpu = cpu; metrics->gpu = gpu; metrics->capacity = capacity;
+    metrics->simulation = simulation; metrics->render = render; metrics->split_capacity = split_capacity;
     metrics->refresh_hertz = refresh_hertz;
     metrics->footprint_first = metrics->footprint_last = metrics->footprint_peak = metrics->left_least = -1;
     metrics->thermal_first = metrics->thermal_worst = metrics->thermal_last = BENCHMARK_THERMAL_UNKNOWN;
@@ -30,6 +33,25 @@ static uint16_t tenths(double milliseconds) {
 }
 
 void benchmark_metrics_frame(struct benchmark_metrics *metrics, double interval, double cpu, double gpu) {
+    benchmark_metrics_frame_split(metrics, interval, cpu, gpu, -1.0, -1.0, 0);
+}
+
+void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double interval, double cpu, double gpu,
+    double simulation, double render, int ticks) {
+    if (simulation >= 0.0 && metrics->split_frames == metrics->split_capacity) {
+        size_t capacity = metrics->split_capacity ? metrics->split_capacity * 2 : 8192;
+        uint16_t *a = realloc(metrics->simulation, capacity * sizeof(*a));
+        uint16_t *b = a ? realloc(metrics->render, capacity * sizeof(*b)) : NULL;
+
+        if (a) metrics->simulation = a;
+        if (b) { metrics->render = b; metrics->split_capacity = capacity; }
+    }
+    if (simulation >= 0.0 && metrics->split_frames < metrics->split_capacity) {
+        metrics->simulation[metrics->split_frames] = tenths(simulation);
+        metrics->render[metrics->split_frames] = tenths(render);
+        metrics->split_frames++;
+        if (ticks > 0) metrics->ticks += (unsigned long)ticks;
+    }
     if (metrics->frames == metrics->capacity) {
         size_t capacity = metrics->capacity ? metrics->capacity * 2 : 8192;
         uint16_t *a = realloc(metrics->interval, capacity * sizeof(*a));
@@ -137,6 +159,16 @@ void benchmark_metrics_summarize(const struct benchmark_metrics *metrics, struct
     memcpy(copy, metrics->gpu, metrics->frames * sizeof(*copy));
     distribution(copy, metrics->frames, &summary->gpu);
     free(copy);
+    summary->split_frames = metrics->split_frames;
+    if (!metrics->split_frames) return;
+    summary->ticks_per_frame = (double)metrics->ticks / (double)metrics->split_frames;
+    copy = malloc(metrics->split_frames * sizeof(*copy));
+    if (!copy) return;
+    memcpy(copy, metrics->simulation, metrics->split_frames * sizeof(*copy));
+    distribution(copy, metrics->split_frames, &summary->simulation_cpu);
+    memcpy(copy, metrics->render, metrics->split_frames * sizeof(*copy));
+    distribution(copy, metrics->split_frames, &summary->render_cpu);
+    free(copy);
 }
 
 char *benchmark_base64(const void *bytes, size_t size) {
@@ -219,6 +251,11 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
     append_distribution(&text, "interval_ms", &summary.interval);
     append_distribution(&text, "cpu_ms", &summary.cpu);
     append_distribution(&text, "gpu_ms", &summary.gpu);
+    if (summary.split_frames) {
+        append_distribution(&text, "simulation_cpu_ms", &summary.simulation_cpu);
+        append_distribution(&text, "render_cpu_ms", &summary.render_cpu);
+        append(&text, "\"ticks_per_frame\":%.2f,", summary.ticks_per_frame);
+    } else append(&text, "\"simulation_cpu_ms\":null,\"render_cpu_ms\":null,\"ticks_per_frame\":null,");
     append(&text, "\"shown_refreshes\":[%lu,%lu,%lu,%lu,%lu],\"on_time_full\":%.4f,\"on_time_half\":%.4f,", summary.shown[1],
         summary.shown[2], summary.shown[3], summary.shown[4], summary.shown[5], summary.on_time_full, summary.on_time_half);
     append(&text, "\"memory_mb\":{\"footprint_first\":%ld,\"footprint_last\":%ld,\"footprint_peak\":%ld,\"left_least\":%ld},",

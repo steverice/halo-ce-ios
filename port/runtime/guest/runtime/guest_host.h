@@ -40,6 +40,9 @@ void host_exit(int code) __attribute__((noreturn));
 /* 1 after main_game_render finishes, 0 before main_pregame_render draws.
    The host waits for the following presentation before accepting trial data. */
 void host_data_updates_frame_ready(int ready);
+/* the benchmark's CPU split (host_benchmark.h): main_loop's marks around its
+ticks (0 and 1, with how many ran) and its render (2 and 3) */
+void host_frame_cpu_phase(int phase, int ticks);
 
 int host_external_cycle(int direction);
 int host_external_force(const char *mode);

@@ -224,7 +224,8 @@ NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictiona
     result[@"measurement_semantics_version"] = presentation ? @2 : @1;
     result[@"measurement_semantics"] = @{ @"interval_ms": @"submission_timing", @"frame_interval": @"submission_timing", @"frames_a_second": @"submission_throughput",
         @"shown_refreshes": @"inferred_refresh_bins_from_submission_intervals", @"on_time_full": @"inferred_from_submission_intervals", @"on_time_half": @"inferred_from_submission_intervals",
-        @"cpu_ms": @"cpu_duration", @"gpu_ms": @"gpu_duration", @"decision_basis": @"submission_timing" };
+        @"cpu_ms": @"cpu_duration", @"gpu_ms": @"gpu_duration", @"simulation_cpu_ms": @"simulation_cpu_duration",
+        @"render_cpu_ms": @"render_cpu_duration", @"ticks_per_frame": @"simulation_ticks_per_frame", @"decision_basis": @"submission_timing" };
     result[@"presentation"] = presentation ?: @{ @"supported": NSNull.null, @"capability": @"unknown",
         @"status": @"unavailable_recovered_run" };
     return result;

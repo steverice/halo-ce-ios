@@ -80,6 +80,9 @@ static void *tests(void *unused) { (void)unused; @autoreleasepool {
     CHECK(read[0][@"measurement_semantics_version"]==nil);
     CHECK([read[1][@"measurement_semantics_version"] intValue]==2 && read[1][@"presentation"]!=nil);
     CHECK([read[1][@"measurement_semantics"][@"decision_basis"] isEqual:@"submission_timing"]);
+    CHECK([read[1][@"measurement_semantics"][@"simulation_cpu_ms"] isEqual:@"simulation_cpu_duration"]);
+    CHECK([read[1][@"measurement_semantics"][@"render_cpu_ms"] isEqual:@"render_cpu_duration"]);
+    CHECK([read[1][@"measurement_semantics"][@"ticks_per_frame"] isEqual:@"simulation_ticks_per_frame"]);
     NSDictionary *recovered=host_benchmark_measurement_record(old,nil);
     CHECK([recovered[@"presentation"][@"status"] isEqual:@"unavailable_recovered_run"]);
     CHECK([recovered[@"measurement_semantics_version"] intValue]==1);

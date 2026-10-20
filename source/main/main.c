@@ -400,6 +400,12 @@ symbols in this file:
 /* port: a signed data pack stays in trial until a rendered menu or world frame
 is presented. Loading screens use main_pregame_render instead. */
 void host_data_updates_frame_ready(int ready);
+/* port: the benchmark's CPU split (port/ios/host/host_benchmark.h): phases 0
+and 1 bracket the ticks, with how many ran, and 2 and 3 the render */
+void host_frame_cpu_phase(int phase, int ticks);
+#define MAIN_CPU_PHASE(phase, ticks) host_frame_cpu_phase((phase), (ticks))
+#else
+#define MAIN_CPU_PHASE(phase, ticks) ((void)0)
 #endif
 
 #if defined(HALO_WINDOWS) || defined(HALO_ANDROID) || defined(__linux__)
@@ -3714,7 +3720,13 @@ void main_loop(
 						network_game_abort();
 					}
 
-					game_time_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
+					{
+						long ticks_before = game_time_get(); /* port: the benchmark's CPU split */
+
+						MAIN_CPU_PHASE(0, 0);
+						game_time_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
+						MAIN_CPU_PHASE(1, (int)(game_time_get() - ticks_before));
+					}
 
 					render_frame = main_globals.main_menu_scenario_loaded ||
 						(main_globals.halt_time_scale &&
@@ -3742,13 +3754,16 @@ void main_loop(
 					/* port: the loading screen goes on over the level's first ticks
 					(port/linux/game/loading_screen.c): never the player's start */
 					profile_render_start();
+					MAIN_CPU_PHASE(2, 0); /* port: the benchmark's CPU split */
 					main_pregame_render();
+					MAIN_CPU_PHASE(3, 0); /* port */
 					profile_render_end();
 					halo_loading_screen_tail_frame();
 				}
 				else if (render_frame && !debug_no_drawing)
 				{
 					profile_render_start();
+					MAIN_CPU_PHASE(2, 0); /* port: the benchmark's CPU split */
 					/* port: stereo latches its frame once, for the frame it
 					draws (port/linux/game/stereo.c). Not in
 					render_interpolation_frame_begin, which game_time_update
@@ -3763,13 +3778,16 @@ void main_loop(
 					host_data_updates_frame_ready(1);
 #endif
 					render_interpolation_frame_end();
+					MAIN_CPU_PHASE(3, 0); /* port */
 					profile_render_end();
 				}
 			}
 			else
 			{
 				profile_render_start();
+				MAIN_CPU_PHASE(2, 0); /* port: the benchmark's CPU split */
 				main_pregame_render();
+				MAIN_CPU_PHASE(3, 0); /* port */
 				profile_render_end();
 			}
 
