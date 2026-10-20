@@ -519,6 +519,7 @@ for distance in ('1.5', '1.75', '2.0'):
     run(BUILD/'stereo-head-probe', '--shared-scope-view', distance)
 run('python3', 'tools/test_dead_spectator_head.py')
 run('python3', 'tools/test_stereo_passenger.py')
+run('python3', 'tools/test_stereo_scope_guest.py')
 run('python3', 'tools/test_stereo_camera_wiring.py')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-DHALO_IOS=1', '-Iport/linux/src', '-Iport/ios/host',
     '-Iport/ios/tests', 'port/ios/tests/replay_stereo_entry_probe.c', 'port/ios/host/host_stereo_head.c',

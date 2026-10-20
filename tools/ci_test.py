@@ -23,6 +23,9 @@ APPLE_PROBES = {
     "test_shader_list_warmup.py",
     "test_metal_border.py",
     "test_checkpoint_timing.py",
+    "test_dead_spectator_head.py",
+    "test_stereo_passenger.py",
+    "test_stereo_scope_guest.py",
 }
 # These are standalone programs, not pytest modules.
 STANDALONE = {"test_death_timing.py", "test_light_storage.py"}
