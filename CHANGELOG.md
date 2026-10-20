@@ -1,3 +1,60 @@
+## visr-v0.3.1 (2026-10-20)
+
+### Summary
+
+- Run the tester benchmark. It's now offered only when a valid benchmark catalog is available, so tell us if it's missing when it should be there.
+- Try benchmark cases across gameplay maps (a10, a50, b30, b40, c10, c20, c40, d40) and multiplayer maps (Chillout, Blood Gulch, Sidewinder).
+- Check the multiplayer benchmark cases: Chillout at 16 players, Blood Gulch at 32 and 64 players, and Sidewinder at 32 and 128 players.
+- Watch the benchmark screen for the new work timings and render interval graph.
+- Check the compact live metrics above the taller frame graph, and see whether they're easy to read while a run is going.
+- Play campaign and multiplayer maps and note any hitching when new draw effects first appear. We added more shader precompilation for campaign, multiplayer, benchmark, and UI.
+- Open menus and other UI screens and watch for hitches the first time they appear.
+
+### Full changelog
+
+### feat
+
+- **benchmark**: compact live metrics above a taller frame graph
+- **benchmark**: show work timings and a render interval graph
+
+### fix
+
+- **test**: keep strict C89 finite probes linkable
+- **linux**: keep energy trigger finite checks linkable — `network_test_suite_energy_trigger` rejects infinity in strict C mode
+- **gl**: route stereo overlay calls through loaded GL entry points — `glUniform4f` and `glDeleteProgram` now resolve and count on both backends
+- **linux**: keep arena finite checks linkable in strict C mode — `__builtin_isfinite` rejects NaN and infinity without an external symbol
+- **linux**: define the visibility result limit for desktop builds — `visibility_unscaled` uses it outside `HALO_ILP32`
+- **benchmark**: offer tester benchmark only with a valid catalog
+
+### perf
+
+- **shaders**: append 18 attributed UI records
+- **shaders**: append 56 attributed benchmark records
+- **shaders**: add four attributed shader records
+
+### build
+
+- **release**: freeze the verified benchmark update while deferring upstream gameplay changes
+- **packs**: prepare signed shader sequence 8 with UI records
+- **release**: record the encryption documentation exemption in `Info.plist`
+- **shaders**: stage the complete map precompilation update
+- **shaders**: add validated campaign and multiplayer precompilation records
+- **shaders**: precompile additional campaign draw pipelines
+
+### test
+
+- **linux**: run focused online and gameplay probes — `linux-compile.yml` checks signed listings, Unicode boundaries and sound lifecycle
+
+### ci
+
+- **linux**: build a complete release for shared source changes — `ci_build.py` compiles and links the 32-bit game with explicit multilib dependencies
+
+### merge
+
+- **upstream**: integrate validated online and gameplay corrections
+- **benchmark**: validate catalog readiness before offering a run
+- **upstream**: integrate five gameplay and lifecycle fixes
+
 ## visr-v0.3.0 (2026-10-20)
 
 ### Summary
