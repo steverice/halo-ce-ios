@@ -60,6 +60,20 @@ The game writes the copy to `maps.partial`. When the copy is complete, the
 game changes the name to `maps`. If the copy stops before it is complete,
 the game asks for the disc image again at the next start.
 
+### NVIDIA on Wayland
+
+The game is a 32-bit program. NVIDIA's driver draws OpenGL into a Wayland
+window through its `egl-wayland` library. If only a 64-bit version is
+installed, a 32-bit OpenGL window on Wayland can fall back to Mesa's
+`llvmpipe`, which draws on the processor. The log shows
+`OpenGL ... on llvmpipe`, and the game is slow or never finishes loading.
+
+So on a Wayland desktop with NVIDIA's driver loaded, the game opens its
+window through XWayland (X11), where the 32-bit driver draws, unless a
+32-bit `egl-wayland` is installed. The log says so ("video: NVIDIA's
+driver ..."). `SDL_VIDEO_DRIVER=wayland` or `SDL_VIDEO_DRIVER=x11` chooses
+the video driver yourself.
+
 ## Files and folders
 
 | Xbox drive | Folder |
