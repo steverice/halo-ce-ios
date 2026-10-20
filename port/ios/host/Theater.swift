@@ -90,7 +90,9 @@ final class TheaterSceneDelegate: UIResponder, UIHostingSceneDelegate {
 @_cdecl("host_theater_set_upper_limbs")
 public func host_theater_set_upper_limbs(_ visible: Int32) {
     DispatchQueue.main.async {
-        TheaterHands.shared.visibility = visible != 0 ? .automatic : .hidden
+        if #available(visionOS 26.0, *) {
+            TheaterHands.shared.visibility = visible != 0 ? .automatic : .hidden
+        }
     }
 }
 
