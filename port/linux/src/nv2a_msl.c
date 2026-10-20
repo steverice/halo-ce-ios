@@ -246,7 +246,7 @@ void nv2a_msl_fragment_inputs(struct xgpu_text *text)
 }
 
 void nv2a_msl_fragment_main(struct xgpu_text *text, const struct nv2a_dialect *dialect,
-	const struct nv2a_pixel_shader_key *key)
+	const struct nv2a_pixel_shader_key *key, BOOL writes_depth)
 {
 	unsigned long index;
 	int stage, foveated = 0;
@@ -293,7 +293,11 @@ void nv2a_msl_fragment_main(struct xgpu_text *text, const struct nv2a_dialect *d
 		"\treturn plain + color * (t.sample(white, coordinates, b) - plain);\n"
 		"}\n"
 		"#endif\n");
-	xgpu_text_append(text, "fragment float4 fragment_main(FragmentIn in [[stage_in]], constant Uniforms &u [[buffer(0)]]");
+	if (writes_depth)
+		xgpu_text_append(text,
+			"struct FragmentWithDepth { float4 color [[color(0)]]; float depth [[depth(any)]]; };\n");
+	xgpu_text_append(text, "fragment %s fragment_main(FragmentIn in [[stage_in]], constant Uniforms &u [[buffer(0)]]",
+		writes_depth ? "FragmentWithDepth" : "float4");
 	for (stage = 0; stage < 4; stage++)
 	{
 		const char *type = key->sampler_type[stage] == _xgpu_sampler_3d ? "texture3d<float>" :

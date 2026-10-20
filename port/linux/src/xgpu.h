@@ -150,7 +150,7 @@ void nv2a_msl_vertex_main(struct xgpu_text *text, const struct nv2a_dialect *dia
 void nv2a_msl_vertex_return(struct xgpu_text *text);
 void nv2a_msl_fragment_inputs(struct xgpu_text *text);
 void nv2a_msl_fragment_main(struct xgpu_text *text, const struct nv2a_dialect *dialect,
-	const struct nv2a_pixel_shader_key *key);
+	const struct nv2a_pixel_shader_key *key, BOOL writes_depth);
 
 /* ---------- textures */
 
