@@ -11,6 +11,9 @@ times its size (at 100%, 64 players made squads 64 times as large: more
 than the ground round them, the clients' objects or the host's ticks could
 take). STATIC MULTIPLIER (network.coop_enemies_multiplier):
 each squad is that many times as large, for any number of players.
+A single-player game gets the static multiplier too, with any value from 1 to
+COOP_ENEMIES_MAXIMUM_GROWTH (debug.enemy_multiplier), which a take records and
+its replay applies (input_replay.c).
 
 Extra enemies are placed in widening rings around the squad's starting
 locations, on a spot on the same floor, reachable without passing through
@@ -156,18 +159,44 @@ static struct
 
 /* ---------- private code */
 
+/* debug.enemy_multiplier's value for a take being replayed: the recording's own
+(coop_enemies_solo_override); negative while the setting's is in force */
+static double coop_enemies_solo_recorded = -1.0;
+
+double coop_enemies_solo_multiplier(
+	void)
+{
+	double multiplier = coop_enemies_solo_recorded >= 1.0 ? coop_enemies_solo_recorded : config_real("debug.enemy_multiplier");
+
+	return PIN(multiplier, 1.0, (double)COOP_ENEMIES_MAXIMUM_GROWTH);
+}
+
+void coop_enemies_solo_override(
+	double multiplier)
+{
+	coop_enemies_solo_recorded = multiplier >= 1.0 ? multiplier : -1.0;
+}
+
+/* a single-player game (local, not a co-op host's) with debug.enemy_multiplier
+above 1 */
+static boolean coop_enemies_solo(
+	void)
+{
+	return game_connection() == _game_connection_local && !network_coop_active() && coop_enemies_solo_multiplier() > 1.0;
+}
+
 static boolean coop_enemies_host(
 	void)
 {
-	return game_connection() == _game_connection_network_server && network_coop_active();
+	return (game_connection() == _game_connection_network_server && network_coop_active()) || coop_enemies_solo();
 }
 
 /* whether this game has extra enemies (it is a co-op host's, with some
-chosen) */
+chosen, or a single-player game's with a multiplier) */
 static boolean coop_enemies_on(
 	void)
 {
-	return coop_enemies.mode != _coop_enemies_none && coop_enemies_host();
+	return coop_enemies_solo() || (coop_enemies.mode != _coop_enemies_none && coop_enemies_host());
 }
 
 /* the players in the game, every machine's: the network game's (a level
@@ -448,7 +477,15 @@ short coop_enemies_extra_count(
 	encounter = encounter_get(encounter_index);
 	if (!game_team_is_enemy(_game_team_player, encounter->team_index))
 		return 0;
-	if (coop_enemies.mode == _coop_enemies_multiplier)
+	if (coop_enemies_solo())
+	{
+		/* (in thousandths, so a fraction rounds the same on every machine) */
+		long milli = (long)(coop_enemies_solo_multiplier() * 1000.0 + 0.5);
+
+		extra = ((long)count * (milli - 1000) + 500) / 1000;
+		extra = MIN(extra, (long)count * (COOP_ENEMIES_MAXIMUM_GROWTH - 1));
+	}
+	else if (coop_enemies.mode == _coop_enemies_multiplier)
 		extra = (long)count * (coop_enemies.multiplier - 1);
 	else
 	{
@@ -622,9 +659,19 @@ void coop_enemies_update(
 {
 	long now = game_time_get();
 	short vehicle_number;
+	static long last_solo_time = -1;
 
 	if (!coop_enemies_host())
 		return;
+	/* (a single-player game's clock going back, a checkpoint revert or the
+	next level: the riders kept are of the game state reverted from; a
+	co-op host's is told by network_coop_reverted) */
+	if (coop_enemies_solo())
+	{
+		if (now < last_solo_time)
+			coop_enemies_reset();
+		last_solo_time = now;
+	}
 	for (vehicle_number = coop_enemies.vehicle_count - 1; vehicle_number >= 0; vehicle_number--)
 	{
 		struct coop_riding_vehicle *vehicle = &coop_enemies.vehicles[vehicle_number];
@@ -680,4 +727,11 @@ void coop_enemies_update(
 		}
 		vehicle->next_release_time = now + RIDER_RELEASE_TICKS;
 	}
+}
+
+void coop_enemies_solo_tick(
+	void)
+{
+	if (coop_enemies_solo())
+		coop_enemies_update();
 }

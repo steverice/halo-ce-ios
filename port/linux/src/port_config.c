@@ -1037,6 +1037,11 @@ static const struct config_setting config_settings[] =
 		"With debug.input_replay or debug.input_record: log player 1's position\n"
 		"every this many ticks, with the segment, the tick and whether the tick\n"
 		"took a recorded action (tools/replay_check.py reads it); 0 never." },
+	{ "debug.enemy_multiplier", _config_real, "1.0", "HALO_ENEMY_MULTIPLIER", _environment_value, _platform_all,
+		"A single-player campaign's enemies, each squad this many times as large\n"
+		"(1.0 off; 1.5 gives every second enemy a companion; up to 8). Extra\n"
+		"enemies stand around the squad's starting locations as in online co-op.\n"
+		"A take recorded with it carries the value, and its replay uses that one." },
 	{ "debug.benchmark", _config_boolean, "false", "HALO_BENCHMARK", _environment_value, _platform_all,
 		"With debug.input_replay: time every frame of the replay, write\n"
 		"benchmark-<name>-<time>.txt and quit when the replay ends." },

@@ -1,7 +1,8 @@
 /*
 COOP_ENEMIES.H
 
-Network co-op's extra enemies, for its players (coop_enemies.c).
+Network co-op's extra enemies, for its players, and a single-player game's at
+a fixed multiplier (coop_enemies.c).
 */
 
 #ifndef __COOP_ENEMIES_H
@@ -56,6 +57,20 @@ void coop_enemies_rider_seated(
 boolean coop_enemies_rider_unseated(
 	long vehicle_index,
 	long unit_index);
+
+/* debug.enemy_multiplier in force for a single-player game: the setting's, or
+the one a replayed take was recorded with (coop_enemies_solo_override) */
+double coop_enemies_solo_multiplier(
+	void);
+/* port/linux/src/input_replay.c: the multiplier a replayed take was recorded
+with, which replaces the setting's; below 1 gives the setting's back */
+void coop_enemies_solo_override(
+	double multiplier);
+
+/* game.c, at the start of each tick: a single-player game's kept riders
+let out (none but with debug.enemy_multiplier above 1) */
+void coop_enemies_solo_tick(
+	void);
 
 /* network_coop.c, after each of the host's ticks: the riders kept placed
 at their vehicle's seats once its own riders get out */

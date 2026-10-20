@@ -321,6 +321,12 @@ void game_tick(
 
 		input_replay_tick_begin();
 	}
+	/* port: single-player's extra enemies (debug.enemy_multiplier), kept riders let out */
+	{
+		extern void coop_enemies_solo_tick(void);
+
+		coop_enemies_solo_tick();
+	}
 
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\game.c",

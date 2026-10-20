@@ -1426,6 +1426,17 @@
             "desktop"
           ]
         },
+        "enemy_multiplier": {
+          "type": "number",
+          "default": 1.0,
+          "description": "A single-player campaign's enemies, each squad this many times as large (1.0 off; 1.5 gives every second enemy a companion; up to 8). Extra enemies stand around the squad's starting locations as in online co-op. A take recorded with it carries the value, and its replay uses that one.",
+          "x-environment": "HALO_ENEMY_MULTIPLIER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "benchmark": {
           "type": "boolean",
           "default": false,
