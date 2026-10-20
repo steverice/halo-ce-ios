@@ -115,8 +115,10 @@ def main():
     take = args.take
     if take is None:
         # the recording run: real time (a take is of a played session), the bot at the controller
-        extra = (["--set", f"debug.enemy_multiplier={args.enemy_multiplier}", "--set", "debug.input_replay_route=300"]
-                 if args.enemy_multiplier != 1.0 else [])
+        # (the route log every 300 ticks also counts the level's actors)
+        extra = ["--set", "debug.input_replay_route=300"]
+        if args.enemy_multiplier != 1.0:
+            extra += ["--set", f"debug.enemy_multiplier={args.enemy_multiplier}"]
         status = runner(args.out / "record", "--exit-after", str(args.seconds), "--set", 'debug.input_record="auto"', *extra,
                         # (the suite refuses a take with the original audio-driven mouths)
                         "--set", "debug.benchmark_lip_sync=true",
