@@ -46,7 +46,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     double render_cpu, double translation_cpu, int ticks);
 /* the game's marks around game_time_update and its render (main.c), through guest_host.h: phase 0 and 1 begin and
    end the ticks (ticks: how many ran), 2 and 3 the render; 4, at the render's end, the D3D8 device's translation
-   and encoding time since the last (ticks: in mach_absolute_time units, negative where unknown) */
+   and encoding time since the last (ticks: in nanoseconds, negative where unknown) */
 enum { HOST_FRAME_SIMULATION_BEGIN, HOST_FRAME_SIMULATION_END, HOST_FRAME_RENDER_BEGIN, HOST_FRAME_RENDER_END,
     HOST_FRAME_TRANSLATION };
 void host_frame_cpu_phase(int phase, int ticks);

@@ -491,7 +491,7 @@ void halo_render_before_hud(short local_player_index, short rasterizer_target,
 the CPU time spent inside the device's outermost draw, clear, constant and
 target calls, which translate D3D8 state and encode it for the GPU. One
 counter read on entry and one on exit; nested calls count once. The counter
-is the one mach_absolute_time reads. */
+runs at CNTFRQ_EL0, which differs between chips (24 MHz, 1 GHz). */
 #if defined(HALO_IOS) && defined(__aarch64__)
 static unsigned long long translation_ticks;
 static int translation_depth;
@@ -518,18 +518,24 @@ static inline void translation_end(unsigned long long *began)
 #define TRANSLATION_TIMED() \
 	unsigned long long translation_began __attribute__((cleanup(translation_end), unused)) = translation_begin()
 
-/* the ticks since the last take (main_loop, at the end of its render) */
-int halo_translation_ticks_take(void)
+/* the nanoseconds since the last take (main_loop, at the end of its render) */
+int halo_translation_nanoseconds_take(void)
 {
-	unsigned long long ticks = translation_ticks;
+	static unsigned long long frequency;
+	unsigned long long ticks = translation_ticks, nanoseconds;
 
 	translation_ticks = 0;
-	return ticks > 0x7fffffffULL ? 0x7fffffff : (int)ticks;
+	if (!frequency)
+		__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(frequency));
+	if (!frequency)
+		return -1;
+	nanoseconds = ticks / frequency * 1000000000ULL + ticks % frequency * 1000000000ULL / frequency;
+	return nanoseconds > 0x7fffffffULL ? 0x7fffffff : (int)nanoseconds;
 }
 #else
 #define TRANSLATION_TIMED() ((void)0)
 
-int halo_translation_ticks_take(void)
+int halo_translation_nanoseconds_take(void)
 {
 	return -1;
 }

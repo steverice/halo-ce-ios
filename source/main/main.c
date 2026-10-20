@@ -404,7 +404,7 @@ void host_data_updates_frame_ready(int ready);
 and 1 bracket the ticks, with how many ran, and 2 and 3 the render; 4 passes
 the D3D8 device's translation time within it (d3d8_device.c) */
 void host_frame_cpu_phase(int phase, int ticks);
-int halo_translation_ticks_take(void);
+int halo_translation_nanoseconds_take(void);
 #define MAIN_CPU_PHASE(phase, ticks) host_frame_cpu_phase((phase), (ticks))
 #else
 #define MAIN_CPU_PHASE(phase, ticks) ((void)0)
@@ -3759,7 +3759,7 @@ void main_loop(
 					MAIN_CPU_PHASE(2, 0); /* port: the benchmark's CPU split */
 					main_pregame_render();
 					MAIN_CPU_PHASE(3, 0); /* port */
-					MAIN_CPU_PHASE(4, halo_translation_ticks_take());
+					MAIN_CPU_PHASE(4, halo_translation_nanoseconds_take());
 					profile_render_end();
 					halo_loading_screen_tail_frame();
 				}
@@ -3782,7 +3782,7 @@ void main_loop(
 #endif
 					render_interpolation_frame_end();
 					MAIN_CPU_PHASE(3, 0); /* port */
-					MAIN_CPU_PHASE(4, halo_translation_ticks_take());
+					MAIN_CPU_PHASE(4, halo_translation_nanoseconds_take());
 					profile_render_end();
 				}
 			}
@@ -3792,7 +3792,7 @@ void main_loop(
 				MAIN_CPU_PHASE(2, 0); /* port: the benchmark's CPU split */
 				main_pregame_render();
 				MAIN_CPU_PHASE(3, 0); /* port */
-				MAIN_CPU_PHASE(4, halo_translation_ticks_take());
+				MAIN_CPU_PHASE(4, halo_translation_nanoseconds_take());
 				profile_render_end();
 			}
 

@@ -35,7 +35,6 @@
 #include "../../runtime/graphics_capture.h"
 #include <math.h>
 #include <mach/mach.h>
-#include <mach/mach_time.h>
 #include <os/lock.h>
 #include <os/proc.h>
 #include <signal.h>
@@ -357,13 +356,10 @@ static int split_ticks, split_marked, split_translated;
 void host_frame_cpu_phase(int phase, int ticks) {
     double now = CACurrentMediaTime();
     int which = phase >= HOST_FRAME_RENDER_BEGIN;
-    static mach_timebase_info_data_t timebase;
-
     if (phase == HOST_FRAME_TRANSLATION) {
         if (ticks < 0) return;
-        if (!timebase.denom) mach_timebase_info(&timebase);
         os_unfair_lock_lock(&split_lock);
-        split_seconds[2] += (double)ticks * timebase.numer / timebase.denom / 1e9;
+        split_seconds[2] += (double)ticks / 1e9;
         split_translated = 1;
         os_unfair_lock_unlock(&split_lock);
         return;
