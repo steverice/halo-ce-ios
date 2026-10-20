@@ -30,6 +30,7 @@ the maps and their movies.
 
 #include "xiso.h"
 
+#include <stdlib.h>
 #include <SDL3/SDL.h>
 #include <ctype.h>
 #include <stdarg.h>
