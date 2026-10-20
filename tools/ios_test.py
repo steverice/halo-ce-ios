@@ -250,6 +250,12 @@ run(BUILD/'natpmp-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/away_probe.c', '-o', BUILD/'away-probe')
 run(BUILD/'away-probe')
+# the Delta game list (delta_list.c): an answer read as /v1/games gives it, hostile and cut-off ones refused, the
+# announcement's form and when announcing goes on; and the network versions this build joins (halo_network_join.h)
+run('xcrun', 'clang', '-std=gnu89', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    '-iquote', 'port/linux/include', 'port/ios/tests/delta_probe.c', 'port/linux/src/delta_list.c',
+    '-o', BUILD/'delta-probe')
+run(BUILD/'delta-probe')
 # and the call sites the probe can't see: the tunnel waits for a peer that said it is away instead of timing it out,
 # the game's server and connections wait for it too, the app asks the system for its background time, and the
 # game's loop shows the notices and joins a lost game again
