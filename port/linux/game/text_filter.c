@@ -355,16 +355,34 @@ void text_filter_utf8(
 		unsigned long code = *byte;
 		long size = 1;
 
-		if (code >= 0xE0 && byte[1] && byte[2])
+		if (code >= 0xF0 && code <= 0xF4 &&
+			byte[1] && (byte[1] & 0xC0) == 0x80 &&
+			byte[2] && (byte[2] & 0xC0) == 0x80 &&
+			byte[3] && (byte[3] & 0xC0) == 0x80 &&
+			(code != 0xF0 || byte[1] >= 0x90) &&
+			(code != 0xF4 || byte[1] <= 0x8F))
+		{
+			/* The 16-bit matcher cannot represent this scalar; keep its bytes together. */
+			code = 0xFFFF;
+			size = 4;
+		}
+		else if (code >= 0xE0 && code <= 0xEF &&
+			byte[1] && (byte[1] & 0xC0) == 0x80 &&
+			byte[2] && (byte[2] & 0xC0) == 0x80 &&
+			(code != 0xE0 || byte[1] >= 0xA0) &&
+			(code != 0xED || byte[1] < 0xA0))
 		{
 			code = ((code & 0x0F) << 12) | ((byte[1] & 0x3F) << 6) | (byte[2] & 0x3F);
 			size = 3;
 		}
-		else if (code >= 0xC0 && byte[1])
+		else if (code >= 0xC2 && code <= 0xDF &&
+			byte[1] && (byte[1] & 0xC0) == 0x80)
 		{
 			code = ((code & 0x1F) << 6) | (byte[1] & 0x3F);
 			size = 2;
 		}
+		else if (code >= 0x80)
+			code = 0xFFFF;
 		starts[length] = (long)(byte - (unsigned char const *)text);
 		units[length++] = (unsigned short)code;
 		byte += size;
