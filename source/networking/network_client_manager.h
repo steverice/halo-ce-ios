@@ -45,6 +45,9 @@ boolean network_game_client_set_team(
 boolean network_game_client_advertised_game_in_progress(
 	struct network_game_client *client,
 	struct network_advertised_game const *game);
+/* port: the joined host's network version (this machine's when hosting) */
+unsigned int network_game_host_version(
+	void);
 boolean network_game_client_advertised_game_compatible(
 	struct network_game_client *client,
 	struct network_advertised_game const *game,

@@ -392,6 +392,7 @@ symbols in this file:
 #include "networking/network_server_manager.h"
 #include "text/unicode.h"
 #include "map_share.h" /* port: port/linux/game/map_share.c */
+#include "halo_network_version.h" /* port: port/linux/include/halo_network_version.h */
 
 /* ---------- constants */
 
@@ -807,6 +808,17 @@ static struct
 	word version;
 	byte flags;
 } network_game_client_advertised_versions[MAXIMUM_NETWORK_ADVERTISED_GAMES];
+
+/* port: the network version of the host this client joined (this machine's
+when it hosts, or has joined nothing): what the host sends and takes
+(halo_network_version.h) */
+static unsigned int network_game_client_host_version = HALO_PORT_NETWORK_VERSION;
+
+unsigned int network_game_host_version(
+	void)
+{
+	return network_game_client_host_version;
+}
 
 struct network_game_client network_game_client_dont_use_directly;
 boolean allow_out_of_sync = FALSE;
@@ -2041,6 +2053,13 @@ boolean network_game_client_initiate_join_game(
 	client->join_in_progress = TRUE;
 	client->connect_process = 0;
 	client->connection_attempt_time = system_milliseconds();
+	/* port: the host's version, for what it sends and takes */
+	{
+		long game_index = game - client->available_games;
+
+		network_game_client_host_version = game_index >= 0 && game_index < MAXIMUM_NETWORK_ADVERTISED_GAMES ?
+			network_game_client_advertised_versions[game_index].version : HALO_PORT_NETWORK_VERSION;
+	}
 
 	csmemcpy(
 		&client->join_parameters,
@@ -3084,7 +3103,8 @@ the system link list does (network_game_join_game_from_server_list) */
 void platform_show_message(char const *title, char const *message);
 
 /* whether this client can join the advertised game: its host's network
-version is this machine's (HALO_PORT_NETWORK_VERSION), and it plays the
+version is this machine's (HALO_PORT_NETWORK_VERSION) or an older one it
+plays with (halo_network_version_joinable), and it plays the
 distributed netcode (a host of this version built before the lockstep
 netcode was removed may play that). If not the player is told why (when
 tell), and nothing is joined. */
@@ -3104,12 +3124,12 @@ boolean network_game_client_advertised_game_compatible(
 	theirs = network_game_client_advertised_versions[game_index].version;
 	distributed = (network_game_client_advertised_versions[game_index].flags &
 		HALO_PORT_ADVERTISED_DISTRIBUTED_FLAG) != 0;
-	if (theirs == ours && distributed)
+	if (halo_network_version_joinable(ours, theirs) && distributed)
 	{
 		network_event("joining a host of network version %u", theirs);
 		return TRUE;
 	}
-	if (theirs == ours)
+	if (halo_network_version_joinable(ours, theirs))
 	{
 		csprintf(message,
 			"The host is using the lockstep network code, which this version no longer has.\n\n"
