@@ -94,3 +94,11 @@ def test_native_metadata_preserves_shared_signed_download_feed_keys():
         ('HaloShaderFeedURL', 'HALO_SHADER_FEED_URL'),
     ):
         assert info[key] == f'$({setting})'
+
+
+def test_native_metadata_matches_shared_encryption_declaration():
+    import plistlib
+
+    info = plistlib.loads((macos_build.ROOT / 'port/macos/Info.plist').read_bytes())
+    assert info.get('ITSAppUsesNonExemptEncryption') is False
+    assert 'ITSEncryptionExportComplianceCode' not in info

@@ -155,6 +155,10 @@ void host_extra_scene_poll(void) {}
 void host_extra_scene_test(void) {}
 int host_scene_is_games(void *scene) { (void)scene; return 1; }
 /* Native reports remain in the data folder; do not open a local HTTP server or another app. */
+/* The local native target has no tester launch UI or interactive benchmark panel. */
+void host_benchmark_overlay_show(int visible) {
+    if (visible) host_logf(HOST_LOG_WARN, "Benchmark controls are unavailable in this native build");
+}
 void host_benchmark_page(const char *path, const char *summary, const char *code, int minutes) {
     (void)code; (void)minutes;
     host_logf(HOST_LOG_INFO, "benchmark report: %s", path);

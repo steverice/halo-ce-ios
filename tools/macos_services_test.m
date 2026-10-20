@@ -3,6 +3,7 @@
 #import <Foundation/Foundation.h>
 #include <assert.h>
 #include "../port/macos/host_macos_event.h"
+#include "../port/ios/host/host_benchmark.h"
 #include "../port/macos/host_macos_services.m"
 
 static int window_reads, pushes;
@@ -66,6 +67,8 @@ int main(void) {
         event.type=SDL_EVENT_KEY_DOWN;event.key.scancode=SDL_SCANCODE_A;
         host_macos_normalize_event(&event);
         assert(event.type==SDL_EVENT_KEY_DOWN && event.key.scancode==SDL_SCANCODE_A);
+        host_benchmark_overlay_show(0);
+        run_worker(^{host_benchmark_overlay_show(1);});
         assert(NSApp==nil);
         puts("Native service main-thread guards, cached worker rate, and normal quit contracts passed");
     }
