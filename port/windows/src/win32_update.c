@@ -17,6 +17,7 @@ Paths are UTF-8, as SDL gives them.
 #include <string.h>
 
 #include "update.h"
+#include "posix.h"
 
 #define UPDATE_USER_AGENT L"halo-ce-universal-updater"
 #define TIMEOUT_MILLISECONDS 20000
@@ -155,6 +156,118 @@ done:
 	if (session)
 		WinHttpCloseHandle(session);
 	return succeeded;
+}
+
+/* ---------- the Delta list's requests (posix.h) */
+
+int posix_https_request(const char *url, const char *form, int form_size, char *response, int response_size,
+	int timeout_milliseconds, char *error, int error_size)
+{
+	wchar_t wide_url[2048], host[256], url_path[2048];
+	URL_COMPONENTS components;
+	HINTERNET session = NULL, connection = NULL, request = NULL;
+	DWORD status = 0, status_size = sizeof(status);
+	DWORD protocols, policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+	int timeout = timeout_milliseconds > 0 ? timeout_milliseconds : TIMEOUT_MILLISECONDS;
+	int received = 0, succeeded = 0;
+
+	if (response_size > 0)
+		response[0] = 0;
+	if (error_size > 0)
+		error[0] = 0;
+	if (!url || response_size < 2 || error_size < 2 || (form && form_size < 0) ||
+		!wide_from_utf8(url, wide_url, 2048))
+	{
+		return 0;
+	}
+	memset(&components, 0, sizeof(components));
+	components.dwStructSize = sizeof(components);
+	components.lpszHostName = host;
+	components.dwHostNameLength = 256;
+	components.lpszUrlPath = url_path;
+	components.dwUrlPathLength = 2048;
+	if (!WinHttpCrackUrl(wide_url, 0, 0, &components) || components.nScheme != INTERNET_SCHEME_HTTPS)
+	{
+		snprintf(error, (size_t)error_size, "not an https:// address: %s", url);
+		return 0;
+	}
+	session = WinHttpOpen(L"VISR", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+		WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!session)
+	{
+		set_error(error, error_size, "could not start WinHTTP");
+		goto done;
+	}
+	protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+	if (!WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols)))
+	{
+		protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+		WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+	}
+	WinHttpSetTimeouts(session, timeout, timeout, timeout, timeout);
+	connection = WinHttpConnect(session, host, components.nPort, 0);
+	if (connection)
+	{
+		request = WinHttpOpenRequest(connection, form ? L"POST" : L"GET", url_path, NULL, WINHTTP_NO_REFERER,
+			WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+	}
+	if (request)
+		WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy));
+	if (!request || !WinHttpSendRequest(request,
+		form ? L"Content-Type: application/x-www-form-urlencoded" : WINHTTP_NO_ADDITIONAL_HEADERS,
+		form ? (DWORD)-1L : 0, form ? (LPVOID)form : WINHTTP_NO_REQUEST_DATA, form ? (DWORD)form_size : 0,
+		form ? (DWORD)form_size : 0, 0) || !WinHttpReceiveResponse(request, NULL))
+	{
+		set_error(error, error_size, "could not reach the server");
+		goto done;
+	}
+	if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+		WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX))
+	{
+		set_error(error, error_size, "a broken answer");
+		goto done;
+	}
+	if (status == 200)
+	{
+		for (;;)
+		{
+			DWORD count = 0;
+
+			if (received >= response_size - 1)
+			{
+				/* (a larger body: a failure, unless it ends here) */
+				char extra;
+
+				if (!WinHttpReadData(request, &extra, 1, &count) || count)
+				{
+					snprintf(error, (size_t)error_size, "the answer is too large");
+					status = 0;
+					goto done;
+				}
+				break;
+			}
+			if (!WinHttpReadData(request, response + received, (DWORD)(response_size - 1 - received), &count))
+			{
+				set_error(error, error_size, "the answer broke off");
+				status = 0;
+				goto done;
+			}
+			if (!count)
+				break;
+			received += (int)count;
+		}
+		response[received] = 0;
+	}
+	succeeded = 1;
+
+done:
+	if (request)
+		WinHttpCloseHandle(request);
+	if (connection)
+		WinHttpCloseHandle(connection);
+	if (session)
+		WinHttpCloseHandle(session);
+	return succeeded ? (int)status : 0;
 }
 
 /* ---------- files and processes */
