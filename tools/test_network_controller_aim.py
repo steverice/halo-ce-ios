@@ -49,7 +49,9 @@ static int connection, test_controller, look_disabled, head_drives=1, perspectiv
 static int aim_controller=1, sampled_hand=1, feedback_calls, reset_calls;
 static long unit_index_now=17, aiming_unit=17;
 static int own_passenger_weapon;
-static struct {int last_unit,hand_aiming,ever_ready;} aim={.ever_ready=1};
+static struct {int last_unit,hand_aiming,ever_ready;float network_move_delta;} aim={.ever_ready=1};
+static short mock_pad=123;
+static int halo_action_facing_unpack(short pad,float *d){int h=pad&1;*d=h?(float)((pad-h)/2)*(3.14159265f/16384.0f):0.0f;return h;}
 static struct halo_stereo_frame *halo_stereo_frame(void){return &frame;}
 static struct unit_datum *unit_get(long index){assert(index==17);return &unit;}
 static int game_connection(void){return connection;}
@@ -73,7 +75,7 @@ static void reset(const char *reason){(void)reason;reset_calls++;}
 static void euler_angles2d_from_vector3d(real_euler_angles2d *a,const real_vector3d *v){a->yaw=atan2f(v->j,v->i);a->pitch=asinf(v->k);}
 static void player_control_network_seat_facing(short local,float *yaw,float *pitch){assert(local==0);*yaw=.3f;*pitch=.1f;}
 static int action_aim(long index,float ly,float lp,unsigned long flags,float *y,float *p,short *pad){
- (void)index;(void)ly;(void)lp;(void)flags;*y=1.57079632679f;*p=.25f;*pad=sampled_hand?123:0;return sampled_hand;
+ (void)index;(void)ly;(void)lp;(void)flags;*y=1.57079632679f;*p=.25f;*pad=sampled_hand?mock_pad:0;return sampled_hand;
 }
 static void unit_get_camera_position(long index,real_point3d *eye){assert(index==17);*eye=(real_point3d){3,4,5};}
 '''
@@ -166,10 +168,45 @@ int main(void){
 ''')
 
 
+def test_production_network_throttle_follows_the_head_not_the_gun(tmp_path):
+    glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
+    run_probe(tmp_path, "throttle", GLUE + SAMPLE + function(glue, "static int hand_tracked_this_session(") +
+              function(glue, "static int network_controller_aim(") + function(glue, "static int gate_target(") +
+              function(glue, "int halo_controller_action_aim(") +
+              function(glue, "void halo_controller_network_throttle(") + r'''
+int main(void){
+ float yaw,pitch,i,j;short pad;unit.object.parent_object_index=NONE;
+ /* (the look is a quarter turn left of the hand's aim: pad's delta is +pi/2) */
+ mock_pad=16385;
+ for(connection=0;connection<=2;connection++){
+  assert(halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad));
+  i=1.0f;j=0.0f;halo_controller_network_throttle(0,&i,&j);
+  if(connection==_game_connection_local){
+   /* (a local action keeps the pad, and players.c turns the facing instead) */
+   assert(pad==16385&&i==1.0f&&j==0.0f);
+  }else{
+   /* (forward walks along the look, a quarter turn from the gun) */
+   assert(pad==0&&fabsf(i)<.0001f&&fabsf(j-1.0f)<.0001f);
+   i=.6f;j=.8f;halo_controller_network_throttle(0,&i,&j);
+   assert(fabsf(i+.8f)<.0001f&&fabsf(j-.6f)<.0001f);
+  }
+  /* (no hand: no turn; another local player: none) */
+  sampled_hand=0;aim.ever_ready=1;
+  halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad);
+  i=1.0f;j=0.0f;halo_controller_network_throttle(0,&i,&j);
+  assert(i==1.0f&&j==0.0f);sampled_hand=1;
+  halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad);
+  i=1.0f;j=0.0f;halo_controller_network_throttle(1,&i,&j);
+  assert(i==1.0f&&j==0.0f);
+ }
+}
+''')
+
+
 def test_production_network_targeting_uses_simulated_aim(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     # The local hand ray is intentionally different from the rate-limited unit.
-    glue_test = (GLUE + SAMPLE).replace("int last_unit,hand_aiming,ever_ready;", "int last_unit,hand_aiming,ever_ready;float ray_direction[3];")
+    glue_test = (GLUE + SAMPLE).replace("float network_move_delta;} aim", "float network_move_delta,ray_direction[3];} aim")
     eligible = function(glue, "static int network_gameplay_aim_eligible(") if \
         "static int network_gameplay_aim_eligible(" in glue else ""
     run_probe(tmp_path, "ray", glue_test + function(glue, "static int gate_target(") +

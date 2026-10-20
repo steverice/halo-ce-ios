@@ -118,6 +118,10 @@ Network controller sessions also return 1 for held/simulated aim without
 tracking and independent seat stick aim; their action pad is always 0. */
 int halo_controller_action_aim(short local_player_index, float look_yaw, float look_pitch,
 	unsigned long control_flags, float *yaw, float *pitch, short *pad);
+/* port: a network action's throttle turned to the facing it is taken with
+(the hand's aim): walking follows the head's frame, as in a local game; no
+change off network or without a tracked hand */
+void halo_controller_network_throttle(short local_player_index, float *throttle_i, float *throttle_j);
 /* 1 while a hand aims for this local player (the magnetism block's gate) */
 int halo_controller_hand_aiming(short local_player_index);
 /* for players.c and units.c (declared there too): the pad of each player's

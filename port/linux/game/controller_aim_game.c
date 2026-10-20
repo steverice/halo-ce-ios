@@ -298,6 +298,9 @@ static struct
 	a lost hand (controller_track_update), not a hand that never aimed */
 	int ever_ready;
 	int hand_aiming;                /* this frame's action carries the hand's aim */
+	/* a network action's facing is the hand's aim with a zero pad, so its
+	throttle turns by the look's yaw less the aim's (halo_controller_network_throttle) */
+	float network_move_delta;
 	float ray_direction[3];         /* and that aim, unit (halo_controller_aim_ray) */
 	/* under debug.test_controller: where the last hand aim's sightline from
 	the eye meets the world (the shot's landing), for the draw log line */
@@ -1351,6 +1354,7 @@ int halo_controller_action_aim(short local_player_index, float look_yaw, float l
 	*yaw = look_yaw;
 	*pitch = look_pitch;
 	*pad = 0;
+	aim.network_move_delta = 0.0f;
 	if (local_player_index != 0)
 		return 0;
 	settings();
@@ -1434,9 +1438,33 @@ int halo_controller_action_aim(short local_player_index, float look_yaw, float l
 	/* The compressed relay has only ordinary facing. Keep presentation's
 	hand state, but never ask a peer to interpret local hand/body metadata. */
 	if (connection == _game_connection_network_client || connection == _game_connection_network_server)
+	{
+		float delta_yaw;
+
+		/* port: the throttle is in the head's frame, as the facing is in a local game
+		(players.c turns the facing back to the look); with the hand's aim as the
+		facing, the throttle takes the same turn, so walking follows the head, not the gun */
+		if (hand && halo_action_facing_unpack(*pad, &delta_yaw))
+			aim.network_move_delta = delta_yaw;
 		*pad = 0;
+	}
 	feedback();
 	return hand || network;
+}
+
+/* for player_control.c as the action is built, after halo_controller_action_aim:
+a network action's throttle turned to the facing it will be taken with */
+void halo_controller_network_throttle(short local_player_index, float *throttle_i, float *throttle_j)
+{
+	float cosine, sine, i;
+
+	if (local_player_index != 0 || aim.network_move_delta == 0.0f)
+		return;
+	cosine = cosf(aim.network_move_delta);
+	sine = sinf(aim.network_move_delta);
+	i = *throttle_i;
+	*throttle_i = i * cosine - *throttle_j * sine;
+	*throttle_j = i * sine + *throttle_j * cosine;
 }
 
 /* Keep this camera source for the whole eligible network session, including

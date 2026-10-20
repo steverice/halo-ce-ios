@@ -856,6 +856,7 @@ static void handle_one_player_input(
 			player->desired_angles, stays the head's. pad was uninitialized */
 			extern int halo_controller_action_aim(short local_player_index, float look_yaw, float look_pitch,
 				unsigned long control_flags, float *yaw, float *pitch, short *pad);
+			extern void halo_controller_network_throttle(short local_player_index, float *throttle_i, float *throttle_j);
 			float yaw;
 			float pitch;
 			short pad;
@@ -872,6 +873,7 @@ static void handle_one_player_input(
 				action.desired_facing.yaw = yaw;
 				action.desired_facing.pitch = pitch;
 				action.pad = pad;
+				halo_controller_network_throttle(local_player_index, &action.throttle.i, &action.throttle.j);
 			}
 			else
 			{
