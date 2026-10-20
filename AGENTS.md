@@ -120,6 +120,10 @@ Conventional Commits, each led by its gitmoji:
   signatures and changes upstream's hashes, which breaks later merges from
   upstream.
 
+## Copyleft code
+
+Code under GPL or AGPL is never copied or read when implementing a feature. A feature seen in another project is reimplemented from a written description of its behavior: one agent writes the description from public prose (pull request descriptions, changelogs, documentation), and a different one implements it from that description. Network compatibility is implemented from protocol documentation and observed traffic.
+
 ## Never commit
 
 - Game data: maps, disc images, sounds, textures, videos, screenshots or frame
@@ -130,5 +134,5 @@ Conventional Commits, each led by its gitmoji:
   paths outside the repository, network addresses, email addresses.
 - Payments, ads or tracking. VISR is free.
 
-New code is CC0 1.0 like the rest of the repository. A third-party library
+New code is Apache-2.0 (`LICENSE`). A third-party library
 keeps its license file next to it and is listed in `NOTICE.md`.

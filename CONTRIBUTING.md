@@ -12,11 +12,12 @@ pull requests are all welcome.
   game content will be closed.
 - **Never commit signing material**: certificates, `.p12` files, provisioning
   profiles, keychains or API keys.
+- **No copyleft code.** Code under GPL or AGPL is never copied or read when implementing a feature. A feature seen in another project is reimplemented from a written description of its behavior: one person or agent writes the description from public prose (pull request descriptions, changelogs, documentation), and a different one implements it from that description. Network compatibility is implemented from protocol documentation and observed traffic.
 - **Keep it free.** VISR is not sold, and contributions must not add
   payments, ads or tracking.
-- Contributions are dedicated to the public domain under
-  [CC0 1.0](LICENSE.md), the same as the rest of the code. By opening a pull
-  request, you agree that you have the right to do that for what you submit.
+- Contributions are accepted under the
+  [Apache License 2.0](LICENSE). By opening a pull request, you agree that you
+  have the right to license what you submit under it.
   If you bring in a third-party library, keep its license file next to it and
   add it to [NOTICE.md](NOTICE.md).
 
