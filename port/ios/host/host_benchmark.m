@@ -998,6 +998,9 @@ int host_benchmark_next(char *text, unsigned int size) {
         /* Internal tester builds offer local download as a fallback. */
         if (!page) completion_screen_requested = 1;
 #endif
+        /* (debug.benchmark_offscreen forced the fixed timestep for the whole launch: the game quits rather than play on
+           at one tick a frame) */
+        if (host_benchmark_offscreen_requested()) completion_screen_requested = 0;
         int descriptor = atomic_exchange(&marker, -1);
 
         if(atomic_load(&finish_requested))flag(@"finished_early");
@@ -1054,7 +1057,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         atomic_store(&running, 0);
         suite_request = nil;
 #ifdef HALO_TESTER_BUILD
-        if(plan.mode==BENCHMARK_UNIFIED) {
+        if(plan.mode==BENCHMARK_UNIFIED && completion_screen_requested) {
 #ifndef HALO_BENCHMARK_CLOUD
             host_benchmark_menu_status(preserved ? "Benchmark data saved on this device. Cloud upload is unavailable in this build." :
                 "Could not queue the report. The original is retained; another benchmark cannot replace it.");

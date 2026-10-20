@@ -67,3 +67,9 @@ def test_offscreen_forces_fixed_timestep():
 def test_offscreen_timing_basis_in_report():
     source = (ROOT / "port/ios/host/host_benchmark_presentation.m").read_text()
     assert 'result[@"timing_basis"]' in source
+
+
+def test_offscreen_suite_quits_at_its_end():
+    source = (ROOT / "port/ios/host/host_benchmark.m").read_text()
+    assert "if (host_benchmark_offscreen_requested()) completion_screen_requested = 0;" in source
+    assert "if(plan.mode==BENCHMARK_UNIFIED && completion_screen_requested) {" in source
