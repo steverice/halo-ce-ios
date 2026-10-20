@@ -156,6 +156,22 @@ enum
 int posix_upnp_method(void);
 int posix_upnp_renew_seconds(void);
 
+/* ---------- HTTPS (the Delta game list, p2p_delta.c; posix_update.c on Linux,
+win32_update.c on Windows, port/ios/host/host_https.m on Apple devices) */
+
+/* one request to the https:// url, with the certificate and the host name
+checked: a GET, or if form is not NULL a POST of its form_size bytes as
+application/x-www-form-urlencoded. Blocks up to timeout_milliseconds for each
+step. Returns the HTTP status, or 0 if there was none, and why in error
+(error_size bytes). A 200's body is copied into response (response_size
+bytes, with its end after it; a larger body is a failure); any other status
+leaves it empty. Redirects are not followed. Where there is no TLS it fails.
+Linux alone also takes an http:// url of this machine (127.0.0.1,
+localhost), which a test's server answers. More than one thread may ask at
+once */
+int posix_https_request(const char *url, const char *form, int form_size, char *response, int response_size,
+	int timeout_milliseconds, char *error, int error_size);
+
 /* ---------- DTLS for WebRTC (internet play with browsers, p2p_webrtc.c;
 posix_dtls.c, with port/third_party/mbedtls) */
 
