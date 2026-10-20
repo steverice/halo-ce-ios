@@ -308,8 +308,11 @@ object is read to its end either way), -1 if the text is malformed */
 static int read_game(struct parser *parser, struct delta_game *game)
 {
 	int verified = 1, locked = 0, coop = 0;
+	/* (room for one that is too long, which is refused and not cut to fit) */
+	char invite[DELTA_INVITE_DIGITS + 16];
 
 	memset(game, 0, sizeof(*game));
+	invite[0] = 0;
 	skip_space(parser);
 	if (parser->position >= parser->end || *parser->position++ != '{')
 		return -1;
@@ -337,9 +340,9 @@ static int read_game(struct parser *parser, struct delta_game *game)
 		start = parser->position;
 		if (!strcmp(key, "invite"))
 		{
-			known = read_string(parser, game->invite, sizeof(game->invite));
+			known = read_string(parser, invite, sizeof(invite));
 			if (!known)
-				game->invite[0] = 0;
+				invite[0] = 0;
 		}
 		else if (!strcmp(key, "name"))
 		{
@@ -423,8 +426,9 @@ static int read_game(struct parser *parser, struct delta_game *game)
 	}
 	trim(game->name);
 	trim(game->gametype);
-	if (!valid_invite(game->invite) || locked || coop || !verified || !game->name[0])
+	if (!valid_invite(invite) || locked || coop || !verified || !game->name[0])
 		return 0;
+	strcpy(game->invite, invite);
 	if (game->maximum_players < game->players)
 		game->maximum_players = game->players;
 	return 1;

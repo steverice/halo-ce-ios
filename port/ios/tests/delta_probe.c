@@ -22,6 +22,7 @@ static const char answer[] =
 	"{\"invite\":\"\",\"name\":\"locked game\",\"map\":\"m\",\"version\":29,\"locked\":true},\n"
 	"{\"invite\":\"" INVITE_A "\",\"name\":\"unverified\",\"map\":\"m\",\"version\":29,\"verified\":false},\n"
 	"{\"invite\":\"" INVITE_A "\",\"name\":\"campaign\",\"map\":\"a10\",\"version\":29,\"mode\":\"coop\"},\n"
+	"{\"invite\":\"" INVITE_A "0\",\"name\":\"too long\",\"map\":\"m\",\"version\":29},\n"
 	"{\"invite\":\"short\",\"name\":\"old invite\",\"map\":\"m\",\"version\":22},\n"
 	"{\"invite\":\"" INVITE_A "\",\"name\":\"\",\"map\":\"m\",\"version\":29},\n"
 	"{\"invite\":\"" INVITE_A "\",\"name\":\"odd types\",\"map\":7,\"players\":\"many\",\"version\":29,\"open\":true}\n"
