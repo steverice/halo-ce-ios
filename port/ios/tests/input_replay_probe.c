@@ -32,7 +32,7 @@ int halo_controller_unit_state(float position[3], float *facing_yaw, float *aim_
 { (void)position; (void)facing_yaw; (void)aim_yaw; return 0; }
 int halo_controller_run_aimed(void) { return 0; }
 static int controller_configured;
-static const char *stereo_mode = "";
+static const char *replay_probe_stereo_mode = "";
 int halo_controller_aim_configured(void) { return controller_configured; }
 
 static int touch_replay_active;
@@ -54,7 +54,7 @@ int config_boolean(const char *name) { return (!strcmp(name, "debug.benchmark_li
 	(!strcmp(name, "game.enhanced_animations") && enhanced_animations); }
 long config_integer(const char *name) { (void)name; return 0; }
 const char *config_string(const char *name) {
-	if (!strcmp(name,"display.stereo")) return stereo_mode;
+	if (!strcmp(name,"display.stereo")) return replay_probe_stereo_mode;
 	if (!strcmp(name, "debug.input_record")) return record_name;
 	return !strcmp(name, "debug.input_replay") ? replay_name : "";
 }
@@ -126,7 +126,7 @@ static void check_recorded_action_metadata(void)
         XINPUT_GAMEPAD pad={0};
         char header[256];long segment,tick;unsigned int words[ACTION_WORDS];
         input_replay_begin(NULL,0);clock_ready=1;clock_tick=0;
-        replay.await_level=0;controller_configured=version==2;stereo_mode=version==2?"head":"";
+        replay.await_level=0;controller_configured=version==2;replay_probe_stereo_mode=version==2?"head":"";
         strcpy(replay.record_path,"metadata.input");strcpy(replay.record_actions_path,"metadata.actions");
         if(version==2)action[7]=0xc0010002u;
         record(&pad,0);input_replay_tick_action(action);record_end("metadata probe");
@@ -143,7 +143,7 @@ static void check_recorded_action_metadata(void)
         assert(action[0]==0x03428001u && action[7]==(version==1?2u:0xc0010002u));
         input_replay_begin(NULL,0);
     }
-    controller_configured=0;stereo_mode="";clock_ready=0;
+    controller_configured=0;replay_probe_stereo_mode="";clock_ready=0;
     unlink("metadata.input");unlink("metadata.actions");unlink("metadata.seeds");
     puts("controller and tutorial metadata: PASS");
 }
