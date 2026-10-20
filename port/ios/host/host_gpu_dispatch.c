@@ -88,12 +88,13 @@ static uint32_t present_wrapped(gpu_texture back_buffer)
 	{
 		double returned = uptime_seconds();
 
-		double simulation, render;
+		double simulation, render, translation;
 		int ticks;
 
-		host_frame_cpu_split(&simulation, &render, &ticks);
+		host_frame_cpu_split(&simulation, &render, &translation, &ticks);
 		if (last_returned > 0.0)
-			host_benchmark_frame(returned - last_returned, called - last_returned, -1.0, 0.0, simulation, render, ticks);
+			host_benchmark_frame(returned - last_returned, called - last_returned, -1.0, 0.0, simulation, render,
+				translation, ticks);
 		last_returned = returned;
 	}
 	if (frame_counter)

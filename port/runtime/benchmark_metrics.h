@@ -24,9 +24,10 @@ struct benchmark_metrics {
     /* per frame, in tenths of a millisecond (65535 = 6.5 s or longer) */
     uint16_t *interval, *cpu, *gpu;
     size_t frames, capacity;
-    /* the frames that knew how their CPU time split: the simulation's ticks and the render, in tenths of a
-       millisecond, and how many ticks each ran */
-    uint16_t *simulation, *render;
+    /* the frames that knew how their CPU time split: the simulation's ticks, the render and the part of the render
+       spent in the D3D8 device translating and encoding for the GPU, in tenths of a millisecond, and how many ticks
+       each ran */
+    uint16_t *simulation, *render, *translation;
     size_t split_frames, split_capacity;
     unsigned long ticks;
     double refresh_hertz, seconds;
@@ -50,7 +51,7 @@ struct benchmark_summary {
     struct benchmark_distribution interval, cpu, gpu;
     /* over the split_frames frames that knew their split; ticks_per_frame is their mean tick count */
     size_t split_frames;
-    struct benchmark_distribution simulation_cpu, render_cpu;
+    struct benchmark_distribution simulation_cpu, render_cpu, translation_cpu;
     double ticks_per_frame;
     /* frames shown for 1, 2, 3, 4 and 5 or more refreshes (index 0 unused) */
     unsigned long shown[6];
@@ -64,10 +65,10 @@ void benchmark_metrics_free(struct benchmark_metrics *metrics);
 /* one presented frame: milliseconds since the frame before it was presented, and the CPU and GPU time it took
    (negative where unknown) */
 void benchmark_metrics_frame(struct benchmark_metrics *metrics, double interval, double cpu, double gpu);
-/* the same, with the part of the CPU time spent running ticks, the part spent rendering and the ticks it ran
-   (simulation negative where the frame did not know them) */
+/* the same, with the part of the CPU time spent running ticks, the part spent rendering, the part of that spent
+   translating and encoding, and the ticks it ran (simulation negative where the frame did not know them) */
 void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double interval, double cpu, double gpu,
-    double simulation, double render, int ticks);
+    double simulation, double render, double translation, int ticks);
 /* a once-a-second sample; megabytes negative where unknown */
 void benchmark_metrics_sample(struct benchmark_metrics *metrics, long footprint, long left, int thermal);
 void benchmark_metrics_compile(struct benchmark_metrics *metrics, double milliseconds);
@@ -75,8 +76,8 @@ void benchmark_metrics_summarize(const struct benchmark_metrics *metrics, struct
 
 /* how many refreshes an interval kept its frame on screen, at least 1 */
 long benchmark_refreshes(double interval, double refresh_hertz);
-/* the run as one JSON object's members (no braces), for a report: summary (simulation_cpu_ms, render_cpu_ms and
-   ticks_per_frame null where no frame knew its split), memory, thermal, compiles, stalls,
+/* the run as one JSON object's members (no braces), for a report: summary (simulation_cpu_ms, render_cpu_ms,
+   translation_cpu_ms and ticks_per_frame null where no frame knew its split), memory, thermal, compiles, stalls,
    and each frame's interval, CPU and GPU time as base64 of little-endian 16-bit tenths of a millisecond.
    Returns malloc'd text, or NULL. */
 char *benchmark_metrics_json(const struct benchmark_metrics *metrics);

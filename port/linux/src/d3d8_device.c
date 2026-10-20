@@ -487,6 +487,54 @@ void halo_render_before_hud(short local_player_index, short rasterizer_target,
 
 /* ---------- state the XDK header's inline functions read and write */
 
+/* port: the benchmark's translation time (port/ios/host/host_benchmark.h):
+the CPU time spent inside the device's outermost draw, clear, constant and
+target calls, which translate D3D8 state and encode it for the GPU. One
+counter read on entry and one on exit; nested calls count once. The counter
+is the one mach_absolute_time reads. */
+#if defined(HALO_IOS) && defined(__aarch64__)
+static unsigned long long translation_ticks;
+static int translation_depth;
+
+static inline unsigned long long translation_clock(void)
+{
+	unsigned long long value;
+
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(value));
+	return value;
+}
+
+static inline unsigned long long translation_begin(void)
+{
+	return translation_depth++ ? 0 : translation_clock();
+}
+
+static inline void translation_end(unsigned long long *began)
+{
+	if (!--translation_depth)
+		translation_ticks += translation_clock() - *began;
+}
+
+#define TRANSLATION_TIMED() \
+	unsigned long long translation_began __attribute__((cleanup(translation_end), unused)) = translation_begin()
+
+/* the ticks since the last take (main_loop, at the end of its render) */
+int halo_translation_ticks_take(void)
+{
+	unsigned long long ticks = translation_ticks;
+
+	translation_ticks = 0;
+	return ticks > 0x7fffffffULL ? 0x7fffffff : (int)ticks;
+}
+#else
+#define TRANSLATION_TIMED() ((void)0)
+
+int halo_translation_ticks_take(void)
+{
+	return -1;
+}
+#endif
+
 DWORD D3D__RenderState[D3DRS_MAX];
 DWORD D3D__TextureState[D3DTSS_MAXSTAGES][D3DTSS_MAX];
 WORD *D3D__IndexData;
@@ -2503,6 +2551,7 @@ static BOOL trace_frame(void);
 
 void WINAPI D3DDevice_SetRenderTarget(D3DSurface *render_target, D3DSurface *depth_stencil)
 {
+	TRANSLATION_TIMED(); /* port */
 	if (trace_frame())
 		platform_log("set render target %08lx depth %08lx", render_target ? (unsigned long)render_target->Data : 0,
 			depth_stencil ? (unsigned long)depth_stencil->Data : 0);
@@ -2997,6 +3046,7 @@ void WINAPI D3DDevice_GetVertexShaderSize(DWORD handle, UINT *size)
 
 void WINAPI D3DDevice_SetVertexShaderConstant(INT reg, CONST void *constant_data, DWORD constant_count)
 {
+	TRANSLATION_TIMED(); /* port */
 	long first = reg + XGPU_VERTEX_CONSTANT_BIAS;
 
 	if (first < 0 || first >= XGPU_VERTEX_CONSTANT_COUNT)
@@ -5097,6 +5147,7 @@ static void hud_draw_extent(const float *vertices, unsigned long count)
 
 void WINAPI D3DDevice_DrawVertices(D3DPRIMITIVETYPE primitive_type, UINT start_vertex, UINT vertex_count)
 {
+	TRANSLATION_TIMED(); /* port */
 	struct gpu_draw *draw = &draw_packet;
 
 	VALIDATION_BEGIN(GPU_VALIDATION_DRAW_VERTICES);
@@ -5133,6 +5184,7 @@ colors holds a red, green, blue and alpha byte for each range. */
 void halo_draw_quad_ranges(const UINT *first_vertex, const UINT *quad_count, const BYTE (*colors)[4], UINT count,
 	INT color_reg)
 {
+	TRANSLATION_TIMED(); /* port */
 	struct gpu_draw *draw = &draw_packet;
 	static float *values = NULL;
 	static unsigned long value_capacity = 0;
@@ -5205,6 +5257,7 @@ void halo_draw_quad_ranges(const UINT *first_vertex, const UINT *quad_count, con
 
 void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT vertex_count, CONST WORD *index_data)
 {
+	TRANSLATION_TIMED(); /* port */
 	struct gpu_draw *draw = &draw_packet;
 	unsigned long minimum, maximum, index, count, generation = 0, index_offset = 0;
 	WORD *indices = NULL;
@@ -5284,6 +5337,7 @@ static void immediate_emit(void)
 
 void WINAPI D3DDevice_End(void)
 {
+	TRANSLATION_TIMED(); /* port */
 	struct gpu_draw *draw = &draw_packet;
 	unsigned long stride = XGPU_VERTEX_ATTRIBUTE_COUNT * 4 * sizeof(float);
 	unsigned long index, count = device.immediate_count;
@@ -5374,6 +5428,7 @@ void WINAPI D3DDevice_SetVertexDataColor(INT reg, D3DCOLOR color)
 
 void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 {
+	TRANSLATION_TIMED(); /* port */
 	struct gpu_clear clear;
 	struct gpu_rect *list;
 	uint32_t listed = 0;

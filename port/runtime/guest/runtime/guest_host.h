@@ -41,7 +41,8 @@ void host_exit(int code) __attribute__((noreturn));
    The host waits for the following presentation before accepting trial data. */
 void host_data_updates_frame_ready(int ready);
 /* the benchmark's CPU split (host_benchmark.h): main_loop's marks around its
-ticks (0 and 1, with how many ran) and its render (2 and 3) */
+ticks (0 and 1, with how many ran) and its render (2 and 3), and the D3D8
+device's translation time within the render (4, in mach_absolute_time units) */
 void host_frame_cpu_phase(int phase, int ticks);
 
 int host_external_cycle(int direction);

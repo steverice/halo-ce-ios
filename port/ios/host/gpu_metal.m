@@ -4108,12 +4108,12 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	CFTimeInterval now = CACurrentMediaTime(), period, hold, interval;
 	long context_refreshes;
 	uint64_t gpu_total = atomic_load(&pacing_gpu_nanoseconds);
-	double cpu, gpu, simulation_cpu, render_cpu;
+	double cpu, gpu, simulation_cpu, render_cpu, translation_cpu;
 	long lower, up;
 	int ticks;
 
 	*next_frame_due = 0;
-	host_frame_cpu_split(&simulation_cpu, &render_cpu, &ticks);
+	host_frame_cpu_split(&simulation_cpu, &render_cpu, &translation_cpu, &ticks);
 	cpu = pacing.work_started > 0.0 ? now - pacing.work_started - pacing_waited : 0.0;
 	gpu = (double)(gpu_total - pacing.gpu_counted) / 1e9;
 	pacing.gpu_counted = gpu_total;
@@ -4128,7 +4128,7 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	{
 		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
 		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0,
-			simulation_cpu, render_cpu, ticks);
+			simulation_cpu, render_cpu, translation_cpu, ticks);
 	}
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 		return 0.0;

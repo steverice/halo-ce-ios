@@ -35,6 +35,7 @@
 #include "../../runtime/graphics_capture.h"
 #include <math.h>
 #include <mach/mach.h>
+#include <mach/mach_time.h>
 #include <os/lock.h>
 #include <os/proc.h>
 #include <signal.h>
@@ -348,15 +349,25 @@ void host_benchmark_frame_unshown(int why) {
 }
 
 /* the game's marks since the last present, on the pacing's clock: when the open phase began, and the seconds summed
-   in ticks [0] and in the render [1] */
+   in ticks [0], in the render [1] and in the render's translation [2] */
 static os_unfair_lock split_lock = OS_UNFAIR_LOCK_INIT;
-static double split_began[2], split_seconds[2];
-static int split_ticks, split_marked;
+static double split_began[2], split_seconds[3];
+static int split_ticks, split_marked, split_translated;
 
 void host_frame_cpu_phase(int phase, int ticks) {
     double now = CACurrentMediaTime();
     int which = phase >= HOST_FRAME_RENDER_BEGIN;
+    static mach_timebase_info_data_t timebase;
 
+    if (phase == HOST_FRAME_TRANSLATION) {
+        if (ticks < 0) return;
+        if (!timebase.denom) mach_timebase_info(&timebase);
+        os_unfair_lock_lock(&split_lock);
+        split_seconds[2] += (double)ticks * timebase.numer / timebase.denom / 1e9;
+        split_translated = 1;
+        os_unfair_lock_unlock(&split_lock);
+        return;
+    }
     os_unfair_lock_lock(&split_lock);
     if (phase == HOST_FRAME_SIMULATION_BEGIN || phase == HOST_FRAME_RENDER_BEGIN) split_began[which] = now;
     else if (split_began[which] > 0.0) {
@@ -368,18 +379,19 @@ void host_frame_cpu_phase(int phase, int ticks) {
     os_unfair_lock_unlock(&split_lock);
 }
 
-void host_frame_cpu_split(double *simulation, double *render, int *ticks) {
+void host_frame_cpu_split(double *simulation, double *render, double *translation, int *ticks) {
     os_unfair_lock_lock(&split_lock);
     *simulation = split_marked ? split_seconds[0] : -1.0;
     *render = split_marked ? split_seconds[1] : -1.0;
+    *translation = split_marked && split_translated ? split_seconds[2] : -1.0;
     *ticks = split_ticks;
-    split_seconds[0] = split_seconds[1] = 0.0;
-    split_ticks = split_marked = 0;
+    split_seconds[0] = split_seconds[1] = split_seconds[2] = 0.0;
+    split_ticks = split_marked = split_translated = 0;
     os_unfair_lock_unlock(&split_lock);
 }
 
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period, double simulation_cpu,
-    double render_cpu, int ticks) {
+    double render_cpu, double translation_cpu, int ticks) {
     host_frame_counter_sample(interval, cpu, gpu);
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
@@ -389,7 +401,8 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
         benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
-            simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0, ticks);
+            simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0,
+            translation_cpu >= 0.0 ? translation_cpu * 1000.0 : -1.0, ticks);
     }
     os_unfair_lock_unlock(&lock);
 }

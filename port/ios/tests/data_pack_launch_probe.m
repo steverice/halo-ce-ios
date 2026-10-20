@@ -12,10 +12,13 @@ void host_logf(int priority, const char *format, ...) { (void)priority; (void)fo
 const struct gpu_backend gpu_backend_metal = {0}, gpu_backend_gl = {0};
 void host_lifecycle_hold(void) {}
 void host_frame_counter_show(unsigned long frame) { (void)frame; }
-void host_benchmark_frame(double interval, double cpu, double gpu, double refresh, double simulation, double render, int ticks) {
-    (void)interval; (void)cpu; (void)gpu; (void)refresh; (void)simulation; (void)render; (void)ticks;
+void host_benchmark_frame(double interval, double cpu, double gpu, double refresh, double simulation, double render,
+    double translation, int ticks) {
+    (void)interval; (void)cpu; (void)gpu; (void)refresh; (void)simulation; (void)render; (void)translation; (void)ticks;
 }
-void host_frame_cpu_split(double *simulation, double *render, int *ticks) { *simulation = *render = -1.0; *ticks = 0; }
+void host_frame_cpu_split(double *simulation, double *render, double *translation, int *ticks) {
+    *simulation = *render = *translation = -1.0; *ticks = 0;
+}
 void host_data_updates_healthy(void) { healthSignals++; [launchStore markHealthy]; }
 static uint32_t Present(gpu_texture picture) { (void)picture; assert(healthSignals == 0); return 0; }
 static uint32_t PresentStereo(const struct gpu_stereo_present *picture) { (void)picture; assert(healthSignals == 0); return 0; }

@@ -40,16 +40,19 @@ void host_benchmark_graphics(const char *json);
 
 /* the Metal backend, at each present: seconds since the last one, the frame's CPU and GPU seconds (negative:
    unknown), the display's refresh period (0: unknown), and the parts of the CPU time spent running the
-   simulation's ticks and rendering, with the ticks it ran (host_frame_cpu_split) */
+   simulation's ticks, rendering and, within the render, translating and encoding, with the ticks it ran
+   (host_frame_cpu_split) */
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period, double simulation_cpu,
-    double render_cpu, int ticks);
+    double render_cpu, double translation_cpu, int ticks);
 /* the game's marks around game_time_update and its render (main.c), through guest_host.h: phase 0 and 1 begin and
-   end the ticks (ticks: how many ran), 2 and 3 the render */
-enum { HOST_FRAME_SIMULATION_BEGIN, HOST_FRAME_SIMULATION_END, HOST_FRAME_RENDER_BEGIN, HOST_FRAME_RENDER_END };
+   end the ticks (ticks: how many ran), 2 and 3 the render; 4, at the render's end, the D3D8 device's translation
+   and encoding time since the last (ticks: in mach_absolute_time units, negative where unknown) */
+enum { HOST_FRAME_SIMULATION_BEGIN, HOST_FRAME_SIMULATION_END, HOST_FRAME_RENDER_BEGIN, HOST_FRAME_RENDER_END,
+    HOST_FRAME_TRANSLATION };
 void host_frame_cpu_phase(int phase, int ticks);
-/* at a present: the seconds spent in ticks and in the render since the last present, and the ticks run, then
-   cleared; simulation and render negative when the game marked neither */
-void host_frame_cpu_split(double *simulation, double *render, int *ticks);
+/* at a present: the seconds spent in ticks, in the render and in translation since the last present, and the
+   ticks run, then cleared; negative when the game marked none (translation: when it could not time it) */
+void host_frame_cpu_split(double *simulation, double *render, double *translation, int *ticks);
 /* the Metal backend, for each frame it could not show (why: 0 no drawable, 1 no picture): counted so a run that
    measured nothing can say whether the display handed out no drawables */
 void host_benchmark_frame_unshown(int why);
