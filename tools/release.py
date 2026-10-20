@@ -1008,6 +1008,17 @@ def find_release(api: API, path: str, tag: str) -> dict[str, Any] | None:
     raise ValueError("GitHub release pagination limit exceeded")
 
 
+def verify_encryption_declaration(info: dict[str, Any]) -> None:
+    # False declares an exemption, not an absence of cryptography. Reassess this
+    # policy before changing crypto or distributing in France (docs/releasing.md).
+    if info.get("ITSAppUsesNonExemptEncryption") is not False or (
+        "ITSEncryptionExportComplianceCode" in info
+    ):
+        raise ValueError(
+            "Actual app encryption declaration differs from the reviewed exemption"
+        )
+
+
 def archive_identity(
     archive: Path,
     manifest: dict[str, Any],
@@ -1017,6 +1028,7 @@ def archive_identity(
 ) -> dict[str, str]:
     app = archive / "Products/Applications/VISR.app"
     info = plistlib.loads((app / "Info.plist").read_bytes())
+    verify_encryption_declaration(info)
     if (
         info["CFBundleShortVersionString"] != manifest["version"]
         or info["CFBundleVersion"] != manifest["build_number"]

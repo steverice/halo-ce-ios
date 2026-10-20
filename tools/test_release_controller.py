@@ -268,6 +268,7 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
             info = {
                 "CFBundleExecutable": "VISR",
                 "CFBundleIdentifier": "example.visr",
+                "ITSAppUsesNonExemptEncryption": False,
                 "CFBundleShortVersionString": manifest["version"],
                 "CFBundleVersion": manifest["build_number"],
                 "DTPlatformName": "iphoneos",

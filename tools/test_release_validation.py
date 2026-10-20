@@ -879,7 +879,10 @@ def test_exported_ipa_uses_the_production_cloudkit_entitlements(tmp_path, monkey
     with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
         exported.writestr(
             "Payload/VISR.app/Info.plist",
-            plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}),
+            plistlib.dumps({
+                "CFBundleIdentifier": "org.steverice.visr",
+                "ITSAppUsesNonExemptEncryption": False,
+            }),
         )
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
@@ -903,7 +906,10 @@ def test_exported_ipa_rejects_development_aps(tmp_path, monkeypatch):
     with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
         exported.writestr(
             "Payload/VISR.app/Info.plist",
-            plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}),
+            plistlib.dumps({
+                "CFBundleIdentifier": "org.steverice.visr",
+                "ITSAppUsesNonExemptEncryption": False,
+            }),
         )
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
@@ -931,7 +937,10 @@ def test_exported_ipa_rejects_nonproduction_cloudkit_environment(
     with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
         exported.writestr(
             "Payload/VISR.app/Info.plist",
-            plistlib.dumps({"CFBundleIdentifier": "org.steverice.visr"}),
+            plistlib.dumps({
+                "CFBundleIdentifier": "org.steverice.visr",
+                "ITSAppUsesNonExemptEncryption": False,
+            }),
         )
     entitlements = {
         "com.apple.developer.icloud-services": ["CloudKit"],
@@ -986,3 +995,22 @@ def test_archive_cloudkit_still_requires_capabilities_and_production_aps(field, 
         validation.verify_benchmark_upload_entitlements(
             entitlements, "iCloud.org.steverice.visr", archive=True
         )
+
+
+@pytest.mark.parametrize("declaration", [None, True, 0, "NO"])
+def test_exported_ipa_rejects_missing_or_changed_encryption_exemption(
+    tmp_path, monkeypatch, declaration
+):
+    import zipfile
+    package = tmp_path / "package"
+    package.mkdir()
+    info = {} if declaration is None else {"ITSAppUsesNonExemptEncryption": declaration}
+    with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
+        exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps(info))
+
+    def unexpected_codesign(*args, **kwargs):
+        pytest.fail("Encryption policy must be checked before signing inspection")
+
+    monkeypatch.setattr(validation, "signed_app_entitlements", unexpected_codesign)
+    with pytest.raises(ValueError, match="encryption"):
+        validation.verify_exported_ipa(package)

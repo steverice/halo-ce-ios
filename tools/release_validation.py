@@ -405,6 +405,9 @@ def verify_exported_ipa(
                         raise ValueError("Release IPA contains an unsafe app path")
                     exported.extract(member, temporary)
         app = Path(temporary) / app_root
+        release.verify_encryption_declaration(
+            plistlib.loads((app / "Info.plist").read_bytes())
+        )
         verify_benchmark_upload_entitlements(
             signed_app_entitlements(app), container_identifier
         )

@@ -443,3 +443,11 @@ def test_manual_upload_package_without_profile_is_refused():
         ios_build.benchmark_upload_aps_environment(
             True, True, None, "ios", "iCloud.org.steverice.visr"
         )
+
+
+@pytest.mark.parametrize('name', ['Info.plist', 'Info-macOS.plist', 'Info-tvOS.plist', 'Info-visionOS.plist'])
+def test_every_apple_app_declares_exempt_encryption(name):
+    import plistlib
+    values = plistlib.loads((ios_build.ROOT / 'port/ios' / name).read_bytes())
+    assert values.get('ITSAppUsesNonExemptEncryption') is False
+    assert 'ITSEncryptionExportComplianceCode' not in values

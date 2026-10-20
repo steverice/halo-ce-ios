@@ -189,7 +189,7 @@ def test_new_policy_fetches_each_target_and_shader_without_monolithic_fallback(
     ]
 
 
-def test_archive_rejects_a_changed_shader_feed(tmp_path, monkeypatch):
+def test_archive_rejects_changed_encryption_or_shader_feed(tmp_path, monkeypatch):
     import hashlib
     import plistlib
     from tools import release
@@ -205,6 +205,7 @@ def test_archive_rejects_a_changed_shader_feed(tmp_path, monkeypatch):
     app.mkdir(parents=True)
     (app / "VISR").write_bytes(b"executable fixture")
     info = {
+        "ITSAppUsesNonExemptEncryption": False,
         "CFBundleShortVersionString": "0.2.2",
         "CFBundleVersion": "20261019.1",
         "DTPlatformName": "iphoneos",
@@ -228,6 +229,15 @@ def test_archive_rejects_a_changed_shader_feed(tmp_path, monkeypatch):
         ]
         == pins["guest_sha256"]
     )
+    for declaration in [None, True, 0, "NO"]:
+        invalid = dict(info)
+        if declaration is None:
+            invalid.pop("ITSAppUsesNonExemptEncryption")
+        else:
+            invalid["ITSAppUsesNonExemptEncryption"] = declaration
+        (app / "Info.plist").write_bytes(plistlib.dumps(invalid))
+        with pytest.raises(ValueError, match="encryption"):
+            release.archive_identity(archive, manifest, "ios", source_root=root)
     info["HaloShaderFeedURL"] = "https://example.invalid/unreviewed.json"
     (app / "Info.plist").write_bytes(plistlib.dumps(info))
     with pytest.raises(ValueError, match="feed"):
@@ -289,3 +299,25 @@ def test_immutable_source_rechecks_the_exact_target_argument(tmp_path):
         root=source,
         profile_target="ios/iPhone18,1/_",
     )
+
+
+@pytest.mark.parametrize("value", [None, True, 0, "NO", "false"])
+def test_release_rejects_missing_or_nonboolean_exemption(value):
+    from tools import release
+    info = {} if value is None else {"ITSAppUsesNonExemptEncryption": value}
+    with pytest.raises(ValueError, match="encryption"):
+        release.verify_encryption_declaration(info)
+
+
+def test_release_accepts_boolean_exemption_without_an_approval_code():
+    from tools import release
+    release.verify_encryption_declaration({"ITSAppUsesNonExemptEncryption": False})
+
+
+def test_release_rejects_an_unexpected_encryption_approval_code():
+    from tools import release
+    with pytest.raises(ValueError, match="encryption"):
+        release.verify_encryption_declaration({
+            "ITSAppUsesNonExemptEncryption": False,
+            "ITSEncryptionExportComplianceCode": "unreviewed-code",
+        })
