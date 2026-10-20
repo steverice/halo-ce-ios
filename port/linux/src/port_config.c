@@ -915,6 +915,27 @@ static const struct config_setting config_settings[] =
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
 		"game of this machine's and shows none." },
+	{ "network.delta_browse", _config_boolean, "true", "HALO_NET_DELTA_BROWSE", _environment_value, _platform_all,
+		"The server browser also lists the games of Delta's public list\n"
+		"(network.delta_url), run by others, with the network version of each;\n"
+		"games of a version this build can't join are shown and not joined. Only\n"
+		"while the server browser is open with network.online and\n"
+		"network.public_lobby on. It asks the list for its games every 15\n"
+		"seconds and sends nothing else: the list's server sees this machine's\n"
+		"internet address, as the signalling brokers do." },
+	{ "network.delta_announce", _config_boolean, "false", "HALO_NET_DELTA_ANNOUNCE", _environment_value, _platform_all,
+		"List the public game this machine hosts for the internet (Create Game >\n"
+		"Internet, PUBLIC, no password) in Delta's public list\n"
+		"(network.delta_url), so that players using it find it. Off by default:\n"
+		"it sends the list's server, run by others, the game's invite (anyone who\n"
+		"has it can join), name, map, game type and player counts, and the\n"
+		"server sees this machine's internet address. The game is withdrawn when\n"
+		"it ends or goes private." },
+	{ "network.delta_url", _config_string, "\"https://halo.milenko.org\"", "HALO_NET_DELTA_URL", _environment_value,
+		_platform_all,
+		"The address of Delta's public game list, whose /v1/games the server\n"
+		"browser reads (network.delta_browse) and whose /v1/announce a hosted\n"
+		"game is listed at (network.delta_announce). Empty turns both off." },
 	{ "network.host_public", _config_boolean, DEFAULT_HOST_PUBLIC, "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
 		"Whether a new game of Create Game > Internet starts as PUBLIC (listed\n"
 		"in everyone's server browser: anyone can see and join it) or, false,\n"
