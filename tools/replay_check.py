@@ -84,7 +84,8 @@ def write_local_routes(take, local, scene):
     case = {"kind": "gameplay", "order": 0, "map": values["map"], "difficulty": values["difficulty"], "recording": scene,
             "lead": 0, "window": window}
     if multiplier > 1:
-        case["enemy_multiplier"] = multiplier
+        # (a whole number is written without a fraction: the app's canonical JSON)
+        case["enemy_multiplier"] = int(multiplier) if multiplier.is_integer() else multiplier
     catalog = {"schema": benchmark_catalog.CATALOG_SCHEMA, "cases": {scene: case}}
     (local / benchmark_catalog.CATALOG_NAME).write_bytes(benchmark_catalog._canonical(catalog))
     benchmark_catalog.load_catalog(local)

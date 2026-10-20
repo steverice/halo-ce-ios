@@ -251,3 +251,15 @@ def test_catalog_rejects_enemy_multiplier_on_multiplayer_case(tmp_path):
     _write_catalog(tmp_path, cases)
     with pytest.raises(benchmark_catalog.CatalogError):
         benchmark_catalog.load_catalog(tmp_path)
+
+
+def test_catalog_requires_whole_enemy_multiplier_as_integer(tmp_path):
+    _recording(tmp_path, route_extra="enemy_multiplier = 2.000\n")
+    cases = _cases(players=2)
+    cases["b30-warthog-fight"]["enemy_multiplier"] = 2.0
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)
+    cases["b30-warthog-fight"]["enemy_multiplier"] = 2
+    _write_catalog(tmp_path, cases)
+    benchmark_catalog.load_catalog(tmp_path)

@@ -197,7 +197,10 @@ def load_catalog(folder):
         if "enemy_multiplier" in case:
             if kind in {"menu", "multiplayer"}:
                 raise CatalogError(f"case {case_id} cannot carry an enemy multiplier")
-            _number(case["enemy_multiplier"], f"{case_id} enemy multiplier", 1, MAXIMUM_ENEMY_MULTIPLIER)
+            value = _number(case["enemy_multiplier"], f"{case_id} enemy multiplier", 1, MAXIMUM_ENEMY_MULTIPLIER)
+            if isinstance(case["enemy_multiplier"], float) and value.is_integer():
+                # (the app's canonical JSON writes a whole number without a fraction)
+                raise CatalogError(f"catalog {case_id} enemy multiplier must be written as an integer")
         lead = _number(case["lead"], f"{case_id} lead", 0, 3600)
         window = _number(case["window"], f"{case_id} window", 0, 3600, positive=True)
         recording = case["recording"]
