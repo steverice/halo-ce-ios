@@ -342,6 +342,28 @@ void host_theater_test_reopen(void)
 	[reopen_button sendActionsForControlEvents:UIControlEventPrimaryActionTriggered];
 }
 
+void host_theater_chord(int held)
+{
+	static CFTimeInterval began;
+	static BOOL fired;
+
+	if (!held)
+	{
+		began = 0.0;
+		fired = NO;
+		return;
+	}
+	if (began == 0.0)
+		began = CACurrentMediaTime();
+	if (fired || CACurrentMediaTime() - began < 1.0)
+		return;
+	fired = YES;
+	if (layer_renderer)
+		host_theater_test_close();
+	else
+		host_theater_test_reopen();
+}
+
 void host_theater_attach(void *renderer)
 {
 	layer_renderer = (__bridge cp_layer_renderer_t)renderer;
@@ -379,6 +401,31 @@ void host_theater_attach(void *renderer)
 	}
 	else if (!session)
 		host_logf(HOST_LOG_INFO, "theater: no world tracking here; the screen follows the head");
+}
+
+ar_session_t host_theater_session(void)
+{
+	return world_tracking ? session : nil;
+}
+
+void host_theater_session_run(ar_data_provider_t accessory_tracking)
+{
+	if (!session || !world_tracking)
+		return;
+	ar_session_run(session, accessory_tracking ?
+		ar_data_providers_create_with_data_providers(world_tracking, accessory_tracking, nil) :
+		ar_data_providers_create_with_data_providers(world_tracking, nil));
+}
+
+void host_theater_session_restart(void)
+{
+	if (!session || !world_tracking)
+		return;
+	ar_session_stop(session);
+	world_tracking = ar_world_tracking_provider_create(ar_world_tracking_configuration_create());
+	session = ar_session_create();
+	ar_session_run(session, ar_data_providers_create_with_data_providers(world_tracking, nil));
+	host_logf(HOST_LOG_INFO, "theater: ARKit's session started again");
 }
 
 int host_theater_active(void)

@@ -63,6 +63,7 @@ void host_lifecycle_install(void) {
             if(!background_began)background_began=monotonic_milliseconds();
             pthread_mutex_unlock(&background_lock);
             host_sdl_audio_pause(1);
+            host_spatial_rumble_hold(1);
             background_task_end();
             background_task=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"network game"
                 expirationHandler:^{
@@ -89,6 +90,7 @@ void host_lifecycle_install(void) {
             pthread_mutex_unlock(&background_lock);
             atomic_store(&backgrounded,0);
             host_sdl_audio_pause(0);
+            host_spatial_rumble_hold(0);
             background_task_end();
             host_logf(HOST_LOG_INFO,"in the foreground: the game resumes");
             /* (the sockets the system took back while the app was suspended,

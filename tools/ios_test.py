@@ -39,6 +39,18 @@ with open(BUILD / 'gpu_layout_check.h', 'w') as layout_check:
     subprocess.run([str(BUILD / 'gpu-layout-probe')], cwd=ROOT, check=True, stdout=layout_check)
 run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
     '-fno-stack-protector', '-ffreestanding', '-Iport/linux/src', '-fsyntax-only', '-x', 'c', BUILD / 'gpu_layout_check.h')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/spatial_pose_probe.c', '-o', BUILD / 'spatial-pose-probe')
+run(BUILD / 'spatial-pose-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/spatial_gamepad_probe.c', '-o', BUILD / 'spatial-gamepad-probe')
+run(BUILD / 'spatial-gamepad-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    'port/ios/tests/spatial_recenter_probe.c', '-o', BUILD / 'spatial-recenter-probe')
+run(BUILD / 'spatial-recenter-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
+    '-Iport/runtime/include', 'port/ios/tests/spatial_record_probe.c', '-o', BUILD / 'spatial-record-probe')
+run(BUILD / 'spatial-record-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/external_mode_probe.c', 'port/ios/host/host_external_mode.c',
     '-o', BUILD/'external-mode-probe')

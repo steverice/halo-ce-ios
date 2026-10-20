@@ -58,6 +58,7 @@ void host_fatal(const char *format,...) {
 void host_abort(const char *reason) { host_logf(HOST_LOG_ERROR,"guest abort: %s",reason);abort(); }
 void host_exit(int code) {
     host_logf(HOST_LOG_INFO,"game exit %d",code);
+    host_spatial_rumble_hold(1);
     /* a save made just before the app is left still goes up (nothing without HALO_CLOUD_SAVES) */
     host_cloud_saves_leaving(3);
     exit(code);

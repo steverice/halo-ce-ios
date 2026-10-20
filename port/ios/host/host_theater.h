@@ -1,6 +1,8 @@
 /* Theater mode (display.immersive, visionOS): host_theater.m and Theater.swift */
 #pragma once
 
+#include <stdint.h>
+
 #ifdef __OBJC__
 #import <Metal/Metal.h>
 /* draws picture on the theater screen for the Compositor's open frame (or the
@@ -27,6 +29,8 @@ int gpu_metal_async_compiles(void);
 
 #if defined(__OBJC__) && !defined(__swift__)
 #import <CompositorServices/CompositorServices.h>
+#import <ARKit/ARKit.h>
+#include <simd/simd.h>
 /* The Compositor's frame, shared by the theater screen and head-tracked
 stereo (host_stereo.m). host_theater_frame_begin opens the next frame: it
 waits for the frame and its optimal input time, then queries the drawables
@@ -44,6 +48,10 @@ size_t host_theater_drawable_count(void);
 anchored) and whether ARKit placed it; either pointer may be NULL */
 cp_drawable_t host_theater_drawable(size_t index, simd_float4x4 *origin_from_device, int *anchored);
 void host_theater_frame_end(void);
+ar_session_t host_theater_session(void);
+void host_theater_session_run(ar_data_provider_t accessory_tracking);
+void host_theater_session_restart(void);
+void host_spatial_frame(cp_drawable_t drawable, const simd_float4x4 *origin_from_device);
 /* ends the open frame with its drawables from first on presented empty,
 cleared to nothing (depth 0, transparent): while a presenter's pipelines are
 still building on a worker, rather than wait for Metal's compiler */
@@ -80,6 +88,12 @@ screen) for a view's projection */
 simd_float4 host_theater_fade_tint(const float fade[4], uint32_t decode_srgb);
 float host_theater_fade_depth(simd_float4x4 projection);
 #endif
+
+/* The immersive scene lets the system show hands again when aiming stops. */
+void host_theater_set_upper_limbs(int32_t visible);
+void host_theater_chord(int held);
+/* The system's recenter phases share a yaw correction with the controllers. */
+void host_stereo_world_recenter(int active);
 
 /* reads display.theater_* from config.toml (host_config.c) */
 void host_theater_load_settings(void);

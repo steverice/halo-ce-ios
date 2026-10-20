@@ -107,7 +107,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "visionOS")
     set(HALO_RENDER_HEIGHT 0 CACHE STRING "Internal render height (display.render_height)")
     option(HALO_EXTENDED_VIRTUAL_ADDRESSING "Sign with the extended virtual addressing entitlement" OFF)
     set(HALO_PLATFORM_SOURCES Assets-visionOS.xcassets host/host_tv.m host/host_import.m host/host_orientation.m
-        host/host_theater.m host/Theater.swift host/host_texture_settings.m host/texture_refine.m)
+        host/host_theater.m host/Theater.swift host/host_texture_settings.m host/texture_refine.m
+        host/host_spatial_input.m host/host_spatial_gamepad.c)
     set(HALO_INFO_PLIST Info-visionOS.plist)
     set(HALO_DEVICE_FAMILY 7)
 else()
@@ -151,6 +152,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_benchmark.m host/host_benchmark_outbox.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
+    host/host_spatial.m host/host_spatial_pose.c host/host_spatial_record.c
     "${ROOT}/port/linux/src/posix_files.c" host/posix_net.c host/host_socket_revival.c host/host_natpmp.c host/host_natpmp_packets.c
     "${ROOT}/build/ios/host/bridges.c" "${ROOT}/build/ios/embedded/guest_image.S")
 if(HALO_NATIVE_MAC)
@@ -271,7 +273,7 @@ elseif(HALO_TVOS)
     endif()
 elseif(HALO_VISIONOS)
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers" "-framework CompositorServices"
-        "-framework ARKit" "-framework SwiftUI")
+        "-framework ARKit" "-framework SwiftUI" "-framework GameController" "-framework CoreHaptics")
     set_source_files_properties(Assets-visionOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     # the app's page in the Settings app (host/host_texture_settings.m)
     target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")

@@ -1,19 +1,26 @@
-/* prints _Static_asserts pinning every gpu.h struct's size and field offsets
-(and halo_stereo.h's, which host_stereo_frame passes)
+/* Prints _Static_asserts pinning the host and guest layouts of gpu.h,
+halo_stereo.h and the spatial imports in halo_spatial.h.
 as this (64-bit host) compiler lays them out; tools/ios_test.py compiles the
 output with the guest's arm64_32 flags, where a mismatch fails the build */
 #include "gpu.h"
 #include "halo_stereo.h"
+#include "halo_spatial.h"
 
 #include <stddef.h>
 #include <stdio.h>
+
+_Static_assert(sizeof(struct halo_spatial_location) == 48, "spatial location ABI");
+_Static_assert(sizeof(struct halo_spatial_hand) == 108, "spatial hand ABI");
+_Static_assert(sizeof(struct halo_spatial_gamepad) == 20, "spatial gamepad ABI");
+_Static_assert(sizeof(struct halo_spatial_sample) == 260, "spatial sample ABI");
+_Static_assert(sizeof(struct halo_spatial_feedback) == 16, "spatial feedback ABI");
 
 #define SIZE(type) printf("_Static_assert(sizeof(struct " #type ") == %zu, \"struct " #type "\");\n", sizeof(struct type))
 #define FIELD(type, field) printf("_Static_assert(offsetof(struct " #type ", " #field ") == %zu, \"" #type "." #field "\");\n", offsetof(struct type, field))
 
 int main(void)
 {
-	printf("#include <stddef.h>\n#include \"gpu.h\"\n#include \"halo_stereo.h\"\n");
+	printf("#include <stddef.h>\n#include \"gpu.h\"\n#include \"halo_stereo.h\"\n#include \"halo_spatial.h\"\n");
 	SIZE(gpu_compile_progress);
 	FIELD(gpu_compile_progress, total);
 	FIELD(gpu_compile_progress, completed);
@@ -113,5 +120,34 @@ int main(void)
 	FIELD(halo_stereo_frame, foveated);
 	FIELD(halo_stereo_frame, foveated_width);
 	FIELD(halo_stereo_frame, foveated_height);
+	SIZE(halo_spatial_location);
+	FIELD(halo_spatial_location, forward);
+	FIELD(halo_spatial_location, left);
+	FIELD(halo_spatial_location, up);
+	FIELD(halo_spatial_location, position);
+	SIZE(halo_spatial_hand);
+	FIELD(halo_spatial_hand, state);
+	FIELD(halo_spatial_hand, held);
+	FIELD(halo_spatial_hand, chirality);
+	FIELD(halo_spatial_hand, aim);
+	FIELD(halo_spatial_hand, grip);
+	SIZE(halo_spatial_gamepad);
+	FIELD(halo_spatial_gamepad, buttons);
+	FIELD(halo_spatial_gamepad, analog);
+	FIELD(halo_spatial_gamepad, thumb);
+	FIELD(halo_spatial_gamepad, pad);
+	SIZE(halo_spatial_sample);
+	FIELD(halo_spatial_sample, reason);
+	FIELD(halo_spatial_sample, aiming_hand);
+	FIELD(halo_spatial_sample, synthetic);
+	FIELD(halo_spatial_sample, head_yaw);
+	FIELD(halo_spatial_sample, head_level);
+	FIELD(halo_spatial_sample, hands);
+	FIELD(halo_spatial_sample, gamepad_valid);
+	FIELD(halo_spatial_sample, gamepad);
+	SIZE(halo_spatial_feedback);
+	FIELD(halo_spatial_feedback, aiming);
+	FIELD(halo_spatial_feedback, buzz_serial);
+	FIELD(halo_spatial_feedback, rumble);
 	return 0;
 }

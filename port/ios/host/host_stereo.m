@@ -84,6 +84,8 @@ static unsigned long memory_foveated_frames;
 static NSTimeInterval memory_last_frame_at;
 /* the head's last pose, while ARKit places it */
 static struct host_stereo_head head;
+static atomic_int world_recenter_active, world_recenter_pending;
+static float head_last_back[3], head_last_position[3];
 static unsigned long stereo_frames;
 /* frames on the screen, presents, and whether the depth range warning was
 logged, since the space opened: the once-only logs repeat for each opening
@@ -902,8 +904,19 @@ static void head_turn(struct halo_stereo_frame *frame, simd_float4x4 origin_from
 	float right[3] = { origin_from_device.columns[0].x, origin_from_device.columns[0].y, origin_from_device.columns[0].z };
 	float up[3] = { origin_from_device.columns[1].x, origin_from_device.columns[1].y, origin_from_device.columns[1].z };
 	float back[3] = { origin_from_device.columns[2].x, origin_from_device.columns[2].y, origin_from_device.columns[2].z };
+	int recenter_active = atomic_load(&world_recenter_active);
+	int recenter_pending = !recenter_active && atomic_exchange(&world_recenter_pending, 0);
 
+	if (recenter_active || recenter_pending)
+		host_stereo_head_recenter(&head);
 	host_stereo_head_turn(&head, right, up, back, frame);
+	if (recenter_pending)
+		host_logf(HOST_LOG_INFO, "stereo: room recentered; yaw correction %.2f degrees",
+			head.room_yaw_offset * 180.0f / (float)M_PI);
+	memcpy(head_last_back, back, sizeof(back));
+	head_last_position[0] = origin_from_device.columns[3].x;
+	head_last_position[1] = origin_from_device.columns[3].y;
+	head_last_position[2] = origin_from_device.columns[3].z;
 }
 
 /* debug.head_sweep, read once (head_sweep): the synthetic head's amplitude
@@ -1269,6 +1282,7 @@ static void stereo_frame(struct halo_stereo_frame *frame) API_AVAILABLE(visionos
 		else
 			host_stereo_head_hold(&head, frame);
 	}
+	host_spatial_frame(drawable, anchored ? &origin_from_device : NULL);
 	frame->eye_count = 2;
 	if (stereo_frames++ == 0)
 		host_logf(HOST_LOG_INFO, "stereo: the head drives the view; %zu view%s of %dx%d, %s", views,
@@ -1348,12 +1362,28 @@ void host_stereo_frame(struct halo_stereo_frame *frame)
 	frame->foveated_height = 0;
 #if TARGET_OS_VISION
 	head_frame_open = 0;
+	host_spatial_frame(NULL, NULL);
 	eye_rate_maps[0] = eye_rate_maps[1] = nil;
 	eye_rate_map_parameters[0] = eye_rate_map_parameters[1] = nil;
 	foveated_allocated_width = foveated_allocated_height = 0;
 	if (@available(visionOS 26.0, *))
 		stereo_frame(frame);
 #endif
+}
+
+int host_stereo_last_head(float back[3], float position[3])
+{
+#if TARGET_OS_VISION
+	if (head.known)
+	{
+		memcpy(back, head_last_back, sizeof(head_last_back));
+		memcpy(position, head_last_position, sizeof(head_last_position));
+		return 1;
+	}
+#endif
+	(void)back;
+	(void)position;
+	return 0;
 }
 
 int host_stereo_picture_size(int *width, int *height)
@@ -2462,5 +2492,42 @@ void host_stereo_present_ui(id<MTLCommandQueue> queue, id<MTLTexture> picture, i
 	(void)picture;
 	(void)hud;
 	(void)brightness;
+#endif
+}
+
+void host_stereo_world_recenter(int active)
+{
+#if TARGET_OS_VISION
+	atomic_store(&world_recenter_pending, 1);
+	atomic_store(&world_recenter_active, active != 0);
+#else
+	(void)active;
+#endif
+}
+
+float host_stereo_room_yaw_offset(void)
+{
+#if TARGET_OS_VISION
+	return head.room_yaw_offset;
+#else
+	return 0.0f;
+#endif
+}
+
+void host_stereo_room_vector(float vector[3])
+{
+#if TARGET_OS_VISION
+	host_stereo_head_room_vector(&head, vector);
+#else
+	(void)vector;
+#endif
+}
+
+int host_stereo_room_recenter_pending(void)
+{
+#if TARGET_OS_VISION
+	return atomic_load(&world_recenter_active) || atomic_load(&world_recenter_pending);
+#else
+	return 0;
 #endif
 }

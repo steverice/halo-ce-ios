@@ -91,6 +91,9 @@ host_gpu_compile_progress
 host_gpu_initialize
 # stereo (halo_stereo.h)
 host_stereo_frame
+# spatial (halo_spatial.h)
+host_spatial_sample
+host_spatial_feedback
 # Bink movies (guest_bink.c)
 host_bink_open
 host_bink_close
