@@ -301,9 +301,7 @@ void host_benchmark_graphics(const char *json)
                 ![graphics_last[@"scene"] isEqual:snapshot[@"scene"]] ||
                 ![graphics_last[@"external_output"] isEqual:snapshot[@"external_output"]] ||
                 ((graphics_last[@"applied_overrides"] || snapshot[@"applied_overrides"]) &&
-                    ![graphics_last[@"applied_overrides"] isEqual:snapshot[@"applied_overrides"]]) ||
-                ((graphics_last[@"renderer_state"] || snapshot[@"renderer_state"]) &&
-                    ![graphics_last[@"renderer_state"] isEqual:snapshot[@"renderer_state"]]))) graphics_changed = YES;
+                    ![graphics_last[@"applied_overrides"] isEqual:snapshot[@"applied_overrides"]]))) graphics_changed = YES;
             if (!graphics_first) graphics_first = snapshot;
             graphics_last = snapshot; graphics_snapshots++;
         } else graphics_invalid++;

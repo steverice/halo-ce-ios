@@ -124,6 +124,20 @@ int main(void) { @autoreleasepool {
     NSString *unobserved = [observed stringByReplacingOccurrencesOfString:@"\"shadow_target_size\":512" withString:@"\"shadow_target_size\":null"];
     host_benchmark_graphics(unobserved.UTF8String);
     assert([graphics_metadata()[@"last"][@"renderer_state"][@"shadow_target_size"] isEqual:NSNull.null]);
+    graphics_first = graphics_last = nil; graphics_changed = NO; graphics_snapshots = graphics_invalid = 0;
+    NSString *before = [[[unobserved stringByReplacingOccurrencesOfString:@"\"anisotropic_sampler_max\":8" withString:@"\"anisotropic_sampler_max\":null"]
+        stringByReplacingOccurrencesOfString:@"\"texture_replacement_selections\":2" withString:@"\"texture_replacement_selections\":0"]
+        stringByReplacingOccurrencesOfString:@"\"texture_replacement_source\":\"debug_directory\"" withString:@"\"texture_replacement_source\":\"unavailable\""];
+    host_benchmark_graphics(before.UTF8String);
+    host_benchmark_graphics(observed.UTF8String);
+    result = graphics_metadata();
+    assert([result[@"available"] boolValue] && ![result[@"changed"] boolValue]);
+    assert([result[@"first"][@"renderer_state"][@"texture_replacement_selections"] intValue] == 0);
+    assert([result[@"last"][@"renderer_state"][@"texture_replacement_selections"] intValue] == 2);
+    NSString *newOverride = [observed stringByReplacingOccurrencesOfString:@"\"shadow_map_size\":512" withString:@"\"shadow_map_size\":1024"];
+    host_benchmark_graphics(newOverride.UTF8String);
+    result = graphics_metadata();
+    assert([result[@"changed"] boolValue] && [result[@"last"][@"applied_overrides"][@"shadow_map_size"] intValue] == 1024);
     NSData *bytes = [NSJSONSerialization dataWithJSONObject:@{@"graphics":result} options:0 error:NULL];
     NSDictionary *decoded = [NSJSONSerialization JSONObjectWithData:bytes options:0 error:NULL];
     assert([decoded[@"graphics"][@"changed"] boolValue]);
