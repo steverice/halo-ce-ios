@@ -852,6 +852,45 @@ If it cannot reach the host in 30 seconds, it marks the game FAILED. A game
 that is full or starting shows CLOSED. REFRESH asks the hosts for their
 listings again.
 
+#### Delta's game list
+
+The Server Browser also shows the games of Delta's public game list
+(`https://halo.milenko.org`, run by others; `network.delta_url`), after the
+games of the brokers. Each game shows its players and, in the column where
+the others show LIVE, CLOSED or FAILED, `V<number>` for a game of a network
+version this build cannot join (this build plays version 29; a game of
+another version is shown and Join refuses it). The line below the rows
+names that version. A game with a password or a game of the campaign is
+left out. A game that a broker also lists is shown once.
+
+- Browsing (`network.delta_browse`, on): while the Server Browser is open,
+  and `network.online` and `network.public_lobby` are on, the game asks the
+  list for its games (`GET /v1/games`) every 15 seconds and when REFRESH is
+  pressed. It sends nothing else: no setting, name or game. The list's
+  server sees this machine's internet address, as the brokers do.
+- Announcing (`network.delta_announce`, off): the PUBLIC game this machine
+  hosts for the internet, without a password, is also listed in the list
+  (`POST /v1/announce`), every minute and when the game changes (the list
+  drops a game it has not heard of in 75 seconds), and withdrawn
+  (`POST /v1/withdraw`) when the game ends, goes private, gets a password
+  or a new invite, and when this game quits. It sends the invite (anyone
+  who has it can join the game), the name, map, game type, player counts,
+  whether it is open and has teams, and this build's network version, and
+  the list's server sees this machine's internet address. It sends no
+  player's name, platform, build or address of the machine. The list tries
+  to reach a new game before it lists it, and refuses it for two minutes if
+  it cannot: this build waits and tries again.
+- `network.delta_url = ""` turns both off. The requests are made on a
+  thread of their own (`src/p2p_delta.c`) with the system's TLS (Mbed TLS
+  and the system's certificate authorities on Linux, WinHTTP on Windows,
+  `NSURLSession` on Apple devices) and never follow a redirect. The answer
+  is read as untrusted text (`src/delta_list.c`).
+
+Delta Peer (the version and capability exchange on UDP port 5160), the
+signed table of network versions, the statistics and link calls and the
+control interface are not used: a game joined from the list is joined by
+its invite, as any other, and plays the game's own protocol.
+
 How it operates (`src/p2p_lobby.c`):
 
 - The host of a public game publishes a listing: the invite, and the name,
