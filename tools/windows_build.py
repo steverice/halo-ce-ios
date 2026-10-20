@@ -18,7 +18,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .linux_build import (LINUX_PROFILE, MINIUPNPC_DIR, OPTIMISATION, STB_VORBIS_SOURCE, WINDOWS_PROFILE, XDK_INCLUDE, lto_mode,
+from .linux_build import (LINUX_PROFILE, MBEDTLS_DIR, MINIUPNPC_DIR, OPTIMISATION, STB_VORBIS_SOURCE, WINDOWS_PROFILE, XDK_INCLUDE, lto_mode,
                           march_flag, miniupnpc_sources, pgo_mode, compile_launcher, game_defines_and_includes,
                           game_sources, musl_math_cflags, musl_math_sources, pgo_profile, profile_use_flags,
                           xdk_headers)
@@ -108,6 +108,8 @@ GAME_FLAGS = [
     "-Wno-error=return-type",
 ]
 
+# platform units that include SDL_opengl.h, and so the Windows SDK headers
+WINDOWS_HEADER_UNITS = {"gpu_gl.c", "gl_functions.c"}
 PLATFORM_FLAGS = [
     "-std=gnu11",
     "-DHALO_LINUX_PLATFORM_LAYER",
@@ -395,6 +397,10 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
             f"-I{_quote(sdl_include)}",
             f"-I{XDK_INCLUDE}",
         ])
+        # SDL's OpenGL header includes <windows.h>, which needs the Windows
+        # SDK's own windef.h and winbase.h, not the Xbox SDK ones of the same
+        # names that -I{XDK_INCLUDE} puts first
+        platform_cflags_windows_sdk = platform_cflags.replace(f"-I{XDK_INCLUDE}", "")
         win32_cflags = " ".join([
             abi,
             " ".join(WIN32_FLAGS),
@@ -408,8 +414,18 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
                 continue
             if source.name == "updater.c":
                 add_object(source, f"{platform_cflags} {updater_defines(getattr(sln, 'port_release', False))}")
+            elif source.name == "posix_dtls.c":
+                # the host-ABI unit of the Linux build, here on the Windows SDK
+                add_object(source, f"{win32_cflags} -I{MBEDTLS_DIR / 'include'}")
+            elif source.name in WINDOWS_HEADER_UNITS:
+                add_object(source, platform_cflags_windows_sdk)
             else:
                 add_object(source, platform_cflags)
+        # the DTLS of internet play with browsers (posix_dtls.c): Mbed TLS
+        # (port/third_party/mbedtls) on the platform layer's ABI
+        for source in sorted((MBEDTLS_DIR / "library").glob("*.c")):
+            add_object(source, " ".join([abi, "-std=gnu11", f"-I{MBEDTLS_DIR / 'include'}",
+                                         f"-I{MBEDTLS_DIR / 'library'}", "-D_CRT_SECURE_NO_WARNINGS", "-w"]))
         miniupnpc_include = f"-I{MINIUPNPC_DIR / 'include'} -DMINIUPNP_STATICLIB"
         for source in sorted((PORT_DIR / "src").glob("*.c")):
             if source.name == "win32_upnp.c":
