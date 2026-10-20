@@ -423,7 +423,7 @@ def network_aim_probe(tmp_path, name, main):
 ''' + seconds + r'''
 static int network;
 static struct {struct {int known;} body;int good_aim_known;float good_yaw,good_pitch;
- struct {int lost;float lost_for;} track;float network_hand;int network_head_aim;} aim={.network_hand=1.0f};
+ struct {int lost;float lost_for;} track;float network_hand,network_hand_share;int network_head_aim;} aim={.network_hand=1.0f,.network_hand_share=1.0f};
 static int network_controller_aim(void){return network;}
 static float yaw_in_range(float yaw){return yaw;}
 static float controller_yaw_blend(float from,float to,float blend){return from+blend*(to-from);}
@@ -465,6 +465,7 @@ int main(void){
  /* lost 1.9 s: the last hand aim is held */
  lose(1.9f,&yaw,&pitch);
  assert(fabsf(yaw-.75f)<.00001f&&fabsf(pitch+.2f)<.00001f&&!aim.network_head_aim);
+ assert(aim.network_hand_share==1.0f);
  /* the hand is back: still the hand */
  aim.track.lost=0;consume(.1f,.3f,1,1,.016f,&yaw,&pitch);
  assert(fabsf(yaw-.75f)<.00001f&&!aim.network_head_aim);
@@ -477,6 +478,8 @@ int main(void){
   if(t<2.0f)assert(fabsf(yaw-.75f)<.00001f);
  }
  assert(aim.network_head_aim&&fabsf(yaw-.1f)<.0001f&&fabsf(pitch-.3f)<.0001f);
+ /* (the gun's drawing blend is that same ease) */
+ assert(aim.network_hand_share==0.0f);
  /* the hand is tracked again: the hand takes over, eased */
  aim.track.lost=0;previous=yaw;
  for(int frame=0;frame<30;frame++){
@@ -484,6 +487,7 @@ int main(void){
   assert(fabsf(yaw-previous)<.1f);previous=yaw;
  }
  assert(!aim.network_head_aim&&fabsf(yaw-.75f)<.0001f&&fabsf(pitch+.2f)<.0001f);
+ assert(aim.network_hand_share==1.0f);
 }
 ''')
 

@@ -301,7 +301,7 @@ static struct
 	int hand_aiming;                /* this frame's action carries the hand's aim */
 	/* a network game's share of hand aim (the gate's ease): it falls to 0 once the
 	hand has been lost CONTROLLER_NETWORK_LOSS_SECONDS, and rises when it recovers */
-	float network_hand;
+	float network_hand, network_hand_share;     /* and as eased (the gun's drawing blend) */
 	int network_head_aim;           /* and it is 0: the head and stick aim */
 	/* a network action's facing is the hand's aim with a zero pad, so its
 	throttle turns by the look's yaw less the aim's (halo_controller_network_throttle) */
@@ -334,7 +334,7 @@ static struct
 	float previous_effective_blend, previous_stick_yaw, previous_stick_pitch, previous_hand_yaw, previous_hand_pitch;
 	long logged_second;
 } aim = { .last_unit = NONE, .clock = -1.0, .last_state = HALO_SPATIAL_NONE, .since_low_accuracy_log = 1000.0f,
-	.logged_second = -1, .latch = { .tick = -1 }, .last_target = -1, .last_track_blend = 1.0f, .zoom_inside = 1, .network_hand = 1.0f,
+	.logged_second = -1, .latch = { .tick = -1 }, .last_target = -1, .last_track_blend = 1.0f, .zoom_inside = 1, .network_hand = 1.0f, .network_hand_share = 1.0f,
 	.last_zoom_level = NONE };
 
 /* the drawing sample's own (halo_controller_draw_update): the body yaw from
@@ -791,7 +791,7 @@ static void reset(const char *reason)
 	drawing.reticle_known = 0;
 	controller_track_reset(&aim.track);
 	aim.gate = 0.0f;
-	aim.network_hand = 1.0f;
+	aim.network_hand = aim.network_hand_share = 1.0f;
 	aim.network_head_aim = 0;
 	aim.good_aim_known = 0;
 	aim.previous_known = 0;
@@ -1291,6 +1291,7 @@ static int action_aim(long unit_index, float look_yaw, float look_pitch, unsigne
 			!(aim.track.lost && aim.track.lost_for >= CONTROLLER_NETWORK_LOSS_SECONDS), time_delta, 0);
 
 		aim.network_head_aim = aim.network_hand <= 0.0f;
+		aim.network_hand_share = hand_share;
 		blend = aim.good_aim_known ? hand_share : 0.0f;
 		if (blend > 0.0f)
 		{
@@ -1958,7 +1959,7 @@ void halo_controller_draw_update(short local_player_index, const float camera_po
 		drawing.grip_shift[2] += arms_follow * (components[2] - drawing.hand_neutral[2]);
 	}
 	drawing.active_frame = render.frame_index;
-	draw.blend = network_controller_aim() ? 1.0f : aim.previous_effective_blend;
+	draw.blend = network_controller_aim() ? aim.network_hand_share : aim.previous_effective_blend;
 	draw.dim = aim.dim || drawing.seat_clamped || (network_controller_aim() && !aim.hand_aiming);
 	/* the reticle's distance: the hit pulled 2% toward the eye, low-passed
 	faster toward nearer than farther so a sweep across a railing against
