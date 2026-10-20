@@ -49,7 +49,8 @@ static int game_difficulty_level_get(void){return _game_difficulty_level_normal;
 static void console_printf(int b,char const *fmt,...){(void)b;(void)fmt;}
 static void error(int kind,char const *fmt,...){(void)kind;(void)fmt;}
 #define _error_silent 0
-static void match_vassert(char const *f,int line,int condition,void *p){(void)f;(void)line;(void)p;CHECK(condition,"assertion");}
+/* The game assertion exits on failure; preserve that contract in extracted source. */
+static void __attribute__((noreturn)) match_vassert(char const *f,int line,int condition,void *p){(void)f;(void)line;(void)p;CHECK(condition,"assertion");abort();}
 static int random_range(int a,int b){(void)b;return a;}
 static void encounter_update_status(long i){(void)i;}
 static void encounters_test_activation(void){}
