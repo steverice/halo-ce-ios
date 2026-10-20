@@ -1,0 +1,58 @@
+# iPad7,2: provisional gameplay recipe from a thermal-limited, real-time Full suite.
+# The eight active campaign windows at 720 lines, 2x filtering, 128-pixel shadows,
+# and automatic model detail measured 71.17–81.80 submitted frames/s. Their Metal
+# drawable callbacks were complete, with presentation p95 16.67–20.84 ms.
+# The same a10 window also has one-setting comparisons at 720 lines; those
+# comparisons were sequential, thermally limited, and not counterbalanced.
+# The iPad reached Serious thermal state, so cold repeatability is unproven.
+# Menu and cutscene rendering retain their previous native-size behavior until
+# those scene classes are qualified at a lower render size.
+#:schema ../port/settings/profile.schema.json
+schema = 1
+name = "iPad Pro 12.9-inch (2nd generation)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPad7,2"]
+
+[display]
+render_height = 720
+anisotropic_filtering = 2
+shadow_map_size = 128
+model_lod = "auto"
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "Eight active campaign windows with the combined 720-line recipe measured 71.17–81.80 submitted frames/s and complete positive drawable callback populations. At native 2048 lines with the prior high-quality recipe, those same windows measured 19.01–30.54 frames/s. Both sets were thermally limited; this comparison establishes the combined recipe, not the isolated cost of resolution."
+source = "iPad7,2 Full report C3YP3296, stage E indices 17–24 against stage A indices 0–7, build 20261019.193402, 2026-10-19"
+
+[evidence."display.anisotropic_filtering"]
+basis = "measured"
+why = "In the same a10 window at 720 lines, 2x filtering reduced GPU mean from 17.67 ms at 16x to 15.78 ms with 512-pixel shadows and maximum model detail. The sequential Serious-thermal comparison was not counterbalanced; the eight-case recipe verifies the combined setting across campaign scenes."
+source = "iPad7,2 Full report C3YP3296, indices 10 and 12 plus stage E indices 17–24, build 20261019.193402, 2026-10-19"
+
+[evidence."display.shadow_map_size"]
+basis = "measured"
+why = "In the same a10 window at 720 lines, 128-pixel shadows reduced GPU mean from 17.67 ms at 512 to 13.72 ms with 16x filtering and maximum model detail. The sequential Serious-thermal comparison was not counterbalanced; the smaller shadows visibly reduce quality and the eight-case recipe verifies the combined setting."
+source = "iPad7,2 Full report C3YP3296, indices 10 and 14 plus stage E indices 17–24, build 20261019.193402, 2026-10-19"
+
+[evidence."display.model_lod"]
+basis = "measured"
+why = "In the same a10 window at 720 lines, automatic model detail changed GPU mean from 17.67 to 17.22 ms against maximum detail, a small sequential Serious-thermal observation. The eight-case recipe verifies the combined setting, but models may visibly reduce detail with distance."
+source = "iPad7,2 Full report C3YP3296, indices 10 and 15 plus stage E indices 17–24, build 20261019.193402, 2026-10-19"
+
+[scene.menu.display]
+render_height = 0
+
+[evidence."scene.menu.display.render_height"]
+basis = "assumed"
+why = "Keep the previous native-size menu; the Full suite did not measure a menu at 720 lines on this model."
+
+[scene.cutscene.display]
+render_height = 0
+
+[evidence."scene.cutscene.display.render_height"]
+basis = "assumed"
+why = "Keep the previous native-size cutscene rendering until a cutscene is measured on this model."
