@@ -174,7 +174,7 @@ def facts_from_coverage(coverage_csv, existing=None):
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    facts = commands.add_parser("facts", help="rewrite profiles/cost/device-facts.csv from a Model coverage CSV export")
+    facts = commands.add_parser("facts", help="rewrite cost-model/device-facts.csv from a Model coverage CSV export")
     facts.add_argument("coverage_csv")
     options = parser.parse_args(arguments)
     existing = list(csv.DictReader(open(FACTS_CSV, newline=""))) if FACTS_CSV.exists() else []

@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-COST = Path(__file__).resolve().parent.parent / "profiles" / "cost"
+COST = Path(__file__).resolve().parent.parent / "cost-model"
 RUNS_CSV = COST / "runs.csv"
 MODEL_TOML = COST / "model.toml"
 BASIS = "offscreen_uncapped"
@@ -252,9 +252,9 @@ def read_model(path):
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    ingest = commands.add_parser("ingest", help="append runs from report.json files to profiles/cost/runs.csv")
+    ingest = commands.add_parser("ingest", help="append runs from report.json files to cost-model/runs.csv")
     ingest.add_argument("reports", nargs="+")
-    commands.add_parser("fit", help="fit profiles/cost/model.toml from profiles/cost/runs.csv")
+    commands.add_parser("fit", help="fit cost-model/model.toml from cost-model/runs.csv")
     options = parser.parse_args(arguments)
     if options.command == "ingest":
         runs = []

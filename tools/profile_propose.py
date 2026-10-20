@@ -227,7 +227,7 @@ def markdown(proposal, device, current):
 
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("model", help="device model name from profiles/cost/device-facts.csv")
+    parser.add_argument("model", help="device model name from cost-model/device-facts.csv")
     parser.add_argument("--workload", default="gameplay")
     parser.add_argument("--output-class", default="handheld", choices=["handheld", "tv"])
     options = parser.parse_args(arguments)
