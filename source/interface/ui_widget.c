@@ -5944,18 +5944,22 @@ static void ui_mouse_step_list_to_slot(
 	return;
 }
 
-/* the widget the wheel steps: the innermost on the focus's way that the
-d-pad steps through */
+/* the wheel's vertical list, even when focus moved into its horizontal
+button bar; the innermost horizontal list if there is no vertical one */
 static struct widget_instance *ui_mouse_wheel_widget(
 	struct widget_instance *root)
 {
 	struct widget_instance *result = NULL;
+	struct widget_instance *vertical = NULL;
 	struct widget_instance *widget;
 
 	for (widget = root; widget; widget = widget->focused_child)
 	{
 		struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
 
+		if (definition->flags & (FLAG(_widget_dpad_updown_tabs_thru_children_bit) |
+			FLAG(_widget_dpad_updown_tabs_thru_list_items_bit)))
+			vertical = widget;
 		if (definition->flags & (FLAG(_widget_dpad_updown_tabs_thru_children_bit) |
 			FLAG(_widget_dpad_leftright_tabs_thru_children_bit) |
 			FLAG(_widget_dpad_updown_tabs_thru_list_items_bit) |
@@ -5965,7 +5969,7 @@ static struct widget_instance *ui_mouse_wheel_widget(
 		}
 	}
 
-	return result;
+	return vertical ? vertical : result;
 }
 
 /* the menu the mouse drives: the first player's, or everyone's */
