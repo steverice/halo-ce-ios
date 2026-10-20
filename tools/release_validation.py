@@ -317,7 +317,7 @@ def inspect_build(
         )
     if benchmark_upload and signed_app:
         verify_benchmark_upload_entitlements(
-            signed_app_entitlements(app), "iCloud.org.steverice.visr"
+            signed_app_entitlements(app), "iCloud.org.steverice.visr", archive=True
         )
     return {
         **({FIELD: next(iter(epochs))} if epochs else {}),
@@ -348,7 +348,7 @@ def signed_app_entitlements(app: Path) -> dict[str, Any]:
 
 
 def verify_benchmark_upload_entitlements(
-    entitlements: dict[str, Any], container_identifier: str
+    entitlements: dict[str, Any], container_identifier: str, *, archive: bool = False
 ) -> None:
     services = entitlements.get("com.apple.developer.icloud-services", [])
     containers = entitlements.get(
@@ -362,10 +362,15 @@ def verify_benchmark_upload_entitlements(
         raise ValueError(
             "Signed release app is missing the configured CloudKit container entitlement"
         )
-    if (
-        entitlements.get("com.apple.developer.icloud-container-environment")
-        != "Production"
-    ):
+    environment_key = "com.apple.developer.icloud-container-environment"
+    if archive:
+        # Xcode re-applies entitlements during export. The intermediate archive
+        # may omit this key; the exported IPA must explicitly select Production.
+        if environment_key in entitlements and entitlements[environment_key] not in (
+            "Development", "Production"
+        ):
+            raise ValueError("Signed archive has an invalid CloudKit environment")
+    elif entitlements.get(environment_key) != "Production":
         raise ValueError(
             "Signed App Store release must use the production CloudKit environment"
         )

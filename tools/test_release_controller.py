@@ -11,6 +11,7 @@ import plistlib
 import struct
 import subprocess
 import sys
+import zipfile
 
 import pytest
 
@@ -174,8 +175,11 @@ def test_publish_roots_reject_drift_before_api(
 
 @pytest.mark.parametrize("script_import", [False, True])
 @pytest.mark.parametrize("corrupt_archive", [False, True])
+@pytest.mark.parametrize("benchmark_upload", [False, True])
+@pytest.mark.parametrize("archive_cloudkit", ["Development", None])
 def test_publish_reads_archive_after_xcode_consumes_normal_product(
-    roots, monkeypatch: pytest.MonkeyPatch, script_import: bool, corrupt_archive: bool
+    roots, monkeypatch: pytest.MonkeyPatch, script_import: bool, corrupt_archive: bool,
+    benchmark_upload: bool, archive_cloudkit: str | None,
 ):
     application, controller, manifest, notes = roots
     publisher, validation = release, release_validation
@@ -192,6 +196,14 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
 
         monkeypatch.setattr(publisher, "ROOT", controller)
     guest, executable = binaries()
+    if benchmark_upload:
+        manifest["build_policy"]["benchmark_upload"] = "on"
+        (application / release.MANIFEST).write_text(json.dumps(manifest))
+        git(application, "add", release.MANIFEST)
+        git(application, "commit", "--quiet", "--amend", "--no-edit")
+        git(application, "tag", "--delete", manifest["tag"])
+        git(application, "tag", manifest["tag"])
+        git(application, "update-ref", "refs/remotes/origin/main", "HEAD")
     for name, value in {
         "APPLE_TEAM_ID": "fixture",
         "APPLE_BUNDLE_ID": "example.visr",
@@ -280,12 +292,28 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
             (package / "ExportOptions.plist").write_bytes(
                 plistlib.dumps({"testFlightInternalTestingOnly": True})
             )
+            with zipfile.ZipFile(package / "VISR.ipa", "w") as exported:
+                exported.writestr("Payload/VISR.app/Info.plist", plistlib.dumps(info))
             assert normal.is_symlink() and not normal.exists()
         return ""
 
     monkeypatch.setattr(publisher, "run", run)
 
     def inspect_command(*args, **kwargs):
+        if args[0] == "codesign":
+            signed_app = Path(args[-1])
+            entitlements = {
+                "com.apple.developer.icloud-services": ["CloudKit"],
+                "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+                # Xcode changes this entitlement when exporting for App Store Connect.
+                "com.apple.developer.icloud-container-environment": (
+                    archive_cloudkit if ".xcarchive" in str(signed_app) else "Production"
+                ),
+                "aps-environment": "production",
+            }
+            if entitlements["com.apple.developer.icloud-container-environment"] is None:
+                del entitlements["com.apple.developer.icloud-container-environment"]
+            return plistlib.dumps(entitlements).decode()
         assert kwargs.get("root") == application
         if args[0] == "ninja":
             return "/llvm/clang -flto=full -fprofile-use=pgo/halo_linux.profdata -c source/game/player_control.c\npython tools/ios_guest_lto.py"
@@ -297,7 +325,8 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
                         "buildSettings": {
                             "OTHER_CFLAGS": "-fprofile-instr-use="
                             + str(application / "pgo/visr_host.profdata"),
-                            "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1",
+                            "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1"
+                            + (" HALO_BENCHMARK_UPLOAD=1" if benchmark_upload else ""),
                         },
                     }
                 ]

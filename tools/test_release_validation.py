@@ -949,3 +949,40 @@ def test_exported_ipa_rejects_nonproduction_cloudkit_environment(
     )
     with pytest.raises(ValueError, match="production CloudKit environment"):
         validation.verify_exported_ipa(package)
+
+
+@pytest.mark.parametrize("environment", ["Development", "Production", None])
+def test_archive_cloudkit_allows_export_to_select_environment(environment):
+    entitlements = {
+        "com.apple.developer.icloud-services": ["CloudKit"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "aps-environment": "production",
+    }
+    if environment is not None:
+        entitlements["com.apple.developer.icloud-container-environment"] = environment
+    validation.verify_benchmark_upload_entitlements(
+        entitlements, "iCloud.org.steverice.visr", archive=True
+    )
+
+
+@pytest.mark.parametrize("field,value,error", [
+    ("com.apple.developer.icloud-services", [], "CloudKit service"),
+    ("com.apple.developer.icloud-container-identifiers", ["iCloud.example.wrong"], "CloudKit container"),
+    ("com.apple.developer.icloud-container-environment", None, "CloudKit environment"),
+    ("com.apple.developer.icloud-container-environment", "Other", "CloudKit environment"),
+    ("com.apple.developer.icloud-container-environment", "", "CloudKit environment"),
+    ("aps-environment", "development", "production APS"),
+    ("aps-environment", None, "production APS"),
+])
+def test_archive_cloudkit_still_requires_capabilities_and_production_aps(field, value, error):
+    entitlements = {
+        "com.apple.developer.icloud-services": ["CloudKit"],
+        "com.apple.developer.icloud-container-identifiers": ["iCloud.org.steverice.visr"],
+        "com.apple.developer.icloud-container-environment": "Development",
+        "aps-environment": "production",
+    }
+    entitlements[field] = value
+    with pytest.raises(ValueError, match=error):
+        validation.verify_benchmark_upload_entitlements(
+            entitlements, "iCloud.org.steverice.visr", archive=True
+        )
