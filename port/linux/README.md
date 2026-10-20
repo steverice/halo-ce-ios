@@ -317,6 +317,14 @@ the setting for one start of the game. It has priority over the file.
 | `display.scoreboard_team_layout` | string | `"teams"` | apple, desktop | `HALO_SCOREBOARD_TEAM_LAYOUT` | How the scoreboard lists a team game's players: "teams" in a column for each team (red on the left, blue on the right), "score" all in order of score. |
 | `display.scoreboard_background` | boolean | `true` | apple, desktop | `HALO_SCOREBOARD_BACKGROUND` | Draw a panel behind the multiplayer scoreboard, for clearer text. |
 | `display.scoreboard_background_color` | string | `"16, 16, 16, 150"` | apple, desktop | `HALO_SCOREBOARD_BACKGROUND_COLOR` | The scoreboard panel's colour: "red, green, blue, alpha", each 0 to 255 (alpha 0 is see-through, 255 solid). |
+### streamer
+
+| Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |
+| --- | --- | --- | --- | --- | --- |
+| `streamer.enabled` | boolean | `false` | apple, desktop | `HALO_STREAMER_MODE` | Hide offensive words in names and text from other players, maps, and mods as stars. |
+| `streamer.slurs` | string | `"mild"` | apple, desktop | `HALO_STREAMER_SLURS` | With streamer.enabled, hide slurs at the selected severity: "off", "severe", "strong", or "mild" (all). |
+| `streamer.swearing` | string | `"strong"` | apple, desktop | `HALO_STREAMER_SWEARING` | With streamer.enabled, hide swearing at the selected severity: "off", "severe", "strong", or "mild" (all). |
+| `streamer.insults` | string | `"off"` | apple, desktop | `HALO_STREAMER_INSULTS` | With streamer.enabled, hide insults at the selected severity: "off", "severe", "strong", or "mild" (all). |
 ### audio
 
 | Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |
@@ -519,6 +527,23 @@ the setting for one start of the game. It has priority over the file.
 
 With Mesa drivers, the game sends its GL calls through the GL thread of
 Mesa. To stop this, set the environment variable `mesa_glthread=false`.
+
+## Streamer mode
+
+Turn on STREAMER MODE in Settings > Network Setup to replace offensive words
+with stars in text the game displays, including player names, the kill feed,
+scoreboards, lobbies, map and mod text, and message boxes. It changes only
+what this machine displays. It does not change names or messages sent to
+other players. Text you are typing remains visible while you edit it.
+
+The default filter includes slurs at every severity and swearing at strong
+or severe levels. Insults are off by default. The `streamer.slurs`,
+`streamer.swearing`, and `streamer.insults` settings in `config.toml` can
+select `"off"`, `"severe"`, `"strong"`, or `"mild"` for each group. For
+personal terms, put `text_filter.txt` in the data root with one `add <word>`
+or `allow <word>` entry per line. The game reads it at startup and when the settings change.
+The built-in list and its sources are described in
+[`port/assets/text_filter/README.md`](../assets/text_filter/README.md).
 
 ## Updates
 

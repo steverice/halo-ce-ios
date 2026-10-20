@@ -20,6 +20,7 @@ and the debug keyboard that the game's console reads.
 #include "p2p.h"
 #include "halo_internet.h"
 #include "xiso.h"
+#include "../game/text_filter.h"
 
 #include <SDL3/SDL.h>
 #include <stdio.h>
@@ -1496,6 +1497,9 @@ static void platform_show_pending_message(void)
 	pthread_mutex_unlock(&platform_message_lock);
 	if (!pending)
 		return;
+	/* Filter on the display thread; producers only copy the original text. */
+	text_filter_utf8(title);
+	text_filter_utf8(text);
 #if defined(HALO_ANDROID) || defined(HALO_ILP32)
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, title, text, NULL);
 #else

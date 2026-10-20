@@ -292,6 +292,8 @@ def main():
         ('port/third_party/mbedtls/LICENSE', 'MbedTLS-Apache-2.0.txt'),
         ('port/third_party/zlib/LICENSE', 'zlib.txt'),
         ('port/assets/fonts/Overpass-OFL.txt', 'Overpass-OFL.txt'),
+        ('port/assets/text_filter/README.md', 'Streamer-Words-MIT.txt'),
+        ('port/third_party/english-words/LICENSE.md', 'English-Words-Unlicense.txt'),
         ('port/assets/fonts/OpenCE-OFL.txt', 'OpenCE-OFL.txt'),
         ('port/assets/fonts/Newtown-LICENSE.txt', 'Newtown.txt'),
         ('port/third_party/smaa/LICENSE', 'SMAA.txt'),
