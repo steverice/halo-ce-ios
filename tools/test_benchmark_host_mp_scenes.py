@@ -1,5 +1,6 @@
 """Exercise the production signed-catalog loader and typed scene selector."""
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
@@ -75,6 +76,23 @@ def test_host_loader_rejects_missing_or_idle_catalog_data(tmp_path, catalog_prob
     _write_catalog(tmp_path, _cases())
     idle = run_probe(catalog_probe, tmp_path, "full")
     assert idle.returncode != 0 and "movement or combat" in idle.stderr.lower()
+
+
+def test_tester_menu_choices_follow_selected_catalog_validity(tmp_path, catalog_probe):
+    environment = dict(os.environ, VISR_PROBE_MENU_CHOICES="1")
+    for name in ("bundled", "active"):
+        selected = tmp_path / name
+        _recording(selected)
+        _write_catalog(selected, _cases())
+        result = subprocess.run([str(catalog_probe), str(selected), "full"],
+                                env=environment, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.startswith("menu_choices=2\n")
+    missing = tmp_path / "unavailable"
+    result = subprocess.run([str(catalog_probe), str(missing), "full"],
+                            env=environment, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert result.stdout.startswith("menu_choices=1\n")
 
 
 @pytest.mark.parametrize("players", [3, 16, 32, 64, 128])

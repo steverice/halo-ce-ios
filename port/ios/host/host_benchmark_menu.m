@@ -6,6 +6,8 @@
 #include "ios_host.h"
 #include "host_benchmark.h"
 #include "benchmark_plan.h"
+#import "host_benchmark_catalog.h"
+#import "host_data_updates.h"
 
 #if !__has_feature(objc_arc)
 #error The benchmark menu requires Objective-C ARC.
@@ -100,11 +102,15 @@ static NSInteger ask(NSString *heading, NSString *detail, NSArray<NSString *> *c
 
 const char *host_benchmark_menu(void) {
     struct benchmark_journal journal;
+    NSString *bundled = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"benchmark-recordings"];
+    NSString *selected = host_recording_update_folder(bundled);
+    NSUInteger choice_count = host_benchmark_menu_choice_count(selected);
+    BOOL ready = choice_count == 2;
 
     /* a benchmark that was cut off comes first: the app cannot reopen itself, so this is where it carries on */
     benchmark_journal_load("benchmark/journal.txt", &journal);
     /* (a journal written for other scenes, by another build, is started over by host_benchmark_start) */
-    if (journal.valid && !journal.finished && journal.count > 0) {
+    if (ready && journal.valid && !journal.finished && journal.count > 0) {
         NSString *detail = [NSString stringWithFormat:@"The %s benchmark stopped %@ run %d. Carrying on skips nothing "
             "that already finished.", benchmark_mode_name(journal.mode), journal.cut_off ? @"during" : @"after",
             journal.cut_off ? journal.count : journal.count];
@@ -124,9 +130,11 @@ const char *host_benchmark_menu(void) {
     }
     attempted_pending=YES;
 #endif
-    NSString *detail=@"The benchmark plays the game by itself and measures this device. Finish at any time. Benchmark data uploads automatically through iCloud.";
+    NSString *detail = ready ?
+        @"The benchmark plays the game by itself and measures this device. Finish at any time. Benchmark data uploads automatically through iCloud." :
+        @"Benchmark data is unavailable on this launch. VISR is checking for the signed download. Play now and try Benchmark after reopening VISR.";
     if(delivery_status.length)detail=[detail stringByAppendingFormat:@"\n\n%@",delivery_status];
-    switch (ask(@"VISR", detail, @[ @"Play", @"Benchmark" ])) {
+    switch (ask(@"VISR", detail, choice_count == 2 ? @[ @"Play", @"Benchmark" ] : @[ @"Play" ])) {
     case 1: host_logf(HOST_LOG_INFO, "benchmark menu: unified"); return "full-unified";
     default: return NULL;
     }

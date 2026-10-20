@@ -277,6 +277,10 @@ BOOL host_benchmark_catalog_validate_folder(NSString *folder, NSError **error) {
     return host_benchmark_catalog_load(folder, &catalog, error);
 }
 
+NSUInteger host_benchmark_menu_choice_count(NSString *selected_folder) {
+    return host_benchmark_catalog_validate_folder(selected_folder, NULL) ? 2 : 1;
+}
+
 NSString *host_benchmark_catalog_file_sha256(NSString *folder) {
     NSData *data = read_catalog_file(folder, HOST_BENCHMARK_CATALOG_NAME, catalog_maximum_bytes);
     return data ? digest(data) : nil;

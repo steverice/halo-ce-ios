@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #include "host_benchmark_catalog.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char **argv) {
@@ -9,6 +10,8 @@ int main(int argc, char **argv) {
         struct host_benchmark_catalog catalog;
         NSError *error = nil;
         NSString *folder = [NSString stringWithUTF8String:argv[1]];
+        if (getenv("VISR_PROBE_MENU_CHOICES"))
+            printf("menu_choices=%lu\n", (unsigned long)host_benchmark_menu_choice_count(folder));
         enum benchmark_mode mode = !strcmp(argv[2], "full") ? BENCHMARK_FULL : BENCHMARK_QUICK;
         const char *filters[BENCHMARK_SCENES_MAXIMUM];
         for (int index = 3; index < argc; index++) filters[index - 3] = argv[index];
