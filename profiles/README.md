@@ -2,7 +2,7 @@
 
 A device profile is the set of graphics settings VISR uses on one Apple device: one file here for each model we have measured, and one for each class of device (every Apple TV, every Mac) for the models we have not. The app picks the files for the device it runs on at every launch.
 
-A profile only ever sets graphics settings, from a fixed list. Controls, sound, network and everything else stay the player's on every device, and anything the player set themselves wins over the profile.
+A profile only ever sets graphics settings and the tracking-loss grace (`input.aim_loss_grace`, how long a hand-tracking dropout holds the aim), from a fixed list. Controls, sound, network and everything else stay the player's on every device, and anything the player set themselves wins over the profile.
 
 ## How a value is chosen
 
@@ -163,5 +163,10 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | `display.frame_rate` | string: `display`, `unlimited`, quoted 30 to 1000 | `"display"` | gameplay, ⓢ scene | The most frames a second, in the Mac app: "display" (default) draws one frame for each refresh of the display; a number ("60", "240") holds that rate; "unlimited" draws as fast as it can. |
 | `display.async_shaders` | string: `auto`, `on`, `off` | `"auto"` | gameplay | How the Metal renderer compiles shaders: "auto" (default) on worker threads, skipping a draw for the frames until its pipeline is ready, so the game never waits on the compiler (on Apple Vision Pro a long wait ends the app); a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) compiles each at its first draw instead. "on" or "off" forces either. |
 | `display.interpolation` | boolean | `true` | gameplay | Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. |
+### input
+
+| Setting | Type and accepted values | Default (Apple) | Contexts | Description |
+| --- | --- | --- | --- | --- |
+| `input.aim_loss_grace` | real, 0 to 5 | `0.5` | gameplay | With input.aim = "controller": seconds of lost hand tracking during which the last hand aim is held, in local and network play, before the aim eases to the head over 0.2 seconds (0 to 5). |
 
 <!-- END GENERATED SETTINGS profile -->

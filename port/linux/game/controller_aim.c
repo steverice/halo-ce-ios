@@ -6,9 +6,9 @@
 #define TWO_PI (2.0f * 3.14159265f)
 #define PI 3.14159265f
 
-/* tracking loss: the last aim held this long, then eased to the head over
-EASE_SECONDS; a recovery eases back over EASE_SECONDS too */
-#define HOLD_SECONDS 0.150f
+/* tracking loss: the last aim held for the grace (struct controller_track's
+hold_seconds), then eased to the head over EASE_SECONDS; a recovery eases back
+over EASE_SECONDS too */
 #define EASE_SECONDS 0.200f
 /* the tracking a recovery needs first (struct controller_track's
 dwell_step): longer for a loss within DWELL_GROWS_WITHIN of the last
@@ -169,6 +169,7 @@ float controller_yaw_blend(float from, float to, float blend)
 void controller_track_reset(struct controller_track *track)
 {
 	track->blend = 1.0f;
+	track->hold_seconds = CONTROLLER_LOSS_GRACE_DEFAULT;
 	track->lost = 0;
 	track->lost_for = 0.0f;
 	track->tracked_for = 0.0f;
@@ -233,7 +234,7 @@ void controller_track_update(struct controller_track *track, int state, int held
 	during a recovery's ease holds there until the loss's own ease reaches it */
 	if (track->lost)
 	{
-		track->blend = fminf(track->blend, 1.0f - smoothstep((track->lost_for - HOLD_SECONDS) / EASE_SECONDS));
+		track->blend = fminf(track->blend, 1.0f - smoothstep((track->lost_for - track->hold_seconds) / EASE_SECONDS));
 		if (track->blend <= 0.0f && previous_blend > 0.0f && message_allowed(track))
 		{
 			out->message = 1;
@@ -246,6 +247,13 @@ void controller_track_update(struct controller_track *track, int state, int held
 	out->blend = track->blend;
 	out->use_held = track->lost;
 	out->dim = track->lost || track->orientation_for >= ORIENTATION_DIM_AFTER;
+}
+
+float controller_loss_grace(float setting, float debug)
+{
+	float grace = debug >= 0.0f ? debug : setting;
+
+	return fminf(fmaxf(grace, 0.0f), CONTROLLER_LOSS_GRACE_MAXIMUM);
 }
 
 float controller_gate_ease(float *value, int target, float time_delta, int snap)

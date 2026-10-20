@@ -274,6 +274,15 @@ static void check_refusals(void)
 	assert(strstr(logged, "display.stereo is not a setting a profile may set"));
 	assert(strstr(logged, "network.online is not a setting") && strstr(logged, "paths.data is not a setting"));
 	assert(strstr(logged, "debug.exit_after is not a setting") && strstr(logged, "input.turn is not a setting"));
+	/* the tracking-loss grace is the one non-graphics value a profile sets, within 0 to 5 seconds */
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[input]\naim_loss_grace = 1.5\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 1 && has(&profile, "input.aim_loss_grace", "1.5"));
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[input]\naim_loss_grace = 9.0\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 0 && strstr(logged, "input.aim_loss_grace has a value"));
 
 	/* files that are no profile: not parsed, another schema, no heading, too large. The launch goes on */
 	write_file("broken.toml", "schema = 1\nname = \"Broken\nkind = [[[\n");

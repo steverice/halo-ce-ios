@@ -310,6 +310,7 @@ the setting for one start of the game. It has priority over the file.
 | `input.smooth_turn_speed` | number | `120.0` | apple | `HALO_SMOOTH_TURN_SPEED` | With input.turn = "smooth": degrees per second with the stick all the way over (10 to 720; 120 is the game's own speed before it speeds up). |
 | `input.comfort_vignette` | boolean | `false` | apple | `HALO_COMFORT_VIGNETTE` | With input.turn = "smooth": darken the edges of the view while the stick turns it, for comfort. |
 | `input.aim` | string | `"controller"` | apple | `HALO_AIM` | With display.stereo = "head": what aims, "head" (the view's center) or "controller" (default; the aiming hand's Sense controller). |
+| `input.aim_loss_grace` | number | `0.5` | apple | `HALO_AIM_LOSS_GRACE` | With input.aim = "controller": seconds of lost hand tracking during which the last hand aim is held, in local and network play, before the aim eases to the head over 0.2 seconds (0 to 5). |
 | `input.aim_hand` | string | `"right"` | apple | `HALO_AIM_HAND` | With input.aim = "controller": the aiming hand, "right" (default) or "left" (the buttons mirror). |
 | `input.aim_pitch_offset` | number | `0.0` | apple | `HALO_AIM_PITCH_OFFSET` | With input.aim = "controller": degrees the barrel ray and gun tilt down from the aim axis (-10 to 45), for aiming from the hip with the forearm low. |
 | `input.aim_assist` | number | `1.0` | apple | `HALO_AIM_ASSIST` | With input.aim = "controller": how much of the game's bullet autoaim a hand-aimed shot keeps, 0.0 to 2.0. |
@@ -344,6 +345,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.controller_correction` | string | `"none"` | apple | `HALO_CONTROLLER_CORRECTION` | The Sense controllers' pose correction from ARKit: "none" (default) or "rendered" (aligned with passthrough), to compare the two for lag and swim. |
 | `debug.controller_axes` | boolean | `false` | apple | `HALO_CONTROLLER_AXES` | HEAD mode with Sense controllers (visionOS 27): log the right controller's aim and grip axes in the head's frame twice a second ("spatial: right aim x (...) y (...) z (...) grip ..."), to measure which of the aim's axes points along the barrel. |
 | `debug.aim_trace` | boolean | `false` | apple | `HALO_AIM_TRACE` | Controller aim: log a line every drawn frame while a hand aims, with the sightline's and the first-person gun's yaw and pitch, the reticle's distance, the action's blend and gate and the magnification. |
+| `debug.aim_loss_grace` | number | `-1.0` | apple | `HALO_AIM_LOSS_GRACE_DEBUG` | Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand tracking that hold the last aim, in place of the device profile's. |
 | `debug.aim_steady_level` | number | `-1.0` | apple | `HALO_AIM_STEADY_LEVEL` | Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. |
 ### display
 

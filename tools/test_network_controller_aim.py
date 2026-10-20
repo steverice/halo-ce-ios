@@ -415,7 +415,7 @@ def network_aim_probe(tmp_path, name, main):
     action = function(glue, "static int action_aim(")
     start = action.index("blend = aim.body.known ?")
     end = action.index("/* the facing and the look turn back", start)
-    seconds = next(line for line in header.splitlines() if line.startswith("#define CONTROLLER_NETWORK_LOSS_SECONDS"))
+    seconds = next(line for line in header.splitlines() if line.startswith("#define CONTROLLER_LOSS_GRACE_DEFAULT"))
     run_probe(tmp_path, name, r'''
 #include <assert.h>
 #include <math.h>
@@ -423,7 +423,7 @@ def network_aim_probe(tmp_path, name, main):
 ''' + seconds + r'''
 static int network;
 static struct {struct {int known;} body;int good_aim_known;float good_yaw,good_pitch;
- struct {int lost;float lost_for;} track;float network_hand,network_hand_share;int network_head_aim;} aim={.network_hand=1.0f,.network_hand_share=1.0f};
+ struct {int lost;float lost_for,hold_seconds;} track;float network_hand,network_hand_share;int network_head_aim;} aim={.track={.hold_seconds=CONTROLLER_LOSS_GRACE_DEFAULT},.network_hand=1.0f,.network_hand_share=1.0f};
 static int network_controller_aim(void){return network;}
 static float yaw_in_range(float yaw){return yaw;}
 static float controller_yaw_blend(float from,float to,float blend){return from+blend*(to-from);}
@@ -452,30 +452,35 @@ int main(void){
 ''')
 
 
-def test_production_network_loss_holds_two_seconds_then_falls_back_and_recovers(tmp_path):
+def test_production_network_loss_holds_the_grace_then_falls_back_and_recovers(tmp_path):
     network_aim_probe(tmp_path, "loss-fallback", r'''
-static void lose(float seconds,float *yaw,float *pitch){
- /* (frames of 16 ms of the track's clock, lost throughout) */
+static void lose(int frames,float *yaw,float *pitch){
+ /* (frames of 10 ms of the track's clock, lost throughout) */
  aim.track.lost=1;
- for(float t=0;t<seconds;t+=.016f){aim.track.lost_for=t;consume(.1f,.3f,0,1,.016f,yaw,pitch);}
+ for(int frame=0;frame<=frames;frame++){aim.track.lost_for=frame*.01f;consume(.1f,.3f,0,1,.01f,yaw,pitch);}
 }
+static void reset(void){aim.network_hand=aim.network_hand_share=1.0f;aim.network_head_aim=0;aim.track.lost=0;}
 int main(void){
  float yaw,pitch;
  aim.body.known=aim.good_aim_known=1;aim.good_yaw=.75f;aim.good_pitch=-.2f;network=1;
- /* lost 1.9 s: the last hand aim is held */
- lose(1.9f,&yaw,&pitch);
- assert(fabsf(yaw-.75f)<.00001f&&fabsf(pitch+.2f)<.00001f&&!aim.network_head_aim);
- assert(aim.network_hand_share==1.0f);
- /* the hand is back: still the hand */
+ /* the default grace is half a second: held at 0.49 s, falling at 0.51 s */
+ assert(aim.track.hold_seconds==.5f);
+ lose(49,&yaw,&pitch);
+ assert(fabsf(yaw-.75f)<.00001f&&fabsf(pitch+.2f)<.00001f&&!aim.network_head_aim&&aim.network_hand_share==1.0f);
+ lose(51,&yaw,&pitch);
+ assert(aim.network_hand_share<1.0f&&yaw<.75f);
+ /* the hand is back: still the hand after a short loss */
+ reset();lose(49,&yaw,&pitch);
  aim.track.lost=0;consume(.1f,.3f,1,1,.016f,&yaw,&pitch);
  assert(fabsf(yaw-.75f)<.00001f&&!aim.network_head_aim);
- /* lost 2.1 s: the head and stick aim, eased over, never a step */
+ /* lost on: the head and stick aim, eased over, never a step */
+ reset();
  float previous=.75f;
  aim.track.lost=1;
- for(float t=0;t<2.1f+.4f;t+=.016f){
+ for(float t=0;t<.5f+.4f;t+=.016f){
   aim.track.lost_for=t;consume(.1f,.3f,0,1,.016f,&yaw,&pitch);
   assert(fabsf(yaw-previous)<.1f);previous=yaw;
-  if(t<2.0f)assert(fabsf(yaw-.75f)<.00001f);
+  if(t<.5f)assert(fabsf(yaw-.75f)<.00001f);
  }
  assert(aim.network_head_aim&&fabsf(yaw-.1f)<.0001f&&fabsf(pitch-.3f)<.0001f);
  /* (the gun's drawing blend is that same ease) */
@@ -488,6 +493,12 @@ int main(void){
  }
  assert(!aim.network_head_aim&&fabsf(yaw-.75f)<.0001f&&fabsf(pitch+.2f)<.0001f);
  assert(aim.network_hand_share==1.0f);
+ /* a longer grace (a profile's, or the debug override) holds longer */
+ reset();aim.track.hold_seconds=1.5f;
+ lose(149,&yaw,&pitch);
+ assert(aim.network_hand_share==1.0f);
+ lose(151,&yaw,&pitch);
+ assert(aim.network_hand_share<1.0f);
 }
 ''')
 

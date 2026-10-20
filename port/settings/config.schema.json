@@ -958,8 +958,18 @@
         "aim": {
           "type": "string",
           "default": "controller",
-          "description": "With display.stereo = \"head\": what aims, \"head\" (the view's center) or \"controller\" (default; the aiming hand's Sense controller). Aiming uses the head when tracking is unavailable in local play. In network play, aim holds its last valid hand direction for 2 seconds of lost tracking, then uses the head until the hand is tracked again (and before the first tracked pose); a seat uses stick aim. Anything else aims with the head.",
+          "description": "With display.stereo = \"head\": what aims, \"head\" (the view's center) or \"controller\" (default; the aiming hand's Sense controller). Aiming uses the head when tracking is unavailable in local play. In network play, aim holds its last valid hand direction through input.aim_loss_grace, then uses the head until the hand is tracked again (and before the first tracked pose); a seat uses stick aim. Anything else aims with the head.",
           "x-environment": "HALO_AIM",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_loss_grace": {
+          "type": "number",
+          "default": 0.5,
+          "description": "With input.aim = \"controller\": seconds of lost hand tracking during which the last hand aim is held, in local and network play, before the aim eases to the head over 0.2 seconds (0 to 5). A device profile sets it for the device; it is not a player choice.",
+          "x-environment": "HALO_AIM_LOSS_GRACE",
           "x-environment-style": "value",
           "x-platforms": [
             "apple"
@@ -1319,6 +1329,16 @@
           "description": "Controller aim: log a line every drawn frame while a hand aims, with the sightline's and the first-person gun's yaw and pitch, the reticle's distance, the action's blend and gate and the magnification.",
           "x-environment": "HALO_AIM_TRACE",
           "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "aim_loss_grace": {
+          "type": "number",
+          "default": -1.0,
+          "description": "Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand tracking that hold the last aim, in place of the device profile's. Negative uses the profile's.",
+          "x-environment": "HALO_AIM_LOSS_GRACE_DEBUG",
+          "x-environment-style": "value",
           "x-platforms": [
             "apple"
           ]

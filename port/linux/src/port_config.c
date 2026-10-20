@@ -383,10 +383,15 @@ static const struct config_setting config_settings[] =
 		"With display.stereo = \"head\": what aims, \"head\" (the view's center)\n"
 		"or \"controller\" (default; the aiming hand's Sense controller). Aiming\n"
 		"uses the head when tracking is unavailable in local play. In network\n"
-		"play, aim holds its last valid hand direction for 2 seconds of lost\n"
-		"tracking, then uses the head until the hand is tracked again (and\n"
-		"before the first tracked pose); a seat uses stick aim. Anything else\n"
-		"aims with the head." },
+		"play, aim holds its last valid hand direction through input.aim_loss_grace,\n"
+		"then uses the head until the hand is tracked again (and before the\n"
+		"first tracked pose); a seat uses stick aim. Anything else aims with the\n"
+		"head." },
+	{ "input.aim_loss_grace", _config_real, "0.5", "HALO_AIM_LOSS_GRACE", _environment_value, _platform_ios,
+		"With input.aim = \"controller\": seconds of lost hand tracking during\n"
+		"which the last hand aim is held, in local and network play, before the\n"
+		"aim eases to the head over 0.2 seconds (0 to 5). A device profile sets\n"
+		"it for the device; it is not a player choice." },
 	{ "input.aim_hand", _config_string, "\"right\"", "HALO_AIM_HAND", _environment_value, _platform_ios,
 		"With input.aim = \"controller\": the aiming hand, \"right\" (default) or\n"
 		"\"left\" (the buttons mirror)." },
@@ -570,6 +575,10 @@ static const struct config_setting config_settings[] =
 		"Controller aim: log a line every drawn frame while a hand aims, with the\n"
 		"sightline's and the first-person gun's yaw and pitch, the reticle's\n"
 		"distance, the action's blend and gate and the magnification." },
+	{ "debug.aim_loss_grace", _config_real, "-1.0", "HALO_AIM_LOSS_GRACE_DEBUG", _environment_value, _platform_ios,
+		"Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand\n"
+		"tracking that hold the last aim, in place of the device profile's. Negative\n"
+		"uses the profile's." },
 	{ "debug.aim_steady_level", _config_real, "-1.0", "HALO_AIM_STEADY_LEVEL", _environment_value, _platform_ios,
 		"Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a\n"
 		"target the hand's aim counts as (1.0 a red reticle), in place of the\n"

@@ -6,7 +6,9 @@ may set, each with its type and the values it accepts. This is the whole
 list: a profile that names any other setting fails tools/profile_check.py,
 and the loader ignores the line and says so in the log. Controls, sound,
 network, paths, comfort and layout choices and debug switches are the
-player's on every device and never belong here.
+player's on every device and never belong here; the one exception is
+input.aim_loss_grace, a hardware property (how long a device's hand tracking
+may drop out before the aim leaves the hand) and not a choice.
 
 An X-macro list, included with the four macros defined:
 
@@ -60,6 +62,7 @@ PROFILE_STRING("display.frame_pacing", "off|tick|refresh")
 PROFILE_STRING("display.frame_rate", "display|unlimited|#")
 PROFILE_STRING("display.async_shaders", "auto|on|off")
 PROFILE_BOOLEAN("display.interpolation")
+PROFILE_REAL("input.aim_loss_grace", 0.0, 5.0)
 
 PROFILE_SCENE("display.render_scale")
 PROFILE_SCENE("display.render_height")

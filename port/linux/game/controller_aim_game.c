@@ -20,7 +20,8 @@ which players.c turns the facing and the looking vectors back to the head.
 Network on-foot actions instead carry ordinary facing with a zero pad:
 existing peers aim, turn and move relative to that direction. Network seats
 keep independent stick aim. Tracking loss holds the last valid hand aim
-for 2 seconds, then eases to the head and stick until the hand recovers;
+for the grace (input.aim_loss_grace, as in local play), then eases to the head
+and stick until the hand recovers;
 before any hand has been tracked in the session (a gamepad, one Sense
 controller, tracking denied, an older SDK), network play aims with the head
 and stick as input.aim = "head" does, until one is. The network reticle and targeting ray use the unit's
@@ -300,7 +301,7 @@ static struct
 	int ever_ready;
 	int hand_aiming;                /* this frame's action carries the hand's aim */
 	/* a network game's share of hand aim (the gate's ease): it falls to 0 once the
-	hand has been lost CONTROLLER_NETWORK_LOSS_SECONDS, and rises when it recovers */
+	hand has been lost for the grace (aim.track.hold_seconds), and rises when it recovers */
 	float network_hand, network_hand_share;     /* and as eased (the gun's drawing blend) */
 	int network_head_aim;           /* and it is 0: the head and stick aim */
 	/* a network action's facing is the hand's aim with a zero pad, so its
@@ -471,6 +472,8 @@ static int steady_message_pending;
 counts as, in place of the game's autoaim level (a test without an enemy);
 negative, the game's */
 static float steady_test_level = -1.0f;
+/* the tracking-loss grace in force (input.aim_loss_grace, or debug.aim_loss_grace) */
+static float loss_grace = CONTROLLER_LOSS_GRACE_DEFAULT;
 /* whether the last steadying asked for was any, for the log; -1 before one */
 static int steady_logged = -1;
 
@@ -591,6 +594,8 @@ static void settings(void)
 		platform_log("controller aim: aim steadying by zoom: %.1f unzoomed, %.1f at 2x, %.1f at 8x", steady_unzoomed,
 			steady_zoom_2x, steady_zoom_8x);
 	}
+	loss_grace = controller_loss_grace((float)config_real("input.aim_loss_grace"),
+		(float)config_real("debug.aim_loss_grace"));
 	steady_test_level = (float)config_real("debug.aim_steady_level");
 	if (steady_test_level >= 0.0f)
 		platform_log("controller aim: debug.aim_steady_level %g: the hand's aim counts as that firmly on target",
@@ -1183,6 +1188,7 @@ static int action_aim(long unit_index, float look_yaw, float look_pitch, unsigne
 	withdrawn) is a lost hand: the head takes over as from tracking loss */
 	state = sample->reason == HALO_SPATIAL_READY ? hand->state : HALO_SPATIAL_NONE;
 	held = sample->reason == HALO_SPATIAL_READY && hand->held;
+	aim.track.hold_seconds = loss_grace;
 	controller_track_update(&aim.track, state, held, time_delta, &track);
 	/* (unzoomed, the low-pass keeps a history only while it steadies the
 	aim on a target, and drops it itself otherwise) */
@@ -1285,10 +1291,10 @@ static int action_aim(long unit_index, float look_yaw, float look_pitch, unsigne
 	{
 		/* Head look stays local. Loss and gate easing hold the last valid
 		hand direction instead of mixing the headset into ordinary facing,
-		until the hand has been lost CONTROLLER_NETWORK_LOSS_SECONDS: then the
+		until the hand has been lost for the grace: then the
 		head and stick aim, eased over, and the hand eases back in on recovery. */
 		float hand_share = controller_gate_ease(&aim.network_hand,
-			!(aim.track.lost && aim.track.lost_for >= CONTROLLER_NETWORK_LOSS_SECONDS), time_delta, 0);
+			!(aim.track.lost && aim.track.lost_for >= aim.track.hold_seconds), time_delta, 0);
 
 		aim.network_head_aim = aim.network_hand <= 0.0f;
 		aim.network_hand_share = hand_share;

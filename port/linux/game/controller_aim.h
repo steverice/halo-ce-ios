@@ -59,15 +59,20 @@ int controller_facing_unpack(short pad, float *delta_yaw);
 /* a yaw blended the short way around +-pi: from + blend * wrap(to - from) */
 float controller_yaw_blend(float from, float to, float blend);
 
-/* port: a network game holds the last hand aim through a loss, then aims with
-the head and stick once the hand has been lost this long (the frame clock,
-as the track's lost_for); the hand takes over again when it recovers */
-#define CONTROLLER_NETWORK_LOSS_SECONDS 2.0f
+/* port: the tracking-loss grace, local and network play alike: the last hand
+aim is held this many seconds of lost tracking (the frame clock, as the
+track's lost_for), then eased to the head and stick over 0.2 s; the hand
+eases back in on recovery. A device profile sets it (input.aim_loss_grace);
+debug.aim_loss_grace, when not negative, replaces that for tuning. */
+#define CONTROLLER_LOSS_GRACE_DEFAULT 0.5f
+#define CONTROLLER_LOSS_GRACE_MAXIMUM 5.0f
+float controller_loss_grace(float setting, float debug);
 
 /* tracking loss and recovery (spec section 1, "Tracking states") */
 struct controller_track
 {
 	float blend;            /* 1 the hand, 0 the head */
+	float hold_seconds;     /* the grace: how long a loss holds the hand's aim */
 	int lost;               /* from a loss until its recovery starts easing */
 	float lost_for;         /* seconds since the loss */
 	float tracked_for;      /* seconds tracked and held since the loss */

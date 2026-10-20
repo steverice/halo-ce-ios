@@ -495,25 +495,25 @@ static void loss(int state, int held, const char *name)
 		track_frame(&track, state, held, &out, &run);
 		if (out.message == 1)
 			message_frame = t;
-		if (t == 149)
+		if (t == 499)
 		{
-			snprintf(what, sizeof(what), "loss (%s): at 149 ms held: blend 1, the last aim, dimmed", name);
+			snprintf(what, sizeof(what), "loss (%s): at 499 ms held: blend 1, the last aim, dimmed", name);
 			check(out.blend >= 0.9999f && out.use_held && out.dim, what);
 		}
-		if (t == 250)
+		if (t == 600)
 		{
-			snprintf(what, sizeof(what), "loss (%s): at 250 ms halfway (%.3f)", name, out.blend);
+			snprintf(what, sizeof(what), "loss (%s): at 600 ms halfway (%.3f)", name, out.blend);
 			check(near(out.blend, 0.5, 0.02), what);
 		}
-		if (t == 350)
+		if (t == 700)
 		{
-			snprintf(what, sizeof(what), "loss (%s): at 350 ms the head (%.6f)", name, out.blend);
+			snprintf(what, sizeof(what), "loss (%s): at 700 ms the head (%.6f)", name, out.blend);
 			check(out.blend <= 1e-6f && out.dim, what);
 		}
 	}
 	snprintf(what, sizeof(what), "loss (%s): one message and one buzz (%d, %d at %d ms)", name, run.messages[1],
 		run.buzzes, message_frame);
-	check(run.messages[1] == 1 && run.buzzes == 1 && message_frame >= 345 && message_frame <= 351, what);
+	check(run.messages[1] == 1 && run.buzzes == 1 && message_frame >= 695 && message_frame <= 701, what);
 	snprintf(what, sizeof(what), "loss (%s): and still the head at 1 s", name);
 	check(out.blend == 0.0f && out.use_held, what);
 	for (; t < 2000; t++)
@@ -535,6 +535,42 @@ static void loss(int state, int held, const char *name)
 	check(out.blend == 1.0f && !out.dim && !out.use_held, "loss: recovered, the hand undimmed");
 }
 
+/* the grace: the same 0.5 s default holds a loss, then eases, whatever else is set; a profile's value
+(input.aim_loss_grace) or the debug override (debug.aim_loss_grace) moves it */
+static void grace_blend_at(float grace, int milliseconds, float *blend)
+{
+	struct controller_track track;
+	struct controller_track_out out;
+	int t;
+
+	controller_track_reset(&track);
+	track.hold_seconds = grace;
+	for (t = 0; t <= milliseconds; t++)
+		controller_track_update(&track, HALO_SPATIAL_NONE, 0, TRACK_STEP, &out);
+	*blend = out.blend;
+}
+
+static void loss_grace(void)
+{
+	float blend;
+
+	check(CONTROLLER_LOSS_GRACE_DEFAULT == 0.5f, "grace: the default is half a second");
+	grace_blend_at(CONTROLLER_LOSS_GRACE_DEFAULT, 489, &blend);
+	check(blend >= 0.9999f, "grace: the default holds at 0.49 s");
+	grace_blend_at(CONTROLLER_LOSS_GRACE_DEFAULT, 520, &blend);
+	check(blend < 0.999f && blend > 0.9f, "grace: the default eases from 0.5 s, begun by 0.51 s");
+	grace_blend_at(1.5f, 1489, &blend);
+	check(blend >= 0.9999f, "grace: a profile's 1.5 s holds at 1.49 s");
+	grace_blend_at(1.5f, 1520, &blend);
+	check(blend < 0.999f, "grace: and falls back by 1.51 s");
+	check(controller_loss_grace(0.5f, -1.0f) == 0.5f && controller_loss_grace(1.5f, -1.0f) == 1.5f,
+		"grace: the profile's value stands without the debug override");
+	check(controller_loss_grace(1.5f, 0.0f) == 0.0f && controller_loss_grace(1.5f, 0.25f) == 0.25f,
+		"grace: debug.aim_loss_grace replaces it from 0");
+	check(controller_loss_grace(-3.0f, -1.0f) == 0.0f && controller_loss_grace(99.0f, -1.0f) == CONTROLLER_LOSS_GRACE_MAXIMUM,
+		"grace: kept within 0 to the maximum");
+}
+
 static void tracking(void)
 {
 	struct controller_track track;
@@ -553,6 +589,7 @@ static void tracking(void)
 	loss(HALO_SPATIAL_TRACKED, 0, "not held");
 	loss(HALO_SPATIAL_NONE, 1, "disconnected");
 	loss(HALO_SPATIAL_ORIENTATION, 0, "orientation-only, not held");
+	loss_grace();
 
 	/* orientation-only and held: the hand aims on; the dim from 2.0 s */
 	controller_track_reset(&track);

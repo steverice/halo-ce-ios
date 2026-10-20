@@ -164,6 +164,7 @@ DEFAULTS = {
     "display.hud_depth_relax_delay": "0.5",
     "display.hud_resolution": "1.0",
     "display.foveation": "true",
+    "input.aim_loss_grace": "0.5",
     "display.render_quality": "0.6",
     "display.first_person_body": "true",
     "display.first_person_legs": "false",
