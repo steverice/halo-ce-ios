@@ -43,8 +43,10 @@ enum
 	BROWSE_MINIMUM = 5000,
 	BROWSE_RETRY = 60000,
 	REQUEST_TIMEOUT = 15000,
+	/* an announcement or a withdrawal waits this long for each step, so that quitting, which waits for one under
+	way, usually sees it end */
+	ANNOUNCE_TIMEOUT = 4000,
 	QUIT_TIMEOUT = 3000,
-	/* how long quitting waits for a request under way */
 	QUIT_WAIT = 6000,
 	URL_SIZE = 256,
 	ERROR_SIZE = 160,
@@ -58,6 +60,10 @@ static struct
 	int browse, refresh, quitting;
 	/* a request is under way (its answer not yet taken), so quitting waits */
 	int busy;
+
+	/* the invite being announced by a request under way (under lock), which quitting withdraws even if the
+	request outlasts its wait */
+	char pending[DELTA_INVITE_DIGITS + 1];
 
 	/* the thread's alone, but for quitting once it is idle */
 	struct delta_announce_state announce;
@@ -139,15 +145,15 @@ static void browse_once(void)
 /* a request to the list: the status, and whether the answer began "ok" */
 static int announce_request(const char *path, const char *form, int form_size, int timeout, int *ok)
 {
-	char url[URL_SIZE], error[ERROR_SIZE];
+	char url[URL_SIZE], error[ERROR_SIZE], reply[256];
 	int status, seconds;
 
 	*ok = 0;
 	if (!list_url(url, sizeof(url), path))
 		return 0;
-	status = posix_https_request(url, form, form_size, answer, 256, timeout, error, sizeof(error));
+	status = posix_https_request(url, form, form_size, reply, sizeof(reply), timeout, error, sizeof(error));
 	if (status == 200)
-		*ok = delta_announce_answer(answer, &seconds);
+		*ok = delta_announce_answer(reply, &seconds);
 	if (!*ok && !delta.announce_failed)
 	{
 		platform_log("Internet play: Delta's list did not take the game (%s)",
@@ -157,15 +163,16 @@ static int announce_request(const char *path, const char *form, int form_size, i
 	return status;
 }
 
-static void withdraw(int timeout)
+/* the invite's listing taken out of the list; nothing is sent while internet play is off (the list drops the
+game in 75 seconds) */
+static void withdraw(const char *invite, int timeout)
 {
 	char form[FORM_SIZE];
-	int length = delta_withdraw_form(form, sizeof(form), delta.announce.invite);
+	int length = delta_withdraw_form(form, sizeof(form), invite);
 	int ok;
 
-	if (length)
+	if (length && config_boolean("network.online"))
 		announce_request("/v1/withdraw", form, length, timeout, &ok);
-	delta_withdraw_done(&delta.announce);
 	delta.announce_failed = 0;
 	platform_log("Internet play: the game is no longer listed in Delta's list");
 }
@@ -184,7 +191,8 @@ static void announce_pass(void)
 	switch (delta_announce_step(&delta.announce, want ? &wanted : NULL, p2p_now()))
 	{
 	case DELTA_STEP_WITHDRAW:
-		withdraw(REQUEST_TIMEOUT);
+		withdraw(delta.announce.invite, ANNOUNCE_TIMEOUT);
+		delta_withdraw_done(&delta.announce);
 		break;
 	case DELTA_STEP_ANNOUNCE:
 	{
@@ -195,8 +203,14 @@ static void announce_pass(void)
 
 		if (!length)
 			break;
-		status = announce_request("/v1/announce", form, length, REQUEST_TIMEOUT, &ok);
+		pthread_mutex_lock(&delta.lock);
+		strcpy(delta.pending, wanted.invite);
+		pthread_mutex_unlock(&delta.lock);
+		status = announce_request("/v1/announce", form, length, ANNOUNCE_TIMEOUT, &ok);
 		delta_announce_done(&delta.announce, &wanted, status, ok, p2p_now());
+		pthread_mutex_lock(&delta.lock);
+		delta.pending[0] = 0;
+		pthread_mutex_unlock(&delta.lock);
 		if (ok && !was_listed)
 			platform_log("Internet play: the game is listed in Delta's list (network.delta_announce)");
 		break;
@@ -281,7 +295,7 @@ void p2p_delta_update(void)
 void p2p_delta_quit(void)
 {
 	unsigned long start = p2p_now();
-	int listed;
+	char invite[DELTA_INVITE_DIGITS + 1];
 
 	pthread_mutex_lock(&delta.lock);
 	delta.quitting = 1;
@@ -292,9 +306,13 @@ void p2p_delta_quit(void)
 		Sleep(20);
 		pthread_mutex_lock(&delta.lock);
 	}
-	listed = !delta.busy && delta.announce.listed;
+	/* (an announcement still under way after the wait is withdrawn as well, though it may land after) */
+	invite[0] = 0;
+	if (delta.pending[0])
+		strcpy(invite, delta.pending);
+	else if (!delta.busy && delta.announce.listed)
+		strcpy(invite, delta.announce.invite);
 	pthread_mutex_unlock(&delta.lock);
-	/* (the thread takes nothing more up: the state is this thread's) */
-	if (listed)
-		withdraw(QUIT_TIMEOUT);
+	if (invite[0])
+		withdraw(invite, QUIT_TIMEOUT);
 }

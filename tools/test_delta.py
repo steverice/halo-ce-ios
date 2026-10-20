@@ -214,18 +214,21 @@ def test_the_thread_browses_announces_and_withdraws(worker, server):
     assert "GAMES 1 Test bloodgulch 29" in result.stdout
     assert "PHASE quit" in result.stdout
     requests = [(item["method"], item["path"], item["body"]) for item in server.requests]
-    invite = {letter: letter * 64 for letter in "abc"}
+    invite = {letter: letter * 64 for letter in "abcd"}
 
     def form(letter, players):
         return (f"invite={invite[letter]}&name=Checked%20game&map=bloodgulch&engine=2&players={players}"
                 "&maximum_players=16&open=1&version=29&teams=0&delta=0")
 
-    assert requests == [
-        ("GET", "/v1/games", ""),
+    # (the games are asked for again every 15 seconds, and when internet play comes back on)
+    assert requests[0] == ("GET", "/v1/games", "")
+    assert all(item[1] == "/v1/games" for item in requests if item[0] == "GET")
+    assert [item for item in requests if item[0] == "POST"] == [
         ("POST", "/v1/announce", form("a", 3)),
         ("POST", "/v1/withdraw", f"invite={invite['a']}"),
         ("POST", "/v1/announce", form("b", 3)),
         ("POST", "/v1/withdraw", f"invite={invite['b']}"),
+        ("POST", "/v1/announce", form("d", 4)),
         ("POST", "/v1/announce", form("c", 5)),
         ("POST", "/v1/withdraw", f"invite={invite['c']}"),
     ], result.stdout

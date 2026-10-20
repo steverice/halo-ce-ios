@@ -14,6 +14,7 @@
 pthread_mutex_t p2p_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int announce_setting;
+static int online = 1;
 /* the game hosted, as p2p_lobby_delta_wanted gives it (under p2p_lock) */
 static int wanted;
 static struct delta_announce hosted;
@@ -44,6 +45,8 @@ int config_boolean(const char *name)
 {
 	if (!strcmp(name, "network.delta_announce"))
 		return announce_setting;
+	if (!strcmp(name, "network.online"))
+		return online;
 	return 1;
 }
 
@@ -110,6 +113,15 @@ int main(void)
 	wanted = 0;
 	pthread_mutex_unlock(&p2p_lock);
 	phase("ended");
+	host("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", 4);
+	phase("announced again");
+	/* internet play off: the listing is dropped from this side, and nothing is sent */
+	online = 0;
+	pthread_mutex_lock(&p2p_lock);
+	wanted = 0;
+	pthread_mutex_unlock(&p2p_lock);
+	phase("online off");
+	online = 1;
 	host("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", 5);
 	phase("hosting again");
 	p2p_delta_quit();
