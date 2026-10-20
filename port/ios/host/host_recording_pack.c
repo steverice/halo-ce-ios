@@ -204,6 +204,7 @@ static int route_valid(char *text, const char *name, char scene[48])
         else if (!strcmp(key, "segments")) ok &= integer(value, 10, 1, SEGMENTS_MAXIMUM, &v);
         else if (!strcmp(key, "pauses") || !strcmp(key, "last_tick")) ok &= integer(value, 10, 0, TICKS_MAXIMUM, &v);
         else if (!strcmp(key, "lead") || !strcmp(key, "window") || !strcmp(key, "seconds")) ok &= real_number(value, 0, 3600, &n);
+        else if (!strcmp(key, "enemy_multiplier")) ok &= real_number(value, 1, 8, &n);
         else if (!strcmp(key, "random_seed")) ok &= integer(value, 16, 0, UINT32_MAX, &v);
         else if (!strcmp(key, "segment_seed")) {
             char *p[3];

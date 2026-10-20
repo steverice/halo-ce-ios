@@ -14,13 +14,13 @@ def _float_word(value):
 
 
 def _recording(folder, name="take-b30", *, active=True, scene="b30-warthog-fight", map_name="b30",
-               difficulty="hard", lead=0, window=1):
+               difficulty="hard", lead=0, window=1, route_extra=""):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{name}.input").write_text(
         "halo input recording 1\n0 0000 0 0 0 0 0 0 0 0 0 0 0 0\n")
     (folder / f"{name}.route").write_text(
         f"scene = {scene}\nkind = gameplay\nlead = {lead}\nwindow = {window}\nmap = {map_name}\n"
-        f"difficulty = {difficulty}\nentered = start\nfirst_tick = 0\nplayers = 1\n")
+        f"difficulty = {difficulty}\nentered = start\nfirst_tick = 0\nplayers = 1\n{route_extra}")
     action_lines = ["halo action recording 1"]
     seed_lines = ["halo seed recording 1"]
     for tick in range(40):
@@ -208,3 +208,46 @@ def test_signed_integer_arena_boundary(tmp_path, radius, accepted):
     else:
         with pytest.raises(benchmark_catalog.CatalogError, match="arena"):
             benchmark_catalog.load_catalog(tmp_path)
+
+
+def test_catalog_carries_enemy_multiplier_matching_its_route(tmp_path):
+    _recording(tmp_path, route_extra="enemy_multiplier = 1.500\n")
+    cases = _cases(players=2)
+    cases["b30-warthog-fight"]["enemy_multiplier"] = 1.5
+    _write_catalog(tmp_path, cases)
+    loaded = benchmark_catalog.load_catalog(tmp_path)
+    assert next(case for case in loaded if case["id"] == "b30-warthog-fight")["enemy_multiplier"] == 1.5
+
+
+@pytest.mark.parametrize("route_extra,case_value", [
+    ("enemy_multiplier = 2.000\n", None),
+    ("", 2.0),
+    ("enemy_multiplier = 2.000\n", 1.5),
+])
+def test_catalog_rejects_enemy_multiplier_that_differs_from_route(tmp_path, route_extra, case_value):
+    _recording(tmp_path, route_extra=route_extra)
+    cases = _cases(players=2)
+    if case_value is not None:
+        cases["b30-warthog-fight"]["enemy_multiplier"] = case_value
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
+@pytest.mark.parametrize("value", [0.5, 9, True, "2"])
+def test_catalog_rejects_unsupported_enemy_multiplier(tmp_path, value):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["b30-warthog-fight"]["enemy_multiplier"] = value
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
+def test_catalog_rejects_enemy_multiplier_on_multiplayer_case(tmp_path):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["mp-chillout-proof"]["enemy_multiplier"] = 2
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)

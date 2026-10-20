@@ -18,6 +18,7 @@ DIFFICULTIES = {"easy", "normal", "hard", "impossible"}
 KINDS = {"menu", "cutscene", "gameplay", "multiplayer"}
 PLAYERS = range(2, 129)
 COMMON_FIELDS = {"kind", "order", "map", "difficulty", "recording", "lead", "window"}
+MAXIMUM_ENEMY_MULTIPLIER = 8.0
 MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
 
 
@@ -107,11 +108,13 @@ def _route(folder, recording):
             "first_tick": int(values["first_tick"]),
             "lead": float(values.get("lead", 0)),
             "window": float(values.get("window", values.get("seconds", 0))),
+            "enemy_multiplier": float(values.get("enemy_multiplier", 1)),
         }
     except (KeyError, ValueError) as error:
         raise CatalogError(f"{recording}.route lacks required replay fields") from error
     if (route["kind"] not in {"gameplay", "cutscene"} or route["entered"] not in {"start", "console"} or
-            route["first_tick"] not in {0, 1} or not math.isfinite(route["lead"]) or not math.isfinite(route["window"])):
+            route["first_tick"] not in {0, 1} or not math.isfinite(route["lead"]) or not math.isfinite(route["window"]) or
+            not 1.0 <= route["enemy_multiplier"] <= MAXIMUM_ENEMY_MULTIPLIER):
         raise CatalogError(f"{recording}.route is not a fresh replayable route")
     for extension in ("input", "actions", "seeds"):
         _read_regular(folder / f"{recording}.{extension}", 4 * 1024 * 1024)
@@ -179,6 +182,8 @@ def load_catalog(folder):
         fields = COMMON_FIELDS | (MULTIPLAYER_FIELDS if kind == "multiplayer" else set())
         if kind == "multiplayer" and "arena" in case:
             fields |= {"arena"}
+        if "enemy_multiplier" in case:
+            fields |= {"enemy_multiplier"}
         if set(case) != fields:
             raise CatalogError(f"case {case_id} has missing or unsupported fields")
         order = case["order"]
@@ -189,6 +194,10 @@ def load_catalog(folder):
         difficulty = case["difficulty"]
         if not isinstance(difficulty, str) or difficulty not in DIFFICULTIES:
             raise CatalogError(f"case {case_id} has an unsupported difficulty")
+        if "enemy_multiplier" in case:
+            if kind in {"menu", "multiplayer"}:
+                raise CatalogError(f"case {case_id} cannot carry an enemy multiplier")
+            _number(case["enemy_multiplier"], f"{case_id} enemy multiplier", 1, MAXIMUM_ENEMY_MULTIPLIER)
         lead = _number(case["lead"], f"{case_id} lead", 0, 3600)
         window = _number(case["window"], f"{case_id} window", 0, 3600, positive=True)
         recording = case["recording"]
@@ -199,7 +208,8 @@ def load_catalog(folder):
             recorded_maps.add(map_name)
             route = _route(root, recording)
             if (route["scene"] != case_id or route["map"] != map_name or route["difficulty"] != difficulty or
-                    route["kind"] != kind or abs(route["lead"] - lead) > 1e-6 or abs(route["window"] - window) > 1e-6):
+                    route["kind"] != kind or abs(route["lead"] - lead) > 1e-6 or abs(route["window"] - window) > 1e-6 or
+                    abs(route["enemy_multiplier"] - float(case.get("enemy_multiplier", 1))) > 1e-6):
                 raise CatalogError(f"case {case_id} does not match its recording route")
         elif kind == "gameplay":
             raise CatalogError(f"gameplay case {case_id} requires a recording")

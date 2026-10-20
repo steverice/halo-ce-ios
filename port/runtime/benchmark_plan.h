@@ -53,6 +53,8 @@ struct benchmark_scene {
     int players, views, score_limit, time_limit_minutes;
     int arena_columns;
     double arena_spacing, arena_distance, arena_movement_radius;
+    /* a campaign scene's enemies, each squad this many times as large (debug.enemy_multiplier; 1 to 8); 0 for none */
+    double enemy_multiplier;
 };
 
 /* what the plan needs to know about the device and its profile's values */

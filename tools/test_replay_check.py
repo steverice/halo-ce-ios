@@ -41,6 +41,16 @@ def test_local_catalog_loads(tmp_path):
         "benchmark-catalog.json", "check.actions", "check.input", "check.route", "check.seeds"]
 
 
+def test_local_catalog_repeats_the_takes_enemy_multiplier(tmp_path):
+    folder = take(tmp_path)
+    folder.with_suffix(".route").write_text(ROUTE + "enemy_multiplier = 2.000\n")
+    local = tmp_path / "local-routes"
+    replay_check.write_local_routes(folder, local, "check")
+    [case] = benchmark_catalog.load_catalog(local)
+    assert case["enemy_multiplier"] == 2.0
+    assert "enemy_multiplier = 2.000" in (local / "check.route").read_text()
+
+
 def test_local_catalog_compiled_out_without_routes():
     source = (Path(replay_check.ROOT) / "port/ios/host/host_benchmark.m").read_text()
     start = source.index("static NSString *local_catalog_folder(void) {")

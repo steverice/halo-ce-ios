@@ -93,6 +93,9 @@ extern void input_replay_random_seeds(unsigned long seeds[2], unsigned char set)
 extern unsigned char input_replay_player_position(float position[3]);
 /* player 1's vitality and the AI's count of actors and of dead objects; 0 while there is no player unit */
 extern unsigned char input_replay_fight_state(float *body, float *shield, long *actors, long *dead_objects);
+/* port/linux/game/coop_enemies.c: debug.enemy_multiplier in force for a single-player game, and a replayed take's own */
+extern double coop_enemies_solo_multiplier(void);
+extern void coop_enemies_solo_override(double multiplier);
 /* xbox_kernel.c */
 double halo_frame_trace_milliseconds(void);
 /* port/linux/game/controller_aim_game.c (halo_spatial.h) */
@@ -380,16 +383,28 @@ static void route_load(void)
 	long first_tick = 0;
 	unsigned long seed;
 	long segment, tick;
+	double multiplier = 1.0, configured;
 
+	coop_enemies_solo_override(-1.0);
+	configured = coop_enemies_solo_multiplier();
 	if (length < 6 || strcmp(replay.replay_path + length - 6, ".input"))
 		return;
 	snprintf(path, sizeof(path), "%.*s.route", (int)(length - 6), replay.replay_path);
 	if (!(file = fopen(path, "r")))
+	{
+		if (configured > 1.0)
+			platform_log("debug.input_replay: %s has no .route, so the enemy multiplier it was recorded with is unknown; "
+				"using debug.enemy_multiplier %.3f", replay.replay_path, configured);
 		return;
+	}
 	while (fgets(line, sizeof(line), file))
 	{
+		double recorded;
+
 		if (sscanf(line, "first_tick = %ld", &tick) == 1)
 			first_tick = tick;
+		else if (sscanf(line, "enemy_multiplier = %lf", &recorded) == 1)
+			multiplier = recorded >= 1.0 ? recorded : 1.0;
 		else if (sscanf(line, "difficulty = %15s", replay.route_difficulty) == 1)
 		{
 			/* (checked at the first replayed tick, replay_check_difficulty) */
@@ -409,6 +424,22 @@ static void route_load(void)
 		}
 	}
 	fclose(file);
+	/* the multiplier the take was recorded with decides which enemies it meets, so a replay uses it; a replay that is
+	also recording a new take only supplies the input, and the setting stands for the new take */
+	if (fabs(multiplier - configured) > 0.0005)
+	{
+		if (*config_string("debug.input_record"))
+			platform_log("debug.input_replay: the take was recorded with debug.enemy_multiplier %.3f; this run records a new "
+				"take at %.3f", multiplier, configured);
+		else
+		{
+			platform_log("debug.input_replay: warning: the take was recorded with debug.enemy_multiplier %.3f and the setting "
+				"is %.3f; the replay uses the recorded value", multiplier, configured);
+			coop_enemies_solo_override(multiplier);
+		}
+	}
+	else if (multiplier > 1.0)
+		platform_log("debug.input_replay: the take's enemy multiplier is %.3f, as the setting", multiplier);
 	{
 		int index;
 
@@ -669,6 +700,8 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick <= TAKE_START_TICKS ? "start" : "saved",
 		tick, seed, config_string("display.stereo"), build && *build ? build : "unknown", utc.tm_year + 1900,
 		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec, settings);
+	if (coop_enemies_solo_multiplier() > 1.0)
+		take_route_note("enemy_multiplier = %.3f\n", coop_enemies_solo_multiplier());
 	take_route_write("open");
 	platform_log("debug.input_record: take %s: %s on %s from tick %ld%s", take.base, map,
 		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick,
@@ -781,6 +814,7 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 		fclose(replay.seeds_file);
 	memset(&replay, 0, sizeof(replay));
 	replay.configured = replay.suite = TRUE;
+	coop_enemies_solo_override(-1.0);
 	replay_touch_update();
 	if (game_time_initialized() && !input_replay_main_menu_loaded())
 	{
@@ -1349,6 +1383,19 @@ void input_replay_tick_action(void *action)
 					snprintf(seeds_path, sizeof(seeds_path), "%.*s.seeds", (int)(length - 8), replay.record_actions_path);
 					if ((replay.seeds_file = fopen(seeds_path, "w")))
 						fprintf(replay.seeds_file, "%s\n", SEEDS_HEADER);
+					/* (a recording of its own, not a take: NAME.route, with only what a replay needs to meet the same
+					enemies) */
+					if (!take.open && coop_enemies_solo_multiplier() > 1.0)
+					{
+						FILE *route;
+
+						snprintf(seeds_path, sizeof(seeds_path), "%.*s.route", (int)(length - 8), replay.record_actions_path);
+						if ((route = fopen(seeds_path, "w")))
+						{
+							fprintf(route, "enemy_multiplier = %.3f\n", coop_enemies_solo_multiplier());
+							fclose(route);
+						}
+					}
 				}
 			}
 		}

@@ -151,6 +151,11 @@ static void test_routes(void) {
         route.scene.kind == BENCHMARK_SCENE_CUTSCENE && !route.scene.heavy);
     CHECK(benchmark_scene_from_route("map = c40\ndifficulty = easy\nheavy = false\n", "x", &route) && !route.scene.heavy);
     /* not usable: begun from a save or past the start, more than one player, no map, a difficulty that is no name */
+    CHECK(benchmark_scene_from_route("map = a10\ndifficulty = hard\nenemy_multiplier = 1.500\n", "x", &route) &&
+        route.scene.enemy_multiplier == 1.5);
+    CHECK(benchmark_scene_from_route("map = a10\ndifficulty = hard\n", "x", &route) && route.scene.enemy_multiplier == 0.0);
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nenemy_multiplier = 0.5\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nenemy_multiplier = 9\n", "x", &route));
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nentered = saved\n", "x", &route));
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nfirst_tick = 4500\n", "x", &route));
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nplayers = 2\n", "x", &route));

@@ -1114,13 +1114,14 @@ int host_benchmark_next(char *text, unsigned int size) {
     }
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
-        "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f "
+        "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
         "lines=%ld anisotropy=%ld shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, scene->seconds, scene->simulation ? scene->simulation : "", scene->players, scene->views,
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
+        scene->enemy_multiplier,
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;

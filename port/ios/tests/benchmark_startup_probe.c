@@ -119,6 +119,7 @@ int input_replay_begin(const char *name, int lip_sync) {
     }
     return 1;
 }
+void coop_enemies_solo_override(double multiplier) { (void)multiplier; }
 int input_replay_ended(void) { return 0; }
 long input_replay_segment(void) { return 0; }
 double input_replay_length_ticks(void) { return 9000; }

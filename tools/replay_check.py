@@ -2,10 +2,12 @@
 """Does a recording replay alike at different frame rates? An end-to-end check on the Mac runner, with nobody
 at a controller.
 
-    replay_check.py --out FOLDER [--map b30] [--difficulty normal] [--bot 7] [--seconds 120]
+    replay_check.py --out FOLDER [--map b30] [--difficulty normal] [--bot 7] [--seconds 120] [--enemy-multiplier 2]
 
 1. Records a take: the game's scripted test input (debug.test_input = "bot:N") plays the map while the automatic
-   recorder (debug.input_record = "auto") writes recordings/take-MAP-TIME.{input,actions,seeds,route}.
+   recorder (debug.input_record = "auto") writes recordings/take-MAP-TIME.{input,actions,seeds,route}. With
+   --enemy-multiplier the take is recorded with debug.enemy_multiplier, which its .route carries and the catalog
+   case repeats, so the replays meet the same extra enemies.
 2. Replays the take, with its .seeds file (both random seeds set at every tick), through the device benchmark's
    suite at two frame rates (display.frame_rate), from an unsigned local catalog (write_local_routes; a build
    that carries routes runs it, and its reports say catalog_signed false). Each replay notes player 1's position
@@ -77,10 +79,13 @@ def write_local_routes(take, local, scene):
     ticks = len(take.with_suffix(".actions").read_text().splitlines()) - 1
     window = max(1, ticks // 30 - 1)
     values = dict(line.split(" = ", 1) for line in take.with_suffix(".route").read_text().splitlines() if " = " in line)
+    multiplier = float(values.get("enemy_multiplier", 1))
     (local / f"{scene}.route").write_text(route_text(take.with_suffix(".route"), scene, window))
-    catalog = {"schema": benchmark_catalog.CATALOG_SCHEMA, "cases": {scene: {
-        "kind": "gameplay", "order": 0, "map": values["map"], "difficulty": values["difficulty"], "recording": scene,
-        "lead": 0, "window": window}}}
+    case = {"kind": "gameplay", "order": 0, "map": values["map"], "difficulty": values["difficulty"], "recording": scene,
+            "lead": 0, "window": window}
+    if multiplier > 1:
+        case["enemy_multiplier"] = multiplier
+    catalog = {"schema": benchmark_catalog.CATALOG_SCHEMA, "cases": {scene: case}}
     (local / benchmark_catalog.CATALOG_NAME).write_bytes(benchmark_catalog._canonical(catalog))
     benchmark_catalog.load_catalog(local)
 
@@ -92,6 +97,8 @@ def main():
     parser.add_argument("--difficulty", default="normal", choices=("easy", "normal", "hard", "impossible"))
     parser.add_argument("--bot", type=int, default=7, help="the scripted input's seed")
     parser.add_argument("--seconds", type=float, default=120.0, help="how long the bot plays")
+    parser.add_argument("--enemy-multiplier", type=float, default=1.0,
+                        help="record the take with debug.enemy_multiplier (1 off); its replays use the recorded value")
     parser.add_argument("--take", type=Path, help="skip the recording: replay this take (its path without an extension)")
     parser.add_argument("--offscreen", action="store_true",
                         help="replay the second of each pair offscreen (debug.benchmark_offscreen), not unlimited")
@@ -108,7 +115,9 @@ def main():
     take = args.take
     if take is None:
         # the recording run: real time (a take is of a played session), the bot at the controller
-        status = runner(args.out / "record", "--exit-after", str(args.seconds), "--set", 'debug.input_record="auto"',
+        extra = (["--set", f"debug.enemy_multiplier={args.enemy_multiplier}", "--set", "debug.input_replay_route=300"]
+                 if args.enemy_multiplier != 1.0 else [])
+        status = runner(args.out / "record", "--exit-after", str(args.seconds), "--set", 'debug.input_record="auto"', *extra,
                         # (the suite refuses a take with the original audio-driven mouths)
                         "--set", "debug.benchmark_lip_sync=true",
                         "--set", f'debug.test_input="bot:{args.bot}"', "--init", f"game_difficulty_set {args.difficulty}",

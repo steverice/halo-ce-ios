@@ -57,6 +57,9 @@ int benchmark_scene_from_route(const char *text, const char *recording, struct b
         BENCHMARK_SCENE_GAMEPLAY;
     route->scene.heavy = route->scene.kind == BENCHMARK_SCENE_GAMEPLAY &&
         !(route_value(text, "heavy", number, sizeof(number)) && !strcmp(number, "false"));
+    route->scene.enemy_multiplier = route_value(text, "enemy_multiplier", number, sizeof(number)) ? atof(number) : 0.0;
+    if (route->scene.enemy_multiplier != 0.0 && !(route->scene.enemy_multiplier >= 1.0 && route->scene.enemy_multiplier <= 8.0))
+        return 0;
     route->scene.id = route->id;
     route->scene.map = route->map;
     route->scene.difficulty = route->difficulty;

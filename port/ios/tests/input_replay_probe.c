@@ -58,6 +58,10 @@ const char *config_string(const char *name) {
 	if (!strcmp(name, "debug.input_record")) return record_name;
 	return !strcmp(name, "debug.input_replay") ? replay_name : "";
 }
+/* coop_enemies.c's debug.enemy_multiplier and a replayed take's own */
+static double probe_multiplier = 1.0, probe_override = -1.0;
+double coop_enemies_solo_multiplier(void) { return probe_override >= 1.0 ? probe_override : probe_multiplier; }
+void coop_enemies_solo_override(double multiplier) { probe_override = multiplier >= 1.0 ? multiplier : -1.0; }
 void config_folder(char *path, size_t size) { snprintf(path, size, "./"); }
 void config_profile_settings_text(char *text, size_t size) { snprintf(text, size, ""); }
 static unsigned char clock_ready, menu_loaded;
@@ -550,6 +554,51 @@ static void check_recorded_environment(void)
     input_replay_begin(NULL, 0);
 }
 
+static void check_enemy_multiplier_metadata(void)
+{
+	unsigned int action[ACTION_WORDS] = { 0x00000001u, 0x3f800000u, 0, 0, 0, 0, 0, 0 };
+	XINPUT_GAMEPAD pad = { 0 };
+	char line[128] = "";
+	FILE *file;
+
+	/* a recording made with debug.enemy_multiplier 2 notes it in NAME.route */
+	input_replay_begin(NULL, 0); clock_ready = 1; clock_tick = 0;
+	replay.await_level = 0;
+	probe_multiplier = 2.0;
+	strcpy(replay.record_path, "multiplier.input"); strcpy(replay.record_actions_path, "multiplier.actions");
+	record(&pad, 0); input_replay_tick_action(action); record_end("multiplier probe");
+	file = fopen("multiplier.route", "r"); assert(file && fgets(line, sizeof(line), file)); fclose(file);
+	assert(!strcmp(line, "enemy_multiplier = 2.000\n"));
+	input_replay_begin(NULL, 0);
+	/* its replay uses the recorded value whatever the setting is */
+	probe_multiplier = 1.0; clock_ready = 0;
+	assert(input_replay_begin("./multiplier.input", 0) && probe_override == 2.0);
+	input_replay_begin(NULL, 0); assert(probe_override < 0.0);
+	probe_multiplier = 3.0;
+	assert(input_replay_begin("./multiplier.input", 0) && probe_override == 2.0);
+	input_replay_begin(NULL, 0);
+	/* a setting equal to the recorded value needs no override; a replay that records a new take keeps the setting */
+	probe_multiplier = 2.0;
+	assert(input_replay_begin("./multiplier.input", 0) && probe_override < 0.0);
+	input_replay_begin(NULL, 0);
+	probe_multiplier = 3.0; record_name = "other";
+	assert(input_replay_begin("./multiplier.input", 0) && probe_override < 0.0);
+	input_replay_begin(NULL, 0); record_name = "";
+	/* a route without the line was recorded at 1: the setting does not apply to it */
+	file = fopen("multiplier.route", "w"); assert(file); fputs("map = a10\n", file); fclose(file);
+	assert(input_replay_begin("./multiplier.input", 0) && probe_override == 1.0 && coop_enemies_solo_multiplier() == 1.0);
+	input_replay_begin(NULL, 0);
+	/* and a setting of 1 writes no route */
+	unlink("multiplier.route"); probe_multiplier = 1.0;
+	input_replay_begin(NULL, 0); clock_ready = 1; clock_tick = 0; replay.await_level = 0;
+	strcpy(replay.record_path, "multiplier.input"); strcpy(replay.record_actions_path, "multiplier.actions");
+	record(&pad, 0); input_replay_tick_action(action); record_end("multiplier probe");
+	assert(access("multiplier.route", F_OK));
+	input_replay_begin(NULL, 0); clock_ready = 0; probe_multiplier = 1.0;
+	unlink("multiplier.input"); unlink("multiplier.actions"); unlink("multiplier.seeds");
+	puts("enemy multiplier metadata: PASS");
+}
+
 int main(int argc, char **argv)
 {
 	if (argc == 2 && !strcmp(argv[1], "--auto-record-suite-camera"))
@@ -571,6 +620,7 @@ int main(int argc, char **argv)
         return 0;
     }
 	check_recorded_action_metadata();
+	check_enemy_multiplier_metadata();
 	check_controller_action_format();
 	check_control_pose();
 	clock_tick = 0;

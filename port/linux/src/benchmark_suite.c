@@ -54,6 +54,8 @@ double input_replay_length_ticks(void);
 double input_replay_timeline(void);
 /* port/linux/game/benchmark_scenario.c */
 void benchmark_scenario_load(const char *map, const char *difficulty);
+/* port/linux/game/coop_enemies.c */
+void coop_enemies_solo_override(double multiplier);
 unsigned char benchmark_scenario_at_menu(void);
 unsigned char benchmark_scenario_player_position(float *position);
 void mp_benchmark_probe_set_suite_requested(int requested);
@@ -101,6 +103,8 @@ static struct
 	enum suite_state state;
 	/* the run in hand */
 	char scene[48], map[32], difficulty[16], recording[64];
+	/* a campaign case's enemy multiplier (coop_enemies.c); 0 for none */
+	double enemy_multiplier;
 	char mp_simulation[32], mp_game_mode[16];
 	int mp_players, mp_views, mp_score_limit, mp_time_limit_minutes;
 	struct benchmark_mp_arena_config mp_arena;
@@ -551,6 +555,7 @@ static void next_run(void)
 	suite.mp_arena.spacing = (float)number_field(text, "arena_spacing");
 	suite.mp_arena.distance = (float)number_field(text, "arena_distance");
 	suite.mp_arena.movement_radius = (float)number_field(text, "arena_radius");
+	suite.enemy_multiplier = number_field(text, "enemy_multiplier");
 	suite.lead = number_field(text, "lead");
 	suite.seconds = number_field(text, "seconds");
 	suite.lines = (long)number_field(text, "lines");
@@ -631,6 +636,10 @@ static void next_run(void)
 		finish("skipped", "the recording could not be read");
 		return;
 	}
+	/* (a case's signed enemy multiplier, for the level about to load; the recording's route carries it too, and the
+	catalog is checked against it) */
+	if (suite.enemy_multiplier > 1.0)
+		coop_enemies_solo_override(suite.enemy_multiplier);
 	if (*suite.map || !benchmark_scenario_at_menu())
 		benchmark_scenario_load(suite.map, suite.difficulty);
 }
