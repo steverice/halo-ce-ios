@@ -1,5 +1,6 @@
 /* host_lan.h's table, TXT record and holds. */
 #include "host_lan.h"
+#include "../../linux/include/halo_network_version.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,7 +145,7 @@ int host_lan_txt_matches(const unsigned char *txt, int length, unsigned version,
 		}
 		position += entry;
 	}
-	return has_version && found_version == version && found_fork == fork;
+	return has_version && halo_network_version_joinable(version, (unsigned)found_version) && found_fork == fork;
 }
 
 void host_lan_hold_request(struct host_lan_hold *hold, int hosting, int searching, double now)

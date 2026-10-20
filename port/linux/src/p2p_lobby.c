@@ -60,6 +60,7 @@ of MAXIMUM_QUEUED; the rest is dropped (hosts publish again).
 #include "port_config.h"
 #include "p2p_internal.h"
 #include "halo_port_limits.h"
+#include "halo_network_version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -627,7 +628,7 @@ int p2p_join_stage(const struct p2p_join_facts *facts)
 		return P2P_JOIN_ENDED;
 	if (facts->watched == P2P_WATCH_NEW_INVITE)
 		return P2P_JOIN_NEW_INVITE;
-	if (facts->watched == P2P_WATCH_LISTED && facts->host_version != facts->version)
+	if (facts->watched == P2P_WATCH_LISTED && !halo_network_version_joinable((unsigned)facts->version, (unsigned)facts->host_version))
 		return P2P_JOIN_VERSION;
 	if (facts->answered)
 	{
@@ -856,7 +857,7 @@ static void update_browsing(void)
 		memmove(lobby.queue, lobby.queue + 1, sizeof(*lobby.queue) * (size_t)(--lobby.queue_count));
 		if (!listing_read(queued.payload, queued.size, &listing))
 			continue;
-		if (listing.version != HALO_PORT_NETWORK_VERSION)
+		if (!halo_network_version_joinable(HALO_PORT_NETWORK_VERSION, (unsigned)listing.version))
 		{
 			other_heard(&queued, &listing);
 			continue;

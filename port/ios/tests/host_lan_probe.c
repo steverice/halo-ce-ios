@@ -1,5 +1,6 @@
 #include "host_lan.h"
 #include "../../linux/include/halo_port_limits.h"
+#include "../../linux/include/halo_network_version.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -62,7 +63,22 @@ int main(void)
 		assert(length == expected_length + 1 && txt[0] == expected_length && !memcmp(txt + 1, expected, expected_length));
 	}
 	assert(host_lan_txt_matches(txt, length, HALO_PORT_NETWORK_VERSION, 0));
-	assert(!host_lan_txt_matches(txt, length, HALO_PORT_NETWORK_VERSION + 1, 0));
+	/* a record of an older version back to the oldest joinable one matches, a newer one or one before it does not */
+	assert(!host_lan_txt_matches(txt, length, HALO_PORT_NETWORK_VERSION - 1, 0));
+	{
+		unsigned older;
+
+		for (older = HALO_PORT_NETWORK_OLDEST_JOINABLE; older < HALO_PORT_NETWORK_VERSION; older++)
+		{
+			unsigned char old_txt[32];
+			int old_length = host_lan_txt_build(old_txt, sizeof(old_txt), older, 0);
+
+			assert(host_lan_txt_matches(old_txt, old_length, HALO_PORT_NETWORK_VERSION, 0));
+		}
+		length = host_lan_txt_build(txt, sizeof(txt), HALO_PORT_NETWORK_OLDEST_JOINABLE - 1, 0);
+		assert(!host_lan_txt_matches(txt, length, HALO_PORT_NETWORK_VERSION, 0));
+		length = host_lan_txt_build(txt, sizeof(txt), HALO_PORT_NETWORK_VERSION, 0);
+	}
 	assert(!host_lan_txt_matches(txt, length, HALO_PORT_NETWORK_VERSION, 0x48564953u));
 	length = host_lan_txt_build(txt, sizeof(txt), 0x8001, 0x48564953u);
 	assert(host_lan_txt_matches(txt, length, 0x8001, 0x48564953u));
