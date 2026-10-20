@@ -1,6 +1,7 @@
 /* Automatic benchmark delivery. Immutable outbox files and content-derived record IDs
    make a timed-out or offline attempt safe to retry without duplicate records. */
 #import <CloudKit/CloudKit.h>
+#import <CommonCrypto/CommonDigest.h>
 #include "ios_host.h"
 #include "host_benchmark.h"
 #import "host_benchmark_outbox.h"
@@ -22,15 +23,70 @@ static NSData *gzipped(NSData *data) {
     return out;
 }
 
-/* the report without its per-frame arrays, for the record's summary column */
-static NSString *summary_json(NSData *report) {
-    NSMutableDictionary *whole = [NSJSONSerialization JSONObjectWithData:report options:NSJSONReadingMutableContainers error:nil];
-    NSData *text;
+#define SUMMARY_MAXIMUM_BYTES (512 * 1024)
+static NSString *bounded_text(id value, NSUInteger maximum) {
+    if(![value isKindOfClass:NSString.class])return @"";
+    return [value length]>maximum ? [value substringToIndex:maximum] : value;
+}
 
-    for (NSMutableDictionary *run in whole[@"runs"]) [run removeObjectsForKeys:@[ @"frame_interval", @"frame_cpu", @"frame_gpu" ]];
-    if (whole) host_benchmark_shader_summarize(whole);
-    text = whole ? [NSJSONSerialization dataWithJSONObject:whole options:NSJSONWritingSortedKeys error:nil] : nil;
-    return text ? [[NSString alloc] initWithData:text encoding:NSUTF8StringEncoding] : @"";
+/* Searchable record fields share CloudKit's 1 MiB limit. The asset and outbox
+   retain every original byte; only this separate summary omits trace payloads. */
+static NSString *summary_json(NSData *report) {
+    id parsed=report ? [NSJSONSerialization JSONObjectWithData:report options:NSJSONReadingMutableContainers error:nil] : nil;
+    if(![parsed isKindOfClass:NSMutableDictionary.class] || ![parsed[@"runs"] isKindOfClass:NSArray.class])return @"";
+    NSMutableDictionary *whole=parsed;
+    NSMutableArray *runs=[whole[@"runs"] mutableCopy];
+    if([whole[@"shader_output_intervals"] isKindOfClass:NSArray.class])
+        for(id prior in whole[@"shader_output_intervals"])
+            if([prior isKindOfClass:NSDictionary.class] && [prior[@"runs"] isKindOfClass:NSArray.class])
+                [runs addObjectsFromArray:prior[@"runs"]];
+    for(id value in runs) {
+        if(![value isKindOfClass:NSMutableDictionary.class])return @"";
+        NSMutableDictionary *run=value;
+        [run removeObjectsForKeys:@[@"frame_interval",@"frame_cpu",@"frame_gpu"]];
+        id presentation=run[@"presentation"];
+        id trace=[presentation isKindOfClass:NSDictionary.class] ? presentation[@"trace"] : nil;
+        if(![trace isKindOfClass:NSMutableDictionary.class] || ![trace[@"data"] isKindOfClass:NSString.class])continue;
+        NSData *payload=[trace[@"data"] dataUsingEncoding:NSUTF8StringEncoding];
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        CC_SHA256(payload.bytes,(CC_LONG)payload.length,digest);
+        NSMutableString *hash=[NSMutableString stringWithCapacity:64];
+        for(size_t i=0;i<sizeof(digest);i++)[hash appendFormat:@"%02x",digest[i]];
+        trace[@"encoded_bytes"]=@(payload.length);
+        trace[@"encoded_sha256"]=hash;
+        trace[@"payload_location"]=@"report_asset";
+        trace[@"source_status"]=trace[@"status"] ?: @"unknown";
+        trace[@"status"]=@"omitted_from_searchable_summary";
+        [trace removeObjectForKey:@"data"];
+    }
+    host_benchmark_shader_summarize(whole);
+    NSData *text=[NSJSONSerialization dataWithJSONObject:whole options:NSJSONWritingSortedKeys error:nil];
+    if(text.length>SUMMARY_MAXIMUM_BYTES) {
+        NSMutableArray *statuses=[NSMutableArray array];
+        for(NSDictionary *run in whole[@"runs"]) {
+            if(statuses.count==64)break;
+            [statuses addObject:@{ @"index":[run[@"index"] isKindOfClass:NSNumber.class] ? run[@"index"] : @(statuses.count),
+                @"scene":bounded_text(run[@"scene"],48), @"status":bounded_text(run[@"status"],32) }];
+        }
+        /* Even malformed or unexpectedly large metadata cannot make another
+           oversized record. Identity also remains in CloudKit's own columns. */
+        NSArray *all_flags=[whole[@"flags"] isKindOfClass:NSArray.class] ? whole[@"flags"] : @[];
+        NSMutableArray *compact_flags=[NSMutableArray array];
+        for(id flag in all_flags) {
+            if(compact_flags.count==64)break;
+            if([flag isKindOfClass:NSString.class])[compact_flags addObject:bounded_text(flag,128)];
+        }
+        NSDictionary *compact=@{ @"summary_status":@"compact", @"code":bounded_text(whole[@"code"],32),
+            @"mode":bounded_text(whole[@"mode"],64), @"run_count":@([whole[@"runs"] count]),
+            @"runs":statuses, @"statuses_omitted":@([whole[@"runs"] count]-statuses.count),
+            @"flags":compact_flags, @"flags_omitted":@(all_flags.count-compact_flags.count),
+            @"completion":[all_flags containsObject:@"finished_early"] ? @"finished_early" : @"see_report_asset",
+            @"detail_asset_field":@"report", @"original_summary_bytes":@(text.length) };
+        text=[NSJSONSerialization dataWithJSONObject:compact options:NSJSONWritingSortedKeys error:nil];
+    }
+    if(!text || text.length>SUMMARY_MAXIMUM_BYTES)
+        return @"{\"detail_asset_field\":\"report\",\"summary_status\":\"serialization_failed\"}";
+    return [[NSString alloc] initWithData:text encoding:NSUTF8StringEncoding];
 }
 
 static BOOL wait_for(dispatch_semaphore_t done, CFAbsoluteTime deadline) {
