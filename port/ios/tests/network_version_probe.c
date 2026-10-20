@@ -26,6 +26,12 @@ int main(void)
 	assert(halo_network_stamp_in_window(1000, 550));
 	assert(!halo_network_stamp_in_window(1000, 1451) && !halo_network_stamp_in_window(1000, 549));
 	assert(!halo_network_stamp_in_window(0, 100000));
+	/* a datagram out of the window is refused until the latest is forgotten (the clock was set: it jumped
+	   600 ticks, as after a long stall), or its sender's stream moves the latest; a stream stamp is always taken */
+	assert(!halo_network_stamp_accepts(1000, 1600, 0));
+	assert(halo_network_stamp_accepts(-1, 1600, 0));
+	assert(halo_network_stamp_accepts(1000, 1600, 1));
+	assert(halo_network_stamp_accepts(1000, 1400, 0));
 	puts("PASS: version range, gates, stamp window");
 	return 0;
 }

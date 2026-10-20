@@ -633,6 +633,10 @@ stream (network_distributed_handle_stream_message) */
 static boolean distributed_handling_stream_message;
 /* a client: the host's latest tick it has had a message of */
 static long distributed_host_time = NONE;
+/* a client: the latest tick taken of the host's messages, for the stamp
+window (halo_network_version.h); NONE once this machine's clock is set, so a
+jump of the clock does not lock the host's datagrams out */
+static long distributed_stamp_latest = NONE;
 /* the host: each client's round trip, in ticks, and its jitter */
 static struct
 {
@@ -3378,6 +3382,7 @@ void network_distributed_new_game(
 	distributed_machines.in_tick = FALSE;
 	distributed_machines.valid = FALSE;
 	distributed_host_time = NONE;
+	distributed_stamp_latest = NONE;
 	distributed_statistics_due = FALSE;
 	distributed_pickup_count = 0;
 	/* (each player's latest input: player_queues_new.c) */
@@ -3933,6 +3938,19 @@ boolean distributed_machine_clock_fast(
 		distributed_client_clocks[machine_index].fast;
 }
 
+/* (game_time.c) this machine's clock was set to the host's or a saved
+tick: the stamp windows start over, as a clock that jumps is not a
+datagram out of the window */
+void network_distributed_clock_set(
+	void)
+{
+	long machine_index;
+
+	distributed_stamp_latest = NONE;
+	for (machine_index = 0; machine_index < HALO_PORT_MAXIMUM_NETWORK_MACHINES; machine_index++)
+		distributed_client_clocks[machine_index].window_tick = NONE;
+}
+
 /* whether the messages handled now came in a batch (the unreliable ones;
 one sent reliably comes on its own): a killing blow sent again reliably is
 not overtaken by the newer damage sent with the ticks since
@@ -4078,20 +4096,34 @@ void network_distributed_handle_message(
 		/* port: ... and a datagram stamped more than a stamp window from the
 		latest tick taken of the machine is dropped; over its stream any is
 		taken */
-		if (!distributed_handling_stream_message && distributed_client_clocks[machine_index].window_tick != NONE &&
-			!halo_network_stamp_in_window(distributed_client_clocks[machine_index].latest_tick, header.game_time))
+		if (!halo_network_stamp_accepts(distributed_client_clocks[machine_index].window_tick == NONE ? NONE :
+				distributed_client_clocks[machine_index].latest_tick, header.game_time,
+				distributed_handling_stream_message))
 		{
 			return;
+		}
+		/* ... and a stamp over its stream that is out of the window moves it */
+		if (distributed_handling_stream_message && distributed_client_clocks[machine_index].window_tick != NONE &&
+			!halo_network_stamp_in_window(distributed_client_clocks[machine_index].latest_tick, header.game_time))
+		{
+			distributed_client_clocks[machine_index].latest_tick = header.game_time;
 		}
 		break;
 	default:
 		if (game_connection() != _game_connection_network_client)
 			return;
 		/* port: the host's datagrams too (a batch came in one) */
-		if (distributed_host_time != NONE && network_connection_last_read_was_unreliable() &&
-			!halo_network_stamp_in_window(distributed_host_time, header.game_time))
+		if (!halo_network_stamp_accepts(distributed_stamp_latest, header.game_time,
+				!network_connection_last_read_was_unreliable()))
 		{
 			return;
+		}
+		/* (the host's latest tick taken, which its stream moves to when it is out of the window) */
+		if (distributed_stamp_latest == NONE || header.game_time > distributed_stamp_latest ||
+			(!network_connection_last_read_was_unreliable() &&
+				!halo_network_stamp_in_window(distributed_stamp_latest, header.game_time)))
+		{
+			distributed_stamp_latest = header.game_time;
 		}
 		/* (the host's latest tick, which this client's input messages tell
 		it back) */

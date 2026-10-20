@@ -166,6 +166,9 @@ void game_time_end(
 	return;
 }
 
+/* port: network_distributed.c's */
+void network_distributed_clock_set(void);
+
 void game_time_set_distributed(
 	long time)
 {
@@ -174,6 +177,8 @@ void game_time_set_distributed(
 	game_time_globals->local_time = time;
 	game_time_globals->server_time = time;
 	game_time_globals->leftover_dt = 0.f;
+	/* port: the distributed netcode's stamp windows start over */
+	network_distributed_clock_set();
 
 	return;
 }

@@ -49,4 +49,11 @@ static inline int halo_network_stamp_in_window(long latest, long tick)
 	return difference <= HALO_NETWORK_STAMP_WINDOW_TICKS && difference >= -HALO_NETWORK_STAMP_WINDOW_TICKS;
 }
 
+/* whether a message stamped tick is taken, given the latest tick taken from its
+sender (-1: none yet) and whether it came over the sender's stream */
+static inline int halo_network_stamp_accepts(long latest, long tick, int stream)
+{
+	return stream || latest == -1 || halo_network_stamp_in_window(latest, tick);
+}
+
 #endif

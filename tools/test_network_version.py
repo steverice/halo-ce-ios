@@ -42,7 +42,9 @@ def test_stream_only_messages_and_stamp_window_are_enforced():
                  "_distributed_message_hit_reports"):
         assert f"header.type == {kind}" in source
     assert "!distributed_handling_stream_message" in source
-    assert source.count("halo_network_stamp_in_window(") == 2
+    assert source.count("halo_network_stamp_accepts(") == 2
+    assert "void network_distributed_clock_set(" in source
+    assert "network_distributed_clock_set();" in read("source/game/game_time.c")
 
 
 def test_coop_friendly_fire_byte_is_byte_two_of_the_input_entry():
