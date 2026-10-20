@@ -3577,6 +3577,9 @@ static struct
 	/* a game being joined: its host, its name, since when, the controller
 	that asked; ready: its game reached (the A press posted) */
 	boolean joining, ready;
+	/* the game being joined came from Delta's list: a failure to reach it is not marked on its host's
+	identifier, which a listing of Delta's can name for any host */
+	boolean from_delta;
 	unsigned char identifier[6];
 	char name[P2P_LISTING_NAME_SIZE + 1];
 	unsigned long join_time;
@@ -3808,7 +3811,8 @@ static void lobby_browser_update(struct widget_instance *list)
 		}
 		else if (now - lobby_browser.join_time > LOBBY_BROWSER_JOIN_TIMEOUT)
 		{
-			p2p_lobby_mark_failed(lobby_browser.identifier);
+			if (!lobby_browser.from_delta)
+				p2p_lobby_mark_failed(lobby_browser.identifier);
 			csmemcpy(lobby_browser.failed_name, lobby_browser.name, sizeof(lobby_browser.failed_name));
 			lobby_browser.failed_time = now ? now : 1;
 			lobby_browser.joining = FALSE;
@@ -3917,6 +3921,7 @@ static boolean lobby_browser_join(struct p2p_listing const *game, short controll
 		return FALSE;
 	csmemcpy(lobby_browser.identifier, game->identifier, sizeof(lobby_browser.identifier));
 	csmemcpy(lobby_browser.name, game->name, sizeof(lobby_browser.name));
+	lobby_browser.from_delta = game->from_delta != 0;
 	lobby_browser.joining = TRUE;
 	lobby_browser.ready = FALSE;
 	lobby_browser.join_time = system_milliseconds();

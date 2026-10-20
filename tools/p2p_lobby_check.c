@@ -255,6 +255,12 @@ static void delta_checks(const char *own_invite)
 		announce.teams && announce.version == HALO_PORT_NETWORK_VERSION, "the game hosted is announced as it is");
 
 	memset(list, 0, sizeof(list));
+	/* (the same host listed twice, with another token: shown once) */
+	strcpy(list[3].invite, other);
+	strcpy(list[3].name, "Copy");
+	list[3].players = 99;
+	list[3].version = HALO_PORT_NETWORK_VERSION;
+	list[3].invite[63] = '2';
 	strcpy(list[0].invite, other);
 	strcpy(list[0].name, "Same version");
 	strcpy(list[0].map, "damnation");
@@ -272,7 +278,7 @@ static void delta_checks(const char *own_invite)
 	strcpy(list[2].name, "Mine");
 	list[2].version = HALO_PORT_NETWORK_VERSION;
 	pthread_mutex_lock(&p2p_lock);
-	p2p_lobby_delta_games(list, 3);
+	p2p_lobby_delta_games(list, 4);
 	pthread_mutex_unlock(&p2p_lock);
 	count = p2p_lobby_games(shown, 8);
 	/* (the one that can be joined, then the one that cannot be, though it has more players) */

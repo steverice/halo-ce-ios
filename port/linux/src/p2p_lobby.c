@@ -1130,6 +1130,14 @@ void p2p_lobby_delta_games(const struct delta_game *games, int count)
 		/* (this machine's own game, listed there: not shown to itself) */
 		if (!memcmp(hash, own, P2P_KEY_HASH_SIZE))
 			continue;
+		/* (a host once: the list could give one many times) */
+		p2p_identifier_from_hash(hash, shown->identifier);
+		for (digit = 0; digit < lobby.delta_count &&
+			memcmp(lobby.delta_games[digit].identifier, shown->identifier, P2P_IDENTIFIER_SIZE); digit++)
+		{
+		}
+		if (digit < lobby.delta_count)
+			continue;
 		snprintf(shown->invite, sizeof(shown->invite), "halo://join/%s", game->invite);
 		p2p_identifier_from_hash(hash, shown->identifier);
 		sanitize(shown->name, P2P_LISTING_NAME_SIZE, game->name, P2P_LISTING_NAME_SIZE);
