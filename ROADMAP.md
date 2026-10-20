@@ -62,7 +62,7 @@
 - [x] Split-screen co-op, LAN play, and internet play with a server browser, from OpenCE (`network.online`)
 - [x] `halo://join` invite links on every Apple platform
 - [x] A grace period that keeps a network game running while the app is in the background (`network.background_grace`)
-- [ ] LAN discovery over Bonjour
+- [ ] LAN discovery over Bonjour: advertise a Bonjour service and relay the game's UDP discovery broadcasts to the resolved peers, so iPhone, iPad and Apple TV find local games without the multicast networking entitlement
 - [ ] Sharing the host's invite from the app
 - [ ] Internet play on by default
 - [x] Custom Edition maps downloaded from a game's players, from OpenCE; off by default (`network.map_download`, DOWNLOAD MAPS in Settings > Network Setup)
