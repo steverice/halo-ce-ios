@@ -175,3 +175,34 @@ int main(void){
  return 0;
 }
 ''')
+
+
+def test_anisotropy_returns_to_the_setting_when_the_benchmark_clears_its_value(tmp_path):
+    compiler = shutil.which("clang") or shutil.which("cc")
+    assert compiler, "a C compiler is required"
+    source = (ROOT / "port/linux/src/d3d8_device.c").read_text()
+    fixture = r'''
+#include <assert.h>
+static long benchmark_anisotropy, knob_anisotropy;
+static long config_integer(const char *name){ (void)name; return 8; }
+''' + function(source, "static long anisotropy_in_force(") + r'''
+int main(void){
+ assert(anisotropy_in_force()==8);
+ benchmark_anisotropy=2;
+ assert(anisotropy_in_force()==2);
+ benchmark_anisotropy=0;
+ assert(anisotropy_in_force()==8);
+ knob_anisotropy=4;
+ assert(anisotropy_in_force()==4);
+ benchmark_anisotropy=1;
+ assert(anisotropy_in_force()==1);
+ return 0;
+}
+'''
+    source_file = tmp_path / "anisotropy.c"
+    source_file.write_text(fixture)
+    binary = tmp_path / "anisotropy"
+    compiled = subprocess.run([compiler, "-std=gnu11", "-O1", "-fsanitize=address,undefined", str(source_file), "-o",
+                               str(binary)], capture_output=True, text=True)
+    assert compiled.returncode == 0, compiled.stderr
+    assert subprocess.run([str(binary)], capture_output=True, text=True).returncode == 0

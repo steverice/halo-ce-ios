@@ -3737,6 +3737,20 @@ static uint8_t gpu_address(DWORD mode)
 	}
 }
 
+/* display.anisotropic_filtering as it stands: the benchmark's value while it has one, else debug.knob_cycle's, else
+the setting (read once) */
+static long anisotropy_in_force(void)
+{
+	static long setting = -1;
+
+	if (setting < 0)
+	{
+		setting = config_integer("display.anisotropic_filtering");
+		setting = setting < 1 ? 1 : setting > 16 ? 16 : setting;
+	}
+	return benchmark_anisotropy > 0 ? benchmark_anisotropy : knob_anisotropy > 0 ? knob_anisotropy : setting;
+}
+
 /* the sampler state of a stage; without mipmaps the mip filter is none */
 /* hires: a high-res HUD texture (hud_hires.h), drawn smaller than it is, so
 filtered and from its mip levels whatever the game asks: the HUD's meters are
@@ -3761,23 +3775,12 @@ static void sampler_state_fill(int stage, BOOL mipmapped, BOOL hires, struct gpu
 	Point-sampled and unmipmapped stages (the HUD, text, render targets)
 	stay as they are. */
 	{
-		static long anisotropy = -1;
+		long used = anisotropy_in_force();
 
-		if (anisotropy < 0)
+		if (used > 1 && sampler->min_filter == GPU_FILTER_LINEAR && sampler->mip_filter != GPU_FILTER_NONE)
 		{
-			anisotropy = config_integer("display.anisotropic_filtering");
-			anisotropy = anisotropy < 1 ? 1 : anisotropy > 16 ? 16 : anisotropy;
-		}
-		if (benchmark_anisotropy > 0)
-			anisotropy = benchmark_anisotropy;
-		{
-			long used = knob_anisotropy > 0 ? knob_anisotropy : anisotropy;
-
-			if (used > 1 && sampler->min_filter == GPU_FILTER_LINEAR && sampler->mip_filter != GPU_FILTER_NONE)
-			{
-				sampler->min_filter = GPU_FILTER_ANISOTROPIC;
-				sampler->max_anisotropy = (uint32_t)used;
-			}
+			sampler->min_filter = GPU_FILTER_ANISOTROPIC;
+			sampler->max_anisotropy = (uint32_t)used;
 		}
 	}
 	if (sampler->mip_filter != GPU_FILTER_NONE &&
