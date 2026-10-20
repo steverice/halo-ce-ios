@@ -57,6 +57,14 @@ void host_benchmark_frame_unshown(int why);
 void host_benchmark_compile(double seconds);
 /* 1 while a suite runs */
 int host_benchmark_running(void);
+/* debug.benchmark_offscreen (host_benchmark_offscreen.h): the guest's first clock read (xbox_kernel.c) asks, with
+   the setting and whether debug.benchmark_suite names a suite; 1 when the mode is honored, and the guest then
+   forces debug.fixed_timestep. Logged once either way. */
+int host_benchmark_offscreen_request(int setting, int suite_named);
+/* 1 when the mode was honored at launch */
+int host_benchmark_offscreen_requested(void);
+/* 1 while this frame is drawn offscreen: honored, and the suite running */
+int host_benchmark_offscreen_active(void);
 
 /* Tester entry screen. "full-unified" starts the signed baseline pass; legacy
    journal modes can resume. NULL chooses Play. */

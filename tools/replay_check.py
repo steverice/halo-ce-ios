@@ -11,6 +11,10 @@ at a controller.
    Each replay notes player 1's position every 300 ticks.
 3. Compares the two frame rates' routes in each pair (tools/benchmark_routes.py) and prints where they part.
 
+With --offscreen the second replay of each pair is the benchmark's offscreen mode (debug.benchmark_offscreen: one
+tick a frame, as fast as the Mac draws) in place of an unlimited frame rate, so the check says whether that mode
+replays as real time does.
+
 The expected result, if per-tick seeds are what makes a replay hold: without .seeds the two replays part, with
 .seeds they do not. Exit status 0 when the with-seeds pair agrees, 1 when it parts, 2 when a step failed.
 
@@ -65,7 +69,10 @@ def main():
     parser.add_argument("--bot", type=int, default=7, help="the scripted input's seed")
     parser.add_argument("--seconds", type=float, default=120.0, help="how long the bot plays")
     parser.add_argument("--take", type=Path, help="skip the recording: replay this take (its path without an extension)")
+    parser.add_argument("--offscreen", action="store_true",
+                        help="replay the second of each pair offscreen (debug.benchmark_offscreen), not unlimited")
     args = parser.parse_args()
+    rates = (RATES[0], "offscreen") if args.offscreen else RATES
     args.out.mkdir(parents=True, exist_ok=True)
 
     app = mac_run.native_app_default()
@@ -100,17 +107,18 @@ def main():
             for suffix in (".input", ".actions") + ((".seeds",) if with_seeds else ()):
                 shutil.copyfile(take.with_suffix(suffix), local / f"check{suffix}")
             (local / "check.route").write_text(route_text(take.with_suffix(".route"), "check"))
-            for rate in RATES:
+            for rate in rates:
                 out = args.out / f"{label}-{rate}"
-                runner(out, "--benchmark-suite", "quick:check", "--time-limit", str(int(args.seconds * 3 + 600)),
-                       "--set", f'display.frame_rate="{rate}"')
+                mode = (["--set", "debug.benchmark_offscreen=true"] if rate == "offscreen" else
+                        ["--set", f'display.frame_rate="{rate}"'])
+                runner(out, "--benchmark-suite", "quick:check", "--time-limit", str(int(args.seconds * 3 + 600)), *mode)
                 results[(label, rate)] = out / "benchmark" / "report.json"
     finally:
         shutil.rmtree(local, ignore_errors=True)
 
     verdicts = {}
     for label in ("without-seeds", "with-seeds"):
-        reports = [results[(label, rate)] for rate in RATES]
+        reports = [results[(label, rate)] for rate in rates]
         verdicts[label] = "failed"
         if not all(report.is_file() for report in reports):
             print(f"replay_check: {label}: a replay left no report ({', '.join(str(r) for r in reports if not r.is_file())})")
@@ -123,7 +131,7 @@ def main():
         ends = [points[-1][0] for _, _, points in replays]
         statuses = [status for _, status, _ in replays]
         verdicts[label] = "agree" if parted is None else "part"
-        print(f"replay_check: {label}: frame rates {' and '.join(RATES)}: {compared} points compared, worst "
+        print(f"replay_check: {label}: frame rates {' and '.join(rates)}: {compared} points compared, worst "
               f"{worst:.2f} world units, " + (f"PART at tick {parted:.0f}" if parted is not None else "agree")
               + f"; routes end at ticks {ends[0]:.0f} and {ends[1]:.0f}; runs ended {statuses[0]} and {statuses[1]}")
     return {"agree": 0, "part": 1, "failed": 2}[verdicts["with-seeds"]]

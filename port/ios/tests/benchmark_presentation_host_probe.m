@@ -73,7 +73,7 @@ static void *tests(void *unused) { (void)unused; @autoreleasepool {
     CHECK([rows[2][6] isEqual:@"invalid_gap"] && [rows[2][8] isEqual:NSNull.null]);
     CHECK([NSJSONSerialization isValidJSONObject:r]);
     NSDictionary *old=@{@"index":@0,@"frames_a_second":@60};
-    NSDictionary *fresh=host_benchmark_measurement_record(@{@"index":@1},r);
+    NSDictionary *fresh=host_benchmark_measurement_record(@{@"index":@1},r,0);
     NSArray *mixed=@[old,fresh ?: @{}];
     NSData *json=[NSJSONSerialization dataWithJSONObject:mixed options:0 error:NULL];
     NSArray *read=[NSJSONSerialization JSONObjectWithData:json options:0 error:NULL];
@@ -83,9 +83,10 @@ static void *tests(void *unused) { (void)unused; @autoreleasepool {
     CHECK([read[1][@"measurement_semantics"][@"simulation_cpu_ms"] isEqual:@"simulation_cpu_duration"]);
     CHECK([read[1][@"measurement_semantics"][@"render_cpu_ms"] isEqual:@"render_cpu_duration"]);
     CHECK([read[1][@"measurement_semantics"][@"ticks_per_frame"] isEqual:@"simulation_ticks_per_frame"]);
-    NSDictionary *recovered=host_benchmark_measurement_record(old,nil);
+    NSDictionary *recovered=host_benchmark_measurement_record(old,nil,1);
     CHECK([recovered[@"presentation"][@"status"] isEqual:@"unavailable_recovered_run"]);
     CHECK([recovered[@"measurement_semantics_version"] intValue]==1);
+    CHECK([read[1][@"timing_basis"] isEqual:@"submission_timing"] && [recovered[@"timing_basis"] isEqual:@"offscreen_uncapped"]);
     host_benchmark_presentation_configure(HOST_PRESENTATION_SIMULATOR,-1,-1);
     host_benchmark_presentation_begin(BENCHMARK_SCENE_MENU,8); host_benchmark_presentation_window();
     CHECK(token(1,0).generation==0);

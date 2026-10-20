@@ -70,6 +70,9 @@ void host_benchmark_graphics(const char *json);
 void host_benchmark_end(const char *status, const char *note);
 /* A fatal guest assertion seals the active run and writes a failed partial report immediately. */
 void host_benchmark_fault(const char *note);
+/* debug.benchmark_offscreen: the setting, and whether debug.benchmark_suite
+names a suite; 1 when the host honors it (host_benchmark.h) */
+int host_benchmark_offscreen_request(int setting, int suite_named);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 

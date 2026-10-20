@@ -805,6 +805,10 @@ on the same frame and tools/mac_run.py can compare their screenshots. */
 
 static unsigned long clock_frames;
 
+#ifdef HALO_IOS
+int host_benchmark_offscreen_request(int setting, int suite_named);
+#endif
+
 int platform_fixed_timestep(void)
 {
 	static int enabled = -1;
@@ -812,6 +816,13 @@ int platform_fixed_timestep(void)
 	if (enabled < 0)
 	{
 		enabled = config_boolean("debug.fixed_timestep");
+#ifdef HALO_IOS
+		/* debug.benchmark_offscreen: a suite drawn offscreen as fast as the
+		device goes, one tick a frame (port/ios/host/host_benchmark_offscreen.h) */
+		if (host_benchmark_offscreen_request(config_boolean("debug.benchmark_offscreen"),
+			config_string("debug.benchmark_suite")[0] != 0))
+			enabled = 1;
+#endif
 		if (enabled)
 			platform_log("debug.fixed_timestep: the clock advances 1/30 s per presented frame");
 	}

@@ -1041,6 +1041,11 @@ static const struct config_setting config_settings[] =
 		"scenes, several times over at different settings, with a report in\n"
 		"the data folder's benchmark folder (port/linux/src/benchmark_suite.c);\n"
 		"empty for none." },
+	{ "debug.benchmark_offscreen", _config_boolean, "false", "HALO_BENCHMARK_OFFSCREEN", _environment_set_is_true, _platform_ios,
+		"With debug.benchmark_suite set at launch: draw each frame of the suite\n"
+		"into a texture that is never shown, with no wait for the display, one\n"
+		"1/30 s tick a frame (debug.fixed_timestep), as fast as the device goes.\n"
+		"Ignored without a suite and on Vision Pro." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"

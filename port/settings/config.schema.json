@@ -1458,6 +1458,16 @@
             "apple"
           ]
         },
+        "benchmark_offscreen": {
+          "type": "boolean",
+          "default": false,
+          "description": "With debug.benchmark_suite set at launch: draw each frame of the suite into a texture that is never shown, with no wait for the display, one 1/30 s tick a frame (debug.fixed_timestep), as fast as the device goes. Ignored without a suite and on Vision Pro.",
+          "x-environment": "HALO_BENCHMARK_OFFSCREEN",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "network_test": {
           "type": "string",
           "default": "",

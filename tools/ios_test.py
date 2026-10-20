@@ -291,6 +291,10 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
     'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
 run(BUILD/'benchmark-probe')
+# debug.benchmark_offscreen's rules: honored only in a suite named at launch, never on the stereo path
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/benchmark_offscreen_probe.c', '-o', BUILD/'benchmark-offscreen-probe')
+run(BUILD/'benchmark-offscreen-probe')
 run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-fobjc-arc',
     '-framework', 'Foundation', '-Iport/ios/host', 'port/ios/tests/benchmark_outbox_probe.m',
     'port/ios/host/host_benchmark_outbox.m', '-o', BUILD/'benchmark-outbox-probe')

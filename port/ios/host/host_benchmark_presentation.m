@@ -1,4 +1,5 @@
 #import "host_benchmark_presentation.h"
+#include "host_benchmark_offscreen.h"
 #include "benchmark_presentation.h"
 #include <math.h>
 #include <pthread.h>
@@ -219,8 +220,10 @@ NSDictionary *host_benchmark_presentation_diagnostics(void) {
     pthread_mutex_unlock(&mutex);
     return result;
 }
-NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictionary *presentation) {
+NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictionary *presentation, int offscreen) {
     NSMutableDictionary *result = [record mutableCopy];
+    /* offscreen_uncapped: frames drawn as fast as the device goes, never shown (debug.benchmark_offscreen) */
+    result[@"timing_basis"] = @(host_benchmark_timing_basis(offscreen));
     result[@"measurement_semantics_version"] = presentation ? @2 : @1;
     result[@"measurement_semantics"] = @{ @"interval_ms": @"submission_timing", @"frame_interval": @"submission_timing", @"frames_a_second": @"submission_throughput",
         @"shown_refreshes": @"inferred_refresh_bins_from_submission_intervals", @"on_time_full": @"inferred_from_submission_intervals", @"on_time_half": @"inferred_from_submission_intervals",

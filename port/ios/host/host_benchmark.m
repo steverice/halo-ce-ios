@@ -21,6 +21,7 @@
 #include "host_benchmark_live.h"
 #import <QuartzCore/CAMediaTiming.h>
 #include "host_benchmark_page_policy.h"
+#include "host_benchmark_offscreen.h"
 #import "host_benchmark_presentation.h"
 #import "host_benchmark_snapshot.h"
 #import "host_data_updates.h"
@@ -317,6 +318,30 @@ static NSDictionary *graphics_metadata(void)
     return result;
 }
 
+static _Atomic int offscreen_decided = HOST_BENCHMARK_OFFSCREEN_OFF;
+
+int host_benchmark_offscreen_request(int setting, int suite_named) {
+    enum host_benchmark_offscreen decided = host_benchmark_offscreen_decide(setting, suite_named, TARGET_OS_VISION);
+
+    atomic_store(&offscreen_decided, decided);
+    if (decided == HOST_BENCHMARK_OFFSCREEN_ON)
+        host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen: the suite's frames are drawn offscreen, uncapped, "
+            "one tick each");
+    else if (decided == HOST_BENCHMARK_OFFSCREEN_NO_SUITE)
+        host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen ignored: no debug.benchmark_suite at launch");
+    else if (decided == HOST_BENCHMARK_OFFSCREEN_STEREO)
+        host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen ignored: Vision Pro runs in real time");
+    return decided == HOST_BENCHMARK_OFFSCREEN_ON;
+}
+
+int host_benchmark_offscreen_requested(void) {
+    return atomic_load(&offscreen_decided) == HOST_BENCHMARK_OFFSCREEN_ON;
+}
+
+int host_benchmark_offscreen_active(void) {
+    return host_benchmark_offscreen_frame(atomic_load(&offscreen_decided), atomic_load(&running));
+}
+
 void host_benchmark_frame_unshown(int why) {
     if (!atomic_load(&running)) return;
     atomic_fetch_add(why ? &frames_no_picture : &frames_no_drawable, 1);
@@ -585,7 +610,7 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
-    text = json_object(host_benchmark_measurement_record(record, presentation));
+    text = json_object(host_benchmark_measurement_record(record, presentation, host_benchmark_offscreen_requested()));
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -817,6 +842,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     }
     if (!pinned_snapshot) return 0;
     flags = [NSMutableArray array];
+    if (host_benchmark_offscreen_requested()) flag(@"benchmark_offscreen");
     started = NSDate.date;
     /* "quick:a10-crew,c40-bridge": only the scenes named after the colon */
     NSArray<NSString *> *only = strchr(mode, ':') ? [@(strchr(mode, ':') + 1) componentsSeparatedByString:@","] : nil;

@@ -4447,8 +4447,33 @@ static void gpu_metal_frame_start(void)
 
 	frame_pacer_gpu_time((double)(total - counted) / 1e9);
 	counted = total;
-	frame_pacer_frame_start();
+	/* (debug.benchmark_offscreen: nothing waits on the display) */
+	if (!host_benchmark_offscreen_active())
+		frame_pacer_frame_start();
 #endif
+}
+
+/* debug.benchmark_offscreen (host_benchmark_offscreen.h): the texture a frame
+is drawn into in place of the drawable it would have had, the same size and
+format, never shown */
+static id<MTLTexture> offscreen_target(void)
+{
+	static id<MTLTexture> target;
+	CGSize size = layer.drawableSize;
+	NSUInteger width = (NSUInteger)size.width, height = (NSUInteger)size.height;
+
+	if (!width || !height)
+		return nil;
+	if (!target || target.width != width || target.height != height || target.pixelFormat != layer.pixelFormat)
+	{
+		MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:layer.pixelFormat
+			width:width height:height mipmapped:NO];
+
+		descriptor.usage = MTLTextureUsageRenderTarget;
+		descriptor.storageMode = MTLStorageModePrivate;
+		target = [device newTextureWithDescriptor:descriptor];
+	}
+	return target;
 }
 
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
@@ -5524,6 +5549,10 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 	{
 		MetalTexture *record = texture_record(back_buffer);
 		id<CAMetalDrawable> drawable;
+		/* debug.benchmark_offscreen: the frame goes into target, with no
+		drawable, Present or display wait (host_benchmark_offscreen.h) */
+		BOOL offscreen = host_benchmark_offscreen_active();
+		id<MTLTexture> target = nil;
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
 		BOOL unsynced;
@@ -5591,9 +5620,16 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		waited = CACurrentMediaTime();
 		/* display.frame_rate's cap; its sleep counts as waiting, not as the
 		frame's CPU time */
-		host_frame_rate_limit();
+		if (!offscreen)
+			host_frame_rate_limit();
 		/* (unsynchronized, a frame with no drawable ready isn't shown) */
-		frame_pacer_frame_begin(&paced, frames, pacing.work_started, !frame_held && !unsynced);
+		frame_pacer_frame_begin(&paced, frames, pacing.work_started, !frame_held && !unsynced && !offscreen);
+		if (offscreen)
+		{
+			drawable = nil;
+			target = frame_held ? nil : offscreen_target();
+		}
+		else
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
 		if (system_frames.active)
 			drawable = frame_held ? nil : system_frame_take();
@@ -5603,7 +5639,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from
 		the compiles) */
-		if (frame_held)
+		if (frame_held && !offscreen)
 		{
 			CFTimeInterval period;
 
@@ -5617,12 +5653,14 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		there: they mustn't count against the next frame that is) */
 		if (unsynced && !drawable)
 			pacing_waited = 0.0;
+		if (drawable)
+			target = drawable.texture;
 		/* nil in the background (or held, or unsynchronized with none ready):
 		the frame still commits, so its slot is freed */
-		if (drawable && record && record->texture)
+		if (target && record && record->texture)
 		{
 			MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-			long window_width = (long)drawable.texture.width, window_height = (long)drawable.texture.height;
+			long window_width = (long)target.width, window_height = (long)target.height;
 			long width = window_width, height = window_width * (long)record->description.height / (long)record->description.width;
 			id<MTLRenderCommandEncoder> present;
 			id<MTLTexture> picture;
@@ -5649,7 +5687,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			unsigned observed_path = picture ? scene_upscale_path((long)source_picture.width, (long)source_picture.height,
 				width, height, picture != source_picture) : HOST_UPSCALER_UNKNOWN;
 			if (observed_path != HOST_UPSCALER_NONE) frame_upscale_paths |= observed_path;
-			pass.colorAttachments[0].texture = drawable.texture;
+			pass.colorAttachments[0].texture = target;
 			pass.colorAttachments[0].loadAction = MTLLoadActionClear;
 			pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 			pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
@@ -5676,47 +5714,52 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 
 				frame_log.width = (unsigned)picture.width;
 				frame_log.height = (unsigned)picture.height;
-				frame_context_wait();
+				if (!offscreen)
+					frame_context_wait();
 				hold = pacing_schedule(drawable, &next_frame_due);
-				gpu_metal_presentation_observe(drawable, CACurrentMediaTime(), frame_context.scene_class == 2,
-					presentation_transition);
+				/* (offscreen: nothing is shown, so nothing is paced or presented) */
+				if (!offscreen)
+				{
+					gpu_metal_presentation_observe(drawable, CACurrentMediaTime(), frame_context.scene_class == 2,
+						presentation_transition);
 
 #if HALO_FRAME_PACING
-				/* (display.frame_pacing's own holds are whole refreshes
-				already; otherwise the pacer says) */
-				if (hold == 0.0)
-					hold = frame_pacer_present(&paced);
-				if (frame_pacer_watches(&paced))
-				{
-#if TARGET_OS_SIMULATOR
-					/* the iOS and tvOS simulators' MTLDrawable has no presented
-					handler and no presentedTime: the pacer is told now, with no
-					time (it holds no slots there, host_frame_pacer.c) */
-					frame_pacer_presented(&paced, 0.0);
-#else
-					struct frame_pacer_frame shown_frame = paced;
-
-					[drawable addPresentedHandler:^(id<MTLDrawable> shown)
+					/* (display.frame_pacing's own holds are whole refreshes
+					already; otherwise the pacer says) */
+					if (hold == 0.0)
+						hold = frame_pacer_present(&paced);
+					if (frame_pacer_watches(&paced))
 					{
-						frame_pacer_presented(&shown_frame, shown.presentedTime);
-					}];
+#if TARGET_OS_SIMULATOR
+						/* the iOS and tvOS simulators' MTLDrawable has no presented
+						handler and no presentedTime: the pacer is told now, with no
+						time (it holds no slots there, host_frame_pacer.c) */
+						frame_pacer_presented(&paced, 0.0);
+#else
+						struct frame_pacer_frame shown_frame = paced;
+
+						[drawable addPresentedHandler:^(id<MTLDrawable> shown)
+						{
+							frame_pacer_presented(&shown_frame, shown.presentedTime);
+						}];
 #endif
-					paced.slot = 0;
-				}
+						paced.slot = 0;
+					}
 #endif
 #if TARGET_OS_SIMULATOR
-				(void)hold;
-				[commands presentDrawable:drawable];
-#else
-				if (hold > 0.0)
-					[commands presentDrawable:drawable afterMinimumDuration:hold];
-				else
+					(void)hold;
 					[commands presentDrawable:drawable];
+#else
+					if (hold > 0.0)
+						[commands presentDrawable:drawable afterMinimumDuration:hold];
+					else
+						[commands presentDrawable:drawable];
 #endif
+				}
 			}
 		}
 		else
-			host_benchmark_frame_unshown(drawable ? 1 : 0);
+			host_benchmark_frame_unshown(drawable || offscreen ? 1 : 0);
 		/* (a frame with nothing to show: its slot goes back now) */
 		frame_pacer_frame_dropped(&paced);
 		BOOL main_shown = drawable && record && record->texture && !frame_held;
