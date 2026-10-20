@@ -975,12 +975,17 @@ static Uint64 frame_interval_ns(void)
 #endif
 void platform_video_swap(void)
 {
+	Uint64 swap_start = SDL_GetTicks(), swap_time;
 #if !defined(HALO_ANDROID) && !defined(HALO_ILP32)
 	static Uint64 next_frame;
 	Uint64 interval, now;
 
 #endif
 	SDL_GL_SwapWindow(platform_window);
+	/* A stalled swap can freeze the game long enough to lose a network connection. */
+	swap_time = SDL_GetTicks() - swap_start;
+	if (swap_time >= 2000)
+		platform_log("display: showing a frame took %.1f s in the graphics driver", (double)swap_time / 1000.0);
 #if !defined(HALO_ANDROID) && !defined(HALO_ILP32)
 	interval = frame_interval_ns();
 	if (!interval)
