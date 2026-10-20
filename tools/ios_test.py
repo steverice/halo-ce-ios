@@ -251,6 +251,10 @@ run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     'port/ios/tests/benchmark_summary_probe.m', 'port/ios/host/host_benchmark_outbox.m',
     'port/ios/host/host_benchmark_snapshot.m', '-lz', '-o', BUILD/'benchmark-summary-probe')
 run(BUILD/'benchmark-summary-probe')
+# Bounded live telemetry preserves spikes and unknown async GPU values.
+run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '--include-directory=port/ios/host', 'port/ios/tests/benchmark_live_probe.c', '-o', BUILD/'benchmark-live-probe')
+run(BUILD/'benchmark-live-probe')
 # Actual drawable timestamps stay separate from submission timing.
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
     '--include-directory=port/runtime', 'port/ios/tests/benchmark_presentation_probe.c',

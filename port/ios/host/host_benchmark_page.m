@@ -12,6 +12,7 @@
 #include <Network/Network.h>
 #include "ios_host.h"
 #include "host_benchmark.h"
+#include "host_benchmark_live.h"
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
@@ -449,33 +450,123 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     return nil;
 }
 @end
+/* Raw render/submission intervals, never callback arrival or physical pacing.
+   UIKit reads and draws at four Hz; the render thread only fills a C ring. */
+@interface HaloBenchmarkGraphView : UIView {
+    struct benchmark_live_snapshot _snapshot;
+}
+- (void)updateSnapshot:(const struct benchmark_live_snapshot *)snapshot;
+@end
+@implementation HaloBenchmarkGraphView
+- (instancetype)initWithFrame:(CGRect)frame {
+    if((self=[super initWithFrame:frame])) {
+        self.backgroundColor=UIColor.clearColor;
+        self.userInteractionEnabled=NO;
+        self.isAccessibilityElement=YES;
+        self.accessibilityLabel=@"Render intervals in milliseconds";
+    }
+    return self;
+}
+- (void)updateSnapshot:(const struct benchmark_live_snapshot *)snapshot {
+    _snapshot=*snapshot;
+    self.accessibilityValue=snapshot->count ? [NSString stringWithFormat:@"%u most recent renders. Peak %.1f milliseconds. %u above the graph range.",snapshot->count,snapshot->peak_ms,snapshot->clipped] : @"Waiting for render timing";
+    [self setNeedsDisplay];
+}
+- (void)drawRect:(CGRect)rect {
+    (void)rect;
+    CGContextRef context=UIGraphicsGetCurrentContext();
+    if(!context)return;
+#if TARGET_OS_TV
+    CGFloat fontSize=13;
+#else
+    CGFloat fontSize=10;
+#endif
+    NSDictionary *text=@{NSFontAttributeName:[UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightRegular],NSForegroundColorAttributeName:UIColor.lightGrayColor};
+    [@"Render interval (ms)" drawAtPoint:CGPointMake(0,0) withAttributes:text];
+    CGRect plot=CGRectMake(1,14,MAX(1,self.bounds.size.width-33),MAX(1,self.bounds.size.height-28));
+    CGContextSetStrokeColorWithColor(context,[UIColor.whiteColor colorWithAlphaComponent:0.25].CGColor);
+    CGContextSetLineWidth(context,0.5);
+    for(unsigned i=1;i<=2;i++) {
+        double reference=i*1000.0/60.0;
+        CGFloat y=CGRectGetMaxY(plot)-reference/BENCHMARK_LIVE_GRAPH_MAX_MS*plot.size.height;
+        CGContextMoveToPoint(context,plot.origin.x,y); CGContextAddLineToPoint(context,CGRectGetMaxX(plot),y);
+        CGContextStrokePath(context);
+        [[NSString stringWithFormat:@"%.1f",reference] drawAtPoint:CGPointMake(CGRectGetMaxX(plot)+3,y-6) withAttributes:text];
+    }
+    CGContextSetStrokeColorWithColor(context,UIColor.systemGreenColor.CGColor);
+    CGContextSetLineWidth(context,1);
+    for(unsigned i=0;i<_snapshot.count;i++) {
+        CGFloat x=CGRectGetMaxX(plot)-(_snapshot.count-1-i)*plot.size.width/(BENCHMARK_LIVE_HISTORY-1);
+        CGFloat y=CGRectGetMaxY(plot)-fmin(_snapshot.interval_ms[i]/BENCHMARK_LIVE_GRAPH_MAX_MS,1)*plot.size.height;
+        if(!i)CGContextMoveToPoint(context,x,y); else CGContextAddLineToPoint(context,x,y);
+    }
+    CGContextStrokePath(context);
+    if(_snapshot.count==1) {
+        CGContextSetFillColorWithColor(context,UIColor.systemGreenColor.CGColor);
+        CGFloat y=CGRectGetMaxY(plot)-fmin(_snapshot.interval_ms[0]/BENCHMARK_LIVE_GRAPH_MAX_MS,1)*plot.size.height;
+        CGContextFillEllipseInRect(context,CGRectMake(CGRectGetMaxX(plot)-1,y-1,2,2));
+    }
+    CGContextSetFillColorWithColor(context,UIColor.systemRedColor.CGColor);
+    for(unsigned i=0;i<_snapshot.count;i++)if(_snapshot.interval_ms[i]>BENCHMARK_LIVE_GRAPH_MAX_MS) {
+        CGFloat x=CGRectGetMaxX(plot)-(_snapshot.count-1-i)*plot.size.width/(BENCHMARK_LIVE_HISTORY-1);
+        CGContextMoveToPoint(context,x,plot.origin.y); CGContextAddLineToPoint(context,x-2,plot.origin.y+4);
+        CGContextAddLineToPoint(context,x+2,plot.origin.y+4); CGContextClosePath(context);
+    }
+    CGContextFillPath(context);
+    NSString *peak=_snapshot.count ? [NSString stringWithFormat:@"Peak %.1f ms%@ · %u renders",_snapshot.peak_ms,_snapshot.clipped ? @" ↑" : @"",_snapshot.count] : @"Waiting for render timing";
+    [peak drawAtPoint:CGPointMake(0,self.bounds.size.height-12) withAttributes:text];
+}
+@end
 @interface HaloBenchmarkOverlayController : UIViewController
 @property(nonatomic,strong) UILabel *status;
+@property(nonatomic,strong) HaloBenchmarkGraphView *graph;
 @property(nonatomic,strong) NSTimer *timer;
 @end
 @implementation HaloBenchmarkOverlayController
 - (void)viewDidLoad {
     [super viewDidLoad]; self.view.backgroundColor=UIColor.clearColor;
-    UIStackView *panel=[UIStackView new]; panel.axis=UILayoutConstraintAxisVertical; panel.spacing=4;
+    UIStackView *panel=[UIStackView new]; panel.axis=UILayoutConstraintAxisVertical; panel.spacing=6;
     panel.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.78]; panel.layer.cornerRadius=10;
-    panel.layoutMargins=UIEdgeInsetsMake(10,14,10,14); panel.layoutMarginsRelativeArrangement=YES;
+    panel.layoutMargins=UIEdgeInsetsMake(10,12,10,12); panel.layoutMarginsRelativeArrangement=YES;
     panel.translatesAutoresizingMaskIntoConstraints=NO;
     self.status=[UILabel new]; self.status.textColor=UIColor.whiteColor; self.status.numberOfLines=0;
-    self.status.font=[UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
-    self.status.text=@"Benchmarking…\nRender FPS: —";
+#if TARGET_OS_TV
+    CGFloat width=360, font=18, graphHeight=84;
+#else
+    CGFloat width=280, font=12, graphHeight=68;
+#endif
+    self.status.font=[UIFont monospacedDigitSystemFontOfSize:font weight:UIFontWeightMedium];
+    self.status.text=@"Benchmarking…\nRender FPS: —\nCPU work avg: — ms\nGPU busy avg: — ms";
+    self.status.accessibilityHint=@"Work averages use up to 60 renders. GPU time is completed busy work per render, not latency. CPU and GPU overlap.";
     UIButton *finish=[UIButton buttonWithType:UIButtonTypeSystem];
     [finish setTitle:@"Finish" forState:UIControlStateNormal];
     [finish.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
+    [finish.widthAnchor constraintGreaterThanOrEqualToConstant:60].active=YES;
     [finish addTarget:self action:@selector(finish:) forControlEvents:UIControlEventPrimaryActionTriggered];
-    [panel addArrangedSubview:self.status]; [panel addArrangedSubview:finish]; [self.view addSubview:panel];
-    [NSLayoutConstraint activateConstraints:@[
+    UIStackView *row=[[UIStackView alloc] initWithArrangedSubviews:@[self.status,finish]];
+    row.axis=UILayoutConstraintAxisHorizontal; row.alignment=UIStackViewAlignmentCenter; row.spacing=8;
+    [finish setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+    [self.status setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    self.graph=[HaloBenchmarkGraphView new];
+    [self.graph.heightAnchor constraintEqualToConstant:graphHeight].active=YES;
+    [panel addArrangedSubview:row]; [panel addArrangedSubview:self.graph]; [self.view addSubview:panel];
+    NSLayoutConstraint *preferred=[panel.widthAnchor constraintEqualToConstant:width]; preferred.priority=UILayoutPriorityDefaultHigh;
+    [NSLayoutConstraint activateConstraints:@[preferred,
+        [panel.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-24],
         [panel.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-12],
         [panel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-12]]];
     __weak HaloBenchmarkOverlayController *weak=self;
     self.timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
-        (void)timer; double fps=0; host_benchmark_live(&fps);
-        weak.status.text=host_benchmark_finish_requested() ? @"Finishing…" : fps>0 ?
-            [NSString stringWithFormat:@"Benchmarking…\nRender FPS: %.0f",fps] : @"Benchmarking…\nRender FPS: —";
+        HaloBenchmarkOverlayController *controller=weak;
+        if(!controller) { [timer invalidate]; return; }
+        struct benchmark_live_snapshot snapshot; host_benchmark_live(&snapshot);
+        NSString *fps=snapshot.count ? [NSString stringWithFormat:@"%.0f",snapshot.fps] : @"—";
+        NSString *cpu=snapshot.cpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.cpu_ms] : @"—";
+        NSString *gpu=snapshot.gpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.gpu_ms] : @"—";
+        controller.status.text=host_benchmark_finish_requested() ? @"Finishing…" :
+            [NSString stringWithFormat:@"Benchmarking…\nRender FPS: %@\nCPU work avg: %@ ms\nGPU busy avg: %@ ms",fps,cpu,gpu];
+        controller.graph.hidden=host_benchmark_finish_requested();
+        [controller.graph updateSnapshot:&snapshot];
     }];
 }
 - (void)finish:(UIButton *)button { button.enabled=NO; host_benchmark_request_finish(); }

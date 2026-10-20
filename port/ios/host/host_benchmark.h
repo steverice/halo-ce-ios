@@ -56,7 +56,11 @@ void host_benchmark_menu_status(const char *message);
 /* The UI only sets a latch; the guest owns partial sealing and replay/match teardown. */
 void host_benchmark_request_finish(void);
 int host_benchmark_finish_requested(void);
-void host_benchmark_live(double *frames_per_second);
+struct benchmark_live_snapshot;
+/* Host-only, bounded submission telemetry; CPU work and completed GPU busy
+   increments overlap and must not be added as a frame budget. */
+void host_benchmark_live(struct benchmark_live_snapshot *snapshot);
+void host_benchmark_live_reset(void);
 void host_benchmark_overlay_show(int visible);
 
 

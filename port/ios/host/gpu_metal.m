@@ -4026,6 +4026,7 @@ static void gpu_metal_frame_context(uint32_t scene_class, uint32_t frame_rate, c
 	if (scene_class == frame_context.scene_class && frame_rate == frame_context.rate &&
 		!strncmp(frame_context.level, level ? level : "", sizeof(frame_context.level) - 1))
 		return;
+	host_benchmark_live_reset();
 	os_unfair_lock_lock(&pacing_lock);
 	period = refresh_period;
 	os_unfair_lock_unlock(&pacing_lock);

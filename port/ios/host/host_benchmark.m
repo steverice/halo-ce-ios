@@ -12,6 +12,8 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_benchmark.h"
+#include "host_benchmark_live.h"
+#import <QuartzCore/CAMediaTiming.h>
 #include "host_benchmark_page_policy.h"
 #import "host_benchmark_presentation.h"
 #import "host_benchmark_snapshot.h"
@@ -53,12 +55,18 @@ static double refresh_hertz;
 static double screen_hertz;
 
 static _Atomic int running, finish_requested;
-static double live_interval, live_sample_time;
+static struct benchmark_live live;
 void host_benchmark_request_finish(void) { atomic_store(&finish_requested,1); }
 int host_benchmark_finish_requested(void) { return atomic_load(&finish_requested); }
-void host_benchmark_live(double *fps) {
+void host_benchmark_live_reset(void) {
     os_unfair_lock_lock(&lock);
-    *fps=live_interval>0 && CFAbsoluteTimeGetCurrent()-live_sample_time<1.5 ? 1.0/live_interval : 0;
+    benchmark_live_reset(&live);
+    os_unfair_lock_unlock(&lock);
+}
+void host_benchmark_live(struct benchmark_live_snapshot *snapshot) {
+    os_unfair_lock_lock(&lock);
+    if(atomic_load(&running))benchmark_live_read(&live,CACurrentMediaTime(),snapshot);
+    else memset(snapshot,0,sizeof(*snapshot));
     os_unfair_lock_unlock(&lock);
 }
 
@@ -278,10 +286,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
     os_unfair_lock_lock(&lock);
-    if(isfinite(interval) && interval>0) {
-        live_interval=live_interval>0 ? live_interval*0.8+interval*0.2 : interval;
-        live_sample_time=CFAbsoluteTimeGetCurrent();
-    }
+    benchmark_live_add(&live,CACurrentMediaTime(),interval,cpu,gpu);
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
@@ -785,7 +790,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     atomic_store(&marker, benchmark_journal_marker_open(JOURNAL));
     atomic_store(&fault_seen, 0);
     atomic_store(&finish_requested,0);
-    live_interval=live_sample_time=0;
+    host_benchmark_live_reset();
     atomic_store(&running, 1);
     if(plan.mode==BENCHMARK_UNIFIED)host_benchmark_overlay_show(1);
     sampler_start();
@@ -966,6 +971,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
+    benchmark_live_reset(&live);
     /* <= 2 GiB devices retain a 4 MiB collector; others allow 16 MiB. */
     host_benchmark_presentation_begin(scene->kind,
         NSProcessInfo.processInfo.physicalMemory <= (2ULL << 30) ? 65536 : 262144);
@@ -992,6 +998,7 @@ int host_benchmark_next(char *text, unsigned int size) {
 void host_benchmark_window(int open, int width, int height) {
     os_unfair_lock_lock(&lock);
     host_benchmark_presentation_window();
+    if(window_open!=open)benchmark_live_reset(&live);
     window_open = open;
     if (open) {
         window_width = width;
@@ -1012,6 +1019,7 @@ void host_benchmark_end(const char *status_name, const char *note) {
         if (!strcmp(status_name, benchmark_status_name((enum benchmark_status)status))) outcome.status = (enum benchmark_status)status;
     os_unfair_lock_lock(&lock);
     window_open = 0;
+    benchmark_live_reset(&live);
     /* Admission closes on this thread before it can return to rendering.
        The worker never needs the legacy metrics lock. */
     host_benchmark_presentation_end_async();
@@ -1075,6 +1083,7 @@ void host_benchmark_fault(const char *note) {
     if (!run_open) return;
     os_unfair_lock_lock(&lock);
     window_open = 0;
+    benchmark_live_reset(&live);
     os_unfair_lock_unlock(&lock);
     /* A normal end may already have dispatched its presentation worker. Do
        not finalize the same collector concurrently; use its report if ready. */
