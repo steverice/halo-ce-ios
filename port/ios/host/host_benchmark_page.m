@@ -529,14 +529,14 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     panel.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.78]; panel.layer.cornerRadius=10;
     panel.layoutMargins=UIEdgeInsetsMake(10,12,10,12); panel.layoutMarginsRelativeArrangement=YES;
     panel.translatesAutoresizingMaskIntoConstraints=NO;
-    self.status=[UILabel new]; self.status.textColor=UIColor.whiteColor; self.status.numberOfLines=0;
+    self.status=[UILabel new]; self.status.textColor=UIColor.whiteColor; self.status.numberOfLines=2;
 #if TARGET_OS_TV
-    CGFloat width=360, font=18, graphHeight=84;
+    CGFloat width=480, font=18, graphHeight=128;
 #else
-    CGFloat width=280, font=12, graphHeight=68;
+    CGFloat width=360, font=12, graphHeight=100;
 #endif
     self.status.font=[UIFont monospacedDigitSystemFontOfSize:font weight:UIFontWeightMedium];
-    self.status.text=@"Benchmarking…\nRender FPS: —\nCPU work avg: — ms\nGPU busy avg: — ms";
+    self.status.text=@"Benchmarking…\nFPS: — CPU: —ms GPU: —ms";
     self.status.accessibilityHint=@"Work averages use up to 60 renders. GPU time is completed busy work per render, not latency. CPU and GPU overlap.";
     UIButton *finish=[UIButton buttonWithType:UIButtonTypeSystem];
     [finish setTitle:@"Finish" forState:UIControlStateNormal];
@@ -564,7 +564,7 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         NSString *cpu=snapshot.cpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.cpu_ms] : @"—";
         NSString *gpu=snapshot.gpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.gpu_ms] : @"—";
         controller.status.text=host_benchmark_finish_requested() ? @"Finishing…" :
-            [NSString stringWithFormat:@"Benchmarking…\nRender FPS: %@\nCPU work avg: %@ ms\nGPU busy avg: %@ ms",fps,cpu,gpu];
+            [NSString stringWithFormat:@"Benchmarking…\nFPS: %@ CPU: %@ms GPU: %@ms",fps,cpu,gpu];
         controller.graph.hidden=host_benchmark_finish_requested();
         [controller.graph updateSnapshot:&snapshot];
     }];
