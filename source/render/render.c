@@ -553,6 +553,15 @@ static void render_player_frame_stereo(
 	Compositor. Both cameras, so culling and the HUD's projections match */
 	halo_stereo_head_orient(&camera->forward.i, &camera->up.i);
 	halo_stereo_head_orient(&window->rasterizer_camera.forward.i, &window->rasterizer_camera.up.i);
+	{
+		/* port: controller aim (port/linux/game/controller_aim_game.c): the
+		drawing sample's barrel and sightline, once a frame, after the head's
+		turn (its body yaw is the eye cameras' less the head's) and before
+		the eyes, for the reticle, the gun and the drawn projectiles */
+		extern void halo_controller_draw_update(short local_player_index, const float camera_position[3]);
+
+		halo_controller_draw_update(window->local_player_index, &camera->position.x);
+	}
 	/* (after the head's turn, which sets where a seat's reticle points) */
 	zoomed = halo_stereo_zoom_begin(player_control_get_zoom_level(window->local_player_index) != NONE);
 	/* the eyes (passes 0 and 1), or while zoomed the zoomed pass alone (2) */
@@ -586,6 +595,16 @@ static void render_player_frame_stereo(
 		zoom_bounds.y1 = view[1] / magnification / field_of_view_tangent;
 		zoom_bounds.y0 = -zoom_bounds.y1;
 		render_camera_build_frustum(&zoom_camera, &zoom_bounds, &zoom_frustum, TRUE);
+		{
+			/* port: controller aim (controller_aim_game.c): the zoomed
+			camera, zoomed or not, for the zoom's gate on the hand's aim
+			and the zoomed reticle */
+			extern void halo_controller_zoom_view(const float forward[3], const float up[3], float tangent_across,
+				float tangent_up, float magnification);
+
+			halo_controller_zoom_view(&zoom_camera.forward.i, &zoom_camera.up.i, view[0] / magnification,
+				view[1] / magnification, magnification);
+		}
 	}
 	/* the screen's eyes (the 3D film's, SCREEN gameplay's) take their
 	frusta from the camera's field of view (stereo.c); nothing otherwise */
@@ -769,6 +788,16 @@ static void render_player_frame_stereo(
 			has_mirror = TRUE;
 		}
 
+		/* port: controller aim's side-by-side marker (debug.test_controller):
+		debug lines added now land in the pass's window below, which draws
+		them after the world and before the HUD pass (added after the
+		mirror's window, so a mirror doesn't draw them); in the zoomed pass
+		too, where it shows at the zoomed projection */
+		{
+			extern void halo_controller_debug_marker(void);
+
+			halo_controller_debug_marker();
+		}
 		render_stereo_visibility_camera = eye < 2 ? &cull_camera : NULL;
 		render_stereo_screen_flash = &screen_flash;
 		/* port: the eye's position, for what sits at infinity in each eye

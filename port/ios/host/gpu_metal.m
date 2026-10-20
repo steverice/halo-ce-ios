@@ -5950,8 +5950,12 @@ static uint32_t gpu_metal_present_stereo(const struct gpu_stereo_present *presen
 				use_texture(zoom);
 			commit(YES);
 			stereo_pacing_count();
+			struct host_stereo_hud_aim aim = { present->reticle_world != 0, present->reticle_distance,
+				present->reticle_dim != 0, present->laser != 0,
+				{ present->laser_from[0], present->laser_from[1], present->laser_from[2] }, present->laser_opacity,
+				zoom != nil };
 			host_stereo_present(queue, color[0]->texture, color[1]->texture, depth[0]->texture, depth[1]->texture,
-				hud_layers, present->hud_group_extent, present->hud_aspect, present->hud_ui, present->reticle,
+				hud_layers, present->hud_group_extent, present->hud_aspect, present->hud_ui, present->reticle, &aim,
 				present->hud_tangents, zoom ? zoom->texture : nil, present->zoom_tangents, present->near_meters,
 				present->far_meters, stereo_cut_brightness(HOST_STEREO_VIEW_FULL, present->cut_covered ||
 				present->expanding, present->cut_requested),

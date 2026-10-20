@@ -68,6 +68,7 @@ brings bars in for titles (cinematics.c), following the held film.
 #include "../src/halo_stereo.h"
 #include "../src/halo_stereo_window.h"
 #include "../src/halo_stereo_cutscene.h"
+#include "../src/halo_spatial.h"
 
 /* port/linux/src/port_config.c */
 const char *config_string(const char *name);
@@ -196,6 +197,8 @@ before the next */
 over the head-tracked frames (head_yaw_now), and the part of them the look has
 taken (head_yaw_taken, halo_stereo_head_look) */
 static float head_yaw_now, head_yaw_taken;
+static float eye_yaw, eye_raise;
+static float eye_forward[3] = { 1.0f, 0.0f, 0.0f }, eye_up[3] = { 0.0f, 0.0f, 1.0f };
 /* a seat's yaw limit (halo_stereo_seat_yaw_clamp): the head's yaw the look
 handed the game on this call of player_control_update (once a frame), which
 the seat's clamp consumes. And the yaw the eye cameras show that the look
@@ -1396,11 +1399,14 @@ void halo_stereo_frame_begin(void)
 	seat_look_fade_update(head_look_frame, time_delta);
 	/* display.eye_height_offset: the full view's eyes raised along the
 	camera's up (the film and SCREEN gameplay keep theirs) */
+	eye_raise = 0.0f;
 	if (stereo_frame.eye_count == 2 && !film && !screen &&
 		(stereo_frame.mode == HALO_STEREO_HEAD || stereo_frame.mode == HALO_STEREO_SIDE_BY_SIDE)) {
 		stereo_frame.eyes[0].offset[1] += eye_height_offset_setting;
 		stereo_frame.eyes[1].offset[1] += eye_height_offset_setting;
+		eye_raise = eye_height_offset_setting;
 	}
+	halo_controller_sample_draw();
 	/* without eyes (the space closed, a load) the next zoom logs again, and
 	no menu holds the zoomed pass back */
 	if (stereo_frame.eye_count != 2) {
@@ -2177,7 +2183,7 @@ static void cutscene_orient(float forward[3], float up[3])
 	reticle_set(NULL, NULL, NULL);
 }
 
-void halo_stereo_head_orient(float forward[3], float up[3])
+static void head_orient(float forward[3], float up[3])
 {
 	float yaw, pitch, camera_yaw;
 	float aim[3] = { forward[0], forward[1], forward[2] };
@@ -2256,6 +2262,31 @@ void halo_stereo_head_orient(float forward[3], float up[3])
 		reticle_set(aim, forward, up);
 	} else
 		reticle_set(NULL, NULL, NULL);
+}
+
+void halo_stereo_head_orient(float forward[3], float up[3])
+{
+	float along;
+	int axis;
+
+	head_orient(forward, up);
+	eye_yaw = atan2f(forward[1], forward[0]);
+	along = up[0] * forward[0] + up[1] * forward[1] + up[2] * forward[2];
+	for (axis = 0; axis < 3; axis++)
+	{
+		eye_forward[axis] = forward[axis];
+		eye_up[axis] = up[axis] - along * forward[axis];
+	}
+	normalize(eye_forward);
+	normalize(eye_up);
+}
+
+float halo_stereo_eye_yaw(void) { return eye_yaw; }
+float halo_stereo_eye_raise(void) { return eye_raise; }
+void halo_stereo_eye_frame(float forward[3], float up[3])
+{
+	memcpy(forward, eye_forward, sizeof(eye_forward));
+	memcpy(up, eye_up, sizeof(eye_up));
 }
 
 void halo_stereo_zoom_orient(float forward[3], float up[3])

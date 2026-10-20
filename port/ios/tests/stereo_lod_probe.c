@@ -222,6 +222,7 @@ double halo_frame_trace_milliseconds(void) { return 0.0; }
 void halo_screen_commit_stereo_scale(void) {}
 /* main.c: one player window (split screen keeps the mono path) */
 short main_get_window_count(void) { return 1; }
+void halo_controller_sample_draw(void) {}
 
 #include "../../linux/game/stereo.c"
 #define STEREO_LOD_PROBE

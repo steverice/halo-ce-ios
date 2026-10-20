@@ -79,6 +79,7 @@ included, by the same dim; a menu's UI quad stays as it is */
 void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLTexture> right,
 	id<MTLTexture> left_depth, id<MTLTexture> right_depth, __unsafe_unretained id<MTLTexture> const *hud_layers,
 	const float (*hud_group_extent)[4], float hud_aspect, int hud_ui, const float reticle[3],
+	const struct host_stereo_hud_aim *aim,
 	const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
 	float far_meters, float brightness, float vignette, float ui_dim, int expanding, float expansion,
 	float expansion_bars, const float fade[4], int cutscene, const float cutscene_forward[3],

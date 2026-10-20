@@ -502,6 +502,15 @@ if latch_calls != [ROOT / 'source/main/main.c'] or not re.search(
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host', '-Iport/linux/src',
     'port/ios/tests/stereo_hud_probe.c', 'port/ios/host/host_stereo_hud.c', '-o', BUILD/'stereo-hud-probe')
 run(BUILD/'stereo-hud-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/tracked_hud_probe.c', 'port/ios/host/host_stereo_hud.c', '-o', BUILD/'tracked-hud-probe')
+run(BUILD/'tracked-hud-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/first_person_arms_probe.c', '-lm', '-o', BUILD/'first-person-arms-probe')
+run(BUILD/'first-person-arms-probe')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/projectile_offset_probe.c', '-lm', '-o', BUILD/'projectile-offset-probe')
+run(BUILD/'projectile-offset-probe')
 # the HUD split by the function that draws each element: nested spans, the catch-all, the corner
 # fallback and each frame's reset (the probe includes port/linux/game/hud_group.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',

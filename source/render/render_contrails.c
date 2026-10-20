@@ -74,7 +74,8 @@ static void render_contrails(
 static void render_contrail(
 	struct contrail_datum *contrail,
 	struct contrail_definition *definition,
-	short instance_index);
+	short instance_index,
+	long contrail_index);
 
 real contrail_fade(
 	struct contrail_definition *definition,
@@ -115,10 +116,36 @@ real contrail_fade(
 	return result;
 }
 
+/* port: controller aim: a contrail point as drawn. The local player's own
+projectile's contrail bends from the drawn gun's muzzle onto the eye's line:
+each point is offset by what the projectile was when it passed it, matched
+by the projectile while it lives and by the contrail's own index after
+(port/linux/game/projectile_offset.c). A local copy; the point never changes */
+static void contrail_point_drawn(
+	struct contrail_datum const *contrail,
+	long contrail_index,
+	real_point3d const *point,
+	real_point3d *drawn)
+{
+	int halo_projectile_point_offset(long, long, long, const float *, float *);
+	float offset[3];
+
+	*drawn = *point;
+	if (halo_projectile_point_offset(contrail->object_index, contrail_index, NONE, &point->x, offset))
+	{
+		drawn->x += offset[0];
+		drawn->y += offset[1];
+		drawn->z += offset[2];
+	}
+
+	return;
+}
+
 static void render_contrail(
 	struct contrail_datum *contrail,
 	struct contrail_definition *definition,
-	short instance_index)
+	short instance_index,
+	long contrail_index)
 {
 	struct bitmap_data *bitmap;
 	short segment_count;
@@ -151,6 +178,7 @@ static void render_contrail(
 			real texture_v_far;
 			real_point3d average_position;
 			struct contrail_point_datum *previous_point;
+			real_point3d previous_position = *global_origin3d;
 			real texture_u;
 			long point_index;
 
@@ -180,6 +208,9 @@ static void render_contrail(
 			while (point_index != NONE)
 			{
 				struct contrail_point_datum *point;
+				/* port: the point as drawn (contrail_point_drawn) */
+				real_point3d position;
+				real_point3d next_position;
 				struct contrail_point_state *state;
 				real color_scale;
 				real width;
@@ -189,6 +220,7 @@ static void render_contrail(
 				real_vector3d facing_normal;
 
 				point = datum_get(contrail_point_data, point_index);
+				contrail_point_drawn(contrail, contrail_index, &point->position, &position);
 				state = TAG_BLOCK_GET_ELEMENT(
 					&definition->states,
 					point->state_index,
@@ -266,32 +298,33 @@ static void render_contrail(
 				vertices[0].texture.y = texture_v_far;
 				vertices[1].texture.x = texture_u;
 				vertices[1].texture.y = texture_offset_v;
-				average_position.x += point->position.x;
-				average_position.y += point->position.y;
-				average_position.z += point->position.z;
+				average_position.x += position.x;
+				average_position.y += position.y;
+				average_position.z += position.z;
 
 				switch (definition->render_type)
 				{
 				case _contrail_render_type_vertical:
-					vertices[0].point.x = point->position.x;
-					vertices[0].point.y = point->position.y;
-					vertices[0].point.z = point->position.z - half_width;
-					vertices[1].point.x = point->position.x;
-					vertices[1].point.y = point->position.y;
-					vertices[1].point.z = point->position.z + half_width;
+					vertices[0].point.x = position.x;
+					vertices[0].point.y = position.y;
+					vertices[0].point.z = position.z - half_width;
+					vertices[1].point.x = position.x;
+					vertices[1].point.y = position.y;
+					vertices[1].point.z = position.z + half_width;
 					if (apply_orientation)
 					{
 						struct contrail_point_datum *next_point;
 						if (previous_point)
 						{
-							orientation.i = previous_point->position.y - point->position.y;
-							orientation.j = point->position.x - previous_point->position.x;
+							orientation.i = previous_position.y - position.y;
+							orientation.j = position.x - previous_position.x;
 						}
 						else
 						{
 							next_point = datum_get(contrail_point_data, point->next_contrail_point_index);
-							orientation.i = point->position.y - next_point->position.y;
-							orientation.j = next_point->position.x - point->position.x;
+							contrail_point_drawn(contrail, contrail_index, &next_point->position, &next_position);
+							orientation.i = position.y - next_position.y;
+							orientation.j = next_position.x - position.x;
 						}
 						orientation.k = 0.f;
 						normalize3d(&orientation);
@@ -305,22 +338,23 @@ static void render_contrail(
 					struct contrail_point_datum *next_point;
 					if (previous_point)
 					{
-						perpendicular.i = previous_point->position.y - point->position.y;
-						perpendicular.j = point->position.x - previous_point->position.x;
+						perpendicular.i = previous_position.y - position.y;
+						perpendicular.j = position.x - previous_position.x;
 					}
 					else
 					{
 						next_point = datum_get(contrail_point_data, point->next_contrail_point_index);
-						perpendicular.i = point->position.y - next_point->position.y;
-						perpendicular.j = next_point->position.x - point->position.x;
+						contrail_point_drawn(contrail, contrail_index, &next_point->position, &next_position);
+						perpendicular.i = position.y - next_position.y;
+						perpendicular.j = next_position.x - position.x;
 					}
 					normalize2d(&perpendicular);
-					vertices[0].point.x = point->position.x - perpendicular.i * half_width;
-					vertices[0].point.y = point->position.y - perpendicular.j * half_width;
-					vertices[0].point.z = point->position.z;
-					vertices[1].point.x = point->position.x + perpendicular.i * half_width;
-					vertices[1].point.y = point->position.y + perpendicular.j * half_width;
-					vertices[1].point.z = point->position.z;
+					vertices[0].point.x = position.x - perpendicular.i * half_width;
+					vertices[0].point.y = position.y - perpendicular.j * half_width;
+					vertices[0].point.z = position.z;
+					vertices[1].point.x = position.x + perpendicular.i * half_width;
+					vertices[1].point.y = position.y + perpendicular.j * half_width;
+					vertices[1].point.z = position.z;
 					if (apply_orientation)
 						orientation = *global_up3d;
 					break;
@@ -335,33 +369,34 @@ static void render_contrail(
 					struct contrail_point_datum *next_point;
 					if (previous_point)
 					{
-						eye_i = render.camera.position.x - previous_point->position.x;
-						eye_j = render.camera.position.y - previous_point->position.y;
-						eye_k = render.camera.position.z - previous_point->position.z;
-						tangent.i = point->position.x - previous_point->position.x;
-						tangent.j = point->position.y - previous_point->position.y;
-						tangent.k = point->position.z - previous_point->position.z;
+						eye_i = render.camera.position.x - previous_position.x;
+						eye_j = render.camera.position.y - previous_position.y;
+						eye_k = render.camera.position.z - previous_position.z;
+						tangent.i = position.x - previous_position.x;
+						tangent.j = position.y - previous_position.y;
+						tangent.k = position.z - previous_position.z;
 					}
 					else
 					{
 						next_point = datum_get(contrail_point_data, point->next_contrail_point_index);
-						eye_i = render.camera.position.x - point->position.x;
-						eye_j = render.camera.position.y - point->position.y;
-						eye_k = render.camera.position.z - point->position.z;
-						tangent.i = next_point->position.x - point->position.x;
-						tangent.j = next_point->position.y - point->position.y;
-						tangent.k = next_point->position.z - point->position.z;
+						contrail_point_drawn(contrail, contrail_index, &next_point->position, &next_position);
+						eye_i = render.camera.position.x - position.x;
+						eye_j = render.camera.position.y - position.y;
+						eye_k = render.camera.position.z - position.z;
+						tangent.i = next_position.x - position.x;
+						tangent.j = next_position.y - position.y;
+						tangent.k = next_position.z - position.z;
 					}
 					facing_normal.i = tangent.k * eye_j - tangent.j * eye_k;
 					facing_normal.j = tangent.i * eye_k - tangent.k * eye_i;
 					facing_normal.k = tangent.j * eye_i - tangent.i * eye_j;
 					normalize3d(&facing_normal);
-					vertices[0].point.x = point->position.x - facing_normal.i * half_width;
-					vertices[0].point.y = point->position.y - facing_normal.j * half_width;
-					vertices[0].point.z = point->position.z - facing_normal.k * half_width;
-					vertices[1].point.x = point->position.x + facing_normal.i * half_width;
-					vertices[1].point.y = point->position.y + facing_normal.j * half_width;
-					vertices[1].point.z = point->position.z + facing_normal.k * half_width;
+					vertices[0].point.x = position.x - facing_normal.i * half_width;
+					vertices[0].point.y = position.y - facing_normal.j * half_width;
+					vertices[0].point.z = position.z - facing_normal.k * half_width;
+					vertices[1].point.x = position.x + facing_normal.i * half_width;
+					vertices[1].point.y = position.y + facing_normal.j * half_width;
+					vertices[1].point.z = position.z + facing_normal.k * half_width;
 					if (apply_orientation)
 					{
 						orientation.i = facing_normal.k * tangent.j - facing_normal.j * tangent.k;
@@ -389,12 +424,13 @@ static void render_contrail(
 				color.alpha *= contrail_fade(
 					definition,
 					shader->framebuffer_fade_mode,
-					&point->position,
+					&position,
 					&orientation);
 				color.alpha = PIN(color.alpha, 0.f, 1.f);
 				vertices[0].color = vertices[1].color = real_argb_color_to_pixel32(&color);
 				texture_u += texture_u_step;
 				previous_point = point;
+				previous_position = position;
 				vertices += 2;
 				point_index = point->next_contrail_point_index;
 			}
@@ -473,7 +509,7 @@ static void render_contrails(
 				if (((1 << definition->render_type) & render_mode_flags) &&
 					contrail->contrail_point_counts[instance_index] >= 2)
 				{
-					render_contrail(contrail, definition, instance_index);
+					render_contrail(contrail, definition, instance_index, contrail_index);
 				}
 			}
 		}

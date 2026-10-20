@@ -182,6 +182,7 @@ void halo_screen_commit_stereo_scale(void) {}
 /* main.c's player windows: 1 unless a case splits the screen */
 static short probe_windows = 1;
 short main_get_window_count(void) { return probe_windows; }
+void halo_controller_sample_draw(void) {}
 
 #include "../../linux/game/stereo.c"
 

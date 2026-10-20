@@ -246,6 +246,93 @@ int host_stereo_hud_reticle(float layout_width, const float position[3], const f
 	return 1;
 }
 
+int host_stereo_hud_reticle_world(float layout_width, const float direction[3], float distance,
+	struct host_stereo_hud_quad *quad, int *pinned)
+{
+	return host_stereo_hud_reticle_world_pin(layout_width, direction, distance, 1, quad, pinned);
+}
+
+int host_stereo_hud_reticle_world_pin(float layout_width, const float direction[3], float distance, int pin,
+	struct host_stereo_hud_quad *quad, int *pinned)
+{
+	float whole[4] = { 0.0f, 0.0f, layout_width, HOST_STEREO_HUD_LINES };
+	float d[3] = { direction[0], direction[1], direction[2] };
+	float length = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+	float edge = HOST_STEREO_HUD_SHARED_DEGREES * DEGREES, scale, position[3];
+	int axis;
+
+	*pinned = 0;
+	if (!(layout_width > 0.0f) || !(distance > 0.0f) || !(length > 1e-6f))
+		return 0;
+	for (axis = 0; axis < 3; axis++)
+		d[axis] /= length;
+	if (pin && acosf(fmaxf(-1.0f, fminf(1.0f, -d[2]))) > edge)
+	{
+		/* outside the eyes' shared view: on its edge, in the direction it
+		lies from the view's center (straight behind has none: the right),
+		a marker of which way to move the hand rather than a place */
+		float across = d[0], up = d[1], off_center = sqrtf(across * across + up * up);
+
+		if (off_center < 1e-6f)
+		{
+			across = 1.0f;
+			up = 0.0f;
+			off_center = 1.0f;
+		}
+		d[0] = sinf(edge) * across / off_center;
+		d[1] = sinf(edge) * up / off_center;
+		d[2] = -cosf(edge);
+		distance = HOST_STEREO_HUD_DISTANCE_DEFAULT;
+		scale = 0.5f * distance / HOST_STEREO_HUD_LINE_DISTANCE;
+		*pinned = 1;
+	}
+	else
+		scale = distance / HOST_STEREO_HUD_LINE_DISTANCE;
+	for (axis = 0; axis < 3; axis++)
+		position[axis] = d[axis] * distance;
+	if (!facing_rectangle(layout_width, whole, layout_width / 2.0f * HOST_STEREO_HUD_METERS_PER_LINE * scale,
+		HOST_STEREO_HUD_LINES / 2.0f * HOST_STEREO_HUD_METERS_PER_LINE * scale, distance, position, d, quad))
+		return 0;
+	quad->layer = HOST_STEREO_HUD_LAYER_RETICLE;
+	return 1;
+}
+
+int host_stereo_hud_laser(const float from[3], const float to[3], struct host_stereo_hud_quad *quad)
+{
+	float along[3], middle[3], side[3], side_length, length;
+	int axis;
+
+	for (axis = 0; axis < 3; axis++)
+	{
+		along[axis] = to[axis] - from[axis];
+		middle[axis] = (from[axis] + to[axis]) / 2.0f;
+	}
+	length = sqrtf(along[0] * along[0] + along[1] * along[1] + along[2] * along[2]);
+	if (!(length > 1e-4f))
+		return 0;
+	/* square to the plane through the eyes' origin and the line, so the
+	eyes see it broadside all along it */
+	side[0] = along[1] * middle[2] - along[2] * middle[1];
+	side[1] = along[2] * middle[0] - along[0] * middle[2];
+	side[2] = along[0] * middle[1] - along[1] * middle[0];
+	side_length = sqrtf(side[0] * side[0] + side[1] * side[1] + side[2] * side[2]);
+	if (!(side_length > 1e-6f * length * sqrtf(middle[0] * middle[0] + middle[1] * middle[1] + middle[2] * middle[2])))
+		return 0;
+	memset(quad, 0, sizeof(*quad));
+	quad->source[2] = quad->source[3] = 1.0f;
+	for (axis = 0; axis < 3; axis++)
+	{
+		quad->center[axis] = middle[axis];
+		quad->x_axis[axis] = side[axis] / side_length * HOST_STEREO_HUD_LASER_HALF_WIDTH;
+		quad->y_axis[axis] = along[axis] / 2.0f;
+	}
+	quad->frame = HOST_STEREO_HUD_HEAD;
+	quad->layer = HOST_STEREO_HUD_LAYER_RETICLE;
+	quad->laser = 1;
+	quad->laser_opacity = 1.0f;
+	return 1;
+}
+
 int host_stereo_hud_zoom(const float tangents[2], float distance, struct host_stereo_hud_quad *quad)
 {
 	if (!(tangents[0] > 0.0f) || !(tangents[1] > 0.0f))
@@ -286,7 +373,7 @@ int host_stereo_hud_piece(const struct host_stereo_hud_quad *quad)
 	size_t index;
 	int member;
 
-	if (quad->catch_all)
+	if (quad->catch_all || quad->laser)
 		return HOST_STEREO_HUD_PIECE_NONE;
 	if (quad->layer == HOST_STEREO_HUD_LAYER_RETICLE)
 		return HOST_STEREO_HUD_PIECE_RETICLE;
@@ -303,6 +390,15 @@ int host_stereo_hud_layout(float layout_width, int ui, const float reticle[3], c
 	const float (*group_extent)[4], const struct host_stereo_hud_placement *placement,
 	const float piece_distance[HOST_STEREO_HUD_PIECE_COUNT], struct host_stereo_hud_quad *quads)
 {
+	return host_stereo_hud_layout_aimed(layout_width, ui, reticle, NULL, hud_tangents, group_extent, placement,
+		piece_distance, quads);
+}
+
+int host_stereo_hud_layout_aimed(float layout_width, int ui, const float reticle[3],
+	const struct host_stereo_hud_aim *aim, const float hud_tangents[2], const float (*group_extent)[4],
+	const struct host_stereo_hud_placement *placement, const float piece_distance[HOST_STEREO_HUD_PIECE_COUNT],
+	struct host_stereo_hud_quad *quads)
+{
 	size_t index;
 	int count = 0;
 
@@ -310,7 +406,40 @@ int host_stereo_hud_layout(float layout_width, int ui, const float reticle[3], c
 		layout_width = 640.0f;
 	if (!placement)
 		placement = &default_placement;
-	if (host_stereo_hud_reticle(layout_width, NULL, reticle,
+	if (aim && aim->world)
+	{
+		int pinned;
+
+		/* the laser under the reticle, to the aim point itself (a pinned
+		reticle's laser still shows where the gun points) */
+		if (aim->laser)
+		{
+			float length = sqrtf(reticle[0] * reticle[0] + reticle[1] * reticle[1] + reticle[2] * reticle[2]);
+
+			if (length > 1e-6f && aim->distance > 0.0f)
+			{
+				float point[3];
+				int axis;
+
+				for (axis = 0; axis < 3; axis++)
+					point[axis] = reticle[axis] / length * aim->distance;
+				if (host_stereo_hud_laser(aim->laser_from, point, &quads[count]))
+				{
+					quads[count].laser_opacity = aim->laser_opacity < 0.0f ? 0.0f : aim->laser_opacity > 1.0f ? 1.0f :
+						aim->laser_opacity;
+					count++;
+				}
+			}
+		}
+		if (host_stereo_hud_reticle_world_pin(layout_width, reticle, aim->distance, !aim->zoomed, &quads[count],
+			&pinned))
+		{
+			/* off the view's edge it's small and dim (the spec's "Out of view") */
+			quads[count].dim = aim->dim || pinned;
+			count++;
+		}
+	}
+	else if (host_stereo_hud_reticle(layout_width, NULL, reticle,
 		piece_distance ? piece_distance[HOST_STEREO_HUD_PIECE_RETICLE] : placement->distance, &quads[count]))
 		count++;
 	for (index = 0; index < SLOT_COUNT; index++)

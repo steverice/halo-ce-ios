@@ -108,6 +108,13 @@ struct host_stereo_hud_quad
 	/* covers what it's over whatever its texture's alpha (the zoomed
 	picture, a picture) */
 	int opaque;
+	/* drawn at half opacity (the world reticle held, easing, its tracking
+	orientation-only for over 2 s, or pinned to the view's edge) */
+	int dim;
+	/* the laser: a solid line in the laser's color
+	(HOST_STEREO_HUD_LASER_OPACITY times laser_opacity), its texture unread */
+	int laser;
+	float laser_opacity;
 };
 
 /* Where the HUD's groups go (the stereo spec's "The HUD in the periphery"):
@@ -139,9 +146,9 @@ to HOST_STEREO_HUD_DISTANCE_MIN to _MAX; a value that isn't a number takes
 its default. Returns 1 if anything changed */
 int host_stereo_hud_placement_clamp(struct host_stereo_hud_placement *placement);
 
-/* most quads a layout makes: the reticle, the groups, the catch-all and
-the UI */
-#define HOST_STEREO_HUD_MAXIMUM_QUADS (HOST_STEREO_HUD_LAYER_COUNT)
+/* most quads a layout makes: the laser, the reticle, the groups, the
+catch-all and the UI */
+#define HOST_STEREO_HUD_MAXIMUM_QUADS (HOST_STEREO_HUD_LAYER_COUNT + 1)
 
 /* The reticle's quad: the crosshairs' layer whole (layout_width lines by
 480) at its natural size (HOST_STEREO_HUD_METERS_PER_LINE), its center on
@@ -157,6 +164,58 @@ placed: tracked-controller aiming (Task 11) replaces its caller's
 arguments. */
 int host_stereo_hud_reticle(float layout_width, const float position[3], const float direction[3], float distance,
 	struct host_stereo_hud_quad *quad);
+
+/* The reticle in the world (tracked-controller aiming): the reticle quad
+at distance (meters) along direction (the eyes' frame), its half extents
+scaled by distance / HOST_STEREO_HUD_LINE_DISTANCE so its angular size is
+the 2 m quad's. A direction outside the eyes' shared view (more than
+HOST_STEREO_HUD_SHARED_DEGREES off the eyes' forward) is pinned to that
+edge in its direction, at half that angular size,
+HOST_STEREO_HUD_DISTANCE_DEFAULT away (it marks a direction, not a place,
+so it doesn't take the aim point's depth); straight behind pins to the
+right edge. *pinned says which. Returns 0 (no quad) without a direction or
+a positive distance */
+int host_stereo_hud_reticle_world(float layout_width, const float direction[3], float distance,
+	struct host_stereo_hud_quad *quad, int *pinned);
+/* the same with pin 0: never pinned, at distance along direction however
+far off forward (the zoomed picture's reticle, which the guest sets only
+while it shows inside the shared view: past it the head has the aim and the
+reticle is the head-locked one) */
+int host_stereo_hud_reticle_world_pin(float layout_width, const float direction[3], float distance, int pin,
+	struct host_stereo_hud_quad *quad, int *pinned);
+
+/* the laser: 2 mm wide, the reticle's color at 60% opacity */
+#define HOST_STEREO_HUD_LASER_HALF_WIDTH 0.001f
+#define HOST_STEREO_HUD_LASER_OPACITY 0.6f
+/* The laser's quad from from to to (meters, the eyes' frame), a line
+HOST_STEREO_HUD_LASER_HALF_WIDTH either side, broadside to the eyes'
+origin all along it (its width is square to the plane through the eyes and
+the line); 0 (no quad) when the line is too short or points at the eyes */
+int host_stereo_hud_laser(const float from[3], const float to[3], struct host_stereo_hud_quad *quad);
+
+/* what tracked-controller aiming hands the layout (the guest's
+gpu_stereo_present reticle_distance, reticle_world, reticle_dim, laser,
+laser_from and laser_opacity) */
+struct host_stereo_hud_aim
+{
+	/* 1 while a hand aims: the reticle sits at distance (meters) along the
+	layout's reticle direction (host_stereo_hud_reticle_world) */
+	int world;
+	float distance;
+	/* 1: the reticle at half opacity */
+	int dim;
+	/* 1: the laser from laser_from (meters, the eyes' frame) to the
+	reticle's point, at laser_opacity (0 to 1; the guest's close-range mode
+	fades it) of HOST_STEREO_HUD_LASER_OPACITY */
+	int laser;
+	float laser_from[3];
+	float laser_opacity;
+	/* 1: the frame shows the zoomed picture, and the reticle is where the
+	picture shows the hand's aim (the guest sets world only while that is
+	inside the part of the picture both eyes see, within the shared view:
+	controller_zoom_project_sight): never pinned to the shared view's edge */
+	int zoomed;
+};
 
 /* The zoom (halo_stereo.h, "Zoom fills the view"): the zoomed picture
 whole on an opaque head-locked quad straight ahead on the HUD's plane,
@@ -183,7 +242,8 @@ enum
 	HOST_STEREO_HUD_PIECE_TRACKER,     /* the motion tracker, bottom left */
 	HOST_STEREO_HUD_PIECE_COUNT
 };
-/* which piece a layout's quad belongs to, or HOST_STEREO_HUD_PIECE_NONE */
+/* which piece a layout's quad belongs to, or HOST_STEREO_HUD_PIECE_NONE
+(the catch-all, the UI, the laser) */
 int host_stereo_hud_piece(const struct host_stereo_hud_quad *quad);
 
 /* the quads for a HEAD-mode frame's HUD laid out layout_width lines across,
@@ -202,6 +262,18 @@ Returns the count; quads holds HOST_STEREO_HUD_MAXIMUM_QUADS */
 int host_stereo_hud_layout(float layout_width, int ui, const float reticle[3], const float hud_tangents[2],
 	const float (*group_extent)[4], const struct host_stereo_hud_placement *placement,
 	const float piece_distance[HOST_STEREO_HUD_PIECE_COUNT], struct host_stereo_hud_quad *quads);
+
+/* host_stereo_hud_layout with tracked-controller aiming: with aim (NULL:
+as host_stereo_hud_layout) and aim->world, the reticle's quad is
+host_stereo_hud_reticle_world's at aim->distance along reticle (not the
+reticle's piece_distance: it sits where the shot lands), dimmed with
+aim->dim or when pinned (never with aim->zoomed), and with aim->laser the
+laser's quad comes first, from aim->laser_from to the reticle's point (its
+own, not the pinned one) */
+int host_stereo_hud_layout_aimed(float layout_width, int ui, const float reticle[3],
+	const struct host_stereo_hud_aim *aim, const float hud_tangents[2], const float (*group_extent)[4],
+	const struct host_stereo_hud_placement *placement, const float piece_distance[HOST_STEREO_HUD_PIECE_COUNT],
+	struct host_stereo_hud_quad *quads);
 
 /* Depth-adaptive placement: each piece's distance is
 clamp(share x the nearest depth under it, floor, the resting distance),

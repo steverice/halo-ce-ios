@@ -68,6 +68,7 @@ void platform_log(const char *format, ...)
 		strcpy(zoom_log, last_log);
 }
 
+void halo_controller_sample_draw(void) {}
 #include "../../linux/game/stereo.c"
 
 /* stereo.c's settings, at their defaults */

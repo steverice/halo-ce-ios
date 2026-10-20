@@ -34,6 +34,7 @@ Conventions carried over from the Xbox:
 #endif
 #include "gpu_companion.h"
 #include "halo_stereo.h"
+#include "halo_spatial.h"
 #include "halo_stereo_window.h"
 #include "halo_stereo_cutscene.h"
 #include "posix.h"
@@ -1273,6 +1274,80 @@ static unsigned long render_target_write_serial;
 
 /* the pixels per unit of the bound targets (render_target_get) */
 static float target_scale[2] = { 1.0f, 1.0f };
+
+/* tracked-controller aiming's reticle (halo_controller_draw_state), over
+present->reticle (the head-locked direction, halo_stereo_reticle): while a
+hand aims, the drawing sightline in the eyes' frame, the quad at the
+reticle's low-passed distance along it, dimmed with the track, and the
+laser from the barrel. The drawing state's E is the eyes' frame's origin
+(the camera raised by display.eye_height_offset, as the eyes are). While
+the action's aim eases between the hand and the head (blend under 1), the
+reticle eases with it toward the head-locked one, so a shot goes where it
+shows. In a zoomed frame the reticle is where the zoomed picture shows the
+sightline (halo_controller_zoom_reticle), on the picture's plane at the
+HUD's distance, without the laser (the barrel isn't in the magnified
+picture), and none while the sightline is outside the picture; with
+input.zoom_takeover and the aim back on the head (the sightline past where
+its reticle would be in sight), the head-locked reticle, centered */
+#define HEAD_LOCKED_RETICLE_METERS 2.0f  /* the head-locked reticle's distance (host_stereo_hud.h's HUD distance) */
+static void stereo_reticle_aimed(struct gpu_stereo_present *present)
+{
+	const struct halo_controller_draw *draw = halo_controller_draw_state();
+	float forward[3], up[3], sightline[3], barrel[3], head[3], length, blend, distance;
+	int axis;
+
+	if (!draw->active)
+		return;
+	if (present->zoom)
+	{
+		/* the zoomed picture is head-locked straight ahead, so where it
+		shows the sightline is already in the eyes' frame; the quad sits on
+		the picture's plane, HALO_STEREO_ZOOM_DISTANCE_METERS ahead */
+		int shown = halo_controller_zoom_reticle(sightline);
+
+		if (shown == 2)
+		{
+			/* the gun points past the picture's edge: no reticle (a world
+			reticle at no distance draws none), and not the head's either,
+			which would mark a place the shot doesn't go */
+			present->reticle_world = 1;
+			present->reticle_distance = 0.0f;
+			return;
+		}
+		if (!shown || !(sightline[2] < -1e-3f))
+			return;
+		distance = HALO_STEREO_ZOOM_DISTANCE_METERS / -sightline[2];
+	}
+	else
+	{
+		halo_stereo_eye_frame(forward, up);
+		halo_stereo_eyes_frame_vector(forward, up, draw->sightline, sightline);
+		distance = draw->reticle_distance * 3.048f;
+	}
+	length = sqrtf(present->reticle[0] * present->reticle[0] + present->reticle[1] * present->reticle[1] +
+		present->reticle[2] * present->reticle[2]);
+	for (axis = 0; axis < 3; axis++)
+		head[axis] = length > 1e-6f ? present->reticle[axis] / length : (axis == 2 ? -1.0f : 0.0f);
+	blend = fmaxf(0.0f, fminf(1.0f, draw->blend));
+	for (axis = 0; axis < 3; axis++)
+		present->reticle[axis] = sightline[axis] * blend + head[axis] * (1.0f - blend);
+	length = sqrtf(present->reticle[0] * present->reticle[0] + present->reticle[1] * present->reticle[1] +
+		present->reticle[2] * present->reticle[2]);
+	/* (head and hand opposite at the ease's midpoint: the hand's) */
+	if (!(length > 1e-3f))
+		memcpy(present->reticle, sightline, sizeof(sightline));
+	present->reticle_distance = distance * blend + HEAD_LOCKED_RETICLE_METERS * (1.0f - blend);
+	present->reticle_world = 1;
+	present->reticle_dim = draw->dim != 0;
+	if (present->zoom)
+		return;
+	present->laser = draw->laser != 0;
+	present->laser_opacity = draw->laser_opacity;
+	for (axis = 0; axis < 3; axis++)
+		barrel[axis] = (draw->barrel_origin[axis] - draw->eye[axis]) * 3.048f;
+	halo_stereo_eyes_frame_vector(forward, up, barrel, present->laser_from);
+}
+
 /* the bound color target is stereo's HUD layer, the reticle's layer or a
 HUD group's target (draw_targets) */
 static BOOL target_hud_layer;
@@ -6171,6 +6246,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			/* the next frame's zoomed pass waits while a menu holds the layer */
 			halo_stereo_set_ui_shown(present.hud_ui);
 			halo_stereo_reticle(present.reticle);
+			stereo_reticle_aimed(&present);
 			halo_stereo_hud_tangents(present.hud_tangents);
 			render_interpolation_next_frame_due(gpu_present_stereo(&present));
 		}

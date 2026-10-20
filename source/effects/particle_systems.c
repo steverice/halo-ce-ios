@@ -1470,9 +1470,28 @@ static void particle_system_render(
 					short sequence_index;
 					struct bitmap_group_sequence *sequence;
 
+					/* port: controller aim: a system on the local player's own projectile
+					bends its particles from the drawn gun's muzzle onto the eye's line, each
+					by what the projectile was when it passed it, matched by the projectile
+					while it lives and by the system's own index after
+					(port/linux/game/projectile_offset.c); a local copy */
+					real_point3d drawn_position = particle->position;
+
+					{
+						int halo_projectile_point_offset(long, long, long, const float *, float *);
+						float offset[3];
+
+						if (halo_projectile_point_offset(system->object_index, NONE, system_index,
+							&particle->position.x, offset))
+						{
+							drawn_position.x += offset[0];
+							drawn_position.y += offset[1];
+							drawn_position.z += offset[2];
+						}
+					}
 					matrix4x3_transform_point(
 						&render.frustum.world_to_view,
-						&particle->position,
+						&drawn_position,
 						&position_viewer_space);
 					matrix4x3_transform_normal(
 						&render.frustum.world_to_view,

@@ -1135,6 +1135,21 @@ void lights_preprocess_scene(
 						}
 					}
 
+					/* port: controller aim: the light of the local player's own young
+					projectile is submitted with the drawn projectile, toward the drawn
+					gun's muzzle (port/linux/game/projectile_offset.c): a local copy, never
+					a write to the light */
+					{
+						int halo_projectile_offset(long, float *);
+						float offset[3];
+
+						if (halo_projectile_offset(light->object_index, offset))
+						{
+							light_parameters.position.x += offset[0];
+							light_parameters.position.y += offset[1];
+							light_parameters.position.z += offset[2];
+						}
+					}
 					light->rasterizer_light_index = rasterizer_light_submit(
 						&light_parameters);
 					debug_rasterizer_light_count = light->rasterizer_light_index + 1;
@@ -1149,6 +1164,12 @@ void lights_preprocess_scene(
 			if (definition->lens_flare.index != NONE)
 			{
 				struct rasterizer_lens_flare_submit_parameters lens_flare_parameters;
+				/* port: controller aim: the flare of the local player's own young
+				projectile goes with the drawn projectile, toward the drawn gun's muzzle
+				(port/linux/game/projectile_offset.c); zero for every other light */
+				int halo_projectile_offset(long, float *);
+				float lens_flare_offset[3];
+				int lens_flare_offset_drawn = halo_projectile_offset(light->object_index, lens_flare_offset);
 
 				lens_flare_parameters.definition = lens_flare_definition_get(
 					definition->lens_flare.index);
@@ -1207,6 +1228,13 @@ void lights_preprocess_scene(
 						marker_index++)
 					{
 						lens_flare_parameters.position = markers[marker_index].matrix.position;
+						/* port: and its lens flares, as the light above */
+						if (lens_flare_offset_drawn)
+						{
+							lens_flare_parameters.position.x += lens_flare_offset[0];
+							lens_flare_parameters.position.y += lens_flare_offset[1];
+							lens_flare_parameters.position.z += lens_flare_offset[2];
+						}
 						lens_flare_parameters.compressed_direction =
 							compress_real_vector3d_to_int32_clamp(
 								&markers[marker_index].matrix.forward);
@@ -1220,6 +1248,12 @@ void lights_preprocess_scene(
 				else
 				{
 					lens_flare_parameters.position = light->position;
+					if (lens_flare_offset_drawn)
+					{
+						lens_flare_parameters.position.x += lens_flare_offset[0];
+						lens_flare_parameters.position.y += lens_flare_offset[1];
+						lens_flare_parameters.position.z += lens_flare_offset[2];
+					}
 					lens_flare_parameters.compressed_direction =
 						compress_real_vector3d_to_int32_clamp(&light->forward);
 					lens_flare_parameters.compressed_up =

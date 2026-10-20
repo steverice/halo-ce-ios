@@ -314,7 +314,7 @@ static NSString *const shader_source =
 	and its center and half extents in its frame, which clip_from_frame
 	takes to the view */
 	"struct hud_uniforms { float4x4 clip_from_frame; float4 source; float4 center; float4 x_axis; float4 y_axis;\n"
-	"	uint decode_srgb; float brightness; uint opaque; };\n"
+	"	uint decode_srgb; float brightness; uint opaque; float opacity; float4 solid; uint use_solid; };\n"
 	"vertex picture_vertex hud_vertex(uint index [[vertex_id]], constant hud_uniforms &u [[buffer(0)]])\n"
 	"{\n"
 	"	float2 corner = float2(index & 1, index >> 1);\n"
@@ -337,13 +337,14 @@ static NSString *const shader_source =
 	/* only inside the quad's rectangle: linear filtering at its edge would
 	take a sliver of what's beside it */
 	"	float2 half_texel = 0.5 / float2(hud.get_width(), hud.get_height());\n"
-	"	float4 color = hud.sample(linear, clamp(in.coordinate, u.source.xy + half_texel, u.source.zw - half_texel));\n"
+	"	float4 color = u.use_solid ? float4(u.solid.rgb, 0.0) :\n"
+	"		hud.sample(linear, clamp(in.coordinate, u.source.xy + half_texel, u.source.zw - half_texel));\n"
 	"	float covered = u.opaque ? 1.0 : 1.0 - color.a;\n"
 	"	if (max(covered, max(color.r, max(color.g, color.b))) < 1.0 / 255.0)\n"
 	"		discard_fragment();\n"
 	"	if (u.decode_srgb)\n"
 	"		color.rgb = select(pow((color.rgb + 0.055) / 1.055, 2.4), color.rgb / 12.92, color.rgb <= 0.04045);\n"
-	"	return float4(color.rgb * u.brightness, covered);\n"
+	"	return float4(color.rgb * u.brightness * u.opacity, covered * u.opacity);\n"
 	"}\n"
 	/* the HUD's depth (host_stereo_hud_depth_ease): over each of a view's
 	pieces' rectangles of the eye's depth (physical texels, x0 y0 x1 y1, the
@@ -738,7 +739,12 @@ struct hud_uniforms
 	uint32_t decode_srgb;
 	float brightness;
 	uint32_t opaque;
+	float opacity;
+	simd_float4 solid;
+	uint32_t use_solid;
 };
+
+static const simd_float4 laser_color = { 0.45f, 0.75f, 1.0f, 1.0f };
 
 static BOOL prepare(id<MTLDevice> device, MTLPixelFormat color, MTLPixelFormat depth)
 {
@@ -1498,6 +1504,10 @@ static void hud_draw(id<MTLRenderCommandEncoder> encoder, __unsafe_unretained id
 		uniforms.decode_srgb = decode_srgb;
 		uniforms.brightness = brightness;
 		uniforms.opaque = opaque || quad->opaque;
+		uniforms.opacity = quad->laser ? HOST_STEREO_HUD_LASER_OPACITY * quad->laser_opacity :
+			quad->dim ? 0.5f : 1.0f;
+		uniforms.solid = laser_color;
+		uniforms.use_solid = quad->laser != 0;
 		[encoder setFragmentTexture:layers[quad->layer] atIndex:0];
 		[encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:0];
 		[encoder setFragmentBytes:&uniforms length:sizeof(uniforms) atIndex:0];
@@ -1966,7 +1976,7 @@ static int cutscene_blur(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLTexture> right,
 	id<MTLTexture> left_depth, id<MTLTexture> right_depth, __unsafe_unretained id<MTLTexture> const *hud_layers,
 	const float (*hud_group_extent)[4], float hud_aspect, int hud_ui, const float reticle[3],
-	const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
+	const struct host_stereo_hud_aim *aim, const float hud_tangents[2], id<MTLTexture> zoom, const float zoom_tangents[2], float near_meters,
 	float far_meters, float brightness, float vignette, float ui_dim, int expanding, float expansion,
 	float expansion_bars, const float fade[4], int cutscene, const float cutscene_forward[3],
 	const float cutscene_up[3], const float cutscene_tangents[2], float cutscene_dim, float look_dim,
@@ -2042,7 +2052,16 @@ void host_stereo_present(id<MTLCommandQueue> queue, id<MTLTexture> left, id<MTLT
 				hud_depth_logged[piece] = hud_depth_distance[piece];
 			}
 		}
-		int quad_count = hud_shown ? host_stereo_hud_layout(layout_width, hud_ui, reticle, hud_tangents,
+		struct host_stereo_hud_aim aimed = {0};
+		if (aim)
+		{
+			aimed = *aim;
+			if (aimed.world && depth_range.x > 0.0f)
+				aimed.distance = fmaxf(depth_range.y * 1.05f,
+					fminf(depth_range.x * 0.95f, aimed.distance));
+		}
+		int quad_count = hud_shown ? host_stereo_hud_layout_aimed(layout_width, hud_ui, reticle,
+			aim ? &aimed : NULL, hud_tangents,
 			hud_group_extent, hud_placement(), depth_settings->enabled ? hud_depth_distance : NULL, quads) : 0;
 		/* the immersive cutscene (Task 12k): the HUD layer (its titles and
 		bars) whole on the director's frame, as on the film's screen, at the

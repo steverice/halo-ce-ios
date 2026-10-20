@@ -534,6 +534,13 @@ struct gpu_stereo_present
 	them; a menu's UI quad never is */
 	float seat_look_dim;
 	float seat_look_blur;
+	/* Tracked gun presentation in the eyes' frame. */
+	float reticle_distance;
+	int32_t reticle_world;
+	int32_t reticle_dim;
+	int32_t laser;
+	float laser_from[3];
+	float laser_opacity;
 };
 
 /* display.native_hud: source, a render target, drawn over the whole of

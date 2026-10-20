@@ -104,6 +104,12 @@ int main(void)
 	FIELD(gpu_stereo_present, cutscene_tangents);
 	FIELD(gpu_stereo_present, cutscene_dim);
 	FIELD(gpu_stereo_present, cut_requested);
+	FIELD(gpu_stereo_present, reticle_distance);
+	FIELD(gpu_stereo_present, reticle_world);
+	FIELD(gpu_stereo_present, reticle_dim);
+	FIELD(gpu_stereo_present, laser);
+	FIELD(gpu_stereo_present, laser_from);
+	FIELD(gpu_stereo_present, laser_opacity);
 	FIELD(gpu_stereo_present, seat_look_dim);
 	FIELD(gpu_stereo_present, seat_look_blur);
 	/* host_stereo_frame's (guest_host.h) */
