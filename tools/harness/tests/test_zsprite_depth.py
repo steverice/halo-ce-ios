@@ -161,5 +161,6 @@ def test_dot_zw_depth_generation_for_gl_and_metal():
                 contents = path.read_bytes()
                 (destination / path.name).write_bytes(contents)
                 hashes[path.name] = {"sha256": hashlib.sha256(contents).hexdigest(), "bytes": len(contents)}
-            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+            head = os.environ.get("GITHUB_SHA") or subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
             (destination / "manifest.json").write_text(json.dumps({"head": head, "files": hashes}, indent=2) + "\n")
