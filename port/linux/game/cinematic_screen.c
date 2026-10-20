@@ -25,6 +25,7 @@ picture.
 #include "game/players.h"
 #include "items/weapons.h"
 #include "units/units.h"
+#include "units/unit_definitions.h"
 #include "objects/objects.h"
 #include "tag_files/tag_files.h"
 #include "effects/player_effects.h"
@@ -253,6 +254,62 @@ int halo_seat_cryo_pod(void)
 		return 0;
 	name = tag_get_name(object_get(parent_index)->definition_index);
 	return name && strstr(name, "cryotube") != NULL;
+}
+
+/* A seated player's first-person passenger view may move around the seat
+independently of the weapon's yaw arc. Driver views and chase cameras keep
+their existing comfort rule. */
+int halo_seat_first_person_passenger(void)
+{
+	long player_index = local_player_get_player_index(0);
+	long unit_index, parent_index;
+	struct unit_datum *unit, *vehicle;
+	struct unit_definition *definition;
+	struct unit_seat *seat;
+
+	if (player_index == NONE)
+		return 0;
+	unit_index = player_get(player_index)->unit_index;
+	if (unit_index == NONE)
+		return 0;
+	unit = unit_get(unit_index);
+	parent_index = unit->object.parent_object_index;
+	if (parent_index == NONE || !object_try_and_get_and_verify_type(parent_index, _object_mask_vehicle))
+		return 0;
+	vehicle = unit_get(parent_index);
+	definition = unit_definition_get(vehicle->definition_index);
+	if (vehicle->unit.driver_object_index == unit_index || unit->unit.parent_seat_index < 0 ||
+		unit->unit.parent_seat_index >= definition->unit.seats.count)
+		return 0;
+	seat = TAG_BLOCK_GET_ELEMENT(&definition->unit.seats, unit->unit.parent_seat_index, struct unit_seat);
+	return TEST_FLAG(seat->flags, _unit_seat_first_person_camera_bit) &&
+		!TEST_FLAG(seat->flags, _unit_seat_driver_bit) &&
+		!TEST_FLAG(seat->flags, _unit_seat_gunner_bit) &&
+		!TEST_FLAG(seat->flags, _unit_seat_invisible_bit);
+}
+
+/* The zoom reticle can use the unit's ordinary aim only when the player
+fires their own held weapon. A gunner or vehicle weapon may fire from its
+marker instead; leave those reticles on their existing camera rule. */
+int halo_zoom_ordinary_aim_ray(short local_player_index, float ray[3])
+{
+	long unit_index = player_control_get_unit_index(local_player_index);
+	long weapon_index;
+	struct unit_datum *unit;
+
+	if (unit_index == NONE || unit_get_aiming_unit_index(unit_index) != unit_index)
+		return 0;
+	unit = unit_get(unit_index);
+	if ((unit->object.parent_object_index != NONE && !halo_seat_first_person_passenger()) ||
+		unit->unit.gunner_object_index != NONE)
+		return 0;
+	weapon_index = unit_inventory_get_weapon(unit_index, unit->unit.current_weapon_index);
+	if (weapon_index == NONE || object_get(weapon_index)->object.parent_object_index != unit_index)
+		return 0;
+	ray[0] = unit->unit.aiming_vector.i;
+	ray[1] = unit->unit.aiming_vector.j;
+	ray[2] = unit->unit.aiming_vector.k;
+	return 1;
 }
 
 /* The zoom's magnification for the local player's zoomed pass (render.c), as the

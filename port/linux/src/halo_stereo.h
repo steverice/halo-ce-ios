@@ -242,6 +242,7 @@ head-tracked third-person seat, and in a first-person seat whose yaw limit
 holds the aim back from the head, it stays the game's camera, where the gun
 aims */
 void halo_stereo_zoom_orient(float forward[3], float up[3]);
+void halo_stereo_zoom_reticle(const float aim[3], const float forward[3], const float up[3], float magnification);
 
 /* render.c sets this around what draws a menu, the console or the progress
 bar into the HUD layer: in HEAD mode the presenter then puts the whole layer
@@ -267,6 +268,8 @@ a first-person seat whose yaw limit holds the aim back from the head, the
 game camera's forward, which the gun follows, in the picture the head turned
 (halo_stereo_head_orient). For the presenter's reticle (gpu_stereo_present) */
 void halo_stereo_reticle(float direction[3]);
+/* A world direction in an eye camera's frame: x right, y up, z back. */
+void halo_stereo_eyes_frame_vector(const float forward[3], const float up[3], const float vector[3], float out[3]);
 /* the HUD pass's projection this frame (render.c): its half tangents across
 and up, centered on the eye cameras' forward; 0 before it runs. The
 presenter's catch-all quad shows the HUD layer at that size, so what the
@@ -347,6 +350,8 @@ void halo_stereo_seat_look_fade(float *dim, float *blur);
 seat's own unit is the level's cryotube), whose look fade has its own angles
 and stops short of black (display.pod_look_fade_start, _end and _dim) */
 int halo_seat_cryo_pod(void);
+int halo_seat_first_person_passenger(void);
+int halo_zoom_ordinary_aim_ray(short local_player_index, float ray[3]);
 /* the fade's next value from its value now, how far the head is past the
 seat's limit (radians, 0 or more), the fade's start and black angles past
 it (radians) and the time since (seconds): it eases toward a smoothstep of

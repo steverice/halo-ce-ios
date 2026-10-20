@@ -575,6 +575,12 @@ static void render_player_frame_stereo(
 		halo_stereo_zoom_view(view);
 		if (!(magnification >= 1.0f))
 			magnification = 1.0f;
+		if (zoomed) {
+			float aim[3];
+
+			if (halo_zoom_ordinary_aim_ray(window->local_player_index, aim))
+				halo_stereo_zoom_reticle(aim, &zoom_camera.forward.i, &zoom_camera.up.i, magnification);
+		}
 		zoom_bounds.x1 = view[0] / magnification / (aspect * field_of_view_tangent);
 		zoom_bounds.x0 = -zoom_bounds.x1;
 		zoom_bounds.y1 = view[1] / magnification / field_of_view_tangent;

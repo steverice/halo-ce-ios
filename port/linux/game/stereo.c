@@ -238,8 +238,11 @@ the stage last logged (0 clear, 1 fading, 2 black) */
 static int seat_look_fade_setting = 1, seat_look_fade_blur_setting = 1;
 static float seat_look_fade_start = 0.08726646f, seat_look_fade_black = 0.7853982f;
 static int seat_limited;
+/* The local head's yaw off the seat marker after its last aim clamp. */
+static float seat_head_yaw_offset;
 static float seat_look_fade_now;
 static int seat_look_fade_logged;
+static int seat_look_fade_passenger;
 /* a10's cryo pod (halo_seat_cryo_pod) has the fade's own angles and never
 goes black: display.pod_look_fade_start and _end (radians past the limit),
 and display.pod_look_fade_dim, the most the view darkens there, the blur
@@ -914,26 +917,27 @@ z back): straight ahead unless halo_stereo_head_orient turned a third-person
 camera */
 static float reticle_direction[3] = { 0.0f, 0.0f, -1.0f };
 
+void halo_stereo_eyes_frame_vector(const float forward[3], const float up[3], const float vector[3], float out[3])
+{
+	float right[3] = { forward[1] * up[2] - forward[2] * up[1], forward[2] * up[0] - forward[0] * up[2],
+		forward[0] * up[1] - forward[1] * up[0] };
+
+	out[0] = vector[0] * right[0] + vector[1] * right[1] + vector[2] * right[2];
+	out[1] = vector[0] * up[0] + vector[1] * up[1] + vector[2] * up[2];
+	out[2] = -(vector[0] * forward[0] + vector[1] * forward[1] + vector[2] * forward[2]);
+}
+
 /* the game camera's forward (aim) in the frame of the eye camera whose forward
 and up are given; NULLs: straight ahead */
 static void reticle_set(const float aim[3], const float forward[3], const float up[3])
 {
-	float right[3];
-
 	if (!aim) {
 		reticle_direction[0] = 0.0f;
 		reticle_direction[1] = 0.0f;
 		reticle_direction[2] = -1.0f;
 		return;
 	}
-	/* the world's z is up and its yaw is left positive, so right is forward
-	cross up */
-	right[0] = forward[1] * up[2] - forward[2] * up[1];
-	right[1] = forward[2] * up[0] - forward[0] * up[2];
-	right[2] = forward[0] * up[1] - forward[1] * up[0];
-	reticle_direction[0] = aim[0] * right[0] + aim[1] * right[1] + aim[2] * right[2];
-	reticle_direction[1] = aim[0] * up[0] + aim[1] * up[1] + aim[2] * up[2];
-	reticle_direction[2] = -(aim[0] * forward[0] + aim[1] * forward[1] + aim[2] * forward[2]);
+	halo_stereo_eyes_frame_vector(forward, up, aim, reticle_direction);
 }
 
 /* the HUD pass's projection: half tangents across and up (render.c), 0
@@ -977,24 +981,36 @@ the fade eases out */
 static void seat_look_fade_update(int head_look_frame, float time_delta)
 {
 	float past = 0.0f;
+	float start = seat_look_fade_start, black = seat_look_fade_black;
 	int stage;
 
+	seat_look_fade_passenger = 0;
 	if (seat_look_fade_setting && head_look_frame && seat_limited) {
-		past = fabsf(remainderf(head_seat_leftover + head_pending_yaw, TWO_PI));
+		seat_look_fade_passenger = halo_seat_first_person_passenger();
+		if (seat_look_fade_passenger) {
+			/* Passenger eyes may turn 135 degrees to either side of the
+			seat marker even when the weapon's arc is narrower. */
+			past = fmaxf(0.0f, fabsf(remainderf(seat_head_yaw_offset + head_pending_yaw, TWO_PI)) -
+				135.0f * (3.14159265f / 180.0f));
+			start = 0.0f;
+			black = 45.0f * (3.14159265f / 180.0f);
+		} else
+			past = fabsf(remainderf(head_seat_leftover + head_pending_yaw, TWO_PI));
 		/* (kept while the fade eases out after the seat is left) */
 		seat_look_fade_pod = halo_seat_cryo_pod();
 	}
 	seat_look_fade_now = halo_stereo_seat_look_fade_ease(seat_look_fade_now, past,
-		seat_look_fade_pod ? pod_look_fade_start : seat_look_fade_start,
-		seat_look_fade_pod ? pod_look_fade_end : seat_look_fade_black, time_delta);
+		seat_look_fade_pod ? pod_look_fade_start : start,
+		seat_look_fade_pod ? pod_look_fade_end : black, time_delta);
 	/* (without the full view it's gone at once: nothing to ease) */
 	if (!head_look_frame)
 		seat_look_fade_now = 0.0f;
 	stage = seat_look_fade_now >= 1.0f ? 2 : seat_look_fade_now > 0.0f ? 1 : 0;
 	if (stage != seat_look_fade_logged) {
-		platform_log("stereo: a seat's look fade: %s, the head %.1f degrees past the aim%s",
+		platform_log("stereo: a seat's look fade: %s, the head %.1f degrees past the %s%s",
 			stage == 2 ? (seat_look_fade_pod ? "darkest" : "black") : stage == 1 ? "fading" : "clear",
-			past * RADIANS_TO_DEGREES, seat_look_fade_pod ? " (the cryo pod)" : "");
+			past * RADIANS_TO_DEGREES, seat_look_fade_passenger ? "head arc" : "aim",
+			seat_look_fade_pod ? " (the cryo pod)" : "");
 		seat_look_fade_logged = stage;
 	}
 }
@@ -1997,6 +2013,7 @@ int halo_stereo_seat_yaw_clamp(short local_player_index, float *desired_yaw, flo
 	through player_control_permanent_impulse, carries no head yaw and must
 	keep what the first held back) */
 	head_seat_leftover = remainderf(head_seat_leftover + refused, TWO_PI);
+	seat_head_yaw_offset = remainderf(yaw + head_seat_leftover, TWO_PI);
 	head_yaw_taken = remainderf(head_yaw_taken - refused, TWO_PI);
 	/* (the leftover the look folded in, taken back: no fold landed) */
 	head_fold = 0.0f;
@@ -2247,6 +2264,30 @@ void halo_stereo_zoom_orient(float forward[3], float up[3])
 	back from the head, the game camera's forward, as in third person) */
 	if (!third_person_head && head_seat_leftover == 0.0f)
 		halo_stereo_head_orient(forward, up);
+}
+
+/* The zoom picture occupies a head-locked plane, but its pixels are from
+the zoom camera. Project the ordinary unit aim (before autoaim changes a
+shot) through that camera, then expand its tangent by the picture's zoom.
+The unzoomed reticle continues to use the eye camera's frame. */
+void halo_stereo_zoom_reticle(const float aim[3], const float forward[3], const float up[3], float magnification)
+{
+	float ray[3], x, y, length;
+
+	if (!aim)
+		aim = forward;
+	halo_stereo_eyes_frame_vector(forward, up, aim, ray);
+	if (ray[2] >= -1e-6f) {
+		reticle_direction[0] = reticle_direction[1] = 0.0f;
+		reticle_direction[2] = 1.0f;
+		return;
+	}
+	x = ray[0] / -ray[2] * fmaxf(1.0f, magnification);
+	y = ray[1] / -ray[2] * fmaxf(1.0f, magnification);
+	length = sqrtf(x * x + y * y + 1.0f);
+	reticle_direction[0] = x / length;
+	reticle_direction[1] = y / length;
+	reticle_direction[2] = -1.0f / length;
 }
 
 void halo_stereo_set_depth_range(float z_near, float z_far)

@@ -144,6 +144,8 @@ int halo_level_first_tick_pending(void) { return 0; }
 int halo_level_start_campaign(void) { return 0; }
 static int game_cryo_pod;
 int halo_seat_cryo_pod(void) { return game_cryo_pod; }
+static int game_first_person_passenger;
+int halo_seat_first_person_passenger(void) { return game_first_person_passenger; }
 int platform_fixed_timestep(void) { return 1; }
 /* the frame clock (debug.fixed_timestep: 1/30 s a frame), a frame each
 time stereo.c reads it (once a frame) */
@@ -3038,8 +3040,147 @@ static void seat_look_fade(void)
 	seat_look_fade_setting = 0;
 }
 
-int main(void)
+/* The passenger's visible view belongs to the head, not the seat weapon's
+aim arc. A 270-degree head arc remains clear through 135 degrees each way. */
+static void passenger_head_arc(void)
 {
+	struct seat_run run;
+	float head = 0.0f, dim, blur;
+	float desired;
+
+	seat_start(&run, "snap");
+	game_first_person_passenger = 1;
+	seat_look_fade_setting = 1;
+	seat_look_fade_start = 5.0f * DEGREES;
+	seat_look_fade_black = 45.0f * DEGREES;
+	seat_turn_to(&run, &head, 130.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && fabsf(remainderf(run.facing_yaw / DEGREES - 45.0f, 360.0f)) < 0.01f,
+		"passenger at 130 degrees: full view while weapon aim stays at its 45-degree bound");
+	seat_turn_to(&run, &head, 150.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim > 0.0f && dim < 1.0f, "passenger past 135 degrees: comfort fade begins");
+	seat_turn_to(&run, &head, 180.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 1.0f, "passenger at 180 degrees: head arc ends in black");
+	game_first_person_passenger = 0;
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 1.0f, "same aim bound in another limited seat keeps its earlier fade");
+	seated = 0;
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f, "leaving the passenger seat clears the fade");
+	seat_start(&run, "snap");
+	game_first_person_passenger = 1;
+	seat_turn_to(&run, &head, -130.0f, 0.0f);
+	seat_hold(&run, head, 30);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f, "passenger's opposite 135-degree side remains clear");
+	/* The seat marker can face away from world zero and rotate with the
+	vehicle. Both positions are 130 degrees off their own seat marker. */
+	seat_limited = 0;
+	head_seat_leftover = head_pending_yaw = 0.0f;
+	head_request = head_yaw_taken = 130.0f * DEGREES;
+	seat_look_fade_now = 0.0f;
+	desired = 160.0f * DEGREES;
+	halo_stereo_seat_yaw_clamp(0, &desired, 30.0f * DEGREES, 130.0f * DEGREES,
+		30.0f * DEGREES, -45.0f * DEGREES, 45.0f * DEGREES);
+	seat_look_fade_update(1, 1.0f);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && fabsf(seat_head_yaw_offset / DEGREES - 130.0f) < 0.01f,
+		"passenger head arc uses the seat marker, not world zero or weapon aim");
+	desired = 105.0f * DEGREES;
+	halo_stereo_seat_yaw_clamp(0, &desired, desired, 0.0f,
+		60.0f * DEGREES, -45.0f * DEGREES, 45.0f * DEGREES);
+	seat_look_fade_update(1, 1.0f);
+	halo_stereo_seat_look_fade(&dim, &blur);
+	check(dim == 0.0f && fabsf(seat_head_yaw_offset / DEGREES - 130.0f) < 0.01f,
+		"a turning vehicle keeps the passenger's head arc seat-relative");
+	game_first_person_passenger = 0;
+	seated = 0;
+}
+
+/* The shot ray is the unit's settled aiming vector before target bending.
+The zoom picture uses zoom_camera, so its scope reticle must project that
+ray in zoom_camera's frame, including the magnification. */
+static void game_camera_forward(float yaw, float pitch, float forward[3], float up[3])
+{
+	forward[0] = cosf(pitch) * cosf(yaw);
+	forward[1] = cosf(pitch) * sinf(yaw);
+	forward[2] = sinf(pitch);
+	up[0] = -sinf(pitch) * cosf(yaw);
+	up[1] = -sinf(pitch) * sinf(yaw);
+	up[2] = cosf(pitch);
+}
+
+static void zoom_reticle_case(const char *name, float requested_yaw, float game_pitch,
+	float head_pitch, float ray_yaw, float magnification, float expected_across)
+{
+	float desired = requested_yaw * DEGREES;
+	float camera_forward[3], camera_up[3], zoom_forward[3], zoom_up[3];
+	float shot[3], shot_up[3], reticle[3];
+	float across, upward;
+
+	stereo_frame.mode = HALO_STEREO_HEAD;
+	stereo_frame.eye_count = 2;
+	third_person_head = 0;
+	cutscene_immersive = 0;
+	film_frame = 0;
+	camera_noted = 0;
+	head_request = desired;
+	head_yaw_taken = desired;
+	head_seat_leftover = head_pending_yaw = 0.0f;
+	head_pitch_now = head_pitch * DEGREES;
+	seat_limited = 0;
+	if (!halo_stereo_seat_yaw_clamp(0, &desired, 0.0f, desired, 0.0f,
+		-45.0f * DEGREES, 45.0f * DEGREES))
+		check(0, "zoom reticle: seat clamp active");
+	/* The same orientation `render_player_frame_stereo` copies before it
+	turns the eyes; the shot ray is independent of the head. */
+	game_camera_forward(desired, game_pitch * DEGREES, camera_forward, camera_up);
+	game_camera_forward(ray_yaw * DEGREES, game_pitch * DEGREES, shot, shot_up);
+	memcpy(zoom_forward, camera_forward, sizeof(zoom_forward));
+	memcpy(zoom_up, camera_up, sizeof(zoom_up));
+	halo_stereo_zoom_orient(zoom_forward, zoom_up);
+	halo_stereo_head_orient(camera_forward, camera_up);
+	halo_stereo_zoom_reticle(shot, zoom_forward, zoom_up, magnification);
+	halo_stereo_reticle(reticle);
+	across = reticle[0] / -reticle[2];
+	upward = reticle[1] / -reticle[2];
+	printf("  %s: reticle tangents %.4f across, %.4f up; expected %.4f across, 0 up\n",
+		name, across, upward, expected_across);
+	check(fabsf(across - expected_across) < 0.002f && fabsf(upward) < 0.002f, name);
+	(void)shot_up;
+}
+
+static void zoom_reticle_alignment(void)
+{
+	zoom_reticle_case("inside arc: settled 2x reticle stays centered", 20.0f, 10.0f, 10.0f,
+		20.0f, 2.0f, 0.0f);
+	zoom_reticle_case("seat bound plus head pitch: settled 2x reticle stays centered", 50.0f, 0.0f, 10.0f,
+		45.0f, 2.0f, 0.0f);
+	zoom_reticle_case("seat bound plus head pitch: settled 10x reticle stays centered", 50.0f, 0.0f, 10.0f,
+		45.0f, 10.0f, 0.0f);
+	zoom_reticle_case("seat bound: aim lag at 2x follows the simulated ray", 50.0f, 0.0f, 10.0f,
+		43.0f, 2.0f, 0.06984f);
+	zoom_reticle_case("seat bound: aim lag at 10x follows the simulated ray", 50.0f, 0.0f, 10.0f,
+		43.0f, 10.0f, 0.3492f);
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 2 && strcmp(argv[1], "--passenger-head-arc") == 0) {
+		passenger_head_arc();
+		return failures ? 1 : 0;
+	}
+	if (argc == 2 && strcmp(argv[1], "--zoom-reticle-alignment") == 0) {
+		zoom_reticle_alignment();
+		return failures ? 1 : 0;
+	}
 	pole_crossing();
 	pole();
 	pan("level pan at 0 deg pitch", 0.0f, 0.0f);
@@ -3062,6 +3203,7 @@ int main(void)
 	seat_yaw_limit();
 	seat_leftover_kept();
 	seat_look_fade();
+	passenger_head_arc();
 	third_person_ends();
 	first_person_cutscenes();
 	released_cutscene();
