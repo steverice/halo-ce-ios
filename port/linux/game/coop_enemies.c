@@ -58,6 +58,7 @@ Only the host runs the AI, so all of this is the host's.
 /* port_config.c's */
 long config_integer(char const *name);
 double config_real(char const *name);
+void platform_log(char const *format, ...);
 char const *config_string(char const *name);
 
 /* ---------- constants */
@@ -485,6 +486,10 @@ short coop_enemies_extra_count(
 
 		extra = ((long)count * (milli - 1000) + 500) / 1000;
 		extra = MIN(extra, (long)count * (COOP_ENEMIES_MAXIMUM_GROWTH - 1));
+		/* (one line a squad, for the take's check that the multiplier applied) */
+		if (extra > 0)
+			platform_log("coop_enemies: single-player x%.3f: encounter %ld, %d placed, %ld more", coop_enemies_solo_multiplier(),
+				encounter_index, (int)count, extra);
 	}
 	else if (coop_enemies.mode == _coop_enemies_multiplier)
 		extra = (long)count * (coop_enemies.multiplier - 1);
