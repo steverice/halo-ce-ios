@@ -77,6 +77,7 @@ machine (their datum identifiers need not be).
 #include "network_distributed.h"
 #include "map_share.h"
 #include "network_aim_assist.h"
+#include "halo_network_version.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -4066,10 +4067,32 @@ void network_distributed_handle_message(
 	case _distributed_message_coop_skip_vote:
 		if (machine_index == NONE || game_connection() != _game_connection_network_server)
 			return;
+		/* port: network version 31: a client's ready, its Discord user and its
+		hit reports are taken from its stream alone, never from a datagram
+		(whose source address anyone can forge) */
+		if ((header.type == _distributed_message_client_ready || header.type == _distributed_message_client_identity ||
+				header.type == _distributed_message_hit_reports) && !distributed_handling_stream_message)
+		{
+			return;
+		}
+		/* port: ... and a datagram stamped more than a stamp window from the
+		latest tick taken of the machine is dropped; over its stream any is
+		taken */
+		if (!distributed_handling_stream_message && distributed_client_clocks[machine_index].window_tick != NONE &&
+			!halo_network_stamp_in_window(distributed_client_clocks[machine_index].latest_tick, header.game_time))
+		{
+			return;
+		}
 		break;
 	default:
 		if (game_connection() != _game_connection_network_client)
 			return;
+		/* port: the host's datagrams too (a batch came in one) */
+		if (distributed_host_time != NONE && network_connection_last_read_was_unreliable() &&
+			!halo_network_stamp_in_window(distributed_host_time, header.game_time))
+		{
+			return;
+		}
 		/* (the host's latest tick, which this client's input messages tell
 		it back) */
 		if (distributed_host_time == NONE || header.game_time > distributed_host_time)
