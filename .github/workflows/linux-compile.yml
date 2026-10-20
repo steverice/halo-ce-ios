@@ -38,7 +38,7 @@ jobs:
         run: |
           printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf
           pacman --sync --refresh --sysupgrade --noconfirm --needed git zstd python python-pytest ninja \
-            clang lld gcc lib32-glibc lib32-gcc-libs lib32-sdl3
+            clang lld gcc glslang lib32-glibc lib32-gcc-libs lib32-sdl3
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
@@ -66,4 +66,5 @@ jobs:
             tools/harness/tests/test_text_filter.py \
             tools/harness/tests/test_text_filter_runtime.py \
             tools/test_text_filter_terms.py \
-            tools/harness/tests/test_contrail_cleanup.py
+            tools/harness/tests/test_contrail_cleanup.py \
+            tools/harness/tests/test_zsprite_depth.py
