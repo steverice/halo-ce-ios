@@ -19,7 +19,7 @@ def compile_and_run(tmp_path, name, source):
 
 def test_sampler_observation_requires_a_mipmapped_linear_stage(tmp_path):
     device = (ROOT / "port/linux/src/d3d8_device.c").read_text()
-    actual = section(device, "static void sampler_state_fill(", "/* ---------- render targets sampled")
+    actual = section(device, "static long anisotropy_in_force(", "/* ---------- render targets sampled")
     compile_and_run(tmp_path, "samplers", r'''
 #include <assert.h>
 #include <stdint.h>
@@ -33,7 +33,7 @@ enum { GPU_FILTER_NONE, GPU_FILTER_POINT, GPU_FILTER_LINEAR, GPU_FILTER_ANISOTRO
 struct gpu_sampler_state { int min_filter, mip_filter, mag_filter, address_u, address_v, address_w;
     uint32_t max_mip_level, max_anisotropy; float lod_bias; uint32_t border_color; };
 static DWORD D3D__TextureState[1][10];
-static long benchmark_anisotropy, benchmark_sampler_max_observed;
+static long benchmark_anisotropy, knob_anisotropy, benchmark_sampler_max_observed;
 static int gpu_filter(DWORD value) { return (int)value; }
 static int gpu_address(DWORD value) { return (int)value; }
 static float dword_to_float(DWORD value) { (void)value; return 0; }
