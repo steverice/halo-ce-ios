@@ -707,6 +707,15 @@ static int network_controller_aim(void)
 		 (frame->mode == HALO_STEREO_SIDE_BY_SIDE && test_controller && frame->eye_count == 2 && !halo_stereo_film()));
 }
 
+/* Head look stays local for the whole network session, but a gameplay ray
+belongs to this rider only while that unit owns its ordinary aim. */
+static int network_gameplay_aim_eligible(long unit_index)
+{
+	const char *reason;
+
+	return unit_index != NONE && network_controller_aim() && gate_target(unit_index, &reason);
+}
+
 /* the "can't start" messages (ruling 7), once a session each */
 static void can_not_start_messages(const struct halo_spatial_sample *sample)
 {
@@ -1664,6 +1673,8 @@ int halo_controller_aim_ray(short local_player_index, float origin[3], float dir
 	unit_index = player_control_get_unit_index(0);
 	if (unit_index == NONE)
 		return 0;
+	if (network_controller_aim() && !network_gameplay_aim_eligible(unit_index))
+		return 0;
 	/* the targeting query runs as the action is built, before this frame's
 	aim (player_control.c): the eye now, along the last action's aim, as
 	the camera's forward it replaces is the last frame's */
@@ -1700,6 +1711,7 @@ static int draw_sightline(const float camera_position[3], float time_delta)
 	pole as the action's is */
 	body_yaw = controller_body_yaw(&drawing.body, halo_stereo_eye_yaw(), sample->head_yaw, sample->head_level);
 	if (unit_index == NONE ||
+		(network && !network_gameplay_aim_eligible(unit_index)) ||
 		(!aim.hand_aiming && !network_controller_aim()) || (!network && !drawing.body.known))
 		return 0;
 	/* a sample that isn't READY is a lost hand, as the action's: the last
@@ -2007,6 +2019,8 @@ int halo_controller_zoom_reticle(float shown[3])
 {
 	if (!draw.active || drawing.active_frame != render.frame_index || !zoom_view.known ||
 		zoom_view.frame != render.frame_index)
+		return 0;
+	if (network_controller_aim() && !network_gameplay_aim_eligible(player_control_get_unit_index(0)))
 		return 0;
 	/* the hand keeps the aim wherever it points: the reticle is where the
 	picture shows the gun's line, and past the picture's edge there is none */

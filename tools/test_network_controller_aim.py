@@ -128,7 +128,10 @@ def test_production_network_targeting_uses_simulated_aim(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     # The local hand ray is intentionally different from the rate-limited unit.
     glue_test = GLUE.replace("int last_unit,hand_aiming;", "int last_unit,hand_aiming;float ray_direction[3];")
-    run_probe(tmp_path, "ray", glue_test + function(glue, "static int network_controller_aim(") +
+    eligible = function(glue, "static int network_gameplay_aim_eligible(") if \
+        "static int network_gameplay_aim_eligible(" in glue else ""
+    run_probe(tmp_path, "ray", glue_test + function(glue, "static int gate_target(") +
+              function(glue, "static int network_controller_aim(") + eligible +
               function(glue, "int halo_controller_aim_ray(") + r'''
 int main(void){
  float origin[3],direction[3];aim.hand_aiming=1;aim.ray_direction[1]=1;
@@ -140,6 +143,10 @@ int main(void){
  assert(!halo_controller_aim_ray(1,origin,direction));
  aim.hand_aiming=0;connection=0;assert(!halo_controller_aim_ray(0,origin,direction));
  connection=1;assert(halo_controller_aim_ray(0,origin,direction)&&direction[0]==1);
+ connection=1;unit.object.parent_object_index=23;aiming_unit=23;
+ assert(!halo_controller_aim_ray(0,origin,direction));
+ unit.object.parent_object_index=NONE;assert(!halo_controller_aim_ray(0,origin,direction));
+ aiming_unit=17;perspective=1;assert(!halo_controller_aim_ray(0,origin,direction));
 }
 ''')
 
@@ -206,8 +213,10 @@ int main(void){
 ''')
 
 
-def test_production_drawing_uses_unit_aim_with_lost_pose_and_in_seat(tmp_path):
+def test_production_drawing_uses_own_unit_aim_and_excludes_borrowed_seats(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
+    eligible = function(glue, "static int network_gameplay_aim_eligible(") if \
+        "static int network_gameplay_aim_eligible(" in glue else ""
     run_probe(tmp_path, "draw", GLUE + r'''
 #define HALO_SPATIAL_READY 1
 #define HALO_SPATIAL_NONE 0
@@ -248,22 +257,63 @@ static int hand_sightline(long index,const struct halo_spatial_hand *h,struct ha
  if(!pose_known)return 0;memset(out,0,sizeof(*out));out->direction[1]=1;out->forward[1]=1;
  out->up[2]=1;out->aim_distance=out->surface_distance=100;return 1;
 }
-''' + function(glue, "static int network_controller_aim(") +
+''' + function(glue, "static int gate_target(") + function(glue, "static int network_controller_aim(") + eligible +
               function(glue, "static int draw_sightline(") + r'''
 int main(void){
  const float camera[3]={3,4,5};aim.hand_aiming=1;drawing.body.known=1;
  unit.unit.aiming_vector=(real_vector3d){.6f,0,.8f};
- for(connection=1;connection<=2;connection++)for(int seat=0;seat<2;seat++)for(pose_known=0;pose_known<=1;pose_known++){
-  unit.object.parent_object_index=seat?23:NONE;aim.hand_aiming=pose_known;
+ for(connection=1;connection<=2;connection++)for(pose_known=0;pose_known<=1;pose_known++){
+  unit.object.parent_object_index=NONE;aim.hand_aiming=pose_known;
   assert(draw_sightline(camera,.016f));
   assert(fabsf(draw.sightline[0]-.6f)<.00001f&&draw.sightline[1]==0&&fabsf(draw.sightline[2]-.8f)<.00001f);
   assert(fabsf(draw.hit_point[0]-9)<.00001f&&fabsf(draw.hit_point[2]-13)<.00001f);
   assert(!draw.past_cover&&!drawing.seat_clamped);
  }
+ connection=1;unit.object.parent_object_index=23;aiming_unit=23;
+ assert(!draw_sightline(camera,.016f));
+ unit.object.parent_object_index=NONE;assert(!draw_sightline(camera,.016f));
+ aiming_unit=17;perspective=1;assert(!draw_sightline(camera,.016f));perspective=0;
+ look_disabled=1;assert(!draw_sightline(camera,.016f));look_disabled=0;
+ unit.object.damage_flags=1;assert(!draw_sightline(camera,.016f));unit.object.damage_flags=0;
  connection=0;unit.object.parent_object_index=NONE;pose_known=1;aim.hand_aiming=1;
  assert(draw_sightline(camera,.016f)&&draw.sightline[1]==1);
  pose_known=0;assert(!draw_sightline(camera,.016f));
  unit_index_now=NONE;connection=1;assert(!draw_sightline(camera,.016f));
+}
+''')
+
+
+def test_network_zoom_reticle_keeps_vehicle_owned_aim_out_of_the_picture(tmp_path):
+    glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
+    eligible = function(glue, "static int network_gameplay_aim_eligible(")
+    run_probe(tmp_path, "zoom-ownership", GLUE + r'''
+static struct {int active;float sightline[3];} draw;
+static struct {long active_frame;} drawing;
+static struct {int known;long frame;float forward[3],up[3],tangents[2],magnification;} zoom_view;
+static struct {long frame_index;} render;
+static int zoom_takeover, project_calls;
+static int controller_zoom_project(const float ray[3],const float forward[3],const float up[3],
+ const float tangents[2],float magnification,int inside,float shown[3]){
+ (void)ray;(void)forward;(void)up;(void)tangents;(void)magnification;(void)inside;
+ project_calls++;shown[2]=-1;return 1;
+}
+static int controller_zoom_project_clamped(const float ray[3],const float forward[3],const float up[3],
+ const float tangents[2],float magnification,float shown[3]){
+ (void)ray;(void)forward;(void)up;(void)tangents;(void)magnification;(void)shown;
+ project_calls++;return 1;
+}
+''' + function(glue, "static int gate_target(") +
+              function(glue, "static int network_controller_aim(") + eligible +
+              function(glue, "int halo_controller_zoom_reticle(") + r'''
+int main(void){
+ float shown[3];connection=1;draw.active=zoom_view.known=1;
+ render.frame_index=drawing.active_frame=zoom_view.frame=7;
+ unit.object.parent_object_index=23;aiming_unit=23;
+ assert(!halo_controller_zoom_reticle(shown)&&project_calls==0);
+ unit.object.parent_object_index=NONE;assert(!halo_controller_zoom_reticle(shown)&&project_calls==0);
+ aiming_unit=17;assert(halo_controller_zoom_reticle(shown)==1&&project_calls==1);
+ connection=2;unit.object.parent_object_index=23;aiming_unit=23;
+ assert(!halo_controller_zoom_reticle(shown)&&project_calls==1);
 }
 ''')
 
