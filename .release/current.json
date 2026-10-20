@@ -1,27 +1,27 @@
 {
   "schema": 1,
-  "tag": "visr-v0.2.2",
-  "version": "0.2.2",
-  "build_number": "20261019.215255",
-  "source_sha": "f842e9eebecd1e9a33af342641f7f76e7f845dce",
+  "tag": "visr-v0.3.0",
+  "version": "0.3.0",
+  "build_number": "20261020.10441",
+  "source_sha": "d35263ce9228fce85aba2aa7685c5956a0aa603d",
   "platforms": [
     "ios",
     "tvos"
   ],
-  "notes_sha256": "c2b583328c9444104848171da6550d0feeb3b0d73c491f8605f9f7e6d89f5f5b",
-  "testflight_summary": "- Run the benchmark suite on the new multiplayer cases: Chill Out with 16 players, Blood Gulch with 32 and 64 players, and Sidewinder with 32 and 128 players.\n- Try the gameplay benchmarks across A10, A50, B30, B40, C10, C20, C40, and D40, and see how the runs behave.\n- Watch for smoother loading and less shader hitching in campaign and multiplayer, especially on Chill Out, Blood Gulch, Sidewinder, and D40.\n- Check that multiplayer benchmark scenes show staged arenas, that combat starts once the roster is ready, and that touch controls stay hidden while a benchmark owns input.\n- Confirm map-copy loading keeps up with screen refresh and no longer misses every other update.\n- Check that the benchmark report screen with the QR code appears only in tester builds.\n- Look at the menus on iOS: the updater option should no longer appear.\n- Replays should keep the animation mode they were recorded with, and grenade animations should look right after timeline changes.",
-  "testflight_summary_sha256": "6b0697b59a4186f1d0d533960c73ec96d0d413021e2e61023ca6064cb3b2ad1a",
+  "notes_sha256": "b918171d24f46fe00399c3295c761e742000aa9da4d81d9e7280d507f88c1826",
+  "testflight_summary": "- Run benchmarks through one unified tester flow and tap Finish when your run is done.\n- Check that your benchmark report is created automatically when you finish, and that it is still there if you leave or relaunch the app.\n- Try the gameplay cases: a10-mess-hall, a50-campaign-heroic, b30-second-run, b40-snow-fight, c10-active-candidate, c20-flood-fight, c40-tower-legendary, and d40-maw-fight.\n- Try the multiplayer cases: mp16-chillout (16 players), mp32-bloodgulch and mp32-sidewinder (32 players each), mp-bloodgulch-64 (64 players), and mp-sidewinder-128 (128 players).\n- Confirm that the benchmark cases appear in the new order and that each one starts on its listed map.\n- Look for full report details after a run, including long or large reports, which are now kept in full.",
+  "testflight_summary_sha256": "801a99d904a2d654eb7ee6aad03e7b3c7503a1abace34aeae95b724b81806ae9",
   "testflight_summary_model": "claude-sonnet-5-5",
   "bootstrap_since": "",
-  "source_date_epoch": "1792446775",
-  "guest_source_date_epoch": "1792392070",
+  "source_date_epoch": "1792458281",
+  "guest_source_date_epoch": "1792454334",
   "internal_only": true,
   "build_policy": {
     "benchmark_upload": "on",
     "guest_compiler_version": "Homebrew clang version 23.1.3",
     "guest_profile_sha256": "663efd5f4da9d29f092231e23c818319bc0ed0625c26305dd1d0489c66b55c16",
-    "guest_sha256": "ea6932f08b0336e9b46e56da405e6ee938479d45ac096bf42ddfb673aa996a8e",
-    "guest_source_date_epoch": "1792392070",
+    "guest_sha256": "1fb8e28ecab503217460e04221936b58878e1cf48302a5c5e03860947c33d715",
+    "guest_source_date_epoch": "1792454334",
     "host_profile_sha256": "787d98fb1650fdb7892174aa9a3ee1cc154eb6fc0bd1a150961a36b82b1ff4b1",
     "profile_feed_sha256s": {
       "ios/iPad13,10/_": "1b162babfc7643e3223d67e9f1bbc2085dd262d8c6c2baea12d9df426670373d",
@@ -46,7 +46,7 @@
       "visionos/RealityDevice14,1/_": "8973444a3cc342fddcbfaa9f08e86056c061f6b5b7b2e17f923359d94b1950c6"
     },
     "profile_feed_url": "https://code.steverice.org/visr/packs/tester/profiles",
-    "recording_feed_sha256": "a5b73d72c366629d980efa7febe2c40c8099d131284530a12647abf121e8e3cd",
+    "recording_feed_sha256": "5b2de56a7f55cc0ed04bcb3ac577c87d9bc9a7749a92e5e79707d6fad08ee122",
     "recording_feed_url": "https://code.steverice.org/visr/packs/tester/recordings.json",
     "shader_feed_sha256": "6ab0eab61296058ed553a5914a5e768edb7a89d07f8e0e435567e9b89cb69739",
     "shader_feed_url": "https://code.steverice.org/visr/packs/tester/shaders.json"

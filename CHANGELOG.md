@@ -1,3 +1,33 @@
+## visr-v0.3.0 (2026-10-20)
+
+### Summary
+
+- Run benchmarks through one unified tester flow and tap Finish when your run is done.
+- Check that your benchmark report is created automatically when you finish, and that it is still there if you leave or relaunch the app.
+- Try the gameplay cases: a10-mess-hall, a50-campaign-heroic, b30-second-run, b40-snow-fight, c10-active-candidate, c20-flood-fight, c40-tower-legendary, and d40-maw-fight.
+- Try the multiplayer cases: mp16-chillout (16 players), mp32-bloodgulch and mp32-sidewinder (32 players each), mp-bloodgulch-64 (64 players), and mp-sidewinder-128 (128 players).
+- Confirm that the benchmark cases appear in the new order and that each one starts on its listed map.
+- Look for full report details after a run, including long or large reports, which are now kept in full.
+
+### Full changelog
+
+### feat
+
+- **benchmark**: unify tester runs with Finish and durable automatic reports
+
+### fix
+
+- **benchmark**: bound `summary_json` while retaining full report assets
+- **release**: validate CloudKit entitlements by archive phase
+
+### build
+
+- **benchmark**: bind the reordered catalog to the unified guest
+
+### ci
+
+- **release**: run unsigned validation independently
+
 ## visr-v0.2.2 (2026-10-19)
 
 ### Summary
