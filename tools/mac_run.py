@@ -34,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zlib
 from pathlib import Path
 
 # a debug.gpu_stats summary (d3d8_device.c), after platform_log's prefix
@@ -301,6 +302,72 @@ def read_bmp(data):
     return width, height, data[offset:offset + width * height * 4]
 
 
+def read_png(data):
+    """(width, height, BGRA rows) of an 8-bit RGB or RGBA PNG, as png_write.h writes it (alpha opaque for RGB)"""
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    position, header, compressed = 8, None, []
+    while position + 8 <= len(data):
+        length, kind = struct.unpack_from(">I4s", data, position)
+        body = data[position + 8:position + 8 + length]
+        if len(body) < length:
+            raise ValueError(f"truncated: {len(data)} bytes")
+        if kind == b"IHDR":
+            header = struct.unpack(">IIBBBBB", body)
+        elif kind == b"IDAT":
+            compressed.append(body)
+        elif kind == b"IEND":
+            break
+        position += 12 + length
+    if header is None:
+        raise ValueError("no IHDR")
+    width, height, depth, color, _, _, interlace = header
+    if depth != 8 or color not in (2, 6) or interlace:
+        raise ValueError(f"depth {depth}, color type {color}, interlace {interlace}; expected 8-bit RGB or RGBA")
+    try:
+        raw = zlib.decompress(b"".join(compressed))
+    except zlib.error as error:
+        raise ValueError(f"truncated: {error}")
+    channels = 3 if color == 2 else 4
+    stride = width * channels
+    if len(raw) < (stride + 1) * height:
+        raise ValueError(f"truncated: {len(data)} bytes")
+    rows, previous = [], bytearray(stride)
+    for y in range(height):
+        line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        kind = raw[y * (stride + 1)]
+        if kind == 1:
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 255
+        elif kind == 2:
+            for i in range(stride):
+                line[i] = (line[i] + previous[i]) & 255
+        elif kind == 3:
+            for i in range(stride):
+                left = line[i - channels] if i >= channels else 0
+                line[i] = (line[i] + ((left + previous[i]) >> 1)) & 255
+        elif kind == 4:
+            for i in range(stride):
+                a = line[i - channels] if i >= channels else 0
+                b, c = previous[i], previous[i - channels] if i >= channels else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        elif kind:
+            raise ValueError(f"filter {kind}")
+        previous = line
+        out = bytearray(width * 4)
+        out[0::4], out[1::4], out[2::4] = line[2::channels], line[1::channels], line[0::channels]
+        out[3::4] = line[3::4] if channels == 4 else b"\xff" * width
+        rows.append(bytes(out))
+    return width, height, b"".join(rows)
+
+
+def read_image(data):
+    """(width, height, BGRA rows) of a screenshot, a PNG or a 32-bit BMP (older baselines)"""
+    return read_png(data) if data[:4] == b"\x89PNG" else read_bmp(data)
+
+
 def region_pixels(width, height, region):
     """the pixel box (left, top, right, bottom) of region, fractions (x0, y0, x1, y1) of a
     width x height frame from its top left; the whole frame without one"""
@@ -316,8 +383,8 @@ def bmp_difference(a, b, channel_tolerance=0, region=None):
     None); alpha is ignored, since write_screenshot forces it opaque. With region
     (fractions x0, y0, x1, y1 from the top left: write_screenshot's rows are top
     down), only the pixels inside it count"""
-    width_a, height_a, pixels_a = read_bmp(a)
-    width_b, height_b, pixels_b = read_bmp(b)
+    width_a, height_a, pixels_a = read_image(a)
+    width_b, height_b, pixels_b = read_image(b)
     if (width_a, height_a) != (width_b, height_b):
         return max(width_a * height_a, width_b * height_b), 255, None
     if pixels_a == pixels_b:
@@ -341,7 +408,7 @@ def bmp_difference(a, b, channel_tolerance=0, region=None):
 
 def bmp_pixels(data, region=None):
     """the pixel count of a BMP, or of region in it (region_pixels)"""
-    width, height, _ = read_bmp(data)
+    width, height, _ = read_image(data)
     left, top, right, bottom = region_pixels(width, height, region)
     return max(right - left, 0) * max(bottom - top, 0)
 
@@ -365,6 +432,13 @@ def stats_lines(log):
 
 def _files(folder, pattern):
     return {path.name: path for path in folder.glob(pattern)} if folder.is_dir() else {}
+
+
+def _shots(folder):
+    """a folder's screenshots by stem, so a PNG compares with an older run's BMP of the same frame"""
+    shots = {path.stem: path for path in _files(folder, "*.bmp").values()}
+    shots.update({path.stem: path for path in _files(folder, "*.png").values()})
+    return shots
 
 
 def _shader_files(folder, patterns):
@@ -489,20 +563,21 @@ def compare(a, b, tolerance=0, ignore_gl_calls=False, channel_tolerance=0, fract
         else:
             _compare_files(problems, folder, a, b, _shader_files(a / folder, SHADER_SOURCES),
                            _shader_files(b / folder, SHADER_SOURCES), contents=True)
-    shots_a, shots_b = _files(a / "runner/shots", "*.bmp"), _files(b / "runner/shots", "*.bmp")
+    shots_a, shots_b = _shots(a / "runner/shots"), _shots(b / "runner/shots")
     for name in sorted(shots_a.keys() ^ shots_b.keys()):
-        problems.append(f"{name} only in {a if name in shots_a else b}")
+        problems.append(f"{(shots_a.get(name) or shots_b[name]).name} only in {a if name in shots_a else b}")
     for name in sorted(shots_a.keys() & shots_b.keys()):
+        label = shots_a[name].name
         try:
             data_a = shots_a[name].read_bytes()
             differing, largest, where = bmp_difference(data_a, shots_b[name].read_bytes(), channel_tolerance, region)
             allowed = max(tolerance, int(fraction * bmp_pixels(data_a, region)))
         except ValueError as error:
-            problems.append(f"{name}: unreadable ({error})")
+            problems.append(f"{label}: unreadable ({error})")
             continue
         if differing > allowed:
             at = f" at {where[0]},{where[1]}" if where else ""
-            problems.append(f"{name}: {differing} pixels differ, by up to {largest}{at}")
+            problems.append(f"{label}: {differing} pixels differ, by up to {largest}{at}")
     logs = [folder / "stderr.log" for folder in (a, b)]
     missing = [str(log) for log in logs if not log.is_file()]
     if missing:

@@ -8,7 +8,7 @@ with a capture instead of the game: it draws the frames into the backend the cap
 and exits, in a second or two.
 
     render_replay.py info CAPTURE...            what each file holds
-    render_replay.py replay CAPTURE --out DIR   replay one file: frames (BMP), frames.txt, result.txt, logs
+    render_replay.py replay CAPTURE --out DIR   replay one file: frames (PNG), frames.txt, result.txt, logs
     render_replay.py check SET [--record]       replay every capture of a set and compare with the set's records
     render_replay.py fuzz CAPTURE --seeds N     replay with calls replaced by wrong ones; the validator must refuse each
     render_replay.py across DIR_A DIR_B         compare two replays' frames within a tolerance (GL against Metal)
@@ -18,7 +18,7 @@ textures and models):
 
     SET/NAME.capture                    e.g. a10-metal-00600.capture
     SET/expected/NAME/frames.txt        each frame's size and hash, as this Mac's GPU drew it
-    SET/expected/NAME/frameNNNNN.bmp    the window's last frame
+    SET/expected/NAME/frameNNNNN.png    the window's last frame
 
 `check --record` writes the expected folders; `check` compares against them and exits 1 on any difference, any
 validation failure, or a capture the build refuses as stale. Records belong to the GPU that drew them: keep a
@@ -147,8 +147,9 @@ def compare_frames(expected, got, channel_tolerance=0, fraction=0.0):
         if line_b.split()[0] != name or line_a.split()[1] != line_b.split()[1]:
             problems.append(f"{name}: expected {line_a.split()[1]}, drew {' '.join(line_b.split()[:2])}")
             continue
-        picture_a, picture_b = Path(expected) / f"{name}.bmp", Path(got) / f"{name}.bmp"
-        if picture_a.is_file() and picture_b.is_file():
+        picture_a, picture_b = (next((path for path in (folder / f"{name}.png", folder / f"{name}.bmp")
+                                      if path.is_file()), None) for folder in (Path(expected), Path(got)))
+        if picture_a and picture_b:
             data_a, data_b = picture_a.read_bytes(), picture_b.read_bytes()
             pixels, largest, where = mac_run.bmp_difference(data_a, data_b, channel_tolerance)
             if pixels > fraction * mac_run.bmp_pixels(data_a):

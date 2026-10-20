@@ -39,6 +39,7 @@ Conventions carried over from the Xbox:
 #include "halo_stereo_cutscene.h"
 #include "posix.h"
 #include "zlib_prefixed.h"
+#include "png_write.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -5540,7 +5541,7 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 
 /* ---------- presentation */
 
-/* suffix: "" for the usual frameNNNNN.bmp, else e.g. "-left" */
+/* suffix: "" for the usual frameNNNNN.png, else e.g. "-left" */
 static void write_screenshot_channel(struct render_target_entry *target, const char *suffix, int alpha);
 
 static void write_screenshot(struct render_target_entry *target, const char *suffix)
@@ -5548,32 +5549,14 @@ static void write_screenshot(struct render_target_entry *target, const char *suf
 	write_screenshot_channel(target, suffix, 0);
 }
 
-/* a screenshot's BGRA pixels, rows from the top, as directory/frameNNNNN<suffix>.bmp */
+/* a screenshot's BGRA pixels, rows from the top, as directory/frameNNNNN<suffix>.png */
 static void screenshot_file(const char *directory, const char *suffix, const unsigned char *pixels,
 	unsigned long width, unsigned long height)
 {
-	unsigned char header[54] = { 'B', 'M' };
-	unsigned long image_size = width * height * 4, row;
 	char path[512];
-	FILE *file;
 
-	snprintf(path, sizeof(path), "%s/frame%05lu%s.bmp", directory, device.frame, suffix);
-	file = fopen(path, "wb");
-	if (file)
-	{
-		*(unsigned int *)(header + 2) = (unsigned int)(54 + image_size);
-		*(unsigned int *)(header + 10) = 54;
-		*(unsigned int *)(header + 14) = 40;
-		*(int *)(header + 18) = (int)width;
-		*(int *)(header + 22) = -(int)height; /* rows from the top, as read */
-		*(unsigned short *)(header + 26) = 1;
-		*(unsigned short *)(header + 28) = 32;
-		*(unsigned int *)(header + 34) = (unsigned int)image_size;
-		fwrite(header, 1, sizeof(header), file);
-		for (row = 0; row < height; row++)
-			fwrite(pixels + row * width * 4, 1, width * 4, file);
-		fclose(file);
-	}
+	snprintf(path, sizeof(path), "%s/frame%05lu%s.png", directory, device.frame, suffix);
+	png_write_bgra(path, pixels, width, height, width * 4);
 }
 
 /* the target's color, or with alpha its alpha channel as gray (stereo's HUD
@@ -5868,7 +5851,7 @@ static float depth_empty_share(struct render_target_entry *target)
 }
 
 /* debug.screenshot_every in a stereo frame: an eye's depth as a grayscale
-frameNNNNN-left-depth.bmp. Reverse-Z, as the Compositor gets it (near is
+frameNNNNN-left-depth.png. Reverse-Z, as the Compositor gets it (near is
 bright); black only where nothing drew, which the Compositor treats as
 empty, and anything drawn at least a dark gray, so the two can't be confused */
 static void write_depth_screenshot(struct render_target_entry *target, const char *suffix)
@@ -5879,9 +5862,7 @@ static void write_depth_screenshot(struct render_target_entry *target, const cha
 	unsigned char *pixels;
 	float *depth;
 	char path[512];
-	FILE *file;
 	unsigned long index, empty = 0;
-	unsigned char header[54] = { 'B', 'M' };
 	unsigned long image_size = width * height * 4;
 
 	if (!directory || !(depth = depth_read(target)))
@@ -5903,23 +5884,8 @@ static void write_depth_screenshot(struct render_target_entry *target, const cha
 		pixels[index * 4 + 3] = 0xff;
 	}
 	free(depth);
-	snprintf(path, sizeof(path), "%s/frame%05lu%s.bmp", directory, device.frame, suffix);
-	file = fopen(path, "wb");
-	if (file)
-	{
-		*(unsigned int *)(header + 2) = (unsigned int)(54 + image_size);
-		*(unsigned int *)(header + 10) = 54;
-		*(unsigned int *)(header + 14) = 40;
-		*(int *)(header + 18) = (int)width;
-		*(int *)(header + 22) = -(int)height; /* rows from the top, as read */
-		*(unsigned short *)(header + 26) = 1;
-		*(unsigned short *)(header + 28) = 32;
-		*(unsigned int *)(header + 34) = (unsigned int)image_size;
-		fwrite(header, 1, sizeof(header), file);
-		for (index = 0; index < height; index++)
-			fwrite(pixels + index * width * 4, 1, width * 4, file);
-		fclose(file);
-	}
+	snprintf(path, sizeof(path), "%s/frame%05lu%s.png", directory, device.frame, suffix);
+	png_write_bgra(path, pixels, width, height, width * 4);
 	platform_log("frame %lu: %s: %.1f%% of the depth is empty", device.frame, suffix,
 		100.0f * (float)empty / (float)(width * height));
 	free(pixels);
@@ -5938,7 +5904,7 @@ static const char *hud_group_name(int group)
 against the rectangle its draws were measured to (layout lines; NULL: the
 reticle's layer, which has none), logged with the box its drawn pixels
 (any color, or alpha under 1) fill and how many fall outside the
-rectangle, and saved as frameNNNNN-SUFFIX.bmp: the rectangle and a margin,
+rectangle, and saved as frameNNNNN-SUFFIX.png: the rectangle and a margin,
 or for the reticle the drawn pixels' box and a margin */
 static void hud_target_check(struct render_target_entry *target, const char *name, const float *rectangle,
 	const char *suffix)
@@ -6001,10 +5967,7 @@ static void hud_target_check(struct render_target_entry *target, const char *nam
 	if (directory && crop[2] >= crop[0] && crop[3] >= crop[1])
 	{
 		unsigned long crop_width = (unsigned long)(crop[2] - crop[0] + 1), crop_height = (unsigned long)(crop[3] - crop[1] + 1);
-		unsigned long image_size = crop_width * crop_height * 4;
-		unsigned char header[54] = { 'B', 'M' };
 		char path[512];
-		FILE *file;
 
 		/* the layer's color over gray where its transmittance shows the
 		picture, so what it covers stands out */
@@ -6022,23 +5985,9 @@ static void hud_target_check(struct render_target_entry *target, const char *nam
 				}
 				pixel[3] = 0xff;
 			}
-		snprintf(path, sizeof(path), "%s/frame%05lu%s.bmp", directory, device.frame, suffix);
-		file = fopen(path, "wb");
-		if (file)
-		{
-			*(unsigned int *)(header + 2) = (unsigned int)(54 + image_size);
-			*(unsigned int *)(header + 10) = 54;
-			*(unsigned int *)(header + 14) = 40;
-			*(int *)(header + 18) = (int)crop_width;
-			*(int *)(header + 22) = -(int)crop_height; /* rows from the top, as read */
-			*(unsigned short *)(header + 26) = 1;
-			*(unsigned short *)(header + 28) = 32;
-			*(unsigned int *)(header + 34) = (unsigned int)image_size;
-			fwrite(header, 1, sizeof(header), file);
-			for (y = (unsigned long)crop[1]; y <= (unsigned long)crop[3]; y++)
-				fwrite(pixels + (y * width + (unsigned long)crop[0]) * 4, 1, crop_width * 4, file);
-			fclose(file);
-		}
+		snprintf(path, sizeof(path), "%s/frame%05lu%s.png", directory, device.frame, suffix);
+		png_write_bgra(path, pixels + ((unsigned long)crop[1] * width + (unsigned long)crop[0]) * 4, crop_width,
+			crop_height, width * 4);
 	}
 	free(pixels);
 }

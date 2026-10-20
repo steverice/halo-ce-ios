@@ -10,7 +10,7 @@ frame's picture as it is presented, and exits.
 
   HALO_RENDER_REPLAY        the capture file
   HALO_RENDER_REPLAY_OUT    the folder for the results (default render-replay, in the data folder):
-                            frameNNNNN.bmp as debug.screenshot_every names them (-left and -right for a
+                            frameNNNNN.png as debug.screenshot_every names them (-left and -right for a
                             stereo frame's eyes), frames.txt with each picture's size and hash, result.txt
   HALO_RENDER_REPLAY_SHOTS  "all" (the default), "last" (only the window's last frame) or "none"
   HALO_RENDER_REPLAY_FORCE  1: play a capture made against another gpu.h
@@ -34,6 +34,7 @@ reached the backend.
 #include "gpu_capture.h"
 #include "gpu_replay_fuzz.h"
 #include "gpu_validate.h"
+#include "png_write.h"
 #include "gpu_interface_hash.h"
 
 #include <SDL3/SDL.h>
@@ -131,26 +132,11 @@ static void replay_frame(void *context, uint32_t frame, const gpu_texture *pictu
 				(unsigned long long)hash_pixels(replay.pixels, size));
 		if (replay.shots == 2 || frame == replay.last_frame)
 		{
-			unsigned char header[54] = { 'B', 'M' };
 			char path[1200];
-			FILE *file;
 
 			/* as d3d8_device.c's screenshot_file writes a frame */
-			snprintf(path, sizeof(path), "%s/frame%05u%s.bmp", replay.out, frame, suffix);
-			file = fopen(path, "wb");
-			if (!file)
-				continue;
-			*(unsigned int *)(void *)(header + 2) = (unsigned int)(54 + size);
-			*(unsigned int *)(void *)(header + 10) = 54;
-			*(unsigned int *)(void *)(header + 14) = 40;
-			*(int *)(void *)(header + 18) = (int)sizes[index][0];
-			*(int *)(void *)(header + 22) = -(int)sizes[index][1];
-			*(unsigned short *)(void *)(header + 26) = 1;
-			*(unsigned short *)(void *)(header + 28) = 32;
-			*(unsigned int *)(void *)(header + 34) = (unsigned int)size;
-			fwrite(header, 1, sizeof(header), file);
-			fwrite(replay.pixels, 1, size, file);
-			fclose(file);
+			snprintf(path, sizeof(path), "%s/frame%05u%s.png", replay.out, frame, suffix);
+			png_write_bgra(path, replay.pixels, sizes[index][0], sizes[index][1], (unsigned long)sizes[index][0] * 4);
 		}
 	}
 }
