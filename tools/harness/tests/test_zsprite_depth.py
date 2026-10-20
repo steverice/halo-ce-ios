@@ -1,5 +1,8 @@
 """Check the actual pixel-shader translator's DOT_ZW output for GL and Metal."""
 
+import hashlib
+import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,19 +21,29 @@ PROBE = r'''
 
 void platform_log(const char *format, ...) { (void)format; }
 
-static void check(const struct nv2a_dialect *dialect, int dot_zw, int count_samples)
+static struct nv2a_pixel_shader_key make_key(int dot_zw, int count_samples)
 {
     struct nv2a_pixel_shader_key key = {0};
+
+    key.texture_modes = 0x04UL | (0x11UL << (5 * 2));
+    if (dot_zw)
+        key.texture_modes |= 0x0aUL << (5 * 3);
+    key.combiner_state[D3DRS_PSFINALCOMBINERINPUTSABCD] = 0x04;
+    key.combiner_state[D3DRS_PSFINALCOMBINERINPUTSEFG] = 0x14 << 8;
+    key.count_samples = count_samples;
+    return key;
+}
+
+static void check(const struct nv2a_dialect *dialect, int dot_zw, int count_samples)
+{
+    struct nv2a_pixel_shader_key key = make_key(dot_zw, count_samples);
     char *shader;
 
-    if (dot_zw)
-        key.texture_modes = 0x0aUL << (5 * 2);
-    key.count_samples = count_samples;
     shader = nv2a_pixel_shader_translate(dialect, &key);
     assert(shader);
     if (dot_zw && !(dialect->es && count_samples))
     {
-        assert(strstr(shader, "replaced_depth = dot2 > 0.0 ? clamp(dot1 / dot2 / 16777215.0") != NULL);
+        assert(strstr(shader, "replaced_depth = dot3 > 0.0 ? clamp(dot2 / dot3 / 16777215.0") != NULL);
         if (dialect->msl)
         {
             assert(strstr(shader, "float depth [[depth(any)]]") != NULL);
@@ -54,39 +67,58 @@ static void check(const struct nv2a_dialect *dialect, int dot_zw, int count_samp
     free(shader);
 }
 
-static void write_es(const char *path, int count_samples)
+static void write_shader(const char *directory, const char *name, const char *extension,
+	const struct nv2a_dialect *dialect, int dot_zw, int count_samples, int discard)
 {
-    struct nv2a_dialect es = {.version = 310, .es = 1};
-    struct nv2a_pixel_shader_key key = {0};
+    struct nv2a_pixel_shader_key key = make_key(dot_zw, count_samples);
+    char path[1024];
     FILE *file;
     char *shader;
 
-    key.texture_modes = 0x0aUL << (5 * 2);
-    key.count_samples = count_samples;
-    shader = nv2a_pixel_shader_translate(&es, &key);
+    if (discard)
+        key.alpha_test_function = D3DCMP_NEVER;
+    shader = nv2a_pixel_shader_translate(dialect, &key);
     assert(shader);
+    assert(snprintf(path, sizeof(path), "%s/%s.%s", directory, name, extension) < (int)sizeof(path));
     file = fopen(path, "wb");
     assert(file);
     assert(fwrite(shader, 1, strlen(shader), file) == strlen(shader));
+    assert(fclose(file) == 0);
+    assert(snprintf(path, sizeof(path), "%s/%s.key", directory, name) < (int)sizeof(path));
+    file = fopen(path, "wb");
+    assert(file);
+    assert(fwrite(&key, 1, sizeof(key), file) == sizeof(key));
     assert(fclose(file) == 0);
     free(shader);
 }
 
 int main(int argc, char **argv)
 {
-    struct nv2a_dialect gl = {.version = 450};
+    struct nv2a_dialect gl = {.version = 410};
     struct nv2a_dialect metal = {.version = GPU_SHADER_LANGUAGE_MSL, .msl = 1};
     struct nv2a_dialect es = {.version = 310, .es = 1};
+    struct nv2a_dialect gl_debug = gl;
+    struct nv2a_dialect metal_debug = metal;
 
-    assert(argc == 3);
+    assert(argc == 2);
+    gl_debug.debug_expression = "vec3(0.0, 1.0, 0.0)";
+    metal_debug.debug_expression = gl_debug.debug_expression;
     check(&gl, 0, 0);
     check(&gl, 1, 0);
     check(&metal, 0, 0);
     check(&metal, 1, 0);
     check(&es, 1, 0);
     check(&es, 1, 1);
-    write_es(argv[1], 0);
-    write_es(argv[2], 1);
+    write_shader(argv[1], "gl_dot", "frag", &gl, 1, 0, 0);
+    write_shader(argv[1], "gl_control", "frag", &gl, 0, 0, 0);
+    write_shader(argv[1], "gl_dot_debug", "frag", &gl_debug, 1, 0, 0);
+    write_shader(argv[1], "gl_dot_discard", "frag", &gl, 1, 0, 1);
+    write_shader(argv[1], "msl_dot", "metal", &metal, 1, 0, 0);
+    write_shader(argv[1], "msl_control", "metal", &metal, 0, 0, 0);
+    write_shader(argv[1], "msl_dot_debug", "metal", &metal_debug, 1, 0, 0);
+    write_shader(argv[1], "msl_dot_discard", "metal", &metal, 1, 0, 1);
+    write_shader(argv[1], "es_dot", "frag", &es, 1, 0, 0);
+    write_shader(argv[1], "es_counter", "frag", &es, 1, 1, 0);
     return 0;
 }
 '''
@@ -102,11 +134,9 @@ def test_dot_zw_depth_generation_for_gl_and_metal():
     with tempfile.TemporaryDirectory(prefix="zsprite-depth-") as directory:
         program = Path(directory, "probe.c")
         binary = Path(directory, "probe")
-        normal = Path(directory, "dot_zw.frag")
-        counter = Path(directory, "dot_zw_counter.frag")
         program.write_text(PROBE)
         subprocess.run([
-            "clang", "--target=i686-linux-gnu", "-m32", "-no-pie",
+            "clang", "--target=i686-linux-gnu", "-m32", "-no-pie", "-flto=full", "-fuse-ld=lld",
             "-std=gnu11", "-fms-extensions", "-fshort-wchar", "-malign-double",
             "-DHALO_LINUX_PLATFORM_LAYER",
             "-Wall", "-Wextra",
@@ -117,6 +147,19 @@ def test_dot_zw_depth_generation_for_gl_and_metal():
             "-idirafter", "port/include/xdk",
             str(program), *(str(path) for path in objects), "-o", str(binary),
         ], cwd=ROOT, check=True)
-        subprocess.run([str(binary), str(normal), str(counter)], cwd=ROOT, check=True)
-        for shader in (normal, counter):
+        subprocess.run([str(binary), directory], cwd=ROOT, check=True)
+        for shader in (Path(directory, "es_dot.frag"), Path(directory, "es_counter.frag")):
             subprocess.run(["glslangValidator", str(shader)], cwd=ROOT, check=True)
+        output = os.environ.get("ZSPRITE_SHADER_OUTPUT")
+        if output:
+            destination = ROOT / output
+            destination.mkdir(parents=True, exist_ok=True)
+            hashes = {}
+            for path in sorted(Path(directory).glob("*")):
+                if path.suffix not in (".frag", ".metal", ".key"):
+                    continue
+                contents = path.read_bytes()
+                (destination / path.name).write_bytes(contents)
+                hashes[path.name] = {"sha256": hashlib.sha256(contents).hexdigest(), "bytes": len(contents)}
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+            (destination / "manifest.json").write_text(json.dumps({"head": head, "files": hashes}, indent=2) + "\n")
