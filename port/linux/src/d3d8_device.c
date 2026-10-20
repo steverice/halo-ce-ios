@@ -208,12 +208,33 @@ static double render_scale_live = -1.0;
 height in lines (the next frame's halo_screen_commit draws at it, as a render scale step does), the shadow maps'
 size and the anisotropy; 0 leaves the setting in force */
 static long benchmark_render_lines, benchmark_shadow_size, benchmark_anisotropy;
+/* Values observed in renderer operations since the current benchmark run began.
+   Zero means this run has not established an actual shadow target or sampler. */
+static long benchmark_shadow_target_observed, benchmark_sampler_max_observed;
 
 void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy)
 {
 	benchmark_render_lines = render_lines;
 	benchmark_shadow_size = shadow_size;
 	benchmark_anisotropy = anisotropy;
+}
+
+void halo_benchmark_override_state(long *render_lines, long *shadow_size, long *anisotropy)
+{
+	*render_lines = benchmark_render_lines;
+	*shadow_size = benchmark_shadow_size;
+	*anisotropy = benchmark_anisotropy;
+}
+
+void halo_benchmark_renderer_observations_reset(void)
+{
+	benchmark_shadow_target_observed = benchmark_sampler_max_observed = 0;
+}
+
+void halo_benchmark_renderer_observations(long *shadow_target_size, long *anisotropic_sampler_max)
+{
+	*shadow_target_size = benchmark_shadow_target_observed;
+	*anisotropic_sampler_max = benchmark_sampler_max_observed;
 }
 
 /* source/render/render_debug.c: text the frame's debug pass draws */
@@ -952,7 +973,9 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 		effect_factor = !strcmp(config_string("display.mirror_resolution"), "full") ? 2.0f : 1.0f;
 	}
 	if (width == 128 && height == 128 && (format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
+	{
 		scale[0] = scale[1] = (float)(benchmark_shadow_size > 0 ? benchmark_shadow_size : shadow_size) / 128.0f;
+	}
 	else if (width == 320 && height == 240 && effect_resolution)
 	{
 		float dense[2];
@@ -973,6 +996,20 @@ always had */
 static int render_target_layer(void)
 {
 	return halo_stereo_frame()->eye_count == 2 ? halo_stereo_current_layer() : HALO_STEREO_LAYER_MONO;
+}
+
+static void benchmark_observe_shadow_target(const D3DSurface *surface, const struct render_target_entry *entry)
+{
+	unsigned long width, height;
+	BOOL depth;
+	DWORD format;
+
+	if (!entry || !entry->target.texture || entry->target.width != 128 || entry->target.height != 128)
+		return;
+	format = surface_dimensions(surface,&width,&height,&depth);
+	if (width == 128 && height == 128 &&
+		(format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
+		benchmark_shadow_target_observed = (long)entry->target.allocated_width;
 }
 
 static struct render_target_entry *render_target_get_layer(const D3DSurface *surface, int stereo_layer)
@@ -1079,10 +1116,14 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 			entry->target.scale[1] = scale[1];
 			entry->target.gl_width = (unsigned long)(width * scale[0] + 0.5f);
 			entry->target.gl_height = (unsigned long)(height * scale[1] + 0.5f);
+			benchmark_observe_shadow_target(surface,entry);
 			return entry;
 		}
 		if (!foveated_eye && entry->target.scale[0] == scale[0] && entry->target.scale[1] == scale[1])
+		{
+			benchmark_observe_shadow_target(surface,entry);
 			return entry;
+		}
 	}
 	entry = calloc(1, sizeof(*entry));
 	entry->layer = layer;
@@ -1109,6 +1150,7 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 		texture.depth = 1;
 		texture.levels = 1;
 		entry->target.texture = gpu_texture_create(&texture);
+		benchmark_observe_shadow_target(surface,entry);
 		/* the zoomed picture: its size against an eye's unfoveated one */
 		if (layer == HALO_STEREO_LAYER_ZOOM && !depth)
 		{
@@ -1188,7 +1230,9 @@ static struct render_target_entry *render_target_get(const D3DSurface *surface)
 				recent_render_targets[slot].native == native)
 			{
 				stats.render_target_recent++;
-				return recent_render_targets[slot].entry;
+				entry = recent_render_targets[slot].entry;
+				benchmark_observe_shadow_target(surface,entry);
+				return entry;
 			}
 		}
 		entry = render_target_get_layer(surface, native ? HALO_STEREO_LAYER_NATIVE : HALO_STEREO_LAYER_MONO);
@@ -3579,6 +3623,13 @@ static void sampler_state_fill(int stage, BOOL mipmapped, BOOL hires, struct gpu
 			sampler->min_filter = GPU_FILTER_ANISOTROPIC;
 			sampler->max_anisotropy = (uint32_t)anisotropy;
 		}
+	}
+	if (sampler->mip_filter != GPU_FILTER_NONE &&
+		(sampler->min_filter == GPU_FILTER_LINEAR || sampler->min_filter == GPU_FILTER_ANISOTROPIC))
+	{
+		long used = sampler->min_filter == GPU_FILTER_ANISOTROPIC ? (long)sampler->max_anisotropy : 1;
+		if (used > benchmark_sampler_max_observed)
+			benchmark_sampler_max_observed = used;
 	}
 }
 

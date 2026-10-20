@@ -233,10 +233,14 @@ static BOOL graphics_key_allowed(NSString *name)
 }
 static BOOL graphics_snapshot_valid(NSDictionary *snapshot)
 {
-    NSSet *keys = [NSSet setWithArray:@[@"schema",@"scene",@"configuration_revision",@"external_output",@"values"]];
-    if (![snapshot isKindOfClass:NSDictionary.class] || ![[NSSet setWithArray:snapshot.allKeys] isEqual:keys] ||
+    if (![snapshot isKindOfClass:NSDictionary.class]) return NO;
+    BOOL extended = [snapshot[@"schema"] isKindOfClass:NSNumber.class] && [snapshot[@"schema"] doubleValue] == 2;
+    NSSet *keys = [NSSet setWithArray:extended ?
+        @[@"schema",@"scene",@"configuration_revision",@"external_output",@"values",@"applied_overrides",@"renderer_state"] :
+        @[@"schema",@"scene",@"configuration_revision",@"external_output",@"values"]];
+    if (![[NSSet setWithArray:snapshot.allKeys] isEqual:keys] ||
         ![snapshot[@"schema"] isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)snapshot[@"schema"]) == CFBooleanGetTypeID() ||
-        [snapshot[@"schema"] doubleValue] != 1 || ![@[@"gameplay",@"menu",@"cutscene"] containsObject:snapshot[@"scene"]] ||
+        ![@[@1,@2] containsObject:snapshot[@"schema"]] || ![@[@"gameplay",@"menu",@"cutscene"] containsObject:snapshot[@"scene"]] ||
         ![snapshot[@"configuration_revision"] isKindOfClass:NSNumber.class] ||
         CFGetTypeID((__bridge CFTypeRef)snapshot[@"configuration_revision"]) == CFBooleanGetTypeID() ||
         CFNumberIsFloatType((__bridge CFNumberRef)snapshot[@"configuration_revision"]) ||
@@ -252,6 +256,35 @@ static BOOL graphics_snapshot_valid(NSDictionary *snapshot)
             if ([value lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > CONFIG_GRAPHICS_MAXIMUM_STRING_BYTES) return NO;
         } else if (![value isKindOfClass:NSNumber.class] || !isfinite([value doubleValue])) return NO;
     }
+    if (extended) {
+        NSDictionary *overrides = snapshot[@"applied_overrides"], *renderer = snapshot[@"renderer_state"];
+        if (![overrides isKindOfClass:NSDictionary.class] || ![renderer isKindOfClass:NSDictionary.class] ||
+            ![[NSSet setWithArray:overrides.allKeys] isEqual:[NSSet setWithArray:
+                @[@"render_lines",@"shadow_map_size",@"anisotropic_filtering",@"model_lod"]]] ||
+            ![[NSSet setWithArray:renderer.allKeys] isEqual:[NSSet setWithArray:
+                @[@"shadow_target_size",@"anisotropic_sampler_max",@"model_lod",@"texture_replacement_selections",
+                    @"texture_replacement_source",@"upscaled_texture_assets"]]]) return NO;
+        for (NSString *key in @[@"render_lines",@"shadow_map_size",@"anisotropic_filtering"]) {
+            id value = overrides[key];
+            if (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID() ||
+                CFNumberIsFloatType((__bridge CFNumberRef)value) || [value longLongValue] < 0 || [value longLongValue] > 8192) return NO;
+        }
+        if (![@[@"auto",@"max"] containsObject:overrides[@"model_lod"]] ||
+            ![@[@"auto",@"max",@"unavailable"] containsObject:renderer[@"model_lod"]]) return NO;
+        for (NSString *key in @[@"shadow_target_size",@"anisotropic_sampler_max"]) {
+            id value = renderer[key];
+            if (value == NSNull.null) continue;
+            if (![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID() ||
+                CFNumberIsFloatType((__bridge CFNumberRef)value) || [value longLongValue] < 1 || [value longLongValue] > 8192) return NO;
+        }
+        id selections = renderer[@"texture_replacement_selections"];
+        if (![selections isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)selections) == CFBooleanGetTypeID() ||
+            CFNumberIsFloatType((__bridge CFNumberRef)selections) || [selections longLongValue] < 0 ||
+            [selections doubleValue] > 9007199254740991.0 ||
+            ![@[@"debug_directory",@"unavailable"] containsObject:renderer[@"texture_replacement_source"]] ||
+            ![renderer[@"upscaled_texture_assets"] isEqual:@"unavailable"] ||
+            ([selections longLongValue] > 0) != [renderer[@"texture_replacement_source"] isEqual:@"debug_directory"]) return NO;
+    }
     return YES;
 }
 void host_benchmark_graphics(const char *json)
@@ -266,7 +299,11 @@ void host_benchmark_graphics(const char *json)
         if (valid) {
             if (graphics_last && (![graphics_last[@"values"] isEqual:snapshot[@"values"]] ||
                 ![graphics_last[@"scene"] isEqual:snapshot[@"scene"]] ||
-                ![graphics_last[@"external_output"] isEqual:snapshot[@"external_output"]])) graphics_changed = YES;
+                ![graphics_last[@"external_output"] isEqual:snapshot[@"external_output"]] ||
+                ((graphics_last[@"applied_overrides"] || snapshot[@"applied_overrides"]) &&
+                    ![graphics_last[@"applied_overrides"] isEqual:snapshot[@"applied_overrides"]]) ||
+                ((graphics_last[@"renderer_state"] || snapshot[@"renderer_state"]) &&
+                    ![graphics_last[@"renderer_state"] isEqual:snapshot[@"renderer_state"]]))) graphics_changed = YES;
             if (!graphics_first) graphics_first = snapshot;
             graphics_last = snapshot; graphics_snapshots++;
         } else graphics_invalid++;

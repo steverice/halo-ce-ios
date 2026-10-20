@@ -1065,6 +1065,11 @@ static gpu_texture texture_entry_result(struct texture_entry *entry, uint32_t *t
 	{
 		/* (debug.texture_override_directory: its own levels, sampled as the
 		game samples the texture; never hires) */
+#ifdef HALO_IOS
+		/* Count actual replacement selections during a measured benchmark window. */
+		extern void benchmark_graphics_texture_replacement_selected(void);
+		benchmark_graphics_texture_replacement_selected();
+#endif
 		description->levels = entry->texture_override_levels;
 		return entry->texture_override;
 	}
