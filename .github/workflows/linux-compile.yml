@@ -57,6 +57,8 @@ jobs:
           python -m pytest --quiet \
             tools/test_linux_port.py::test_network_format_is_the_recorded_one \
             tools/test_linux_port.py::test_p2p_signatures_and_listings \
+            tools/test_memory_watch.py \
+            tools/test_linux_video_driver.py \
             tools/harness/tests/test_unicode_line_breaks.py \
             tools/harness/tests/test_sound_orphan.py \
             tools/harness/tests/test_queue_reset.py \

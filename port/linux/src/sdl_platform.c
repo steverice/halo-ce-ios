@@ -33,6 +33,10 @@ void win32_window_borderless_apply(SDL_Window *window);
 #if !defined(_WIN32) && !defined(HALO_ANDROID) && !defined(HALO_ILP32)
 #include <signal.h>
 #endif
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ILP32) && !defined(HALO_ANDROID)
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
 
 static SDL_Window *platform_window;
 static SDL_GLContext platform_gl_context;
@@ -95,6 +99,35 @@ void updater_start(void);
 void updater_poll(SDL_Window *window);
 #endif
 
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ILP32) && !defined(HALO_ANDROID)
+/* A 32-bit NVIDIA OpenGL window on Wayland needs a loadable egl-wayland
+library. Without it, EGL may fall back to Mesa's software renderer while
+X11 (XWayland) can use the 32-bit GLX driver. Try X11 first only when the
+NVIDIA module is loaded and neither egl-wayland library loads. The explicit
+SDL_VIDEO_DRIVER setting still decides. */
+static void platform_choose_video_driver(void)
+{
+	static const char *const egl_wayland[] = { "libnvidia-egl-wayland.so.1", "libnvidia-egl-wayland2.so.1" };
+	size_t index;
+
+	if (getenv("SDL_VIDEO_DRIVER") || !getenv("WAYLAND_DISPLAY") || access("/sys/module/nvidia", F_OK) != 0)
+		return;
+	for (index = 0; index < sizeof(egl_wayland) / sizeof(egl_wayland[0]); index++)
+	{
+		void *library = dlopen(egl_wayland[index], RTLD_LAZY | RTLD_LOCAL);
+
+		if (library)
+		{
+			dlclose(library);
+			return;
+		}
+	}
+	platform_log("video: NVIDIA's driver has no 32-bit egl-wayland here: X11 (XWayland) before Wayland, "
+		"where OpenGL would be drawn on the processor (SDL_VIDEO_DRIVER=wayland chooses Wayland)");
+	SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
+}
+#endif
+
 BOOL platform_sdl_initialize(void)
 {
 	if (platform_sdl_started)
@@ -110,6 +143,9 @@ BOOL platform_sdl_initialize(void)
 	if (p2p_hand_off_invite())
 		exit(EXIT_SUCCESS);
 	SDL_SetHint(SDL_HINT_APP_NAME, "Halo");
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ILP32) && !defined(HALO_ANDROID)
+	platform_choose_video_driver();
+#endif
 #ifdef HALO_ILP32
 	/* landscape only; the back key arrives as a key event (xinput_sdl.c)
 	instead of closing the activity */
@@ -902,6 +938,16 @@ BOOL platform_video_initialize(unsigned long width, unsigned long height)
 #ifndef HALO_IOS
 	/* (the host's gpu_initialize logs this on iOS) */
 	platform_log("OpenGL %s on %s", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER));
+#if defined(__linux__) && !defined(HALO_ARM64_GUEST) && !defined(HALO_ILP32) && !defined(HALO_ANDROID)
+	{
+		const char *renderer = (const char *)glGetString(GL_RENDERER);
+
+		/* (Mesa's software renderers: no GPU driver for this window) */
+		if (renderer && (strstr(renderer, "llvmpipe") || strstr(renderer, "softpipe")))
+			platform_log("OpenGL is drawn on the processor, not the GPU (video driver %s): "
+				"refer to \"NVIDIA on Wayland\" in port/linux/README.md", SDL_GetCurrentVideoDriver());
+	}
+#endif
 #endif
 #ifndef HALO_ILP32
 	platform_mouse_capture(TRUE);

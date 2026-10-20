@@ -6227,6 +6227,9 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			render_interpolation_next_frame_due(gpu_present(back_buffer->target.texture));
 		hud_layer_ui = FALSE;
 		ui_dim = 0.0f;
+#if defined(__linux__) && !defined(HALO_ANDROID) && !defined(HALO_ARM64_GUEST)
+		memory_watch_begin_frame();
+#endif
 		xgpu_texture_cache_begin_frame();
 		shader_list_take_pipelines();
 	}
