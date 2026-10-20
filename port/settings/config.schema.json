@@ -2628,6 +2628,39 @@
             "desktop"
           ]
         },
+        "delta_browse": {
+          "type": "boolean",
+          "default": true,
+          "description": "The server browser also lists the games of Delta's public list (network.delta_url), run by others, with the network version of each; games of a version this build can't join are shown and not joined. Only while the server browser is open with network.online and network.public_lobby on. It asks the list for its games every 15 seconds and sends nothing else: the list's server sees this machine's internet address, as the signalling brokers do.",
+          "x-environment": "HALO_NET_DELTA_BROWSE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "delta_announce": {
+          "type": "boolean",
+          "default": false,
+          "description": "List the public game this machine hosts for the internet (Create Game > Internet, PUBLIC, no password) in Delta's public list (network.delta_url), so that players using it find it. Off by default: it sends the list's server, run by others, the game's invite (anyone who has it can join), name, map, game type number, player counts, whether it is open and has teams, this build's network version and that it plays the game's own protocol alone, and the server sees this machine's internet address. The game is withdrawn when it ends or goes private.",
+          "x-environment": "HALO_NET_DELTA_ANNOUNCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "delta_url": {
+          "type": "string",
+          "default": "https://halo.milenko.org",
+          "description": "The address of Delta's public game list, whose /v1/games the server browser reads (network.delta_browse) and whose /v1/announce a hosted game is listed at (network.delta_announce). Empty turns both off.",
+          "x-environment": "HALO_NET_DELTA_URL",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "host_public": {
           "type": "boolean",
           "default": false,

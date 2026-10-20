@@ -928,9 +928,10 @@ static const struct config_setting config_settings[] =
 		"Internet, PUBLIC, no password) in Delta's public list\n"
 		"(network.delta_url), so that players using it find it. Off by default:\n"
 		"it sends the list's server, run by others, the game's invite (anyone who\n"
-		"has it can join), name, map, game type and player counts, and the\n"
-		"server sees this machine's internet address. The game is withdrawn when\n"
-		"it ends or goes private." },
+		"has it can join), name, map, game type number, player counts, whether\n"
+		"it is open and has teams, this build's network version and that it\n"
+		"plays the game's own protocol alone, and the server sees this machine's\n"
+		"internet address. The game is withdrawn when it ends or goes private." },
 	{ "network.delta_url", _config_string, "\"https://halo.milenko.org\"", "HALO_NET_DELTA_URL", _environment_value,
 		_platform_all,
 		"The address of Delta's public game list, whose /v1/games the server\n"
