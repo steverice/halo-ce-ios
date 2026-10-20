@@ -2416,6 +2416,11 @@ static void distributed_handle_inputs(
 		action.throttle.i = PIN(action.throttle.i, -1.0f, 1.0f);
 		action.throttle.j = PIN(action.throttle.j, -1.0f, 1.0f);
 		action.primary_trigger = PIN(action.primary_trigger, 0.0f, 1.0f);
+		/* port: pad is the tracked hand aim's flag and facing offset on this
+		machine, never sent over the network (hand aim goes as ordinary
+		facing); an older client left it unset and a modified one could set
+		it, so a remote player's is not taken */
+		action.pad = 0;
 		/* (a spectator's buttons pick whom it watches: not counted) */
 		if (network_coop_active() && player->unit_index != NONE)
 			distributed_note_input_actions(input->player_index, &action);

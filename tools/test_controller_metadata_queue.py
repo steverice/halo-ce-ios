@@ -140,6 +140,10 @@ int main(void){
  assert(received_player==DATUM_INDEX_NEW(1,2));
  assert(received_host.desired_facing.yaw==1.0f && received_host.desired_facing.pitch==.2f);
  assert(received_host.pad==0 && received_host.control_flags==0x8001);
+ /* A remote client's pad (hand aim flag and facing offset) is not taken. */
+ sent.action.pad=(short)0xffff;received_host.pad=1;
+ distributed_handle_inputs(5,&sent,1);
+ assert(received_host.pad==0 && received_host.control_flags==0x8001);
  struct distributed_relayed_action packed,decoded;byte bytes[32],before[32];
  const struct player_action *recent[4]={actions,actions,actions,actions};short counts[4]={2,2,2,2};
  distributed_relayed_action_from(1,recent,counts,&packed);
