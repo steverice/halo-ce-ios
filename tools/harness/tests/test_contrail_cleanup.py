@@ -15,7 +15,9 @@ CASES = ("ground", "unknown", "repeat-then-supported")
 
 
 def generated(fault=None):
-    code = function(read(SOURCE), "render_contrail")
+    source = read(SOURCE)
+    code = function(source, "render_contrail")
+    drawn_point = function(source, "contrail_point_drawn")
     if fault:
         branch = code.index("case _contrail_render_type_ground:")
         end = code.index("\t\t\t\t\treturn;", branch)
@@ -23,7 +25,7 @@ def generated(fault=None):
         assert code[branch:end].count(call) == 1
         code = code[:branch] + code[branch:end].replace(call, "/* missing triangle unlock */", 1) + code[end:]
     types = enum_with(read("source/effects/contrail_definitions.h"), "_contrail_render_type_ground")
-    return (("config.inc", types + "\n"), ("under_test.inc", code + "\n"))
+    return (("config.inc", types + "\n"), ("under_test.inc", drawn_point + "\n" + code + "\n"))
 
 
 def build_native(generated_files):
