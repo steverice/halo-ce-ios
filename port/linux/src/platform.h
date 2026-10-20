@@ -164,6 +164,9 @@ Page generations let a cache entry tell whether any of its pages changed
 since it was built. */
 
 void memory_watch_initialize(void);
+#if defined(__linux__) && !defined(HALO_ANDROID) && !defined(HALO_ARM64_GUEST)
+void memory_watch_begin_frame(void);
+#endif
 void memory_watch_protect(unsigned long address, unsigned long size);
 /* newest write generation of any page in the range */
 unsigned long memory_watch_generation(unsigned long address, unsigned long size);
