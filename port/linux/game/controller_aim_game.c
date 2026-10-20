@@ -40,8 +40,8 @@ the reticle's place and its low-passed distance, for the reticle, the gun
 and the drawn projectiles. That path writes nothing the tick reads. One
 thing crosses from the render to the action: the zoomed camera render.c
 latches each stereo frame (halo_controller_zoom_view, the zoom_view
-struct), which the next frame's action reads for the zoom's gate (ruling
-9). Like the hand's pose it is input to the action, not game state: the
+struct), which the next frame's action reads for the zoom's gate.
+Like the hand's pose it is input to the action, not game state: the
 action carries what it decided, so a recording replays without it.
 
 The hand flag per player (halo_player_hand_aim_set and its readers): the
@@ -78,8 +78,8 @@ in a network game and a multiplayer game type (aim_assist_fixed_rules). The
 live chord (Back and a click of the right stick) cycles it off, default and
 strong for the session; like the assist strength it is this machine's, not
 part of a recording. By default the setting follows the zoom: none
-unzoomed (the user's call after the 2026-10-12 headset session: a reticle
-that follows the hand late only while it is on an enemy feels disconnected),
+unzoomed (a reticle that follows the hand late only while it is on an enemy
+feels disconnected),
 input.aim_steady_zoom_2x at 2x and input.aim_steady_zoom_8x at 8x; the chord
 cycles by zoom, off, default and strong. */
 #include <math.h>
@@ -429,7 +429,7 @@ choice over the setting once used */
 #define ARMS_FOLLOW_ON 0.5f
 static float arms_follow_live = -1.0f;
 static int arms_turn_limit_message_pending, arms_follow_message_pending;
-/* input.zoom_takeover: 1, ruling 9's gate: zoomed, the head takes the aim
+/* input.zoom_takeover: 1, the zoom gate: zoomed, the head takes the aim
 (and the reticle goes to the center) where the hand's reticle would leave
 sight in the zoomed picture. 0, the default: the hand keeps the aim at any
 angle, the reticle is wherever the zoomed picture shows the gun's line, and
@@ -735,7 +735,7 @@ static int network_gameplay_aim_eligible(long unit_index)
 	return halo_zoom_ordinary_aim_ray(0, ray);
 }
 
-/* the "can't start" messages (ruling 7), once a session each */
+/* the "can't start" messages, once a session each */
 static void can_not_start_messages(const struct halo_spatial_sample *sample)
 {
 	const struct halo_stereo_frame *frame = halo_stereo_frame();
@@ -979,7 +979,7 @@ static void feedback(void)
 #endif
 }
 
-/* zoomed (ruling 9): 1 while the hand's aim (radians, world) shows in the
+/* zoomed: 1 while the hand's aim (radians, world) shows in the
 zoomed picture where its reticle is in sight (zoom_view.sight: the part both
 eyes see, within the shared view), by the zoomed camera render.c latched
 last frame at the zoom's magnification now (the frame a zoom starts, the
@@ -1212,12 +1212,12 @@ static int action_aim(long unit_index, float look_yaw, float look_pitch, unsigne
 		hand_known = 1;
 	}
 
-	/* a change to the look eases over 200 ms; back to the hand snaps (ruling
-	11). Zoomed, the hand keeps the aim wherever it points. With
+	/* a change to the look eases over 200 ms; back to the hand snaps.
+	Zoomed, the hand keeps the aim wherever it points. With
 	input.zoom_takeover it keeps it only while its reticle is in sight in
 	the zoomed picture (zoom_inside); leaving that hands the aim to the look
-	at once, and coming back inside 90% of it hands it back at once (ruling
-	9). Zooming itself changes nothing */
+	at once, and coming back inside 90% of it hands it back at once.
+	Zooming itself changes nothing */
 	if (test_controller && player_control_get_zoom_level(0) != aim.last_zoom_level)
 	{
 		aim.last_zoom_level = player_control_get_zoom_level(0);

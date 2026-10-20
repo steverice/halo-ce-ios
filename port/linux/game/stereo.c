@@ -250,7 +250,7 @@ static int seat_look_fade_passenger;
 goes black: display.pod_look_fade_start and _end (radians past the limit),
 and display.pod_look_fade_dim, the most the view darkens there, the blur
 still reaching full. A black view in the pod, before the player has moved
-at all, read as the game having stopped (headset session, 2026-10-12).
+at all, read as the game having stopped.
 seat_look_fade_pod: this frame's limited seat is the pod */
 static float pod_look_fade_start = 0.2617994f, pod_look_fade_end = 1.2217305f, pod_look_fade_dim = 0.85f;
 static int seat_look_fade_pod;

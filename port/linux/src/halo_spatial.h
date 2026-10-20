@@ -73,7 +73,7 @@ struct halo_spatial_sample
 	positive) at this sample's latch: the game sample's, the last
 	host_stereo_frame's; the drawing sample's, this frame's. 0 with no head */
 	/* (the game sample's head is one latch old by design: the look holds that
-	latch's head, and ruling 1's body yaw makes a fresh controller pose exact
+	latch's head, and the body yaw makes a fresh controller pose exact
 	against it. Do not "fix" it to the device anchor at the sample's time) */
 	float head_yaw;
 	int32_t head_level;      /* 1 while that head's pitch is under 85 degrees (or there is no head) */
@@ -147,8 +147,8 @@ barrel and sightline from the eyes' position (the camera's, world units,
 raised by display.eye_height_offset as the eyes are: halo_stereo_eye_frame),
 and what the eye sees along it. It writes nothing the tick reads */
 void halo_controller_draw_update(short local_player_index, const float camera_position[3]);
-/* the drawing state, for the reticle (Task 10), the gun (Task 11) and the
-projectiles (Task 13); world units and unit vectors. Every field but active
+/* the drawing state, for the reticle, the gun and the
+projectiles; world units and unit vectors. Every field but active
 is stale while active is 0 (the last active frame's, or zero): read them
 only while it is 1 */
 struct halo_controller_draw
@@ -207,7 +207,7 @@ unzoomed). While zoomed the action keeps the hand's aim only while its
 reticle shows in sight in the zoomed picture (inside what both eyes see of
 it, within the eyes' shared view: halo_stereo_shared_view, latched here), by
 the camera latched the frame before at the zoom's magnification then
-(controller_zoom_project_sight, ruling 9) */
+(controller_zoom_project_sight) */
 void halo_controller_zoom_view(const float forward[3], const float up[3], float tangent_across, float tangent_up,
 	float magnification);
 /* for d3d8_device.c, in a zoomed frame: 1 and where the drawing sightline

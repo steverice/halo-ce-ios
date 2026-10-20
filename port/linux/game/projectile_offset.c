@@ -2,7 +2,7 @@
 PROJECTILE_OFFSET.C
 
 Controller aim, milestone 1 (the spec's section 2, "The projectile's
-origin", option (b), and the plan's ruling 6): while a hand aims, the local
+origin", option (b)): while a hand aims, the local
 player's own projectiles are drawn as if they left the drawn gun's muzzle.
 The simulation still fires them from the eye along the hand's aim (the shot
 everyone else sees, and the one the tick moves); only the drawing moves.
@@ -43,7 +43,7 @@ keep their offsets once the projectile is gone.
 
 Unattached effect particles (smoke a projectile leaves in the world) keep
 their simulated place: nothing links them to their projectile at render
-time (ruling 6). Child projectiles from a detonation never pass through
+time. Child projectiles from a detonation never pass through
 trigger_create_projectiles and keep theirs.
 
 The record is written during the tick but read only by the drawing: the
@@ -483,7 +483,7 @@ const struct real_matrix4x3 *halo_projectile_matrices(long object_index, const s
 
 #ifndef PROJECTILE_OFFSET_PROBE
 /* the first-person weapon's "primary trigger" marker as drawn this frame
-(Task 11 turns the gun's node matrices to the hand's aim, so the marker is
+(the gun's node matrices turn to the hand's aim, so the marker is
 the turned gun's), less the rasterizer's view move for the weapon's draws:
 rasterizer_first_person_offset (rasterizer_xbox.c) draws the gun moved down
 by display.weapon_offset_down along the gun's up and back by

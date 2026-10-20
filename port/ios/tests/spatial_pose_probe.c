@@ -330,7 +330,7 @@ static void misplaced(void)
 	hand.aim.position[2] = -0.5f;
 	result |= host_spatial_misplaced_update(&state, &hand, 1, now);
 	check(result == 0 && !state.flagged, "misplaced: a second overhead is a raised arm");
-	/* 0.63 m above the head, as the headset session had it: flagged after 1.5 s, once */
+	/* 0.63 m above the head, as a headset run once logged it: flagged after 1.5 s, once */
 	hand.aim.position[2] = 0.63f;
 	for (frame = 0, result = 0; frame < 134; frame++, now += 1.0 / 90.0)
 		result += host_spatial_misplaced_update(&state, &hand, 1, now);

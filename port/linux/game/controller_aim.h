@@ -201,7 +201,7 @@ tangents[1] up, the unzoomed view's tangents over the magnification. Returns
 1 and the direction (eyes' frame: x right, y up, z back) at which the
 full-view picture shows it, or 0 when it is outside the picture: with inside
 1, outside past 100% of a tangent; with inside 0, inside again only within
-90% (ruling 9). shown is unit, and left alone when outside */
+90%. shown is unit, and left alone when outside */
 #define CONTROLLER_ZOOM_REENTRY 0.9f
 int controller_zoom_project(const float direction[3], const float zoom_forward[3], const float zoom_up[3],
 	const float tangents[2], float magnification, int inside, float shown[3]);

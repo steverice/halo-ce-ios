@@ -20,7 +20,7 @@ controller doesn't have reads as released */
 void host_spatial_controls_read(id<GCDevicePhysicalInputState> state, struct host_spatial_controls *controls);
 
 /* logs once, as a controller loads, the input elements GameController lists
-for it, so the headset session can confirm the names read above */
+for it, so the names read above can be confirmed from the log */
 void host_spatial_controls_log_names(GCController *controller, const char *hand);
 
 /* the controller's haptic engine (GCHapticsLocalityDefault), started; nil

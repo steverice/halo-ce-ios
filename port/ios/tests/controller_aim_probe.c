@@ -1199,7 +1199,7 @@ static void zoom_project(void)
 		check(controller_zoom_project(direction, forward, up, tangents, 2.0f, 1, shown), "zoom: inside at 99.9% up");
 		zoom_direction(forward, up, right, 0.0, across * 0.0701, direction);
 		check(!controller_zoom_project(direction, forward, up, tangents, 2.0f, 1, shown), "zoom: outside at 100.1% up");
-		/* outside: inside again only within 90% (ruling 9) */
+		/* outside: inside again only within 90% */
 		zoom_direction(forward, up, right, across * 0.0815, 0.0, direction);
 		check(!controller_zoom_project(direction, forward, up, tangents, 2.0f, 0, shown),
 			"zoom: re-entry: still outside at 90.6% across");

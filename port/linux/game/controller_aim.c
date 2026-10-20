@@ -57,7 +57,7 @@ static void turned_about_z(const float v[3], float angle, float out[3])
 
 float controller_body_yaw(struct controller_body *body, float look_yaw, float head_yaw, int head_level)
 {
-	/* past 85 degrees the head's yaw swings by its roll (ruling 1): the body
+	/* past 85 degrees the head's yaw swings by its roll: the body
 	holds, so the aim stays put in the room while you look at your feet */
 	if (head_level)
 	{
