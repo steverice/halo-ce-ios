@@ -27,6 +27,7 @@ watcher above it before the next frame.
 #include "platform.h"
 
 #include <signal.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ucontext.h>

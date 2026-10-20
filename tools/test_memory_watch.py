@@ -82,10 +82,9 @@ void write_to_error_file(char *string, unsigned char date)
 static void mask_handler(int signal_number)
 {
 	sigset_t current;
-	(void)signal_number;
 	sigprocmask(SIG_SETMASK, NULL, &current);
 	mask_seen = sigismember(&current, SIGUSR1);
-	self_blocked = sigismember(&current, SIGFPE);
+	self_blocked = sigismember(&current, signal_number);
 }
 
 static void once_handler(int signal_number)
@@ -271,6 +270,14 @@ int main(int argc, char **argv)
 		printf("survived\n");
 		return 0;
 	}
+	else if (!strcmp(mode, "ignored_siginfo_segv"))
+	{
+		install_handler(SIGSEGV, SIG_IGN, SA_SIGINFO, 0);
+		memory_watch_initialize();
+		raise(SIGSEGV);
+		printf("survived\n");
+		return 0;
+	}
 	else if (!strcmp(mode, "default_siginfo"))
 	{
 		install_handler(SIGBUS, SIG_DFL, SA_SIGINFO, 0);
@@ -278,21 +285,30 @@ int main(int argc, char **argv)
 		raise(SIGBUS);
 		return 102;
 	}
-	else if (!strcmp(mode, "mask"))
+	else if (!strcmp(mode, "default_siginfo_segv"))
 	{
-		install_handler(SIGFPE, mask_handler, 0, SIGUSR1);
+		install_handler(SIGSEGV, SIG_DFL, SA_SIGINFO, 0);
 		memory_watch_initialize();
-		raise(SIGFPE);
+		raise(SIGSEGV);
+		return 102;
+	}
+	else if (!strcmp(mode, "mask") || !strcmp(mode, "mask_segv"))
+	{
+		int number = !strcmp(mode, "mask_segv") ? SIGSEGV : SIGFPE;
+		install_handler(number, mask_handler, 0, SIGUSR1);
+		memory_watch_initialize();
+		raise(number);
 		printf("mask=%d self=%d\n", mask_seen, self_blocked);
 		return 0;
 	}
-	else if (!strcmp(mode, "one_shot"))
+	else if (!strcmp(mode, "one_shot") || !strcmp(mode, "one_shot_segv"))
 	{
-		install_handler(SIGFPE, once_handler, SA_RESETHAND, 0);
+		int number = !strcmp(mode, "one_shot_segv") ? SIGSEGV : SIGFPE;
+		install_handler(number, once_handler, SA_RESETHAND, 0);
 		memory_watch_initialize();
-		raise(SIGFPE);
+		raise(number);
 		printf("first=%d\n", once_calls);
-		raise(SIGFPE);
+		raise(number);
 		return 103;
 	}
 	else if (!strcmp(mode, "nested_signals"))
@@ -304,14 +320,15 @@ int main(int argc, char **argv)
 		printf("fpe=%d bus=%d\n", fpe_calls, bus_calls);
 		return 0;
 	}
-	else if (!strcmp(mode, "alternate_stack"))
+	else if (!strcmp(mode, "alternate_stack") || !strcmp(mode, "alternate_stack_segv"))
 	{
+		int number = !strcmp(mode, "alternate_stack_segv") ? SIGSEGV : SIGFPE;
 		stack_t stack = {.ss_sp = alternate_stack, .ss_size = sizeof(alternate_stack)};
 		if (sigaltstack(&stack, NULL) != 0)
 			return 104;
-		install_handler(SIGFPE, alt_stack_handler, SA_ONSTACK, 0);
+		install_handler(number, alt_stack_handler, SA_ONSTACK, 0);
 		memory_watch_initialize();
-		raise(SIGFPE);
+		raise(number);
 		printf("alternate=%d\n", on_alt_stack);
 		return 0;
 	}
@@ -410,27 +427,32 @@ def test_an_ignored_signal_stays_ignored(program):
 
 
 def test_siginfo_ignore_and_default_dispositions(program):
-    ignored = run(program, "ignored_siginfo")
-    assert ignored.returncode == 0, ignored.stderr
-    assert ignored.stdout.strip() == "survived"
-    assert "halo-linux:" not in ignored.stderr
-    default = run(program, "default_siginfo")
-    assert default.returncode == -signal.SIGBUS, default.stderr
-    assert default.stderr.count("halo-linux: bus error") == 1
+    for mode in ("ignored_siginfo", "ignored_siginfo_segv"):
+        ignored = run(program, mode)
+        assert ignored.returncode == 0, ignored.stderr
+        assert ignored.stdout.strip() == "survived"
+        assert "halo-linux:" not in ignored.stderr
+    for mode, number, name in (("default_siginfo", signal.SIGBUS, "bus error"),
+                               ("default_siginfo_segv", signal.SIGSEGV, "segmentation fault")):
+        default = run(program, mode)
+        assert default.returncode == -number, default.stderr
+        assert default.stderr.count(f"halo-linux: {name}") == 1
 
 
 def test_prior_mask_and_self_blocking_apply(program):
-    result = run(program, "mask")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "mask=1 self=1"
-    assert "halo-linux:" not in result.stderr
+    for mode in ("mask", "mask_segv"):
+        result = run(program, mode)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "mask=1 self=1"
+        assert result.stderr.count("halo-linux: segmentation fault") == int(mode.endswith("segv"))
 
 
 def test_prior_one_shot_handler_resets(program):
-    result = run(program, "one_shot")
-    assert result.returncode == -signal.SIGFPE, result.stderr
-    assert result.stdout.strip() == "first=1"
-    assert "halo-linux:" not in result.stderr
+    for mode, number in (("one_shot", signal.SIGFPE), ("one_shot_segv", signal.SIGSEGV)):
+        result = run(program, mode)
+        assert result.returncode == -number, result.stderr
+        assert result.stdout.strip() == "first=1"
+        assert result.stderr.count("halo-linux: segmentation fault") == int(mode.endswith("segv"))
 
 
 def test_nested_different_signals_keep_their_handlers(program):
@@ -441,10 +463,11 @@ def test_nested_different_signals_keep_their_handlers(program):
 
 
 def test_prior_alternate_stack_is_used(program):
-    result = run(program, "alternate_stack")
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "alternate=1"
-    assert "halo-linux:" not in result.stderr
+    for mode in ("alternate_stack", "alternate_stack_segv"):
+        result = run(program, mode)
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "alternate=1"
+        assert result.stderr.count("halo-linux: segmentation fault") == int(mode.endswith("segv"))
 
 
 def test_worker_recovery_after_foreign_longjmp(program):
