@@ -1725,6 +1725,7 @@ static int draw_sightline(const float camera_position[3], float time_delta)
 	int axis;
 	int network = game_connection() == _game_connection_network_client ||
 		game_connection() == _game_connection_network_server;
+	int network_seat;
 
 	/* the room-to-world yaw from the eye cameras this frame, held at the
 	pole as the action's is */
@@ -1733,13 +1734,14 @@ static int draw_sightline(const float camera_position[3], float time_delta)
 		(network && !network_gameplay_aim_eligible(unit_index)) ||
 		(!aim.hand_aiming && !network_controller_aim()) || (!network && !drawing.body.known))
 		return 0;
+	network_seat = network && unit_get(unit_index)->object.parent_object_index != NONE;
 	/* a sample that isn't READY is a lost hand, as the action's: the last
 	tracked location */
 	if (sample->reason != HALO_SPATIAL_READY)
 		hand.state = HALO_SPATIAL_NONE;
-	if (network && unit_get(unit_index)->object.parent_object_index != NONE)
-		hand.state = HALO_SPATIAL_NONE;
-	if (!hand_sightline(unit_index, &hand, &drawing.location, &drawing.near, &drawing.range, &drawing.zoom_filter, body_yaw,
+	/* Seats use independent stick aim. Do not reuse a cached hand pose for
+	the weapon frame while the rider holds an ordinary weapon. */
+	if (network_seat || !hand_sightline(unit_index, &hand, &drawing.location, &drawing.near, &drawing.range, &drawing.zoom_filter, body_yaw,
 		camera_position, camera_position, time_delta, steady_strength(), &sightline))
 	{
 		if (!network)

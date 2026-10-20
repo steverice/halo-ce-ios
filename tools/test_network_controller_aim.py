@@ -245,7 +245,7 @@ static struct {struct controller_body body;struct hand_memory location;struct co
  int seat_clamped;float ray_range,eased_range;} drawing;
 static struct {float eye[3],barrel_origin[3],barrel_forward[3],barrel_up[3],sightline[3],aim_point[3],hit_point[3];
  float hit_distance;int past_cover;} draw;
-static int pose_known=1;
+static int pose_known=1, hand_calls;
 static struct halo_spatial_sample *halo_controller_draw_sample(void){return &sample;}
 static float halo_stereo_eye_yaw(void){return 0;}
 static float controller_body_yaw(struct controller_body *b,float l,float h,int level){(void)b;(void)h;(void)level;return l;}
@@ -261,6 +261,7 @@ static int hand_sightline(long index,const struct halo_spatial_hand *h,struct ha
  struct controller_near *n,struct controller_range *r,struct controller_zoom_filter *z,float body,
  const float head[3],const float eye[3],float dt,float steady,struct hand_sightline *out){
  (void)index;(void)h;(void)m;(void)n;(void)r;(void)z;(void)body;(void)head;(void)eye;(void)dt;(void)steady;
+ hand_calls++;
  if(!pose_known)return 0;memset(out,0,sizeof(*out));out->direction[1]=1;out->forward[1]=1;
  out->up[2]=1;out->aim_distance=out->surface_distance=100;return 1;
 }
@@ -277,8 +278,9 @@ int main(void){
   assert(!draw.past_cover&&!drawing.seat_clamped);
  }
  connection=1;unit.object.parent_object_index=23;aiming_unit=17;own_passenger_weapon=1;
- pose_known=0;aim.hand_aiming=0;
+ int before=hand_calls;pose_known=1;drawing.location.known=1;aim.hand_aiming=0;
  assert(draw_sightline(camera,.016f)&&fabsf(draw.sightline[0]-.6f)<.00001f);
+ assert(hand_calls==before&&draw.barrel_origin[0]==camera[0]&&draw.barrel_origin[2]==camera[2]);
  own_passenger_weapon=0;aiming_unit=23;
  assert(!draw_sightline(camera,.016f));
  unit.object.parent_object_index=NONE;assert(!draw_sightline(camera,.016f));
