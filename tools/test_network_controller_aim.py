@@ -48,6 +48,7 @@ static struct halo_stereo_frame frame={HALO_STEREO_HEAD,2};
 static int connection, test_controller, look_disabled, head_drives=1, perspective, cinematic;
 static int aim_controller=1, sampled_hand=1, feedback_calls, reset_calls;
 static long unit_index_now=17, aiming_unit=17;
+static int own_passenger_weapon;
 static struct {int last_unit,hand_aiming;} aim;
 static struct halo_stereo_frame *halo_stereo_frame(void){return &frame;}
 static struct unit_datum *unit_get(long index){assert(index==17);return &unit;}
@@ -58,6 +59,10 @@ static int halo_look_disabled_first_person(void){return look_disabled;}
 static int director_desired_perspective(long index,director_perspective *out){(void)index;*out=perspective;return perspective;}
 static int director_peek_perspective(short local){(void)local;return perspective;}
 static long unit_get_aiming_unit_index(long index){(void)index;return aiming_unit;}
+static int halo_zoom_ordinary_aim_ray(short local,float ray[3]){
+ if(local!=0||!own_passenger_weapon||unit.object.parent_object_index==NONE||aiming_unit!=unit_index_now)return 0;
+ ray[0]=unit.unit.aiming_vector.i;ray[1]=unit.unit.aiming_vector.j;ray[2]=unit.unit.aiming_vector.k;return 1;
+}
 static void settings(void){}
 static long player_control_get_unit_index(short local){return local==0?unit_index_now:NONE;}
 static unsigned long get_random_seed(void){return 0;}
@@ -143,7 +148,9 @@ int main(void){
  assert(!halo_controller_aim_ray(1,origin,direction));
  aim.hand_aiming=0;connection=0;assert(!halo_controller_aim_ray(0,origin,direction));
  connection=1;assert(halo_controller_aim_ray(0,origin,direction)&&direction[0]==1);
- connection=1;unit.object.parent_object_index=23;aiming_unit=23;
+ unit.object.parent_object_index=23;aiming_unit=17;own_passenger_weapon=1;
+ assert(halo_controller_aim_ray(0,origin,direction)&&direction[0]==1);
+ own_passenger_weapon=0;aiming_unit=23;
  assert(!halo_controller_aim_ray(0,origin,direction));
  unit.object.parent_object_index=NONE;assert(!halo_controller_aim_ray(0,origin,direction));
  aiming_unit=17;perspective=1;assert(!halo_controller_aim_ray(0,origin,direction));
@@ -269,7 +276,10 @@ int main(void){
   assert(fabsf(draw.hit_point[0]-9)<.00001f&&fabsf(draw.hit_point[2]-13)<.00001f);
   assert(!draw.past_cover&&!drawing.seat_clamped);
  }
- connection=1;unit.object.parent_object_index=23;aiming_unit=23;
+ connection=1;unit.object.parent_object_index=23;aiming_unit=17;own_passenger_weapon=1;
+ pose_known=0;aim.hand_aiming=0;
+ assert(draw_sightline(camera,.016f)&&fabsf(draw.sightline[0]-.6f)<.00001f);
+ own_passenger_weapon=0;aiming_unit=23;
  assert(!draw_sightline(camera,.016f));
  unit.object.parent_object_index=NONE;assert(!draw_sightline(camera,.016f));
  aiming_unit=17;perspective=1;assert(!draw_sightline(camera,.016f));perspective=0;
@@ -283,7 +293,7 @@ int main(void){
 ''')
 
 
-def test_network_zoom_reticle_keeps_vehicle_owned_aim_out_of_the_picture(tmp_path):
+def test_network_zoom_reticle_shows_own_passenger_and_excludes_vehicle_owned_aim(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     eligible = function(glue, "static int network_gameplay_aim_eligible(")
     run_probe(tmp_path, "zoom-ownership", GLUE + r'''
@@ -310,10 +320,13 @@ int main(void){
  render.frame_index=drawing.active_frame=zoom_view.frame=7;
  unit.object.parent_object_index=23;aiming_unit=23;
  assert(!halo_controller_zoom_reticle(shown)&&project_calls==0);
- unit.object.parent_object_index=NONE;assert(!halo_controller_zoom_reticle(shown)&&project_calls==0);
- aiming_unit=17;assert(halo_controller_zoom_reticle(shown)==1&&project_calls==1);
+ aiming_unit=17;own_passenger_weapon=1;
+ assert(halo_controller_zoom_reticle(shown)==1&&project_calls==1);
+ own_passenger_weapon=0;aiming_unit=23;
+ unit.object.parent_object_index=NONE;assert(!halo_controller_zoom_reticle(shown)&&project_calls==1);
+ aiming_unit=17;assert(halo_controller_zoom_reticle(shown)==1&&project_calls==2);
  connection=2;unit.object.parent_object_index=23;aiming_unit=23;
- assert(!halo_controller_zoom_reticle(shown)&&project_calls==1);
+ assert(!halo_controller_zoom_reticle(shown)&&project_calls==2);
 }
 ''')
 

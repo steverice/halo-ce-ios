@@ -711,9 +711,28 @@ static int network_controller_aim(void)
 belongs to this rider only while that unit owns its ordinary aim. */
 static int network_gameplay_aim_eligible(long unit_index)
 {
+	const struct halo_stereo_frame *frame = halo_stereo_frame();
+	struct unit_datum *unit;
+	director_perspective perspective;
 	const char *reason;
+	float ray[3];
 
-	return unit_index != NONE && network_controller_aim() && gate_target(unit_index, &reason);
+	if (unit_index == NONE || !network_controller_aim())
+		return 0;
+	unit = unit_get(unit_index);
+	if (unit->object.parent_object_index == NONE)
+		return gate_target(unit_index, &reason);
+	/* A network passenger aims with the stick, but the rider's own held
+	weapon still needs a simulated-ray sightline. The zoom selector checks
+	the actual seat, aiming unit and weapon ownership. */
+	if (frame->mode == HALO_STEREO_HEAD && !halo_stereo_head_drives_look(0))
+		return 0;
+	if (halo_look_disabled_first_person() || TEST_FLAG(unit->object.damage_flags, _object_dead_bit) ||
+		director_desired_perspective(unit_index, &perspective) ||
+		director_peek_perspective(0) != _director_perspective_first_person ||
+		unit_get_aiming_unit_index(unit_index) != unit_index)
+		return 0;
+	return halo_zoom_ordinary_aim_ray(0, ray);
 }
 
 /* the "can't start" messages (ruling 7), once a session each */
@@ -1717,6 +1736,8 @@ static int draw_sightline(const float camera_position[3], float time_delta)
 	/* a sample that isn't READY is a lost hand, as the action's: the last
 	tracked location */
 	if (sample->reason != HALO_SPATIAL_READY)
+		hand.state = HALO_SPATIAL_NONE;
+	if (network && unit_get(unit_index)->object.parent_object_index != NONE)
 		hand.state = HALO_SPATIAL_NONE;
 	if (!hand_sightline(unit_index, &hand, &drawing.location, &drawing.near, &drawing.range, &drawing.zoom_filter, body_yaw,
 		camera_position, camera_position, time_delta, steady_strength(), &sightline))
