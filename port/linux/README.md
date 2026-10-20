@@ -402,6 +402,15 @@ the setting for one start of the game. It has priority over the file.
 | `input.stick_dead_zone` | number | `0.27` | apple, desktop | `HALO_STICK_DEAD_ZONE` | How far a controller stick moves before it counts, from 0 to 1. |
 | `input.mouse_sensitivity` | number | `1.0` | desktop | `HALO_MOUSE_SENSITIVITY` | How far the view turns for the mouse's movement. |
 | `input.invert_mouse` | boolean | `false` | desktop | `HALO_MOUSE_INVERT` | Moving the mouse forward looks down. |
+### network
+
+| Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |
+| --- | --- | --- | --- | --- | --- |
+| `network.block_mouse_aim_assist` | boolean | `false` | apple, desktop | `HALO_NET_BLOCK_MOUSE_AIM_ASSIST` | Host: disable optional mouse magnetism for mouse/keyboard players. |
+### input
+
+| Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |
+| --- | --- | --- | --- | --- | --- |
 | `input.mouse_aim_assist` | boolean | `false` | desktop | `HALO_MOUSE_AIM_ASSIST` | Magnetism while aiming with the mouse, as with a controller: the view slowed and dragged along by a target. |
 | `input.mouse_vertical_sensitivity` | number | `0.0` | desktop | `HALO_MOUSE_VERTICAL_SENSITIVITY` | How far the view turns up and down for the mouse's movement; 0 for the same as input.mouse_sensitivity. |
 ### controls
@@ -470,6 +479,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.map_download` | boolean | `false`; desktop `true` | apple, desktop | `HALO_NET_MAP_DOWNLOAD` | Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. |
 | `network.coop_public` | boolean | `false` | apple, desktop | `HALO_NET_COOP_PUBLIC` | Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here. |
 | `network.coop_friendly_fire` | string | `"on"` | apple, desktop | `HALO_NET_COOP_FRIENDLY_FIRE` | Whether the players of an online co-op game hurt each other: "off", "on", "shields_only" or "explosives_only" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). |
+| `network.coop_own_friendly_fire` | boolean | `true` | apple, desktop | `HALO_NET_COOP_OWN_FRIENDLY_FIRE` | Whether this machine's players hurt, and are hurt by, the other players of an online co-op game: two players hurt each other only if both have it true. |
 | `network.coop_player_collisions` | boolean | `true` | apple, desktop | `HALO_NET_COOP_PLAYER_COLLISIONS` | Whether the players of an online co-op game bump into each other; false, they walk through each other (the AI's characters they still bump into). |
 | `network.coop_enemies_mode` | string | `"per_player"` | apple, desktop | `HALO_NET_COOP_ENEMIES_MODE` | Online co-op's extra enemies: "none", "per_player" (each squad of enemies grows by coop_enemies for each player past the first) or "multiplier" (each is coop_enemies_multiplier times as large, for any number of players). |
 | `network.coop_enemies` | integer | `50` | apple, desktop | `HALO_NET_COOP_ENEMIES` | Online co-op's extra enemies per player, a percentage: for each player past the first, each squad of enemies a level places gets this much of itself more (100: as many again; 25 to 200). |

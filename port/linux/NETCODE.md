@@ -219,7 +219,32 @@ and readies a second weapon picked up while firing;
 version 29 names a Custom Edition map by its own name (`custom_maps\hugeass`,
 which every screen shows) and says which version it is by the map version
 of the game record, its hash's first 32 bits (the header checksum before),
-which a client finds its file by (below, "Map sharing").
+which a client finds its file by (below, "Map sharing");
+version 30 carries an elevator's riders by the elevator's movement of the
+same tick, takes only across of a rider's reported position, and has a
+client keep its own height on the elevator it stands on; version 31 sends the
+pregame keep-alive's bytes as zeros (they were the sender's stack), drops a
+datagram stamped more than 450 ticks from the latest tick taken from its
+sender (any stamp is taken over a stream), and takes a client's ready, Discord
+user and hit reports from its stream alone; version 32 sends a host's
+aim-assist policy for the mouse (message 90, below) and has a client's input
+say whether its player plays co-op without friendly fire (its byte 2).
+
+Versions 30 to 32 only add: a machine that does not know an addition drops it.
+A host of version 32 plays every client as version 32 (a join request does
+not carry a version), and a client joins hosts of version 29 to 32
+(`halo_network_version.h`), playing by the host's version: it waits for no
+message 90 from a host of 31 or less, whose mouse magnetism it plays as set.
+The Apple port does not import upstream's text chat (kinds 87 to 89) or its
+menus for these options: `network.block_mouse_aim_assist` (the host) and
+`network.coop_own_friendly_fire` are settings in `config.toml`.
+
+**Host aim-assist policy (message 90).** The host's reliable message to a
+client, when the client is ready and whenever the host changes the setting:
+the standard header, then a 16-bit policy (0 allows, 1 blocks the mouse's
+magnetism) and 16 bits of zero, 12 bytes. A client takes it from the host's
+stream alone. A client of a host of version 32 blocks until it arrives. The
+coop friendly fire byte's non-zero value means "without friendly fire".
 
 `port/linux/network_format.txt` records the wire format of the current
 version (`tools/network_format.py`): `test_linux_port.py` fails when the

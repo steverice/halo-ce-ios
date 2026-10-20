@@ -2476,6 +2476,316 @@
       },
       "additionalProperties": false
     },
+    "network": {
+      "type": "object",
+      "properties": {
+        "block_mouse_aim_assist": {
+          "type": "boolean",
+          "default": false,
+          "description": "Host: disable optional mouse magnetism for mouse/keyboard players. Controllers and touch keep their own assist.",
+          "x-environment": "HALO_NET_BLOCK_MOUSE_AIM_ASSIST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "address": {
+          "type": "string",
+          "default": "",
+          "description": "This machine's IPv4 address for system link, for a machine on several networks; empty chooses one.",
+          "x-environment": "HALO_NET_ADDRESS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "broadcast": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated IPv4 addresses system link sends its announcements to instead of the local network's broadcast address (for VPNs); empty for the local network.",
+          "x-environment": "HALO_NET_BROADCAST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "lan_broadcast": {
+          "type": "string",
+          "default": "auto",
+          "description": "System link by broadcast, which finds games of every system: \"auto\" where this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices either way.",
+          "x-environment": "HALO_NET_LAN_BROADCAST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "online": {
+          "type": "boolean",
+          "default": false,
+          "description": "Internet play: hosting makes an invite link (logged, and put on the clipboard) that lets whoever has it join over the internet; opening a link (or copying one before switching to the game) joins. Only people with the invite can join. Off keeps system link to the local network.",
+          "x-environment": "HALO_NET_ONLINE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "online_ask": {
+          "type": "boolean",
+          "default": false,
+          "description": "While network.online is false: ask whether to turn Internet Play on the first time Create Game > Internet, Join Game > Server Browser or Direct Link is opened, saying which servers it reaches and what they see. Asked once: either answer, and a join link's question, writes false here.",
+          "x-environment": "HALO_NET_ONLINE_ASK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "join_from_clipboard": {
+          "type": "boolean",
+          "default": false,
+          "description": "Join the game of an invite link found on the clipboard when the game comes to the front.",
+          "x-environment": "HALO_NET_JOIN_FROM_CLIPBOARD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "tunnel_port": {
+          "type": "integer",
+          "default": 0,
+          "description": "The UDP port internet play uses; 0 picks one. A fixed one can be forwarded on the router, for networks whose NAT stops connections.",
+          "x-environment": "HALO_NET_TUNNEL_PORT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "allow_upnp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let internet play ask the router (UPnP; on Apple devices NAT-PMP or PCP) to forward its port, for networks whose NAT stops connections: when a player joins this machine's game, and when joining a game takes too long. False never asks.",
+          "x-environment": "HALO_NET_ALLOW_UPNP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "background_grace": {
+          "type": "integer",
+          "default": 60,
+          "description": "Seconds the other players of an internet game wait for this machine when its app goes to the background (an Apple device suspends it, its game held) before they drop it.",
+          "x-environment": "HALO_NET_BACKGROUND_GRACE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "public_lobby": {
+          "type": "boolean",
+          "default": true,
+          "description": "The server browser: public games are listed through the signalling brokers, and Join Game > Server Browser shows them. False lists no game of this machine's and shows none.",
+          "x-environment": "HALO_NET_PUBLIC_LOBBY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "host_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether a new game of Create Game > Internet starts as PUBLIC (listed in everyone's server browser: anyone can see and join it) or, false, PRIVATE (only players with its invite link can join). Server Setup's LISTING changes it for each game.",
+          "x-environment": "HALO_NET_HOST_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "map_share": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hosting: send a player who joins without the game's Custom Edition map the map (from custom_maps), and the resource maps it needs that the player lacks (bitmaps.map, sounds.map, loc.map). The game's other players help (network.map_seed).",
+          "x-environment": "HALO_NET_MAP_SHARE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_share_upload": {
+          "type": "integer",
+          "default": 1024,
+          "description": "Hosting: the most kilobytes a second the host sends of maps (16 to 65536), so that the game's own traffic keeps the rest of the upload.",
+          "x-environment": "HALO_NET_MAP_SHARE_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_seed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Playing in another's game: help send its map to players who join without it, as a torrent's peers do (the pieces this machine has, at most network.map_seed_upload). While it does, in a game on a Custom Edition map, this machine takes connections on TCP port 5153. Off by default on Apple builds.",
+          "x-environment": "HALO_NET_MAP_SEED",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "map_seed_upload": {
+          "type": "integer",
+          "default": 256,
+          "description": "Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536).",
+          "x-environment": "HALO_NET_MAP_SEED_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "map_download": {
+          "type": "boolean",
+          "default": false,
+          "description": "Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. Off by default on Apple builds. It governs receiving only: sending maps to others is network.map_share (a host) and network.map_seed (a player in another's game).",
+          "x-environment": "HALO_NET_MAP_DOWNLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-defaults": {
+            "apple": false,
+            "desktop": true
+          }
+        },
+        "coop_public": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here.",
+          "x-environment": "HALO_NET_COOP_PUBLIC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_friendly_fire": {
+          "type": "string",
+          "default": "on",
+          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Their AI allies they always can, as in the campaign.",
+          "x-environment": "HALO_NET_COOP_FRIENDLY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_own_friendly_fire": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this machine's players hurt, and are hurt by, the other players of an online co-op game: two players hurt each other only if both have it true. A player away from the controls for over 70 seconds is hurt by every player, whatever either chose.",
+          "x-environment": "HALO_NET_COOP_OWN_FRIENDLY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_player_collisions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the players of an online co-op game bump into each other; false, they walk through each other (the AI's characters they still bump into). Server Setup's PLAYER COLLISIONS in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_PLAYER_COLLISIONS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies_mode": {
+          "type": "string",
+          "default": "per_player",
+          "description": "Online co-op's extra enemies: \"none\", \"per_player\" (each squad of enemies grows by coop_enemies for each player past the first) or \"multiplier\" (each is coop_enemies_multiplier times as large, for any number of players). Server Setup's EXTRA ENEMIES in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies": {
+          "type": "integer",
+          "default": 50,
+          "description": "Online co-op's extra enemies per player, a percentage: for each player past the first, each squad of enemies a level places gets this much of itself more (100: as many again; 25 to 200). Server Setup's PER PLAYER in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_enemies_multiplier": {
+          "type": "integer",
+          "default": 2,
+          "description": "Online co-op's static multiplier of its enemies: each squad of enemies a level places is this many times as large (2 to 32). Server Setup's MULTIPLIER in co-op writes its choice here.",
+          "x-environment": "HALO_NET_COOP_ENEMIES_MULTIPLIER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "brokers_file": {
+          "type": "string",
+          "default": "brokers.txt",
+          "description": "The file of the public MQTT brokers through which the machines of an invite find each other (its messages are encrypted), beside this file unless a full path: one host:port on each line, up to 4. Updates replace brokers.txt: keep a list of your own under another name.",
+          "x-environment": "HALO_NET_BROKERS_FILE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "stun_servers": {
+          "type": "string",
+          "default": "stun.l.google.com:19302,stun.cloudflare.com:3478",
+          "description": "Public STUN servers that tell this machine its internet address; comma-separated host:port.",
+          "x-environment": "HALO_NET_STUN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "controls": {
       "type": "object",
       "properties": {
@@ -2771,294 +3081,6 @@
           "x-environment": "HALO_CUSTOM_EDITION_ROOT",
           "x-environment-style": "value",
           "x-platforms": [
-            "desktop"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "network": {
-      "type": "object",
-      "properties": {
-        "address": {
-          "type": "string",
-          "default": "",
-          "description": "This machine's IPv4 address for system link, for a machine on several networks; empty chooses one.",
-          "x-environment": "HALO_NET_ADDRESS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "broadcast": {
-          "type": "string",
-          "default": "",
-          "description": "Comma-separated IPv4 addresses system link sends its announcements to instead of the local network's broadcast address (for VPNs); empty for the local network.",
-          "x-environment": "HALO_NET_BROADCAST",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "lan_broadcast": {
-          "type": "string",
-          "default": "auto",
-          "description": "System link by broadcast, which finds games of every system: \"auto\" where this device may (the Mac; an iPhone, iPad or Vision Pro only with Apple's multicast entitlement), \"on\" or \"off\". Bonjour finds other Apple devices either way.",
-          "x-environment": "HALO_NET_LAN_BROADCAST",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple"
-          ]
-        },
-        "online": {
-          "type": "boolean",
-          "default": false,
-          "description": "Internet play: hosting makes an invite link (logged, and put on the clipboard) that lets whoever has it join over the internet; opening a link (or copying one before switching to the game) joins. Only people with the invite can join. Off keeps system link to the local network.",
-          "x-environment": "HALO_NET_ONLINE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "online_ask": {
-          "type": "boolean",
-          "default": false,
-          "description": "While network.online is false: ask whether to turn Internet Play on the first time Create Game > Internet, Join Game > Server Browser or Direct Link is opened, saying which servers it reaches and what they see. Asked once: either answer, and a join link's question, writes false here.",
-          "x-environment": "HALO_NET_ONLINE_ASK",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple"
-          ]
-        },
-        "join_from_clipboard": {
-          "type": "boolean",
-          "default": false,
-          "description": "Join the game of an invite link found on the clipboard when the game comes to the front.",
-          "x-environment": "HALO_NET_JOIN_FROM_CLIPBOARD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "tunnel_port": {
-          "type": "integer",
-          "default": 0,
-          "description": "The UDP port internet play uses; 0 picks one. A fixed one can be forwarded on the router, for networks whose NAT stops connections.",
-          "x-environment": "HALO_NET_TUNNEL_PORT",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "allow_upnp": {
-          "type": "boolean",
-          "default": true,
-          "description": "Let internet play ask the router (UPnP; on Apple devices NAT-PMP or PCP) to forward its port, for networks whose NAT stops connections: when a player joins this machine's game, and when joining a game takes too long. False never asks.",
-          "x-environment": "HALO_NET_ALLOW_UPNP",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "background_grace": {
-          "type": "integer",
-          "default": 60,
-          "description": "Seconds the other players of an internet game wait for this machine when its app goes to the background (an Apple device suspends it, its game held) before they drop it.",
-          "x-environment": "HALO_NET_BACKGROUND_GRACE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "public_lobby": {
-          "type": "boolean",
-          "default": true,
-          "description": "The server browser: public games are listed through the signalling brokers, and Join Game > Server Browser shows them. False lists no game of this machine's and shows none.",
-          "x-environment": "HALO_NET_PUBLIC_LOBBY",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "host_public": {
-          "type": "boolean",
-          "default": false,
-          "description": "Whether a new game of Create Game > Internet starts as PUBLIC (listed in everyone's server browser: anyone can see and join it) or, false, PRIVATE (only players with its invite link can join). Server Setup's LISTING changes it for each game.",
-          "x-environment": "HALO_NET_HOST_PUBLIC",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "map_share": {
-          "type": "boolean",
-          "default": true,
-          "description": "Hosting: send a player who joins without the game's Custom Edition map the map (from custom_maps), and the resource maps it needs that the player lacks (bitmaps.map, sounds.map, loc.map). The game's other players help (network.map_seed).",
-          "x-environment": "HALO_NET_MAP_SHARE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "map_share_upload": {
-          "type": "integer",
-          "default": 1024,
-          "description": "Hosting: the most kilobytes a second the host sends of maps (16 to 65536), so that the game's own traffic keeps the rest of the upload.",
-          "x-environment": "HALO_NET_MAP_SHARE_UPLOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "map_seed": {
-          "type": "boolean",
-          "default": false,
-          "description": "Playing in another's game: help send its map to players who join without it, as a torrent's peers do (the pieces this machine has, at most network.map_seed_upload). While it does, in a game on a Custom Edition map, this machine takes connections on TCP port 5153. Off by default on Apple builds.",
-          "x-environment": "HALO_NET_MAP_SEED",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "map_seed_upload": {
-          "type": "integer",
-          "default": 256,
-          "description": "Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536).",
-          "x-environment": "HALO_NET_MAP_SEED_UPLOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "map_download": {
-          "type": "boolean",
-          "default": false,
-          "description": "Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. Off by default on Apple builds. It governs receiving only: sending maps to others is network.map_share (a host) and network.map_seed (a player in another's game).",
-          "x-environment": "HALO_NET_MAP_DOWNLOAD",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ],
-          "x-defaults": {
-            "apple": false,
-            "desktop": true
-          }
-        },
-        "coop_public": {
-          "type": "boolean",
-          "default": false,
-          "description": "Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here.",
-          "x-environment": "HALO_NET_COOP_PUBLIC",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_friendly_fire": {
-          "type": "string",
-          "default": "on",
-          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Their AI allies they always can, as in the campaign.",
-          "x-environment": "HALO_NET_COOP_FRIENDLY_FIRE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_player_collisions": {
-          "type": "boolean",
-          "default": true,
-          "description": "Whether the players of an online co-op game bump into each other; false, they walk through each other (the AI's characters they still bump into). Server Setup's PLAYER COLLISIONS in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_PLAYER_COLLISIONS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_enemies_mode": {
-          "type": "string",
-          "default": "per_player",
-          "description": "Online co-op's extra enemies: \"none\", \"per_player\" (each squad of enemies grows by coop_enemies for each player past the first) or \"multiplier\" (each is coop_enemies_multiplier times as large, for any number of players). Server Setup's EXTRA ENEMIES in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_ENEMIES_MODE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_enemies": {
-          "type": "integer",
-          "default": 50,
-          "description": "Online co-op's extra enemies per player, a percentage: for each player past the first, each squad of enemies a level places gets this much of itself more (100: as many again; 25 to 200). Server Setup's PER PLAYER in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_ENEMIES",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "coop_enemies_multiplier": {
-          "type": "integer",
-          "default": 2,
-          "description": "Online co-op's static multiplier of its enemies: each squad of enemies a level places is this many times as large (2 to 32). Server Setup's MULTIPLIER in co-op writes its choice here.",
-          "x-environment": "HALO_NET_COOP_ENEMIES_MULTIPLIER",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "brokers_file": {
-          "type": "string",
-          "default": "brokers.txt",
-          "description": "The file of the public MQTT brokers through which the machines of an invite find each other (its messages are encrypted), beside this file unless a full path: one host:port on each line, up to 4. Updates replace brokers.txt: keep a list of your own under another name.",
-          "x-environment": "HALO_NET_BROKERS_FILE",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "stun_servers": {
-          "type": "string",
-          "default": "stun.l.google.com:19302,stun.cloudflare.com:3478",
-          "description": "Public STUN servers that tell this machine its internet address; comma-separated host:port.",
-          "x-environment": "HALO_NET_STUN",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
             "desktop"
           ]
         }

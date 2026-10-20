@@ -69,4 +69,9 @@ jobs:
             tools/harness/tests/test_text_filter_runtime.py \
             tools/test_text_filter_terms.py \
             tools/harness/tests/test_contrail_cleanup.py \
-            tools/harness/tests/test_zsprite_depth.py
+            tools/harness/tests/test_zsprite_depth.py \
+            tools/test_network_version.py \
+            tools/harness/tests/test_aim_assist.py \
+            tools/harness/tests/test_elevator_carry.py \
+            tools/harness/tests/test_elevator_correction.py \
+            tools/harness/tests/test_elevator_prediction.py
