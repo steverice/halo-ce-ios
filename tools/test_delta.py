@@ -26,13 +26,12 @@ def compile_native(arguments, output):
 
 
 @pytest.fixture(scope="module")
-def transport(tmp_path_factory):
-    """tools/delta_transport_check.c with posix_update.c and Mbed TLS, built for this machine"""
+def native(tmp_path_factory):
+    """Mbed TLS built for this machine, and a directory for the programs that use it"""
     work = tmp_path_factory.mktemp("delta")
     objects = []
-    sources = sorted((MBEDTLS / "library").glob("*.c"))
     processes = []
-    for source in sources:
+    for source in sorted((MBEDTLS / "library").glob("*.c")):
         object_file = work / (source.stem + ".o")
         objects.append(str(object_file))
         processes.append(subprocess.Popen(
@@ -42,10 +41,34 @@ def transport(tmp_path_factory):
             assert processes.pop(0).wait() == 0
     for process in processes:
         assert process.wait() == 0, process.stderr.read()[-2000:]
+    return work, objects
+
+
+@pytest.fixture(scope="module")
+def transport(native):
+    """tools/delta_transport_check.c with posix_update.c and Mbed TLS"""
+    work, objects = native
     program = work / "delta_transport_check"
     compile_native(["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Iport/linux/src",
                     f"-I{MBEDTLS / 'include'}", "tools/delta_transport_check.c", "port/linux/src/posix_update.c",
                     *objects], program)
+    return program
+
+
+@pytest.fixture(scope="module")
+def worker(native):
+    """tools/delta_worker_check.c with p2p_delta.c, delta_list.c and the request layer, p2p_delta.c compiled
+    beside a platform.h that declares only what it takes from the game's"""
+    work, objects = native
+    shim = work / "shim"
+    shim.mkdir()
+    (shim / "platform.h").write_text("#include <pthread.h>\nvoid platform_log(const char *format, ...);\n"
+                                     "void Sleep(unsigned long milliseconds);\n")
+    (shim / "p2p_delta.c").write_text((ROOT / "port/linux/src/p2p_delta.c").read_text())
+    program = work / "delta_worker_check"
+    compile_native(["-std=gnu11", "-O1", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Iport/linux/src",
+                    f"-I{MBEDTLS / 'include'}", "tools/delta_worker_check.c", str(shim / "p2p_delta.c"),
+                    "port/linux/src/delta_list.c", "port/linux/src/posix_update.c", *objects], program)
     return program
 
 
@@ -92,6 +115,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.respond(200, json.dumps(LIST), chunked=True)
         elif self.path == "/v1/announce":
             self.respond(200, "ok 150")
+        elif self.path == "/v1/withdraw":
+            self.respond(200, "ok")
         elif self.path == "/refused":
             self.respond(403, "refused")
         elif self.path == "/slow":
@@ -179,6 +204,31 @@ def test_only_this_machine_may_be_plain(transport, server):
                             capture_output=True, text=True, timeout=30)
     assert result.stdout.startswith("status=0\n")
     assert [item["path"] for item in server.requests].count("/v1/games") == 1
+
+
+def test_the_thread_browses_announces_and_withdraws(worker, server):
+    result = subprocess.run([str(worker)], capture_output=True, text=True, timeout=60,
+                            env={"HALO_DELTA_URL": f"http://127.0.0.1:{server.server_address[1]}/"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "GAMES 1 Test bloodgulch 29" in result.stdout
+    assert "PHASE quit" in result.stdout
+    requests = [(item["method"], item["path"], item["body"]) for item in server.requests]
+    invite = {letter: letter * 64 for letter in "abc"}
+
+    def form(letter, players):
+        return (f"invite={invite[letter]}&name=Checked%20game&map=bloodgulch&engine=2&players={players}"
+                "&maximum_players=16&open=1&version=29&teams=0&delta=0")
+
+    assert requests == [
+        ("GET", "/v1/games", ""),
+        ("POST", "/v1/announce", form("a", 3)),
+        ("POST", "/v1/withdraw", f"invite={invite['a']}"),
+        ("POST", "/v1/announce", form("b", 3)),
+        ("POST", "/v1/withdraw", f"invite={invite['b']}"),
+        ("POST", "/v1/announce", form("c", 5)),
+        ("POST", "/v1/withdraw", f"invite={invite['c']}"),
+    ], result.stdout
+    assert {item["agent"] for item in server.requests} == {"VISR"}
 
 
 def test_the_probe_of_the_list_and_announcing(tmp_path):
