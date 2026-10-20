@@ -249,6 +249,11 @@ void halo_model_lod_set(int is_max)
 	model_lod_setting = is_max<0 ? -1 : is_max!=0;
 }
 
+int halo_model_lod_override_state(void)
+{
+	return model_lod_setting;
+}
+
 static boolean model_lod_is_max(void)
 {
 	if (model_lod_setting<0)
@@ -256,6 +261,11 @@ static boolean model_lod_is_max(void)
 		model_lod_setting = strcmp(config_string("display.model_lod"), "auto")!=0;
 	}
 	return model_lod_setting;
+}
+
+int halo_model_lod_effective(void)
+{
+	return model_lod_is_max()!=0;
 }
 
 /* port: debug.gpu_stats' model counts (d3d8_device.c logs them every 60

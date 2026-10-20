@@ -64,8 +64,13 @@ unsigned char filesystem_check_thread_is_active(void);
 int halo_scene_class(void);
 /* d3d8_device.c */
 void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy);
+void halo_benchmark_override_state(long *render_lines, long *shadow_size, long *anisotropy);
+void halo_benchmark_renderer_observations_reset(void);
+void halo_benchmark_renderer_observations(long *shadow_target_size, long *anisotropic_sampler_max);
 /* source/models/models.c: display.model_lod's value while the game runs (1 "max", 0 "auto") */
 void halo_model_lod_set(int is_max);
+int halo_model_lod_override_state(void);
+int halo_model_lod_effective(void);
 /* sdl_platform.c */
 void platform_video_drawable_size(int *width, int *height);
 /* xbox_kernel.c: milliseconds of real time */
@@ -397,6 +402,52 @@ static int mp_evidence_note(char *note, size_t size)
 static int graphics_window_open;
 static int graphics_scene, graphics_external;
 static unsigned long graphics_revision;
+static unsigned long long texture_replacement_selections;
+
+void benchmark_graphics_texture_replacement_selected(void)
+{
+	if (graphics_window_open && texture_replacement_selections < 9007199254740991ULL)
+		texture_replacement_selections++;
+}
+
+static int benchmark_graphics_snapshot_json(int scene, char *json, size_t size)
+{
+	long render_lines, shadow_override, anisotropy_override, shadow_target, sampler_max;
+	char shadow_text[32], sampler_text[32];
+	size_t length;
+	int written, lod_override;
+
+	if (!json || !size) return 0;
+	json[0] = 0;
+	if (!config_graphics_settings_json(scene,json,size)) goto invalid;
+	if (strncmp(json,"{\"schema\":1,",12)) goto invalid;
+	length = strlen(json);
+	if (length < 2 || json[length-1] != '}') goto invalid;
+	/* Schema 2 adds separate run policy and renderer observations without changing `values`. */
+	json[10] = '2';
+	halo_benchmark_override_state(&render_lines,&shadow_override,&anisotropy_override);
+	halo_benchmark_renderer_observations(&shadow_target,&sampler_max);
+	lod_override = halo_model_lod_override_state();
+	if (lod_override < 0 || render_lines < 0 || shadow_override < 0 || anisotropy_override < 0) goto invalid;
+	if (shadow_target > 0) snprintf(shadow_text,sizeof(shadow_text),"%ld",shadow_target);
+	else strcpy(shadow_text,"null");
+	if (sampler_max > 0) snprintf(sampler_text,sizeof(sampler_text),"%ld",sampler_max);
+	else strcpy(sampler_text,"null");
+	written = snprintf(json+length-1,size-length+1,
+		",\"applied_overrides\":{\"render_lines\":%ld,\"shadow_map_size\":%ld,\"anisotropic_filtering\":%ld,\"model_lod\":\"%s\"},"
+		"\"renderer_state\":{\"shadow_target_size\":%s,\"anisotropic_sampler_max\":%s,\"model_lod\":\"%s\","
+		"\"texture_replacement_selections\":%llu,\"texture_replacement_source\":\"%s\","
+		"\"upscaled_texture_assets\":\"unavailable\"}}",
+		render_lines,shadow_override,anisotropy_override,lod_override ? "max" : "auto",
+		shadow_text,sampler_text,halo_model_lod_effective() ? "max" : "auto",texture_replacement_selections,
+		texture_replacement_selections ? "debug_directory" : "unavailable");
+	if (written < 0 || (size_t)written >= size-length+1) goto invalid;
+	return 1;
+invalid:
+	json[0] = 0;
+	return 0;
+}
+
 static void benchmark_graphics_window(int open, int width, int height)
 {
 	int scene = halo_scene_class(), external = host_external_active();
@@ -406,7 +457,7 @@ static void benchmark_graphics_window(int open, int width, int height)
 	if (publish)
 	{
 		char json[CONFIG_GRAPHICS_MAXIMUM_BYTES];
-		if (!config_graphics_settings_json(scene,json,sizeof(json))) json[0] = 0;
+		if (!benchmark_graphics_snapshot_json(scene,json,sizeof(json))) json[0] = 0;
 		host_benchmark_graphics(json);
 		graphics_scene = scene; graphics_external = external; graphics_revision = config_changes();
 	}
@@ -566,6 +617,8 @@ static void next_run(void)
 	}
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
 	halo_model_lod_set(suite.model_lod_max);
+	halo_benchmark_renderer_observations_reset();
+	texture_replacement_selections = 0;
 	if (suite.mp_scene)
 	{
 		if (!benchmark_scenario_at_menu())

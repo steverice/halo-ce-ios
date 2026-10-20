@@ -74,8 +74,14 @@ static unsigned long graphics_test_revision;
 static int graphics_serializations, graphics_deliveries, graphics_window_active;
 unsigned long config_changes(void) { return graphics_test_revision; }
 int host_external_active(void) { return 0; }
-int config_graphics_settings_json(int scene, char *text, size_t size) { (void)scene; graphics_serializations++; snprintf(text,size,"{}"); return 1; }
-void host_benchmark_graphics(const char *json) { CHECK(graphics_window_active && json[0]); graphics_deliveries++; }
+int config_graphics_settings_json(int scene, char *text, size_t size) {
+    (void)scene; graphics_serializations++;
+    return snprintf(text,size,"{\"schema\":1,\"scene\":\"gameplay\",\"configuration_revision\":0,\"external_output\":false,\"values\":{\"display.render_scale\":1.0}}") < (int)size;
+}
+void host_benchmark_graphics(const char *json) {
+    CHECK(graphics_window_active && strstr(json,"\"schema\":2") && strstr(json,"applied_overrides"));
+    graphics_deliveries++;
+}
 void host_benchmark_window(int open, int width, int height) {
     (void)width; (void)height; graphics_window_active = open; if (open) window_opens++; else window_closes++;
 }
@@ -124,12 +130,24 @@ unsigned char benchmark_scenario_at_menu(void) { return at_menu; }
 unsigned char benchmark_scenario_player_position(float *position) { (void)position; return 0; }
 void benchmark_scenario_multiplayer_state(struct benchmark_mp_state *state) { *state = observed_mp; }
 int halo_scene_class(void) { return CONFIG_SCENE_GAMEPLAY; }
-void halo_benchmark_overrides(long lines, long shadow, long anisotropy) { (void)lines; (void)shadow; (void)anisotropy; }
-void halo_model_lod_set(int max) { (void)max; }
+static long override_lines, override_shadow, override_anisotropy;
+static int override_lod;
+void halo_benchmark_overrides(long lines, long shadow, long anisotropy) {
+    override_lines=lines; override_shadow=shadow; override_anisotropy=anisotropy;
+}
+void halo_benchmark_override_state(long *lines, long *shadow, long *anisotropy) {
+    *lines=override_lines; *shadow=override_shadow; *anisotropy=override_anisotropy;
+}
+void halo_benchmark_renderer_observations_reset(void) {}
+void halo_benchmark_renderer_observations(long *shadow, long *anisotropy) { *shadow=*anisotropy=0; }
+void halo_model_lod_set(int max) { override_lod=max; }
+int halo_model_lod_override_state(void) { return override_lod; }
+int halo_model_lod_effective(void) { return override_lod > 0; }
 
 static void reset(void) {
     graphics_window_open = 0; graphics_test_revision = 0;
     graphics_serializations = graphics_deliveries = graphics_window_active = 0;
+    override_lines=override_shadow=override_anisotropy=0; override_lod=0;
     combat_begins = 0;
     memset(&suite, 0, sizeof(suite));
     strcpy(suite.map, "chillout"); strcpy(suite.mp_game_mode, "slayer");
