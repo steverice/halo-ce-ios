@@ -13,6 +13,10 @@ the Newtown font (public domain), and SMAA (MIT;
 `port/third_party/smaa`). The native XISO parser adapts upstream
 extraction code following
 extract-xiso (modified BSD; see `port/third_party/extract-xiso/LICENSE.TXT`).
+Streamer mode's built-in word table derives from Surge AI's profanity list
+(MIT); its provenance and license are in `Licenses/Streamer-Words-MIT.txt`.
+The English word list used to review terms is under the Unlicense; its notice
+is in `Licenses/English-Words-Unlicense.txt`.
 This product includes software developed by in <in@fishtank.com>.
 Builds that play the game's intro and credits movies (the default; not those
 made with `--bink off`) use libraries from the FFmpeg project (9.0.2, its

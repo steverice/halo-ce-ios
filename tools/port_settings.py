@@ -102,8 +102,11 @@ SCREENS = {
     "network_setup": {
         "screen": "network_settings_screen",
         "header": ("header_profile_network_settings", f"{PE}/network_setup/header_profile_network_settings"),
-        # (eleven rows: closer together)
-        "spacing": 24,
+        # Twelve rows fit above the help text and buttons.
+        "spacing": 23,
+        "row_top": 71,
+        "help_top": 354,
+        "help_height": 50,
         "rows": [
             ("INTERNET PLAY:", "network.online", ON_OFF,
              "Host and join games over the internet by invite\nlinks; off keeps to the local network.", None),
@@ -133,6 +136,8 @@ SCREENS = {
             ("MAP UPLOAD LIMIT:", "network.map_seed_upload",
              [(f"{kb} KB/S" if kb < 1024 else f"{kb // 1024} MB/S", str(kb)) for kb in (64, 128, 256, 512, 1024, 2048)],
              "The most you send of maps to other players, so\nthat the game keeps the rest of your upload.", None),
+            ("STREAMER MODE:", "streamer.enabled", ON_OFF,
+             "Hide offensive words in names and text from\nother players, maps, and mods as stars.", None),
         ],
     },
     "gamepad_setup": {
@@ -221,12 +226,12 @@ def _screen(folder: str, spec: dict, rows: list, list_inputs: list, list_handler
                                           ("bitmap", header_bitmap)], [])
     lines += _widget(f"{base}/help", [("type", "text"), ("controller", 1), ("left", 68),
                                       ("top", spec.get("help_top", 350)), ("width", 482),
-                                      ("height", 60), ("string_list", f"{base}/help_strings"),
+                                      ("height", spec.get("help_height", 60)), ("string_list", f"{base}/help_strings"),
                                       ("font", "ui\\large_ui"), ("color", "#FFFFFFFF")], [])
     children = [f'<data input="{name}"/>' for name in list_inputs] + list_handlers
     # (each row: its widget, platform, and the place it is in, else the next)
     for index, (row, platform, *place) in enumerate(rows):
-        y = 73 + (place[0] if place else index) * spec["spacing"]
+        y = spec.get("row_top", 73) + (place[0] if place else index) * spec["spacing"]
         children.append(f'<child{attributes([("widget", row), ("x", 54), ("y", y), ("platform", platform)])}/>')
     children.append(f'<child{attributes([("widget", f"{base}/button_bar"), ("y", 414)])}/>')
     lines += _widget(f"{base}/options_menu",

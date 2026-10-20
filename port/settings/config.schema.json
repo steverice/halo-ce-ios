@@ -939,6 +939,56 @@
       },
       "additionalProperties": false
     },
+    "streamer": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide offensive words in names and text from other players, maps, and mods as stars.",
+          "x-environment": "HALO_STREAMER_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "slurs": {
+          "type": "string",
+          "default": "mild",
+          "description": "With streamer.enabled, hide slurs at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
+          "x-environment": "HALO_STREAMER_SLURS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "swearing": {
+          "type": "string",
+          "default": "strong",
+          "description": "With streamer.enabled, hide swearing at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
+          "x-environment": "HALO_STREAMER_SWEARING",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "insults": {
+          "type": "string",
+          "default": "off",
+          "description": "With streamer.enabled, hide insults at the selected severity: \"off\", \"severe\", \"strong\", or \"mild\" (all).",
+          "x-environment": "HALO_STREAMER_INSULTS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "audio": {
       "type": "object",
       "properties": {
