@@ -4,6 +4,8 @@ import shutil
 import subprocess
 from unittest import SkipTest
 
+import pytest
+
 from test_mp_synthetic_input import function
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,7 @@ int main(void) {
     assert(!network_test_suite_energy_trigger(1,1,0,0.002f));
     assert(!network_test_suite_energy_trigger(NONE,3,0,0.002f));
     assert(!network_test_suite_energy_trigger(NONE,0,0,NAN));
+    assert(!network_test_suite_energy_trigger(NONE,0,0,__builtin_inff()));
     fire(1,0);assert(!evidence); /* real misfire branch cannot create a projectile */
     next_object=NONE;fire(0,0);assert(!evidence);
     next_object=7;fire(0,1);assert(!evidence); /* charging alternate ammunition */
@@ -55,7 +58,8 @@ int main(void) {
 '''
 
 
-def test_successful_owned_battery_projectiles_exclude_misfires_and_failed_creation(tmp_path):
+@pytest.mark.parametrize("strict_math", [False, True])
+def test_successful_owned_battery_projectiles_exclude_misfires_and_failed_creation(tmp_path, strict_math):
     compiler = shutil.which("clang") or shutil.which("cc")
     if not compiler:
         raise SkipTest("A C compiler is required for the energy projectile probe")
@@ -64,7 +68,8 @@ def test_successful_owned_battery_projectiles_exclude_misfires_and_failed_creati
     misfire = function(fire, "if (!misfired)")
     path, binary = tmp_path / "energy.c", tmp_path / "energy"
     path.write_text(HARNESS.replace("__CREATED__", created).replace("__MISFIRE__", misfire))
-    subprocess.run([compiler, "-O2", "-std=gnu89", "-fms-extensions", "-Wno-c99-extensions",
+    flags = ["-D__STRICT_ANSI__"] if strict_math else []
+    subprocess.run([compiler, "-O2", "-std=gnu89", *flags, "-fms-extensions", "-Wno-c99-extensions",
                     "-fsanitize=address,undefined", "-iquote", str(ROOT / "port/linux/include"),
                     str(path), "-lm", "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

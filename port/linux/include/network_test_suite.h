@@ -7,7 +7,7 @@
 /* Some battery weapons have a dummy magazine that consumes zero rounds. */
 static inline int network_test_suite_energy_trigger(int magazine, int magazines, int rounds, float age)
 {
-	return isfinite(age) && age > 0.0f && magazines >= 0 && magazines <= 2 && (magazine == -1 ||
+	return __builtin_isfinite(age) && age > 0.0f && magazines >= 0 && magazines <= 2 && (magazine == -1 ||
 		(magazine >= 0 && magazine < magazines && rounds == 0));
 }
 void network_test_suite_projectile_created(long owner_unit, int energy);
