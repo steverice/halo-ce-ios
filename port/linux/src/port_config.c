@@ -383,9 +383,10 @@ static const struct config_setting config_settings[] =
 		"With display.stereo = \"head\": what aims, \"head\" (the view's center)\n"
 		"or \"controller\" (default; the aiming hand's Sense controller). Aiming\n"
 		"uses the head when tracking is unavailable in local play. In network\n"
-		"play, aim holds its last valid hand direction once a hand has been\n"
-		"tracked, and uses the head until then; a seat uses stick aim. Anything\n"
-		"else aims with the head." },
+		"play, aim holds its last valid hand direction for 2 seconds of lost\n"
+		"tracking, then uses the head until the hand is tracked again (and\n"
+		"before the first tracked pose); a seat uses stick aim. Anything else\n"
+		"aims with the head." },
 	{ "input.aim_hand", _config_string, "\"right\"", "HALO_AIM_HAND", _environment_value, _platform_ios,
 		"With input.aim = \"controller\": the aiming hand, \"right\" (default) or\n"
 		"\"left\" (the buttons mirror)." },

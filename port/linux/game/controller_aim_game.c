@@ -19,7 +19,8 @@ hand flag and the look's yaw less the aim's (controller_facing_pack), from
 which players.c turns the facing and the looking vectors back to the head.
 Network on-foot actions instead carry ordinary facing with a zero pad:
 existing peers aim, turn and move relative to that direction. Network seats
-keep independent stick aim. Tracking loss holds the last valid hand aim;
+keep independent stick aim. Tracking loss holds the last valid hand aim
+for 2 seconds, then eases to the head and stick until the hand recovers;
 before any hand has been tracked in the session (a gamepad, one Sense
 controller, tracking denied, an older SDK), network play aims with the head
 and stick as input.aim = "head" does, until one is. The network reticle and targeting ray use the unit's
@@ -298,6 +299,10 @@ static struct
 	a lost hand (controller_track_update), not a hand that never aimed */
 	int ever_ready;
 	int hand_aiming;                /* this frame's action carries the hand's aim */
+	/* a network game's share of hand aim (the gate's ease): it falls to 0 once the
+	hand has been lost CONTROLLER_NETWORK_LOSS_SECONDS, and rises when it recovers */
+	float network_hand;
+	int network_head_aim;           /* and it is 0: the head and stick aim */
 	/* a network action's facing is the hand's aim with a zero pad, so its
 	throttle turns by the look's yaw less the aim's (halo_controller_network_throttle) */
 	float network_move_delta;
@@ -329,7 +334,7 @@ static struct
 	float previous_effective_blend, previous_stick_yaw, previous_stick_pitch, previous_hand_yaw, previous_hand_pitch;
 	long logged_second;
 } aim = { .last_unit = NONE, .clock = -1.0, .last_state = HALO_SPATIAL_NONE, .since_low_accuracy_log = 1000.0f,
-	.logged_second = -1, .latch = { .tick = -1 }, .last_target = -1, .last_track_blend = 1.0f, .zoom_inside = 1,
+	.logged_second = -1, .latch = { .tick = -1 }, .last_target = -1, .last_track_blend = 1.0f, .zoom_inside = 1, .network_hand = 1.0f,
 	.last_zoom_level = NONE };
 
 /* the drawing sample's own (halo_controller_draw_update): the body yaw from
@@ -786,6 +791,8 @@ static void reset(const char *reason)
 	drawing.reticle_known = 0;
 	controller_track_reset(&aim.track);
 	aim.gate = 0.0f;
+	aim.network_hand = 1.0f;
+	aim.network_head_aim = 0;
 	aim.good_aim_known = 0;
 	aim.previous_known = 0;
 	aim.last_target = -1;
@@ -1277,12 +1284,18 @@ static int action_aim(long unit_index, float look_yaw, float look_pitch, unsigne
 	if (network_controller_aim())
 	{
 		/* Head look stays local. Loss and gate easing hold the last valid
-		hand direction instead of mixing the headset into ordinary facing. */
-		blend = aim.good_aim_known ? 1.0f : 0.0f;
-		if (aim.good_aim_known)
+		hand direction instead of mixing the headset into ordinary facing,
+		until the hand has been lost CONTROLLER_NETWORK_LOSS_SECONDS: then the
+		head and stick aim, eased over, and the hand eases back in on recovery. */
+		float hand_share = controller_gate_ease(&aim.network_hand,
+			!(aim.track.lost && aim.track.lost_for >= CONTROLLER_NETWORK_LOSS_SECONDS), time_delta, 0);
+
+		aim.network_head_aim = aim.network_hand <= 0.0f;
+		blend = aim.good_aim_known ? hand_share : 0.0f;
+		if (blend > 0.0f)
 		{
-			*yaw = aim.good_yaw;
-			*pitch = aim.good_pitch;
+			*yaw = yaw_in_range(controller_yaw_blend(look_yaw, aim.good_yaw, blend));
+			*pitch = look_pitch + blend * (aim.good_pitch - look_pitch);
 		}
 	}
 	else if (blend > 0.0f)
@@ -1418,7 +1431,7 @@ int halo_controller_action_aim(short local_player_index, float look_yaw, float l
 		platform_log("controller aim: random seed changed");
 	if (!hand)
 	{
-		if (network)
+		if (network && !aim.network_head_aim)
 		{
 			real_euler_angles2d facing;
 

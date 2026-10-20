@@ -49,7 +49,7 @@ static int connection, test_controller, look_disabled, head_drives=1, perspectiv
 static int aim_controller=1, sampled_hand=1, feedback_calls, reset_calls;
 static long unit_index_now=17, aiming_unit=17;
 static int own_passenger_weapon;
-static struct {int last_unit,hand_aiming,ever_ready;float network_move_delta;} aim={.ever_ready=1};
+static struct {int last_unit,hand_aiming,ever_ready;float network_move_delta;int network_head_aim;} aim={.ever_ready=1};
 static short mock_pad=123;
 static int halo_action_facing_unpack(short pad,float *d){int h=pad&1;*d=h?(float)((pad-h)/2)*(3.14159265f/16384.0f):0.0f;return h;}
 static struct halo_stereo_frame *halo_stereo_frame(void){return &frame;}
@@ -206,7 +206,7 @@ int main(void){
 def test_production_network_targeting_uses_simulated_aim(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     # The local hand ray is intentionally different from the rate-limited unit.
-    glue_test = (GLUE + SAMPLE).replace("float network_move_delta;} aim", "float network_move_delta,ray_direction[3];} aim")
+    glue_test = (GLUE + SAMPLE).replace("float network_move_delta;int network_head_aim;} aim", "float network_move_delta,ray_direction[3];int network_head_aim;} aim")
     eligible = function(glue, "static int network_gameplay_aim_eligible(") if \
         "static int network_gameplay_aim_eligible(" in glue else ""
     run_probe(tmp_path, "ray", glue_test + function(glue, "static int gate_target(") +
@@ -408,35 +408,82 @@ int main(void){
 ''')
 
 
-def test_production_network_aim_does_not_blend_toward_head(tmp_path):
+def network_aim_probe(tmp_path, name, main):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
+    ease = (ROOT / "port/linux/game/controller_aim.c").read_text()
+    header = (ROOT / "port/linux/game/controller_aim.h").read_text()
     action = function(glue, "static int action_aim(")
     start = action.index("blend = aim.body.known ?")
     end = action.index("/* the facing and the look turn back", start)
-    run_probe(tmp_path, "head-independent", r'''
+    seconds = next(line for line in header.splitlines() if line.startswith("#define CONTROLLER_NETWORK_LOSS_SECONDS"))
+    run_probe(tmp_path, name, r'''
 #include <assert.h>
 #include <math.h>
+#define EASE_SECONDS 0.200f
+''' + seconds + r'''
 static int network;
-static struct {struct {int known;} body;int good_aim_known;float good_yaw,good_pitch;} aim;
+static struct {struct {int known;} body;int good_aim_known;float good_yaw,good_pitch;
+ struct {int lost;float lost_for;} track;float network_hand;int network_head_aim;} aim={.network_hand=1.0f};
 static int network_controller_aim(void){return network;}
 static float yaw_in_range(float yaw){return yaw;}
 static float controller_yaw_blend(float from,float to,float blend){return from+blend*(to-from);}
 static void tilted_look(float ly,float lp,float *y,float *p){*y=ly;*p=lp;}
-static void consume(float look_yaw,float look_pitch,float tracking,float gate,float *yaw,float *pitch){
+''' + function(ease, "static float smoothstep(") + function(ease, "float controller_gate_ease(") + r'''
+static void consume(float look_yaw,float look_pitch,float tracking,float gate,float time_delta,float *yaw,float *pitch){
  struct {float blend;} track={tracking};float blend,stick_yaw=look_yaw,stick_pitch=look_pitch;
  float hand_yaw=.75f,hand_pitch=-.2f;
-''' + action[start:end] + r'''
-}
+ *yaw=look_yaw;*pitch=look_pitch;
+''' + action[start:end] + "\n}\n" + main)
+
+
+def test_production_network_aim_does_not_blend_toward_head(tmp_path):
+    network_aim_probe(tmp_path, "head-independent", r'''
 int main(void){
  aim.body.known=aim.good_aim_known=1;aim.good_yaw=.75f;aim.good_pitch=-.2f;
  network=1;
  for(int h=0;h<12;h++)for(int t=0;t<=10;t++)for(int g=0;g<=10;g++){
   float yaw=h*.2f,pitch=h*.04f;
-  consume(yaw,pitch,t*.1f,g*.1f,&yaw,&pitch);
-  assert(yaw==.75f&&pitch==-.2f);
+  consume(yaw,pitch,t*.1f,g*.1f,.016f,&yaw,&pitch);
+  assert(fabsf(yaw-.75f)<.00001f&&fabsf(pitch+.2f)<.00001f);
  }
- network=0;float yaw=0,pitch=0;consume(0,0,.5f,1,&yaw,&pitch);
+ network=0;float yaw=0,pitch=0;consume(0,0,.5f,1,.016f,&yaw,&pitch);
  assert(yaw==.375f&&pitch==-.1f);
+}
+''')
+
+
+def test_production_network_loss_holds_two_seconds_then_falls_back_and_recovers(tmp_path):
+    network_aim_probe(tmp_path, "loss-fallback", r'''
+static void lose(float seconds,float *yaw,float *pitch){
+ /* (frames of 16 ms of the track's clock, lost throughout) */
+ aim.track.lost=1;
+ for(float t=0;t<seconds;t+=.016f){aim.track.lost_for=t;consume(.1f,.3f,0,1,.016f,yaw,pitch);}
+}
+int main(void){
+ float yaw,pitch;
+ aim.body.known=aim.good_aim_known=1;aim.good_yaw=.75f;aim.good_pitch=-.2f;network=1;
+ /* lost 1.9 s: the last hand aim is held */
+ lose(1.9f,&yaw,&pitch);
+ assert(fabsf(yaw-.75f)<.00001f&&fabsf(pitch+.2f)<.00001f&&!aim.network_head_aim);
+ /* the hand is back: still the hand */
+ aim.track.lost=0;consume(.1f,.3f,1,1,.016f,&yaw,&pitch);
+ assert(fabsf(yaw-.75f)<.00001f&&!aim.network_head_aim);
+ /* lost 2.1 s: the head and stick aim, eased over, never a step */
+ float previous=.75f;
+ aim.track.lost=1;
+ for(float t=0;t<2.1f+.4f;t+=.016f){
+  aim.track.lost_for=t;consume(.1f,.3f,0,1,.016f,&yaw,&pitch);
+  assert(fabsf(yaw-previous)<.1f);previous=yaw;
+  if(t<2.0f)assert(fabsf(yaw-.75f)<.00001f);
+ }
+ assert(aim.network_head_aim&&fabsf(yaw-.1f)<.0001f&&fabsf(pitch-.3f)<.0001f);
+ /* the hand is tracked again: the hand takes over, eased */
+ aim.track.lost=0;previous=yaw;
+ for(int frame=0;frame<30;frame++){
+  consume(.1f,.3f,1,1,.016f,&yaw,&pitch);
+  assert(fabsf(yaw-previous)<.1f);previous=yaw;
+ }
+ assert(!aim.network_head_aim&&fabsf(yaw-.75f)<.0001f&&fabsf(pitch+.2f)<.0001f);
 }
 ''')
 

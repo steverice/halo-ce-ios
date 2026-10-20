@@ -59,6 +59,11 @@ int controller_facing_unpack(short pad, float *delta_yaw);
 /* a yaw blended the short way around +-pi: from + blend * wrap(to - from) */
 float controller_yaw_blend(float from, float to, float blend);
 
+/* port: a network game holds the last hand aim through a loss, then aims with
+the head and stick once the hand has been lost this long (the frame clock,
+as the track's lost_for); the hand takes over again when it recovers */
+#define CONTROLLER_NETWORK_LOSS_SECONDS 2.0f
+
 /* tracking loss and recovery (spec section 1, "Tracking states") */
 struct controller_track
 {
