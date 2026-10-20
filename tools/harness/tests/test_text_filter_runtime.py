@@ -1,5 +1,9 @@
 """The display filter changes only displayed copies while its toggle is on."""
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import build, read, run
 
 
