@@ -142,8 +142,7 @@ static int arena_choose(void)
 		struct player_starting_location *location = TAG_BLOCK_GET_ELEMENT(&scenario->players, start, struct player_starting_location);
 		int direction;
 
-		if (!__builtin_isfinite(location->position.x) || !__builtin_isfinite(location->position.y) ||
-			!__builtin_isfinite(location->position.z) || !__builtin_isfinite(location->facing))
+		if (!isfinite(location->position.x) || !isfinite(location->position.y) || !isfinite(location->position.z) || !isfinite(location->facing))
 			continue;
 		for (direction = 0; direction < 4; direction++)
 		{
@@ -249,7 +248,7 @@ int benchmark_mp_arena_tick(long tick)
 		}
 		if (player->unit_index != arena.units[i]) { arena_place(i, player); continue; }
 		object_get_origin(player->unit_index, &position);
-		if (!__builtin_isfinite(position.x) || !__builtin_isfinite(position.y) || !__builtin_isfinite(position.z))
+		if (!isfinite(position.x) || !isfinite(position.y) || !isfinite(position.z))
 		{
 			platform_log("network test: arena invalid position: tick %ld actor %d unit %ld", tick, i, player->unit_index);
 			arena.failed = 1; return -1;

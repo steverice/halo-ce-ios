@@ -120,7 +120,6 @@ Windows it is __stdcall too, and SDL would include windows.h without it) */
 	X(glGetShaderInfoLog) \
 	X(glDeleteShader) \
 	X(glCreateProgram) \
-	X(glDeleteProgram) \
 	X(glAttachShader) \
 	X(glBindAttribLocation) \
 	X(glLinkProgram) \
@@ -131,7 +130,6 @@ Windows it is __stdcall too, and SDL would include windows.h without it) */
 	X(glUniform1i) \
 	X(glUniform1iv) \
 	X(glUniform1f) \
-	X(glUniform4f) \
 	X(glUniform4fv) \
 	X(glUniform2f) \
 	X(glGenQueries) \
@@ -231,7 +229,6 @@ Windows it is __stdcall too, and SDL would include windows.h without it) */
 	X(glGetShaderInfoLog) \
 	X(glDeleteShader) \
 	X(glCreateProgram) \
-	X(glDeleteProgram) \
 	X(glAttachShader) \
 	X(glBindAttribLocation) \
 	X(glBindFragDataLocation) \
@@ -243,7 +240,6 @@ Windows it is __stdcall too, and SDL would include windows.h without it) */
 	X(glUniform1i) \
 	X(glUniform1iv) \
 	X(glUniform1f) \
-	X(glUniform4f) \
 	X(glUniform4fv) \
 	X(glUniform2f) \
 	X(glGenQueries) \
@@ -354,7 +350,6 @@ pointers, sees the declarations without these aliases */
 #define glGetShaderInfoLog HALO_GL_COUNTED(halo_glGetShaderInfoLog)
 #define glDeleteShader HALO_GL_COUNTED(halo_glDeleteShader)
 #define glCreateProgram HALO_GL_COUNTED(halo_glCreateProgram)
-#define glDeleteProgram HALO_GL_COUNTED(halo_glDeleteProgram)
 #define glAttachShader HALO_GL_COUNTED(halo_glAttachShader)
 #define glBindAttribLocation HALO_GL_COUNTED(halo_glBindAttribLocation)
 #define glLinkProgram HALO_GL_COUNTED(halo_glLinkProgram)
@@ -365,7 +360,6 @@ pointers, sees the declarations without these aliases */
 #define glUniform1i HALO_GL_COUNTED(halo_glUniform1i)
 #define glUniform1iv HALO_GL_COUNTED(halo_glUniform1iv)
 #define glUniform1f HALO_GL_COUNTED(halo_glUniform1f)
-#define glUniform4f HALO_GL_COUNTED(halo_glUniform4f)
 #define glUniform4fv HALO_GL_COUNTED(halo_glUniform4fv)
 #define glUniform2f HALO_GL_COUNTED(halo_glUniform2f)
 #define glGenQueries HALO_GL_COUNTED(halo_glGenQueries)
@@ -465,7 +459,6 @@ pointers, sees the declarations without these aliases */
 #define glGetShaderInfoLog HALO_GL_COUNTED(halo_glGetShaderInfoLog)
 #define glDeleteShader HALO_GL_COUNTED(halo_glDeleteShader)
 #define glCreateProgram HALO_GL_COUNTED(halo_glCreateProgram)
-#define glDeleteProgram HALO_GL_COUNTED(halo_glDeleteProgram)
 #define glAttachShader HALO_GL_COUNTED(halo_glAttachShader)
 #define glBindAttribLocation HALO_GL_COUNTED(halo_glBindAttribLocation)
 #define glBindFragDataLocation HALO_GL_COUNTED(halo_glBindFragDataLocation)
@@ -477,7 +470,6 @@ pointers, sees the declarations without these aliases */
 #define glUniform1i HALO_GL_COUNTED(halo_glUniform1i)
 #define glUniform1iv HALO_GL_COUNTED(halo_glUniform1iv)
 #define glUniform1f HALO_GL_COUNTED(halo_glUniform1f)
-#define glUniform4f HALO_GL_COUNTED(halo_glUniform4f)
 #define glUniform4fv HALO_GL_COUNTED(halo_glUniform4fv)
 #define glUniform2f HALO_GL_COUNTED(halo_glUniform2f)
 #define glGenQueries HALO_GL_COUNTED(halo_glGenQueries)

@@ -764,19 +764,10 @@ static word parse_unicode_string(
 	switch (character)
 	{
 	case '|':
-		/* port: the next character is taken only when it is the 'n' of
-		"|n"; any other '|' is a character, as parse_string has it. The
-		next character was taken whatever it was, so a string ending in '|'
-		(a player's name, a server's message) was read past its end */
-		if (string[state->string_index] == 'n')
+		if (string[state->string_index++] == 'n')
 		{
-			state->string_index++;
 			state->character = '\r';
 			state->result = _parsed_end_of_line;
-		}
-		else
-		{
-			state->result = _parsed_character;
 		}
 		break;
 	case 0:
