@@ -76,6 +76,7 @@ machine (their datum identifiers need not be).
 #include "network_coop.h"
 #include "network_distributed.h"
 #include "map_share.h"
+#include "network_aim_assist.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -3379,6 +3380,7 @@ void network_distributed_new_game(
 	network_damage_new_game();
 	network_actors_new_game();
 	network_coop_new_game();
+	network_aim_assist_reset();
 }
 
 /* after each tick (game_time.c) */
@@ -3943,6 +3945,11 @@ void network_distributed_handle_message(
 	short index;
 	word entry_size;
 
+	if (network_aim_assist_handles_message(message, size))
+	{
+		network_aim_assist_handle_message(machine_index, message, size);
+		return;
+	}
 	/* (map sharing's, in the lobby too, over the host's connection alone:
 	map_share.c) */
 	if (map_share_handles_message(message, size))
@@ -4214,6 +4221,7 @@ void network_distributed_handle_message(
 
 		/* (its count 1: the client asks again, having failed to make one of
 		the host's objects) */
+		network_aim_assist_send_policy(machine_index);
 		network_objects_client_asked(machine_index, header.count != 0);
 		/* (a machine new at its index, which may have joined the game in
 		progress: every player's statistics and the game type's state, after

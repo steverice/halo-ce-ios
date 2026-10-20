@@ -39,6 +39,8 @@ drive the controller.
 #include "platform.h"
 #include "sdl_platform.h"
 #include "port_config.h"
+/* port/linux/game/network_aim_assist.c */
+extern unsigned char network_aim_assist_block_mouse(void);
 #include "halo_keyboard.h"
 #include "mp_benchmark_probe.h"
 #include "benchmark_mp_arena.h"
@@ -456,7 +458,8 @@ int halo_linux_mouse_aiming(short gamepad_index)
 		read_at = config_changes();
 		aim_assist = config_boolean("input.mouse_aim_assist");
 	}
-	if (aim_assist)
+	/* port: the host's policy blocks the mouse's magnetism whatever the setting */
+	if (aim_assist && !network_aim_assist_block_mouse())
 		return FALSE;
 	pthread_mutex_lock(&mouse_lock);
 	aiming = mouse_aimed_ms != 0 && mouse_aimed_ms >= stick_aimed_ms;

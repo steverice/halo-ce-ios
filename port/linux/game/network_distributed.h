@@ -125,6 +125,11 @@ enum
 	_distributed_message_map_share_offer = 84,
 	_distributed_message_map_share_sources = 85,
 	_distributed_message_map_share_progress = 86,
+	/* (87 to 89 are upstream's text chat, which this port has not imported:
+	dropped as kinds it does not know) */
+	/* version 32: the host's mouse aim-assist policy, reliably when a client
+	is ready and when it changes (network_aim_assist.c) */
+	_distributed_message_aim_assist_policy = 90,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };

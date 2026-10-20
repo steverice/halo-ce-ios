@@ -383,6 +383,7 @@ symbols in this file:
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "map_share.h" /* port: port/linux/game/map_share.c */
 #include "network_away.h" /* port: port/linux/game/network_away.c */
+#include "network_aim_assist.h" /* port: port/linux/game/network_aim_assist.c */
 #include "camera/director.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
@@ -3659,6 +3660,8 @@ void main_loop(
 			map_share_update();
 			/* port: players whose app went to the background (port/linux/game/network_away.c) */
 			network_away_update(main_globals.main_menu_scenario_loaded);
+			/* port: apply and replicate the host's mouse aim-assist policy. */
+			network_aim_assist_update();
 			connection = main_globals.connection;
 			if (connection==_game_connection_network_client)
 			{
