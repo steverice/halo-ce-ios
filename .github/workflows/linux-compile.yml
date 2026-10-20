@@ -44,7 +44,7 @@ jobs:
           persist-credentials: false
       - name: Build complete Linux release
         run: python tools/ci_build.py linux release
-      - name: Verify executable and network format
+      - name: Verify executable and focused behavior
         run: |
           test -s dist/halo-linux-release/halo
           python - <<'PY'
@@ -54,4 +54,8 @@ jobs:
           assert int.from_bytes(image[18:20], 'little') == 3, 'expected x86 machine code'
           print('32-bit x86 Linux executable verified')
           PY
-          python -m pytest --quiet tools/test_linux_port.py::test_network_format_is_the_recorded_one
+          python -m pytest --quiet \
+            tools/test_linux_port.py::test_network_format_is_the_recorded_one \
+            tools/test_linux_port.py::test_p2p_signatures_and_listings \
+            tools/harness/tests/test_unicode_line_breaks.py \
+            tools/harness/tests/test_sound_orphan.py

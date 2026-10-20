@@ -35,8 +35,10 @@ one deletes or keeps is no authority, so
   keeps the newest of each host (by sequence), drops one not heard in
   GAME_EXPIRY (on its own clock; a retained copy is taken only if its time
   is within RETAINED_WINDOW of this machine's, from a host that died and
-  left it), takes a host's closing listing (a tombstone) as its end, and
-  ignores an emptied slot (a wipe is not a delete).
+  left it, and a live one only within LIVE_WINDOW, so an old listing
+  published again by someone else does not list a game long gone), takes
+  a host's closing listing (a tombstone) as its end, and ignores an
+  emptied slot (a wipe is not a delete).
 A host that stops publishes a tombstone, then clears its slot. Going private
 makes a new invite (p2p.c), so a listing seen before lets no one in.
 
@@ -96,6 +98,8 @@ enum
 	VERIFY_BUDGET = 2,
 	/* seconds */
 	RETAINED_WINDOW = 600,
+	/* (wide: a host whose clock is off is still listed) */
+	LIVE_WINDOW = 3600,
 };
 
 static const char signature_label[] = "hceu-lobby-1";
@@ -778,13 +782,15 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->ping = -1;
 }
 
-/* whether a slot's retained copy is of about now (a host that died left
-it, and nothing cleared it) */
-static int retained_is_current(const struct listing *listing)
+/* A retained slot may outlive its host; a live slot can also be republished
+by another machine after its host is gone. Give live listings a wider window
+for hosts whose clocks are off. */
+static int listing_is_current(const struct listing *listing, int retained)
 {
 	long difference = (long)(listing->time - (unsigned long)time(NULL));
+	long window = retained ? RETAINED_WINDOW : LIVE_WINDOW;
 
-	return difference <= RETAINED_WINDOW && difference >= -RETAINED_WINDOW;
+	return difference <= window && difference >= -window;
 }
 
 /* a listing of another network version: counted, or (a tombstone) no
@@ -795,7 +801,7 @@ static void other_heard(const struct queued *queued, const struct listing *listi
 	struct other *other = NULL;
 	int index;
 
-	if (queued->retained && !retained_is_current(listing))
+	if (!listing_is_current(listing, queued->retained))
 		return;
 	for (index = 0; index < MAXIMUM_OTHERS && !other; index++)
 	{
@@ -857,8 +863,9 @@ static void update_browsing(void)
 		}
 		if (!signing_key_hash(listing.key, key_hash) || memcmp(key_hash, queued.key_hash, P2P_KEY_HASH_SIZE))
 			continue;
-		/* a slot's retained copy: only one of about now */
-		if (queued.retained && !retained_is_current(&listing))
+		/* A retained copy must be recent; a live listing may be older, but
+		not so old that another machine is repeating a game long gone. */
+		if (!listing_is_current(&listing, queued.retained))
 			continue;
 		/* (the work, without the lock: the game's threads need not wait) */
 		pthread_mutex_unlock(&p2p_lock);
