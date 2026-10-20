@@ -42,7 +42,7 @@ int main(void) {
     assert(!network_test_suite_energy_trigger(-2,1,0,0.002f));
     assert(!network_test_suite_energy_trigger(1,1,0,0.002f));
     assert(!network_test_suite_energy_trigger(NONE,3,0,0.002f));
-    assert(!network_test_suite_energy_trigger(NONE,0,0,NAN));
+    assert(!network_test_suite_energy_trigger(NONE,0,0,__builtin_nanf("")));
     assert(!network_test_suite_energy_trigger(NONE,0,0,__builtin_inff()));
     fire(1,0);assert(!evidence); /* real misfire branch cannot create a projectile */
     next_object=NONE;fire(0,0);assert(!evidence);

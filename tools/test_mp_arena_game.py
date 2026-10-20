@@ -78,7 +78,7 @@ int main(void) {
     struct player_action action={0};
     for(i=1;i<128;i++) {
         assert(benchmark_mp_arena_action(i,10,&action));
-        assert(isfinite(action.desired_facing.yaw)&&isfinite(action.desired_facing.pitch));
+        assert(__builtin_isfinite(action.desired_facing.yaw)&&__builtin_isfinite(action.desired_facing.pitch));
         assert(hypotf(action.throttle.i,action.throttle.j)>0&&hypotf(action.throttle.i,action.throttle.j)<=0.76f);
         assert(action.primary_trigger==0.0f); /* host startup still owns combat */
     }
