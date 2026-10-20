@@ -49,7 +49,7 @@ static int connection, test_controller, look_disabled, head_drives=1, perspectiv
 static int aim_controller=1, sampled_hand=1, feedback_calls, reset_calls;
 static long unit_index_now=17, aiming_unit=17;
 static int own_passenger_weapon;
-static struct {int last_unit,hand_aiming;} aim;
+static struct {int last_unit,hand_aiming,ever_ready;} aim={.ever_ready=1};
 static struct halo_stereo_frame *halo_stereo_frame(void){return &frame;}
 static struct unit_datum *unit_get(long index){assert(index==17);return &unit;}
 static int game_connection(void){return connection;}
@@ -79,6 +79,15 @@ static void unit_get_camera_position(long index,real_point3d *eye){assert(index=
 '''
 
 
+# (the spatial sample the session's first tracked hand is read from)
+SAMPLE = r'''
+#define HALO_SPATIAL_READY 1
+struct halo_spatial_sample {int reason;};
+static struct halo_spatial_sample game_sample={HALO_SPATIAL_READY};
+static const struct halo_spatial_sample *halo_controller_game_sample(void){return &game_sample;}
+'''
+
+
 def test_production_gate_opens_network_on_foot_only(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     run_probe(tmp_path, "gate", GLUE + function(glue, "static int gate_target(") + r'''
@@ -101,7 +110,7 @@ int main(void){
 
 def test_production_action_preserves_local_pad_and_zeros_network_pad(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
-    run_probe(tmp_path, "action", GLUE + function(glue, "static int network_controller_aim(") +
+    run_probe(tmp_path, "action", GLUE + SAMPLE + function(glue, "static int hand_tracked_this_session(") + function(glue, "static int network_controller_aim(") +
               function(glue, "static int gate_target(") +
               function(glue, "int halo_controller_action_aim(") + r'''
 int main(void){
@@ -118,7 +127,7 @@ int main(void){
    assert(pad==0&&yaw==.3f&&pitch==.1f&&!aim.hand_aiming);
    unit.object.parent_object_index=NONE;
   }
-  sampled_hand=0;unit.unit.aiming_vector=(real_vector3d){1,0,0};
+  sampled_hand=0;aim.ever_ready=1;unit.unit.aiming_vector=(real_vector3d){1,0,0};
   assert(halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad)==(connection!=0));
   assert(pad==0&&yaw==(connection?0:.1f)&&pitch==(connection?0:.2f));sampled_hand=1;
   unit_index_now=NONE;assert(halo_controller_action_aim(0,.4f,.5f,7,&yaw,&pitch,&pad)==(connection!=0));
@@ -129,14 +138,42 @@ int main(void){
 ''')
 
 
+def test_production_network_without_tracked_hand_aims_with_head_and_stick(tmp_path):
+    glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
+    run_probe(tmp_path, "no-hand", GLUE + SAMPLE + function(glue, "static int hand_tracked_this_session(") +
+              function(glue, "static int network_controller_aim(") + function(glue, "static int gate_target(") +
+              function(glue, "int halo_controller_action_aim(") + r'''
+int main(void){
+ float yaw,pitch;short pad;unit.object.parent_object_index=NONE;
+ unit.unit.aiming_vector=(real_vector3d){1,0,0};
+ for(connection=1;connection<=2;connection++){
+  /* (no hand yet: a gamepad, one controller, denied, an older SDK) */
+  aim.ever_ready=0;game_sample.reason=0;sampled_hand=0;
+  assert(!network_controller_aim());
+  assert(!halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad));
+  assert(yaw==.1f&&pitch==.2f&&pad==0);
+  /* (the first tracked pose takes over, and a later loss then holds) */
+  game_sample.reason=HALO_SPATIAL_READY;sampled_hand=1;
+  assert(network_controller_aim());
+  assert(halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad));
+  assert(yaw>1.5f&&pitch==.25f&&pad==0);
+  aim.ever_ready=1;game_sample.reason=0;sampled_hand=0;
+  assert(network_controller_aim());
+  assert(halo_controller_action_aim(0,.1f,.2f,7,&yaw,&pitch,&pad));
+  assert(yaw==0&&pitch==0);
+ }
+}
+''')
+
+
 def test_production_network_targeting_uses_simulated_aim(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     # The local hand ray is intentionally different from the rate-limited unit.
-    glue_test = GLUE.replace("int last_unit,hand_aiming;", "int last_unit,hand_aiming;float ray_direction[3];")
+    glue_test = (GLUE + SAMPLE).replace("int last_unit,hand_aiming,ever_ready;", "int last_unit,hand_aiming,ever_ready;float ray_direction[3];")
     eligible = function(glue, "static int network_gameplay_aim_eligible(") if \
         "static int network_gameplay_aim_eligible(" in glue else ""
     run_probe(tmp_path, "ray", glue_test + function(glue, "static int gate_target(") +
-              function(glue, "static int network_controller_aim(") + eligible +
+              function(glue, "static int hand_tracked_this_session(") + function(glue, "static int network_controller_aim(") + eligible +
               function(glue, "int halo_controller_aim_ray(") + r'''
 int main(void){
  float origin[3],direction[3];aim.hand_aiming=1;aim.ray_direction[1]=1;
@@ -204,7 +241,7 @@ int main(void){
 
 def test_production_head_camera_session_outlives_tracking_and_gate(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
-    run_probe(tmp_path, "camera-session", GLUE + function(glue, "static int network_controller_aim(") +
+    run_probe(tmp_path, "camera-session", GLUE + SAMPLE + function(glue, "static int hand_tracked_this_session(") + function(glue, "static int network_controller_aim(") +
               function(glue, "int halo_controller_network_head_camera(") + r'''
 int main(void){
  for(connection=0;connection<=2;connection++){
@@ -240,6 +277,7 @@ struct controller_range {int known;};
 struct controller_zoom_filter {int known;};
 struct controller_body {int known;float yaw;};
 static struct halo_spatial_sample sample;
+static const struct halo_spatial_sample *halo_controller_game_sample(void){return &sample;}
 static struct {struct controller_body body;struct hand_memory location;struct controller_near near;
  struct controller_range range;struct controller_zoom_filter zoom_filter;
  int seat_clamped;float ray_range,eased_range;} drawing;
@@ -265,7 +303,7 @@ static int hand_sightline(long index,const struct halo_spatial_hand *h,struct ha
  if(!pose_known)return 0;memset(out,0,sizeof(*out));out->direction[1]=1;out->forward[1]=1;
  out->up[2]=1;out->aim_distance=out->surface_distance=100;return 1;
 }
-''' + function(glue, "static int gate_target(") + function(glue, "static int network_controller_aim(") + eligible +
+''' + function(glue, "static int gate_target(") + function(glue, "static int hand_tracked_this_session(") + function(glue, "static int network_controller_aim(") + eligible +
               function(glue, "static int draw_sightline(") + r'''
 int main(void){
  const float camera[3]={3,4,5};aim.hand_aiming=1;drawing.body.known=1;
@@ -298,7 +336,7 @@ int main(void){
 def test_network_zoom_reticle_shows_own_passenger_and_excludes_vehicle_owned_aim(tmp_path):
     glue = (ROOT / "port/linux/game/controller_aim_game.c").read_text()
     eligible = function(glue, "static int network_gameplay_aim_eligible(")
-    run_probe(tmp_path, "zoom-ownership", GLUE + r'''
+    run_probe(tmp_path, "zoom-ownership", GLUE + SAMPLE + r'''
 static struct {int active;float sightline[3];} draw;
 static struct {long active_frame;} drawing;
 static struct {int known;long frame;float forward[3],up[3],tangents[2],magnification;} zoom_view;
@@ -315,7 +353,7 @@ static int controller_zoom_project_clamped(const float ray[3],const float forwar
  project_calls++;return 1;
 }
 ''' + function(glue, "static int gate_target(") +
-              function(glue, "static int network_controller_aim(") + eligible +
+              function(glue, "static int hand_tracked_this_session(") + function(glue, "static int network_controller_aim(") + eligible +
               function(glue, "int halo_controller_zoom_reticle(") + r'''
 int main(void){
  float shown[3];connection=1;draw.active=zoom_view.known=1;

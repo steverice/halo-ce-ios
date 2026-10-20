@@ -20,7 +20,9 @@ which players.c turns the facing and the looking vectors back to the head.
 Network on-foot actions instead carry ordinary facing with a zero pad:
 existing peers aim, turn and move relative to that direction. Network seats
 keep independent stick aim. Tracking loss holds the last valid hand aim;
-before one exists, the simulated unit aim stands. The network reticle and targeting ray use the unit's
+before any hand has been tracked in the session (a gamepad, one Sense
+controller, tracking denied, an older SDK), network play aims with the head
+and stick as input.aim = "head" does, until one is. The network reticle and targeting ray use the unit's
 actual aiming vector, including its ordinary clipping and rate limits.
 The hand's aim is the sightline from the eye (controller_sightline) to where
 the barrel's ray meets the world, so the shot, which leaves from the eye,
@@ -694,14 +696,23 @@ static int gate_target(long unit_index, const char **reason)
 	return 1;
 }
 
-/* This session predicate deliberately does not depend on tracking or the
-gate. Neither a lost hand nor an old observer tick may expose head look. */
+/* port: a hand has been tracked this session (or is this frame). Until then
+a network player has no hand aim to hold, so aims with the head and stick as
+input.aim = "head" does. */
+static int hand_tracked_this_session(void)
+{
+	return aim.ever_ready || halo_controller_game_sample()->reason == HALO_SPATIAL_READY;
+}
+
+/* This session predicate deliberately does not depend on the gate. Neither
+a lost hand nor an old observer tick may expose head look once a hand has
+aimed. */
 static int network_controller_aim(void)
 {
 	const struct halo_stereo_frame *frame = halo_stereo_frame();
 	short connection = game_connection();
 
-	return aim_controller &&
+	return aim_controller && hand_tracked_this_session() &&
 		(connection == _game_connection_network_client || connection == _game_connection_network_server) &&
 		(frame->mode == HALO_STEREO_HEAD ||
 		 (frame->mode == HALO_STEREO_SIDE_BY_SIDE && test_controller && frame->eye_count == 2 && !halo_stereo_film()));
