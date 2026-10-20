@@ -84,7 +84,7 @@ int main(void)
 	assert(host_lan_txt_matches(txt, length, 0x8001, 0x48564953u));
 	assert(!host_lan_txt_matches(txt, length, 0x8001, 0));
 	/* a version past 16 bits is not cut down to one that matches (2^32 + 32) */
-	assert(!host_lan_txt_matches((const unsigned char *)"\x0e" "v=4294967328", 15, HALO_PORT_NETWORK_VERSION, 0));
+	assert(!host_lan_txt_matches((const unsigned char *)"\x0c" "v=4294967328", 13, HALO_PORT_NETWORK_VERSION, 0));
 	/* a record without v=, or cut short, matches nothing */
 	assert(!host_lan_txt_matches((const unsigned char *)"\x03" "f=1", 4, HALO_PORT_NETWORK_VERSION, 0));
 	assert(!host_lan_txt_matches((const unsigned char *)"\x09" "v=1", 4, HALO_PORT_NETWORK_VERSION, 0));
