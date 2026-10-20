@@ -1,19 +1,19 @@
 {
   "schema": 1,
-  "tag": "visr-v0.3.0",
-  "version": "0.3.0",
-  "build_number": "20261020.10441",
-  "source_sha": "d35263ce9228fce85aba2aa7685c5956a0aa603d",
+  "tag": "visr-v0.3.1",
+  "version": "0.3.1",
+  "build_number": "20261020.55147",
+  "source_sha": "a1f0457c0f4cbd0496c47d645f88926d2fba8d08",
   "platforms": [
     "ios",
     "tvos"
   ],
-  "notes_sha256": "b918171d24f46fe00399c3295c761e742000aa9da4d81d9e7280d507f88c1826",
-  "testflight_summary": "- Run benchmarks through one unified tester flow and tap Finish when your run is done.\n- Check that your benchmark report is created automatically when you finish, and that it is still there if you leave or relaunch the app.\n- Try the gameplay cases: a10-mess-hall, a50-campaign-heroic, b30-second-run, b40-snow-fight, c10-active-candidate, c20-flood-fight, c40-tower-legendary, and d40-maw-fight.\n- Try the multiplayer cases: mp16-chillout (16 players), mp32-bloodgulch and mp32-sidewinder (32 players each), mp-bloodgulch-64 (64 players), and mp-sidewinder-128 (128 players).\n- Confirm that the benchmark cases appear in the new order and that each one starts on its listed map.\n- Look for full report details after a run, including long or large reports, which are now kept in full.",
-  "testflight_summary_sha256": "801a99d904a2d654eb7ee6aad03e7b3c7503a1abace34aeae95b724b81806ae9",
+  "notes_sha256": "22f5c662a871d90695d94b63dbb1392cad563444b1ed1bdb9a0c0212d289794a",
+  "testflight_summary": "- Run the tester benchmark. It's now offered only when a valid benchmark catalog is available, so tell us if it's missing when it should be there.\n- Try benchmark cases across gameplay maps (a10, a50, b30, b40, c10, c20, c40, d40) and multiplayer maps (Chillout, Blood Gulch, Sidewinder).\n- Check the multiplayer benchmark cases: Chillout at 16 players, Blood Gulch at 32 and 64 players, and Sidewinder at 32 and 128 players.\n- Watch the benchmark screen for the new work timings and render interval graph.\n- Check the compact live metrics above the taller frame graph, and see whether they're easy to read while a run is going.\n- Play campaign and multiplayer maps and note any hitching when new draw effects first appear. We added more shader precompilation for campaign, multiplayer, benchmark, and UI.\n- Open menus and other UI screens and watch for hitches the first time they appear.",
+  "testflight_summary_sha256": "81707b95f8a5a79ca07cbc00b90a0a173076f21e5926b42a7c57d79f88973bd2",
   "testflight_summary_model": "claude-sonnet-5-5",
   "bootstrap_since": "",
-  "source_date_epoch": "1792458281",
+  "source_date_epoch": "1792475507",
   "guest_source_date_epoch": "1792454334",
   "internal_only": true,
   "build_policy": {
@@ -48,7 +48,7 @@
     "profile_feed_url": "https://code.steverice.org/visr/packs/tester/profiles",
     "recording_feed_sha256": "5b2de56a7f55cc0ed04bcb3ac577c87d9bc9a7749a92e5e79707d6fad08ee122",
     "recording_feed_url": "https://code.steverice.org/visr/packs/tester/recordings.json",
-    "shader_feed_sha256": "6ab0eab61296058ed553a5914a5e768edb7a89d07f8e0e435567e9b89cb69739",
+    "shader_feed_sha256": "d839d2b14152a562753865cb0242baeb0cbc832f095d18f036929e718edccc42",
     "shader_feed_url": "https://code.steverice.org/visr/packs/tester/shaders.json"
   }
 }
