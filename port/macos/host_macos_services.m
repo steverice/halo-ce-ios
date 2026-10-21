@@ -266,6 +266,26 @@ void host_frame_counter_show(unsigned long frame) {
         counter_renderer, clock, value.fps, value.average_ms, value.worst_ms, cpu, gpu];
 }
 
+/* Peek without consuming quit, window, or controller events needed by the guest. */
+static int benchmark_notice_stopped(void) {
+    int stopped = 0;
+    /* AppKit delivers input, but the guest must still receive every SDL event. */
+    int count = SDL_PeepEvents(NULL, 0, SDL_PEEKEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST);
+    SDL_Event *events = count > 0 ? SDL_malloc((size_t)count * sizeof(*events)) : NULL;
+    if (events) {
+        count = SDL_PeepEvents(events, count, SDL_PEEKEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST);
+        for (int i = 0; i < count; i++) {
+            SDL_Event *event = &events[i];
+            if (event->type == SDL_EVENT_QUIT || event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
+                (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_ESCAPE) ||
+                (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && event->gbutton.button == SDL_GAMEPAD_BUTTON_BACK))
+                stopped = 1;
+        }
+        SDL_free(events);
+    }
+    return stopped || host_benchmark_finish_requested();
+}
+
 int host_benchmark_notice(const char *heading, const char *detail, double seconds, int (*until)(void)) {
     if (!NSThread.isMainThread) return 0;
     NSPanel *panel=[[NSPanel alloc]initWithContentRect:NSMakeRect(0,0,520,160)
@@ -277,14 +297,11 @@ int host_benchmark_notice(const char *heading, const char *detail, double second
     double end=CACurrentMediaTime()+seconds;int stopped=0;
     while(CACurrentMediaTime()<end && !(until && until())) {
         @autoreleasepool {
-            SDL_Event event;
-            while(SDL_PollEvent(&event)) {
-                if(event.type==SDL_EVENT_QUIT || (event.type==SDL_EVENT_KEY_DOWN && event.key.key==SDLK_ESCAPE) ||
-                    (event.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN && event.gbutton.button==SDL_GAMEPAD_BUTTON_BACK)) stopped=1;
-            }
+            SDL_PumpEvents();
+            stopped = benchmark_notice_stopped();
             if(stopped)break;
             [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
         }
     }
-    [panel orderOut:nil];return stopped;
+    [panel orderOut:nil];return stopped || host_benchmark_finish_requested();
 }

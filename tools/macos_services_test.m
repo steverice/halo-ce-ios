@@ -6,8 +6,20 @@
 #include "../port/ios/host/host_benchmark.h"
 #include "../port/macos/host_macos_services.m"
 
+static int finish_requested;
+int host_benchmark_finish_requested(void) { return finish_requested; }
+
 static int window_reads, pushes;
 static Uint32 last_event;
+static SDL_Event pending[4];
+static int pending_count;
+int SDL_PeepEvents(SDL_Event *events, int count, SDL_EventAction action, Uint32 first, Uint32 last) {
+    assert(action == SDL_PEEKEVENT && first == SDL_EVENT_FIRST && last == SDL_EVENT_LAST);
+    if (!events) return pending_count;
+    int copied = count < pending_count ? count : pending_count;
+    memcpy(events, pending, (size_t)copied * sizeof(*events));
+    return copied;
+}
 void host_fatal(const char *format, ...) {
     (void)format;
     @throw [NSException exceptionWithName:@"MainThreadRequired" reason:@"expected thread guard" userInfo:nil];
@@ -69,6 +81,22 @@ int main(void) {
         assert(event.type==SDL_EVENT_KEY_DOWN && event.key.scancode==SDL_SCANCODE_A);
         host_benchmark_overlay_show(0);
         run_worker(^{host_benchmark_overlay_show(1);});
+        pending[0].type = SDL_EVENT_GAMEPAD_ADDED;
+        pending_count = 1;
+        assert(!benchmark_notice_stopped() && pending_count == 1);
+        const Uint32 stops[] = {SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED, SDL_EVENT_KEY_DOWN,
+            SDL_EVENT_GAMEPAD_BUTTON_DOWN};
+        for (int i = 0; i < 4; i++) {
+            pending[1] = (SDL_Event){.type = stops[i]};
+            pending[1].key.key = SDLK_ESCAPE;
+            if (stops[i] == SDL_EVENT_GAMEPAD_BUTTON_DOWN) pending[1].gbutton.button = SDL_GAMEPAD_BUTTON_BACK;
+            pending_count = 2;
+            assert(benchmark_notice_stopped() && pending_count == 2);
+            assert(pending[0].type == SDL_EVENT_GAMEPAD_ADDED && pending[1].type == stops[i]);
+        }
+        pending_count = 0;
+        finish_requested = 1;
+        assert(benchmark_notice_stopped());
         assert(NSApp==nil);
         puts("Native service main-thread guards, cached worker rate, and normal quit contracts passed");
     }
