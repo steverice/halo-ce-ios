@@ -20,7 +20,7 @@ PLAYERS = range(2, 129)
 COMMON_FIELDS = {"kind", "order", "map", "difficulty", "recording", "lead", "window"}
 MAXIMUM_ENEMY_MULTIPLIER = 8.0
 # a window anchored on an event of the recording: "kind:n" (the nth) or "kind:script" (the first one that script made)
-ANCHOR = re.compile(r"(cinematic_start|cinematic_end|checkpoint|bsp_switch):([1-9][0-9]{0,2}|[a-z][a-z0-9_]{0,30})\Z")
+ANCHOR = re.compile(r"(cinematic_start|cinematic_end|cinematic_done|checkpoint|bsp_switch):([1-9][0-9]{0,2}|[a-z][a-z0-9_]{0,30})\Z")
 
 
 def anchor_seconds(anchor, events_text):

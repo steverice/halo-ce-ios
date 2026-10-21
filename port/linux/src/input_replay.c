@@ -596,11 +596,13 @@ static struct
 } take;
 
 /* Events of the level being played, in the recorded time: each cinematic's start and end, the checkpoints saved and
-the structure BSP switches, numbered in order of play per kind ("cinematic_end:2:3412": the second cinematic ended at
+the structure BSP switches (and "cinematic_done", where a script leaves its skippable cinematic whether it was watched
+or skipped: a skip reverts the game, so a skipped cinematic has a start but no end), numbered in order of play per kind ("cinematic_end:2:3412": the second cinematic ended at
 recorded tick 3412). A take's .route carries them as "events = a:1:10,b:1:20", and a catalog case can anchor its
 window on one (benchmark_plan.c). Bookkeeping only: nothing here reads or changes the simulation. */
-#define EVENT_KINDS 4
-static const char *const event_kinds[EVENT_KINDS] = { "cinematic_start", "cinematic_end", "checkpoint", "bsp_switch" };
+#define EVENT_KINDS 5
+static const char *const event_kinds[EVENT_KINDS] = { "cinematic_start", "cinematic_end", "checkpoint", "bsp_switch",
+	"cinematic_done" };
 static struct { char text[1536]; int counts[EVENT_KINDS]; } events;
 
 /* The take's .route, whole: what was noted at its opening and since, then the closing lines as

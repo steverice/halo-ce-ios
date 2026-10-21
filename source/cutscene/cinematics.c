@@ -172,6 +172,13 @@ void cinematic_skip_stop(
 	void)
 {
 	cinematic_globals->can_be_skipped = FALSE;
+	/* port: noted in the recorded time (input_replay.c): reached whether the cinematic was watched or skipped */
+	{
+		extern void input_replay_note_event(char const *kind, char const *name);
+		extern char const *hs_runtime_get_executing_thread_name(void);
+
+		input_replay_note_event("cinematic_done", hs_runtime_get_executing_thread_name());
+	}
 
 	return;
 }

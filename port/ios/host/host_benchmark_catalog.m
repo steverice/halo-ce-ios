@@ -200,7 +200,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported enemy multiplier.", identifier]);
         NSString *anchor = nil;
         if (entry[@"anchor"] && (!has_recording || multiplayer || ![entry[@"anchor"] isKindOfClass:NSString.class] ||
-            [(NSString *)entry[@"anchor"] rangeOfString:@"^(cinematic_start|cinematic_end|checkpoint|bsp_switch):([1-9][0-9]{0,2}|[a-z][a-z0-9_]{0,30})$"
+            [(NSString *)entry[@"anchor"] rangeOfString:@"^(cinematic_start|cinematic_end|cinematic_done|checkpoint|bsp_switch):([1-9][0-9]{0,2}|[a-z][a-z0-9_]{0,30})$"
                 options:NSRegularExpressionSearch].location == NSNotFound))
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported anchor.", identifier]);
         if (entry[@"anchor"]) anchor = entry[@"anchor"];
