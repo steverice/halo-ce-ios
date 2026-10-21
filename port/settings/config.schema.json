@@ -658,8 +658,8 @@
         },
         "renderer": {
           "type": "string",
-          "default": "gl",
-          "description": "What draws the game: \"gl\" (default) OpenGL ES, or \"metal\" Metal. Changes apply on relaunch.",
+          "default": "metal",
+          "description": "What draws the game: \"metal\" (default) Metal, or \"gl\" OpenGL ES, for debugging only: it lacks the Metal renderer's performance work and measures no GPU time. Changes apply on relaunch.",
           "x-environment": "HALO_RENDERER",
           "x-environment-style": "value",
           "x-platforms": [

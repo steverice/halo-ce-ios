@@ -17,3 +17,4 @@ default flipped, "equal to a former default" would discard real choices.
 
 FORMER_DEFAULT("display.frame_pacing", "\"tick\"")
 FORMER_DEFAULT("display.foveation", "false")
+FORMER_DEFAULT("display.renderer", "\"gl\"")

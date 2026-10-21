@@ -139,7 +139,7 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 
 | Setting | Type and accepted values | Default (Apple) | Contexts | Description |
 | --- | --- | --- | --- | --- |
-| `display.renderer` | string: `gl`, `metal` | `"gl"` | gameplay | What draws the game: "gl" (default) OpenGL ES, or "metal" Metal. |
+| `display.renderer` | string: `gl`, `metal` | `"metal"` | gameplay | What draws the game: "metal" (default) Metal, or "gl" OpenGL ES, for debugging only: it lacks the Metal renderer's performance work and measures no GPU time. |
 | `display.render_height` | integer, 0 to 4320 | `0` | gameplay, ⓢ scene, external | Internal rendering height in physical pixels: 0 (default) uses native display resolution. |
 | `display.output_height` | integer, 0 to 4320 | Profile only | external only, external | External output height cap in pixels; zero leaves it uncapped. |
 | `display.render_scale` | real, 0.25 to 1 | `1.0` | gameplay, ⓢ scene, external | Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. |

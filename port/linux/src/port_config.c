@@ -634,9 +634,10 @@ static const struct config_setting config_settings[] =
 		_platform_ios,
 		"With display.immersive: around the screen, \"passthrough\" (the room) or\n"
 		"\"dark\" (black)." },
-	{ "display.renderer", _config_string, "\"gl\"", "HALO_RENDERER", _environment_value, _platform_ios,
-		"What draws the game: \"gl\" (default) OpenGL ES, or \"metal\" Metal.\n"
-		"Changes apply on relaunch." },
+	{ "display.renderer", _config_string, "\"metal\"", "HALO_RENDERER", _environment_value, _platform_ios,
+		"What draws the game: \"metal\" (default) Metal, or \"gl\" OpenGL ES, for\n"
+		"debugging only: it lacks the Metal renderer's performance work and\n"
+		"measures no GPU time. Changes apply on relaunch." },
 	{ "display.frame_pacing", _config_string, "\"off\"", "HALO_FRAME_PACING", _environment_value, _platform_ios,
 		"How the Metal renderer times frames: \"off\" (default) shows each frame as\n"
 		"soon as it's drawn; \"tick\" shows every frame for the same whole number\n"

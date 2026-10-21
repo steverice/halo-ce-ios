@@ -17,7 +17,7 @@ def test_config_comes_from_every_c_entry():
     assert sum(len(section['properties']) for section in config['properties'].values()) == len(settings)
     display = config['properties']['display']['properties']
     assert display['render_scale']['type'] == 'number'
-    assert display['renderer']['default'] == 'gl'
+    assert display['renderer']['default'] == 'metal'
     assert 'maximum' not in display['shadow_map_size']
     assert display['shadow_map_size']['type'] == 'integer'
     online = config['properties']['network']['properties']['map_download']

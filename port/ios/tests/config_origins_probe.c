@@ -144,7 +144,7 @@ static void check_first_launch(void)
 	assert(strstr(logged, "settings: display.render_height = 1080 [class Apple TV] over 0 [default]"));
 	assert(strstr(logged, "settings: display.render_scale = 0.5 [model Apple TV HD] over 1.0 [default]; menu 0.667 "
 		"[model Apple TV HD]; cutscene 0.5 [model Apple TV HD]"));
-	assert(strstr(logged, "settings: display.renderer = \"metal\" [class Apple TV] over \"gl\" [default]"));
+	assert(strstr(logged, "settings: display.renderer = \"metal\" [class Apple TV] over \"metal\" [default]"));
 	assert(!strstr(logged, "settings: display.shadow_map_size") && !strstr(logged, "settings: network.") &&
 		!strstr(logged, "settings: paths."));
 	/* Defaults in the menus shows the device's value */
@@ -210,9 +210,9 @@ static void check_profile_changes(void)
 
 	/* debug.device_profile = "none" (the host passes no values): the built-in defaults, the choice still kept */
 	launch("");
-	assert(config_integer("display.render_height") == 0 && !strcmp(config_string("display.renderer"), "gl"));
+	assert(config_integer("display.render_height") == 0 && !strcmp(config_string("display.renderer"), "metal"));
 	assert(config_real("display.render_scale") == 1.0 && config_boolean("display.upscaled_textures"));
-	assert(file_has(path, "\nrender_height = 0\n") && file_has(path, "\nrenderer = \"gl\"\n"));
+	assert(file_has(path, "\nrender_height = 0\n") && file_has(path, "\nrenderer = \"metal\"\n"));
 	launch(TV_MODEL);
 	assert(config_integer("display.render_height") == 1080 && !strcmp(config_string("display.renderer"), "metal"));
 }
@@ -246,7 +246,7 @@ static void check_old_install(void)
 		"anisotropic_filtering = 4\n"    /* never a default: chosen */
 		"shadow_map_size = 512\n"
 		"render_scale = 1.0\n"
-		"renderer = \"metal\"\n"         /* not the default, but what the profile says: follows it from now on */
+		"renderer = \"metal\"\n"         /* the default and what the profile says: follows it from now on */
 		"upscaled_textures = true\n"
 		"\n[input]\n"
 		"turn = \"smooth\"\n"            /* once the default, but a player's setting: kept */
@@ -505,6 +505,22 @@ static void check_changed_default(void)
 	assert(strstr(logged, "settings: input.snap_angle was the default 45.0 in config.toml; it is now this device's 30.0"));
 }
 
+/* the renderer's default was OpenGL ES: a Mac's config.toml from before config.origins holds it, written by the game,
+   and gets Metal; one marked chosen keeps OpenGL ES */
+static void check_renderer_default(void)
+{
+	fresh();
+	write_text(path, "[display]\nrenderer = \"gl\"\n");
+	launch("");
+	assert(!strcmp(config_string("display.renderer"), "metal") && file_has(path, "\nrenderer = \"metal\"\n"));
+	assert(strstr(logged, "settings: display.renderer = \"gl\" in config.toml is a default an earlier version wrote"));
+	fresh();
+	write_text(path, "[display]\nrenderer = \"gl\"\n");
+	write_text(origins, "display.renderer\tchosen\n");
+	launch("");
+	assert(!strcmp(config_string("display.renderer"), "gl") && file_has(path, "\nrenderer = \"gl\"\n"));
+}
+
 static void check_external(void)
 {
 	const char *profile = TV_MODEL
@@ -555,6 +571,7 @@ int main(void)
 	check_profile_changes();
 	check_reload();
 	check_old_install();
+	check_renderer_default();
 	check_tools();
 	check_menus();
 	check_environment_and_refusals();
