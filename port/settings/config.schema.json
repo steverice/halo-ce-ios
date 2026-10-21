@@ -1398,6 +1398,39 @@
             "desktop"
           ]
         },
+        "collision_type_filter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. Collision rays and sphere queries skip an object whose type the query does not test before looking at it, instead of after: the same answers with less work in a crowded cluster. Read again each tick, so it can be flipped while the game runs.",
+          "x-environment": "HALO_COLLISION_TYPE_FILTER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "sphere_query_type_filter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. The nearby-object queries (objects_in_sphere) skip an object whose type the caller did not ask for before collecting it, instead of after: the same answers with less work. Read again each tick, so it can be flipped while the game runs.",
+          "x-environment": "HALO_SPHERE_QUERY_TYPE_FILTER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "static_light_relink": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. An attached light that has not moved keeps its place in the map's light lists instead of leaving and joining them again every tick. Read again each tick, so it can be flipped while the game runs.",
+          "x-environment": "HALO_STATIC_LIGHT_RELINK",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "aim_steady_level": {
           "type": "number",
           "default": -1.0,

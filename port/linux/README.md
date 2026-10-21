@@ -351,6 +351,9 @@ the setting for one start of the game. It has priority over the file.
 | `debug.texture_idle_seconds` | number | `-1.0` | apple, desktop | `HALO_TEXTURE_IDLE_SECONDS_DEBUG` | Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. |
 | `debug.clutter_distance` | number | `-1.0` | apple, desktop | `HALO_CLUTTER_DISTANCE_DEBUG` | Tuning display.clutter_distance live: from 0 up, the distance in world units in place of the device profile's. |
 | `debug.clutter_lowest_lod` | boolean | `false` | apple, desktop | `HALO_CLUTTER_LOWEST_LOD` | Draw the clutter display.clutter_distance names (dead bodies, loose weapons and equipment, garbage) at its lowest model detail level, wherever it is. |
+| `debug.collision_type_filter` | boolean | `false` | apple, desktop | `HALO_COLLISION_TYPE_FILTER` | Experimental. |
+| `debug.sphere_query_type_filter` | boolean | `false` | apple, desktop | `HALO_SPHERE_QUERY_TYPE_FILTER` | Experimental. |
+| `debug.static_light_relink` | boolean | `false` | apple, desktop | `HALO_STATIC_LIGHT_RELINK` | Experimental. |
 | `debug.aim_steady_level` | number | `-1.0` | apple | `HALO_AIM_STEADY_LEVEL` | Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. |
 ### display
 
