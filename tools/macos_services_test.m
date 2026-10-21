@@ -4,6 +4,22 @@
 #include <assert.h>
 #include "../port/macos/host_macos_event.h"
 #include "../port/ios/host/host_benchmark.h"
+#import <AppKit/AppKit.h>
+static int mode_copies, mode_releases;
+static CGDisplayModeRef probe_copy_mode(CGDirectDisplayID display) {
+    mode_copies++;
+    return display == 1 ? (CGDisplayModeRef)(uintptr_t)1 : NULL;
+}
+static size_t probe_pixel_width(CGDisplayModeRef mode) { assert(mode); return 3024; }
+static size_t probe_pixel_height(CGDisplayModeRef mode) { assert(mode); return 1964; }
+static size_t probe_logical_size(CGDirectDisplayID display) { (void)display; return 1512; }
+static void probe_release_mode(CGDisplayModeRef mode) { assert(mode); mode_releases++; }
+#define CGDisplayCopyDisplayMode probe_copy_mode
+#define CGDisplayModeGetPixelWidth probe_pixel_width
+#define CGDisplayModeGetPixelHeight probe_pixel_height
+#define CGDisplayModeRelease probe_release_mode
+#define CGDisplayPixelsWide probe_logical_size
+#define CGDisplayPixelsHigh probe_logical_size
 #include "../port/macos/host_macos_services.m"
 
 static int finish_requested;
@@ -59,6 +75,16 @@ static void expect_main_guard(void (^action)(void)) {
 }
 int main(void) {
     @autoreleasepool {
+        int width = -1, height = -1;
+        display_pixel_size(1, &width, &height);
+        assert(width == 3024 && height == 1964);
+        assert(mode_copies == 1 && mode_releases == 1);
+        display_pixel_size(2, &width, &height);
+        assert(width == 0 && height == 0);
+        assert(mode_copies == 2 && mode_releases == 1);
+        display_pixel_size(0, &width, &height);
+        assert(width == 0 && height == 0 && mode_copies == 2);
+        expect_main_guard(^{int w, h; host_macos_screen_size(&w, &h);});
         expect_main_guard(^{host_macos_install();});
         expect_main_guard(^{host_macos_window_ready(NULL);});
         expect_main_guard(^{(void)host_macos_display_link(nil,NULL);});
@@ -98,7 +124,7 @@ int main(void) {
         finish_requested = 1;
         assert(benchmark_notice_stopped());
         assert(NSApp==nil);
-        puts("Native service main-thread guards, cached worker rate, and normal quit contracts passed");
+        puts("Native service physical pixels, main-thread guards, cached worker rate, and normal quit contracts passed");
     }
     return 0;
 }
