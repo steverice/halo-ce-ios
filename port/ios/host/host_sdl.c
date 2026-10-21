@@ -500,7 +500,40 @@ struct audio_binding
 	int capacity;
 	SDL_AudioFormat format;
 	int logged_output;
+	/* how long the guest takes to mix (audio_callback_timing) */
+	double bytes_per_second;
+	Uint64 timing_since;
+	unsigned long timing_callbacks, timing_late;
+	double timing_slowest_ms, timing_slowest_sound_ms;
 };
+
+/* Every 30 seconds, how long the guest took to mix a callback's sound against how long that sound plays: a mix
+slower than its sound falls behind the device, which then runs dry */
+static void audio_callback_timing(struct audio_binding *binding, int additional, Uint64 began, Uint64 ended)
+{
+	double mix_ms = (double)(ended - began) / 1.0e6;
+	double sound_ms = binding->bytes_per_second > 0.0 ? 1000.0 * (double)additional / binding->bytes_per_second : 0.0;
+
+	if (!binding->timing_since)
+		binding->timing_since = began;
+	binding->timing_callbacks++;
+	if (sound_ms > 0.0 && mix_ms > sound_ms)
+		binding->timing_late++;
+	if (mix_ms > binding->timing_slowest_ms)
+	{
+		binding->timing_slowest_ms = mix_ms;
+		binding->timing_slowest_sound_ms = sound_ms;
+	}
+	if (ended - binding->timing_since >= 30 * SDL_NS_PER_SECOND)
+	{
+		host_logf(HOST_LOG_INFO, "audio mix: %lu callbacks in %.0f s, %lu slower than the sound they made; slowest %.2f ms for %.2f ms of sound",
+			binding->timing_callbacks, (double)(ended - binding->timing_since) / 1.0e9, binding->timing_late,
+			binding->timing_slowest_ms, binding->timing_slowest_sound_ms);
+		binding->timing_since = ended;
+		binding->timing_callbacks = binding->timing_late = 0;
+		binding->timing_slowest_ms = binding->timing_slowest_sound_ms = 0.0;
+	}
+}
 
 static __thread struct audio_binding *audio_worker_binding;
 
@@ -530,6 +563,7 @@ static void *audio_thread(void *context)
 static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int additional, int total)
 {
 	struct audio_binding *binding = userdata;
+	Uint64 began = SDL_GetTicksNS();
 
 	pthread_mutex_lock(&binding->lock);
 	binding->length = 0;
@@ -539,6 +573,7 @@ static void SDLCALL audio_callback(void *userdata, SDL_AudioStream *stream, int 
 	pthread_cond_signal(&binding->requested);
 	while (binding->pending)
 		pthread_cond_wait(&binding->done, &binding->lock);
+	audio_callback_timing(binding, additional, began, SDL_GetTicksNS());
 	if (binding->length && !SDL_PutAudioStreamData(stream, binding->samples, binding->length))
 		host_logf(HOST_LOG_ERROR, "cannot submit audio: %s", SDL_GetError());
 	if (!binding->logged_output && binding->format == SDL_AUDIO_F32)
@@ -614,6 +649,8 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
 	binding->callback = callback;
 	binding->userdata = userdata;
 	binding->format = ((const SDL_AudioSpec *)spec)->format;
+	binding->bytes_per_second = (double)((const SDL_AudioSpec *)spec)->freq * ((const SDL_AudioSpec *)spec)->channels *
+		SDL_AUDIO_BYTESIZE(binding->format);
 	pthread_mutex_init(&binding->lock, NULL);
 	pthread_cond_init(&binding->requested, NULL);
 	pthread_cond_init(&binding->done, NULL);
