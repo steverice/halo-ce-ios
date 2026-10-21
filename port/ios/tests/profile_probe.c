@@ -389,15 +389,16 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("ios", "iPad6,8", "", 3), NULL, "");
 	assert(!profile.model_file[0] && !has(&profile, "display.render_height", "720"));
 	profile = resolve(shipped, device("mac", "Mac14,5", "Apple M2 Max", 8), NULL, "");
-	assert(profile.count == 2 && has(&profile, "display.model_lod", "max") &&
-		has(&profile, "display.compressed_textures", "true"));
+	assert(profile.count == 3 && has(&profile, "display.model_lod", "max") &&
+		has(&profile, "display.compressed_textures", "true") && has(&profile, "display.renderer", "metal"));
 	profile = resolve(shipped, device("mac", "Mac16,10", "Apple M4", 9), NULL, "");
-	assert(profile.count == 1 && has(&profile, "display.shadow_map_size", "512"));
+	assert(profile.count == 2 && has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal"));
 	profile = resolve(shipped, device("mac", "Mac17,1", "Apple M6", 11), NULL, "");
-	assert(profile.count == 0 && !strcmp(profile.model_file, "mac-m6.toml"));
+	assert(profile.count == 1 && !strcmp(profile.model_file, "mac-m6.toml") && has(&profile, "display.renderer", "metal"));
 	/* a Mac, an iPhone and a headset nobody has measured: their class, nothing refused */
 	profile = resolve(shipped, device("mac", "Mac15,3", "Apple M3 Max", 9), NULL, "");
-	assert(profile.count == 0 && !strcmp(profile.class_file, "mac.toml") && !strstr(logged, "ignored"));
+	assert(profile.count == 1 && !strcmp(profile.class_file, "mac.toml") && has(&profile, "display.renderer", "metal") &&
+		!strstr(logged, "ignored"));
 	profile = resolve(shipped, device("ios", "iPhone99,1", "", 15), NULL, "");
 	assert(profile.count == 3 && has(&profile, "display.renderer", "metal") &&
 		!strcmp(profile.class_file, "iphone-ipad.toml"));

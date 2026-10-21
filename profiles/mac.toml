@@ -7,3 +7,11 @@ kind = "class"
 [match]
 platform = "mac"
 gpu_family = [1, 0]
+
+[display]
+renderer = "metal"
+
+[evidence."display.renderer"]
+basis = "measured"
+why = "The Metal backend is the project's renderer, and only it measures GPU time: with OpenGL ES every Mac benchmark run reported a GPU time of 0. On an M4 Mac mini a four-run offscreen cost suite on Metal measured GPU time in all 15,600 frames. The Mac runner still writes display.renderer = \"gl\" into config.toml for the OpenGL records the check-metal comparisons use."
+source = "M4 Mac mini cost suite and MacBook Air (M3) report, 2026-10-21"
