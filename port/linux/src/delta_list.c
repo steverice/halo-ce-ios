@@ -640,7 +640,7 @@ int delta_announce_step(const struct delta_announce_state *state, const struct d
 	unsigned long now)
 {
 	if (wanted && !delta_announce_ready(wanted))
-		wanted = NULL;
+		return state->listed && strcmp(wanted->invite, state->invite) ? DELTA_STEP_WITHDRAW : DELTA_STEP_NOTHING;
 	if (state->listed)
 	{
 		unsigned long since = now - state->sent_time;

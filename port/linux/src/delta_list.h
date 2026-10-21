@@ -114,11 +114,13 @@ struct delta_announce_state
 	unsigned long wait_until;
 };
 
-/* whether a game's setup is final enough to list: it has a name, a map and a game type (1 to 6) the list
-knows. A game still being set up reports the defaults (a map and game type 0), which are not listed */
+/* whether a game's setup is final enough to list: it has a name, a map (any: Derelict's is "carousel") and a
+game type from 1 to 6. Game type 0 is no multiplayer game (the game's `game_engine_index` is 0 for co-op and
+for a game not yet set up, which reports its default map), so such a game is not announced; one already
+listed is left as it is, not withdrawn, until the game says it is gone */
 int delta_announce_ready(const struct delta_announce *announce);
 /* what to do now: wanted is the game to be listed (NULL: none, and a game not delta_announce_ready is
-none). Withdraw
+none; a game not delta_announce_ready is neither announced nor, if it is the listed one, withdrawn). Withdraw
 first the listing of another invite, then announce. The caller reports what
 came of it with delta_announce_done / delta_withdraw_done */
 int delta_announce_step(const struct delta_announce_state *state, const struct delta_announce *wanted,

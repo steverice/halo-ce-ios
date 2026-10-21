@@ -132,23 +132,33 @@ int main(void)
 	assert(!delta_announce_answer("okay", &seconds) && !delta_announce_answer("403 forbidden", &seconds));
 	assert(!delta_announce_answer("", &seconds));
 
-	/* a game still being set up (game type 0, no map) is not listed, and one listed that goes back to it is
-	withdrawn */
+	/* a game still being set up (game type 0, no map) or co-op is not announced; a map is no sign of it:
+	Derelict's is "carousel" and is announced as any other */
 	announce.engine = 0;
 	assert(!delta_announce_ready(&announce));
 	memset(&state, 0, sizeof(state));
+	assert(delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
+	strcpy(announce.map, "carousel");
 	assert(delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
 	announce.engine = 7;
 	assert(!delta_announce_ready(&announce) && delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
 	announce.engine = 2;
 	announce.map[0] = 0;
 	assert(!delta_announce_ready(&announce) && delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
-	strcpy(announce.map, "bloodgulch");
+	strcpy(announce.map, "carousel");
 	assert(delta_announce_ready(&announce) && delta_announce_step(&state, &announce, 1000) == DELTA_STEP_ANNOUNCE);
 	delta_announce_done(&state, &announce, 200, 1, 1000);
+	/* listed, then a moment of game type 0: left alone (not withdrawn, not announced again) */
 	announce.engine = 0;
+	assert(delta_announce_step(&state, &announce, 1500) == DELTA_STEP_NOTHING);
+	assert(delta_announce_step(&state, &announce, 1000 + DELTA_ANNOUNCE_INTERVAL + 1) == DELTA_STEP_NOTHING);
+	/* ... the game gone, or another invite: withdrawn */
+	assert(delta_announce_step(&state, NULL, 1500) == DELTA_STEP_WITHDRAW);
+	strcpy(announce.invite, INVITE_B);
 	assert(delta_announce_step(&state, &announce, 1500) == DELTA_STEP_WITHDRAW);
+	strcpy(announce.invite, INVITE_A);
 	announce.engine = 2;
+	strcpy(announce.map, "bloodgulch");
 
 	/* when it goes on: nothing wanted, nothing done */
 	memset(&state, 0, sizeof(state));
