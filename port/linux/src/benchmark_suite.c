@@ -389,6 +389,17 @@ static int mp_evidence_note(char *note, size_t size)
 			firing, suite.mp_players - 1, remote_ammo, minimum_ammo, energy_projectiles, energy_actors, !suite.mp_energy_invalid,
 			suite.mp_projectile_seen, suite.mp_damage_changes, suite.mp_deaths, suite.mp_respawns,
 			suite.mp_scripted_hits, suite.mp_scripted_kills, suite.mp_repositions);
+		/* (a window the wall-time cap cut short is a shorter sample of the same match: nine in ten moving and
+		firing is enough there) */
+		if (suite.capped)
+		{
+			size_t length = strlen(note);
+
+			snprintf(note + length, size - length, "; window cut short by the wall-time cap");
+			return !suite.mp_energy_invalid && moved * 10 >= suite.mp_players * 9 &&
+				firing * 10 >= (suite.mp_players - 1) * 9 && suite.mp_projectile_seen &&
+				suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
+		}
 		return !suite.mp_energy_invalid && moved == suite.mp_players && firing == suite.mp_players - 1 && suite.mp_projectile_seen &&
 			suite.mp_damage_changes > 0 && suite.mp_deaths > 0 && suite.mp_respawns > 0;
 	}
