@@ -75,7 +75,7 @@ grade = {"false" = "barely"}
 order = ["full", "half"]
 grade = {"half" = "barely"}
 
-# The three simulation switches below are exact: they change how much work a query does and not what it returns
+# The simulation switches below are exact: they change how much work a query does and not what it returns
 # (zero global-seed misses against off), so arriving at "on" is invisible. Experimental, default off.
 
 [handheld."debug.collision_type_filter"]
@@ -87,6 +87,10 @@ order = ["off", "on"]
 grade = {"on" = "invisible"}
 
 [handheld."debug.static_light_relink"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[handheld."debug.collision_candidates"]
 order = ["off", "on"]
 grade = {"on" = "invisible"}
 
@@ -110,5 +114,9 @@ order = ["off", "on"]
 grade = {"on" = "invisible"}
 
 [tv."debug.immediate_merge"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[tv."debug.collision_candidates"]
 order = ["off", "on"]
 grade = {"on" = "invisible"}
