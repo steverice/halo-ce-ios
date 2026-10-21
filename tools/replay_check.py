@@ -62,13 +62,14 @@ def newest_take(folder, map_name):
     return None
 
 
-def route_text(take_route, scene, window):
+def route_text(take_route, scene, window, anchor=None, lead=0):
     """the take's .route as a suite scene's: named, and measured for window seconds from its first tick"""
     kept = [line for line in take_route.read_text().splitlines() if not line.startswith(("scene", "lead", "window", "kind"))]
-    return "\n".join([f"scene = {scene}", "kind = gameplay", "lead = 0", f"window = {window}", *kept]) + "\n"
+    return "\n".join([f"scene = {scene}", "kind = gameplay", f"lead = {lead}", f"window = {window}",
+                       *([f"anchor = {anchor}"] if anchor else []), *kept]) + "\n"
 
 
-def write_local_routes(take, local, scene):
+def write_local_routes(take, local, scene, anchor=None, lead=0, window_seconds=None):
     """the take as benchmark/local-routes: its files under the scene's name, a route measured over all but its last
     second, and the unsigned benchmark-catalog.json a build that carries routes runs it from (host_benchmark.m's
     local_catalog_folder; such reports say catalog_signed false). Raises benchmark_catalog.CatalogError when the
@@ -77,12 +78,19 @@ def write_local_routes(take, local, scene):
     for suffix in (".input", ".actions", ".seeds"):
         shutil.copyfile(take.with_suffix(suffix), local / f"{scene}{suffix}")
     ticks = len(take.with_suffix(".actions").read_text().splitlines()) - 1
-    window = max(1, ticks // 30 - 1)
+    # (a replay ends where the take's last controller state does, and a take that ends in a pause stops its game
+    # time before that: the window stops three seconds short of the last state)
+    input_lines = take.with_suffix(".input").read_text().splitlines()
+    last_state = float(input_lines[-1].split()[0]) / 30.0 if len(input_lines) > 1 else float("inf")
+    window = window_seconds if window_seconds else max(1, min(ticks // 30 - 1, int(min(last_state, 1e9)) - 3))
     values = dict(line.split(" = ", 1) for line in take.with_suffix(".route").read_text().splitlines() if " = " in line)
     multiplier = float(values.get("enemy_multiplier", 1))
-    (local / f"{scene}.route").write_text(route_text(take.with_suffix(".route"), scene, window))
+    (local / f"{scene}.route").write_text(route_text(take.with_suffix(".route"), scene, window, anchor, lead))
     case = {"kind": "gameplay", "order": 0, "map": values["map"], "difficulty": values["difficulty"], "recording": scene,
-            "lead": 0, "window": window}
+            "lead": int(lead) if float(lead).is_integer() else lead,
+            "window": int(window) if float(window).is_integer() else window}
+    if anchor:
+        case["anchor"] = anchor
     if multiplier > 1:
         # (a whole number is written without a fraction: the app's canonical JSON)
         case["enemy_multiplier"] = int(multiplier) if multiplier.is_integer() else multiplier
@@ -100,11 +108,17 @@ def main():
     parser.add_argument("--seconds", type=float, default=120.0, help="how long the bot plays")
     parser.add_argument("--enemy-multiplier", type=float, default=1.0,
                         help="record the take with debug.enemy_multiplier (1 off); its replays use the recorded value")
+    parser.add_argument("--anchor", help="anchor the window on an event of the take (kind:n or kind:script)")
+    parser.add_argument("--lead-after", type=float, default=0.0, help="seconds after the anchor the window starts")
+    parser.add_argument("--window", type=float, default=0.0, help="the window's length in seconds (default: to near the take's end)")
+    parser.add_argument("--only-unlimited", action="store_true", help="replay once, unlimited (for a take's per-frame costs)")
     parser.add_argument("--take", type=Path, help="skip the recording: replay this take (its path without an extension)")
     parser.add_argument("--offscreen", action="store_true",
                         help="replay the second of each pair offscreen (debug.benchmark_offscreen), not unlimited")
     args = parser.parse_args()
     rates = (RATES[0], "offscreen") if args.offscreen else RATES
+    if args.only_unlimited:
+        rates = ("unlimited",)
     args.out.mkdir(parents=True, exist_ok=True)
 
     app = mac_run.native_app_default()
@@ -141,7 +155,7 @@ def main():
     try:
         for label in LABELS:
             shutil.rmtree(local, ignore_errors=True)
-            write_local_routes(take, local, "check")
+            write_local_routes(take, local, "check", args.anchor, args.lead_after, args.window or None)
             for rate in rates:
                 out = args.out / f"{label}-{rate}"
                 mode = (["--set", "debug.benchmark_offscreen=true"] if rate == "offscreen" else

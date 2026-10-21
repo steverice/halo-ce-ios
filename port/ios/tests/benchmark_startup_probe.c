@@ -87,8 +87,9 @@ void host_benchmark_graphics(const char *json) {
     CHECK(graphics_window_active && strstr(json,"\"schema\":2") && strstr(json,"applied_overrides"));
     graphics_deliveries++;
 }
-void host_benchmark_window(int open, int width, int height) {
-    (void)width; (void)height; graphics_window_active = open; if (open) window_opens++; else window_closes++;
+int window_open_ticks[8], window_open_tick_count;
+void host_benchmark_window(int open, int width, int height, int opened_tick) {
+    (void)width; (void)height; graphics_window_active = open; if (open) { window_opens++; if (window_open_tick_count < 8) window_open_ticks[window_open_tick_count++] = opened_tick; } else window_closes++;
 }
 void host_benchmark_end(const char *status, const char *note) {
     (void)note; run_ends++; snprintf(last_end_status, sizeof(last_end_status), "%s", status);
@@ -641,6 +642,13 @@ int main(void) {
     CHECK(suite.state == suite_lead && run_ends == 0);
     frame(180000.0 + 100 * 1500.0 + 1);
     CHECK(run_ends == 1 && !strcmp(last_end_status, "failed"));
+    /* the tick the measured window opened at reaches the host with the window (the report records it) */
+    reset(); window_open_tick_count = 0;
+    benchmark_graphics_window(1, 1280, 720);
+    CHECK(window_open_tick_count == 1 && window_open_ticks[0] == (int)suite.opened_ticks);
+    suite.opened_ticks = 3750; graphics_window_open = 0;
+    benchmark_graphics_window(1, 1280, 720);
+    CHECK(window_open_tick_count == 2 && window_open_ticks[1] == 3750);
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
     assert(!rmdir("benchmark"));

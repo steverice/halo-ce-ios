@@ -30,6 +30,8 @@ struct benchmark_metrics {
     uint16_t *simulation, *render, *translation;
     size_t split_frames, split_capacity;
     unsigned long ticks;
+    /* the recorded time, in ticks, at which the measured window opened (a replay's; -1 where it never did) */
+    long window_opened_tick;
     double refresh_hertz, seconds;
     struct { double at, milliseconds; } stalls[BENCHMARK_STALLS_KEPT];
     size_t stall_count;

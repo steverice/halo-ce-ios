@@ -39,7 +39,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 	int model_lod_max);
 /* 1: a run to carry out; 0: the suite is over and the game quits; 2: over, and the game goes back to its main menu */
 int host_benchmark_next(char *text, unsigned int size);
-void host_benchmark_window(int open, int width, int height);
+void host_benchmark_window(int open, int width, int height, int opened_tick);
 void host_benchmark_graphics(const char *json);
 int host_external_active(void);
 void host_benchmark_end(const char *status, const char *note);
@@ -499,7 +499,7 @@ static void benchmark_graphics_window(int open, int width, int height)
 	int scene = halo_scene_class(), external = host_external_active();
 	unsigned long revision = config_changes();
 	int publish = open ? !graphics_window_open || scene != graphics_scene || external != graphics_external || revision != graphics_revision : graphics_window_open;
-	if (open && !graphics_window_open) host_benchmark_window(open,width,height);
+	if (open && !graphics_window_open) host_benchmark_window(open,width,height,(int)suite.opened_ticks);
 	if (publish)
 	{
 		char json[CONFIG_GRAPHICS_MAXIMUM_BYTES];
@@ -507,7 +507,7 @@ static void benchmark_graphics_window(int open, int width, int height)
 		host_benchmark_graphics(json);
 		graphics_scene = scene; graphics_external = external; graphics_revision = config_changes();
 	}
-	if (!open) host_benchmark_window(open,width,height);
+	if (!open) host_benchmark_window(open,width,height,(int)suite.opened_ticks);
 	graphics_window_open = open;
 }
 

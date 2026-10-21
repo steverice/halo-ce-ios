@@ -22,6 +22,7 @@ void benchmark_metrics_reset(struct benchmark_metrics *metrics, double refresh_h
     metrics->interval = interval; metrics->cpu = cpu; metrics->gpu = gpu; metrics->capacity = capacity;
     metrics->simulation = simulation; metrics->render = render; metrics->translation = translation;
     metrics->split_capacity = split_capacity;
+    metrics->window_opened_tick = -1;
     metrics->refresh_hertz = refresh_hertz;
     metrics->footprint_first = metrics->footprint_last = metrics->footprint_peak = metrics->left_least = -1;
     metrics->thermal_first = metrics->thermal_worst = metrics->thermal_last = BENCHMARK_THERMAL_UNKNOWN;
@@ -280,12 +281,20 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
     kept = metrics->stall_count < BENCHMARK_STALLS_KEPT ? metrics->stall_count : BENCHMARK_STALLS_KEPT;
     for (index = 0; index < kept; index++)
         append(&text, "%s[%.2f,%.1f]", index ? "," : "", metrics->stalls[index].at, metrics->stalls[index].milliseconds);
-    append(&text, "]},\"frame_encoding\":\"base64 of little-endian uint16, tenths of a millisecond\",");
+    append(&text, "]},\"window_opened_tick\":%ld,", metrics->window_opened_tick);
+    append(&text, "\"frame_encoding\":\"base64 of little-endian uint16, tenths of a millisecond\",");
     append_frames(&text, "frame_interval", metrics->interval, metrics->frames);
     append(&text, ",");
     append_frames(&text, "frame_cpu", metrics->cpu, metrics->frames);
     append(&text, ",");
     append_frames(&text, "frame_gpu", metrics->gpu, metrics->frames);
+    /* the simulation's and the render's CPU time of the frames that knew their split (split_frames of them) */
+    if (metrics->split_frames) {
+        append(&text, ",");
+        append_frames(&text, "frame_simulation", metrics->simulation, metrics->split_frames);
+        append(&text, ",");
+        append_frames(&text, "frame_render", metrics->render, metrics->split_frames);
+    }
     if (text.failed) { free(text.bytes); return NULL; }
     return text.bytes;
 }

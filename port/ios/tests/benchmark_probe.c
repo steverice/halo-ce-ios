@@ -120,6 +120,13 @@ static void test_metrics_split(void) {
     CHECK(json && strstr(json, "\"render_cpu_ms\":{\"mean\":6.00,"));
     CHECK(json && strstr(json, "\"ticks_per_frame\":1.50"));
     CHECK(json && strstr(json, "\"translation_cpu_ms\":{\"mean\":3.00,"));
+    /* the per-frame series of the frames that knew their split, and the tick the window opened at */
+    CHECK(json && strstr(json, "\"frame_simulation\":\"") && strstr(json, "\"frame_render\":\""));
+    CHECK(json && strstr(json, "\"window_opened_tick\":-1,"));
+    free(json);
+    metrics.window_opened_tick = 3750;
+    json = benchmark_metrics_json(&metrics);
+    CHECK(json && strstr(json, "\"window_opened_tick\":3750,"));
     free(json);
     benchmark_metrics_free(&metrics);
 
@@ -127,6 +134,7 @@ static void test_metrics_split(void) {
     benchmark_metrics_reset(&metrics, 60.0);
     benchmark_metrics_frame(&metrics, 16.7, 11.0, 8.0);
     json = benchmark_metrics_json(&metrics);
+    CHECK(json && !strstr(json, "\"frame_simulation\""));
     CHECK(json && strstr(json, "\"simulation_cpu_ms\":null") && strstr(json, "\"render_cpu_ms\":null") &&
         strstr(json, "\"translation_cpu_ms\":null") &&
         strstr(json, "\"ticks_per_frame\":null"));

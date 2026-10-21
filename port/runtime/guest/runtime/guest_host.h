@@ -70,7 +70,7 @@ between runs; 0 once the suite is over and its report written */
 /* 3 waits for an output switch; 4 asks the guest to restart with its committed output sizing. */
 int host_benchmark_next(char *text, unsigned int size);
 /* the measured window opens (1) or closes (0); the render size it drew at */
-void host_benchmark_window(int open, int width, int height);
+void host_benchmark_window(int open, int width, int height, int opened_tick);
 /* Bounded resolved graphics JSON, published only during an open measured window. */
 void host_benchmark_graphics(const char *json);
 /* the run is over: a status by name (benchmark_plan.h) and a note for the report */

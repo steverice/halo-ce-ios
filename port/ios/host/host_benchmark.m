@@ -1316,7 +1316,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     return 1;
 }
 
-void host_benchmark_window(int open, int width, int height) {
+void host_benchmark_window(int open, int width, int height, int opened_tick) {
     os_unfair_lock_lock(&lock);
     host_benchmark_presentation_window();
     if(window_open!=open)benchmark_live_reset(&live);
@@ -1325,6 +1325,7 @@ void host_benchmark_window(int open, int width, int height) {
         if (window_started_at <= 0) window_started_at = CFAbsoluteTimeGetCurrent();
         window_width = width;
         window_height = height;
+        metrics.window_opened_tick = opened_tick;
         if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz > 0.0 ? refresh_hertz : screen_hertz;
     }
     os_unfair_lock_unlock(&lock);
