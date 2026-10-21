@@ -1,5 +1,6 @@
 #include "harness.h"
 
+#include <stdarg.h>
 #include <stdlib.h>
 
 typedef unsigned long long Uint64;
@@ -8,7 +9,7 @@ struct texture_entry
 {
 	struct texture_entry *next;
 	GLuint texture;
-	struct { unsigned long width, height; } description;
+	struct { unsigned long width, height, depth, levels; int cube_map; } description;
 	unsigned long address, generation, last_used_frame;
 	GLuint hud_upscale;
 };
@@ -17,7 +18,11 @@ static struct texture_entry *texture_buckets[TEXTURE_BUCKET_COUNT];
 static struct { struct texture_entry *entry; } recent_textures[4];
 static Uint64 clock_ms;
 static Uint64 SDL_GetTicks(void) { return clock_ms; }
-static void gpu_texture_destroy(GLuint texture) { }
+static unsigned long destroyed;
+static void gpu_texture_destroy(GLuint texture) { destroyed++; }
+static void platform_log(const char *format, ...) { }
+static long available_mb = 500;
+static long available(void) { return available_mb; }
 static void xgpu_gl_state_invalidate(void) { }
 /* display.texture_idle_seconds and debug.texture_idle_seconds */
 static double idle_setting = 30.0, debug_setting = -1.0;
@@ -88,6 +93,47 @@ static void check_idle(double idle, double lowest)
 	CHECK(idle >= lowest && idle <= lowest + 11.0, "dropped %.1f s after it was last drawn, not %.0f to %.0f", idle, lowest, lowest + 10.0);
 }
 
+/* a memory warning after seconds of frames, three textures: one drawn up to
+the warning, one last drawn five seconds before it, one never drawn after
+being added */
+static void check_trim(int request)
+{
+	enum { RECENT = 11, STALE = 12 };
+	long frame;
+
+	xgpu_available_memory_hook = available;
+	add(RECENT, 20);
+	add(STALE, 21);
+	for (frame = 0; frame < 10 * 60; frame++)
+	{
+		clock_ms = (Uint64)frame * 1000 / 60;
+		xgpu_texture_cache_begin_frame();
+		if (frame < 5 * 60)
+			find(STALE, 21)->last_used_frame = texture_frame;
+		find(RECENT, 20)->last_used_frame = texture_frame;
+	}
+	/* (a sweep is not due: the idle time is the profile's, a minute) */
+	CHECK(find(STALE, 21) && find(RECENT, 20), "textures were dropped without a warning");
+	if (request)
+		xgpu_texture_cache_request_trim();
+	clock_ms += 16;
+	xgpu_texture_cache_begin_frame();
+	CHECK(find(RECENT, 20), "the texture drawn just before the warning was dropped");
+	if (request)
+	{
+		CHECK(!find(STALE, 21), "the texture not drawn for five seconds was kept through the warning");
+		CHECK(destroyed == 1, "%lu textures destroyed, not 1", destroyed);
+		/* the request is consumed: a later frame drops nothing more */
+		add(STALE, 21);
+		find(STALE, 21)->last_used_frame = 0;
+		clock_ms += 16;
+		xgpu_texture_cache_begin_frame();
+		CHECK(find(STALE, 21), "a second trim ran without a second warning");
+	}
+	else
+		CHECK(find(STALE, 21), "a texture was dropped without a warning");
+}
+
 int main(int argc, char **argv)
 {
 	const char *case_name = argv[1];
@@ -126,6 +172,16 @@ int main(int argc, char **argv)
 		/* the longest, past the sweeps remembered once round */
 		idle_setting = 600.0;
 		check_idle(play(30, 1.0, 700.0), 600.0);
+	}
+	CASE("trim")
+	{
+		idle_setting = 60.0;
+		check_trim(1);
+	}
+	CASE("no_trim")
+	{
+		idle_setting = 60.0;
+		check_trim(0);
 	}
 	return 0;
 }

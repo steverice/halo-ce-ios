@@ -178,6 +178,11 @@ guest memory as needed; *type receives a GPU_TEXTURE_* */
 gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uint32_t *type,
 	struct xgpu_texture_description *description);
 void xgpu_texture_cache_begin_frame(void);
+/* asks the next begin_frame to drop the textures not drawn in the last second
+or two (a memory warning); callable from any thread */
+void xgpu_texture_cache_request_trim(void);
+/* the memory left to the app in MB, for the log of a trim (NULL: unknown) */
+extern long (*xgpu_available_memory_hook)(void);
 /* a small 2D texture's mean alpha (0 to 1), decoded from guest memory: 1 and
 *alpha set for one of at most 4096 texels (palettized ones excepted), else 0 */
 int xgpu_texture_mean_alpha(const DWORD *resource, float *alpha);

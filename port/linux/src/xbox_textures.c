@@ -844,6 +844,13 @@ is due */
 static unsigned long texture_sweep_frames[TEXTURE_SWEEP_COUNT];
 static unsigned long texture_sweep_count = 0;
 static Uint64 texture_next_sweep = 0;
+/* A memory warning is only noted where it arrives (any thread); the next
+frame's begin_frame drops the textures not drawn since the frame a second or
+two before, found from the frame each of the last two seconds began at. */
+static int texture_trim_requested = 0;
+static unsigned long texture_trim_frames[2];
+static Uint64 texture_trim_next = 0;
+long (*xgpu_available_memory_hook)(void);
 
 /* (every bit of the three mixed into the top ones: textures are aligned,
 and few sizes and formats are common) */
@@ -1292,6 +1299,76 @@ static unsigned long texture_idle_sweeps(void)
 	return sweeps;
 }
 
+/* the bytes a texture holds on the GPU, about: BGRA8 texels of every face and
+slice, a third more for the mip levels */
+static unsigned long texture_gpu_bytes(const struct texture_entry *entry)
+{
+	unsigned long bytes = entry->description.width * entry->description.height * 4;
+
+	if (entry->description.depth > 1)
+		bytes *= entry->description.depth;
+	if (entry->description.cube_map)
+		bytes *= 6;
+	if (entry->description.levels > 1)
+		bytes += bytes / 3;
+	return bytes;
+}
+
+/* drops the textures last drawn in a frame before this one, and adds up the
+bytes of the ones dropped to *bytes (when not NULL) */
+static void texture_drop_before(unsigned long frame, unsigned long long *bytes)
+{
+	unsigned long index;
+
+	for (index = 0; index < TEXTURE_BUCKET_COUNT; index++)
+	{
+		struct texture_entry **link = &texture_buckets[index];
+
+		while (*link)
+		{
+			struct texture_entry *entry = *link;
+
+			if (entry->last_used_frame < frame)
+			{
+				*link = entry->next;
+				if (bytes)
+					*bytes += texture_gpu_bytes(entry);
+				gpu_texture_destroy(entry->texture);
+				texture_drop_serial++;
+				free(entry);
+			}
+			else
+			{
+				link = &entry->next;
+			}
+		}
+	}
+}
+
+void xgpu_texture_cache_request_trim(void)
+{
+	__sync_lock_test_and_set(&texture_trim_requested, 1);
+}
+
+/* drops the textures not drawn in the last second or two, once asked to (a
+memory warning), and logs what it freed and the memory left around it */
+static void texture_trim_if_requested(void)
+{
+	unsigned long long bytes = 0;
+	unsigned long count = texture_drop_serial;
+	long before = -1, after = -1;
+
+	if (!__sync_lock_test_and_set(&texture_trim_requested, 0))
+		return;
+	if (xgpu_available_memory_hook)
+		before = xgpu_available_memory_hook();
+	texture_drop_before(texture_trim_frames[0], &bytes);
+	if (xgpu_available_memory_hook)
+		after = xgpu_available_memory_hook();
+	platform_log("textures: memory pressure, dropped %lu textures not drawn in the last second or two, about %llu MB (%ld MB left before, %ld after; -1: unknown)",
+		texture_drop_serial - count, bytes >> 20, before, after);
+}
+
 void xgpu_texture_cache_begin_frame(void)
 {
 	unsigned long index, idle_since, sweeps;
@@ -1317,6 +1394,13 @@ void xgpu_texture_cache_begin_frame(void)
 	}
 	texture_frame++;
 	now = SDL_GetTicks();
+	if (now >= texture_trim_next)
+	{
+		texture_trim_frames[0] = texture_trim_frames[1];
+		texture_trim_frames[1] = texture_frame;
+		texture_trim_next = now + 1000;
+	}
+	texture_trim_if_requested();
 	if (now < texture_next_sweep)
 		return;
 	texture_next_sweep = now + TEXTURE_SWEEP_SECONDS * 1000;
@@ -1330,25 +1414,5 @@ void xgpu_texture_cache_begin_frame(void)
 		texture_sweep_frames[(texture_sweep_count - sweeps) % TEXTURE_SWEEP_COUNT];
 	texture_sweep_frames[texture_sweep_count % TEXTURE_SWEEP_COUNT] = texture_frame;
 	texture_sweep_count++;
-	for (index = 0; index < TEXTURE_BUCKET_COUNT; index++)
-	{
-		struct texture_entry **link = &texture_buckets[index];
-
-		while (*link)
-		{
-			struct texture_entry *entry = *link;
-
-			if (texture_frame - entry->last_used_frame > texture_frame - idle_since)
-			{
-				*link = entry->next;
-				gpu_texture_destroy(entry->texture);
-				texture_drop_serial++;
-				free(entry);
-			}
-			else
-			{
-				link = &entry->next;
-			}
-		}
-	}
+	texture_drop_before(idle_since, NULL);
 }

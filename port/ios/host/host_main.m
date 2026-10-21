@@ -49,6 +49,7 @@ void host_log(int priority,const char *text) { host_logf(priority,"%s",text); }
 /* host_render_replay.c */
 int host_render_replay_requested(void);
 void host_render_replay(void) __attribute__((noreturn));
+void host_memory_pressure_start(void);
 #endif
 void host_fatal(const char *format,...) {
     va_list ap;va_start(ap,format);char text[1024];vsnprintf(text,sizeof(text),format,ap);va_end(ap);
@@ -308,6 +309,7 @@ int main(int argc,char **argv) {
 #else
         if(getenv("HALO_MEMORY_LOG")||access("memory-log",F_OK)==0)memory_log_start();
 #endif
+        host_memory_pressure_start();
         /* halo://join links (host_join_link.c): before the import screen can spin the run loop,
            which is when SDL's scene delegate passes on the link the app was launched with */
         host_join_link_install(data_root);
