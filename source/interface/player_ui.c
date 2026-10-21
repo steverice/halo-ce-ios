@@ -452,6 +452,43 @@ boolean player_ui_edit_profile_is_dirty(
 const char *config_string(const char *name);
 void platform_log(char const *format, ...);
 
+int config_boolean(const char *name);
+
+/* port: debug.profile_controls gives a level started without a menu (the console's map_name) the controls of the
+last profile used, as the menu's New Game would: look sensitivity, inverted look and the button layout. The
+profile is copied without its index, so no profile file is written by the level. */
+void player_ui_port_apply_last_profile_controls(
+	void)
+{
+	static long previous_time = -1;
+	long now = game_time_get();
+	struct player_profile profile;
+	long index;
+
+	if (!config_boolean("debug.profile_controls"))
+		return;
+	/* (once a level: when the game time has gone back, to its start or a revert's) */
+	if (now >= previous_time && previous_time >= 0)
+	{
+		previous_time = now;
+		return;
+	}
+	previous_time = now;
+	if (player_ui_globals.local_players[0].active_profile_index != NONE)
+		return;
+	index = player_ui_get_player1_last_used_profile_index();
+	if (index == NONE || !player_profile_get(index, &profile))
+	{
+		platform_log("debug.profile_controls: no last-used profile to take the controls from");
+		return;
+	}
+	player_ui_set_active_player_profile(0, NONE, &profile);
+	platform_log("debug.profile_controls: controls from the last-used profile: look sensitivity %d, invert look %d, "
+		"button preset %d, joystick preset %d", (int)profile.controller_settings.look_sensitivity,
+		(int)profile.controller_settings.invert_look, (int)profile.controller_settings.button_preset,
+		(int)profile.controller_settings.joystick_preset);
+}
+
 boolean player0_look_pitch_is_inverted(
 	void)
 {

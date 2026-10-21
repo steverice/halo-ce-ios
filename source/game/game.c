@@ -327,6 +327,12 @@ void game_tick(
 
 		coop_enemies_solo_tick();
 	}
+	/* port: debug.profile_controls, the last profile's controls for a level started with map_name */
+	{
+		extern void player_ui_port_apply_last_profile_controls(void);
+
+		player_ui_port_apply_last_profile_controls();
+	}
 
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\game.c",

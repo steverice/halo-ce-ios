@@ -58,6 +58,9 @@ boolean player_ui_edit_profile_is_dirty(
 	void);
 boolean player_ui_save_profile(
 	void);
+/* port: debug.profile_controls (game.c, at the start of each tick) */
+void player_ui_port_apply_last_profile_controls(
+	void);
 boolean player0_look_pitch_is_inverted(
 	void);
 boolean player0_joystick_set_is_normal(

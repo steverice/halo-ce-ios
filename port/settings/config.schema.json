@@ -1437,6 +1437,17 @@
             "desktop"
           ]
         },
+        "profile_controls": {
+          "type": "boolean",
+          "default": false,
+          "description": "A level started without the menu (the console's map_name) takes the controls of the last profile used: look sensitivity, inverted look, button and stick layout. The profile file is not written. Off, such a level uses the default controls.",
+          "x-environment": "HALO_PROFILE_CONTROLS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "benchmark": {
           "type": "boolean",
           "default": false,
