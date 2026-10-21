@@ -1781,13 +1781,20 @@ void network_objects_handle_vehicle_prediction(
 		short player_index;
 
 		if (!vehicle || vehicle->unit.driver_object_index == NONE)
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		if (unit_get(vehicle->unit.driver_object_index)->unit.player_index == NONE)
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		player_index = (short)DATUM_INDEX_TO_ABSOLUTE_INDEX(unit_get(vehicle->unit.driver_object_index)->unit.player_index);
 		if (player_index < 0 || player_index >= MAXIMUM_TRACKED_PLAYERS ||
 			!distributed_machine_has_player(machine_index, player_index))
 		{
+			distributed_count_prediction_rejected();
 			continue;
 		}
 		objects_host_vehicle_predictions[player_index].valid = TRUE;
@@ -1904,28 +1911,41 @@ void network_objects_apply_vehicle_predictions(
 		objects_host_vehicle_predictions[player_index].valid = FALSE;
 		vehicle = (struct unit_datum *)object_try_and_get_and_verify_type(state->object_index, _object_mask_vehicle);
 		if (!vehicle || vehicle->unit.driver_object_index == NONE || vehicle->object.parent_object_index != NONE)
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		driver = unit_get(vehicle->unit.driver_object_index);
 		if (driver->unit.player_index == NONE ||
 			DATUM_INDEX_TO_ABSOLUTE_INDEX(driver->unit.player_index) != player_index ||
 			!distributed_machine_has_player(objects_host_vehicle_predictions[player_index].machine_index, player_index))
 		{
+			distributed_count_prediction_rejected();
 			continue;
 		}
 		/* (not from a co-op client still loading the host's BSP: the
 		vehicle falls there with no ground under it) */
 		if (!network_coop_player_has_structure_bsp(driver->unit.player_index))
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		dx = state->position.x - vehicle->object.position.x;
 		dy = state->position.y - vehicle->object.position.y;
 		dz = state->position.z - vehicle->object.position.z;
 		/* (so written that a position not a number is not taken) */
 		if (!(dx * dx + dy * dy + dz * dz <= HOST_VEHICLE_ACCEPT_TOLERANCE * HOST_VEHICLE_ACCEPT_TOLERANCE))
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		/* (no higher in the air than it was thrown up leaving the ground,
 		falling since: past that the host's copy falls as its ticks have it) */
 		if (!network_objects_vehicle_below_ceiling(player_index, state->object_index, &state->position))
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		/* (how fast it may go, a tick) */
 		{
 			struct vehicle_definition const *definition = vehicle_specific_definition_get(vehicle->definition_index);
@@ -1998,7 +2018,10 @@ void network_objects_apply_vehicle_predictions(
 				dy = state->position.y - from->y;
 				dz = state->position.z - from->z;
 				if (ticks <= 0 || !(dx * dx + dy * dy + dz * dz <= reach * reach))
+				{
+					distributed_count_prediction_rejected();
 					continue;
+				}
 			}
 		}
 		distributed_object_state_unpack(state, &forward, &up, &velocity, &angular_velocity);
@@ -2007,12 +2030,16 @@ void network_objects_apply_vehicle_predictions(
 		distributed_vector_clamp(&velocity, speed);
 		distributed_vector_clamp(&angular_velocity, MAXIMUM_PREDICTED_VEHICLE_ANGULAR_SPEED);
 		if (!distributed_transform_valid(&state->position, &forward, &up, &velocity, &angular_velocity, &forward, &up))
+		{
+			distributed_count_prediction_rejected();
 			continue;
+		}
 		{
 			real_point3d previous_position = vehicle->object.position;
 
-			network_objects_reconcile(state->object_index, &state->position, &forward, &up, &velocity,
-				&angular_velocity, HOST_VEHICLE_BLEND_DISTANCE);
+			if (network_objects_reconcile(state->object_index, &state->position, &forward, &up, &velocity,
+				&angular_velocity, HOST_VEHICLE_BLEND_DISTANCE))
+				distributed_count_correction();
 			/* (a copy at rest runs no physics, and so neither falls nor
 			counts its ticks in the air: one the client moved from where it
 			came to rest (a little at a time too), or says moves, wakes, and
@@ -3258,6 +3285,8 @@ void network_objects_client_tick(
 		if (objects_client_ready_time != NONE)
 			objects_client_ready_interval = MIN(2 * objects_client_ready_interval, CLIENT_READY_MAXIMUM_INTERVAL_TICKS);
 		objects_client_ready_time = game_time_get();
+		if (objects_client_ask_again)
+			distributed_count_resync();
 		distributed_send(&message, _distributed_message_client_ready, objects_client_ask_again ? 1 : 0,
 			(word)sizeof(message), _distributed_to_host_reliably);
 		objects_client_ask_again = FALSE;

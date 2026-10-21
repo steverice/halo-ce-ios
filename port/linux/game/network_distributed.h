@@ -226,6 +226,9 @@ long distributed_living_unit(struct player_datum const *player);
 /* whether the player is one of that client machine's (the host) */
 boolean distributed_machine_has_player(long machine_index, short player_index);
 void distributed_count_correction(void);
+/* port: Logging-only counts for refused predictions and object resync requests. */
+void distributed_count_prediction_rejected(void);
+void distributed_count_resync(void);
 /* (the host) the client machines in the game, but for its own; their count */
 short distributed_client_machines(long *machine_indices, short maximum);
 /* (the host) how long a message takes that client and its answer back, in

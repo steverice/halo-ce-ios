@@ -671,6 +671,64 @@ static struct
 	long corrections;
 } distributed_statistics;
 
+/* port: Diagnostics only; existing correction and damage counters stay cumulative.
+The baselines make totals local to this map without resetting test statistics. */
+void platform_log(char const *format, ...) __attribute__((format(printf, 1, 2)));
+void network_damage_statistics(long *sent, long *dealt, long *rejected, long *replayed);
+static struct
+{
+	long tick;
+	long correction_base, correction_logged;
+	long damage_base, damage_logged;
+	unsigned long rejected, rejected_logged;
+	unsigned long resyncs, resyncs_logged;
+} distributed_sync_log;
+
+void distributed_count_prediction_rejected(void)
+{
+	distributed_sync_log.rejected++;
+}
+
+void distributed_count_resync(void)
+{
+	distributed_sync_log.resyncs++;
+}
+
+static void distributed_sync_log_reset(void)
+{
+	long sent, dealt, rejected, replayed;
+
+	network_damage_statistics(&sent, &dealt, &rejected, &replayed);
+	csmemset(&distributed_sync_log, 0, sizeof(distributed_sync_log));
+	distributed_sync_log.correction_base = distributed_sync_log.correction_logged = distributed_statistics.corrections;
+	distributed_sync_log.damage_base = distributed_sync_log.damage_logged = rejected;
+}
+
+static void distributed_sync_log_tick(void)
+{
+	long now = game_time_get();
+	long sent, dealt, rejected, replayed;
+
+	if (now < distributed_sync_log.tick)
+		distributed_sync_log_reset();
+	if (now - distributed_sync_log.tick < 30 * TICKS_PER_SECOND)
+		return;
+	network_damage_statistics(&sent, &dealt, &rejected, &replayed);
+	platform_log("net sync: %ld s window, corrections %ld (total %ld), rejected %lu (total %lu), "
+		"resyncs %lu (total %lu), damage rejected %ld (total %ld)",
+		(now - distributed_sync_log.tick) / TICKS_PER_SECOND,
+		distributed_statistics.corrections - distributed_sync_log.correction_logged,
+		distributed_statistics.corrections - distributed_sync_log.correction_base,
+		distributed_sync_log.rejected - distributed_sync_log.rejected_logged, distributed_sync_log.rejected,
+		distributed_sync_log.resyncs - distributed_sync_log.resyncs_logged, distributed_sync_log.resyncs,
+		rejected - distributed_sync_log.damage_logged, rejected - distributed_sync_log.damage_base);
+	distributed_sync_log.tick = now;
+	distributed_sync_log.correction_logged = distributed_statistics.corrections;
+	distributed_sync_log.rejected_logged = distributed_sync_log.rejected;
+	distributed_sync_log.resyncs_logged = distributed_sync_log.resyncs;
+	distributed_sync_log.damage_logged = rejected;
+}
+
 /* ---------- shared (network_distributed.h) */
 
 void network_distributed_statistics(
@@ -1797,6 +1855,7 @@ static void distributed_handle_predictions(
 			!TEST_FLAG(state.flags, _distributed_unit_alive_bit) ||
 			!TEST_FLAG(state.flags, _distributed_unit_placed_bit))
 		{
+			distributed_count_prediction_rejected();
 			continue;
 		}
 		distributed_predictions[state.player_index].valid = TRUE;
@@ -2190,6 +2249,9 @@ static void distributed_apply_predictions(
 			{
 				distributed_take_prediction(player_index, unit_index, &bound);
 			}
+			/* port: NONE still means this pending prediction was not taken. */
+			if (distributed_predictions[player_index].taken_host_time == NONE)
+				distributed_count_prediction_rejected();
 		}
 		/* (what the host's next tick starts from) */
 		if (unit_index != NONE)
@@ -3392,6 +3454,7 @@ void network_distributed_new_game(
 	network_actors_new_game();
 	network_coop_new_game();
 	network_aim_assist_reset();
+	distributed_sync_log_reset();
 }
 
 /* after each tick (game_time.c) */
@@ -3458,6 +3521,8 @@ void network_distributed_tick(
 		network_coop_client_tick();
 	}
 	distributed_batches_flush();
+	if (connection == _game_connection_network_server || connection == _game_connection_network_client)
+		distributed_sync_log_tick();
 	distributed_machines.in_tick = FALSE;
 	distributed_machines.valid = FALSE;
 }
@@ -4145,6 +4210,7 @@ void network_distributed_handle_message(
 				header.type == _distributed_message_vehicle_prediction) &&
 			distributed_machine_clock_fast(machine_index))
 		{
+			distributed_sync_log.rejected += header.count;
 			return;
 		}
 	}
@@ -4282,6 +4348,8 @@ void network_distributed_handle_message(
 		/* (its count 1: the client asks again, having failed to make one of
 		the host's objects) */
 		network_aim_assist_send_policy(machine_index);
+		if (header.count != 0)
+			distributed_count_resync();
 		network_objects_client_asked(machine_index, header.count != 0);
 		/* (a machine new at its index, which may have joined the game in
 		progress: every player's statistics and the game type's state, after
