@@ -50,7 +50,23 @@ def test_device_profile_key_is_canonical_and_target_bound():
 
 
 def test_real_bundled_shader_corpus_matches_delivery_abi():
-    data_pack.validate_shaders(ROOT / "port/shader-lists")
+    files = data_pack.snapshot(ROOT / "port/shader-lists", "shaders", "shader-lists-2")
+    assert sum(map(len, files.values())) <= 16 * 1024 * 1024
+
+
+def test_shader_snapshot_aggregate_limit(tmp_path):
+    maximum_file = 4 * 1024 * 1024
+    text = shader_text().encode("ascii")
+    padded = text + b"\n" * (maximum_file - len(text))
+    for index in range(4):
+        (tmp_path / f"map{index}.txt").write_bytes(padded)
+    files = data_pack.snapshot(tmp_path, "shaders", "shader-lists-2")
+    assert sum(map(len, files.values())) == 16 * 1024 * 1024
+    (tmp_path / "overflow.txt").write_bytes(b"\n")
+    with pytest.raises(ValueError, match="total size"):
+        data_pack.snapshot(tmp_path, "shaders", "shader-lists-2")
+    with pytest.raises(ValueError, match="shader"):
+        data_pack.validate_shaders(tmp_path)
 
 
 def test_inherited_device_shard_keeps_its_source_envelope():

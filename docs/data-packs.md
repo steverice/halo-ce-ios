@@ -51,7 +51,9 @@ python3 tools/data_pack.py --kind shaders --channel tester \
   --signing-key /private/path/signing-seed --output shaders.json
 ```
 
-The native validator checks descriptor shapes and ranges, 252-byte pixel keys and their FNV-1a hashes, vertex variants and packed masks, attribute formats, four-bit border masks, legacy alpha defaults, and map-local pipeline dependencies. Conflicting shader definitions are rejected. Each snapshot allows at most 32 maps, 4 MiB per decoded file, 8 MiB total decoded files, and a 64 KiB index envelope. Compressed downloads allow at most 4 MiB per map and 8 MiB total. Each map permits at most 8192 descriptors. The bundled and downloaded union permits at most 16384 descriptors per map.
+The native validator checks descriptor shapes and ranges, 252-byte pixel keys and their FNV-1a hashes, vertex variants and packed masks, attribute formats, four-bit border masks, legacy alpha defaults, and map-local pipeline dependencies. Conflicting shader definitions are rejected. Each snapshot allows at most 32 maps, 4 MiB per decoded file, 16 MiB total decoded files, and a 64 KiB index envelope. Compressed downloads allow at most 4 MiB per map and 16 MiB total. Each map permits at most 8192 descriptors. The bundled and downloaded union permits at most 16384 descriptors per map.
+
+Apps released with the previous 8 MiB aggregate limit reject larger snapshots and keep their bundled shader lists.
 
 The index retains the signed envelope's manifest, signature, and payload fields. Its payload is `{"files":{"a10.txt":"RAW_SHA256:RAW_BYTES:COMPRESSED_SHA256:COMPRESSED_BYTES"}}`. Hashes use lowercase SHA-256 and sizes use positive decimal integers without leading zeros. A map downloads from `shader-maps/COMPRESSED_SHA256.zlib` alongside the feed. The zlib stream must end exactly at its declared raw length, without trailing bytes. The signed index authenticates both representations. Asset URLs cannot select another host or directory.
 

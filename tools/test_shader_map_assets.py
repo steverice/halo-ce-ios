@@ -59,12 +59,16 @@ def test_shader_assets_reject_corruption_trailing_and_incomplete_streams(content
         data_pack_validation.validate_payload(payload, "shaders", "shader-lists-2", shader_assets={name: content})
 
 
-def test_shader_index_rejects_aggregate_size_before_loading_assets():
+@pytest.mark.parametrize("field", [1, 3], ids=["decoded", "compressed"])
+def test_shader_index_aggregate_limit_before_loading_assets(field):
     item = descriptor(b"x").split(":")
-    item[1] = str(4 * 1024 * 1024)
-    payload = data_pack.canonical({"files": {f"a{i}.txt": ":".join(item) for i in range(3)}})
+    item[field] = str(4 * 1024 * 1024)
+    files = {f"a{i}.txt": ":".join(item) for i in range(4)}
+    assert len(data_pack_validation.shader_index(data_pack.canonical({"files": files}))) == 4
+    item[field] = "1"
+    files["overflow.txt"] = ":".join(item)
     with pytest.raises(ValueError, match="total"):
-        data_pack_validation.shader_index(payload)
+        data_pack_validation.shader_index(data_pack.canonical({"files": files}))
 
 
 @pytest.mark.parametrize("name", ["../a10.txt", "A10.txt", "a10.txt/other", "a10.txt\n"])

@@ -30,7 +30,7 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 SHADER_INDEX_LIMIT = 65536
 SHADER_COMPRESSED_FILE_LIMIT = 4 * 1024 * 1024
-SHADER_COMPRESSED_TOTAL_LIMIT = 8 * 1024 * 1024
+SHADER_COMPRESSED_TOTAL_LIMIT = 16 * 1024 * 1024
 MAXIMUM_SEQUENCE = 2**53 - 1
 RECORDING_MAX_FILES = 160
 RECORDING_MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -236,7 +236,7 @@ def read_regular(directory, name, maximum):
 
 def snapshot_limits(kind):
     if kind == "shaders":
-        return 32, 4 * 1024 * 1024, 8 * 1024 * 1024
+        return 32, 4 * 1024 * 1024, 16 * 1024 * 1024
     return ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
         else (RECORDING_MAX_FILES, RECORDING_MAX_FILE_BYTES, RECORDING_MAX_FILES * RECORDING_MAX_FILE_BYTES))
 

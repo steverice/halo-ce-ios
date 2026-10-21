@@ -128,7 +128,7 @@ def shader_index(payload: bytes) -> dict[str, tuple[str, int, str, int]]:
             raise ValueError("Shader descriptor exceeds its per-file limit")
         raw_total += raw_size
         compressed_total += compressed_size
-        if raw_total > 8 * 1024 * 1024 or compressed_total > data_pack.SHADER_COMPRESSED_TOTAL_LIMIT:
+        if raw_total > 16 * 1024 * 1024 or compressed_total > data_pack.SHADER_COMPRESSED_TOTAL_LIMIT:
             raise ValueError("Shader index total exceeds its limit")
         result[name] = (raw_hash, raw_size, compressed_hash, compressed_size)
     return result
