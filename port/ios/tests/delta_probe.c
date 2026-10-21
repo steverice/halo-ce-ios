@@ -132,6 +132,24 @@ int main(void)
 	assert(!delta_announce_answer("okay", &seconds) && !delta_announce_answer("403 forbidden", &seconds));
 	assert(!delta_announce_answer("", &seconds));
 
+	/* a game still being set up (game type 0, no map) is not listed, and one listed that goes back to it is
+	withdrawn */
+	announce.engine = 0;
+	assert(!delta_announce_ready(&announce));
+	memset(&state, 0, sizeof(state));
+	assert(delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
+	announce.engine = 7;
+	assert(!delta_announce_ready(&announce) && delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
+	announce.engine = 2;
+	announce.map[0] = 0;
+	assert(!delta_announce_ready(&announce) && delta_announce_step(&state, &announce, 1000) == DELTA_STEP_NOTHING);
+	strcpy(announce.map, "bloodgulch");
+	assert(delta_announce_ready(&announce) && delta_announce_step(&state, &announce, 1000) == DELTA_STEP_ANNOUNCE);
+	delta_announce_done(&state, &announce, 200, 1, 1000);
+	announce.engine = 0;
+	assert(delta_announce_step(&state, &announce, 1500) == DELTA_STEP_WITHDRAW);
+	announce.engine = 2;
+
 	/* when it goes on: nothing wanted, nothing done */
 	memset(&state, 0, sizeof(state));
 	assert(delta_announce_step(&state, NULL, 1000) == DELTA_STEP_NOTHING);

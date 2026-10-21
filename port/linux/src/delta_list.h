@@ -114,7 +114,11 @@ struct delta_announce_state
 	unsigned long wait_until;
 };
 
-/* what to do now: wanted is the game to be listed (NULL: none). Withdraw
+/* whether a game's setup is final enough to list: it has a name, a map and a game type (1 to 6) the list
+knows. A game still being set up reports the defaults (a map and game type 0), which are not listed */
+int delta_announce_ready(const struct delta_announce *announce);
+/* what to do now: wanted is the game to be listed (NULL: none, and a game not delta_announce_ready is
+none). Withdraw
 first the listing of another invite, then announce. The caller reports what
 came of it with delta_announce_done / delta_withdraw_done */
 int delta_announce_step(const struct delta_announce_state *state, const struct delta_announce *wanted,

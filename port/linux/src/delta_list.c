@@ -631,9 +631,16 @@ static int waiting(const struct delta_announce_state *state, unsigned long now)
 	return state->wait_until && (long)(now - state->wait_until) < 0;
 }
 
+int delta_announce_ready(const struct delta_announce *announce)
+{
+	return announce->name[0] && announce->map[0] && announce->engine >= 1 && announce->engine <= 6;
+}
+
 int delta_announce_step(const struct delta_announce_state *state, const struct delta_announce *wanted,
 	unsigned long now)
 {
+	if (wanted && !delta_announce_ready(wanted))
+		wanted = NULL;
 	if (state->listed)
 	{
 		unsigned long since = now - state->sent_time;
