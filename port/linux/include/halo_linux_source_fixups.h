@@ -60,6 +60,8 @@ unsigned char custom_edition_vehicle_placement_allowed(struct scenario_object_da
 /* the width of the screen the game draws, 480 lines tall: the device's or
 the display's shape, or 640 (port/linux/src/d3d8_device.c) */
 long halo_screen_width(void);
+/* the screen targets' pixels to the Xbox's one (screen effects) */
+float halo_screen_scale(void);
 /* takes up a new width between frames (F11); returns the width */
 long halo_screen_commit(void);
 /* while TRUE, drawing shifts right to center 640-column layouts */
