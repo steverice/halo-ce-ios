@@ -354,6 +354,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.collision_type_filter` | boolean | `false` | apple, desktop | `HALO_COLLISION_TYPE_FILTER` | Experimental. |
 | `debug.sphere_query_type_filter` | boolean | `false` | apple, desktop | `HALO_SPHERE_QUERY_TYPE_FILTER` | Experimental. |
 | `debug.static_light_relink` | boolean | `false` | apple, desktop | `HALO_STATIC_LIGHT_RELINK` | Experimental. |
+| `debug.immediate_merge` | boolean | `false` | apple, desktop | `HALO_IMMEDIATE_MERGE` | Experimental. |
 | `debug.aim_steady_level` | number | `-1.0` | apple | `HALO_AIM_STEADY_LEVEL` | Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. |
 ### display
 

@@ -101,3 +101,14 @@ grade = {"on" = "invisible"}
 [tv."debug.static_light_relink"]
 order = ["off", "on"]
 grade = {"on" = "invisible"}
+
+# debug.immediate_merge is exact too: consecutive immediate-mode draws in the same state (the HUD's and text's quads) are
+# made as one draw, in the same order, so every pixel is the same.
+
+[handheld."debug.immediate_merge"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[tv."debug.immediate_merge"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}

@@ -38,7 +38,8 @@ def anchor_seconds(anchor, events_text):
 # simulation changes are booleans (bit N of the scene's sim_experiments is the Nth key; port/linux/game/sim_experiments.c)
 # and change work done, not results. A setting a later change adds takes one entry here, one in
 # host_benchmark_catalog.m and its application in the guest (port/linux/src/benchmark_suite.c).
-SIM_SETTINGS = ("debug.collision_type_filter", "debug.sphere_query_type_filter", "debug.static_light_relink")
+SIM_SETTINGS = ("debug.collision_type_filter", "debug.sphere_query_type_filter", "debug.static_light_relink",
+                "debug.immediate_merge")
 # name: ("boolean",) | ("integer", allowed values or None, minimum, maximum) | ("number", minimum, maximum) | ("text", allowed)
 CASE_SETTINGS = {
     **{name: ("boolean",) for name in SIM_SETTINGS},

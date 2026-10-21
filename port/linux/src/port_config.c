@@ -615,6 +615,11 @@ static const struct config_setting config_settings[] =
 		"Experimental. An attached light that has not moved keeps its place in the\n"
 		"map's light lists instead of leaving and joining them again every tick.\n"
 		"Read again each tick, so it can be flipped while the game runs." },
+	{ "debug.immediate_merge", _config_boolean, "false", "HALO_IMMEDIATE_MERGE", _environment_value, _platform_all,
+		"Experimental. Consecutive immediate-mode draws (the HUD's and the text's\n"
+		"quads) in the same state are made as one draw, in the same order: the same\n"
+		"pictures with fewer draws. Read again each tick, so it can be flipped\n"
+		"while the game runs." },
 	{ "debug.aim_steady_level", _config_real, "-1.0", "HALO_AIM_STEADY_LEVEL", _environment_value, _platform_ios,
 		"Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a\n"
 		"target the hand's aim counts as (1.0 a red reticle), in place of the\n"

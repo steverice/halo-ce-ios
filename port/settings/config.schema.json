@@ -1431,6 +1431,17 @@
             "desktop"
           ]
         },
+        "immediate_merge": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. Consecutive immediate-mode draws (the HUD's and the text's quads) in the same state are made as one draw, in the same order: the same pictures with fewer draws. Read again each tick, so it can be flipped while the game runs.",
+          "x-environment": "HALO_IMMEDIATE_MERGE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "aim_steady_level": {
           "type": "number",
           "default": -1.0,

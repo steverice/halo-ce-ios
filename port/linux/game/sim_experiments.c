@@ -2,7 +2,8 @@
 SIM_EXPERIMENTS.C
 
 The experimental simulation speed-ups (debug.collision_type_filter,
-debug.sphere_query_type_filter, debug.static_light_relink), each off by
+debug.sphere_query_type_filter, debug.static_light_relink,
+debug.immediate_merge), each off by
 default. A setting is read again at the start of each game tick, so one can
 be flipped while the game runs (a console toggle or a settings change) and
 the simulation keeps one value for the whole tick. Every one changes how
@@ -19,6 +20,7 @@ static const char *const sim_experiment_names[] =
 	"debug.collision_type_filter",
 	"debug.sphere_query_type_filter",
 	"debug.static_light_relink",
+	"debug.immediate_merge",
 };
 #define SIM_EXPERIMENT_COUNT ((long)(sizeof(sim_experiment_names) / sizeof(sim_experiment_names[0])))
 
@@ -51,4 +53,17 @@ boolean sim_experiment_enabled(
 	}
 
 	return experiment >= 0 && experiment < SIM_EXPERIMENT_COUNT && sim_experiment_values[experiment];
+}
+
+/* the same answer for code that runs outside the game's ticks, the renderer (the loading screen draws before game time
+exists): the setting and the case's choice as of now, with no game time to ask */
+boolean sim_experiment_enabled_now(
+	short experiment)
+{
+	if (experiment < 0 || experiment >= SIM_EXPERIMENT_COUNT)
+	{
+		return FALSE;
+	}
+
+	return config_boolean(sim_experiment_names[experiment]) != 0 || (sim_experiment_mask & (1u << experiment)) != 0;
 }

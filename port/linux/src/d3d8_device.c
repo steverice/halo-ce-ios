@@ -62,6 +62,25 @@ void halo_model_counts_take(unsigned long drawn[5], unsigned long *culled);
 
 struct gpu_capabilities device_capabilities;
 
+/* sim_experiments.c: the experimental changes, a setting each (a catalog case can turn one on); the renderer asks
+once a frame, as it can draw before game time exists */
+unsigned char sim_experiment_enabled_now(short experiment);
+#define SIM_EXPERIMENT_IMMEDIATE_MERGE 3
+
+/* port: debug.immediate_merge (sim_experiments.c). Consecutive immediate-mode draws in the same state are held and
+made as one draw. The guest's gpu_ functions (guest_gpu.c, in a build with HALO_IMMEDIATE_BATCH) first submit a held
+draw, and the two things a draw reads when it is submitted, the vertex constants and the uniforms, submit it before
+they change, so the held draw is made as it would have been when its End ran. */
+#if HALO_IMMEDIATE_BATCH && !HALO_RENDER_VALIDATION
+#define IMMEDIATE_BATCH 1
+int halo_immediate_pending;
+void halo_immediate_flush(void);
+#define IMMEDIATE_FLUSH() do { if (halo_immediate_pending) halo_immediate_flush(); } while (0)
+#else
+#define IMMEDIATE_BATCH 0
+#define IMMEDIATE_FLUSH() ((void)0)
+#endif
+
 /* Render validation (gpu_validate.h), in a build configured with it: the
 identity of the draw being made, which goes to the host just before the
 draw does, and this file's own fallbacks, by name. In any other build each
@@ -2283,6 +2302,7 @@ static void constants_store(unsigned long first, const void *data, unsigned long
 	{
 		if (memcmp(constant_store.c[first + index], values[index], sizeof(constant_store.c[0])))
 		{
+			IMMEDIATE_FLUSH();
 			memcpy(constant_store.c[first + index], values[index], sizeof(constant_store.c[0]));
 			constant_store.serials[first + index] = ++constant_store.serial;
 			constant_store.log[constant_store.serial % GPU_CONSTANT_LOG_SIZE] = (unsigned char)(first + index);
@@ -4454,6 +4474,7 @@ static BOOL prepare_draw(struct gpu_draw *draw, BOOL immediate)
 		{
 			struct gpu_uniforms *converted = &draw_uniforms;
 
+			IMMEDIATE_FLUSH();
 			memcpy(draw_uniform_inputs, inputs, sizeof(inputs));
 			draw_uniforms.serial++;
 			memcpy(converted->viewport_scale[0], device.viewport_scale, sizeof(converted->viewport_scale));
@@ -4560,6 +4581,156 @@ static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 	else
 		stats.draws++;
 }
+
+#if IMMEDIATE_BATCH
+/* the held draw's vertices (all of an End's attributes, as floats, one after another) and the triangles of its fans,
+quad lists and triangle lists, indexed from the first vertex */
+#define IMMEDIATE_BATCH_VERTICES 16000
+
+static struct
+{
+	struct gpu_draw packet;
+	float *vertices;
+	unsigned long vertex_count, vertex_capacity;
+	WORD *indices;
+	unsigned long index_count, index_capacity;
+} immediate_batch;
+static struct gpu_draw immediate_batch_draw;
+
+static unsigned long stream_upload(const void *data, unsigned long size, gpu_buffer *buffer);
+static uint32_t index_upload(const void *data, unsigned long size, gpu_buffer *buffer);
+
+void halo_immediate_flush(void)
+{
+	struct gpu_draw *draw = &immediate_batch_draw;
+	unsigned long stride = XGPU_VERTEX_ATTRIBUTE_COUNT * 4 * sizeof(float), index;
+
+	if (!halo_immediate_pending)
+		return;
+	/* (the calls below are gpu_ calls: they must not find a draw held) */
+	halo_immediate_pending = 0;
+	if (!immediate_batch.index_count)
+	{
+		static int logged;
+
+		if (!logged++)
+			platform_log("immediate merge: a held draw has no triangles (%lu vertices)", immediate_batch.vertex_count);
+		immediate_batch.vertex_count = 0;
+		return;
+	}
+	*draw = immediate_batch.packet;
+	draw->streams[0].offset = (uint32_t)stream_upload(immediate_batch.vertices, immediate_batch.vertex_count * stride,
+		&draw->streams[0].buffer);
+	draw->streams[0].stride = (uint32_t)stride;
+	for (index = 0; index < XGPU_VERTEX_ATTRIBUTE_COUNT; index++)
+	{
+		draw->attributes[index].format = GPU_ATTRIBUTE_FLOAT4;
+		draw->attributes[index].stream = 0;
+		draw->attributes[index].offset = (uint16_t)(index * 4 * sizeof(float));
+	}
+	draw->index_offset = index_upload(immediate_batch.indices, immediate_batch.index_count * sizeof(WORD),
+		&draw->index_buffer);
+	draw->primitive = GPU_PRIMITIVE_TRIANGLES;
+	draw->count = (uint32_t)immediate_batch.index_count;
+	immediate_batch.vertex_count = immediate_batch.index_count = 0;
+	submit_draw(draw, TRUE);
+}
+
+/* adds the End's vertices to the held draw (or starts one): FALSE when this primitive is not one that can be held */
+static BOOL immediate_batch_add(const struct gpu_draw *draw, const float *vertices, unsigned long count,
+	D3DPRIMITIVETYPE type)
+{
+	unsigned long floats = XGPU_VERTEX_ATTRIBUTE_COUNT * 4, triangles, triangle, base;
+	static int enabled = -1;
+	static unsigned long checked_frame = ~0UL;
+
+	if (checked_frame != device.frame)
+	{
+		checked_frame = device.frame;
+		enabled = sim_experiment_enabled_now(SIM_EXPERIMENT_IMMEDIATE_MERGE) != 0;
+	}
+	if (!enabled || companion_active() || trace_frame() || count > IMMEDIATE_BATCH_VERTICES)
+		return FALSE;
+	switch (type)
+	{
+	case D3DPT_TRIANGLEFAN:
+	case D3DPT_POLYGON:
+		if (count < 3)
+			return FALSE;
+		triangles = count - 2;
+		break;
+	case D3DPT_QUADLIST:
+		triangles = count / 4 * 2;
+		break;
+	case D3DPT_TRIANGLELIST:
+		triangles = count / 3;
+		break;
+	default:
+		return FALSE;
+	}
+	if (!triangles)
+		return FALSE;
+	if (halo_immediate_pending && (memcmp(draw, &immediate_batch.packet, sizeof(*draw)) ||
+		immediate_batch.vertex_count + count > IMMEDIATE_BATCH_VERTICES))
+		halo_immediate_flush();
+	if (!halo_immediate_pending)
+	{
+		immediate_batch.packet = *draw;
+		immediate_batch.vertex_count = immediate_batch.index_count = 0;
+	}
+	if (immediate_batch.vertex_capacity < immediate_batch.vertex_count + count)
+	{
+		immediate_batch.vertex_capacity = IMMEDIATE_BATCH_VERTICES;
+		immediate_batch.vertices = realloc(immediate_batch.vertices,
+			immediate_batch.vertex_capacity * floats * sizeof(float));
+	}
+	if (immediate_batch.index_capacity < immediate_batch.index_count + triangles * 3)
+	{
+		immediate_batch.index_capacity = (immediate_batch.index_count + triangles * 3) * 2 + 1024;
+		immediate_batch.indices = realloc(immediate_batch.indices, immediate_batch.index_capacity * sizeof(WORD));
+	}
+	base = immediate_batch.vertex_count;
+	memcpy(immediate_batch.vertices + base * floats, vertices, count * floats * sizeof(float));
+	for (triangle = 0; triangle < triangles; triangle++)
+	{
+		WORD *out = immediate_batch.indices + immediate_batch.index_count;
+
+		if (type == D3DPT_QUADLIST)
+		{
+			unsigned long quad = triangle / 2 * 4;
+
+			if (triangle % 2 == 0)
+			{
+				out[0] = (WORD)(base + quad);
+				out[1] = (WORD)(base + quad + 1);
+				out[2] = (WORD)(base + quad + 2);
+			}
+			else
+			{
+				out[0] = (WORD)(base + quad);
+				out[1] = (WORD)(base + quad + 2);
+				out[2] = (WORD)(base + quad + 3);
+			}
+		}
+		else if (type == D3DPT_TRIANGLELIST)
+		{
+			out[0] = (WORD)(base + triangle * 3);
+			out[1] = (WORD)(base + triangle * 3 + 1);
+			out[2] = (WORD)(base + triangle * 3 + 2);
+		}
+		else
+		{
+			out[0] = (WORD)base;
+			out[1] = (WORD)(base + triangle + 1);
+			out[2] = (WORD)(base + triangle + 2);
+		}
+		immediate_batch.index_count += 3;
+	}
+	immediate_batch.vertex_count += count;
+	halo_immediate_pending = 1;
+	return TRUE;
+}
+#endif
 
 /* ---------- tracing (debug.gpu_trace_frame) */
 
@@ -4785,6 +4956,7 @@ static BOOL mirror_refresh(unsigned long first, unsigned long last)
 that holds it, the range's offset in that buffer and the newest upload
 generation of its pages (which changes whenever its contents do); FALSE if
 the range is outside the window, spans two segments or is volatile */
+
 static BOOL mirror_range(unsigned long address, unsigned long size, gpu_buffer *buffer, unsigned long *offset,
 	unsigned long *generation)
 {
@@ -5399,6 +5571,11 @@ void WINAPI D3DDevice_End(void)
 	if (target_hud_measured)
 		hud_draw_extent(device.immediate_vertices, count);
 	trace_draw("immediate", type, count, device.immediate_vertices);
+#if IMMEDIATE_BATCH
+	if (immediate_batch_add(draw, device.immediate_vertices, count, type))
+		return;
+	IMMEDIATE_FLUSH();
+#endif
 	/* every attribute, as a float4, from stream 0 */
 	draw->streams[0].offset = (uint32_t)stream_upload(device.immediate_vertices, count * stride, &draw->streams[0].buffer);
 	draw->streams[0].stride = (uint32_t)stride;
