@@ -52,6 +52,9 @@
 #define PAUSE_AFTER_THROTTLE_SECONDS 60.0
 /* how long a warm device is given to cool before the suite starts anyway, flagged */
 #define COOL_WAIT_SECONDS 300.0
+/* an offscreen case measures at most this much wall time of its window: a slow device measures what fits and
+   moves on (the report's capped and measured_ticks); presented runs are never cut */
+#define OFFSCREEN_WINDOW_WALL_SECONDS 60.0
 
 static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 /* under the lock: the open window's measurements, and what happened during it */
@@ -83,6 +86,10 @@ static _Atomic unsigned long frames_offered, frames_no_drawable, frames_no_pictu
 /* the run's game ticks so far, for the progress screen; when it began, in real time */
 static _Atomic long run_ticks;
 static CFAbsoluteTime run_started_at;
+/* the run's measured ticks, when its window first opened, and whether its wall-time cap ended it */
+static _Atomic long window_ticks;
+static CFAbsoluteTime window_started_at;
+static int run_capped;
 static struct benchmark_plan plan;
 static struct benchmark_outcome outcomes[BENCHMARK_RUNS_MAXIMUM];
 static int outcome_count;
@@ -421,6 +428,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     os_unfair_lock_lock(&lock);
     benchmark_live_add(&live,CACurrentMediaTime(),interval,cpu,gpu);
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
+    if (ticks > 0 && window_open) atomic_fetch_add(&window_ticks, ticks);
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
         benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
@@ -656,6 +664,8 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     int offscreen = host_benchmark_offscreen_requested() && finished->stage != 'P';
     record[@"presented"] = @(!offscreen);
     record[@"reality_check"] = @(finished->stage == 'P');
+    record[@"measured_ticks"] = @(atomic_load(&window_ticks));
+    record[@"capped"] = @(run_capped != 0);
     if (run_started_at > 0) record[@"wall_seconds"] = @(round((CFAbsoluteTimeGetCurrent() - run_started_at) * 10.0) / 10.0);
     text = json_object(host_benchmark_measurement_record(record, presentation, offscreen));
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -1055,7 +1065,17 @@ void host_benchmark_progress(struct host_benchmark_progress *progress) {
 int host_benchmark_next(char *text, unsigned int size) {
     const struct benchmark_scene *scene;
 
-    if(!text && !size)return atomic_load(&finish_requested) ? 5 : 0;
+    if(!text && !size) {
+        if (atomic_load(&finish_requested)) return 5;
+        if (run_open && !run_finishing && window_started_at > 0 && host_benchmark_offscreen_active() &&
+            CFAbsoluteTimeGetCurrent() - window_started_at >= OFFSCREEN_WINDOW_WALL_SECONDS) {
+            if (!run_capped) host_logf(HOST_LOG_INFO, "benchmark: run %d: the window's %.0f s of wall time are up after %ld ticks",
+                run.index, OFFSCREEN_WINDOW_WALL_SECONDS, atomic_load(&window_ticks));
+            run_capped = 1;
+            return 6;
+        }
+        return 0;
+    }
     if (!atomic_load(&running)) return 0;
     if (run_finishing) {
         if(!pending_presentation)pending_presentation=host_benchmark_presentation_take_report();
@@ -1215,7 +1235,10 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->enemy_multiplier,
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P');
     atomic_store(&run_ticks, 0);
+    atomic_store(&window_ticks, 0);
     run_started_at = CFAbsoluteTimeGetCurrent();
+    window_started_at = 0;
+    run_capped = 0;
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
     benchmark_live_reset(&live);
@@ -1248,6 +1271,7 @@ void host_benchmark_window(int open, int width, int height) {
     if(window_open!=open)benchmark_live_reset(&live);
     window_open = open;
     if (open) {
+        if (window_started_at <= 0) window_started_at = CFAbsoluteTimeGetCurrent();
         window_width = width;
         window_height = height;
         if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz > 0.0 ? refresh_hertz : screen_hertz;

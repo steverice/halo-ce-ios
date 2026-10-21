@@ -109,3 +109,14 @@ def test_offscreen_suite_quits_at_its_end():
     # a scripted launch quits; a tester build goes back to real time and its menu
     assert "#ifndef HALO_TESTER_BUILD\n        if (host_benchmark_offscreen_requested()) completion_screen_requested = 0;" in source
     assert "if(plan.mode==BENCHMARK_UNIFIED && completion_screen_requested) {" in source
+
+
+def test_offscreen_window_has_a_wall_time_cap():
+    host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
+    assert "#define OFFSCREEN_WINDOW_WALL_SECONDS 60.0" in host
+    # only offscreen frames are cut; the report says so and how much was measured
+    assert "host_benchmark_offscreen_active() &&\n            CFAbsoluteTimeGetCurrent() - window_started_at >= OFFSCREEN_WINDOW_WALL_SECONDS" in host
+    assert 'record[@"capped"]' in host and 'record[@"measured_ticks"]' in host
+    suite = (ROOT / "port/linux/src/benchmark_suite.c").read_text()
+    assert "control == 6 && suite.state == suite_measuring" in suite
+    assert "if (suite.capped || state.tick - (long)suite.opened_ticks >= (long)(suite.seconds * 30.0))" in suite

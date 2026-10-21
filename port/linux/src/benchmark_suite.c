@@ -119,6 +119,8 @@ static struct
 	int model_lod_max;
 	/* the run is a presented reality check (stage P); whether the frames are shown in real time now */
 	int presented, presented_now;
+	/* the host ended the measured window early: an offscreen case's wall-time cap (host_benchmark.m) */
+	int capped;
 	/* a gameplay scene: frames of a cutscene inside it are not measured (a cutscene has its own target, and a
 	profile may hold it to 30); whether the window is closed for one now */
 	int gameplay, in_cutscene;
@@ -587,6 +589,7 @@ static void next_run(void)
 	suite.shadow_size = (long)number_field(text, "shadow");
 	suite.model_lod_max = (int)number_field(text, "lod");
 	suite.presented = (int)number_field(text, "presented");
+	suite.capped = 0;
 	{
 		char kind[32];
 
@@ -765,13 +768,21 @@ void benchmark_suite_frame(long width, long height)
 	}
     /* A control query through the existing import does not advance the planner.
        Finish uses the normal case end and multiplayer teardown before returning. */
-    if (suite.state != suite_off && suite.state != suite_unasked &&
-        host_benchmark_next(NULL, 0) == 5) {
-        if (suite.state == suite_loading || suite.state == suite_lead || suite.state == suite_measuring) {
-            finish("partial", "Finish requested; this case contains only the available partial measurements");
-            return;
+    if (suite.state != suite_off && suite.state != suite_unasked) {
+        int control = host_benchmark_next(NULL, 0);
+
+        if (control == 5) {
+            if (suite.state == suite_loading || suite.state == suite_lead || suite.state == suite_measuring) {
+                finish("partial", "Finish requested; this case contains only the available partial measurements");
+                return;
+            }
+            if (suite.state == suite_starting) enter(suite_next);
         }
-        if (suite.state == suite_starting) enter(suite_next);
+        /* (6: the window has had its wall time; it ends as if its ticks were done) */
+        else if (control == 6 && suite.state == suite_measuring && !suite.capped) {
+            suite.capped = 1;
+            platform_log("benchmark suite: %s: the measured window reached its wall-time cap", suite.scene);
+        }
     }
 	now = halo_frame_trace_milliseconds();
 	/* The menu scenario can render while its filesystem worker still reads
@@ -926,7 +937,7 @@ void benchmark_suite_frame(long width, long height)
 			else
 			{
 				mp_collect(&state);
-				if (state.tick - (long)suite.opened_ticks >= (long)(suite.seconds * 30.0))
+				if (suite.capped || state.tick - (long)suite.opened_ticks >= (long)(suite.seconds * 30.0))
 				{
 					char note[512];
 					int useful = mp_evidence_note(note, sizeof(note));
@@ -955,8 +966,8 @@ void benchmark_suite_frame(long width, long height)
 			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("diverged", suite.route);
 		}
-		else if (menu ? now - suite.opened >= suite.seconds * 1000.0 :
-			suite.seconds > 0.0 ? ticks - suite.opened_ticks >= suite.seconds * 30.0 : input_replay_ended())
+		else if (suite.capped || (menu ? now - suite.opened >= suite.seconds * 1000.0 :
+			suite.seconds > 0.0 ? ticks - suite.opened_ticks >= suite.seconds * 30.0 : input_replay_ended()))
 		{
 			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("ok", suite.route);
