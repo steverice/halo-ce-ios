@@ -55,6 +55,11 @@ struct benchmark_scene {
     double arena_spacing, arena_distance, arena_movement_radius;
     /* a campaign scene's enemies, each squad this many times as large (debug.enemy_multiplier; 1 to 8); 0 for none */
     double enemy_multiplier;
+    /* A window anchored on an event of the recording (benchmark_scene_from_route's route "events" line): "kind:n",
+       the nth cinematic_start, cinematic_end, checkpoint or bsp_switch; NULL for none. `lead` is then seconds
+       after the event, and anchor_seconds is the event's recorded time in seconds. */
+    const char *anchor;
+    double anchor_seconds;
 };
 
 /* what the plan needs to know about the device and its profile's values */
@@ -96,7 +101,7 @@ struct benchmark_plan {
    that cannot be a scene: no map or difficulty, not begun at its level's beginning, not single-player */
 struct benchmark_route {
     struct benchmark_scene scene;
-    char id[48], map[32], difficulty[16], recording[64];
+    char id[48], map[32], difficulty[16], recording[64], anchor[48];
 };
 int benchmark_scene_from_route(const char *text, const char *recording, struct benchmark_route *route);
 /* Select an ordered subset of a validated signed catalog. No scenes are supplied by the engine. */

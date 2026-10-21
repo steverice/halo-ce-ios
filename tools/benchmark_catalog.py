@@ -19,6 +19,21 @@ KINDS = {"menu", "cutscene", "gameplay", "multiplayer"}
 PLAYERS = range(2, 129)
 COMMON_FIELDS = {"kind", "order", "map", "difficulty", "recording", "lead", "window"}
 MAXIMUM_ENEMY_MULTIPLIER = 8.0
+# a window anchored on an event of the recording: "kind:n" (the nth) or "kind:script" (the first one that script made)
+ANCHOR = re.compile(r"(cinematic_start|cinematic_end|checkpoint|bsp_switch):([1-9][0-9]{0,2}|[a-z][a-z0-9_]{0,30})\Z")
+
+
+def anchor_seconds(anchor, events_text):
+    """The recorded time, in seconds, of the event a route's anchor names (its 'events = kind:n:tick[:script],...'
+    line), or None when the route does not have it."""
+    kind, _, which = anchor.partition(":")
+    for entry in events_text.split(","):
+        parts = entry.split(":")
+        if len(parts) < 3 or parts[0] != kind or not parts[2].isdigit():
+            continue
+        if (parts[1] == which if which.isdigit() else (len(parts) > 3 and parts[3] == which)):
+            return int(parts[2]) / 30.0
+    return None
 MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
 
 
@@ -109,6 +124,8 @@ def _route(folder, recording):
             "lead": float(values.get("lead", 0)),
             "window": float(values.get("window", values.get("seconds", 0))),
             "enemy_multiplier": float(values.get("enemy_multiplier", 1)),
+            "anchor": values.get("anchor"),
+            "events": values.get("events", ""),
         }
     except (KeyError, ValueError) as error:
         raise CatalogError(f"{recording}.route lacks required replay fields") from error
@@ -184,6 +201,8 @@ def load_catalog(folder):
             fields |= {"arena"}
         if "enemy_multiplier" in case:
             fields |= {"enemy_multiplier"}
+        if "anchor" in case:
+            fields |= {"anchor"}
         if set(case) != fields:
             raise CatalogError(f"case {case_id} has missing or unsupported fields")
         order = case["order"]
@@ -201,9 +220,14 @@ def load_catalog(folder):
             if isinstance(case["enemy_multiplier"], float) and value.is_integer():
                 # (the app's canonical JSON writes a whole number without a fraction)
                 raise CatalogError(f"catalog {case_id} enemy multiplier must be written as an integer")
+        anchor = case.get("anchor")
+        if "anchor" in case and (kind in {"menu", "multiplayer"} or case["recording"] is None or
+                                 not isinstance(anchor, str) or not ANCHOR.match(anchor)):
+            raise CatalogError(f"case {case_id} has an unsupported anchor")
         lead = _number(case["lead"], f"{case_id} lead", 0, 3600)
         window = _number(case["window"], f"{case_id} window", 0, 3600, positive=True)
         recording = case["recording"]
+        anchored = None
         if recording is not None:
             _text(recording, f"{case_id} recording", RECORDING_NAME)
             if map_name in recorded_maps:
@@ -212,8 +236,13 @@ def load_catalog(folder):
             route = _route(root, recording)
             if (route["scene"] != case_id or route["map"] != map_name or route["difficulty"] != difficulty or
                     route["kind"] != kind or abs(route["lead"] - lead) > 1e-6 or abs(route["window"] - window) > 1e-6 or
-                    abs(route["enemy_multiplier"] - float(case.get("enemy_multiplier", 1))) > 1e-6):
+                    abs(route["enemy_multiplier"] - float(case.get("enemy_multiplier", 1))) > 1e-6 or
+                    route["anchor"] != anchor):
                 raise CatalogError(f"case {case_id} does not match its recording route")
+            if anchor is not None:
+                anchored = anchor_seconds(anchor, route["events"])
+                if anchored is None:
+                    raise CatalogError(f"case {case_id} anchors on an event its recording route does not have")
         elif kind == "gameplay":
             raise CatalogError(f"gameplay case {case_id} requires a recording")
         elif kind in {"cutscene", "multiplayer"} and not map_name:
@@ -255,7 +284,7 @@ def load_catalog(folder):
                 raise CatalogError(f"multiplayer case {case_id} has an unsupported time limit")
         if kind == "gameplay":
             has_gameplay = True
-            if not _active_window(root, recording, lead, window):
+            if not _active_window(root, recording, lead + (anchored or 0.0), window):
                 raise CatalogError(f"gameplay case {case_id} has no movement or combat input in its measured window")
         prepared.append({"id": case_id, **case})
     if orders != set(range(len(cases))):

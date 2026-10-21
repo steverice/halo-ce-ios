@@ -128,6 +128,8 @@ static BOOL gameplay_active_in_window(NSString *folder, NSString *recording, dou
     return valid && active;
 }
 
+/* A case anchored on an event of its recording: the route carries the same anchor and the event's recorded time,
+   and the case's lead (seconds after the event) becomes the window's start in the recording's time. */
 static BOOL route_matches(NSString *folder, struct benchmark_scene *scene, NSError **error) {
     NSString *recording = [NSString stringWithUTF8String:scene->recording];
     NSString *route_name = [recording stringByAppendingPathExtension:@"route"];
@@ -138,9 +140,11 @@ static BOOL route_matches(NSString *folder, struct benchmark_scene *scene, NSErr
         strcmp(route.id, scene->id) || strcmp(route.map, scene->map) || strcmp(route.difficulty, scene->difficulty) ||
         route.scene.kind != scene->kind || fabs(route.scene.lead - scene->lead) > 1e-6 ||
         fabs(route.scene.seconds - scene->seconds) > 1e-6 ||
+        strcmp(route.anchor, scene->anchor ? scene->anchor : "") ||
         fabs((route.scene.enemy_multiplier > 1.0 ? route.scene.enemy_multiplier : 1.0) -
              (scene->enemy_multiplier > 1.0 ? scene->enemy_multiplier : 1.0)) > 1e-6)
         return catalog_error(error, [NSString stringWithFormat:@"%@ does not match its signed catalog entry", recording]);
+    if (scene->anchor) scene->lead += route.scene.anchor_seconds;
     return YES;
 }
 
@@ -184,6 +188,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             [expected unionSet:[NSSet setWithArray:@[@"simulation", @"players", @"views", @"game_mode", @"score_limit", @"time_limit_minutes"]]];
         if ([kind isEqual:@"multiplayer"] && entry[@"arena"]) [expected addObject:@"arena"];
         if (entry[@"enemy_multiplier"]) [expected addObject:@"enemy_multiplier"];
+        if (entry[@"anchor"]) [expected addObject:@"anchor"];
         if (![[NSSet setWithArray:entry.allKeys] isEqualToSet:expected])
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has missing or unsupported fields.", identifier]);
         BOOL menu = [kind isEqual:@"menu"], cutscene = [kind isEqual:@"cutscene"];
@@ -193,6 +198,12 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an invalid kind, map, or difficulty.", identifier]);
         if (entry[@"enemy_multiplier"] && (multiplayer || menu || !real_number(entry[@"enemy_multiplier"], 1, 8, &enemy_multiplier)))
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported enemy multiplier.", identifier]);
+        NSString *anchor = nil;
+        if (entry[@"anchor"] && (!has_recording || multiplayer || ![entry[@"anchor"] isKindOfClass:NSString.class] ||
+            [(NSString *)entry[@"anchor"] rangeOfString:@"^(cinematic_start|cinematic_end|checkpoint|bsp_switch):([1-9][0-9]{0,2}|[a-z][a-z0-9_]{0,30})$"
+                options:NSRegularExpressionSearch].location == NSNotFound))
+            return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported anchor.", identifier]);
+        if (entry[@"anchor"]) anchor = entry[@"anchor"];
         if (gameplay && !has_recording)
             return catalog_error(error, [NSString stringWithFormat:@"Gameplay case %@ needs a recording.", identifier]);
         if (gameplay) workload = YES;
@@ -250,6 +261,10 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             multiplayer ? BENCHMARK_SCENE_MULTIPLAYER : BENCHMARK_SCENE_GAMEPLAY;
         scene->heavy = gameplay;
         scene->enemy_multiplier = enemy_multiplier;
+        if (anchor) {
+            snprintf(built.anchors[index], sizeof(built.anchors[index]), "%s", anchor.UTF8String);
+            scene->anchor = built.anchors[index];
+        }
         scene->simulation = multiplayer ? built.simulations[index] : NULL;
         scene->game_mode = multiplayer ? built.game_modes[index] : NULL;
         scene->players = (int)players; scene->views = (int)views;
@@ -257,7 +272,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         scene->arena_columns = (int)arena_columns; scene->arena_spacing = arena_spacing;
         scene->arena_distance = arena_distance; scene->arena_movement_radius = arena_radius;
         if (scene->recording && !route_matches(folder, scene, error)) return NO;
-        if (gameplay && !gameplay_active_in_window(folder, recording, lead, window))
+        if (gameplay && !gameplay_active_in_window(folder, recording, scene->lead, window))
             return catalog_error(error, [NSString stringWithFormat:@"Gameplay case %@ has no movement or combat input in its measured window.", identifier]);
     }
     for (int order = 0; order < built.count; order++)
@@ -272,6 +287,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         scene->id = catalog->ids[index]; scene->map = catalog->maps[index];
         scene->difficulty = catalog->difficulties[index];
         scene->recording = catalog->recordings[index][0] ? catalog->recordings[index] : NULL;
+        scene->anchor = catalog->anchors[index][0] ? catalog->anchors[index] : NULL;
         scene->simulation = catalog->simulations[index][0] ? catalog->simulations[index] : NULL;
         scene->game_mode = catalog->game_modes[index][0] ? catalog->game_modes[index] : NULL;
     }

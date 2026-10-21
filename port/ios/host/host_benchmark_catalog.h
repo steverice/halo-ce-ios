@@ -13,6 +13,7 @@ struct host_benchmark_catalog {
     char maps[BENCHMARK_SCENES_MAXIMUM][32];
     char difficulties[BENCHMARK_SCENES_MAXIMUM][16];
     char recordings[BENCHMARK_SCENES_MAXIMUM][64];
+    char anchors[BENCHMARK_SCENES_MAXIMUM][48];
     char simulations[BENCHMARK_SCENES_MAXIMUM][32];
     char game_modes[BENCHMARK_SCENES_MAXIMUM][32];
     char sha256[65];

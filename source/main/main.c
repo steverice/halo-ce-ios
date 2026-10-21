@@ -2124,9 +2124,9 @@ static void main_saving_map_private(
 	game_state_save();
 	/* port: noted in the recorded time (input_replay.c) */
 	{
-		extern void input_replay_note_event(char const *kind);
+		extern void input_replay_note_event(char const *kind, char const *name);
 
-		input_replay_note_event("checkpoint");
+		input_replay_note_event("checkpoint", NULL);
 	}
 	hud_autosave(FALSE);
 	main_globals.save_map_completed = FALSE;

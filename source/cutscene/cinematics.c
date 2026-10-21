@@ -196,9 +196,10 @@ void cinematic_start(
 	projectiles_delete_all();
 	/* port: noted in the recorded time (input_replay.c) */
 	{
-		extern void input_replay_note_event(char const *kind);
+		extern void input_replay_note_event(char const *kind, char const *name);
+		extern char const *hs_runtime_get_executing_thread_name(void);
 
-		input_replay_note_event("cinematic_start");
+		input_replay_note_event("cinematic_start", hs_runtime_get_executing_thread_name());
 	}
 
 	return;
@@ -253,9 +254,10 @@ void cinematic_stop(
 	ai_globals_dialogue_triggers_enabled(TRUE);
 	cinematic_globals->in_progress = FALSE;
 	{
-		extern void input_replay_note_event(char const *kind);
+		extern void input_replay_note_event(char const *kind, char const *name);
+		extern char const *hs_runtime_get_executing_thread_name(void);
 
-		input_replay_note_event("cinematic_end");
+		input_replay_note_event("cinematic_end", hs_runtime_get_executing_thread_name());
 	}
 	rasterizer_screen_effects_initialize_for_new_map();
 	if (global_rasterizer_model_ambient_reflection_tint)

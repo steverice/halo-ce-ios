@@ -1683,11 +1683,11 @@ void input_replay_frame(long width, long height)
 
 /* A cinematic started or ended, a checkpoint was saved or a structure BSP was switched to (cinematics.c, main.c,
 scenario.c): noted in the recorded time for the take's .route and the log. */
-void input_replay_note_event(const char *kind)
+void input_replay_note_event(const char *kind, const char *name)
 {
 	int index;
 	double ticks;
-	char entry[48];
+	char entry[96], script[40];
 	size_t length = strlen(events.text);
 
 	if (!game_time_initialized())
@@ -1703,8 +1703,22 @@ void input_replay_note_event(const char *kind)
 	if (index == EVENT_KINDS)
 		return;
 	events.counts[index]++;
-	snprintf(entry, sizeof(entry), "%s:%d:%ld", kind, events.counts[index], (long)ticks);
-	platform_log("input_replay: event %s %d at recorded tick %ld", kind, events.counts[index], (long)ticks);
+	/* (the script that called, for a cinematic: lowercase letters, digits and underscores; none from the engine) */
+	script[0] = 0;
+	if (name && name[0] != '[')
+	{
+		size_t at;
+
+		for (at = 0; name[at] && at < sizeof(script) - 1; at++)
+			script[at] = (name[at] >= 'A' && name[at] <= 'Z') ? (char)(name[at] + 32) :
+				((name[at] >= 'a' && name[at] <= 'z') || (name[at] >= '0' && name[at] <= '9')) ? name[at] : '_';
+		script[at] = 0;
+	}
+	if (script[0])
+		snprintf(entry, sizeof(entry), "%s:%d:%ld:%s", kind, events.counts[index], (long)ticks, script);
+	else
+		snprintf(entry, sizeof(entry), "%s:%d:%ld", kind, events.counts[index], (long)ticks);
+	platform_log("input_replay: event %s %d at recorded tick %ld %s", kind, events.counts[index], (long)ticks, script);
 	if (length + strlen(entry) + 2 < sizeof(events.text))
 		snprintf(events.text + length, sizeof(events.text) - length, "%s%s", length ? "," : "", entry);
 }

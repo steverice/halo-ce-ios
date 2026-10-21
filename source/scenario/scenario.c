@@ -1157,9 +1157,9 @@ boolean scenario_switch_structure_bsp(
 			/* port: noted in the recorded time (input_replay.c): a switch from a bsp, not a level's first load */
 			if (result && had_old_structure_bsp)
 			{
-				extern void input_replay_note_event(char const *kind);
+				extern void input_replay_note_event(char const *kind, char const *name);
 
-				input_replay_note_event("bsp_switch");
+				input_replay_note_event("bsp_switch", NULL);
 			}
 		}
 

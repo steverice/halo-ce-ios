@@ -263,3 +263,49 @@ def test_catalog_requires_whole_enemy_multiplier_as_integer(tmp_path):
     cases["b30-warthog-fight"]["enemy_multiplier"] = 2
     _write_catalog(tmp_path, cases)
     benchmark_catalog.load_catalog(tmp_path)
+
+
+EVENTS = "events = cinematic_start:1:30:a10_intro,cinematic_end:1:300:a10_intro,cinematic_end:2:15:b30_bridge\n"
+
+
+def test_catalog_anchors_a_window_on_an_event_by_ordinal_or_script(tmp_path):
+    for anchor in ("cinematic_end:2", "cinematic_end:b30_bridge"):
+        _recording(tmp_path, route_extra=f"anchor = {anchor}\n{EVENTS}")
+        cases = _cases(players=2)
+        cases["b30-warthog-fight"]["anchor"] = anchor
+        _write_catalog(tmp_path, cases)
+        loaded = benchmark_catalog.load_catalog(tmp_path)
+        assert next(c for c in loaded if c["id"] == "b30-warthog-fight")["anchor"] == anchor
+
+
+def test_anchor_seconds_resolves_events():
+    assert benchmark_catalog.anchor_seconds("cinematic_end:2", EVENTS[len("events = "):].strip()) == 0.5
+    assert benchmark_catalog.anchor_seconds("cinematic_end:a10_intro", EVENTS[len("events = "):].strip()) == 10.0
+    assert benchmark_catalog.anchor_seconds("checkpoint:1", EVENTS[len("events = "):].strip()) is None
+
+
+@pytest.mark.parametrize("route_extra,anchor", [
+    (EVENTS, "cinematic_end:2"),                         # the route does not carry the anchor
+    ("anchor = cinematic_end:2\n" + EVENTS, None),       # the case does not
+    ("anchor = cinematic_end:3\n" + EVENTS, "cinematic_end:3"),   # the event is not in the route
+    ("anchor = cinematic_end:2\n" + EVENTS, "cinematic_end:1"),   # they differ
+    ("anchor = checkpoint:1\n" + EVENTS, "checkpoint:1"),
+])
+def test_catalog_rejects_unresolvable_or_mismatched_anchor(tmp_path, route_extra, anchor):
+    _recording(tmp_path, route_extra=route_extra)
+    cases = _cases(players=2)
+    if anchor:
+        cases["b30-warthog-fight"]["anchor"] = anchor
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
+@pytest.mark.parametrize("anchor", ["Cinematic_end:2", "cinematic_end:0", "wave:1", "cinematic_end:", 3, None])
+def test_catalog_rejects_malformed_anchor(tmp_path, anchor):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["b30-warthog-fight"]["anchor"] = anchor
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)

@@ -60,6 +60,46 @@ int benchmark_scene_from_route(const char *text, const char *recording, struct b
     route->scene.enemy_multiplier = route_value(text, "enemy_multiplier", number, sizeof(number)) ? atof(number) : 0.0;
     if (route->scene.enemy_multiplier != 0.0 && !(route->scene.enemy_multiplier >= 1.0 && route->scene.enemy_multiplier <= 8.0))
         return 0;
+    /* an anchored window: "anchor = kind:n" names an event the route's "events = kind:n:tick,..." line holds */
+    if (route_value(text, "anchor", route->anchor, sizeof(route->anchor)) && *route->anchor) {
+        char events[2048];
+        const char *at;
+
+        if (!route_value(text, "events", events, sizeof(events))) return 0;
+        /* "kind:n" is the nth event of the kind; "kind:script" the first the named script made. The events line
+           is "kind:n:tick[:script],...". */
+        const char *colon = strchr(route->anchor, ':');
+        size_t kind_length = colon ? (size_t)(colon - route->anchor) : 0;
+
+        if (!colon || !colon[1]) return 0;
+        for (at = events; at && *at; ) {
+            const char *entry_end = strchr(at, ',');
+            size_t entry_length = entry_end ? (size_t)(entry_end - at) : strlen(at);
+            char entry[160], *number, *tick, *script;
+
+            if (entry_length < sizeof(entry)) {
+                memcpy(entry, at, entry_length);
+                entry[entry_length] = 0;
+                number = strchr(entry, ':');
+                tick = number ? strchr(number + 1, ':') : NULL;
+                if (tick) {
+                    *number++ = 0;
+                    *tick++ = 0;
+                    script = strchr(tick, ':');
+                    if (script) *script++ = 0;
+                    if (strlen(entry) == kind_length && !strncmp(entry, route->anchor, kind_length) &&
+                        ((colon[1] >= '0' && colon[1] <= '9') ? !strcmp(number, colon + 1) :
+                            (script && !strcmp(script, colon + 1)))) {
+                        route->scene.anchor_seconds = atof(tick) / 30.0;
+                        route->scene.anchor = route->anchor;
+                        break;
+                    }
+                }
+            }
+            at = entry_end ? entry_end + 1 : NULL;
+        }
+        if (!route->scene.anchor) return 0;
+    }
     route->scene.id = route->id;
     route->scene.map = route->map;
     route->scene.difficulty = route->difficulty;

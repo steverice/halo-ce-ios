@@ -156,6 +156,16 @@ static void test_routes(void) {
     CHECK(benchmark_scene_from_route("map = a10\ndifficulty = hard\n", "x", &route) && route.scene.enemy_multiplier == 0.0);
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nenemy_multiplier = 0.5\n", "x", &route));
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nenemy_multiplier = 9\n", "x", &route));
+    /* an anchored window: by ordinal or by the script's name, from the route's events */
+    CHECK(benchmark_scene_from_route("map = a10\ndifficulty = hard\nanchor = cinematic_end:2\nlead = 5\n"
+        "events = cinematic_start:1:30:a10_intro,cinematic_end:1:300:a10_intro,cinematic_start:2:900,cinematic_end:2:3000:a10_bridge\n",
+        "x", &route) && route.scene.anchor && !strcmp(route.scene.anchor, "cinematic_end:2") && route.scene.anchor_seconds == 100.0);
+    CHECK(benchmark_scene_from_route("map = a10\ndifficulty = hard\nanchor = cinematic_end:a10_bridge\n"
+        "events = cinematic_end:1:300:a10_intro,cinematic_end:2:3000:a10_bridge\n", "x", &route) && route.scene.anchor_seconds == 100.0);
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nanchor = cinematic_end:3\nevents = cinematic_end:1:300\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nanchor = checkpoint:1\nevents = cinematic_end:1:300\n", "x", &route));
+    CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nanchor = cinematic_end:1\n", "x", &route));
+    CHECK(benchmark_scene_from_route("map = a10\ndifficulty = hard\n", "x", &route) && !route.scene.anchor);
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nentered = saved\n", "x", &route));
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nfirst_tick = 4500\n", "x", &route));
     CHECK(!benchmark_scene_from_route("map = a10\ndifficulty = hard\nplayers = 2\n", "x", &route));

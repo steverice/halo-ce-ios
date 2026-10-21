@@ -204,6 +204,14 @@ static int route_valid(char *text, const char *name, char scene[48])
         else if (!strcmp(key, "segments")) ok &= integer(value, 10, 1, SEGMENTS_MAXIMUM, &v);
         else if (!strcmp(key, "pauses") || !strcmp(key, "last_tick")) ok &= integer(value, 10, 0, TICKS_MAXIMUM, &v);
         else if (!strcmp(key, "lead") || !strcmp(key, "window") || !strcmp(key, "seconds")) ok &= real_number(value, 0, 3600, &n);
+        else if (!strcmp(key, "anchor") || !strcmp(key, "events")) {
+            /* an event anchor ("cinematic_end:2") and a take's events ("cinematic_end:2:3412,checkpoint:1:900") */
+            size_t at, limit = !strcmp(key, "anchor") ? 47 : 1599;
+            ok &= strlen(value) <= limit;
+            for (at = 0; ok && value[at]; at++)
+                ok &= (value[at] >= 'a' && value[at] <= 'z') || (value[at] >= '0' && value[at] <= '9') || value[at] == '_' ||
+                    value[at] == ':' || (value[at] == ',' && key[0] == 'e');
+        }
         else if (!strcmp(key, "enemy_multiplier")) ok &= real_number(value, 1, 8, &n);
         else if (!strcmp(key, "random_seed")) ok &= integer(value, 16, 0, UINT32_MAX, &v);
         else if (!strcmp(key, "segment_seed")) {
