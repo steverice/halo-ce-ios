@@ -4701,8 +4701,15 @@ void display_scenario_help(
 		"c:\\halo\\SOURCE\\interface\\ui_widget.c",
 		2407,
 		string_index>=0);
-	/* port: noted in the recorded time (input_replay.c): the dialog stops the game until a button is pressed, so a
-	take needs that press */
+	/* port: shown by no automatic take, replay of one or run with debug.scenario_help off: the dialog stops the game
+	until a button is pressed, which such a take has no press for (input_replay.c) */
+	{
+		extern int input_replay_scenario_help_suppressed(void);
+
+		if (input_replay_scenario_help_suppressed())
+			return;
+	}
+	/* port: noted in the recorded time (input_replay.c) */
 	{
 		extern void input_replay_note_event(char const *kind, char const *name);
 		extern char const *hs_runtime_get_executing_thread_name(void);

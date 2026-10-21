@@ -191,6 +191,8 @@ static struct
 	and normal) */
 	char route_difficulty[16];
 	BOOL difficulty_checked;
+	/* the replayed take's .route says "scenario_help = off": its recording showed no in-game help dialogs */
+	BOOL help_off;
 	/* ticks whose random seeds, as the game had them before the recording's were set, were not the recording's:
 	the tick before drew a different count of random numbers, so the replay had left the take's path there */
 	long global_misses;
@@ -386,6 +388,7 @@ static void route_load(void)
 	double multiplier = 1.0, configured;
 
 	coop_enemies_solo_override(-1.0);
+	replay.help_off = FALSE;
 	configured = coop_enemies_solo_multiplier();
 	if (length < 6 || strcmp(replay.replay_path + length - 6, ".input"))
 		return;
@@ -405,6 +408,8 @@ static void route_load(void)
 			first_tick = tick;
 		else if (sscanf(line, "enemy_multiplier = %lf", &recorded) == 1)
 			multiplier = recorded >= 1.0 ? recorded : 1.0;
+		else if (!strncmp(line, "scenario_help = off", 19))
+			replay.help_off = TRUE;
 		else if (sscanf(line, "difficulty = %15s", replay.route_difficulty) == 1)
 		{
 			/* (checked at the first replayed tick, replay_check_difficulty) */
@@ -717,6 +722,9 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 		utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec, settings);
 	if (coop_enemies_solo_multiplier() > 1.0)
 		take_route_note("enemy_multiplier = %.3f\n", coop_enemies_solo_multiplier());
+	/* (an automatic take shows no in-game help dialogs, which stop the game until a button is pressed, so the take
+	needs no press and its replay shows none: input_replay_scenario_help_suppressed) */
+	take_route_note("scenario_help = off\n");
 	take_route_write("open");
 	platform_log("debug.input_record: take %s: %s on %s from tick %ld%s", take.base, map,
 		difficulty >= 0 && difficulty < 4 ? difficulties[difficulty] : "unknown", tick,
@@ -1728,4 +1736,12 @@ void input_replay_note_event(const char *kind, const char *name)
 	platform_log("input_replay: event %s %d at recorded tick %ld %s", kind, events.counts[index], (long)ticks, script);
 	if (length + strlen(entry) + 2 < sizeof(events.text))
 		snprintf(events.text + length, sizeof(events.text) - length, "%s%s", length ? "," : "", entry);
+}
+
+/* Whether display_scenario_help (ui_widget.c) shows nothing: debug.scenario_help is false, an automatic take is being
+recorded, or the take being replayed was recorded so. The dialog stops the game until a button is pressed, which a
+take that did not show it has no press for. */
+int input_replay_scenario_help_suppressed(void)
+{
+	return !config_boolean("debug.scenario_help") || take.automatic || replay.help_off;
 }

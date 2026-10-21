@@ -1547,6 +1547,17 @@
             "desktop"
           ]
         },
+        "scenario_help": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the in-game help dialogs a level's scripts raise (taking a Scorpion's or a Banshee's seat), which stop the game until a button is pressed. Automatic takes and the replays of takes recorded that way show none whatever this says. False shows none anywhere.",
+          "x-environment": "HALO_SCENARIO_HELP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "profile_controls": {
           "type": "boolean",
           "default": false,

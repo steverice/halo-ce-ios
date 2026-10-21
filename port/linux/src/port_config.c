@@ -1113,6 +1113,10 @@ static const struct config_setting config_settings[] =
 		"(1.0 off; 1.5 gives every second enemy a companion; up to 8). Extra\n"
 		"enemies stand around the squad's starting locations as in online co-op.\n"
 		"A take recorded with it carries the value, and its replay uses that one." },
+	{ "debug.scenario_help", _config_boolean, "true", "HALO_SCENARIO_HELP", _environment_value, _platform_all,
+		"Show the in-game help dialogs a level's scripts raise (taking a Scorpion's or a Banshee's seat), which\n"
+		"stop the game until a button is pressed. Automatic takes and the replays of takes recorded that way show\n"
+		"none whatever this says. False shows none anywhere." },
 	{ "debug.profile_controls", _config_boolean, "false", "HALO_PROFILE_CONTROLS", _environment_value, _platform_all,
 		"A level started without the menu (the console's map_name) takes the controls of the last profile\n"
 		"used: look sensitivity, inverted look, button and stick layout. The profile file is not written.\n"

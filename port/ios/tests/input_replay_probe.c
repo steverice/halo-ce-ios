@@ -49,7 +49,8 @@ static int timed_benchmark;
 static const char *replay_name = "";
 static const char *record_name = "";
 void platform_log(const char *format, ...) { (void)format; }
-int config_boolean(const char *name) { return (!strcmp(name, "debug.benchmark_lip_sync") && lip_sync) ||
+int config_boolean(const char *name) { return !strcmp(name, "debug.scenario_help") ||
+	(!strcmp(name, "debug.benchmark_lip_sync") && lip_sync) ||
 	(!strcmp(name, "debug.benchmark") && timed_benchmark) ||
 	(!strcmp(name, "game.enhanced_animations") && enhanced_animations); }
 long config_integer(const char *name) { (void)name; return 0; }
@@ -554,6 +555,7 @@ static void check_recorded_environment(void)
     input_replay_begin(NULL, 0);
 }
 
+extern int input_replay_scenario_help_suppressed(void);
 static void check_enemy_multiplier_metadata(void)
 {
 	unsigned int action[ACTION_WORDS] = { 0x00000001u, 0x3f800000u, 0, 0, 0, 0, 0, 0 };
@@ -584,6 +586,12 @@ static void check_enemy_multiplier_metadata(void)
 	probe_multiplier = 3.0; record_name = "other";
 	assert(input_replay_begin("./multiplier.input", 0) && probe_override < 0.0);
 	input_replay_begin(NULL, 0); record_name = "";
+	/* in-game help dialogs: shown unless the replayed route says "scenario_help = off" */
+	file = fopen("multiplier.route", "w"); assert(file); fputs("map = a10\n", file); fclose(file);
+	assert(input_replay_begin("./multiplier.input", 0) && !input_replay_scenario_help_suppressed());
+	file = fopen("multiplier.route", "w"); assert(file); fputs("map = a10\nscenario_help = off\n", file); fclose(file);
+	assert(input_replay_begin("./multiplier.input", 0) && input_replay_scenario_help_suppressed());
+	input_replay_begin(NULL, 0); assert(!input_replay_scenario_help_suppressed());
 	/* a route without the line was recorded at 1: the setting does not apply to it */
 	file = fopen("multiplier.route", "w"); assert(file); fputs("map = a10\n", file); fclose(file);
 	assert(input_replay_begin("./multiplier.input", 0) && probe_override == 1.0 && coop_enemies_solo_multiplier() == 1.0);

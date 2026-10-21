@@ -212,6 +212,7 @@ static int route_valid(char *text, const char *name, char scene[48])
                 ok &= (value[at] >= 'a' && value[at] <= 'z') || (value[at] >= '0' && value[at] <= '9') || value[at] == '_' ||
                     value[at] == ':' || (value[at] == ',' && key[0] == 'e');
         }
+        else if (!strcmp(key, "scenario_help")) ok &= !strcmp(value, "off");
         else if (!strcmp(key, "enemy_multiplier")) ok &= real_number(value, 1, 8, &n);
         else if (!strcmp(key, "random_seed")) ok &= integer(value, 16, 0, UINT32_MAX, &v);
         else if (!strcmp(key, "segment_seed")) {
