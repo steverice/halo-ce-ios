@@ -92,6 +92,9 @@ static void distributed_send(const void *message,int kind,short count,word size,
  (void)kind;(void)size;(void)destination;assert(count==1);
  memcpy(&sent,(const char *)message+sizeof(struct distributed_message_header),sizeof(sent));
 }
+static int network_coop_active(void){return 0;}
+static int network_coop_own_friendly_fire(void){return 0;}
+static void network_coop_note_player_friendly_fire(long player,int friendly_fire){(void)player;(void)friendly_fire;}
 __SEND__
 __RELAY_STRUCT__
 __PUT__
@@ -108,7 +111,6 @@ static struct player_action received_host,received_peer;
 static long received_player;
 static int distributed_machine_has_player(long machine,short player){return machine==5&&player==1;}
 static struct player_datum *distributed_player(short player){return player==1?&remote_player:NULL;}
-static int network_coop_active(void){return 0;}
 static void distributed_note_input_actions(short player,const struct player_action *action){(void)player;(void)action;}
 static void network_coop_note_player_structure_bsp(short player,int bsp){(void)player;(void)bsp;}
 static void update_server_handle_distributed_input(long player,long tick,const struct player_action *action,
