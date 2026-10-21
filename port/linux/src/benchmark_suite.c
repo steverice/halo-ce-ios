@@ -456,6 +456,15 @@ void benchmark_graphics_texture_replacement_selected(void)
 		texture_replacement_selections++;
 }
 
+/* the recorded tick a window is opening or closing at: a replay's recorded time, else the tick the suite opened it at
+(a window opens again, with frames starting to count, when a cutscene gives way to the game) */
+static int benchmark_window_tick(void)
+{
+	double ticks = *suite.recording ? input_replay_timeline() : -1.0;
+
+	return ticks >= 0.0 ? (int)ticks : (int)suite.opened_ticks;
+}
+
 static int benchmark_graphics_snapshot_json(int scene, char *json, size_t size)
 {
 	long render_lines, shadow_override, anisotropy_override, shadow_target, sampler_max;
@@ -492,15 +501,6 @@ static int benchmark_graphics_snapshot_json(int scene, char *json, size_t size)
 invalid:
 	json[0] = 0;
 	return 0;
-}
-
-/* the recorded tick a window is opening or closing at: a replay's recorded time, else the tick the suite opened it at
-(a window opens again, with frames starting to count, when a cutscene gives way to the game) */
-static int benchmark_window_tick(void)
-{
-	double ticks = *suite.recording ? input_replay_timeline() : -1.0;
-
-	return ticks >= 0.0 ? (int)ticks : (int)suite.opened_ticks;
 }
 
 static void benchmark_graphics_window(int open, int width, int height)
