@@ -50,3 +50,30 @@ grade = {"80" = "invisible", "40" = "barely", "20" = "obvious"}
 [tv."debug.clutter_lowest_lod"]
 order = ["off", "on"]
 grade = {"on" = "barely"}
+
+# The three simulation switches below are exact: they change how much work a query does and not what it returns
+# (zero global-seed misses against off), so arriving at "on" is invisible. Experimental, default off.
+
+[handheld."debug.collision_type_filter"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[handheld."debug.sphere_query_type_filter"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[handheld."debug.static_light_relink"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[tv."debug.collision_type_filter"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[tv."debug.sphere_query_type_filter"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
+
+[tv."debug.static_light_relink"]
+order = ["off", "on"]
+grade = {"on" = "invisible"}
