@@ -494,12 +494,21 @@ invalid:
 	return 0;
 }
 
+/* the recorded tick a window is opening or closing at: a replay's recorded time, else the tick the suite opened it at
+(a window opens again, with frames starting to count, when a cutscene gives way to the game) */
+static int benchmark_window_tick(void)
+{
+	double ticks = *suite.recording ? input_replay_timeline() : -1.0;
+
+	return ticks >= 0.0 ? (int)ticks : (int)suite.opened_ticks;
+}
+
 static void benchmark_graphics_window(int open, int width, int height)
 {
 	int scene = halo_scene_class(), external = host_external_active();
 	unsigned long revision = config_changes();
 	int publish = open ? !graphics_window_open || scene != graphics_scene || external != graphics_external || revision != graphics_revision : graphics_window_open;
-	if (open && !graphics_window_open) host_benchmark_window(open,width,height,(int)suite.opened_ticks);
+	if (open && !graphics_window_open) host_benchmark_window(open,width,height,benchmark_window_tick());
 	if (publish)
 	{
 		char json[CONFIG_GRAPHICS_MAXIMUM_BYTES];
@@ -507,7 +516,7 @@ static void benchmark_graphics_window(int open, int width, int height)
 		host_benchmark_graphics(json);
 		graphics_scene = scene; graphics_external = external; graphics_revision = config_changes();
 	}
-	if (!open) host_benchmark_window(open,width,height,(int)suite.opened_ticks);
+	if (!open) host_benchmark_window(open,width,height,benchmark_window_tick());
 	graphics_window_open = open;
 }
 

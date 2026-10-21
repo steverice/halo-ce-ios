@@ -1325,7 +1325,8 @@ void host_benchmark_window(int open, int width, int height, int opened_tick) {
         if (window_started_at <= 0) window_started_at = CFAbsoluteTimeGetCurrent();
         window_width = width;
         window_height = height;
-        metrics.window_opened_tick = opened_tick;
+        /* (the tick of the first frame counted: a window that opens again, as a cutscene gives way to the game, keeps it) */
+        if (metrics.frames == 0) metrics.window_opened_tick = opened_tick;
         if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz > 0.0 ? refresh_hertz : screen_hertz;
     }
     os_unfair_lock_unlock(&lock);

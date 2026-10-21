@@ -129,7 +129,8 @@ void coop_enemies_solo_override(double multiplier) { (void)multiplier; }
 int input_replay_ended(void) { return 0; }
 long input_replay_segment(void) { return 0; }
 double input_replay_length_ticks(void) { return 9000; }
-double input_replay_timeline(void) { timeline_reads++; return 0; }
+static double timeline_value;
+double input_replay_timeline(void) { timeline_reads++; return timeline_value; }
 void benchmark_scenario_load(const char *map, const char *difficulty) {
     (void)difficulty; loads++; unsafe_loads += worker_active != 0; at_menu = !map || !*map;
 }
@@ -649,6 +650,11 @@ int main(void) {
     suite.opened_ticks = 3750; graphics_window_open = 0;
     benchmark_graphics_window(1, 1280, 720);
     CHECK(window_open_tick_count == 2 && window_open_ticks[1] == 3750);
+    /* a recording's window (re)opens at the recorded time now, as a cutscene gives way to the game */
+    strcpy(suite.recording, "probe"); timeline_value = 777.9; graphics_window_open = 0;
+    benchmark_graphics_window(1, 1280, 720);
+    CHECK(window_open_tick_count == 3 && window_open_ticks[2] == 777);
+    timeline_value = 0;
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
     assert(!rmdir("benchmark"));
