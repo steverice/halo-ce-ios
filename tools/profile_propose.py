@@ -18,6 +18,10 @@ GRADE_COST = {"invisible": 0, "barely": 1, "obvious": 3}
 FLOOR_LINES = 540
 LOWER = {120: 60, 90: 60, 60: 30}
 DEFAULT_ASPECT = 16 / 9
+# Knobs that only cost GPU time, and knobs that only cost CPU time. A fitted factor on the other side is
+# measurement noise, so a cut is never taken to relieve the other side.
+GPU_SIDE = {"display.shadow_map_size", "display.anisotropic_filtering", cost.RESOLUTION_KEY, "display.mirror_resolution"}
+CPU_SIDE = {"display.model_lod"}
 
 
 @dataclass
@@ -102,7 +106,7 @@ def _greedy(fit, device, current, ladders, hz, allowed=("invisible", "barely", "
         for knob, (order, grades) in ladders.items():
             value = settings.get(knob)
             following = _next_value(knob, value, order) if value is not None else None
-            if following is None:
+            if following is None or (side == "cpu" and knob in GPU_SIDE) or (side == "gpu" and knob in CPU_SIDE):
                 continue
             grade = _grade(following, order, grades)
             if grade not in allowed:

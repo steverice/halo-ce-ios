@@ -98,3 +98,23 @@ def test_markdown_table():
     assert "| Setting | Current | Proposed | CPU effect | GPU effect |" in text
     assert f"| `{ANISO}` | 16 | 8 | none | -10% |" in text
     assert "FPS before" in text and "after" in text
+
+
+def test_cpu_bound_ignores_noise_on_gpu_side_knobs():
+    noisy = {SHADOW: {"256": (0.8, 1.0)}, ANISO: {"8": (0.9, 1.0)}, LOD: {"auto": (0.5, 1.0)}}
+    result = run(fit(sim=6.0, render=20.0, gpu_per_mp=1.0, knobs=noisy))
+    assert result.bound == "cpu" and SHADOW not in result.settings and ANISO not in result.settings
+    assert LOD in result.settings
+
+
+def test_lower_target_needs_no_change_when_the_device_already_meets_it():
+    # 60 FPS is out of reach (19 ms of CPU) but the current settings fit 30 FPS (33 ms)
+    result = run(fit(sim=2.0, render=17.0, gpu_per_mp=1.0, knobs={SHADOW: GPU_KNOBS[SHADOW]}))
+    assert result.kind == "change" and result.target_hz == 30 and result.settings == {}
+
+
+def test_lower_target_still_cuts_to_reach_it():
+    # 60 FPS is out of reach and so is 30 FPS at the current settings (about 38 ms of GPU)
+    result = run(fit(gpu_per_mp=17.0, knobs=GPU_KNOBS))
+    assert result.kind == "change" and result.target_hz == 30 and result.settings
+    assert result.predicted_fps >= 29.9
