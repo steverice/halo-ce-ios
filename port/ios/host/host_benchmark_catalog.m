@@ -188,6 +188,12 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, struct benchmark_kn
         } else if ([name isEqual:@"display.render_scale"]) {
             if (!real_number(value, 0.25, 1.0, &real)) return NO;
             knobs->mask |= BENCHMARK_KNOB_RENDER_SCALE; knobs->render_scale = real;
+        } else if ([name isEqual:@"display.clutter_distance"]) {
+            if (!real_number(value, 0.0, 200.0, &real)) return NO;
+            knobs->mask |= BENCHMARK_KNOB_CLUTTER_DISTANCE; knobs->clutter_distance = real;
+        } else if ([name isEqual:@"debug.clutter_lowest_lod"]) {
+            if (!boolean) return NO;
+            knobs->mask |= BENCHMARK_KNOB_CLUTTER_LOD; knobs->clutter_lowest_lod = [value boolValue];
         } else return NO;
     }
     return YES;

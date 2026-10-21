@@ -646,7 +646,11 @@ static void record_applied_settings(NSMutableDictionary *settings, const struct 
     settings[@"display.mirror_resolution"] = mask & BENCHMARK_KNOB_MIRROR ? (knobs->mirror_full ? @"full" : @"half") :
         configured_text("display.mirror_resolution", "half");
     settings[@"display.render_scale"] = mask & BENCHMARK_KNOB_RENDER_SCALE ?
-        [NSString stringWithFormat:@"%g", knobs->render_scale] : configured_text("display.render_scale", "1");
+        [NSString stringWithFormat:@"%g", knobs->render_scale] : [NSString stringWithFormat:@"%g", host_config_real("display.render_scale", 1.0)];
+    settings[@"display.clutter_distance"] = [NSString stringWithFormat:@"%g", mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ?
+        knobs->clutter_distance : host_config_real("display.clutter_distance", 0.0)];
+    settings[@"debug.clutter_lowest_lod"] = mask & BENCHMARK_KNOB_CLUTTER_LOD ? (knobs->clutter_lowest_lod ? @"on" : @"off") :
+        [configured_text("debug.clutter_lowest_lod", "false") isEqual:@"true"] ? @"on" : @"off";
 }
 
 /* one finished run as a JSON object in its own file; the report is these put together */
@@ -1265,7 +1269,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
         "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d knob_aa=%d "
-        "knob_effect=%d knob_mirror=%d knob_scale=%.3f", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        "knob_effect=%d knob_mirror=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds, scene->simulation ? scene->simulation : "",
@@ -1277,7 +1281,9 @@ int host_benchmark_next(char *text, unsigned int size) {
         /* (-1 for a setting the case leaves to the configuration) */
         knobs.mask & BENCHMARK_KNOB_ANTI_ALIASING ? knobs.anti_aliasing : -1,
         knobs.mask & BENCHMARK_KNOB_EFFECT ? knobs.effect_full : -1, knobs.mask & BENCHMARK_KNOB_MIRROR ? knobs.mirror_full : -1,
-        knobs.mask & BENCHMARK_KNOB_RENDER_SCALE ? knobs.render_scale : 0.0);
+        knobs.mask & BENCHMARK_KNOB_RENDER_SCALE ? knobs.render_scale : 0.0,
+        knobs.mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ? knobs.clutter_distance : -1.0,
+        knobs.mask & BENCHMARK_KNOB_CLUTTER_LOD ? knobs.clutter_lowest_lod : -1);
     atomic_store(&run_ticks, 0);
     atomic_store(&window_ticks, 0);
     run_started_at = CFAbsoluteTimeGetCurrent();

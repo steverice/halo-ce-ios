@@ -51,6 +51,9 @@ CASE_SETTINGS = {
     "display.effect_resolution": ("boolean",),
     "display.mirror_resolution": ("text", ("half", "full")),
     "display.render_scale": ("number", 0.25, 1.0),
+    # (0: no limit)
+    "display.clutter_distance": ("number", 0.0, 200.0),
+    "debug.clutter_lowest_lod": ("boolean",),
 }
 
 

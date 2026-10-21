@@ -1894,6 +1894,27 @@ void halo_benchmark_knobs(int anti_aliasing, int effect_full, int mirror_full, d
 	knob_release_frame = device.frame + 120;
 }
 
+/* A cost run's clutter settings (benchmark_suite.c), read each frame by source/render/render_objects.c through the
+two getters below; -1 leaves a setting as configured */
+static double benchmark_clutter_distance = -1.0;
+static int benchmark_clutter_lowest_lod = -1;
+
+void halo_benchmark_clutter(double distance, int lowest_lod)
+{
+	benchmark_clutter_distance = distance;
+	benchmark_clutter_lowest_lod = lowest_lod;
+}
+
+double halo_benchmark_clutter_distance(void)
+{
+	return benchmark_clutter_distance;
+}
+
+int halo_benchmark_clutter_lowest_lod(void)
+{
+	return benchmark_clutter_lowest_lod;
+}
+
 /* the chord's label for two seconds: in a game the HUD's message line, elsewhere the debug text */
 void halo_knob_message(const char *text)
 {

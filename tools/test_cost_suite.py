@@ -62,7 +62,7 @@ def test_a_knob_added_to_the_ladder_is_data_only():
 
 def test_ladder_knob_the_catalog_cannot_carry_is_refused():
     with pytest.raises(ValueError, match="not a setting"):
-        suites.bounds_suite(WORKLOADS, {"display.clutter_distance": ["off", "80"]})
+        suites.bounds_suite(WORKLOADS, {"display.future_knob": ["off", "80"]})
 
 
 def test_ofat_one_knob_per_run():
@@ -155,3 +155,10 @@ def test_gpu_times_from_sheet(tmp_path):
             {"scene": "mp", "kind": "multiplayer", "status": "ok", "gpu_ms_mean": 9.0}]
     path.write_text("\n".join(json.dumps(row) for row in rows))
     assert suites.gpu_times_from_sheet(path) == {"c-a": 5.0}
+
+
+def test_clutter_knobs_are_in_the_bounds_runs():
+    ladder = {"display.clutter_distance": ["0", "80", "40", "20"], "debug.clutter_lowest_lod": ["off", "on"]}
+    suite = suites.bounds_suite(WORKLOADS[:1], ladder)
+    assert suite.runs[0].settings == {"display.clutter_distance": 20.0, "debug.clutter_lowest_lod": True}
+    assert suite.runs[1].settings == {"display.clutter_distance": 0.0, "debug.clutter_lowest_lod": False}

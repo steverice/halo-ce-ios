@@ -341,7 +341,8 @@ def test_catalog_accepts_display_settings(tmp_path):
     cases["mp-chillout-proof"]["settings"] = {
         "display.render_height": 540, "display.anisotropic_filtering": 4, "display.shadow_map_size": 256,
         "display.model_lod": "auto", "display.anti_aliasing": "smaa", "display.effect_resolution": False,
-        "display.mirror_resolution": "full", "display.render_scale": 0.67}
+        "display.mirror_resolution": "full", "display.render_scale": 0.67,
+        "display.clutter_distance": 40, "debug.clutter_lowest_lod": True}
     _write_catalog(tmp_path, cases)
     loaded = {case["id"]: case for case in benchmark_catalog.load_catalog(tmp_path)}
     assert loaded["mp-chillout-proof"]["settings"]["display.render_height"] == 540
@@ -350,7 +351,8 @@ def test_catalog_accepts_display_settings(tmp_path):
 @pytest.mark.parametrize("settings", [
     {"display.render_height": -1}, {"display.render_height": True}, {"display.anisotropic_filtering": 3},
     {"display.anti_aliasing": "taa"}, {"display.render_scale": 1.5},
-    {"display.compressed_textures": False}, {"display.model_lod": "high"}])
+    {"display.compressed_textures": False}, {"display.clutter_distance": 201}, {"display.clutter_distance": -1},
+    {"debug.clutter_lowest_lod": "on"}, {"display.model_lod": "high"}])
 def test_catalog_rejects_unsupported_display_settings(tmp_path, settings):
     _recording(tmp_path)
     cases = _cases(players=2)
