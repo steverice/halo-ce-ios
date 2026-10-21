@@ -31,6 +31,7 @@ so the audio callback is handed to a thread that has one.
 #include "ios_host.h"
 #if HALO_NATIVE_MAC
 #include "host_macos_event.h"
+#include "host_macos.h"
 #endif
 #include "host_join_link.h"
 #include "host_external.h"
@@ -210,6 +211,15 @@ void host_sdl_pin_window_pixels(int width, int height)
 {
 	pinned_width = width;
 	pinned_height = height;
+}
+
+int host_sdl_display_max_fps(void)
+{
+#if HALO_NATIVE_MAC
+	return (int)host_macos_refresh_rate();
+#else
+	return 0;
+#endif
 }
 
 void host_sdl_window_size_in_pixels(uint32_t window, int *width, int *height)

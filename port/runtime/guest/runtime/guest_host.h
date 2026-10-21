@@ -119,6 +119,8 @@ long long host_sdl_ticks(void);
 long long host_sdl_thread_id(void);
 unsigned int host_sdl_create_window(const char *title, int width, int height, long long flags);
 void host_sdl_window_size_in_pixels(unsigned int window, int *width, int *height);
+/* Current native Mac display maximum; 0 keeps other hosts' menu behavior. */
+int host_sdl_display_max_fps(void);
 int host_sdl_set_relative_mouse(unsigned int window, int enabled);
 int host_sdl_gl_set_attribute(int attribute, int value);
 unsigned int host_sdl_gl_create_context(unsigned int window);

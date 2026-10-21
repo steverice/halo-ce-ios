@@ -3860,6 +3860,11 @@ static _Atomic unsigned long refresh_count;
 @implementation PacingClock
 - (void)refresh:(CADisplayLink *)link
 {
+#if HALO_NATIVE_MAC
+    float rate = (float)host_macos_refresh_rate();
+    if (link.preferredFrameRateRange.maximum != rate)
+        link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80, rate), rate, rate);
+#endif
 	atomic_fetch_add(&refresh_count, 1);
 	os_unfair_lock_lock(&pacing_lock);
 	refresh_period = link.targetTimestamp - link.timestamp;
@@ -4665,6 +4670,11 @@ API_AVAILABLE(ios(17.0), tvos(17.0), macCatalyst(17.0), macos(14.0))
 @implementation SystemFrames
 - (void)metalDisplayLink:(CAMetalDisplayLink *)link needsUpdate:(CAMetalDisplayLinkUpdate *)update
 {
+#if HALO_NATIVE_MAC
+    float rate = (float)host_macos_refresh_rate();
+    if (link.preferredFrameRateRange.maximum != rate)
+        link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80, rate), rate, rate);
+#endif
 	void *stale = atomic_exchange(&system_frames.ready, (__bridge_retained void *)update.drawable);
 
 	(void)link;
@@ -4705,8 +4715,8 @@ static void system_frames_start(void)
             float rate=120;
 #else
             float rate=(float)((__bridge UIScreen *)host_external_screen()).maximumFramesPerSecond;
-            if(rate<60)rate=60;
 #endif
+            if(rate<60)rate=60;
 			link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80,rate), rate, rate);
 			[link addToRunLoop:NSRunLoop.currentRunLoop forMode:NSDefaultRunLoopMode];
             system_frames_link=link;

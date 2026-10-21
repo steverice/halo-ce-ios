@@ -535,6 +535,16 @@ static NSString *model_identifier(void) {
     return @(text);
 }
 
+static NSString *host_name(void) {
+#if HALO_NATIVE_MAC
+    return @"appkit";
+#elif TARGET_OS_MACCATALYST
+    return @"catalyst";
+#else
+    return @"uikit";
+#endif
+}
+
 static NSString *platform_name(void) {
 #if TARGET_OS_TV
     return @"tvos";
@@ -582,7 +592,7 @@ static NSString *report_header(void) {
     (void)chip_size;
 #endif
     return [NSString stringWithFormat:@"\"format\":%d,\"code\":%@,\"suite\":%d,\"mode\":\"%s\",\"started\":\"%@\","
-        "\"device\":{\"model\":%@,\"chip\":%@,\"platform\":\"%@\",\"os\":\"%ld.%ld.%ld\",\"os_build\":%@,"
+        "\"device\":{\"model\":%@,\"chip\":%@,\"platform\":\"%@\",\"host\":\"%@\",\"os\":\"%ld.%ld.%ld\",\"os_build\":%@,"
         "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
         "\"external_modes_complete\":%s,\"output\":%@,\"output_reports\":%@,\"requested_output\":%@,\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
@@ -591,7 +601,7 @@ static NSString *report_header(void) {
         "\"benchmark_catalog\":{\"status\":%@,\"sha256\":%@,\"note\":%@},\"catalog_signed\":%s,\"flags\":%@",
         REPORT_FORMAT, json_string(@(report_code)), BENCHMARK_SUITE_VERSION, benchmark_mode_name(plan.mode),
         [minutes stringFromDate:started ?: NSDate.date],
-        json_string(model_identifier()), json_string(@(chip)), platform_name(), (long)version.majorVersion,
+        json_string(model_identifier()), json_string(@(chip)), platform_name(), host_name(), (long)version.majorVersion,
         (long)version.minorVersion, (long)version.patchVersion,
         /* "Version 26.6 (Build 23M5311a)": the build's name alone */
         json_string([[process.operatingSystemVersionString componentsSeparatedByString:@"Build "].lastObject
@@ -799,8 +809,7 @@ static double screen_rate(void) {
 static void screen_size(double *width, double *height) {
 #if HALO_NATIVE_MAC
     int w=0,h=0;
-    SDL_Window *window=host_sdl_window();
-    if(window)SDL_GetWindowSizeInPixels(window,&w,&h);
+    host_macos_screen_size(&w, &h);
     *width=w;*height=h;
 #elif TARGET_OS_VISION
     *width = *height = 0.0;
