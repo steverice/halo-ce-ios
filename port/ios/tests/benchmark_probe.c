@@ -122,6 +122,7 @@ static void test_metrics_split(void) {
     CHECK(json && strstr(json, "\"translation_cpu_ms\":{\"mean\":3.00,"));
     /* the per-frame series of the frames that knew their split, and the tick the window opened at */
     CHECK(json && strstr(json, "\"frame_simulation\":\"") && strstr(json, "\"frame_render\":\""));
+    CHECK(json && strstr(json, "\"frame_ticks\":\""));
     CHECK(json && strstr(json, "\"window_opened_tick\":-1,"));
     free(json);
     metrics.window_opened_tick = 3750;

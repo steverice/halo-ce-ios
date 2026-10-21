@@ -11,8 +11,13 @@ def encode(values):
     return base64.b64encode(struct.pack("<%dH" % len(values), *[int(v * 10) for v in values])).decode()
 
 
+def ticks_plus(values):
+    return base64.b64encode(struct.pack("<%dH" % len(values), *values)).decode()
+
+
 def report(opened=900, seconds=4.0, frames=8):
-    return {"runs": [{"window_opened_tick": opened, "seconds": seconds,
+    # each frame ran 15 ticks, half a second of the take
+    return {"runs": [{"window_opened_tick": opened, "seconds": seconds, "frame_ticks": ticks_plus([16] * frames),
                       "frame_cpu": encode([1.0] * frames), "frame_gpu": encode([5.0] * 4 + [9.0] * 4),
                       "frame_simulation": encode([2.0] * frames), "frame_render": encode([3.0] * frames)}]}
 
@@ -43,3 +48,12 @@ def test_a_report_without_the_split_series_still_gives_gpu():
     del plain["runs"][0]["frame_simulation"], plain["runs"][0]["frame_render"]
     rows = frame_series.series(plain)
     assert rows and rows[0][1] == 0.0 and rows[0][2] == 5.0
+
+
+def test_frames_are_placed_by_their_ticks_so_frameless_stretches_leave_gaps():
+    # three frames of 30 ticks, then a skip of 300 ticks (no frames) is not in the series; the next frame's
+    # tick count places it after the frames before it only
+    plain = report(opened=0, frames=8)
+    plain["runs"][0]["frame_ticks"] = ticks_plus([31, 31, 31, 301, 31, 31, 31, 31])
+    rows = frame_series.series(plain)
+    assert [row[0] for row in rows] == [0, 1, 2, 3, 13, 14, 15, 16]

@@ -23,6 +23,8 @@ enum {
 struct benchmark_metrics {
     /* per frame, in tenths of a millisecond (65535 = 6.5 s or longer) */
     uint16_t *interval, *cpu, *gpu;
+    /* per frame, the game ticks it ran plus one, or 0 for a frame that did not know its split */
+    uint16_t *tick_plus;
     size_t frames, capacity;
     /* the frames that knew how their CPU time split: the simulation's ticks, the render and the part of the render
        spent in the D3D8 device translating and encoding for the GPU, in tenths of a millisecond, and how many ticks

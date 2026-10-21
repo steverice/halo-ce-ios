@@ -4,7 +4,8 @@ A replay of a whole take through the benchmark suite writes, for every frame of 
 time, the GPU time and the interval (frame_cpu, frame_gpu, frame_interval), and for the frames that knew their split
 the simulation's and the render's CPU time (frame_simulation, frame_render), each as base64 of little-endian
 uint16 in tenths of a millisecond. The run also records window_opened_tick, the recorded tick at which the window
-opened, so the frames can be placed on the take's own time exactly.
+opened and every frame's tick count (frame_ticks, ticks plus one, 0 where unknown), so the frames are placed on the
+take's own time exactly, through skips and loads that draw no frames.
 
     python tools/frame_series.py REPORT.json OUT.csv
 
@@ -32,23 +33,25 @@ def series(report):
             report = json.load(file)
     run = report["runs"][0]
     opened = run.get("window_opened_tick")
-    if opened is None or opened < 0:
-        raise ValueError("the run does not record the tick its window opened at")
+    if opened is None or opened < 0 or "frame_ticks" not in run:
+        raise ValueError("the run does not record the tick its window opened at and the ticks of its frames")
     render_cpu, gpu = decode(run, "frame_cpu"), decode(run, "frame_gpu")
-    frames = min(len(render_cpu), len(gpu))
+    raw = base64.b64decode(run["frame_ticks"])
+    ticks = struct.unpack("<%dH" % (len(raw) // 2), raw)
     simulation = decode(run, "frame_simulation") if "frame_simulation" in run else []
     render = decode(run, "frame_render") if "frame_render" in run else []
-    split = min(len(simulation), len(render))
-    seconds = run.get("seconds") or frames / 120.0
-    start = opened / TICKS_PER_SECOND
-    cells = {}
+    frames = min(len(render_cpu), len(gpu), len(ticks))
+    cells, tick, split = {}, float(opened), 0
     for index in range(frames):
-        second = int(start + index / frames * seconds)
-        cells.setdefault(second, [[], [], []])[1].append(gpu[index])
-        cells[second][2].append(render_cpu[index])
-    for index in range(split):
-        second = int(start + index / split * seconds)
-        cells.setdefault(second, [[], [], []])[0].append(simulation[index] + render[index])
+        second = int(tick / TICKS_PER_SECOND)
+        cell = cells.setdefault(second, [[], [], []])
+        cell[1].append(gpu[index])
+        cell[2].append(render_cpu[index])
+        if ticks[index] > 0:
+            if split < min(len(simulation), len(render)):
+                cell[0].append(simulation[split] + render[split])
+            split += 1
+            tick += ticks[index] - 1
     rows = []
     for second in sorted(cells):
         cpu, gpu_values, render_values = cells[second]

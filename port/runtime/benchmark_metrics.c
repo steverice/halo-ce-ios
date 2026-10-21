@@ -8,7 +8,7 @@
 #include <string.h>
 
 void benchmark_metrics_free(struct benchmark_metrics *metrics) {
-    free(metrics->interval); free(metrics->cpu); free(metrics->gpu);
+    free(metrics->interval); free(metrics->cpu); free(metrics->gpu); free(metrics->tick_plus);
     free(metrics->simulation); free(metrics->render); free(metrics->translation);
     memset(metrics, 0, sizeof(*metrics));
 }
@@ -16,12 +16,14 @@ void benchmark_metrics_free(struct benchmark_metrics *metrics) {
 void benchmark_metrics_reset(struct benchmark_metrics *metrics, double refresh_hertz) {
     uint16_t *interval = metrics->interval, *cpu = metrics->cpu, *gpu = metrics->gpu;
     uint16_t *simulation = metrics->simulation, *render = metrics->render, *translation = metrics->translation;
+    uint16_t *tick_plus = metrics->tick_plus;
     size_t capacity = metrics->capacity, split_capacity = metrics->split_capacity;
 
     memset(metrics, 0, sizeof(*metrics));
     metrics->interval = interval; metrics->cpu = cpu; metrics->gpu = gpu; metrics->capacity = capacity;
     metrics->simulation = simulation; metrics->render = render; metrics->translation = translation;
     metrics->split_capacity = split_capacity;
+    metrics->tick_plus = tick_plus;
     metrics->window_opened_tick = -1;
     metrics->refresh_hertz = refresh_hertz;
     metrics->footprint_first = metrics->footprint_last = metrics->footprint_peak = metrics->left_least = -1;
@@ -62,11 +64,13 @@ void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double int
         uint16_t *a = realloc(metrics->interval, capacity * sizeof(*a));
         uint16_t *b = a ? realloc(metrics->cpu, capacity * sizeof(*b)) : NULL;
         uint16_t *c = b ? realloc(metrics->gpu, capacity * sizeof(*c)) : NULL;
+        uint16_t *d = c ? realloc(metrics->tick_plus, capacity * sizeof(*d)) : NULL;
 
         if (a) metrics->interval = a;
         if (b) metrics->cpu = b;
-        if (!c) return;   /* out of memory: the run keeps the frames it has */
-        metrics->gpu = c;
+        if (c) metrics->gpu = c;
+        if (!d) return;   /* out of memory: the run keeps the frames it has */
+        metrics->tick_plus = d;
         metrics->capacity = capacity;
     }
     if (interval >= BENCHMARK_STALL_MILLISECONDS) {
@@ -79,6 +83,7 @@ void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double int
     metrics->interval[metrics->frames] = tenths(interval);
     metrics->cpu[metrics->frames] = tenths(cpu);
     metrics->gpu[metrics->frames] = tenths(gpu);
+    metrics->tick_plus[metrics->frames] = simulation >= 0.0 ? (uint16_t)(ticks < 0 ? 1 : ticks > 65534 ? 65535 : ticks + 1) : 0;
     metrics->frames++;
     if (interval > 0.0) metrics->seconds += interval / 1000.0;
 }
@@ -288,7 +293,10 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
     append_frames(&text, "frame_cpu", metrics->cpu, metrics->frames);
     append(&text, ",");
     append_frames(&text, "frame_gpu", metrics->gpu, metrics->frames);
-    /* the simulation's and the render's CPU time of the frames that knew their split (split_frames of them) */
+    /* the simulation's and the render's CPU time of the frames that knew their split (split_frames of them), and for
+       every frame the ticks it ran plus one (0: unknown), which places the frames on the replay's recorded time */
+    append(&text, ",");
+    append_frames(&text, "frame_ticks", metrics->tick_plus, metrics->frames);
     if (metrics->split_frames) {
         append(&text, ",");
         append_frames(&text, "frame_simulation", metrics->simulation, metrics->split_frames);
