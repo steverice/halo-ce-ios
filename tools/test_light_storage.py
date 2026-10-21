@@ -48,6 +48,7 @@ def run(cc):
 typedef union real_point3d real_point3d;
 struct location;
 struct data_array {{ unsigned long signature; }};
+typedef unsigned char boolean;
 #include "{header}"
 typedef char require_32_bit_abi[sizeof(void *) == 4 && sizeof(long) == 4 ? 1 : -1];
 '''
