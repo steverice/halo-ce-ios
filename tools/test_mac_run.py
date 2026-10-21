@@ -368,6 +368,18 @@ def test_compare_across_backends_checks_shader_inputs_and_names_not_sources(tmp_
     assert any("ps_2 only in" in p for p in problems)
 
 
+def test_compare_ignores_immediate_draw_counts_only_when_asked(tmp_path):
+    log = "frame 60: 341 draws, 51 immediate, 3 clears, 8 target changes, 7 GL calls\n"
+    a = _result(tmp_path / "a", {"ps_1.metal": "m"}, {}, log)
+    b = _result(tmp_path / "b", {"ps_1.metal": "m"}, {}, log.replace("51 immediate", "47 immediate"))
+    assert any("gpu_stats differ" in p for p in mac_run.compare(a, b))
+    assert mac_run.compare(a, b, ignore_immediate_draws=True) == []
+    (b / "runner/shaders/ps_1.metal").write_text("other")
+    assert any("ps_1.metal differs" in p for p in mac_run.compare(a, b, ignore_immediate_draws=True))
+    c = _result(tmp_path / "c", {"ps_1.metal": "m"}, {}, log.replace("341 draws", "340 draws"))
+    assert any("gpu_stats differ" in p for p in mac_run.compare(a, c, ignore_immediate_draws=True))
+
+
 def test_compare_across_backends_requires_matching_capabilities(tmp_path):
     gl = _result(tmp_path / "gl", {}, {}, "GPU capabilities: copy image 0, anisotropy 1\n")
     metal = _result(tmp_path / "metal", {}, {}, "GPU capabilities: copy image 0, anisotropy 0\n")

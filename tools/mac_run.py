@@ -41,6 +41,8 @@ from pathlib import Path
 STATS = re.compile(r"frame \d+: (.*)$")
 # the GL call total at the end of a debug.gpu_stats summary
 GL_CALLS = re.compile(r",? \d+ GL calls$")
+# the immediate-draw count in a summary, which debug.immediate_merge lowers on purpose
+IMMEDIATE_DRAWS = re.compile(r"\d+ immediate, ")
 # what a backend reports it can do (gpu_gl.c, gpu_metal.m)
 CAPABILITIES = re.compile(r"GPU capabilities: (.*)$")
 # the capabilities Metal has and Apple's OpenGL ES lacks, so a GL run and a Metal run report them differently:
@@ -541,7 +543,7 @@ def compare_inputs(a, b):
 
 
 def compare(a, b, tolerance=0, ignore_gl_calls=False, channel_tolerance=0, fraction=0.0, across_backends=False,
-            region=None):
+            region=None, ignore_immediate_draws=False):
     """the differences between two result folders (empty: they match). A pixel
     differs when a channel differs by more than channel_tolerance, and a frame
     matches when no more than tolerance pixels, or fraction of its pixels,
@@ -596,6 +598,8 @@ def compare(a, b, tolerance=0, ignore_gl_calls=False, channel_tolerance=0, fract
             stats_a, stats_b = ([GL_CALLS.sub("", line) for line in lines] for lines in (stats_a, stats_b))
         if across_backends:
             stats_a, stats_b = ([UPLOAD_BYTES.sub("", line) for line in lines] for lines in (stats_a, stats_b))
+        if ignore_immediate_draws:
+            stats_a, stats_b = ([IMMEDIATE_DRAWS.sub("", line) for line in lines] for lines in (stats_a, stats_b))
         if stats_a != stats_b:
             problems.append(f"gpu_stats differ:\n  {a}: {stats_a}\n  {b}: {stats_b}")
     return problems
@@ -1443,6 +1447,9 @@ def main():
                                 help="fraction of a frame's pixels that may differ (overrides a smaller --tolerance)")
     compare_parser.add_argument("--ignore-gl-calls", action="store_true",
                                 help="compare gpu_stats without the GL call totals")
+    compare_parser.add_argument("--ignore-immediate-draws", action="store_true",
+                                help="compare gpu_stats without the immediate-draw counts (debug.immediate_merge lowers them "
+                                     "on purpose; everything else, screenshots and shaders included, is compared)")
     compare_parser.add_argument("--across-backends", action="store_true",
                                 help="a GL run against a Metal run: shader inputs, not sources; capabilities; no GL calls")
     compare_parser.add_argument("--region", type=parse_region, metavar="X0,Y0,X1,Y1",
@@ -1461,7 +1468,7 @@ def main():
         sys.exit(1 if problems else 0)
     else:
         problems = compare(args.a, args.b, args.tolerance, args.ignore_gl_calls, args.channel_tolerance,
-                           args.fraction, args.across_backends, args.region)
+                           args.fraction, args.across_backends, args.region, args.ignore_immediate_draws)
         print("\n".join(problems) if problems else "match")
         sys.exit(1 if problems else 0)
 
