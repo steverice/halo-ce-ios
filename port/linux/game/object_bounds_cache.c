@@ -44,6 +44,13 @@ void object_bounds_cache_invalidate(
 	object_bounds_epoch++;
 }
 
+/* which game state the cache belongs to; the unmoved-light record (object_lights.c) shares it */
+long object_bounds_cache_epoch(
+	void)
+{
+	return object_bounds_epoch;
+}
+
 /* whether the object's bounding sphere is known to be out of the reach of
 the point (collision's own test on the copy); FALSE when it is not known */
 boolean object_bounds_cache_out_of_reach(

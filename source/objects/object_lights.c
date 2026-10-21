@@ -1456,10 +1456,31 @@ void light_particle(
 	return;
 }
 
+/* port: object_bounds_cache.c's and sim_experiments.c's (debug.static_light_relink is experimental, off by default) */
+long object_bounds_cache_epoch(void);
+boolean sim_experiment_enabled(short experiment);
+#define SIM_EXPERIMENT_STATIC_LIGHT_RELINK 2
+
+/* port: what light_relink_to_map last linked a light with, kept outside the game state (whose layout the
+saved games share). A record counts only for its light, its cluster reference and the game state it was
+made in, and any other disconnect drops it. */
+struct light_link_record
+{
+	long light_index;
+	long epoch;
+	long cluster_reference;
+	real_point3d position;
+	real radius;
+	struct location location;
+};
+
+static struct light_link_record light_link_records[MAXIMUM_LIGHTS_PER_MAP];
+
 void light_disconnect_from_map(
 	long light_index)
 {
 	struct light_datum *light = light_get(light_index);
+	light_link_records[DATUM_INDEX_TO_ABSOLUTE_INDEX(light_index)].light_index = NONE;
 
 	if (TEST_FLAG(light->flags, _point_light_connects_to_map_bit))
 	{
@@ -1945,6 +1966,89 @@ void light_reconnect_to_map(
 			&location);
 		SET_FLAG(light->flags, _point_light_connected_to_map_bit, TRUE);
 	}
+
+	return;
+}
+
+/* port: light_disconnect_from_map and light_reconnect_to_map in one, for a light an object carries
+(object_connect_lights). A light whose position, radius and location are what it was last linked with
+would be linked to the same clusters again, so it stays where it is in their lists (debug.static_light_relink). */
+void light_relink_to_map(
+	long light_index)
+{
+	struct light_datum *light = light_get(light_index);
+	struct light_link_record *record = &light_link_records[DATUM_INDEX_TO_ABSOLUTE_INDEX(light_index)];
+	struct object_marker markers[1];
+	struct location location;
+	real_point3d position;
+	real radius;
+
+	if (!TEST_FLAG(light->flags, _point_light_connects_to_map_bit) ||
+		!TEST_FLAG(light->flags, _point_light_connected_to_map_bit))
+	{
+		light_disconnect_from_map(light_index);
+		light_reconnect_to_map(light_index);
+		return;
+	}
+
+	if (light->parent_light_index == NONE)
+	{
+		object_get_marker_by_name(
+			light->object_index,
+			object_get_attachment_marker_name(light->object_index, light->attachment_marker_index),
+			markers,
+			1);
+		light->position = markers[0].matrix.position;
+		light->forward = markers[0].matrix.forward;
+		light->up = markers[0].matrix.up;
+	}
+	else if (object_try_and_get(light->object_index))
+	{
+		real_matrix4x3 *node_matrix = object_get_node_matrix(light->object_index, light->attachment_marker_index);
+
+		matrix4x3_transform_point(node_matrix, &light->node.relative_position, &light->position);
+		matrix4x3_transform_normal(node_matrix, &light->node.relative_forward, &light->forward);
+		perpendicular3d(&light->forward, &light->up);
+		normalize3d(&light->up);
+	}
+
+	light_compute_bounding_sphere(light_index, TRUE, FALSE, TRUE, &position, &radius);
+	if (light->object_index != NONE && object_try_and_get(light->object_index))
+	{
+		object_get_location(light->object_index, &location);
+	}
+	else
+	{
+		scenario_location_from_point(&location, &position);
+	}
+
+	if (record->light_index == light_index &&
+		record->epoch == object_bounds_cache_epoch() &&
+		record->cluster_reference == light->cluster_reference &&
+		record->radius == radius &&
+		record->position.x == position.x && record->position.y == position.y && record->position.z == position.z &&
+		record->location.leaf_index == location.leaf_index &&
+		record->location.cluster_index == location.cluster_index &&
+		record->location.bonus == location.bonus)
+	{
+		return;
+	}
+
+	light_disconnect_from_map(light_index);
+	cluster_partition_reconnect(
+		&light_cluster_partition,
+		light_index,
+		&light->cluster_reference,
+		&position,
+		radius,
+		&location);
+	SET_FLAG(light->flags, _point_light_connected_to_map_bit, TRUE);
+	record->light_index = light_index;
+	record->epoch = object_bounds_cache_epoch();
+	record->cluster_reference = light->cluster_reference;
+	record->position = position;
+	record->radius = radius;
+	record->location = location;
 
 	return;
 }

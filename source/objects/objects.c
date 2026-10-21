@@ -1597,6 +1597,7 @@ boolean object_get_function_value(
 /* port: sim_experiments.c's (debug.sphere_query_type_filter and debug.static_light_relink are experimental, off by default) */
 boolean sim_experiment_enabled(short experiment);
 #define SIM_EXPERIMENT_SPHERE_QUERY_TYPE_FILTER 1
+#define SIM_EXPERIMENT_STATIC_LIGHT_RELINK 2
 
 short objects_in_clusters_by_indices(
 	unsigned long class_flags,
@@ -4696,13 +4697,20 @@ static void object_connect_lights(
 		{
 			if (!object->object.attachment_types[i] && object->object.attachment_indices[i]!=NONE)
 			{
-				if (disconnect)
+				if (disconnect && reconnect && sim_experiment_enabled(SIM_EXPERIMENT_STATIC_LIGHT_RELINK))
 				{
-					light_disconnect_from_map(object->object.attachment_indices[i]);
+					light_relink_to_map(object->object.attachment_indices[i]);
 				}
-				if (reconnect)
+				else
 				{
-					light_reconnect_to_map(object->object.attachment_indices[i]);
+					if (disconnect)
+					{
+						light_disconnect_from_map(object->object.attachment_indices[i]);
+					}
+					if (reconnect)
+					{
+						light_reconnect_to_map(object->object.attachment_indices[i]);
+					}
 				}
 			}
 		}
