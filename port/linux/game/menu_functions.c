@@ -79,6 +79,7 @@ their handlers open opens.
 #include "text/unicode.h"
 
 #include "halo_menus.h"
+#include "halo_network_version.h"
 #include "custom_edition_cache.h"
 #include "custom_edition_maps.h"
 #include "text_filter.h"
@@ -3874,8 +3875,8 @@ static void lobby_browser_update(struct widget_instance *list)
 			text_to_wide(game->gametype, gametype, NUMBEROF(gametype));
 			if (!game->joinable)
 			{
-				usnprintf(text, NUMBEROF(text) - 1, L"%s: network version %d, this build plays %d", gametype,
-					game->network_version, HALO_PORT_NETWORK_VERSION);
+				usnprintf(text, NUMBEROF(text) - 1, L"%s: network version %d, this build plays %d to %d", gametype,
+					game->network_version, HALO_PORT_NETWORK_OLDEST_JOINABLE, HALO_PORT_NETWORK_VERSION);
 			}
 			else
 			{

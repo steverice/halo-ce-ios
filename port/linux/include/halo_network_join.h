@@ -13,13 +13,13 @@ Header-only and pure, so the probes can run it.
 #ifndef HALO_NETWORK_JOIN_H
 #define HALO_NETWORK_JOIN_H
 
-#include "halo_port_limits.h"
+#include "halo_network_version.h"
 
-/* whether a host that announces this network version can be joined: its own
-alone, until this build speaks a range of them */
+/* whether a host that announces this network version can be joined: this
+build's own, or an older one back to HALO_PORT_NETWORK_OLDEST_JOINABLE */
 static inline int halo_network_joinable(int version)
 {
-	return version == HALO_PORT_NETWORK_VERSION;
+	return version > 0 && halo_network_version_joinable((unsigned)HALO_PORT_NETWORK_VERSION, (unsigned)version);
 }
 
 #endif
