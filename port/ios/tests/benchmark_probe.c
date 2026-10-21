@@ -694,6 +694,33 @@ static void test_multiplayer_journal(void) {
     unlink(journal_path);
 }
 
+/* a case that sets render, filtering, shadow or detail values runs at them, and its signature says so */
+static void test_unified_case_settings(void) {
+    struct benchmark_scene scenes[] = {
+        { .id="plain", .map="c10", .difficulty="normal", .kind=BENCHMARK_SCENE_GAMEPLAY, .heavy=1 },
+        { .id="low", .workload="plain", .map="c10", .difficulty="normal", .kind=BENCHMARK_SCENE_GAMEPLAY, .heavy=1,
+          .knobs={ .mask=BENCHMARK_KNOB_LINES|BENCHMARK_KNOB_ANISOTROPY|BENCHMARK_KNOB_SHADOW|BENCHMARK_KNOB_LOD,
+                   .lines=540, .anisotropy=2, .shadow_size=128, .model_lod_max=1 } },
+        { .id="native", .workload="plain", .map="c10", .difficulty="normal", .kind=BENCHMARK_SCENE_GAMEPLAY, .heavy=1,
+          .knobs={ .mask=BENCHMARK_KNOB_LINES, .lines=0 } }
+    };
+    struct benchmark_plan plan = { BENCHMARK_UNIFIED, scenes, 3, { 1080, 720, 4, 256, 0 } };
+    struct benchmark_outcome outcomes[3] = {{ .status=BENCHMARK_OK }, { .status=BENCHMARK_OK }, { .status=BENCHMARK_OK }};
+    struct benchmark_run next;
+
+    CHECK(benchmark_plan_next(&plan,outcomes,0,&next) && next.lines==0 && next.anisotropy==4 && next.shadow_size==256 &&
+        next.model_lod_max==0);
+    CHECK(benchmark_plan_next(&plan,outcomes,1,&next) && next.lines==540 && next.anisotropy==2 && next.shadow_size==128 &&
+        next.model_lod_max==1 && !strcmp(next.key,"A low 540 2 128 max"));
+    CHECK(benchmark_plan_next(&plan,outcomes,2,&next) && next.lines==1080);
+    unsigned long before = benchmark_plan_signature(&plan);
+    scenes[1].knobs.shadow_size = 256;
+    CHECK(benchmark_plan_signature(&plan) != before);
+    before = benchmark_plan_signature(&plan);
+    scenes[1].knobs.mask |= BENCHMARK_KNOB_ANTI_ALIASING; scenes[1].knobs.anti_aliasing = 2;
+    CHECK(benchmark_plan_signature(&plan) != before);
+}
+
 static void test_unified_catalog_pass(void) {
     const struct benchmark_scene scenes[] = {
         { .id="taxing", .map="c10", .difficulty="normal", .kind=BENCHMARK_SCENE_GAMEPLAY, .heavy=1 },
@@ -744,6 +771,7 @@ static void test_unified_catalog_pass(void) {
 }
 
 int main(void) {
+    test_unified_case_settings();
     test_unified_catalog_pass();
     test_metrics();
     test_metrics_split();

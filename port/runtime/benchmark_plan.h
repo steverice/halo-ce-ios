@@ -34,6 +34,21 @@ enum benchmark_status {
     BENCHMARK_STATUS_COUNT
 };
 
+/* the case's "settings" other than the simulation changes: each bit of `mask` says a field is set. Fields are in the
+   units of the run (lines 0: the display's own height). */
+enum { BENCHMARK_KNOB_LINES = 1, BENCHMARK_KNOB_ANISOTROPY = 2, BENCHMARK_KNOB_SHADOW = 4, BENCHMARK_KNOB_LOD = 8,
+    BENCHMARK_KNOB_ANTI_ALIASING = 16, BENCHMARK_KNOB_EFFECT = 32, BENCHMARK_KNOB_MIRROR = 64,
+    BENCHMARK_KNOB_RENDER_SCALE = 128 };
+struct benchmark_knobs {
+    unsigned mask;
+    long lines, anisotropy, shadow_size;
+    int model_lod_max;
+    int anti_aliasing;   /* 0 off, 1 fxaa, 2 smaa */
+    int effect_full;     /* display.effect_resolution */
+    int mirror_full;     /* display.mirror_resolution is "full" */
+    double render_scale;
+};
+
 enum benchmark_scene_kind { BENCHMARK_SCENE_MENU, BENCHMARK_SCENE_CUTSCENE, BENCHMARK_SCENE_GAMEPLAY,
     BENCHMARK_SCENE_MULTIPLAYER };
 
@@ -63,6 +78,9 @@ struct benchmark_scene {
     /* the case's "settings": bit N set turns on the Nth of the experimental simulation changes for the run
        (port/linux/game/sim_experiments.c: collision type filter, sphere query type filter, static light relink) */
     unsigned sim_experiments;
+    struct benchmark_knobs knobs;
+    /* the case this one is a variant of (the same recording or workload, other settings); its own id for none */
+    const char *workload;
 };
 
 /* what the plan needs to know about the device and its profile's values */

@@ -333,3 +333,57 @@ def test_catalog_rejects_malformed_anchor(tmp_path, anchor):
     _write_catalog(tmp_path, cases)
     with pytest.raises(benchmark_catalog.CatalogError):
         benchmark_catalog.load_catalog(tmp_path)
+
+
+def test_catalog_accepts_display_settings(tmp_path):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["mp-chillout-proof"]["settings"] = {
+        "display.render_height": 540, "display.anisotropic_filtering": 4, "display.shadow_map_size": 256,
+        "display.model_lod": "auto", "display.anti_aliasing": "smaa", "display.effect_resolution": False,
+        "display.mirror_resolution": "full", "display.render_scale": 0.67}
+    _write_catalog(tmp_path, cases)
+    loaded = {case["id"]: case for case in benchmark_catalog.load_catalog(tmp_path)}
+    assert loaded["mp-chillout-proof"]["settings"]["display.render_height"] == 540
+
+
+@pytest.mark.parametrize("settings", [
+    {"display.render_height": -1}, {"display.render_height": True}, {"display.anisotropic_filtering": 3},
+    {"display.anti_aliasing": "taa"}, {"display.render_scale": 1.5},
+    {"display.compressed_textures": False}, {"display.model_lod": "high"}])
+def test_catalog_rejects_unsupported_display_settings(tmp_path, settings):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["mp-chillout-proof"]["settings"] = settings
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
+def test_variant_replays_its_base_with_other_settings(tmp_path):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["b30-low"] = {"variant_of": "b30-warthog-fight", "order": 4, "settings": {"display.shadow_map_size": 128}}
+    cases["mp-low"] = {"variant_of": "mp-chillout-proof", "order": 5, "settings": {"display.anti_aliasing": "fxaa"}}
+    _write_catalog(tmp_path, cases)
+    loaded = {case["id"]: case for case in benchmark_catalog.load_catalog(tmp_path)}
+    assert loaded["b30-low"]["recording"] == "take-b30" and loaded["b30-low"]["variant_of"] == "b30-warthog-fight"
+    assert loaded["b30-low"]["settings"] == {"display.shadow_map_size": 128}
+    assert loaded["mp-low"]["players"] == 2 and "variant_of" in loaded["mp-low"]
+    assert "variant_of" not in loaded["b30-warthog-fight"]
+
+
+@pytest.mark.parametrize("variant", [
+    {"variant_of": "nope", "order": 4, "settings": {"display.shadow_map_size": 128}},
+    {"variant_of": "menu", "order": 4, "settings": {"display.shadow_map_size": 128}},
+    {"variant_of": "b30-warthog-fight", "order": 4},
+    {"variant_of": "b30-warthog-fight", "order": 4, "settings": {"display.shadow_map_size": 128}, "lead": 3},
+    {"variant_of": "b30-again", "order": 4, "settings": {"display.shadow_map_size": 128}}])
+def test_catalog_rejects_invalid_variants(tmp_path, variant):
+    _recording(tmp_path)
+    cases = _cases(players=2)
+    cases["b30-again"] = {"variant_of": "b30-warthog-fight", "order": 6, "settings": {"display.shadow_map_size": 256}}
+    cases["b30-low"] = variant
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)

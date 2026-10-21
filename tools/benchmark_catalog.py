@@ -34,9 +34,42 @@ def anchor_seconds(anchor, events_text):
         if (parts[1] == which if which.isdigit() else (len(parts) > 3 and parts[3] == which)):
             return int(parts[2]) / 30.0
     return None
-# a case's optional "settings": the experimental exact simulation changes a run turns on (each key a boolean, bit N of the
-# scene's sim_experiments is the Nth key; port/linux/game/sim_experiments.c). They change work done, not results.
-CASE_SETTINGS = ("debug.collision_type_filter", "debug.sphere_query_type_filter", "debug.static_light_relink")
+# a case's optional "settings": values a run sets in place of the profile's, by config name. The experimental exact
+# simulation changes are booleans (bit N of the scene's sim_experiments is the Nth key; port/linux/game/sim_experiments.c)
+# and change work done, not results. A setting a later change adds takes one entry here, one in
+# host_benchmark_catalog.m and its application in the guest (port/linux/src/benchmark_suite.c).
+SIM_SETTINGS = ("debug.collision_type_filter", "debug.sphere_query_type_filter", "debug.static_light_relink")
+# name: ("boolean",) | ("integer", allowed values or None, minimum, maximum) | ("number", minimum, maximum) | ("text", allowed)
+CASE_SETTINGS = {
+    **{name: ("boolean",) for name in SIM_SETTINGS},
+    # (0: the display's own height)
+    "display.render_height": ("integer", None, 0, 4320),
+    "display.anisotropic_filtering": ("integer", (1, 2, 4, 8, 16), 1, 16),
+    "display.shadow_map_size": ("integer", (128, 256, 512, 1024, 2048), 128, 2048),
+    "display.model_lod": ("text", ("max", "auto")),
+    "display.anti_aliasing": ("text", ("off", "fxaa", "smaa")),
+    "display.effect_resolution": ("boolean",),
+    "display.mirror_resolution": ("text", ("half", "full")),
+    "display.render_scale": ("number", 0.25, 1.0),
+}
+
+
+def _setting_valid(name, value):
+    spec = CASE_SETTINGS.get(name)
+    if spec is None:
+        return False
+    kind = spec[0]
+    if kind == "boolean":
+        return isinstance(value, bool)
+    if kind == "text":
+        return isinstance(value, str) and value in spec[1]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return False
+    if kind == "integer":
+        return isinstance(value, int) and spec[2] <= value <= spec[3] and (spec[1] is None or value in spec[1])
+    return spec[1] <= value <= spec[2]
+
+
 MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
 
 
@@ -170,6 +203,23 @@ def _active_window(folder, recording, lead, window):
     return active
 
 
+def _resolve_variants(cases):
+    """Each case as (id, fields). A variant, {"variant_of": id, "order": n, "settings": {...}}, is the named case run again
+    with its own settings: it takes that case's fields (its recording and route included) and says which in "variant_of"."""
+    resolved = []
+    for case_id, case in cases.items():
+        if not isinstance(case, dict) or "variant_of" not in case:
+            resolved.append((case_id, dict(case) if isinstance(case, dict) else case))
+            continue
+        base = cases.get(case.get("variant_of")) if isinstance(case.get("variant_of"), str) else None
+        if (set(case) != {"variant_of", "order", "settings"} or not isinstance(base, dict) or "variant_of" in base or
+                base.get("kind") == "menu"):
+            raise CatalogError(f"case {case_id} is not a valid variant")
+        resolved.append((case_id, {**base, "order": case["order"], "settings": case["settings"],
+                                   "variant_of": case["variant_of"]}))
+    return resolved
+
+
 def load_catalog(folder):
     """Load cases in catalog order and validate their exact route references and selected windows."""
     root = Path(folder)
@@ -192,10 +242,11 @@ def load_catalog(folder):
     orders = set()
     recorded_maps = set()
     has_gameplay = False
-    for case_id, case in cases.items():
+    for case_id, case in _resolve_variants(cases):
         _text(case_id, "case ID", CASE_ID)
         if not isinstance(case, dict) or "kind" not in case:
             raise CatalogError(f"case {case_id} must be an object with a kind")
+        base_id = case.pop("variant_of", case_id)
         kind = case["kind"]
         if not isinstance(kind, str) or kind not in KINDS:
             raise CatalogError(f"case {case_id} has an unsupported kind")
@@ -231,8 +282,8 @@ def load_catalog(folder):
             raise CatalogError(f"case {case_id} has an unsupported anchor")
         if "settings" in case:
             settings = case["settings"]
-            if (not isinstance(settings, dict) or not settings or not set(settings) <= set(CASE_SETTINGS) or
-                    not all(isinstance(value, bool) for value in settings.values())):
+            if (not isinstance(settings, dict) or not settings or
+                    not all(_setting_valid(name, value) for name, value in settings.items())):
                 raise CatalogError(f"case {case_id} has unsupported settings")
         lead = _number(case["lead"], f"{case_id} lead", 0, 3600)
         window = _number(case["window"], f"{case_id} window", 0, 3600, positive=True)
@@ -240,11 +291,12 @@ def load_catalog(folder):
         anchored = None
         if recording is not None:
             _text(recording, f"{case_id} recording", RECORDING_NAME)
-            if map_name in recorded_maps:
-                raise CatalogError(f"catalog selects more than one recording per level: {map_name}")
-            recorded_maps.add(map_name)
+            if base_id == case_id:
+                if map_name in recorded_maps:
+                    raise CatalogError(f"catalog selects more than one recording per level: {map_name}")
+                recorded_maps.add(map_name)
             route = _route(root, recording)
-            if (route["scene"] != case_id or route["map"] != map_name or route["difficulty"] != difficulty or
+            if (route["scene"] != base_id or route["map"] != map_name or route["difficulty"] != difficulty or
                     route["kind"] != kind or abs(route["lead"] - lead) > 1e-6 or abs(route["window"] - window) > 1e-6 or
                     abs(route["enemy_multiplier"] - float(case.get("enemy_multiplier", 1))) > 1e-6 or
                     route["anchor"] != anchor):
@@ -296,7 +348,7 @@ def load_catalog(folder):
             has_gameplay = True
             if not _active_window(root, recording, lead + (anchored or 0.0), window):
                 raise CatalogError(f"gameplay case {case_id} has no movement or combat input in its measured window")
-        prepared.append({"id": case_id, **case})
+        prepared.append({"id": case_id, **case, **({"variant_of": base_id} if base_id != case_id else {})})
     if orders != set(range(len(cases))):
         raise CatalogError("catalog order must be contiguous from zero")
     if not has_gameplay and not any(case["kind"] == "multiplayer" for case in prepared):

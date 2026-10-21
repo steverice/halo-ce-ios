@@ -10,6 +10,7 @@ struct host_benchmark_catalog {
     int count;
     struct benchmark_scene scenes[BENCHMARK_SCENES_MAXIMUM];
     char ids[BENCHMARK_SCENES_MAXIMUM][48];
+    char workloads[BENCHMARK_SCENES_MAXIMUM][48];
     char maps[BENCHMARK_SCENES_MAXIMUM][32];
     char difficulties[BENCHMARK_SCENES_MAXIMUM][16];
     char recordings[BENCHMARK_SCENES_MAXIMUM][64];

@@ -137,7 +137,7 @@ static BOOL route_matches(NSString *folder, struct benchmark_scene *scene, NSErr
     NSString *text = data ? [[NSString alloc] initWithData:data encoding:NSASCIIStringEncoding] : nil;
     struct benchmark_route route;
     if (!text || !benchmark_scene_from_route(text.UTF8String, scene->recording, &route) ||
-        strcmp(route.id, scene->id) || strcmp(route.map, scene->map) || strcmp(route.difficulty, scene->difficulty) ||
+        strcmp(route.id, scene->workload ? scene->workload : scene->id) || strcmp(route.map, scene->map) || strcmp(route.difficulty, scene->difficulty) ||
         route.scene.kind != scene->kind || fabs(route.scene.lead - scene->lead) > 1e-6 ||
         fabs(route.scene.seconds - scene->seconds) > 1e-6 ||
         strcmp(route.anchor, scene->anchor ? scene->anchor : "") ||
@@ -146,6 +146,74 @@ static BOOL route_matches(NSString *folder, struct benchmark_scene *scene, NSErr
         return catalog_error(error, [NSString stringWithFormat:@"%@ does not match its signed catalog entry", recording]);
     if (scene->anchor) scene->lead += route.scene.anchor_seconds;
     return YES;
+}
+
+/* A case's "settings" (tools/benchmark_catalog.py CASE_SETTINGS has the same names and ranges): the experimental
+   simulation changes as bits of *sim_experiments, the rest as the scene's knobs. NO for anything unsupported. */
+static BOOL case_settings(id raw, unsigned *sim_experiments, struct benchmark_knobs *knobs) {
+    NSArray *simulation = @[@"debug.collision_type_filter", @"debug.sphere_query_type_filter", @"debug.static_light_relink"];
+    NSDictionary *settings = raw;
+    if (![settings isKindOfClass:NSDictionary.class] || !settings.count) return NO;
+    for (NSString *name in settings) {
+        id value = settings[name];
+        NSInteger number;
+        double real;
+        BOOL boolean = [value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
+        NSUInteger bit = [simulation indexOfObject:name];
+        if (bit != NSNotFound) {
+            if (!boolean) return NO;
+            if ([value boolValue]) *sim_experiments |= 1u << bit;
+        } else if ([name isEqual:@"display.render_height"]) {
+            if (!integer_number(value, 0, 4320, &number)) return NO;
+            knobs->mask |= BENCHMARK_KNOB_LINES; knobs->lines = number;
+        } else if ([name isEqual:@"display.anisotropic_filtering"]) {
+            if (!integer_number(value, 1, 16, &number) || ![@[@1, @2, @4, @8, @16] containsObject:@(number)]) return NO;
+            knobs->mask |= BENCHMARK_KNOB_ANISOTROPY; knobs->anisotropy = number;
+        } else if ([name isEqual:@"display.shadow_map_size"]) {
+            if (!integer_number(value, 128, 2048, &number) || ![@[@128, @256, @512, @1024, @2048] containsObject:@(number)]) return NO;
+            knobs->mask |= BENCHMARK_KNOB_SHADOW; knobs->shadow_size = number;
+        } else if ([name isEqual:@"display.model_lod"]) {
+            if (![@[@"max", @"auto"] containsObject:value]) return NO;
+            knobs->mask |= BENCHMARK_KNOB_LOD; knobs->model_lod_max = [value isEqual:@"max"];
+        } else if ([name isEqual:@"display.anti_aliasing"]) {
+            NSUInteger method = [@[@"off", @"fxaa", @"smaa"] indexOfObject:value];
+            if (method == NSNotFound) return NO;
+            knobs->mask |= BENCHMARK_KNOB_ANTI_ALIASING; knobs->anti_aliasing = (int)method;
+        } else if ([name isEqual:@"display.effect_resolution"]) {
+            if (!boolean) return NO;
+            knobs->mask |= BENCHMARK_KNOB_EFFECT; knobs->effect_full = [value boolValue];
+        } else if ([name isEqual:@"display.mirror_resolution"]) {
+            if (![@[@"half", @"full"] containsObject:value]) return NO;
+            knobs->mask |= BENCHMARK_KNOB_MIRROR; knobs->mirror_full = [value isEqual:@"full"];
+        } else if ([name isEqual:@"display.render_scale"]) {
+            if (!real_number(value, 0.25, 1.0, &real)) return NO;
+            knobs->mask |= BENCHMARK_KNOB_RENDER_SCALE; knobs->render_scale = real;
+        } else return NO;
+    }
+    return YES;
+}
+
+/* The cases with each variant ({"variant_of", "order", "settings"}) replaced by the case it varies, under its own
+   order and settings; *bases names the case each came from. nil when a variant is not valid. */
+static NSDictionary *resolve_variants(NSDictionary *cases, NSMutableDictionary<NSString *, NSString *> *bases) {
+    NSMutableDictionary *resolved = [NSMutableDictionary dictionary];
+    for (NSString *identifier in cases) {
+        NSDictionary *entry = cases[identifier];
+        if (![entry isKindOfClass:NSDictionary.class] || !entry[@"variant_of"]) {
+            resolved[identifier] = entry;
+            continue;
+        }
+        NSString *name = entry[@"variant_of"];
+        NSDictionary *base = [name isKindOfClass:NSString.class] ? cases[name] : nil;
+        if (![[NSSet setWithArray:entry.allKeys] isEqualToSet:[NSSet setWithArray:@[@"variant_of", @"order", @"settings"]]] ||
+            ![base isKindOfClass:NSDictionary.class] || base[@"variant_of"] || [base[@"kind"] isEqual:@"menu"]) return nil;
+        NSMutableDictionary *merged = [base mutableCopy];
+        merged[@"order"] = entry[@"order"];
+        merged[@"settings"] = entry[@"settings"];
+        resolved[identifier] = merged;
+        bases[identifier] = name;
+    }
+    return resolved;
 }
 
 BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog *catalog, NSError **error) {
@@ -167,8 +235,12 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
     int seen_map_count = 0;
     BOOL workload = NO;
     built.count = (int)cases.count;
-    for (NSString *identifier in cases) {
-        id raw = cases[identifier];
+    NSMutableDictionary<NSString *, NSString *> *bases = [NSMutableDictionary dictionary];
+    NSDictionary *resolved = resolve_variants(cases, bases);
+    if (!resolved) return catalog_error(error, @"The signed benchmark catalog has an invalid variant case.");
+    for (NSString *identifier in resolved) {
+        id raw = resolved[identifier];
+        NSString *workload_id = bases[identifier] ?: identifier;
         NSDictionary *entry = [raw isKindOfClass:NSDictionary.class] ? raw : nil;
         NSString *kind = entry[@"kind"], *map = nil, *difficulty = nil, *recording = nil;
         NSInteger order = -1, players = 0, views = 0, score = 0, time_limit = 0;
@@ -198,19 +270,9 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             (!menu && !map.length) || ![@[@"easy", @"normal", @"hard", @"impossible"] containsObject:difficulty])
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an invalid kind, map, or difficulty.", identifier]);
         unsigned sim_experiments = 0;
-        if (entry[@"settings"]) {
-            NSArray *names = @[@"debug.collision_type_filter", @"debug.sphere_query_type_filter", @"debug.static_light_relink"];
-            NSDictionary *settings = entry[@"settings"];
-            if (![settings isKindOfClass:NSDictionary.class] || !settings.count)
-                return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has unsupported settings.", identifier]);
-            for (NSString *name in settings) {
-                NSUInteger bit = [names indexOfObject:name];
-                id value = settings[name];
-                if (bit == NSNotFound || ![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())
-                    return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has unsupported settings.", identifier]);
-                if ([value boolValue]) sim_experiments |= 1u << bit;
-            }
-        }
+        struct benchmark_knobs knobs = {0};
+        if (entry[@"settings"] && !case_settings(entry[@"settings"], &sim_experiments, &knobs))
+            return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has unsupported settings.", identifier]);
         if (entry[@"enemy_multiplier"] && (multiplayer || menu || !real_number(entry[@"enemy_multiplier"], 1, 8, &enemy_multiplier)))
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported enemy multiplier.", identifier]);
         NSString *anchor = nil;
@@ -227,10 +289,12 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         if (has_recording) {
             if (!string_field(entry, @"recording", 48, NO, &recording))
                 return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an invalid recording reference.", identifier]);
-            for (int previous = 0; previous < seen_map_count; previous++)
-                if (!strcmp(seen_maps[previous], map.UTF8String))
-                    return catalog_error(error, [NSString stringWithFormat:@"Catalog selects more than one recording for %@.", map]);
-            snprintf(seen_maps[seen_map_count++], sizeof(seen_maps[0]), "%s", map.UTF8String);
+            if (!bases[identifier]) {
+                for (int previous = 0; previous < seen_map_count; previous++)
+                    if (!strcmp(seen_maps[previous], map.UTF8String))
+                        return catalog_error(error, [NSString stringWithFormat:@"Catalog selects more than one recording for %@.", map]);
+                snprintf(seen_maps[seen_map_count++], sizeof(seen_maps[0]), "%s", map.UTF8String);
+            }
         }
         NSString *simulation = nil, *game_mode = nil;
         if (multiplayer) {
@@ -281,6 +345,9 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             scene->anchor = built.anchors[index];
         }
         scene->sim_experiments = sim_experiments;
+        scene->knobs = knobs;
+        snprintf(built.workloads[index], sizeof(built.workloads[index]), "%s", workload_id.UTF8String);
+        scene->workload = built.workloads[index];
         scene->simulation = multiplayer ? built.simulations[index] : NULL;
         scene->game_mode = multiplayer ? built.game_modes[index] : NULL;
         scene->players = (int)players; scene->views = (int)views;
@@ -301,6 +368,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
     for (int index = 0; index < catalog->count; index++) {
         struct benchmark_scene *scene = &catalog->scenes[index];
         scene->id = catalog->ids[index]; scene->map = catalog->maps[index];
+        scene->workload = catalog->workloads[index];
         scene->difficulty = catalog->difficulties[index];
         scene->recording = catalog->recordings[index][0] ? catalog->recordings[index] : NULL;
         scene->anchor = catalog->anchors[index][0] ? catalog->anchors[index] : NULL;

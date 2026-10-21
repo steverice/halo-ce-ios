@@ -164,6 +164,12 @@ unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
             one->game_mode ? one->game_mode : "", one->score_limit, one->time_limit_minutes,
             one->arena_columns, one->arena_spacing, one->arena_distance, one->arena_movement_radius);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
+        /* (the settings a case sets, so a journal is never carried on with other values for the same cases) */
+        snprintf(text, sizeof(text), "%s|%u|%u|%ld|%ld|%ld|%d|%d|%d|%d|%.3f;", one->workload ? one->workload : "",
+            one->sim_experiments, one->knobs.mask, one->knobs.lines, one->knobs.anisotropy, one->knobs.shadow_size,
+            one->knobs.model_lod_max, one->knobs.anti_aliasing, one->knobs.effect_full, one->knobs.mirror_full,
+            one->knobs.render_scale);
+        for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
     }
     /* (a journal from a pass without the presented checks is not carried on with them, nor the other way) */
     if (plan->reality_checks) hash = ((hash ^ (unsigned char)'P') * 16777619UL) & 0xffffffffUL;
@@ -226,6 +232,17 @@ static const struct benchmark_outcome *step(struct walk *walk, char stage, int s
     if (walk->stopped) return NULL;
     if (walk->index >= BENCHMARK_RUNS_MAXIMUM) { walk->stopped = 2; return NULL; }
     if (walk->index < walk->count) return &walk->finished[walk->index++];
+    /* the unified pass's baseline run of a case that sets render, filtering, shadow or detail values runs at them
+       (lines 0 in the case: the display's own height) */
+    if (walk->plan->mode == BENCHMARK_UNIFIED && stage == 'A') {
+        const struct benchmark_knobs *knobs = &walk->plan->scenes[scene].knobs;
+
+        if (knobs->mask & BENCHMARK_KNOB_LINES)
+            lines = knobs->lines ? knobs->lines : walk->plan->device.drawable_lines;
+        if (knobs->mask & BENCHMARK_KNOB_ANISOTROPY) anisotropy = knobs->anisotropy;
+        if (knobs->mask & BENCHMARK_KNOB_SHADOW) shadow_size = knobs->shadow_size;
+        if (knobs->mask & BENCHMARK_KNOB_LOD) model_lod_max = knobs->model_lod_max;
+    }
     walk->next->index = walk->index;
     walk->next->stage = stage;
     walk->next->scene = scene;
