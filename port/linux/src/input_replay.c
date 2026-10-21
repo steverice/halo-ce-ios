@@ -595,6 +595,14 @@ static struct
 	char route[4096];
 } take;
 
+/* Events of the level being played, in the recorded time: each cinematic's start and end, the checkpoints saved and
+the structure BSP switches, numbered in order of play per kind ("cinematic_end:2:3412": the second cinematic ended at
+recorded tick 3412). A take's .route carries them as "events = a:1:10,b:1:20", and a catalog case can anchor its
+window on one (benchmark_plan.c). Bookkeeping only: nothing here reads or changes the simulation. */
+#define EVENT_KINDS 4
+static const char *const event_kinds[EVENT_KINDS] = { "cinematic_start", "cinematic_end", "checkpoint", "bsp_switch" };
+static struct { char text[1536]; int counts[EVENT_KINDS]; } events;
+
 /* The take's .route, whole: what was noted at its opening and since, then the closing lines as
 they stand now. Written again every TAKE_ROUTE_TICKS, at a pause and at the close, so a take whose
 app is quit or suspended (which the game never hears of) still has them, at most that old, with
@@ -609,7 +617,10 @@ static void take_route_write(const char *closed_by)
 	snprintf(path, sizeof(path), "%s.route", take.base);
 	if (!(route = fopen(path, "w")))
 		return;
-	fprintf(route, "%sclosed_by = %s\nsegments = %ld\npauses = %ld\nlast_tick = %ld\nseconds = %.1f\n", take.route,
+	fputs(take.route, route);
+	if (events.text[0])
+		fprintf(route, "events = %s\n", events.text);
+	fprintf(route, "closed_by = %s\nsegments = %ld\npauses = %ld\nlast_tick = %ld\nseconds = %.1f\n",
 		closed_by, replay.segment + 1, take.pauses, take.last_tick, (double)replay.actions_written / 30.0);
 	fclose(route);
 	take.route_written_tick = take.last_tick;
@@ -682,6 +693,7 @@ static void take_open(const char *map, long tick, long difficulty, long players,
 	take.players_written = take.paused = FALSE;
 	take.pauses = 0;
 	take.route[0] = 0;
+	memset(&events, 0, sizeof(events));
 	replay.actions_written = 0;
 	replay.record_environment_valid = FALSE;
 	/* a recording of its own: its time and its segments begin here */
@@ -815,6 +827,7 @@ int input_replay_begin(const char *name, int benchmark_lip_sync)
 	memset(&replay, 0, sizeof(replay));
 	replay.configured = replay.suite = TRUE;
 	coop_enemies_solo_override(-1.0);
+	memset(&events, 0, sizeof(events));
 	replay_touch_update();
 	if (game_time_initialized() && !input_replay_main_menu_loaded())
 	{
@@ -1666,4 +1679,32 @@ void input_replay_frame(long width, long height)
 		replay.frame_milliseconds[replay.frame_count++] = now - replay.previous_frame;
 	}
 	replay.previous_frame = now;
+}
+
+/* A cinematic started or ended, a checkpoint was saved or a structure BSP was switched to (cinematics.c, main.c,
+scenario.c): noted in the recorded time for the take's .route and the log. */
+void input_replay_note_event(const char *kind)
+{
+	int index;
+	double ticks;
+	char entry[48];
+	size_t length = strlen(events.text);
+
+	if (!game_time_initialized())
+		return;
+	ticks = game_ticks();
+	if (ticks < 0.0)
+		return;
+	for (index = 0; index < EVENT_KINDS; index++)
+	{
+		if (!strcmp(kind, event_kinds[index]))
+			break;
+	}
+	if (index == EVENT_KINDS)
+		return;
+	events.counts[index]++;
+	snprintf(entry, sizeof(entry), "%s:%d:%ld", kind, events.counts[index], (long)ticks);
+	platform_log("input_replay: event %s %d at recorded tick %ld", kind, events.counts[index], (long)ticks);
+	if (length + strlen(entry) + 2 < sizeof(events.text))
+		snprintf(events.text + length, sizeof(events.text) - length, "%s%s", length ? "," : "", entry);
 }

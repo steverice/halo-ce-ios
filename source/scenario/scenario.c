@@ -1154,6 +1154,13 @@ boolean scenario_switch_structure_bsp(
 			}
 			/* port: (not when it is the old one, loaded again) */
 			result = structure_bsp_index != old_structure_bsp_index;
+			/* port: noted in the recorded time (input_replay.c): a switch from a bsp, not a level's first load */
+			if (result && had_old_structure_bsp)
+			{
+				extern void input_replay_note_event(char const *kind);
+
+				input_replay_note_event("bsp_switch");
+			}
 		}
 
 		collision_log_enable(TRUE);

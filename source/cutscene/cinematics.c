@@ -194,6 +194,12 @@ void cinematic_start(
 	cinematic_globals->letterbox_last_game_time = game_time_get();
 	cinematic_globals->in_progress = TRUE;
 	projectiles_delete_all();
+	/* port: noted in the recorded time (input_replay.c) */
+	{
+		extern void input_replay_note_event(char const *kind);
+
+		input_replay_note_event("cinematic_start");
+	}
 
 	return;
 }
@@ -246,6 +252,11 @@ void cinematic_stop(
 	player_input_enable(TRUE);
 	ai_globals_dialogue_triggers_enabled(TRUE);
 	cinematic_globals->in_progress = FALSE;
+	{
+		extern void input_replay_note_event(char const *kind);
+
+		input_replay_note_event("cinematic_end");
+	}
 	rasterizer_screen_effects_initialize_for_new_map();
 	if (global_rasterizer_model_ambient_reflection_tint)
 	{
