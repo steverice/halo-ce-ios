@@ -138,6 +138,8 @@ static int override_lod;
 void halo_benchmark_overrides(long lines, long shadow, long anisotropy) {
     override_lines=lines; override_shadow=shadow; override_anisotropy=anisotropy;
 }
+static unsigned override_experiments;
+void sim_experiment_override(unsigned mask) { override_experiments=mask; }
 void halo_benchmark_override_state(long *lines, long *shadow, long *anisotropy) {
     *lines=override_lines; *shadow=override_shadow; *anisotropy=override_anisotropy;
 }

@@ -24,6 +24,15 @@ static const char *const sim_experiment_names[] =
 
 static boolean sim_experiment_values[SIM_EXPERIMENT_COUNT];
 static long sim_experiment_tick = -2;
+static unsigned sim_experiment_mask;
+
+/* a benchmark case's own choice, one bit per experiment in the order above; 0 leaves the settings alone */
+void sim_experiment_override(
+	unsigned mask)
+{
+	sim_experiment_mask = mask;
+	sim_experiment_tick = -2;
+}
 
 boolean sim_experiment_enabled(
 	short experiment)
@@ -37,7 +46,7 @@ boolean sim_experiment_enabled(
 		sim_experiment_tick = tick;
 		for (index = 0; index < SIM_EXPERIMENT_COUNT; index++)
 		{
-			sim_experiment_values[index] = config_boolean(sim_experiment_names[index]) != 0;
+			sim_experiment_values[index] = config_boolean(sim_experiment_names[index]) != 0 || (sim_experiment_mask & (1u << index)) != 0;
 		}
 	}
 

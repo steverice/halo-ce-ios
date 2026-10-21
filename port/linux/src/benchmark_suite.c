@@ -69,6 +69,8 @@ unsigned char filesystem_check_thread_is_active(void);
 int halo_scene_class(void);
 /* d3d8_device.c */
 void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy);
+/* sim_experiments.c: the experimental simulation changes a case turns on, a bit each, on top of the settings */
+void sim_experiment_override(unsigned mask);
 void halo_benchmark_override_state(long *render_lines, long *shadow_size, long *anisotropy);
 void halo_benchmark_renderer_observations_reset(void);
 void halo_benchmark_renderer_observations(long *shadow_target_size, long *anisotropic_sampler_max);
@@ -111,6 +113,8 @@ static struct
 	char scene[48], map[32], difficulty[16], recording[64];
 	/* a campaign case's enemy multiplier (coop_enemies.c); 0 for none */
 	double enemy_multiplier;
+	/* the case's experimental simulation changes (sim_experiments.c), a bit each */
+	unsigned sim_experiments;
 	char mp_simulation[32], mp_game_mode[16];
 	int mp_players, mp_views, mp_score_limit, mp_time_limit_minutes;
 	struct benchmark_mp_arena_config mp_arena;
@@ -566,6 +570,7 @@ static void next_run(void)
 		/* (the game goes on in real time, shown) */
 		suite_presented(1);
 		halo_benchmark_overrides(0, 0, 0);
+		sim_experiment_override(0);
 		halo_model_lod_set(-1);
 		benchmark_scenario_load("", "");
 		input_replay_suite_restore();
@@ -593,6 +598,7 @@ static void next_run(void)
 	suite.mp_arena.distance = (float)number_field(text, "arena_distance");
 	suite.mp_arena.movement_radius = (float)number_field(text, "arena_radius");
 	suite.enemy_multiplier = number_field(text, "enemy_multiplier");
+	suite.sim_experiments = (unsigned)number_field(text, "sim_experiments");
 	suite.lead = number_field(text, "lead");
 	suite.seconds = number_field(text, "seconds");
 	suite.lines = (long)number_field(text, "lines");
@@ -660,6 +666,7 @@ static void next_run(void)
 		}
 	}
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
+	sim_experiment_override(suite.sim_experiments);
 	halo_model_lod_set(suite.model_lod_max);
 	halo_benchmark_renderer_observations_reset();
 	texture_replacement_selections = 0;

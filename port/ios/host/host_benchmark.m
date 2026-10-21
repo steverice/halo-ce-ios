@@ -644,6 +644,7 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     record[@"catalog_signed"] = @(catalog_signed());
     NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
     settings[@"upscaler_requested"] = upscaler[@"requested"];
+    settings[@"sim_experiments"] = @(scene->sim_experiments);
     record[@"settings"] = settings;
     if (scene->recording && scene->recording[0])
         record[@"replay_environment"] = replay_environment_for_recording(scene->recording);
@@ -1225,14 +1226,14 @@ int host_benchmark_next(char *text, unsigned int size) {
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
-        "lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds, scene->simulation ? scene->simulation : "",
         scene->players, scene->views,
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
-        scene->enemy_multiplier,
+        scene->enemy_multiplier, scene->sim_experiments,
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P');
     atomic_store(&run_ticks, 0);
     atomic_store(&window_ticks, 0);

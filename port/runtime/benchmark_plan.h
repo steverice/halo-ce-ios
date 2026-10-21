@@ -60,6 +60,9 @@ struct benchmark_scene {
        after the event, and anchor_seconds is the event's recorded time in seconds. */
     const char *anchor;
     double anchor_seconds;
+    /* the case's "settings": bit N set turns on the Nth of the experimental simulation changes for the run
+       (port/linux/game/sim_experiments.c: collision type filter, sphere query type filter, static light relink) */
+    unsigned sim_experiments;
 };
 
 /* what the plan needs to know about the device and its profile's values */

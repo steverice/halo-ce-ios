@@ -189,6 +189,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         if ([kind isEqual:@"multiplayer"] && entry[@"arena"]) [expected addObject:@"arena"];
         if (entry[@"enemy_multiplier"]) [expected addObject:@"enemy_multiplier"];
         if (entry[@"anchor"]) [expected addObject:@"anchor"];
+        if (entry[@"settings"]) [expected addObject:@"settings"];
         if (![[NSSet setWithArray:entry.allKeys] isEqualToSet:expected])
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has missing or unsupported fields.", identifier]);
         BOOL menu = [kind isEqual:@"menu"], cutscene = [kind isEqual:@"cutscene"];
@@ -196,6 +197,20 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         if ((!menu && !cutscene && !gameplay && !multiplayer) || (menu && (map.length || has_recording)) ||
             (!menu && !map.length) || ![@[@"easy", @"normal", @"hard", @"impossible"] containsObject:difficulty])
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an invalid kind, map, or difficulty.", identifier]);
+        unsigned sim_experiments = 0;
+        if (entry[@"settings"]) {
+            NSArray *names = @[@"debug.collision_type_filter", @"debug.sphere_query_type_filter", @"debug.static_light_relink"];
+            NSDictionary *settings = entry[@"settings"];
+            if (![settings isKindOfClass:NSDictionary.class] || !settings.count)
+                return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has unsupported settings.", identifier]);
+            for (NSString *name in settings) {
+                NSUInteger bit = [names indexOfObject:name];
+                id value = settings[name];
+                if (bit == NSNotFound || ![value isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID())
+                    return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has unsupported settings.", identifier]);
+                if ([value boolValue]) sim_experiments |= 1u << bit;
+            }
+        }
         if (entry[@"enemy_multiplier"] && (multiplayer || menu || !real_number(entry[@"enemy_multiplier"], 1, 8, &enemy_multiplier)))
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported enemy multiplier.", identifier]);
         NSString *anchor = nil;
@@ -265,6 +280,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             snprintf(built.anchors[index], sizeof(built.anchors[index]), "%s", anchor.UTF8String);
             scene->anchor = built.anchors[index];
         }
+        scene->sim_experiments = sim_experiments;
         scene->simulation = multiplayer ? built.simulations[index] : NULL;
         scene->game_mode = multiplayer ? built.game_modes[index] : NULL;
         scene->players = (int)players; scene->views = (int)views;

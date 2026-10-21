@@ -34,6 +34,9 @@ def anchor_seconds(anchor, events_text):
         if (parts[1] == which if which.isdigit() else (len(parts) > 3 and parts[3] == which)):
             return int(parts[2]) / 30.0
     return None
+# a case's optional "settings": the experimental exact simulation changes a run turns on (each key a boolean, bit N of the
+# scene's sim_experiments is the Nth key; port/linux/game/sim_experiments.c). They change work done, not results.
+CASE_SETTINGS = ("debug.collision_type_filter", "debug.sphere_query_type_filter", "debug.static_light_relink")
 MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
 
 
@@ -203,6 +206,8 @@ def load_catalog(folder):
             fields |= {"enemy_multiplier"}
         if "anchor" in case:
             fields |= {"anchor"}
+        if "settings" in case:
+            fields |= {"settings"}
         if set(case) != fields:
             raise CatalogError(f"case {case_id} has missing or unsupported fields")
         order = case["order"]
@@ -224,6 +229,11 @@ def load_catalog(folder):
         if "anchor" in case and (kind in {"menu", "multiplayer"} or case["recording"] is None or
                                  not isinstance(anchor, str) or not ANCHOR.match(anchor)):
             raise CatalogError(f"case {case_id} has an unsupported anchor")
+        if "settings" in case:
+            settings = case["settings"]
+            if (not isinstance(settings, dict) or not settings or not set(settings) <= set(CASE_SETTINGS) or
+                    not all(isinstance(value, bool) for value in settings.values())):
+                raise CatalogError(f"case {case_id} has unsupported settings")
         lead = _number(case["lead"], f"{case_id} lead", 0, 3600)
         window = _number(case["window"], f"{case_id} window", 0, 3600, positive=True)
         recording = case["recording"]
