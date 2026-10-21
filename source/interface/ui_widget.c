@@ -4752,6 +4752,9 @@ void display_scenario_help(
 			return;
 		}
 		local_player_index = player_ui_get_single_player_local_player_controller(0);
+		if (player_ui_ingame_help_disabled(local_player_index))
+			return;
+
 		widget = ui_widget_load_by_name_or_tag(
 			widget_name,
 			NONE,

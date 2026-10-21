@@ -596,6 +596,27 @@ boolean player_ui_rumble_disabled(
 	return player_ui_globals.local_players[local_player_index].profile.controller_settings.vibration_disabled;
 }
 
+boolean player_ui_ingame_help_disabled(
+	short controller_index)
+{
+	short local_player_index;
+
+	if (controller_index == NONE)
+		return FALSE;
+
+	if (network_game_is_active())
+		local_player_index = controller_index;
+	else
+		local_player_index = player_ui_get_single_player_local_player_from_controller(controller_index);
+
+	if (local_player_index == NONE)
+		return FALSE;
+
+	match_assert("c:\\halo\\SOURCE\\interface\\player_ui.c", 305, (local_player_index>=0) && (local_player_index<MAXIMUM_NUMBER_OF_LOCAL_PLAYERS));
+
+	return player_ui_globals.local_players[local_player_index].profile.controller_settings.ingame_help_disabled;
+}
+
 boolean player_ui_get_path_to_local_player_profile_directory(
 	short local_player_index,
 	char *path)

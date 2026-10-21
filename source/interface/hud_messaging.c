@@ -131,6 +131,7 @@ symbols in this file:
 #include "interface/hud_definitions.h"
 #include "interface/hud_messaging.h"
 #include "interface/interface.h"
+#include "interface/player_ui.h"
 #include "interface/ui_widget.h"
 #include "items/item_definitions.h"
 #include "memory/data.h"
@@ -1422,6 +1423,7 @@ void hud_messaging_update(
 		objective_active = hud_messaging_globals->objective.message &&
 			hud_messaging_globals->objective.uptime;
 		help_active = hud_scripted_globals->show_hud_help_text &&
+			!player_ui_ingame_help_disabled(local_player_index) &&
 			hud_messaging_globals->help_message;
 		/* port: in HEAD mode a10's look prompts don't show, as if no help
 		text were up, and its moving prompt shows only its first line

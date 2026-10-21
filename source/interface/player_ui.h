@@ -80,6 +80,8 @@ void player_ui_local_player_left_multiplayer_game(
 	short local_player_index);
 boolean player_ui_rumble_disabled(
 	short local_player_index);
+boolean player_ui_ingame_help_disabled(
+	short controller_index);
 boolean player_ui_get_path_to_local_player_profile_directory(
 	short local_player_index,
 	char *path);
