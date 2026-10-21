@@ -73,6 +73,7 @@ draw, and the two things a draw reads when it is submitted, the vertex constants
 they change, so the held draw is made as it would have been when its End ran. */
 #if HALO_IMMEDIATE_BATCH && !HALO_RENDER_VALIDATION
 #define IMMEDIATE_BATCH 1
+#include "immediate_batch.h"
 int halo_immediate_pending;
 void halo_immediate_flush(void);
 #define IMMEDIATE_FLUSH() do { if (halo_immediate_pending) halo_immediate_flush(); } while (0)
@@ -4585,8 +4586,6 @@ static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 #if IMMEDIATE_BATCH
 /* the held draw's vertices (all of an End's attributes, as floats, one after another) and the triangles of its fans,
 quad lists and triangle lists, indexed from the first vertex */
-#define IMMEDIATE_BATCH_VERTICES 16000
-
 static struct
 {
 	struct gpu_draw packet;
@@ -4641,6 +4640,7 @@ static BOOL immediate_batch_add(const struct gpu_draw *draw, const float *vertic
 	D3DPRIMITIVETYPE type)
 {
 	unsigned long floats = XGPU_VERTEX_ATTRIBUTE_COUNT * 4, triangles, triangle, base;
+	int kind;
 	static int enabled = -1;
 	static unsigned long checked_frame = ~0UL;
 
@@ -4649,29 +4649,28 @@ static BOOL immediate_batch_add(const struct gpu_draw *draw, const float *vertic
 		checked_frame = device.frame;
 		enabled = sim_experiment_enabled_now(SIM_EXPERIMENT_IMMEDIATE_MERGE) != 0;
 	}
-	if (!enabled || companion_active() || trace_frame() || count > IMMEDIATE_BATCH_VERTICES)
+	if (!enabled || companion_active() || trace_frame() || !immediate_batch_fits(0, count))
 		return FALSE;
 	switch (type)
 	{
 	case D3DPT_TRIANGLEFAN:
 	case D3DPT_POLYGON:
-		if (count < 3)
-			return FALSE;
-		triangles = count - 2;
+		kind = IMMEDIATE_BATCH_FAN;
 		break;
 	case D3DPT_QUADLIST:
-		triangles = count / 4 * 2;
+		kind = IMMEDIATE_BATCH_QUADS;
 		break;
 	case D3DPT_TRIANGLELIST:
-		triangles = count / 3;
+		kind = IMMEDIATE_BATCH_TRIANGLES;
 		break;
 	default:
 		return FALSE;
 	}
+	triangles = immediate_batch_triangles(kind, count);
 	if (!triangles)
 		return FALSE;
 	if (halo_immediate_pending && (memcmp(draw, &immediate_batch.packet, sizeof(*draw)) ||
-		immediate_batch.vertex_count + count > IMMEDIATE_BATCH_VERTICES))
+		!immediate_batch_fits(immediate_batch.vertex_count, count)))
 		halo_immediate_flush();
 	if (!halo_immediate_pending)
 	{
@@ -4693,37 +4692,10 @@ static BOOL immediate_batch_add(const struct gpu_draw *draw, const float *vertic
 	memcpy(immediate_batch.vertices + base * floats, vertices, count * floats * sizeof(float));
 	for (triangle = 0; triangle < triangles; triangle++)
 	{
-		WORD *out = immediate_batch.indices + immediate_batch.index_count;
+		unsigned short out[3];
 
-		if (type == D3DPT_QUADLIST)
-		{
-			unsigned long quad = triangle / 2 * 4;
-
-			if (triangle % 2 == 0)
-			{
-				out[0] = (WORD)(base + quad);
-				out[1] = (WORD)(base + quad + 1);
-				out[2] = (WORD)(base + quad + 2);
-			}
-			else
-			{
-				out[0] = (WORD)(base + quad);
-				out[1] = (WORD)(base + quad + 2);
-				out[2] = (WORD)(base + quad + 3);
-			}
-		}
-		else if (type == D3DPT_TRIANGLELIST)
-		{
-			out[0] = (WORD)(base + triangle * 3);
-			out[1] = (WORD)(base + triangle * 3 + 1);
-			out[2] = (WORD)(base + triangle * 3 + 2);
-		}
-		else
-		{
-			out[0] = (WORD)base;
-			out[1] = (WORD)(base + triangle + 1);
-			out[2] = (WORD)(base + triangle + 2);
-		}
+		immediate_batch_triangle(kind, base, triangle, out);
+		memcpy(immediate_batch.indices + immediate_batch.index_count, out, sizeof(out));
 		immediate_batch.index_count += 3;
 	}
 	immediate_batch.vertex_count += count;

@@ -346,6 +346,10 @@ run(BUILD/'frame-counter-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/metal_state_probe.c', '-o', BUILD/'metal-state-probe')
 run(BUILD/'metal-state-probe')
+# debug.immediate_merge's triangles and its vertex limit (immediate_batch.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/immediate_batch_probe.c', '-o', BUILD/'immediate-batch-probe')
+run(BUILD/'immediate-batch-probe')
 run('python3', 'tools/renderer_build_probe.py')
 run('python3', 'tools/test_metal_border.py')
 # render validation (port/ios/host/gpu_validate.c): deliberately bad draws through a backend that draws
