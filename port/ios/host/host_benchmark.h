@@ -72,15 +72,11 @@ int host_benchmark_offscreen_requested(void);
 int host_benchmark_presented(int on);
 /* gpu_metal.m: the same for the renderer, which a fixed-timestep launch started unpaced */
 void gpu_metal_benchmark_realtime(int on);
-/* the tester's progress screen (host_benchmark_page.m): the case in hand by a name a player knows, which of how
-   many, how far the whole benchmark has come (0 to 1), whether this frame is drawn offscreen, and whether the
-   case is the real-time check */
-struct host_benchmark_progress {
-    char title[96];
-    int number, total;
-    double fraction;
-    int offscreen, reality_check;
-};
+#include "host_benchmark_progress.h"
+/* Guest phase changes only; the native UI samples progress at 4 Hz. */
+void host_benchmark_phase(int phase);
+/* Hide synchronously before switching the renderer to presented work. */
+void host_benchmark_overlay_presented(int presented);
 void host_benchmark_progress(struct host_benchmark_progress *progress);
 /* 1 while this frame is drawn offscreen: honored, and the suite running */
 int host_benchmark_offscreen_active(void);

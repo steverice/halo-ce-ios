@@ -83,8 +83,18 @@ void host_benchmark_live(struct benchmark_live_snapshot *snapshot) {
 static _Atomic int fault_seen;
 /* every frame offered to host_benchmark_frame and every frame not shown, since the run began (the end's log line) */
 static _Atomic unsigned long frames_offered, frames_no_drawable, frames_no_picture;
-/* the run's game ticks so far, for the progress screen; when it began, in real time */
-static _Atomic long run_ticks;
+/* The UI reads immutable case metadata separately from the frame metrics. */
+static os_unfair_lock progress_lock = OS_UNFAIR_LOCK_INIT;
+static struct host_benchmark_progress progress_case;
+static double progress_started_at, progress_window_seconds, progress_measuring_at;
+static int progress_menu;
+static _Atomic int progress_phase;
+void host_benchmark_phase(int phase) {
+    os_unfair_lock_lock(&progress_lock);
+    if (phase == HOST_BENCHMARK_MEASURING) progress_measuring_at = CFAbsoluteTimeGetCurrent();
+    atomic_store(&progress_phase, phase);
+    os_unfair_lock_unlock(&progress_lock);
+}
 static CFAbsoluteTime run_started_at;
 /* the run's measured ticks, when its window first opened, and whether its wall-time cap ended it */
 static _Atomic long window_ticks;
@@ -369,6 +379,7 @@ int host_benchmark_presented(int on) {
     on = on != 0;
     if (!host_benchmark_offscreen_requested()) return 0;
     if (atomic_exchange(&presented_now, on) != on) {
+        host_benchmark_overlay_presented(on);
         gpu_metal_benchmark_realtime(on);
         host_logf(HOST_LOG_INFO, "benchmark: frames %s", on ? "shown in real time" : "drawn offscreen, time-compressed");
     }
@@ -424,7 +435,6 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     host_frame_counter_sample(interval, cpu, gpu);
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
-    if (ticks > 0) atomic_fetch_add(&run_ticks, ticks);
     os_unfair_lock_lock(&lock);
     benchmark_live_add(&live,CACurrentMediaTime(),interval,cpu,gpu);
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
@@ -1031,7 +1041,14 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     atomic_store(&finish_requested,0);
     host_benchmark_live_reset();
     atomic_store(&running, 1);
-    if(plan.mode==BENCHMARK_UNIFIED)host_benchmark_overlay_show(1);
+    os_unfair_lock_lock(&progress_lock);
+    memset(&progress_case, 0, sizeof(progress_case));
+    snprintf(progress_case.mode, sizeof(progress_case.mode), "%s", mode);
+    progress_started_at = CFAbsoluteTimeGetCurrent();
+    progress_window_seconds = 0;
+    os_unfair_lock_unlock(&progress_lock);
+    host_benchmark_phase(HOST_BENCHMARK_LOADING);
+    if(plan.mode==BENCHMARK_UNIFIED || host_benchmark_offscreen_requested())host_benchmark_overlay_show(1);
     sampler_start();
 
     /* conditions: a warm device gets time to cool, then runs flagged; the display's rate is recorded as it is */
@@ -1091,20 +1108,20 @@ static NSString *scene_title(const struct benchmark_scene *scene) {
 }
 
 void host_benchmark_progress(struct host_benchmark_progress *progress) {
-    memset(progress, 0, sizeof(*progress));
-    progress->offscreen = host_benchmark_offscreen_active();
-    if (!atomic_load(&running) || !run_open || run.scene < 0 || run.scene >= plan.scene_count) return;
-    const struct benchmark_scene *scene = &plan.scenes[run.scene];
-    double lead = scene->lead * 30.0, window = (run.stage == 'P' ? reality_check_seconds(scene) :
-        scene->seconds > 0.0 ? scene->seconds : 60.0) * 30.0;
-    double within = lead + window > 0.0 ? fmin(1.0, (double)atomic_load(&run_ticks) / (lead + window)) : 0.0;
-
-    snprintf(progress->title, sizeof(progress->title), "%s", scene_title(scene).UTF8String);
-    progress->number = outcome_count + 1;
-    progress->total = benchmark_plan_total(&plan, outcomes, outcome_count);
-    if (progress->total < progress->number) progress->total = progress->number;
-    progress->fraction = fmin(1.0, ((double)outcome_count + within) / (double)progress->total);
-    progress->reality_check = run.stage == 'P';
+    /* The main-thread timer never reads the guest thread's mutable plan or run. */
+    os_unfair_lock_lock(&progress_lock);
+    *progress = progress_case;
+    double now = CFAbsoluteTimeGetCurrent();
+    progress->elapsed = fmax(0, now - progress_started_at);
+    progress->phase = atomic_load(&progress_phase);
+    /* Menu windows use wall time in benchmark_suite.c; game windows use simulation ticks. */
+    double measured = progress_menu ? fmax(0, now - progress_measuring_at) : atomic_load(&window_ticks) / 30.0;
+    progress->measured_fraction = progress_window_seconds > 0 ? fmin(1, measured / progress_window_seconds) : -1;
+    os_unfair_lock_unlock(&progress_lock);
+    progress->offscreen = host_benchmark_offscreen_requested() && atomic_load(&running);
+    progress->presented = atomic_load(&presented_now);
+    progress->fraction = progress->phase == HOST_BENCHMARK_MEASURING && progress->measured_fraction >= 0 ?
+        progress->measured_fraction : 0;
 }
 
 int host_benchmark_next(char *text, unsigned int size) {
@@ -1241,6 +1258,19 @@ int host_benchmark_next(char *text, unsigned int size) {
         return completion_screen_requested ? 2 : 0;
     }
     scene = &plan.scenes[run.scene];
+    host_benchmark_phase(HOST_BENCHMARK_LOADING);
+    os_unfair_lock_lock(&progress_lock);
+    snprintf(progress_case.title, sizeof(progress_case.title), "%s\n%s", scene_title(scene).UTF8String, scene->id);
+    progress_case.number = outcome_count + 1;
+    progress_case.total = benchmark_plan_total(&plan, outcomes, outcome_count);
+    if (progress_case.total < progress_case.number) progress_case.total = progress_case.number;
+    progress_case.reality_check = run.stage == 'P';
+    progress_menu = scene->kind == BENCHMARK_SCENE_MENU;
+    progress_measuring_at = 0;
+    progress_window_seconds = run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds;
+    progress_started_at = CFAbsoluteTimeGetCurrent();
+    atomic_store(&window_ticks, 0);
+    os_unfair_lock_unlock(&progress_lock);
     if (outcome_count) {
         /* the pause between runs, on a still screen that says what comes next; Back there stops the suite, which
            carries on from its journal the next time it is started */
@@ -1289,7 +1319,6 @@ int host_benchmark_next(char *text, unsigned int size) {
         knobs.mask & BENCHMARK_KNOB_RENDER_SCALE ? knobs.render_scale : 0.0,
         knobs.mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ? knobs.clutter_distance : -1.0,
         knobs.mask & BENCHMARK_KNOB_CLUTTER_LOD ? knobs.clutter_lowest_lod : -1);
-    atomic_store(&run_ticks, 0);
     atomic_store(&window_ticks, 0);
     run_started_at = CFAbsoluteTimeGetCurrent();
     window_started_at = 0;
