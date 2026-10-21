@@ -620,13 +620,13 @@ static const struct config_setting config_settings[] =
 		"quads) in the same state are made as one draw, in the same order: the same\n"
 		"pictures with fewer draws. Read again each tick, so it can be flipped\n"
 		"while the game runs." },
-	{ "debug.collision_candidates", _config_boolean, "false", "HALO_COLLISION_CANDIDATES", _environment_value, _platform_all,
-		"Experimental. Each cluster keeps a second list of its vehicles, scenery\n"
-		"and other objects that are not bipeds, items or projectiles, and a\n"
-		"collision ray that tests none of those three walks only that list: the\n"
-		"same answers in the same order without stepping past every body and\n"
-		"weapon in a crowded cluster. Read again each tick, so it can be flipped\n"
-		"while the game runs." },
+	{ "debug.collision_candidates", _config_boolean, "true", "HALO_COLLISION_CANDIDATES", _environment_value, _platform_all,
+		"Each cluster keeps a second list of its vehicles, scenery and other objects\n"
+		"that are not bipeds, items or projectiles, and a collision ray that tests\n"
+		"none of those three walks only that list: the same answers in the same\n"
+		"order without stepping past every body and weapon in a crowded cluster.\n"
+		"On by default; false walks every object. Read again each tick, so it can\n"
+		"be flipped while the game runs." },
 	{ "debug.aim_steady_level", _config_real, "-1.0", "HALO_AIM_STEADY_LEVEL", _environment_value, _platform_ios,
 		"Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a\n"
 		"target the hand's aim counts as (1.0 a red reticle), in place of the\n"

@@ -3,9 +3,8 @@ SIM_EXPERIMENTS.C
 
 The simulation speed-ups (debug.collision_type_filter,
 debug.sphere_query_type_filter, debug.static_light_relink,
-debug.immediate_merge, debug.collision_candidates). The first three default to on;
-immediate merge defaults to off; collision candidates is changed to on by a later
-commit. A setting is read again at the start of each game tick, so one can
+debug.immediate_merge, debug.collision_candidates). All but immediate merge default
+to on. A setting is read again at the start of each game tick, so one can
 be flipped while the game runs (a console toggle or a settings change) and
 the simulation keeps one value for the whole tick. Every one changes how
 much work a query does and not what it returns.

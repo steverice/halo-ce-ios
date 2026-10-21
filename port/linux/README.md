@@ -355,7 +355,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.sphere_query_type_filter` | boolean | `true` | apple, desktop | `HALO_SPHERE_QUERY_TYPE_FILTER` | The nearby-object queries (objects_in_sphere) skip an object whose type the caller did not ask for before collecting it, instead of after: the same answers with less work. |
 | `debug.static_light_relink` | boolean | `true` | apple, desktop | `HALO_STATIC_LIGHT_RELINK` | An attached light that has not moved keeps its place in the map's light lists instead of leaving and joining them again every tick. |
 | `debug.immediate_merge` | boolean | `false` | apple, desktop | `HALO_IMMEDIATE_MERGE` | Experimental. |
-| `debug.collision_candidates` | boolean | `false` | apple, desktop | `HALO_COLLISION_CANDIDATES` | Experimental. |
+| `debug.collision_candidates` | boolean | `true` | apple, desktop | `HALO_COLLISION_CANDIDATES` | Each cluster keeps a second list of its vehicles, scenery and other objects that are not bipeds, items or projectiles, and a collision ray that tests none of those three walks only that list: the same answers in the same order without stepping past every body and weapon in a crowded cluster. |
 | `debug.aim_steady_level` | number | `-1.0` | apple | `HALO_AIM_STEADY_LEVEL` | Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. |
 ### display
 
