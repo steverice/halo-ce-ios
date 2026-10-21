@@ -1134,7 +1134,7 @@ void unit_dialogue_update(
 /* port: in an opted-in benchmark recording or replay (input_replay_benchmark_lip_sync, port/linux/src/input_replay.c), the mouth
 moves with the speech once a tick, not with the mixer (game_sound_set_mouth_aperture): the mouth aperture of the
 speech's first permutation at the ticks since it began, approached by at most 0.3 a tick as the mixer's was, and
-closing once the speech is over. It is the same in a replay, which plays no sound, as in the take. */
+closing once the speech is over. It is the same in a replay, whose mixer leaves the mouths alone, as in the take. */
 static void unit_mouth_aperture_from_speech(
 	long unit_index)
 {

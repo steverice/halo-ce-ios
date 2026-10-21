@@ -826,14 +826,10 @@ void sound_enable(
 	return;
 }
 
-extern unsigned char input_replay_sound_silent(void);
-
 boolean sound_is_active(
 	void)
 {
-	/* port: a replay plays no sound: which sounds the mixer starts follows the sound cache's loading and the frames'
-	timing, and the simulation must not (input_replay.c) */
-	return sound_manager_globals.initialized && sound_manager_globals.enabled && !input_replay_sound_silent();
+	return sound_manager_globals.initialized && sound_manager_globals.enabled;
 }
 
 void sound_pause(

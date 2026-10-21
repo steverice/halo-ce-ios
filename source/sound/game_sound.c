@@ -524,6 +524,7 @@ void network_coop_note_sound(short kind, long definition_index, long object_inde
 
 extern unsigned char input_replay_sim_isolated(void);
 extern unsigned char input_replay_benchmark_lip_sync(void);
+extern unsigned char input_replay_mixer_detached(void);
 
 void scripted_sound_new(
 	long definition_index,
@@ -911,15 +912,16 @@ void game_sound_update(
 	return;
 }
 
-/* port: in an opted-in benchmark recording or replay the mixer leaves the mouths alone: a unit's mouth aperture is part of
-the simulation (the unit's mouth function moves its jaw in its node matrices, which the game reads its markers
-from), and the mixer sets it as the sound plays, at the device's pace, and not at all in a replay, which plays no
-sound. unit_dialogue_update moves it once a tick from the speech instead (unit_dialogue.c). */
+/* port: in an opted-in benchmark recording or replay, and in any replay, the mixer leaves the mouths alone: a unit's
+mouth aperture is part of the simulation (the unit's mouth function moves its jaw in its node matrices, which the
+game reads its markers from), and the mixer sets it as the sound plays, at the device's pace. In an opted-in
+benchmark take unit_dialogue_update moves it once a tick from the speech instead (unit_dialogue.c); in a replay of
+any other take it stays closed. */
 void game_sound_set_mouth_aperture(
 	long object_index,
 	real mouth_aperture)
 {
-	if (input_replay_benchmark_lip_sync())
+	if (input_replay_benchmark_lip_sync() || input_replay_mixer_detached())
 		return;
 	if (game_looping_sound_data->valid)
 	{

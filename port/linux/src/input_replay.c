@@ -279,7 +279,7 @@ static void actions_load(void)
 			!config_boolean("debug.benchmark_lip_sync"))
 			platform_log("debug.input_replay: warning: this take needs debug.benchmark_lip_sync=true to match its simulated mouths; this replay may diverge");
 		if (replay.recorded_original_lip_sync)
-			platform_log("debug.input_replay: warning: original audio-driven mouths cannot be reproduced by a silent replay; record benchmark takes with debug.benchmark_lip_sync=true");
+			platform_log("debug.input_replay: warning: original audio-driven mouths cannot be reproduced by a replay; record benchmark takes with debug.benchmark_lip_sync=true");
 		version = replay.environment.action_version;
 		controller_aim = replay.environment.controller_aim;
 		platform_log("input replay: actions aim=%s", controller_aim ? "controller" : "head");
@@ -1207,7 +1207,7 @@ a tick draws from it are not the same in two runs.) The sounds reach the simulat
 sound only if the mixer started it, which follows the sound cache's loading and the playing sounds' timing, and the
 sounds drew from the same sequences. So the sounds draw from a sequence of their own, a unit speaks a scripted
 sound whether or not it started while a take is recorded or replayed (input_replay_sim_isolated), and a replay
-plays no sound at all (input_replay_sound_silent). */
+plays its sounds but its mixer moves no mouths (input_replay_mixer_detached). */
 static struct { BOOL valid; long tick; unsigned long seeds[2]; } tick_seeds;
 static long tick_seeds_begun = -1;
 
@@ -1234,8 +1234,9 @@ unsigned char input_replay_benchmark_lip_sync(void)
 	return *replay.record_actions_path && !replay.record_ended;
 }
 
-/* whether a replay is under way, which plays no sound */
-unsigned char input_replay_sound_silent(void)
+/* whether a replay is under way: its sounds play, but the mixer sets nothing the simulation reads (a unit's mouth,
+game_sound_set_mouth_aperture) */
+unsigned char input_replay_mixer_detached(void)
 {
 	return replay.action_count != 0;
 }
