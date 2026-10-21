@@ -2030,7 +2030,11 @@ static boolean pause_game_quit_to_main_menu(
 	}
 	/* port: a multiplayer map played alone (New Game's MULTIPLAYER maps) is
 	not saved, so it never takes the place of the campaign's saved game */
-	if (main_get_current_solo_level() != NONE && !game_state_save_to_persistent_storage())
+	if (main_get_current_solo_level() != NONE &&
+		/* port: and a level played with no player profile (started with map_name) has no saved game to write to:
+		it returns to the main menu with nothing saved, not with an error */
+		player_ui_get_active_player_profile_index(0) != NONE &&
+		!game_state_save_to_persistent_storage())
 	{
 		/* port: reverting to the checkpoint can restore its unpaused clock.
 		A failed save leaves the pause menu open, so pause the clock again. */
