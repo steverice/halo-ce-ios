@@ -162,3 +162,17 @@ def test_clutter_knobs_are_in_the_bounds_runs():
     suite = suites.bounds_suite(WORKLOADS[:1], ladder)
     assert suite.runs[0].settings == {"display.clutter_distance": 20.0, "debug.clutter_lowest_lod": True}
     assert suite.runs[1].settings == {"display.clutter_distance": 0.0, "debug.clutter_lowest_lod": False}
+
+
+@pytest.mark.parametrize("klass", ["handheld", "tv"])
+def test_immediate_merge_is_a_knob_of_the_ranking_the_catalog_and_the_suites_carry(klass):
+    ladder = suites.read_ladder(klass)
+    assert ladder["debug.immediate_merge"] == ["off", "on"]
+    assert suites.setting_name("debug.immediate_merge") == "debug.immediate_merge"
+    assert suites.setting_value("debug.immediate_merge", "on") is True
+    assert "debug.immediate_merge" in benchmark_catalog.CASE_SETTINGS
+    runs = suites.bounds_suite(WORKLOADS, ladder).runs
+    assert runs[0].settings["debug.immediate_merge"] is True and runs[1].settings["debug.immediate_merge"] is False
+    singles = [run for run in suites.ofat_suite(WORKLOADS[:1], {knob: values[0] for knob, values in ladder.items()}, suites.ofat_knobs(ladder)).runs
+               if "debug.immediate_merge" in run.settings]
+    assert any(run.settings["debug.immediate_merge"] for run in singles)

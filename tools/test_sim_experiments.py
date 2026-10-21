@@ -38,10 +38,10 @@ def test_every_setting_has_a_constant_and_the_catalog_lists_them_in_the_same_ord
     names = _names()
     assert len(names) == len(set(names))
     assert {"debug." + c.lower() for c in _constants()} == set(names)
-    assert list(benchmark_catalog.CASE_SETTINGS) == names
+    assert list(benchmark_catalog.SIM_SETTINGS) == names
 
 
 def test_the_host_catalog_reader_lists_the_same_settings_in_the_same_order():
     text = (ROOT / "port/ios/host/host_benchmark_catalog.m").read_text()
-    listed = re.search(r"names = @\[((?:@\"debug\.[a-z_]+\",?\s*)+)\]", text).group(1)
+    listed = re.search(r"simulation = @\[((?:@\"debug\.[a-z_]+\",?\s*)+)\]", text).group(1)
     assert re.findall(r'@"([^"]+)"', listed) == _names()
