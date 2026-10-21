@@ -119,6 +119,7 @@ enum
 	_render_model_shadow_bit,
 	_render_model_no_planar_fog_bit,
 	_render_model_first_person_bit,
+	_render_model_lowest_lod_bit, /* port: debug.clutter_lowest_lod */
 	NUMBER_OF_RENDER_MODEL_FLAGS
 };
 
@@ -379,7 +380,7 @@ static void render_model_parts(
 
 				/* port: under "max" a permutation without the chosen level draws its own
 				highest level below it, rather than nothing */
-				if (geometry_index==NONE && model_lod_is_max())
+				if (geometry_index==NONE && (model_lod_is_max() || TEST_FLAG(flags, _render_model_lowest_lod_bit)))
 				{
 					short level_index = geometry_detail_level_index;
 
@@ -1089,6 +1090,35 @@ void render_model(
 				}
 				geometry_detail_level_index = highest_level_index;
 			}
+		}
+		/* port: debug.clutter_lowest_lod: the lowest level every chosen permutation has
+		one at or below, whatever display.model_lod says */
+		if (TEST_FLAG(flags, _render_model_lowest_lod_bit))
+		{
+			short region_index;
+			short lowest_level_index = 0;
+
+			for (region_index = 0; region_index<model->regions.count; region_index++)
+			{
+				struct model_region *region = TAG_BLOCK_GET_ELEMENT(&model->regions, region_index, struct model_region);
+				char permutation_index = region_permutation_indices[region_index];
+
+				if (permutation_index!=NONE)
+				{
+					struct model_region_permutation *permutation = TAG_BLOCK_GET_ELEMENT(
+						&region->permutations,
+						permutation_index,
+						struct model_region_permutation);
+					short level_index = 0;
+
+					while (level_index<NUMBER_OF_DETAIL_LEVELS_PER_MODEL-1 && permutation->geometry_indices[level_index]==NONE)
+					{
+						level_index++;
+					}
+					lowest_level_index = MAX(lowest_level_index, level_index);
+				}
+			}
+			geometry_detail_level_index = lowest_level_index;
 		}
 		if (rasterizer_debug_options.debug_model_lod!=NONE)
 		{

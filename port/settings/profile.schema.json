@@ -186,6 +186,13 @@
           "maximum": 600.0,
           "default": 60.0,
           "description": "Seconds a texture goes undrawn before the cache drops it, 10 to 600. The cache sweeps every 10 seconds, so a texture goes 0 to 10 seconds after that. A device profile sets it for the device's memory; it is not a player choice. Profile values outside the accepted set are refused, not clamped."
+        },
+        "clutter_distance": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 200.0,
+          "default": 0.0,
+          "description": "Beyond this many world units from the camera, dead bodies, weapons and equipment on the ground and garbage objects are not drawn; 0 (default) draws them all, 0 to 200. Held weapons, living units, vehicles, scenery and effects are always drawn. Only the drawing changes, never the game. A device profile sets it for the device's speed; it is not a player choice. Profile values outside the accepted set are refused, not clamped."
         }
       },
       "additionalProperties": false
@@ -2178,6 +2185,50 @@
           ]
         },
         "display.texture_idle_seconds": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.clutter_distance": {
           "type": "object",
           "properties": {
             "basis": {

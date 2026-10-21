@@ -372,6 +372,12 @@ static const struct config_setting config_settings[] =
 		"cache sweeps every 10 seconds, so a texture goes 0 to 10 seconds after\n"
 		"that. A device profile sets it for the device's memory; it is not a player\n"
 		"choice." },
+	{ "display.clutter_distance", _config_real, "0.0", "HALO_CLUTTER_DISTANCE", _environment_value, _platform_all,
+		"Beyond this many world units from the camera, dead bodies, weapons and\n"
+		"equipment on the ground and garbage objects are not drawn; 0 (default) draws\n"
+		"them all, 0 to 200. Held weapons, living units, vehicles, scenery and effects\n"
+		"are always drawn. Only the drawing changes, never the game. A device profile\n"
+		"sets it for the device's speed; it is not a player choice." },
 	{ "input.turn", _config_string, "\"snap\"", "HALO_TURN", _environment_value, _platform_ios,
 		"With display.stereo = \"head\": how the right stick turns the view: \"snap\"\n"
 		"(default; a flick turns input.snap_angle at once), \"smooth\" (steadily, at\n"
@@ -588,6 +594,13 @@ static const struct config_setting config_settings[] =
 		"Tuning display.texture_idle_seconds live: from 10 up, the seconds a\n"
 		"texture goes undrawn before the cache drops it, in place of the device\n"
 		"profile's. Negative uses the profile's." },
+	{ "debug.clutter_distance", _config_real, "-1.0", "HALO_CLUTTER_DISTANCE_DEBUG", _environment_value, _platform_all,
+		"Tuning display.clutter_distance live: from 0 up, the distance in world units\n"
+		"in place of the device profile's. Negative uses the profile's." },
+	{ "debug.clutter_lowest_lod", _config_boolean, "false", "HALO_CLUTTER_LOWEST_LOD", _environment_value, _platform_all,
+		"Draw the clutter display.clutter_distance names (dead bodies, loose weapons\n"
+		"and equipment, garbage) at its lowest model detail level, wherever it is.\n"
+		"Only the drawing changes." },
 	{ "debug.aim_steady_level", _config_real, "-1.0", "HALO_AIM_STEADY_LEVEL", _environment_value, _platform_ios,
 		"Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a\n"
 		"target the hand's aim counts as (1.0 a red reticle), in place of the\n"

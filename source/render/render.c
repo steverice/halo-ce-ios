@@ -153,6 +153,13 @@ static boolean render_stereo_eyes_drawn;
 /* port: in a stereo eye's render_window, the camera whose apex is the culling
 frustum's (render_player_frame_stereo), else NULL */
 static const struct render_camera *render_stereo_visibility_camera;
+
+/* port: the camera a frame's distance decisions measure from (display.clutter_distance):
+in a stereo eye the center camera both eyes share, else the window's */
+const struct render_camera *render_clutter_camera(void)
+{
+	return render_stereo_visibility_camera ? render_stereo_visibility_camera : &render.camera;
+}
 /* port: in a stereo eye's render_window, the frame's one screen flash
 (render_player_frame_stereo), else NULL */
 static const struct render_screen_flash *render_stereo_screen_flash;

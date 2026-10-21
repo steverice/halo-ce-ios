@@ -34,3 +34,19 @@ grade = {"auto" = "barely"}
 [tv."display.render_lines"]
 order = ["1080", "810", "540"]
 grade = {"810" = "barely", "540" = "obvious"}
+
+[handheld."display.clutter_distance"]
+order = ["0", "80", "40", "20"]
+grade = {"80" = "invisible", "40" = "barely", "20" = "obvious"}
+
+[handheld."debug.clutter_lowest_lod"]
+order = ["off", "on"]
+grade = {"on" = "barely"}
+
+[tv."display.clutter_distance"]
+order = ["0", "80", "40", "20"]
+grade = {"80" = "invisible", "40" = "barely", "20" = "obvious"}
+
+[tv."debug.clutter_lowest_lod"]
+order = ["off", "on"]
+grade = {"on" = "barely"}

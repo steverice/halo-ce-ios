@@ -138,6 +138,8 @@ enum
 {
 	_render_model_shadow_bit = 1,
 	_render_model_no_planar_fog_bit,
+	/* port: models.c's _render_model_lowest_lod_bit */
+	_render_model_lowest_lod_bit = 4,
 };
 
 enum
@@ -263,6 +265,14 @@ short structure_visibility_find_objects(
 	void (*get_bounding_sphere_function)(long object_index, real_point3d *center, real *radius),
 	boolean (*unmarked_function)(long object_index),
 	boolean (*mark_function)(long object_index));
+
+/* port: display.clutter_distance (port/linux/game/clutter_distance.c) */
+double config_real(const char *name);
+boolean config_boolean(const char *name);
+const struct render_camera *render_clutter_camera(void);
+static boolean object_is_clutter(long object_index);
+/* port: debug.clutter_lowest_lod, read once per draw list */
+static boolean clutter_lowest_lod = FALSE;
 
 extern boolean debug_objects;
 extern short debug_rasterizer_light_count;
@@ -510,6 +520,28 @@ static boolean first_person_legs_shadow(
 		first_person_legs_wanted(object_index);
 }
 
+/* port: what display.clutter_distance and debug.clutter_lowest_lod act on: a
+dead biped, a weapon or equipment nobody holds, garbage. A held weapon, a unit
+in a seat and the living are left alone */
+static boolean object_is_clutter(
+	long object_index)
+{
+	struct object_datum *object = object_get(object_index);
+
+	if (object->object.parent_object_index != NONE)
+		return FALSE;
+	switch (object->object.type)
+	{
+		case _object_type_biped:
+			return TEST_FLAG(object->object.damage_flags, _object_dead_bit);
+		case _object_type_weapon:
+		case _object_type_equipment:
+		case _object_type_garbage:
+			return TRUE;
+	}
+	return FALSE;
+}
+
 static void find_rendered_objects(
 	void)
 {
@@ -535,6 +567,44 @@ static void find_rendered_objects(
 		object_mark_function);
 
 	object_marker_end();
+
+	clutter_lowest_lod = config_boolean("debug.clutter_lowest_lod") != FALSE;
+
+	/* port: display.clutter_distance: beyond it from the frame's camera (the
+	center camera in a stereo eye, so both eyes agree) bodies, items on the
+	ground and garbage are left out of the frame's draw list. Render-only: it
+	reads the object and changes nothing of it */
+	{
+		double distance = config_real("debug.clutter_distance");
+
+		if (distance < 0.0)
+			distance = config_real("display.clutter_distance");
+		if (distance > 0.0)
+		{
+			struct render_camera const *camera = render_clutter_camera();
+			real limit_squared = (real)(distance * distance);
+			long source_index, kept = 0;
+
+			for (source_index = 0; source_index < render_object_globals.rendered_object_count; source_index++)
+			{
+				long object_index = render_object_globals.rendered_object_indices[source_index];
+				boolean keep = TRUE;
+
+				if (camera && object_is_clutter(object_index))
+				{
+					struct object_datum *object = object_get(object_index);
+					real dx = object->object.bounding_sphere_center.x - camera->position.x;
+					real dy = object->object.bounding_sphere_center.y - camera->position.y;
+					real dz = object->object.bounding_sphere_center.z - camera->position.z;
+
+					keep = dx * dx + dy * dy + dz * dz <= limit_squared;
+				}
+				if (keep)
+					render_object_globals.rendered_object_indices[kept++] = object_index;
+			}
+			render_object_globals.rendered_object_count = (short)kept;
+		}
+	}
 
 	if (render_object_globals.rendered_object_count == MAXIMUM_RENDERED_OBJECTS &&
 		!reported_rendered_object_overflow)
@@ -799,7 +869,8 @@ static void render_object_list(
 						&model_effect,
 						object_index,
 						object->object.forced_shader_permutation_index,
-						data->no_planar_fog ? FLAG(_render_model_no_planar_fog_bit) : 0);
+						(data->no_planar_fog ? FLAG(_render_model_no_planar_fog_bit) : 0) |
+						(clutter_lowest_lod && object_is_clutter(object_index) ? FLAG(_render_model_lowest_lod_bit) : 0));
 
 					if (debug_objects)
 					{

@@ -167,6 +167,7 @@ DEFAULTS = {
     "display.foveation": "true",
     "input.aim_loss_grace": "0.5",
     "display.texture_idle_seconds": "60.0",
+    "display.clutter_distance": "0.0",
     "display.render_quality": "0.6",
     "display.first_person_body": "true",
     "display.first_person_legs": "false",

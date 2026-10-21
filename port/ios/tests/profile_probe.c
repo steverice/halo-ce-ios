@@ -293,6 +293,16 @@ static void check_refusals(void)
 	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
 	assert(profile.count == 0 && strstr(logged, "display.texture_idle_seconds has a value"));
 
+	/* the clutter distance is within 0 to 200 world units */
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[display]\nclutter_distance = 40\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 1 && has(&profile, "display.clutter_distance", "40"));
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[display]\nclutter_distance = 500\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 0 && strstr(logged, "display.clutter_distance has a value"));
+
 	/* files that are no profile: not parsed, another schema, no heading, too large. The launch goes on */
 	write_file("broken.toml", "schema = 1\nname = \"Broken\nkind = [[[\n");
 	write_file("future.toml", "schema = 2\nname = \"Future\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"

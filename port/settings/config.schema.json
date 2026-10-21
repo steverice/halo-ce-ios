@@ -615,6 +615,17 @@
             "desktop"
           ]
         },
+        "clutter_distance": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Beyond this many world units from the camera, dead bodies, weapons and equipment on the ground and garbage objects are not drawn; 0 (default) draws them all, 0 to 200. Held weapons, living units, vehicles, scenery and effects are always drawn. Only the drawing changes, never the game. A device profile sets it for the device's speed; it is not a player choice.",
+          "x-environment": "HALO_CLUTTER_DISTANCE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "theater_width": {
           "type": "number",
           "default": 60.0,
@@ -1359,6 +1370,28 @@
           "default": -1.0,
           "description": "Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. Negative uses the profile's.",
           "x-environment": "HALO_TEXTURE_IDLE_SECONDS_DEBUG",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "clutter_distance": {
+          "type": "number",
+          "default": -1.0,
+          "description": "Tuning display.clutter_distance live: from 0 up, the distance in world units in place of the device profile's. Negative uses the profile's.",
+          "x-environment": "HALO_CLUTTER_DISTANCE_DEBUG",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "clutter_lowest_lod": {
+          "type": "boolean",
+          "default": false,
+          "description": "Draw the clutter display.clutter_distance names (dead bodies, loose weapons and equipment, garbage) at its lowest model detail level, wherever it is. Only the drawing changes.",
+          "x-environment": "HALO_CLUTTER_LOWEST_LOD",
           "x-environment-style": "value",
           "x-platforms": [
             "apple",

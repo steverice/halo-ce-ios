@@ -10,7 +10,8 @@ player's on every device and never belong here; the one exception is
 input.aim_loss_grace, a hardware property (how long a device's hand tracking
 may drop out before the aim leaves the hand) and not a choice, and
 display.texture_idle_seconds (how long the texture cache keeps an undrawn
-texture, which a device's memory decides).
+texture, which a device's memory decides), and display.clutter_distance (how
+far bodies, loose items and garbage are drawn, which a device's speed decides).
 
 An X-macro list, included with the four macros defined:
 
@@ -66,6 +67,7 @@ PROFILE_STRING("display.async_shaders", "auto|on|off")
 PROFILE_BOOLEAN("display.interpolation")
 PROFILE_REAL("input.aim_loss_grace", 0.0, 5.0)
 PROFILE_REAL("display.texture_idle_seconds", 10.0, 600.0)
+PROFILE_REAL("display.clutter_distance", 0.0, 200.0)
 
 PROFILE_SCENE("display.render_scale")
 PROFILE_SCENE("display.render_height")
