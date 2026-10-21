@@ -1013,6 +1013,9 @@ static void exit_hook(void)
 	/* a recording the game's exit cuts off (debug.exit_after, closing the window) */
 	if (*replay.record_actions_path && replay.actions_file)
 		log_ended();
+	/* an automatic take the exit cuts off (Command-Q, closing the window) is closed like one the menu ends: its
+	.route gets closed_by, its last tick and its events as they stand, not as the last periodic write left them */
+	take_close("quit");
 }
 
 /* ends a recording: both files close, and nothing more is written */
