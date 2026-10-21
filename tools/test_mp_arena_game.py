@@ -95,7 +95,7 @@ int main(void) {
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.left_x);
     assert(!pad.fire);
     assert(benchmark_mp_arena_begin_combat()&&benchmark_mp_arena_combat_ready());
-    assert(benchmark_mp_arena_action(1,10,&action)&&action.primary_trigger>0.0f);
+    assert(benchmark_mp_arena_action(1,60,&action)&&action.primary_trigger>0.0f /* bot 1 fires where (tick + 37) % 90 < 24 */);
     assert(benchmark_mp_arena_gamepad(0,10,&pad)&&pad.fire);
     assert(!benchmark_mp_arena_gamepad(1,10,&pad));
     benchmark_mp_arena_reset();assert(!benchmark_mp_arena_repositions(127));

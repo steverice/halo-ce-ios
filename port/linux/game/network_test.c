@@ -601,7 +601,7 @@ void network_test_suite_synthetic_input_tick(long tick)
 
 		action.desired_facing.yaw = (real)((tick + i * 17) % 360) * 0.01f;
 		action.throttle.j = 0.75f;
-		action.primary_trigger = prepared && tick % 90 < 24 ? 1.0f : 0.0f;
+		action.primary_trigger = prepared && (tick + NETWORK_TEST_BOT_TRIGGER_PHASE(i)) % 90 < 24 ? 1.0f : 0.0f;
 		if (prepared && benchmark_mp_arena_enabled())
 		{
 			memset(&action, 0, sizeof(action));

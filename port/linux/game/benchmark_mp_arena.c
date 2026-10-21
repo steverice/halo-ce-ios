@@ -316,7 +316,7 @@ int benchmark_mp_arena_action(int actor, long tick, struct player_action *action
 	else dx = dy = 0.0f;
 	action->throttle.i = -sinf(yaw) * dx + cosf(yaw) * dy;
 	action->throttle.j = cosf(yaw) * dx + sinf(yaw) * dy;
-	action->primary_trigger = arena.combat && tick % 90 < 24 ? 1.0f : 0.0f;
+	action->primary_trigger = arena.combat && (tick + NETWORK_TEST_BOT_TRIGGER_PHASE(actor)) % 90 < 24 ? 1.0f : 0.0f;
 	return 1;
 }
 

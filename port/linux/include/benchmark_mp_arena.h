@@ -1,6 +1,13 @@
 /* Generic bounded arena mechanics. Workload dimensions come from signed data. */
 #ifndef BENCHMARK_MP_ARENA_H
 #define BENCHMARK_MP_ARENA_H
+
+/* The synthetic bots' trigger phase: bot N pulls its trigger on ticks where (tick + N * 37) % 90 < 24, so
+deaths do not arrive in one wave. A fixed offset of the bot's index, never the game's random seed. */
+#define NETWORK_TEST_BOT_TRIGGER_PHASE(actor) (((actor) * 37) % 90)
+/* The bots' workload revision, reported as simulation.bot_workload: 3 staggers the trigger phase; reports
+without the key (or with 2) have every bot firing together. */
+#define NETWORK_TEST_BOT_WORKLOAD 3
 #include "mp_benchmark_probe.h"
 #include "benchmark_mp_limits.h"
 #include <math.h>

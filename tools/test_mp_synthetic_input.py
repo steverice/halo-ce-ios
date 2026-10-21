@@ -35,6 +35,7 @@ def function(source: str, signature: str) -> str:
 WEAPON_FIXTURES = r'''
 
 #define TICKS_PER_SECOND 30
+#define NETWORK_TEST_BOT_TRIGGER_PHASE(actor) (((actor) * 37) % 90)
 #define WEAPON_DEFINITION_TAG 1
 #define _object_dead_bit 0
 #define _unit_add_weapon_starting 1
@@ -228,7 +229,7 @@ int main(void) {
         CHECK(unit_add_weapon_to_inventory(test_players[1].unit_index,old,1));
         test_units[1].unit.current_weapon_index=0;
     }
-    game_tick = 10;
+    game_tick = 60; /* bot 1 fires where (tick + 37) % 90 < 24 */
     update_server_next_update();
     CHECK(observed.action_count == 2 && observed.actions[1].throttle.j > 0.5f &&
         observed.actions[1].primary_trigger > 0.5f);
@@ -237,27 +238,27 @@ int main(void) {
     CHECK(test_weapons[1].definition_index==NONE);
     CHECK(test_units[1].unit.weapon_object_indices[0]!=NONE&&test_units[1].unit.weapon_object_indices[1]!=NONE);
     CHECK(test_units[1].unit.weapon_object_indices[2]==NONE&&test_units[1].unit.weapon_object_indices[3]==NONE);
-    CHECK(update_server_distributed_inputs[1].valid && update_server_distributed_inputs[1].tick == 10);
+    CHECK(update_server_distributed_inputs[1].valid && update_server_distributed_inputs[1].tick == 60);
     {
         struct player_action duplicate = queues[1].current_action;
         word flags[DISTRIBUTED_INPUT_HISTORY] = { 0 };
         duplicate.throttle.j = -1.0f;
-        update_server_handle_distributed_input(machine_players[1][0], 10, &duplicate, flags, DISTRIBUTED_INPUT_HISTORY);
+        update_server_handle_distributed_input(machine_players[1][0], 60, &duplicate, flags, DISTRIBUTED_INPUT_HISTORY);
         CHECK(queues[1].current_action.throttle.j > 0.5f);
     }
-    game_tick = 60; /* release phase must clear both the analog pull and digital fire flag */
+    game_tick = 80; /* release phase must clear both the analog pull and digital fire flag */
     update_server_next_update();
     CHECK(observed.actions[1].primary_trigger == 0.0f);
     CHECK(!TEST_FLAG(observed.actions[1].control_flags, _unit_control_weapon_primary_trigger_bit));
     CHECK(!actual_unit_primary_weapon_flags(observed.actions[1].control_flags));
     network_test.suite_owned = 0;
     memset(&queues[1].current_action, 0, sizeof(queues[1].current_action));
-    game_tick = 61;
+    game_tick = 81;
     update_server_next_update();
     CHECK(observed.actions[1].throttle.j == 0.0f && observed.actions[1].primary_trigger == 0.0f);
     network_test.suite_owned = 1;
     queues[1].identifier = 0; /* missing datum queue must stay inert */
-    game_tick = 62;
+    game_tick = 82;
     update_server_next_update();
     CHECK(observed.actions[1].throttle.j == 0.0f && observed.actions[1].primary_trigger == 0.0f);
     for (int count = 16; count <= 128; count *= 2) {
@@ -294,8 +295,8 @@ int main(void) {
                         CHECK(definition!=first_definition[i]);
                         changes[offset-1]++;transitions++;prior[i]=slot;
                     }
-                    CHECK((observed.actions[i].primary_trigger>0)==(game_tick%90<24));
-                    CHECK(!!actual_unit_primary_weapon_flags(observed.actions[i].control_flags)==(game_tick%90<24));
+                    CHECK((observed.actions[i].primary_trigger>0)==((game_tick+NETWORK_TEST_BOT_TRIGGER_PHASE(i))%90<24));
+                    CHECK(!!actual_unit_primary_weapon_flags(observed.actions[i].control_flags)==((game_tick+NETWORK_TEST_BOT_TRIGGER_PHASE(i))%90<24));
                 }
             }
             CHECK(transitions==count-1&&created==initial_created);
@@ -304,15 +305,15 @@ int main(void) {
         for (i = 1; i < count; i++) {
             CHECK(observed.actions[i].throttle.j > 0.5f);
             CHECK(isfinite(observed.actions[i].desired_facing.yaw));
-            CHECK(TEST_FLAG(actual_unit_primary_weapon_flags(observed.actions[i].control_flags), _weapon_control_primary_trigger_bit));
+            CHECK(!!TEST_FLAG(actual_unit_primary_weapon_flags(observed.actions[i].control_flags), _weapon_control_primary_trigger_bit)==((game_tick+NETWORK_TEST_BOT_TRIGGER_PHASE(i))%90<24));
             CHECK(update_server_distributed_inputs[i].tick == game_tick);
         }
         memset(update_server_distributed_inputs,0,sizeof(update_server_distributed_inputs));
         game_tick = 150;
         update_server_next_update();
         for (i = 1; i < count; i++) {
-            CHECK(!actual_unit_primary_weapon_flags(observed.actions[i].control_flags));
-            CHECK(observed.actions[i].primary_trigger == 0.0f);
+            CHECK(!!actual_unit_primary_weapon_flags(observed.actions[i].control_flags)==((150+NETWORK_TEST_BOT_TRIGGER_PHASE(i))%90<24));
+            CHECK((observed.actions[i].primary_trigger!=0.0f)==((150+NETWORK_TEST_BOT_TRIGGER_PHASE(i))%90<24));
         }
     }
     /* Death stays inert, a salted respawn gets a new valid two-weapon loadout,
