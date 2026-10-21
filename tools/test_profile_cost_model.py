@@ -105,3 +105,16 @@ def test_runs_csv_without_catalog_signed_column(tmp_path):
     lines = path.read_text().splitlines()
     path.write_text("\n".join(line.rsplit(",", 1)[0] for line in lines) + "\n")
     assert model.read_runs(path)[0].catalog_signed is True
+
+
+def test_report_run_of_a_variant_counts_for_its_workload():
+    report = {"device": {"model": "iPad0,0", "chip": "A0"}, "runs": [
+        {"index": 0, "status": "ok", "scene": "a10-mess-hall-min", "workload": "a10-mess-hall", "render_size": [960, 540],
+         "settings": {"render_lines": 540, "sim_experiments": 5, "debug.static_light_relink": "on",
+                      "display.anti_aliasing": "off", "upscaler_requested": "bilinear"},
+         "simulation_cpu_ms": {"mean": 4.0}, "render_cpu_ms": {"mean": 3.0}, "gpu_ms": {"mean": 6.0},
+         "timing_basis": "offscreen_uncapped"}]}
+    (item,) = model.runs_from_report(report, "r")
+    assert item.workload == "a10-mess-hall"
+    assert item.settings == {"display.render_lines": "540", "debug.static_light_relink": "on",
+                             "display.anti_aliasing": "off"}

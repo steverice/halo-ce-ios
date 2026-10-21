@@ -1,6 +1,7 @@
 /* Execute the complete production benchmark state machine. The UI worker is
    deliberately held active while clocks advance and between startup frames. */
 #include <assert.h>
+#include <math.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -61,6 +62,7 @@ unsigned char filesystem_check_thread_is_active(void) { readiness_reads++; retur
 int host_benchmark_start(const char *name, int drawable, int base, int anisotropy, int shadow, int lod) {
     (void)name; (void)drawable; (void)base; (void)anisotropy; (void)shadow; (void)lod; starts++; return 1;
 }
+static const char *run_settings_text;
 int host_benchmark_next(char *text, unsigned int size) {
     if (!text && !size) return finish_requested ? 5 : 0;
     requests++;
@@ -70,6 +72,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         mp_request > 4 ? arena_columns_override : 0);
     else if (recording_selected) snprintf(text, size, "scene=startup map=a10 difficulty=normal recording=probe kind=gameplay lead=100 seconds=10");
     else snprintf(text, size, "scene=startup map=a10 difficulty=normal kind=gameplay lead=100 seconds=10");
+    if (run_settings_text) { size_t used = strlen(text); snprintf(text + used, size - used, " %s", run_settings_text); }
     return 1;
 }
 static unsigned long graphics_test_revision;
@@ -140,6 +143,11 @@ void halo_benchmark_overrides(long lines, long shadow, long anisotropy) {
 }
 static unsigned override_experiments;
 void sim_experiment_override(unsigned mask) { override_experiments=mask; }
+static int knob_aa = -1, knob_effect = -1, knob_mirror = -1, knob_calls;
+static double knob_scale;
+void halo_benchmark_knobs(int aa, int effect, int mirror, double scale) {
+    knob_aa=aa; knob_effect=effect; knob_mirror=mirror; knob_scale=scale; knob_calls++;
+}
 void halo_benchmark_override_state(long *lines, long *shadow, long *anisotropy) {
     *lines=override_lines; *shadow=override_shadow; *anisotropy=override_anisotropy;
 }
@@ -204,6 +212,20 @@ int main(void) {
     CHECK(frame(3532) == -1 && loads == 1 && requests == 1 && starts == 1);
     frame(3548);
     CHECK(loads == 1 && unsafe_loads == 0);
+
+    /* a run's extra settings are applied as it starts, and a run without them leaves the configuration alone */
+    reset(); run_settings_text = "sim_experiments=5 lines=540 anisotropy=4 shadow=256 lod=0 knob_aa=2 knob_effect=0 "
+        "knob_mirror=1 knob_scale=0.670";
+    knob_calls = 0; knob_aa = knob_effect = knob_mirror = 7; knob_scale = 7;
+    frame(0); frame(3500); frame(3516); frame(3532);
+    CHECK(knob_calls == 1 && knob_aa == 2 && knob_effect == 0 && knob_mirror == 1 && fabs(knob_scale - 0.67) < 1e-9);
+    CHECK(override_lines == 540 && override_anisotropy == 4 && override_shadow == 256 && override_experiments == 5);
+    reset(); run_settings_text = "sim_experiments=0 lines=0 anisotropy=0 shadow=0 lod=1 knob_aa=-1 knob_effect=-1 knob_mirror=-1 "
+        "knob_scale=0.000";
+    knob_calls = 0;
+    frame(0); frame(3500); frame(3516); frame(3532);
+    CHECK(knob_calls == 1 && knob_aa == -1 && knob_effect == -1 && knob_mirror == -1 && knob_scale == 0.0);
+    run_settings_text = NULL;
 
     reset(); recording_selected = 1;
     frame(0); frame(3500); frame(3516); frame(3532);

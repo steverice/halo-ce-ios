@@ -618,6 +618,37 @@ static NSDictionary *replay_environment_for_recording(const char *name) {
     return host_benchmark_snapshot_replay_environment(@FOLDER, pinned_snapshot, @(name));
 }
 
+/* a setting as the run had it: the text of the configuration's value for it, or the default when there is none */
+static NSString *configured_text(const char *name, const char *fallback) {
+    char value[64];
+
+    host_config_string(name, fallback, value, sizeof(value));
+    return @(value);
+}
+
+/* The values of the settings a cost run varies (tools/cost_suite.py), as the run had them: the case's own where it sets
+   one, the configuration's otherwise, so every run of a suite names the same settings. The simulation changes read
+   "on" or "off", the other switches "true" or "false"; render_lines, filtering, shadows and detail are the run's own. */
+static void record_applied_settings(NSMutableDictionary *settings, const struct benchmark_scene *scene, char stage) {
+    static const char *const switches[] = { "debug.collision_type_filter", "debug.sphere_query_type_filter",
+        "debug.static_light_relink" };
+    const struct benchmark_knobs *knobs = &scene->knobs;
+    unsigned mask = stage == 'A' ? knobs->mask : 0;
+
+    for (unsigned bit = 0; bit < 3; bit++) {
+        NSString *configured = configured_text(switches[bit], "false");
+        settings[@(switches[bit])] = (scene->sim_experiments >> bit) & 1 || [configured isEqual:@"true"] ? @"on" : @"off";
+    }
+    settings[@"display.anti_aliasing"] = mask & BENCHMARK_KNOB_ANTI_ALIASING ?
+        @[@"off", @"fxaa", @"smaa"][knobs->anti_aliasing] : configured_text("display.anti_aliasing", "off");
+    settings[@"display.effect_resolution"] = mask & BENCHMARK_KNOB_EFFECT ? (knobs->effect_full ? @"true" : @"false") :
+        configured_text("display.effect_resolution", "true");
+    settings[@"display.mirror_resolution"] = mask & BENCHMARK_KNOB_MIRROR ? (knobs->mirror_full ? @"full" : @"half") :
+        configured_text("display.mirror_resolution", "half");
+    settings[@"display.render_scale"] = mask & BENCHMARK_KNOB_RENDER_SCALE ?
+        [NSString stringWithFormat:@"%g", knobs->render_scale] : configured_text("display.render_scale", "1");
+}
+
 /* one finished run as a JSON object in its own file; the report is these put together */
 static BOOL write_run(const struct benchmark_run *finished, enum benchmark_status status, NSString *note,
     const char *measurements, NSDictionary *presentation) {
@@ -645,6 +676,8 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
     settings[@"upscaler_requested"] = upscaler[@"requested"];
     settings[@"sim_experiments"] = @(scene->sim_experiments);
+    record_applied_settings(settings, scene, finished->stage);
+    record[@"workload"] = @(scene->workload ?: scene->id);
     record[@"settings"] = settings;
     if (scene->recording && scene->recording[0])
         record[@"replay_environment"] = replay_environment_for_recording(scene->recording);
@@ -910,9 +943,12 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         return 0;
     }
     /* ("full-unified:a10-mess-hall,mp16-chillout": the unified pass over the named cases only) */
-    plan.mode = !strcmp(mode,"full-unified") || !strncmp(mode,"full-unified:",13) ? BENCHMARK_UNIFIED : !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
+    /* ("cost:a10-mess-hall-min,a10-mess-hall-max": the unified pass over the named cases, which set their own values,
+       with no presented checks after; tools/cost_suite.py writes the catalog) */
+    int cost_suite = !strncmp(mode, "cost:", 5);
+    plan.mode = cost_suite || !strcmp(mode,"full-unified") || !strncmp(mode,"full-unified:",13) ? BENCHMARK_UNIFIED : !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
     plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
-    plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && host_benchmark_offscreen_requested();
+    plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && !cost_suite && host_benchmark_offscreen_requested();
     benchmark_journal_load(JOURNAL, &journal);
     NSDictionary *identity = snapshot_identity(mode);
     pinned_snapshot = journal.valid && !journal.finished ? host_benchmark_snapshot_load(@FOLDER, identity) : nil;
@@ -1223,10 +1259,13 @@ int host_benchmark_next(char *text, unsigned int size) {
             return host_benchmark_next(text,size);
         }
     }
+    /* (only the baseline run of the unified pass sets what its case asks for: benchmark_plan.c) */
+    struct benchmark_knobs knobs = run.stage == 'A' ? scene->knobs : (struct benchmark_knobs){0};
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
-        "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d knob_aa=%d "
+        "knob_effect=%d knob_mirror=%d knob_scale=%.3f", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds, scene->simulation ? scene->simulation : "",
@@ -1234,7 +1273,11 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
         scene->enemy_multiplier, scene->sim_experiments,
-        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P');
+        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P',
+        /* (-1 for a setting the case leaves to the configuration) */
+        knobs.mask & BENCHMARK_KNOB_ANTI_ALIASING ? knobs.anti_aliasing : -1,
+        knobs.mask & BENCHMARK_KNOB_EFFECT ? knobs.effect_full : -1, knobs.mask & BENCHMARK_KNOB_MIRROR ? knobs.mirror_full : -1,
+        knobs.mask & BENCHMARK_KNOB_RENDER_SCALE ? knobs.render_scale : 0.0);
     atomic_store(&run_ticks, 0);
     atomic_store(&window_ticks, 0);
     run_started_at = CFAbsoluteTimeGetCurrent();

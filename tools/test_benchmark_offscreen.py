@@ -94,7 +94,7 @@ def test_presented_runs_follow_the_host():
     assert "if (host_benchmark_presented(on))\n\t\tplatform_clock_realtime(on);" in suite
     host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
     assert "finished->stage != 'P'" in host and 'record[@"reality_check"]' in host
-    assert "plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && host_benchmark_offscreen_requested();" in host
+    assert "plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && !cost_suite && host_benchmark_offscreen_requested();" in host
     imports = (ROOT / "port/runtime/host_imports.list").read_text().split()
     assert "host_benchmark_presented" in imports
 

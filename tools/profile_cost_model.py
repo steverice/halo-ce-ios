@@ -17,6 +17,8 @@ THERMAL_SERIOUS = 2
 RESOLUTION_KEY = "display.render_lines"
 REPORT_SETTINGS = {"render_lines": RESOLUTION_KEY, "anisotropic_filtering": "display.anisotropic_filtering",
                    "shadow_map_size": "display.shadow_map_size", "model_lod": "display.model_lod"}
+# report settings that name no knob: the simulation changes are in the report under their own names too
+IGNORED_SETTINGS = {"sim_experiments"}
 FIELDS = ["report", "index", "device", "chip", "workload", "settings", "render_width", "render_height",
           "simulation_cpu_ms", "render_cpu_ms", "gpu_ms", "thermal", "timing_basis", "catalog_signed"]
 
@@ -82,11 +84,11 @@ def runs_from_report(report, name=""):
         if run.get("status") not in (None, "complete", "completed", "ok"):
             continue
         settings = {REPORT_SETTINGS.get(key, key): str(value) for key, value in run.get("settings", {}).items()
-                    if not key.endswith("_requested")}
+                    if not key.endswith("_requested") and key not in IGNORED_SETTINGS}
         size = run.get("render_size") or [0, 0]
         thermal = run.get("thermal", {}).get("worst", -1) if isinstance(run.get("thermal"), dict) else -1
         result.append(Run(report=name or str(report.get("code", "")), device=device.get("model", ""),
-                          chip=device.get("chip", ""), workload=run.get("scene", ""), settings=settings,
+                          chip=device.get("chip", ""), workload=run.get("workload") or run.get("scene", ""), settings=settings,
                           render_width=int(size[0]), render_height=int(size[1]),
                           simulation_cpu_ms=_mean(run.get("simulation_cpu_ms")) or 0.0,
                           render_cpu_ms=_mean(run.get("render_cpu_ms")) or 0.0,

@@ -1873,6 +1873,27 @@ int halo_knob_apply(const char *name, const char *value)
 	return 1;
 }
 
+/* A cost run's anti-aliasing method (0 off, 1 fxaa, 2 smaa), effect resolution (0 or 1), mirror resolution (0 half,
+1 full) and render scale (benchmark_suite.c), from the next frame and in place of the settings; -1 (0 for the scale)
+leaves one as configured. Called with all of them so when a run or the suite ends. */
+void halo_benchmark_knobs(int anti_aliasing, int effect_full, int mirror_full, double render_scale)
+{
+	static const char *const methods[] = { "off", "fxaa", "smaa" };
+
+	if (anti_aliasing >= 0 && anti_aliasing <= 2)
+		anti_aliasing_live_set(methods[anti_aliasing]);
+	else
+	{
+		anti_aliasing_live = -1;
+		if (device.gl_ready)
+			anti_aliasing_read();
+	}
+	knob_effect_resolution = effect_full;
+	knob_mirror_full = mirror_full;
+	render_scale_live = render_scale >= 0.25 && render_scale <= 1.0 ? render_scale : -1.0;
+	knob_release_frame = device.frame + 120;
+}
+
 /* the chord's label for two seconds: in a game the HUD's message line, elsewhere the debug text */
 void halo_knob_message(const char *text)
 {
