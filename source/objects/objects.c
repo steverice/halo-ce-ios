@@ -1594,6 +1594,10 @@ boolean object_get_function_value(
 	return result;
 }
 
+/* port: sim_experiments.c's (debug.sphere_query_type_filter and debug.static_light_relink are experimental, off by default) */
+boolean sim_experiment_enabled(short experiment);
+#define SIM_EXPERIMENT_SPHERE_QUERY_TYPE_FILTER 1
+
 short objects_in_clusters_by_indices(
 	unsigned long class_flags,
 	short cluster_count,
@@ -1645,6 +1649,88 @@ short objects_in_clusters_by_indices(
 				object_index!=NONE;
 				object_index = cluster_get_next_noncollideable_object(&reference))
 			{
+				if (object_mark_function(object_index))
+				{
+					if (object_count>=maximum_object_count)
+					{
+						object_marker_end();
+						return object_count;
+					}
+					object_indices[object_count++] = object_index;
+				}
+			}
+		}
+	}
+
+	object_marker_end();
+
+	return object_count;
+}
+
+/* port: objects_in_clusters_by_indices for objects_in_sphere, passing over an object whose type the
+caller did not ask for before marking and collecting it (debug.sphere_query_type_filter). The objects
+it passes over are the ones objects_in_sphere would drop after; the collected ones keep their order,
+and the temporary list holds every object the map can have, so none is cut off for want of room. */
+static short objects_in_clusters_by_indices_of_types(
+	unsigned long class_flags,
+	unsigned long type_flags,
+	short cluster_count,
+	short const *cluster_indices,
+	short maximum_object_count,
+	long *object_indices)
+{
+	short cluster_index;
+
+	short object_count = 0;
+
+	if (!class_flags)
+	{
+		class_flags = NONE;
+	}
+
+	object_marker_begin();
+
+	for (cluster_index = 0; cluster_index<cluster_count; ++cluster_index)
+	{
+		short cluster_num = cluster_indices[cluster_index];
+		if (TEST_FLAG(class_flags, 0))
+		{
+			long reference;
+			long object_index;
+
+			for (object_index = cluster_get_first_collideable_object(&reference, cluster_num);
+				object_index!=NONE;
+				object_index = cluster_get_next_collideable_object(&reference))
+			{
+				if (!TEST_FLAG(type_flags, object_header_get(object_index)->type))
+				{
+					continue;
+				}
+				if (object_mark_function(object_index))
+				{
+					if (object_count>=maximum_object_count)
+					{
+						object_marker_end();
+						return object_count;
+					}
+					object_indices[object_count++] = object_index;
+				}
+			}
+		}
+
+		if (TEST_FLAG(class_flags, 1))
+		{
+			long reference;
+			long object_index;
+
+			for (object_index = cluster_get_first_noncollideable_object(&reference, cluster_num);
+				object_index!=NONE;
+				object_index = cluster_get_next_noncollideable_object(&reference))
+			{
+				if (!TEST_FLAG(type_flags, object_header_get(object_index)->type))
+				{
+					continue;
+				}
 				if (object_mark_function(object_index))
 				{
 					if (object_count>=maximum_object_count)
@@ -2222,12 +2308,25 @@ short objects_in_sphere(
 		radius,
 		NUMBEROF(cluster_indices),
 		cluster_indices);
-	object_count_in_clusters = objects_in_clusters_by_indices(
-		class_flags,
-		cluster_count,
-		cluster_indices,
-		NUMBEROF(temporary_object_indices),
-		temporary_object_indices);
+	if (sim_experiment_enabled(SIM_EXPERIMENT_SPHERE_QUERY_TYPE_FILTER))
+	{
+		object_count_in_clusters = objects_in_clusters_by_indices_of_types(
+			class_flags,
+			type_flags,
+			cluster_count,
+			cluster_indices,
+			NUMBEROF(temporary_object_indices),
+			temporary_object_indices);
+	}
+	else
+	{
+		object_count_in_clusters = objects_in_clusters_by_indices(
+			class_flags,
+			cluster_count,
+			cluster_indices,
+			NUMBEROF(temporary_object_indices),
+			temporary_object_indices);
+	}
 	for (object_index = 0; object_index<object_count_in_clusters && result<maximum_count; ++object_index)
 	{
 		struct object_datum *object = object_get(temporary_object_indices[object_index]);
