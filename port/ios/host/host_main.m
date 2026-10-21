@@ -49,8 +49,9 @@ void host_log(int priority,const char *text) { host_logf(priority,"%s",text); }
 /* host_render_replay.c */
 int host_render_replay_requested(void);
 void host_render_replay(void) __attribute__((noreturn));
-void host_memory_pressure_start(void);
 #endif
+/* host_memory_pressure.m */
+void host_memory_pressure_start(void);
 void host_fatal(const char *format,...) {
     va_list ap;va_start(ap,format);char text[1024];vsnprintf(text,sizeof(text),format,ap);va_end(ap);
     host_logf(HOST_LOG_ERROR,"FATAL: %s",text);
