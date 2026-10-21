@@ -230,6 +230,7 @@ struct pc_menu_setting
 };
 
 struct pc_menu_setting *pc_menu_setting_get(long definition_index);
+int pc_menu_display_rate_refresh(void);
 
 /* ---------- private code */
 
@@ -1511,6 +1512,7 @@ static void settings_help(struct widget_instance *list)
 	struct widget_instance *row = list->focused_child;
 	short index = 0;
 
+	pc_menu_display_rate_refresh();
 	if (!help)
 		return;
 	if (row && row->child && row->child->type == 1 && strncmp(row->name, "button", 6))

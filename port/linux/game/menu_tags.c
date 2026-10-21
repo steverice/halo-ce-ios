@@ -66,6 +66,28 @@ char const *pc_menu_game_data_input_name(long function_index);
 boolean pc_menu_tag(long tag_index);
 boolean pc_menu_frame_placement(struct bitmap_data const *bitmap, short *x, short *y, short *width, short *height);
 
+/* The native Mac's DISPLAY choice follows the window between displays.
+Keep its UTF-16 backing stable so an open spinner sees the new label. */
+static char display_rate_label[32];
+static unsigned short display_rate_unicode[32];
+
+int pc_menu_display_rate_refresh(void)
+{
+#ifdef HALO_IOS
+	int host_sdl_display_max_fps(void);
+	int fps = host_sdl_display_max_fps();
+
+	if (fps > 0)
+	{
+		snprintf(display_rate_label, sizeof(display_rate_label), "DISPLAY (%d HZ)", fps);
+		halo_menus_utf16(display_rate_label, display_rate_unicode, NUMBEROF(display_rate_unicode));
+	}
+	return fps;
+#else
+	return 0;
+#endif
+}
+
 /* ---------- constants */
 
 #define PC_MENU_TAG_PREFIX "pc\\"
@@ -762,10 +784,19 @@ static long spinner_split(struct halo_menu_widget const *widget, boolean values,
 		/* the Mac app's Frame Rate: the display's own highest rate
 		(HALO_DISPLAY_MAX_FPS, port/ios/host/host_main.m) before the last
 		choice, Unlimited, when it is none of those listed */
-		const char *rate = getenv("HALO_DISPLAY_MAX_FPS");
-		long fps = rate ? atol(rate) : 0;
+		const char *rate;
+		long fps;
 		char text[16];
 		char *piece;
+
+		if (pc_menu_display_rate_refresh() > 0)
+		{
+			if (!values && count > 0)
+				pieces[0] = display_rate_label;
+			return count;
+		}
+		rate = getenv("HALO_DISPLAY_MAX_FPS");
+		fps = rate ? atol(rate) : 0;
 
 		if (fps < 1 || fps > 1000 || count < 1 || count >= MAXIMUM_STRINGS)
 			return count;
@@ -1773,9 +1804,17 @@ void menu_tags_loaded(
 		{
 			char const *pieces[MAXIMUM_STRINGS];
 			long count = spinner_split(widget, FALSE, pieces);
+			struct string_list *list = string_list_build(pieces, count);
 
-			instance_set(instances, UNICODE_STRING_LIST_TAG, build.spinner_tags[index], widget->name, " strings",
-				string_list_build(pieces, count));
+			if (widget->setting && !strcmp(widget->setting, "display.frame_rate") &&
+				count > 0 && !build.failed && pc_menu_display_rate_refresh() > 0)
+			{
+				struct string_list_entry *entries = list->strings.address;
+
+				entries[0].string.address = display_rate_unicode;
+				entries[0].string.size = sizeof(display_rate_unicode);
+			}
+			instance_set(instances, UNICODE_STRING_LIST_TAG, build.spinner_tags[index], widget->name, " strings", list);
 		}
 		instance_set(instances, UI_WIDGET_DEFINITION_TAG, build.widget_tags[index], widget->name, "", NULL);
 	}
@@ -1959,6 +1998,7 @@ struct pc_menu_setting *pc_menu_setting_get(
 {
 	long index;
 
+	pc_menu_display_rate_refresh();
 	for (index = 0; index < menu_tags.setting_count; index++)
 	{
 		if (menu_tags.settings[index].definition_index == definition_index)

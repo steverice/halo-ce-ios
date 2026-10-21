@@ -58,6 +58,19 @@ void host_macos_install(void) {
 void host_macos_window_ready(void *sdl_window) {
     require_main();
     (void)sdl_window;
+    host_macos_refresh_rate();
+    static id screen_observer, rate_observer;
+    if (!screen_observer) {
+        NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+        screen_observer = [center addObserverForName:NSWindowDidChangeScreenNotification
+            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+                (void)note; host_macos_refresh_rate();
+            }];
+        rate_observer = [center addObserverForName:NSApplicationDidChangeScreenParametersNotification
+            object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+                (void)note; host_macos_refresh_rate();
+            }];
+    }
     static VISRMacActions *actions;
     if (actions) return;
     actions = [VISRMacActions new];
@@ -77,12 +90,18 @@ double host_macos_refresh_rate(void) {
     SDL_Window *window = host_sdl_window();
     SDL_DisplayID display = window ? SDL_GetDisplayForWindow(window) : SDL_GetPrimaryDisplay();
     const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(display);
-    static int fallback_logged;
-    if ((!mode || mode->refresh_rate <= 0) && !fallback_logged++)
-        host_logf(HOST_LOG_WARN,"Native display refresh unavailable; using 60 Hz until a display mode is known");
-    double rate=mode && mode->refresh_rate > 0 ? mode->refresh_rate : 60.0;
+    NSScreen *screen = game_window().screen ?: NSScreen.mainScreen;
+    double rate = mode && mode->refresh_rate > 0 ? mode->refresh_rate : screen.maximumFramesPerSecond;
+    if (rate < 60.0) rate = 60.0;
     atomic_store(&cached_refresh_rate,rate);
     return rate;
+}
+void host_macos_screen_size(int *width, int *height) {
+    require_main();
+    NSScreen *screen = game_window().screen ?: NSScreen.mainScreen;
+    CGDirectDisplayID display = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
+    *width = display ? (int)CGDisplayPixelsWide(display) : 0;
+    *height = display ? (int)CGDisplayPixelsHigh(display) : 0;
 }
 CADisplayLink *host_macos_display_link(id target, SEL selector) {
     require_main();
@@ -132,7 +151,10 @@ void host_lifecycle_hold(void) {}
 unsigned long long host_lifecycle_background_milliseconds(void) { return 0; }
 void host_external_install(void) {}
 void host_external_attach(void *window, int metal) { (void)metal; host_macos_window_ready(window); }
-void host_external_poll(void) {}
+void host_external_poll(void) {
+    /* SDL pumps AppKit on this thread; refresh the worker cache even without a mode notification. */
+    host_macos_refresh_rate();
+}
 void host_external_commit(int allow_pause) { (void)allow_pause; }
 int host_external_active(void) { return 0; }
 int host_external_size(int *width, int *height) { (void)width; (void)height; return 0; }

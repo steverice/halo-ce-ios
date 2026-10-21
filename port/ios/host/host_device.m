@@ -75,8 +75,7 @@ void host_device_identify(struct host_device *device)
 		}
 #if HALO_NATIVE_MAC
         {
-            SDL_Window *window=host_sdl_window();
-            if (window) SDL_GetWindowSizeInPixels(window,&device->pixel_width,&device->pixel_height);
+            host_macos_screen_size(&device->pixel_width, &device->pixel_height);
             device->refresh_rate=(int)host_macos_refresh_rate();
         }
 #elif !TARGET_OS_VISION
