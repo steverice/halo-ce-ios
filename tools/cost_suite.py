@@ -292,6 +292,18 @@ def heaviest_by_gpu(runs, device=None):
     return {name: sum(values) / len(values) for name, values in totals.items()}
 
 
+def gpu_times_from_sheet(path, kind="gameplay"):
+    """{scene: mean GPU milliseconds} over the finished runs with a GPU time in the benchmark sheet's normalized rows
+    (one JSON object a line: `scene`, `kind`, `status`, `gpu_ms_mean`)."""
+    totals = {}
+    with open(path) as handle:
+        for line in handle:
+            row = json.loads(line)
+            if row.get("status") == "ok" and row.get("kind") == kind and (row.get("gpu_ms_mean") or 0) > 0:
+                totals.setdefault(row["scene"], []).append(row["gpu_ms_mean"])
+    return {name: sum(values) / len(values) for name, values in totals.items()}
+
+
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -304,13 +316,18 @@ def main(arguments=None):
         item.add_argument("--other", help="the other campaign case id")
         item.add_argument("--multiplayer", nargs="*", default=list(MULTIPLAYER_DEFAULTS))
         item.add_argument("--runs", default=str(cost.RUNS_CSV))
+        item.add_argument("--sheet", help="the benchmark sheet's normalized runs (JSON lines) to pick the heaviest case from")
         if name == "next":
             item.add_argument("--device", required=True)
             item.add_argument("--baseline", required=True, help="JSON object of ladder knob to value text")
     options = parser.parse_args(arguments)
     cases = bc.load_catalog(options.catalog)
     runs = cost.read_runs(options.runs)
-    workloads = select_workloads(cases, heaviest_by_gpu(runs), options.heaviest, options.other, options.multiplayer)
+    times = heaviest_by_gpu(runs)
+    if options.sheet:
+        times = {**gpu_times_from_sheet(options.sheet), **times}
+    workloads = select_workloads(cases, times, options.heaviest, options.other, options.multiplayer)
+    print("workloads: " + ", ".join(case["id"] for case in workloads))
     ladder = read_ladder(options.klass)
     if options.command == "bounds":
         suite = bounds_suite(workloads, ladder)

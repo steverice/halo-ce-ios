@@ -144,3 +144,14 @@ def test_select_workloads_by_id_and_heaviest():
 def test_heaviest_by_gpu_skips_unusable_runs():
     runs = [row("c-a", {}, 1080, gpu=9.0), row("c-a", {}, 1080, gpu=0.0), row("c-b", {}, 1080, gpu=30.0, thermal=3)]
     assert suites.heaviest_by_gpu(runs) == {"c-a": 9.0}
+
+
+def test_gpu_times_from_sheet(tmp_path):
+    path = tmp_path / "rows.jsonl"
+    rows = [{"scene": "c-a", "kind": "gameplay", "status": "ok", "gpu_ms_mean": 4.0},
+            {"scene": "c-a", "kind": "gameplay", "status": "ok", "gpu_ms_mean": 6.0},
+            {"scene": "c-b", "kind": "gameplay", "status": "ok", "gpu_ms_mean": 0.0},
+            {"scene": "c-c", "kind": "gameplay", "status": "failed", "gpu_ms_mean": 9.0},
+            {"scene": "mp", "kind": "multiplayer", "status": "ok", "gpu_ms_mean": 9.0}]
+    path.write_text("\n".join(json.dumps(row) for row in rows))
+    assert suites.gpu_times_from_sheet(path) == {"c-a": 5.0}
