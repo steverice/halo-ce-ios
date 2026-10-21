@@ -101,9 +101,20 @@ static long cluster_partition_port_add(
 	long *previous_references);
 static void cluster_partition_port_remove(
 	struct cluster_partition *partition,
-	long *first_reference_index,
+	short cluster_index,
 	long datum_index,
 	long found_reference_index);
+static void cluster_partition_port_candidate_add(
+	struct cluster_partition *partition,
+	short cluster_index,
+	long reference_index,
+	long datum_index);
+static void cluster_partition_port_candidate_remove(
+	struct cluster_partition *partition,
+	short cluster_index,
+	long reference_index);
+static void cluster_partition_port_candidates_rebuild(
+	struct cluster_partition *partition);
 
 /* ---------- globals */
 
@@ -368,6 +379,8 @@ void cluster_partition_reconnect(
 			partition->port_previous_references);
 
 		partition->port_modification_count++;
+		if (data_reference_index != NONE && partition->port_candidates_valid)
+			cluster_partition_port_candidate_add(partition, cluster_index, data_reference_index, datum_index);
 		if (cluster_reference_index != NONE && partition->port_cluster_data_references)
 		{
 			partition->port_cluster_data_references[DATUM_INDEX_TO_ABSOLUTE_INDEX(cluster_reference_index)] =
@@ -400,7 +413,7 @@ void cluster_partition_disconnect(
 		put */
 		cluster_partition_port_remove(
 			partition,
-			cluster_partition_get_first_reference(partition, cluster_index),
+			cluster_index,
 			datum_index,
 			data_reference_index);
 
@@ -422,6 +435,69 @@ long cluster_partition_get_first_datum(
 	return reference_list_get_next_datum_index(partition->data_reference_data, reference_index);
 }
 
+/* port: Candidate lists. A collision ray that tests only some object types
+stepped through every object in each cluster it crossed and passed over most
+of them on their type. A partition with candidates keeps a second list per
+cluster holding only the references of the data its candidate function
+accepts. A reference joins it at the head when it joins the head of its
+cluster's list (cluster_partition_reconnect) and leaves it when it leaves
+that list (cluster_partition_port_remove), and a datum's answer does not
+change while it is listed, so each candidate list is its cluster's list with
+the others taken out, in the same order. The lists are not in the game
+state: they are dropped with the references' places
+(cluster_partition_port_forget) and built again from the clusters' lists
+when next walked. */
+
+void cluster_partition_port_enable_candidates(
+	struct cluster_partition *partition,
+	boolean (*candidate)(long datum_index))
+{
+	partition->port_candidates = debug_malloc(
+		HALO_PORT_MAXIMUM_CLUSTER_REFERENCES * sizeof(*partition->port_candidates), FALSE, __FILE__, __LINE__);
+	partition->port_cluster_first_candidates = debug_malloc(
+		MAXIMUM_CLUSTERS_PER_STRUCTURE * sizeof(*partition->port_cluster_first_candidates), FALSE, __FILE__, __LINE__);
+	partition->port_candidate = partition->port_candidates && partition->port_cluster_first_candidates ? candidate : NULL;
+	partition->port_candidates_valid = FALSE;
+}
+
+boolean cluster_partition_port_candidates_ready(
+	struct cluster_partition *partition)
+{
+	if (!partition->port_candidate)
+		return FALSE;
+	if (!partition->port_candidates_valid)
+		cluster_partition_port_candidates_rebuild(partition);
+
+	return TRUE;
+}
+
+long cluster_partition_port_get_first_candidate(
+	struct cluster_partition const *partition,
+	long *reference_index,
+	short cluster_index)
+{
+	/* (a cluster index that fits no cluster's list has an empty list, as in
+	cluster_partition_get_first_reference) */
+	*reference_index = cluster_index >= 0 && cluster_index < MAXIMUM_CLUSTERS_PER_STRUCTURE ?
+		partition->port_cluster_first_candidates[cluster_index] : NONE;
+
+	return cluster_partition_port_get_next_candidate(partition, reference_index);
+}
+
+long cluster_partition_port_get_next_candidate(
+	struct cluster_partition const *partition,
+	long *reference_index)
+{
+	struct cluster_partition_port_candidate const *candidate;
+
+	if (*reference_index == NONE)
+		return NONE;
+	candidate = &partition->port_candidates[*reference_index];
+	*reference_index = candidate->next;
+
+	return candidate->datum_index;
+}
+
 /* ---------- private code */
 
 /* port: Where each reference is in its cluster's list, so a datum leaving
@@ -439,6 +515,9 @@ static void cluster_partition_port_forget(
 	struct cluster_partition *partition)
 {
 	partition->port_modification_count++;
+	/* (the candidate lists are rebuilt from the clusters' lists when next
+	walked) */
+	partition->port_candidates_valid = FALSE;
 	if (partition->port_previous_references)
 		csmemset(partition->port_previous_references, 0xFF, HALO_PORT_MAXIMUM_CLUSTER_REFERENCES * sizeof(long));
 	if (partition->port_cluster_data_references)
@@ -481,10 +560,11 @@ static long cluster_partition_port_add(
 (where the datum's reference was put) if it is there */
 static void cluster_partition_port_remove(
 	struct cluster_partition *partition,
-	long *first_reference_index,
+	short cluster_index,
 	long datum_index,
 	long found_reference_index)
 {
+	long *first_reference_index = cluster_partition_get_first_reference(partition, cluster_index);
 	struct data_array *array = partition->data_reference_data;
 	long *previous_references = partition->port_previous_references;
 	long reference_index = NONE;
@@ -538,6 +618,8 @@ static void cluster_partition_port_remove(
 		return;
 	}
 	partition->port_modification_count++;
+	if (partition->port_candidates_valid)
+		cluster_partition_port_candidate_remove(partition, cluster_index, reference_index);
 	reference = (struct data_reference *)datum_get(array, reference_index);
 	next_index = reference->next_reference_index;
 	datum_delete(array, reference_index);
@@ -567,4 +649,91 @@ static long *cluster_partition_get_first_reference(
 	}
 
 	return &partition->cluster_first_data_references[cluster_index];
+}
+
+/* the reference just put first in its cluster's list put first in the
+cluster's candidate list, if its datum is a candidate */
+static void cluster_partition_port_candidate_add(
+	struct cluster_partition *partition,
+	short cluster_index,
+	long reference_index,
+	long datum_index)
+{
+	long const absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(reference_index);
+	struct cluster_partition_port_candidate *candidate = &partition->port_candidates[absolute_index];
+
+	candidate->member = cluster_index >= 0 && cluster_index < MAXIMUM_CLUSTERS_PER_STRUCTURE &&
+		partition->port_candidate(datum_index);
+	if (candidate->member)
+	{
+		long *first = &partition->port_cluster_first_candidates[cluster_index];
+
+		candidate->datum_index = datum_index;
+		candidate->previous = NONE;
+		candidate->next = *first;
+		if (*first != NONE)
+			partition->port_candidates[*first].previous = absolute_index;
+		*first = absolute_index;
+	}
+}
+
+/* the reference leaving its cluster's list taken out of the cluster's
+candidate list, if it is in it */
+static void cluster_partition_port_candidate_remove(
+	struct cluster_partition *partition,
+	short cluster_index,
+	long reference_index)
+{
+	long const absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(reference_index);
+	struct cluster_partition_port_candidate *candidate = &partition->port_candidates[absolute_index];
+
+	if (!candidate->member)
+		return;
+	if (candidate->previous == NONE)
+		partition->port_cluster_first_candidates[cluster_index] = candidate->next;
+	else
+		partition->port_candidates[candidate->previous].next = candidate->next;
+	if (candidate->next != NONE)
+		partition->port_candidates[candidate->next].previous = candidate->previous;
+	candidate->member = FALSE;
+}
+
+/* every cluster's candidate list made again from its list, in its order */
+static void cluster_partition_port_candidates_rebuild(
+	struct cluster_partition *partition)
+{
+	short cluster_index;
+
+	csmemset(partition->port_candidates, 0, HALO_PORT_MAXIMUM_CLUSTER_REFERENCES * sizeof(*partition->port_candidates));
+	for (cluster_index = 0; cluster_index < MAXIMUM_CLUSTERS_PER_STRUCTURE; cluster_index++)
+	{
+		long *first = &partition->port_cluster_first_candidates[cluster_index];
+		long last = NONE;
+		long reference_index = partition->cluster_first_data_references[cluster_index];
+
+		*first = NONE;
+		while (reference_index != NONE)
+		{
+			struct data_reference const *reference = (struct data_reference const *)datum_get(
+				partition->data_reference_data,
+				reference_index);
+			long const absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(reference_index);
+			struct cluster_partition_port_candidate *candidate = &partition->port_candidates[absolute_index];
+
+			if (partition->port_candidate(reference->datum_index))
+			{
+				candidate->member = TRUE;
+				candidate->datum_index = reference->datum_index;
+				candidate->previous = last;
+				candidate->next = NONE;
+				if (last == NONE)
+					*first = absolute_index;
+				else
+					partition->port_candidates[last].next = absolute_index;
+				last = absolute_index;
+			}
+			reference_index = reference->next_reference_index;
+		}
+	}
+	partition->port_candidates_valid = TRUE;
 }

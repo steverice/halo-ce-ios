@@ -116,6 +116,8 @@ symbols in this file:
 /* port: sim_experiments.c's (debug.collision_type_filter) */
 boolean sim_experiment_enabled(short experiment);
 #define SIM_EXPERIMENT_COLLISION_TYPE_FILTER 0
+/* port: (and debug.collision_candidates) */
+#define SIM_EXPERIMENT_COLLISION_CANDIDATES 4
 /* port: object_bounds_cache.c's */
 boolean object_bounds_cache_out_of_reach(long object_index, real_point3d const *point, real radius);
 
@@ -646,6 +648,7 @@ boolean collision_test_vector(
 		{
 			long leaf_index;
 			boolean type_filter;
+			boolean candidates;
 
 			collision_log_usage(_collision_function_vector_objects);
 			collision_log_start_time(&collision_usage_times.vector_objects);
@@ -655,6 +658,14 @@ boolean collision_test_vector(
 			}
 
 			type_filter = sim_experiment_enabled(SIM_EXPERIMENT_COLLISION_TYPE_FILTER);
+			/* port: a ray that tests none of the types the clusters' collision candidate
+			lists leave out walks those lists, which hold the other objects in the order
+			the clusters' lists do: the objects it skips are ones the type filter below
+			passes over (debug.collision_candidates) */
+			candidates = sim_experiment_enabled(SIM_EXPERIMENT_COLLISION_CANDIDATES) &&
+				!(flags & ((unsigned long)OBJECT_MASK_COLLISION_NONCANDIDATES << _collision_test_objects_first_type_bit)) &&
+				cluster_collision_candidates_ready();
+			type_filter = type_filter || candidates;
 
 			structure_cluster_marker_begin();
 			object_marker_begin();
@@ -669,9 +680,13 @@ boolean collision_test_vector(
 					long reference_index;
 					long object_index;
 
-					for (object_index = cluster_get_first_collideable_object(&reference_index, cluster_index);
+					for (object_index = candidates ?
+							cluster_get_first_collision_candidate(&reference_index, cluster_index) :
+							cluster_get_first_collideable_object(&reference_index, cluster_index);
 						object_index != NONE;
-						object_index = cluster_get_next_collideable_object(&reference_index))
+						object_index = candidates ?
+							cluster_get_next_collision_candidate(&reference_index) :
+							cluster_get_next_collideable_object(&reference_index))
 					{
 						/* port: an object whose type this ray does not test would be passed over by
 						object_test_vector, children and all, once marked; skip it on its header alone

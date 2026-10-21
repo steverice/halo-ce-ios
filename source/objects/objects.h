@@ -370,6 +370,13 @@ long cluster_get_first_noncollideable_object(long *reference_index, short cluste
 long cluster_get_next_noncollideable_object(long *reference_index);
 long cluster_get_first_collideable_object(long *reference_index, short cluster_index);
 long cluster_get_next_collideable_object(long *reference_index);
+/* port: the collideable objects of OBJECT_MASK_COLLISION_CANDIDATES's types in
+a cluster, in the order cluster_get_first_collideable_object and
+cluster_get_next_collideable_object return them (debug.collision_candidates);
+walk them only after cluster_collision_candidates_ready says they can be */
+boolean cluster_collision_candidates_ready(void);
+long cluster_get_first_collision_candidate(long *reference_index, short cluster_index);
+long cluster_get_next_collision_candidate(long *reference_index);
 short object_get_next_cluster(struct object_cluster_iterator *iterator, long object_index);
 void *object_try_and_get_and_verify_type(long object_index, unsigned long valid_type_flags);
 void *object_get_and_verify_type(long object_index, unsigned long valid_type_flags);

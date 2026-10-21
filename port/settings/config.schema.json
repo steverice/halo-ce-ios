@@ -1442,6 +1442,17 @@
             "desktop"
           ]
         },
+        "collision_candidates": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental. Each cluster keeps a second list of its vehicles, scenery and other objects that are not bipeds, items or projectiles, and a collision ray that tests none of those three walks only that list: the same answers in the same order without stepping past every body and weapon in a crowded cluster. Read again each tick, so it can be flipped while the game runs.",
+          "x-environment": "HALO_COLLISION_CANDIDATES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "aim_steady_level": {
           "type": "number",
           "default": -1.0,

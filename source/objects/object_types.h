@@ -52,6 +52,15 @@ enum
 	_object_mask_remove_on_bsp_switch =		(FLAG(_object_type_scenery)|FLAG(_object_type_light_fixture))
 };
 
+/* port: the types a collideable object of which is in its clusters' collision
+candidate lists (objects.c's cluster_get_first_collision_candidate): all but
+bipeds, items and projectiles (OBJECT_MASK_COLLISION_NONCANDIDATES), which
+are most of a crowded cluster */
+#define OBJECT_MASK_COLLISION_NONCANDIDATES (_object_mask_biped|_object_mask_item|_object_mask_projectile)
+#define OBJECT_MASK_COLLISION_CANDIDATES \
+	(FLAG(_object_type_vehicle)|FLAG(_object_type_scenery)|FLAG(_object_type_machine)|FLAG(_object_type_control)| \
+	FLAG(_object_type_light_fixture)|FLAG(_object_type_placeholder)|FLAG(_object_type_sound_scenery))
+
 /* ---------- structures */
 
 struct object_type_definition

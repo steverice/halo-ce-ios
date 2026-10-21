@@ -35,6 +35,24 @@ struct cluster_partition
 	of them), for what is kept of them while they don't change
 	(object_lights.c's lights_port_cluster) */
 	unsigned long port_modification_count;
+	/* port: each cluster's candidate list (cluster_partition_port_enable_candidates):
+	the references of the data port_candidate accepts, in their order in the
+	cluster's list. Not in the game state, and kept only while
+	port_candidates_valid. */
+	boolean (*port_candidate)(long datum_index);
+	struct cluster_partition_port_candidate *port_candidates;
+	long *port_cluster_first_candidates;
+	boolean port_candidates_valid;
+};
+
+/* port: a reference's place in its cluster's candidate list, by the
+reference's absolute index */
+struct cluster_partition_port_candidate
+{
+	long next;
+	long previous;
+	long datum_index;
+	boolean member;
 };
 
 /* ---------- prototypes/CLUSTER_PARTITIONS.C */
@@ -71,6 +89,24 @@ long cluster_partition_get_first_datum(
 	long *reference_index,
 	short cluster_index);
 long cluster_partition_get_next_datum(
+	struct cluster_partition const *partition,
+	long *reference_index);
+/* port: the partition keeps, per cluster, a list of only the data that
+candidate accepts, in the order cluster_partition_get_first_datum and
+cluster_partition_get_next_datum return them. candidate must give the same
+answer for a datum for as long as it is in the partition. */
+void cluster_partition_port_enable_candidates(
+	struct cluster_partition *partition,
+	boolean (*candidate)(long datum_index));
+/* port: whether the candidate lists can be walked (they are rebuilt from the
+clusters' lists first if they were dropped) */
+boolean cluster_partition_port_candidates_ready(
+	struct cluster_partition *partition);
+long cluster_partition_port_get_first_candidate(
+	struct cluster_partition const *partition,
+	long *reference_index,
+	short cluster_index);
+long cluster_partition_port_get_next_candidate(
 	struct cluster_partition const *partition,
 	long *reference_index);
 long cluster_partition_get_first_cluster(

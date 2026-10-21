@@ -252,6 +252,43 @@ long cluster_get_next_collideable_object(
 		reference_index);
 }
 
+/* port: every type is a candidate or not, never both */
+typedef char object_collision_candidate_masks_assert[
+	(OBJECT_MASK_COLLISION_CANDIDATES | OBJECT_MASK_COLLISION_NONCANDIDATES) == FLAG(NUMBER_OF_OBJECT_TYPES) - 1 &&
+	!(OBJECT_MASK_COLLISION_CANDIDATES & OBJECT_MASK_COLLISION_NONCANDIDATES) ? 1 : -1];
+
+/* port: the collideable objects collision_test_vector may walk on their own
+(debug.collision_candidates): every type but bipeds, items and projectiles */
+static boolean object_port_collision_candidate(
+	long object_index)
+{
+	return TEST_FLAG(OBJECT_MASK_COLLISION_CANDIDATES, object_header_get(object_index)->type);
+}
+
+boolean cluster_collision_candidates_ready(
+	void)
+{
+	return cluster_partition_port_candidates_ready(&collideable_object_cluster_partition);
+}
+
+long cluster_get_first_collision_candidate(
+	long *reference_index,
+	short cluster_index)
+{
+	return cluster_partition_port_get_first_candidate(
+		&collideable_object_cluster_partition,
+		reference_index,
+		cluster_index);
+}
+
+long cluster_get_next_collision_candidate(
+	long *reference_index)
+{
+	return cluster_partition_port_get_next_candidate(
+		&collideable_object_cluster_partition,
+		reference_index);
+}
+
 short object_get_next_cluster(
 	struct object_cluster_iterator *iterator,
 	long object_index)
@@ -1061,6 +1098,7 @@ void objects_initialize(
 
 	object_name_list_allocate();
 	cluster_partition_new(&collideable_object_cluster_partition, "collideable object");
+	cluster_partition_port_enable_candidates(&collideable_object_cluster_partition, object_port_collision_candidate);
 	cluster_partition_new(&noncollideable_object_cluster_partition, "noncollideable object");
 
 	return;
