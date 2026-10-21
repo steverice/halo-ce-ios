@@ -84,6 +84,7 @@ void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double int
     metrics->cpu[metrics->frames] = tenths(cpu);
     metrics->gpu[metrics->frames] = tenths(gpu);
     metrics->tick_plus[metrics->frames] = simulation >= 0.0 ? (uint16_t)(ticks < 0 ? 1 : ticks > 65534 ? 65535 : ticks + 1) : 0;
+    if (gpu >= 0.0) metrics->gpu_frames++;
     metrics->frames++;
     if (interval > 0.0) metrics->seconds += interval / 1000.0;
 }
@@ -151,6 +152,7 @@ void benchmark_metrics_summarize(const struct benchmark_metrics *metrics, struct
     summary->seconds = metrics->seconds;
     summary->refresh_hertz = metrics->refresh_hertz;
     summary->stalls = metrics->stall_count;
+    summary->gpu_frames = metrics->gpu_frames;
     if (!metrics->frames) return;
     summary->frames_a_second = metrics->seconds > 0.0 ? (double)metrics->frames / metrics->seconds : 0.0;
     for (index = 0; index < metrics->frames; index++) {
@@ -263,6 +265,7 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
     append_distribution(&text, "interval_ms", &summary.interval);
     append_distribution(&text, "cpu_ms", &summary.cpu);
     append_distribution(&text, "gpu_ms", &summary.gpu);
+    append(&text, "\"gpu_frames\":%zu,", summary.gpu_frames);
     if (summary.split_frames) {
         append_distribution(&text, "simulation_cpu_ms", &summary.simulation_cpu);
         append_distribution(&text, "render_cpu_ms", &summary.render_cpu);

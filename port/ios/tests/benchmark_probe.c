@@ -32,7 +32,7 @@ static void test_metrics(void) {
     benchmark_metrics_frame(&metrics, 50.0, 30.0, 25.0);
     benchmark_metrics_frame(&metrics, 120.0, 100.0, 9.0);
     benchmark_metrics_summarize(&metrics, &summary);
-    CHECK(summary.frames == 100);
+    CHECK(summary.frames == 100 && summary.gpu_frames == 100);
     CHECK(summary.shown[1] == 90 && summary.shown[2] == 8 && summary.shown[3] == 1 && summary.shown[5] == 1);
     CHECK(NEAR(summary.on_time_full, 0.90, 1e-9) && NEAR(summary.on_time_half, 0.98, 1e-9));
     CHECK(NEAR(summary.interval.median, 16.7, 0.05));
@@ -48,6 +48,7 @@ static void test_metrics(void) {
     /* a frame too long for 16 bits is kept at the largest value, and unknown times as zero */
     benchmark_metrics_frame(&metrics, 9000.0, -1.0, -1.0);
     CHECK(metrics.interval[100] == 65535 && metrics.cpu[100] == 0 && metrics.gpu[100] == 0);
+    CHECK(metrics.gpu_frames == 100);   /* the unknown GPU time is not counted as measured */
 
     /* samples: memory extremes, thermal changes */
     benchmark_metrics_sample(&metrics, 500, 900, BENCHMARK_THERMAL_NOMINAL);
@@ -65,6 +66,7 @@ static void test_metrics(void) {
     json = benchmark_metrics_json(&metrics);
     CHECK(json && strstr(json, "\"frames\":101") && strstr(json, "\"shown_refreshes\":[90,8,1,0,2]") &&
         strstr(json, "\"left_least\":760") && strstr(json, "\"frame_interval\":\"") && strstr(json, "\"count\":2"));
+    CHECK(json && strstr(json, "\"gpu_frames\":100,"));
     /* the first frame, 16.7 ms: 167 = 0xa7 0x00, twice over begins "pwCn" */
     CHECK(json && strstr(json, "\"frame_interval\":\"pwCnAK"));
     free(json);
@@ -139,6 +141,17 @@ static void test_metrics_split(void) {
     CHECK(json && strstr(json, "\"simulation_cpu_ms\":null") && strstr(json, "\"render_cpu_ms\":null") &&
         strstr(json, "\"translation_cpu_ms\":null") &&
         strstr(json, "\"ticks_per_frame\":null"));
+    free(json);
+    benchmark_metrics_free(&metrics);
+
+    /* the OpenGL ES renderer measures no GPU time: zeros, and the count that says they are not measurements */
+    benchmark_metrics_reset(&metrics, 60.0);
+    benchmark_metrics_frame(&metrics, 16.7, 11.0, -1.0);
+    benchmark_metrics_frame(&metrics, 16.7, 11.0, -1.0);
+    benchmark_metrics_summarize(&metrics, &summary);
+    CHECK(summary.frames == 2 && summary.gpu_frames == 0 && summary.gpu.worst == 0.0);
+    json = benchmark_metrics_json(&metrics);
+    CHECK(json && strstr(json, "\"gpu_frames\":0,"));
     free(json);
     benchmark_metrics_free(&metrics);
 }

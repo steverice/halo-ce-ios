@@ -1465,5 +1465,9 @@ static BOOL finish_run(NSDictionary *presentation) {
         window_height, outcome.left_least);
     host_logf(HOST_LOG_INFO, "benchmark: run %d offered %lu submissions; %lu had no drawable and %lu no picture", run.index,
         pending_offered, pending_no_drawable, pending_no_picture);
+    /* (the OpenGL ES renderer measures no GPU time: its GPU 95th of 0.0 is no measurement) */
+    if (summary.gpu_frames < summary.frames)
+        host_logf(HOST_LOG_INFO, "benchmark: run %d GPU time measured in %zu of %zu submissions%s", run.index, summary.gpu_frames,
+            summary.frames, summary.gpu_frames ? "" : " (the GPU 95th is no measurement)");
     return YES;
 }

@@ -26,6 +26,8 @@ struct benchmark_metrics {
     /* per frame, the game ticks it ran plus one, or 0 for a frame that did not know its split */
     uint16_t *tick_plus;
     size_t frames, capacity;
+    /* the frames whose GPU time was measured (a negative one, the OpenGL ES renderer's, is kept as zero) */
+    size_t gpu_frames;
     /* the frames that knew how their CPU time split: the simulation's ticks, the render and the part of the render
        spent in the D3D8 device translating and encoding for the GPU, in tenths of a millisecond, and how many ticks
        each ran */
@@ -53,6 +55,8 @@ struct benchmark_summary {
     size_t frames;
     double seconds, frames_a_second, refresh_hertz;
     struct benchmark_distribution interval, cpu, gpu;
+    /* the frames with a measured GPU time: with none, gpu is all zeros and means unmeasured */
+    size_t gpu_frames;
     /* over the split_frames frames that knew their split; ticks_per_frame is their mean tick count */
     size_t split_frames;
     struct benchmark_distribution simulation_cpu, render_cpu, translation_cpu;
@@ -81,7 +85,8 @@ void benchmark_metrics_summarize(const struct benchmark_metrics *metrics, struct
 /* how many refreshes an interval kept its frame on screen, at least 1 */
 long benchmark_refreshes(double interval, double refresh_hertz);
 /* the run as one JSON object's members (no braces), for a report: summary (simulation_cpu_ms, render_cpu_ms,
-   translation_cpu_ms and ticks_per_frame null where no frame knew its split), memory, thermal, compiles, stalls,
+   translation_cpu_ms and ticks_per_frame null where no frame knew its split; gpu_frames, the frames whose GPU time
+   was measured, 0 when gpu_ms is zeros for want of a measurement), memory, thermal, compiles, stalls,
    and each frame's interval, CPU and GPU time as base64 of little-endian 16-bit tenths of a millisecond.
    Returns malloc'd text, or NULL. */
 char *benchmark_metrics_json(const struct benchmark_metrics *metrics);
