@@ -372,6 +372,9 @@ int main(int argc,char **argv) {
         /* (no Files app on an Apple TV; and a message box would hold a test run open) */
         if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image.":
             "This Apple TV cannot give the game the 4 GB of address space it needs.");
+#elif HALO_NATIVE_MAC || TARGET_OS_MACCATALYST
+        if(host_load_image(NULL,0))host_fatal("%s See ios-runtime.log in %s.",
+            host_arena ? "Could not map the signed game image." : "Could not reserve the game's 4 GB memory arena.", data_root);
 #else
         if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image. See ios-runtime.log in Files.":
             "Could not reserve the game's 4 GB memory arena. See ios-runtime.log in Files.");
