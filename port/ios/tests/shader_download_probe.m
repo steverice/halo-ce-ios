@@ -151,7 +151,7 @@ int main(void) { @autoreleasepool {
     }
     [counts removeAllObjects];
     NSString *tooLarge=[NSString stringWithFormat:@"%@:4194304:%@:1",SHA(a),SHA(Compressed(a))];
-    Update(store,SignedIndex(11,@{@"a10.txt":tooLarge,@"b30.txt":tooLarge,@"c10.txt":tooLarge}));
+    Update(store,SignedIndex(11,@{@"a10.txt":tooLarge,@"b30.txt":tooLarge,@"c10.txt":tooLarge,@"d40.txt":tooLarge,@"a50.txt":tooLarge}));
     CHECK(AssetRequests()==0,"aggregate raw limit rejects signed index before downloading");
     [counts removeAllObjects];
     NSMutableDictionary *badEnvelope=[[NSJSONSerialization JSONObjectWithData:Index(12,@{@"a10.txt":a}) options:0 error:NULL] mutableCopy];
