@@ -269,6 +269,10 @@ short structure_visibility_find_objects(
 /* port: display.clutter_distance (port/linux/game/clutter_distance.c) */
 double config_real(const char *name);
 boolean config_boolean(const char *name);
+/* port: what a cost run of the device benchmark sets in place of the settings (port/linux/src/benchmark_suite.c);
+   negative when none */
+double halo_benchmark_clutter_distance(void);
+int halo_benchmark_clutter_lowest_lod(void);
 const struct render_camera *render_clutter_camera(void);
 static boolean object_is_clutter(long object_index);
 /* port: debug.clutter_lowest_lod, read once per draw list */
@@ -568,14 +572,16 @@ static void find_rendered_objects(
 
 	object_marker_end();
 
-	clutter_lowest_lod = config_boolean("debug.clutter_lowest_lod") != FALSE;
+	clutter_lowest_lod = halo_benchmark_clutter_lowest_lod() >= 0 ? halo_benchmark_clutter_lowest_lod() != 0 :
+		config_boolean("debug.clutter_lowest_lod") != FALSE;
 
 	/* port: display.clutter_distance: beyond it from the frame's camera (the
 	center camera in a stereo eye, so both eyes agree) bodies, items on the
 	ground and garbage are left out of the frame's draw list. Render-only: it
 	reads the object and changes nothing of it */
 	{
-		double distance = config_real("debug.clutter_distance");
+		double distance = halo_benchmark_clutter_distance() >= 0.0 ? halo_benchmark_clutter_distance() :
+			config_real("debug.clutter_distance");
 
 		if (distance < 0.0)
 			distance = config_real("display.clutter_distance");
