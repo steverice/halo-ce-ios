@@ -96,12 +96,18 @@ double host_macos_refresh_rate(void) {
     atomic_store(&cached_refresh_rate,rate);
     return rate;
 }
+static void display_pixel_size(CGDirectDisplayID display, int *width, int *height) {
+    CGDisplayModeRef mode = display ? CGDisplayCopyDisplayMode(display) : NULL;
+    /* CGDisplayPixelsWide/High can return logical dimensions on Retina displays. */
+    *width = mode ? (int)CGDisplayModeGetPixelWidth(mode) : 0;
+    *height = mode ? (int)CGDisplayModeGetPixelHeight(mode) : 0;
+    if (mode) CGDisplayModeRelease(mode);
+}
 void host_macos_screen_size(int *width, int *height) {
     require_main();
     NSScreen *screen = game_window().screen ?: NSScreen.mainScreen;
     CGDirectDisplayID display = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];
-    *width = display ? (int)CGDisplayPixelsWide(display) : 0;
-    *height = display ? (int)CGDisplayPixelsHigh(display) : 0;
+    display_pixel_size(display, width, height);
 }
 CADisplayLink *host_macos_display_link(id target, SEL selector) {
     require_main();
