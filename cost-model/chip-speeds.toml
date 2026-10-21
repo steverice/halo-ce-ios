@@ -116,3 +116,8 @@ basis = "assumed"
 gpu_speed = 9.313
 cpu_speed = 9.313
 basis = "assumed"
+
+[M6]
+gpu_speed = 11.641
+cpu_speed = 11.641
+basis = "assumed"

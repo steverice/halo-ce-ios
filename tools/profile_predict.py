@@ -35,7 +35,7 @@ class Device:
 
 
 def family_of(chip):
-    match = FAMILY.match(chip.strip())
+    match = FAMILY.search(chip.strip())
     return match.group(1) if match else ""
 
 

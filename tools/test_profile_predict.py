@@ -51,3 +51,8 @@ def test_fit_chip_speeds_needs_two_families():
     assert predict.fit_chip_speeds([fit("a", "A12")], devices, SPEEDS)["A12"]["basis"] == "assumed"
     refit = predict.fit_chip_speeds([fit("a", "A12", 10.0), fit("b", "A14", 5.0)], devices, SPEEDS)
     assert refit["A14"]["basis"] == "fit" and refit["A14"]["gpu_speed"] > refit["A12"]["gpu_speed"]
+
+
+def test_family_of_reads_a_reports_chip_name():
+    assert predict.family_of("Apple M6") == "M6" and predict.family_of("A14 Bionic") == "A14"
+    assert predict.family_of("Apple A12X Bionic") == "A12X"
