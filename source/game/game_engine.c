@@ -5134,6 +5134,30 @@ boolean game_engine_should_end_game(
 	return should_end_game;
 }
 
+/* port: network_objects.c's host-delete scope calls this before freeing each
+weapon. These slots match ctf_engine_weapon_update and oddball_engine_weapon_update. */
+void game_engine_objective_weapon_deleted(
+	long weapon_index)
+{
+	struct weapon_datum *weapon;
+	long goal_index;
+
+	if (!game_engine || !weapon_is_flag(weapon_index))
+		return;
+	weapon = weapon_get(weapon_index);
+	goal_index = weapon->object.owner_team_index;
+	if (global_variant.game_engine_index == game_engine_ctf && VALID_INDEX(goal_index, 2))
+	{
+		game_engine_clear_goal_position((short)goal_index);
+		game_engine_clear_goal_position((short)(goal_index + 2));
+	}
+	else if (global_variant.game_engine_index == game_engine_oddball &&
+		VALID_INDEX(goal_index, MAXIMUM_ODDBALLS))
+	{
+		game_engine_clear_goal_position((short)goal_index);
+	}
+}
+
 void game_engine_clear_goal_position(
 	short goal_index)
 {

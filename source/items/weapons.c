@@ -232,6 +232,9 @@ symbols in this file:
 #include "units/unit_definitions.h"
 #include "units/units.h"
 
+/* port: port/linux/game/network_objects.c, scoped to a host delete instruction. */
+boolean network_objects_deleting_host_object(void);
+
 /* port/linux/game/pal_tags.c's */
 short pal_tags_first_person_frames(long graph_index, short animation_index, short frames);
 
@@ -845,7 +848,7 @@ void weapon_set_total_rounds(
 void weapon_delete(
 	long weapon_index)
 {
-	if (game_engine_running())
+	if (game_engine_running() && !network_objects_deleting_host_object())
 	{
 		match_assert("c:\\halo\\SOURCE\\items\\weapons.c", 234, !weapon_is_flag(weapon_index));
 	}

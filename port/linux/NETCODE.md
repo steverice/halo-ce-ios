@@ -496,6 +496,12 @@ its name alone beside it, has its name given back as the map lists find it.
      host's objects and is told when it has them; from then on it deletes
      any such object the host has not told it of, and nothing but the
      host's word deletes the host's.
+     A host delete instruction also permits deleting a flag-type weapon:
+     the client first removes it from inventories and selects another weapon,
+     then clears its CTF flag/carrier or oddball HUD goals before freeing it.
+     Only that deletion scope skips the two original flag-deletion assertions;
+     local cleanup, other game deletions, hosts and single player retain them.
+     Object messages and replay behavior are unchanged.
    - The objects placed when the map loads are placed alike everywhere:
      the host's word finds a client's already there. Past loading, a
      client's own objects (projectiles, effects: what only it sees) take

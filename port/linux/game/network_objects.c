@@ -489,6 +489,7 @@ static long objects_client_creating_index = NONE;
 static boolean objects_client_creating;
 /* ... deleting one on the host's word */
 static boolean objects_client_deleting;
+static boolean objects_client_host_deleting;
 
 /* for the automated tests' reports (network_test.c) */
 static struct
@@ -573,6 +574,14 @@ boolean network_objects_creating_host_object(
 	void)
 {
 	return objects_client_creating;
+}
+
+/* port: only a host delete instruction may remove an objective weapon without
+running the original game's flag-deletion assertions. Local cleanup keeps them. */
+boolean network_objects_deleting_host_object(
+	void)
+{
+	return objects_client_host_deleting && network_game_distributed_client();
 }
 
 /* whether the object may be deleted: not the host's on a client, but on
@@ -2124,7 +2133,8 @@ static void distributed_client_release_item(
 /* deletes an object (the host's, on its word, or one the host has not
 told of), undoing what refers to it first */
 static void distributed_client_delete(
-	long object_index)
+	long object_index,
+	boolean host_delete)
 {
 	struct object_datum *object = object_try_and_get(object_index);
 
@@ -2187,7 +2197,9 @@ static void distributed_client_delete(
 		}
 	}
 	objects_client_deleting = TRUE;
+	objects_client_host_deleting = host_delete;
 	object_delete_immediately(object_index);
+	objects_client_host_deleting = FALSE;
 	objects_client_deleting = FALSE;
 }
 
@@ -2387,7 +2399,7 @@ static void distributed_client_create(
 			return;
 		}
 		/* something else in its place: gone */
-		distributed_client_delete(existing_index);
+		distributed_client_delete(existing_index, FALSE);
 		objects_client_has[absolute_index] = NONE;
 		if (header->identifier)
 		{
@@ -2457,7 +2469,7 @@ void network_objects_handle_changes(
 			objects_client_has[absolute_index] == change->object_index)
 		{
 			objects_statistics.deletes++;
-			distributed_client_delete(change->object_index);
+			distributed_client_delete(change->object_index, TRUE);
 			objects_client_has[absolute_index] = NONE;
 		}
 	}
@@ -3193,7 +3205,7 @@ static void distributed_client_remove_own_objects(
 			if (!distributed_object_networked(iterator.index) || objects_client_has[absolute_index] == iterator.index)
 				continue;
 			objects_statistics.own_objects_removed++;
-			distributed_client_delete(iterator.index);
+			distributed_client_delete(iterator.index, FALSE);
 		}
 		return;
 	}
@@ -3207,7 +3219,7 @@ static void distributed_client_remove_own_objects(
 			continue;
 		}
 		objects_statistics.own_objects_removed++;
-		distributed_client_delete(object_index);
+		distributed_client_delete(object_index, FALSE);
 	}
 	objects_client_new_object_count = 0;
 }
@@ -3354,6 +3366,7 @@ void network_objects_new_game(
 	objects_client_creating_index = NONE;
 	objects_client_creating = FALSE;
 	objects_client_deleting = FALSE;
+	objects_client_host_deleting = FALSE;
 	objects_client_new_object_count = 0;
 	objects_client_check_all = TRUE;
 	objects_client_local_free_index = LOCAL_OBJECTS_FIRST_INDEX;

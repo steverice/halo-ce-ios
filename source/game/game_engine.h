@@ -613,6 +613,9 @@ long find_netgame_flag(
 boolean game_engine_should_end_game(
 	void);
 
+/* port: clear objective HUD goals before a host-directed weapon deletion. */
+void game_engine_objective_weapon_deleted(long weapon_index);
+
 void game_engine_clear_goal_position(
 	short goal_index);
 

@@ -147,6 +147,7 @@ on the host's word */
 long network_objects_new_object_index(void);
 boolean network_objects_creating_host_object(void);
 boolean network_objects_may_delete(long object_index);
+boolean network_objects_deleting_host_object(void);
 /* port/linux/game/network_coop.c's: the scripts' attaching, on co-op's clients */
 void network_coop_note_attach(long parent_index, char const *parent_marker_name, long child_index,
 	char const *child_marker_name);
@@ -1884,7 +1885,11 @@ static void object_delete_initial_recursive(
 
 	if (game_engine_running() && object->object.type == _object_type_weapon)
 	{
-		match_assert("c:\\halo\\SOURCE\\objects\\objects.c", 829, !(weapon_is_flag(object_index)));
+		/* port: the host may delete a flag-type weapon in a modded game. */
+		if (network_objects_deleting_host_object())
+			game_engine_objective_weapon_deleted(object_index);
+		else
+			match_assert("c:\\halo\\SOURCE\\objects\\objects.c", 829, !(weapon_is_flag(object_index)));
 	}
 	
 	if (object->object.first_child_object_index!=NONE)
