@@ -154,7 +154,8 @@ def render_screenshots(label, sets, folder, options, run):
     for name, settings in sets.items():
         command = ["python3", "tools/mac_run.py", "run", "--runner", "native", "--out", f"{remote}/{name}",
                    "--screenshot-every", options.frames, "--exit-after", options.exit_after,
-                   "--set", "debug.fixed_timestep=true", *shot_settings(settings), *scene]
+                   "--set", "debug.fixed_timestep=true", "--set", 'display.renderer="metal"',
+                   *shot_settings(settings), *scene]
         for flag, value in (("--maps", options.maps), ("--app", options.app)):
             if value:
                 command += [flag, value]
