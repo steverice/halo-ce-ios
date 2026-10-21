@@ -25,6 +25,14 @@ Packets the mixer has finished are completed from DirectSoundDoWork, which
 the game calls every frame, and from Flush, never from the audio thread:
 the game's completion callback is not meant to run concurrently with it.
 
+Each voice has a lock of its own, which the mixer holds only while it mixes
+that voice, so the game's thread waits at most for one voice to be mixed,
+not for all of them. mixer_lock guards the lists of voices and buffers and
+the buffers themselves; the mixer holds it for the whole mix, and the game's
+thread, the only one that changes the lists, takes it only to change them.
+The listener has its own lock, and the mixer works from a copy taken at the
+start of each mix.
+
 Without an audio device, a clock thread runs the same mixer into a scratch
 buffer, so streams still drain at their real rate.
 
@@ -74,6 +82,8 @@ struct sdl_stream
 	/* must be first: in C an IDirectSoundStream is just { lpVtbl } */
 	IDirectSoundStream object;
 	struct sdl_stream *next;
+	/* everything below, held by the mixer while it mixes the voice */
+	pthread_mutex_t lock;
 	ULONG reference_count;
 	LPFNXMEDIAOBJECTCALLBACK callback;
 	LPVOID context;
@@ -120,11 +130,12 @@ struct sdl_stream
 	BOOL gains_valid;
 };
 
+/* the lists of voices and buffers, and the buffers */
 static pthread_mutex_t mixer_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct sdl_stream *streams;
 
 /* the listener, in DirectSound's left-handed +y up space */
-static struct
+struct sound_listener_state
 {
 	float position[3];
 	float front[3];
@@ -133,7 +144,13 @@ static struct
 	/* meters a unit (SetDistanceFactor): the game sets 3.048, a world unit
 	being 10 feet. Only Doppler, which is not modelled, would use it */
 	float distance_factor;
-} listener = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 }, 1.0f, 1.0f };
+};
+
+/* the game's, under listener_lock, and the mixer's copy of it for the mix
+under way */
+static pthread_mutex_t listener_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct sound_listener_state listener = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 }, 1.0f, 1.0f };
+static struct sound_listener_state mixed_listener = { { 0, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 }, 1.0f, 1.0f };
 
 static float master_volume = 1.0f;
 
@@ -268,13 +285,13 @@ static void spatialize(const struct sdl_stream *stream, float *left, float *righ
 	else
 	{
 		for (axis = 0; axis < 3; axis++)
-			offset[axis] = stream->position[axis] - listener.position[axis];
+			offset[axis] = stream->position[axis] - mixed_listener.position[axis];
 		/* left-handed: right = top x front */
-		right_axis[0] = listener.top[1] * listener.front[2] - listener.top[2] * listener.front[1];
-		right_axis[1] = listener.top[2] * listener.front[0] - listener.top[0] * listener.front[2];
-		right_axis[2] = listener.top[0] * listener.front[1] - listener.top[1] * listener.front[0];
+		right_axis[0] = mixed_listener.top[1] * mixed_listener.front[2] - mixed_listener.top[2] * mixed_listener.front[1];
+		right_axis[1] = mixed_listener.top[2] * mixed_listener.front[0] - mixed_listener.top[0] * mixed_listener.front[2];
+		right_axis[2] = mixed_listener.top[0] * mixed_listener.front[1] - mixed_listener.top[1] * mixed_listener.front[0];
 		side = dot3(offset, right_axis);
-		ahead = dot3(offset, listener.front);
+		ahead = dot3(offset, mixed_listener.front);
 	}
 	/* in the game's units, those of the minimum and maximum distances: the
 	distance factor turns units into meters for Doppler, and scaling by it
@@ -288,7 +305,7 @@ static void spatialize(const struct sdl_stream *stream, float *left, float *righ
 		float clamped = distance < stream->maximum_distance ? distance : stream->maximum_distance;
 
 		attenuation = stream->minimum_distance /
-			(stream->minimum_distance + listener.rolloff_factor * (clamped - stream->minimum_distance));
+			(stream->minimum_distance + mixed_listener.rolloff_factor * (clamped - stream->minimum_distance));
 	}
 
 	/* equal power pan; close sources and sources straight ahead or behind
@@ -709,9 +726,16 @@ static void mix(float *output, unsigned long frames)
 	struct sdl_stream *stream;
 
 	memset(output, 0, frames * OUTPUT_CHANNELS * sizeof(float));
+	pthread_mutex_lock(&listener_lock);
+	mixed_listener = listener;
+	pthread_mutex_unlock(&listener_lock);
 	pthread_mutex_lock(&mixer_lock);
 	for (stream = streams; stream; stream = stream->next)
+	{
+		pthread_mutex_lock(&stream->lock);
 		mix_voice(stream, output, frames);
+		pthread_mutex_unlock(&stream->lock);
+	}
 	mix_buffers(output, frames);
 	pthread_mutex_unlock(&mixer_lock);
 	limit(output, frames);
@@ -813,8 +837,8 @@ static void packet_release(struct voice_packet *entry)
 	entry->samples = NULL;
 }
 
-/* completes the head packet; called with the lock held, which the game's
-callback runs without */
+/* completes the head packet; called with the voice's lock held, which the
+game's callback runs without */
 static void stream_complete_head(struct sdl_stream *stream, DWORD status, DWORD completed_size)
 {
 	struct voice_packet *entry = &stream->packets[stream->packet_head];
@@ -834,9 +858,9 @@ static void stream_complete_head(struct sdl_stream *stream, DWORD status, DWORD 
 		*packet.pdwStatus = status;
 	if (stream->callback)
 	{
-		pthread_mutex_unlock(&mixer_lock);
+		pthread_mutex_unlock(&stream->lock);
 		stream->callback(stream->context, packet.pContext, status);
-		pthread_mutex_lock(&mixer_lock);
+		pthread_mutex_lock(&stream->lock);
 	}
 	else if (packet.hCompletionEvent)
 	{
@@ -844,17 +868,19 @@ static void stream_complete_head(struct sdl_stream *stream, DWORD status, DWORD 
 	}
 }
 
+/* (the list without mixer_lock: only the game's thread, this one, changes
+it) */
 static void streams_complete_finished(void)
 {
 	struct sdl_stream *stream;
 
-	pthread_mutex_lock(&mixer_lock);
 	for (stream = streams; stream; stream = stream->next)
 	{
+		pthread_mutex_lock(&stream->lock);
 		while (stream->packet_count && stream->packets[stream->packet_head].finished)
 			stream_complete_head(stream, XMEDIAPACKET_STATUS_SUCCESS, stream->packets[stream->packet_head].packet.dwMaxSize);
+		pthread_mutex_unlock(&stream->lock);
 	}
-	pthread_mutex_unlock(&mixer_lock);
 }
 
 /* ---------- stream interface */
@@ -869,9 +895,9 @@ static ULONG STDMETHODCALLTYPE stream_add_reference(IDirectSoundStream *object)
 	struct sdl_stream *stream = stream_from_interface(object);
 	ULONG count;
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&stream->lock);
 	count = ++stream->reference_count;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&stream->lock);
 	return count;
 }
 
@@ -883,9 +909,9 @@ static ULONG STDMETHODCALLTYPE stream_release(IDirectSoundStream *object)
 	struct sdl_stream **link;
 	ULONG count;
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&stream->lock);
 	count = --stream->reference_count;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&stream->lock);
 	if (count)
 		return count;
 
@@ -899,7 +925,9 @@ static ULONG STDMETHODCALLTYPE stream_release(IDirectSoundStream *object)
 			break;
 		}
 	}
+	/* (once unlinked under mixer_lock, no mix has the voice any more) */
 	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_destroy(&stream->lock);
 	free(stream);
 	return 0;
 }
@@ -918,9 +946,9 @@ static HRESULT STDMETHODCALLTYPE stream_get_status(IDirectSoundStream *object, L
 {
 	struct sdl_stream *stream = stream_from_interface(object);
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&stream->lock);
 	*status = stream->packet_count < MAXIMUM_STREAM_PACKETS ? XMO_STATUSF_ACCEPT_INPUT_DATA : 0;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&stream->lock);
 	return S_OK;
 }
 
@@ -938,10 +966,10 @@ static HRESULT STDMETHODCALLTYPE stream_process(IDirectSoundStream *object, LPCX
 	samples = stream->adpcm ?
 		decode_adpcm(input->pvBuffer, input->dwMaxSize, stream->channels, &frames) :
 		decode_pcm(input->pvBuffer, input->dwMaxSize, stream->channels, &frames);
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&stream->lock);
 	if (stream->packet_count == MAXIMUM_STREAM_PACKETS)
 	{
-		pthread_mutex_unlock(&mixer_lock);
+		pthread_mutex_unlock(&stream->lock);
 		free(samples);
 		return E_OUTOFMEMORY;
 	}
@@ -962,7 +990,7 @@ static HRESULT STDMETHODCALLTYPE stream_process(IDirectSoundStream *object, LPCX
 		stream->gains_valid = FALSE;
 	}
 	stream->packet_count++;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&stream->lock);
 	return S_OK;
 }
 
@@ -976,7 +1004,7 @@ static HRESULT STDMETHODCALLTYPE stream_flush(IDirectSoundStream *object)
 {
 	struct sdl_stream *stream = stream_from_interface(object);
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&stream->lock);
 	while (stream->packet_count)
 	{
 		struct voice_packet *head = &stream->packets[stream->packet_head];
@@ -990,7 +1018,7 @@ static HRESULT STDMETHODCALLTYPE stream_flush(IDirectSoundStream *object)
 	resampler_reset(stream);
 	/* (the next sound on the channel says where it is) */
 	stream->stereo_positioned = FALSE;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&stream->lock);
 	return S_OK;
 }
 
@@ -1002,10 +1030,10 @@ void dsound_sdl_stream_set_stereo_pan(IDirectSoundStream *object, BOOL positione
 {
 	struct sdl_stream *stream = stream_from_interface(object);
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&stream->lock);
 	stream->stereo_positioned = positioned && stream->channels == 2;
 	stream->stereo_pan = pan < -1.0f ? -1.0f : (pan > 1.0f ? 1.0f : pan);
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&stream->lock);
 }
 
 static IDirectSoundStreamVtbl stream_vtable =
@@ -1100,9 +1128,9 @@ HRESULT WINAPI IDirectSound_SetDistanceFactor(LPDIRECTSOUND sound, FLOAT factor,
 {
 	(void)sound;
 	(void)apply;
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&listener_lock);
 	listener.distance_factor = factor > 0.0f ? factor : 1.0f;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&listener_lock);
 	return DS_OK;
 }
 
@@ -1110,9 +1138,9 @@ HRESULT WINAPI IDirectSound_SetRolloffFactor(LPDIRECTSOUND sound, FLOAT factor, 
 {
 	(void)sound;
 	(void)apply;
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&listener_lock);
 	listener.rolloff_factor = factor >= 0.0f ? factor : 1.0f;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&listener_lock);
 	return DS_OK;
 }
 
@@ -1120,11 +1148,11 @@ HRESULT WINAPI IDirectSound_SetPosition(LPDIRECTSOUND sound, FLOAT x, FLOAT y, F
 {
 	(void)sound;
 	(void)apply;
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&listener_lock);
 	listener.position[0] = x;
 	listener.position[1] = y;
 	listener.position[2] = z;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&listener_lock);
 	return DS_OK;
 }
 
@@ -1147,7 +1175,7 @@ HRESULT WINAPI IDirectSound_SetOrientation(LPDIRECTSOUND sound, FLOAT x_front, F
 {
 	(void)sound;
 	(void)apply;
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&listener_lock);
 	listener.front[0] = x_front;
 	listener.front[1] = y_front;
 	listener.front[2] = z_front;
@@ -1156,7 +1184,7 @@ HRESULT WINAPI IDirectSound_SetOrientation(LPDIRECTSOUND sound, FLOAT x_front, F
 	listener.top[2] = z_top;
 	normalize3(listener.front);
 	normalize3(listener.top);
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&listener_lock);
 	return DS_OK;
 }
 
@@ -1189,6 +1217,7 @@ HRESULT WINAPI IDirectSound_CreateSoundStream(LPDIRECTSOUND sound, LPCDSSTREAMDE
 	stream->maximum_distance = DS3D_DEFAULTMAXDISTANCE;
 	stream->i3dl2_gain = 1.0f;
 	resampler_reset(stream);
+	pthread_mutex_init(&stream->lock, NULL);
 	pthread_mutex_lock(&mixer_lock);
 	stream->next = streams;
 	streams = stream;
@@ -1210,17 +1239,17 @@ unsigned long __stdcall DirectSoundGetStreamVoiceStatus(LPDIRECTSOUNDSTREAM stre
 	struct sdl_stream *record = stream_from_interface(stream);
 	unsigned long active;
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&record->lock);
 	active = record->packet_count != 0;
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&record->lock);
 	return active;
 }
 
 #define STREAM_SETTER(body) \
 	struct sdl_stream *record = stream_from_interface(stream); \
-	pthread_mutex_lock(&mixer_lock); \
+	pthread_mutex_lock(&record->lock); \
 	body; \
-	pthread_mutex_unlock(&mixer_lock); \
+	pthread_mutex_unlock(&record->lock); \
 	return DS_OK;
 
 HRESULT WINAPI IDirectSoundStream_SetFrequency(LPDIRECTSOUNDSTREAM stream, DWORD frequency)
@@ -1246,7 +1275,7 @@ HRESULT WINAPI IDirectSoundStream_SetMixBinVolumes(LPDIRECTSOUNDSTREAM stream, D
 	struct sdl_stream *record = stream_from_interface(stream);
 	unsigned long bit, index = 0;
 
-	pthread_mutex_lock(&mixer_lock);
+	pthread_mutex_lock(&record->lock);
 	for (bit = 0; bit < 32; bit++)
 	{
 		if (!(mix_bin_mask & (1UL << bit)))
@@ -1257,7 +1286,7 @@ HRESULT WINAPI IDirectSoundStream_SetMixBinVolumes(LPDIRECTSOUNDSTREAM stream, D
 			record->mix_right = gain_from_millibels(volumes[index]);
 		index++;
 	}
-	pthread_mutex_unlock(&mixer_lock);
+	pthread_mutex_unlock(&record->lock);
 	return DS_OK;
 }
 

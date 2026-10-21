@@ -47,7 +47,8 @@ def stream_types():
     backend = read("port/linux/src/dsound_sdl.c")
     game = read("source/sound/sound_dsound_xbox.c")
     xdk = read("port/include/xdk/xdk_pdb.h")
-    text = """typedef unsigned long DWORD, ULONG;
+    text = """#include <pthread.h>
+typedef unsigned long DWORD, ULONG;
 typedef long LONG, HRESULT;
 typedef int BOOL;
 typedef void *LPVOID, *LPDIRECTSOUND, *LPDIRECTSOUNDBUFFER;
