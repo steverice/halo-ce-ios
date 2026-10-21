@@ -154,6 +154,7 @@ def render_screenshots(label, sets, folder, options, run):
     for name, settings in sets.items():
         command = ["python3", "tools/mac_run.py", "run", "--runner", "native", "--out", f"{remote}/{name}",
                    "--screenshot-every", options.frames, "--exit-after", options.exit_after,
+                   "--time-limit", options.time_limit,
                    "--set", "debug.fixed_timestep=true", "--set", 'display.renderer="metal"',
                    *shot_settings(settings), *scene]
         for flag, value in (("--maps", options.maps), ("--app", options.app)):
@@ -333,6 +334,7 @@ def main(arguments=None):
     parser.add_argument("--recording", help="input recording the screenshots replay")
     parser.add_argument("--frames", type=int, default=600, help="the frame whose picture is kept")
     parser.add_argument("--exit-after", type=float, default=20.0, help="seconds of game time before the run ends")
+    parser.add_argument("--time-limit", type=float, default=900.0, help="seconds before a screenshot run is killed")
     parser.add_argument("--maps", help="extracted maps folder for the runner")
     parser.add_argument("--app", help="native runner app")
     parser.add_argument("--host", help="run-job.sh host for the screenshot job (default: its own choice)")
