@@ -602,6 +602,17 @@ int main(void) {
     benchmark_suite_mainloop_update();
     CHECK(mp_ends == 1 && !mp_probe_enabled && !suite.mp_host_started);
     finish_requested = 0;
+    /* A recording's lead-in gets the load limit plus one and a half times the lead: a replay still short of its
+       window after the lead and the load limit has not failed yet, and one past that has. */
+    reset();
+    strcpy(suite.map, "a10"); strcpy(suite.recording, "probe"); suite.gameplay = 1; suite.lead = 100; suite.seconds = 10;
+    now = 0; suite.state = suite_lead; suite.entered = 0;
+    frame(180000.0 + 100 * 1000.0 + 1);
+    CHECK(suite.state == suite_lead && run_ends == 0);
+    frame(180000.0 + 100 * 1500.0 - 1);
+    CHECK(suite.state == suite_lead && run_ends == 0);
+    frame(180000.0 + 100 * 1500.0 + 1);
+    CHECK(run_ends == 1 && !strcmp(last_end_status, "failed"));
     unlink("benchmark/recordings/probe.input");
     assert(!rmdir("benchmark/recordings"));
     assert(!rmdir("benchmark"));

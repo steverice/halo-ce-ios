@@ -906,7 +906,9 @@ void benchmark_suite_frame(long width, long height)
 		}
 		else if (*suite.recording && input_replay_ended())
 			finish("failed", "the recording ended before the measured window");
-		else if (now - suite.entered > LOAD_LIMIT_MILLISECONDS + suite.lead * 1000.0)
+		/* (a recording's lead-in plays in real time, and a long one adds the checkpoint saves and reverts of the take:
+		a limit of the lead alone failed a replay at 30 fps whose lead was 446 s) */
+		else if (now - suite.entered > LOAD_LIMIT_MILLISECONDS + suite.lead * 1500.0)
 			finish("failed", "the lead-in never ended");
 		break;
 	case suite_measuring:
