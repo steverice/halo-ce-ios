@@ -105,10 +105,20 @@ def find_profile(folder, identifiers, platform):
     return None
 
 
+def platform_of(device):
+    """The profile platform of the device's identifiers; the report's own platform is its source chip's."""
+    prefixes = {"iPhone": "ios", "iPad": "ios", "AppleTV": "tvos", "RealityDevice": "visionos", "Mac": "mac"}
+    for identifier in device.identifiers:
+        for prefix, platform in prefixes.items():
+            if identifier.startswith(prefix):
+                return platform
+    raise Failure(f"no platform for {device.model}")
+
+
 def new_profile_text(device, platform):
     models = ", ".join(json.dumps(m) for m in device.identifiers)
     return (f'#:schema ../port/settings/profile.schema.json\nschema = 1\nname = {json.dumps(device.model)}\n'
-            f'kind = "model"\nstatus = "provisional"\n\n[match]\nplatform = {json.dumps(platform)}\nmodels = [{models}]\n')
+            f'kind = "model"\nstatus = "provisional"\n\n[match]\nplatform = {json.dumps(platform)}\nmodels = [{models}]\n\n')
 
 
 def apply_change(text, proposal, fit, report_name):
@@ -209,12 +219,13 @@ def evidence_url(branch, name):
     return f"https://raw.githubusercontent.com/{REPOSITORY}/{branch}/{EVIDENCE_DIRECTORY}/{name}"
 
 
-def body(proposal, device, current, fit, scene, branch, report_name, stem):
+def body(proposal, device, current, fit, scene, branch, report_name, stem, pictures=True):
     lines = [propose.markdown(proposal, device, current).rstrip("\n"), "",
              f"Confidence: {fit.confidence}" + (" (predicted from another chip's measurements)" if fit.confidence != "measured" else "")
-             + f". Scene: {scene}. Report: {report_name}.", "",
-             "| Before | After |", "| --- | --- |",
-             f"| ![Before]({evidence_url(branch, f'{stem}/before.png')}) | ![After]({evidence_url(branch, f'{stem}/after.png')}) |"]
+             + f". Scene: {scene}. Report: {report_name}."]
+    if pictures:
+        lines += ["", "| Before | After |", "| --- | --- |",
+                  f"| ![Before]({evidence_url(branch, f'{stem}/before.png')}) | ![After]({evidence_url(branch, f'{stem}/after.png')}) |"]
     return "\n".join(lines) + "\n"
 
 
@@ -234,7 +245,7 @@ def build(options, run=None):
         raise Failure("the report has no usable offscreen_uncapped runs and no fit exists to anchor on")
     fit = predict.predicted_fit(device, fits, devices, workload=options.workload)
     ranking = propose.read_ranking()
-    platform = report.get("device", {}).get("platform", "ios")
+    platform = platform_of(device)
 
     work = out / "profiles"
     if work.exists():
@@ -269,7 +280,10 @@ def build(options, run=None):
     stem = target.stem
     evidence = out / "evidence" / stem
     evidence.mkdir(parents=True, exist_ok=True)
-    pictures = render_screenshots(f"profile-{stem}", {"before": current, "after": after_settings}, shots, options, run)
+    if options.skip_screenshots and not options.dry_run:
+        raise Failure("--skip-screenshots is for --dry-run only")
+    pictures = ({} if options.skip_screenshots else
+                render_screenshots(f"profile-{stem}", {"before": current, "after": after_settings}, shots, options, run))
     for name, picture in pictures.items():
         shutil.copyfile(picture, evidence / f"{name}.png")
 
@@ -282,7 +296,7 @@ def build(options, run=None):
         print("no --signing-key: the tester shards were not regenerated")
 
     branch = f"profile/{stem}"
-    text = body(proposal, device, current, fit, options.workload, branch, report_name, stem)
+    text = body(proposal, device, current, fit, options.workload, branch, report_name, stem, bool(pictures))
     (out / "body.md").write_text(text)
     if options.dry_run:
         print(f"dry run: profile, screenshots and body are in {out}")
@@ -335,6 +349,7 @@ def main(arguments=None):
     parser.add_argument("--frames", type=int, default=600, help="the frame whose picture is kept")
     parser.add_argument("--exit-after", type=float, default=20.0, help="seconds of game time before the run ends")
     parser.add_argument("--time-limit", type=float, default=900.0, help="seconds before a screenshot run is killed")
+    parser.add_argument("--skip-screenshots", action="store_true", help="dry run only: write the body without pictures")
     parser.add_argument("--maps", help="extracted maps folder for the runner")
     parser.add_argument("--app", help="native runner app")
     parser.add_argument("--host", help="run-job.sh host for the screenshot job (default: its own choice)")

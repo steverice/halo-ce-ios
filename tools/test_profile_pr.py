@@ -68,7 +68,7 @@ def setup(tmp_path, monkeypatch, key=None):
     monkeypatch.setattr(pr.check, "profile_keys", lambda: {SHADOW: ("integer", 128, 1024, None), ANISO: ("integer", 1, 16, None)})
     options = pr.argparse.Namespace(model="Test Pad", report=str(report), dry_run=True, out=str(tmp_path / "out"),
                                     workload="gameplay", output_class="handheld", signing_key=key, worktree=str(tmp_path),
-                                    map="a10", recording=None, frames=600, exit_after=20.0, time_limit=900.0, maps=None, app=None, host=None)
+                                    map="a10", recording=None, frames=600, exit_after=20.0, time_limit=900.0, skip_screenshots=False, maps=None, app=None, host=None)
     return options
 
 
@@ -120,3 +120,7 @@ def test_frame_rate_target_only_opens_nothing(tmp_path, monkeypatch):
     runner = Runner()
     assert pr.build(options, runner) == 0
     assert runner.calls == [] and not (tmp_path / "out/body.md").exists()
+
+
+def test_platform_comes_from_the_device_not_the_report():
+    assert pr.platform_of(DEVICE) == "ios"
