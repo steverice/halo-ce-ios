@@ -118,3 +118,12 @@ def test_lower_target_still_cuts_to_reach_it():
     result = run(fit(gpu_per_mp=17.0, knobs=GPU_KNOBS))
     assert result.kind == "change" and result.target_hz == 30 and result.settings
     assert result.predicted_fps >= 29.9
+
+
+def test_effects_report_resolution_and_clamp_noise():
+    item = fit(gpu_per_mp=12.0, knobs={ANISO: {"8": (0.9, 0.85)}})
+    start = dict(BASE)
+    effects = propose._effects(item, start, {ANISO: "8", LINES: "810"}, DEVICE)
+    assert effects[ANISO] == (1.0, 0.85)  # filtering cannot save CPU time
+    cpu, gpu = effects[LINES]
+    assert cpu == 1.0 and 0.5 < gpu < 0.7  # (810/1080)^2 of the pixels

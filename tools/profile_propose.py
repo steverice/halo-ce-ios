@@ -154,14 +154,21 @@ def _fill(fit, current, ladders):
     return settings
 
 
-def _effects(fit, current, proposed):
+def _effects(fit, current, proposed, device=None):
+    """(CPU, GPU) time factors for each proposed change. A knob that only costs one side shows no effect on the
+    other: a fitted factor there is measurement noise."""
     result = {}
     for knob, value in proposed.items():
         if knob == cost.RESOLUTION_KEY:
+            if device is not None:
+                before, after = _predict(fit, device, current), _predict(fit, device, dict(current, **{knob: value}))
+                result[knob] = (after.render_cpu_ms / before.render_cpu_ms if before.render_cpu_ms else 1.0,
+                                after.gpu_ms / before.gpu_ms if before.gpu_ms else 1.0)
             continue
         old = fit.knobs.get(knob, {}).get(current.get(knob), (1.0, 1.0)) if current.get(knob) != fit.baseline.get(knob) else (1.0, 1.0)
         new = fit.knobs.get(knob, {}).get(value, (1.0, 1.0)) if value != fit.baseline.get(knob) else (1.0, 1.0)
-        result[knob] = (new[0] / old[0] if old[0] else 1.0, new[1] / old[1] if old[1] else 1.0)
+        cpu, gpu = (new[0] / old[0] if old[0] else 1.0, new[1] / old[1] if old[1] else 1.0)
+        result[knob] = (1.0 if knob in GPU_SIDE else cpu, 1.0 if knob in CPU_SIDE else gpu)
     return result
 
 
@@ -175,7 +182,7 @@ def propose(fit, device, workload_kind, current, ranking, output_class="handheld
         settings, ok, worst, bound = _greedy(fit, device, start, ladders, rate)
         changed = {k: v for k, v in settings.items() if start.get(k) != v}
         return ok, bound, Option(changed, _fps(_predict(fit, device, settings), rate), worst, rate,
-                                 _effects(fit, start, changed))
+                                 _effects(fit, start, changed, device))
 
     ok, bound, first = option(hz)
     if ok and not first.settings:
