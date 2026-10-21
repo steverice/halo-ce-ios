@@ -31,6 +31,8 @@ static int fatal_reports, arena_configures, arena_columns_override = 6;
 static struct benchmark_mp_arena_config configured_arena;
 static int combat_begins;
 int benchmark_mp_arena_begin_combat(void) { combat_begins++; return 1; }
+int host_benchmark_presented(int on) { (void)on; return 0; }
+void platform_clock_realtime(int on) { (void)on; }
 static char last_end_status[32];
 static struct benchmark_mp_state observed_mp;
 static int exit_status, exit_armed;

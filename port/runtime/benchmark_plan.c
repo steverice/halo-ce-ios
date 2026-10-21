@@ -165,7 +165,22 @@ unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
             one->arena_columns, one->arena_spacing, one->arena_distance, one->arena_movement_radius);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
     }
+    /* (a journal from a pass without the presented checks is not carried on with them, nor the other way) */
+    if (plan->reality_checks) hash = ((hash ^ (unsigned char)'P') * 16777619UL) & 0xffffffffUL;
     return hash;
+}
+
+int benchmark_plan_total(const struct benchmark_plan *plan, const struct benchmark_outcome *finished, int count) {
+    int scene, campaign = 0, multiplayer = 0;
+
+    if (plan->mode != BENCHMARK_UNIFIED || plan->scene_count > BENCHMARK_SCENES_MAXIMUM) return 0;
+    if (!plan->reality_checks) return plan->scene_count;
+    for (scene = 0; scene < plan->scene_count; scene++) {
+        if (scene < count && finished[scene].status != BENCHMARK_OK) continue;
+        if (plan->scenes[scene].kind == BENCHMARK_SCENE_GAMEPLAY) campaign = 1;
+        if (plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER) multiplayer = 1;
+    }
+    return plan->scene_count + campaign + multiplayer;
 }
 
 int benchmark_outcome_meets(const struct benchmark_outcome *outcome, int refreshes) {
@@ -258,9 +273,25 @@ int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmar
     /* The tester pass follows signed catalog order exactly, once at profile defaults.
        Catalog publishers choose the first taxing campaign and multiplayer ordering. */
     if (plan->mode == BENCHMARK_UNIFIED) {
+        const struct benchmark_outcome *checked[BENCHMARK_SCENES_MAXIMUM] = { 0 };
+        int campaign = -1, multiplayer = -1;
+
         for (scene = 0; scene < plan->scene_count; scene++)
-            if (!step(&walk, 'A', scene, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
+            if (!(checked[scene] = step(&walk, 'A', scene, 0, device->anisotropy, device->shadow_size,
+                device->model_lod_max)))
                 return walk.stopped == 1;
+        if (!plan->reality_checks) return 0;
+        /* (a scene that gave no measurement offscreen has nothing to check) */
+        for (scene = 0; scene < plan->scene_count; scene++) {
+            if (checked[scene]->status != BENCHMARK_OK) continue;
+            if (campaign < 0 && plan->scenes[scene].kind == BENCHMARK_SCENE_GAMEPLAY) campaign = scene;
+            if (multiplayer < 0 && plan->scenes[scene].kind == BENCHMARK_SCENE_MULTIPLAYER) multiplayer = scene;
+        }
+        if (campaign >= 0 && !step(&walk, 'P', campaign, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
+            return walk.stopped == 1;
+        if (multiplayer >= 0 &&
+            !step(&walk, 'P', multiplayer, 0, device->anisotropy, device->shadow_size, device->model_lod_max))
+            return walk.stopped == 1;
         return 0;
     }
     base_lines = device->base_lines > 0 && device->base_lines < device->drawable_lines ? device->base_lines : device->drawable_lines;

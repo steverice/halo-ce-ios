@@ -521,6 +521,12 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 @property(nonatomic,strong) UILabel *status;
 @property(nonatomic,strong) HaloBenchmarkGraphView *graph;
 @property(nonatomic,strong) NSTimer *timer;
+/* while the frames are drawn offscreen, a screen of its own in place of the game's: what is being measured, how
+   far along, and Finish */
+@property(nonatomic,strong) UIView *progressScreen, *panel;
+@property(nonatomic,strong) UILabel *progressTitle, *progressDetail;
+@property(nonatomic,strong) UIProgressView *progressBar;
+@property(nonatomic,strong) UIButton *progressFinish;
 @end
 @implementation HaloBenchmarkOverlayController
 - (void)viewDidLoad {
@@ -550,6 +556,8 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     self.graph=[HaloBenchmarkGraphView new];
     [self.graph.heightAnchor constraintEqualToConstant:graphHeight].active=YES;
     [panel addArrangedSubview:row]; [panel addArrangedSubview:self.graph]; [self.view addSubview:panel];
+    self.panel=panel;
+    [self buildProgressScreen];
     NSLayoutConstraint *preferred=[panel.widthAnchor constraintEqualToConstant:width]; preferred.priority=UILayoutPriorityDefaultHigh;
     [NSLayoutConstraint activateConstraints:@[preferred,
         [panel.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-24],
@@ -567,9 +575,83 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
             [NSString stringWithFormat:@"Benchmarking…\nFPS: %@ CPU: %@ms GPU: %@ms",fps,cpu,gpu];
         controller.graph.hidden=host_benchmark_finish_requested();
         [controller.graph updateSnapshot:&snapshot];
+        [controller refreshProgress];
     }];
 }
+- (void)buildProgressScreen {
+    UIView *screen=[UIView new];
+    screen.backgroundColor=UIColor.blackColor;
+    screen.translatesAutoresizingMaskIntoConstraints=NO;
+    screen.hidden=YES;
+    UIStackView *stack=[UIStackView new];
+    stack.axis=UILayoutConstraintAxisVertical; stack.alignment=UIStackViewAlignmentCenter; stack.spacing=18;
+    stack.translatesAutoresizingMaskIntoConstraints=NO;
+    UILabel *heading=[UILabel new];
+    heading.text=@"Benchmarking";
+    heading.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle2];
+    heading.textColor=UIColor.lightGrayColor;
+    self.progressTitle=[UILabel new];
+    self.progressTitle.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle1];
+    self.progressTitle.textColor=UIColor.whiteColor;
+    self.progressTitle.textAlignment=NSTextAlignmentCenter;
+    self.progressTitle.numberOfLines=2;
+    self.progressDetail=[UILabel new];
+    self.progressDetail.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    self.progressDetail.textColor=UIColor.lightGrayColor;
+    self.progressDetail.textAlignment=NSTextAlignmentCenter;
+    self.progressDetail.numberOfLines=0;
+    self.progressBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+    self.progressBar.translatesAutoresizingMaskIntoConstraints=NO;
+    UILabel *note=[UILabel new];
+    note.text=@"The game plays by itself, faster than usual, without showing its picture. Keep VISR open until it finishes.";
+    note.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    note.textColor=UIColor.grayColor;
+    note.textAlignment=NSTextAlignmentCenter;
+    note.numberOfLines=0;
+    self.progressFinish=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.progressFinish setTitle:@"Finish" forState:UIControlStateNormal];
+    self.progressFinish.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    [self.progressFinish.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
+    [self.progressFinish addTarget:self action:@selector(finish:) forControlEvents:UIControlEventPrimaryActionTriggered];
+    for(UIView *view in @[heading,self.progressTitle,self.progressDetail,self.progressBar,note,self.progressFinish])
+        [stack addArrangedSubview:view];
+    [screen addSubview:stack];
+    [self.view insertSubview:screen atIndex:0];
+    self.progressScreen=screen;
+    [NSLayoutConstraint activateConstraints:@[
+        [screen.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [screen.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [screen.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+        [screen.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+        [stack.centerXAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.centerYAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:screen.safeAreaLayoutGuide.widthAnchor multiplier:0.8],
+        [self.progressBar.widthAnchor constraintEqualToAnchor:stack.widthAnchor],
+        [stack.widthAnchor constraintGreaterThanOrEqualToConstant:240]]];
+}
+- (void)refreshProgress {
+    struct host_benchmark_progress progress;
+    host_benchmark_progress(&progress);
+    BOOL offscreen=progress.offscreen!=0;
+    self.progressScreen.hidden=!offscreen;
+    self.panel.hidden=offscreen;
+    if(!offscreen)return;
+    if(progress.title[0])self.progressTitle.text=@(progress.title);
+    else if(!self.progressTitle.text.length)self.progressTitle.text=@"Getting ready";
+    if(host_benchmark_finish_requested())self.progressDetail.text=@"Finishing…";
+    else if(progress.number>0)self.progressDetail.text=progress.total>0 ?
+        [NSString stringWithFormat:@"Part %d of %d%@",progress.number,progress.total,
+            progress.reality_check ? @"\nThis part finishes on screen, in real time." : @""] :
+        [NSString stringWithFormat:@"Part %d",progress.number];
+    if(progress.number>0)[self.progressBar setProgress:(float)progress.fraction animated:YES];
+    self.progressFinish.enabled=!host_benchmark_finish_requested();
+}
 - (void)finish:(UIButton *)button { button.enabled=NO; host_benchmark_request_finish(); }
+#if TARGET_OS_TV
+- (NSArray<id<UIFocusEnvironment>> *)preferredFocusEnvironments {
+    return self.progressScreen.hidden ? [super preferredFocusEnvironments] : @[self.progressFinish];
+}
+#endif
 @end
 static HaloBenchmarkOverlayWindow *benchmark_overlay;
 void host_benchmark_overlay_show(int visible) {

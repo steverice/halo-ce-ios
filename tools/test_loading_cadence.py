@@ -246,6 +246,7 @@ typedef void VOID;
 #define WAIT_IO_COMPLETION 0xC0
 static __thread BOOL thread_is_worker;
 static BOOL platform_fixed_timestep(void) { return FALSE; }
+static BOOL platform_fixed_timestep_launch(void) { return FALSE; }
 static BOOL platform_run_apcs(void) { return FALSE; }
 static BOOL is_presenting_thread(void) { return FALSE; }
 static void platform_quiescence_wait(void) {}

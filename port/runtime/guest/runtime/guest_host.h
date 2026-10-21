@@ -80,6 +80,9 @@ void host_benchmark_fault(const char *note);
 /* debug.benchmark_offscreen: the setting, and whether debug.benchmark_suite
 names a suite; 1 when the host honors it (host_benchmark.h) */
 int host_benchmark_offscreen_request(int setting, int suite_named);
+/* a presented run inside an offscreen suite, and the game after it: the frames shown in real time (on) or
+not; 1 when the guest's clock follows (host_benchmark.h) */
+int host_benchmark_presented(int on);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 

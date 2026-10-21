@@ -187,6 +187,10 @@ void platform_filetime_to_unix_time(const FILETIME *file_time, unsigned long *se
 /* debug.fixed_timestep: the clocks below read a frame counter that
 D3DDevice_Present advances (halo_virtual_clock.h) */
 int platform_fixed_timestep(void);
+/* whether the launch decided on the fixed timestep, which platform_clock_realtime
+can take onto real time for a while */
+int platform_fixed_timestep_launch(void);
+void platform_clock_realtime(int on);
 /* the real clock in milliseconds, which goes on while the app is in the
 background where the game's (GetTickCount) stands still (xbox_kernel.c) */
 unsigned long platform_real_milliseconds(void);

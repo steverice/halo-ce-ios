@@ -79,7 +79,7 @@ struct benchmark_outcome {
 struct benchmark_run {
     int index;
     /* A baseline, B resolution, C one setting at a time, D menu and cutscene, F one size lower toward 120,
-       E confirmation, R a repeat */
+       E confirmation, R a repeat, P a presented reality check (benchmark_plan.reality_checks) */
     char stage;
     int scene;
     /* lines 0: the render size is left to the device's profile (the baseline) */
@@ -94,7 +94,12 @@ struct benchmark_plan {
     const struct benchmark_scene *scenes;
     int scene_count;
     struct benchmark_device device;
+    /* the unified pass's runs are drawn offscreen, time-compressed: after them, a presented run ('P') of its first
+       campaign scene and of its first multiplayer scene checks them against what a player sees */
+    int reality_checks;
 };
+/* a presented run's measured window, at most */
+#define BENCHMARK_REALITY_CHECK_SECONDS 45.0
 
 /* A recorded route as a scene: the text of its NAME.route file ("key = value" lines; port/benchmark/README.md)
    and the recording's name. The scene's strings point into the route, which must outlive the plan. 0 for a route
@@ -112,6 +117,9 @@ int benchmark_scenes_select(enum benchmark_mode mode, const struct benchmark_sce
 /* 1 and *next: the run after the count finished ones; 0: the suite is over */
 int benchmark_plan_next(const struct benchmark_plan *plan, const struct benchmark_outcome *finished, int count,
     struct benchmark_run *next);
+/* how many runs the unified pass will make, counting the reality checks the outcomes so far still leave (the
+runs to come counted as measured); 0 for the other modes, whose length depends on what they find */
+int benchmark_plan_total(const struct benchmark_plan *plan, const struct benchmark_outcome *finished, int count);
 /* whether an outcome holds a target of one frame every `refreshes` refreshes */
 int benchmark_outcome_meets(const struct benchmark_outcome *outcome, int refreshes);
 /* a number that changes when the suite's scenes do, so a journal written for one set of scenes is never carried

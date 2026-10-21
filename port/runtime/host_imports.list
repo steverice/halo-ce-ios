@@ -106,6 +106,7 @@ host_errno
 host_data_updates_frame_ready
 host_frame_cpu_phase
 host_benchmark_offscreen_request
+host_benchmark_presented
 
 # Wired external display lifecycle and test controls
 host_external_active

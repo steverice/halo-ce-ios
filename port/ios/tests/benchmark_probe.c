@@ -718,6 +718,29 @@ static void test_unified_catalog_pass(void) {
     CHECK(journal.valid && journal.mode==BENCHMARK_UNIFIED);
     unlink(path);
 
+    /* drawn offscreen: then a presented run of the first campaign and the first multiplayer scene that measured */
+    unsigned long plain = benchmark_plan_signature(&plan);
+    plan.reality_checks = 1;
+    CHECK(benchmark_plan_signature(&plan) != plain);
+    outcomes[0].status = BENCHMARK_OK; outcomes[1].status = BENCHMARK_OK;
+    struct benchmark_outcome all[5] = {{ .status=BENCHMARK_OK }, { .status=BENCHMARK_OK }, { .status=BENCHMARK_OK },
+        { .status=BENCHMARK_OK }, { .status=BENCHMARK_OK }};
+    CHECK(benchmark_plan_next(&plan,all,3,&next) && next.stage=='P' && next.scene==0 && next.index==3);
+    CHECK(!strncmp(next.key,"P taxing",8));
+    CHECK(benchmark_plan_next(&plan,all,4,&next) && next.stage=='P' && next.scene==1 && next.index==4);
+    CHECK(!benchmark_plan_next(&plan,all,5,&next));
+    /* a campaign scene that failed offscreen is not checked; the next one that measured is */
+    all[0].status = BENCHMARK_FAILED;
+    CHECK(benchmark_plan_next(&plan,all,3,&next) && next.stage=='P' && next.scene==2);
+    all[1].status = BENCHMARK_SKIPPED;
+    CHECK(benchmark_plan_next(&plan,all,4,&next) == 0);
+    CHECK(benchmark_plan_total(&plan,all,0) == 5 && benchmark_plan_total(&plan,all,2) == 4);
+    all[2].status = BENCHMARK_FAILED;
+    CHECK(benchmark_plan_total(&plan,all,3) == 3);
+    plan.reality_checks = 0;
+    CHECK(benchmark_plan_total(&plan,all,0) == 3);
+    plan.mode = BENCHMARK_FULL;
+    CHECK(benchmark_plan_total(&plan,all,0) == 0);
 }
 
 int main(void) {

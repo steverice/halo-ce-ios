@@ -3842,6 +3842,31 @@ static void pacing_start(uint32_t flags)
     dispatch_semaphore_wait(started,DISPATCH_TIME_FOREVER);
 }
 
+/* host_benchmark_presented: a launch on the fixed timestep (debug.benchmark_offscreen) whose frames are shown in
+real time for a while, paced by the display as a presented launch's are, and then not again. The pacing
+thread starts at the first such frame and stays */
+static BOOL fixed_timestep_launch;
+void gpu_metal_benchmark_realtime(int on)
+{
+	if (!fixed_timestep_launch)
+		return;
+	visibility_wait = !on;
+	if (on && !pacing_thread)
+	{
+		uint32_t flags = output_initialize_flags;
+
+		pacing_start(flags & ~GPU_INITIALIZE_FIXED_TIMESTEP);
+		output_initialize_flags = flags;
+	}
+	pacing.off = on ? (output_initialize_flags & GPU_INITIALIZE_PACING_OFF) != 0 : YES;
+	pacing.last_present = 0;
+	pacing.due = 0;
+	if (on)
+		frame_pacer_start(0);
+	else
+		frame_pacer_stop();
+}
+
 /* whether n refreshes a frame is allowed at this refresh rate: with "tick",
 a multiple of 30 frames a second when the display runs at one */
 static BOOL pacing_allowed(long n, CFTimeInterval period)
@@ -6080,7 +6105,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 
 		memset(capabilities, 0, sizeof(*capabilities));
 		metal_debug = (flags & GPU_INITIALIZE_DEBUG) != 0;
-		visibility_wait = (flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0;
+		visibility_wait = fixed_timestep_launch = (flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0;
 		metalfx_requested = metalfx_wanted = (flags & GPU_INITIALIZE_METALFX) != 0;
 		metal_state_initialize(&state_cache, !(flags & GPU_INITIALIZE_NO_STATE_CACHE));
 		specialize_off = (flags & GPU_INITIALIZE_NO_SPECIALIZE) != 0;

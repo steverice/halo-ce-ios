@@ -80,6 +80,9 @@ void host_benchmark_live(struct benchmark_live_snapshot *snapshot) {
 static _Atomic int fault_seen;
 /* every frame offered to host_benchmark_frame and every frame not shown, since the run began (the end's log line) */
 static _Atomic unsigned long frames_offered, frames_no_drawable, frames_no_picture;
+/* the run's game ticks so far, for the progress screen; when it began, in real time */
+static _Atomic long run_ticks;
+static CFAbsoluteTime run_started_at;
 static struct benchmark_plan plan;
 static struct benchmark_outcome outcomes[BENCHMARK_RUNS_MAXIMUM];
 static int outcome_count;
@@ -319,8 +322,20 @@ static NSDictionary *graphics_metadata(void)
 }
 
 static _Atomic int offscreen_decided = HOST_BENCHMARK_OFFSCREEN_OFF;
+/* host_benchmark_presented: the frames are shown, in real time, for now */
+static _Atomic int presented_now;
 
 int host_benchmark_offscreen_request(int setting, int suite_named) {
+#ifdef HALO_TESTER_BUILD
+    /* the tester's benchmark measures offscreen, time-compressed, wherever the device allows it */
+    if (suite_named) {
+        char suite[64];
+        const char *named = getenv("HALO_BENCHMARK_SUITE");
+
+        if (!named) { host_config_string("debug.benchmark_suite", "", suite, sizeof(suite)); named = suite; }
+        if (!strncmp(named, "full-unified", 12)) setting = 1;
+    }
+#endif
     enum host_benchmark_offscreen decided = host_benchmark_offscreen_decide(setting, suite_named, TARGET_OS_VISION);
 
     atomic_store(&offscreen_decided, decided);
@@ -339,7 +354,18 @@ int host_benchmark_offscreen_requested(void) {
 }
 
 int host_benchmark_offscreen_active(void) {
-    return host_benchmark_offscreen_frame(atomic_load(&offscreen_decided), atomic_load(&running));
+    return host_benchmark_offscreen_frame(atomic_load(&offscreen_decided), atomic_load(&running)) &&
+        !atomic_load(&presented_now);
+}
+
+int host_benchmark_presented(int on) {
+    on = on != 0;
+    if (!host_benchmark_offscreen_requested()) return 0;
+    if (atomic_exchange(&presented_now, on) != on) {
+        gpu_metal_benchmark_realtime(on);
+        host_logf(HOST_LOG_INFO, "benchmark: frames %s", on ? "shown in real time" : "drawn offscreen, time-compressed");
+    }
+    return 1;
 }
 
 void host_benchmark_frame_unshown(int why) {
@@ -391,6 +417,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     host_frame_counter_sample(interval, cpu, gpu);
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);
+    if (ticks > 0) atomic_fetch_add(&run_ticks, ticks);
     os_unfair_lock_lock(&lock);
     benchmark_live_add(&live,CACurrentMediaTime(),interval,cpu,gpu);
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
@@ -625,7 +652,12 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSString *map = scene->map[0] ? @(scene->map) : @"ui";
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
-    text = json_object(host_benchmark_measurement_record(record, presentation, host_benchmark_offscreen_requested()));
+    /* (a presented reality check inside an offscreen suite measures what a player sees) */
+    int offscreen = host_benchmark_offscreen_requested() && finished->stage != 'P';
+    record[@"presented"] = @(!offscreen);
+    record[@"reality_check"] = @(finished->stage == 'P');
+    if (run_started_at > 0) record[@"wall_seconds"] = @(round((CFAbsoluteTimeGetCurrent() - run_started_at) * 10.0) / 10.0);
+    text = json_object(host_benchmark_measurement_record(record, presentation, offscreen));
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -866,8 +898,10 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         host_logf(HOST_LOG_INFO,"benchmark: cannot preserve previous report; refusing to replace it");
         return 0;
     }
-    plan.mode = !strcmp(mode,"full-unified") ? BENCHMARK_UNIFIED : !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
+    /* ("full-unified:a10-mess-hall,mp16-chillout": the unified pass over the named cases only) */
+    plan.mode = !strcmp(mode,"full-unified") || !strncmp(mode,"full-unified:",13) ? BENCHMARK_UNIFIED : !strncmp(mode, "full", 4) ? BENCHMARK_FULL : BENCHMARK_QUICK;
     plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
+    plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && host_benchmark_offscreen_requested();
     benchmark_journal_load(JOURNAL, &journal);
     NSDictionary *identity = snapshot_identity(mode);
     pinned_snapshot = journal.valid && !journal.finished ? host_benchmark_snapshot_load(@FOLDER, identity) : nil;
@@ -972,6 +1006,52 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     return 1;
 }
 
+/* a presented reality check's window: the scene's, up to BENCHMARK_REALITY_CHECK_SECONDS */
+static double reality_check_seconds(const struct benchmark_scene *scene) {
+    return scene->seconds > 0.0 && scene->seconds < BENCHMARK_REALITY_CHECK_SECONDS ? scene->seconds :
+        BENCHMARK_REALITY_CHECK_SECONDS;
+}
+
+/* a scene by a name a player knows: the level, or the map and its players */
+static NSString *scene_title(const struct benchmark_scene *scene) {
+    static NSDictionary<NSString *, NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        names = @{ @"a10": @"The Pillar of Autumn", @"a30": @"Halo", @"a50": @"The Truth and Reconciliation",
+            @"b30": @"The Silent Cartographer", @"b40": @"Assault on the Control Room", @"c10": @"343 Guilty Spark",
+            @"c20": @"The Library", @"c40": @"Two Betrayals", @"d20": @"Keyes", @"d40": @"The Maw",
+            @"beavercreek": @"Battle Creek", @"bloodgulch": @"Blood Gulch", @"boardingaction": @"Boarding Action",
+            @"carousel": @"Derelict", @"chillout": @"Chill Out", @"damnation": @"Damnation", @"dangercanyon": @"Danger Canyon",
+            @"deathisland": @"Death Island", @"gephyrophobia": @"Gephyrophobia", @"hangemhigh": @"Hang 'Em High",
+            @"icefields": @"Ice Fields", @"infinity": @"Infinity", @"longest": @"Longest", @"prisoner": @"Prisoner",
+            @"putput": @"Chiron TL34", @"ratrace": @"Rat Race", @"sidewinder": @"Sidewinder", @"timberland": @"Timberland",
+            @"wizard": @"Wizard" };
+    });
+    NSString *map = @(scene->map).lastPathComponent.lowercaseString;
+    NSString *name = names[map];
+    if (scene->kind == BENCHMARK_SCENE_MULTIPLAYER)
+        return [NSString stringWithFormat:@"%@, %d players", name ?: @"Multiplayer", scene->players];
+    if (scene->kind == BENCHMARK_SCENE_MENU) return @"Main menu";
+    return name ?: @"Campaign";
+}
+
+void host_benchmark_progress(struct host_benchmark_progress *progress) {
+    memset(progress, 0, sizeof(*progress));
+    progress->offscreen = host_benchmark_offscreen_active();
+    if (!atomic_load(&running) || !run_open || run.scene < 0 || run.scene >= plan.scene_count) return;
+    const struct benchmark_scene *scene = &plan.scenes[run.scene];
+    double lead = scene->lead * 30.0, window = (run.stage == 'P' ? reality_check_seconds(scene) :
+        scene->seconds > 0.0 ? scene->seconds : 60.0) * 30.0;
+    double within = lead + window > 0.0 ? fmin(1.0, (double)atomic_load(&run_ticks) / (lead + window)) : 0.0;
+
+    snprintf(progress->title, sizeof(progress->title), "%s", scene_title(scene).UTF8String);
+    progress->number = outcome_count + 1;
+    progress->total = benchmark_plan_total(&plan, outcomes, outcome_count);
+    if (progress->total < progress->number) progress->total = progress->number;
+    progress->fraction = fmin(1.0, ((double)outcome_count + within) / (double)progress->total);
+    progress->reality_check = run.stage == 'P';
+}
+
 int host_benchmark_next(char *text, unsigned int size) {
     const struct benchmark_scene *scene;
 
@@ -1023,9 +1103,10 @@ int host_benchmark_next(char *text, unsigned int size) {
         /* Internal tester builds offer local download as a fallback. */
         if (!page) completion_screen_requested = 1;
 #endif
-        /* (debug.benchmark_offscreen forced the fixed timestep for the whole launch: the game quits rather than play on
-           at one tick a frame) */
+        /* (a scripted launch with debug.benchmark_offscreen quits; a tester's goes back to real time and its menu) */
+#ifndef HALO_TESTER_BUILD
         if (host_benchmark_offscreen_requested()) completion_screen_requested = 0;
+#endif
         int descriptor = atomic_exchange(&marker, -1);
 
         if(atomic_load(&finish_requested))flag(@"finished_early");
@@ -1101,10 +1182,19 @@ int host_benchmark_next(char *text, unsigned int size) {
         char heading[96], detail[160];
         double minutes = -[started timeIntervalSinceNow] / 60.0;
 
-        snprintf(heading, sizeof(heading), "Benchmark: run %d is next", run.index + 1);
-        snprintf(detail, sizeof(detail), "%s%s, %ld lines. Started %.0f minute%s ago.",
-            last_run_throttled ? "The device got hot: cooling for a minute. Then " : "", scene->id, run.lines, minutes,
-            minutes >= 1.5 || minutes < 0.5 ? "s" : "");
+        int total = benchmark_plan_total(&plan, outcomes, outcome_count);
+
+        if (total > 0) {
+            snprintf(heading, sizeof(heading), "Next: %s", scene_title(scene).UTF8String);
+            snprintf(detail, sizeof(detail), "%sPart %d of %d%s. Started %.0f minute%s ago.",
+                last_run_throttled ? "The device got hot: cooling for a minute. " : "", run.index + 1, total,
+                run.stage == 'P' ? ", played in real time" : "", minutes, minutes >= 1.5 || minutes < 0.5 ? "s" : "");
+        } else {
+            snprintf(heading, sizeof(heading), "Benchmark: run %d is next", run.index + 1);
+            snprintf(detail, sizeof(detail), "%s%s, %ld lines. Started %.0f minute%s ago.",
+                last_run_throttled ? "The device got hot: cooling for a minute. Then " : "", scene->id, run.lines, minutes,
+                minutes >= 1.5 || minutes < 0.5 ? "s" : "");
+        }
         if (host_benchmark_notice(heading, detail, last_run_throttled ? PAUSE_AFTER_THROTTLE_SECONDS : PAUSE_SECONDS, NULL)) {
             host_logf(HOST_LOG_INFO, "benchmark: stopped from the screen before run %d; the journal keeps what is done", run.index);
             flag(@"stopped");
@@ -1115,14 +1205,17 @@ int host_benchmark_next(char *text, unsigned int size) {
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
-        "lines=%ld anisotropy=%ld shadow=%ld lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        "lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
-        scene->lead, scene->seconds, scene->simulation ? scene->simulation : "", scene->players, scene->views,
+        scene->lead, run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds, scene->simulation ? scene->simulation : "",
+        scene->players, scene->views,
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
         scene->enemy_multiplier,
-        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max);
+        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P');
+    atomic_store(&run_ticks, 0);
+    run_started_at = CFAbsoluteTimeGetCurrent();
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
     benchmark_live_reset(&live);

@@ -57,11 +57,46 @@ def test_offscreen_frame_skips_the_display():
     assert "commit(YES);" in body[acquire:]
 
 
-def test_offscreen_forces_fixed_timestep():
+def kernel_function(name):
     kernel = (ROOT / "port/linux/src/xbox_kernel.c").read_text()
-    start = kernel.index("int platform_fixed_timestep(void)")
-    body = kernel[start:kernel.index("\n}\n", start)]
-    assert "host_benchmark_offscreen_request(" in body
+    start = kernel.index(name)
+    return kernel[start:kernel.index("\n}\n", start)]
+
+
+def test_offscreen_forces_fixed_timestep():
+    assert "host_benchmark_offscreen_request(" in kernel_function("int platform_fixed_timestep_launch(void)")
+    # a presented run takes the launch onto real time for a while
+    assert "clock_realtime" in kernel_function("int platform_fixed_timestep(void)")
+
+
+def test_clock_switch_keeps_worker_accounting():
+    kernel = (ROOT / "port/linux/src/xbox_kernel.c").read_text()
+    # the load barrier counts workers by the launch's decision, so a switch never leaves one counted busy
+    for line in kernel.splitlines():
+        if "workers_add(" in line or "BOOL tracked" in line or "BOOL park" in line:
+            continue
+        if "platform_fixed_timestep()" in line and ("suspended" in line or "thread_is_worker" in line):
+            raise AssertionError(line)
+    switch = kernel_function("void platform_clock_realtime(int on)")
+    assert "halo_main_time_restart();" in switch
+    assert "clock_realtime_offset =" in switch and "clock_frames_offset" in switch
+
+
+def test_unpresented_pass_moves_the_clock():
+    main = (ROOT / "source/main/main.c").read_text()
+    start = main.index("void main_loop(")
+    body = main[start:main.index("\n}\n", start)]
+    assert re.search(r"main_present_frame\(\);\s*\}\s*else\s*\{[^}]*platform_clock_unpresented_frame\(\);", body)
+
+
+def test_presented_runs_follow_the_host():
+    suite = (ROOT / "port/linux/src/benchmark_suite.c").read_text()
+    assert "if (host_benchmark_presented(on))\n\t\tplatform_clock_realtime(on);" in suite
+    host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
+    assert "finished->stage != 'P'" in host and 'record[@"reality_check"]' in host
+    assert "plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && host_benchmark_offscreen_requested();" in host
+    imports = (ROOT / "port/runtime/host_imports.list").read_text().split()
+    assert "host_benchmark_presented" in imports
 
 
 def test_offscreen_timing_basis_in_report():
@@ -71,5 +106,6 @@ def test_offscreen_timing_basis_in_report():
 
 def test_offscreen_suite_quits_at_its_end():
     source = (ROOT / "port/ios/host/host_benchmark.m").read_text()
-    assert "if (host_benchmark_offscreen_requested()) completion_screen_requested = 0;" in source
+    # a scripted launch quits; a tester build goes back to real time and its menu
+    assert "#ifndef HALO_TESTER_BUILD\n        if (host_benchmark_offscreen_requested()) completion_screen_requested = 0;" in source
     assert "if(plan.mode==BENCHMARK_UNIFIED && completion_screen_requested) {" in source

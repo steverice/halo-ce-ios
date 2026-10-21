@@ -362,7 +362,7 @@ DWORD WINAPI WaitForSingleObjectEx(HANDLE object, DWORD milliseconds, BOOL alert
 	struct timespec deadline;
 	DWORD result = WAIT_OBJECT_0;
 	struct platform_waiter waiter;
-	BOOL tracked = thread_is_worker && platform_fixed_timestep();
+	BOOL tracked = thread_is_worker && platform_fixed_timestep_launch();
 
 	if (alertable && platform_run_apcs())
 		return WAIT_IO_COMPLETION;
@@ -638,7 +638,7 @@ static void *thread_main(void *context)
 	pthread_cond_broadcast(&handle->condition);
 	free_now = thread->closed;
 	pthread_mutex_unlock(&handle->lock);
-	if (platform_fixed_timestep())
+	if (platform_fixed_timestep_launch())
 		workers_add(-1);
 	if (free_now)
 	{
@@ -683,11 +683,11 @@ HANDLE WINAPI CreateThread(LPSECURITY_ATTRIBUTES attributes, DWORD stack_size,
 	/* Xbox stacks are small; give the host a comfortable minimum */
 	pthread_attr_setstacksize(&thread_attributes, stack_size > 0x100000 ? stack_size : 0x100000);
 	/* a new worker is busy from now (debug.fixed_timestep), unless suspended */
-	if (platform_fixed_timestep() && !thread->suspended)
+	if (platform_fixed_timestep_launch() && !thread->suspended)
 		workers_add(1);
 	if (pthread_create(&thread->thread, &thread_attributes, thread_main, thread) != 0)
 	{
-		if (platform_fixed_timestep() && !thread->suspended)
+		if (platform_fixed_timestep_launch() && !thread->suspended)
 			workers_add(-1);
 		pthread_attr_destroy(&thread_attributes);
 		free(thread);
@@ -712,7 +712,7 @@ DWORD WINAPI ResumeThread(HANDLE object)
 	thread = handle->data;
 	pthread_mutex_lock(&handle->lock);
 	previous = thread->suspended ? 1 : 0;
-	if (thread->suspended && platform_fixed_timestep())
+	if (thread->suspended && platform_fixed_timestep_launch())
 		workers_add(1);
 	thread->suspended = FALSE;
 	pthread_cond_broadcast(&handle->condition);
@@ -755,7 +755,7 @@ BOOL WINAPI SwitchToThread(void)
 DWORD WINAPI SleepEx(DWORD milliseconds, BOOL alertable)
 {
 	struct timespec duration;
-	BOOL park = thread_is_worker && milliseconds != 0 && platform_fixed_timestep();
+	BOOL park = thread_is_worker && milliseconds != 0 && platform_fixed_timestep_launch();
 
 	if (alertable && platform_run_apcs())
 		return WAIT_IO_COMPLETION;
@@ -804,12 +804,24 @@ presented frame (halo_virtual_clock.h), so two runs show the same game time
 on the same frame and tools/mac_run.py can compare their screenshots. */
 
 static unsigned long clock_frames;
+/* platform_clock_realtime: a launch with the fixed timestep on real time for
+a while (debug.benchmark_offscreen's presented runs); what the real clock is
+off from the game's while it is, and what the frame count is off from the
+game's frames after it comes back */
+static int clock_realtime;
+static long long clock_realtime_offset;
+static unsigned long clock_frames_offset;
 
 #ifdef HALO_IOS
 int host_benchmark_offscreen_request(int setting, int suite_named);
 #endif
 
 int platform_fixed_timestep(void)
+{
+	return platform_fixed_timestep_launch() && !__atomic_load_n(&clock_realtime, __ATOMIC_ACQUIRE);
+}
+
+int platform_fixed_timestep_launch(void)
 {
 	static int enabled = -1;
 
@@ -880,6 +892,12 @@ void platform_clock_frame(void)
 	__atomic_add_fetch(&clock_frames, 1, __ATOMIC_RELAXED);
 }
 
+/* the game's frames on the fixed timestep's clock */
+static unsigned long clock_game_frames(void)
+{
+	return platform_clock_frames() + __atomic_load_n(&clock_frames_offset, __ATOMIC_RELAXED);
+}
+
 /* debug.fixed_timestep: a pass of the main loop that presents nothing moves
 the clock a frame too. A multiplayer game draws nothing before its third tick
 (main_loop) and ticks only as the clock moves, so with the clock held to
@@ -923,18 +941,25 @@ static unsigned long long platform_clock_nanoseconds(void)
 	return platform_real_nanoseconds() - (unsigned long long)posix_background_milliseconds() * 1000000ULL;
 }
 
+/* the game's clock on real time: the real clock itself, or after
+platform_clock_realtime, the real clock carried on from the frame count */
+static unsigned long long clock_realtime_nanoseconds(unsigned long long real)
+{
+	return platform_fixed_timestep_launch() ? real + (unsigned long long)clock_realtime_offset : real;
+}
+
 DWORD WINAPI GetTickCount(void)
 {
 	if (platform_fixed_timestep())
-		return (DWORD)halo_virtual_clock_milliseconds(platform_clock_frames());
-	return (DWORD)(platform_clock_nanoseconds() / 1000000ULL);
+		return (DWORD)halo_virtual_clock_milliseconds(clock_game_frames());
+	return (DWORD)(clock_realtime_nanoseconds(platform_clock_nanoseconds()) / 1000000ULL);
 }
 
 unsigned long platform_real_milliseconds(void)
 {
 	if (platform_fixed_timestep())
-		return (unsigned long)halo_virtual_clock_milliseconds(platform_clock_frames());
-	return (unsigned long)(platform_real_nanoseconds() / 1000000ULL);
+		return (unsigned long)halo_virtual_clock_milliseconds(clock_game_frames());
+	return (unsigned long)(clock_realtime_nanoseconds(platform_real_nanoseconds()) / 1000000ULL);
 }
 
 /* The Xbox performance counter runs at the 733 MHz CPU clock. Report a
@@ -946,10 +971,11 @@ BOOL WINAPI QueryPerformanceCounter(LARGE_INTEGER *count)
 {
 	if (platform_fixed_timestep())
 	{
-		count->QuadPart = (LONGLONG)halo_virtual_clock_counter(platform_clock_frames());
+		count->QuadPart = (LONGLONG)halo_virtual_clock_counter(clock_game_frames());
 		return TRUE;
 	}
-	count->QuadPart = (LONGLONG)(platform_clock_nanoseconds() / (1000000000ULL / PLATFORM_PERFORMANCE_FREQUENCY));
+	count->QuadPart = (LONGLONG)(clock_realtime_nanoseconds(platform_clock_nanoseconds()) /
+		(1000000000ULL / PLATFORM_PERFORMANCE_FREQUENCY));
 	return TRUE;
 }
 
@@ -965,11 +991,54 @@ random seeds and the error log's timestamps */
 time_t halo_platform_time(time_t *timer)
 {
 	time_t now = platform_fixed_timestep() ?
-		(time_t)halo_virtual_clock_seconds(platform_clock_frames()) : time(NULL);
+		(time_t)halo_virtual_clock_seconds(clock_game_frames()) : time(NULL);
+
+	/* (on real time after the frame count: the virtual date, carried on) */
+	if (!platform_fixed_timestep() && platform_fixed_timestep_launch())
+		now = (time_t)(HALO_VIRTUAL_CLOCK_START_SECONDS +
+			(clock_realtime_nanoseconds(platform_clock_nanoseconds()) / 1000000ULL - HALO_VIRTUAL_CLOCK_START_MILLISECONDS) /
+			1000ULL);
 
 	if (timer)
 		*timer = now;
 	return now;
+}
+
+/* main.c: the next frame's time is counted from now */
+void halo_main_time_restart(void);
+
+/* A launch on the fixed timestep onto real time and back (on: real time), at
+the same moment of game time either way: a presented run inside an offscreen
+benchmark (debug.benchmark_offscreen). The performance counter changes its
+rate with the clock, so the main loop's next frame is timed from here. On the
+game thread, between frames. */
+void platform_clock_realtime(int on)
+{
+	unsigned long long game;
+
+	if (!platform_fixed_timestep_launch() || !on == !__atomic_load_n(&clock_realtime, __ATOMIC_ACQUIRE))
+		return;
+	if (on)
+	{
+		game = HALO_VIRTUAL_CLOCK_START_MILLISECONDS * 1000000ULL +
+			(unsigned long long)clock_game_frames() * 1000000000ULL / HALO_VIRTUAL_CLOCK_RATE;
+		clock_realtime_offset = (long long)(game - platform_clock_nanoseconds());
+	}
+	else
+	{
+		/* the next whole frame at or after the moment: never back */
+		unsigned long long since = clock_realtime_nanoseconds(platform_clock_nanoseconds()) -
+			HALO_VIRTUAL_CLOCK_START_MILLISECONDS * 1000000ULL;
+		unsigned long frames = (unsigned long)((since * HALO_VIRTUAL_CLOCK_RATE + 999999999ULL) / 1000000000ULL);
+
+		if (frames < clock_game_frames())
+			frames = clock_game_frames();
+		__atomic_store_n(&clock_frames_offset, frames - platform_clock_frames(), __ATOMIC_RELAXED);
+	}
+	__atomic_store_n(&clock_realtime, on ? 1 : 0, __ATOMIC_RELEASE);
+	halo_main_time_restart();
+	platform_log("debug.fixed_timestep: the clock follows %s from game time %lu ms", on ? "real time" : "presented frames",
+		(unsigned long)GetTickCount());
 }
 
 /* seconds between 1601-01-01 and 1970-01-01 */

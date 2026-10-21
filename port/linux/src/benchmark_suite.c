@@ -44,6 +44,9 @@ void host_benchmark_graphics(const char *json);
 int host_external_active(void);
 void host_benchmark_end(const char *status, const char *note);
 void host_benchmark_fault(const char *note);
+int host_benchmark_presented(int on);
+/* xbox_kernel.c: a launch on the fixed timestep onto real time and back */
+void platform_clock_realtime(int on);
 /* input_replay.c */
 int input_replay_begin(const char *name, int benchmark_lip_sync);
 int input_replay_suite_suspend(void);
@@ -93,6 +96,9 @@ double halo_frame_trace_milliseconds(void);
 /* a replay this many world units from the recording's own route has left it (a tick's difference in when a point
 is taken moves a running player a small fraction of this) */
 #define ROUTE_TOLERANCE 2.0
+/* a presented run inside an offscreen suite is shown in real time from this many ticks before its window opens,
+so the window starts with the display's pacing settled; the lead before that goes offscreen, time-compressed */
+#define PRESENTED_LEAD_TICKS 150.0
 
 enum suite_state { suite_unasked, suite_off, suite_starting, suite_next, suite_loading, suite_lead, suite_measuring,
 	suite_wait_mp_teardown };
@@ -111,6 +117,8 @@ static struct
 	double lead, seconds;
 	long lines, anisotropy, shadow_size;
 	int model_lod_max;
+	/* the run is a presented reality check (stage P); whether the frames are shown in real time now */
+	int presented, presented_now;
 	/* a gameplay scene: frames of a cutscene inside it are not measured (a cutscene has its own target, and a
 	profile may hold it to 30); whether the window is closed for one now */
 	int gameplay, in_cutscene;
@@ -475,8 +483,20 @@ static void benchmark_graphics_observe(int width, int height)
 		host_external_active() != graphics_external)) benchmark_graphics_window(1,width,height);
 }
 
+/* the frames shown and the clock on real time, or back offscreen on the fixed timestep: a presented run inside a
+suite drawn offscreen (debug.benchmark_offscreen), and the game after the suite. Nothing elsewhere */
+static void suite_presented(int on)
+{
+	if (suite.presented_now == on)
+		return;
+	suite.presented_now = on;
+	if (host_benchmark_presented(on))
+		platform_clock_realtime(on);
+}
+
 static void finish(const char *status, const char *note)
 {
+	suite_presented(0);
 	if (graphics_window_open) benchmark_graphics_window(0,0,0);
 	platform_log("benchmark suite: %s ends: %s%s%s", suite.scene, status, *note ? ", " : "", note);
 	host_benchmark_end(status, note);
@@ -517,6 +537,8 @@ static void next_run(void)
 	int more = host_benchmark_next(text, sizeof(text));
 
     if(more==4) {
+        /* (another suite, or the same one replanned for a new display: offscreen again) */
+        suite_presented(0);
         if(!start_suite_for_output()) {
             platform_log("benchmark suite: cannot replan for the selected output");exit(EXIT_FAILURE);
         }
@@ -528,6 +550,8 @@ static void next_run(void)
 		/* the report was shown and dismissed: the settings the runs set are the game's own again, and the player is
 		where they would be without the suite, at the main menu */
 		platform_log("benchmark suite: over; back to the main menu");
+		/* (the game goes on in real time, shown) */
+		suite_presented(1);
 		halo_benchmark_overrides(0, 0, 0);
 		halo_model_lod_set(-1);
 		benchmark_scenario_load("", "");
@@ -562,6 +586,7 @@ static void next_run(void)
 	suite.anisotropy = (long)number_field(text, "anisotropy");
 	suite.shadow_size = (long)number_field(text, "shadow");
 	suite.model_lod_max = (int)number_field(text, "lod");
+	suite.presented = (int)number_field(text, "presented");
 	{
 		char kind[32];
 
@@ -846,6 +871,8 @@ void benchmark_suite_frame(long width, long height)
 			struct benchmark_mp_state state;
 
 			benchmark_scenario_multiplayer_state(&state);
+			if (suite.presented && state.tick - suite.mp_ready_tick >= (long)(suite.lead * 30.0 - PRESENTED_LEAD_TICKS))
+				suite_presented(1);
 			if (!mp_match_valid(&state, 0) || !mp_ticks_advance(&state, now))
 				finish("failed", "multiplayer match or ticks stopped during warmup");
 			else if (state.tick - suite.mp_ready_tick >= (long)(suite.lead * 30.0))
@@ -865,6 +892,8 @@ void benchmark_suite_frame(long width, long height)
 		caught before anything is measured */
 		if (!menu)
 			route_point(ticks);
+		if (suite.presented && (menu || ticks >= suite.lead * 30.0 - PRESENTED_LEAD_TICKS))
+			suite_presented(1);
 		if (suite.diverged)
 			finish("diverged", suite.route);
 		else if (menu ? now - suite.entered >= suite.lead * 1000.0 : ticks >= suite.lead * 30.0)

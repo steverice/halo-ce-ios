@@ -50,6 +50,9 @@ struct frame_pacer_frame
 /* once, before the first frame; fixed_timestep (debug.fixed_timestep): the
 pacer stays out of the way, so runs repeat */
 void frame_pacer_start(int fixed_timestep);
+/* frames are drawn unshown for a while (debug.benchmark_offscreen): nothing waits or is paced until
+frame_pacer_start again */
+void frame_pacer_stop(void);
 
 /* Where frames that wait for the display get their place on it
 (display.frame_source):
@@ -131,6 +134,10 @@ uint32_t frame_pacer_vertical_blank_wait(void);
 static inline void frame_pacer_start(int fixed_timestep)
 {
 	(void)fixed_timestep;
+}
+
+static inline void frame_pacer_stop(void)
+{
 }
 
 static inline int frame_pacer_wants_system_source(void)

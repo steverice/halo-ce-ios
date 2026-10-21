@@ -83,6 +83,8 @@ void frame_pacer_start(int fixed_timestep)
 #endif
 	host_config_string("display.frame_spacing", "true", value, sizeof(value));
 	pthread_mutex_lock(&pacer.lock);
+	/* (started again after frame_pacer_stop: frames from before hold no slot) */
+	memset(&pacer.flight, 0, sizeof(pacer.flight));
 	pacer.flight.limit = pacer.in_flight = limit;
 	pacer.spacing = strcmp(value, "false") != 0;
 	host_config_string("display.frame_source", "", value, sizeof(value));
@@ -109,6 +111,14 @@ void frame_pacer_start(int fixed_timestep)
 	if (pacer.load > 0.0)
 		platform_log("frame pacer: debug.frame_load_cpu spins %.1f ms in every frame%s", pacer.load * 1e3,
 			pacer.load_every > 0.0 ? ", on and off (debug.frame_load_every)" : "");
+}
+
+void frame_pacer_stop(void)
+{
+	pthread_mutex_lock(&pacer.lock);
+	pacer.started = 0;
+	pthread_cond_broadcast(&pacer.shown_or_ticked);
+	pthread_mutex_unlock(&pacer.lock);
 }
 
 void frame_pacer_frame_start(void)

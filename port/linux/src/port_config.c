@@ -1093,7 +1093,10 @@ static const struct config_setting config_settings[] =
 		"With debug.benchmark_suite set at launch: draw each frame of the suite\n"
 		"into a texture that is never shown, with no wait for the display, one\n"
 		"1/30 s tick a frame (debug.fixed_timestep), as fast as the device goes.\n"
-		"Ignored without a suite and on Vision Pro." },
+		"A \"full-unified\" suite then ends with a short presented run of its\n"
+		"first campaign and first multiplayer case, in real time, as a check.\n"
+		"On in tester builds for \"full-unified\". Ignored without a suite and\n"
+		"on Vision Pro." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
