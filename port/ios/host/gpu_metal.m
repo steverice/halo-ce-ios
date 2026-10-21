@@ -278,9 +278,23 @@ spans used, let pacing_schedule tell a frame with no measurement from one the
 GPU was idle for (gpu_metal_gpu_spans). */
 static _Atomic uint64_t gpu_spans_used, gpu_spans_refused;
 
+/* the last refused span, for the benchmark's log (gpu_metal_gpu_spans_summary) */
+static struct
+{
+	const char *why;
+	CFTimeInterval start, end, now;
+} gpu_refused_last;
+
 static void gpu_busy_refused(const char *why, CFTimeInterval start, CFTimeInterval end, CFTimeInterval now)
 {
 	uint64_t refused = atomic_fetch_add(&gpu_spans_refused, 1) + 1;
+
+	os_unfair_lock_lock(&gpu_busy_lock);
+	gpu_refused_last.why = why;
+	gpu_refused_last.start = start;
+	gpu_refused_last.end = end;
+	gpu_refused_last.now = now;
+	os_unfair_lock_unlock(&gpu_busy_lock);
 
 	/* (the first few, then now and then: enough to see which clock they're on) */
 	if (refused <= 4 || refused % 10000 == 0)
@@ -318,6 +332,22 @@ static void gpu_busy_add(CFTimeInterval start, CFTimeInterval end)
 	os_unfair_lock_unlock(&gpu_busy_lock);
 	if (counted > 0.0)
 		atomic_fetch_add(&pacing_gpu_nanoseconds, (uint64_t)(counted * 1e9));
+}
+
+/* host_benchmark.m: the spans used and refused since launch, and the last
+refused one, as text for a run's log (platform_log's lines are not kept on
+every device) */
+void gpu_metal_gpu_spans_summary(char *text, size_t size)
+{
+	os_unfair_lock_lock(&gpu_busy_lock);
+	if (gpu_refused_last.why)
+		snprintf(text, size, "%llu command buffers' GPU times used and %llu not, the last (%s): start %.6f, end %.6f, "
+			"now %.6f", (unsigned long long)atomic_load(&gpu_spans_used), (unsigned long long)atomic_load(&gpu_spans_refused),
+			gpu_refused_last.why, gpu_refused_last.start, gpu_refused_last.end, gpu_refused_last.now);
+	else
+		snprintf(text, size, "%llu command buffers' GPU times used and none refused",
+			(unsigned long long)atomic_load(&gpu_spans_used));
+	os_unfair_lock_unlock(&gpu_busy_lock);
 }
 
 /* whether the GPU time since the last call (*used and *refused, the counts

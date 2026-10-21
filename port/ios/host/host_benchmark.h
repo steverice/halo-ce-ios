@@ -81,6 +81,8 @@ struct host_benchmark_progress {
     double fraction;
     int offscreen, reality_check;
 };
+/* gpu_metal.m: the command buffers whose GPU times were used and refused since launch, and the last refused, as text */
+void gpu_metal_gpu_spans_summary(char *text, size_t size);
 void host_benchmark_progress(struct host_benchmark_progress *progress);
 /* 1 while this frame is drawn offscreen: honored, and the suite running */
 int host_benchmark_offscreen_active(void);
