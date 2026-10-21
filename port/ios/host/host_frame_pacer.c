@@ -97,7 +97,7 @@ void frame_pacer_start(int fixed_timestep)
 	pacer.load_from = now_seconds();
 	/* (measured on the Mac only so far: off elsewhere unless asked for) */
 	host_config_string("display.late_start", "", value, sizeof(value));
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
 	pacer.late_start = strcmp(value, "false") != 0;
 #else
 	pacer.late_start = !strcmp(value, "true");
