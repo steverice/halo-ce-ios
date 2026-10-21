@@ -553,7 +553,8 @@ latch_calls = [path for path in sorted((ROOT / 'source').rglob('*.c')) + sorted(
                for line in path.read_text(errors='replace').splitlines()
                if re.match(r'\s*halo_stereo_frame_begin\(\);', line)]
 if latch_calls != [ROOT / 'source/main/main.c'] or not re.search(
-        r'halo_stereo_frame_begin\(\);\n\s*render_interpolation_frame_begin\(\);\n\s*main_game_render\(',
+        r'halo_stereo_frame_begin\(\);\n\s*render_interpolation_frame_begin\(\);\n'
+        r'(?:\s*/\*[^*]*(?:\*(?!/)[^*]*)*\*/\n)?(?:\s*if \(!benchmark_suite_skips_drawing\(\)\)\n)?\s*main_game_render\(',
         (ROOT / 'source/main/main.c').read_text()):
     raise SystemExit('halo_stereo_frame_begin must be called once, in main.c just before the render\'s '
                      f'render_interpolation_frame_begin; found {[str(path.relative_to(ROOT)) for path in latch_calls]}')
