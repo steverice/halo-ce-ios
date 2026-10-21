@@ -1,7 +1,9 @@
 /* Memory pressure: the system's warnings ask the texture cache to drop what
    was not drawn lately. Only a flag is set here, on whatever thread the system
-   uses; the game thread drops the textures at the start of its next frame
-   (xgpu_texture_cache_begin_frame). Textures load again when drawn. */
+   uses; the guest's game thread reads it (host_memory_pressure_poll) and drops
+   the textures at the start of its next frame (xgpu_texture_cache_begin_frame).
+   Textures load again when drawn. */
+#include <stdatomic.h>
 #import <Foundation/Foundation.h>
 #include <dispatch/dispatch.h>
 #include <notify.h>
@@ -11,23 +13,29 @@
 #import <UIKit/UIKit.h>
 #endif
 
-void xgpu_texture_cache_request_trim(void);
-extern long (*xgpu_available_memory_hook)(void);
+static atomic_int pressure_pending;
+
+int host_memory_pressure_poll(void) {
+    return atomic_exchange(&pressure_pending,0);
+}
+
+/* -1 where the system does not say */
+int host_memory_available_megabytes(void) {
+#if HALO_NATIVE_MAC
+    return -1;
+#else
+    return (int)(os_proc_available_memory()>>20);
+#endif
+}
 
 /* `notifyutil -p visr.simulate-memory-pressure` asks for the same on the Mac
    and in the simulator, where the system raises no warning of its own (the
    simulator's Simulate Memory Warning and the `memory_pressure` tool do too) */
 #define HOST_MEMORY_PRESSURE_NOTIFICATION "visr.simulate-memory-pressure"
 
-#if !HALO_NATIVE_MAC
-static long host_available_megabytes(void) {
-    return (long)(os_proc_available_memory() >> 20);
-}
-#endif
-
 static void host_memory_pressure_note(const char *source) {
     host_logf(HOST_LOG_INFO,"memory: pressure (%s), textures not drawn lately will be dropped",source);
-    xgpu_texture_cache_request_trim();
+    atomic_store(&pressure_pending,1);
 }
 
 void host_memory_pressure_start(void) {
@@ -35,7 +43,6 @@ void host_memory_pressure_start(void) {
     static int token;
 
 #if !HALO_NATIVE_MAC
-    xgpu_available_memory_hook=host_available_megabytes;
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidReceiveMemoryWarningNotification
         object:nil queue:nil usingBlock:^(NSNotification *note) {
             (void)note;

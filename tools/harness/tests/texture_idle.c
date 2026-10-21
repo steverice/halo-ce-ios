@@ -21,8 +21,10 @@ static Uint64 SDL_GetTicks(void) { return clock_ms; }
 static unsigned long destroyed;
 static void gpu_texture_destroy(GLuint texture) { destroyed++; }
 static void platform_log(const char *format, ...) { }
-static long available_mb = 500;
-static long available(void) { return available_mb; }
+#define HALO_IOS 1
+static int pressure;
+static int host_memory_pressure_poll(void) { int now = pressure; pressure = 0; return now; }
+static int host_memory_available_megabytes(void) { return 500; }
 static void xgpu_gl_state_invalidate(void) { }
 /* display.texture_idle_seconds and debug.texture_idle_seconds */
 static double idle_setting = 30.0, debug_setting = -1.0;
@@ -101,7 +103,6 @@ static void check_trim(int request)
 	enum { RECENT = 11, STALE = 12 };
 	long frame;
 
-	xgpu_available_memory_hook = available;
 	add(RECENT, 20);
 	add(STALE, 21);
 	for (frame = 0; frame < 10 * 60; frame++)
@@ -115,7 +116,7 @@ static void check_trim(int request)
 	/* (a sweep is not due: the idle time is the profile's, a minute) */
 	CHECK(find(STALE, 21) && find(RECENT, 20), "textures were dropped without a warning");
 	if (request)
-		xgpu_texture_cache_request_trim();
+		pressure = 1;
 	clock_ms += 16;
 	xgpu_texture_cache_begin_frame();
 	CHECK(find(RECENT, 20), "the texture drawn just before the warning was dropped");

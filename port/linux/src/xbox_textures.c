@@ -844,13 +844,17 @@ is due */
 static unsigned long texture_sweep_frames[TEXTURE_SWEEP_COUNT];
 static unsigned long texture_sweep_count = 0;
 static Uint64 texture_next_sweep = 0;
-/* A memory warning is only noted where it arrives (any thread); the next
-frame's begin_frame drops the textures not drawn since the frame a second or
-two before, found from the frame each of the last two seconds began at. */
+/* A memory warning is noted by the host, on whatever thread it arrives; the
+first begin_frame after it drops the textures not drawn since the frame a
+second or two before, found from the frame each of the last two seconds began
+at. */
+#ifdef HALO_IOS
+int host_memory_pressure_poll(void);
+int host_memory_available_megabytes(void);
+#endif
 static int texture_trim_requested = 0;
 static unsigned long texture_trim_frames[2];
 static Uint64 texture_trim_next = 0;
-long (*xgpu_available_memory_hook)(void);
 
 /* (every bit of the three mixed into the top ones: textures are aligned,
 and few sizes and formats are common) */
@@ -1345,11 +1349,6 @@ static void texture_drop_before(unsigned long frame, unsigned long long *bytes)
 	}
 }
 
-void xgpu_texture_cache_request_trim(void)
-{
-	__sync_lock_test_and_set(&texture_trim_requested, 1);
-}
-
 /* drops the textures not drawn in the last second or two, once asked to (a
 memory warning), and logs what it freed and the memory left around it */
 static void texture_trim_if_requested(void)
@@ -1358,13 +1357,20 @@ static void texture_trim_if_requested(void)
 	unsigned long count = texture_drop_serial;
 	long before = -1, after = -1;
 
-	if (!__sync_lock_test_and_set(&texture_trim_requested, 0))
+#ifdef HALO_IOS
+	if (host_memory_pressure_poll())
+		texture_trim_requested = 1;
+#endif
+	if (!texture_trim_requested)
 		return;
-	if (xgpu_available_memory_hook)
-		before = xgpu_available_memory_hook();
+	texture_trim_requested = 0;
+#ifdef HALO_IOS
+	before = host_memory_available_megabytes();
+#endif
 	texture_drop_before(texture_trim_frames[0], &bytes);
-	if (xgpu_available_memory_hook)
-		after = xgpu_available_memory_hook();
+#ifdef HALO_IOS
+	after = host_memory_available_megabytes();
+#endif
 	platform_log("textures: memory pressure, dropped %lu textures not drawn in the last second or two, about %llu MB (%ld MB left before, %ld after; -1: unknown)",
 		texture_drop_serial - count, bytes >> 20, before, after);
 }

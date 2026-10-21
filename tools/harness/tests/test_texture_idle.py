@@ -15,10 +15,9 @@ SOURCE = 'port/linux/src/xbox_textures.c'
 def generated(fault=None, config_fault=None):
     source = read(SOURCE)
     config = '\n'.join(re.findall(r'^#define TEXTURE_\w+.*$', source, re.M) + re.findall(
-        r'^static (?:unsigned long|Uint64|int) texture_(?:frame|drop_serial|sweep_\w+|next_sweep|trim_\w+)\b.*;$', source, re.M)
-        + re.findall(r'^long \(\*xgpu_available_memory_hook\)\(void\);$', source, re.M))
+        r'^static (?:unsigned long|Uint64|int) texture_(?:frame|drop_serial|sweep_\w+|next_sweep|trim_\w+)\b.*;$', source, re.M))
     code = (function(source, 'texture_idle_sweeps') + function(source, 'texture_gpu_bytes') + function(source, 'texture_drop_before')
-            + function(source, 'xgpu_texture_cache_request_trim') + function(source, 'texture_trim_if_requested') + function(source, 'xgpu_texture_cache_begin_frame'))
+            + function(source, 'texture_trim_if_requested') + function(source, 'xgpu_texture_cache_begin_frame'))
     if config_fault:
         config = mutated(config, *config_fault)
     if fault:
@@ -52,9 +51,9 @@ def test_case(case):
     # a warning that drops nothing
     (('texture_drop_before(texture_trim_frames[0], &bytes);', 'texture_drop_before(0, &bytes);'), 'trim'),
     # a request that is never consumed
-    (('__sync_lock_test_and_set(&texture_trim_requested, 0)', 'texture_trim_requested'), 'trim'),
+    (('\ttexture_trim_requested = 0;\n', '\n'), 'trim'),
     # a trim without a warning
-    (('if (!__sync_lock_test_and_set(&texture_trim_requested, 0))', 'if (!texture_frame)'), 'trim'),
+    (('if (!texture_trim_requested)', 'if (0)'), 'trim'),
 ])
 def test_negative_control(fault, case):
     status, output = run(build('texture_idle', generated(fault)), case)

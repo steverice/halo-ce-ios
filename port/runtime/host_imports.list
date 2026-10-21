@@ -115,3 +115,5 @@ host_external_force
 host_external_mode_label
 
 host_touch_replay_active
+host_memory_pressure_poll
+host_memory_available_megabytes

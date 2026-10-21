@@ -45,6 +45,12 @@ ticks (0 and 1, with how many ran) and its render (2 and 3), and the D3D8
 device's translation time within the render (4, in nanoseconds) */
 void host_frame_cpu_phase(int phase, int ticks);
 
+/* 1 once for each memory warning since the last call, else 0 (the texture
+   cache drops what was not drawn lately), and the memory left to the app in
+   MB (-1: not known) */
+int host_memory_pressure_poll(void);
+int host_memory_available_megabytes(void);
+
 int host_external_cycle(int direction);
 int host_external_force(const char *mode);
 void host_external_mode_label(char *text, unsigned long size);
