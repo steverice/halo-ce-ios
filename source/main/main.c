@@ -3785,7 +3785,10 @@ void main_loop(
 					stick's turn for the vignette) and halved the film's hold */
 					halo_stereo_frame_begin();
 					render_interpolation_frame_begin();
-					main_game_render((double)main_globals.seconds_elapsed);
+					/* port: an offscreen benchmark lead-in simulates without drawing
+					(port/linux/src/benchmark_suite.c) */
+					if (!benchmark_suite_skips_drawing())
+						main_game_render((double)main_globals.seconds_elapsed);
 #ifdef HALO_IOS
 					host_data_updates_frame_ready(1);
 #endif

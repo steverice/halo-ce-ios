@@ -120,3 +120,14 @@ def test_offscreen_window_has_a_wall_time_cap():
     suite = (ROOT / "port/linux/src/benchmark_suite.c").read_text()
     assert "control == 6 && suite.state == suite_measuring" in suite
     assert "if (suite.capped || state.tick - (long)suite.opened_ticks >= (long)(suite.seconds * 30.0))" in suite
+
+
+def test_offscreen_lead_in_skips_drawing_but_presents():
+    main = (ROOT / "source/main/main.c").read_text()
+    # the world goes undrawn, but the frame is still presented, so the suite, the replay and the clock go on
+    assert re.search(r"if \(!benchmark_suite_skips_drawing\(\)\)\s*\n\s*main_game_render\(", main)
+    suite = (ROOT / "port/linux/src/benchmark_suite.c").read_text()
+    assert "#define DRAWN_LEAD_TICKS 300.0" in suite
+    assert "return suite.state == suite_lead && suite.skip_drawing;" in suite
+    host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
+    assert "presented=%d offscreen=%d" in host

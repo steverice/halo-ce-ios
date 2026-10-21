@@ -1268,7 +1268,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
-        "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d knob_aa=%d "
+        "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d offscreen=%d knob_aa=%d "
         "knob_effect=%d knob_mirror=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
@@ -1278,6 +1278,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
         scene->enemy_multiplier, scene->sim_experiments,
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P',
+        host_benchmark_offscreen_requested(),
         /* (-1 for a setting the case leaves to the configuration) */
         knobs.mask & BENCHMARK_KNOB_ANTI_ALIASING ? knobs.anti_aliasing : -1,
         knobs.mask & BENCHMARK_KNOB_EFFECT ? knobs.effect_full : -1, knobs.mask & BENCHMARK_KNOB_MIRROR ? knobs.mirror_full : -1,

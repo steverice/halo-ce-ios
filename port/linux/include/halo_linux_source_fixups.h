@@ -96,6 +96,8 @@ void halo_main_time_restart(void);
 /* main_loop's passes that present nothing: debug.fixed_timestep's clock still
 moves a frame (port/linux/src/xbox_kernel.c) */
 void platform_clock_unpresented_frame(void);
+/* an offscreen benchmark lead-in's frames that draw nothing (port/linux/src/benchmark_suite.c) */
+int benchmark_suite_skips_drawing(void);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"
 /* the frame's stereo state: source/render/render.c renders each eye and the

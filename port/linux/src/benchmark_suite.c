@@ -108,6 +108,9 @@ is taken moves a running player a small fraction of this) */
 /* a presented run inside an offscreen suite is shown in real time from this many ticks before its window opens,
 so the window starts with the display's pacing settled; the lead before that goes offscreen, time-compressed */
 #define PRESENTED_LEAD_TICKS 150.0
+/* an offscreen lead-in draws nothing until this many ticks before its window: the simulation alone runs the rest,
+and the last ten seconds draw as usual so textures, shaders and caches are warm when measuring starts */
+#define DRAWN_LEAD_TICKS 300.0
 
 enum suite_state { suite_unasked, suite_off, suite_starting, suite_next, suite_loading, suite_lead, suite_measuring,
 	suite_wait_mp_teardown };
@@ -136,6 +139,8 @@ static struct
 	int presented, presented_now;
 	/* the host ended the measured window early: an offscreen case's wall-time cap (host_benchmark.m) */
 	int capped;
+	/* the run's frames are drawn offscreen (host_benchmark.m); and the lead-in skips drawing this frame */
+	int offscreen, skip_drawing;
 	/* a gameplay scene: frames of a cutscene inside it are not measured (a cutscene has its own target, and a
 	profile may hold it to 30); whether the window is closed for one now */
 	int gameplay, in_cutscene;
@@ -230,6 +235,7 @@ void benchmark_suite_mainloop_update(void)
 static void enter(enum suite_state state)
 {
 	suite.state = state;
+	suite.skip_drawing = 0;
 	suite.entered = halo_frame_trace_milliseconds();
 }
 
@@ -626,6 +632,7 @@ static void next_run(void)
 	suite.model_lod_max = (int)number_field(text, "lod");
 	suite.presented = (int)number_field(text, "presented");
 	suite.capped = 0;
+	suite.offscreen = (int)number_field(text, "offscreen");
 	{
 		char kind[32];
 
@@ -923,6 +930,8 @@ void benchmark_suite_frame(long width, long height)
 			benchmark_scenario_multiplayer_state(&state);
 			if (suite.presented && state.tick - suite.mp_ready_tick >= (long)(suite.lead * 30.0 - PRESENTED_LEAD_TICKS))
 				suite_presented(1);
+			suite.skip_drawing = suite.offscreen &&
+				state.tick - suite.mp_ready_tick < (long)(suite.lead * 30.0 - DRAWN_LEAD_TICKS);
 			if (!mp_match_valid(&state, 0) || !mp_ticks_advance(&state, now))
 				finish("failed", "multiplayer match or ticks stopped during warmup");
 			else if (state.tick - suite.mp_ready_tick >= (long)(suite.lead * 30.0))
@@ -944,6 +953,7 @@ void benchmark_suite_frame(long width, long height)
 			route_point(ticks);
 		if (suite.presented && (menu || ticks >= suite.lead * 30.0 - PRESENTED_LEAD_TICKS))
 			suite_presented(1);
+		suite.skip_drawing = suite.offscreen && !menu && ticks < suite.lead * 30.0 - DRAWN_LEAD_TICKS;
 		if (suite.diverged)
 			finish("diverged", suite.route);
 		else if (menu ? now - suite.entered >= suite.lead * 1000.0 : ticks >= suite.lead * 30.0)
@@ -1039,12 +1049,24 @@ void benchmark_suite_frame(long width, long height)
 	}
 }
 
+/* main_loop: whether this frame's world goes undrawn (an offscreen lead-in's early part); the frame is still
+presented, so the suite, the replay and the clock go on as every frame */
+int benchmark_suite_skips_drawing(void)
+{
+	return suite.state == suite_lead && suite.skip_drawing;
+}
+
 #else
 
 void benchmark_suite_frame(long width, long height)
 {
 	(void)width;
 	(void)height;
+}
+
+int benchmark_suite_skips_drawing(void)
+{
+	return 0;
 }
 
 #endif
