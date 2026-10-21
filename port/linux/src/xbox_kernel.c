@@ -880,6 +880,18 @@ void platform_clock_frame(void)
 	__atomic_add_fetch(&clock_frames, 1, __ATOMIC_RELAXED);
 }
 
+/* debug.fixed_timestep: a pass of the main loop that presents nothing moves
+the clock a frame too. A multiplayer game draws nothing before its third tick
+(main_loop) and ticks only as the clock moves, so with the clock held to
+presented frames it never started. */
+void platform_clock_unpresented_frame(void)
+{
+	if (!platform_fixed_timestep())
+		return;
+	platform_quiescence_wait();
+	platform_clock_frame();
+}
+
 /* The game's clocks count from when it started, as the Xbox's count from
 power-on. Its code keeps times in signed 32-bit variables, which a host up
 for more than 24.8 days (2^31 ms since boot) overflows: a hosted game then

@@ -192,6 +192,9 @@ background where the game's (GetTickCount) stands still (xbox_kernel.c) */
 unsigned long platform_real_milliseconds(void);
 unsigned long platform_clock_frames(void);
 void platform_clock_frame(void);
+/* a main loop pass that presented nothing: with debug.fixed_timestep, the
+clock moves a frame anyway (xbox_kernel.c) */
+void platform_clock_unpresented_frame(void);
 /* with debug.fixed_timestep: wait until no game worker thread (made by
 CreateThread) is running or about to run, so a load takes the same number
 of frames every run */

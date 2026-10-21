@@ -3811,6 +3811,13 @@ void main_loop(
 			{
 				main_present_frame();
 			}
+			else
+			{
+				/* port: under debug.fixed_timestep the clock moves only as
+				frames are presented; a multiplayer game draws nothing before
+				its third tick, so it would never tick */
+				platform_clock_unpresented_frame();
+			}
 		}
 
 		input_frame_end();
