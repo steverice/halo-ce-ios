@@ -154,6 +154,13 @@ static int announce_request(const char *path, const char *form, int form_size, i
 	status = posix_https_request(url, form, form_size, reply, sizeof(reply), timeout, error, sizeof(error));
 	if (status == 200)
 		*ok = delta_announce_answer(reply, &seconds);
+	/* (what the list answered, for the log: the form without its invite) */
+	{
+		const char *fields = form ? strchr(form, '&') : NULL;
+
+		platform_log("Internet play: Delta %s%s%s -> %d %.60s", path, fields ? " ?" : "", fields ? fields + 1 : "",
+			status, status == 200 ? reply : "");
+	}
 	if (!*ok && !delta.announce_failed)
 	{
 		platform_log("Internet play: Delta's list did not take the game (%s)",
