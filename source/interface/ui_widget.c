@@ -4701,6 +4701,14 @@ void display_scenario_help(
 		"c:\\halo\\SOURCE\\interface\\ui_widget.c",
 		2407,
 		string_index>=0);
+	/* port: noted in the recorded time (input_replay.c): the dialog stops the game until a button is pressed, so a
+	take needs that press */
+	{
+		extern void input_replay_note_event(char const *kind, char const *name);
+		extern char const *hs_runtime_get_executing_thread_name(void);
+
+		input_replay_note_event("scenario_help", hs_runtime_get_executing_thread_name());
+	}
 	if (global_scenario_index != NONE)
 	{
 		char const *widget_name;
