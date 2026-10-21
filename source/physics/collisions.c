@@ -113,7 +113,7 @@ symbols in this file:
 #include "scenario/scenario.h"
 #include "structures/structure_bsp_definitions.h"
 #include "units/bipeds.h"
-/* port: sim_experiments.c's (debug.collision_type_filter is experimental, off by default) */
+/* port: sim_experiments.c's (debug.collision_type_filter) */
 boolean sim_experiment_enabled(short experiment);
 #define SIM_EXPERIMENT_COLLISION_TYPE_FILTER 0
 /* port: object_bounds_cache.c's */

@@ -1,10 +1,10 @@
 /*
 SIM_EXPERIMENTS.C
 
-The experimental simulation speed-ups (debug.collision_type_filter,
+The simulation speed-ups (debug.collision_type_filter,
 debug.sphere_query_type_filter, debug.static_light_relink,
-debug.immediate_merge), each off by
-default. A setting is read again at the start of each game tick, so one can
+debug.immediate_merge). The first three default to on; immediate merge defaults
+to off. A setting is read again at the start of each game tick, so one can
 be flipped while the game runs (a console toggle or a settings change) and
 the simulation keeps one value for the whole tick. Every one changes how
 much work a query does and not what it returns.
@@ -27,11 +27,14 @@ static const char *const sim_experiment_names[] =
 static boolean sim_experiment_values[SIM_EXPERIMENT_COUNT];
 static long sim_experiment_tick = -2;
 static unsigned sim_experiment_mask;
+static unsigned sim_experiment_overrides;
 
-/* a benchmark case's own choice, one bit per experiment in the order above; 0 leaves the settings alone */
+/* A benchmark case's values and the bits it explicitly sets; a zero mask leaves the configuration alone. */
 void sim_experiment_override(
+	unsigned values,
 	unsigned mask)
 {
+	sim_experiment_overrides = values;
 	sim_experiment_mask = mask;
 	sim_experiment_tick = -2;
 }
@@ -48,7 +51,8 @@ boolean sim_experiment_enabled(
 		sim_experiment_tick = tick;
 		for (index = 0; index < SIM_EXPERIMENT_COUNT; index++)
 		{
-			sim_experiment_values[index] = config_boolean(sim_experiment_names[index]) != 0 || (sim_experiment_mask & (1u << index)) != 0;
+			sim_experiment_values[index] = (sim_experiment_mask & (1u << index)) != 0 ?
+				(sim_experiment_overrides & (1u << index)) != 0 : config_boolean(sim_experiment_names[index]) != 0;
 		}
 	}
 
@@ -65,5 +69,6 @@ boolean sim_experiment_enabled_now(
 		return FALSE;
 	}
 
-	return config_boolean(sim_experiment_names[experiment]) != 0 || (sim_experiment_mask & (1u << experiment)) != 0;
+	return (sim_experiment_mask & (1u << experiment)) != 0 ?
+		(sim_experiment_overrides & (1u << experiment)) != 0 : config_boolean(sim_experiment_names[experiment]) != 0;
 }

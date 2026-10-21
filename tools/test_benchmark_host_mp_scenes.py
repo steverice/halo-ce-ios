@@ -138,3 +138,15 @@ def test_host_integer_arena_boundary(tmp_path, catalog_probe, radius, accepted):
         assert result.stdout.splitlines()[-1].split("\t")[-3:] == ["0.900", "3.500", "0.300"]
     else:
         assert "arena" in result.stderr.lower()
+
+
+def test_host_preserves_explicit_simulation_false_and_absent_settings(tmp_path, catalog_probe):
+    cases = _cases(gameplay=False)
+    cases['a10-opening']['settings'] = {'debug.collision_type_filter': False,
+                                        'debug.sphere_query_type_filter': True,
+                                        'debug.static_light_relink': False}
+    _write_catalog(tmp_path, cases)
+    result = subprocess.run([str(catalog_probe), str(tmp_path), 'full'], capture_output=True, text=True,
+                            env=dict(os.environ, VISR_PROBE_SIM_SETTINGS='1'))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[1:] == ['sim=menu:0:0', 'sim=a10-opening:2:7', 'sim=mp-chillout-proof:0:0']

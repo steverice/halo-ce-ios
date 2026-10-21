@@ -24,6 +24,12 @@ int main(int argc, char **argv) {
             argc - 3, selected, BENCHMARK_SCENES_MAXIMUM);
         if (count < 0) return 1;
         printf("sha256=%s\n", catalog.sha256);
+        if (getenv("VISR_PROBE_SIM_SETTINGS")) {
+            for (int index = 0; index < count; index++)
+                printf("sim=%s:%u:%u\n", selected[index].id, selected[index].sim_experiments,
+                    selected[index].sim_experiments_mask);
+            return 0;
+        }
         for (int index = 0; index < count; index++)
             printf("%s\t%d\t%s\t%d\t%d\t%s\t%d\t%d\t%d\t%.3f\t%.3f\t%.3f\n", selected[index].id, selected[index].kind,
                 selected[index].simulation ?: "", selected[index].players, selected[index].views,

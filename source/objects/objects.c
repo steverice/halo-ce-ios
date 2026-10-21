@@ -1594,7 +1594,7 @@ boolean object_get_function_value(
 	return result;
 }
 
-/* port: sim_experiments.c's (debug.sphere_query_type_filter and debug.static_light_relink are experimental, off by default) */
+/* port: sim_experiments.c's (debug.sphere_query_type_filter and debug.static_light_relink) */
 boolean sim_experiment_enabled(short experiment);
 #define SIM_EXPERIMENT_SPHERE_QUERY_TYPE_FILTER 1
 #define SIM_EXPERIMENT_STATIC_LIGHT_RELINK 2

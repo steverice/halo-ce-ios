@@ -1456,7 +1456,7 @@ void light_particle(
 	return;
 }
 
-/* port: object_bounds_cache.c's and sim_experiments.c's (debug.static_light_relink is experimental, off by default) */
+/* port: object_bounds_cache.c's and sim_experiments.c's (debug.static_light_relink) */
 long object_bounds_cache_epoch(void);
 boolean sim_experiment_enabled(short experiment);
 #define SIM_EXPERIMENT_STATIC_LIGHT_RELINK 2

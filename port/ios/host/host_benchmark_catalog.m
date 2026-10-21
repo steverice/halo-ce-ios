@@ -149,8 +149,8 @@ static BOOL route_matches(NSString *folder, struct benchmark_scene *scene, NSErr
 }
 
 /* A case's "settings" (tools/benchmark_catalog.py CASE_SETTINGS has the same names and ranges): the experimental
-   simulation changes as bits of *sim_experiments, the rest as the scene's knobs. NO for anything unsupported. */
-static BOOL case_settings(id raw, unsigned *sim_experiments, struct benchmark_knobs *knobs) {
+   simulation values and explicit overrides as bits, the rest as the scene's knobs. NO for anything unsupported. */
+static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_experiments_mask, struct benchmark_knobs *knobs) {
     NSArray *simulation = @[@"debug.collision_type_filter", @"debug.sphere_query_type_filter", @"debug.static_light_relink", @"debug.immediate_merge"];
     NSDictionary *settings = raw;
     if (![settings isKindOfClass:NSDictionary.class] || !settings.count) return NO;
@@ -162,6 +162,7 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, struct benchmark_kn
         NSUInteger bit = [simulation indexOfObject:name];
         if (bit != NSNotFound) {
             if (!boolean) return NO;
+            *sim_experiments_mask |= 1u << bit;
             if ([value boolValue]) *sim_experiments |= 1u << bit;
         } else if ([name isEqual:@"display.render_height"]) {
             if (!integer_number(value, 0, 4320, &number)) return NO;
@@ -275,9 +276,9 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         if ((!menu && !cutscene && !gameplay && !multiplayer) || (menu && (map.length || has_recording)) ||
             (!menu && !map.length) || ![@[@"easy", @"normal", @"hard", @"impossible"] containsObject:difficulty])
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an invalid kind, map, or difficulty.", identifier]);
-        unsigned sim_experiments = 0;
+        unsigned sim_experiments = 0, sim_experiments_mask = 0;
         struct benchmark_knobs knobs = {0};
-        if (entry[@"settings"] && !case_settings(entry[@"settings"], &sim_experiments, &knobs))
+        if (entry[@"settings"] && !case_settings(entry[@"settings"], &sim_experiments, &sim_experiments_mask, &knobs))
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has unsupported settings.", identifier]);
         if (entry[@"enemy_multiplier"] && (multiplayer || menu || !real_number(entry[@"enemy_multiplier"], 1, 8, &enemy_multiplier)))
             return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an unsupported enemy multiplier.", identifier]);
@@ -351,6 +352,7 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             scene->anchor = built.anchors[index];
         }
         scene->sim_experiments = sim_experiments;
+        scene->sim_experiments_mask = sim_experiments_mask;
         scene->knobs = knobs;
         snprintf(built.workloads[index], sizeof(built.workloads[index]), "%s", workload_id.UTF8String);
         scene->workload = built.workloads[index];

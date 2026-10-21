@@ -351,9 +351,9 @@ the setting for one start of the game. It has priority over the file.
 | `debug.texture_idle_seconds` | number | `-1.0` | apple, desktop | `HALO_TEXTURE_IDLE_SECONDS_DEBUG` | Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. |
 | `debug.clutter_distance` | number | `-1.0` | apple, desktop | `HALO_CLUTTER_DISTANCE_DEBUG` | Tuning display.clutter_distance live: from 0 up, the distance in world units in place of the device profile's. |
 | `debug.clutter_lowest_lod` | boolean | `false` | apple, desktop | `HALO_CLUTTER_LOWEST_LOD` | Draw the clutter display.clutter_distance names (dead bodies, loose weapons and equipment, garbage) at its lowest model detail level, wherever it is. |
-| `debug.collision_type_filter` | boolean | `false` | apple, desktop | `HALO_COLLISION_TYPE_FILTER` | Experimental. |
-| `debug.sphere_query_type_filter` | boolean | `false` | apple, desktop | `HALO_SPHERE_QUERY_TYPE_FILTER` | Experimental. |
-| `debug.static_light_relink` | boolean | `false` | apple, desktop | `HALO_STATIC_LIGHT_RELINK` | Experimental. |
+| `debug.collision_type_filter` | boolean | `true` | apple, desktop | `HALO_COLLISION_TYPE_FILTER` | Collision rays and sphere queries skip an object whose type the query does not test before looking at it, instead of after: the same answers with less work in a crowded cluster. |
+| `debug.sphere_query_type_filter` | boolean | `true` | apple, desktop | `HALO_SPHERE_QUERY_TYPE_FILTER` | The nearby-object queries (objects_in_sphere) skip an object whose type the caller did not ask for before collecting it, instead of after: the same answers with less work. |
+| `debug.static_light_relink` | boolean | `true` | apple, desktop | `HALO_STATIC_LIGHT_RELINK` | An attached light that has not moved keeps its place in the map's light lists instead of leaving and joining them again every tick. |
 | `debug.immediate_merge` | boolean | `false` | apple, desktop | `HALO_IMMEDIATE_MERGE` | Experimental. |
 | `debug.aim_steady_level` | number | `-1.0` | apple | `HALO_AIM_STEADY_LEVEL` | Testing input.aim_steady without an enemy: from 0.0 up, how firmly on a target the hand's aim counts as (1.0 a red reticle), in place of the game's own targeting. |
 ### display

@@ -636,8 +636,11 @@ static void record_applied_settings(NSMutableDictionary *settings, const struct 
     unsigned mask = stage == 'A' ? knobs->mask : 0;
 
     for (unsigned bit = 0; bit < 3; bit++) {
-        NSString *configured = configured_text(switches[bit], "false");
-        settings[@(switches[bit])] = (scene->sim_experiments >> bit) & 1 || [configured isEqual:@"true"] ? @"on" : @"off";
+        NSString *configured = configured_text(switches[bit], "true");
+        BOOL enabled = scene->sim_experiments_mask & (1u << bit) ?
+            (scene->sim_experiments & (1u << bit)) != 0 :
+            ![@[@"0", @"false", @"no", @"off"] containsObject:configured.lowercaseString];
+        settings[@(switches[bit])] = enabled ? @"on" : @"off";
     }
     settings[@"display.anti_aliasing"] = mask & BENCHMARK_KNOB_ANTI_ALIASING ?
         @[@"off", @"fxaa", @"smaa"][knobs->anti_aliasing] : configured_text("display.anti_aliasing", "off");
@@ -680,6 +683,7 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
     settings[@"upscaler_requested"] = upscaler[@"requested"];
     settings[@"sim_experiments"] = @(scene->sim_experiments);
+    settings[@"sim_experiments_mask"] = @(scene->sim_experiments_mask);
     record_applied_settings(settings, scene, finished->stage);
     record[@"workload"] = @(scene->workload ?: scene->id);
     record[@"settings"] = settings;
@@ -1268,7 +1272,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
-        "sim_experiments=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d offscreen=%d knob_aa=%d "
+        "sim_experiments=%u sim_experiments_mask=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d offscreen=%d knob_aa=%d "
         "knob_effect=%d knob_mirror=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
@@ -1276,7 +1280,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->players, scene->views,
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
-        scene->enemy_multiplier, scene->sim_experiments,
+        scene->enemy_multiplier, scene->sim_experiments, scene->sim_experiments_mask,
         run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P',
         host_benchmark_offscreen_requested(),
         /* (-1 for a setting the case leaves to the configuration) */

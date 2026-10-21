@@ -736,6 +736,12 @@ static void test_unified_case_settings(void) {
         next.model_lod_max==1 && !strcmp(next.key,"A low 540 2 128 max"));
     CHECK(benchmark_plan_next(&plan,outcomes,2,&next) && next.lines==1080);
     unsigned long before = benchmark_plan_signature(&plan);
+    scenes[1].sim_experiments_mask = 7;
+    CHECK(benchmark_plan_signature(&plan) != before);
+    before = benchmark_plan_signature(&plan);
+    scenes[1].sim_experiments = 5;
+    CHECK(benchmark_plan_signature(&plan) != before);
+    before = benchmark_plan_signature(&plan);
     scenes[1].knobs.shadow_size = 256;
     CHECK(benchmark_plan_signature(&plan) != before);
     before = benchmark_plan_signature(&plan);

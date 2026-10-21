@@ -601,18 +601,18 @@ static const struct config_setting config_settings[] =
 		"Draw the clutter display.clutter_distance names (dead bodies, loose weapons\n"
 		"and equipment, garbage) at its lowest model detail level, wherever it is.\n"
 		"Only the drawing changes." },
-	{ "debug.collision_type_filter", _config_boolean, "false", "HALO_COLLISION_TYPE_FILTER", _environment_value, _platform_all,
-		"Experimental. Collision rays and sphere queries skip an object whose type\n"
+	{ "debug.collision_type_filter", _config_boolean, "true", "HALO_COLLISION_TYPE_FILTER", _environment_value, _platform_all,
+		"Collision rays and sphere queries skip an object whose type\n"
 		"the query does not test before looking at it, instead of after: the same\n"
 		"answers with less work in a crowded cluster. Read again each tick, so it\n"
 		"can be flipped while the game runs." },
-	{ "debug.sphere_query_type_filter", _config_boolean, "false", "HALO_SPHERE_QUERY_TYPE_FILTER", _environment_value, _platform_all,
-		"Experimental. The nearby-object queries (objects_in_sphere) skip an\n"
+	{ "debug.sphere_query_type_filter", _config_boolean, "true", "HALO_SPHERE_QUERY_TYPE_FILTER", _environment_value, _platform_all,
+		"The nearby-object queries (objects_in_sphere) skip an\n"
 		"object whose type the caller did not ask for before collecting it,\n"
 		"instead of after: the same answers with less work. Read again each tick,\n"
 		"so it can be flipped while the game runs." },
-	{ "debug.static_light_relink", _config_boolean, "false", "HALO_STATIC_LIGHT_RELINK", _environment_value, _platform_all,
-		"Experimental. An attached light that has not moved keeps its place in the\n"
+	{ "debug.static_light_relink", _config_boolean, "true", "HALO_STATIC_LIGHT_RELINK", _environment_value, _platform_all,
+		"An attached light that has not moved keeps its place in the\n"
 		"map's light lists instead of leaving and joining them again every tick.\n"
 		"Read again each tick, so it can be flipped while the game runs." },
 	{ "debug.immediate_merge", _config_boolean, "false", "HALO_IMMEDIATE_MERGE", _environment_value, _platform_all,

@@ -18,7 +18,7 @@ RESOLUTION_KEY = "display.render_lines"
 REPORT_SETTINGS = {"render_lines": RESOLUTION_KEY, "anisotropic_filtering": "display.anisotropic_filtering",
                    "shadow_map_size": "display.shadow_map_size", "model_lod": "display.model_lod"}
 # report settings that name no knob: the simulation changes are in the report under their own names too
-IGNORED_SETTINGS = {"sim_experiments"}
+IGNORED_SETTINGS = {"sim_experiments", "sim_experiments_mask"}
 FIELDS = ["report", "index", "device", "chip", "workload", "settings", "render_width", "render_height",
           "simulation_cpu_ms", "render_cpu_ms", "gpu_ms", "thermal", "timing_basis", "catalog_signed"]
 

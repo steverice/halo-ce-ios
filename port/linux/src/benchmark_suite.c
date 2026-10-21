@@ -69,8 +69,8 @@ unsigned char filesystem_check_thread_is_active(void);
 int halo_scene_class(void);
 /* d3d8_device.c */
 void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy);
-/* sim_experiments.c: the experimental simulation changes a case turns on, a bit each, on top of the settings */
-void sim_experiment_override(unsigned mask);
+/* sim_experiments.c: the simulation values a case explicitly overrides, a bit each. */
+void sim_experiment_override(unsigned values, unsigned mask);
 /* d3d8_device.c: the anti-aliasing method (0 off, 1 fxaa, 2 smaa), effect resolution (0 or 1), mirror resolution
    (0 half, 1 full) and render scale a cost run sets from the next frame, in place of the settings; -1 (0 for the
    scale) leaves a setting as configured, and all of them so ends the run's values */
@@ -124,7 +124,7 @@ static struct
 	/* a campaign case's enemy multiplier (coop_enemies.c); 0 for none */
 	double enemy_multiplier;
 	/* the case's experimental simulation changes (sim_experiments.c), a bit each */
-	unsigned sim_experiments;
+	unsigned sim_experiments, sim_experiments_mask;
 	/* the case's other settings (halo_benchmark_knobs) */
 	int knob_anti_aliasing, knob_effect_full, knob_mirror_full;
 	double knob_render_scale, knob_clutter_distance;
@@ -596,7 +596,7 @@ static void next_run(void)
 		/* (the game goes on in real time, shown) */
 		suite_presented(1);
 		halo_benchmark_overrides(0, 0, 0);
-		sim_experiment_override(0);
+		sim_experiment_override(0, 0);
 		halo_benchmark_knobs(-1, -1, -1, 0.0);
 		halo_benchmark_clutter(-1.0, -1);
 		halo_model_lod_set(-1);
@@ -627,6 +627,7 @@ static void next_run(void)
 	suite.mp_arena.movement_radius = (float)number_field(text, "arena_radius");
 	suite.enemy_multiplier = number_field(text, "enemy_multiplier");
 	suite.sim_experiments = (unsigned)number_field(text, "sim_experiments");
+	suite.sim_experiments_mask = (unsigned)number_field(text, "sim_experiments_mask");
 	suite.knob_anti_aliasing = field(text, "knob_aa", (char[8]){0}, 8) ? (int)number_field(text, "knob_aa") : -1;
 	suite.knob_effect_full = field(text, "knob_effect", (char[8]){0}, 8) ? (int)number_field(text, "knob_effect") : -1;
 	suite.knob_mirror_full = field(text, "knob_mirror", (char[8]){0}, 8) ? (int)number_field(text, "knob_mirror") : -1;
@@ -701,7 +702,7 @@ static void next_run(void)
 		}
 	}
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
-	sim_experiment_override(suite.sim_experiments);
+	sim_experiment_override(suite.sim_experiments, suite.sim_experiments_mask);
 	halo_benchmark_knobs(suite.knob_anti_aliasing, suite.knob_effect_full, suite.knob_mirror_full, suite.knob_render_scale);
 	halo_benchmark_clutter(suite.knob_clutter_distance, suite.knob_clutter_lowest_lod);
 	halo_model_lod_set(suite.model_lod_max);

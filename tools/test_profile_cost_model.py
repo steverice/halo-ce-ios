@@ -110,7 +110,7 @@ def test_runs_csv_without_catalog_signed_column(tmp_path):
 def test_report_run_of_a_variant_counts_for_its_workload():
     report = {"device": {"model": "iPad0,0", "chip": "A0"}, "runs": [
         {"index": 0, "status": "ok", "scene": "a10-mess-hall-min", "workload": "a10-mess-hall", "render_size": [960, 540],
-         "settings": {"render_lines": 540, "sim_experiments": 5, "debug.static_light_relink": "on",
+         "settings": {"render_lines": 540, "sim_experiments": 5, "sim_experiments_mask": 7, "debug.static_light_relink": "on",
                       "display.anti_aliasing": "off", "upscaler_requested": "bilinear"},
          "simulation_cpu_ms": {"mean": 4.0}, "render_cpu_ms": {"mean": 3.0}, "gpu_ms": {"mean": 6.0},
          "timing_basis": "offscreen_uncapped"}]}
