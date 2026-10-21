@@ -124,3 +124,20 @@ def test_frame_rate_target_only_opens_nothing(tmp_path, monkeypatch):
 
 def test_platform_comes_from_the_device_not_the_report():
     assert pr.platform_of(DEVICE) == "ios"
+
+
+def test_pull_request_keeps_pictures_out_of_main(tmp_path, monkeypatch):
+    options = setup(tmp_path, monkeypatch, key="seed")
+    options.dry_run = False
+    (tmp_path / "profiles").mkdir(exist_ok=True)
+    receipt = tmp_path / pr.RECEIPT
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text(json.dumps({"assets": {}, "schema": 1}))
+    runner = Runner()
+    assert pr.build(options, runner) == 0
+    adds = [call for call in runner.calls if call[:4] == ["git", "-C", str(tmp_path), "add"]]
+    assert len(adds) == 1 and not any(".png" in part for part in adds[0])
+    assert any("profile-pr-assets" in " ".join(call) and "push" in call for call in runner.calls)
+    assert any(call[0] == "gh" and "--body-file" in call for call in runner.calls)
+    body = (tmp_path / "out/body.md").read_text()
+    assert "/profile-pr-assets/test-pad-" in body

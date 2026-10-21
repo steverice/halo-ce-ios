@@ -30,7 +30,7 @@ FEED = Path("docs/site/packs/tester")
 RECEIPT = FEED / "publication.json"
 RUN_JOB = Path.home() / "code/halovision/step-tools/run-job.sh"
 REPOSITORY = "steverice/visr"
-EVIDENCE_DIRECTORY = Path("docs/profile-prs")
+ASSETS_BRANCH = "profile-pr-assets"
 # the cost model's name for a knob, where the profile's differs
 PROFILE_KEY = {cost.RESOLUTION_KEY: "display.render_height"}
 SCREENSHOT_KEYS = {cost.RESOLUTION_KEY: "display.render_height"}
@@ -159,7 +159,12 @@ def render_screenshots(label, sets, folder, options, run):
     remote = f"build/profile-pr/{label}"
     scene = (["--set", f'debug.input_replay="{options.recording}"'] if options.recording
              else ["--init", f"map_name {options.map}"])
-    steps = ['test -d "$(python3 -c \'import sys;sys.path.insert(0,"tools");import mac_run;print(mac_run.native_app_default())\')" '
+    # the host's shared runner data is also used by other jobs, so this job runs on a private copy of it
+    private = f"$PWD/build/profile-pr-data/{label}"
+    steps = [f'mkdir -p "{private}"',
+             f'for d in maps custom_maps seeded; do test -e "$HALO_NATIVE_DATA/$d" && cp -cR "$HALO_NATIVE_DATA/$d" "{private}/" || true; done',
+             f'export HALO_NATIVE_DATA="{private}"',
+             'test -d "$(python3 -c \'import sys;sys.path.insert(0,"tools");import mac_run;print(mac_run.native_app_default())\')" '
              "|| python3 tools/ios_build.py --mac"]
     for name, settings in sets.items():
         command = ["python3", "tools/mac_run.py", "run", "--runner", "native", "--out", f"{remote}/{name}",
@@ -171,6 +176,7 @@ def render_screenshots(label, sets, folder, options, run):
             if value:
                 command += [flag, value]
         steps.append(" ".join(shlex.quote(str(part)) for part in command))
+    steps.append(f'rm -R "{private}"')
     folder.mkdir(parents=True, exist_ok=True)
     result = run(RUN_JOB, "--kind", "runner", *(["--host", options.host] if options.host else []), "--fetch", f"{remote}={folder}", label, options.worktree,
                  "bash", "-ec", "\n".join(steps))
@@ -215,17 +221,49 @@ def build_feed(targets, profiles, out, signing_key, run, repo=ROOT):
     return shards
 
 
-def evidence_url(branch, name):
-    return f"https://raw.githubusercontent.com/{REPOSITORY}/{branch}/{EVIDENCE_DIRECTORY}/{name}"
+def evidence_url(key, name):
+    return f"https://raw.githubusercontent.com/{REPOSITORY}/{ASSETS_BRANCH}/{key}/{name}"
 
 
-def body(proposal, device, current, fit, scene, branch, report_name, stem, pictures=True):
+def evidence_key(stem, evidence):
+    """A folder name unique to these two pictures, so a later pull request for the profile keeps this one's images."""
+    digest = hashlib.sha256()
+    for name in ("before", "after"):
+        digest.update((evidence / f"{name}.png").read_bytes() if (evidence / f"{name}.png").exists() else b"")
+    return f"{stem}-{digest.hexdigest()[:10]}"
+
+
+def publish_assets(evidence, key, run, scratch):
+    """Push the pictures to the orphan assets branch, which keeps them out of main's history."""
+    clone = scratch / "assets-clone"
+    if clone.exists():
+        shutil.rmtree(clone)
+    url = f"https://github.com/{REPOSITORY}.git"
+    exists = run("git", "ls-remote", "--exit-code", "--heads", url, ASSETS_BRANCH).returncode == 0
+    if exists:
+        steps = [("git", "clone", "--quiet", "--depth", "1", "--branch", ASSETS_BRANCH, url, clone)]
+    else:
+        steps = [("git", "init", "--quiet", "--initial-branch", ASSETS_BRANCH, clone), ("git", "-C", clone, "remote", "add", "origin", url)]
+    for step in steps:
+        if run(*step).returncode:
+            raise Failure(f"{step[1]} failed while preparing {ASSETS_BRANCH}")
+    (clone / key).mkdir(parents=True, exist_ok=True)
+    for name in ("before", "after"):
+        shutil.copyfile(evidence / f"{name}.png", clone / key / f"{name}.png")
+    for step in (("git", "-C", clone, "add", "--", key),
+                 ("git", "-C", clone, "commit", "--quiet", "--message", f"Add the pictures for {key}"),
+                 ("git", "-C", clone, "push", "origin", f"HEAD:refs/heads/{ASSETS_BRANCH}")):
+        if run(*step).returncode:
+            raise Failure(f"{step[1]} failed while publishing the pictures")
+
+
+def body(proposal, device, current, fit, scene, report_name, key, pictures=True):
     lines = [propose.markdown(proposal, device, current).rstrip("\n"), "",
              f"Confidence: {fit.confidence}" + (" (predicted from another chip's measurements)" if fit.confidence != "measured" else "")
              + f". Scene: {scene}. Report: {report_name}."]
     if pictures:
         lines += ["", "| Before | After |", "| --- | --- |",
-                  f"| ![Before]({evidence_url(branch, f'{stem}/before.png')}) | ![After]({evidence_url(branch, f'{stem}/after.png')}) |"]
+                  f"| ![Before]({evidence_url(key, 'before.png')}) | ![After]({evidence_url(key, 'after.png')}) |"]
     return "\n".join(lines) + "\n"
 
 
@@ -296,21 +334,21 @@ def build(options, run=None):
         print("no --signing-key: the tester shards were not regenerated")
 
     branch = f"profile/{stem}"
-    text = body(proposal, device, current, fit, options.workload, branch, report_name, stem, bool(pictures))
+    key = evidence_key(stem, evidence)
+    text = body(proposal, device, current, fit, options.workload, report_name, key, bool(pictures))
     (out / "body.md").write_text(text)
     if options.dry_run:
         print(f"dry run: profile, screenshots and body are in {out}")
         return 0
-    return open_pull_request(options, out, target, evidence, shards, branch, stem, device, run)
+    return open_pull_request(options, out, target, evidence, shards, branch, key, device, run)
 
 
-def open_pull_request(options, out, target, evidence, shards, branch, stem, device, run):
+def open_pull_request(options, out, target, evidence, shards, branch, key, device, run):
     repo = Path(options.worktree)
-    paths = [Path("profiles") / target.name, EVIDENCE_DIRECTORY / stem / "before.png", EVIDENCE_DIRECTORY / stem / "after.png"]
+    paths = [Path("profiles") / target.name]
     shutil.copyfile(target, repo / paths[0])
-    (repo / EVIDENCE_DIRECTORY / stem).mkdir(parents=True, exist_ok=True)
-    for name in ("before", "after"):
-        shutil.copyfile(evidence / f"{name}.png", repo / EVIDENCE_DIRECTORY / stem / f"{name}.png")
+    if (evidence / "before.png").exists():
+        publish_assets(evidence, key, run, out)
     receipt = json.loads((repo / RECEIPT).read_text())
     for shard, (path, _) in shards.items():
         destination = FEED / "profiles" / f"{shard}.json"
