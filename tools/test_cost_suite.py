@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -176,3 +177,77 @@ def test_immediate_merge_is_a_knob_of_the_ranking_the_catalog_and_the_suites_car
     singles = [run for run in suites.ofat_suite(WORKLOADS[:1], {knob: values[0] for knob, values in ladder.items()}, suites.ofat_knobs(ladder)).runs
                if "debug.immediate_merge" in run.settings]
     assert any(run.settings["debug.immediate_merge"] for run in singles)
+
+
+@pytest.mark.parametrize("value", ["0", "20", "1"])
+def test_whole_number_settings_are_integers(value):
+    setting = "display.render_scale" if value == "1" else "display.clutter_distance"
+    assert type(suites.setting_value(setting, value)) is int
+
+
+def test_shared_canonical_writer_matches_foundation_fixture():
+    # Captured from NSJSONSerialization with NSJSONWritingSortedKeys, the same
+    # parse/write calls used by host_benchmark_catalog_load. Includes numeric
+    # ties, punctuation, nested values, and Foundation's double precision.
+    expected = (b'{"a":0,"a_":0,"a-":0,"a.":0,"a0":0,"a4":0,"a04":0,"a004":0,'
+                b'"a4a":0,"a04a":0,"a4z":0,"a04z":0,"a16":0,"aa":0,'
+                b'"values":[20,0,0.40000000000000002,0.25,0.75,148.69999999999999,9.9999999999999995e-08]}')
+    document = json.loads(expected)
+    document["values"][:2] = [20.0, 0.0]
+    assert benchmark_catalog._canonical(document) == expected
+
+
+def test_written_anisotropy_suite_uses_foundation_numeric_order(tmp_path):
+    source = tmp_path / "source"
+    fixtures._recording(source, "take-c-one", scene="c-one")
+    suite = suites.ofat_suite(WORKLOADS[:1], {"display.anisotropic_filtering": "2", "display.clutter_distance": "20"},
+                              {"display.anisotropic_filtering": ["16", "4"]})
+    folder = tmp_path / "out"
+    suite.write(folder, source)
+    raw = (folder / benchmark_catalog.CATALOG_NAME).read_bytes()
+    assert raw.index(b'"c-one-anisotropic-filtering-4"') < raw.index(b'"c-one-anisotropic-filtering-16"')
+    assert len(benchmark_catalog.load_catalog(folder)) == 4
+    # App-written fixture: the Foundation parse/write calls from the loader,
+    # with integer clutter distances and numeric sorting at every object level.
+    assert raw == (Path(__file__).parent / "fixtures/cost-suite-foundation.json").read_bytes()
+    if sys.platform == "darwin":
+        script = """ObjC.import("Foundation");
+var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
+var parsed = $.NSJSONSerialization.JSONObjectWithDataOptionsError(data, 0, null);
+var canonical = $.NSJSONSerialization.dataWithJSONObjectOptionsError(parsed, $.NSJSONWritingSortedKeys, null);
+$.NSFileHandle.fileHandleWithStandardOutput.writeData(canonical);"""
+        native = subprocess.run(["/usr/bin/osascript", "-l", "JavaScript", "-e", script],
+                                input=raw, capture_output=True, check=True)
+        assert raw == native.stdout
+
+
+@pytest.mark.parametrize("name", ["a50-campaign-heroic", "c40-campaign-heroic", "a" * 47])
+def test_next_suite_long_ids_are_unique_deterministic_and_loadable(tmp_path, name):
+    source = tmp_path / "source"
+    fixtures._recording(source, "take", scene=name)
+    workloads = [case(name, recording="take")]
+    ladder = suites.read_ladder()
+    baseline = {knob: values[-1] if knob in benchmark_catalog.SIM_SETTINGS else values[0]
+                for knob, values in ladder.items()}
+    suite = suites.next_suite([], "iPad0,0", workloads, baseline, ladder)
+    ids = [run.id for run in suite.runs]
+    assert all(benchmark_catalog.CASE_ID.fullmatch(identifier) for identifier in ids)
+    assert len(set(ids) | {name}) == len(ids) + 1
+    assert ids == [run.id for run in suites.next_suite([], "iPad0,0", workloads, baseline, ladder).runs]
+    for index, chunk in enumerate(suite.chunks()):
+        folder = tmp_path / str(index)
+        chunk.write(folder, source)
+        assert len(benchmark_catalog.load_catalog(folder)) == len(chunk.runs) + 1
+
+
+@pytest.mark.parametrize("noncanonical", ["whole-float", "lexical-order"])
+def test_catalog_validator_rejects_python_only_canonical_forms(tmp_path, noncanonical):
+    fixtures._recording(tmp_path, "take-c-one", scene="c-one")
+    raw = (Path(__file__).parent / "fixtures/cost-suite-foundation.json").read_bytes()
+    if noncanonical == "whole-float":
+        raw = raw.replace(b'"display.clutter_distance":20', b'"display.clutter_distance":20.0')
+    else:
+        raw = json.dumps(json.loads(raw), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    (tmp_path / benchmark_catalog.CATALOG_NAME).write_bytes(raw)
+    with pytest.raises(benchmark_catalog.CatalogError, match="canonical JSON"):
+        benchmark_catalog.load_catalog(tmp_path)

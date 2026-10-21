@@ -7,6 +7,7 @@ A suite is a benchmark catalog whose extra cases are variants of the workloads' 
 values come from cost-model/visual-ranking.toml (`order` runs best to cheapest), so a knob that lands later is a
 new table there and an entry in benchmark_catalog.CASE_SETTINGS."""
 import argparse
+import hashlib
 import json
 import shutil
 import sys
@@ -124,7 +125,8 @@ def setting_value(knob, text):
     if kind == "integer":
         return int(text)
     if kind == "number":
-        return float(text)
+        value = float(text)
+        return int(value) if value.is_integer() else value
     return text
 
 
@@ -145,7 +147,8 @@ def _bound(ladder, lowest):
 def _run_id(workload, tag):
     name = f"{workload}-{tag}"
     if len(name) > 47:
-        raise ValueError(f"{name} is too long for a case ID")
+        digest = hashlib.sha256(name.encode("ascii")).hexdigest()[:10]
+        name = f"{name[:36].rstrip('-')}-{digest}"
     return name
 
 
@@ -185,7 +188,7 @@ def ofat_suite(workloads, baseline, knobs):
                 if value == baseline.get(knob):
                     continue
                 tag = f"{knob.split('.')[-1].replace('_', '-')}-{value}"
-                suite.runs.append(SuiteRun(_run_id(case["id"], tag[:30]), case["id"], _settings({**baseline, knob: value})))
+                suite.runs.append(SuiteRun(_run_id(case["id"], tag), case["id"], _settings({**baseline, knob: value})))
         if len(switches) > 1:
             on = {knob: knobs[knob][-1] for knob in switches}
             suite.runs.append(SuiteRun(_run_id(case["id"], "sim-all"), case["id"], _settings({**baseline, **on})))

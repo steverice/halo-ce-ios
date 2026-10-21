@@ -344,7 +344,7 @@ def test_catalog_accepts_display_settings(tmp_path):
         "display.model_lod": "auto", "display.anti_aliasing": "smaa", "display.effect_resolution": False,
         "display.mirror_resolution": "full", "display.render_scale": 0.67,
         "display.clutter_distance": 40, "debug.clutter_lowest_lod": True}
-    _write_catalog(tmp_path, cases)
+    _write_catalog(tmp_path, cases, raw=benchmark_catalog._canonical({"schema": 1, "cases": cases}).decode("utf-8"))
     loaded = {case["id"]: case for case in benchmark_catalog.load_catalog(tmp_path)}
     assert loaded["mp-chillout-proof"]["settings"]["display.render_height"] == 540
 

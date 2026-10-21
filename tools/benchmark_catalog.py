@@ -114,8 +114,34 @@ def _read_regular(path, maximum):
         os.close(descriptor)
 
 
+def _catalog_key(key):
+    # Foundation's sorted keys use numeric, case-insensitive, forced ordering
+    # with the system locale. Catalog keys are restricted to lowercase ASCII;
+    # punctuation sorts as underscore, hyphen, period before digits and letters.
+    # Compare numeric runs by value, then break otherwise equal ties by width.
+    if not re.fullmatch(r"[a-z0-9_.-]+", key):
+        raise CatalogError("catalog case ID and field keys must use lowercase ASCII identifiers")
+    parts = re.findall(r"[0-9]+|[^0-9]", key)
+    primary = tuple((3, int(part)) if part.isdigit() else
+                    ({"_": 0, "-": 1, ".": 2}.get(part, ord(part)), 0) for part in parts)
+    return primary, tuple(len(part) for part in parts if part.isdigit())
+
+
 def _canonical(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    """Foundation NSJSONWritingSortedKeys bytes for the catalog's ASCII grammar."""
+    def encode(item):
+        if isinstance(item, dict):
+            return "{" + ",".join(encode(key) + ":" + encode(item[key])
+                                  for key in sorted(item, key=_catalog_key)) + "}"
+        if isinstance(item, list):
+            return "[" + ",".join(encode(child) for child in item) + "]"
+        if isinstance(item, float):
+            if not math.isfinite(item):
+                raise CatalogError("catalog numbers must be finite")
+            return str(int(item)) if item.is_integer() else format(item, ".17g")
+        # NSJSONSerialization escapes slashes by default, unlike json.dumps.
+        return json.dumps(item, ensure_ascii=False, allow_nan=False).replace("/", "\\/")
+    return encode(value).encode("utf-8")
 
 
 def _number(value, name, minimum, maximum, *, positive=False):
