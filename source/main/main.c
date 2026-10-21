@@ -2083,7 +2083,16 @@ static void main_skip_cinematic_private(
 		skipped = TRUE;
 	}
 	if (skipped)
+	{
 		main_globals.revert_map = FALSE;
+		/* port: noted in the recorded time (input_replay.c): the player skipped a skippable sequence, and the game
+		went back to the state its cinematic_skip_start saved */
+		{
+			extern void input_replay_note_event(char const *kind, char const *name);
+
+			input_replay_note_event("cinematic_skipped", NULL);
+		}
+	}
 	else if (main_coop_host())
 	{
 		error(_error_silent, "co-op: cutscene not skipped (skippable %d, saved state %d)",

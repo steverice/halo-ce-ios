@@ -164,6 +164,13 @@ void cinematic_skip_start(
 	void)
 {
 	cinematic_globals->can_be_skipped = TRUE;
+	/* port: noted in the recorded time (input_replay.c): a skippable sequence begins here, in the script's thread */
+	{
+		extern void input_replay_note_event(char const *kind, char const *name);
+		extern char const *hs_runtime_get_executing_thread_name(void);
+
+		input_replay_note_event("cinematic_skippable", hs_runtime_get_executing_thread_name());
+	}
 
 	return;
 }
