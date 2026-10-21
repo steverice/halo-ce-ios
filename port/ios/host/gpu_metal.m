@@ -269,11 +269,46 @@ time some command buffer was running, from the spans' union. Completion
 handlers can run on several threads, hence the lock. */
 static os_unfair_lock gpu_busy_lock = OS_UNFAIR_LOCK_INIT;
 static CFTimeInterval gpu_busy_until;
+/* Spans the union can't use: no times (end not after start), an end after the
+completion handler that reports it (a time on another clock), or longer than any
+frame. One end in the future once raised gpu_busy_until past every later span,
+and every frame after it had no GPU time: an Apple TV HD's reports lost it for
+the rest of a launch from one moment in a run. The counts, and those of the
+spans used, let pacing_schedule tell a frame with no measurement from one the
+GPU was idle for (gpu_metal_gpu_spans). */
+static _Atomic uint64_t gpu_spans_used, gpu_spans_refused;
+
+static void gpu_busy_refused(const char *why, CFTimeInterval start, CFTimeInterval end, CFTimeInterval now)
+{
+	uint64_t refused = atomic_fetch_add(&gpu_spans_refused, 1) + 1;
+
+	/* (the first few, then now and then: enough to see which clock they're on) */
+	if (refused <= 4 || refused % 10000 == 0)
+		platform_log("Metal: GPU time of a command buffer not counted (%s): start %.6f, end %.6f, now %.6f; %llu so far",
+			why, start, end, now, (unsigned long long)refused);
+}
 
 static void gpu_busy_add(CFTimeInterval start, CFTimeInterval end)
 {
-	CFTimeInterval counted = 0.0;
+	CFTimeInterval counted = 0.0, now = CACurrentMediaTime();
 
+	if (!(start > 0.0) || !(end > start))
+	{
+		gpu_busy_refused("no times", start, end, now);
+		return;
+	}
+	/* (a small allowance for the clocks' rounding) */
+	if (end > now + 0.01)
+	{
+		gpu_busy_refused("ends after it was reported", start, end, now);
+		return;
+	}
+	if (end - start > 10.0)
+	{
+		gpu_busy_refused("longer than any frame", start, end, now);
+		return;
+	}
+	atomic_fetch_add(&gpu_spans_used, 1);
 	os_unfair_lock_lock(&gpu_busy_lock);
 	if (end > gpu_busy_until)
 	{
@@ -283,6 +318,18 @@ static void gpu_busy_add(CFTimeInterval start, CFTimeInterval end)
 	os_unfair_lock_unlock(&gpu_busy_lock);
 	if (counted > 0.0)
 		atomic_fetch_add(&pacing_gpu_nanoseconds, (uint64_t)(counted * 1e9));
+}
+
+/* whether the GPU time since the last call (*used and *refused, the counts
+then) is a measurement: no if every span that came in was refused */
+static inline BOOL gpu_metal_gpu_spans(uint64_t *used, uint64_t *refused)
+{
+	uint64_t now_used = atomic_load(&gpu_spans_used), now_refused = atomic_load(&gpu_spans_refused);
+	BOOL measured = now_used != *used || now_refused == *refused;
+
+	*used = now_used;
+	*refused = now_refused;
+	return measured;
 }
 static CFTimeInterval pacing_waited;
 
@@ -294,8 +341,7 @@ void gpu_metal_count_gpu_time(id<MTLCommandBuffer> commands)
 {
 	[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
 	{
-		if (completed.GPUEndTime > completed.GPUStartTime)
-			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+		gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
 	}];
 }
 #endif
@@ -551,8 +597,7 @@ static void native_unpark(void)
 		{
 			if (completed.status == MTLCommandBufferStatusError)
 				platform_log("Metal: a command buffer ahead of the HUD's failed: %s", completed.error.description.UTF8String);
-			if (completed.GPUEndTime > completed.GPUStartTime)
-				gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
 		}];
 		[commands commit];
 	}
@@ -641,8 +686,7 @@ static void commit(BOOL frame_end)
 			GPU_VALIDATION_REPORT(GPU_VALIDATION_COMMAND_BUFFER_FAILED, 0, "command buffer %llu: %s", (unsigned long long)serial,
 				completed.error.description.UTF8String);
 		}
-		if (completed.GPUEndTime > completed.GPUStartTime)
-			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+		gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
 		for (test = 0; test < pending.length / sizeof(*tests); test++)
 		{
 			/* the samples its draws passed, added up (a yes-or-no test's
@@ -3737,6 +3781,7 @@ static struct
 	long refreshes;                  /* a frame's refreshes */
 	CFTimeInterval work_started;     /* when the frame being drawn began (the last Present returned) */
 	uint64_t gpu_counted;            /* pacing_gpu_nanoseconds at the last Present */
+	uint64_t gpu_used, gpu_refused;  /* gpu_metal_gpu_spans' counts then */
 	double cost;                     /* the slowest frame (CPU or GPU) since the rate last changed, in seconds */
 	unsigned long over;              /* frames since then too slow for one refresh fewer */
 	unsigned long since_change;
@@ -4136,12 +4181,15 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	double cpu, gpu, simulation_cpu, render_cpu, translation_cpu;
 	long lower, up;
 	int ticks;
+	BOOL gpu_measured;
 
 	*next_frame_due = 0;
 	host_frame_cpu_split(&simulation_cpu, &render_cpu, &translation_cpu, &ticks);
 	cpu = pacing.work_started > 0.0 ? now - pacing.work_started - pacing_waited : 0.0;
 	gpu = (double)(gpu_total - pacing.gpu_counted) / 1e9;
 	pacing.gpu_counted = gpu_total;
+	/* (no measurement, not an idle GPU: the benchmark keeps it apart) */
+	gpu_measured = gpu_metal_gpu_spans(&pacing.gpu_used, &pacing.gpu_refused);
 	pacing_waited = 0.0;
 	interval = pacing.last_present > 0.0 ? now - pacing.last_present : 0.0;
 	pacing.last_present = now;
@@ -4152,7 +4200,7 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	if (!frame_log.skip_transition)
 	{
 		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
-		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0,
+		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu_measured ? gpu : -1.0, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0,
 			simulation_cpu, render_cpu, translation_cpu, ticks);
 	}
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
