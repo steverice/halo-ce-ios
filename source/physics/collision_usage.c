@@ -571,6 +571,7 @@ static short collision_log_get_current_user(
 	return user;
 }
 
+#ifdef HALO_COLLISION_LOG
 void collision_log_start_time(
 	LARGE_INTEGER *start_time)
 {
@@ -617,6 +618,8 @@ void collision_log_usage(
 
 	return;
 }
+
+#endif /* HALO_COLLISION_LOG */
 
 void collision_log_display(
 	char *buffer)

@@ -70,6 +70,7 @@ void collision_log_enable(
 	boolean enable);
 void collision_log_render(
 	void);
+#ifdef HALO_COLLISION_LOG
 void collision_log_start_time(
 	LARGE_INTEGER *start_time);
 void collision_log_end_time(
@@ -77,6 +78,14 @@ void collision_log_end_time(
 	__int64 end_time);
 void collision_log_usage(
 	short collision_function);
+#else
+/* port: the clock reads and counters feed only the on-screen collision log, a debug and profiling aid;
+a build without HALO_COLLISION_LOG (configure.py --collision-log) compiles them and their call sites out */
+#define collision_log_start_time(start_time) ((void)0)
+#define collision_log_end_time(collision_function, start_time) ((void)0)
+#define collision_log_usage(collision_function) ((void)0)
+#endif
+
 void collision_log_display(
 	char *buffer);
 void collision_log_begin_period(

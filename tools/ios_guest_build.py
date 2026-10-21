@@ -316,7 +316,7 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     # build is the code it always was.
     branch_ranges = ["-mllvm", "-aarch64-tbz-offset-bits=12", "-mllvm", "-aarch64-cbz-offset-bits=17",
                      "-mllvm", "-aarch64-bcc-offset-bits=17"] if lto or profile else []
-    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + branch_ranges + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []) + (["-DHALO_RENDER_VALIDATION=1"] if validation else []))
+    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + branch_ranges + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []) + (["-DHALO_COLLISION_LOG"] if getattr(sln, "port_collision_log", False) else []) + (["-DHALO_RENDER_VALIDATION=1"] if validation else []))
     guest_code = " ".join(GUEST_CODE_FLAGS)
     tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
     bitcode_implicit = [*generated_headers]

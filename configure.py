@@ -34,6 +34,12 @@ parser.add_argument(
     help="release builds of the native ports (Linux, Windows, iOS): assertions are not checked",
 )
 parser.add_argument(
+    "--collision-log",
+    action="store_true",
+    help="debug and profiling builds: time and count the collision functions' use for the on-screen collision log "
+    "(source/physics/collision_usage.c); without it the clock reads and counters are compiled out",
+)
+parser.add_argument(
     "--lto",
     choices=["full", "thin", "off"],
     default="full",
@@ -80,6 +86,7 @@ sln = SimpleNamespace(
     linux_cc=args.linux_cc,
     compiler_launcher=args.compiler_launcher,
     port_release=args.release,
+    port_collision_log=args.collision_log,
     port_lto=args.lto,
     port_portable=args.portable,
     port_pgo=args.pgo,

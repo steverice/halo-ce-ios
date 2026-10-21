@@ -150,6 +150,9 @@ def main():
                         help='the HTTPS address of the signed benchmark recording update envelope, in place of the default')
     parser.add_argument('--internal-only', action='store_true',
                         help='with --app-store-package: restrict the exported build to internal TestFlight groups')
+    parser.add_argument('--collision-log', action='store_true',
+                        help='time and count the collision functions for the on-screen collision log (a debug and profiling '
+                             'aid); without it the clock reads and counters are compiled out')
     parser.add_argument('--render-validation', choices=('on', 'off'),
                         default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
                         help='check every call into the GPU backend before it is made, and name every fallback '
@@ -270,7 +273,7 @@ def main():
             if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
     validation = args.render_validation == 'on'
     run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld,
-        *(['--render-validation'] if validation else []))
+        *(['--render-validation'] if validation else []),*(['--collision-log'] if args.collision_log else []))
     run('ninja','ios_guest','-j',args.jobs)
     run(sys.executable,'tools/ios_bridges.py',*(['--render-validation'] if validation else []))
     # what a render capture is checked against when it is replayed (port/ios/host/gpu_capture.h)
