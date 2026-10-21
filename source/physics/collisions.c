@@ -113,6 +113,9 @@ symbols in this file:
 #include "scenario/scenario.h"
 #include "structures/structure_bsp_definitions.h"
 #include "units/bipeds.h"
+/* port: sim_experiments.c's (debug.collision_type_filter is experimental, off by default) */
+boolean sim_experiment_enabled(short experiment);
+#define SIM_EXPERIMENT_COLLISION_TYPE_FILTER 0
 /* port: object_bounds_cache.c's */
 boolean object_bounds_cache_out_of_reach(long object_index, real_point3d const *point, real radius);
 
@@ -642,6 +645,7 @@ boolean collision_test_vector(
 		if (test_objects && bsp_result.leaf_count > 0)
 		{
 			long leaf_index;
+			boolean type_filter;
 
 			collision_log_usage(_collision_function_vector_objects);
 			collision_log_start_time(&collision_usage_times.vector_objects);
@@ -649,6 +653,8 @@ boolean collision_test_vector(
 			{
 				flags |= _collision_test_objects_all_types_flags;
 			}
+
+			type_filter = sim_experiment_enabled(SIM_EXPERIMENT_COLLISION_TYPE_FILTER);
 
 			structure_cluster_marker_begin();
 			object_marker_begin();
@@ -667,6 +673,14 @@ boolean collision_test_vector(
 						object_index != NONE;
 						object_index = cluster_get_next_collideable_object(&reference_index))
 					{
+						/* port: an object whose type this ray does not test would be passed over by
+						object_test_vector, children and all, once marked; skip it on its header alone
+						(debug.collision_type_filter). A listed object has no siblings. */
+						if (type_filter &&
+							!TEST_FLAG(flags, object_header_get(object_index)->type + _collision_test_objects_first_type_bit))
+						{
+							continue;
+						}
 						if (object_mark_function(object_index) &&
 							object_test_vector(
 								object_index,
@@ -924,11 +938,14 @@ boolean collision_get_features_in_sphere(
 		if (objects && result.leaf_count > 0)
 		{
 			short leaf_reference_index;
+			boolean type_filter;
 
 			if (!(flags & _collision_test_objects_all_types_flags))
 			{
 				flags |= _collision_test_objects_all_types_flags;
 			}
+
+			type_filter = sim_experiment_enabled(SIM_EXPERIMENT_COLLISION_TYPE_FILTER);
 
 			structure_cluster_marker_begin();
 			object_marker_begin();
@@ -951,6 +968,18 @@ boolean collision_get_features_in_sphere(
 						object_index != NONE;
 						object_index = cluster_get_next_collideable_object(&reference_index))
 					{
+						/* port: an object of a type this query does not test, with no children
+						to test, adds nothing (debug.collision_type_filter) */
+						if (type_filter)
+						{
+							struct object_header_datum *header = object_header_get(object_index);
+
+							if (!TEST_FLAG(flags, header->type + _collision_test_objects_first_type_bit) &&
+								header->datum->object.first_child_object_index == NONE)
+							{
+								continue;
+							}
+						}
 						/* port: (the far ones passed over on a packed copy
 						of their bounding spheres: object_bounds_cache.c) */
 						if (object_mark_function(object_index) &&
