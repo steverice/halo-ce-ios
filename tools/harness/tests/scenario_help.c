@@ -2,9 +2,14 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef int boolean;
+#define __cdecl
+#define csmemset memset
+#define MAXIMUM_GAMEPADS 4
+#define _game_connection_local 0
 #define TRUE 1
 #define FALSE 0
 #define NONE (-1)
@@ -32,16 +37,30 @@ struct widget_instance {
 };
 static struct widget_instance text_box, dialog;
 static int loads;
-static short owner, loaded_owner;
+static short loaded_owner;
 static boolean network_active;
 static boolean network_game_is_active(void) { return network_active; }
 static int global_scenario_index = 1;
 static char const *scenario = "levels\\b40\\b40";
 static char const *loaded_name;
-static short player_ui_get_single_player_local_player_controller(short index)
+/* Player datums and controller slots deliberately have different indexes. */
+static struct player_datum { short local_player_index; } players[16];
+static struct { long local_players[4]; } globals, *players_globals = &globals;
+static struct { boolean main_menu_scenario_loaded; } main_globals;
+static short player_spawn_count;
+static long next_player_index = 7;
+static int game_connection(void) { return _game_connection_local; }
+static struct player_datum *player_get(long index)
 {
-    assert(index == 0);
-    return owner;
+    assert(index >= 0 && index < 16);
+    return &players[index];
+}
+static long player_new(long machine, long index, short controller, void const *network_player)
+{
+    assert(index == NONE);
+    index = next_player_index++;
+    player_get(index)->local_player_index = controller;
+    return index;
 }
 static char const *tag_get_name(int index) { return scenario; }
 static void strlwr(char *text)
@@ -76,7 +95,6 @@ int main(void)
     player_ui_globals.single_player_controller[1] = 0;
     player_ui_globals.single_player_controller[2] = NONE;
     player_ui_globals.single_player_controller[3] = NONE;
-    owner = 2;
     display_scenario_help(7);
     assert(loads == 1 && loaded_owner == 2);
     assert(strstr(loaded_name, "player_help_screen_b40"));
@@ -88,11 +106,41 @@ int main(void)
     display_scenario_help(9);
     assert(loads == 2 && text_box.parameters.text_box.string_list_index == 8);
     /* No owner retains the existing default behavior without indexing NONE. */
-    owner = NONE;
+    player_ui_globals.single_player_controller[0] = NONE;
     display_scenario_help(10);
     assert(loads == 3 && loaded_owner == NONE);
     assert(!player_ui_ingame_help_disabled(NONE));
+    player_ui_globals.single_player_controller[0] = 2;
+    memset(globals.local_players, NONE, sizeof(globals.local_players));
+    player_spawn_count = 1;
+    create_local_players();
+    assert(local_player_get_player_index(0) == NONE);
+    assert(local_player_get_player_index(2) == 7);
+    assert(player_get(7)->local_player_index == 2);
+    scripted.show_hud_help_text = TRUE;
+    messaging.help_message = &text_box;
+    /* Campaign profile 0 belongs to controller 2, not controller 0. */
+    player_ui_globals.local_players[0].profile.controller_settings.ingame_help_disabled = FALSE;
+    assert(hud_help_visible(player_get(7)->local_player_index));
+    player_ui_globals.local_players[0].profile.controller_settings.ingame_help_disabled = TRUE;
+    assert(!hud_help_visible(player_get(7)->local_player_index));
+    /* Split-screen creation sorts controllers independently of profile order. */
+    player_spawn_count = 2;
+    create_local_players();
+    assert(local_player_get_player_index(0) == 8);
+    assert(local_player_get_player_index(2) == 9);
+    player_ui_globals.local_players[1].profile.controller_settings.ingame_help_disabled = FALSE;
+    assert(hud_help_visible(player_get(8)->local_player_index));
+    assert(!hud_help_visible(player_get(9)->local_player_index));
     network_active = TRUE;
+    /* Network join assigns the datum to the controller's local table slot. */
+    local_player_set_player_index(3, 12);
+    assert(local_player_get_player_index(3) == 12);
+    assert(player_get(12)->local_player_index == 3);
+    player_ui_globals.local_players[3].profile.controller_settings.ingame_help_disabled = FALSE;
+    assert(hud_help_visible(player_get(12)->local_player_index));
+    player_ui_globals.local_players[3].profile.controller_settings.ingame_help_disabled = TRUE;
+    assert(!hud_help_visible(player_get(12)->local_player_index));
     scripted.show_hud_help_text = TRUE;
     messaging.help_message = &text_box;
     for (index = 0; index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; ++index) {

@@ -612,7 +612,7 @@ boolean player_ui_ingame_help_disabled(
 	if (local_player_index == NONE)
 		return FALSE;
 
-	match_assert("c:\\halo\\SOURCE\\interface\\player_ui.c", 305, (local_player_index>=0) && (local_player_index<MAXIMUM_NUMBER_OF_LOCAL_PLAYERS));
+	assert((local_player_index>=0) && (local_player_index<MAXIMUM_NUMBER_OF_LOCAL_PLAYERS));
 
 	return player_ui_globals.local_players[local_player_index].profile.controller_settings.ingame_help_disabled;
 }

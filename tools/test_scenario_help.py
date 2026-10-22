@@ -11,6 +11,13 @@ def test_scenario_help_profiles():
     player_ui = read("source/interface/player_ui.c")
     accessor = function(player_ui, "player_ui_ingame_help_disabled")
     mapping = function(player_ui, "player_ui_get_single_player_local_player_from_controller")
+    controller = function(player_ui, "player_ui_get_single_player_local_player_controller")
+    players = read("source/game/players.c")
+    player_mapping = "\n".join(function(players, name) for name in (
+        "local_player_get_player_index", "local_player_set_player_index"))
+    main = read("source/main/main.c")
+    creation = "\n".join(function(main, name) for name in (
+        "sort_desired_local_player_controllers", "create_local_players"))
     dialog = function(read("source/interface/ui_widget.c"), "display_scenario_help")
     hud = function(read("source/interface/hud_messaging.c"), "hud_messaging_update")
     start = hud.index("help_active =")
@@ -18,7 +25,7 @@ def test_scenario_help_profiles():
     fixture = Path(__file__).with_name("harness") / "tests" / "scenario_help.c"
     with tempfile.TemporaryDirectory() as folder:
         work = Path(folder)
-        (work / "under_test.inc").write_text(mapping + "\n" + accessor + "\n" + dialog)
+        (work / "under_test.inc").write_text("\n".join((mapping, controller, player_mapping, creation, accessor, dialog)))
         (work / "hud_help.inc").write_text(help_expression)
         compiler = shutil.which("clang") or shutil.which("cc")
         assert compiler, "a C compiler is required"
