@@ -1017,3 +1017,90 @@ def test_exported_ipa_rejects_missing_or_changed_encryption_exemption(
     monkeypatch.setattr(validation, "signed_app_entitlements", unexpected_codesign)
     with pytest.raises(ValueError, match="encryption"):
         validation.verify_exported_ipa(package)
+
+
+def optional_recording_policy() -> dict[str, str]:
+    values = {**policy(), "recording_feed_required": "off"}
+    del values["recording_feed_sha256"]
+    return values
+
+
+def test_policy_can_leave_the_recording_feed_unpinned_and_keeps_its_url() -> None:
+    values = optional_recording_policy()
+    loaded = validation.load_policy(json.dumps(values))
+    assert loaded == values
+    # The build still carries the URL, so cases published later reach installed apps.
+    assert loaded["recording_feed_url"] == policy()["recording_feed_url"]
+    assert not validation.recording_feed_required(loaded)
+    assert validation.recording_feed_required(policy())
+    with pytest.raises(ValueError, match="recording_feed_required"):
+        validation.load_policy(json.dumps({**values, "recording_feed_required": "maybe"}))
+    with pytest.raises(ValueError, match="exact documented"):
+        validation.load_policy(
+            json.dumps({**values, "recording_feed_sha256": "e" * 64})
+        )
+    required = {**values, "recording_feed_required": "on"}
+    with pytest.raises(ValueError, match="exact documented"):
+        validation.load_policy(json.dumps(required))
+
+
+def test_preflight_without_a_pinned_recording_feed_skips_it_and_has_no_catalog_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    values = optional_recording_policy()
+    fetched: list[str] = []
+
+    class Response:
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return b"profile-envelope"
+
+    class Opener:
+        def open(self, url: str, timeout: int) -> Response:
+            fetched.append(url)
+            return Response()
+
+    monkeypatch.setattr(
+        validation.urllib.request, "build_opener", lambda *_args: Opener()
+    )
+    monkeypatch.setattr(validation, "verify_feed", lambda *_args, **_kwargs: None)
+    assert validation.check_feeds(values) is None
+    assert fetched == [values["profile_feed_url"]]
+    assert validation.validate_recording_summary_context("", values) is None
+    with pytest.raises(ValueError, match="without a pinned recording feed"):
+        validation.validate_recording_summary_context('{"schema":1}', values)
+    instructions = validation.release.release_summary_instructions(
+        False, ["ios"], has_recording_catalog=False
+    )
+    assert "No current signed recording catalog facts were supplied" in instructions
+
+
+def test_preflight_output_is_empty_without_catalog_facts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = "a" * 40
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"source_sha": source, "platforms": {"ios": {}}}))
+    outputs: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "sys.argv",
+        ["release_validation.py", "check", "--source-sha", source,
+         "--platforms", "ios", "--report", str(report)],
+    )
+    monkeypatch.setattr(validation.release, "require_ci", lambda: None)
+    monkeypatch.setattr(validation, "check_release", lambda *_args: None)
+    monkeypatch.setattr(validation, "preflight_identity", lambda *_args: "identity")
+    monkeypatch.setattr(validation.release, "API", lambda *_args: object())
+    monkeypatch.setattr(validation.release, "exact_app", lambda *_args: {})
+    monkeypatch.setattr(
+        validation.release, "output", lambda name, value: outputs.append((name, value))
+    )
+    monkeypatch.setenv("APPLE_BUNDLE_ID", "org.example.visr")
+    monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(optional_recording_policy()))
+    validation.main()
+    assert outputs == [("identity", "identity"), ("recording_context", "")]

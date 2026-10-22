@@ -86,8 +86,14 @@ def require_guest_epoch_policy(policy: dict[str, Any]) -> str:
     return parse_guest_epoch(policy.get(FIELD))
 
 
+def recording_feed_required(policy: dict[str, Any]) -> bool:
+    """Policies keep the recording feed pinned unless they explicitly turn it off."""
+    return policy.get("recording_feed_required", "on") != "off"
+
+
 def load_policy(value: str) -> dict[str, Any]:
     policy = json.loads(value or "{}")
+    optional = {"benchmark_upload", "recording_feed_required", FIELD}
     fields = {
         "guest_sha256",
         "guest_compiler_version",
@@ -103,10 +109,21 @@ def load_policy(value: str) -> dict[str, Any]:
         "shader_feed_url",
         "shader_feed_sha256",
     }
-    if not isinstance(policy, dict) or set(policy) - {"benchmark_upload", FIELD} not in (
-        fields,
-        asset_fields,
-    ):
+    if not isinstance(policy, dict):
+        raise ValueError(
+            "RELEASE_BUILD_POLICY must contain the exact documented build and feed pins"
+        )
+    if "recording_feed_required" in policy and policy["recording_feed_required"] not in {
+        "on",
+        "off",
+    }:
+        raise ValueError("RELEASE_BUILD_POLICY recording_feed_required must be on or off")
+    if not recording_feed_required(policy):
+        # The feed URL stays in the build so cases can be published later; only the
+        # reviewed envelope pin and its guest compatibility check are dropped.
+        fields = fields - {"recording_feed_sha256"}
+        asset_fields = asset_fields - {"recording_feed_sha256"}
+    if set(policy) - optional not in (fields, asset_fields):
         raise ValueError(
             "RELEASE_BUILD_POLICY must contain the exact documented build and feed pins"
         )
@@ -114,7 +131,7 @@ def load_policy(value: str) -> dict[str, Any]:
         raise ValueError("RELEASE_BUILD_POLICY benchmark_upload must be on or off")
     if FIELD in policy:
         parse_guest_epoch(policy[FIELD])
-    for name in set(policy) - {"benchmark_upload", "profile_feed_sha256s"}:
+    for name in set(policy) - {"benchmark_upload", "recording_feed_required", "profile_feed_sha256s"}:
         value = policy[name]
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing build policy pin: {name}")
@@ -670,7 +687,8 @@ def check_feeds(
         feeds.append(("shader", "shaders", policy["shader_feed_url"], None))
     else:
         feeds.append(("profile", "profiles", policy["profile_feed_url"], None))
-    feeds.append(("recording", "recordings", policy["recording_feed_url"], None))
+    if recording_feed_required(policy):
+        feeds.append(("recording", "recordings", policy["recording_feed_url"], None))
     for kind, payload_kind, url, profile_target in feeds:
         limit = ENVELOPE_LIMITS[payload_kind]
         with urllib.request.build_opener(NoRedirect()).open(
@@ -696,6 +714,8 @@ def check_feeds(
                 verify_feed(data, kind, policy, root=root)
     if root is not None:
         return None
+    if not recording_feed_required(policy):
+        return None
     if not isinstance(recording_context, dict):
         raise TypeError("Signed benchmark catalog facts are unavailable")
     return recording_context
@@ -703,7 +723,7 @@ def check_feeds(
 
 def check_release(
     report: dict[str, Any], policy: dict[str, str], selected: list[str]
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     if FIELD in policy and report.get(FIELD) != require_guest_epoch_policy(policy):
         raise ValueError("Probe guest epoch differs from reviewed policy")
     check_credentials(os.environ, selected)
@@ -712,6 +732,8 @@ def check_release(
     for item in report["platforms"].values():
         compare_evidence(item, policy)
     context = check_feeds(policy)
+    if not recording_feed_required(policy):
+        return None
     if not isinstance(context, dict):
         raise TypeError("Signed benchmark catalog facts are unavailable")
     return context
@@ -719,8 +741,12 @@ def check_release(
 
 def validate_recording_summary_context(
     value: str, policy: dict[str, str]
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     """Validate the bounded catalog facts emitted by signed-feed preflight."""
+    if not recording_feed_required(policy):
+        if isinstance(value, str) and value.strip():
+            raise ValueError("Catalog facts were supplied for a release without a pinned recording feed")
+        return None
     if not isinstance(value, str) or not value.strip():
         raise ValueError("Verified benchmark catalog context is missing")
     try:
@@ -883,7 +909,9 @@ def main() -> None:
         )
         release.output(
             "recording_context",
-            json.dumps(recording_context, sort_keys=True, separators=(",", ":")),
+            ""
+            if recording_context is None
+            else json.dumps(recording_context, sort_keys=True, separators=(",", ":")),
         )
         print("Build, feeds, signing configuration, and existing app access validated")
 
