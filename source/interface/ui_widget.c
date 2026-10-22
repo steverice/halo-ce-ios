@@ -4701,6 +4701,14 @@ void display_scenario_help(
 		"c:\\halo\\SOURCE\\interface\\ui_widget.c",
 		2407,
 		string_index>=0);
+	/* port: noted in the recorded time (input_replay.c), where the level's script asks for the dialog, whether or not
+	it shows */
+	{
+		extern void input_replay_note_event(char const *kind, char const *name);
+		extern char const *hs_runtime_get_executing_thread_name(void);
+
+		input_replay_note_event("scenario_help", hs_runtime_get_executing_thread_name());
+	}
 	/* port: shown by no automatic take, replay of one or run with debug.scenario_help off: the dialog stops the game
 	until a button is pressed, which such a take has no press for (input_replay.c) */
 	{
@@ -4708,13 +4716,6 @@ void display_scenario_help(
 
 		if (input_replay_scenario_help_suppressed())
 			return;
-	}
-	/* port: noted in the recorded time (input_replay.c) */
-	{
-		extern void input_replay_note_event(char const *kind, char const *name);
-		extern char const *hs_runtime_get_executing_thread_name(void);
-
-		input_replay_note_event("scenario_help", hs_runtime_get_executing_thread_name());
 	}
 	if (global_scenario_index != NONE)
 	{
@@ -4752,8 +4753,15 @@ void display_scenario_help(
 			return;
 		}
 		local_player_index = player_ui_get_single_player_local_player_controller(0);
-		if (player_ui_ingame_help_disabled(local_player_index))
-			return;
+		/* port: the player's profile decides, except while a recording or a replay runs: there the dialog shows as
+		its recording had it, whatever the profile of the device replaying, since showing one or not changes when the
+		game stops (input_replay.c) */
+		{
+			extern int input_replay_scenario_help_fixed(void);
+
+			if (!input_replay_scenario_help_fixed() && player_ui_ingame_help_disabled(local_player_index))
+				return;
+		}
 
 		widget = ui_widget_load_by_name_or_tag(
 			widget_name,

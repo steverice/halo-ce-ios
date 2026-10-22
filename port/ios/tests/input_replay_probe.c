@@ -556,6 +556,7 @@ static void check_recorded_environment(void)
 }
 
 extern int input_replay_scenario_help_suppressed(void);
+extern int input_replay_scenario_help_fixed(void);
 static void check_enemy_multiplier_metadata(void)
 {
 	unsigned int action[ACTION_WORDS] = { 0x00000001u, 0x3f800000u, 0, 0, 0, 0, 0, 0 };
@@ -591,7 +592,9 @@ static void check_enemy_multiplier_metadata(void)
 	assert(input_replay_begin("./multiplier.input", 0) && !input_replay_scenario_help_suppressed());
 	file = fopen("multiplier.route", "w"); assert(file); fputs("map = a10\nscenario_help = off\n", file); fclose(file);
 	assert(input_replay_begin("./multiplier.input", 0) && input_replay_scenario_help_suppressed());
-	input_replay_begin(NULL, 0); assert(!input_replay_scenario_help_suppressed());
+	/* a replay under way decides the dialogs in place of the player's profile; none once it is gone */
+	assert(input_replay_scenario_help_fixed());
+	input_replay_begin(NULL, 0); assert(!input_replay_scenario_help_suppressed() && !input_replay_scenario_help_fixed());
 	/* a route without the line was recorded at 1: the setting does not apply to it */
 	file = fopen("multiplier.route", "w"); assert(file); fputs("map = a10\n", file); fclose(file);
 	assert(input_replay_begin("./multiplier.input", 0) && probe_override == 1.0 && coop_enemies_solo_multiplier() == 1.0);

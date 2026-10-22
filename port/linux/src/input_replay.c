@@ -1745,3 +1745,12 @@ int input_replay_scenario_help_suppressed(void)
 {
 	return !config_boolean("debug.scenario_help") || take.automatic || replay.help_off;
 }
+
+/* Whether a recording or a replay is running, so that the player's profile does not decide whether
+display_scenario_help shows its dialog (ui_widget.c): a replay shows the dialogs its recording showed, whatever the
+profile of the device replaying, and a recording shows them as the original game did */
+int input_replay_scenario_help_fixed(void)
+{
+	return take.automatic || (*replay.record_path && !replay.record_ended) ||
+		(*replay.replay_path && !replay.replay_finished);
+}

@@ -75,6 +75,18 @@ static struct widget_instance *ui_widget_load_by_name_or_tag(
     loaded_owner = controller;
     return &dialog;
 }
+/* input_replay.c: whether a take or a debug setting turns the dialog off, and whether a recording or a replay
+decides it in place of the profile */
+static boolean help_suppressed, help_fixed;
+static int help_events;
+int input_replay_scenario_help_suppressed(void) { return help_suppressed; }
+int input_replay_scenario_help_fixed(void) { return help_fixed; }
+void input_replay_note_event(char const *kind, char const *name)
+{
+    assert(!strcmp(kind, "scenario_help"));
+    ++help_events;
+}
+char const *hs_runtime_get_executing_thread_name(void) { return "test"; }
 #include "under_test.inc"
 
 static struct { boolean show_hud_help_text; } scripted, *hud_scripted_globals = &scripted;
@@ -105,10 +117,20 @@ int main(void)
     player_ui_globals.local_players[0].profile.controller_settings.ingame_help_disabled = TRUE;
     display_scenario_help(9);
     assert(loads == 2 && text_box.parameters.text_box.string_list_index == 8);
+    /* A recording or a replay shows the dialog whatever the profile; a take recorded without dialogs shows none. */
+    help_fixed = TRUE;
+    display_scenario_help(11);
+    assert(loads == 3 && text_box.parameters.text_box.string_list_index == 11);
+    help_suppressed = TRUE;
+    display_scenario_help(12);
+    assert(loads == 3 && text_box.parameters.text_box.string_list_index == 11);
+    help_suppressed = help_fixed = FALSE;
+    display_scenario_help(13);
+    assert(loads == 3 && help_events == 6);
     /* No owner retains the existing default behavior without indexing NONE. */
     player_ui_globals.single_player_controller[0] = NONE;
     display_scenario_help(10);
-    assert(loads == 3 && loaded_owner == NONE);
+    assert(loads == 4 && loaded_owner == NONE);
     assert(!player_ui_ingame_help_disabled(NONE));
     player_ui_globals.single_player_controller[0] = 2;
     memset(globals.local_players, NONE, sizeof(globals.local_players));
