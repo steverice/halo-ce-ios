@@ -82,6 +82,33 @@ Put `#:schema ../port/settings/profile.schema.json` at the top of a profile for 
 
 Run `python3 tools/settings_schema.py` after changing the C setting definitions. It refreshes the three schemas and the reference tables in this file and `port/linux/README.md`. `--check` checks their freshness; `--markdown config` and `--markdown profile` print either table. Config schemas check names and types. Profile schemas also check the intentionally narrower profile limits. Build-dependent defaults list Apple and desktop values.
 
+## Targets
+
+A device's profile aims for the highest tier of this ladder that the device holds comfortably. Each tier is a frame rate, a render-line count and an enemy multiplier (`debug.enemy_multiplier`, the replay's extra enemies):
+
+| Tier | Frame rate | Render lines | Enemies |
+|---|---|---|---|
+| 0, the floor | 30 | 540 | 1x |
+| 1 | 60 | 720 | 1x |
+| 2 | 60 | 900 | 1x |
+| 3, the target | 60 | 1080 | 1x |
+| 4 | 60 | 1080 | 1.5x |
+| 5 | 120 | 1080 | 1.5x |
+| 6 | 120 | 1440 | 2x |
+| 7 | 120 | 2160 | 2x |
+
+Tier 3 is the ideal. Above it, each tier must also hold at more enemies than real play has, so the profile keeps headroom: a device that holds 120 frames a second at 1440 lines with twice the enemies should not run 4K and drop below 60 in a busy game.
+
+**Holding a tier.** In every benchmark window at the tier's multiplier, after the device has warmed up, 95% of frames take at most 90% of the frame budget: 30.0 ms at 30 frames a second, 15.0 ms at 60, 7.5 ms at 120. Each level's window is the stretch that level stresses most (open terrain with vehicles, swarms of small enemies, effects and reflections, large fights between factions). Fanless devices and phones throttle, so a cold run does not count.
+
+**Settings before tiers.** Before a device drops a tier, the profile lowers the settings that cost the most for the least visible difference (shadow detail, anisotropy, level of detail, anti-aliasing), in the order the measured cost of each setting gives. Frame rate and render lines change only when those settings cannot close the gap.
+
+**What the display allows.** The display caps the ladder. 120 frames a second needs a 120 Hz display (ProMotion, or a 120 Hz external display). Render lines stop at the display's native vertical resolution, and 2160 lines need a 4K output, so the Apple TV HD tops out at tier 3. A device that reaches its display's cap takes the highest tier the display allows.
+
+**Other scenes.** Cutscenes run at 30 frames a second and menus at the display's rate. Each multiplayer map and player count is qualified separately at the profile's tier, and a multiplayer miss does not lower the campaign tier.
+
+**Vision Pro** has its own ladder. Holding the display's rate comes first there, for comfort, and resolution second.
+
 ## Writing a profile
 
 1. Copy `TEMPLATE.toml` to a name for the device, lowercase words joined by hyphens (`ipad-air-m2.toml`).
