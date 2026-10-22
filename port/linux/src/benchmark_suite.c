@@ -39,7 +39,6 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
 	int model_lod_max);
 /* 1: a run to carry out; 0: the suite is over and the game quits; 2: over, and the game goes back to its main menu */
 int host_benchmark_next(char *text, unsigned int size);
-void host_benchmark_phase(int phase);
 void host_benchmark_window(int open, int width, int height, int opened_tick);
 void host_benchmark_graphics(const char *json);
 int host_external_active(void);
@@ -235,10 +234,6 @@ void benchmark_suite_mainloop_update(void)
 
 static void enter(enum suite_state state)
 {
-	/* host_benchmark_progress.h: loading, lead-in, measuring; publish only at transitions. */
-	if (state == suite_loading) host_benchmark_phase(0);
-	else if (state == suite_lead) host_benchmark_phase(1);
-	else if (state == suite_measuring) host_benchmark_phase(2);
 	suite.state = state;
 	suite.skip_drawing = 0;
 	suite.entered = halo_frame_trace_milliseconds();

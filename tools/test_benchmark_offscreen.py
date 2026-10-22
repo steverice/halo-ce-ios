@@ -131,30 +131,3 @@ def test_offscreen_lead_in_skips_drawing_but_presents():
     assert "return suite.state == suite_lead && suite.skip_drawing;" in suite
     host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
     assert "presented=%d offscreen=%d" in host
-
-
-@pytest.mark.parametrize("name", ["progress_format", "progress_visibility"])
-def test_native_progress(probe, name):
-    run_case(probe, name)
-
-
-def test_progress_for_all_offscreen_suites():
-    host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
-    assert "plan.mode==BENCHMARK_UNIFIED || host_benchmark_offscreen_requested()" in host
-    # The UI hides before the renderer can submit a presented frame, without a timer delay.
-    switch = host[host.index("int host_benchmark_presented(int on)"):]
-    assert switch.index("host_benchmark_overlay_presented(on)") < switch.index("gpu_metal_benchmark_realtime(on)")
-    ui = (ROOT / "port/ios/host/host_benchmark_page.m").read_text()
-    assert "self.view.hidden=progress.presented!=0;" in ui
-    assert "dispatch_sync(dispatch_get_main_queue(),update)" in ui
-    assert "host_benchmark_progress_visible(&progress)" in ui
-    assert "scheduledTimerWithTimeInterval:0.25" in ui
-    assert "scroll.contentLayoutGuide" in ui and "screen.safeAreaLayoutGuide" in ui
-    assert "Benchmark running — please don’t close the app" in ui
-
-
-def test_progress_phase_bridge():
-    guest = (ROOT / "port/linux/src/benchmark_suite.c").read_text()
-    for state, phase in [("loading", 0), ("lead", 1), ("measuring", 2)]:
-        assert f"state == suite_{state}) host_benchmark_phase({phase})" in guest
-    assert "host_benchmark_phase" in (ROOT / "port/runtime/host_imports.list").read_text().split()

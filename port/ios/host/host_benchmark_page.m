@@ -440,13 +440,13 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     host_logf(HOST_LOG_INFO, "benchmark: the report screen closed");
 }
 
-/* Pass through game input while keeping native progress scrolling and Finish usable. */
+/* A window that accepts only the Finish control keeps the game surface usable. */
 @interface HaloBenchmarkOverlayWindow : UIWindow
 @end
 @implementation HaloBenchmarkOverlayWindow
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hit=[super hitTest:point withEvent:event];
-    for(UIView *view=hit;view;view=view.superview)if([view isKindOfClass:UIControl.class] || [view isKindOfClass:UIScrollView.class])return hit;
+    for(UIView *view=hit;view;view=view.superview)if([view isKindOfClass:UIControl.class])return hit;
     return nil;
 }
 @end
@@ -563,13 +563,10 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         [panel.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-24],
         [panel.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-12],
         [panel.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-12]]];
-    [self refreshProgress];
     __weak HaloBenchmarkOverlayController *weak=self;
     self.timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
         HaloBenchmarkOverlayController *controller=weak;
         if(!controller) { [timer invalidate]; return; }
-        [controller refreshProgress];
-        if(!controller.progressScreen.hidden || controller.view.hidden)return;
         struct benchmark_live_snapshot snapshot; host_benchmark_live(&snapshot);
         NSString *fps=snapshot.count ? [NSString stringWithFormat:@"%.0f",snapshot.fps] : @"—";
         NSString *cpu=snapshot.cpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.cpu_ms] : @"—";
@@ -578,6 +575,7 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
             [NSString stringWithFormat:@"Benchmarking…\nFPS: %@ CPU: %@ms GPU: %@ms",fps,cpu,gpu];
         controller.graph.hidden=host_benchmark_finish_requested();
         [controller.graph updateSnapshot:&snapshot];
+        [controller refreshProgress];
     }];
 }
 - (void)buildProgressScreen {
@@ -596,7 +594,7 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     self.progressTitle.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle1];
     self.progressTitle.textColor=UIColor.whiteColor;
     self.progressTitle.textAlignment=NSTextAlignmentCenter;
-    self.progressTitle.numberOfLines=0;
+    self.progressTitle.numberOfLines=2;
     self.progressDetail=[UILabel new];
     self.progressDetail.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     self.progressDetail.textColor=UIColor.lightGrayColor;
@@ -605,7 +603,7 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     self.progressBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
     self.progressBar.translatesAutoresizingMaskIntoConstraints=NO;
     UILabel *note=[UILabel new];
-    note.text=@"Benchmark running — please don’t close the app";
+    note.text=@"The game plays by itself, faster than usual, without showing its picture. Keep VISR open until it finishes.";
     note.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
     note.textColor=UIColor.grayColor;
     note.textAlignment=NSTextAlignmentCenter;
@@ -615,14 +613,9 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     self.progressFinish.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
     [self.progressFinish.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
     [self.progressFinish addTarget:self action:@selector(finish:) forControlEvents:UIControlEventPrimaryActionTriggered];
-    UIView *topSpace=[UIView new], *bottomSpace=[UIView new];
-    [topSpace.heightAnchor constraintEqualToAnchor:bottomSpace.heightAnchor].active=YES;
-    for(UIView *view in @[topSpace,heading,self.progressTitle,self.progressDetail,self.progressBar,note,self.progressFinish,bottomSpace])
+    for(UIView *view in @[heading,self.progressTitle,self.progressDetail,self.progressBar,note,self.progressFinish])
         [stack addArrangedSubview:view];
-    UIScrollView *scroll=[UIScrollView new];
-    scroll.translatesAutoresizingMaskIntoConstraints=NO;
-    [screen addSubview:scroll];
-    [scroll addSubview:stack];
+    [screen addSubview:stack];
     [self.view insertSubview:screen atIndex:0];
     self.progressScreen=screen;
     [NSLayoutConstraint activateConstraints:@[
@@ -630,32 +623,27 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         [screen.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [screen.topAnchor constraintEqualToAnchor:self.view.topAnchor],
         [screen.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-        [scroll.leadingAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.leadingAnchor],
-        [scroll.trailingAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.trailingAnchor],
-        [scroll.topAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.topAnchor],
-        [scroll.bottomAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.bottomAnchor],
-        [scroll.contentLayoutGuide.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor],
-        [stack.centerXAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.centerXAnchor],
-        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor multiplier:0.8],
+        [stack.centerXAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:screen.safeAreaLayoutGuide.centerYAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:screen.safeAreaLayoutGuide.widthAnchor multiplier:0.8],
         [self.progressBar.widthAnchor constraintEqualToAnchor:stack.widthAnchor],
-        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:12],
-        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-12],
-        [scroll.contentLayoutGuide.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.frameLayoutGuide.heightAnchor]]];
+        [stack.widthAnchor constraintGreaterThanOrEqualToConstant:240]]];
 }
 - (void)refreshProgress {
     struct host_benchmark_progress progress;
     host_benchmark_progress(&progress);
-    self.view.hidden=progress.presented!=0;
-    BOOL offscreen=host_benchmark_progress_visible(&progress);
+    BOOL offscreen=progress.offscreen!=0;
     self.progressScreen.hidden=!offscreen;
-    self.panel.hidden=offscreen || progress.presented;
+    self.panel.hidden=offscreen;
     if(!offscreen)return;
-    self.progressTitle.text=progress.title[0] ? @(progress.title) : @"Getting ready";
-    char detail[512];
-    host_benchmark_progress_detail(&progress,detail,sizeof(detail));
-    self.progressDetail.text=host_benchmark_finish_requested() ? @"Finishing…" : @(detail);
-    self.progressBar.hidden=progress.phase!=HOST_BENCHMARK_MEASURING || progress.measured_fraction<0;
-    [self.progressBar setProgress:(float)progress.fraction animated:NO];
+    if(progress.title[0])self.progressTitle.text=@(progress.title);
+    else if(!self.progressTitle.text.length)self.progressTitle.text=@"Getting ready";
+    if(host_benchmark_finish_requested())self.progressDetail.text=@"Finishing…";
+    else if(progress.number>0)self.progressDetail.text=progress.total>0 ?
+        [NSString stringWithFormat:@"Part %d of %d%@",progress.number,progress.total,
+            progress.reality_check ? @"\nThis part finishes on screen, in real time." : @""] :
+        [NSString stringWithFormat:@"Part %d",progress.number];
+    if(progress.number>0)[self.progressBar setProgress:(float)progress.fraction animated:YES];
     self.progressFinish.enabled=!host_benchmark_finish_requested();
 }
 - (void)finish:(UIButton *)button { button.enabled=NO; host_benchmark_request_finish(); }
@@ -681,13 +669,4 @@ void host_benchmark_overlay_show(int visible) {
         benchmark_overlay.rootViewController=[HaloBenchmarkOverlayController new];
         [benchmark_overlay makeKeyAndVisible]; break;
     }
-}
-
-void host_benchmark_overlay_presented(int presented) {
-    void (^update)(void)=^{
-        benchmark_overlay.rootViewController.view.hidden=presented!=0;
-        [(HaloBenchmarkOverlayController *)benchmark_overlay.rootViewController refreshProgress];
-    };
-    if(NSThread.isMainThread)update();
-    else dispatch_sync(dispatch_get_main_queue(),update);
 }

@@ -32,8 +32,6 @@ static int fatal_reports, arena_configures, arena_columns_override = 6;
 static struct benchmark_mp_arena_config configured_arena;
 static int combat_begins;
 int benchmark_mp_arena_begin_combat(void) { combat_begins++; return 1; }
-static int progress_phase;
-void host_benchmark_phase(int phase) { progress_phase = phase; }
 int host_benchmark_presented(int on) { (void)on; return 0; }
 void platform_clock_realtime(int on) { (void)on; }
 static char last_end_status[32];
@@ -298,13 +296,13 @@ int main(void) {
         observed_mp.actors[player].throttle = 0.88f;
     }
     frame(12000);
-    CHECK(window_opens == 0 && suite.state == suite_loading && progress_phase == 0);
+    CHECK(window_opens == 0 && suite.state == suite_loading);
     observed_mp.tick = 60;
     frame(13000);
-    CHECK(suite.state == suite_lead && window_opens == 0 && progress_phase == 1);
+    CHECK(suite.state == suite_lead && window_opens == 0);
     observed_mp.tick = 510;
     frame(28000);
-    CHECK(suite.state == suite_measuring && window_opens == 1 && progress_phase == 2);
+    CHECK(suite.state == suite_measuring && window_opens == 1);
     observed_mp.tick = 750;
     observed_mp.actors[0].spawned = 0;
     observed_mp.actors[0].deaths = 1;

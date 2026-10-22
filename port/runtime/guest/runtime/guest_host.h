@@ -69,7 +69,6 @@ lead=0 seconds=0 lines=540 anisotropy=4 shadow=256 lod=1"), after the pause
 between runs; 0 once the suite is over and its report written */
 /* 3 waits for an output switch; 4 asks the guest to restart with its committed output sizing. */
 int host_benchmark_next(char *text, unsigned int size);
-void host_benchmark_phase(int phase);
 /* the measured window opens (1) or closes (0); the render size it drew at */
 void host_benchmark_window(int open, int width, int height, int opened_tick);
 /* Bounded resolved graphics JSON, published only during an open measured window. */
