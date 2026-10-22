@@ -33,8 +33,11 @@ def main() -> None:
         if build in found:
             developer_dir = f"{found[build]}/Contents/Developer"
             print(f"Selected Xcode build {build}: {developer_dir}")
-            print(subprocess.run(["xcodebuild", "-version"], env={**os.environ, "DEVELOPER_DIR": developer_dir},
-                                 capture_output=True, text=True, check=False).stdout, end="")
+            try:
+                print(subprocess.run(["xcodebuild", "-version"], env={**os.environ, "DEVELOPER_DIR": developer_dir},
+                                     capture_output=True, text=True, check=False).stdout, end="")
+            except OSError as error:
+                print(f"xcodebuild -version unavailable: {error}")
             target = os.environ.get("GITHUB_ENV")
             if target:
                 with open(target, "a", encoding="utf-8") as file:
