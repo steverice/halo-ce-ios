@@ -1,3 +1,283 @@
+## visr-v0.4.0 (2026-10-22)
+
+### Summary
+
+- Server browser now shows Delta's games alongside the others, and you can join games running network versions 29 to 32. Games on other versions are shown but can't be joined.
+- Hosting a public game can optionally announce it to Delta's list. This is off by default; browsing the list is on.
+- Collision and lighting speed-ups are now on by default, so check for any odd hits, line-of-sight, or lighting behavior in busy games.
+- Memory pressure now frees textures that haven't been drawn recently. Watch for textures reloading briefly after a memory warning.
+- Texture idle time is now set per device, and the Apple TV models use a shorter window.
+- In single-player, you can set an enemy multiplier to make enemy squads larger.
+- Far clutter such as dead bodies and loose weapons can now be hidden or drawn at lower detail beyond a set distance.
+- Fixed: a client could halt when the host removed a flag-type weapon. It now deletes the weapon and keeps playing.
+
+### Full changelog
+
+### feat
+
+- **benchmark**: a catalog case's `settings` and the cost model take `debug.collision_candidates` — it joins `SIM_SETTINGS` in `benchmark_catalog.py` and the simulation names in `host_benchmark_catalog.m` as the fifth `sim_experiments` bit (after `debug.immediate_merge`), every run records it with the other simulation switches, and `visual-ranking.toml` grades it `invisible` for handheld and TV like them, since it changes how much work a ray does and not what it returns.
+- **benchmark**: show native progress in offscreen suites — `host_benchmark_progress` keeps each case and phase visible while the game renders offscreen
+- **net**: log network sync counts every 30 seconds in every network game — `net sync: 30 s window, corrections N (total N), rejected N (total N), resyncs N (total N), damage rejected N (total N)`, on hosts and clients alike, not only under `debug.network_test`: corrections are the existing `distributed_statistics.corrections` (now also counting a host's successful vehicle prediction reconciliation), rejected counts refused player and vehicle predictions, and resyncs counts state re-requests. Logging only: every counter sits beside the branch it counts, with no change to control flow, messages or game state. `tools/test_network_sync_log.py` checks the line and the window reset.
+- **benchmark**: reports say how many frames had a measured GPU time — `benchmark_metrics` counts `gpu_frames`, the report carries it next to `gpu_ms`, and a run's log says when some frames had none, so the OpenGL ES renderer's GPU 95th of 0.0 (it measures no GPU time) no longer reads as an idle GPU
+- **benchmark**: a run records the recorded tick its measured window opened at (`window_opened_tick`) and, for the frames that knew their split, the simulation's and the render's CPU time per frame (`frame_simulation`, `frame_render`) — `tools/frame_series.py` turns a whole-take replay's report into per-second CPU and GPU costs placed on the take's own time
+- **tools**: `mac_run.py compare --ignore-immediate-draws` — the `gpu_stats` summaries are compared without their immediate-draw counts, which `debug.immediate_merge` lowers on purpose; screenshots, shaders and every other field stay compared. `test_mac_run.py` covers that the flag hides the count and nothing else.
+- **render**: a cost run's clutter settings take the place of the configuration's in `render_objects.c` — `halo_benchmark_clutter_distance` and `halo_benchmark_clutter_lowest_lod` (from the device benchmark, negative when no run sets them) are read before `debug.clutter_distance`, `display.clutter_distance` and `debug.clutter_lowest_lod`.
+- **benchmark**: a cost run's case can set `display.clutter_distance` and `debug.clutter_lowest_lod` — both join `CASE_SETTINGS` and `case_settings`, travel to the guest as `knob_clutter` and `knob_clutter_lod`, are held by `halo_benchmark_clutter` in `d3d8_device.c` until the run or suite ends, and are recorded on every run next to the other cost settings.
+- **benchmark**: pick the most taxing campaign case for a cost suite from the benchmark sheet's rows — `gpu_times_from_sheet` averages the finished campaign runs' GPU time per case, and `cost_suite.py --sheet` passes it to `select_workloads`, which looks every case up in the catalog by ID.
+- **benchmark**: generate bounds-first cost-run suites — `cost_suite.py` reads the knob ladder from `cost-model/visual-ranking.toml`, writes a catalog of variant cases per workload with a minimum run (every knob cheapest, 540 lines) and a maximum run (every knob best, native lines), then `next_suite` drops workloads whose minimum misses 30 FPS or whose maximum meets the target and sweeps one knob at a time for the rest. Suites are chunked to the catalog's 16-case limit and launched with `debug.benchmark_suite = "cost:<ids>"`. `visual-ranking.toml` gains anti-aliasing, effect and mirror resolution ladders with assumed grades.
+- **benchmark**: a cost run applies its case's anti-aliasing, effect, mirror and render-scale settings and records every setting it ran with — the `cost:` suite mode is the unified pass over the named cases with no presented checks. `host_benchmark_next` passes the case's values to the guest, `benchmark_suite.c` applies them through `halo_benchmark_knobs` in `d3d8_device.c` from the next frame and clears them when a run or the suite ends, and `write_run` records `display.anti_aliasing`, `display.effect_resolution`, `display.mirror_resolution`, `display.render_scale` and the three simulation switches on every run, taking the configuration's value where the case sets none, along with the `workload` a variant case belongs to. `runs_from_report` files a variant's runs under its workload and drops `sim_experiments`.
+- **benchmark**: a catalog case's `settings` can carry display values, and a variant case replays another case with its own settings — `settings` also takes `display.render_height`, `display.anisotropic_filtering`, `display.shadow_map_size`, `display.model_lod`, `display.anti_aliasing`, `display.effect_resolution`, `display.mirror_resolution` and `display.render_scale`, validated by one table in `benchmark_catalog.py` and by `case_settings` in `host_benchmark_catalog.m`. A case of the form `{"variant_of", "order", "settings"}` takes its fields, recording and route from the named case, so one workload can run many times in a catalog that otherwise allows one recording per level. `benchmark_plan_next` runs a unified-pass case at the render height, filtering, shadow size and model detail its settings name (lines 0 meaning the display's own), and `benchmark_plan_signature` covers them.
+- **benchmark**: a catalog case's `settings` turns on the experimental simulation changes for its run — `debug.collision_type_filter`, `debug.sphere_query_type_filter` and `debug.static_light_relink`, each a boolean, validated by `benchmark_catalog.py` and `host_benchmark_catalog.m`, carried to the guest as `sim_experiments` bits that `sim_experiment_override` ORs with the settings for the run and clears when the suite ends, and recorded in the run's `settings.sim_experiments`. `test_benchmark_catalog.py` covers accepted and rejected settings.
+- **settings**: `debug.collision_type_filter`, `debug.sphere_query_type_filter` and `debug.static_light_relink` — three experimental, default-off settings for simulation speed-ups that change how much work a query does and not what it returns. `sim_experiments.c` reads them again at the start of each game tick, so one can be flipped while the game runs, and each has its `HALO_` environment override, schema entry and README row marked experimental.
+- **render**: leave far clutter out of the draw list — `display.clutter_distance` (world units, 0 off, 0 to 200) drops dead bipeds, loose weapons and equipment, and garbage beyond that distance from the frame's camera in `find_rendered_objects`, and `debug.clutter_lowest_lod` draws the same objects at their lowest model level, both render-only. A stereo frame measures from the center camera (`render_clutter_camera`) so both eyes agree. `debug.clutter_distance` overrides the profile value; the profile key accepts 0 to 200, and the `visual-ranking.toml` ladder grades 80, 40 and 20 as assumed.
+- **benchmark**: cap an offscreen case's measured window at 60 s of wall time — on a device slower than the game's tick rate an offscreen window ran longer than real time, so `host_benchmark_next`'s control query now answers 6 once a run's window has had `OFFSCREEN_WINDOW_WALL_SECONDS` of wall time while frames are offscreen, and the suite ends the window there as if its ticks were done. Each run in the report records `measured_ticks` and `capped`. Presented runs and fast devices measure their full window.
+- **tools**: `heavy_window.py` chooses a measured window from a take's per-second cost — the heaviest stretch with no rewind in or just after it, ending at or before the take's last controller state, and a separate clean window that starts earlier wins when its cost is within 10% of the heaviest
+- **tools**: open profile pull requests with before and after screenshots — `profile_pr.py` fits a benchmark report, runs `profile_propose`, writes the changed profile with an evidence entry per setting, checks it with `profile_check.py`, renders before and after pictures through a `runner` job, signs the tester shards with `data_pack.py` and opens the pull request with `gh`. `--dry-run` stops after writing the body. A proposal that is a frame-rate target alone, a choice or not recommended opens nothing.
+- **benchmark**: stagger the synthetic bots' trigger phase by player index — bot N now fires where `(tick + N * 37) % 90 < 24` instead of every bot firing on the same ticks, so deaths no longer arrive in one wave and `corpse` work stops stacking. The offset comes from the bot's index, never from the game's random seed, so runs stay deterministic and the seed sequence is unchanged. Reports carry `simulation.bot_workload` 3 (`NETWORK_TEST_BOT_WORKLOAD`); reports without the key, or with 2, are from the era when every bot fired together, and 64- and 128-player case numbers from the two eras are not comparable. `test_mp_synthetic_input.py` checks each bot against its own phase.
+- **audio**: log how long the game takes to mix the audio callback's sound — every 30 seconds `audio_callback_timing` logs the callbacks, how many took longer to mix than the sound they made (a mix that falls behind the device runs it dry), and the slowest, so a run's log shows whether the mixer keeps up
+- **benchmark**: run the tester suite offscreen, time-compressed, with presented reality checks — `full-unified` now draws its cases offscreen on the fixed timestep (on by default in tester builds, except on Vision Pro), then plays its first campaign and first multiplayer case again as presented stage `P` runs with at most a 45 s window. A presented run's lead stays offscreen; `platform_clock_realtime` takes the game's clock onto real time 150 ticks before the window and back afterward without a jump, while `host_benchmark_presented` turns the renderer's display pacing on and off. The load barrier's worker accounting now follows the launch's decision (`platform_fixed_timestep_launch`) so a switch never leaves a worker counted busy. A progress screen replaces the game view while frames are offscreen: the case's name, part n of N, a progress bar and Finish. Each run in the report says `presented`, `reality_check`, `timing_basis` and `wall_seconds`. A tester build returns to its menu in real time after the suite; `full-unified:CASES` is the unified pass over the named cases.
+- **textures**: drop textures not drawn lately under memory pressure — a `UIApplicationDidReceiveMemoryWarningNotification` or a warning or critical `DISPATCH_SOURCE_TYPE_MEMORYPRESSURE` event (`host_memory_pressure.m`) sets a flag, and `xgpu_texture_cache_begin_frame` on the game thread drops every cached texture not drawn in the last second or two, then logs the textures and MB freed with `os_proc_available_memory()` before and after. `notifyutil -p visr.simulate-memory-pressure` triggers it on the Mac and in the simulator. Textures load again on demand, as after the idle sweep; simulation and replays are not touched. `test_texture_idle.py` covers that only stale textures go and that a request is consumed once.
+- **benchmark**: note `cinematic_done` where a script leaves its skippable cinematic — a skip reverts the game, so a skipped cinematic has a `cinematic_start` and no `cinematic_end`, while `cinematic_skip_stop` is reached either way; anchors may name it
+- **benchmark**: a catalog case can anchor its window on a recorded event — `anchor` is `cinematic_end:2` (the nth) or `cinematic_end:script_name` (the first one that script made), the case's `lead` counts seconds after it, and `benchmark_scene_from_route`, the catalog check, the pack check and `tools/benchmark_catalog.py` resolve it from the route's `events` line; events also carry the calling script's name
+- **benchmark**: the recorder notes each cinematic's start and end, each checkpoint and each structure BSP switch in recorded ticks — a take's `.route` gets `events = cinematic_end:2:3412,...`, numbered per kind in order of play, and every run logs `input_replay: event ...`; bookkeeping only, for anchoring a window on an event rather than on a time
+- **textures**: make the texture cache's idle time a device profile value in seconds — `display.texture_idle_seconds` (10 to 600, 60 by default) replaces the fixed 30 seconds, with `debug.texture_idle_seconds` to tune it live, so no device drops a texture sooner than the 1800-frame window did at its frame rate. The Apple TV HD and the Apple TV 4K (1st generation) set 30 seconds for their 2 GB and 3 GB. `test_texture_idle.py` covers the profile value, the debug override and the longest window, `profile_probe.c` the accepted range.
+- **net**: log each announcement and its answer — `announce_request` writes the path, the form without its invite and the status the list gave, one line a minute while a game is listed
+- **net**: join Delta's games of versions 29 to 32 — `halo_network_joinable` asks `halo_network_version_joinable` instead of comparing with this build's version, the line below the rows names the range, and `delta_probe.c` checks 28, 29, 32 and 33
+- **net**: show Delta's games in the server browser and list the game hosted there — `p2p_delta.c` asks `/v1/games` every 15 seconds while the browser is open (`network.delta_browse`) and hands the games to `p2p_lobby.c`, which shows them after the brokers' with their network version, and `halo_network_joinable` decides which can be joined (the rest show `V32` and the version in the line below the rows, and Join refuses them); with `network.delta_announce` the public game hosted without a password is announced every minute, withdrawn when it ends, goes private or changes invite, and at exit; `tools/p2p_lobby_check.c` checks the games shown and the game announced
+- **net**: add `network.delta_browse`, `network.delta_announce` and `network.delta_url` — browsing the Delta list sends nothing but an anonymous GET and is on, announcing a hosted game sends its invite, name and map to a server run by others and is off, and the address can be changed or emptied to turn both off
+- **windows**: answer `posix_https_request` with WinHTTP in `win32_update.c` — TLS 1.2 and 1.3 against Windows's certificate store, a redirect is not followed, and a body larger than the caller's buffer is a failure
+- **ios**: answer `posix_https_request` with `NSURLSession` in `host_https.m` — the system checks the certificate and the host name, a redirect is not followed, a non-200 answer is cancelled before its body, and a body larger than the caller's buffer is a failure
+- **net**: add `posix_https_request` for small HTTPS GETs and form POSTs — the Linux build answers it from `posix_update.c` (Mbed TLS, the system's certificate authorities, the host name checked, no redirects, the body kept in memory up to the caller's size) and gives each request its own connection instead of the updater's shared one; an `http://` address of this machine alone is allowed so `tools/test_delta.py` can test it against a stand-in server
+- **net**: read the Delta game list and write its announcement — `delta_list.c` reads `/v1/games` as untrusted JSON (bounded depth, size and count, text kept printable ASCII, locked, unverified, co-op and short-invite games left out), writes the `/v1/announce` and `/v1/withdraw` forms and decides when announcing goes on; `halo_network_joinable` is the one place that says which network versions this build joins; `delta_probe.c` checks them
+- **input**: `debug.profile_controls` gives a level started with `map_name` the controls of the last-used player profile — look sensitivity, inverted look and the button layout, which it otherwise lacks because no profile is active; the profile is copied without its index so `player_profile_save` never writes it
+- **ai**: log a line for each squad that `debug.enemy_multiplier` grows, with the extra enemies it placed
+- **benchmark**: takes and benchmark catalog cases carry `enemy_multiplier` — the automatic recorder notes it in a take's `.route` (an explicit `debug.input_record` writes a `NAME.route` with it), `route_load` applies the recorded value to the replay and warns when the setting differs, and the catalog, `benchmark_scene_from_route`, the recording pack check and the suite text pass it on; `tools/replay_check.py` takes `--enemy-multiplier`
+- **ai**: `debug.enemy_multiplier` gives a single-player campaign the co-op extra-enemies system at a fixed multiplier — each squad of the player's enemies is that many times as large (1.0 off, fractions rounded in thousandths, up to `COOP_ENEMIES_MAXIMUM_GROWTH`), placed around its starting locations by `coop_enemies_spread_position`, and the dropship riders kept without a seat are let out by `coop_enemies_solo_tick`
+- **benchmark**: run a suite from its launch environment, leaving `config.toml`, the saves and the player profile alone — with `HALO_BENCHMARK_SUITE` set, `config_write_file` writes nothing, the host passes every `HALO_` variable on to the game and reads its own settings from them, saves go to `benchmark/run/save`, `init.txt` comes from `benchmark/run/`, and cloud saves and the Settings texture switch stay off
+- **network**: network version 32
+- **network**: list and join internet and local network hosts of network version 29 to 32
+- **network**: take a client's ready, identity and hit reports from its stream alone and drop datagrams stamped far from the sender's latest tick
+- **network**: join hosts of network version 29 to 32 and gate by the host's version
+- **benchmark**: run an unsigned local catalog in builds that carry routes
+- **benchmark**: time D3D8 translation within the render
+- **benchmark**: add an offscreen uncapped benchmark mode
+- **benchmark**: time simulation and render CPU separately
+- **input**: cycle quality knobs live for visual comparison
+- **tools**: propose least-visible profile changes from the cost model
+- **tools**: predict cost fits for untested devices from device facts
+- **tools**: fit a plain-data device cost model from benchmark reports
+- **input**: gate the Sense tuning chord behind `debug.sense_tuning_chord` — Back with the tuning buttons changed laser, aim assist, steadying, pitch offset, origin raise, reticle easing, arms and gun smoothing and zeroed both sticks in every build; it now runs only with the setting on (default off), and otherwise Back is ordinary game input. The schema and README tables are regenerated with `tools/settings_schema.py`.
+- **benchmark**: rotate bot loadouts through distinct weapon slots
+- **visionos**: add controller action ownership — ordinary peer facing keeps headset look local
+- **visionos**: present tracked gun aim and projectiles through stereo HUD
+- **visionos**: add tracked controller transport — `host_spatial_sample` and `host_spatial_feedback` share a fixed ABI
+- **stereo**: give a10's cryo pod its own look fade, wider and never black — past a limited seat's aim the view fades to black from 5 to 45 degrees, and in the pod, before the player has moved at all, the black read as the game having stopped. `halo_seat_cryo_pod` tells the pod by its unit's tag, and there `seat_look_fade_update` runs the fade from `display.pod_look_fade_start` (15 degrees past the limit) to `display.pod_look_fade_end` (70) and `halo_stereo_seat_look_fade` stops the dim at `display.pod_look_fade_dim` (0.85) while the blur still reaches full. A Warthog's passenger seat and the Pelican's bench keep `display.seat_look_fade_start` and `_black` as they were. `stereo_head_probe` checks the pod's angles and its darkest
+- **stereo**: fade the view past a seat's aim limit — display.seat_look_fade veils the eyes, the HUD and the crosshair toward black as the head turns past the limit, while the world keeps following the head
+- **benchmark**: report applied graphics overrides and observed renderer state — `graphics` distinguishes persistent settings from measured texture selections
+- **streamer**: hide offensive words in displayed text when enabled
+- **macos**: add a native `AppKit` host
+
+### fix
+
+- **release**: keep `tools/xcode_select.py` from failing where `xcodebuild` is absent
+- **net**: let a client delete a flag-type weapon on the host's word instead of halting
+- **shaders**: add 1,499 more recorded shader records from multiplayer play — cover new compilation requests
+- **shaders**: add 7,168 recorded shader records from multiplayer and campaign play to the warm-up lists — cover recorded compilation requests
+- **benchmark**: match Foundation catalog bytes — `cost_suite.py` emits canonical numbers and bounded case IDs
+- **metal**: one bad command-buffer timestamp can no longer zero the GPU time for the rest of a launch — `gpu_busy_add` kept the union's end in `gpu_busy_until`, so one span ending in the future would count every later span as zero; it now refuses spans with no times, an end after the completion handler that reports it, or a length over 10 s, logs the first few with the host clock, and frames whose spans were all refused reach the benchmark as unmeasured
+- **benchmark**: define `benchmark_window_tick` ahead of the slices of `benchmark_suite.c` the renderer-observation tests compile
+- **benchmark**: keep `benchmark_window_tick` out of the slice of `benchmark_suite.c` that `test_benchmark_graphics_state.py` compiles
+- **benchmark**: a run records every frame's tick count (`frame_ticks`, ticks plus one, 0 where unknown) so `tools/frame_series.py` places each frame on the replay's recorded time through skips and loads that draw no frames; the frames' own wall time ran 28 s short of the recorded time on a take with two skipped cutscenes
+- **benchmark**: `window_opened_tick` is the recorded time the first counted frame came at — a window that opens again as a cutscene gives way to the game keeps the first tick of the frames it counts, and a recording's window reports the recorded time, not the tick the suite opened it at
+- **benchmark**: `debug.benchmark_suite` accepts the `cost:` mode — `benchmark_suite.c` rejected it as an unknown value and the app idled at its menu with no suite.
+- **benchmark**: judge a capped multiplayer window on nine in ten players — a window that `OFFSCREEN_WINDOW_WALL_SECONDS` cut short was failed because some of 128 players had not yet moved five units or fired, so `mp_evidence_note` now asks nine in ten of them to move and fire in a capped window and notes that the cap cut it. Full windows keep the every-player rule.
+- **benchmark**: a recording's lead-in gets the load limit plus one and a half times its lead — a replay at 30 fps with a 446 s lead failed with "the lead-in never ended" on a take with three rewinds and a dozen checkpoint saves; `benchmark_startup_probe` covers the limit
+- **tools**: report the resolution's effect and show no cross-side effect for a one-sided knob — `_effects` skipped `display.render_lines`, so the pull request table said none, and a noisy fitted CPU factor on `display.anisotropic_filtering` read as a CPU saving.
+- **tools**: publish profile pictures to an assets branch and render on a private data copy — the pictures went into the pull request's commit, which would keep them in `main`'s history, and the runner job shared its host's data folder with other jobs. The pictures now go to the orphan branch `profile-pr-assets` under a folder named for their content, and the job runs with `HALO_NATIVE_DATA` set to a `cp -cR` copy of the maps.
+- **tools**: keep a cut on the side that is the bottleneck — `_greedy` took `display.shadow_map_size` and `display.anisotropic_filtering` to relieve a CPU-bound device because their fitted CPU factors were noise. `GPU_SIDE` and `CPU_SIDE` now limit which knobs may relieve each side, and tests cover a lower target that needs no change and one that still needs cuts.
+- **tools**: take a profile's platform from its device and let a dry run skip the pictures — a report from a Mac made `profile_pr.py` write `platform = "mac"` into an iPhone profile.
+- **tools**: give profile screenshot runs a longer time limit — a cold Metal shader cache kept the first run past the runner's default of the exit time plus 120 seconds.
+- **tools**: render profile screenshots with the Metal renderer — the native runner defaults to GL, which is not what the device runs.
+- **tools**: read the chip family from a report's chip name — `family_of` matched only at the start of the text, so `Apple M6` had no family and `predicted_fit` raised. `chip-speeds.toml` gains an assumed `M6` entry at 1.25x the `M5` speed, the same placeholder rule as the other chips.
+- **shaders**: add 50 recorded Chillout and Sidewinder pipelines to the warm-up lists — 49 `chillout` and 1 `sidewinder` entries from the iPad13,9 tester run in report `PHYKW8MV` (map-attributed intervals only), plus the one `ps` line each pipeline needed from the other maps' bundled lists; existing lines are untouched and each pixel hash matches its key bytes
+- **replay**: a replay plays its sounds — the mixer and the audio output run as in live play, so a benchmark replay measures the real sound cost and a watched replay has sound, while the simulation stays clear of them as before: a unit still speaks a scripted sound whether or not the mixer started it (`input_replay_sim_isolated`), the sounds still draw from `sound_random_seed`, and in a replay the mixer moves no unit's mouth (`input_replay_mixer_detached`, which replaces `input_replay_sound_silent`), the one thing it set that the simulation reads
+- **benchmark**: advance the fixed-timestep clock on main loop passes that present nothing — with `debug.fixed_timestep` (and so `debug.benchmark_offscreen`) the game's clock moved only in `D3DDevice_Present`, but `main_loop` draws nothing in a multiplayer game until `game_time_get()` reaches 3 ticks, and ticks come only from the clock: the game spun in `network_game_server_idle` after "all machines have successfully loaded" and never ticked. `platform_clock_unpresented_frame` now moves the clock one frame for such a pass.
+- **textures**: reach the host's memory warning through guest imports — `xbox_textures.c` is guest code, so it polls `host_memory_pressure_poll` and `host_memory_available_megabytes` each frame instead of the host calling into it
+- **textures**: declare `host_memory_pressure_start` outside the render validation block in `host_main.m`
+- **net**: leave a listed game alone when its setup reads as not final — `delta_announce_step` no longer withdraws a listed game for a moment of game type 0 (it withdraws only when the game is gone or the invite changes), and `delta_probe.c` checks that Derelict (`carousel`) is announced like any other map and that type 0, which is co-op or a game not yet set up, never is
+- **net**: announce a game only once its setup is final — a game still being set up reports the default map and game type 0, which the live list showed as `carousel` before the real map; `delta_announce_ready` wants a name, a map and a game type from 1 to 6, `delta_announce_step` treats any other as no game, and `delta_probe.c` checks it
+- **ios**: do not send the device's languages to Delta's list — `NSURLSession` added `Accept-Language` with the locale to every request; `host_https.m` sets it empty
+- **net**: show a host once from Delta's list and keep its failures off the brokers' listing — `p2p_lobby_delta_games` drops a second entry with the same identifier, and a join of a Delta game that cannot be reached no longer calls `p2p_lobby_mark_failed`, since a Delta entry can carry any host's key hash
+- **net**: send nothing to Delta's list with internet play off, and withdraw an announcement still under way at exit — `withdraw` skips its request while `network.online` is off; announcements and withdrawals wait 4 seconds a step so the 6-second wait at exit usually sees one end, and the invite being announced (`pending`) is withdrawn even when it does not; `delta_worker_check.c` checks the first
+- **net**: refuse a Delta invite that is too long — `read_game` cut it to 64 characters and accepted what was left; `delta_probe.c` checks a 65-digit one
+- **updater**: keep every updater hop on https — `parse_url` took `http://` for this machine's own address on any download, so a redirect to `http://127.0.0.1` would have been fetched in plaintext; plain http now needs a memory download from `posix_https_request` and `HALO_TEST_ALLOW_LOCAL_HTTP` in the environment, which only `tools/test_delta.py` sets
+- **tls**: lock Mbed TLS's shared state where pthreads are — the Delta worker, WebRTC's DTLS on the p2p thread and the updater can run handshakes at once, and without `MBEDTLS_THREADING_C` the PSA random generator and key slots were unsynchronized
+- **benchmark**: write a whole `enemy_multiplier` as an integer in the catalog — the app's canonical JSON drops the fraction, so `2.0` made the catalog noncanonical; `load_catalog` now rejects it too
+- **ai**: declare `config_real` in `coop_enemies.c` — without it the call returned an `int` and `debug.enemy_multiplier` read as garbage, so the multiplier never applied
+- **network**: start the stamp windows over when the clock is set, and let a stream stamp move them
+- **network**: do not list a Bonjour host whose TXT version is past 16 bits
+- **updater**: log the gamescope update notice without the removed version fields — the revert of `cccab36f5` restored `updater_latest_version` and `HALO_VERSION`, which no longer exist
+- **xiso**: include `<stdlib.h>` before SDL in the Linux reader — SDL's header defines `alloca` as `__builtin_alloca`, which then conflicts with musl's `alloca.h` in the iOS guest build
+- **benchmark**: report D3D8 translation time in nanoseconds
+- **sound**: end a map's sound fade under the fixed timestep
+- **benchmark**: quit after an offscreen suite instead of returning to the menu
+- **render**: anisotropy no longer sticks at the benchmark's value
+- **profiles**: remove the duplicate `profiles/cost/` left by the move to `cost-model/`
+- **profiles**: keep the cost model out of `profiles/` — `host_profile_validate_folder` refused the pack once `profiles/cost/` existed, failing `profile-pack-probe`; the model's data now lives in `cost-model/`
+- **aim**: one tracking-loss grace for local and network play, set by the device profile
+- **network**: ease the gun's drawing blend with the network aim fallback
+- **network**: aim with the head and stick after 2 seconds of lost hand tracking
+- **network**: turn the throttle with the hand-aimed facing so walking follows the head
+- **aim**: aim with the head and stick in network play until a hand has been tracked
+- **windows**: link `stb_vorbis.c` — `custom_edition_sounds.c` calls it and the Windows build never compiled it
+- **windows**: build `gpu_gl.c` and `gl_functions.c` against the Windows SDK and compile Mbed TLS for `posix_dtls.c` — the Xbox SDK's `windef.h` shadowed the Windows one that SDL's `SDL_opengl.h` pulls in through `windows.h` (unknown type `POINT`), and the Windows build had no Mbed TLS for the DTLS unit
+- **network**: ignore a remote player's `action.pad` on the host
+- **visionos**: compile Sense tracking only with the visionOS 27 SDK
+- **ci**: route native stereo probes through `ios_test.py`
+- **visionos**: exclude guest from native Linux `memory_watch_begin_frame` hook
+- **render**: keep widescreen cinematic video margins opaque
+- **visionos**: guard `TheaterHands` access for older deployment targets
+- **visionos**: keep cached hand pose out of network passenger drawing
+- **visionos**: show passenger stick aim without borrowing vehicle aim
+- **visionos**: limit network reticles and queries to locally owned aim
+- **visionos**: align scoped reticles with the live zoom plane and preserve hidden aim
+- **visionos**: keep passenger head view seat-relative and align scoped ordinary aim
+- **visionos**: turn the co-op dead camera with headset motion — `third_person_begin` keeps spectator look local
+- **coop**: preserve corpse target through scripted cameras
+- **camera**: preserve the rider exception outside corpse view — keep scripted camera behavior
+- **camera**: ignore the previous teammate during corpse view — hide stale HUD and borrowed-camera targets
+- **camera**: show the body before network co-op spectating — keep the original death view for 92 game ticks
+- **linux**: prefer X11 when NVIDIA Wayland bridge is unavailable
+- **linux**: preserve foreign signal dispositions with bounded crash reports
+- **linux**: report crashes from startup and restore signal handlers each frame
+- **tools**: build text-filter data checks for the host ABI
+- **renderer**: keep `DOT_ZW` depth out of ES visibility counters
+- **renderer**: apply `DOT_ZW` fragment depth in GL and Metal — preserve z-sprite shape
+- **benchmark**: keep renderer observations out of `graphics.changed` — only setting and context changes invalidate a run
+- **contrails**: release buffers on unsupported render types
+- **streamer**: decode four-byte UTF-8 atomically in `text_filter_utf8` — prevent false matches and orphan bytes
+- **apple**: support fixed low-pool guest mappings for Custom Edition maps
+- **updater**: log the VISR build number under gamescope
+- **menus**: keep wheel scrolling on vertical rows after focus enters a button bar — `ui_mouse_wheel_widget` prefers the nearest vertical list
+- **macos**: title the native game window VISR
+- **macos**: adapt the native target to shared host contracts
+- **macos**: preserve the signed shader feed in native metadata
+- **macos**: seal the native bundle before reporting success — `build_native` left resources outside its signature
+- **macos**: start the native host in a resizable window
+- **macos**: provide the suspended-time lifecycle adapter
+
+### perf
+
+- **collision**: `debug.collision_candidates` is on by default — the per-cluster lists of the objects a dead-body or line-of-sight ray can hit give the same objects in the same order as walking every object, and validate with zero seed misses on a50, b30 and d40 and zero mismatches against the full walk in multiplayer and co-op (see the research note). The setting's text drops "experimental", `false` walks every object, and run reports record the switch with its default.
+- **collision**: with `debug.collision_candidates`, a ray that tests no bipeds, items or projectiles walks a per-cluster list of only the other objects — the dead-body relaxation and line-of-sight rays tested vehicles, scenery and machines but stepped past every body and weapon in each cluster they crossed, and `debug.collision_type_filter` still paid a list step and a header load for each one it skipped. The collideable partition keeps a second list per cluster (`cluster_partition_port_enable_candidates`) outside the game state: a reference joins its head when it joins the head of its cluster's list in `cluster_partition_reconnect` and leaves it when `cluster_partition_port_remove` takes it out, so each candidate list is its cluster's list with the other objects removed, in the same order. The lists are dropped with the references' places in `cluster_partition_port_forget` and rebuilt from the clusters' lists when next walked. `collision_test_vector` walks them only for rays whose type flags hold none of `OBJECT_MASK_COLLISION_NONCANDIDATES` and applies the type filter's test, so the objects it reaches, and their order, are the ones the type filter reaches. Off by default; read each tick through `sim_experiments.c`.
+- **sim**: turn the collision type filter, sphere query type filter and static light relink on by default — exercise the query optimizations in tester builds
+- **benchmark**: simulate an offscreen lead-in without drawing until its last ten seconds — a recording's lead-in can run for minutes before its measured window, so while a run's frames are offscreen `main_loop` now skips `main_game_render` until `DRAWN_LEAD_TICKS` before the window. Each frame is still presented, so the suite, the replay and the clock advance as before, and the last ten seconds draw as usual so textures, shaders and caches are warm when measuring starts. The host tells the suite which runs are offscreen. Drawing does not feed the simulation: a50, c20 and d40 replays follow identical routes offscreen and presented.
+- **renderer**: with `debug.immediate_merge`, consecutive immediate-mode draws in the same state are made as one draw — `D3DDevice_End` holds the draw (fans, quad lists and triangle lists, as one triangle list indexed from the first vertex) and `halo_immediate_flush` submits it before any other `gpu_` call (the guest's `guest_gpu.c` wrappers, under `HALO_IMMEDIATE_BATCH`), before the vertex constants or the uniforms change, and when the next draw's packet differs. A catalog case can turn it on through `settings`, and `visual-ranking.toml` grades it `invisible`.
+- **lights**: with `debug.static_light_relink`, an attached light that has not moved keeps its place in the map's light lists — `object_connect_lights` disconnected and reconnected every attached light every tick, which found the clusters of the same sphere again through `structure_clusters_in_sphere` and a node allocation. `light_relink_to_map` computes the light's pose, bounding sphere and location as before and skips the relink when all three equal what it was last linked with, in the same game state and with the same cluster reference; any other disconnect drops the record. The light's position and direction are still updated; only its order within a cluster's list can differ. Off by default.
+- **objects**: with `debug.sphere_query_type_filter`, `objects_in_sphere` skips an object of a type the caller did not ask for before collecting it — every player examined every object in its clusters each tick (`player_examine_nearby_objects`, 2.6 times the cost at twice the players) and filtered by type afterward. `objects_in_clusters_by_indices_of_types` passes over the others on their header's type; the objects kept come in the same order, and the temporary list holds as many objects as a map can, so none is cut off. Off by default.
+- **collision**: with `debug.collision_type_filter`, skip an object whose type a ray or sphere query does not test before marking it — `collision_test_vector` visited and marked every object in the clusters a ray crosses, then `object_test_vector` rejected the ones whose type bit the ray's flags lack, children included, so the dead-body relaxation rays (vehicles, scenery and machines only) paid for every biped and item in the arena. The filter reads the object header's type instead, which changes no result because a skipped object was never going to be tested; `collision_get_features_in_sphere` skips only objects that also have no children, which it tests whatever their parent's type. Off by default.
+- **collision**: compile the collision usage clock reads and call counters out of every build but `configure.py --collision-log` — `collision_log_start_time`, `collision_log_end_time` and `collision_log_usage` read the host clock around each object and structure pass of every `collision_test_vector`, and fed only the on-screen collision log (`collision_log_render` and `collision_log_display`), which nothing in the simulation reads. Debug and profiling builds define `HALO_COLLISION_LOG` (`tools/ios_build.py --collision-log` for the iOS guest) and keep the overlay working; other builds turn the three calls into no-ops, and `collision_log_begin_period`, `collision_log_enable` and the collision user stack stay.
+- **audio**: give each voice its own lock, so the game's thread waits at most for one voice to be mixed — the audio callback held `mixer_lock` while it mixed every voice, and each `stream_process`, setter, `GetStatus` and completion on the game's thread waited for the whole mix: in a 128-player game more than half of `sound_render` was that wait. The mixer now holds a voice's lock only while it mixes that voice, `mixer_lock` guards the lists of voices and buffers (the game's thread, the only one that changes them, completes packets without it), and the listener has a lock of its own, copied at the start of each mix
+- **screenshots**: write screenshots as lossless PNG instead of 32-bit BMP — `png_write.h` filters rows and compresses them with fixed-Huffman LZ77, since the guest has only zlib's inflate. `d3d8_device.c` and `host_render_replay.c` use it, and `mac_run.py` (`compare`) and `render_replay.py` read both PNG and BMP, so older baselines still compare.
+
+### refactor
+
+- **xiso**: read disc images with a reader written from the published format — `port/runtime/xiso.c` and `port/linux/src/xiso.c` are new code that follows the public XDVDFS descriptions, with bounded tree walks, checked extents and refused unsafe names, and `xiso_list` plus a `list` command in `xiso_probe.c` enumerate a whole image for tests.
+- **comments**: state the facts in comments added since `15d4491e8` — drop references to numbered rulings, plan tasks and dated headset sessions from `controller_aim_game.c`, `controller_aim.c`, `controller_aim.h`, `projectile_offset.c`, `halo_spatial.h`, `stereo.c`, `host_spatial_input.h` and two probe tests, keeping the measured values and behavior they describe.
+
+### build
+
+- **data**: stage a recordings feed signed for guest `5f549a68caefb0ee` — a development build reads `docs/site/packs/staging/recordings-5f549a68caefb0ee.json`; `packs/tester/` is untouched
+- **profiles**: add iPad7,2 sequence 2 tester shard
+
+### revert
+
+- **benchmark**: show native progress in offscreen suites — an offscreen `cost:` case on a device showed the cooldown screen, then a black screen with no case or phase text for the whole run
+- `cccab36f5` (log the VISR build number under gamescope) — its two-line log change matched a later AGPL-licensed upstream commit, so it is removed rather than kept
+
+### docs
+
+- **profiles**: add the target ladder — a profile aims for the highest frame rate, render-line and enemy-multiplier tier its device holds with 95% of frames within 90% of the budget, lowering costly settings before dropping a tier
+- **net**: list exactly what an announcement and a browse send to Delta's list — the game type is its number, `delta=0` is sent, the request carries no language, and a withdrawal waits for `network.online`
+- **net**: describe Delta's game list in the port README — what the Server Browser shows of it, what browsing and announcing send and when, and what of Delta is not used
+- **contributing**: accept contributions under Apache-2.0 and never copy or read GPL and AGPL code — features seen elsewhere are reimplemented from a written description of their behavior by a different person or agent, and network compatibility comes from protocol documentation and observed traffic
+- **license**: license VISR under Apache-2.0 — the whole repository, including the code that originated in CC0 decompilation projects, is Apache-2.0 from this change on; `NOTICE.md` credits those projects, notes that VISR's earlier commits were published under CC0 1.0 (`LICENSES/CC0-1.0.txt`), and states that Halo and its content are Microsoft's property; the apps bundle `LICENSE` and `NOTICE.md`
+- **roadmap**: describe LAN discovery over Bonjour — relay the game's discovery broadcasts to resolved peers instead of needing the multicast entitlement
+- **notice**: drop the `extract-xiso` notice and its license bundling — the importers no longer derive from it, so `NOTICE.md`, `README.md`, `port/ios/THIRD_PARTY.md`, `port/third_party/extract-xiso/` and the build steps that copied its license into apps and releases are removed.
+- **profiles**: fill device facts from Apple specifications — `gpu_cores`, `native_width`, `native_height` and `max_refresh_hz` in `device-facts.csv` now come from Apple's technical specification pages, with the GPU core counts of models whose page omits them taken from the Wikipedia Apple silicon table, and each URL appended to the row's `source`. Cells that no source states stay blank.
+- **license**: state the current CC0 dedication precisely
+
+### test
+
+- **sim**: cover `debug.collision_candidates` as the fifth simulation setting — `test_sim_experiments.py` checks its default, the five-bit override and effective-value cases and the run records for every switch, and `record_applied_settings` declares its defaults once.
+- **lights**: give the light-storage link probe the `boolean` type — `cluster_partitions.h` now names it for the collision candidate lists, and the probe includes the header without the game's types.
+- **shaders**: oversize the aggregate-limit case past 16 MiB — `shader_download_probe.m` declared three 4 MiB maps, which the 16 MiB total now admits
+- **stereo**: let the render's latch check see the offscreen lead-in guard — `tools/ios_test.py` required `main_game_render` to follow `render_interpolation_frame_begin` directly, so it now also accepts the comment and the `benchmark_suite_skips_drawing` guard between them.
+- **cost-model**: `debug.immediate_merge` is a catalog setting and a ladder knob for the cost suites — `SIM_SETTINGS` and the host catalog reader carry it, `test_cost_suite.py` checks both classes' ladders offer it `off` and `on` and that the bounds and one-at-a-time suites vary it, and `test_sim_experiments.py` follows the catalog's `SIM_SETTINGS`.
+- **renderer**: `immediate_batch.h` holds `debug.immediate_merge`'s triangle arithmetic and vertex limit, with `immediate_batch_probe.c` checking each primitive against the unmerged draw and a stream of many large fans around the 16000-vertex limit, and `test_sim_experiments.py` tying each `SIM_EXPERIMENT_*` constant, the catalog's settings and the host catalog reader to the names list of `sim_experiments.c`.
+- **net**: run the Delta thread against a stand-in server — `delta_worker_check.c` builds `p2p_delta.c` with the real request layer and checks browsing, an announcement's fields, a changed invite (withdrawn, then announced), a game that ends and the withdrawal at exit
+- **network**: declare the co-op friendly-fire stubs before the extracted metadata code — `test_local_tutorial_metadata_is_consumed_before_simulation_and_never_sent` failed to compile once the co-op own friendly fire change made the extracted input code call `network_coop_own_friendly_fire` and `network_coop_note_player_friendly_fire`, which the harness never declared, and `network_coop_active`, which it declared only after that code
+- **network**: size the oversized TXT version record as the bytes it has
+- **benchmark**: include `anisotropy_in_force` in the sampler observation test
+- **benchmark**: trace actual post-switch weapon projectiles
+- **contrails**: include the drawn-point helper in cleanup probes
+- **stereo**: set the HUD plane in the screen probe
+- **replay**: give the combined probe its own stereo mode variable
+- **projectiles**: model the tracked spawn hook in the energy fixture
+- **replay**: model the controller action pad in the control probe
+- **linux**: compile signal probe and cover sent `SIGSEGV` dispositions
+- **renderer**: identify CI shader artifacts from `GITHUB_SHA`
+- **renderer**: export production `DOT_ZW` shaders for offscreen validation
+- **renderer**: use the platform ABI for the `DOT_ZW` probe
+- **streamer**: import runtime harness independently
+- **linux**: run `button_presets` in release compile CI
+- **linux**: model nonreturning assertion in `coop_monitor` harness
+- **linux**: exercise co-op reset and Monitor guards — `linux-compile.yml` runs their extracted-source probes
+- **linux**: exercise `platform_offer_game_data` failure and retry
+- **linux**: exercise `platform_display_apply` and `platform_mouse_capture`
+
+### ci
+
+- let a run on main finish when main moves on — `ios.yml`, `ci.yml`, `linux-compile.yml` and `cinematic-harness.yml` cancelled every in-progress run in their group when the next push arrived, so while main took pushes faster than an iOS run takes, no iOS run on main finished; `cancel-in-progress` is now false for `refs/heads/main` and stays true on other branches
+- **site**: serve a staging recordings feed for a development build — signed for guest `395fdca3` of main `75b4de66` at `docs/site/packs/staging/recordings.json`, outside `packs/tester/` so installed tester builds never read it; remove it when the development build is retired
+- **linux**: run the `DOT_ZW` harness on main and pull requests
+- **tooling**: install `gcc-multilib` — let 32-bit C probes link
+- **linux**: exercise the biped ownership regression
+
+### chore
+
+- **release**: log `xcodebuild -version` for the selected Xcode
+- **release**: select the Xcode by build instead of by path — the `xcode-27` runner fleet serves images with Xcode 27.2 beta 2 (27B5028f) and beta 3 (27B5038j), so every Xcode job runs `tools/xcode_select.py`, which logs the installed Xcodes and exports the one whose build `tools/xcode_builds.py` lists
+- **release**: pin Xcode 27.2 beta 3 on the `xcode-27` runner — image `20261019.0289` replaced `Xcode_27.2_beta_2.app` (build 27B5028f) with `Xcode_27.2_beta_3.app` (build 27B5038j), so the release probe failed with a missing `DEVELOPER_DIR`
+- **release**: let a policy leave the recording feed unpinned — `recording_feed_required: off` drops the `recording_feed_sha256` pin and the guest compatibility check, passes no catalog facts to the summary, and keeps `recording_feed_url` in the build
+- **config**: Metal is the built-in default renderer — `display.renderer` defaults to `"metal"`, and its description calls OpenGL ES a debugging mode that lacks the Metal renderer's performance work and measures no GPU time; `"gl"` joins `port_config_former_defaults.h` so a config.toml from before config.origins follows the new default, the regenerated schemas and references carry the text, `config_origins_probe.c` checks both the migration and a chosen `"gl"`, and `mac_run.py` still pins `"gl"` for the OpenGL records
+- **profiles**: Macs draw with Metal — `profiles/mac.toml` sets `display.renderer = "metal"`, since the OpenGL ES renderer measures no GPU time and every Mac benchmark run reported 0; the Mac runner still writes `display.renderer = "gl"` into `config.toml` for the OpenGL records, and `profile_probe.c` expects the Mac renderer in every Mac's profile
+- **shaders**: allow shader packs up to 16 MiB — admit the harvested corpus
+- **cost-model**: grade the three experimental simulation switches `invisible` for every output class — `debug.collision_type_filter`, `debug.sphere_query_type_filter` and `debug.static_light_relink` ladder `["off", "on"]` in `visual-ranking.toml`, with a comment that they are exact: they change how much work a query does and not what it returns.
+- **tools**: `replay_check.py` logs the route and actor count every 300 ticks of its recording run
+- **linux**: report swaps stalled for two seconds — identify graphics driver freezes
+- **profiles**: add provisional iPad Pro 12.9-inch second-generation recipe
+
+### merge
+
+- **benchmark**: rotate bot weapons and fix cinematic video borders
+- **visionos**: integrate tracked aiming and co-op camera fixes
+- **visionos**: combine reviewed co-op headset source
+- **linux**: improve crash diagnostics and video driver selection
+- **tools**: run text-filter data checks with the host ABI
+- **render**: restore z-sprite fragment depth on GL and Metal
+- **benchmark**: distinguish settings from renderer observations
+- **upstream**: keep Windows borderless presentation on the desktop
+- **upstream**: release contrail locks on unsupported types
+- **upstream**: report prolonged graphics-driver swaps
+- **ci**: provide the 32-bit runtime for tooling regressions
+- **upstream**: add optional streamer text filtering
+- **main**: include current VISR changes in streamer cut
+- **upstream**: honor biped deletion ownership
+- **upstream**: retain current gameplay and profile state in desktop cut
+- **release**: preserve 0.3.1 metadata in native successor
+- **upstream**: restore reviewed gameplay and build corrections after the release cut
+
 ## visr-v0.3.1 (2026-10-20)
 
 ### Summary

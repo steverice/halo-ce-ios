@@ -1,26 +1,26 @@
 {
   "schema": 1,
-  "tag": "visr-v0.3.1",
-  "version": "0.3.1",
-  "build_number": "20261020.55147",
-  "source_sha": "a1f0457c0f4cbd0496c47d645f88926d2fba8d08",
+  "tag": "visr-v0.4.0",
+  "version": "0.4.0",
+  "build_number": "20261022.42429",
+  "source_sha": "905b7bdcf52c2d136a2e52298006b5cde06ffccf",
   "platforms": [
     "ios",
     "tvos"
   ],
-  "notes_sha256": "22f5c662a871d90695d94b63dbb1392cad563444b1ed1bdb9a0c0212d289794a",
-  "testflight_summary": "- Run the tester benchmark. It's now offered only when a valid benchmark catalog is available, so tell us if it's missing when it should be there.\n- Try benchmark cases across gameplay maps (a10, a50, b30, b40, c10, c20, c40, d40) and multiplayer maps (Chillout, Blood Gulch, Sidewinder).\n- Check the multiplayer benchmark cases: Chillout at 16 players, Blood Gulch at 32 and 64 players, and Sidewinder at 32 and 128 players.\n- Watch the benchmark screen for the new work timings and render interval graph.\n- Check the compact live metrics above the taller frame graph, and see whether they're easy to read while a run is going.\n- Play campaign and multiplayer maps and note any hitching when new draw effects first appear. We added more shader precompilation for campaign, multiplayer, benchmark, and UI.\n- Open menus and other UI screens and watch for hitches the first time they appear.",
-  "testflight_summary_sha256": "81707b95f8a5a79ca07cbc00b90a0a173076f21e5926b42a7c57d79f88973bd2",
+  "notes_sha256": "9ad9e21e14873214c2f0a247d1c43e1b435a09f550093e0035b2f7c87ccc287d",
+  "testflight_summary": "- Server browser now shows Delta's games alongside the others, and you can join games running network versions 29 to 32. Games on other versions are shown but can't be joined.\n- Hosting a public game can optionally announce it to Delta's list. This is off by default; browsing the list is on.\n- Collision and lighting speed-ups are now on by default, so check for any odd hits, line-of-sight, or lighting behavior in busy games.\n- Memory pressure now frees textures that haven't been drawn recently. Watch for textures reloading briefly after a memory warning.\n- Texture idle time is now set per device, and the Apple TV models use a shorter window.\n- In single-player, you can set an enemy multiplier to make enemy squads larger.\n- Far clutter such as dead bodies and loose weapons can now be hidden or drawn at lower detail beyond a set distance.\n- Fixed: a client could halt when the host removed a flag-type weapon. It now deletes the weapon and keeps playing.",
+  "testflight_summary_sha256": "6b5bb11a6702ee0168f2b29a0a1feb5e9d8425988c930407d669160646dbfd59",
   "testflight_summary_model": "claude-sonnet-5-5",
   "bootstrap_since": "",
-  "source_date_epoch": "1792475507",
+  "source_date_epoch": "1792643069",
   "guest_source_date_epoch": "1792454334",
   "internal_only": true,
   "build_policy": {
     "benchmark_upload": "on",
     "guest_compiler_version": "Homebrew clang version 23.1.3",
     "guest_profile_sha256": "663efd5f4da9d29f092231e23c818319bc0ed0625c26305dd1d0489c66b55c16",
-    "guest_sha256": "1fb8e28ecab503217460e04221936b58878e1cf48302a5c5e03860947c33d715",
+    "guest_sha256": "3e84123503e943a18f2b470c7e39a6e02c591c4bdda0248483147b9e5f75ff7f",
     "guest_source_date_epoch": "1792454334",
     "host_profile_sha256": "787d98fb1650fdb7892174aa9a3ee1cc154eb6fc0bd1a150961a36b82b1ff4b1",
     "profile_feed_sha256s": {
@@ -33,7 +33,7 @@
       "ios/iPad13,8/_": "00107ef333cad4e9165581b23eb0daaeb71db712f4ef8e848be9b9549c5c4e77",
       "ios/iPad13,9/_": "2ffac451507f129f6d116c7cdd9a53cd44a84bdfac78ac7f7fd6d73f6e70573a",
       "ios/iPad6,7/_": "0a4f262f5796e28aa0efc4b5ce6c4f7b83db3c8a93e9349d6b9ce246da8713cb",
-      "ios/iPad7,2/_": "e0241a5b8b98060f43df935c37196f92a4eccd83620d168fdc88725824d2c02b",
+      "ios/iPad7,2/_": "fb3ff48d0a67104cddfe6b3e143d36bfc32b1ea679ce6e625bf85742135fab97",
       "ios/iPhone13,3/_": "b89a912377b63869f1777248fc4973ffce27acb77fe1d79e73e9a3d8d485f943",
       "ios/iPhone17,5/_": "5667a844a23d7a6a966eb7d34dbe3d3342d4929aaba9e842e356cc575b2f848e",
       "ios/iPhone18,1/_": "c0bb81eae3fa5aea22999cfab4658c2e1724bd105e32aba6e75f8ac131a967c1",
@@ -46,7 +46,7 @@
       "visionos/RealityDevice14,1/_": "8973444a3cc342fddcbfaa9f08e86056c061f6b5b7b2e17f923359d94b1950c6"
     },
     "profile_feed_url": "https://code.steverice.org/visr/packs/tester/profiles",
-    "recording_feed_sha256": "5b2de56a7f55cc0ed04bcb3ac577c87d9bc9a7749a92e5e79707d6fad08ee122",
+    "recording_feed_required": "off",
     "recording_feed_url": "https://code.steverice.org/visr/packs/tester/recordings.json",
     "shader_feed_sha256": "d839d2b14152a562753865cb0242baeb0cbc832f095d18f036929e718edccc42",
     "shader_feed_url": "https://code.steverice.org/visr/packs/tester/shaders.json"
