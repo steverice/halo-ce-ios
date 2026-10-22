@@ -616,9 +616,9 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     [self.progressFinish.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
     [self.progressFinish addTarget:self action:@selector(finish:) forControlEvents:UIControlEventPrimaryActionTriggered];
     UIView *topSpace=[UIView new], *bottomSpace=[UIView new];
-    [topSpace.heightAnchor constraintEqualToAnchor:bottomSpace.heightAnchor].active=YES;
     for(UIView *view in @[topSpace,heading,self.progressTitle,self.progressDetail,self.progressBar,note,self.progressFinish,bottomSpace])
         [stack addArrangedSubview:view];
+    [topSpace.heightAnchor constraintEqualToAnchor:bottomSpace.heightAnchor].active=YES;
     UIScrollView *scroll=[UIScrollView new];
     scroll.translatesAutoresizingMaskIntoConstraints=NO;
     [screen addSubview:scroll];
