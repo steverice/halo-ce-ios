@@ -54,9 +54,8 @@ def test_defaults_and_explicit_overrides_across_ticks(tmp_path):
     import settings_schema
 
     settings = settings_schema.config_settings()
-    for name in _names()[:3]:
-        assert settings[name]['default'] is True
-    assert settings['debug.immediate_merge']['default'] is False
+    for name in _names():
+        assert settings[name]['default'] is (name != 'debug.immediate_merge')
     compiler = shutil.which('clang') or shutil.which('cc')
     if not compiler:
         pytest.skip('A C compiler is required for the simulation probe')
@@ -70,18 +69,18 @@ static long tick;
 static unsigned configured = 7;
 long game_time_get(void) { return tick; }
 int config_boolean(const char *name) {
-    for (unsigned i = 0; i < 4; i++)
+    for (unsigned i = 0; i < 5; i++)
         if (!strcmp(name, sim_experiment_names[i])) return (configured >> i) & 1;
     assert(0); return 0;
 }
 int main(void) {
-    for (unsigned defaults = 0; defaults < 16; defaults++) {
+    for (unsigned defaults = 0; defaults < 32; defaults++) {
         configured = defaults;
-        for (unsigned mask = 0; mask < 16; mask++) {
-            for (unsigned values = 0; values < 16; values++) {
+        for (unsigned mask = 0; mask < 32; mask++) {
+            for (unsigned values = 0; values < 32; values++) {
                 sim_experiment_override(values, mask);
                 unsigned expected = (defaults & ~mask) | (values & mask);
-                for (short i = 0; i < 4; i++) {
+                for (short i = 0; i < 5; i++) {
                     assert(sim_experiment_enabled(i) == ((expected >> i) & 1));
                     assert(sim_experiment_enabled_now(i) == ((expected >> i) & 1));
                 }
@@ -100,8 +99,8 @@ int main(void) {
     assert(sim_experiment_enabled(0)); /* override invalidates the cache */
     sim_experiment_override(0, 0);
     assert(!sim_experiment_enabled(0));
-    assert(!sim_experiment_enabled(-1) && !sim_experiment_enabled(4));
-    assert(!sim_experiment_enabled_now(-1) && !sim_experiment_enabled_now(4));
+    assert(!sim_experiment_enabled(-1) && !sim_experiment_enabled(5));
+    assert(!sim_experiment_enabled_now(-1) && !sim_experiment_enabled_now(5));
 }
 ''')
     binary = tmp_path / 'probe'
@@ -130,10 +129,10 @@ def test_run_records_use_effective_simulation_values(tmp_path):
 static unsigned configured;
 static NSString *configured_alias;
 static const char *const names[] = { "debug.collision_type_filter", "debug.sphere_query_type_filter",
-    "debug.static_light_relink" };
+    "debug.static_light_relink", "debug.immediate_merge", "debug.collision_candidates" };
 static NSString *configured_text(const char *name, const char *fallback) {
     if (configured_alias) return configured_alias;
-    for (unsigned bit = 0; bit < 3; bit++)
+    for (unsigned bit = 0; bit < 5; bit++)
         if (!strcmp(name, names[bit])) return configured & (1u << bit) ? @"true" : @"false";
     return @(fallback);
 }
@@ -141,15 +140,15 @@ static double host_config_real(const char *name, double fallback) { (void)name; 
 ''' + function + r'''
 int main(void) {
     @autoreleasepool {
-        for (configured = 0; configured < 8; configured++) {
-            for (unsigned mask = 0; mask < 8; mask++) {
-                for (unsigned values = 0; values < 8; values++) {
+        for (configured = 0; configured < 32; configured++) {
+            for (unsigned mask = 0; mask < 32; mask++) {
+                for (unsigned values = 0; values < 32; values++) {
                     struct benchmark_scene scene = { .sim_experiments = values, .sim_experiments_mask = mask };
                     for (const char *stage = "AP"; *stage; stage++) {
                         NSMutableDictionary *record = [NSMutableDictionary dictionary];
                         record_applied_settings(record, &scene, *stage);
                         unsigned expected = (configured & ~mask) | (values & mask);
-                        for (unsigned bit = 0; bit < 3; bit++)
+                        for (unsigned bit = 0; bit < 5; bit++)
                             assert([record[@(names[bit])] isEqual:expected & (1u << bit) ? @"on" : @"off"]);
                     }
                 }
@@ -161,7 +160,7 @@ int main(void) {
             NSMutableDictionary *record = [NSMutableDictionary dictionary];
             record_applied_settings(record, &scene, 'A');
             BOOL enabled = [@[@"true", @"1", @"on", @"TRUE"] containsObject:alias];
-            for (unsigned bit = 0; bit < 3; bit++)
+            for (unsigned bit = 0; bit < 5; bit++)
                 assert([record[@(names[bit])] isEqual:enabled ? @"on" : @"off"]);
         }
     }

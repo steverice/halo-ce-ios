@@ -632,8 +632,6 @@ static NSString *configured_text(const char *name, const char *fallback) {
 static void record_applied_settings(NSMutableDictionary *settings, const struct benchmark_scene *scene, char stage) {
     static const char *const switches[] = { "debug.collision_type_filter", "debug.sphere_query_type_filter",
         "debug.static_light_relink", "debug.immediate_merge", "debug.collision_candidates" };
-    /* (each switch's default in port_config.c, for a configuration that does not name it) */
-    static const char *const defaults[] = { "false", "false", "false", "false", "true" };
     const struct benchmark_knobs *knobs = &scene->knobs;
     unsigned mask = stage == 'A' ? knobs->mask : 0;
 
