@@ -418,6 +418,14 @@ def test_release_summary_instructions_keep_report_sending_policy_conditional() -
     assert "do not infer current benchmark case counts" in absent
 
 
+def test_release_summary_instructions_omit_debug_only_changes() -> None:
+    instructions = release.release_summary_instructions(
+        False, ["ios", "tvos"], has_recording_catalog=True
+    )
+    assert "Omit anything testers cannot reach" in instructions
+    assert "`debug.` settings" in instructions
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

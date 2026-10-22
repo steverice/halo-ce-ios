@@ -266,6 +266,8 @@ def release_summary_instructions(
         "Write only a concise list of 4 to 8 short bullets for TestFlight What to Test. Use "
         "American English and direct, player-facing language. Do not add a product description, "
         "introduction, heading, or sign-off. Focus on meaningful new behavior testers can notice. "
+        "Omit anything testers cannot reach from the game's menus or settings: `debug.` settings, "
+        "debug keys and controller chords, developer tools, test harnesses, and benchmark internals. "
         "Commitizen groups changelog entries by change type and lists commits newest-first within "
         "each group. The first entry in a group is the newest; later entries may describe older "
         "prototypes or intermediate limits. Prefer the newest supported final capability, and do "
