@@ -1,3 +1,77 @@
+## visr-v0.4.1 (2026-10-22)
+
+### Summary
+
+- Benchmark progress screen now shows the performance line and a render-interval graph while running offscreen.
+- The benchmark graph is taller on iPad and has a 0 to 40 ms range, with reference lines for 120, 60, and 30 fps.
+- On iPhone in landscape, the Finish button now stays on screen during the benchmark progress screen.
+- The benchmark progress screen text is tidier: the level name is the title, and the suite kind and case ID appear once.
+- A benchmark catalog can now hold more than one recording of the same level.
+- Fixed Save and Quit returning an "Unable to save" error when no player profile is active. It now returns you to the main menu.
+- Fixed Apple TV HD multiplayer fights hanging the GPU within the first frames, after which nothing more was drawn.
+- Fixed benchmark replays hanging at in-game help dialogs. Replays now show the same help dialogs the recording showed.
+
+### Full changelog
+
+### feat
+
+- **benchmark**: taller graph on iPad, a 0 to 40 ms range and an 8.3 ms reference line on the benchmark graph — `HaloBenchmarkGraphView` now draws 120, 60 and 30 fps lines, drops a label that would touch the one below it, and the progress screen gives the graph a third of an iPad's height
+- **benchmark**: show the perf line and render-interval graph on the offscreen progress screen — reuses `HaloBenchmarkGraphView` and the live snapshot that offscreen frames already feed through `host_benchmark_frame`, refreshed by the existing 0.25 s timer
+- **benchmark**: a catalog may hold several recordings of one level — `load_catalog` and `host_benchmark_catalog_load` rejected a second base case on a map; they now reject only two base cases that share a recording, so a 3x and a 1.5x take of `b40`, `c20` or `c40` can sit in one catalog
+- **benchmark**: note `scenario_help` events — the in-game help dialog (`display_scenario_help`) stops the game until a button is pressed, so a take needs the press and a replay that shows a dialog the recording did not hangs; the event says where each one comes
+- **benchmark**: note where a skippable sequence begins (`cinematic_skippable`, with its script) and where the player skips it (`cinematic_skipped`) — `cinematic_skip_start` saves the game and a skip reverts to that save, which is how a take's game time goes back with no death or checkpoint reload
+- **metal**: with `debug.gl_debug`, the first failed command buffer's encoders reach the host log with their states — the driver's per-encoder status names the pass the GPU hung or faulted in, and each render pass's label carries its target size and frame
+- **metal**: the host log names the first command buffer to fail — on an Apple TV HD a multiplayer run's buffers all failed with "Ignored (for causing prior/excessive GPU errors)", which hides the error that started it, so `gpu_busy_count` logs the first failure with its time and the run's span summary carries both
+- **metal**: the benchmark's span summary counts failed command buffers with the last one's error, and tells zero-length spans from missing times — on an Apple TV HD every multiplayer command buffer reported a start equal to its end
+- **benchmark**: each run's log counts the command buffers whose GPU times were used and refused, with the last refused span's times — `gpu_metal_gpu_spans_summary` reports them through `host_logf`, since `platform_log`'s refusal lines are not kept on an Apple TV, where multiplayer runs measured no GPU time while campaign runs in the same launch did
+
+### fix
+
+- **benchmark**: keep Finish on screen in landscape on the offscreen progress screen — on an iPhone 12 Pro held sideways the graph pushed Finish below the fold; a compact-height layout uses a 64 point graph and 6 point spacing
+- **macos**: show the native result alert when `HALO_BENCHMARK_PAGE` asks — `host_benchmark_page_minutes` returned 0 for every non-tester build, so `host_benchmark_page` never ran in the native Mac host; iOS and tvOS non-tester builds are unchanged
+- **macos**: report physical Retina screen dimensions — use display-mode pixels in `host_macos_screen_size`
+- **macos**: follow the window’s screen — refresh pacing and menu rates and report display pixels
+- **macos**: preserve events during benchmark notices — peek for stop input and honor finish requests
+- **macos**: name the Mac log folder and renderer — use platform-correct failure messages
+- **macos**: match Catalyst late-start pacing — enable the native default in `host_frame_pacer.c`
+- **release**: keep debug-only changes out of TestFlight What to Test — the 0.4.0 summary listed `debug.` keys (enemy multiplier, far clutter) that testers cannot reach, so `release_summary_instructions` now tells the model to omit `debug.` settings, debug chords, developer tools, test harnesses and benchmark internals
+- **tools**: drive the overlay probe through a polled command file — `simctl openurl` never reached `openURLContexts` on the iOS 27.2 runtime
+- **tools**: run the overlay probe on iOS runtimes that ship only phone device types — `ios_benchmark_overlay_test.py` required an iPad device type
+- **benchmark**: attach progress spacers before constraining them — `buildProgressScreen` activated an equal-height constraint without a shared ancestor
+- **benchmark**: create progress during scene startup — `host_benchmark_overlay_show` accepts inactive foreground scenes and retries activation
+- **benchmark**: a replay shows the in-game help dialogs its recording showed, whatever the replaying player's profile says — `display_scenario_help` let the profile's help setting turn a dialog off during a replay of a take that had one, so the game no longer stopped where the recording did; `input_replay_scenario_help_fixed` keeps the profile out while a recording or a replay runs, and the `scenario_help` event is noted where the script asks for the dialog, whether or not it shows
+- **hs**: report the help assertion's actual source — replace invented `match_assert` metadata
+- **hs**: respect the player’s help setting — gate `display_scenario_help` and HUD tutorial text by profile
+- **benchmark**: an automatic take shows no in-game help dialogs, and a replay of one shows none either — `display_scenario_help` raised a dialog that stops the game until a button is pressed in a replay of a take whose recording had none, hanging a b40 take at a Scorpion seat; the take's `.route` says `scenario_help = off`, `debug.scenario_help` turns the dialogs off everywhere, and a route without the line replays as before
+- **benchmark**: an automatic take is closed when the app quits — `exit_hook` now calls `take_close`, so a take ended by Command-Q has `closed_by = quit`, its last tick and its events in the `.route` instead of the last periodic write's
+- **ui**: Save and Quit with no player profile returns to the main menu without the "Unable to save" error — a level started with `map_name` has no profile to save a game under, so `pause_game_quit_to_main_menu` skips `game_state_save_to_persistent_storage`
+- **metal**: a DOT_ZW pixel shader never writes a non-finite fragment depth — on an Apple TV HD, every multiplayer fight hung the GPU (`kIOAccelCommandBufferCallbackErrorHang`) within the first frames, and the system then refused every later command buffer, so nothing more was drawn
+- **render**: add `halo_screen_scale` to `d3d8_device.c` for the picked scope zoom pass count — the picked `rasterizer_xbox_screen_effect.c` change calls it, and VISR's device did not define it
+
+### refactor
+
+- **benchmark**: tidy the offscreen progress text — the level name is the title, the suite kind and case id appear once, and the percentage the bar already shows is dropped on the phone and iPad screen
+
+### revert
+
+- **render**: drop the picked structure triangle culling — on Vinyl Cabinet (Apple TV HD) and an iPad Pro (2nd generation), `structure_culling` on and off measured the same frame time within run-to-run spread, so its 2,400 lines buy nothing measurable; this reverts `63502432e` and keeps the scope zoom pick and `halo_screen_scale`
+- **benchmark**: restore native offscreen progress — bring back the overlay for the startup lifecycle fix
+
+### docs
+
+- **benchmark**: an automatic take's description says quitting the app closes it — `exit_hook` now calls `take_close("quit")`, and only a suspended or killed app leaves a take without `closed_by`
+
+### test
+
+- **macos**: stub `host_benchmark_progress` in the services probe — `host_macos_services.m` now draws native benchmark progress, so `tools/macos_services_test.m` failed to link in `macos_test.py`
+- **storage**: Save and Quit with no player profile returns to the menu and writes nothing — the probe's `player_ui_get_active_player_profile_index` stub answers `NONE` for the `no_profile` case
+- **storage**: stub `player_ui_get_active_player_profile_index` in the persistent-storage probe — `pause_game_quit_to_main_menu` now asks for the active profile before saving
+
+### ci
+
+- **release**: accept the Xcode 27.2 RC (`27B48`) — an `xcode-27` runner image now carries only the RC, so `tools/xcode_select.py` stopped the release preflight there; App Store Connect accepts uploads only from the RC, so it is listed first and the betas stay for images that still carry them
+- **macos**: build the AppKit host — run native probes and reuse Apple source caches
+
 ## visr-v0.4.0 (2026-10-22)
 
 ### Summary
