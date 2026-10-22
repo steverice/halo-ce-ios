@@ -135,6 +135,17 @@ def test_successful_save_quit(probe, tmp_path, exists):
     assert path.read_bytes()[64:] == b"c" * (SIZE - 64)
 
 
+def test_save_quit_without_profile_returns_to_menu(probe, tmp_path):
+    path = tmp_path / "savegame.bin"
+    original = b"campaign save"
+    path.write_bytes(original)
+    result, _ = run(probe, tmp_path, mode="quit", fault="no_profile")
+    assert result["ok"] == result["menus"] == "1"
+    assert result["writes"] == result["notes"] == result["reverts"] == result["dialogs"] == "0"
+    assert result["live"] == "0"
+    assert path.read_bytes() == original
+
+
 @pytest.mark.parametrize("fault", ["write", "short", "seek", "header_write"])
 def test_write_failure_does_not_quit(probe, tmp_path, fault):
     (tmp_path / "savegame.bin").write_bytes(b"v" * SIZE)

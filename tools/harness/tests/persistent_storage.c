@@ -115,7 +115,7 @@ static void game_state_revert(void) {
 static boolean network_coop_active(void) { return FALSE; }
 static void network_game_client_local_player_quit(short index) {}
 static long main_get_current_solo_level(void) { return 0; }
-static long player_ui_get_active_player_profile_index(short player) { (void)player; return 0; }
+static long player_ui_get_active_player_profile_index(short player) { (void)player; return !strcmp(fault,"no_profile") ? NONE : 0; }
 static void main_goto_main_menu(void) { menus++; }
 static void game_time_set_paused(boolean value) { paused=value; }
 static void display_error_text_deferred(const wchar_t *message, short controller) { assert(message && *message); dialogs++; }
