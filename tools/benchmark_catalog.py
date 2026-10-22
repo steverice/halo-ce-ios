@@ -270,7 +270,7 @@ def load_catalog(folder):
         raise CatalogError("benchmark catalog must contain 1 to 16 cases")
     prepared = []
     orders = set()
-    recorded_maps = set()
+    recorded = set()
     has_gameplay = False
     for case_id, case in _resolve_variants(cases):
         _text(case_id, "case ID", CASE_ID)
@@ -322,9 +322,9 @@ def load_catalog(folder):
         if recording is not None:
             _text(recording, f"{case_id} recording", RECORDING_NAME)
             if base_id == case_id:
-                if map_name in recorded_maps:
-                    raise CatalogError(f"catalog selects more than one recording per level: {map_name}")
-                recorded_maps.add(map_name)
+                if recording in recorded:
+                    raise CatalogError(f"catalog selects the same recording for more than one case: {recording}")
+                recorded.add(recording)
             route = _route(root, recording)
             if (route["scene"] != base_id or route["map"] != map_name or route["difficulty"] != difficulty or
                     route["kind"] != kind or abs(route["lead"] - lead) > 1e-6 or abs(route["window"] - window) > 1e-6 or

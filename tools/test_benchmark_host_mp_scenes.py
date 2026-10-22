@@ -61,6 +61,22 @@ def test_host_loader_selects_signed_catalog_cases_by_type_and_mode(tmp_path, cat
     assert filtered_mp.returncode == 0 and filtered_mp.stdout.splitlines()[1:] == []
 
 
+def test_host_loader_allows_two_recordings_of_one_level_but_not_one_shared(tmp_path, catalog_probe):
+    _recording(tmp_path)
+    _recording(tmp_path, name="take-b30-second", scene="b30-second-take")
+    cases = _cases()
+    cases["b30-second-take"] = dict(cases["b30-warthog-fight"], order=4, recording="take-b30-second")
+    _write_catalog(tmp_path, cases)
+    result = run_probe(catalog_probe, tmp_path, "full")
+    assert result.returncode == 0, result.stderr
+    assert "b30-second-take" in result.stdout
+    cases["b30-second-take"]["recording"] = "take-b30"
+    cases["b30-second-take"]["order"] = 4
+    _write_catalog(tmp_path, cases)
+    shared = run_probe(catalog_probe, tmp_path, "full")
+    assert shared.returncode != 0 and "more than one case" in shared.stderr
+
+
 def test_host_loader_accepts_mp_only_catalog_without_placeholder_replays(tmp_path, catalog_probe):
     _write_catalog(tmp_path, _cases(gameplay=False))
     result = run_probe(catalog_probe, tmp_path, "full")

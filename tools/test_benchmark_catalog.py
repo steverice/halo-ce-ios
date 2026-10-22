@@ -174,7 +174,7 @@ def test_catalog_rejects_duplicate_json_keys(tmp_path):
         benchmark_catalog.load_catalog(tmp_path)
 
 
-def test_catalog_rejects_duplicate_order_and_replay_per_level(tmp_path):
+def test_catalog_rejects_duplicate_order_and_shared_recording(tmp_path):
     _recording(tmp_path)
     cases = _cases()
     cases["menu"]["order"] = 1
@@ -183,11 +183,19 @@ def test_catalog_rejects_duplicate_order_and_replay_per_level(tmp_path):
         benchmark_catalog.load_catalog(tmp_path)
 
     cases = _cases()
+    cases["b30-warthog-fight-2"] = dict(cases["b30-warthog-fight"], order=4)
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError, match="same recording"):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
+def test_catalog_accepts_two_recordings_of_one_level(tmp_path):
+    _recording(tmp_path)
+    cases = _cases()
     cases["b30-second-take"] = dict(cases["b30-warthog-fight"], order=4, recording="take-b30-second")
     _recording(tmp_path, name="take-b30-second", scene="b30-second-take")
     _write_catalog(tmp_path, cases)
-    with pytest.raises(benchmark_catalog.CatalogError, match="per level"):
-        benchmark_catalog.load_catalog(tmp_path)
+    assert [case["id"] for case in benchmark_catalog.load_catalog(tmp_path)].count("b30-second-take") == 1
 
 
 def test_new_compatibility_accepts_catalog_while_legacy_does_not(tmp_path):

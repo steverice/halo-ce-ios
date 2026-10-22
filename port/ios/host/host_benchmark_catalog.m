@@ -239,8 +239,8 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
 
     struct host_benchmark_catalog built = {0};
     BOOL orders[BENCHMARK_SCENES_MAXIMUM] = {0};
-    char seen_maps[BENCHMARK_SCENES_MAXIMUM][32] = {{0}};
-    int seen_map_count = 0;
+    char seen_recordings[BENCHMARK_SCENES_MAXIMUM][49] = {{0}};
+    int seen_recording_count = 0;
     BOOL workload = NO;
     built.count = (int)cases.count;
     NSMutableDictionary<NSString *, NSString *> *bases = [NSMutableDictionary dictionary];
@@ -298,10 +298,10 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
             if (!string_field(entry, @"recording", 48, NO, &recording))
                 return catalog_error(error, [NSString stringWithFormat:@"Catalog case %@ has an invalid recording reference.", identifier]);
             if (!bases[identifier]) {
-                for (int previous = 0; previous < seen_map_count; previous++)
-                    if (!strcmp(seen_maps[previous], map.UTF8String))
-                        return catalog_error(error, [NSString stringWithFormat:@"Catalog selects more than one recording for %@.", map]);
-                snprintf(seen_maps[seen_map_count++], sizeof(seen_maps[0]), "%s", map.UTF8String);
+                for (int previous = 0; previous < seen_recording_count; previous++)
+                    if (!strcmp(seen_recordings[previous], recording.UTF8String))
+                        return catalog_error(error, [NSString stringWithFormat:@"Catalog selects recording %@ for more than one case.", recording]);
+                snprintf(seen_recordings[seen_recording_count++], sizeof(seen_recordings[0]), "%s", recording.UTF8String);
             }
         }
         NSString *simulation = nil, *game_mode = nil;
