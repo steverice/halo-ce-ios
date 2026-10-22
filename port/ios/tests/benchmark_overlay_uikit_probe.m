@@ -14,7 +14,18 @@ static struct host_benchmark_progress progress = {
 };
 static int finished;
 void host_benchmark_progress(struct host_benchmark_progress *out) { *out = progress; }
-void host_benchmark_live(struct benchmark_live_snapshot *out) { memset(out, 0, sizeof(*out)); }
+/* A synthetic feed that grows by ten renders a call, so a changing graph and perf line prove the timer updates them. */
+static unsigned live_calls;
+void host_benchmark_live(struct benchmark_live_snapshot *out) {
+    memset(out, 0, sizeof(*out));
+    live_calls++;
+    out->count = live_calls * 10 < BENCHMARK_LIVE_HISTORY ? live_calls * 10 : BENCHMARK_LIVE_HISTORY;
+    for (unsigned i = 0; i < out->count; i++) {
+        out->interval_ms[i] = 16.7 + (i % 7);
+        if (out->interval_ms[i] > out->peak_ms) out->peak_ms = out->interval_ms[i];
+    }
+    out->fps = 60; out->cpu_ms = 4.0; out->gpu_ms = 6.0; out->cpu_available = out->gpu_available = 1;
+}
 int host_benchmark_finish_requested(void) { return finished; }
 void host_benchmark_request_finish(void) { finished = 1; }
 static void host_logf(int priority, const char *format, ...) {
@@ -40,7 +51,8 @@ static void checkProgress(NSString *phase) {
     assert(!controller.view.hidden && !controller.progressScreen.hidden && controller.panel.hidden);
     assert([controller.progressTitle.text isEqualToString:@"cost:d40-maw-fight-base"]);
     assert([controller.progressDetail.text containsString:phase]);
-    for (UIView *label in @[controller.progressTitle, controller.progressDetail, controller.progressFinish]) {
+    for (UIView *label in @[controller.progressTitle, controller.progressDetail, controller.progressFinish,
+        controller.progressPerf, controller.progressGraph]) {
         CGRect rect = [label convertRect:label.bounds toView:controller.view];
         assert(rect.size.width > 0 && rect.size.height > 0);
         assert(CGRectContainsRect(CGRectInset(controller.view.bounds, -1, -1), rect));
@@ -106,6 +118,18 @@ static void checkProgress(NSString *phase) {
         progress.fraction = 0.5; progress.measured_fraction = 0.5; progress.elapsed = 42;
         checkProgress(@"Measuring");
         assert(!controller.progressBar.hidden && controller.progressBar.progress == 0.5f);
+        /* The 0.25 s timer feeds the perf line and the graph: after a second both show the synthetic feed. */
+        NSString *before = controller.progressGraph.accessibilityValue;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            assert(!controller.progressPerf.hidden && !controller.progressGraph.hidden);
+            assert([controller.progressPerf.text isEqualToString:@"FPS: 60 CPU: 4.0ms GPU: 6.0ms"]);
+            assert([controller.progressGraph.accessibilityValue containsString:@"most recent renders"]);
+            assert(![controller.progressGraph.accessibilityValue isEqualToString:before]);
+            fprintf(stderr, "perf: %s | graph: %s\n", controller.progressPerf.text.UTF8String,
+                controller.progressGraph.accessibilityValue.UTF8String);
+            receipt(command);
+        });
+        return;
     } else if ([command isEqualToString:@"presented"]) {
         progress.presented = 1; host_benchmark_overlay_presented(1);
         assert(controller.view.hidden && controller.progressScreen.hidden && controller.panel.hidden);

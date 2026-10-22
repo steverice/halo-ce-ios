@@ -110,6 +110,7 @@ def main():
             for failure in ("uncaught exception", "Assertion failed", "Unable to simultaneously satisfy constraints"):
                 assert failure not in text, text
             assert "created native progress window" in text
+            assert "perf: FPS: 60 CPU: 4.0ms GPU: 6.0ms | graph:" in text, text
             print(text, flush=True)
         finally:
             try:

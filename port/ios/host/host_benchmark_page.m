@@ -524,7 +524,8 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 /* while the frames are drawn offscreen, a screen of its own in place of the game's: what is being measured, how
    far along, and Finish */
 @property(nonatomic,strong) UIView *progressScreen, *panel;
-@property(nonatomic,strong) UILabel *progressTitle, *progressDetail;
+@property(nonatomic,strong) UILabel *progressTitle, *progressDetail, *progressPerf;
+@property(nonatomic,strong) HaloBenchmarkGraphView *progressGraph;
 @property(nonatomic,strong) UIProgressView *progressBar;
 @property(nonatomic,strong) UIButton *progressFinish;
 @end
@@ -569,13 +570,19 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         HaloBenchmarkOverlayController *controller=weak;
         if(!controller) { [timer invalidate]; return; }
         [controller refreshProgress];
-        if(!controller.progressScreen.hidden || controller.view.hidden)return;
+        if(controller.view.hidden)return;
         struct benchmark_live_snapshot snapshot; host_benchmark_live(&snapshot);
         NSString *fps=snapshot.count ? [NSString stringWithFormat:@"%.0f",snapshot.fps] : @"—";
         NSString *cpu=snapshot.cpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.cpu_ms] : @"—";
         NSString *gpu=snapshot.gpu_available ? [NSString stringWithFormat:@"%.1f",snapshot.gpu_ms] : @"—";
+        NSString *perf=[NSString stringWithFormat:@"FPS: %@ CPU: %@ms GPU: %@ms",fps,cpu,gpu];
+        if(!controller.progressScreen.hidden) {
+            controller.progressPerf.text=perf;
+            [controller.progressGraph updateSnapshot:&snapshot];
+            return;
+        }
         controller.status.text=host_benchmark_finish_requested() ? @"Finishing…" :
-            [NSString stringWithFormat:@"Benchmarking…\nFPS: %@ CPU: %@ms GPU: %@ms",fps,cpu,gpu];
+            [NSString stringWithFormat:@"Benchmarking…\n%@",perf];
         controller.graph.hidden=host_benchmark_finish_requested();
         [controller.graph updateSnapshot:&snapshot];
     }];
@@ -604,6 +611,20 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     self.progressDetail.numberOfLines=0;
     self.progressBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
     self.progressBar.translatesAutoresizingMaskIntoConstraints=NO;
+    self.progressPerf=[UILabel new];
+    self.progressPerf.font=[UIFont monospacedDigitSystemFontOfSize:14 weight:UIFontWeightMedium];
+    self.progressPerf.textColor=UIColor.whiteColor;
+    self.progressPerf.textAlignment=NSTextAlignmentCenter;
+    self.progressPerf.adjustsFontSizeToFitWidth=YES;
+    self.progressPerf.text=@"FPS: — CPU: —ms GPU: —ms";
+    self.progressGraph=[HaloBenchmarkGraphView new];
+    self.progressGraph.translatesAutoresizingMaskIntoConstraints=NO;
+#if TARGET_OS_TV
+    CGFloat graphHeight=128;
+#else
+    CGFloat graphHeight=96;
+#endif
+    [self.progressGraph.heightAnchor constraintEqualToConstant:graphHeight].active=YES;
     UILabel *note=[UILabel new];
     note.text=@"Benchmark running — please don’t close the app";
     note.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
@@ -616,7 +637,7 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     [self.progressFinish.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
     [self.progressFinish addTarget:self action:@selector(finish:) forControlEvents:UIControlEventPrimaryActionTriggered];
     UIView *topSpace=[UIView new], *bottomSpace=[UIView new];
-    for(UIView *view in @[topSpace,heading,self.progressTitle,self.progressDetail,self.progressBar,note,self.progressFinish,bottomSpace])
+    for(UIView *view in @[topSpace,heading,self.progressTitle,self.progressDetail,self.progressBar,self.progressPerf,self.progressGraph,note,self.progressFinish,bottomSpace])
         [stack addArrangedSubview:view];
     [topSpace.heightAnchor constraintEqualToAnchor:bottomSpace.heightAnchor].active=YES;
     UIScrollView *scroll=[UIScrollView new];
@@ -638,6 +659,8 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         [stack.centerXAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.centerXAnchor],
         [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor multiplier:0.8],
         [self.progressBar.widthAnchor constraintEqualToAnchor:stack.widthAnchor],
+        [self.progressGraph.widthAnchor constraintEqualToAnchor:stack.widthAnchor],
+        [self.progressPerf.widthAnchor constraintEqualToAnchor:stack.widthAnchor],
         [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:12],
         [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-12],
         [scroll.contentLayoutGuide.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.frameLayoutGuide.heightAnchor]]];
