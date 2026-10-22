@@ -35,6 +35,7 @@ build with render validation; nothing otherwise */
 #include "gpu_validate.h"
 #include "metal_compile_async.h"
 #include "metal_compile_progress.h"
+#include "host.h"
 #include "host_benchmark.h"
 #import "host_data_updates.h"
 #include "gpu_metal_presentation.h"
@@ -344,7 +345,7 @@ static void gpu_busy_add(CFTimeInterval start, CFTimeInterval end)
 one's error, for the benchmark's log. A failed buffer drew nothing, and its
 times are not the GPU's work. */
 static uint64_t gpu_failed_buffers;
-static char gpu_failed_last[160];
+static char gpu_failed_first[200], gpu_failed_last[200];
 
 /* a completed command buffer's GPU time, into the union */
 static void gpu_busy_count(id<MTLCommandBuffer> completed)
@@ -352,10 +353,18 @@ static void gpu_busy_count(id<MTLCommandBuffer> completed)
 	if (completed.status == MTLCommandBufferStatusError)
 	{
 		os_unfair_lock_lock(&gpu_busy_lock);
-		gpu_failed_buffers++;
 		snprintf(gpu_failed_last, sizeof(gpu_failed_last), "%s %ld: %s", completed.error.domain.UTF8String,
 			(long)completed.error.code, completed.error.localizedDescription.UTF8String);
+		/* (after one GPU error the system can refuse every later buffer, "Ignored (for causing prior/excessive
+		GPU errors)": the first says what went wrong) */
+		BOOL first = !gpu_failed_buffers++;
+
+		if (first)
+			snprintf(gpu_failed_first, sizeof(gpu_failed_first), "%s at %.6f", gpu_failed_last, CACurrentMediaTime());
 		os_unfair_lock_unlock(&gpu_busy_lock);
+		/* (in the host's log, which every device keeps) */
+		if (first)
+			host_logf(HOST_LOG_ERROR, "Metal: the first command buffer to fail: %s", gpu_failed_first);
 		gpu_busy_refused("failed", completed.GPUStartTime, completed.GPUEndTime, CACurrentMediaTime());
 		return;
 	}
@@ -379,8 +388,8 @@ void gpu_metal_gpu_spans_summary(char *text, size_t size)
 	{
 		size_t used = strlen(text);
 
-		snprintf(text + used, size - used, "; %llu failed, the last with %s", (unsigned long long)gpu_failed_buffers,
-			gpu_failed_last);
+		snprintf(text + used, size - used, "; %llu failed, the first with %s; the last with %s",
+			(unsigned long long)gpu_failed_buffers, gpu_failed_first, gpu_failed_last);
 	}
 	os_unfair_lock_unlock(&gpu_busy_lock);
 }

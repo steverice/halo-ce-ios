@@ -1476,7 +1476,7 @@ static BOOL finish_run(NSDictionary *presentation) {
         host_logf(HOST_LOG_INFO, "benchmark: run %d GPU time measured in %zu of %zu submissions%s", run.index, summary.gpu_frames,
             summary.frames, summary.gpu_frames ? "" : " (the GPU 95th is no measurement)");
     {
-        char spans[256];
+        char spans[768];
 
         gpu_metal_gpu_spans_summary(spans, sizeof(spans));
         host_logf(HOST_LOG_INFO, "benchmark: run %d: %s", run.index, spans);
