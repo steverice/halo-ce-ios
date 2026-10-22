@@ -126,6 +126,9 @@ static void checkProgress(NSString *phase) {
         NSString *before = controller.progressGraph.accessibilityValue;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             assert(!controller.progressPerf.hidden && !controller.progressGraph.hidden);
+            /* the graph keeps a drawable height for the 8.3, 16.7 and 33.3 ms lines, and Finish stays on screen */
+            assert(controller.progressGraph.bounds.size.height >= 64);
+            assert(CGRectContainsRect(controller.view.bounds, [controller.progressFinish convertRect:controller.progressFinish.bounds toView:controller.view]));
             assert([controller.progressPerf.text isEqualToString:@"FPS: 60 CPU: 4.0ms GPU: 6.0ms"]);
             assert([controller.progressGraph.accessibilityValue containsString:@"most recent renders"]);
             assert(![controller.progressGraph.accessibilityValue isEqualToString:before]);

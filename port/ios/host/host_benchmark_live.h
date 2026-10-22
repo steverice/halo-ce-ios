@@ -8,7 +8,9 @@
 #define BENCHMARK_LIVE_HISTORY 240
 #define BENCHMARK_LIVE_AVERAGE 60
 #define BENCHMARK_LIVE_STALE_SECONDS 1.5
-#define BENCHMARK_LIVE_GRAPH_MAX_MS (1000.0 / 15.0)
+/* the graph spans 0 to 40 ms: 33.3 (30 fps) sits near the top, and a 120 or 60 fps device's line stays clear of the bottom;
+   a longer render is clipped to the top edge and marked */
+#define BENCHMARK_LIVE_GRAPH_MAX_MS 40.0
 struct benchmark_live {
     double interval[BENCHMARK_LIVE_HISTORY], cpu[BENCHMARK_LIVE_HISTORY], gpu[BENCHMARK_LIVE_HISTORY];
     double interval_sum, cpu_sum, gpu_sum, last_sample, last_cpu, last_gpu_positive;

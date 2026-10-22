@@ -481,17 +481,22 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 #else
     CGFloat fontSize=10;
 #endif
+    if(self.bounds.size.height>200)fontSize+=3; /* the iPad's tall graph */
     NSDictionary *text=@{NSFontAttributeName:[UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightRegular],NSForegroundColorAttributeName:UIColor.lightGrayColor};
     [@"Render interval (ms)" drawAtPoint:CGPointMake(0,0) withAttributes:text];
-    CGRect plot=CGRectMake(1,14,MAX(1,self.bounds.size.width-33),MAX(1,self.bounds.size.height-28));
+    CGRect plot=CGRectMake(1,fontSize+4,MAX(1,self.bounds.size.width-33-MAX(0,fontSize-10)*2),MAX(1,self.bounds.size.height-2*fontSize-8));
     CGContextSetStrokeColorWithColor(context,[UIColor.whiteColor colorWithAlphaComponent:0.25].CGColor);
     CGContextSetLineWidth(context,0.5);
-    for(unsigned i=1;i<=2;i++) {
-        double reference=i*1000.0/60.0;
+    /* 120, 60 and 30 fps; a label too close to the one below it is left off, its line stays */
+    CGFloat lastLabelY=CGFLOAT_MAX;
+    for(unsigned i=0;i<3;i++) {
+        double reference=1000.0/(i==0 ? 120.0 : i==1 ? 60.0 : 30.0);
         CGFloat y=CGRectGetMaxY(plot)-reference/BENCHMARK_LIVE_GRAPH_MAX_MS*plot.size.height;
         CGContextMoveToPoint(context,plot.origin.x,y); CGContextAddLineToPoint(context,CGRectGetMaxX(plot),y);
         CGContextStrokePath(context);
-        [[NSString stringWithFormat:@"%.1f",reference] drawAtPoint:CGPointMake(CGRectGetMaxX(plot)+3,y-6) withAttributes:text];
+        if(lastLabelY-y<fontSize)continue;
+        lastLabelY=y;
+        [[NSString stringWithFormat:@"%.1f",reference] drawAtPoint:CGPointMake(CGRectGetMaxX(plot)+3,y-fontSize*0.6) withAttributes:text];
     }
     CGContextSetStrokeColorWithColor(context,UIColor.systemGreenColor.CGColor);
     CGContextSetLineWidth(context,1);
@@ -514,7 +519,7 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     }
     CGContextFillPath(context);
     NSString *peak=_snapshot.count ? [NSString stringWithFormat:@"Peak %.1f ms%@ · %u renders",_snapshot.peak_ms,_snapshot.clipped ? @" ↑" : @"",_snapshot.count] : @"Waiting for render timing";
-    [peak drawAtPoint:CGPointMake(0,self.bounds.size.height-12) withAttributes:text];
+    [peak drawAtPoint:CGPointMake(0,self.bounds.size.height-fontSize-2) withAttributes:text];
 }
 @end
 @interface HaloBenchmarkOverlayController : UIViewController
@@ -675,7 +680,10 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     BOOL compact=self.traitCollection.verticalSizeClass==UIUserInterfaceSizeClassCompact;
-    CGFloat height=compact ? 64 : self.progressGraphRegularHeight, spacing=compact ? 6 : 18;
+    /* an iPad (regular width and height) gives the graph a third of the screen; a phone sideways, 64 points */
+    BOOL wide=self.traitCollection.horizontalSizeClass==UIUserInterfaceSizeClassRegular && !compact;
+    CGFloat height=compact ? 64 : wide ? MIN(MAX(self.view.bounds.size.height*0.34,self.progressGraphRegularHeight),520) : self.progressGraphRegularHeight;
+    CGFloat spacing=compact ? 6 : 18;
     if(self.progressGraphHeight.constant!=height || self.progressStack.spacing!=spacing) {
         self.progressGraphHeight.constant=height; self.progressStack.spacing=spacing;
     }

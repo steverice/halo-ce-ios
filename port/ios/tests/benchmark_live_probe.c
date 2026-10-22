@@ -14,6 +14,8 @@ int main(void) {
     benchmark_live_add(&live,11,0.01,0.001,0.002); benchmark_live_read(&live,12,&view); assert(view.count==1); /* Old monotonic data cannot revive an old scene. */
     benchmark_live_add(&live,12.01,NAN,0,0); benchmark_live_add(&live,12.01,0,0,0); benchmark_live_add(&live,INFINITY,0.01,0,0);
     benchmark_live_read(&live,12.01,&view); assert(view.count==1);
+    /* The graph spans 0 to 40 ms: 33.3 ms (30 fps) is inside it with room, 120 and 60 fps are well above the bottom. */
+    assert(BENCHMARK_LIVE_GRAPH_MAX_MS>1000.0/30 && BENCHMARK_LIVE_GRAPH_MAX_MS<=50);
     benchmark_live_reset(&live);
     for(unsigned i=0;i<300;i++)benchmark_live_add(&live,20+i*0.01,i==299?0.2:0.01,i<240?0.001:0.003,i<240?0.002:0.006);
     benchmark_live_read(&live,22.99,&view); assert(view.count==240 && view.clipped==1); near(view.interval_ms[0],10); near(view.interval_ms[239],200); near(view.peak_ms,200);
