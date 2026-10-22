@@ -34,7 +34,6 @@ else:
     from ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
     from guest_epoch import ENVIRONMENT, FIELD, parse_guest_epoch
 
-XCODE_BUILD = "27B5038j"
 SDK_VERSION = "27.2"
 
 
@@ -187,9 +186,10 @@ def toolchain(selected: list[str], *, root: Path | None = None) -> dict[str, str
     if host_platform.system() != "Darwin" or host_platform.machine() != "arm64":
         raise ValueError("Release validation requires an Apple silicon Mac")
     version = run("xcodebuild", "-version", capture=True)
-    if f"Build version {XCODE_BUILD}" not in version.splitlines():
-        raise ValueError(f"Release requires exact Xcode build {XCODE_BUILD}")
-    result = {"xcode_build": XCODE_BUILD, "xcode": version}
+    builds = [line.split()[-1] for line in version.splitlines() if line.startswith("Build version ")]
+    if len(builds) != 1 or builds[0] not in release.XCODE_BUILDS:
+        raise ValueError(f"Release requires an Xcode build in {', '.join(release.XCODE_BUILDS)}")
+    result = {"xcode_build": builds[0], "xcode": version}
     for target in selected:
         sdk = release.PLATFORMS[target][1]
         actual = run("xcrun", "--sdk", sdk, "--show-sdk-version", capture=True)
@@ -316,7 +316,7 @@ def inspect_build(
     app = app if app is not None else build / f"Release-{sdk}/VISR.app"
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if (
-        info.get("DTXcodeBuild") != XCODE_BUILD
+        info.get("DTXcodeBuild") not in release.XCODE_BUILDS
         or info.get("DTSDKName") != sdk + SDK_VERSION
     ):
         raise ValueError(

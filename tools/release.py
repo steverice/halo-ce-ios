@@ -23,8 +23,10 @@ from typing import Any
 
 if __package__:
     from .guest_epoch import ENVIRONMENT as GUEST_EPOCH_ENV, FIELD as GUEST_EPOCH_FIELD, parse_guest_epoch
+    from .xcode_builds import XCODE_BUILDS
 else:
     from guest_epoch import ENVIRONMENT as GUEST_EPOCH_ENV, FIELD as GUEST_EPOCH_FIELD, parse_guest_epoch
+    from xcode_builds import XCODE_BUILDS
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = Path(".release/current.json")
@@ -1047,7 +1049,7 @@ def archive_identity(
     if guest_hash != policy["guest_sha256"]:
         raise ValueError("Actual archived guest differs from the reviewed probe")
     expected_info = {
-        "DTXcodeBuild": "27B5038j",
+        "DTXcodeBuild": info.get("DTXcodeBuild") if info.get("DTXcodeBuild") in XCODE_BUILDS else XCODE_BUILDS[0],
         "DTSDKName": PLATFORMS[platform][1] + "27.2",
         "CFBundleIdentifier": os.environ["APPLE_BUNDLE_ID"],
         "HaloDataPackPublicKey": "b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea",

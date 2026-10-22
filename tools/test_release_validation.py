@@ -1104,3 +1104,36 @@ def test_preflight_output_is_empty_without_catalog_facts(
     monkeypatch.setenv("RELEASE_BUILD_POLICY", json.dumps(optional_recording_policy()))
     validation.main()
     assert outputs == [("identity", "identity"), ("recording_context", "")]
+
+
+def test_xcode_select_picks_an_accepted_build_and_exports_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import plistlib
+
+    from tools import xcode_builds, xcode_select
+
+    def app(name: str, build: str) -> str:
+        path = tmp_path / name / "Contents"
+        path.mkdir(parents=True)
+        (path / "version.plist").write_bytes(plistlib.dumps({"ProductBuildVersion": build}))
+        return str(tmp_path / name)
+
+    apps = [app("Xcode_27.app", "27A266a"), app("Xcode_27.2_beta_2.app", xcode_builds.XCODE_BUILDS[1])]
+    env = tmp_path / "env"
+    monkeypatch.setenv("GITHUB_ENV", str(env))
+    monkeypatch.setattr(xcode_select.glob, "glob", lambda _pattern: apps)
+    xcode_select.main()
+    assert env.read_text() == f"DEVELOPER_DIR={apps[1]}/Contents/Developer\n"
+    assert "27A266a" in capsys.readouterr().out
+    monkeypatch.setattr(xcode_select.glob, "glob", lambda _pattern: apps[:1])
+    with pytest.raises(SystemExit, match="None of the accepted Xcode builds"):
+        xcode_select.main()
+
+
+def test_release_workflow_selects_xcode_by_build_in_every_xcode_job() -> None:
+    workflow = (validation.release.ROOT / ".github/workflows/release.yml").read_text()
+    assert "DEVELOPER_DIR:" not in workflow
+    assert workflow.count("run: python3 tools/xcode_select.py") == workflow.count(
+        "runs-on: xcode-27"
+    )

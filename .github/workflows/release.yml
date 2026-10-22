@@ -42,9 +42,8 @@ concurrency:
   group: ${{ inputs.mode == 'validate' && format('visr-validate-{0}', inputs.source_sha) || 'visr-release' }}
   cancel-in-progress: false
 
-# The xcode-27 image inventory includes this exact build. Never follow its default Xcode.
-env:
-  DEVELOPER_DIR: /Applications/Xcode_27.2_beta_3.app/Contents/Developer
+# The xcode-27 runner fleet serves more than one image, and each carries a different 27.2 beta. Each Xcode job
+# selects the 27.2 beta its image has; tools/xcode_builds.py lists the builds a release accepts.
 
 jobs:
   probe:
@@ -58,6 +57,8 @@ jobs:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Select an accepted Xcode build
+        run: python3 tools/xcode_select.py
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.11.8'
@@ -136,6 +137,8 @@ jobs:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Select an accepted Xcode build
+        run: python3 tools/xcode_select.py
       - name: Verify source is on main before using credentials
         id: trusted-source
         env:
@@ -224,6 +227,8 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
+      - name: Select an accepted Xcode build
+        run: python3 tools/xcode_select.py
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.11.8'
