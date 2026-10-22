@@ -526,6 +526,9 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 @property(nonatomic,strong) UIView *progressScreen, *panel;
 @property(nonatomic,strong) UILabel *progressTitle, *progressDetail, *progressPerf;
 @property(nonatomic,strong) HaloBenchmarkGraphView *progressGraph;
+@property(nonatomic,strong) NSLayoutConstraint *progressGraphHeight;
+@property(nonatomic,strong) UIStackView *progressStack;
+@property(nonatomic) CGFloat progressGraphRegularHeight;
 @property(nonatomic,strong) UIProgressView *progressBar;
 @property(nonatomic,strong) UIButton *progressFinish;
 @end
@@ -624,7 +627,10 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 #else
     CGFloat graphHeight=96;
 #endif
-    [self.progressGraph.heightAnchor constraintEqualToConstant:graphHeight].active=YES;
+    self.progressGraphHeight=[self.progressGraph.heightAnchor constraintEqualToConstant:graphHeight];
+    self.progressGraphHeight.active=YES;
+    self.progressGraphRegularHeight=graphHeight;
+    self.progressStack=stack;
     UILabel *note=[UILabel new];
     note.text=@"Benchmark running — please don’t close the app";
     note.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
@@ -664,6 +670,15 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
         [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:12],
         [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-12],
         [scroll.contentLayoutGuide.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.frameLayoutGuide.heightAnchor]]];
+}
+/* a phone held sideways has about 350 points of height: a short graph and tighter spacing keep Finish on screen */
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    BOOL compact=self.traitCollection.verticalSizeClass==UIUserInterfaceSizeClassCompact;
+    CGFloat height=compact ? 64 : self.progressGraphRegularHeight, spacing=compact ? 6 : 18;
+    if(self.progressGraphHeight.constant!=height || self.progressStack.spacing!=spacing) {
+        self.progressGraphHeight.constant=height; self.progressStack.spacing=spacing;
+    }
 }
 - (void)refreshProgress {
     struct host_benchmark_progress progress;
