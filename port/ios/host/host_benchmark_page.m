@@ -673,9 +673,11 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
     self.progressScreen.hidden=!offscreen;
     self.panel.hidden=offscreen || progress.presented;
     if(!offscreen)return;
-    self.progressTitle.text=progress.title[0] ? @(progress.title) : @"Getting ready";
-    char detail[512];
-    host_benchmark_progress_detail(&progress,detail,sizeof(detail));
+    char level[192], detail[512];
+    host_benchmark_progress_level(&progress,level,sizeof(level));
+    self.progressTitle.text=level[0] ? @(level) : @"Getting ready";
+    /* the bar conveys the measured window, so its percentage is left out */
+    host_benchmark_progress_text(&progress,detail,sizeof(detail),1,0);
     self.progressDetail.text=host_benchmark_finish_requested() ? @"Finishing…" : @(detail);
     self.progressBar.hidden=progress.phase!=HOST_BENCHMARK_MEASURING || progress.measured_fraction<0;
     [self.progressBar setProgress:(float)progress.fraction animated:NO];

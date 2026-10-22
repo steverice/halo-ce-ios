@@ -47,7 +47,7 @@ static void progress_format(void) {
         .elapsed = 125.9, .measured_fraction = -1, .offscreen = 1 };
     char text[512];
     host_benchmark_progress_detail(&p, text, sizeof(text));
-    CHECK(strstr(text, "cost:shadows — offscreen benchmark") != NULL);
+    CHECK(strstr(text, "Settings cost\n") != NULL);
     CHECK(strstr(text, "Case 2 of 8") != NULL);
     CHECK(strstr(text, "Loading · Elapsed 2:05") != NULL);
     CHECK(strstr(text, "Measured window") == NULL);
@@ -68,6 +68,15 @@ static void progress_format(void) {
     p.presented = 1;
     host_benchmark_progress_detail(&p, text, sizeof(text));
     CHECK(strstr(text, "Presented check") != NULL);
+    /* the phone's screen: level name alone as the title, the case id once after the kind, no percentage */
+    snprintf(p.title, sizeof(p.title), "The Maw\nd40-maw-fight-base");
+    snprintf(p.mode, sizeof(p.mode), "cost:d40-maw-fight-base");
+    p.presented = 0; p.measured_fraction = 0.5;
+    host_benchmark_progress_level(&p, text, sizeof(text));
+    CHECK(!strcmp(text, "The Maw"));
+    host_benchmark_progress_text(&p, text, sizeof(text), 1, 0);
+    CHECK(strstr(text, "Settings cost · d40-maw-fight-base\nCase 2 of 8") == text);
+    CHECK(strstr(text, "cost:") == NULL && strstr(text, "offscreen") == NULL && strstr(text, "Measured window") == NULL);
 }
 
 static void progress_visibility(void) {

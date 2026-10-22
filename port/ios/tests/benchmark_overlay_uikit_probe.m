@@ -8,7 +8,7 @@
 
 #define HOST_LOG_INFO 4
 static struct host_benchmark_progress progress = {
-    .title = "cost:d40-maw-fight-base", .mode = "Settings cost",
+    .title = "The Maw\nd40-maw-fight-base", .mode = "cost:d40-maw-fight-base",
     .number = 1, .total = 3, .offscreen = 1, .measured_fraction = -1,
     .phase = HOST_BENCHMARK_LOADING
 };
@@ -49,7 +49,11 @@ static void checkProgress(NSString *phase) {
     [controller refreshProgress];
     [controller.view layoutIfNeeded];
     assert(!controller.view.hidden && !controller.progressScreen.hidden && controller.panel.hidden);
-    assert([controller.progressTitle.text isEqualToString:@"cost:d40-maw-fight-base"]);
+    assert([controller.progressTitle.text isEqualToString:@"The Maw"]);
+    if (![phase isEqualToString:@"Finishing"])
+        assert([controller.progressDetail.text hasPrefix:@"Settings cost · d40-maw-fight-base\nCase 1 of 3\n"]);
+    assert(![controller.progressDetail.text containsString:@"offscreen"] &&
+        ![controller.progressDetail.text containsString:@"Measured window"]);
     assert([controller.progressDetail.text containsString:phase]);
     for (UIView *label in @[controller.progressTitle, controller.progressDetail, controller.progressFinish,
         controller.progressPerf, controller.progressGraph]) {
