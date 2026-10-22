@@ -7,6 +7,7 @@ exits with an error when none of the accepted builds is installed.
 import glob
 import os
 import plistlib
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +33,8 @@ def main() -> None:
         if build in found:
             developer_dir = f"{found[build]}/Contents/Developer"
             print(f"Selected Xcode build {build}: {developer_dir}")
+            print(subprocess.run(["xcodebuild", "-version"], env={**os.environ, "DEVELOPER_DIR": developer_dir},
+                                 capture_output=True, text=True, check=False).stdout, end="")
             target = os.environ.get("GITHUB_ENV")
             if target:
                 with open(target, "a", encoding="utf-8") as file:
