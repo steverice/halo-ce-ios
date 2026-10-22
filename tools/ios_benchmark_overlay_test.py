@@ -56,7 +56,7 @@ def main():
     supported = runtime["supportedDeviceTypes"]
     phone = next(d for d in supported if d["name"].startswith("iPhone SE")) if any(
         d["name"].startswith("iPhone SE") for d in supported) else next(d for d in supported if d["name"].startswith("iPhone"))
-    tablet = next(d for d in supported if d["name"].startswith("iPad"))
+    tablet = next((d for d in supported if d["name"].startswith("iPad")), None)  # some runtimes ship phones only
     app = output / "OverlayProbe.app"
     app.mkdir()
     production = args.source.read_text()
@@ -80,6 +80,9 @@ def main():
         str(source), "-o", str(app / "OverlayProbe"))
     run("codesign", "--sign", "-", str(app))
     for kind, device in (("phone", phone), ("ipad", tablet)):
+        if device is None:
+            print(f"{kind}: no supported device type in {runtime['name']}, skipped", flush=True)
+            continue
         folder = output / kind
         folder.mkdir()
         udid = sim("create", "VISR overlay layout probe", device["identifier"], runtime["identifier"])
