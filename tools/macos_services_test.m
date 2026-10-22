@@ -24,6 +24,7 @@ static void probe_release_mode(CGDisplayModeRef mode) { assert(mode); mode_relea
 
 static int finish_requested;
 int host_benchmark_finish_requested(void) { return finish_requested; }
+void host_benchmark_progress(struct host_benchmark_progress *progress) { memset(progress, 0, sizeof(*progress)); }
 
 static int window_reads, pushes;
 static Uint32 last_event;
