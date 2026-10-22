@@ -101,7 +101,7 @@ def main():
             container = Path(sim("get_app_container", udid, BUNDLE, "data"))
             for state in ("loading", "measuring", "presented", "restored", "finish", "hidden"):
                 if state != "loading":
-                    sim("openurl", udid, "overlayprobe://" + state)
+                    (container / "Documents/command.txt").write_text(state)
                 wait_for_state(container, state, log)
                 time.sleep(0.5)  # Let the compositor display the checked layout.
                 sim("io", udid, "screenshot", str(folder / (state + ".png")))

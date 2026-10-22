@@ -79,11 +79,27 @@ static void checkProgress(NSString *phase) {
         host_benchmark_overlay_show(1);
         assert(first == benchmark_overlay);
         receipt(@"loading");
+        [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *timer) {
+            (void)timer; [self pollCommandFile];
+        }];
     });
 }
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)contexts {
     (void)scene;
-    NSString *command = contexts.anyObject.URL.host;
+    [self runCommand:contexts.anyObject.URL.host];
+}
+/* The driver also writes Documents/command.txt, which is polled: simctl openurl
+   can be swallowed by a system confirmation on some runtimes. */
+- (void)pollCommandFile {
+    NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
+        stringByAppendingPathComponent:@"command.txt"];
+    NSString *command = [[NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil]
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!command.length) return;
+    [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+    [self runCommand:command];
+}
+- (void)runCommand:(NSString *)command {
     HaloBenchmarkOverlayController *controller = (id)benchmark_overlay.rootViewController;
     if ([command isEqualToString:@"measuring"]) {
         progress.phase = HOST_BENCHMARK_MEASURING;
