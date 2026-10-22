@@ -269,7 +269,8 @@ time some command buffer was running, from the spans' union. Completion
 handlers can run on several threads, hence the lock. */
 static os_unfair_lock gpu_busy_lock = OS_UNFAIR_LOCK_INIT;
 static CFTimeInterval gpu_busy_until;
-/* Spans the union can't use: no times (end not after start), an end after the
+/* Spans the union can't use: a failed buffer's, no times (none, or an end before
+the start), no length (start and end the same), an end after the
 completion handler that reports it (a time on another clock), or longer than any
 frame. One end in the future once raised gpu_busy_until past every later span,
 and every frame after it had no GPU time: an Apple TV HD's reports lost it for
@@ -306,9 +307,14 @@ static void gpu_busy_add(CFTimeInterval start, CFTimeInterval end)
 {
 	CFTimeInterval counted = 0.0, now = CACurrentMediaTime();
 
-	if (!(start > 0.0) || !(end > start))
+	if (!(start > 0.0) || !(end >= start))
 	{
 		gpu_busy_refused("no times", start, end, now);
+		return;
+	}
+	if (end == start)
+	{
+		gpu_busy_refused("no length", start, end, now);
 		return;
 	}
 	/* (a small allowance for the clocks' rounding) */
@@ -334,6 +340,28 @@ static void gpu_busy_add(CFTimeInterval start, CFTimeInterval end)
 		atomic_fetch_add(&pacing_gpu_nanoseconds, (uint64_t)(counted * 1e9));
 }
 
+/* command buffers that failed (their status an error): how many, and the last
+one's error, for the benchmark's log. A failed buffer drew nothing, and its
+times are not the GPU's work. */
+static uint64_t gpu_failed_buffers;
+static char gpu_failed_last[160];
+
+/* a completed command buffer's GPU time, into the union */
+static void gpu_busy_count(id<MTLCommandBuffer> completed)
+{
+	if (completed.status == MTLCommandBufferStatusError)
+	{
+		os_unfair_lock_lock(&gpu_busy_lock);
+		gpu_failed_buffers++;
+		snprintf(gpu_failed_last, sizeof(gpu_failed_last), "%s %ld: %s", completed.error.domain.UTF8String,
+			(long)completed.error.code, completed.error.localizedDescription.UTF8String);
+		os_unfair_lock_unlock(&gpu_busy_lock);
+		gpu_busy_refused("failed", completed.GPUStartTime, completed.GPUEndTime, CACurrentMediaTime());
+		return;
+	}
+	gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+}
+
 /* host_benchmark.m: the spans used and refused since launch, and the last
 refused one, as text for a run's log (platform_log's lines are not kept on
 every device) */
@@ -347,6 +375,13 @@ void gpu_metal_gpu_spans_summary(char *text, size_t size)
 	else
 		snprintf(text, size, "%llu command buffers' GPU times used and none refused",
 			(unsigned long long)atomic_load(&gpu_spans_used));
+	if (gpu_failed_buffers)
+	{
+		size_t used = strlen(text);
+
+		snprintf(text + used, size - used, "; %llu failed, the last with %s", (unsigned long long)gpu_failed_buffers,
+			gpu_failed_last);
+	}
 	os_unfair_lock_unlock(&gpu_busy_lock);
 }
 
@@ -371,7 +406,7 @@ void gpu_metal_count_gpu_time(id<MTLCommandBuffer> commands)
 {
 	[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
 	{
-		gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+		gpu_busy_count(completed);
 	}];
 }
 #endif
@@ -627,7 +662,7 @@ static void native_unpark(void)
 		{
 			if (completed.status == MTLCommandBufferStatusError)
 				platform_log("Metal: a command buffer ahead of the HUD's failed: %s", completed.error.description.UTF8String);
-			gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+			gpu_busy_count(completed);
 		}];
 		[commands commit];
 	}
@@ -716,7 +751,7 @@ static void commit(BOOL frame_end)
 			GPU_VALIDATION_REPORT(GPU_VALIDATION_COMMAND_BUFFER_FAILED, 0, "command buffer %llu: %s", (unsigned long long)serial,
 				completed.error.description.UTF8String);
 		}
-		gpu_busy_add(completed.GPUStartTime, completed.GPUEndTime);
+		gpu_busy_count(completed);
 		for (test = 0; test < pending.length / sizeof(*tests); test++)
 		{
 			/* the samples its draws passed, added up (a yes-or-no test's
