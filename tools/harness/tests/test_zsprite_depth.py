@@ -47,7 +47,7 @@ static void check(const struct nv2a_dialect *dialect, int dot_zw, int count_samp
         if (dialect->msl)
         {
             assert(strstr(shader, "float depth [[depth(any)]]") != NULL);
-            assert(strstr(shader, "output.depth = 1.0 - replaced_depth") != NULL);
+            assert(strstr(shader, "output.depth = (as_type<uint>(replaced_depth) & 0x7f800000u) != 0x7f800000u ?\n\t\t1.0 - replaced_depth : 0.0;") != NULL);
             assert(strstr(shader, "gl_FragDepth") == NULL);
         }
         else

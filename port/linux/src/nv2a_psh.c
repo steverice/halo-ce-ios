@@ -768,10 +768,13 @@ char *nv2a_pixel_shader_translate(const struct nv2a_dialect *dialect, const stru
 	xgpu_text_append(&text, "\tfragment_color = clamp(result, 0.0, 1.0);\n");
 	if (dialect->msl)
 	{
+		/* (a depth that is not finite, from a NaN interpolant, is the far
+		plane's: the exponent bits are tested, which no math mode drops) */
 		if (writes_depth)
 			xgpu_text_append(&text,
 				"\tFragmentWithDepth output;\n\toutput.color = fragment_color;\n"
-				"\toutput.depth = 1.0 - replaced_depth;\n\treturn output;\n");
+				"\toutput.depth = (as_type<uint>(replaced_depth) & 0x7f800000u) != 0x7f800000u ?\n"
+				"\t\t1.0 - replaced_depth : 0.0;\n\treturn output;\n");
 		else
 			xgpu_text_append(&text, "\treturn fragment_color;\n");
 	}
