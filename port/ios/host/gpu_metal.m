@@ -364,7 +364,22 @@ static void gpu_busy_count(id<MTLCommandBuffer> completed)
 		os_unfair_lock_unlock(&gpu_busy_lock);
 		/* (in the host's log, which every device keeps) */
 		if (first)
-			host_logf(HOST_LOG_ERROR, "Metal: the first command buffer to fail: %s", gpu_failed_first);
+		{
+			NSArray *encoders = completed.error.userInfo[MTLCommandBufferEncoderInfoErrorKey];
+
+			host_logf(HOST_LOG_ERROR, "Metal: the first command buffer to fail: %s (%s, %lu encoders known)", gpu_failed_first,
+				completed.label.UTF8String ?: "unlabeled", (unsigned long)encoders.count);
+			/* (debug.gl_debug: each encoder's state, which names the one the GPU faulted or hung in) */
+			for (id<MTLCommandBufferEncoderInfo> info in encoders)
+			{
+				static const char *const states[] = { "unknown", "completed", "affected", "pending", "faulted" };
+				long state = (long)info.errorState;
+
+				host_logf(HOST_LOG_ERROR, "Metal:   encoder %s: %s%s%s", info.label.UTF8String ?: "unlabeled",
+					state >= 0 && state < 5 ? states[state] : "?", info.debugSignposts.count ? ", in " : "",
+					info.debugSignposts.count ? [info.debugSignposts componentsJoinedByString:@" > "].UTF8String : "");
+			}
+		}
 		gpu_busy_refused("failed", completed.GPUStartTime, completed.GPUEndTime, CACurrentMediaTime());
 		return;
 	}
@@ -1836,7 +1851,12 @@ static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_cl
 	metal_state_reset(&state_cache);
 	encoder_depth_clamp = 0;
 	if (metal_debug)
-		encoder.label = [NSString stringWithFormat:@"targets %u/%u", color, depth];
+	{
+		id<MTLTexture> sized = pass.colorAttachments[0].texture ?: pass.depthAttachment.texture;
+
+		encoder.label = [NSString stringWithFormat:@"targets %u/%u %lux%lu, frame %lu", color, depth,
+			(unsigned long)sized.width, (unsigned long)sized.height, frames];
+	}
 	pass_color = color;
 	pass_depth = depth;
 	pass_commands = 0;
