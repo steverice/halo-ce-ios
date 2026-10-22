@@ -574,9 +574,10 @@ profile's settings in force) and gets its last lines when it closes
 tick of game time and closes when another map loads, the same map starts
 over (the game time back under a second), or the menu returns. Dying does
 not close it: the revert to a checkpoint is a new segment, as in any
-recording. Quitting the app or the system suspending it closes nothing, so
-such a take's .route has no closed_by; its other two files are whole at
-every moment, each line being flushed as written.
+recording. Quitting the app closes it ("closed_by = quit"); the system
+suspending or killing the app closes nothing, so such a take's .route has no
+closed_by; its other two files are whole at every moment, each line being
+flushed as written.
 
 A take whose first_tick is not the level's start (a saved game continued)
 replays nowhere else: entered says "saved" and tools leave it out. One
