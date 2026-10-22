@@ -1047,7 +1047,7 @@ def archive_identity(
     if guest_hash != policy["guest_sha256"]:
         raise ValueError("Actual archived guest differs from the reviewed probe")
     expected_info = {
-        "DTXcodeBuild": "27B5028f",
+        "DTXcodeBuild": "27B5038j",
         "DTSDKName": PLATFORMS[platform][1] + "27.2",
         "CFBundleIdentifier": os.environ["APPLE_BUNDLE_ID"],
         "HaloDataPackPublicKey": "b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea",

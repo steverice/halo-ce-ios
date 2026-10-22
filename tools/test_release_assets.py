@@ -209,7 +209,7 @@ def test_archive_rejects_changed_encryption_or_shader_feed(tmp_path, monkeypatch
         "CFBundleShortVersionString": "0.2.2",
         "CFBundleVersion": "20261019.1",
         "DTPlatformName": "iphoneos",
-        "DTXcodeBuild": "27B5028f",
+        "DTXcodeBuild": "27B5038j",
         "DTSDKName": "iphoneos27.2",
         "CFBundleIdentifier": "example.app",
         "CFBundleExecutable": "VISR",

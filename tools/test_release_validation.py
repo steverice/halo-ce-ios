@@ -128,7 +128,7 @@ def test_probe_never_calls_release_mutation_helpers(
         return ""
 
     monkeypatch.setattr(validation, "run", run)
-    monkeypatch.setattr(validation, "toolchain", lambda *_: {"xcode_build": "27B5028f"})
+    monkeypatch.setattr(validation, "toolchain", lambda *_: {"xcode_build": "27B5038j"})
     monkeypatch.setattr(
         validation, "inspect_build", lambda *_, **__: {"guest_sha256": "a" * 64}
     )
@@ -179,7 +179,7 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
         plistlib.dumps(
             {
                 "CFBundleExecutable": "VISR",
-                "DTXcodeBuild": "27B5028f",
+                "DTXcodeBuild": "27B5038j",
                 "DTSDKName": "iphoneos27.2",
             }
         )

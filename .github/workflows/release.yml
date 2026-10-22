@@ -44,7 +44,7 @@ concurrency:
 
 # The xcode-27 image inventory includes this exact build. Never follow its default Xcode.
 env:
-  DEVELOPER_DIR: /Applications/Xcode_27.2_beta_2.app/Contents/Developer
+  DEVELOPER_DIR: /Applications/Xcode_27.2_beta_3.app/Contents/Developer
 
 jobs:
   probe:

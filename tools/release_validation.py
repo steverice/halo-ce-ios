@@ -34,7 +34,7 @@ else:
     from ios_build import DATA_PACK_PUBLIC_KEY, data_pack_definitions
     from guest_epoch import ENVIRONMENT, FIELD, parse_guest_epoch
 
-XCODE_BUILD = "27B5028f"
+XCODE_BUILD = "27B5038j"
 SDK_VERSION = "27.2"
 
 

@@ -272,7 +272,7 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
                 "CFBundleShortVersionString": manifest["version"],
                 "CFBundleVersion": manifest["build_number"],
                 "DTPlatformName": "iphoneos",
-                "DTXcodeBuild": "27B5028f",
+                "DTXcodeBuild": "27B5038j",
                 "DTSDKName": "iphoneos27.2",
                 "HaloDataPackPublicKey": validation.DATA_PACK_PUBLIC_KEY,
                 "HaloProfileFeedURL": manifest["build_policy"]["profile_feed_url"],
