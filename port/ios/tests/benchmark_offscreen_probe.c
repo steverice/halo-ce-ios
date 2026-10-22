@@ -1,6 +1,7 @@
 /* debug.benchmark_offscreen's rules (port/ios/host/host_benchmark_offscreen.h): tools/ios_test.py runs every case,
    tools/test_benchmark_offscreen.py one at a time by name. */
 #include "host_benchmark_offscreen.h"
+#include "host_benchmark_progress.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,10 +42,55 @@ static void ignored_on_stereo(void) {
     CHECK(!host_benchmark_offscreen_frame(decided, 1));
 }
 
+static void progress_format(void) {
+    struct host_benchmark_progress p = { .mode = "cost:shadows", .number = 2, .total = 8,
+        .elapsed = 125.9, .measured_fraction = -1, .offscreen = 1 };
+    char text[512];
+    host_benchmark_progress_detail(&p, text, sizeof(text));
+    CHECK(strstr(text, "cost:shadows — offscreen benchmark") != NULL);
+    CHECK(strstr(text, "Case 2 of 8") != NULL);
+    CHECK(strstr(text, "Loading · Elapsed 2:05") != NULL);
+    CHECK(strstr(text, "Measured window") == NULL);
+    p.phase = HOST_BENCHMARK_LEAD_IN;
+    host_benchmark_progress_detail(&p, text, sizeof(text));
+    CHECK(strstr(text, "Lead-in") != NULL);
+    p.phase = HOST_BENCHMARK_MEASURING;
+    p.measured_fraction = 0.375;
+    host_benchmark_progress_detail(&p, text, sizeof(text));
+    CHECK(strstr(text, "Measuring") != NULL);
+    CHECK(strstr(text, "Measured window: 38%") != NULL);
+    p.measured_fraction = 1.5;
+    host_benchmark_progress_detail(&p, text, sizeof(text));
+    CHECK(strstr(text, "Measured window: 100%") != NULL);
+    p.measured_fraction = -1;
+    host_benchmark_progress_detail(&p, text, sizeof(text));
+    CHECK(strstr(text, "Measured window") == NULL);
+    p.presented = 1;
+    host_benchmark_progress_detail(&p, text, sizeof(text));
+    CHECK(strstr(text, "Presented check") != NULL);
+}
+
+static void progress_visibility(void) {
+    struct host_benchmark_progress p = {0};
+    CHECK(!host_benchmark_progress_visible(&p));
+    p.offscreen = 1;
+    CHECK(host_benchmark_progress_visible(&p));
+    /* A stage P case still has an offscreen lead before presentation begins. */
+    p.reality_check = 1;
+    CHECK(host_benchmark_progress_visible(&p));
+    p.presented = 1;
+    CHECK(!host_benchmark_progress_visible(&p));
+    p.presented = 0;
+    CHECK(host_benchmark_progress_visible(&p));
+    p.offscreen = 0;
+    CHECK(!host_benchmark_progress_visible(&p));
+}
+
 int main(int argc, char **argv) {
     static const struct { const char *name; void (*run)(void); } cases[] = {
         { "ignored_outside_suite", ignored_outside_suite }, { "active_in_suite", active_in_suite },
         { "ignored_on_stereo", ignored_on_stereo },
+        { "progress_format", progress_format }, { "progress_visibility", progress_visibility },
     };
     size_t index, ran = 0;
 

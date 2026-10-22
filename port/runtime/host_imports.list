@@ -6,6 +6,7 @@ host_abort
 host_exit
 host_benchmark_start
 host_benchmark_next
+host_benchmark_phase
 host_benchmark_window
 host_benchmark_graphics
 host_benchmark_end

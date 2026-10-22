@@ -6,6 +6,7 @@
 #include "host_macos.h"
 #include "ios_host.h"
 #include "host_external.h"
+#include "host_benchmark.h"
 #include "host_frame_counter_stats.h"
 #include <stdatomic.h>
 #include <stdio.h>
@@ -155,9 +156,58 @@ void host_extra_scene_poll(void) {}
 void host_extra_scene_test(void) {}
 int host_scene_is_games(void *scene) { (void)scene; return 1; }
 /* Native reports remain in the data folder; do not open a local HTTP server or another app. */
-/* The local native target has no tester launch UI or interactive benchmark panel. */
+/* Native Mac uses the same progress snapshot as the UIKit tester screen. */
+static NSView *benchmark_progress_view;
+static NSTextField *benchmark_progress_label;
+static NSTimer *benchmark_progress_timer;
+static void benchmark_progress_refresh(void) {
+    struct host_benchmark_progress progress;
+    host_benchmark_progress(&progress);
+    benchmark_progress_view.hidden = !host_benchmark_progress_visible(&progress);
+    if (benchmark_progress_view.hidden) return;
+    char detail[512];
+    host_benchmark_progress_detail(&progress, detail, sizeof(detail));
+    benchmark_progress_label.stringValue = [NSString stringWithFormat:@"%s\n\n%s\n\nBenchmark running — please don’t close the app",
+        progress.title[0] ? progress.title : "Getting ready", detail];
+}
+void host_benchmark_overlay_presented(int presented) {
+    void (^update)(void) = ^{ benchmark_progress_view.hidden = presented != 0; benchmark_progress_refresh(); };
+    if (NSThread.isMainThread) update();
+    else dispatch_sync(dispatch_get_main_queue(), update);
+}
 void host_benchmark_overlay_show(int visible) {
-    if (visible) host_logf(HOST_LOG_WARN, "Benchmark controls are unavailable in this native build");
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ host_benchmark_overlay_show(visible); });
+        return;
+    }
+    if (!visible) {
+        [benchmark_progress_timer invalidate]; benchmark_progress_timer = nil;
+        [benchmark_progress_view removeFromSuperview]; benchmark_progress_view = nil;
+        benchmark_progress_label = nil;
+        return;
+    }
+    if (benchmark_progress_view) return;
+    NSView *parent = game_window().contentView;
+    if (!parent) return;
+    benchmark_progress_view = [[NSView alloc] initWithFrame:parent.bounds];
+    benchmark_progress_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    benchmark_progress_view.wantsLayer = YES;
+    benchmark_progress_view.layer.backgroundColor = NSColor.blackColor.CGColor;
+    benchmark_progress_label = [NSTextField wrappingLabelWithString:@""];
+    benchmark_progress_label.textColor = NSColor.whiteColor;
+    benchmark_progress_label.font = [NSFont systemFontOfSize:20];
+    benchmark_progress_label.alignment = NSTextAlignmentCenter;
+    benchmark_progress_label.translatesAutoresizingMaskIntoConstraints = NO;
+    [benchmark_progress_view addSubview:benchmark_progress_label];
+    [NSLayoutConstraint activateConstraints:@[
+        [benchmark_progress_label.centerYAnchor constraintEqualToAnchor:benchmark_progress_view.centerYAnchor],
+        [benchmark_progress_label.leadingAnchor constraintEqualToAnchor:benchmark_progress_view.leadingAnchor constant:24],
+        [benchmark_progress_label.trailingAnchor constraintEqualToAnchor:benchmark_progress_view.trailingAnchor constant:-24]]];
+    [parent addSubview:benchmark_progress_view];
+    benchmark_progress_refresh();
+    benchmark_progress_timer = [NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
+        (void)timer; benchmark_progress_refresh();
+    }];
 }
 void host_benchmark_page(const char *path, const char *summary, const char *code, int minutes) {
     (void)code; (void)minutes;
