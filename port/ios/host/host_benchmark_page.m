@@ -666,20 +666,34 @@ void host_benchmark_page(const char *report_path, const char *summary, const cha
 #endif
 @end
 static HaloBenchmarkOverlayWindow *benchmark_overlay;
+static id benchmark_overlay_activation;
 void host_benchmark_overlay_show(int visible) {
     if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ host_benchmark_overlay_show(visible); }); return; }
     if(!visible) {
+        if(benchmark_overlay_activation) [NSNotificationCenter.defaultCenter removeObserver:benchmark_overlay_activation];
+        benchmark_overlay_activation=nil;
         [((HaloBenchmarkOverlayController *)benchmark_overlay.rootViewController).timer invalidate];
         benchmark_overlay.hidden=YES; benchmark_overlay.rootViewController=nil; benchmark_overlay=nil; return;
     }
     if(benchmark_overlay)return;
+    /* SDL can enter the guest before the connected scene becomes active. Keep
+       the request alive if no foreground window scene has connected yet. */
+    if(!benchmark_overlay_activation)
+        benchmark_overlay_activation=[NSNotificationCenter.defaultCenter addObserverForName:UISceneDidActivateNotification
+            object:nil queue:nil usingBlock:^(NSNotification *notification) { host_benchmark_overlay_show(1); }];
     for(UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {
-        if(![candidate isKindOfClass:UIWindowScene.class] || candidate.activationState!=UISceneActivationStateForegroundActive)continue;
+        if(![candidate isKindOfClass:UIWindowScene.class] ||
+            ![((UIWindowScene *)candidate).session.role isEqualToString:UIWindowSceneSessionRoleApplication])continue;
+        host_logf(HOST_LOG_INFO,"benchmark overlay: window scene state %ld",(long)candidate.activationState);
+        if(candidate.activationState!=UISceneActivationStateForegroundActive &&
+            candidate.activationState!=UISceneActivationStateForegroundInactive)continue;
         benchmark_overlay=[[HaloBenchmarkOverlayWindow alloc] initWithWindowScene:(UIWindowScene *)candidate];
         benchmark_overlay.frame=((UIWindowScene *)candidate).coordinateSpace.bounds;
         benchmark_overlay.windowLevel=UIWindowLevelNormal+1;
         benchmark_overlay.rootViewController=[HaloBenchmarkOverlayController new];
-        [benchmark_overlay makeKeyAndVisible]; break;
+        [benchmark_overlay makeKeyAndVisible];
+        host_logf(HOST_LOG_INFO,"benchmark overlay: created native progress window");
+        break;
     }
 }
 

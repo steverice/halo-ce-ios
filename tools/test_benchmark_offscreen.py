@@ -158,3 +158,23 @@ def test_progress_phase_bridge():
     for state, phase in [("loading", 0), ("lead", 1), ("measuring", 2)]:
         assert f"state == suite_{state}) host_benchmark_phase({phase})" in guest
     assert "host_benchmark_phase" in (ROOT / "port/runtime/host_imports.list").read_text().split()
+
+
+def test_overlay_window_lifecycle(tmp_path):
+    """Execute the production window code with an inactive launch scene on macOS."""
+    import sys
+
+    if sys.platform != "darwin":
+        pytest.skip("Objective-C Foundation probe requires macOS")
+    compiler = shutil.which("clang")
+    if not compiler:
+        pytest.skip("no Objective-C compiler")
+    ui = (ROOT / "port/ios/host/host_benchmark_page.m").read_text()
+    production = ui[ui.index("static HaloBenchmarkOverlayWindow *benchmark_overlay;"):]
+    template = (ROOT / "port/ios/tests/benchmark_overlay_probe.m").read_text()
+    source = tmp_path / "overlay.m"
+    source.write_text(template.replace("// PRODUCTION_OVERLAY", production))
+    program = tmp_path / "overlay"
+    subprocess.run([compiler, "-fobjc-arc", "-fblocks", "-Wall", "-Werror",
+                    "-framework", "Foundation", str(source), "-o", str(program)], check=True)
+    subprocess.run([str(program)], check=True, timeout=10)
