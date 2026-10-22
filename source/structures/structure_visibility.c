@@ -119,7 +119,6 @@ symbols in this file:
 #include "shaders/shader_definitions.h"
 #include "structures/structure_bsp_definitions.h"
 #include "tag_files/tag_groups.h"
-#include "structure_culling.h" /* port: port/linux/game/structure_culling.c */
 
 /* ---------- constants */
 
@@ -343,10 +342,9 @@ static boolean warned_about_structure_bsp_depth;
 static struct structure_visibility_globals structure_visibility_globals;
 static struct profile_section render_structure_visibility_portal_traversal =
 	{ "render_structure_visibility_portal_traversal", NONE, TRUE };
-/* port: shared with the culling walk so both paths use the same profile sections */
-struct profile_section render_structure_visibility_subcluster_traversal =
+static struct profile_section render_structure_visibility_subcluster_traversal =
 	{ "render_structure_visibility_subcluster_traversal", NONE, TRUE };
-struct profile_section render_structure_visibility_surface_traversal =
+static struct profile_section render_structure_visibility_surface_traversal =
 	{ "render_structure_visibility_surface_traversal", NONE, TRUE };
 real structure_sphere_threshold = 2.0f;
 
@@ -1982,11 +1980,7 @@ void structure_visibility_compute(
 		0,
 		struct structure_visibility_cluster)->subclusters.count)
 	{
-		/* port: retain the original walk when culling is disabled or unavailable */
-		if (!structure_culling_traverse(structure))
-		{
-			structure_visibility_traverse_subclusters(structure);
-		}
+		structure_visibility_traverse_subclusters(structure);
 	}
 	else
 	{
@@ -2002,11 +1996,7 @@ void structure_visibility_compute(
 			warned_about_missing_subclusters = TRUE;
 		}
 
-		/* port: retain the original walk when culling is disabled or unavailable */
-		if (!structure_culling_traverse(structure))
-		{
-			structure_visibility_traverse_surface_lists(structure);
-		}
+		structure_visibility_traverse_surface_lists(structure);
 	}
 
 	return;

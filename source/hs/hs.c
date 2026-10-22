@@ -2840,7 +2840,6 @@ symbols in this file:
 #include "units/units.h"
 #include "units/vehicles.h"
 #include "coop_scripts.h" /* port: port/linux/game/coop_scripts.c */
-#include "structure_culling.h" /* port: port/linux/game/structure_culling.c */
 
 /* ---------- constants */
 
@@ -3379,7 +3378,7 @@ typedef void (*hs_token_enumerator)(
 
 struct hs_function_table_storage
 {
-	struct hs_function_definition const *functions[418 + 6];
+	struct hs_function_definition const *functions[418 + 4];
 	struct profile_section profile;
 	hs_token_enumerator token_enumerators[18];
 };
@@ -11734,43 +11733,7 @@ static struct hs_function_definition_with_1_parameter const loose_sounds_definit
 	},
 };
 
-/* port: the culling tests change only this machine's rendering */
-HS_EVALUATE_VOID_LONG(hs_structure_culling_evaluate, structure_culling_set_tests)
-
-static struct hs_function_definition_with_1_parameter const structure_culling_definition=
-{
-	{
-		_hs_type_void,
-		0,
-		"structure_culling",
-		hs_macro_function_parse,
-		hs_structure_culling_evaluate,
-		"which structure culling tests run, as bits (1 triangle planes, 2 bucket facing, 4 triangle facing, 8 finer buckets, 16 near first); 0 is the original walk.",
-		NULL,
-		1,
-		{ _hs_type_long_integer },
-	},
-};
-
-/* port: the debug view changes only this machine's rendering */
-HS_EVALUATE_VOID_BOOLEAN(hs_debug_structure_culling_evaluate, structure_culling_debug)
-
-static struct hs_function_definition_with_1_parameter const debug_structure_culling_definition=
-{
-	{
-		_hs_type_void,
-		0,
-		"debug_structure_culling",
-		hs_macro_function_parse,
-		hs_debug_structure_culling_evaluate,
-		"draws the structure triangles culled for the culling camera (red: outside the view, blue: facing away) and the counts.",
-		NULL,
-		1,
-		{ _hs_type_boolean },
-	},
-};
-
-long const hs_function_table_count= 418 + 6;
+long const hs_function_table_count= 418 + 4;
 
 struct hs_enum_definition const hs_enum_table[]=
 {
@@ -12206,8 +12169,6 @@ struct hs_function_table_storage hs_function_table=
 		&sv_end_game_definition,
 		&loose_sounds_reload_definition,
 		&loose_sounds_definition.definition,
-		&structure_culling_definition.definition, /* port: local structure culling switch */
-		&debug_structure_culling_definition.definition, /* port: local culling debug view */
 	},
 	{
 		"hs_update",
@@ -12713,10 +12674,6 @@ static boolean const hs_function_allowed_in_maps[]=
 	/* the port's, for those making sounds */
 	FALSE, /* loose_sounds_reload */
 	FALSE, /* loose_sounds */
-
-	/* port: local structure rendering */
-	FALSE, /* structure_culling: this machine's rendering */
-	FALSE, /* debug_structure_culling: this machine's rendering */
 };
 typedef char verify_hs_function_allowed_in_maps_size[
 	NUMBEROF(hs_function_allowed_in_maps) == NUMBEROF(hs_function_table.functions) ? 1 : -1];
@@ -15343,8 +15300,6 @@ static boolean hs_expression_changes_no_game(
 		"player0_look_yaw_rate", "player1_look_yaw_rate", "player2_look_yaw_rate", "player3_look_yaw_rate",
 		"player0_look_pitch_rate", "player1_look_pitch_rate", "player2_look_pitch_rate",
 		"player3_look_pitch_rate",
-		"structure_culling", /* port: only this machine's rendering */
-		"debug_structure_culling", /* port: only this machine's rendering */
 		"true", "false", "on", "off",
 	};
 	char const *character = expression;

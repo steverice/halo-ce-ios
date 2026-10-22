@@ -168,7 +168,6 @@ symbols in this file:
 #include "units/bipeds.h"
 #include "units/vehicle_datum.h"
 #include "units/vehicles.h"
-#include "structure_culling.h" /* port: port/linux/game/structure_culling.c */
 
 /* ---------- constants */
 
@@ -529,7 +528,6 @@ void render_debug(
 	render_debug_camera();
 	render_debug_player();
 	render_debug_structure();
-	structure_culling_render_debug(); /* port: show what the culling camera rejected */
 	render_debug_bsp();
 	render_debug_input();
 	render_debug_structure_decals();
