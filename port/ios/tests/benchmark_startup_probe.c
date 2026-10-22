@@ -55,6 +55,9 @@ static _Noreturn void probe_exit(int status) {
 const char *config_string(const char *name) {
     return !strcmp(name, "debug.benchmark_suite") ? mode : "auto";
 }
+#ifndef WINDOW_MARKER_PROBE
+int config_boolean(const char *name) { (void)name; return 0; }
+#endif
 long config_integer(const char *name) { (void)name; return 0; }
 double config_scene_real(const char *name, int scene) { (void)name; (void)scene; return 1; }
 long config_scene_integer(const char *name, int scene) { (void)name; (void)scene; return 0; }
@@ -128,7 +131,8 @@ int input_replay_begin(const char *name, int lip_sync) {
     return 1;
 }
 void coop_enemies_solo_override(double multiplier) { (void)multiplier; }
-int input_replay_ended(void) { return 0; }
+static int replay_ended;
+int input_replay_ended(void) { return replay_ended; }
 long input_replay_segment(void) { return 0; }
 double input_replay_length_ticks(void) { return 9000; }
 static double timeline_value;

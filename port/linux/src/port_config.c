@@ -1296,6 +1296,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens (of game time under\n"
 		"debug.fixed_timestep); 0 never." },
+	{ "debug.benchmark_window_marker", _config_boolean, "false", "HALO_BENCHMARK_WINDOW_MARKER", _environment_set_is_true, _platform_all,
+		"Show the measured benchmark window and a five-second countdown onscreen." },
+	{ "debug.benchmark_review_take", _config_boolean, "false", "HALO_BENCHMARK_REVIEW_TAKE", _environment_set_is_true, _platform_all,
+		"In an onscreen benchmark replay, play the rest of the recorded input after the measured window closes. Log take position every ten seconds." },
 	{ "debug.fixed_timestep", _config_boolean, "false", "HALO_FIXED_TIMESTEP", _environment_set_is_true, _platform_all,
 		"Advance the game's clock 1/30 s per frame, however long the frame took, so\n"
 		"two runs show the same frames; debug.exit_after then counts seconds of\n"

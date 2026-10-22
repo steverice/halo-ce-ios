@@ -1982,6 +1982,28 @@
             "desktop"
           ]
         },
+        "benchmark_window_marker": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the measured benchmark window and a five-second countdown onscreen.",
+          "x-environment": "HALO_BENCHMARK_WINDOW_MARKER",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "benchmark_review_take": {
+          "type": "boolean",
+          "default": false,
+          "description": "In an onscreen benchmark replay, play the rest of the recorded input after the measured window closes. Log take position every ten seconds.",
+          "x-environment": "HALO_BENCHMARK_REVIEW_TAKE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "fixed_timestep": {
           "type": "boolean",
           "default": false,

@@ -562,6 +562,8 @@ the setting for one start of the game. It has priority over the file.
 | `debug.update_answer` | string | `""` | desktop | `HALO_UPDATE_ANSWER` | The answer to the new version question, for automated tests: "yes", "no" or "never" (do not ask again, confirmed); empty asks. |
 | `debug.link_consent_answer` | string | `""` | apple | `HALO_LINK_CONSENT_ANSWER` | The answer to "Join this game over the internet?" and to "Turn on Internet Play?" for automated tests: "join" (Join, Turn On) or "cancel"; empty asks. |
 | `debug.exit_after` | number | `0.0` | apple, desktop | `HALO_EXIT_AFTER` | Quit this many seconds after the window opens (of game time under debug.fixed_timestep); 0 never. |
+| `debug.benchmark_window_marker` | boolean | `false` | apple, desktop | `HALO_BENCHMARK_WINDOW_MARKER` | Show the measured benchmark window and a five-second countdown onscreen. |
+| `debug.benchmark_review_take` | boolean | `false` | apple, desktop | `HALO_BENCHMARK_REVIEW_TAKE` | In an onscreen benchmark replay, play the rest of the recorded input after the measured window closes. |
 | `debug.fixed_timestep` | boolean | `false` | apple, desktop | `HALO_FIXED_TIMESTEP` | Advance the game's clock 1/30 s per frame, however long the frame took, so two runs show the same frames; debug.exit_after then counts seconds of game time, 30 frames each (600 = 18,000 frames). |
 | `debug.hidden_window` | boolean | `false` | desktop | `HALO_HIDDEN_WINDOW` | Keep the window hidden (and never fullscreen). |
 | `debug.null_renderer` | boolean | `false` | apple, desktop | `HALO_NULL_RENDERER` | Run without a window, drawing nothing. |

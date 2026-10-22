@@ -282,20 +282,23 @@ static const char *anti_aliasing_label;
 static double knob_message_milliseconds = -1.0;
 static char knob_message_text[96];
 
+int benchmark_suite_window_marker(char *text, size_t size);
+
 void halo_render_scale_overlay(void)
 {
-	char text[64];
+	char text[256], marker[96];
+	text[0] = 0;
+	if (benchmark_suite_window_marker(marker, sizeof(marker))) snprintf(text, sizeof(text), "%s", marker);
 
 	if (anti_aliasing_changed_milliseconds >= 0.0 &&
 		halo_frame_trace_milliseconds() - anti_aliasing_changed_milliseconds <= 2000.0)
-		render_debug_string(0, anti_aliasing_label);
+		snprintf(text + strlen(text), sizeof(text) - strlen(text), "%s%s", *text ? " | " : "", anti_aliasing_label);
 	if (knob_message_milliseconds >= 0.0 && halo_frame_trace_milliseconds() - knob_message_milliseconds <= 2000.0)
-		render_debug_string(0, knob_message_text);
-	if (render_scale_changed_milliseconds < 0.0 ||
-		halo_frame_trace_milliseconds() - render_scale_changed_milliseconds > 2000.0)
-		return;
-	snprintf(text, sizeof(text), "render scale %.2f", render_scale_live);
-	render_debug_string(0, text);
+		snprintf(text + strlen(text), sizeof(text) - strlen(text), "%s%s", *text ? " | " : "", knob_message_text);
+	if (render_scale_changed_milliseconds >= 0.0 &&
+		halo_frame_trace_milliseconds() - render_scale_changed_milliseconds <= 2000.0)
+		snprintf(text + strlen(text), sizeof(text) - strlen(text), "%srender scale %.2f", *text ? " | " : "", render_scale_live);
+	if (*text) render_debug_string(0, text);
 }
 
 /* one step (0.05) up or down of the render scale, 0.25 to 1.0; the next

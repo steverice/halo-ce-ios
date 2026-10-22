@@ -114,7 +114,7 @@ and the last ten seconds draw as usual so textures, shaders and caches are warm 
 #define DRAWN_LEAD_TICKS 300.0
 
 enum suite_state { suite_unasked, suite_off, suite_starting, suite_next, suite_loading, suite_lead, suite_measuring,
-	suite_wait_mp_teardown };
+	suite_wait_mp_teardown, suite_review_tail };
 enum suite_action { suite_action_none, suite_action_menu, suite_action_mp_begin, suite_action_mp_end };
 
 static struct
@@ -149,6 +149,7 @@ static struct
 	double entered, opened;
 	/* the recorded time when the window opened (a level), and the next route point's */
 	double opened_ticks, route_due;
+	long review_progress;
 	char route[4096];
 	size_t route_length;
 	/* the recording's own route (NAME.checks beside it: the same "tick:x,y,z;..." text, made from replays that
@@ -459,9 +460,32 @@ static unsigned long long texture_replacement_selections;
 (a window opens again, with frames starting to count, when a cutscene gives way to the game) */
 static int benchmark_window_tick(void)
 {
-	double ticks = *suite.recording ? input_replay_timeline() : -1.0;
+	double ticks = suite.mp_scene ? suite.mp_last_tick : (*suite.recording ? input_replay_timeline() : -1.0);
 
 	return ticks >= 0.0 ? (int)ticks : (int)suite.opened_ticks;
+}
+
+/* Share the replay clock with the measured-window events, including checkpoint reverts. */
+int benchmark_suite_window_marker(char *text, size_t size)
+{
+	double elapsed, remaining;
+	if (!text || !size) return 0;
+	text[0] = 0;
+	if (!config_boolean("debug.benchmark_window_marker") || (suite.offscreen && !suite.presented_now)) return 0;
+	elapsed = benchmark_window_tick() / 30.0;
+	if (suite.state == suite_measuring && graphics_window_open)
+	{
+		int seconds = elapsed > suite.opened_ticks / 30.0 ? (int)(elapsed - suite.opened_ticks / 30.0) : 0;
+		int total = (int)suite.seconds;
+		snprintf(text, size, "MEASURING %d:%02d / %d:%02d", seconds / 60, seconds % 60, total / 60, total % 60);
+	}
+	else if (suite.state == suite_lead)
+	{
+		remaining = suite.lead - elapsed + (suite.mp_scene ? suite.mp_ready_tick / 30.0 : 0.0);
+		if (remaining > 0.0 && remaining <= 5.0)
+			snprintf(text, size, "window starts in %d s", (int)remaining + (remaining > (int)remaining));
+	}
+	return text[0] != 0;
 }
 
 void benchmark_graphics_texture_replacement_selected(void)
@@ -511,6 +535,8 @@ invalid:
 static void benchmark_graphics_window(int open, int width, int height)
 {
 	int scene = halo_scene_class(), external = host_external_active();
+	if (!!open != !!graphics_window_open)
+		platform_log("benchmark suite: measured %s scene=%s tick=%d", open ? "start" : "end", suite.scene, benchmark_window_tick());
 	unsigned long revision = config_changes();
 	int publish = open ? !graphics_window_open || scene != graphics_scene || external != graphics_external || revision != graphics_revision : graphics_window_open;
 	if (open && !graphics_window_open) host_benchmark_window(open,width,height,benchmark_window_tick());
@@ -646,6 +672,7 @@ static void next_run(void)
 	suite.model_lod_max = (int)number_field(text, "lod");
 	suite.presented = (int)number_field(text, "presented");
 	suite.capped = 0;
+	suite.review_progress = -1;
 	suite.offscreen = (int)number_field(text, "offscreen");
 	{
 		char kind[32];
@@ -832,7 +859,7 @@ void benchmark_suite_frame(long width, long height)
         int control = host_benchmark_next(NULL, 0);
 
         if (control == 5) {
-            if (suite.state == suite_loading || suite.state == suite_lead || suite.state == suite_measuring) {
+            if (suite.state == suite_loading || suite.state == suite_lead || suite.state == suite_measuring || suite.state == suite_review_tail) {
                 finish("partial", "Finish requested; this case contains only the available partial measurements");
                 return;
             }
@@ -858,6 +885,13 @@ void benchmark_suite_frame(long width, long height)
 		return;
 	}
 	ticks = input_replay_timeline();
+	if (*suite.recording && config_boolean("debug.benchmark_review_take") && ticks >= 0.0 &&
+		(suite.state == suite_lead || suite.state == suite_measuring || suite.state == suite_review_tail) &&
+		(long)(ticks / 300.0) > suite.review_progress)
+	{
+		suite.review_progress = (long)(ticks / 300.0);
+		platform_log("benchmark suite: take position scene=%s tick=%ld", suite.scene, (long)ticks);
+	}
 	switch (suite.state)
 	{
 	case suite_starting:
@@ -1033,7 +1067,10 @@ void benchmark_suite_frame(long width, long height)
 			suite.seconds > 0.0 ? ticks - suite.opened_ticks >= suite.seconds * 30.0 : input_replay_ended()))
 		{
 			benchmark_graphics_window(0, (int)width, (int)height);
-			finish("ok", suite.route);
+			if (*suite.recording && !suite.offscreen && config_boolean("debug.benchmark_review_take") && !input_replay_ended())
+				enter(suite_review_tail);
+			else
+				finish("ok", suite.route);
 		}
 		else if (*suite.recording && suite.seconds > 0.0 && input_replay_ended())
 		{
@@ -1048,6 +1085,11 @@ void benchmark_suite_frame(long width, long height)
 			benchmark_graphics_window(0, (int)width, (int)height);
 			finish("diverged", suite.route);
 		}
+		break;
+	case suite_review_tail:
+		/* The review runner bounds wall time using the action recording too; the last changed pad state
+		can precede a long stretch of recorded actions with unchanged controls. */
+		if (input_replay_ended()) finish("ok", suite.route);
 		break;
 	case suite_wait_mp_teardown:
 		if (!suite.mp_host_started && suite.pending_action == suite_action_none && benchmark_scenario_at_menu())
@@ -1071,6 +1113,12 @@ int benchmark_suite_skips_drawing(void)
 }
 
 #else
+
+int benchmark_suite_window_marker(char *text, size_t size)
+{
+	if (text && size) text[0] = 0;
+	return 0;
+}
 
 void benchmark_suite_frame(long width, long height)
 {

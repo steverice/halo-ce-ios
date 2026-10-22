@@ -1150,7 +1150,12 @@ void input_replay_filter(XINPUT_GAMEPAD *pad)
 	if (*replay.record_path && !game_time_get_paused())
 		record(pad, ticks);
 	if (*replay.replay_path && !replay.replay_finished)
+	{
 		play(pad, ticks);
+		/* Paused menu input is not recorded, so a review must omit the opening Start press too. */
+		if (replay.suite && config_boolean("debug.benchmark_review_take"))
+			pad->wButtons &= (WORD)~XINPUT_GAMEPAD_START;
+	}
 }
 
 /* ---------- each tick's action */

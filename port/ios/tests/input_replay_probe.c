@@ -45,11 +45,12 @@ void host_touch_replay_active(int active) {
 static int lip_sync;
 static int enhanced_animations = 1;
 static unsigned long environment_config_changes = 1;
-static int timed_benchmark;
+static int timed_benchmark, review_take;
 static const char *replay_name = "";
 static const char *record_name = "";
 void platform_log(const char *format, ...) { (void)format; }
 int config_boolean(const char *name) { return !strcmp(name, "debug.scenario_help") ||
+	(!strcmp(name, "debug.benchmark_review_take") && review_take) ||
 	(!strcmp(name, "debug.benchmark_lip_sync") && lip_sync) ||
 	(!strcmp(name, "debug.benchmark") && timed_benchmark) ||
 	(!strcmp(name, "game.enhanced_animations") && enhanced_animations); }
