@@ -1433,7 +1433,7 @@
         },
         "static_light_relink": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "An attached light that has not moved keeps its place in the map's light lists instead of leaving and joining them again every tick. Read again each tick, so it can be flipped while the game runs.",
           "x-environment": "HALO_STATIC_LIGHT_RELINK",
           "x-environment-style": "value",

@@ -661,7 +661,7 @@ static void record_applied_settings(NSMutableDictionary *settings, const struct 
     unsigned mask = stage == 'A' ? knobs->mask : 0;
 
     /* (each switch's default in port_config.c, for a configuration that does not name it) */
-    static const char *const defaults[] = { "true", "true", "true", "true" };
+    static const char *const defaults[] = { "true", "true", "false", "true" };
     for (unsigned bit = 0; bit < sizeof(switches) / sizeof(switches[0]); bit++) {
         NSString *configured = configured_text(switches[bit], defaults[bit]);
         BOOL enabled = scene->sim_experiments_mask & (1u << bit) ?

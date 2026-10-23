@@ -55,7 +55,7 @@ def test_defaults_and_explicit_overrides_across_ticks(tmp_path):
 
     settings = settings_schema.config_settings()
     for name in _names():
-        assert settings[name]['default'] is True
+        assert settings[name]['default'] is (name != 'debug.static_light_relink')
     compiler = shutil.which('clang') or shutil.which('cc')
     if not compiler:
         pytest.skip('A C compiler is required for the simulation probe')

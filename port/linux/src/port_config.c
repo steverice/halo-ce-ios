@@ -616,7 +616,7 @@ static const struct config_setting config_settings[] =
 		"object whose type the caller did not ask for before collecting it,\n"
 		"instead of after: the same answers with less work. Read again each tick,\n"
 		"so it can be flipped while the game runs." },
-	{ "debug.static_light_relink", _config_boolean, "true", "HALO_STATIC_LIGHT_RELINK", _environment_value, _platform_all,
+	{ "debug.static_light_relink", _config_boolean, "false", "HALO_STATIC_LIGHT_RELINK", _environment_value, _platform_all,
 		"An attached light that has not moved keeps its place in the\n"
 		"map's light lists instead of leaving and joining them again every tick.\n"
 		"Read again each tick, so it can be flipped while the game runs." },
