@@ -656,12 +656,12 @@ static NSString *configured_text(const char *name, const char *fallback) {
    "on" or "off", the other switches "true" or "false"; render_lines, filtering, shadows and detail are the run's own. */
 static void record_applied_settings(NSMutableDictionary *settings, const struct benchmark_scene *scene, char stage) {
     static const char *const switches[] = { "debug.collision_type_filter", "debug.sphere_query_type_filter",
-        "debug.static_light_relink", "debug.immediate_merge", "debug.collision_candidates" };
+        "debug.static_light_relink", "debug.collision_candidates" };
     const struct benchmark_knobs *knobs = &scene->knobs;
     unsigned mask = stage == 'A' ? knobs->mask : 0;
 
     /* (each switch's default in port_config.c, for a configuration that does not name it) */
-    static const char *const defaults[] = { "true", "true", "true", "false", "true" };
+    static const char *const defaults[] = { "true", "true", "true", "true" };
     for (unsigned bit = 0; bit < sizeof(switches) / sizeof(switches[0]); bit++) {
         NSString *configured = configured_text(switches[bit], defaults[bit]);
         BOOL enabled = scene->sim_experiments_mask & (1u << bit) ?

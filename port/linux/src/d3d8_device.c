@@ -62,10 +62,9 @@ void halo_model_counts_take(unsigned long drawn[5], unsigned long *culled);
 
 struct gpu_capabilities device_capabilities;
 
-/* sim_experiments.c: the experimental changes, a setting each (a catalog case can turn one on); the renderer asks
+/* sim_experiments.c: the always-on switch debug.immediate_merge (kept for diagnosis); the renderer asks
 once a frame, as it can draw before game time exists */
-unsigned char sim_experiment_enabled_now(short experiment);
-#define SIM_EXPERIMENT_IMMEDIATE_MERGE 3
+unsigned char sim_switch_immediate_merge_now(void);
 
 /* port: debug.immediate_merge (sim_experiments.c). Consecutive immediate-mode draws in the same state are held and
 made as one draw. The guest's gpu_ functions (guest_gpu.c, in a build with HALO_IMMEDIATE_BATCH) first submit a held
@@ -4655,7 +4654,7 @@ static BOOL immediate_batch_add(const struct gpu_draw *draw, const float *vertic
 	if (checked_frame != device.frame)
 	{
 		checked_frame = device.frame;
-		enabled = sim_experiment_enabled_now(SIM_EXPERIMENT_IMMEDIATE_MERGE) != 0;
+		enabled = sim_switch_immediate_merge_now() != 0;
 	}
 	if (!enabled || companion_active() || trace_frame() || !immediate_batch_fits(0, count))
 		return FALSE;

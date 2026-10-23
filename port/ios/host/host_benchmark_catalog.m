@@ -151,7 +151,7 @@ static BOOL route_matches(NSString *folder, struct benchmark_scene *scene, NSErr
 /* A case's "settings" (tools/benchmark_catalog.py CASE_SETTINGS has the same names and ranges): the experimental
    simulation values and explicit overrides as bits, the rest as the scene's knobs. NO for anything unsupported. */
 static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_experiments_mask, struct benchmark_knobs *knobs) {
-    NSArray *simulation = @[@"debug.collision_type_filter", @"debug.sphere_query_type_filter", @"debug.static_light_relink", @"debug.immediate_merge",
+    NSArray *simulation = @[@"debug.collision_type_filter", @"debug.sphere_query_type_filter", @"debug.static_light_relink",
         @"debug.collision_candidates"];
     NSDictionary *settings = raw;
     if (![settings isKindOfClass:NSDictionary.class] || !settings.count) return NO;

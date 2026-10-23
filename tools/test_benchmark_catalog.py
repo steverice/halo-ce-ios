@@ -98,20 +98,20 @@ def test_catalog_accepts_experimental_simulation_settings(tmp_path):
     _recording(tmp_path)
     cases = _cases(players=2)
     cases["mp-chillout-proof"]["settings"] = {"debug.collision_type_filter": True, "debug.static_light_relink": False}
-    cases["a10-opening"]["settings"] = {"debug.sphere_query_type_filter": True, "debug.immediate_merge": True,
+    cases["a10-opening"]["settings"] = {"debug.sphere_query_type_filter": True,
                                         "debug.collision_candidates": True}
     _write_catalog(tmp_path, cases)
     loaded = {case["id"]: case for case in benchmark_catalog.load_catalog(tmp_path)}
     assert loaded["mp-chillout-proof"]["settings"] == {"debug.collision_type_filter": True,
                                                        "debug.static_light_relink": False}
     assert loaded["a10-opening"]["settings"] == {"debug.sphere_query_type_filter": True,
-                                                 "debug.immediate_merge": True,
                                                  "debug.collision_candidates": True}
 
 
 @pytest.mark.parametrize("settings", [
     {}, [], {"debug.enemy_multiplier": True}, {"debug.collision_type_filter": 1},
-    {"debug.collision_type_filter": "true"}, {"display.shadow_map_size": True}])
+    {"debug.collision_type_filter": "true"}, {"display.shadow_map_size": True},
+    {"debug.immediate_merge": False}])
 def test_catalog_rejects_unsupported_settings(tmp_path, settings):
     _recording(tmp_path)
     cases = _cases(players=2)

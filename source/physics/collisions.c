@@ -117,7 +117,7 @@ symbols in this file:
 boolean sim_experiment_enabled(short experiment);
 #define SIM_EXPERIMENT_COLLISION_TYPE_FILTER 0
 /* port: (and debug.collision_candidates) */
-#define SIM_EXPERIMENT_COLLISION_CANDIDATES 4
+#define SIM_EXPERIMENT_COLLISION_CANDIDATES 3
 /* port: object_bounds_cache.c's */
 boolean object_bounds_cache_out_of_reach(long object_index, real_point3d const *point, real radius);
 
