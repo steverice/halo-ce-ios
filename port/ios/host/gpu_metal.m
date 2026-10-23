@@ -4819,17 +4819,20 @@ at or above the panel's height gives the panel's own size. Nothing changes while
 before the renderer has started. */
 static _Atomic int output_cap_pending = -1;
 
+/* (height is the drawable's shorter side, and the scale comes from the bounds' shorter side: the app is landscape
+only, but an iPhone's or iPad's layer may still be portrait when the renderer starts) */
 static BOOL output_cap_layer(CAMetalLayer *target, int width, int height)
 {
-	CGFloat bounds_height = target.bounds.size.height > 0 ? target.bounds.size.height :
+	CGSize bounds = target.bounds.size;
+	(void)width;
 #if TARGET_OS_TV || (TARGET_OS_IOS && !TARGET_OS_MACCATALYST)
-		UIScreen.mainScreen.bounds.size.height;
-#else
-		0;
+	if (bounds.width <= 0 || bounds.height <= 0)
+		bounds = UIScreen.mainScreen.bounds.size;
 #endif
-	if (bounds_height <= 0)
+	CGFloat shorter = bounds.width < bounds.height ? bounds.width : bounds.height;
+	if (shorter <= 0)
 		return NO;
-	target.contentsScale = (CGFloat)height / bounds_height;
+	target.contentsScale = (CGFloat)height / shorter;
 	return YES;
 }
 
@@ -6428,12 +6431,8 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 
 			if (host_sdl_output_cap(&capped_width, &capped_height))
 			{
-				CGFloat bounds_height = layer.bounds.size.height > 0 ? layer.bounds.size.height :
-					UIScreen.mainScreen.bounds.size.height;
-
-				if (bounds_height > 0)
+				if (output_cap_layer(layer, capped_width, capped_height))
 				{
-					layer.contentsScale = (CGFloat)capped_height / bounds_height;
 					layer.drawableSize = CGSizeMake(capped_width, capped_height);
 					platform_log("Metal: built-in output capped: drawable %dx%d (layer scale %.4f)", capped_width,
 						capped_height, (double)layer.contentsScale);
