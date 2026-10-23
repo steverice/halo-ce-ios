@@ -2606,6 +2606,10 @@ static int config_migrate_effect_resolution(char **text, toml_datum_t table)
 		return 0;
 	if (effect.type == TOML_BOOLEAN)
 		value = !effect.u.boolean ? "xbox" : mirror.type == TOML_STRING && !strcmp(mirror.u.s, "full") ? "full" : "half";
+	/* (a full mirror with no effect_resolution line: the old effect_resolution's default was true, so the two
+	together were "full") */
+	else if (effect.type == TOML_UNKNOWN && mirror.type == TOML_STRING && !strcmp(mirror.u.s, "full"))
+		value = "full";
 	else
 		value = NULL;
 	if (value)
@@ -2617,7 +2621,8 @@ static int config_migrate_effect_resolution(char **text, toml_datum_t table)
 		free(*text);
 		*text = changed;
 		platform_log("settings: display.effect_resolution is now \"%s\" (was %s, with display.mirror_resolution %s)",
-			value, effect.u.boolean ? "true" : "false", mirror.type == TOML_STRING ? mirror.u.s : "unset");
+			value, effect.type != TOML_BOOLEAN ? "unset" : effect.u.boolean ? "true" : "false",
+			mirror.type == TOML_STRING ? mirror.u.s : "unset");
 		if (index >= 0)
 		{
 			free(config_states[index].origin_literal);

@@ -589,6 +589,21 @@ static void check_effect_resolution_migration(void)
 	write_text(origins, "display.effect_resolution\tdefault\ttrue\n");
 	launch("");
 	assert(!strcmp(config_string("display.effect_resolution"), "xbox") && file_has(origins, "display.effect_resolution\tchosen\n"));
+	/* a full mirror without an effect_resolution line (the boolean's default was true): "full", said in the log */
+	fresh();
+	write_text(path, "[display]\nmirror_resolution = \"full\"\nshadow_map_size = 256\n");
+	launch("");
+	assert(!strcmp(config_string("display.effect_resolution"), "full"));
+	assert(file_has(path, "\neffect_resolution = \"full\"\n") && !file_has(path, "mirror_resolution"));
+	assert(strstr(logged, "display.effect_resolution is now \"full\" (was unset, with display.mirror_resolution full)"));
+	assert(file_has(origins, "display.effect_resolution\tchosen\n"));
+	launch("");
+	assert(!strcmp(config_string("display.effect_resolution"), "full") && !strstr(logged, "is now"));
+	/* a half mirror alone was the default: the line goes, and the default stays */
+	fresh();
+	write_text(path, "[display]\nmirror_resolution = \"half\"\nshadow_map_size = 256\n");
+	launch("");
+	assert(!strcmp(config_string("display.effect_resolution"), "half") && !file_has(path, "mirror_resolution"));
 }
 
 int main(void)
