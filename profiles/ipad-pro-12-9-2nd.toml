@@ -18,6 +18,7 @@ platform = "ios"
 models = ["iPad7,2"]
 
 [display]
+frame_rate = "display"
 render_height = 720
 anisotropic_filtering = 2
 shadow_map_size = 128
@@ -56,3 +57,8 @@ render_height = 0
 [evidence."scene.cutscene.display.render_height"]
 basis = "assumed"
 why = "Keep the previous native-size cutscene rendering until a cutscene is measured on this model."
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "Measured on a 120 Hz display at its own rate. Stated so the iPhone and iPad class profile's 60 Hz floor cap does not reach this model."
+source = "iPad7,2 Full report C3YP3296, build 20261019.193402, 2026-10-19"

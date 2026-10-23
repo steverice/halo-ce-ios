@@ -8,6 +8,7 @@ models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
 and_newer = true
 
 [display]
+frame_rate = "display"
 render_height = 0
 anisotropic_filtering = 16
 shadow_map_size = 512
@@ -31,4 +32,9 @@ source = "iPad mirror runs, c40, 2026-10-03"
 [evidence."display.render_height"]
 basis = "measured"
 why = "The sweep ran at the display's own size (zero: native, a10 at 3180x2384). Stated because the iPhone and iPad class profile's floor is 720 lines."
+source = "M1 settings sweep, a10 at 3180x2384, 2026-10-03"
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "Measured on a 120 Hz display at its own rate. Stated so the iPhone and iPad class profile's 60 Hz floor cap does not reach this model."
 source = "M1 settings sweep, a10 at 3180x2384, 2026-10-03"

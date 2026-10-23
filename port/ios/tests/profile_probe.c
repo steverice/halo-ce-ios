@@ -348,11 +348,10 @@ static void check_unprofiled_models(const char *shipped)
 {
 	struct host_profile profile;
 
-	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): the 16e's profile is ranked below it but was measured at 60 Hz, which
-	   the 120 Hz display is outside of, so it keeps the class floor: the weakest measured device's 720 lines. */
+	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): the 16e's profile, which states the 60 Hz it was measured at, so the
+	   120 Hz display inherits it capped at 60. */
 	profile = resolve_model(shipped, "ios", "iPhone16,2", 9, 7655, 2796, 1290, 120);
-	assert(!profile.model_file[0] && !profile.inherited && strstr(logged, "skipped iphone-16e.toml") &&
-		has(&profile, "display.render_height", "720"));
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
 	/* iPhone 16 (A18): the iPhone 16e's profile, inside its 60 Hz and pixel envelope. */
 	profile = resolve_model(shipped, "ios", "iPhone17,3", 9, 7600, 2556, 1179, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") &&
@@ -367,10 +366,11 @@ static void check_unprofiled_models(const char *shipped)
 	/* The oldest supported iPhone sits below every measured profile: the class floor. */
 	profile = resolve_model(shipped, "ios", "iPhone10,1", 4, 1950, 1334, 750, 60);
 	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
-		has(&profile, "display.render_height", "720"));
-	/* iPhone 17: listed and ordered, but a 120 Hz display is outside the only source below it. */
+		has(&profile, "display.render_height", "720") &&
+		has(&profile, "display.frame_rate", "60"));
+	/* iPhone 17 (120 Hz): the same capped 16e profile. */
 	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
-	assert(!profile.model_file[0] && has(&profile, "display.render_height", "720"));
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
 	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 720 lines; nothing measured is closer. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
@@ -633,6 +633,10 @@ static void check_refresh_envelope(void)
 		/* The base 60 cap holds an iPhone's 120 Hz screen at 60, and on Mac it also caps the 120 menu; a Vision Pro
 		   ignores it, so its 120 is over the tier's 60. */
 		assert(profile.inherited == (which != 2));
+		/* A source that states no rate gives a 120 Hz display nothing to run at, so the 60 Hz envelope rejects it. */
+		snprintf(path, sizeof(path), "%s/rate-source.toml", folder); file = fopen(path, "wb"); assert(file);
+		fprintf(file, "schema=1\nname=\"Rate source\"\nkind=\"model\"\n[match]\nplatform=\"%s\"\nmodels=[\"Rate9,1\"]\n[display]\nanisotropic_filtering=4\n", platform); fclose(file);
+		profile = resolve(folder, target, NULL, ""); assert(!profile.inherited);
 	}
 }
 

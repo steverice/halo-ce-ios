@@ -18,6 +18,7 @@ platform = "ios"
 models = ["iPhone17,5"]
 
 [display]
+frame_rate = "60"
 render_height = 0
 anisotropic_filtering = 16
 shadow_map_size = 512
@@ -42,3 +43,8 @@ source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b
 basis = "measured"
 why = "Native 2532x1170 (zero: the display's own size) was measured. Stated because the iPhone and iPad class profile's floor is 720 lines."
 source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b30-beach, 2026-10-18 UTC"
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "Measured on a 60 Hz display (59.91 to 59.97 fps). Stated so a faster display that inherits this profile runs capped at the rate it was measured at."
+source = "Report HWZD3QQH, build 20261017.73634, quick suite, 2026-10-18 UTC"

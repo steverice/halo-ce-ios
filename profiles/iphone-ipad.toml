@@ -18,6 +18,7 @@ gpu_family = [1, 0]
 [display]
 renderer = "metal"
 render_height = 720
+frame_rate = "60"
 
 [scene.menu.display]
 render_height = 0
@@ -33,6 +34,11 @@ source = "iPhone 17 Pro benchmark reports C23KM6WA (Metal) and LBAE78A5 (OpenGL 
 [evidence."display.render_height"]
 basis = "inherited"
 why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-inch (1st generation, A9X) was measured at 720 lines (6CYGBCXB and isolated c40 reports, 2026-10-17). Models with their own profile, or one inherited through the hardware catalog, set their own value."
+
+[evidence."display.frame_rate"]
+basis = "inherited"
+why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-inch (1st generation, A9X) was measured on a 60 Hz display. An unlisted 120 Hz device runs capped at the rate the floor was measured at, not at an unmeasured 120."
+source = "iPad6,7 benchmark report 6CYGBCXB, build 20261017.73635, 2026-10-17"
 
 [evidence."scene.menu.display.render_height"]
 basis = "assumed"
