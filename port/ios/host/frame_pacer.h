@@ -111,6 +111,20 @@ static inline double frame_pacer_minimum_duration(int spacing, int waits_for_dis
 	return (frame_pacer_share(period, cap) - 0.5) * period;
 }
 
+/* the same where the panel refreshes faster than the display link that gives period (an iPhone, iPad or Apple TV
+held under its screen's rate by display.frame_rate: the link runs at the cap, a ProMotion panel at up to 120 Hz):
+half a panel refresh short of the frame's share, not half a link period, or a frame held for one 60 Hz period
+shows after 8.3 ms on a 120 Hz panel. panel is the panel's refresh period, 0 for unknown */
+static inline double frame_pacer_minimum_duration_panel(int spacing, int waits_for_display, double period, double cap,
+	double panel)
+{
+	double duration = frame_pacer_minimum_duration(spacing, waits_for_display, period, cap);
+
+	if (duration > 0.0 && panel > 0.0 && panel < period)
+		duration += 0.5 * (period - panel);
+	return duration;
+}
+
 /* ---------- the 60 Hz vertical blank */
 
 struct frame_pacer_blank

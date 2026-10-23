@@ -123,8 +123,8 @@ display link asks the system for that rate (gpu_metal.m, pacing_start), and
 frames are spaced and judged for it (host_frame_rate_target); "unlimited"
 and a cap at or above the display's rate leave the display's own pace. A
 Vision Pro's Compositor paces frames itself, and there the setting is
-ignored with a line in the log. A cap is held by sleeping before a frame
-is shown (host_frame_rate_limit: gpu_metal.m's Present, host_gpu.c's swap);
+ignored with a line in the log. The Mac app holds a cap by sleeping before a
+frame is shown (host_frame_rate_limit: gpu_metal.m's Present, host_gpu.c's swap);
 going faster than the display is the Mac app's Metal backend's to arrange
 (frame_rate_sync), and the GL backend, which can't, holds only caps under
 the display's rate. */
@@ -276,6 +276,13 @@ double host_frame_rate_limit(void)
 {
 	uint64_t now;
 
+#if !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
+	/* (an iPhone, iPad or Apple TV holds its cap at the display: the display link
+	runs at it, and under 60 the pacer's frame spacing holds each frame for its
+	refreshes, as for a scene class's rate. A sleep here as well drifts against
+	the refreshes and makes frames miss one) */
+	return 0.0;
+#endif
 	if (!frame_rate.interval)
 		return 0.0;
 	now = mach_absolute_time();

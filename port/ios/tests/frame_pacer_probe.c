@@ -80,6 +80,13 @@ int main(void)
 	/* the minimum time on screen: half a refresh short of the share */
 	CHECK(near(frame_pacer_minimum_duration(1, 1, 1.0 / 60.0, 0.0), 0.5 / 60.0));
 	CHECK(near(frame_pacer_minimum_duration(1, 1, 1.0 / 120.0, 60.0), 1.5 / 120.0));
+	/* a 60 Hz display link over a 120 Hz panel (display.frame_rate 60): half a panel refresh short of 16.7 ms, so
+	   the frame shows after two panel refreshes, not one; 30 there, after four */
+	CHECK(near(frame_pacer_minimum_duration_panel(1, 1, 1.0 / 60.0, 60.0, 1.0 / 120.0), 1.5 / 120.0));
+	CHECK(near(frame_pacer_minimum_duration_panel(1, 1, 1.0 / 60.0, 30.0, 1.0 / 120.0), 3.5 / 120.0));
+	CHECK(near(frame_pacer_minimum_duration_panel(1, 1, 1.0 / 120.0, 0.0, 1.0 / 120.0), 0.5 / 120.0));
+	CHECK(near(frame_pacer_minimum_duration_panel(1, 1, 1.0 / 60.0, 0.0, 0.0), 0.5 / 60.0));
+	CHECK(frame_pacer_minimum_duration_panel(0, 1, 1.0 / 60.0, 60.0, 1.0 / 120.0) == 0.0);
 	/* none when frames don't wait for the display (unlimited, a cap above the display), or it is off */
 	CHECK(frame_pacer_minimum_duration(1, 0, 1.0 / 60.0, 0.0) == 0.0);
 	CHECK(frame_pacer_minimum_duration(0, 1, 1.0 / 60.0, 0.0) == 0.0);

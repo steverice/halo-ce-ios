@@ -79,6 +79,9 @@ int frame_pacer_in_flight(void);
 seconds on the clock frame_pacer_presented's times use (CACurrentMediaTime's);
 any thread */
 void frame_pacer_refresh(double timestamp, double period);
+/* the panel's own refresh period when it can run faster than the display link
+(frame_pacer_minimum_duration_panel); 0 for the link's */
+void frame_pacer_panel_period(double period);
 
 /* The game is about to start a frame: called from its loop before it reads
 the controllers and steps the blend between ticks (d3d8_device.c's
@@ -208,6 +211,11 @@ static inline void frame_pacer_frame_dropped(struct frame_pacer_frame *frame)
 static inline uint32_t frame_pacer_vertical_blank_wait(void)
 {
 	return 0;
+}
+
+static inline void frame_pacer_panel_period(double period)
+{
+	(void)period;
 }
 
 #endif

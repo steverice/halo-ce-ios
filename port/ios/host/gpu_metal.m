@@ -3992,6 +3992,7 @@ static void pacing_start(uint32_t flags)
         rate and holds its caps by host_frame_rate_limit */
 #if !TARGET_OS_MACCATALYST
         pacing_screen_rate=rate;
+        frame_pacer_panel_period(rate>0 ? 1.0/rate : 0.0);
         rate=pacing_link_rate(rate);
 #endif
 #endif

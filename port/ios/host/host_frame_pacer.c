@@ -39,6 +39,7 @@ static struct
 	struct frame_pacer_blank blank;
 	struct frame_pacer_shown shown;
 	double period;                   /* the display's refresh period, seconds; 0 unknown */
+	double panel;                    /* the panel's own period where it is shorter (frame_pacer_panel_period); 0 */
 	double refresh;                  /* the time of the display's latest refresh; 0 none yet */
 	int late_start;                  /* display.late_start */
 	struct frame_pacer_late late;
@@ -185,6 +186,13 @@ int frame_pacer_in_flight(void)
 	return pacer.in_flight;
 }
 
+void frame_pacer_panel_period(double period)
+{
+	pthread_mutex_lock(&pacer.lock);
+	pacer.panel = period;
+	pthread_mutex_unlock(&pacer.lock);
+}
+
 void frame_pacer_refresh(double timestamp, double period)
 {
 	pthread_mutex_lock(&pacer.lock);
@@ -246,15 +254,17 @@ void frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long numb
 
 double frame_pacer_present(const struct frame_pacer_frame *frame)
 {
-	double period;
+	double period, panel;
 
 	if (!pacer.started)
 		return 0.0;
 	pthread_mutex_lock(&pacer.lock);
 	period = pacer.period;
+	panel = pacer.panel;
 	pthread_mutex_unlock(&pacer.lock);
 	/* (a scene class's rate counts: a cutscene at 30 is spaced for 30) */
-	return frame_pacer_minimum_duration(pacer.spacing, frame->waits_for_display, period, host_frame_rate_target());
+	return frame_pacer_minimum_duration_panel(pacer.spacing, frame->waits_for_display, period, host_frame_rate_target(),
+		panel);
 }
 
 void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
