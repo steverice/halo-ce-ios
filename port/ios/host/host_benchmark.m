@@ -435,6 +435,9 @@ void host_frame_cpu_split(double *simulation, double *render, double *translatio
     os_unfair_lock_unlock(&split_lock);
 }
 
+/* (defined with the report helpers below) */
+static double run_budget_hertz(void);
+
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period, double simulation_cpu,
     double render_cpu, double translation_cpu, int ticks) {
     host_frame_counter_sample(interval, cpu, gpu);
