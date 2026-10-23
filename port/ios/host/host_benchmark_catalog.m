@@ -227,7 +227,7 @@ static BOOL catalog_variants(id raw, struct host_benchmark_catalog *built) {
             [NSSet setWithArray:models].count != models.count) return NO;
         variant->model_count = 0;
         for (NSString *model in models) {
-            if (![model isKindOfClass:NSString.class] || [model rangeOfString:@"^(AppleTV|iPad|iPhone)[1-9][0-9]?,[1-9][0-9]?$"
+            if (![model isKindOfClass:NSString.class] || [model rangeOfString:@"^(AppleTV|iPad|iPhone)[1-9][0-9]?,[1-9][0-9]?\\z"
                 options:NSRegularExpressionSearch].location == NSNotFound) return NO;
             snprintf(variant->models[variant->model_count++], sizeof(variant->models[0]), "%s", model.UTF8String);
         }
