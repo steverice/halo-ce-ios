@@ -24,7 +24,8 @@ static inline int host_output_cap_height(const char *launch, const char *profile
 }
 
 /* The drawable for an output of width x height pixels under a cap of cap lines: the output's shape at cap
-   lines, the width rounded to the nearest pixel. Returns 1 with *capped_width x *capped_height filled when the
+   lines, the width rounded down, as Core Animation truncates a drawable of bounds times a fractional scale (an
+   iPad Pro 12.9-inch's 2732x2048 under 1080 is 1440x1080, its 1366-point width at 1.0546875). Returns 1 with *capped_width x *capped_height filled when the
    cap is below the output; 0 (and the output's own size) when there is no cap or the output is no taller. */
 static inline int host_output_cap_apply(int width, int height, int cap, int *capped_width, int *capped_height)
 {
@@ -32,7 +33,7 @@ static inline int host_output_cap_apply(int width, int height, int cap, int *cap
 	*capped_height = height;
 	if (cap <= 0 || width <= 0 || height <= 0 || height <= cap)
 		return 0;
-	*capped_width = (int)(((long long)width * cap * 2 + height) / (2LL * height));
+	*capped_width = (int)((long long)width * cap / height);
 	*capped_height = cap;
 	return 1;
 }

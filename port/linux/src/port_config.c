@@ -1085,6 +1085,10 @@ static const struct config_setting config_settings[] =
 		"Force an external display mode for testing: preferred, WIDTHxHEIGHT, or a comma-separated list.\n"
 		"Hold Back and press the D-pad's up or down to cycle the list live." },
 
+	{ "debug.output_height", _config_integer, "0", "HALO_OUTPUT_HEIGHT", _environment_value, _platform_ios,
+		"Cap the built-in display's drawable at this many lines for measuring (0, the\n"
+		"default: the device's own size, or an Apple TV profile's display.output_height);\n"
+		"the system scales it to the panel. iPhone, iPad and Apple TV with Metal, read at launch." },
 	{ "debug.render_scale_dpad", _config_boolean, "false", "HALO_RENDER_SCALE_DPAD", _environment_value, _platform_ios,
 		"While Back is held, the D-pad's left and right step the render scale\n"
 		"(display.render_scale) down and up by 0.05 as the game runs, shown on\n"

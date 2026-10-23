@@ -24,6 +24,9 @@ int main(void)
 	/* a 1080 TV under a 720 debug cap; a 16:10 panel keeps its shape */
 	capped(1920, 1080, 720, 1280, 720);
 	capped(2560, 1600, 900, 1440, 900);
+	/* an iPad Pro 12.9-inch: the width is rounded down, as Core Animation does with its points times scale */
+	capped(2732, 2048, 1080, 1440, 1080);
+	capped(2732, 2048, 720, 960, 720);
 	/* a cap at or above the output, or none, leaves it alone */
 	uncapped(1920, 1080, 1080);
 	uncapped(1280, 720, 1080);

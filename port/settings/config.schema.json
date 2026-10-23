@@ -1473,6 +1473,16 @@
             "apple"
           ]
         },
+        "output_height": {
+          "type": "integer",
+          "default": 0,
+          "description": "Cap the built-in display's drawable at this many lines for measuring (0, the default: the device's own size, or an Apple TV profile's display.output_height); the system scales it to the panel. iPhone, iPad and Apple TV with Metal, read at launch.",
+          "x-environment": "HALO_OUTPUT_HEIGHT",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "render_scale_dpad": {
           "type": "boolean",
           "default": false,

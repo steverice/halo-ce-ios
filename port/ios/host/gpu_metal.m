@@ -6330,9 +6330,10 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
 		layer.framebufferOnly = YES;
 		gpu_metal_presentation_configure(layer);
-#if TARGET_OS_TV
+#if TARGET_OS_TV || (TARGET_OS_IOS && !TARGET_OS_MACCATALYST)
 		{
-			/* a tvOS profile's built-in output cap (host_output_cap.h, host_main.m): the layer's scale is
+			/* the built-in output cap (a tvOS profile's display.output_height or debug.output_height;
+			   host_output_cap.h, host_main.m): the layer's scale is
 			   lowered so SDL's view, which sets the drawable to bounds times scale at each layout, keeps the
 			   capped size; the system scales the drawable to the TV */
 			int capped_width, capped_height;
