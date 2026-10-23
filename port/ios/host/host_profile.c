@@ -260,6 +260,10 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 			int accepted = 0;
 
 			memset(&value, 0, sizeof(value));
+			/* (profiles published before display.effect_resolution had three values set display.mirror_resolution too; a
+			   value there was the default or the measured "half", which "half" in display.effect_resolution now is) */
+			if (!strcmp(section_name, "display") && !strcmp(section.u.tab.key[key_index], "mirror_resolution"))
+				continue;
 			if (snprintf(value.name, sizeof(value.name), "%s.%s", section_name, section.u.tab.key[key_index]) >=
 				(int)sizeof(value.name) || !(key = profile_key(value.name)))
 			{
