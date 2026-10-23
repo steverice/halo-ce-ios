@@ -1066,6 +1066,14 @@ static int variant_display_apply(void) {
             variant_wanted_upscaler() ? "metalfx" : "bilinear");
     }
     if (host_sdl_output_cap_requested() == variant_wanted_cap() || variant_display_failed == variant_index + 1) return 0;
+    /* (the cap is the built-in output's: on an external output the external mode and the profile's
+       [external.display] output_height decide the drawable, and the pass says the variant's cap did not apply) */
+    if (host_external_active()) {
+        flag(@"variant_output_cap_not_on_external_output");
+        host_logf(HOST_LOG_INFO, "benchmark: variant %s: the built-in output cap %d does not apply on an external output",
+            suite_variants[variant_index].id, variant_wanted_cap());
+        return 0;
+    }
     host_logf(HOST_LOG_INFO, "benchmark: variant %s: built-in output cap %d", suite_variants[variant_index].id,
         variant_wanted_cap());
     gpu_metal_request_output_cap(variant_wanted_cap());
@@ -1234,7 +1242,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         atomic_store(&running, 1);
         return 1;
     }
-    if (suite_variant_count && host_sdl_output_cap_requested() != variant_wanted_cap())
+    if (suite_variant_count && !host_external_active() && host_sdl_output_cap_requested() != variant_wanted_cap())
         flag(@"variant_display_unavailable");
     if (suite_variant_count) variant_state_write();
     if (pinned_resume && !(journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&

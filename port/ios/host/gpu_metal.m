@@ -4815,8 +4815,9 @@ int gpu_metal_output(void *new_layer, void *screen, int width, int height)
 
 /* The built-in output cap as the game runs (ios_host.h): the drawable is drained and resized as for an external
 output, between frames, and the layer's scale lowered with it so SDL's view keeps that size at its next layout. A cap
-at or above the panel's height gives the panel's own size. Nothing changes while an external output is in use or
-before the renderer has started. */
+at or above the panel's height gives the panel's own size. It is the built-in output's alone: an external output's
+size is the external mode and its profile's [external.display] output_height, so while one is in use a cap asked for
+waits for the game to come back to the device's screen. */
 static _Atomic int output_cap_pending = -1;
 
 /* (height is the drawable's shorter side, and the scale comes from the bounds' shorter side: the app is landscape
@@ -4842,9 +4843,11 @@ void gpu_metal_request_output_cap(int cap)
 	atomic_store(&output_cap_pending, cap < 0 ? -1 : cap);
 }
 
+/* (a cap is for the built-in output: while an external output is in use one asked for waits, and counts as settled,
+   until the game is back on the device's own screen) */
 int gpu_metal_output_cap_settled(void)
 {
-	return atomic_load(&output_cap_pending) < 0;
+	return atomic_load(&output_cap_pending) < 0 || host_external_active();
 }
 
 void gpu_metal_output_cap_commit(void)
