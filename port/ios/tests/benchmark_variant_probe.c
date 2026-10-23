@@ -40,6 +40,14 @@ int main(void)
 	/* resumed in the second pass; a stored index out of range starts again from the first */
 	assert(host_benchmark_variant_resumed_index(1, 3) == 1);
 	assert(host_benchmark_variant_resumed_index(3, 3) == 0 && host_benchmark_variant_resumed_index(-1, 3) == 0);
+	/* carrying on after the app was ended: inside a pass (its journal unfinished), or between passes when every
+	earlier pass's report is kept; not with an earlier report missing, nor outside the suite's passes */
+	assert(host_benchmark_variant_resumes(1, 3, 1, 0));
+	assert(host_benchmark_variant_resumes(0, 3, 1, 0));
+	assert(host_benchmark_variant_resumes(2, 3, 0, 2));
+	assert(!host_benchmark_variant_resumes(2, 3, 0, 1));
+	assert(!host_benchmark_variant_resumes(0, 3, 0, 0));
+	assert(!host_benchmark_variant_resumes(3, 3, 1, 3) && !host_benchmark_variant_resumes(-1, 3, 1, 0));
 	puts("PASS: display variant passes want their own cap and upscaler, are named in order, and end where they should");
 	return 0;
 }

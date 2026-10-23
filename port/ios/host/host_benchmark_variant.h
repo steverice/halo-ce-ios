@@ -46,3 +46,13 @@ static inline int host_benchmark_variant_resumed_index(long stored, int count)
 {
     return stored >= 0 && stored < count ? (int)stored : 0;
 }
+
+/* whether a suite's saved pass index carries on after the app was ended: in a pass whose journal is unfinished, or
+   between passes (one pass's journal finished, the next one's not yet begun) when every earlier pass's report is
+   kept; otherwise the suite starts from the first pass */
+static inline int host_benchmark_variant_resumes(long index, int count, int journal_unfinished, int earlier_reports_kept)
+{
+    if (index < 0 || index >= count)
+        return 0;
+    return journal_unfinished || (index > 0 && earlier_reports_kept >= index);
+}
