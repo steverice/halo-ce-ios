@@ -87,7 +87,7 @@ int main(void) {
     binary = tmp_path / 'marker'
     subprocess.run(['cc', '-Werror=implicit-function-declaration', '-I', str(ROOT / 'port/ios/tests'),
                     '-I', str(ROOT / 'port/linux/src'), '-iquote', str(ROOT / 'port/linux/include'),
-                    str(source), '-o', str(binary)], check=True)
+                    str(source), '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
 
