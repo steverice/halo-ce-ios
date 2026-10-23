@@ -4329,7 +4329,12 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 			simulation_cpu, render_cpu, translation_cpu, ticks);
 	}
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
+	{
+		/* (the one frame an output change skips is this one: frame_log_frame, below, is not reached to end the
+		skip, and without this an offscreen benchmark, which has no drawable, would skip every frame after one) */
+		frame_log.skip_transition = 0;
 		return 0.0;
+	}
 	if (!pacing_allowed(pacing.refreshes, period))
 		pacing.refreshes = 1;
 	hold = pacing.off ? 0.0 : period * (double)pacing.refreshes;
