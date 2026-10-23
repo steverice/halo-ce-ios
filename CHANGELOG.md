@@ -1,3 +1,77 @@
+## visr-v0.4.2 (2026-10-23)
+
+### Summary
+
+- Benchmark can now run once for each display variant in a single report, when the catalog lists variants for your device model.
+- Benchmark runs keep their launch display, passes, and finish after a restart. Earlier variant passes no longer leak into the final report.
+- New frame rate cap in display settings for iPhone, iPad, and Apple TV. Faster panels now use a validated target frame rate.
+- Device profiles are more accurate. The iPad mini 6 no longer gets the M1 iPad Pro profile, and newer iPhone, iPad, and Apple TV models now get the right profile.
+- Apple TV 4K (1st generation) now caps its built-in output at 720.
+- The two effect resolution settings are now one: Xbox, Half (default), or Full. Your existing settings carry over automatically.
+- Fixed light selection on objects hit by many lights, and particles now draw only after a tick's update has passed. Replays should look closer to the original, and replays now skip the cinematic at the same moment the recording did.
+- Immediate-mode draws are now merged in every build, which should make busy scenes smoother.
+
+### Full changelog
+
+### feat
+
+- **benchmark**: run the suite once per display variant from one start, in one report
+- **benchmark**: signed catalogs may name display variants for chosen device models
+- **ios**: `debug.output_height` caps the built-in drawable on an iPhone or iPad for measuring
+- **tvos**: let a device profile cap the built-in output — set the Apple TV 4K (1st generation) to 720
+- **profiles**: inherit the source frame rate — state measured caps in `display.frame_rate` so faster panels use a validated target
+- **profiles**: resolve a catalog-listed device through the catalog before `and_newer`, rank by GPU capability, and make the class profiles the weakest measured device's settings — `host_profile_catalog_lists` lets the catalog answer first so the iPad mini 6 no longer takes the M1 iPad Pro profile, the iPhone 16e sits below A17 Pro by its 4-core GPU, A12X, A12Z, A16, A17 Pro iPad mini, iPhone 17 and iPhone Air gain tiers, `iphone-ipad.toml` takes the A9X iPad Pro's 720 lines and `apple-tv.toml` the Apple TV HD's values, and each model profile states the values the floor would otherwise change
+- **profiles**: order every iPhone, iPad and Apple TV in the hardware catalog and carry `and_newer` on the newest measured profile of each line — a model without a profile inherits the strongest measured profile at or below its tier (envelopes per source), models whose ordering is uncertain keep their class profile, and `iphone-17-pro.toml`, `ipad-pro-m1.toml` and `apple-tv-4k-3rd.toml` now cover later identifiers; version 0.4.0 compatibility with current feeds is no longer kept, so the `README.md` restriction on `and_newer` in feeds is lifted (the publisher still refuses it in `profiles-1` snapshots)
+- **benchmark**: let a signed catalog case set `display.frame_rate`
+- **display**: cap the frame rate on iPhone, iPad and Apple TV with `display.frame_rate`
+- **benchmark**: raise the catalog limit to 20 cases — share `BENCHMARK_SCENES_MAXIMUM` and `MAXIMUM_CASES` with recording envelope bounds so larger catalogs validate
+- **benchmark**: make the offscreen window wall-time cap a setting — `debug.offscreen_window_wall_seconds` (default 60, bounded 30 to 1800) replaces the compile-time `OFFSCREEN_WINDOW_WALL_SECONDS` as the cap in `host_benchmark_next`, a signed catalog case may set it in its `settings` (`CASE_SETTINGS` and `case_settings`), and each run in the report records `window_wall_cap_seconds`
+
+### fix
+
+- **benchmark**: leave an external output's size to its mode and profile, not a variant's built-in cap
+- **benchmark**: keep a display-variant suite's launch display, passes and finish across restarts
+- **benchmark**: end a variant's model pattern at the string's very end
+- **metal**: take the built-in output cap's scale from the bounds' shorter side
+- **metal**: end an output change's one skipped frame when the frame has no drawable
+- **benchmark**: keep an earlier display variant pass's report out of `report.json`
+- **benchmark**: declare `run_budget_hertz` before `host_benchmark_frame` uses it
+- **replay**: skip a take's cinematic at the tick its recording did
+- **render**: read the old "true" and "false" for `display.effect_resolution` from the environment and `--set`
+- **settings**: migrate a full mirror without an `effect_resolution` line to "full"
+- **benchmark**: budget each run from the display's own rate, not the last link period
+- **display**: hold an iPhone or iPad cap at the panel's refreshes, not with a sleep
+- **profiles**: skip `display.mirror_resolution` in a published profile without a refusal — the signed profile pack holds `ipad-pro-m1.toml` from before the setting was merged into `display.effect_resolution`, and `host_profile.c` refused the pack for the key Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com> Claude-Session: https://claude.ai/code/session_01VPtP8WpHknYn8sUvqTv3MQ
+- **recordings**: accept `display.mirror_resolution` in a route's recorded settings — the signed recording packs hold routes made before the setting was merged into `display.effect_resolution`, and `host_recording_pack_validate` rejected the pack for the unknown key Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com> Claude-Session: https://claude.ai/code/session_01VPtP8WpHknYn8sUvqTv3MQ
+- **sim**: relinked lights rejoin the heads of their cluster lists as the original does — `light_relink_to_map` kept an unmoved light where it was, so the order of each cluster's light list differed from the original's, which changed the lights chosen for objects reached by more lights than they use; it now leaves and joins the lists in the original order and skips only the search for the clusters (`cluster_partition_port_reconnect_clusters`), and a replay of the 2x `c40` take matches the original in every screenshot sampled every 60 frames, as does `a10`
+- **sim**: default `debug.static_light_relink` to off, as the original game relinks lights — with it on, an unmoved light keeps its place in each cluster's list where the original moves it to the head every tick, so objects lit by more lights than they can use pick different lights and `c40` frames differ by up to 154 levels in a replay of a 2x take; the setting stays as an experiment
+- **benchmark**: declare `window_wall_cap` before `write_run` uses it — the Apple builds rejected the implicit declaration
+- **shaders**: add 486 recorded shader records from 0.4.1 tester runs to the warm-up lists — `a50` 56, `b30` 8, `b40` 355, `c20` 2, `c40` 49, `d40` 16
+- **effects**: draw a particle only once a tick's update has passed
+- **pages**: record the 0.4.1 recording feed's hash in the publication receipt — `pages_asset_overlay.py` refused to stage the re-signed `docs/site/packs/tester/recordings.json` because `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` still named the previous envelope's SHA-256
+
+### perf
+
+- **renderer**: turn `debug.immediate_merge` on for every build — consecutive immediate-mode draws in the same state are made as one draw, and replays of the a10 and c40 2x takes with it on match the unmerged run in every screenshot (sampled every 60 frames), route point, actor count and seed, with 0 seed misses; it saves about 3 ms of a 128-player frame on an A9X iPad. The setting stays for diagnosis but is no longer a catalog case setting, a cost-ladder knob (`cost-model/visual-ranking.toml`) or part of `sim_experiments` (its place is now `sim_switch_immediate_merge`); `check-metal.sh` compares GL against the older GL records without the immediate-draw counts and GL call totals it lowers.
+
+### refactor
+
+- **render**: merge `display.effect_resolution` and `display.mirror_resolution` into one three-value setting — `display.effect_resolution` is now `"xbox"` (the Xbox's 320x240), `"half"` (the default; half the screen's resolution each way) or `"full"` (the screen's resolution) for the target mirror floors and active camouflage are drawn into, `display.mirror_resolution` is removed, and `port_config.c` migrates an existing `config.toml` on load (false is `"xbox"`, true with a `"full"` mirror is `"full"`, true otherwise `"half"`) while the migrated value follows the device profile when it is the default, with the benchmark knobs, catalog allowlist, profile keys, `ipad-pro-m1.toml`, cost-model ranking, schemas, reference tables and probes updated to the one setting
+
+### build
+
+- **shaders**: publish signed shader feed sequence 9 with 486 records from 0.4.1 tester runs — `docs/site/packs/tester/shaders.json` is re-signed with compatibility `shader-lists-2` from the merged `port/shader-lists` lists, `docs/site/packs/tester/publication.json` names the 24 current `shader-maps` assets, and `tools/test_pages_main_assets.py` expects sequence 9 with 24 maps
+- **benchmark**: bind the 15-case tester catalog to the 0.4.1 guest — `docs/site/packs/tester/recordings.json` is re-signed as sequence 1792725665 with compatibility `benchmark-catalog-1:fe06197f32bb19719e1fc2e4a5b8b18f6058516607bfd595884816c500e29f62`, so 0.4.1 builds offer the benchmark again; it holds 1x windows on a10, a50, b30 and d40, 1.5x windows on a10, b30, b40, c20 and c40, and 2x windows on b30, b40, c20 and c40, each replayed alike at 30 fps and unlimited on the 0.4.1 source
+
+### docs
+
+- **profiles**: hold a tier on presentation, not GPU time — a device holds a tier when, after warm-up, at least 99.5% of frames present on time and late frames are few at that tier's frame rate, `render_height` and enemy multiplier; `gpu_ms` includes drawable waits on pipelined Metal, so it is for diagnosis and relative cost only
+- **benchmark**: say that this update restarts benchmark journals
+
+### test
+
+- **render**: read the log count after `effect_resolution_level` returns
+
 ## visr-v0.4.1 (2026-10-22)
 
 ### Summary

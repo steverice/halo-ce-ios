@@ -1,26 +1,26 @@
 {
   "schema": 1,
-  "tag": "visr-v0.4.1",
-  "version": "0.4.1",
-  "build_number": "20261022.222500",
-  "source_sha": "a2b7b224c7aa3dd3d17693d205060d8ad3204b69",
+  "tag": "visr-v0.4.2",
+  "version": "0.4.2",
+  "build_number": "20261023.212823",
+  "source_sha": "fe18f775bb38a1ac39a0e521c73ffc7d5ca3dc4b",
   "platforms": [
     "ios",
     "tvos"
   ],
-  "notes_sha256": "0b40b85e8d06ec7b2369965d463bae91d59b4c1f3d82fec258bb0da54885cbbe",
-  "testflight_summary": "- Benchmark progress screen now shows the performance line and a render-interval graph while running offscreen.\n- The benchmark graph is taller on iPad and has a 0 to 40 ms range, with reference lines for 120, 60, and 30 fps.\n- On iPhone in landscape, the Finish button now stays on screen during the benchmark progress screen.\n- The benchmark progress screen text is tidier: the level name is the title, and the suite kind and case ID appear once.\n- A benchmark catalog can now hold more than one recording of the same level.\n- Fixed Save and Quit returning an \"Unable to save\" error when no player profile is active. It now returns you to the main menu.\n- Fixed Apple TV HD multiplayer fights hanging the GPU within the first frames, after which nothing more was drawn.\n- Fixed benchmark replays hanging at in-game help dialogs. Replays now show the same help dialogs the recording showed.",
-  "testflight_summary_sha256": "a6c3b1946094640eeca6ac77caafeabf6d6fe3e2a4e5e81b81e9e67f18aacc8c",
+  "notes_sha256": "2f23b6ead8469039eabe76e61e32f33dcb0b7a121db9a756dc8be8ff092c3d54",
+  "testflight_summary": "- Benchmark can now run once for each display variant in a single report, when the catalog lists variants for your device model.\n- Benchmark runs keep their launch display, passes, and finish after a restart. Earlier variant passes no longer leak into the final report.\n- New frame rate cap in display settings for iPhone, iPad, and Apple TV. Faster panels now use a validated target frame rate.\n- Device profiles are more accurate. The iPad mini 6 no longer gets the M1 iPad Pro profile, and newer iPhone, iPad, and Apple TV models now get the right profile.\n- Apple TV 4K (1st generation) now caps its built-in output at 720.\n- The two effect resolution settings are now one: Xbox, Half (default), or Full. Your existing settings carry over automatically.\n- Fixed light selection on objects hit by many lights, and particles now draw only after a tick's update has passed. Replays should look closer to the original, and replays now skip the cinematic at the same moment the recording did.\n- Immediate-mode draws are now merged in every build, which should make busy scenes smoother.",
+  "testflight_summary_sha256": "cf5be012e355a94186e2f83cb08d747b9adc88b58080a7fdd248620afff85e05",
   "testflight_summary_model": "claude-sonnet-5-5",
   "bootstrap_since": "",
-  "source_date_epoch": "1792707900",
+  "source_date_epoch": "1792790903",
   "guest_source_date_epoch": "1792454334",
   "internal_only": true,
   "build_policy": {
     "benchmark_upload": "on",
-    "guest_compiler_version": "Homebrew clang version 23.1.3",
+    "guest_compiler_version": "Homebrew clang version 23.1.4",
     "guest_profile_sha256": "663efd5f4da9d29f092231e23c818319bc0ed0625c26305dd1d0489c66b55c16",
-    "guest_sha256": "fe06197f32bb19719e1fc2e4a5b8b18f6058516607bfd595884816c500e29f62",
+    "guest_sha256": "d9cfd3692f72f1443e822d9804f75e5505784dc9207fdcb1d5fec5ef086656cb",
     "guest_source_date_epoch": "1792454334",
     "host_profile_sha256": "787d98fb1650fdb7892174aa9a3ee1cc154eb6fc0bd1a150961a36b82b1ff4b1",
     "profile_feed_sha256s": {
@@ -48,7 +48,7 @@
     "profile_feed_url": "https://code.steverice.org/visr/packs/tester/profiles",
     "recording_feed_required": "off",
     "recording_feed_url": "https://code.steverice.org/visr/packs/tester/recordings.json",
-    "shader_feed_sha256": "d839d2b14152a562753865cb0242baeb0cbc832f095d18f036929e718edccc42",
+    "shader_feed_sha256": "25fd837e4a8447d4beecd65c43ef9a581f4e559e65d95a8f407ba049d95c23e0",
     "shader_feed_url": "https://code.steverice.org/visr/packs/tester/shaders.json"
   }
 }
