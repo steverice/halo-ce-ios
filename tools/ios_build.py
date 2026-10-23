@@ -78,7 +78,7 @@ def main():
     mode.add_argument('--simulator', action='store_true', help='build for an ARM64 simulator')
     mode.add_argument('--unsigned', action='store_true', help='build a device app for signing later')
     parser.add_argument('--team', help='Apple development team ID for device signing')
-    parser.add_argument('--bundle-id', help='bundle identifier covered by your signing profile (default org.steverice.visr for iOS, tvOS and visionOS, so one App Store Connect record covers them all; org.steverice.visr.mac for --mac)')
+    parser.add_argument('--bundle-id', help='bundle identifier covered by your signing profile (default org.steverice.visr for iOS, tvOS, visionOS and a team-signed --native-mac, so one App Store Connect record covers them all; org.steverice.visr.mac for --mac; org.steverice.visr.native for an ad hoc --native-mac)')
     target = parser.add_mutually_exclusive_group()
     target.add_argument('--tvos', action='store_true', help='build for Apple TV instead of iPhone/iPad')
     target.add_argument('--visionos', action='store_true', help='build for Apple Vision Pro (Metal only) instead of iPhone/iPad')
@@ -140,9 +140,15 @@ def main():
                              'Xcode is signed in to. The app record must exist there first')
     parser.add_argument('--data-packs', choices=('on', 'off'),
                         help='signed profile and recording updates (docs/data-packs.md): on by default for device and '
-                             'simulator builds, from the tester feeds with --tester and the stable feeds otherwise; off '
-                             'by default for --mac, the runner, whose runs must not change with a download, unless a key '
-                             'or feed is named')
+                             'simulator builds and --native-mac, from the tester feeds with --tester and the stable feeds '
+                             'otherwise; off by default for --mac, the runner, whose runs must not change with a download, '
+                             'unless a key or feed is named')
+    parser.add_argument('--data-pack-channel', choices=('stable', 'tester'),
+                        help='the channel the signed updates come from (default tester with --tester, stable '
+                             'otherwise); the native Mac app has no tester build, so its TestFlight build names tester')
+    parser.add_argument('--sandbox', choices=('on', 'off'),
+                        help='--native-mac: sign the ad hoc development build with the App Sandbox entitlements (off by '
+                             'default). Team-signed native builds are always sandboxed')
     parser.add_argument('--data-pack-public-key', metavar='HEX',
                         help='the Ed25519 public key (64 hex digits) that updates must verify against, in place of the '
                              "project's own")
@@ -217,14 +223,16 @@ def main():
     renderer = args.renderer.upper() if args.renderer else ('METAL' if args.visionos or args.native_mac else 'BOTH')
     if args.visionos and renderer != 'METAL':
         parser.error('--visionos supports only --renderer metal')
-    args.bundle_id = args.bundle_id or ('org.steverice.visr.native' if args.native_mac else 'org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
+    if not args.native_mac:
+        args.bundle_id = args.bundle_id or ('org.steverice.visr.mac' if platform_name == 'mac' else 'org.steverice.visr')
+    if args.sandbox and not args.native_mac:
+        parser.error('--sandbox is for --native-mac')
     if args.native_mac:
-        if args.data_packs is None:
-            args.data_packs = 'off'
         if __package__:
-            from .macos_build import validate_native
+            from .macos_build import default_bundle_id, validate_native
         else:
-            from macos_build import validate_native
+            from macos_build import default_bundle_id, validate_native
+        args.bundle_id = args.bundle_id or default_bundle_id(args.team)
         try:
             validate_native(args)
         except ValueError as error:
@@ -334,6 +342,7 @@ def main():
              f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_DEVELOPMENT_TEAM={args.team or ""}',
              f'-DHALO_RENDER_HEIGHT={args.render_height}', f'-DHALO_RENDERER={renderer}', f'-DHALO_BINK={args.bink.upper()}',
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
+             f'-DHALO_DATA_PACK_CHANNEL_NAME={args.data_pack_channel or ""}',
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
     if args.benchmark_upload:
@@ -399,8 +408,13 @@ def manual_signing(profile: str | None) -> list[str]:
             f'PROVISIONING_PROFILE_SPECIFIER={profile}'] if profile else []
 
 
+# the certificate that signs a Mac App Store installer package ("Mac Installer Distribution" in the developer account)
+MAC_INSTALLER_CERTIFICATE = '3rd Party Mac Developer Installer'
+
+
 def app_store_options(team: str, upload: bool, internal_only: bool = False,
-                      profile: str | None = None, bundle_id: str | None = None) -> dict[str, object]:
+                      profile: str | None = None, bundle_id: str | None = None,
+                      system: str | None = None) -> dict[str, object]:
     """the export options for an App Store Connect package: signed for distribution by Xcode's automatic signing,
     and either written to disk or uploaded"""
     options: dict[str, object] = {'method': 'app-store-connect', 'destination': 'upload' if upload else 'export', 'teamID': team,
@@ -410,20 +424,24 @@ def app_store_options(team: str, upload: bool, internal_only: bool = False,
             raise ValueError('manual signing needs the actual bundle identifier')
         options.update(signingStyle='manual', signingCertificate='Apple Distribution',
                        provisioningProfiles={bundle_id: profile})
+        if system == 'macOS':
+            # a Mac app goes to App Store Connect as a signed installer package, not an IPA
+            options['installerSigningCertificate'] = MAC_INSTALLER_CERTIFICATE
     if internal_only:
         options['testFlightInternalTestingOnly'] = True
     return options
 
 
 def app_store_commands(build: Path, system: str, team: str, out: Path, upload: bool, internal_only: bool = False,
-                       profile: str | None = None, bundle_id: str | None = None) -> list[list[str | Path]]:
+                       profile: str | None = None, bundle_id: str | None = None,
+                       project: Path | None = None) -> list[list[str | Path]]:
     """the commands that archive the configured project and export (or upload) its App Store Connect package into
     out; writes out/ExportOptions.plist for the second"""
     import plistlib
     out.mkdir(parents=True, exist_ok=True)
-    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload, internal_only, profile, bundle_id)))
+    (out/'ExportOptions.plist').write_bytes(plistlib.dumps(app_store_options(team, upload, internal_only, profile, bundle_id, system)))
     archive = out/'VISR.xcarchive'
-    return [['xcodebuild', '-project', build/'VISR.xcodeproj', '-scheme', 'VISR', '-configuration', 'Release',
+    return [['xcodebuild', '-project', project or build/'VISR.xcodeproj', '-scheme', 'VISR', '-configuration', 'Release',
              '-destination', f'generic/platform={system}', '-archivePath', archive, '-quiet',
              *(manual_signing(profile) or ['-allowProvisioningUpdates']), 'archive'],
             ['xcodebuild', '-exportArchive', '-archivePath', archive, '-exportOptionsPlist', out/'ExportOptions.plist',
@@ -540,7 +558,7 @@ def data_pack_settings(args):
         if named:
             raise ValueError('--data-packs off leaves out the key and feed URLs; drop them, or use --data-packs on')
         return '', '', '', ''
-    channel = 'tester' if args.tester else 'stable'
+    channel = getattr(args, 'data_pack_channel', None) or ('tester' if args.tester else 'stable')
     return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
             DATA_PACK_FEED.format(channel=channel, kind='profiles').removesuffix('.json') if args.profile_feed_url is None else args.profile_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None

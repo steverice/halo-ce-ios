@@ -261,6 +261,8 @@ if(NOT CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
 endif()
 if(HALO_NATIVE_MAC)
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers")
+    target_sources(VISR PRIVATE "${HALO_NATIVE_DIR}/Assets-macOS.xcassets")
+    set_source_files_properties("${HALO_NATIVE_DIR}/Assets-macOS.xcassets" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 elseif(HALO_TVOS)
     target_link_libraries(VISR PRIVATE "-framework Network" "-framework CoreImage")
     set_source_files_properties(Assets-tvOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -333,7 +335,14 @@ set(HALO_DATA_PACK_PUBLIC_KEY "" CACHE STRING "Pinned Ed25519 public key (64 hex
 set(HALO_PROFILE_FEED_URL "" CACHE STRING "Device-keyed signed profile HTTPS directory")
 set(HALO_SHADER_FEED_URL "" CACHE STRING "Signed additive shader envelope HTTPS URL")
 set(HALO_RECORDING_FEED_URL "" CACHE STRING "Signed recording envelope HTTPS URL")
-if(HALO_TESTER_BUILD)
+# tools/ios_build.py --data-pack-channel; empty follows the tester build. The native Mac app has no tester build,
+# and its TestFlight build names the tester channel
+set(HALO_DATA_PACK_CHANNEL_NAME "" CACHE STRING "Signed update channel: stable, tester, or empty for the build's own")
+if(HALO_DATA_PACK_CHANNEL_NAME STREQUAL "tester" OR HALO_DATA_PACK_CHANNEL_NAME STREQUAL "stable")
+    set(HALO_DATA_PACK_CHANNEL "${HALO_DATA_PACK_CHANNEL_NAME}")
+elseif(HALO_DATA_PACK_CHANNEL_NAME)
+    message(FATAL_ERROR "HALO_DATA_PACK_CHANNEL_NAME must be stable or tester, got '${HALO_DATA_PACK_CHANNEL_NAME}'")
+elseif(HALO_TESTER_BUILD)
     set(HALO_DATA_PACK_CHANNEL "tester")
 else()
     set(HALO_DATA_PACK_CHANNEL "stable")
@@ -431,6 +440,21 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
         XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
+endif()
+# The native Mac app's App Sandbox (port/macos/VISR-macOS.entitlements). A team-signed build, the one that goes to
+# TestFlight, always runs sandboxed and also declares the iCloud container, so the App Store profile that signs it
+# already carries the container when CloudKit saves arrive on the Mac. An ad hoc build signs after the build
+# (tools/macos_build.py) and leaves the iCloud keys out: macOS does not launch an ad hoc app that claims them.
+if(HALO_NATIVE_MAC AND HALO_DEVELOPMENT_TEAM)
+    set(HALO_NATIVE_ICLOUD_CONTAINER "iCloud.org.steverice.visr" CACHE STRING "iCloud container the signed Mac app declares")
+    file(READ "${HALO_NATIVE_DIR}/VISR-macOS.entitlements" HALO_NATIVE_ENTITLEMENTS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_NATIVE_CLOUD)
+    string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_NATIVE_CLOUD_KEYS "${HALO_NATIVE_CLOUD}")
+    string(REPLACE "$(HALO_CLOUD_CONTAINER)" "${HALO_NATIVE_ICLOUD_CONTAINER}" HALO_NATIVE_CLOUD_KEYS "${HALO_NATIVE_CLOUD_KEYS}")
+    string(REPLACE "</dict>" "${HALO_NATIVE_CLOUD_KEYS}</dict>" HALO_NATIVE_ENTITLEMENTS "${HALO_NATIVE_ENTITLEMENTS}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-macOS.entitlements" "${HALO_NATIVE_ENTITLEMENTS}")
+    set_target_properties(VISR PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-macOS.entitlements")
 endif()
 # The multicast entitlement (spec section 2): with it in the chosen
 # entitlements file, iOS and visionOS may broadcast, and network.lan_broadcast
