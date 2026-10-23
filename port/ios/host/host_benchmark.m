@@ -802,8 +802,8 @@ static BOOL write_report(void) {
     NSString *variant_fields = @"";
     NSArray<NSDictionary *> *prior_variants = suite_variant_count && variant_last_pass ? variant_prior_reports() : @[];
     if (suite_variant_count)
-        variant_fields = [NSString stringWithFormat:@",\"variant\":%@,\"variant_reports\":%@",
-            json_object(variant_description()), json_object(prior_variants)];
+        variant_fields = [NSString stringWithFormat:@",\"variant\":%@,\"variant_reports\":%@,\"variants_complete\":%s",
+            json_object(variant_description()), json_object(prior_variants), variant_last_pass ? "true" : "false"];
     NSMutableString *report = [NSMutableString stringWithFormat:@"{%@%@,\"runs\":[", report_header(), variant_fields];
     int index, written = 0;
     NSMutableArray *runs = [NSMutableArray array];
@@ -829,9 +829,18 @@ static BOOL write_report(void) {
     NSDictionary *evidence = host_benchmark_shader_evidence(runs, previous, shader_directory());
     [report appendFormat:@"\n],\"shader_dependency_candidates\":%@,\"shader_output_intervals\":%@}\n",
         json_object(evidence[@"shader_dependency_candidates"]), json_object(evidence[@"shader_output_intervals"])];
-    if(![report writeToFile:@REPORT atomically:YES encoding:NSUTF8StringEncoding error:nil])return NO;
-    host_logf(HOST_LOG_INFO, "benchmark: report %s, %d runs, %lu bytes: %s/" REPORT, report_code, written,
-        (unsigned long)report.length, NSFileManager.defaultManager.currentDirectoryPath.fileSystemRepresentation);
+    /* (an earlier display variant pass's report goes beside report.json, never in it: report.json is only ever a
+       finished suite's, which is what tools waiting for it take it for) */
+    NSString *destination = @REPORT;
+    if (suite_variant_count && !variant_last_pass) {
+        char pass_name[32];
+        host_benchmark_variant_report_name(variant_index, pass_name, sizeof(pass_name));
+        destination = [@FOLDER stringByAppendingPathComponent:@(pass_name)];
+    }
+    if(![report writeToFile:destination atomically:YES encoding:NSUTF8StringEncoding error:nil])return NO;
+    host_logf(HOST_LOG_INFO, "benchmark: report %s, %d runs, %lu bytes: %s/%s", report_code, written,
+        (unsigned long)report.length, NSFileManager.defaultManager.currentDirectoryPath.fileSystemRepresentation,
+        destination.UTF8String);
     return YES;
 }
 
@@ -1403,17 +1412,19 @@ int host_benchmark_next(char *text, unsigned int size) {
             host_benchmark_variant_report_name(variant_index, report_name, sizeof(report_name));
             NSString *name = @(report_name);
             NSString *path = [@FOLDER stringByAppendingPathComponent:name];
-            /* (the last pass's report carries the earlier ones: write_report) */
+            /* (the last pass's report.json carries the earlier ones; an earlier pass's goes to its own file:
+               write_report) */
             variant_last_pass = host_benchmark_variant_last_pass(variant_index, suite_variant_count, atomic_load(&finish_requested));
             if(!write_report())return 3;
-            [NSFileManager.defaultManager removeItemAtPath:path error:nil];
-            if (![NSFileManager.defaultManager copyItemAtPath:@REPORT toPath:path error:nil]) return 3;
+            if (variant_last_pass) {
+                [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+                [NSFileManager.defaultManager copyItemAtPath:@REPORT toPath:path error:nil];
+            }
             if (![variant_reports containsObject:name]) [variant_reports addObject:name];
             if (!variant_last_pass) {
-                /* the next pass starts as a suite of its own (host_benchmark_start), with this one's report kept
-                   out of the outbox until the last carries it */
+                /* the next pass starts as a suite of its own (host_benchmark_start); this one's report waits beside
+                   report.json, out of the outbox, until the last carries it */
                 benchmark_journal_done(JOURNAL);
-                [NSFileManager.defaultManager removeItemAtPath:@REPORT error:nil];
                 variant_index++;
                 variant_state_write();
                 host_logf(HOST_LOG_INFO, "benchmark: display variant pass %d of %d: %s", variant_index + 1,
