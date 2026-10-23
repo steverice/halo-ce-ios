@@ -191,7 +191,7 @@ def test_current_release_assets_are_checked_in_and_exact():
     assert len(recordings) == 3
     assert set(assets) == set(overlay.parse_receipt((root / RECEIPT).read_bytes()))
     assert hashlib.sha256(assets[RECORDING]).hexdigest() == (
-        "5b2de56a7f55cc0ed04bcb3ac577c87d9bc9a7749a92e5e79707d6fad08ee122"
+        "4ed272f14342894203c730eafc242167826eb03b3190a0d3d64873e6ce6bc452"
     )
     assert hashlib.sha256(assets[RECORDING_OLD]).hexdigest() == (
         "69655d46646b69f259e66803204e840306a32740fffe904ce9517550c4650956"
