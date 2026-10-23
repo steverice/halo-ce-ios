@@ -155,6 +155,8 @@ static int action_seeds_valid(char *actions, char *seeds)
 
 static int profile_metadata_key(const char *key)
 {
+	/* (recordings made before display.effect_resolution had three values also hold display.mirror_resolution) */
+	if (!strcmp(key, "display.mirror_resolution")) return 1;
 #define PROFILE_BOOLEAN(name) if (!strcmp(key, name)) return 1;
 #define PROFILE_INTEGER(name, minimum, maximum) PROFILE_BOOLEAN(name)
 #define PROFILE_REAL(name, minimum, maximum) PROFILE_BOOLEAN(name)
