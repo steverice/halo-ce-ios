@@ -55,10 +55,10 @@ def test_bounds_suite_has_min_and_max_per_workload():
 
 
 def test_a_knob_added_to_the_ladder_is_data_only():
-    ladder = {**LADDER, "display.mirror_resolution": ["full", "half"]}
+    ladder = {**LADDER, "display.effect_resolution": ["full", "half"]}
     suite = suites.bounds_suite(WORKLOADS, ladder)
-    assert suite.runs[0].settings["display.mirror_resolution"] == "half"
-    assert suite.runs[1].settings["display.mirror_resolution"] == "full"
+    assert suite.runs[0].settings["display.effect_resolution"] == "half"
+    assert suite.runs[1].settings["display.effect_resolution"] == "full"
 
 
 def test_ladder_knob_the_catalog_cannot_carry_is_refused():

@@ -556,6 +556,41 @@ static void check_external(void)
 	external_active = 0;
 }
 
+/* display.effect_resolution was a boolean beside display.mirror_resolution: the saved choice carries over */
+static void check_effect_resolution_migration(void)
+{
+	static const struct { const char *effect, *mirror, *expected; int still_default; } cases[] = {
+		{ "false", "\"half\"", "xbox", 0 }, { "false", "\"full\"", "xbox", 0 },
+		{ "true", "\"half\"", "half", 1 }, { "true", "\"full\"", "full", 0 },
+	};
+	char text[256];
+	size_t index;
+
+	for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++)
+	{
+		fresh();
+		snprintf(text, sizeof(text), "[display]\neffect_resolution = %s\nmirror_resolution = %s\nshadow_map_size = 256\n",
+			cases[index].effect, cases[index].mirror);
+		write_text(path, text);
+		launch("");
+		assert(!strcmp(config_string("display.effect_resolution"), cases[index].expected));
+		snprintf(text, sizeof(text), "\neffect_resolution = \"%s\"\n", cases[index].expected);
+		assert(file_has(path, text) && !file_has(path, "mirror_resolution") && file_has(path, "\nshadow_map_size = 256\n"));
+		assert(strstr(logged, "display.effect_resolution is now") && !strstr(logged, "unknown setting"));
+		assert(file_has(origins, cases[index].still_default ? "display.effect_resolution\tdefault\t\"half\"\n" :
+			"display.effect_resolution\tchosen\n"));
+		/* (a second launch finds nothing to migrate) */
+		launch("");
+		assert(!strcmp(config_string("display.effect_resolution"), cases[index].expected) && !strstr(logged, "is now"));
+	}
+	/* with a stale origins line from the boolean, and the mirror line absent */
+	fresh();
+	write_text(path, "[display]\neffect_resolution = false\n");
+	write_text(origins, "display.effect_resolution\tdefault\ttrue\n");
+	launch("");
+	assert(!strcmp(config_string("display.effect_resolution"), "xbox") && file_has(origins, "display.effect_resolution\tchosen\n"));
+}
+
 int main(void)
 {
 	snprintf(directory, sizeof(directory), "/tmp/config-origins-probe-XXXXXX");
@@ -578,6 +613,7 @@ int main(void)
 	check_scenes();
 	check_changed_default();
 	check_external();
+	check_effect_resolution_migration();
 	fresh();
 	rmdir(directory);
 	puts("PASS: settings layers: default, device profile, a chosen value, the environment; config.origins; scene classes");

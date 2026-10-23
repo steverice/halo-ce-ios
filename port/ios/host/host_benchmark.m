@@ -671,10 +671,8 @@ static void record_applied_settings(NSMutableDictionary *settings, const struct 
     }
     settings[@"display.anti_aliasing"] = mask & BENCHMARK_KNOB_ANTI_ALIASING ?
         @[@"off", @"fxaa", @"smaa"][knobs->anti_aliasing] : configured_text("display.anti_aliasing", "off");
-    settings[@"display.effect_resolution"] = mask & BENCHMARK_KNOB_EFFECT ? (knobs->effect_full ? @"true" : @"false") :
-        configured_text("display.effect_resolution", "true");
-    settings[@"display.mirror_resolution"] = mask & BENCHMARK_KNOB_MIRROR ? (knobs->mirror_full ? @"full" : @"half") :
-        configured_text("display.mirror_resolution", "half");
+    settings[@"display.effect_resolution"] = mask & BENCHMARK_KNOB_EFFECT ?
+        @[@"xbox", @"half", @"full"][knobs->effect_level] : configured_text("display.effect_resolution", "half");
     settings[@"display.render_scale"] = mask & BENCHMARK_KNOB_RENDER_SCALE ?
         [NSString stringWithFormat:@"%g", knobs->render_scale] : [NSString stringWithFormat:@"%g", host_config_real("display.render_scale", 1.0)];
     settings[@"display.clutter_distance"] = [NSString stringWithFormat:@"%g", mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ?
@@ -1329,7 +1327,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
         "sim_experiments=%u sim_experiments_mask=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d offscreen=%d knob_aa=%d "
-        "knob_effect=%d knob_mirror=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        "knob_effect=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds, scene->simulation ? scene->simulation : "",
@@ -1341,7 +1339,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         host_benchmark_offscreen_requested(),
         /* (-1 for a setting the case leaves to the configuration) */
         knobs.mask & BENCHMARK_KNOB_ANTI_ALIASING ? knobs.anti_aliasing : -1,
-        knobs.mask & BENCHMARK_KNOB_EFFECT ? knobs.effect_full : -1, knobs.mask & BENCHMARK_KNOB_MIRROR ? knobs.mirror_full : -1,
+        knobs.mask & BENCHMARK_KNOB_EFFECT ? knobs.effect_level : -1,
         knobs.mask & BENCHMARK_KNOB_RENDER_SCALE ? knobs.render_scale : 0.0,
         knobs.mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ? knobs.clutter_distance : -1.0,
         knobs.mask & BENCHMARK_KNOB_CLUTTER_LOD ? knobs.clutter_lowest_lod : -1);

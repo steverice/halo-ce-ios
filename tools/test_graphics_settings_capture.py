@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
                     "display.vsync", "display.frame_rate", "display.frame_repeat", "display.effect_resolution",
                     "display.shadow_batching", "display.decal_batching", "display.compressed_textures",
                     "display.upscaled_textures", "display.native_hud", "display.high_res_hud", "display.high_res_text",
-                    "display.stereo", "display.foveation", "display.render_quality", "display.mirror_resolution"}
+                    "display.stereo", "display.foveation", "display.render_quality"}
         assert required <= values.keys()
         assert snapshot["scene"] == "menu"
         safe = set(re.findall(r'X\("([^"]+)"\)', (ROOT / "port/runtime/graphics_capture.h").read_text()))

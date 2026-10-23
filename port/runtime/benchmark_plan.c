@@ -165,9 +165,9 @@ unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
             one->arena_columns, one->arena_spacing, one->arena_distance, one->arena_movement_radius);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
         /* (the settings a case sets, so a journal is never carried on with other values for the same cases) */
-        snprintf(text, sizeof(text), "%s|%u|%u|%u|%ld|%ld|%ld|%d|%d|%d|%d|%.3f|%.3f|%d;", one->workload ? one->workload : "",
+        snprintf(text, sizeof(text), "%s|%u|%u|%u|%ld|%ld|%ld|%d|%d|%d|%.3f|%.3f|%d;", one->workload ? one->workload : "",
             one->sim_experiments, one->sim_experiments_mask, one->knobs.mask, one->knobs.lines, one->knobs.anisotropy, one->knobs.shadow_size,
-            one->knobs.model_lod_max, one->knobs.anti_aliasing, one->knobs.effect_full, one->knobs.mirror_full,
+            one->knobs.model_lod_max, one->knobs.anti_aliasing, one->knobs.effect_level,
             one->knobs.render_scale, one->knobs.clutter_distance, one->knobs.clutter_lowest_lod);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
     }

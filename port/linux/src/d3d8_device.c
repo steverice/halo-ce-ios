@@ -230,11 +230,11 @@ height in lines (the next frame's halo_screen_commit draws at it, as a render sc
 size and the anisotropy; 0 leaves the setting in force */
 static long benchmark_render_lines, benchmark_shadow_size, benchmark_anisotropy;
 /* debug.knob_cycle (halo_knob_apply): the same settings changed while the game runs, in place of the settings; the
-benchmark's values come first. 0 leaves the setting in force, and for the effect and mirror targets -1 */
+benchmark's values come first. 0 leaves the setting in force, and for the effect target -1 */
 static long knob_render_lines, knob_shadow_size, knob_anisotropy;
 /* the frame the offscreen targets of an older size are freed on (knob_targets_release); 0 for none */
 static unsigned long knob_release_frame;
-static int knob_effect_resolution = -1, knob_mirror_full = -1;
+static int knob_effect_level = -1;
 /* Values observed in renderer operations since the current benchmark run began.
    Zero means this run has not established an actual shadow target or sampler. */
 static long benchmark_shadow_target_observed, benchmark_sampler_max_observed;
@@ -1049,35 +1049,40 @@ static void screen_scale_dense(float scale[2])
 	}
 }
 
+/* display.effect_resolution's value as a level: 0 "xbox" (the 320x240 target as the Xbox had it), 1 "half" (the
+default; also any other text), 2 "full" */
+static int effect_resolution_level(const char *value)
+{
+	return !strcmp(value, "xbox") ? 0 : !strcmp(value, "full") ? 2 : 1;
+}
+
 /* the Xbox-sized offscreen targets drawn larger than the Xbox drew them:
 the 128x128 R5G6B5 shadow maps (and their blur) at display.shadow_map_size,
-and with display.effect_resolution the 320x240 active-camouflage source (and
-its depth) at the screen's scale. Their users address them in normalized or
+and with display.effect_resolution "half" or "full" the 320x240
+mirror-floor and active-camouflage target (and its depth) at the screen's scale. Their users address them in normalized or
 logical coordinates, so only the pixel count changes. */
 static void offscreen_target_scale(unsigned long width, unsigned long height, DWORD format, float scale[2])
 {
 	static long shadow_size = -1;
-	static int effect_resolution = -1;
-	static float effect_factor = 1.0f;
+	static int effect_level = -1;
 
 	if (shadow_size < 0)
 	{
 		shadow_size = config_integer("display.shadow_map_size");
 		shadow_size = shadow_size < 128 ? 128 : shadow_size > 2048 ? 2048 : shadow_size;
-		effect_resolution = config_boolean("display.effect_resolution");
-		/* display.mirror_resolution = "full": the 320x240 target at the
-		screen's full resolution, twice its Xbox proportion each way */
-		effect_factor = !strcmp(config_string("display.mirror_resolution"), "full") ? 2.0f : 1.0f;
+		effect_level = effect_resolution_level(config_string("display.effect_resolution"));
 	}
 	if (width == 128 && height == 128 && (format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
 	{
 		scale[0] = scale[1] = (float)(benchmark_shadow_size > 0 ? benchmark_shadow_size :
 			knob_shadow_size > 0 ? knob_shadow_size : shadow_size) / 128.0f;
 	}
-	else if (width == 320 && height == 240 && (knob_effect_resolution >= 0 ? knob_effect_resolution : effect_resolution))
+	else if (width == 320 && height == 240 && (knob_effect_level >= 0 ? knob_effect_level : effect_level) > 0)
 	{
 		float dense[2];
-		float factor = knob_mirror_full >= 0 ? (knob_mirror_full ? 2.0f : 1.0f) : effect_factor;
+		/* "half": the screen's resolution halved each way, as the Xbox had it; "full": the screen's resolution,
+		twice that */
+		float factor = (knob_effect_level >= 0 ? knob_effect_level : effect_level) == 2 ? 2.0f : 1.0f;
 
 		/* (foveated eye passes: at the eyes' density without foveation, not
 		the rate maps' screen size, which the full-rate center reaches only
@@ -1890,9 +1895,7 @@ int halo_knob_apply(const char *name, const char *value)
 	else if (!strcmp(name, "display.anti_aliasing"))
 		anti_aliasing_live_set(value);
 	else if (!strcmp(name, "display.effect_resolution"))
-		knob_effect_resolution = !strcmp(value, "true");
-	else if (!strcmp(name, "display.mirror_resolution"))
-		knob_mirror_full = !strcmp(value, "full");
+		knob_effect_level = effect_resolution_level(value);
 	else
 		return 0;
 	/* the new targets are allocated by the next frames; the old ones go two seconds on */
@@ -1900,10 +1903,10 @@ int halo_knob_apply(const char *name, const char *value)
 	return 1;
 }
 
-/* A cost run's anti-aliasing method (0 off, 1 fxaa, 2 smaa), effect resolution (0 or 1), mirror resolution (0 half,
-1 full) and render scale (benchmark_suite.c), from the next frame and in place of the settings; -1 (0 for the scale)
+/* A cost run's anti-aliasing method (0 off, 1 fxaa, 2 smaa), effect resolution (0 xbox, 1 half, 2 full) and render
+scale (benchmark_suite.c), from the next frame and in place of the settings; -1 (0 for the scale)
 leaves one as configured. Called with all of them so when a run or the suite ends. */
-void halo_benchmark_knobs(int anti_aliasing, int effect_full, int mirror_full, double render_scale)
+void halo_benchmark_knobs(int anti_aliasing, int effect_level, double render_scale)
 {
 	static const char *const methods[] = { "off", "fxaa", "smaa" };
 
@@ -1915,8 +1918,7 @@ void halo_benchmark_knobs(int anti_aliasing, int effect_full, int mirror_full, d
 		if (device.gl_ready)
 			anti_aliasing_read();
 	}
-	knob_effect_resolution = effect_full;
-	knob_mirror_full = mirror_full;
+	knob_effect_level = effect_level >= 0 && effect_level <= 2 ? effect_level : -1;
 	render_scale_live = render_scale >= 0.25 && render_scale <= 1.0 ? render_scale : -1.0;
 	knob_release_frame = device.frame + 120;
 }

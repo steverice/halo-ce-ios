@@ -152,14 +152,11 @@ static const struct config_setting config_settings[] =
 	{ "display.shadow_map_size", _config_integer, "512", "HALO_SHADOW_MAP_SIZE", _environment_value, _platform_all,
 		"The size of the textures characters' and vehicles' shadows are drawn into,\n"
 		"128 (as on the Xbox) to 2048: larger is smoother." },
-	{ "display.effect_resolution", _config_boolean, "true", "HALO_EFFECT_RESOLUTION", _environment_value, _platform_all,
-		"Draw the active-camouflage effect at the screen's resolution rather than the\n"
-		"Xbox's 320x240." },
-	{ "display.mirror_resolution", _config_string, "\"half\"", "HALO_MIRROR_RESOLUTION", _environment_value, _platform_all,
-		"With display.effect_resolution: the reflections in mirror floors and the\n"
-		"active camouflage (both drawn into the Xbox's 320x240 target) at \"half\"\n"
-		"the screen's resolution each way, as the Xbox had them, or \"full\"\n"
-		"(sharper reflections; up to a whole second render of the scene's pixels\n"
+	{ "display.effect_resolution", _config_string, "\"half\"", "HALO_EFFECT_RESOLUTION", _environment_value, _platform_all,
+		"The resolution of the 320x240 target the reflections in mirror floors and\n"
+		"the active camouflage are drawn into: \"xbox\" keeps the Xbox's 320x240,\n"
+		"\"half\" is half the screen's resolution each way, and \"full\" the screen's\n"
+		"resolution (sharper; up to a whole second render of the scene's pixels\n"
 		"where a mirror shows)." },
 	{ "display.model_lod", _config_string, "\"max\"", "HALO_MODEL_LOD", _environment_value, _platform_all,
 		"Which geometry detail level models draw: \"max\" (default) always the\n"
@@ -2585,6 +2582,60 @@ static int config_literal_is_a_default(size_t index, const char *literal)
 }
 
 static char *config_text_set(const char *text, const char *name, const char *line_text);
+static char *config_text_remove(const char *text, const char *name);
+
+/* A config.toml from before display.effect_resolution had three values holds a
+boolean there and display.mirror_resolution beside it: false is "xbox", true with
+the mirror at "full" is "full", true otherwise "half". The file's text is
+rewritten (the old text freed) with the one setting, and the setting's origin is
+forgotten so config_origin_decide classes the migrated value afresh: the default
+follows the device's profile, anything else is the player's. Returns 1 when the
+text changed; the caller parses it again. */
+static int config_migrate_effect_resolution(char **text, toml_datum_t table)
+{
+	toml_datum_t effect = toml_seek(table, "display.effect_resolution");
+	toml_datum_t mirror = toml_seek(table, "display.mirror_resolution");
+	const char *value;
+	char line_text[64];
+	char *changed;
+	long index = config_setting_index("display.effect_resolution");
+
+	if (effect.type != TOML_BOOLEAN && mirror.type == TOML_UNKNOWN)
+		return 0;
+	if (effect.type == TOML_BOOLEAN)
+		value = !effect.u.boolean ? "xbox" : mirror.type == TOML_STRING && !strcmp(mirror.u.s, "full") ? "full" : "half";
+	else
+		value = NULL;
+	if (value)
+	{
+		snprintf(line_text, sizeof(line_text), "effect_resolution = \"%s\"\n", value);
+		changed = config_text_set(*text, "display.effect_resolution", line_text);
+		if (!changed)
+			return 0;
+		free(*text);
+		*text = changed;
+		platform_log("settings: display.effect_resolution is now \"%s\" (was %s, with display.mirror_resolution %s)",
+			value, effect.u.boolean ? "true" : "false", mirror.type == TOML_STRING ? mirror.u.s : "unset");
+		if (index >= 0)
+		{
+			free(config_states[index].origin_literal);
+			config_states[index].origin_literal = NULL;
+			config_states[index].origin = _origin_none;
+			config_origins_changed = 1;
+		}
+	}
+	/* (display.mirror_resolution is no setting now: its line is dropped, a stray one with the new setting included) */
+	if (mirror.type != TOML_UNKNOWN)
+	{
+		changed = config_text_remove(*text, "display.mirror_resolution");
+		if (changed)
+		{
+			free(*text);
+			*text = changed;
+		}
+	}
+	return 1;
+}
 
 /* One setting the file holds (its value read into file_value, of the right
 type), against config.origins:
@@ -2765,6 +2816,7 @@ static void config_load(void)
 	size_t size = 0;
 	char *text;
 	size_t index;
+	int migrated;
 
 	config_profile_load();
 	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
@@ -2785,10 +2837,17 @@ static void config_load(void)
 			size = strlen(text);
 		}
 		result = toml_parse(text, (int)size);
+		migrated = result.ok && config_migrate_effect_resolution(&text, result.toptab);
+		if (migrated)
+		{
+			toml_free(result);
+			size = strlen(text);
+			result = toml_parse(text, (int)size);
+		}
 		if (result.ok)
 		{
 			char *completed;
-			int rewritten = 0;
+			int rewritten = migrated;
 
 			for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
 			{
@@ -2974,6 +3033,43 @@ static char *config_text_set(const char *text, const char *name, const char *lin
 			config_append(&out, header);
 		}
 		config_append(&out, line_text);
+	}
+	return out.buffer;
+}
+
+/* text (config.toml's) without name's line, the rest kept as it is. NULL without memory */
+static char *config_text_remove(const char *text, const char *name)
+{
+	const char *dot = strchr(name, '.');
+	char section[64], key[64], current[64] = "";
+	struct config_text out = { 0 };
+	const char *line;
+	int in_section = 0;
+
+	snprintf(section, sizeof(section), "%.*s", (int)(dot - name), name);
+	snprintf(key, sizeof(key), "%s", dot + 1);
+	for (line = text ? text : ""; *line;)
+	{
+		const char *end = line + strcspn(line, "\n");
+		const char *next = *end ? end + 1 : end;
+
+		if (config_line_section(line, end, current, sizeof(current)))
+			in_section = !strcmp(current, section);
+		else if (in_section && config_line_key(line, end, key))
+		{
+			line = next;
+			continue;
+		}
+		{
+			char *copy = config_copy(line, (size_t)(next - line));
+
+			if (copy)
+			{
+				config_append(&out, copy);
+				free(copy);
+			}
+		}
+		line = next;
 	}
 	return out.buffer;
 }

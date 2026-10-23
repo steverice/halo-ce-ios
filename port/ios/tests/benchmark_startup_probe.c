@@ -147,12 +147,12 @@ void halo_benchmark_overrides(long lines, long shadow, long anisotropy) {
 }
 static unsigned override_experiments, override_experiments_mask;
 void sim_experiment_override(unsigned values, unsigned mask) { override_experiments=values; override_experiments_mask=mask; }
-static int knob_aa = -1, knob_effect = -1, knob_mirror = -1, knob_calls;
+static int knob_aa = -1, knob_effect = -1, knob_calls;
 static double knob_scale, clutter_distance = -1;
 static int clutter_lod = -1;
 void halo_benchmark_clutter(double distance, int lod) { clutter_distance=distance; clutter_lod=lod; }
-void halo_benchmark_knobs(int aa, int effect, int mirror, double scale) {
-    knob_aa=aa; knob_effect=effect; knob_mirror=mirror; knob_scale=scale; knob_calls++;
+void halo_benchmark_knobs(int aa, int effect, double scale) {
+    knob_aa=aa; knob_effect=effect; knob_scale=scale; knob_calls++;
 }
 void halo_benchmark_override_state(long *lines, long *shadow, long *anisotropy) {
     *lines=override_lines; *shadow=override_shadow; *anisotropy=override_anisotropy;
@@ -220,18 +220,18 @@ int main(void) {
     CHECK(loads == 1 && unsafe_loads == 0);
 
     /* a run's extra settings are applied as it starts, and a run without them leaves the configuration alone */
-    reset(); run_settings_text = "sim_experiments=5 sim_experiments_mask=7 lines=540 anisotropy=4 shadow=256 lod=0 knob_aa=2 knob_effect=0 "
-        "knob_mirror=1 knob_scale=0.670 knob_clutter=40.000 knob_clutter_lod=1";
-    knob_calls = 0; knob_aa = knob_effect = knob_mirror = 7; knob_scale = 7;
+    reset(); run_settings_text = "sim_experiments=5 sim_experiments_mask=7 lines=540 anisotropy=4 shadow=256 lod=0 knob_aa=2 knob_effect=2 "
+        "knob_scale=0.670 knob_clutter=40.000 knob_clutter_lod=1";
+    knob_calls = 0; knob_aa = knob_effect = 7; knob_scale = 7;
     frame(0); frame(3500); frame(3516); frame(3532);
-    CHECK(knob_calls == 1 && knob_aa == 2 && knob_effect == 0 && knob_mirror == 1 && fabs(knob_scale - 0.67) < 1e-9 &&
+    CHECK(knob_calls == 1 && knob_aa == 2 && knob_effect == 2 && fabs(knob_scale - 0.67) < 1e-9 &&
         clutter_distance == 40.0 && clutter_lod == 1);
     CHECK(override_lines == 540 && override_anisotropy == 4 && override_shadow == 256 && override_experiments == 5 && override_experiments_mask == 7);
-    reset(); run_settings_text = "sim_experiments=0 sim_experiments_mask=0 lines=0 anisotropy=0 shadow=0 lod=1 knob_aa=-1 knob_effect=-1 knob_mirror=-1 "
+    reset(); run_settings_text = "sim_experiments=0 sim_experiments_mask=0 lines=0 anisotropy=0 shadow=0 lod=1 knob_aa=-1 knob_effect=-1 "
         "knob_scale=0.000 knob_clutter=-1.000 knob_clutter_lod=-1";
     knob_calls = 0;
     frame(0); frame(3500); frame(3516); frame(3532);
-    CHECK(knob_calls == 1 && knob_aa == -1 && knob_effect == -1 && knob_mirror == -1 && knob_scale == 0.0 &&
+    CHECK(knob_calls == 1 && knob_aa == -1 && knob_effect == -1 && knob_scale == 0.0 &&
         clutter_distance == -1.0 && clutter_lod == -1);
     run_settings_text = NULL;
 

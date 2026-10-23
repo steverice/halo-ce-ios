@@ -20,7 +20,7 @@ LOWER = {120: 60, 90: 60, 60: 30}
 DEFAULT_ASPECT = 16 / 9
 # Knobs that only cost GPU time, and knobs that only cost CPU time. A fitted factor on the other side is
 # measurement noise, so a cut is never taken to relieve the other side.
-GPU_SIDE = {"display.shadow_map_size", "display.anisotropic_filtering", cost.RESOLUTION_KEY, "display.mirror_resolution"}
+GPU_SIDE = {"display.shadow_map_size", "display.anisotropic_filtering", cost.RESOLUTION_KEY, "display.effect_resolution"}
 CPU_SIDE = {"display.model_lod"}
 
 

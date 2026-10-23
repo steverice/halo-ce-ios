@@ -54,18 +54,14 @@
           "description": "The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. Profile values outside the accepted set are refused, not clamped."
         },
         "effect_resolution": {
-          "type": "boolean",
-          "default": true,
-          "description": "Draw the active-camouflage effect at the screen's resolution rather than the Xbox's 320x240. Profile values outside the accepted set are refused, not clamped."
-        },
-        "mirror_resolution": {
           "type": "string",
           "enum": [
+            "xbox",
             "half",
             "full"
           ],
           "default": "half",
-          "description": "With display.effect_resolution: the reflections in mirror floors and the active camouflage (both drawn into the Xbox's 320x240 target) at \"half\" the screen's resolution each way, as the Xbox had them, or \"full\" (sharper reflections; up to a whole second render of the scene's pixels where a mirror shows). Profile values outside the accepted set are refused, not clamped."
+          "description": "The resolution of the 320x240 target the reflections in mirror floors and the active camouflage are drawn into: \"xbox\" keeps the Xbox's 320x240, \"half\" is half the screen's resolution each way, and \"full\" the screen's resolution (sharper; up to a whole second render of the scene's pixels where a mirror shows). Profile values outside the accepted set are refused, not clamped."
         },
         "model_lod": {
           "type": "string",
@@ -1257,50 +1253,6 @@
           ]
         },
         "display.effect_resolution": {
-          "type": "object",
-          "properties": {
-            "basis": {
-              "enum": [
-                "measured",
-                "assumed",
-                "inherited"
-              ]
-            },
-            "why": {
-              "type": "string",
-              "minLength": 20
-            },
-            "source": {
-              "type": "string",
-              "minLength": 10
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "basis",
-            "why"
-          ],
-          "allOf": [
-            {
-              "if": {
-                "properties": {
-                  "basis": {
-                    "const": "measured"
-                  }
-                },
-                "required": [
-                  "basis"
-                ]
-              },
-              "then": {
-                "required": [
-                  "source"
-                ]
-              }
-            }
-          ]
-        },
-        "display.mirror_resolution": {
           "type": "object",
           "properties": {
             "basis": {

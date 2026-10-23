@@ -72,10 +72,10 @@ int halo_scene_class(void);
 void halo_benchmark_overrides(long render_lines, long shadow_size, long anisotropy);
 /* sim_experiments.c: the simulation values a case explicitly overrides, a bit each. */
 void sim_experiment_override(unsigned values, unsigned mask);
-/* d3d8_device.c: the anti-aliasing method (0 off, 1 fxaa, 2 smaa), effect resolution (0 or 1), mirror resolution
-   (0 half, 1 full) and render scale a cost run sets from the next frame, in place of the settings; -1 (0 for the
+/* d3d8_device.c: the anti-aliasing method (0 off, 1 fxaa, 2 smaa), effect resolution (0 xbox, 1 half, 2 full)
+   and render scale a cost run sets from the next frame, in place of the settings; -1 (0 for the
    scale) leaves a setting as configured, and all of them so ends the run's values */
-void halo_benchmark_knobs(int anti_aliasing, int effect_full, int mirror_full, double render_scale);
+void halo_benchmark_knobs(int anti_aliasing, int effect_level, double render_scale);
 /* d3d8_device.c: display.clutter_distance (0 for no limit) and debug.clutter_lowest_lod (0 or 1) a cost run sets, read
    each frame by source/render/render_objects.c in place of the settings; -1 leaves one as configured */
 void halo_benchmark_clutter(double distance, int lowest_lod);
@@ -127,7 +127,7 @@ static struct
 	/* the case's experimental simulation changes (sim_experiments.c), a bit each */
 	unsigned sim_experiments, sim_experiments_mask;
 	/* the case's other settings (halo_benchmark_knobs) */
-	int knob_anti_aliasing, knob_effect_full, knob_mirror_full;
+	int knob_anti_aliasing, knob_effect_level;
 	double knob_render_scale, knob_clutter_distance;
 	int knob_clutter_lowest_lod;
 	char mp_simulation[32], mp_game_mode[16];
@@ -602,7 +602,7 @@ static void next_run(void)
 		suite_presented(1);
 		halo_benchmark_overrides(0, 0, 0);
 		sim_experiment_override(0, 0);
-		halo_benchmark_knobs(-1, -1, -1, 0.0);
+		halo_benchmark_knobs(-1, -1, 0.0);
 		halo_benchmark_clutter(-1.0, -1);
 		halo_model_lod_set(-1);
 		benchmark_scenario_load("", "");
@@ -634,8 +634,7 @@ static void next_run(void)
 	suite.sim_experiments = (unsigned)number_field(text, "sim_experiments");
 	suite.sim_experiments_mask = (unsigned)number_field(text, "sim_experiments_mask");
 	suite.knob_anti_aliasing = field(text, "knob_aa", (char[8]){0}, 8) ? (int)number_field(text, "knob_aa") : -1;
-	suite.knob_effect_full = field(text, "knob_effect", (char[8]){0}, 8) ? (int)number_field(text, "knob_effect") : -1;
-	suite.knob_mirror_full = field(text, "knob_mirror", (char[8]){0}, 8) ? (int)number_field(text, "knob_mirror") : -1;
+	suite.knob_effect_level = field(text, "knob_effect", (char[8]){0}, 8) ? (int)number_field(text, "knob_effect") : -1;
 	suite.knob_render_scale = number_field(text, "knob_scale");
 	suite.knob_clutter_distance = field(text, "knob_clutter", (char[16]){0}, 16) ? number_field(text, "knob_clutter") : -1.0;
 	suite.knob_clutter_lowest_lod = field(text, "knob_clutter_lod", (char[8]){0}, 8) ? (int)number_field(text, "knob_clutter_lod") : -1;
@@ -708,7 +707,7 @@ static void next_run(void)
 	}
 	halo_benchmark_overrides(suite.lines, suite.shadow_size, suite.anisotropy);
 	sim_experiment_override(suite.sim_experiments, suite.sim_experiments_mask);
-	halo_benchmark_knobs(suite.knob_anti_aliasing, suite.knob_effect_full, suite.knob_mirror_full, suite.knob_render_scale);
+	halo_benchmark_knobs(suite.knob_anti_aliasing, suite.knob_effect_level, suite.knob_render_scale);
 	halo_benchmark_clutter(suite.knob_clutter_distance, suite.knob_clutter_lowest_lod);
 	halo_model_lod_set(suite.model_lod_max);
 	halo_benchmark_renderer_observations_reset();

@@ -131,21 +131,10 @@
           ]
         },
         "effect_resolution": {
-          "type": "boolean",
-          "default": true,
-          "description": "Draw the active-camouflage effect at the screen's resolution rather than the Xbox's 320x240.",
-          "x-environment": "HALO_EFFECT_RESOLUTION",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
-        "mirror_resolution": {
           "type": "string",
           "default": "half",
-          "description": "With display.effect_resolution: the reflections in mirror floors and the active camouflage (both drawn into the Xbox's 320x240 target) at \"half\" the screen's resolution each way, as the Xbox had them, or \"full\" (sharper reflections; up to a whole second render of the scene's pixels where a mirror shows).",
-          "x-environment": "HALO_MIRROR_RESOLUTION",
+          "description": "The resolution of the 320x240 target the reflections in mirror floors and the active camouflage are drawn into: \"xbox\" keeps the Xbox's 320x240, \"half\" is half the screen's resolution each way, and \"full\" the screen's resolution (sharper; up to a whole second render of the scene's pixels where a mirror shows).",
+          "x-environment": "HALO_EFFECT_RESOLUTION",
           "x-environment-style": "value",
           "x-platforms": [
             "apple",

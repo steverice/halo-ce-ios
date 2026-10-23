@@ -25,7 +25,7 @@ struct knob
 };
 
 /* The render height does not apply under foveated head-tracked stereo (the Compositor's rate maps size the eyes);
-the shadow map, effect and mirror targets are allocated again at their new size on first use, and the old ones stay
+the shadow map and effect targets are allocated again at their new size on first use, and the old ones stay
 allocated until the app quits. Not here because they cannot change while the game runs: display.upscaled_textures,
 display.compressed_textures, display.renderer and display.foveation. */
 static const struct knob knob_table[] = {
@@ -37,8 +37,7 @@ static const struct knob knob_table[] = {
 		{ "1x", "2x", "4x", "8x", "16x" } },
 	{ "model detail", "display.model_lod", KNOB_STRING, 2, { "auto", "max" }, { "auto", "max" } },
 	{ "anti-aliasing", "display.anti_aliasing", KNOB_STRING, 3, { "off", "fxaa", "smaa" }, { "off", "FXAA", "SMAA" } },
-	{ "effect resolution", "display.effect_resolution", KNOB_BOOLEAN, 2, { "false", "true" }, { "off", "on" } },
-	{ "mirror resolution", "display.mirror_resolution", KNOB_STRING, 2, { "half", "full" }, { "half", "full" } },
+	{ "effect resolution", "display.effect_resolution", KNOB_STRING, 3, { "xbox", "half", "full" }, { "xbox", "half", "full" } },
 };
 #define KNOB_COUNT ((int)(sizeof(knob_table) / sizeof(*knob_table)))
 

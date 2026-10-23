@@ -263,7 +263,7 @@ static void check_refusals(void)
 		"models = [\"Bad1,1\"]\n"
 		"[display]\nrender_quality = 0.5\nshadow_map_size = 2048\nrender_scale = 0.01\nrenderer = \"vulkan\"\n"
 		"stereo = \"head\"\nframe_rate = \"29\"\nanisotropic_filtering = \"16\"\nfoveation = 1\nlod_scale = nan\n"
-		"frame_pacing = \"tick\"\nmirror_resolution = \"half|full\"\nanti_aliasing = \"taa\"\n"
+		"frame_pacing = \"tick\"\neffect_resolution = \"double\"\nanti_aliasing = \"taa\"\n"
 		"[network]\nonline = true\n[paths]\ndata = \"/tmp\"\n[debug]\nexit_after = 1.0\n[input]\nturn = \"off\"\n");
 	profile = resolve(folder, device("visionos", "Bad1,1", "", 8), missing, "");
 	assert(profile.count == 2 && has(&profile, "display.render_quality", "0.5") && has(&profile, "display.frame_pacing", "tick"));
@@ -373,13 +373,13 @@ static void check_shipped(const char *shipped)
 		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
 		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(profile.count == 6 && has(&profile, "display.mirror_resolution", "half") &&
+	assert(profile.count == 6 && has(&profile, "display.effect_resolution", "half") &&
 		has(&profile, "display.renderer", "metal"));
 	/* The smaller M1 iPad Pro inherits the measured M1 profile, subject to its envelope. */
 	struct host_device sibling = device("ios", "iPad13,4", "", 7);
 	sibling.memory_megabytes = 8192; sibling.pixel_width = 2388; sibling.pixel_height = 1668; sibling.refresh_rate = 120;
 	profile = resolve(shipped, sibling, NULL, "");
-	assert(profile.inherited && has(&profile, "display.mirror_resolution", "half"));
+	assert(profile.inherited && has(&profile, "display.effect_resolution", "half"));
 	assert(!strcmp(profile.model_file, "ipad-pro-m1.toml"));
 	/* The measured first-generation 12.9-inch iPad uses its own 720-line model profile. The neighboring
 	   cellular identifier keeps the class defaults until it is measured. */

@@ -49,8 +49,7 @@ CASE_SETTINGS = {
     "display.shadow_map_size": ("integer", (128, 256, 512, 1024, 2048), 128, 2048),
     "display.model_lod": ("text", ("max", "auto")),
     "display.anti_aliasing": ("text", ("off", "fxaa", "smaa")),
-    "display.effect_resolution": ("boolean",),
-    "display.mirror_resolution": ("text", ("half", "full")),
+    "display.effect_resolution": ("text", ("xbox", "half", "full")),
     "display.render_scale": ("number", 0.25, 1.0),
     # (0: no limit)
     "display.clutter_distance": ("number", 0.0, 200.0),

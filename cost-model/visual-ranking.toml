@@ -56,24 +56,16 @@ order = ["smaa", "fxaa", "off"]
 grade = {"fxaa" = "barely", "off" = "obvious"}
 
 [handheld."display.effect_resolution"]
-order = ["true", "false"]
-grade = {"false" = "barely"}
-
-[handheld."display.mirror_resolution"]
-order = ["full", "half"]
-grade = {"half" = "barely"}
+order = ["full", "half", "xbox"]
+grade = {"half" = "barely", "xbox" = "barely"}
 
 [tv."display.anti_aliasing"]
 order = ["smaa", "fxaa", "off"]
 grade = {"fxaa" = "barely", "off" = "obvious"}
 
 [tv."display.effect_resolution"]
-order = ["true", "false"]
-grade = {"false" = "barely"}
-
-[tv."display.mirror_resolution"]
-order = ["full", "half"]
-grade = {"half" = "barely"}
+order = ["full", "half", "xbox"]
+grade = {"half" = "barely", "xbox" = "barely"}
 
 # The simulation switches below are exact: they change how much work a query does and not what it returns
 # (zero global-seed misses against off), so arriving at "on" is invisible. Experimental, default off.

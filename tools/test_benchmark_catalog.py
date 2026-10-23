@@ -377,8 +377,8 @@ def test_catalog_accepts_display_settings(tmp_path):
     cases = _cases(players=2)
     cases["mp-chillout-proof"]["settings"] = {
         "display.render_height": 540, "display.anisotropic_filtering": 4, "display.shadow_map_size": 256,
-        "display.model_lod": "auto", "display.anti_aliasing": "smaa", "display.effect_resolution": False,
-        "display.mirror_resolution": "full", "display.render_scale": 0.67,
+        "display.model_lod": "auto", "display.anti_aliasing": "smaa", "display.effect_resolution": "full",
+        "display.render_scale": 0.67,
         "display.clutter_distance": 40, "debug.clutter_lowest_lod": True,
         "debug.offscreen_window_wall_seconds": 600}
     _write_catalog(tmp_path, cases, raw=benchmark_catalog._canonical({"schema": 1, "cases": cases}).decode("utf-8"))

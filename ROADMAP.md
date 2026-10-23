@@ -51,7 +51,7 @@
 - [x] Compressed textures, 16x anisotropic filtering and reversed-Z depth
 - [x] Upstream's redrawn high-resolution HUD and text
 - [ ] Upstream's anti-aliasing (FXAA, SMAA, MSAA, SSAA), shadow resolution and per-pixel lighting on Metal
-- [ ] Mirror reflections at full resolution by default (`display.mirror_resolution`)
+- [ ] Mirror reflections at full resolution by default (`display.effect_resolution = "full"`)
 - [ ] AI-upscaled textures
 - [x] The intro and credits movies (Bink video, decoded with FFmpeg; `display.movies`)
 - [ ] The attract movies

@@ -37,7 +37,7 @@ enum benchmark_status {
 /* the case's "settings" other than the simulation changes: each bit of `mask` says a field is set. Fields are in the
    units of the run (lines 0: the display's own height). */
 enum { BENCHMARK_KNOB_LINES = 1, BENCHMARK_KNOB_ANISOTROPY = 2, BENCHMARK_KNOB_SHADOW = 4, BENCHMARK_KNOB_LOD = 8,
-    BENCHMARK_KNOB_ANTI_ALIASING = 16, BENCHMARK_KNOB_EFFECT = 32, BENCHMARK_KNOB_MIRROR = 64,
+    BENCHMARK_KNOB_ANTI_ALIASING = 16, BENCHMARK_KNOB_EFFECT = 32,
     BENCHMARK_KNOB_RENDER_SCALE = 128, BENCHMARK_KNOB_CLUTTER_DISTANCE = 256, BENCHMARK_KNOB_CLUTTER_LOD = 512,
     BENCHMARK_KNOB_WALL_SECONDS = 1024 };
 struct benchmark_knobs {
@@ -45,8 +45,7 @@ struct benchmark_knobs {
     long lines, anisotropy, shadow_size;
     int model_lod_max;
     int anti_aliasing;   /* 0 off, 1 fxaa, 2 smaa */
-    int effect_full;     /* display.effect_resolution */
-    int mirror_full;     /* display.mirror_resolution is "full" */
+    int effect_level;    /* display.effect_resolution: 0 xbox, 1 half, 2 full */
     double render_scale;
     double clutter_distance;   /* display.clutter_distance; 0 for no limit */
     int clutter_lowest_lod;    /* debug.clutter_lowest_lod */

@@ -182,11 +182,9 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_exper
             if (method == NSNotFound) return NO;
             knobs->mask |= BENCHMARK_KNOB_ANTI_ALIASING; knobs->anti_aliasing = (int)method;
         } else if ([name isEqual:@"display.effect_resolution"]) {
-            if (!boolean) return NO;
-            knobs->mask |= BENCHMARK_KNOB_EFFECT; knobs->effect_full = [value boolValue];
-        } else if ([name isEqual:@"display.mirror_resolution"]) {
-            if (![@[@"half", @"full"] containsObject:value]) return NO;
-            knobs->mask |= BENCHMARK_KNOB_MIRROR; knobs->mirror_full = [value isEqual:@"full"];
+            NSUInteger level = [@[@"xbox", @"half", @"full"] indexOfObject:value];
+            if (level == NSNotFound) return NO;
+            knobs->mask |= BENCHMARK_KNOB_EFFECT; knobs->effect_level = (int)level;
         } else if ([name isEqual:@"display.render_scale"]) {
             if (!real_number(value, 0.25, 1.0, &real)) return NO;
             knobs->mask |= BENCHMARK_KNOB_RENDER_SCALE; knobs->render_scale = real;

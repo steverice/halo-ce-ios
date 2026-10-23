@@ -124,7 +124,7 @@ DEFAULTS = {
     "display.interpolation": "true",
     "display.anisotropic_filtering": "1",
     "display.shadow_map_size": "128",
-    "display.effect_resolution": "false",
+    "display.effect_resolution": '"xbox"',
     "display.compressed_textures": "false",
     "display.frame_pacing": '"off"',
     "display.frame_rate": '"display"',
@@ -139,7 +139,6 @@ DEFAULTS = {
     "display.upscaled_textures": "true",
     "display.anti_aliasing": '"off"',  # the recorded references have no smoothing pass
     "display.immersive": "false",
-    "display.mirror_resolution": '"half"',
     "display.model_lod": '"auto"',  # the recorded references were made with the original LOD
     "display.lod_scale": "1.0",
     "display.theater_width": "60.0",
