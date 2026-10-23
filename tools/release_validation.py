@@ -63,6 +63,12 @@ def credential_names(selected: list[str]) -> list[str]:
         "ASC_ISSUER_ID",
         "ASC_PRIVATE_KEY",
         *[f"APPLE_PROFILE_{target.upper()}_BASE64" for target in selected],
+        # a Mac App Store package is signed by a separate installer certificate
+        *(
+            ["APPLE_INSTALLER_P12_BASE64", "APPLE_INSTALLER_P12_PASSWORD"]
+            if "macos" in selected
+            else []
+        ),
     ]
 
 
@@ -208,6 +214,27 @@ def toolchain(selected: list[str], *, root: Path | None = None) -> dict[str, str
 
 def build_command(target: str, benchmark_upload: bool = False) -> list[str]:
     # This first-stage artifact establishes the guest identity. It is never signed or distributed.
+    if target == "macos":
+        # the native Mac app: signed ad hoc by its build, no tester build, routes or benchmark upload
+        return [
+            sys.executable,
+            "tools/ios_build.py",
+            "--native-mac",
+            "--pgo",
+            "use",
+            "--lto",
+            "full",
+            "--host-pgo",
+            "use",
+            "--render-validation",
+            "off",
+            "--data-packs",
+            "off",
+            "--bink",
+            "on",
+            "--jobs",
+            "3",
+        ]
     return [
         sys.executable,
         "tools/ios_build.py",
@@ -245,7 +272,8 @@ def inspect_build(
     guest_source_date_epoch: str | None = None,
 ) -> dict[str, str]:
     signed_app = app is not None
-    build = root / "build" / target / folder
+    mac = target == "macos"
+    build = root / "build/macos/app-native" if mac else root / "build" / target / folder
     commands = run(
         "ninja", "-t", "commands", "ios_guest", capture=True, root=root
     ).splitlines()
@@ -280,7 +308,7 @@ def inspect_build(
         run(
             "xcodebuild",
             "-project",
-            build / "VISR.xcodeproj",
+            build / ("VISRNative.xcodeproj" if mac else "VISR.xcodeproj"),
             "-target",
             "VISR",
             "-configuration",
@@ -305,7 +333,16 @@ def inspect_build(
     definitions = rows[0].get("GCC_PREPROCESSOR_DEFINITIONS", "")
     if isinstance(definitions, list):
         definitions = " ".join(definitions)
-    if (
+    if mac:
+        if (
+            "HALO_NATIVE_MAC=1" not in definitions
+            or "HALO_TESTER_BUILD=1" in definitions
+            or "HALO_BENCHMARK_NO_ROUTES=1" not in definitions
+        ):
+            raise ValueError("Effective native Mac routes-off build definitions are missing")
+        if benchmark_upload:
+            raise ValueError("The native Mac app has no benchmark upload")
+    elif (
         "HALO_TESTER_BUILD=1" not in definitions
         or "HALO_BENCHMARK_NO_ROUTES=1" not in definitions
     ):
@@ -313,8 +350,9 @@ def inspect_build(
     guest = (root / "build/ios/halo_guest.elf").read_bytes()
     guest_hash = hashlib.sha256(guest).hexdigest()
     sdk = release.PLATFORMS[target][1]
-    app = app if app is not None else build / f"Release-{sdk}/VISR.app"
-    info = plistlib.loads((app / "Info.plist").read_bytes())
+    if app is None:
+        app = build / "host/Release/VISR.app" if mac else build / f"Release-{sdk}/VISR.app"
+    info = plistlib.loads(release.bundle_info_path(app, target).read_bytes())
     if (
         info.get("DTXcodeBuild") not in release.XCODE_BUILDS
         or info.get("DTSDKName") != sdk + SDK_VERSION
@@ -322,7 +360,7 @@ def inspect_build(
         raise ValueError(
             "Actual unsigned/signed app was built with a different toolchain"
         )
-    executable = (app / info["CFBundleExecutable"]).read_bytes()
+    executable = release.bundle_executable(app, target, info).read_bytes()
     release.verify_guest(executable, guest, guest_hash)
     if LOCAL_CATALOG_NOTE in executable:
         raise ValueError(
@@ -358,7 +396,7 @@ def inspect_build(
         "guest_pgo": "use",
         "guest_lto": "full",
         "host_pgo": "use",
-        "tester": "on",
+        "tester": "off" if mac else "on",
         "benchmark_routes": "off",
         "benchmark_upload": "on" if benchmark_upload else "off",
     }
@@ -436,6 +474,16 @@ def verify_exported_ipa(
         )
 
 
+def verify_exported_pkg(package: Path) -> None:
+    """A Mac App Store export is one installer package, signed by the installer certificate."""
+    packages = sorted(package.glob("*.pkg"))
+    if len(packages) != 1:
+        raise ValueError("Mac release export must contain exactly one installer package")
+    signature = run("pkgutil", "--check-signature", packages[0], capture=True)
+    if "Status: signed" not in signature or "3rd Party Mac Developer Installer" not in signature:
+        raise ValueError("Mac release package is not signed by the installer certificate")
+
+
 def probe(
     root: Path, source: str, selected: list[str], benchmark_upload: bool = False,
     guest_source_date_epoch: str | None = None,
@@ -455,7 +503,7 @@ def probe(
     }
     for target in selected:
         run(*build_command(target, benchmark_upload), env=build_env)
-        if benchmark_upload:
+        if benchmark_upload and target != "macos":
             report["platforms"][target] = inspect_build(
                 root, target, benchmark_upload=True, guest_source_date_epoch=epoch
             )
@@ -466,7 +514,9 @@ def probe(
     return report
 
 
-def compare_evidence(evidence: dict[str, str], policy: dict[str, str]) -> None:
+def compare_evidence(
+    evidence: dict[str, str], policy: dict[str, str], *, platform: str | None = None
+) -> None:
     if FIELD in policy and evidence.get(FIELD) != require_guest_epoch_policy(policy):
         raise ValueError("Actual guest compile epoch differs from reviewed policy")
     for name in (
@@ -477,7 +527,9 @@ def compare_evidence(evidence: dict[str, str], policy: dict[str, str]) -> None:
     ):
         if evidence[name] != policy[name]:
             raise ValueError(f"Actual build differs from reviewed policy: {name}")
-    if evidence.get("benchmark_upload", "off") != policy.get("benchmark_upload", "off"):
+    # The native Mac app has no benchmark upload yet; its evidence must say so whatever the policy asks of iOS.
+    expected_upload = "off" if platform == "macos" else policy.get("benchmark_upload", "off")
+    if evidence.get("benchmark_upload", "off") != expected_upload:
         raise ValueError("Actual benchmark-upload build differs from reviewed policy")
 
 
@@ -729,8 +781,8 @@ def check_release(
     check_credentials(os.environ, selected)
     if set(report["platforms"]) != set(selected):
         raise ValueError("Probe platforms differ from release selection")
-    for item in report["platforms"].values():
-        compare_evidence(item, policy)
+    for target, item in report["platforms"].items():
+        compare_evidence(item, policy, platform=target)
     context = check_feeds(policy)
     if not recording_feed_required(policy):
         return None
