@@ -1483,6 +1483,19 @@ void input_replay_tick_action(void *action)
 				}
 				input_replay_random_seeds(replay.actions[replay.next_action].seeds, TRUE);
 			}
+			/* the segment's last action, with the next one in a later segment: the recording went back to a
+			checkpoint after this tick. When that was a cinematic skip, the player's press came before this tick and
+			the game stepped back right after it (main_tick_end): skip here, so the revert follows the same tick as
+			the recording's whatever the frame rate. A revert restores the game state, not what is kept outside it,
+			so the ticks run before it still count: on a10 with debug.enemy_multiplier 2, one tick more or less
+			before the bridge cinematic's skip left the AI's props different from the first tick after it. */
+			if (replay.next_action + 1 < replay.action_count &&
+				replay.actions[replay.next_action + 1].segment > replay.segment && !replay.skip_pending &&
+				input_replay_skip_cinematic())
+			{
+				replay.skip_pending = TRUE;
+				replay.skip_tick = tick;
+			}
 			memcpy(action, replay.actions[replay.next_action].words, sizeof(words));
 			memcpy(replay.camera_sample.facing, &replay.actions[replay.next_action].words[1], sizeof(float) * 2);
 			memcpy(&replay.camera_sample.zoom, &replay.actions[replay.next_action].words[7], sizeof(short));
@@ -1514,6 +1527,13 @@ void input_replay_tick_action(void *action)
 	}
 	else if (*replay.record_actions_path)
 		route_log(tick, "recorded");
+}
+
+/* player_control.c: whether a replay skips cinematics itself, at the tick its take did (input_replay_tick_action),
+so the controller's replayed accept, whose frame lands a tick or two apart at different frame rates, does not */
+unsigned char input_replay_skips_cinematics(void)
+{
+	return replay.action_count > 0 && !*replay.record_actions_path && !replay.replay_finished && !replay.await_level;
 }
 
 /* The queue calls this once for its mapped local player. Later damage impulses

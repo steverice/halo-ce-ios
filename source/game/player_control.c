@@ -1921,7 +1921,10 @@ static void player_control_action_test_check_reset_input_blob(
 {
 	struct player_control_globals_data *globals;
 
-	if (input->accept && (cinematic_can_be_skipped() || network_coop_skip_offered()))
+	/* port: a replay skips a cinematic at its take's tick instead (input_replay_skips_cinematics) */
+	extern unsigned char input_replay_skips_cinematics(void);
+
+	if (input->accept && (cinematic_can_be_skipped() || network_coop_skip_offered()) && !input_replay_skips_cinematics())
 	{
 		/* port: in network co-op the players vote to skip (network_coop.c) */
 		if (!network_coop_vote_skip())
