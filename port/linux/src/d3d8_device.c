@@ -1050,10 +1050,20 @@ static void screen_scale_dense(float scale[2])
 }
 
 /* display.effect_resolution's value as a level: 0 "xbox" (the 320x240 target as the Xbox had it), 1 "half" (the
-default; also any other text), 2 "full" */
+default), 2 "full". The boolean it was, which the environment or a --set can still give (config.toml's is migrated
+in port_config.c), reads as before: "true" is "half", "false" is "xbox". Anything else is "half", said in the log */
 static int effect_resolution_level(const char *value)
 {
-	return !strcmp(value, "xbox") ? 0 : !strcmp(value, "full") ? 2 : 1;
+	if (!strcmp(value, "xbox") || !strcmp(value, "half") || !strcmp(value, "full"))
+		return !strcmp(value, "xbox") ? 0 : !strcmp(value, "full") ? 2 : 1;
+	if (!strcmp(value, "true") || !strcmp(value, "false"))
+	{
+		platform_log("display.effect_resolution: \"%s\" is the old switch; using \"%s\"", value,
+			!strcmp(value, "true") ? "half" : "xbox");
+		return !strcmp(value, "true") ? 1 : 0;
+	}
+	platform_log("display.effect_resolution: unknown value \"%s\" (\"xbox\", \"half\" or \"full\"); using \"half\"", value);
+	return 1;
 }
 
 /* the Xbox-sized offscreen targets drawn larger than the Xbox drew them:
