@@ -27,7 +27,11 @@ def test_effect_resolution_levels(tmp_path):
         + _function() +
         "int main(void) {\n"
         "    const char *values[] = { \"xbox\", \"half\", \"full\", \"true\", \"false\", \"bogus\" };\n"
-        "    for (int i = 0; i < 6; i++) { logged = 0; printf(\"%s %d %d\\n\", values[i], effect_resolution_level(values[i]), logged); }\n"
+        "    for (int i = 0; i < 6; i++) {\n"
+        "        logged = 0;\n"
+        "        int level = effect_resolution_level(values[i]);\n"
+        "        printf(\"%s %d %d\\n\", values[i], level, logged);\n"
+        "    }\n"
         "    return 0;\n}\n")
     binary = tmp_path / "level"
     subprocess.run(["cc", "-Wall", "-Wextra", "-Werror", str(program), "-o", str(binary)], check=True)
