@@ -122,6 +122,9 @@ def main():
                         help="bundle the device benchmark's recorded routes and run them as scenes (default on; off "
                              'for --tester, whose suite has only the scenes that play by themselves until recorded '
                              'routes are shown to hold on other devices)')
+    parser.add_argument('--local-routes', action='store_true',
+                        help='native Mac development builds: run the unsigned benchmark/local-routes catalog '
+                             '(tools/replay_check.py, step-tools replay review) without bundling recordings')
     parser.add_argument('--archive-only', action='store_true',
                         help='with --app-store-package: stop after the archive. The export that follows is what '
                              'makes the distribution certificate and App Store profile')

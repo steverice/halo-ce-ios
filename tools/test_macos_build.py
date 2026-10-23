@@ -31,6 +31,11 @@ def test_native_uses_macos_sdk_and_separate_product():
     assert not any('MACCATALYST' in value or 'Provisioning' in value for value in configure + build)
 
 
+def test_native_local_routes_flag_is_off_by_default_and_opt_in():
+    assert '-DHALO_BENCHMARK_LOCAL_ROUTES=ON' not in macos_build.native_commands(options(), [])[0]
+    assert '-DHALO_BENCHMARK_LOCAL_ROUTES=ON' in macos_build.native_commands(options(local_routes=True), [])[0]
+
+
 @pytest.mark.parametrize('change', [dict(renderer='BOTH'), dict(cloud_saves=True),
     dict(benchmark_upload=True), dict(team='TEAM'), dict(register_device='device'),
     dict(app_store_package=Path('out')), dict(upload=True), dict(tester=True),

@@ -34,6 +34,8 @@ def native_commands(args, data_packs):
         '-DHALO_BENCHMARK_UPLOAD=OFF', '-DHALO_TESTER_BUILD=OFF', '-DHALO_BENCHMARK_ROUTES=OFF',
         f'-DHALO_BUILD_NUMBER={args.build_number or time.strftime("%Y%m%d.%H%M%S")}',
         *ios_build.host_pgo_flags(args.host_pgo), *data_packs]
+    if getattr(args, 'local_routes', False):
+        configure.append('-DHALO_BENCHMARK_LOCAL_ROUTES=ON')
     if args.frame_pacing:
         configure.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     if args.marketing_version:
