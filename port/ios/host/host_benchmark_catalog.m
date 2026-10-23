@@ -206,6 +206,63 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_exper
     return YES;
 }
 
+/* The catalog's "variants": each {"id", "models", "settings"}, a unique id, one to eight distinct model identifiers
+   (AppleTV, iPad or iPhone) and at least one of display.render_height, display.output_height (0 to 4320) and
+   display.upscaler (bilinear or metalfx). NO for anything else, which refuses the whole catalog. */
+static BOOL catalog_variants(id raw, struct host_benchmark_catalog *built) {
+    NSArray *variants = raw;
+    if (![variants isKindOfClass:NSArray.class] || !variants.count || variants.count > HOST_BENCHMARK_VARIANTS_MAXIMUM) return NO;
+    NSMutableSet *seen = [NSMutableSet set];
+    for (id item in variants) {
+        NSDictionary *entry = item;
+        struct host_benchmark_variant *variant = &built->variants[built->variant_count];
+        if (![entry isKindOfClass:NSDictionary.class] ||
+            ![[NSSet setWithArray:entry.allKeys] isEqualToSet:[NSSet setWithArray:@[@"id", @"models", @"settings"]]]) return NO;
+        NSString *identifier = entry[@"id"];
+        if (!safe_name(identifier, 47, NO) || [seen containsObject:identifier]) return NO;
+        [seen addObject:identifier];
+        snprintf(variant->id, sizeof(variant->id), "%s", identifier.UTF8String);
+        NSArray *models = entry[@"models"];
+        if (![models isKindOfClass:NSArray.class] || !models.count || models.count > HOST_BENCHMARK_VARIANT_MODELS_MAXIMUM ||
+            [NSSet setWithArray:models].count != models.count) return NO;
+        variant->model_count = 0;
+        for (NSString *model in models) {
+            if (![model isKindOfClass:NSString.class] || [model rangeOfString:@"^(AppleTV|iPad|iPhone)[1-9][0-9]?,[1-9][0-9]?$"
+                options:NSRegularExpressionSearch].location == NSNotFound) return NO;
+            snprintf(variant->models[variant->model_count++], sizeof(variant->models[0]), "%s", model.UTF8String);
+        }
+        NSDictionary *settings = entry[@"settings"];
+        if (![settings isKindOfClass:NSDictionary.class] || !settings.count) return NO;
+        variant->render_height = variant->output_height = variant->upscaler = -1;
+        for (NSString *name in settings) {
+            id value = settings[name];
+            NSInteger number;
+            if ([name isEqual:@"display.render_height"]) {
+                if (!integer_number(value, 0, 4320, &number)) return NO;
+                variant->render_height = (int)number;
+            } else if ([name isEqual:@"display.output_height"]) {
+                if (!integer_number(value, 0, 4320, &number)) return NO;
+                variant->output_height = (int)number;
+            } else if ([name isEqual:@"display.upscaler"]) {
+                NSUInteger method = [@[@"bilinear", @"metalfx"] indexOfObject:value];
+                if (![value isKindOfClass:NSString.class] || method == NSNotFound) return NO;
+                variant->upscaler = (int)method;
+            } else return NO;
+        }
+        built->variant_count++;
+    }
+    return YES;
+}
+
+int host_benchmark_catalog_variants_for(const struct host_benchmark_catalog *catalog, const char *model,
+    int indexes[HOST_BENCHMARK_VARIANTS_MAXIMUM]) {
+    int count = 0;
+    for (int index = 0; model && index < catalog->variant_count; index++)
+        for (int name = 0; name < catalog->variants[index].model_count; name++)
+            if (!strcmp(catalog->variants[index].models[name], model)) { indexes[count++] = index; break; }
+    return count;
+}
+
 /* The cases with each variant ({"variant_of", "order", "settings"}) replaced by the case it varies, under its own
    order and settings; *bases names the case each came from. nil when a variant is not valid. */
 static NSDictionary *resolve_variants(NSDictionary *cases, NSMutableDictionary<NSString *, NSString *> *bases) {
@@ -238,11 +295,13 @@ BOOL host_benchmark_catalog_load(NSString *folder, struct host_benchmark_catalog
         return catalog_error(error, @"The signed benchmark catalog is missing, malformed, or noncanonical.");
     NSDictionary *document = parsed;
     NSDictionary *cases = document[@"cases"];
-    if (document.count != 2 || !integer_number(document[@"schema"], 1, 1, NULL) ||
+    if (document.count != (document[@"variants"] ? 3u : 2u) || !integer_number(document[@"schema"], 1, 1, NULL) ||
         ![cases isKindOfClass:NSDictionary.class] || !cases.count || cases.count > BENCHMARK_SCENES_MAXIMUM)
         return catalog_error(error, @"The signed benchmark catalog has an unsupported schema or case count.");
 
     struct host_benchmark_catalog built = {0};
+    if (document[@"variants"] && !catalog_variants(document[@"variants"], &built))
+        return catalog_error(error, @"The signed benchmark catalog has an unsupported display variant.");
     BOOL orders[BENCHMARK_SCENES_MAXIMUM] = {0};
     char seen_recordings[BENCHMARK_SCENES_MAXIMUM][49] = {{0}};
     int seen_recording_count = 0;

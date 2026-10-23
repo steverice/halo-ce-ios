@@ -24,6 +24,16 @@ int main(int argc, char **argv) {
             argc - 3, selected, BENCHMARK_SCENES_MAXIMUM);
         if (count < 0) return 1;
         printf("sha256=%s\n", catalog.sha256);
+        if (getenv("VISR_PROBE_VARIANTS")) {
+            int indexes[HOST_BENCHMARK_VARIANTS_MAXIMUM];
+            int matched = host_benchmark_catalog_variants_for(&catalog, getenv("VISR_PROBE_VARIANTS"), indexes);
+            printf("variants=%d matched=%d\n", catalog.variant_count, matched);
+            for (int index = 0; index < matched; index++) {
+                const struct host_benchmark_variant *variant = &catalog.variants[indexes[index]];
+                printf("variant=%s:%d:%d:%d\n", variant->id, variant->render_height, variant->output_height, variant->upscaler);
+            }
+            return 0;
+        }
         if (getenv("VISR_PROBE_SIM_SETTINGS")) {
             for (int index = 0; index < count; index++)
                 printf("sim=%s:%u:%u\n", selected[index].id, selected[index].sim_experiments,

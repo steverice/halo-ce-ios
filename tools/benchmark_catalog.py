@@ -78,6 +78,58 @@ def _setting_valid(name, value):
 
 MULTIPLAYER_FIELDS = {"simulation", "players", "views", "game_mode", "score_limit", "time_limit_minutes"}
 
+# The catalog's optional "variants": display configurations a device of one of the named models runs the whole suite
+# under, once each, in list order, from one press (host_benchmark_catalog.m has the same rules). A variant sets only
+# these; display.output_height caps the built-in drawable, which the app does on an Apple TV, iPhone or iPad
+# (host_output_cap.h).
+MAXIMUM_VARIANTS = 4
+MAXIMUM_VARIANT_MODELS = 8
+VARIANT_SETTINGS = {
+    "display.render_height": ("integer", None, 0, 4320),
+    "display.output_height": ("integer", None, 0, 4320),
+    "display.upscaler": ("text", ("bilinear", "metalfx")),
+}
+VARIANT_MODEL = re.compile(r"(AppleTV|iPad|iPhone)[1-9][0-9]?,[1-9][0-9]?\Z")
+
+
+def _variant_setting_valid(name, value):
+    spec = VARIANT_SETTINGS.get(name)
+    if spec is None:
+        return False
+    if spec[0] == "text":
+        return isinstance(value, str) and value in spec[1]
+    return type(value) is int and spec[2] <= value <= spec[3]
+
+
+def validate_variants(variants):
+    """The catalog's "variants" list, checked: each {"id", "models", "settings"} with a unique id, one to eight
+    distinct model identifiers and at least one allowed setting. Raises CatalogError for anything else."""
+    if not isinstance(variants, list) or not 1 <= len(variants) <= MAXIMUM_VARIANTS:
+        raise CatalogError(f"benchmark catalog variants must be a list of 1 to {MAXIMUM_VARIANTS}")
+    seen = set()
+    for variant in variants:
+        if not isinstance(variant, dict) or set(variant) != {"id", "models", "settings"}:
+            raise CatalogError("a benchmark variant holds exactly id, models and settings")
+        variant_id = _text(variant["id"], "variant ID", CASE_ID)
+        if variant_id in seen:
+            raise CatalogError(f"benchmark variant {variant_id} is named twice")
+        seen.add(variant_id)
+        models = variant["models"]
+        if (not isinstance(models, list) or not 1 <= len(models) <= MAXIMUM_VARIANT_MODELS or
+                len(set(map(str, models))) != len(models) or
+                not all(isinstance(model, str) and VARIANT_MODEL.match(model) for model in models)):
+            raise CatalogError(f"benchmark variant {variant_id} needs 1 to {MAXIMUM_VARIANT_MODELS} distinct models")
+        settings = variant["settings"]
+        if (not isinstance(settings, dict) or not settings or
+                not all(_variant_setting_valid(name, value) for name, value in settings.items())):
+            raise CatalogError(f"benchmark variant {variant_id} has unsupported settings")
+    return variants
+
+
+def variants_for(variants, model):
+    """The variants a device of this model identifier runs, in catalog order (none: the suite runs once, as before)."""
+    return [variant for variant in variants or [] if model in variant["models"]]
+
 
 class CatalogError(ValueError):
     """The signed benchmark catalog is missing or malformed."""
@@ -252,6 +304,13 @@ def _resolve_variants(cases):
     return resolved
 
 
+def load_variants(folder):
+    """The signed catalog's validated "variants" ([] when it has none); load_catalog has checked the rest."""
+    load_catalog(folder)
+    document = json.loads(_read_regular(Path(folder) / CATALOG_NAME, MAXIMUM_CATALOG_BYTES).decode("utf-8"))
+    return document.get("variants", [])
+
+
 def load_catalog(folder):
     """Load cases in catalog order and validate their exact route references and selected windows."""
     root = Path(folder)
@@ -265,8 +324,11 @@ def load_catalog(folder):
         raise CatalogError("benchmark catalog is not valid UTF-8 JSON") from error
     if _canonical(document) != raw:
         raise CatalogError("benchmark catalog must use canonical JSON")
-    if not isinstance(document, dict) or set(document) != {"schema", "cases"} or document.get("schema") != CATALOG_SCHEMA:
+    if (not isinstance(document, dict) or set(document) - {"variants"} != {"schema", "cases"} or
+            document.get("schema") != CATALOG_SCHEMA):
         raise CatalogError("benchmark catalog has an unsupported schema or fields")
+    if "variants" in document:
+        validate_variants(document["variants"])
     cases = document["cases"]
     if not isinstance(cases, dict) or not 1 <= len(cases) <= MAXIMUM_CASES:
         raise CatalogError(f"benchmark catalog must contain 1 to {MAXIMUM_CASES} cases")

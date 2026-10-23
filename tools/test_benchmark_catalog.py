@@ -438,3 +438,60 @@ def test_case_settings_match_the_app():
     source = (Path(__file__).resolve().parents[1] / "port/ios/host/host_benchmark_catalog.m").read_text()
     for name in benchmark_catalog.CASE_SETTINGS:
         assert f'@"{name}"' in source, name
+
+
+# The three display configurations measured on an Apple TV 4K (1st generation) and an iPad Pro 12.9-inch (2nd
+# generation), both A10X.
+A10X_VARIANTS = [
+    {"id": "out-720", "models": ["AppleTV6,2", "iPad7,2"],
+     "settings": {"display.render_height": 720, "display.output_height": 720}},
+    {"id": "out-1080-bilinear", "models": ["AppleTV6,2", "iPad7,2"],
+     "settings": {"display.render_height": 720, "display.output_height": 1080, "display.upscaler": "bilinear"}},
+    {"id": "out-1080-metalfx", "models": ["AppleTV6,2", "iPad7,2"],
+     "settings": {"display.render_height": 720, "display.output_height": 1080, "display.upscaler": "metalfx"}},
+]
+
+
+def _write_variant_catalog(folder, variants):
+    _recording(folder)
+    path = folder / "benchmark-catalog.json"
+    path.write_bytes(benchmark_catalog._canonical({"schema": 1, "cases": _cases(), "variants": variants}))
+
+
+def test_catalog_variants_load_and_match_models(tmp_path):
+    _write_variant_catalog(tmp_path, A10X_VARIANTS)
+    assert len(benchmark_catalog.load_catalog(tmp_path)) == 4
+    variants = benchmark_catalog.load_variants(tmp_path)
+    assert [v["id"] for v in benchmark_catalog.variants_for(variants, "AppleTV6,2")] == [
+        "out-720", "out-1080-bilinear", "out-1080-metalfx"]
+    assert benchmark_catalog.variants_for(variants, "AppleTV14,1") == []
+    assert benchmark_catalog.variants_for(variants, "AppleTV6") == []
+
+
+def test_catalog_without_variants_has_none(tmp_path):
+    _recording(tmp_path)
+    _write_catalog(tmp_path, _cases())
+    assert benchmark_catalog.load_variants(tmp_path) == []
+
+
+@pytest.mark.parametrize("variants", [
+    [],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.shadow_map_size": 512}}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.upscaler": "nearest"}}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.output_height": 9000}}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.render_height": 720.5}}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.render_height": True}}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {}}],
+    [{"id": "x", "models": [], "settings": {"display.render_height": 720}}],
+    [{"id": "x", "models": ["Mac14,5"], "settings": {"display.render_height": 720}}],
+    [{"id": "x", "models": ["AppleTV6,2", "AppleTV6,2"], "settings": {"display.render_height": 720}}],
+    [{"id": "X!", "models": ["AppleTV6,2"], "settings": {"display.render_height": 720}}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.render_height": 720}, "extra": 1}],
+    [{"id": "x", "models": ["AppleTV6,2"], "settings": {"display.render_height": 720}}] * 2,
+    A10X_VARIANTS + A10X_VARIANTS[:2],
+    {"id": "x"},
+])
+def test_catalog_rejects_invalid_display_variants(tmp_path, variants):
+    _write_variant_catalog(tmp_path, variants)
+    with pytest.raises(benchmark_catalog.CatalogError):
+        benchmark_catalog.load_catalog(tmp_path)

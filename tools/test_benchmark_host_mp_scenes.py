@@ -166,3 +166,28 @@ def test_host_preserves_explicit_simulation_false_and_absent_settings(tmp_path, 
                             env=dict(os.environ, VISR_PROBE_SIM_SETTINGS='1'))
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines()[1:] == ['sim=menu:0:0', 'sim=a10-opening:2:7', 'sim=mp-chillout-proof:0:0']
+
+
+def _variant_probe(binary, folder, model):
+    return subprocess.run([str(binary), str(folder), 'full'], capture_output=True, text=True,
+                          env=dict(os.environ, VISR_PROBE_VARIANTS=model))
+
+
+def test_host_loads_display_variants_and_matches_models(tmp_path, catalog_probe):
+    from test_benchmark_catalog import A10X_VARIANTS, _write_variant_catalog
+    _write_variant_catalog(tmp_path, A10X_VARIANTS)
+    result = _variant_probe(catalog_probe, tmp_path, 'AppleTV6,2')
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[1:] == ['variants=3 matched=3', 'variant=out-720:720:720:-1',
+                                              'variant=out-1080-bilinear:720:1080:0', 'variant=out-1080-metalfx:720:1080:1']
+    other = _variant_probe(catalog_probe, tmp_path, 'AppleTV14,1')
+    assert other.returncode == 0 and other.stdout.splitlines()[1:] == ['variants=3 matched=0']
+
+
+@pytest.mark.parametrize('settings', [{'display.shadow_map_size': 512}, {'display.upscaler': 'nearest'},
+                                      {'display.output_height': 4321}, {'display.render_height': 720.5}, {}])
+def test_host_refuses_catalog_with_unsupported_variant_settings(tmp_path, catalog_probe, settings):
+    from test_benchmark_catalog import _write_variant_catalog
+    _write_variant_catalog(tmp_path, [{'id': 'x', 'models': ['AppleTV6,2'], 'settings': settings}])
+    result = _variant_probe(catalog_probe, tmp_path, 'AppleTV6,2')
+    assert result.returncode == 1 and 'variant' in result.stderr
