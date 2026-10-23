@@ -170,7 +170,10 @@ unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
             one->knobs.model_lod_max, one->knobs.anti_aliasing, one->knobs.effect_level,
             one->knobs.render_scale, one->knobs.clutter_distance, one->knobs.clutter_lowest_lod);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
-        /* (only where a case sets it, so the cases from before it existed keep their journals) */
+        /* (only where a case sets it: a case that leaves the frame rate to the configuration hashes the same with
+           or without a stored value. This does not keep journals from older builds: the three-value
+           effect_level above and sim_experiments' bits, where collision_candidates moved from bit 4 to bit 3, change
+           every case's signature, so a journal from before them starts over) */
         if (one->knobs.mask & BENCHMARK_KNOB_FRAME_RATE) {
             snprintf(text, sizeof(text), "frame_rate=%ld;", one->knobs.frame_rate);
             for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;

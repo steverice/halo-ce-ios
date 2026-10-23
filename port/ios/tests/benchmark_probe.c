@@ -761,8 +761,8 @@ static void test_unified_case_settings(void) {
     before = benchmark_plan_signature(&plan);
     scenes[1].knobs.mask |= BENCHMARK_KNOB_ANTI_ALIASING; scenes[1].knobs.anti_aliasing = 2;
     CHECK(benchmark_plan_signature(&plan) != before);
-    /* a case's display.frame_rate is its own: a cap, and a different cap, each make another plan; an unset one leaves
-       the signature as it was before the setting existed */
+    /* a case's display.frame_rate is its own: a cap, and a different cap, each make another plan; a stored value the
+       case does not set (no BENCHMARK_KNOB_FRAME_RATE) leaves the signature unchanged */
     before = benchmark_plan_signature(&plan);
     scenes[1].knobs.frame_rate = 60;
     CHECK(benchmark_plan_signature(&plan) == before);
