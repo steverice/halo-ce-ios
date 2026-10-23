@@ -191,6 +191,10 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_exper
         } else if ([name isEqual:@"display.clutter_distance"]) {
             if (!real_number(value, 0.0, 200.0, &real)) return NO;
             knobs->mask |= BENCHMARK_KNOB_CLUTTER_DISTANCE; knobs->clutter_distance = real;
+        } else if ([name isEqual:@"display.frame_rate"]) {
+            /* (as a profile's: a whole number from 30; host_frame_rate_override applies it for the case's runs) */
+            if (!integer_number(value, 30, 1000, &number)) return NO;
+            knobs->mask |= BENCHMARK_KNOB_FRAME_RATE; knobs->frame_rate = number;
         } else if ([name isEqual:@"debug.clutter_lowest_lod"]) {
             if (!boolean) return NO;
             knobs->mask |= BENCHMARK_KNOB_CLUTTER_LOD; knobs->clutter_lowest_lod = [value boolValue];

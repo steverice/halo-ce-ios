@@ -677,6 +677,8 @@ static void record_applied_settings(NSMutableDictionary *settings, const struct 
         [NSString stringWithFormat:@"%g", knobs->render_scale] : [NSString stringWithFormat:@"%g", host_config_real("display.render_scale", 1.0)];
     settings[@"display.clutter_distance"] = [NSString stringWithFormat:@"%g", mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ?
         knobs->clutter_distance : host_config_real("display.clutter_distance", 0.0)];
+    settings[@"display.frame_rate"] = mask & BENCHMARK_KNOB_FRAME_RATE ? [NSString stringWithFormat:@"%ld", knobs->frame_rate] :
+        configured_text("display.frame_rate", "display");
     settings[@"debug.clutter_lowest_lod"] = mask & BENCHMARK_KNOB_CLUTTER_LOD ? (knobs->clutter_lowest_lod ? @"on" : @"off") :
         [configured_text("debug.clutter_lowest_lod", "false") isEqual:@"true"] ? @"on" : @"off";
 }
@@ -1323,6 +1325,8 @@ int host_benchmark_next(char *text, unsigned int size) {
     }
     /* (only the baseline run of the unified pass sets what its case asks for: benchmark_plan.c) */
     struct benchmark_knobs knobs = run.stage == 'A' ? scene->knobs : (struct benchmark_knobs){0};
+    /* (before the measurements are reset: their budget is the case's cap) */
+    host_frame_rate_override(knobs.mask & BENCHMARK_KNOB_FRAME_RATE ? (double)knobs.frame_rate : 0.0);
     snprintf(text, size, "scene=%s map=%s difficulty=%s recording=%s kind=%s lead=%.1f seconds=%.1f "
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
@@ -1408,6 +1412,7 @@ void host_benchmark_end(const char *status_name, const char *note) {
     interrupted = window_interrupted;
     benchmark_metrics_summarize(&metrics, &summary);
     if (summary.frames) measurements = benchmark_metrics_json(&metrics);
+    host_frame_rate_override(0.0);
     outcome.left_least = metrics.left_least;
     last_run_throttled = metrics.thermal_worst >= BENCHMARK_THERMAL_SERIOUS;
     os_unfair_lock_unlock(&lock);

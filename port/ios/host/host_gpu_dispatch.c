@@ -137,7 +137,7 @@ static struct
 	uint64_t interval, next;
 } frame_rate;
 
-static void frame_rate_cap_set(uint32_t rate)
+__attribute__((unused)) static void frame_rate_cap_set(uint32_t rate)
 {
 	mach_timebase_info_data_t timebase;
 
@@ -187,6 +187,64 @@ static void frame_rate_initialize(uint32_t flags)
 				platform_log("display.frame_rate: at most %u frames a second", (unsigned)rate);
 		}
 	}
+#endif
+}
+
+/* what the configuration asked for, which a benchmark case's override (host_frame_rate_override) returns to */
+static struct
+{
+	int unlimited;
+	double cap;
+	uint64_t interval;
+} frame_rate_configured;
+
+void host_frame_rate_override(double rate)
+{
+	static int overridden;
+
+	if (!overridden)
+	{
+		frame_rate_configured.unlimited = frame_rate.unlimited;
+		frame_rate_configured.cap = frame_rate.cap;
+		frame_rate_configured.interval = frame_rate.interval;
+	}
+	if (rate <= 0.0)
+	{
+		if (!overridden)
+			return;
+		overridden = 0;
+		frame_rate.unlimited = frame_rate_configured.unlimited;
+		frame_rate.cap = frame_rate_configured.cap;
+		frame_rate.interval = frame_rate_configured.interval;
+		platform_log("display.frame_rate: back to the configuration's (%.0f; 0 for the display's rate)", frame_rate.cap);
+		return;
+	}
+#if TARGET_OS_VISION
+	platform_log("display.frame_rate %.0f: not for a Vision Pro; ignored", rate);
+	return;
+#else
+#if !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
+	{
+		struct host_external_snapshot output;
+
+		host_external_snapshot(&output);
+		if (output.refresh_hertz > 0 && rate >= (double)output.refresh_hertz)
+		{
+			/* (not under the display's rate: the display's own pace, as with no cap) */
+			overridden = 1;
+			frame_rate.unlimited = 0;
+			frame_rate.cap = 0.0;
+			frame_rate.interval = 0;
+			platform_log("display.frame_rate %.0f for this run: not under the display's %d; the display's pace", rate,
+				output.refresh_hertz);
+			return;
+		}
+	}
+#endif
+	overridden = 1;
+	frame_rate.unlimited = 0;
+	frame_rate_cap_set((uint32_t)rate);
+	platform_log("display.frame_rate: at most %.0f frames a second for this run", rate);
 #endif
 }
 

@@ -62,6 +62,9 @@ double host_frame_rate_cap(void);
 double host_frame_rate_target(void);
 void host_frame_rate_scene(double rate);
 double host_frame_rate_limit(void);
+/* a benchmark case's display.frame_rate for the runs from now on (frames a second, as the configuration's would be
+   taken on this device), or 0 to go back to the configuration's */
+void host_frame_rate_override(double rate);
 void host_frame_counter_start(int fixed_timestep, int metal);
 void host_frame_counter_show(unsigned long frame);
 void host_frame_counter_stop(void);

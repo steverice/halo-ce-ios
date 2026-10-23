@@ -754,6 +754,16 @@ static void test_unified_case_settings(void) {
     before = benchmark_plan_signature(&plan);
     scenes[1].knobs.mask |= BENCHMARK_KNOB_ANTI_ALIASING; scenes[1].knobs.anti_aliasing = 2;
     CHECK(benchmark_plan_signature(&plan) != before);
+    /* a case's display.frame_rate is its own: a cap, and a different cap, each make another plan; an unset one leaves
+       the signature as it was before the setting existed */
+    before = benchmark_plan_signature(&plan);
+    scenes[1].knobs.frame_rate = 60;
+    CHECK(benchmark_plan_signature(&plan) == before);
+    scenes[1].knobs.mask |= BENCHMARK_KNOB_FRAME_RATE;
+    CHECK(benchmark_plan_signature(&plan) != before);
+    before = benchmark_plan_signature(&plan);
+    scenes[1].knobs.frame_rate = 120;
+    CHECK(benchmark_plan_signature(&plan) != before);
 }
 
 static void test_unified_catalog_pass(void) {

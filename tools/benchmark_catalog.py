@@ -55,6 +55,8 @@ CASE_SETTINGS = {
     "display.clutter_distance": ("number", 0.0, 200.0),
     "debug.clutter_lowest_lod": ("boolean",),
     "debug.offscreen_window_wall_seconds": ("number", 30.0, 1800.0),
+    # (frames a second, as a profile's: 60 holds a 120 Hz device to 60; the host applies it for the case's runs)
+    "display.frame_rate": ("integer", None, 30, 1000),
 }
 
 

@@ -39,7 +39,8 @@ enum benchmark_status {
 enum { BENCHMARK_KNOB_LINES = 1, BENCHMARK_KNOB_ANISOTROPY = 2, BENCHMARK_KNOB_SHADOW = 4, BENCHMARK_KNOB_LOD = 8,
     BENCHMARK_KNOB_ANTI_ALIASING = 16, BENCHMARK_KNOB_EFFECT = 32,
     BENCHMARK_KNOB_RENDER_SCALE = 128, BENCHMARK_KNOB_CLUTTER_DISTANCE = 256, BENCHMARK_KNOB_CLUTTER_LOD = 512,
-    BENCHMARK_KNOB_WALL_SECONDS = 1024 };
+    BENCHMARK_KNOB_WALL_SECONDS = 1024,
+    BENCHMARK_KNOB_FRAME_RATE = 2048 };
 struct benchmark_knobs {
     unsigned mask;
     long lines, anisotropy, shadow_size;
@@ -50,6 +51,7 @@ struct benchmark_knobs {
     double clutter_distance;   /* display.clutter_distance; 0 for no limit */
     int clutter_lowest_lod;    /* debug.clutter_lowest_lod */
     double wall_seconds;       /* debug.offscreen_window_wall_seconds; read by the host only */
+    long frame_rate;           /* display.frame_rate, frames a second (host_frame_rate_override) */
 };
 
 enum benchmark_scene_kind { BENCHMARK_SCENE_MENU, BENCHMARK_SCENE_CUTSCENE, BENCHMARK_SCENE_GAMEPLAY,

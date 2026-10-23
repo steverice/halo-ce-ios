@@ -170,6 +170,11 @@ unsigned long benchmark_plan_signature(const struct benchmark_plan *plan) {
             one->knobs.model_lod_max, one->knobs.anti_aliasing, one->knobs.effect_level,
             one->knobs.render_scale, one->knobs.clutter_distance, one->knobs.clutter_lowest_lod);
         for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
+        /* (only where a case sets it, so the cases from before it existed keep their journals) */
+        if (one->knobs.mask & BENCHMARK_KNOB_FRAME_RATE) {
+            snprintf(text, sizeof(text), "frame_rate=%ld;", one->knobs.frame_rate);
+            for (at = text; *at; at++) hash = ((hash ^ (unsigned char)*at) * 16777619UL) & 0xffffffffUL;
+        }
     }
     /* (a journal from a pass without the presented checks is not carried on with them, nor the other way) */
     if (plan->reality_checks) hash = ((hash ^ (unsigned char)'P') * 16777619UL) & 0xffffffffUL;

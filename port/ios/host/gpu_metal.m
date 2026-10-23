@@ -3857,12 +3857,30 @@ static os_unfair_lock pacing_lock = OS_UNFAIR_LOCK_INIT;
 static CFTimeInterval refresh_period; /* CACurrentMediaTime's clock */
 /* how many refreshes the display link has called for (frame_context_wait counts them) */
 static _Atomic unsigned long refresh_count;
+#if !TARGET_OS_VISION && !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
+/* the pacing link's screen's highest rate (pacing_start), and the rate the link asks for: display.frame_rate's cap
+under it (host_gpu_dispatch.c), so the display itself runs at the cap. Not under 60, where the game's 60 Hz blank
+(frame_pacer_vertical_blank_wait) comes from; a cap of 30 is held by the pacer's spacing instead */
+static float pacing_screen_rate;
+static float pacing_link_rate(float screen_rate)
+{
+    float rate = screen_rate;
+    double cap = host_frame_rate_cap();
+    if (cap > 0.0 && cap < rate) rate = (float)cap;
+    return rate < 60 ? 60 : rate;
+}
+#endif
 @implementation PacingClock
 - (void)refresh:(CADisplayLink *)link
 {
 #if HALO_NATIVE_MAC
     float rate = (float)host_macos_refresh_rate();
     if (link.preferredFrameRateRange.maximum != rate)
+        link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80, rate), rate, rate);
+#elif !TARGET_OS_VISION && !TARGET_OS_MACCATALYST
+    /* (a benchmark case's display.frame_rate changes the cap between runs: host_frame_rate_override) */
+    float rate = pacing_link_rate(pacing_screen_rate);
+    if (pacing_screen_rate > 0.0f && link.preferredFrameRateRange.maximum != rate)
         link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80, rate), rate, rate);
 #endif
 	atomic_fetch_add(&refresh_count, 1);
@@ -3970,14 +3988,11 @@ static void pacing_start(uint32_t flags)
         float rate=native_rate;
 #else
         float rate=(float)screen.maximumFramesPerSecond;
-        /* display.frame_rate's cap under the screen's rate (host_gpu_dispatch.c): the
-        display itself runs at it, so a 120 Hz screen held to 60 refreshes at 60. Not
-        under 60, where the game's 60 Hz blank (frame_pacer_vertical_blank_wait) comes
-        from; a cap of 30 is held by the pacer's spacing instead. (The Mac app keeps
-        the display's rate and holds its caps by host_frame_rate_limit) */
+        /* display.frame_rate's cap (pacing_link_rate); the Mac app keeps the display's
+        rate and holds its caps by host_frame_rate_limit */
 #if !TARGET_OS_MACCATALYST
-        double cap=host_frame_rate_cap();
-        if(cap>0.0 && cap<rate)rate=(float)cap;
+        pacing_screen_rate=rate;
+        rate=pacing_link_rate(rate);
 #endif
 #endif
         if(rate<60)rate=60;
