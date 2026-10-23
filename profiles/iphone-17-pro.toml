@@ -6,6 +6,7 @@ status = "provisional"
 [match]
 platform = "ios"
 models = ["iPhone18,1"]
+and_newer = true
 
 [display]
 anisotropic_filtering = 16

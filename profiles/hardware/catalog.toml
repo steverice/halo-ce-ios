@@ -1,26 +1,394 @@
 #:schema ../../port/settings/catalog.schema.json
-# Tiers order hardware within a platform, not model identifiers or release dates.
-# This first catalog establishes only the M1 iPad tier. Other hardware keeps exact/class matching.
+# Tiers order hardware within a platform, not model identifiers or release dates, and a source may be inherited only by hardware at or above its tier.
+# iOS holds two disjoint ranges so an iPhone never inherits an iPad's profile: iPhones 100 to 199, iPads 1000 to 1999 (an iPad reaches an
+# iPhone source only when every iPad source fails its envelope, and the iPhone sources' memory floors exclude every iPad below 8 GB).
+# Within a range, a tier is a chip generation; core counts inside a generation are not ranked. Hardware whose ordering against its
+# neighbors is uncertain has no tier and keeps its class profile. Each entry's source records the basis.
 schema = 1
-version = "2026-10-15"
+version = "2026-10-23"
+
+[[hardware]]
+id = "iphone-a11"
+platform = "ios"
+models = ["iPhone10,1", "iPhone10,2", "iPhone10,3", "iPhone10,4", "iPhone10,5", "iPhone10,6"]
+tier = 110
+gpu_family = 4
+basis = "assumed"
+source = "iPhone 8, 8 Plus and X (A11, the first Apple-designed GPU). Identifiers and chips: https://en.wikipedia.org/wiki/List_of_iPhone_models. Lowest model iOS 16 supports."
+
+[[hardware]]
+id = "iphone-a12"
+platform = "ios"
+models = ["iPhone11,2", "iPhone11,4", "iPhone11,6", "iPhone11,8"]
+tier = 120
+gpu_family = 5
+basis = "assumed"
+source = "iPhone XS, XS Max, XR (A12). https://en.wikipedia.org/wiki/List_of_iPhone_models. A12 is Apple's successor to A11; Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "iphone-a13"
+platform = "ios"
+models = ["iPhone12,1", "iPhone12,3", "iPhone12,5", "iPhone12,8"]
+tier = 130
+gpu_family = 6
+basis = "assumed"
+source = "iPhone 11 family and SE 2nd generation (A13). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "iphone-a14"
+platform = "ios"
+models = ["iPhone13,1", "iPhone13,2", "iPhone13,3", "iPhone13,4"]
+tier = 140
+gpu_family = 7
+basis = "assumed"
+source = "iPhone 12 family (A14). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "iphone-a15"
+platform = "ios"
+models = ["iPhone14,2", "iPhone14,3", "iPhone14,4", "iPhone14,5", "iPhone14,6", "iPhone14,7", "iPhone14,8"]
+tier = 150
+gpu_family = 8
+basis = "assumed"
+source = "iPhone 13 family, SE 3rd generation, iPhone 14 and 14 Plus (A15, 4- or 5-core GPU; core counts within a generation are not ranked). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "iphone-a16"
+platform = "ios"
+models = ["iPhone15,2", "iPhone15,3", "iPhone15,4", "iPhone15,5"]
+tier = 160
+gpu_family = 8
+basis = "assumed"
+source = "iPhone 14 Pro, 14 Pro Max, 15, 15 Plus (A16). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "iphone-a17-pro"
+platform = "ios"
+models = ["iPhone16,1", "iPhone16,2"]
+tier = 170
+gpu_family = 9
+basis = "assumed"
+source = "iPhone 15 Pro and Pro Max (A17 Pro, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPhone_models. Above A16. It is deliberately below the iPhone 16e: the 16e's 4-core A18 GPU is not ranked against A17 Pro's 6-core GPU, and the lower tier only keeps A17 Pro from inheriting the 16e's profile."
+
+[[hardware]]
+id = "iphone-16e"
+platform = "ios"
+models = ["iPhone17,5"]
+tier = 180
+gpu_family = 9
+basis = "measured"
+source = "iphone-16e.toml: report HWZD3QQH, quick suite at native 2532x1170 and 60 Hz, 2026-10-18. Tier placed above A17 Pro only so that devices it can safely stand in for may inherit it; its 4-core A18 GPU is not ranked against A17 Pro."
+
+[[hardware]]
+id = "iphone-16"
+platform = "ios"
+models = ["iPhone17,3", "iPhone17,4"]
+tier = 181
+gpu_family = 9
+basis = "assumed"
+source = "iPhone 16 and 16 Plus (A18, 5-core GPU): same architecture as the 16e with one more GPU core. https://en.wikipedia.org/wiki/List_of_iPhone_models"
+
+[[hardware]]
+id = "iphone-16-pro"
+platform = "ios"
+models = ["iPhone17,1", "iPhone17,2"]
+tier = 182
+gpu_family = 9
+basis = "assumed"
+source = "iPhone 16 Pro and Pro Max (A18 Pro, 6-core GPU): same architecture as the iPhone 16 with one more GPU core. https://en.wikipedia.org/wiki/List_of_iPhone_models"
+
+[[hardware]]
+id = "iphone-17-pro"
+platform = "ios"
+models = ["iPhone18,1"]
+tier = 190
+gpu_family = 10
+basis = "measured"
+source = "iphone-17-pro.toml: reports NMYSEQ6R and 47PS5LC2, quick suite, 2026-10-15; A19 Pro, GPU family 10, 120 Hz. Above A18 Pro by Apple's chip succession."
+
+[[hardware]]
+id = "iphone-17-pro-max"
+platform = "ios"
+models = ["iPhone18,2"]
+tier = 190
+gpu_family = 10
+basis = "assumed"
+source = "iPhone 17 Pro Max (A19 Pro): the 17 Pro's chip with a larger panel. Identifier: https://iphonesoft.fr/2016/10/31/liste-codes-identifiants-iphone-ipod-ipad-watch"
+
+[[hardware]]
+id = "iphone-17-and-air"
+platform = "ios"
+models = ["iPhone18,3", "iPhone18,4"]
+gpu_family = 10
+basis = "assumed"
+source = "iPhone 17 (iPhone18,3, A19) and iPhone Air (iPhone18,4, A19 Pro, fewer GPU cores): https://www.iclarified.com/ipsw/iphone-17 and https://www.iclarified.com/ipsw/iphone-air. Left unordered: A19 against A18 Pro and a reduced A19 Pro GPU cannot be ranked from the published data."
+
+[[hardware]]
+id = "ipad-a9"
+platform = "ios"
+models = ["iPad6,11", "iPad6,12"]
+tier = 1010
+gpu_family = 3
+basis = "assumed"
+source = "iPad 5th generation (A9, 2 GB). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Below A9X: same PowerVR 7XT design with half the GPU clusters."
+
+[[hardware]]
+id = "ipad-pro-12-9-1st"
+platform = "ios"
+models = ["iPad6,7"]
+tier = 1020
+gpu_family = 3
+basis = "measured"
+source = "ipad-pro-12-9-1st.toml: iPad Pro 12.9-inch (A9X), report 6CYGBCXB and isolated c40 reports, 720 lines, 2026-10-17, provisional."
+
+[[hardware]]
+id = "ipad-a9x-siblings"
+platform = "ios"
+models = ["iPad6,3", "iPad6,4", "iPad6,8"]
+tier = 1020
+gpu_family = 3
+basis = "assumed"
+source = "Same A9X as the measured 12.9-inch: the 9.7-inch (2 GB, underclocked) and the 12.9-inch cellular identifier. https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. The source's memory floor keeps the 2 GB model on its class."
+
+[[hardware]]
+id = "ipad-a10"
+platform = "ios"
+models = ["iPad7,5", "iPad7,6", "iPad7,11", "iPad7,12"]
+gpu_family = 3
+basis = "assumed"
+source = "iPad 6th and 7th generation (A10 Fusion, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Left unordered: its 6-core GPU is not ranked against A9X's 12-core GPU."
+
+[[hardware]]
+id = "ipad-pro-12-9-2nd"
+platform = "ios"
+models = ["iPad7,2"]
+tier = 1040
+gpu_family = 3
+basis = "measured"
+source = "ipad-pro-12-9-2nd.toml: iPad Pro 12.9-inch (A10X), report C3YP3296, 720 lines, 2026-10-19, provisional."
+
+[[hardware]]
+id = "ipad-a10x-siblings"
+platform = "ios"
+models = ["iPad7,1", "iPad7,3", "iPad7,4"]
+tier = 1040
+gpu_family = 3
+basis = "assumed"
+source = "Same A10X as the measured 12.9-inch: its other identifier and the 10.5-inch (4 GB, 2224x1668, 120 Hz). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Above A9X (same lineage, more clusters and clock)."
+
+[[hardware]]
+id = "ipad-a12"
+platform = "ios"
+models = ["iPad11,1", "iPad11,2", "iPad11,3", "iPad11,4", "iPad11,6", "iPad11,7"]
+tier = 1060
+gpu_family = 5
+basis = "assumed"
+source = "iPad mini 5, iPad Air 3, iPad 8th generation (A12, 3 GB). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Placed just above A10X. Apple credits A12 with a faster GPU than A10X; independent reviews found them comparable (https://www.macrumors.com/2021/04/20/apple-new-apple-tv-4k/, https://appleinsider.com/articles/21/05/25/2021-apple-tv-4k-review-seeking-a-blockbuster-given-a-band-aid), so the A10X profile is the right neighbor either way."
+
+[[hardware]]
+id = "ipad-a12x-a12z"
+platform = "ios"
+models = ["iPad8,1", "iPad8,2", "iPad8,3", "iPad8,4", "iPad8,5", "iPad8,6", "iPad8,7", "iPad8,8", "iPad8,9", "iPad8,10", "iPad8,11", "iPad8,12"]
+gpu_family = 5
+basis = "assumed"
+source = "iPad Pro with A12X or A12Z. https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Left unordered: its 7- or 8-core GPU is not ranked against the 4- and 5-core A13 to A16 generations."
+
+[[hardware]]
+id = "ipad-a13"
+platform = "ios"
+models = ["iPad12,1", "iPad12,2"]
+tier = 1080
+gpu_family = 6
+basis = "assumed"
+source = "iPad 9th generation (A13). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "ipad-a14"
+platform = "ios"
+models = ["iPad13,1", "iPad13,2", "iPad13,18", "iPad13,19"]
+tier = 1090
+gpu_family = 7
+basis = "assumed"
+source = "iPad Air 4 and iPad 10th generation (A14). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "ipad-a15-mini"
+platform = "ios"
+models = ["iPad14,1", "iPad14,2"]
+tier = 1095
+gpu_family = 8
+basis = "assumed"
+source = "iPad mini 6 (A15, 5-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Above A14, below M1 (8-core GPU)."
+
+[[hardware]]
+id = "ipad-a16-a17pro"
+platform = "ios"
+models = ["iPad15,7", "iPad15,8", "iPad16,1", "iPad16,2"]
+gpu_family = 8
+basis = "assumed"
+source = "iPad 11th generation (A16, 4-core GPU) and iPad mini 7th generation (A17 Pro, 5-core). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Left unordered: their GPU core counts do not rank them against A15's 5-core GPU."
 
 [[hardware]]
 id = "ipad-pro-m1-12-9"
 platform = "ios"
 models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
-tier = 100
+tier = 1100
 gpu_family = 7
 basis = "measured"
-source = "ipad-pro-m1.toml: M1 settings sweep, a10 at 3180x2384, 2026-10-03. Tier 100 establishes this platform's M1 baseline; it does not rank M1 against A-series chips."
+source = "ipad-pro-m1.toml: M1 settings sweep, a10 at 3180x2384, 2026-10-03. M1's 8-core GPU is above every A-series tier here."
 
 [[hardware]]
 id = "ipad-pro-m1-11"
 platform = "ios"
 models = ["iPad13,4", "iPad13,5", "iPad13,6", "iPad13,7"]
-tier = 100
+tier = 1100
 gpu_family = 7
 basis = "assumed"
 source = "https://support.apple.com/en-us/111897: same M1 CPU and 8-core GPU, 8 or 16 GB RAM, smaller 2388x1668 display. Inheritance is a conservative hardware assessment, not a measurement of this model."
+
+[[hardware]]
+id = "ipad-air-m1"
+platform = "ios"
+models = ["iPad13,16", "iPad13,17"]
+tier = 1100
+gpu_family = 7
+basis = "assumed"
+source = "iPad Air 5th generation (M1, 8 GB, 2360x1640). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same chip as the iPad Pro."
+
+[[hardware]]
+id = "ipad-m2"
+platform = "ios"
+models = ["iPad14,3", "iPad14,4", "iPad14,5", "iPad14,6", "iPad14,8", "iPad14,9", "iPad14,10", "iPad14,11"]
+tier = 1110
+gpu_family = 8
+basis = "assumed"
+source = "iPad Pro (11-inch 4th and 12.9-inch 6th generation) and iPad Air 6th generation (M2). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Above M1 by Apple's chip succession."
+
+[[hardware]]
+id = "ipad-m3"
+platform = "ios"
+models = ["iPad15,3", "iPad15,4", "iPad15,5", "iPad15,6"]
+tier = 1120
+gpu_family = 9
+basis = "assumed"
+source = "iPad Air 7th generation (M3). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "ipad-m4"
+platform = "ios"
+models = ["iPad16,3", "iPad16,4", "iPad16,5", "iPad16,6", "iPad16,8", "iPad16,9", "iPad16,10", "iPad16,11"]
+tier = 1130
+gpu_family = 9
+basis = "assumed"
+source = "iPad Pro (M4) and iPad Air 8th generation (M4). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "ipad-m5"
+platform = "ios"
+models = ["iPad17,1", "iPad17,2", "iPad17,3", "iPad17,4"]
+tier = 1140
+gpu_family = 10
+basis = "assumed"
+source = "iPad Pro (M5). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+
+[[hardware]]
+id = "apple-tv-hd"
+platform = "tvos"
+models = ["AppleTV5,3"]
+tier = 100
+gpu_family = 2
+basis = "measured"
+source = "apple-tv-hd.toml: Apple TV HD (A8), measured 2026-10-13 and 2026-10-14."
+
+[[hardware]]
+id = "apple-tv-4k-1st"
+platform = "tvos"
+models = ["AppleTV6,2"]
+tier = 110
+gpu_family = 3
+basis = "measured"
+source = "apple-tv-4k-1st.toml: Apple TV 4K 1st generation (A10X), TestFlight reports 2026-10-22: holds 60 at 720 lines."
+
+[[hardware]]
+id = "apple-tv-4k-2nd"
+platform = "tvos"
+models = ["AppleTV11,1"]
+tier = 120
+gpu_family = 5
+basis = "assumed"
+source = "Apple TV 4K 2nd generation (A12). https://www.macrumors.com/2021/04/20/apple-new-apple-tv-4k/. Placed just above A10X: Apple credits A12 with a faster GPU, while https://appleinsider.com/articles/21/05/25/2021-apple-tv-4k-review-seeking-a-blockbuster-given-a-band-aid found it no better than A10 in some tests, so the A10X profile is the right neighbor either way."
+
+[[hardware]]
+id = "apple-tv-4k-3rd"
+platform = "tvos"
+models = ["AppleTV14,1"]
+tier = 150
+gpu_family = 8
+basis = "measured"
+source = "apple-tv-4k-3rd.toml: Apple TV 4K 3rd generation (A15), TestFlight reports 2026-10-22: holds 60 at 1080 lines with 1.5x and 2x enemies."
+
+[[fallback]]
+hardware = "apple-tv-hd"
+profile = "apple-tv-hd.toml"
+minimum_memory_mb = 1900
+minimum_gpu_family = 2
+# The measured Apple TV HD at 1080 lines out: 960x540 play, 1280x720 menu, 1152x648 cutscenes. A 4K output draws more and fails this.
+maximum_pixels = [518400, 921600, 746496]
+maximum_refresh_hertz = 60
+
+[[fallback]]
+hardware = "apple-tv-4k-1st"
+profile = "apple-tv-4k-1st.toml"
+minimum_memory_mb = 2900
+minimum_gpu_family = 3
+# Play at 720 lines; menu and cutscenes at 1080 lines on any output.
+maximum_pixels = [921600, 2073600, 2073600]
+maximum_refresh_hertz = 60
+
+[[fallback]]
+hardware = "apple-tv-4k-3rd"
+profile = "apple-tv-4k-3rd.toml"
+minimum_memory_mb = 3700
+minimum_gpu_family = 8
+# Play at 1080 lines; menu and cutscenes at 2160 lines (3840x2160).
+maximum_pixels = [2073600, 8294400, 8294400]
+maximum_refresh_hertz = 60
+
+[[fallback]]
+hardware = "iphone-16e"
+profile = "iphone-16e.toml"
+minimum_memory_mb = 7000
+minimum_gpu_family = 9
+# Native 2532x1170 at 60 Hz was measured. Every iOS envelope is at least 3,888,000 pixels, the class profile's wired-display frame (3600x1080); the 60 Hz limit keeps 120 Hz models out.
+maximum_pixels = [3900000, 3900000, 3900000]
+maximum_refresh_hertz = 60
+
+[[fallback]]
+hardware = "iphone-17-pro"
+profile = "iphone-17-pro.toml"
+minimum_memory_mb = 10500
+minimum_gpu_family = 10
+# Native 2622x1206 at 120 Hz was measured; 3,900,000 also admits the 2868x1320 Pro Max (3,785,760).
+maximum_pixels = [3900000, 3900000, 3900000]
+maximum_refresh_hertz = 120
+
+[[fallback]]
+hardware = "ipad-pro-12-9-1st"
+profile = "ipad-pro-12-9-1st.toml"
+minimum_memory_mb = 2800
+minimum_gpu_family = 3
+# 720-line play (at most 960x720 on a 4:3 iPad; the 3,888,000 floor is the class profile's wired-display frame); menu and cutscenes native up to the 12.9-inch 2732x2048.
+maximum_pixels = [3900000, 5600000, 5600000]
+maximum_refresh_hertz = 60
+
+[[fallback]]
+hardware = "ipad-pro-12-9-2nd"
+profile = "ipad-pro-12-9-2nd.toml"
+minimum_memory_mb = 2800
+minimum_gpu_family = 3
+# 720-line play; menu and cutscenes native up to the 12.9-inch 2732x2048; the measured device is 120 Hz.
+maximum_pixels = [3900000, 5600000, 5600000]
+maximum_refresh_hertz = 120
 
 [[fallback]]
 hardware = "ipad-pro-m1-12-9"

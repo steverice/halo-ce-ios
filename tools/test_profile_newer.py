@@ -62,7 +62,7 @@ def test_profiles_1_refuses_newer_rules(tmp_path, enabled):
     import shutil
     shutil.copytree(data_pack.ROOT / 'profiles', tmp_path / 'profiles')
     path = tmp_path / 'profiles/iphone-17-pro.toml'
-    text = path.read_text().replace('[match]', f'[match]\nand_newer = {enabled}')
+    text = path.read_text().replace('and_newer = true', f'and_newer = {enabled}')
     path.write_text(text)
     with pytest.raises(ValueError, match='profiles-2'):
         data_pack.snapshot(tmp_path / 'profiles', 'profiles', compatibility='profiles-1')

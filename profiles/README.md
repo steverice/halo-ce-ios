@@ -34,7 +34,9 @@ On a Mac, use `chips = ["Apple M4 Pro"]`. Known tiers are base, Pro, Max and Ult
 
 Exact matches always win. Among qualifying rules, the newest source generation wins, then the highest Mac tier. Equal thresholds for one platform/product line are rejected by both snapshot validation and `tools/profile_check.py`. A rule precedes catalog inheritance and uses the receiving device's class baseline. The log names the source rule and target identity. Drop-ins and player choices keep their usual precedence.
 
-No shipped profile enables this rule without evidence. Apps built before support for `and_newer` reject a downloaded snapshot containing the field, including `profiles-2` snapshots; the compatibility label alone does not make the syntax safe for older clients. Keep current feeds free of these rules until the client compatibility policy is updated. The publisher also refuses them in `profiles-1` snapshots.
+The newest measured profile in each product line carries this rule: `iphone-17-pro.toml`, `ipad-pro-m1.toml` and `apple-tv-4k-3rd.toml`. Apps built before support for `and_newer` reject a downloaded snapshot containing the field, including `profiles-2` snapshots. Version 0.4.0 is not kept compatible with current feeds. The publisher still refuses the field in `profiles-1` snapshots.
+
+A rule applies before the hardware catalog and ignores its envelope, so a later identifier in the product line takes the newest measured profile even when the catalog would place that hardware lower. For iPad this reaches a lower-powered model with a higher identifier, such as the iPad mini 6 (`iPad14,1`, A15) taking the M1 iPad Pro's profile. Move the rule to a newer measured profile when one exists.
 
 ## Hardware fallback
 
@@ -42,7 +44,11 @@ An exact model or chip profile wins. Otherwise, the app uses `hardware/catalog.t
 
 The catalog has separate orderings for iOS, tvOS, visionOS, and Mac. A source must fit the receiving device's physical memory, GPU family, render-pixel limits for gameplay/menu/cutscenes, and refresh target. Unknown or unordered hardware keeps its class fallback. Inheritance uses the source's class baseline and model values together, including scene values; the receiving class does not contribute extra settings. Drop-ins and player choices retain their precedence.
 
-The initial catalog covers the M1 iPad Pro variants: the 11-inch model may inherit the measured 12.9-inch profile. That inheritance is an explicit hardware assessment, not a benchmark of the 11-inch model. Other models retain exact/class matching until their ordering is established. Physical runtime checks can reject a catalog candidate.
+The catalog lists every iPhone, iPad and Apple TV model the app supports, from the iPhone 8, iPad (5th generation) and Apple TV HD through the current generation. Each entry records its basis and the source of its ordering. Hardware whose ordering against its neighbors cannot be established has no tier and keeps its class profile: the iPhone 17 and iPhone Air, the A10 iPads, the A12X and A12Z iPad Pro, the iPad (A16) and the iPad mini (A17 Pro). Inheritance for hardware without a measurement of its own is an explicit hardware assessment, not a benchmark of that model.
+
+iOS has two tier ranges, iPhones from 100 and iPads from 1000, so an iPhone never inherits an iPad's profile. A tier is a chip generation; GPU core counts inside a generation are not ranked, and an entry placed above a rival it cannot be ranked against only keeps that rival from inheriting it. Each source's envelope carries a memory floor, the pixels its measured device drew, and a refresh limit; a receiving device outside it keeps its class profile. Physical runtime checks can reject a catalog candidate.
+
+A device below every measured profile gets its class profile, which sets only the renderer: the game's built-in defaults at the display's native resolution.
 
 To add coverage, record the exact device identities, platform, tier, GPU family, evidence basis, and source in a `[[hardware]]` entry. Designate at most one `[[fallback]]` source per platform/tier, referencing a measured model profile and its compatibility envelope. Omit a hardware tier when ordering is uncertain. Use the existing catalog as the schema example and validate the entire folder with `python3 tools/profile_check.py` before publishing a change.
 

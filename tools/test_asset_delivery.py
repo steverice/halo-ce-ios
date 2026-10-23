@@ -71,7 +71,9 @@ def test_shader_snapshot_aggregate_limit(tmp_path):
 
 def test_inherited_device_shard_keeps_its_source_envelope():
     files = data_pack.device_profile_snapshot(ROOT / "profiles", "ios", "iPad13,4")
-    assert set(files) == {"iphone-ipad.toml", "ipad-pro-m1.toml", "hardware/catalog.toml"}
+    # Every source at or below the target's tier ships, so the device can fall back when the nearer one's envelope rejects it.
+    assert set(files) == {"iphone-ipad.toml", "ipad-pro-m1.toml", "ipad-pro-12-9-1st.toml", "ipad-pro-12-9-2nd.toml",
+                          "iphone-16e.toml", "iphone-17-pro.toml", "hardware/catalog.toml"}
     catalog = files["hardware/catalog.toml"]
     assert b"ipad-pro-m1-11" in catalog and b"ipad-pro-m1-12-9" in catalog
 

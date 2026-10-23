@@ -5,6 +5,7 @@ kind = "model"
 [match]
 platform = "ios"
 models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
+and_newer = true
 
 [display]
 anisotropic_filtering = 16

@@ -333,6 +333,65 @@ static void check_refusals(void)
 	assert(profile.count == 0);
 }
 
+/* Which profile real models without one of their own resolve to: the hardware catalog's nearest weaker
+   measured profile, the newest measured profile's and_newer rule, or the class floor. */
+static struct host_profile resolve_model(const char *shipped, const char *platform, const char *model,
+	int family, unsigned memory, int width, int height, int hertz)
+{
+	struct host_device made = device(platform, model, "", family);
+
+	made.memory_megabytes = memory; made.pixel_width = width; made.pixel_height = height; made.refresh_rate = hertz;
+	return resolve(shipped, made, NULL, "");
+}
+
+static void check_unprofiled_models(const char *shipped)
+{
+	struct host_profile profile;
+
+	/* iPhone 15 Pro Max (A17 Pro): no measured iPhone profile at or below its tier. The 16e is not ranked below it. */
+	profile = resolve_model(shipped, "ios", "iPhone16,2", 9, 7655, 2796, 1290, 120);
+	assert(!profile.model_file[0] && !profile.inherited && strstr(logged, "no compatible profile at or below"));
+	/* iPhone 16 (A18): the iPhone 16e's profile, inside its 60 Hz and pixel envelope. */
+	profile = resolve_model(shipped, "ios", "iPhone17,3", 9, 7600, 2556, 1179, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") &&
+		!strcmp(profile.source_hardware, "iphone-16e") && !strcmp(profile.target_hardware, "iphone-16"));
+	/* iPhone 17 Pro Max: the same chip as the measured 17 Pro; the profile is inherited, not an and_newer match. */
+	profile = resolve_model(shipped, "ios", "iPhone18,2", 10, 11722, 2868, 1320, 120);
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-17-pro.toml"));
+	/* A model a later generation introduces: the 17 Pro's and_newer rule. */
+	profile = resolve_model(shipped, "ios", "iPhone19,1", 11, 12000, 2622, 1206, 120);
+	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-17-pro.toml") && has(&profile, "display.anti_aliasing", "fxaa") &&
+		strstr(logged, "and_newer iphone-17-pro.toml: iPhone19,1"));
+	/* The oldest supported iPhone sits below every measured profile: the class floor. */
+	profile = resolve_model(shipped, "ios", "iPhone10,1", 4, 1950, 1334, 750, 60);
+	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml"));
+	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 720 lines; nothing measured is closer. */
+	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
+		has(&profile, "display.render_height", "720") && !strcmp(profile.target_hardware, "ipad-a12"));
+	/* iPad Pro 12.9-inch 3rd generation (A12X): unordered, so the class floor. */
+	profile = resolve_model(shipped, "ios", "iPad8,5", 5, 3900, 2732, 2048, 120);
+	assert(!profile.model_file[0] && strstr(logged, "unknown or unordered hardware"));
+	/* iPad 5th generation (A9), the oldest: below every measured iPad profile. */
+	profile = resolve_model(shipped, "ios", "iPad6,11", 3, 1950, 2048, 1536, 60);
+	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml"));
+	/* iPad Air 5 (M1) shares the measured iPad Pro chip. */
+	profile = resolve_model(shipped, "ios", "iPad13,16", 7, 7600, 2360, 1640, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml"));
+	/* A later iPad generation: the M1 iPad Pro's and_newer rule. */
+	profile = resolve_model(shipped, "ios", "iPad19,1", 11, 16000, 2420, 1668, 120);
+	assert(!profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml") &&
+		strstr(logged, "and_newer ipad-pro-m1.toml: iPad19,1"));
+	/* Apple TV 4K 2nd generation (A12): the 1st generation's 720-line profile. */
+	profile = resolve_model(shipped, "tvos", "AppleTV11,1", 5, 2950, 3840, 2160, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-1st.toml") &&
+		has(&profile, "display.render_height", "720"));
+	/* A later Apple TV: the 3rd generation's and_newer rule. */
+	profile = resolve_model(shipped, "tvos", "AppleTV15,1", 11, 4000, 3840, 2160, 60);
+	assert(!profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-3rd.toml") &&
+		has(&profile, "display.render_height", "1080"));
+}
+
 /* the shipped profiles, for the devices measured so far: what each resolves to */
 static void check_shipped(const char *shipped)
 {
@@ -399,11 +458,12 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("mac", "Mac15,3", "Apple M3 Max", 9), NULL, "");
 	assert(profile.count == 1 && !strcmp(profile.class_file, "mac.toml") && has(&profile, "display.renderer", "metal") &&
 		!strstr(logged, "ignored"));
-	profile = resolve(shipped, device("ios", "iPhone99,1", "", 15), NULL, "");
+	profile = resolve(shipped, device("ios", "iPhone18,9", "", 15), NULL, "");
 	assert(profile.count == 3 && has(&profile, "display.renderer", "metal") &&
 		!strcmp(profile.class_file, "iphone-ipad.toml"));
 	profile = resolve(shipped, device("visionos", "RealityDevice99,1", "", 15), NULL, "");
 	assert(profile.count == 3 && !profile.model_file[0] && has(&profile, "display.renderer", "metal"));
+	check_unprofiled_models(shipped);
 }
 
 /* Synthetic chip tiers are intentionally independent of real Apple rankings. */
