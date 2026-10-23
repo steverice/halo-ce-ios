@@ -88,6 +88,13 @@ static void test_metrics(void) {
     /* display.frame_rate's cap is the budget when it is under the refresh: 16.7 ms at 60 on a 120 Hz screen is on time */
     CHECK(benchmark_budget_hertz(120.0, 60.0) == 60.0 && benchmark_budget_hertz(120.0, 0.0) == 120.0);
     CHECK(benchmark_budget_hertz(60.0, 240.0) == 60.0 && benchmark_budget_hertz(0.0, 60.0) == 60.0);
+    /* runs in a row on a 120 Hz screen: capped at 60 (the link then measures 60), uncapped, then capped at 90. Each is
+       budgeted from the screen's 120, never from the period the run before left the link at */
+    CHECK(benchmark_run_budget_hertz(120.0, 120.0, 60.0) == 60.0);
+    CHECK(benchmark_run_budget_hertz(120.0, 60.0, 0.0) == 120.0);
+    CHECK(benchmark_run_budget_hertz(120.0, 120.0, 90.0) == 90.0);
+    CHECK(benchmark_run_budget_hertz(120.0, 60.0, 90.0) == 90.0);
+    CHECK(benchmark_run_budget_hertz(0.0, 60.0, 0.0) == 60.0 && benchmark_run_budget_hertz(60.0, 120.0, 0.0) == 60.0);
     benchmark_metrics_reset(&metrics, benchmark_budget_hertz(120.0, 60.0));
     for (index = 0; index < 600; index++) benchmark_metrics_frame(&metrics, 16.7, 3.0, 4.0);
     benchmark_metrics_summarize(&metrics, &summary);

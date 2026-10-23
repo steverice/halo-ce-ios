@@ -122,6 +122,10 @@ double benchmark_budget_hertz(double refresh_hertz, double cap) {
     return refresh_hertz;
 }
 
+double benchmark_run_budget_hertz(double display_hertz, double measured_hertz, double cap) {
+    return benchmark_budget_hertz(display_hertz > 0.0 ? display_hertz : measured_hertz, cap);
+}
+
 long benchmark_refreshes(double interval, double refresh_hertz) {
     long refreshes = refresh_hertz > 0.0 ? lround(interval * refresh_hertz / 1000.0) : 1;
 

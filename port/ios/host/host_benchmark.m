@@ -445,7 +445,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (ticks > 0 && window_open) atomic_fetch_add(&window_ticks, ticks);
     if (window_open && interval > 0.0) {
-        if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = benchmark_budget_hertz(refresh_hertz, host_frame_rate_cap());
+        if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = run_budget_hertz();
         benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
             simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0,
             translation_cpu >= 0.0 ? translation_cpu * 1000.0 : -1.0, ticks);
@@ -510,6 +510,14 @@ static void sampler_start(void) {
 }
 
 static double screen_rate(void);
+/* the output's highest rate (an external display's, else the screen's), with the run's cap on top
+   (benchmark_run_budget_hertz) */
+static double run_budget_hertz(void) {
+    struct host_external_snapshot output;
+    host_external_snapshot(&output);
+    return benchmark_run_budget_hertz(output.refresh_hertz > 0 ? (double)output.refresh_hertz : screen_rate(),
+        refresh_hertz > 0.0 ? refresh_hertz : screen_hertz, host_frame_rate_cap());
+}
 static void screen_size(double *width, double *height);
 
 /* ---------- the report */
@@ -1358,7 +1366,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     host_benchmark_presentation_begin(scene->kind,
         NSProcessInfo.processInfo.physicalMemory <= (2ULL << 30) ? 65536 : 262144);
     atomic_store(&frames_offered, 0); atomic_store(&frames_no_drawable, 0); atomic_store(&frames_no_picture, 0);
-    benchmark_metrics_reset(&metrics, refresh_hertz > 0.0 ? benchmark_budget_hertz(refresh_hertz, host_frame_rate_cap()) : 0.0);
+    benchmark_metrics_reset(&metrics, run_budget_hertz());
     upscaler_requests = upscaler_paths = 0; memset(upscaler_frames,0,sizeof(upscaler_frames));
     graphics_first = graphics_last = nil; graphics_changed = NO; graphics_snapshots = graphics_invalid = 0;
     os_unfair_lock_unlock(&lock);
@@ -1389,7 +1397,7 @@ void host_benchmark_window(int open, int width, int height, int opened_tick) {
         /* (the tick of the first frame counted: a window that opens again, as a cutscene gives way to the game, keeps it) */
         if (metrics.frames == 0) metrics.window_opened_tick = opened_tick;
         if (metrics.refresh_hertz <= 0.0)
-            metrics.refresh_hertz = benchmark_budget_hertz(refresh_hertz > 0.0 ? refresh_hertz : screen_hertz, host_frame_rate_cap());
+            metrics.refresh_hertz = run_budget_hertz();
     }
     os_unfair_lock_unlock(&lock);
 }
