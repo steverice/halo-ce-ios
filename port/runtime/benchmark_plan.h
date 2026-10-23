@@ -15,7 +15,7 @@
 #include <stddef.h>
 
 #define BENCHMARK_RUNS_MAXIMUM 64
-#define BENCHMARK_SCENES_MAXIMUM 16
+#define BENCHMARK_SCENES_MAXIMUM 20
 /* megabytes that must stay free before the system's limit for a run to count as meeting its target */
 #define BENCHMARK_MEMORY_FLOOR 300
 

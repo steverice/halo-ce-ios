@@ -313,7 +313,7 @@ def main(arguments=None):
     for name in ("bounds", "next"):
         item = commands.add_parser(name, help=f"write the {name} suite's catalog folders")
         item.add_argument("catalog", help="folder with the benchmark catalog and its recordings")
-        item.add_argument("out", help="folder to write the suite folders into (one a catalog of at most 16 cases)")
+        item.add_argument("out", help=f"folder to write the suite folders into (one a catalog of at most {bc.MAXIMUM_CASES} cases)")
         item.add_argument("--class", dest="klass", default="handheld", choices=CLASSES)
         item.add_argument("--heaviest", help="campaign case id to use as the most taxing")
         item.add_argument("--other", help="the other campaign case id")

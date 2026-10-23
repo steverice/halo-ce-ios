@@ -68,6 +68,32 @@ def test_catalog_types_order_and_two_player_proof(tmp_path):
     assert cases[-1]["kind"] == "multiplayer" and cases[-1]["players"] == 2
 
 
+@pytest.mark.parametrize("count", [20, 21])
+def test_catalog_and_native_recording_case_limit(tmp_path, count):
+    cases = {}
+    for order in range(count):
+        name = f"take-{order}"
+        _recording(tmp_path, name=name, scene=name)
+        cases[name] = dict(_cases()["b30-warthog-fight"], order=order, recording=name)
+    _write_catalog(tmp_path, cases, raw=benchmark_catalog._canonical({"schema": 1, "cases": cases}).decode("ascii"))
+    if count == 20:
+        assert len(benchmark_catalog.load_catalog(tmp_path)) == 20
+        data_pack.validate_recordings(tmp_path, "benchmark-catalog-1:" + "a" * 64)
+    else:
+        with pytest.raises(benchmark_catalog.CatalogError, match="1 to 20 cases"):
+            benchmark_catalog.load_catalog(tmp_path)
+        with pytest.raises(ValueError):
+            data_pack.validate_recordings(tmp_path, "benchmark-catalog-1:" + "a" * 64)
+
+
+def test_catalog_rejects_order_at_case_limit(tmp_path):
+    cases = _cases(gameplay=False)
+    cases["mp-chillout-proof"]["order"] = 20
+    _write_catalog(tmp_path, cases)
+    with pytest.raises(benchmark_catalog.CatalogError, match="order"):
+        benchmark_catalog.load_catalog(tmp_path)
+
+
 def test_catalog_accepts_experimental_simulation_settings(tmp_path):
     _recording(tmp_path)
     cases = _cases(players=2)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 CATALOG_NAME = "benchmark-catalog.json"
 CATALOG_SCHEMA = 1
-MAXIMUM_CASES = 16
+MAXIMUM_CASES = 20
 MAXIMUM_CATALOG_BYTES = 256 * 1024
 CASE_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,45}[a-z0-9])?\Z")
 MAP_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,29}[a-z0-9])?\Z")
@@ -268,7 +268,7 @@ def load_catalog(folder):
         raise CatalogError("benchmark catalog has an unsupported schema or fields")
     cases = document["cases"]
     if not isinstance(cases, dict) or not 1 <= len(cases) <= MAXIMUM_CASES:
-        raise CatalogError("benchmark catalog must contain 1 to 16 cases")
+        raise CatalogError(f"benchmark catalog must contain 1 to {MAXIMUM_CASES} cases")
     prepared = []
     orders = set()
     recorded = set()

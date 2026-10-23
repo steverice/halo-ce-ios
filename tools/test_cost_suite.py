@@ -109,11 +109,11 @@ def test_next_suite_ignores_other_devices_thermal_and_basis():
 
 def test_chunks_fit_the_catalog_limit_and_repeat_the_workload():
     suite = suites.ofat_suite(WORKLOADS, BASELINE, suites.ofat_knobs(LADDER))
-    chunks = suite.chunks(16)
+    chunks = suite.chunks()
     assert sum(len(chunk.runs) for chunk in chunks) == len(suite.runs)
     for chunk in chunks:
         document = chunk.catalog()["cases"]
-        assert len(document) <= 16
+        assert len(document) <= suites.bc.MAXIMUM_CASES
         assert {case["variant_of"] for case in document.values() if "variant_of" in case} <= set(document)
 
 

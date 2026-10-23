@@ -36,7 +36,7 @@ RECORDING_MAX_FILES = 160
 RECORDING_MAX_FILE_BYTES = 4 * 1024 * 1024
 # Match the native route grammar: three streams and two short metadata files per
 # route, plus one catalog; include per-file padding/names and both base64 layers.
-_RECORDING_ENVELOPE_CONTENT_MAX = 16 * (3 * RECORDING_MAX_FILE_BYTES + 2 * 4095) + RECORDING_MAX_FILE_BYTES
+_RECORDING_ENVELOPE_CONTENT_MAX = benchmark_catalog.MAXIMUM_CASES * (3 * RECORDING_MAX_FILE_BYTES + 2 * 4095) + RECORDING_MAX_FILE_BYTES
 _RECORDING_PAYLOAD_MAX = ((_RECORDING_ENVELOPE_CONTENT_MAX + 2) // 3) * 4 + RECORDING_MAX_FILES * 128 + 65536
 ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024,
                    "recordings": ((_RECORDING_PAYLOAD_MAX + 2) // 3) * 4 + 65536,
