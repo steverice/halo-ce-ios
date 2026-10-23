@@ -1472,6 +1472,8 @@ struct light_link_record
 	real_point3d position;
 	real radius;
 	struct location location;
+	short cluster_count;
+	short cluster_indices[64];
 };
 
 static struct light_link_record light_link_records[MAXIMUM_LIGHTS_PER_MAP];
@@ -1972,7 +1974,9 @@ void light_reconnect_to_map(
 
 /* port: light_disconnect_from_map and light_reconnect_to_map in one, for a light an object carries
 (object_connect_lights). A light whose position, radius and location are what it was last linked with
-would be linked to the same clusters again, so it stays where it is in their lists (debug.static_light_relink). */
+would be linked to the same clusters again, so only the search for them is skipped: it leaves and joins the heads of
+their lists as the original does, in the order it joined them, so the lists (which lights an object gets when more
+reach it than it uses) are those of the original (debug.static_light_relink). */
 void light_relink_to_map(
 	long light_index)
 {
@@ -2031,17 +2035,35 @@ void light_relink_to_map(
 		record->location.cluster_index == location.cluster_index &&
 		record->location.bonus == location.bonus)
 	{
+		short cluster_count = record->cluster_count;
+		short cluster_indices[64];
+
+		memcpy(cluster_indices, record->cluster_indices, sizeof(cluster_indices));
+		light_disconnect_from_map(light_index);
+		cluster_partition_port_reconnect_clusters(
+			&light_cluster_partition,
+			light_index,
+			&light->cluster_reference,
+			cluster_indices,
+			cluster_count);
+		SET_FLAG(light->flags, _point_light_connected_to_map_bit, TRUE);
+		record->light_index = light_index;
+		record->cluster_reference = light->cluster_reference;
+		record->cluster_count = cluster_count;
+		memcpy(record->cluster_indices, cluster_indices, sizeof(cluster_indices));
 		return;
 	}
 
 	light_disconnect_from_map(light_index);
-	cluster_partition_reconnect(
+	cluster_partition_port_reconnect_recording(
 		&light_cluster_partition,
 		light_index,
 		&light->cluster_reference,
 		&position,
 		radius,
-		&location);
+		&location,
+		record->cluster_indices,
+		&record->cluster_count);
 	SET_FLAG(light->flags, _point_light_connected_to_map_bit, TRUE);
 	record->light_index = light_index;
 	record->epoch = object_bounds_cache_epoch();

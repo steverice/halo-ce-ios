@@ -342,7 +342,32 @@ void cluster_partition_reconnect(
 {
 	short cluster_indices[64];
 	short cluster_count;
-	short cluster_index_index;
+
+	cluster_partition_port_reconnect_recording(
+		partition,
+		datum_index,
+		first_cluster_reference,
+		position,
+		radius,
+		location,
+		cluster_indices,
+		&cluster_count);
+
+	return;
+}
+
+/* port: cluster_partition_reconnect, noting the clusters it joined (in the order it joined them) */
+void cluster_partition_port_reconnect_recording(
+	struct cluster_partition *partition,
+	long datum_index,
+	long *first_cluster_reference,
+	real_point3d const *position,
+	float radius,
+	struct location const *location,
+	short *cluster_indices,
+	short *cluster_count_result)
+{
+	short cluster_count;
 
 	match_assert("c:\\halo\\SOURCE\\structures\\cluster_partitions.c", 0x6f, partition);
 	match_assert("c:\\halo\\SOURCE\\structures\\cluster_partitions.c", 0x70, first_cluster_reference);
@@ -354,14 +379,36 @@ void cluster_partition_reconnect(
 		location->cluster_index,
 		position,
 		radius,
-		NUMBEROF(cluster_indices),
+		64,
 		cluster_indices);
 
 	if (cluster_count > 64)
 	{
 		error(_error_silent, "an object or light spanned %d clusters.", cluster_count);
-		cluster_count = NUMBEROF(cluster_indices);
+		cluster_count = 64;
 	}
+
+	*cluster_count_result = cluster_count;
+	cluster_partition_port_reconnect_clusters(
+		partition,
+		datum_index,
+		first_cluster_reference,
+		cluster_indices,
+		cluster_count);
+
+	return;
+}
+
+/* port: the joining half of cluster_partition_reconnect, for clusters already known: the datum goes to the head of
+each cluster's list in the order given, as it does when the clusters are found again */
+void cluster_partition_port_reconnect_clusters(
+	struct cluster_partition *partition,
+	long datum_index,
+	long *first_cluster_reference,
+	short const *cluster_indices,
+	short cluster_count)
+{
+	short cluster_index_index;
 
 	for (cluster_index_index = 0; cluster_index_index < cluster_count; cluster_index_index++)
 	{

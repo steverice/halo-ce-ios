@@ -80,6 +80,21 @@ void cluster_partition_reconnect(
 	real_point3d const *position,
 	float radius,
 	struct location const *location);
+void cluster_partition_port_reconnect_recording(
+	struct cluster_partition *partition,
+	long datum_index,
+	long *first_cluster_reference,
+	real_point3d const *position,
+	float radius,
+	struct location const *location,
+	short *cluster_indices,
+	short *cluster_count_result);
+void cluster_partition_port_reconnect_clusters(
+	struct cluster_partition *partition,
+	long datum_index,
+	long *first_cluster_reference,
+	short const *cluster_indices,
+	short cluster_count);
 void cluster_partition_disconnect(
 	struct cluster_partition *partition,
 	long datum_index,
