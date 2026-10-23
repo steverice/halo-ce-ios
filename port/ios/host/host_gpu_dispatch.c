@@ -13,6 +13,7 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 #include "host_data_updates.h"
 #include <string.h>
 #include "host_benchmark.h"
+#include "host_external.h"
 #if HALO_RENDER_VALIDATION
 #include "gpu_validate.h"
 #include "gpu_capture.h"
@@ -115,12 +116,16 @@ static uint32_t present_stereo_wrapped(const struct gpu_stereo_present *present)
 	return next_frame_due;
 }
 
-/* display.frame_rate (GPU_INITIALIZE_FRAME_RATE_SHIFT). The Mac app alone
-honors it: everywhere else the system paces frames (the display link on an
-iPhone, iPad or Apple TV, the Compositor on a Vision Pro), and the setting
-is ignored with a line in the log. A cap is held by sleeping before a frame
+/* display.frame_rate (GPU_INITIALIZE_FRAME_RATE_SHIFT). In the Mac app it
+is any cap or "unlimited". On an iPhone, an iPad and an Apple TV it is a cap
+under the display's highest rate (a profile's "60" on a 120 Hz screen): the
+display link asks the system for that rate (gpu_metal.m, pacing_start), and
+frames are spaced and judged for it (host_frame_rate_target); "unlimited"
+and a cap at or above the display's rate leave the display's own pace. A
+Vision Pro's Compositor paces frames itself, and there the setting is
+ignored with a line in the log. A cap is held by sleeping before a frame
 is shown (host_frame_rate_limit: gpu_metal.m's Present, host_gpu.c's swap);
-going faster than the display is the Metal backend's to arrange
+going faster than the display is the Mac app's Metal backend's to arrange
 (frame_rate_sync), and the GL backend, which can't, holds only caps under
 the display's rate. */
 static struct
@@ -131,6 +136,15 @@ static struct
 	next frame may show */
 	uint64_t interval, next;
 } frame_rate;
+
+static void frame_rate_cap_set(uint32_t rate)
+{
+	mach_timebase_info_data_t timebase;
+
+	mach_timebase_info(&timebase);
+	frame_rate.cap = (double)rate;
+	frame_rate.interval = (uint64_t)(1e9 / (double)rate * (double)timebase.denom / (double)timebase.numer);
+}
 
 static void frame_rate_initialize(uint32_t flags)
 {
@@ -147,16 +161,32 @@ static void frame_rate_initialize(uint32_t flags)
 	}
 	else
 	{
-		mach_timebase_info_data_t timebase;
-
-		mach_timebase_info(&timebase);
-		frame_rate.cap = (double)rate;
-		frame_rate.interval = (uint64_t)(1e9 / (double)rate * (double)timebase.denom / (double)timebase.numer);
+		frame_rate_cap_set(rate);
 		platform_log("display.frame_rate: at most %u frames a second%s", (unsigned)rate, (flags & GPU_INITIALIZE_METAL) ? "" :
 			" (OpenGL ES also waits for the display)");
 	}
+#elif TARGET_OS_VISION
+	platform_log("display.frame_rate is not for a Vision Pro, where the system paces frames; the setting is ignored");
 #else
-	platform_log("display.frame_rate is for the Mac app; here the system paces frames, and the setting is ignored");
+	{
+		struct host_external_snapshot output;
+
+		host_external_snapshot(&output);
+		if (rate == GPU_INITIALIZE_FRAME_RATE_UNLIMITED)
+			platform_log("display.frame_rate: \"unlimited\" is for the Mac app; frames keep the display's pace");
+		else if (output.refresh_hertz > 0 && rate >= (uint32_t)output.refresh_hertz)
+			platform_log("display.frame_rate: %u is not under the display's %d a second; frames keep the display's pace",
+				(unsigned)rate, output.refresh_hertz);
+		else
+		{
+			frame_rate_cap_set(rate);
+			if (output.refresh_hertz > 0)
+				platform_log("display.frame_rate: at most %u frames a second (the display's highest: %d)", (unsigned)rate,
+					output.refresh_hertz);
+			else
+				platform_log("display.frame_rate: at most %u frames a second", (unsigned)rate);
+		}
+	}
 #endif
 }
 

@@ -82,6 +82,10 @@ void benchmark_metrics_sample(struct benchmark_metrics *metrics, long footprint,
 void benchmark_metrics_compile(struct benchmark_metrics *metrics, double milliseconds);
 void benchmark_metrics_summarize(const struct benchmark_metrics *metrics, struct benchmark_summary *summary);
 
+/* the rate a run's frames are judged against: the display's refresh, or display.frame_rate's cap (frames a
+   second, 0 for none) when that is lower, so a 120 Hz screen held to 60 counts a 16.7 ms frame as on time; with no
+   refresh known, the cap */
+double benchmark_budget_hertz(double refresh_hertz, double cap);
 /* how many refreshes an interval kept its frame on screen, at least 1 */
 long benchmark_refreshes(double interval, double refresh_hertz);
 /* the run as one JSON object's members (no braces), for a report: summary (simulation_cpu_ms, render_cpu_ms,

@@ -3970,6 +3970,15 @@ static void pacing_start(uint32_t flags)
         float rate=native_rate;
 #else
         float rate=(float)screen.maximumFramesPerSecond;
+        /* display.frame_rate's cap under the screen's rate (host_gpu_dispatch.c): the
+        display itself runs at it, so a 120 Hz screen held to 60 refreshes at 60. Not
+        under 60, where the game's 60 Hz blank (frame_pacer_vertical_blank_wait) comes
+        from; a cap of 30 is held by the pacer's spacing instead. (The Mac app keeps
+        the display's rate and holds its caps by host_frame_rate_limit) */
+#if !TARGET_OS_MACCATALYST
+        double cap=host_frame_rate_cap();
+        if(cap>0.0 && cap<rate)rate=(float)cap;
+#endif
 #endif
         if(rate<60)rate=60;
 		link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80,rate), rate, rate);

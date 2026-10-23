@@ -699,15 +699,17 @@ static const struct config_setting config_settings[] =
 		"the cap's. Off with \"unlimited\" or a cap above the display's rate, where\n"
 		"it would itself be a cap. Not on a Vision Pro." },
 	{ "display.frame_rate", _config_string, "\"display\"", "HALO_FRAME_RATE", _environment_value, _platform_ios,
-		"The most frames a second, in the Mac app: \"display\" (default) draws one\n"
-		"frame for each refresh of the display; a number (\"60\", \"240\") holds that\n"
-		"rate; \"unlimited\" draws as fast as it can. Above the display's refresh\n"
-		"rate, and with \"unlimited\", frames no longer wait for the display, so the\n"
-		"picture can tear and the Mac uses more power; a frame the display isn't\n"
-		"ready for is drawn and not shown. The game still runs at 30\n"
-		"ticks a second whatever is drawn, and with display.interpolation off it\n"
-		"draws 30 frames a second at most. On iPhone, iPad, Apple TV and Vision Pro\n"
-		"the system paces frames and this is ignored." },
+		"The most frames a second: \"display\" (default) draws one frame for each\n"
+		"refresh of the display; a number (\"60\", \"240\") holds that rate;\n"
+		"\"unlimited\" draws as fast as it can. In the Mac app, above the display's\n"
+		"refresh rate and with \"unlimited\", frames no longer wait for the display,\n"
+		"so the picture can tear and the Mac uses more power; a frame the display\n"
+		"isn't ready for is drawn and not shown. On iPhone, iPad and Apple TV a\n"
+		"number under the display's highest rate runs the display at it (\"60\" on\n"
+		"a 120 Hz screen); a higher number and \"unlimited\" keep the display's\n"
+		"rate. The game still runs at 30 ticks a second whatever is drawn, and with\n"
+		"display.interpolation off it draws 30 frames a second at most. A Vision\n"
+		"Pro paces frames itself and ignores this." },
 	{ "display.async_shaders", _config_string, "\"auto\"", "HALO_ASYNC_SHADERS", _environment_value, _platform_ios,
 		"How the Metal renderer compiles shaders: \"auto\" (default) on worker\n"
 		"threads, skipping a draw for the frames until its pipeline is ready, so\n"

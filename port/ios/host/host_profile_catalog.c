@@ -183,11 +183,15 @@ static int compatible(const struct host_device *d, const struct host_profile *p,
 		struct halo_display_size size = halo_display_render_size(lround(long_side * atof(scale)),
 			lround(short_side * atof(scale)), 1600, 0, atoi(height), INT_MAX);
 		double pixels = (double)size.width * size.height;
-		/* Base frame_rate is a Mac-only cap. Numeric scene caps limit every platform;
-		   they combine with the base cap rather than replacing it. */
+		/* Base frame_rate caps the Mac app at any rate, and an iPhone, an iPad or an
+		   Apple TV under the display's (host_gpu_dispatch.c); a Vision Pro ignores it.
+		   Numeric scene caps limit every platform; they combine with the base cap
+		   rather than replacing it. */
 		double target = d->refresh_rate;
 		if (!strcmp(d->platform, "mac"))
 			target = !strcmp(base_rate, "display") ? d->refresh_rate : !strcmp(base_rate, "unlimited") ? 1000000 : atof(base_rate);
+		else if (strcmp(d->platform, "visionos") && atoi(base_rate) > 0 && atoi(base_rate) < target)
+			target = atoi(base_rate);
 		if (atoi(scene_rate) > 0 && atoi(scene_rate) < target) target = atoi(scene_rate);
 		if (pixels > field(f, "maximum_pixels").u.arr.elem[i].u.int64 ||
 			target > number(f, "maximum_refresh_hertz", 1, 1000)) return 0;

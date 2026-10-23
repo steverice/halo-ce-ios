@@ -29,8 +29,9 @@ scene class ([scene.menu.display], [scene.cutscene.display]): the ones the
 game can change between frames while it runs. display.frame_rate as a
 scene class's value is the most frames a second while the scene is that
 class, on every device: each frame stays up the whole number of refreshes
-that gives it ("30" at 60 Hz: two). The setting itself is still the Mac
-app's cap.
+that gives it ("30" at 60 Hz: two). The setting itself caps the Mac app
+at any rate, and an iPhone, an iPad or an Apple TV under the display's
+highest rate ("60" on a 120 Hz screen); a Vision Pro ignores it.
 
 choices is the accepted values separated by '|'; "#" among them accepts a
 whole number from 30 to 1000 (a frame rate: a profile cannot hold the game

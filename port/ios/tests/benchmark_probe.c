@@ -85,6 +85,13 @@ static void test_metrics(void) {
     benchmark_metrics_summarize(&metrics, &summary);
     CHECK(summary.frames == 20000 && summary.shown[1] == 10000 && summary.shown[2] == 10000);
     CHECK(benchmark_refreshes(0.5, 60.0) == 1 && benchmark_refreshes(41.0, 60.0) == 2 && benchmark_refreshes(42.0, 60.0) == 3);
+    /* display.frame_rate's cap is the budget when it is under the refresh: 16.7 ms at 60 on a 120 Hz screen is on time */
+    CHECK(benchmark_budget_hertz(120.0, 60.0) == 60.0 && benchmark_budget_hertz(120.0, 0.0) == 120.0);
+    CHECK(benchmark_budget_hertz(60.0, 240.0) == 60.0 && benchmark_budget_hertz(0.0, 60.0) == 60.0);
+    benchmark_metrics_reset(&metrics, benchmark_budget_hertz(120.0, 60.0));
+    for (index = 0; index < 600; index++) benchmark_metrics_frame(&metrics, 16.7, 3.0, 4.0);
+    benchmark_metrics_summarize(&metrics, &summary);
+    CHECK(summary.refresh_hertz == 60.0 && summary.shown[1] == 600 && summary.on_time_full == 1.0);
     benchmark_metrics_free(&metrics);
 }
 

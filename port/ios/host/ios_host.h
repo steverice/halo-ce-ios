@@ -49,7 +49,8 @@ void host_lifecycle_hold(void);
 void host_sdl_audio_pause(int paused);
 /* the runner's pinned display (HALO_HOST_DISPLAY, host_main.m): the drawable size the guest is told */
 void host_sdl_pin_window_pixels(int width, int height);
-/* display.frame_rate (host_gpu_dispatch.c), which only the Mac app honors:
+/* display.frame_rate (host_gpu_dispatch.c), any cap or "unlimited" in the Mac
+app, a cap under the display's rate on an iPhone, an iPad or an Apple TV:
 whether frames come as fast as they are drawn; the cap, 0 for none; and the
 wait that holds the cap, called once a frame before it is shown, which
 returns the seconds it slept */

@@ -117,6 +117,11 @@ void benchmark_metrics_compile(struct benchmark_metrics *metrics, double millise
     if (milliseconds > metrics->compile_longest) metrics->compile_longest = milliseconds;
 }
 
+double benchmark_budget_hertz(double refresh_hertz, double cap) {
+    if (cap > 0.0 && (refresh_hertz <= 0.0 || cap < refresh_hertz)) return cap;
+    return refresh_hertz;
+}
+
 long benchmark_refreshes(double interval, double refresh_hertz) {
     long refreshes = refresh_hertz > 0.0 ? lround(interval * refresh_hertz / 1000.0) : 1;
 

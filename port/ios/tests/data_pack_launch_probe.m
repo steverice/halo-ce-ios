@@ -11,6 +11,7 @@ static int healthSignals;
 void host_logf(int priority, const char *format, ...) { (void)priority; (void)format; }
 const struct gpu_backend gpu_backend_metal = {0}, gpu_backend_gl = {0};
 void host_lifecycle_hold(void) {}
+void host_external_snapshot(struct host_external_snapshot *out) { memset(out, 0, sizeof(*out)); }
 void host_frame_counter_show(unsigned long frame) { (void)frame; }
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh, double simulation, double render,
     double translation, int ticks) {

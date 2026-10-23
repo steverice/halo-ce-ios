@@ -445,7 +445,7 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (refresh_period > 0.0) refresh_hertz = 1.0 / refresh_period;
     if (ticks > 0 && window_open) atomic_fetch_add(&window_ticks, ticks);
     if (window_open && interval > 0.0) {
-        if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = refresh_hertz;
+        if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = benchmark_budget_hertz(refresh_hertz, host_frame_rate_cap());
         benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
             simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0,
             translation_cpu >= 0.0 ? translation_cpu * 1000.0 : -1.0, ticks);
@@ -599,7 +599,7 @@ static NSString *report_header(void) {
     return [NSString stringWithFormat:@"\"format\":%d,\"code\":%@,\"suite\":%d,\"mode\":\"%s\",\"started\":\"%@\","
         "\"device\":{\"model\":%@,\"chip\":%@,\"platform\":\"%@\",\"host\":\"%@\",\"os\":\"%ld.%ld.%ld\",\"os_build\":%@,"
         "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
-        "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld}},"
+        "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld,\"frame_rate_cap\":%ld}},"
         "\"external_modes_complete\":%s,\"output\":%@,\"output_reports\":%@,\"requested_output\":%@,\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
         "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
         "\"model_lod\":\"%s\"},\"data_updates\":%@,\"recording_snapshot\":%@,\"profile_sha256\":%@,"
@@ -612,7 +612,7 @@ static NSString *report_header(void) {
         json_string([[process.operatingSystemVersionString componentsSeparatedByString:@"Build "].lastObject
             stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@")"]]),
         json_string(gpu.name), gpu ? gpu_family(gpu) : 0, process.physicalMemory >> 20,
-        screen_width, screen_height, (long)screen_rate(),
+        screen_width, screen_height, (long)screen_rate(), lround(host_frame_rate_cap()),
         external_modes.count && external_mode_index + 1 < external_modes.count ? "false" : "true",
         json_object(suite_output ?: output_now()), json_object(output_reports ?: @[]),
         json_string(external_modes.count ? external_modes[external_mode_index] : @""),
@@ -1354,7 +1354,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     host_benchmark_presentation_begin(scene->kind,
         NSProcessInfo.processInfo.physicalMemory <= (2ULL << 30) ? 65536 : 262144);
     atomic_store(&frames_offered, 0); atomic_store(&frames_no_drawable, 0); atomic_store(&frames_no_picture, 0);
-    benchmark_metrics_reset(&metrics, refresh_hertz);
+    benchmark_metrics_reset(&metrics, refresh_hertz > 0.0 ? benchmark_budget_hertz(refresh_hertz, host_frame_rate_cap()) : 0.0);
     upscaler_requests = upscaler_paths = 0; memset(upscaler_frames,0,sizeof(upscaler_frames));
     graphics_first = graphics_last = nil; graphics_changed = NO; graphics_snapshots = graphics_invalid = 0;
     os_unfair_lock_unlock(&lock);
@@ -1384,7 +1384,8 @@ void host_benchmark_window(int open, int width, int height, int opened_tick) {
         window_height = height;
         /* (the tick of the first frame counted: a window that opens again, as a cutscene gives way to the game, keeps it) */
         if (metrics.frames == 0) metrics.window_opened_tick = opened_tick;
-        if (metrics.refresh_hertz <= 0.0) metrics.refresh_hertz = refresh_hertz > 0.0 ? refresh_hertz : screen_hertz;
+        if (metrics.refresh_hertz <= 0.0)
+            metrics.refresh_hertz = benchmark_budget_hertz(refresh_hertz > 0.0 ? refresh_hertz : screen_hertz, host_frame_rate_cap());
     }
     os_unfair_lock_unlock(&lock);
 }

@@ -445,6 +445,13 @@ static void check_capability_fallback(void)
 	assert(!profile.model_file[0] && has(&profile, "display.shadow_map_size", "256"));
 	target.memory_megabytes = 4096; target.refresh_rate = 120;
 	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
+	/* display.frame_rate under the display's rate caps an iPhone too: "60" on a 120 Hz screen fits a 60 Hz tier,
+	   and "unlimited" does not lift an iPhone above its display */
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\nframe_rate=\"60\"\n");
+	profile = resolve(folder, target, NULL, ""); assert(profile.inherited && has(&profile, "display.frame_rate", "60"));
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\nframe_rate=\"unlimited\"\n");
+	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[external.display]\noutput_height=720\nrender_height=360\n");
 	target.refresh_rate = 60; target.pixel_width = 8192;
 	profile = resolve(folder, target, NULL, ""); assert(!profile.model_file[0]);
 	profile = resolve(folder, device("ios", "Chip12,1", "", 5), NULL, "");
@@ -526,10 +533,11 @@ static void check_minimum_height_envelope(void)
 static void check_refresh_envelope(void)
 {
 	char path[256];
-	int mac;
-	for (mac = 0; mac < 2; mac++)
+	int mac, which;
+	for (which = 0; which < 3; which++)
 	{
-		const char *platform = mac ? "mac" : "ios";
+		const char *platform = which == 1 ? "mac" : which == 2 ? "visionos" : "ios";
+		mac = which == 1;
 		struct host_device target = device(platform, "Rate11,1", "", 5);
 		struct host_profile profile;
 		FILE *file;
@@ -544,8 +552,9 @@ static void check_refresh_envelope(void)
 			"[[hardware]]\nid=\"target\"\nplatform=\"%s\"\nmodels=[\"Rate11,1\"]\ntier=11\ngpu_family=5\nbasis=\"assumed\"\nsource=\"synthetic\"\n"
 			"[[fallback]]\nhardware=\"source\"\nprofile=\"rate-source.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=2\nmaximum_pixels=[100000000,100000000,100000000]\nmaximum_refresh_hertz=60\n", platform, platform); fclose(file);
 		profile = resolve(folder, target, NULL, "");
-		/* The base 60 cap is ignored on iOS; on Mac it also caps the 120 menu. */
-		assert(profile.inherited == mac);
+		/* The base 60 cap holds an iPhone's 120 Hz screen at 60, and on Mac it also caps the 120 menu; a Vision Pro
+		   ignores it, so its 120 is over the tier's 60. */
+		assert(profile.inherited == (which != 2));
 	}
 }
 
