@@ -124,6 +124,10 @@ run(BUILD/'display-pin-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/output_cap_probe.c', '-o', BUILD/'output-cap-probe')
 run(BUILD/'output-cap-probe')
+# the benchmark's display variant passes (host_benchmark_variant.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/benchmark_variant_probe.c', '-o', BUILD/'benchmark-variant-probe')
+run(BUILD/'benchmark-variant-probe')
 # config.toml: the written file has each table once and parses, and one with a table or key repeated
 # keeps the first of each instead of being ignored; once with the iOS and visionOS settings (HALO_ILP32)
 # and once with the desktop's (only the address sanitizer: tomlc17's page arithmetic trips the

@@ -59,6 +59,37 @@ int main(int argc, char **argv) { @autoreleasepool {
     assert([limited[@"run_count"] isEqual:@100] && [limited[@"runs"] count]==64 && [limited[@"statuses_omitted"] isEqual:@36]);
     assert([limited[@"completion"] isEqual:@"finished_early"]);
 
+    /* A display-variant suite (three variants of fifteen cases, each run the size of a real one: frame series and a
+       presentation trace): the last report carries the first two passes, the searchable summary stays far below
+       CloudKit's limit and names every pass, and the asset round-trips every byte. */
+    NSString *series=[@"0" stringByPaddingToLength:21*1024 withString:@"0" startingAtIndex:0];
+    NSString *presentation_trace=[@"B" stringByPaddingToLength:250*1024 withString:@"B" startingAtIndex:0];
+    NSMutableArray *passes=[NSMutableArray array];
+    NSArray *variant_ids=@[@"out-720",@"out-1080-bilinear",@"out-1080-metalfx"];
+    for(int pass=0;pass<3;pass++) {
+        NSMutableArray *pass_runs=[NSMutableArray array];
+        for(int i=0;i<15;i++)[pass_runs addObject:@{ @"index":@(i), @"scene":[NSString stringWithFormat:@"case-%02d",i],
+            @"status":@"ok", @"variant":variant_ids[pass], @"frame_interval":series, @"frame_cpu":series, @"frame_gpu":series,
+            @"frame_render":series, @"frame_simulation":series, @"frame_ticks":series,
+            @"output":@{ @"width":@3840, @"height":@2160, @"drawable_width":@1280, @"drawable_height":@720 },
+            @"presentation":@{ @"trace":@{ @"status":@"ok", @"data":presentation_trace } } }];
+        NSMutableDictionary *one=[@{ @"code":[NSString stringWithFormat:@"PASS%d",pass], @"format":@1, @"mode":@"full-unified",
+            @"flags":@[], @"runs":pass_runs, @"shader_dependency_candidates":@[series], @"shader_output_intervals":@[],
+            @"variant":@{ @"id":variant_ids[pass], @"index":@(pass), @"count":@3, @"settings":@{} } } mutableCopy];
+        if(pass==2)one[@"variant_reports"]=[passes copy];
+        [passes addObject:one];
+    }
+    NSData *variant_raw=encode(passes[2]); verify(variant_raw);
+    assert(variant_raw.length>15*1024*1024);
+    NSString *variant_text=summary_json(variant_raw);
+    assert([variant_text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]<64*1024);
+    NSDictionary *variant_summary=[NSJSONSerialization JSONObjectWithData:[variant_text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    NSArray *named=variant_summary[@"variant_passes"];
+    assert(named.count==3 && [named[0][@"variant"] isEqual:@"out-720"] && [named[2][@"variant"] isEqual:@"out-1080-metalfx"]);
+    assert([named[1][@"run_count"] isEqual:@15] && [named[1][@"runs"] count]==15 && [named[1][@"code"] isEqual:@"PASS1"]);
+    printf("variant suite summary: %lu -> %lu UTF-8 bytes\n",(unsigned long)variant_raw.length,
+        (unsigned long)[variant_text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+
     assert([summary_json([@"invalid" dataUsingEncoding:NSUTF8StringEncoding]) length]==0);
     assert([summary_json([@"[]" dataUsingEncoding:NSUTF8StringEncoding]) length]==0);
     Method method=class_getClassMethod(NSJSONSerialization.class,@selector(dataWithJSONObject:options:error:));

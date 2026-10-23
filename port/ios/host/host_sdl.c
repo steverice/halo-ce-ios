@@ -205,7 +205,7 @@ void *host_sdl_metal_layer(void)
 	return metal_view ? SDL_Metal_GetLayer(metal_view) : NULL;
 }
 
-static int pinned_width, pinned_height, output_capped;
+static int pinned_width, pinned_height, output_capped, output_cap_requested, native_width, native_height;
 
 void host_sdl_pin_window_pixels(int width, int height)
 {
@@ -213,10 +213,35 @@ void host_sdl_pin_window_pixels(int width, int height)
 	pinned_height = height;
 }
 
+void host_sdl_output_native(int width, int height, int requested_cap)
+{
+	native_width = width;
+	native_height = height;
+	output_cap_requested = requested_cap > 0 ? requested_cap : 0;
+}
+
+void host_sdl_native_output(int *width, int *height)
+{
+	*width = native_width;
+	*height = native_height;
+}
+
+int host_sdl_output_cap_requested(void)
+{
+	return output_cap_requested;
+}
+
 void host_sdl_cap_output(int width, int height)
 {
 	host_sdl_pin_window_pixels(width, height);
 	output_capped = 1;
+}
+
+void host_sdl_uncap_output(void)
+{
+	if (output_capped)
+		host_sdl_pin_window_pixels(0, 0);
+	output_capped = 0;
 }
 
 int host_sdl_output_cap(int *width, int *height)

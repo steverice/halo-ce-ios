@@ -437,6 +437,7 @@ int main(int argc,char **argv) {
             else host_config_string("display.renderer","metal",renderer,sizeof(renderer));
             if(HALO_METAL_ONLY)snprintf(renderer,sizeof(renderer),"metal");
             int capped_width,capped_height;
+            host_sdl_output_native(pixel_width,pixel_height,strcmp(renderer,"metal")?0:cap);
             if(cap&&strcmp(renderer,"metal"))
                 host_logf(HOST_LOG_INFO,"output: the %d-line cap is for Metal; %s keeps %dx%d",cap,renderer,pixel_width,pixel_height);
             else if(host_output_cap_apply(pixel_width,pixel_height,cap,&capped_width,&capped_height)){
@@ -445,6 +446,8 @@ int main(int argc,char **argv) {
                 pixel_width=capped_width;pixel_height=capped_height;
                 host_sdl_cap_output(pixel_width,pixel_height);
             }
+            else if(cap)
+                host_logf(HOST_LOG_INFO,"output: the %d-line cap leaves %dx%d as it is",cap,pixel_width,pixel_height);
         }
 #endif
 #if HALO_RENDER_VALIDATION

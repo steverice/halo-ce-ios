@@ -438,6 +438,8 @@ void host_external_poll(void) {
 }
 void host_external_commit(int allow_pause) {
     (void)allow_pause;
+    /* (a benchmark display variant's built-in output cap, before the frame's first draw) */
+    gpu_metal_output_cap_commit();
 #if TARGET_OS_MACCATALYST
     test_output_frame++;
 #endif

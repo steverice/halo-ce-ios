@@ -40,6 +40,15 @@ static NSString *summary_json(NSData *report) {
         for(id prior in whole[@"shader_output_intervals"])
             if([prior isKindOfClass:NSDictionary.class] && [prior[@"runs"] isKindOfClass:NSArray.class])
                 [runs addObjectsFromArray:prior[@"runs"]];
+    /* A display-variant suite's last report carries the earlier passes whole; the summary keeps their identity,
+       flags and runs, without what the asset alone needs. */
+    if([whole[@"variant_reports"] isKindOfClass:NSArray.class])
+        for(id prior in whole[@"variant_reports"])
+            if([prior isKindOfClass:NSMutableDictionary.class]) {
+                [prior removeObjectsForKeys:@[@"shader_dependency_candidates",@"shader_output_intervals",@"data_updates",
+                    @"recording_snapshot",@"output_reports"]];
+                if([prior[@"runs"] isKindOfClass:NSArray.class])[runs addObjectsFromArray:prior[@"runs"]];
+            }
     for(id value in runs) {
         if(![value isKindOfClass:NSMutableDictionary.class])return @"";
         NSMutableDictionary *run=value;
@@ -76,12 +85,29 @@ static NSString *summary_json(NSData *report) {
             if(compact_flags.count==64)break;
             if([flag isKindOfClass:NSString.class])[compact_flags addObject:bounded_text(flag,128)];
         }
-        NSDictionary *compact=@{ @"summary_status":@"compact", @"code":bounded_text(whole[@"code"],32),
+        /* a display-variant suite: each pass's variant, code and run statuses, a few bytes each */
+        NSMutableArray *passes=[NSMutableArray array];
+        NSArray *prior=[whole[@"variant_reports"] isKindOfClass:NSArray.class] ? whole[@"variant_reports"] : @[];
+        for(id report in [prior arrayByAddingObject:whole]) {
+            if(passes.count==8 || ![report isKindOfClass:NSDictionary.class] ||
+                ![report[@"variant"] isKindOfClass:NSDictionary.class])continue;
+            NSMutableArray *pass_statuses=[NSMutableArray array];
+            NSArray *pass_runs=[report[@"runs"] isKindOfClass:NSArray.class] ? report[@"runs"] : @[];
+            for(id run in pass_runs) {
+                if(pass_statuses.count==32)break;
+                if([run isKindOfClass:NSDictionary.class])[pass_statuses addObject:@{
+                    @"scene":bounded_text(run[@"scene"],48), @"status":bounded_text(run[@"status"],32) }];
+            }
+            [passes addObject:@{ @"variant":bounded_text(report[@"variant"][@"id"],48), @"code":bounded_text(report[@"code"],32),
+                @"run_count":@(pass_runs.count), @"runs":pass_statuses }];
+        }
+        NSMutableDictionary *compact=[@{ @"summary_status":@"compact", @"code":bounded_text(whole[@"code"],32),
             @"mode":bounded_text(whole[@"mode"],64), @"run_count":@([whole[@"runs"] count]),
             @"runs":statuses, @"statuses_omitted":@([whole[@"runs"] count]-statuses.count),
             @"flags":compact_flags, @"flags_omitted":@(all_flags.count-compact_flags.count),
             @"completion":[all_flags containsObject:@"finished_early"] ? @"finished_early" : @"see_report_asset",
-            @"detail_asset_field":@"report", @"original_summary_bytes":@(text.length) };
+            @"detail_asset_field":@"report", @"original_summary_bytes":@(text.length) } mutableCopy];
+        if(passes.count)compact[@"variant_passes"]=passes;
         text=[NSJSONSerialization dataWithJSONObject:compact options:NSJSONWritingSortedKeys error:nil];
     }
     if(!text || text.length>SUMMARY_MAXIMUM_BYTES)

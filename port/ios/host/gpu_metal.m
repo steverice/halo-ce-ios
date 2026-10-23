@@ -40,6 +40,7 @@ build with render validation; nothing otherwise */
 #import "host_data_updates.h"
 #include "gpu_metal_presentation.h"
 #include "halo_display.h"
+#include "host_output_cap.h"
 #include "host_external.h"
 
 #import <Metal/Metal.h>
@@ -4805,6 +4806,88 @@ int gpu_metal_output(void *new_layer, void *screen, int width, int height)
     }
     platform_log("Metal: output changed to %dx%d",width,height);
     return 1;
+}
+
+/* The built-in output cap as the game runs (ios_host.h): the drawable is drained and resized as for an external
+output, between frames, and the layer's scale lowered with it so SDL's view keeps that size at its next layout. A cap
+at or above the panel's height gives the panel's own size. Nothing changes while an external output is in use or
+before the renderer has started. */
+static _Atomic int output_cap_pending = -1;
+
+static BOOL output_cap_layer(CAMetalLayer *target, int width, int height)
+{
+	CGFloat bounds_height = target.bounds.size.height > 0 ? target.bounds.size.height :
+#if TARGET_OS_TV || (TARGET_OS_IOS && !TARGET_OS_MACCATALYST)
+		UIScreen.mainScreen.bounds.size.height;
+#else
+		0;
+#endif
+	if (bounds_height <= 0)
+		return NO;
+	target.contentsScale = (CGFloat)height / bounds_height;
+	return YES;
+}
+
+void gpu_metal_request_output_cap(int cap)
+{
+	/* (below zero: forget one still waiting) */
+	atomic_store(&output_cap_pending, cap < 0 ? -1 : cap);
+}
+
+int gpu_metal_output_cap_settled(void)
+{
+	return atomic_load(&output_cap_pending) < 0;
+}
+
+void gpu_metal_output_cap_commit(void)
+{
+#if TARGET_OS_TV || (TARGET_OS_IOS && !TARGET_OS_MACCATALYST)
+	int cap = atomic_load(&output_cap_pending), native_width, native_height, width, height;
+	CAMetalLayer *built_in;
+
+	if (cap < 0 || host_external_active())
+		return;
+	if (!device)
+	{
+		/* (the OpenGL ES renderer: the cap is Metal's) */
+		atomic_store(&output_cap_pending, -1);
+		return;
+	}
+	built_in = (__bridge CAMetalLayer *)host_sdl_metal_layer();
+	host_sdl_native_output(&native_width, &native_height);
+	if (!built_in || native_width <= 0 || native_height <= 0)
+	{
+		atomic_store(&output_cap_pending, -1);
+		return;
+	}
+	int capped = host_output_cap_apply(native_width, native_height, cap, &width, &height);
+	if (!output_cap_layer(built_in, width, height) || !gpu_metal_output((__bridge void *)built_in, NULL, width, height))
+		return;
+	if (capped)
+		host_sdl_cap_output(width, height);
+	else
+		host_sdl_uncap_output();
+	host_sdl_output_native(native_width, native_height, cap);
+	atomic_store(&output_cap_pending, -1);
+	platform_log("Metal: built-in output %s: drawable %dx%d", capped ? "capped" : "at the panel's size", width, height);
+#else
+	atomic_store(&output_cap_pending, -1);
+#endif
+}
+
+void gpu_metal_set_upscaler(int metalfx)
+{
+	metalfx_requested = metalfx != 0;
+#ifdef HAVE_METALFX
+	metalfx_wanted = metalfx != 0;
+#else
+	metalfx_wanted = NO;
+#endif
+}
+
+int gpu_metal_upscaler(void)
+{
+	return metalfx_requested ? 1 : 0;
 }
 
 #if HALO_FRAME_PACING

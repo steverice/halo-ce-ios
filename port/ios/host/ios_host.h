@@ -52,7 +52,22 @@ void host_sdl_pin_window_pixels(int width, int height);
 /* a tvOS profile's built-in output cap (display.output_height, host_output_cap.h): pinned as above, and the
    size gpu_metal.m gives the layer's drawable; host_sdl_output_cap is 0 when there is none */
 void host_sdl_cap_output(int width, int height);
+void host_sdl_uncap_output(void);
 int host_sdl_output_cap(int *width, int *height);
+/* the built-in output's own size, before any cap, and the cap last asked for (0: none), whether or not it lowered
+   the drawable: a cap at or above the panel's height is asked for and changes nothing */
+void host_sdl_output_native(int width, int height, int requested_cap);
+void host_sdl_native_output(int *width, int *height);
+int host_sdl_output_cap_requested(void);
+/* gpu_metal.m: a built-in output cap (0: none) or upscaler (0 bilinear, 1 MetalFX) to change to as the game runs, the
+   cap between frames (host_external_commit), a cap below zero forgetting one still waiting; 1 once nothing asked for
+   is still waiting. The benchmark's display
+   variants use them (host_benchmark.m). */
+void gpu_metal_request_output_cap(int cap);
+void gpu_metal_output_cap_commit(void);
+int gpu_metal_output_cap_settled(void);
+void gpu_metal_set_upscaler(int metalfx);
+int gpu_metal_upscaler(void);
 /* display.frame_rate (host_gpu_dispatch.c), any cap or "unlimited" in the Mac
 app, a cap under the display's rate on an iPhone, an iPad or an Apple TV:
 whether frames come as fast as they are drawn; the cap, 0 for none; and the

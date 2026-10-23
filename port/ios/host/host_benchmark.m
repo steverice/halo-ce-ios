@@ -133,6 +133,17 @@ static int last_run_throttled;
 static NSDictionary *pinned_snapshot;
 static NSString *catalog_status, *catalog_note;
 static NSDictionary *run_environment_start, *run_environment_end, *run_output, *suite_output;
+/* The signed catalog's display variants this device runs (host_benchmark_catalog.h): the whole full-unified suite
+   once under each, in order, from one start, each pass a report of its own that the last one carries in
+   "variant_reports". variant_index is the pass in force, kept in VARIANT_STATE so a suite the app was cut off in
+   carries on in the right pass; the display the app started with comes back after the last. */
+#define VARIANT_STATE FOLDER "/variant-state.json"
+static struct host_benchmark_variant suite_variants[HOST_BENCHMARK_VARIANTS_MAXIMUM];
+static int suite_variant_count, variant_index, variants_decided, variant_waiting;
+static int launch_output_cap = -1, launch_upscaler = -1;
+static NSMutableArray<NSString *> *variant_reports;
+static CFAbsoluteTime variant_wait_started;
+static int variant_state_pending, variant_display_failed, variant_last_pass;
 static unsigned run_output_generation;
 static NSArray<NSString *> *external_modes;
 static NSMutableArray<NSString *> *output_reports;
@@ -151,11 +162,14 @@ static NSDictionary *output_now(void) {
        (display.output_height, host_output_cap.h), which the system scales to the panel */
     int drawable_width = output.width, drawable_height = output.height, capped_width, capped_height;
     int capped = !output.external && host_sdl_output_cap(&capped_width, &capped_height);
+    int requested = output.external ? 0 : host_sdl_output_cap_requested();
     if (capped) { drawable_width = capped_width; drawable_height = capped_height; }
     return @{ @"kind": output.external ? @"external" : @"builtin", @"width": @(output.width),
         @"height": @(output.height), @"refresh_hertz": @(output.refresh_hertz), @"name": @(output.name),
         @"reason": @(output.reason), @"offered_modes": modes, @"drawable_width": @(drawable_width),
-        @"drawable_height": @(drawable_height), @"output_cap_height": @(capped ? capped_height : 0) };
+        @"drawable_height": @(drawable_height), @"output_cap_height": @(capped ? capped_height : 0),
+        /* (a cap at or above the panel's height is asked for and leaves it as it is: "unchanged") */
+        @"output_cap_requested": @(requested), @"output_cap": !requested ? @"none" : capped ? @"capped" : @"unchanged" };
 }
 
 static NSDictionary *environment_now(void) {
@@ -730,6 +744,7 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     settings[@"sim_experiments_mask"] = @(scene->sim_experiments_mask);
     record_applied_settings(settings, scene, finished->stage);
     record[@"workload"] = @(scene->workload ?: scene->id);
+    record[@"variant"] = suite_variant_count ? @(suite_variants[variant_index].id) : NSNull.null;
     record[@"settings"] = settings;
     if (scene->recording && scene->recording[0])
         record[@"replay_environment"] = replay_environment_for_recording(scene->recording);
@@ -758,8 +773,38 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
+/* a display variant's description for its pass's report and runs: its id, place and the settings it sets */
+static NSDictionary *variant_description(void) {
+    const struct host_benchmark_variant *variant = &suite_variants[variant_index];
+    NSMutableDictionary *settings = [NSMutableDictionary dictionary];
+    if (variant->render_height >= 0) settings[@"display.render_height"] = @(variant->render_height);
+    if (variant->output_height >= 0) settings[@"display.output_height"] = @(variant->output_height);
+    if (variant->upscaler >= 0) settings[@"display.upscaler"] = variant->upscaler ? @"metalfx" : @"bilinear";
+    return @{ @"id": @(variant->id), @"index": @(variant_index), @"count": @(suite_variant_count), @"settings": settings };
+}
+
+/* the earlier passes' reports, which the last pass's report carries whole */
+static NSArray<NSDictionary *> *variant_prior_reports(void) {
+    NSMutableArray *prior = [NSMutableArray array];
+    char current_name[32];
+    host_benchmark_variant_report_name(variant_index, current_name, sizeof(current_name));
+    NSString *current = @(current_name);
+    for (NSString *name in variant_reports) {
+        if ([name isEqual:current]) continue;
+        NSData *data = [NSData dataWithContentsOfFile:[@FOLDER stringByAppendingPathComponent:name]];
+        NSDictionary *report = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if ([report isKindOfClass:NSDictionary.class]) [prior addObject:report];
+    }
+    return prior;
+}
+
 static BOOL write_report(void) {
-    NSMutableString *report = [NSMutableString stringWithFormat:@"{%@,\"runs\":[", report_header()];
+    NSString *variant_fields = @"";
+    NSArray<NSDictionary *> *prior_variants = suite_variant_count && variant_last_pass ? variant_prior_reports() : @[];
+    if (suite_variant_count)
+        variant_fields = [NSString stringWithFormat:@",\"variant\":%@,\"variant_reports\":%@",
+            json_object(variant_description()), json_object(prior_variants)];
+    NSMutableString *report = [NSMutableString stringWithFormat:@"{%@%@,\"runs\":[", report_header(), variant_fields];
     int index, written = 0;
     NSMutableArray *runs = [NSMutableArray array];
 
@@ -780,6 +825,7 @@ static BOOL write_report(void) {
         NSDictionary *prior = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         if (prior) [previous addObject:prior];
     }
+    [previous addObjectsFromArray:prior_variants];
     NSDictionary *evidence = host_benchmark_shader_evidence(runs, previous, shader_directory());
     [report appendFormat:@"\n],\"shader_dependency_candidates\":%@,\"shader_output_intervals\":%@}\n",
         json_object(evidence[@"shader_dependency_candidates"]), json_object(evidence[@"shader_output_intervals"])];
@@ -888,6 +934,7 @@ static NSDictionary *snapshot_identity(const char *mode) {
     return @{ @"guest": @HALO_GUEST_SHA256, @"profile_sha256": host_benchmark_snapshot_digest(resolved),
         @"catalog_sha256": active_catalog_sha256(),
         @"output_mode": external_modes.count ? external_modes[external_mode_index] : @"",
+        @"variant": @(variant_index),
         @"suite": @(BENCHMARK_SUITE_VERSION), @"mode": @(mode),
         @"app_build": [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] ?: @"",
         @"device": @[ @(plan.device.drawable_lines), @(plan.device.base_lines), @(plan.device.anisotropy),
@@ -956,6 +1003,84 @@ static void install_scenes(NSArray<NSString *> *only) {
     }
     plan.scenes = selected;
     plan.scene_count = count;
+    /* the display variants: decided once a suite, for the full-unified pass on the built-in output only */
+    if (!variants_decided) {
+        int indexes[HOST_BENCHMARK_VARIANTS_MAXIMUM];
+        variants_decided = 1;
+        suite_variant_count = 0;
+        if (plan.mode == BENCHMARK_UNIFIED && !external_modes.count) {
+            int matched = host_benchmark_catalog_variants_for(&catalog, model_identifier().UTF8String, indexes);
+            for (int index = 0; index < matched; index++) suite_variants[suite_variant_count++] = catalog.variants[indexes[index]];
+        } else if (catalog.variant_count)
+            host_logf(HOST_LOG_INFO, "benchmark: the catalog's display variants are for the full-unified pass on the device's own screen");
+        variant_index = host_benchmark_variant_resumed_index(variant_index, suite_variant_count);
+        if (suite_variant_count)
+            host_logf(HOST_LOG_INFO, "benchmark: %d display variants for this device; pass %d is %s", suite_variant_count,
+                variant_index + 1, suite_variants[variant_index].id);
+    }
+    /* (a variant's render height is every run's: 0 is the drawable's own) */
+    if (suite_variant_count && suite_variants[variant_index].render_height >= 0)
+        for (int index = 0; index < count; index++) {
+            selected[index].knobs.mask |= BENCHMARK_KNOB_LINES;
+            selected[index].knobs.lines = suite_variants[variant_index].render_height;
+        }
+}
+
+static int variant_wanted_cap(void) {
+    return host_benchmark_variant_cap(&suite_variants[variant_index], launch_output_cap);
+}
+
+static int variant_wanted_upscaler(void) {
+    return host_benchmark_variant_upscaler(&suite_variants[variant_index], launch_upscaler);
+}
+
+/* puts the pass's display in force: the upscaler at once, the output cap between frames (host_benchmark_next waits
+   for it, then has the game plan again for the new drawable); 1 when the cap is to change */
+static int variant_display_apply(void) {
+    if (gpu_metal_upscaler() != variant_wanted_upscaler()) {
+        gpu_metal_set_upscaler(variant_wanted_upscaler());
+        host_logf(HOST_LOG_INFO, "benchmark: variant %s: upscaler %s", suite_variants[variant_index].id,
+            variant_wanted_upscaler() ? "metalfx" : "bilinear");
+    }
+    if (host_sdl_output_cap_requested() == variant_wanted_cap() || variant_display_failed == variant_index + 1) return 0;
+    host_logf(HOST_LOG_INFO, "benchmark: variant %s: built-in output cap %d", suite_variants[variant_index].id,
+        variant_wanted_cap());
+    gpu_metal_request_output_cap(variant_wanted_cap());
+    return 1;
+}
+
+/* the display the app started with, after the last pass or a suite ended early */
+static void variant_display_restore(void) {
+    if (launch_upscaler >= 0 && gpu_metal_upscaler() != launch_upscaler) gpu_metal_set_upscaler(launch_upscaler);
+    if (launch_output_cap >= 0 && host_sdl_output_cap_requested() != launch_output_cap)
+        gpu_metal_request_output_cap(launch_output_cap);
+}
+
+static void variant_state_write(void) {
+    NSDictionary *state = @{ @"catalog_sha256": pinned_snapshot[@"identity"][@"catalog_sha256"] ?: @"",
+        @"index": @(variant_index), @"reports": variant_reports ?: @[] };
+    NSData *data = [NSJSONSerialization dataWithJSONObject:state options:NSJSONWritingSortedKeys error:nil];
+    if (!data || ![data writeToFile:@VARIANT_STATE atomically:YES])
+        host_logf(HOST_LOG_INFO, "benchmark: cannot record the display variant in force");
+}
+
+/* at a suite's first start: the pass a suite that was cut off was in, when its journal is unfinished and the catalog
+   is the same; otherwise the first */
+static void variant_state_load(const struct benchmark_journal *journal) {
+    NSData *data = [NSData dataWithContentsOfFile:@VARIANT_STATE];
+    NSDictionary *state = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    variant_index = 0;
+    variant_reports = [NSMutableArray array];
+    if ([state isKindOfClass:NSDictionary.class] && journal->valid && !journal->finished &&
+        [state[@"catalog_sha256"] isEqual:active_catalog_sha256()] && [state[@"index"] isKindOfClass:NSNumber.class] &&
+        [state[@"reports"] isKindOfClass:NSArray.class] && [state[@"index"] intValue] >= 0 &&
+        [state[@"index"] intValue] < HOST_BENCHMARK_VARIANTS_MAXIMUM) {
+        variant_index = [state[@"index"] intValue];
+        for (id name in state[@"reports"])
+            if ([name isKindOfClass:NSString.class] && [name hasPrefix:@"variant-"] && [name hasSuffix:@".json"] &&
+                ![name containsString:@"/"]) [variant_reports addObject:name];
+        if (variant_index) host_logf(HOST_LOG_INFO, "benchmark: carrying on in display variant pass %d", variant_index + 1);
+    } else [NSFileManager.defaultManager removeItemAtPath:@VARIANT_STATE error:nil];
 }
 
 int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, int anisotropy, int shadow_size,
@@ -981,6 +1106,15 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
             output_waiting = 1;
             output_wait_started = CFAbsoluteTimeGetCurrent();
         }
+        /* (a new suite: its display variants are chosen from its catalog, and the display it starts with returns
+           after them) */
+        variants_decided = 0;
+        suite_variant_count = 0;
+        variant_state_pending = 1;
+        variant_display_failed = 0;
+        variant_last_pass = 0;
+        launch_output_cap = host_sdl_output_cap_requested();
+        launch_upscaler = gpu_metal_upscaler();
     }
     if (process.lowPowerModeEnabled) {
         host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
@@ -1002,6 +1136,10 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     plan.device = (struct benchmark_device){ drawable_lines, base_lines, anisotropy, shadow_size, model_lod_max };
     plan.reality_checks = plan.mode == BENCHMARK_UNIFIED && !cost_suite && host_benchmark_offscreen_requested();
     benchmark_journal_load(JOURNAL, &journal);
+    if (variant_state_pending) {
+        variant_state_pending = 0;
+        variant_state_load(&journal);
+    }
     NSDictionary *identity = snapshot_identity(mode);
     pinned_snapshot = journal.valid && !journal.finished ? host_benchmark_snapshot_load(@FOLDER, identity) : nil;
     NSString *journal_pin = [NSString stringWithContentsOfFile:@JOURNAL_SNAPSHOT encoding:NSUTF8StringEncoding error:nil];
@@ -1019,6 +1157,17 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     install_scenes(only);
     if ([catalog_status isEqual:@"unavailable"]) flag(@"benchmark_catalog_unavailable");
     else if (!catalog_signed()) flag(@"benchmark_catalog_unsigned");
+    /* a display variant whose output cap is not yet in force: host_benchmark_next waits for it between frames, then
+       the game plans the suite again for the new drawable and starts it here once more */
+    if (suite_variant_count && !variant_waiting && variant_display_apply()) {
+        variant_waiting = 1;
+        variant_wait_started = CFAbsoluteTimeGetCurrent();
+        atomic_store(&running, 1);
+        return 1;
+    }
+    if (suite_variant_count && host_sdl_output_cap_requested() != variant_wanted_cap())
+        flag(@"variant_display_unavailable");
+    if (suite_variant_count) variant_state_write();
     if (pinned_resume && !(journal.mode == plan.mode && journal.signature == benchmark_plan_signature(&plan) &&
         journal.device.drawable_lines == plan.device.drawable_lines && journal.device.base_lines == plan.device.base_lines &&
         journal.device.anisotropy == plan.device.anisotropy && journal.device.shadow_size == plan.device.shadow_size &&
@@ -1182,6 +1331,18 @@ int host_benchmark_next(char *text, unsigned int size) {
         return 0;
     }
     if (!atomic_load(&running)) return 0;
+    if (variant_waiting) {
+        if (!gpu_metal_output_cap_settled() && CFAbsoluteTimeGetCurrent() - variant_wait_started < 5.0) return 3;
+        if (!gpu_metal_output_cap_settled()) {
+            host_logf(HOST_LOG_INFO, "benchmark: the display variant's output cap did not take; measuring as it is");
+            gpu_metal_request_output_cap(-1);
+            variant_display_failed = variant_index + 1;
+        }
+        variant_waiting = 0;
+        atomic_store(&running, 0);
+        /* (the guest plans again for the drawable now in force: host_benchmark_start) */
+        return 4;
+    }
     if (run_finishing) {
         if(!pending_presentation)pending_presentation=host_benchmark_presentation_take_report();
         if (!pending_presentation || !finish_run(pending_presentation)) return 3;
@@ -1236,7 +1397,33 @@ int host_benchmark_next(char *text, unsigned int size) {
 
         if(atomic_load(&finish_requested))flag(@"finished_early");
         if (descriptor >= 0) close(descriptor);
-        if (external_modes.count) {
+        if (suite_variant_count) {
+            /* each pass's report is kept as variant-NN.json; the last one's report.json carries them all */
+            char report_name[32];
+            host_benchmark_variant_report_name(variant_index, report_name, sizeof(report_name));
+            NSString *name = @(report_name);
+            NSString *path = [@FOLDER stringByAppendingPathComponent:name];
+            /* (the last pass's report carries the earlier ones: write_report) */
+            variant_last_pass = host_benchmark_variant_last_pass(variant_index, suite_variant_count, atomic_load(&finish_requested));
+            if(!write_report())return 3;
+            [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+            if (![NSFileManager.defaultManager copyItemAtPath:@REPORT toPath:path error:nil]) return 3;
+            if (![variant_reports containsObject:name]) [variant_reports addObject:name];
+            if (!variant_last_pass) {
+                /* the next pass starts as a suite of its own (host_benchmark_start), with this one's report kept
+                   out of the outbox until the last carries it */
+                benchmark_journal_done(JOURNAL);
+                [NSFileManager.defaultManager removeItemAtPath:@REPORT error:nil];
+                variant_index++;
+                variant_state_write();
+                host_logf(HOST_LOG_INFO, "benchmark: display variant pass %d of %d: %s", variant_index + 1,
+                    suite_variant_count, suite_variants[variant_index].id);
+                atomic_store(&running, 0);
+                return 4;
+            }
+            variant_display_restore();
+            [NSFileManager.defaultManager removeItemAtPath:@VARIANT_STATE error:nil];
+        } else if (external_modes.count) {
             NSString *path = [NSString stringWithFormat:@FOLDER "/output-%02lu.json", (unsigned long)external_mode_index];
             [output_reports addObject:path.lastPathComponent];
             if(!write_report())return 3;
