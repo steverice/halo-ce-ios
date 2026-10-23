@@ -10,7 +10,7 @@ Lowest first; each layer overrides the ones before it.
 
 1. The game's built-in default.
 2. The **class** profile: the one `kind = "class"` file whose platform matches and whose GPU family range holds the device's.
-3. The **model** profile: an exact `kind = "model"` match, otherwise an explicit `and_newer` rule, otherwise the strongest compatible source selected by the hardware catalog. An inherited source brings its own class baseline (see below).
+3. The **model** profile: an exact `kind = "model"` match, otherwise the strongest compatible source selected by the hardware catalog (for any device the catalog lists), otherwise an explicit `and_newer` rule (only for identifiers the catalog does not list). An inherited source brings its own class baseline (see below).
 4. A **drop-in** file, `device-profile.toml` in the app's data folder, for trying a profile (below).
 5. What the player chose: a value set in the menus, with the Settings app's switch, or by editing `config.toml`.
 6. A developer's override: a `HALO_*` environment variable or a build's `--render-height`.
@@ -36,7 +36,7 @@ Exact matches always win. Among qualifying rules, the newest source generation w
 
 The newest measured profile in each product line carries this rule: `iphone-17-pro.toml`, `ipad-pro-m1.toml` and `apple-tv-4k-3rd.toml`. Apps built before support for `and_newer` reject a downloaded snapshot containing the field, including `profiles-2` snapshots. Version 0.4.0 is not kept compatible with current feeds. The publisher still refuses the field in `profiles-1` snapshots.
 
-A rule applies before the hardware catalog and ignores its envelope, so a later identifier in the product line takes the newest measured profile even when the catalog would place that hardware lower. For iPad this reaches a lower-powered model with a higher identifier, such as the iPad mini 6 (`iPad14,1`, A15) taking the M1 iPad Pro's profile. Move the rule to a newer measured profile when one exists.
+A rule applies only to identifiers the hardware catalog does not list. A device the catalog lists takes the catalog's answer (inheritance, or its class profile when it has no tier or no compatible source), so a later identifier of a weaker model, such as the iPad mini 6 (`iPad14,1`), is not taken over by the newest iPad profile.
 
 ## Hardware fallback
 
@@ -44,15 +44,11 @@ An exact model or chip profile wins. Otherwise, the app uses `hardware/catalog.t
 
 The catalog has separate orderings for iOS, tvOS, visionOS, and Mac. A source must fit the receiving device's physical memory, GPU family, render-pixel limits for gameplay/menu/cutscenes, and refresh target. Unknown or unordered hardware keeps its class fallback. Inheritance uses the source's class baseline and model values together, including scene values; the receiving class does not contribute extra settings. Drop-ins and player choices retain their precedence.
 
-The catalog lists every iPhone, iPad and Apple TV model the app supports, from the iPhone 8, iPad (5th generation) and Apple TV HD through the current generation. Each entry records its basis and the source of its ordering. Hardware whose ordering against its neighbors cannot be established has no tier and keeps its class profile: the iPhone 17 and iPhone Air, the A10 iPads, the A12X and A12Z iPad Pro, the iPad (A16) and the iPad mini (A17 Pro). Inheritance for hardware without a measurement of its own is an explicit hardware assessment, not a benchmark of that model.
+The catalog lists every iPhone, iPad and Apple TV model the app supports, from the iPhone 8, iPad (5th generation) and Apple TV HD through the current generation. Each entry records its basis and the source of its ordering. A tier orders GPU capability: the design generation, then the GPU core count where a design is shared. Hardware whose ordering against its neighbors cannot be defended has no tier and keeps its class profile; none is left out today. Inheritance for hardware without a measurement of its own is an explicit hardware assessment, not a benchmark of that model.
 
-iOS has two tier ranges, iPhones from 100 and iPads from 1000, so an iPhone never inherits an iPad's profile. A tier is a chip generation; GPU core counts inside a generation are not ranked, and an entry placed above a rival it cannot be ranked against only keeps that rival from inheriting it. Each source's envelope carries a memory floor, the pixels its measured device drew, and a refresh limit; a receiving device outside it keeps its class profile. Physical runtime checks can reject a catalog candidate.
+iOS has two tier ranges, iPhones from 100 and iPads from 1000, so an iPhone never inherits an iPad's profile. Each source's envelope carries a memory floor, the pixels its measured device drew, and a refresh limit. A device on a display faster than the source was measured at is outside the envelope, because iPhone, iPad and Apple TV builds cannot cap gameplay at a lower frame rate (`display.frame_rate` is Mac-only there; the system paces frames), so the settings would run at a rate nobody measured them at. Such a device keeps the next lower compatible source, or the class floor. Physical runtime checks can reject a catalog candidate.
 
-A device below every measured profile gets its class profile, which sets only the renderer: the game's built-in defaults at the display's native resolution.
-
-To add coverage, record the exact device identities, platform, tier, GPU family, evidence basis, and source in a `[[hardware]]` entry. Designate at most one `[[fallback]]` source per platform/tier, referencing a measured model profile and its compatibility envelope. Omit a hardware tier when ordering is uncertain. Use the existing catalog as the schema example and validate the entire folder with `python3 tools/profile_check.py` before publishing a change.
-
-Logs and benchmark reports distinguish inherited selection from exact selection and retain both hardware identities, tiers, and the catalog version. An inherited result does not change the evidence attached to the source's settings.
+**The class floor.** A device weaker than every measured profile of its line, or outside every envelope, takes its class profile, whose values are the weakest measured device's settings: for iPhone and iPad, the iPad Pro 12.9-inch (1st generation, A9X) at 720 lines with menus and cutscenes at the display's size; for Apple TV, the Apple TV HD's values (`apple-tv-hd.toml`). Because every model profile sits on its class, each states the values the floor would otherwise change.
 
 ## Scene classes
 

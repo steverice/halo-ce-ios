@@ -620,6 +620,14 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 		free(text);
 	}
 
+	/* precedence: exact model, then the hardware catalog for any device it lists, then an and_newer rule (only for
+	   identifiers the catalog does not list), then the class */
+	if (have_model && chosen_model.names_device == 1 && !(selector && *selector) && host_profile_catalog_lists(device, folder))
+	{
+		memset(&chosen_model, 0, sizeof(chosen_model));
+		have_model = 0;
+	}
+
 	if (have_model && chosen_model.names_device == 1)
 		profile_logf(&log, "device profile: and_newer %s: %s qualifies after %s (known product line and tier floor)",
 			chosen_model.file, !strcmp(platform, "mac") ? chip : model, chosen_model.newer_source);

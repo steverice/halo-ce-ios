@@ -14,12 +14,15 @@ platform = "tvos"
 models = ["AppleTV6,2"]
 
 [display]
+render_scale = 1.0
+shadow_map_size = 512
 texture_idle_seconds = 30
 render_height = 720
 anisotropic_filtering = 4
 model_lod = "auto"
 
 [scene.menu.display]
+render_scale = 1.0
 render_height = 1080
 
 [evidence."display.texture_idle_seconds"]
@@ -41,3 +44,27 @@ why = "The game's own choice of detail by size on screen: on the Apple TV HD it 
 [evidence."scene.menu.display.render_height"]
 basis = "assumed"
 why = "The menu held 60 at 1080 on the Apple TV HD with 2 ms to spare (GPU 12.4 to 14.5 ms); a GPU five times that has ample room."
+
+[scene.cutscene.display]
+render_scale = 1.0
+frame_rate = "display"
+
+[evidence."display.render_scale"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."display.shadow_map_size"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."scene.menu.display.render_scale"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."scene.cutscene.display.render_scale"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."scene.cutscene.display.frame_rate"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."

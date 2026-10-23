@@ -8,6 +8,7 @@ models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
 and_newer = true
 
 [display]
+render_height = 0
 anisotropic_filtering = 16
 shadow_map_size = 512
 effect_resolution = "half"
@@ -26,3 +27,8 @@ source = "iPad settings sweep, a10 benchmark, 2026-10-03"
 basis = "measured"
 why = "On c40's mirror floors, full took GPU time from about 9 ms to 13.7 ms a frame and the frame from 8.3 ms to 13.1."
 source = "iPad mirror runs, c40, 2026-10-03"
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "The sweep ran at the display's own size (zero: native, a10 at 3180x2384). Stated because the iPhone and iPad class profile's floor is 720 lines."
+source = "M1 settings sweep, a10 at 3180x2384, 2026-10-03"

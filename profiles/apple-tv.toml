@@ -8,10 +8,24 @@ kind = "class"
 platform = "tvos"
 gpu_family = [1, 0]
 
+# The floor: a device weaker than every measured Apple TV profile gets the weakest measured device's settings,
+# the Apple TV HD's (apple-tv-hd.toml). Each Apple TV model with its own profile states every value below.
 [display]
 renderer = "metal"
 render_height = 1080
 upscaled_textures = false
+texture_idle_seconds = 30
+render_scale = 0.5
+anisotropic_filtering = 4
+model_lod = "auto"
+shadow_map_size = 256
+
+[scene.menu.display]
+render_scale = 0.6667
+
+[scene.cutscene.display]
+render_scale = 0.6
+frame_rate = "30"
 
 [evidence."display.renderer"]
 basis = "measured"
@@ -25,3 +39,35 @@ why = "What tvOS builds rendered at before profiles: the build's default, chosen
 [evidence."display.upscaled_textures"]
 basis = "assumed"
 why = "Nothing on an Apple TV makes upscaled textures, and the smallest model has 2 GB of memory."
+
+[evidence."display.texture_idle_seconds"]
+basis = "inherited"
+why = "The floor is the weakest measured device's settings: the Apple TV HD's value (apple-tv-hd.toml)."
+
+[evidence."display.render_scale"]
+basis = "inherited"
+why = "The Apple TV HD's value: half of 1080 each way, 960x540 (apple-tv-hd.toml, measured 2026-10-13 and 2026-10-14)."
+
+[evidence."display.anisotropic_filtering"]
+basis = "inherited"
+why = "The Apple TV HD's value (apple-tv-hd.toml)."
+
+[evidence."display.model_lod"]
+basis = "inherited"
+why = "The Apple TV HD's value (apple-tv-hd.toml)."
+
+[evidence."display.shadow_map_size"]
+basis = "inherited"
+why = "The Apple TV HD's value (apple-tv-hd.toml)."
+
+[evidence."scene.menu.display.render_scale"]
+basis = "inherited"
+why = "The Apple TV HD's menu value, about 720 lines (apple-tv-hd.toml)."
+
+[evidence."scene.cutscene.display.render_scale"]
+basis = "inherited"
+why = "The Apple TV HD's cutscene value, about 650 lines (apple-tv-hd.toml)."
+
+[evidence."scene.cutscene.display.frame_rate"]
+basis = "inherited"
+why = "The Apple TV HD's cutscene frame rate, 30 as the original played them (apple-tv-hd.toml)."

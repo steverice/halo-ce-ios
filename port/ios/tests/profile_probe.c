@@ -348,9 +348,11 @@ static void check_unprofiled_models(const char *shipped)
 {
 	struct host_profile profile;
 
-	/* iPhone 15 Pro Max (A17 Pro): no measured iPhone profile at or below its tier. The 16e is not ranked below it. */
+	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): the 16e's profile is ranked below it but was measured at 60 Hz, which
+	   the 120 Hz display is outside of, so it keeps the class floor: the weakest measured device's 720 lines. */
 	profile = resolve_model(shipped, "ios", "iPhone16,2", 9, 7655, 2796, 1290, 120);
-	assert(!profile.model_file[0] && !profile.inherited && strstr(logged, "no compatible profile at or below"));
+	assert(!profile.model_file[0] && !profile.inherited && strstr(logged, "skipped iphone-16e.toml") &&
+		has(&profile, "display.render_height", "720"));
 	/* iPhone 16 (A18): the iPhone 16e's profile, inside its 60 Hz and pixel envelope. */
 	profile = resolve_model(shipped, "ios", "iPhone17,3", 9, 7600, 2556, 1179, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") &&
@@ -364,17 +366,28 @@ static void check_unprofiled_models(const char *shipped)
 		strstr(logged, "and_newer iphone-17-pro.toml: iPhone19,1"));
 	/* The oldest supported iPhone sits below every measured profile: the class floor. */
 	profile = resolve_model(shipped, "ios", "iPhone10,1", 4, 1950, 1334, 750, 60);
-	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml"));
+	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
+		has(&profile, "display.render_height", "720"));
+	/* iPhone 17: listed and ordered, but a 120 Hz display is outside the only source below it. */
+	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
+	assert(!profile.model_file[0] && has(&profile, "display.render_height", "720"));
 	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 720 lines; nothing measured is closer. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
 		has(&profile, "display.render_height", "720") && !strcmp(profile.target_hardware, "ipad-a12"));
-	/* iPad Pro 12.9-inch 3rd generation (A12X): unordered, so the class floor. */
+	/* iPad Pro 12.9-inch 3rd generation (A12X, 7-core GPU): the A10X profile. */
 	profile = resolve_model(shipped, "ios", "iPad8,5", 5, 3900, 2732, 2048, 120);
-	assert(!profile.model_file[0] && strstr(logged, "unknown or unordered hardware"));
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml"));
+	/* iPad mini 6 and iPad (A16): the catalog's answer comes before the M1 iPad Pro's and_newer rule, which
+	   would otherwise match their higher identifiers. */
+	profile = resolve_model(shipped, "ios", "iPad14,1", 8, 3900, 2266, 1488, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") && !strstr(logged, "and_newer"));
+	profile = resolve_model(shipped, "ios", "iPad15,7", 8, 5800, 2360, 1640, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") && !strstr(logged, "and_newer"));
 	/* iPad 5th generation (A9), the oldest: below every measured iPad profile. */
 	profile = resolve_model(shipped, "ios", "iPad6,11", 3, 1950, 2048, 1536, 60);
-	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml"));
+	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
+		has(&profile, "display.render_height", "720"));
 	/* iPad Air 5 (M1) shares the measured iPad Pro chip. */
 	profile = resolve_model(shipped, "ios", "iPad13,16", 7, 7600, 2360, 1640, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml"));
@@ -386,6 +399,10 @@ static void check_unprofiled_models(const char *shipped)
 	profile = resolve_model(shipped, "tvos", "AppleTV11,1", 5, 2950, 3840, 2160, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-1st.toml") &&
 		has(&profile, "display.render_height", "720"));
+	/* An Apple TV below every measured profile and outside the catalog: the Apple TV HD's values. */
+	profile = resolve_model(shipped, "tvos", "AppleTV9,9", 3, 2000, 1920, 1080, 60);
+	assert(!profile.model_file[0] && has(&profile, "display.render_scale", "0.5") &&
+		has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.shadow_map_size", "256"));
 	/* A later Apple TV: the 3rd generation's and_newer rule. */
 	profile = resolve_model(shipped, "tvos", "AppleTV15,1", 11, 4000, 3840, 2160, 60);
 	assert(!profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-3rd.toml") &&
@@ -407,9 +424,10 @@ static void check_shipped(const char *shipped)
 		has(&profile, "display.shadow_map_size", "256"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "\tmodel Apple TV HD\tmenu\n") && strstr(encoded, "\tmodel Apple TV HD\tcutscene\n"));
-	/* an Apple TV 4K, and the tvOS simulator: what the build's default was */
+	/* an Apple TV 4K without memory or display reported, and the tvOS simulator: the class floor, the Apple TV HD's values */
 	profile = resolve(shipped, device("tvos", "AppleTV11,1", "", 5), NULL, "");
-	assert(has(&profile, "display.render_height", "1080") && !profile.model_file[0] && profile.count == 3);
+	assert(has(&profile, "display.render_height", "1080") && !profile.model_file[0] &&
+		has(&profile, "display.render_scale", "0.5") && has(&profile, "display.anisotropic_filtering", "4"));
 	/* the two Apple TV 4K models with estimated profiles: 720 in play on the first, 1080 on the third, and a
 	menu at the display's height */
 	profile = resolve(shipped, device("tvos", "AppleTV6,2", "", 3), NULL, "");
@@ -428,11 +446,11 @@ static void check_shipped(const char *shipped)
 	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
 	class profile's Metal */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(profile.count == 6 && has(&profile, "display.anisotropic_filtering", "16") &&
+	assert(has(&profile, "display.render_height", "0") && has(&profile, "display.anisotropic_filtering", "16") &&
 		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
 		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(profile.count == 6 && has(&profile, "display.effect_resolution", "half") &&
+	assert(has(&profile, "display.render_height", "0") && has(&profile, "display.effect_resolution", "half") &&
 		has(&profile, "display.renderer", "metal"));
 	/* The smaller M1 iPad Pro inherits the measured M1 profile, subject to its envelope. */
 	struct host_device sibling = device("ios", "iPad13,4", "", 7);
@@ -441,12 +459,12 @@ static void check_shipped(const char *shipped)
 	assert(profile.inherited && has(&profile, "display.effect_resolution", "half"));
 	assert(!strcmp(profile.model_file, "ipad-pro-m1.toml"));
 	/* The measured first-generation 12.9-inch iPad uses its own 720-line model profile. The neighboring
-	   cellular identifier keeps the class defaults until it is measured. */
+	   cellular identifier is cataloged, but a device reporting no memory or display cannot inherit and keeps the class floor. */
 	profile = resolve(shipped, device("ios", "iPad6,7", "", 3), NULL, "");
 	assert(!strcmp(profile.model_file, "ipad-pro-12-9-1st.toml") &&
 		has(&profile, "display.render_height", "720") && has(&profile, "display.renderer", "metal"));
 	profile = resolve(shipped, device("ios", "iPad6,8", "", 3), NULL, "");
-	assert(!profile.model_file[0] && !has(&profile, "display.render_height", "720"));
+	assert(!profile.model_file[0] && !profile.inherited);
 	profile = resolve(shipped, device("mac", "Mac14,5", "Apple M2 Max", 8), NULL, "");
 	assert(profile.count == 3 && has(&profile, "display.model_lod", "max") &&
 		has(&profile, "display.compressed_textures", "true") && has(&profile, "display.renderer", "metal"));
@@ -459,7 +477,7 @@ static void check_shipped(const char *shipped)
 	assert(profile.count == 1 && !strcmp(profile.class_file, "mac.toml") && has(&profile, "display.renderer", "metal") &&
 		!strstr(logged, "ignored"));
 	profile = resolve(shipped, device("ios", "iPhone18,9", "", 15), NULL, "");
-	assert(profile.count == 3 && has(&profile, "display.renderer", "metal") &&
+	assert(has(&profile, "display.renderer", "metal") && has(&profile, "display.render_height", "720") &&
 		!strcmp(profile.class_file, "iphone-ipad.toml"));
 	profile = resolve(shipped, device("visionos", "RealityDevice99,1", "", 15), NULL, "");
 	assert(profile.count == 3 && !profile.model_file[0] && has(&profile, "display.renderer", "metal"));
@@ -688,8 +706,13 @@ static void check_and_newer(void)
 		"[[fallback]]\nhardware=\"source\"\nprofile=\"source.toml\"\nminimum_memory_mb=2048\nminimum_gpu_family=7\nmaximum_pixels=[1000000,1000000,1000000]\nmaximum_refresh_hertz=60\n");
 	struct host_device target = device("ios", "iPhone21,1", "", 10);
 	target.memory_megabytes = 8192; target.pixel_width = 1000; target.pixel_height = 500; target.refresh_rate = 60;
+	/* The catalog lists the target, so its answer precedes the rule that would also match it. */
 	profile = resolve(folder, target, NULL, "");
-	assert(!profile.inherited && !strcmp(profile.model_file, "b-new.toml"));
+	assert(profile.inherited && !strcmp(profile.model_file, "source.toml") && !strstr(logged, "and_newer"));
+	/* An identifier the catalog does not list still takes the rule. */
+	struct host_device unlisted = target; snprintf(unlisted.model, sizeof(unlisted.model), "iPhone22,1");
+	profile = resolve(folder, unlisted, NULL, "");
+	assert(!profile.inherited && !strcmp(profile.model_file, "b-new.toml") && strstr(logged, "and_newer b-new.toml"));
 	const char *rules[] = {"a-old.toml", "b-new.toml", "z-exact.toml", "mac.toml", "mac-max.toml"};
 	for (int i = 0; i < 5; i++) { snprintf(path, sizeof(path), "%s/%s", folder, rules[i]); unlink(path); }
 	profile = resolve(folder, target, NULL, "");

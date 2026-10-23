@@ -215,6 +215,26 @@ static int compatible(const struct host_device *d, const struct host_profile *p,
 	return 1;
 }
 
+/* Whether the hardware catalog lists this device. A listed device takes the catalog's answer (inheritance, or its
+   class where it has no tier or no compatible source) ahead of any and_newer rule. */
+int host_profile_catalog_lists(const struct host_device *device, const char *folder)
+{
+	char path[1024];
+	toml_result_t catalog;
+	toml_datum_t hardware;
+	int i, listed = 0;
+	if (!folder) return 0;
+	snprintf(path, sizeof(path), "%s/hardware/catalog.toml", folder);
+	catalog = read_table(path);
+	if (catalog.ok && valid_catalog(catalog.toptab))
+	{
+		hardware = field(catalog.toptab, "hardware");
+		for (i = 0; i < hardware.u.arr.size && !listed; i++) listed = identity(hardware.u.arr.elem[i], device);
+	}
+	toml_free(catalog);
+	return listed;
+}
+
 int host_profile_inherit(const struct host_device *device, const char *folder,
 	void (*log)(const char *), struct host_profile *profile)
 {

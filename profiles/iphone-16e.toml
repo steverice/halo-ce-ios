@@ -18,6 +18,7 @@ platform = "ios"
 models = ["iPhone17,5"]
 
 [display]
+render_height = 0
 anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
@@ -35,4 +36,9 @@ source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b
 [evidence."display.model_lod"]
 basis = "measured"
 why = "The quick suite recorded max model detail at native 2532x1170 in the menu, a10 opening, and b30 beach runs. The report listed 59.97, 59.96, and 59.91 fps at 60 Hz with nominal thermal state; `stalls.count` reported zero frame-interval stalls over 50 ms. This is a measured baseline, not a comparison of detail levels."
+source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b30-beach, 2026-10-18 UTC"
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "Native 2532x1170 (zero: the display's own size) was measured. Stated because the iPhone and iPad class profile's floor is 720 lines."
 source = "Report HWZD3QQH, build 20261017.73634, quick suite, menu/a10-opening/b30-beach, 2026-10-18 UTC"

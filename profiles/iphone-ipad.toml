@@ -12,13 +12,35 @@ kind = "class"
 platform = "ios"
 gpu_family = [1, 0]
 
+# The floor: a device weaker than every measured iPhone or iPad profile gets the weakest measured device's settings,
+# the iPad Pro 12.9-inch (1st generation, A9X; ipad-pro-12-9-1st.toml), which was measured at 720 lines. Menus and
+# cutscenes stay at the display's own size, as that device left them.
 [display]
 renderer = "metal"
+render_height = 720
+
+[scene.menu.display]
+render_height = 0
+
+[scene.cutscene.display]
+render_height = 0
 
 [evidence."display.renderer"]
 basis = "measured"
 why = "The Metal backend is the project's renderer, and the OpenGL ES path lacks the Metal performance work (shadow-map and decal batching, pipeline caching, frame pacing). On an iPhone 17 Pro at 2622x1206 the quick suite ran 119.9/119.9/120.0 fps on Metal (menu, a10 opening, b30 beach; CPU 1.8/3.2/4.0 ms, GPU 2.6/3.9/5.5 ms, b30 GPU p95 6.6 ms) against 60.0/60.0/59.9 fps on OpenGL ES (CPU 2.0/4.7/6.8 ms), which is the GL path's 60 Hz cap. On the Apple TV HD, Metal ran the menu, a10 and b30 with no Metal error; the Metal menu and a10 replays match the OpenGL ES records on the Mac runner."
 source = "iPhone 17 Pro benchmark reports C23KM6WA (Metal) and LBAE78A5 (OpenGL ES), quick suite, 2026-10-14; check-metal and Apple TV HD runs, 2026-10-14"
+
+[evidence."display.render_height"]
+basis = "inherited"
+why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-inch (1st generation, A9X) was measured at 720 lines (6CYGBCXB and isolated c40 reports, 2026-10-17). Models with their own profile, or one inherited through the hardware catalog, set their own value."
+
+[evidence."scene.menu.display.render_height"]
+basis = "assumed"
+why = "The A9X measurement covered gameplay only; menus stay at the display's own size, as before the floor."
+
+[evidence."scene.cutscene.display.render_height"]
+basis = "assumed"
+why = "The A9X measurement covered gameplay only; cutscenes stay at the display's own size, as before the floor."
 
 # Initial wired-display defaults; replace with measured per-model values after profiling.
 [external.display]

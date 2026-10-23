@@ -2,8 +2,8 @@
 # Tiers order hardware within a platform, not model identifiers or release dates, and a source may be inherited only by hardware at or above its tier.
 # iOS holds two disjoint ranges so an iPhone never inherits an iPad's profile: iPhones 100 to 199, iPads 1000 to 1999 (an iPad reaches an
 # iPhone source only when every iPad source fails its envelope, and the iPhone sources' memory floors exclude every iPad below 8 GB).
-# Within a range, a tier is a chip generation; core counts inside a generation are not ranked. Hardware whose ordering against its
-# neighbors is uncertain has no tier and keeps its class profile. Each entry's source records the basis.
+# Within a range, a tier orders GPU capability: the design generation, then the GPU core count (each entry's source gives the basis).
+# Hardware whose ordering against its neighbors cannot be defended would have no tier and keep its class profile.
 schema = 1
 version = "2026-10-23"
 
@@ -62,31 +62,31 @@ basis = "assumed"
 source = "iPhone 14 Pro, 14 Pro Max, 15, 15 Plus (A16). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
 
 [[hardware]]
+id = "iphone-16e"
+platform = "ios"
+models = ["iPhone17,5"]
+tier = 165
+gpu_family = 9
+basis = "measured"
+source = "iphone-16e.toml: report HWZD3QQH, quick suite at native 2532x1170 and 60 Hz, 2026-10-18. Ranked by GPU capability: the A18's 4-core GPU is a generation newer per core than A16's 5-core GPU and about level with it, and well below A17 Pro's 6-core GPU."
+
+[[hardware]]
 id = "iphone-a17-pro"
 platform = "ios"
 models = ["iPhone16,1", "iPhone16,2"]
 tier = 170
 gpu_family = 9
 basis = "assumed"
-source = "iPhone 15 Pro and Pro Max (A17 Pro, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPhone_models. Above A16. It is deliberately below the iPhone 16e: the 16e's 4-core A18 GPU is not ranked against A17 Pro's 6-core GPU, and the lower tier only keeps A17 Pro from inheriting the 16e's profile."
-
-[[hardware]]
-id = "iphone-16e"
-platform = "ios"
-models = ["iPhone17,5"]
-tier = 180
-gpu_family = 9
-basis = "measured"
-source = "iphone-16e.toml: report HWZD3QQH, quick suite at native 2532x1170 and 60 Hz, 2026-10-18. Tier placed above A17 Pro only so that devices it can safely stand in for may inherit it; its 4-core A18 GPU is not ranked against A17 Pro."
+source = "iPhone 15 Pro and Pro Max (A17 Pro, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPhone_models. Above A16 and above the iPhone 16e's 4-core A18 GPU: 6 cores of a newer-than-A16 design against 4."
 
 [[hardware]]
 id = "iphone-16"
 platform = "ios"
 models = ["iPhone17,3", "iPhone17,4"]
-tier = 181
+tier = 175
 gpu_family = 9
 basis = "assumed"
-source = "iPhone 16 and 16 Plus (A18, 5-core GPU): same architecture as the 16e with one more GPU core. https://en.wikipedia.org/wiki/List_of_iPhone_models"
+source = "iPhone 16 and 16 Plus (A18, 5-core GPU). https://en.wikipedia.org/wiki/List_of_iPhone_models. About level with A17 Pro's 6-core GPU (one fewer core, a newer design); placed just above it, so A17 Pro never inherits from this tier and this tier may inherit from A17 Pro."
 
 [[hardware]]
 id = "iphone-16-pro"
@@ -95,7 +95,25 @@ models = ["iPhone17,1", "iPhone17,2"]
 tier = 182
 gpu_family = 9
 basis = "assumed"
-source = "iPhone 16 Pro and Pro Max (A18 Pro, 6-core GPU): same architecture as the iPhone 16 with one more GPU core. https://en.wikipedia.org/wiki/List_of_iPhone_models"
+source = "iPhone 16 Pro and Pro Max (A18 Pro, 6-core GPU): the iPhone 16's design with one more GPU core, above A17 Pro (Apple states about 20% faster GPU). https://en.wikipedia.org/wiki/List_of_iPhone_models"
+
+[[hardware]]
+id = "iphone-17"
+platform = "ios"
+models = ["iPhone18,3"]
+tier = 185
+gpu_family = 10
+basis = "assumed"
+source = "iPhone 17 (A19, 5-core GPU, the generation after A18 Pro): https://www.iclarified.com/ipsw/iphone-17. Placed above A18 Pro, below A19 Pro; a 5-core GPU of the newer design against 6 cores of the older is not ranked finer than that."
+
+[[hardware]]
+id = "iphone-air"
+platform = "ios"
+models = ["iPhone18,4"]
+tier = 187
+gpu_family = 10
+basis = "assumed"
+source = "iPhone Air (A19 Pro, 5-core GPU): https://www.iclarified.com/ipsw/iphone-air. The A19 Pro with one core fewer than the 17 Pro; above the A19 (same design), below the 17 Pro."
 
 [[hardware]]
 id = "iphone-17-pro"
@@ -114,14 +132,6 @@ tier = 190
 gpu_family = 10
 basis = "assumed"
 source = "iPhone 17 Pro Max (A19 Pro): the 17 Pro's chip with a larger panel. Identifier: https://iphonesoft.fr/2016/10/31/liste-codes-identifiants-iphone-ipod-ipad-watch"
-
-[[hardware]]
-id = "iphone-17-and-air"
-platform = "ios"
-models = ["iPhone18,3", "iPhone18,4"]
-gpu_family = 10
-basis = "assumed"
-source = "iPhone 17 (iPhone18,3, A19) and iPhone Air (iPhone18,4, A19 Pro, fewer GPU cores): https://www.iclarified.com/ipsw/iphone-17 and https://www.iclarified.com/ipsw/iphone-air. Left unordered: A19 against A18 Pro and a reduced A19 Pro GPU cannot be ranked from the published data."
 
 [[hardware]]
 id = "ipad-a9"
@@ -154,9 +164,10 @@ source = "Same A9X as the measured 12.9-inch: the 9.7-inch (2 GB, underclocked) 
 id = "ipad-a10"
 platform = "ios"
 models = ["iPad7,5", "iPad7,6", "iPad7,11", "iPad7,12"]
+tier = 1015
 gpu_family = 3
 basis = "assumed"
-source = "iPad 6th and 7th generation (A10 Fusion, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Left unordered: its 6-core GPU is not ranked against A9X's 12-core GPU."
+source = "iPad 6th and 7th generation (A10 Fusion, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Above A9 (Apple: about 50% faster GPU), below A9X: a 6-core GPU against twelve of the same PowerVR family, Apple's A10 claim being relative to A9, not A9X."
 
 [[hardware]]
 id = "ipad-pro-12-9-2nd"
@@ -186,14 +197,6 @@ basis = "assumed"
 source = "iPad mini 5, iPad Air 3, iPad 8th generation (A12, 3 GB). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Placed just above A10X. Apple credits A12 with a faster GPU than A10X; independent reviews found them comparable (https://www.macrumors.com/2021/04/20/apple-new-apple-tv-4k/, https://appleinsider.com/articles/21/05/25/2021-apple-tv-4k-review-seeking-a-blockbuster-given-a-band-aid), so the A10X profile is the right neighbor either way."
 
 [[hardware]]
-id = "ipad-a12x-a12z"
-platform = "ios"
-models = ["iPad8,1", "iPad8,2", "iPad8,3", "iPad8,4", "iPad8,5", "iPad8,6", "iPad8,7", "iPad8,8", "iPad8,9", "iPad8,10", "iPad8,11", "iPad8,12"]
-gpu_family = 5
-basis = "assumed"
-source = "iPad Pro with A12X or A12Z. https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Left unordered: its 7- or 8-core GPU is not ranked against the 4- and 5-core A13 to A16 generations."
-
-[[hardware]]
 id = "ipad-a13"
 platform = "ios"
 models = ["iPad12,1", "iPad12,2"]
@@ -212,6 +215,33 @@ basis = "assumed"
 source = "iPad Air 4 and iPad 10th generation (A14). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
 
 [[hardware]]
+id = "ipad-a12x"
+platform = "ios"
+models = ["iPad8,1", "iPad8,2", "iPad8,3", "iPad8,4", "iPad8,5", "iPad8,6", "iPad8,7", "iPad8,8"]
+tier = 1091
+gpu_family = 5
+basis = "assumed"
+source = "iPad Pro 11-inch 1st and 12.9-inch 3rd generation (A12X, 7-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. By core count: 7 cores of the A12 design is about 1.75x A12, above A13 and A14 (4 cores, each about 20 to 30% faster per core than the last), below A15's 5-core GPU. The margin over A14 is the narrowest in the range."
+
+[[hardware]]
+id = "ipad-a12z"
+platform = "ios"
+models = ["iPad8,9", "iPad8,10", "iPad8,11", "iPad8,12"]
+tier = 1092
+gpu_family = 5
+basis = "assumed"
+source = "iPad Pro 11-inch 2nd and 12.9-inch 4th generation (A12Z, 8-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. The A12X with one more GPU core."
+
+[[hardware]]
+id = "ipad-a16"
+platform = "ios"
+models = ["iPad15,7", "iPad15,8"]
+tier = 1093
+gpu_family = 8
+basis = "assumed"
+source = "iPad 11th generation (A16, 4-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. A16 design with 4 cores: above A14's 4-core GPU, below A15's 5-core GPU in the iPad mini 6 (about 15% per-core gain against 25% more cores)."
+
+[[hardware]]
 id = "ipad-a15-mini"
 platform = "ios"
 models = ["iPad14,1", "iPad14,2"]
@@ -221,12 +251,13 @@ basis = "assumed"
 source = "iPad mini 6 (A15, 5-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Above A14, below M1 (8-core GPU)."
 
 [[hardware]]
-id = "ipad-a16-a17pro"
+id = "ipad-mini-a17-pro"
 platform = "ios"
-models = ["iPad15,7", "iPad15,8", "iPad16,1", "iPad16,2"]
-gpu_family = 8
+models = ["iPad16,1", "iPad16,2"]
+tier = 1098
+gpu_family = 9
 basis = "assumed"
-source = "iPad 11th generation (A16, 4-core GPU) and iPad mini 7th generation (A17 Pro, 5-core). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Left unordered: their GPU core counts do not rank them against A15's 5-core GPU."
+source = "iPad mini 7th generation (A17 Pro, 5-core GPU). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Above A15 and A16; below M1's 8 cores: 5 cores of the A17 Pro design against 8 of M1's, by core count."
 
 [[hardware]]
 id = "ipad-pro-m1-12-9"

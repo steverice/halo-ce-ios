@@ -17,6 +17,10 @@ models = ["AppleTV14,1"]
 and_newer = true
 
 [display]
+render_scale = 1.0
+shadow_map_size = 512
+texture_idle_seconds = 60
+model_lod = "max"
 render_height = 1080
 anisotropic_filtering = 16
 
@@ -32,6 +36,7 @@ source = "device benchmark report H7C78EJ8 (a tester's Apple TV 4K, 3rd generati
 
 # The main menu at the display's own height (2160 on a 4K output; on a smaller output the cap does nothing).
 [scene.menu.display]
+render_scale = 1.0
 render_height = 2160
 
 [evidence."scene.menu.display.render_height"]
@@ -41,6 +46,7 @@ source = "device benchmark report NHC5Z2D5 (a tester's Apple TV 4K, 3rd generati
 
 # Cutscenes at the display's own height, at 30 frames a second as the original played them.
 [scene.cutscene.display]
+render_scale = 1.0
 render_height = 2160
 frame_rate = "30"
 
@@ -53,3 +59,27 @@ source = "device benchmark report NHC5Z2D5 (a tester's Apple TV 4K, 3rd generati
 basis = "assumed"
 why = "Decided for every Apple TV: cutscenes play at the original's 30 frames a second, and the pixel budget that frees goes to resolution."
 source = "the user's decision of 2026-10-13: 60 or more in play, 30 in cutscenes"
+
+[evidence."display.render_scale"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."display.shadow_map_size"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."display.texture_idle_seconds"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."display.model_lod"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."scene.menu.display.render_scale"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."scene.cutscene.display.render_scale"]
+basis = "assumed"
+why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
