@@ -23,7 +23,7 @@ python3 tools/macos_build.py --team TEAM_ID --signing-profile PROFILE_UUID \
 
 ## Data and import
 
-On first launch, choose an original Xbox PAL or NTSC-US ISO or XISO. The importer validates and stages the maps before replacing incomplete data. The original disc image stays unchanged.
+On first launch, choose an original Xbox PAL or NTSC-US ISO or XISO. The importer validates and stages the maps before replacing incomplete data. The original disc image stays unchanged. The app keeps a read-only, security-scoped bookmark to the chosen image (`disc-image.bookmark` in the data folder), so a later import reopens it without asking; if the image has moved, the open panel appears again.
 
 Native Mac starts in a resizable window. Set `display.fullscreen = true` or `display.mode = "fullscreen"` for an explicit fullscreen launch; `display.mode = "windowed"` selects the window. `HALO_DISPLAY_MODE` and `HALO_FULLSCREEN` provide launch overrides. Keyboard, mouse, controllers, and audio use SDL. Command-Q and closing the game window use the game's quit path.
 
