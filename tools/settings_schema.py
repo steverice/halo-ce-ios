@@ -118,7 +118,8 @@ def profile_value(name, key, settings):
         item['default'] = settings[name]['default']
         item['description'] = settings[name]['description']
     else:
-        item['description'] = 'Profile-only output height cap in pixels; zero leaves the external mode uncapped.'
+        item['description'] = ('Profile-only output height cap in pixels: the external mode, or a tvOS profile\'s '
+                               'built-in output; zero leaves it uncapped.')
     item['description'] += ' Profile values outside the accepted set are refused, not clamped.'
     return item
 
@@ -135,7 +136,7 @@ def profile_schema(settings):
         return nested({name: values[name] for name in values if name in names})
     def scene_schema(names):
         return object_schema({scene: context(names & scenes) for scene in profile_check.SCENES})
-    properties = context(set(values) - {'display.output_height'})['properties']
+    properties = context(set(values))['properties']
     properties.update({
         'schema': {'type': 'integer', 'const': 1},
         'name': {'type': 'string', 'minLength': 1, 'maxLength': 63, 'pattern': r'^[^\x00-\x1f\x7f]+$'},
@@ -150,11 +151,9 @@ def profile_schema(settings):
     })
     evidence = {}
     for name in values:
-        contexts = []
-        if name != 'display.output_height':
-            contexts.append(name)
-            if name in scenes:
-                contexts += [f'scene.{scene}.{name}' for scene in profile_check.SCENES]
+        contexts = [name]
+        if name in scenes:
+            contexts += [f'scene.{scene}.{name}' for scene in profile_check.SCENES]
         if name in external:
             contexts.append(f'external.{name}')
             if name in scenes:
@@ -179,7 +178,11 @@ def profile_schema(settings):
              {'required': ['models']}, {'required': ['chips']}, {'required': ['and_newer']}]}}}},
          'else': {'properties': {'match': {'not': {'required': ['gpu_family']}, 'anyOf': [
              {'required': ['models'], 'properties': {'models': {'minItems': 1}}},
-             {'required': ['chips'], 'properties': {'chips': {'minItems': 1}}}]}}}}]
+             {'required': ['chips'], 'properties': {'chips': {'minItems': 1}}}]}}}},
+        # display.output_height outside [external.display] caps a tvOS profile's built-in output, and nothing else's
+        {'if': {'not': {'properties': {'match': {'properties': {'platform': {'const': 'tvos'}}, 'required': ['platform']}},
+                        'required': ['match']}},
+         'then': {'properties': {'display': {'not': {'required': ['output_height']}}}}}]
     return result
 
 
@@ -239,13 +242,14 @@ def markdown(kind, settings):
                 accepted += f', {low:g} to {high:g}'
             if choices:
                 accepted += ': ' + ', '.join('quoted 30 to 1000' if c == '#' else f'`{c}`' for c in choices)
-            contexts = ['external only'] if name == 'display.output_height' else ['gameplay']
+            contexts = ['tvOS built-in'] if name == 'display.output_height' else ['gameplay']
             if name in profile_check.scene_keys():
                 contexts.append('ⓢ scene')
             if name in profile_check.external_keys():
                 contexts.append('external')
             extra = ', '.join(contexts)
-        description = (item['description'] if item else 'External output height cap in pixels; zero leaves it uncapped.')
+        description = (item['description'] if item else
+                       'Output height cap in pixels, external or tvOS built-in; zero leaves it uncapped.')
         # A period in a setting name is not the end of a sentence.
         description = re.split(r'(?<=[.!?])\s+(?=[A-Z]|false\b|true\b)', description, maxsplit=1)[0]
         rows.append(f'| `{name}` | {escape(accepted)} | {default} | {extra} | {escape(description)} |')

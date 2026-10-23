@@ -23,6 +23,12 @@
           "default": 0,
           "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
         },
+        "output_height": {
+          "type": "integer",
+          "minimum": 0.0,
+          "maximum": 4320.0,
+          "description": "Profile-only output height cap in pixels: the external mode, or a tvOS profile's built-in output; zero leaves it uncapped. Profile values outside the accepted set are refused, not clamped."
+        },
         "render_scale": {
           "type": "number",
           "minimum": 0.25,
@@ -390,7 +396,7 @@
               "type": "integer",
               "minimum": 0.0,
               "maximum": 4320.0,
-              "description": "Profile-only output height cap in pixels; zero leaves the external mode uncapped. Profile values outside the accepted set are refused, not clamped."
+              "description": "Profile-only output height cap in pixels: the external mode, or a tvOS profile's built-in output; zero leaves it uncapped. Profile values outside the accepted set are refused, not clamped."
             },
             "render_scale": {
               "type": "number",
@@ -791,6 +797,50 @@
                 "required": [
                   "source",
                   "output"
+                ]
+              }
+            }
+          ]
+        },
+        "display.output_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
                 ]
               }
             }
@@ -2302,6 +2352,38 @@
                 }
               }
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "properties": {
+            "match": {
+              "properties": {
+                "platform": {
+                  "const": "tvos"
+                }
+              },
+              "required": [
+                "platform"
+              ]
+            }
+          },
+          "required": [
+            "match"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "display": {
+            "not": {
+              "required": [
+                "output_height"
+              ]
+            }
           }
         }
       }

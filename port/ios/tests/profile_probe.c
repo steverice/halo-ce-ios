@@ -428,13 +428,14 @@ static void check_shipped(const char *shipped)
 	profile = resolve(shipped, device("tvos", "AppleTV11,1", "", 5), NULL, "");
 	assert(has(&profile, "display.render_height", "1080") && !profile.model_file[0] &&
 		has(&profile, "display.render_scale", "0.5") && has(&profile, "display.anisotropic_filtering", "4"));
-	/* the two Apple TV 4K models with estimated profiles: 720 in play on the first, 1080 on the third, and a
-	menu at the display's height */
+	/* the two Apple TV 4K models with estimated profiles: 720 in play on the first, with its built-in output capped
+	at 720 (a tvOS profile's own display.output_height, for the host and never the game), and 1080 on the third */
 	profile = resolve(shipped, device("tvos", "AppleTV6,2", "", 3), NULL, "");
 	assert(has(&profile, "display.render_height", "720") && has(&profile, "display.anisotropic_filtering", "4") &&
 		has(&profile, "display.renderer", "metal") && !strcmp(profile.model_file, "apple-tv-4k-1st.toml"));
+	assert(has(&profile, "display.output_height", "720"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
-	assert(strstr(encoded, "display.render_height\t1080\tmodel Apple TV 4K (1st generation)\tmenu\n"));
+	assert(strstr(encoded, "display.output_height\t720\tmodel Apple TV 4K (1st generation)\n"));
 	profile = resolve(shipped, device("tvos", "AppleTV14,1", "", 8), NULL, "");
 	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.anisotropic_filtering", "16") &&
 		!strcmp(profile.model_file, "apple-tv-4k-3rd.toml"));
@@ -661,6 +662,15 @@ static void check_external(void)
 	assert(host_profile_external_value(&profile, "display.output_height", value, sizeof(value)) && !strcmp(value, "1440"));
 	assert(host_profile_external_value(&profile, "display.render_height", value, sizeof(value)) && !strcmp(value, "720"));
 	char path[256]; snprintf(path, sizeof(path), "%s/external.toml", folder); unlink(path);
+	/* a tvOS profile's own [display] caps the built-in output; a scene class may not */
+	write_file("builtin-cap.toml", "schema = 1\nname = \"Capped\"\nkind = \"model\"\n[match]\nplatform = \"tvos\"\n"
+		"models = [\"Capped1,1\"]\n[display]\nrender_height = 720\noutput_height = 720\n"
+		"[scene.menu.display]\noutput_height = 540\n");
+	profile = resolve(folder, device("tvos", "Capped1,1", "", 3), NULL, "");
+	assert(has(&profile, "display.output_height", "720") && has(&profile, "display.render_height", "720"));
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(strstr(encoded, "display.output_height\t720\tmodel Capped\n") && !strstr(encoded, "\t540\t"));
+	snprintf(path, sizeof(path), "%s/builtin-cap.toml", folder); unlink(path);
 }
 
 static void check_and_newer(void)

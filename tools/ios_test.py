@@ -120,6 +120,10 @@ run(BUILD/'companion-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/display_pin_probe.c', '-o', BUILD/'display-pin-probe')
 run(BUILD/'display-pin-probe')
+# a tvOS profile's built-in output cap (host_output_cap.h)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/output_cap_probe.c', '-o', BUILD/'output-cap-probe')
+run(BUILD/'output-cap-probe')
 # config.toml: the written file has each table once and parses, and one with a table or key repeated
 # keeps the first of each instead of being ignored; once with the iOS and visionOS settings (HALO_ILP32)
 # and once with the desktop's (only the address sanitizer: tomlc17's page arithmetic trips the

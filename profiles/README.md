@@ -154,7 +154,7 @@ Profiles can also arrive as signed complete snapshots. See [Updating profiles an
 
 ## External displays
 
-`[external.display]` supplies output values while an iPhone or iPad drives a wired display. It may set only the `PROFILE_EXTERNAL` keys in `port/linux/src/port_profile_keys.h`: `display.output_height`, `display.render_height`, `display.render_scale` and `display.anti_aliasing`. `display.output_height` is a profile-only output cap, valid only here; zero leaves the mode height uncapped.
+`[external.display]` supplies output values while an iPhone or iPad drives a wired display. It may set only the `PROFILE_EXTERNAL` keys in `port/linux/src/port_profile_keys.h`: `display.output_height`, `display.render_height`, `display.render_scale` and `display.anti_aliasing`. `display.output_height` is a profile-only output cap; zero leaves the mode height uncapped. It is valid here and in a tvOS profile's own `[display]`, where it caps the built-in output: the game draws into a drawable that many lines tall and the system scales it to the TV without changing the TV's mode. A launch's `HALO_OUTPUT_HEIGHT` overrides it on an Apple TV, and the benchmark report's `output` block records the panel size, `drawable_width`, `drawable_height` and `output_cap_height`.
 
 `[external.scene.menu.display]` and `[external.scene.cutscene.display]` can further set the keys also marked `PROFILE_SCENE`. Precedence is the built-in profile value, the built-in scene value, the external value, then the external scene value. The highest class, model or drop-in layer that supplies each context value wins. Player choices and environment overrides apply on every output. External values never enter `config.toml` or `config.origins`.
 
@@ -170,7 +170,7 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | --- | --- | --- | --- | --- |
 | `display.renderer` | string: `gl`, `metal` | `"metal"` | gameplay | What draws the game: "metal" (default) Metal, or "gl" OpenGL ES, for debugging only: it lacks the Metal renderer's performance work and measures no GPU time. |
 | `display.render_height` | integer, 0 to 4320 | `0` | gameplay, ⓢ scene, external | Internal rendering height in physical pixels: 0 (default) uses native display resolution. |
-| `display.output_height` | integer, 0 to 4320 | Profile only | external only, external | External output height cap in pixels; zero leaves it uncapped. |
+| `display.output_height` | integer, 0 to 4320 | Profile only | tvOS built-in, external | Output height cap in pixels, external or tvOS built-in; zero leaves it uncapped. |
 | `display.render_scale` | real, 0.25 to 1 | `1.0` | gameplay, ⓢ scene, external | Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. |
 | `display.upscaler` | string: `bilinear`, `metalfx` | `"bilinear"` | gameplay | How a picture rendered below the display's size is scaled up: "bilinear" (default), or "metalfx" (Metal renderer, on a device: MetalFX's spatial scaler, sharper edges and text for a fraction of a millisecond). |
 | `display.anisotropic_filtering` | integer, 1 to 16 | `16` | gameplay | Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16: sharper floors and terrain at a distance, for a few percent of GPU time. |

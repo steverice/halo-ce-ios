@@ -10,6 +10,8 @@
 #include "ios_host.h"
 #include "guest_image.h"
 #include "host_display_pin.h"
+#include "host_output_cap.h"
+#include "host_config.h"
 #include "host_profile.h"
 #include "host_join_link.h"
 #include "host_benchmark.h"
@@ -409,6 +411,33 @@ int main(int argc,char **argv) {
             host_sdl_pin_window_pixels(pixel_width,pixel_height);
             host_logf(HOST_LOG_INFO,"display pinned to %s: %dx%d pixels, width %d",pin_text,pixel_width,pixel_height,width);
         }
+        /* The device profile resolves here on an Apple TV, before the guest is told its display: a tvOS profile's
+           display.output_height caps the built-in output (host_output_cap.h). The game draws into a drawable that
+           many lines tall and the system scales it to the TV, whose mode is left alone. Metal only: the OpenGL ES
+           view keeps the screen's own size. Every other device resolves it below, as before. */
+        const char *profile_values=NULL;
+#if TARGET_OS_TV
+        profile_values=host_device_profile_install(data_root);
+        if(!pinned){
+            char cap_text[32]="",renderer[16]="";
+            host_profile_value(host_device_profile(),"display.output_height",cap_text,sizeof(cap_text));
+            int cap=host_output_cap_height(getenv("HALO_OUTPUT_HEIGHT"),cap_text);
+            const char *launch_renderer=getenv("HALO_RENDERER");
+            if(launch_renderer&&*launch_renderer)snprintf(renderer,sizeof(renderer),"%s",launch_renderer);
+            else host_config_string("display.renderer","metal",renderer,sizeof(renderer));
+            if(HALO_METAL_ONLY)snprintf(renderer,sizeof(renderer),"metal");
+            int capped_width,capped_height;
+            if(cap&&strcmp(renderer,"metal"))
+                host_logf(HOST_LOG_INFO,"output: the %d-line cap is for Metal; %s keeps %dx%d",cap,renderer,pixel_width,pixel_height);
+            else if(host_output_cap_apply(pixel_width,pixel_height,cap,&capped_width,&capped_height)){
+                host_logf(HOST_LOG_INFO,"output: %dx%d capped to %dx%d (%s)",pixel_width,pixel_height,capped_width,capped_height,
+                    getenv("HALO_OUTPUT_HEIGHT")&&host_output_cap_height(getenv("HALO_OUTPUT_HEIGHT"),NULL)?
+                    "HALO_OUTPUT_HEIGHT":"display.output_height");
+                pixel_width=capped_width;pixel_height=capped_height;
+                host_sdl_cap_output(pixel_width,pixel_height);
+            }
+        }
+#endif
 #if HALO_RENDER_VALIDATION
         if(host_render_replay_requested())host_render_replay();
 #endif
@@ -427,7 +456,7 @@ int main(int argc,char **argv) {
            port_config.c lays under config.toml. Not as the settings' own HALO_ variables, which win over the
            file: a profile never outranks what the player chose. */
         static char env_profile[sizeof("HALO_DEVICE_PROFILE_VALUES=")+HOST_PROFILE_MAXIMUM_VALUES*216];
-        snprintf(env_profile,sizeof(env_profile),"HALO_DEVICE_PROFILE_VALUES=%s",host_device_profile_install(data_root));
+        snprintf(env_profile,sizeof(env_profile),"HALO_DEVICE_PROFILE_VALUES=%s",profile_values?profile_values:host_device_profile_install(data_root));
         env[env_count++]=env_profile;
         /* the build, for what the game writes beside a recording (input_replay.c), and the folder its automatic
            takes go to */

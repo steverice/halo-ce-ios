@@ -62,6 +62,10 @@ def test_profile_contexts_and_values():
     assert not list(validator.iter_errors(table))
     table['display'] = {'output_height': 1080}
     assert list(validator.iter_errors(table))
+    table['match'] = {'platform': 'tvos', 'models': ['AppleTV6,2']}
+    assert not list(validator.iter_errors(table))
+    table['scene'] = {'menu': {'display': {'output_height': 720}}}
+    assert list(validator.iter_errors(table))
 
 
 def test_markdown_lists_all_source_keys():

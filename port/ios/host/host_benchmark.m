@@ -147,9 +147,15 @@ static NSDictionary *output_now(void) {
     NSMutableArray *modes = [NSMutableArray array];
     for (int i = 0; i < output.mode_count && i < 64; i++)
         [modes addObject:@{ @"width": @(output.modes[i].width), @"height": @(output.modes[i].height) }];
+    /* the drawable the game draws into: the output's own size, or a tvOS profile's built-in cap
+       (display.output_height, host_output_cap.h), which the system scales to the panel */
+    int drawable_width = output.width, drawable_height = output.height, capped_width, capped_height;
+    int capped = !output.external && host_sdl_output_cap(&capped_width, &capped_height);
+    if (capped) { drawable_width = capped_width; drawable_height = capped_height; }
     return @{ @"kind": output.external ? @"external" : @"builtin", @"width": @(output.width),
         @"height": @(output.height), @"refresh_hertz": @(output.refresh_hertz), @"name": @(output.name),
-        @"reason": @(output.reason), @"offered_modes": modes };
+        @"reason": @(output.reason), @"offered_modes": modes, @"drawable_width": @(drawable_width),
+        @"drawable_height": @(drawable_height), @"output_cap_height": @(capped ? capped_height : 0) };
 }
 
 static NSDictionary *environment_now(void) {

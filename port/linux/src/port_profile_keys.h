@@ -22,7 +22,9 @@ An X-macro list, included with the four macros defined:
 	PROFILE_SCENE(name)
 
 PROFILE_EXTERNAL names a setting that may vary while driving an external output.
-Display output height is profile-only and valid only in the external context.
+Display output height is profile-only: valid in the external context, and in a
+tvOS profile's own [display], where it caps the built-in output's drawable
+(port/ios/host/host_output_cap.h). No scene class may set it.
 
 PROFILE_SCENE names a setting above that a profile may also set for one
 scene class ([scene.menu.display], [scene.cutscene.display]): the ones the

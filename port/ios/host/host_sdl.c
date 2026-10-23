@@ -205,12 +205,25 @@ void *host_sdl_metal_layer(void)
 	return metal_view ? SDL_Metal_GetLayer(metal_view) : NULL;
 }
 
-static int pinned_width, pinned_height;
+static int pinned_width, pinned_height, output_capped;
 
 void host_sdl_pin_window_pixels(int width, int height)
 {
 	pinned_width = width;
 	pinned_height = height;
+}
+
+void host_sdl_cap_output(int width, int height)
+{
+	host_sdl_pin_window_pixels(width, height);
+	output_capped = 1;
+}
+
+int host_sdl_output_cap(int *width, int *height)
+{
+	*width = output_capped ? pinned_width : 0;
+	*height = output_capped ? pinned_height : 0;
+	return output_capped;
 }
 
 int host_sdl_display_max_fps(void)

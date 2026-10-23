@@ -96,7 +96,15 @@ why = "Cutscenes leave room for this external render scale."
 '''
 assert problems(EXTERNAL)[0] == []
 refused(EXTERNAL.replace("output_height = 1080", 'output_height = 1080\nrenderer = "metal"'), "cannot change by output")
-refused(GOOD.replace("render_height = 540", "output_height = 1080"), "only in an external section")
+# a tvOS profile's own [display] may cap the built-in output; no other platform's, and no scene class's
+BUILTIN_CAP = GOOD.replace("render_height = 540", "render_height = 540\noutput_height = 720") + '''[evidence."display.output_height"]
+basis = "assumed"
+why = "A cap at the render height leaves no upscale pass in the frame."
+'''
+assert problems(BUILTIN_CAP)[0] == []
+refused(BUILTIN_CAP.replace('platform = "tvos"', 'platform = "ios"'), "only in an external section")
+refused(BUILTIN_CAP.replace('platform = "tvos"', 'platform = "visionos"'), "only in an external section")
+refused(BUILTIN_CAP + "[scene.menu.display]\noutput_height = 720\n", "only in an external section")
 refused(EXTERNAL.replace("[external.scene.cutscene.display]", "[external.scene.loading.display]"), 'scene class "loading"')
 refused(EXTERNAL.replace("render_scale = 0.75", 'anti_aliasing = "fxaa"'), "cannot change by scene class")
 

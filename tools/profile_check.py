@@ -237,8 +237,10 @@ def check_profile(path, keys, drop_in=False, scenes=None):
                 if external and name not in external_keys():
                     problems.append(f"{shown}: {name} cannot change by output (PROFILE_EXTERNAL in port_profile_keys.h)")
                     continue
-                if not external and name == "display.output_height":
-                    problems.append(f"{shown} is valid only in an external section")
+                # a tvOS profile's own [display] may cap the built-in output; elsewhere the cap is external only
+                if not external and name == "display.output_height" and (
+                        scene is not None or match.get("platform") != "tvos"):
+                    problems.append(f"{shown} is valid only in an external section, or in a tvOS profile's [display]")
                     continue
                 if scene is not None and name not in scenes:
                     problems.append(f"{shown}: {name} cannot change by scene class (PROFILE_SCENE in port_profile_keys.h)")

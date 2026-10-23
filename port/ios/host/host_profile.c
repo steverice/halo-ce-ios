@@ -209,9 +209,11 @@ static char *profile_read(const char *path, size_t *size, const struct profile_l
 }
 
 /* table's settings (its "section" tables' keys) added to profile as layer source; those that are no profile
-   setting, of the wrong type or outside their range are left out and named in the log */
+   setting, of the wrong type or outside their range are left out and named in the log. builtin_output is 1 for
+   a tvOS profile, whose own [display] may cap the built-in output (display.output_height); elsewhere that key
+   belongs to [external.display] alone */
 static void profile_add_settings(struct host_profile *profile, toml_datum_t table, const char *source,
-	const char *label, const char *scene, int external, const struct profile_log *log)
+	const char *label, const char *scene, int external, int builtin_output, const struct profile_log *log)
 {
 	int section_index;
 
@@ -236,7 +238,8 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 					profile_logf(log, "device profile: %s: scene class \"%.40s\" is not one this build knows; ignored",
 						label, class_name);
 				else
-					profile_add_settings(profile, section.u.tab.value[class_index], source, label, class_name, external, log);
+					profile_add_settings(profile, section.u.tab.value[class_index], source, label, class_name, external,
+						builtin_output, log);
 			}
 			continue;
 		}
@@ -245,7 +248,7 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 			if (external || section.type != TOML_TABLE)
 				profile_logf(log, "device profile: %s: invalid external table; ignored", label);
 			else
-				profile_add_settings(profile, section, source, label, NULL, 1, log);
+				profile_add_settings(profile, section, source, label, NULL, 1, 0, log);
 			continue;
 		}
 		/* (the file's own fields and tables: tools/profile_check.py checks those) */
@@ -272,7 +275,7 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 				continue;
 			}
 			if ((external && !name_in(value.name, external_keys, sizeof(external_keys) / sizeof(external_keys[0]))) ||
-				(!external && !strcmp(value.name, "display.output_height")))
+				(!external && !strcmp(value.name, "display.output_height") && (scene || !builtin_output)))
 			{
 				profile_logf(log, "device profile: %s: %s cannot be set in this output context; ignored", label, value.name);
 				continue;
@@ -678,7 +681,7 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 		{
 			int before = profile->count;
 
-			profile_add_settings(profile, result.toptab, source, label, NULL, 0, &log);
+			profile_add_settings(profile, result.toptab, source, label, NULL, 0, !strcmp(platform, "tvos"), &log);
 			if (index == 2)
 			{
 				profile->drop_in = 1;
@@ -916,7 +919,8 @@ static int profile_validate_folder(const char *folder, const struct host_device 
 		if (!pack_heading(tables[current].toptab, name, &heads[current], &log) ||
 			(device && strcmp(heads[current].platform, device->platform))) goto done;
 		struct host_profile values = {0};
-		profile_add_settings(&values, tables[current].toptab, "pack", name, NULL, 0, &log);
+		profile_add_settings(&values, tables[current].toptab, "pack", name, NULL, 0,
+			!strcmp(heads[current].platform, "tvos"), &log);
 		if (errors) goto done;
 	}
 	/* Every platform/family has exactly one class; exact model identities remain unique. */

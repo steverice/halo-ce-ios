@@ -6330,6 +6330,28 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
 		layer.framebufferOnly = YES;
 		gpu_metal_presentation_configure(layer);
+#if TARGET_OS_TV
+		{
+			/* a tvOS profile's built-in output cap (host_output_cap.h, host_main.m): the layer's scale is
+			   lowered so SDL's view, which sets the drawable to bounds times scale at each layout, keeps the
+			   capped size; the system scales the drawable to the TV */
+			int capped_width, capped_height;
+
+			if (host_sdl_output_cap(&capped_width, &capped_height))
+			{
+				CGFloat bounds_height = layer.bounds.size.height > 0 ? layer.bounds.size.height :
+					UIScreen.mainScreen.bounds.size.height;
+
+				if (bounds_height > 0)
+				{
+					layer.contentsScale = (CGFloat)capped_height / bounds_height;
+					layer.drawableSize = CGSizeMake(capped_width, capped_height);
+					platform_log("Metal: built-in output capped: drawable %dx%d (layer scale %.4f)", capped_width,
+						capped_height, (double)layer.contentsScale);
+				}
+			}
+		}
+#endif
 		textures = [MetalTable new];
 		buffers = [MetalTable new];
 		shaders = [MetalTable new];

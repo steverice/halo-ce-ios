@@ -18,12 +18,12 @@ render_scale = 1.0
 shadow_map_size = 512
 texture_idle_seconds = 30
 render_height = 720
+output_height = 720
 anisotropic_filtering = 4
 model_lod = "auto"
 
 [scene.menu.display]
 render_scale = 1.0
-render_height = 1080
 
 [evidence."display.texture_idle_seconds"]
 basis = "assumed"
@@ -40,10 +40,6 @@ why = "On the Apple TV HD 16x was the largest single cost (b30's beach 31 frames
 [evidence."display.model_lod"]
 basis = "assumed"
 why = "The game's own choice of detail by size on screen: on the Apple TV HD it took b30's CPU time from 26 to 21.5 ms a frame with no visible difference at 540. An A10X's CPU is about two and a half times an A8's, so this is headroom, not need; at 720 the lower levels may show more than they did at 540."
-
-[evidence."scene.menu.display.render_height"]
-basis = "assumed"
-why = "The menu held 60 at 1080 on the Apple TV HD with 2 ms to spare (GPU 12.4 to 14.5 ms); a GPU five times that has ample room."
 
 [scene.cutscene.display]
 render_scale = 1.0
@@ -68,3 +64,8 @@ why = "Pinned to the built-in default so the Apple TV class profile's floor (the
 [evidence."scene.cutscene.display.frame_rate"]
 basis = "assumed"
 why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+
+[evidence."display.output_height"]
+basis = "measured"
+why = "At render 720 this model held 60 frames a second on a 720p TV at 1x, 1.5x and 2x enemies (on-time 0.998 or better, GPU 12 to 15 ms) but fell to 51 to 59 on a 4K TV, GPU 15 to 19 ms: the cost of drawing and upscaling into a 3840x2160 drawable. A cap equal to the render height draws every TV's frame the way the 720p TV's was drawn, with no upscale pass, and the system scales it to the panel. The menu's 1080 is gone with it, since the render height cannot exceed the output."
+source = "TestFlight 0.4.1 benchmark reports on AppleTV6,2, 720p and 4K TVs, full-unified suite, 2026-10-22"
