@@ -117,8 +117,8 @@ jobs:
         run: |
           app=build/macos/app-native/host/Release/VISR.app
           codesign --display --entitlements - --xml "$app" > build/macos/entitlements.plist
-          plutil -extract com.apple.security.app-sandbox raw build/macos/entitlements.plist | grep --quiet --line-regexp true
-          plutil -extract com.apple.security.files.user-selected.read-only raw build/macos/entitlements.plist | grep --quiet --line-regexp true
+          /usr/libexec/PlistBuddy -c "Print :com.apple.security.app-sandbox" build/macos/entitlements.plist | grep --quiet --line-regexp true
+          /usr/libexec/PlistBuddy -c "Print :com.apple.security.files.user-selected.read-only" build/macos/entitlements.plist | grep --quiet --line-regexp true
           plutil -extract CFBundleIconName raw "$app/Contents/Info.plist" | grep --quiet --line-regexp AppIcon
           test -f "$app/Contents/Resources/Assets.car"
           plutil -extract HaloShaderFeedURL raw "$app/Contents/Info.plist" | grep --quiet '^https://'
