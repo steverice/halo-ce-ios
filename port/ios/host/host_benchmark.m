@@ -59,6 +59,8 @@
 #define OFFSCREEN_WINDOW_WALL_MIN 30.0
 #define OFFSCREEN_WINDOW_WALL_MAX 1800.0
 
+static double window_wall_cap(void);
+
 static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 /* under the lock: the open window's measurements, and what happened during it */
 static struct benchmark_metrics metrics;
