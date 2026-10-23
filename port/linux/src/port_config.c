@@ -601,6 +601,11 @@ static const struct config_setting config_settings[] =
 		"Draw the clutter display.clutter_distance names (dead bodies, loose weapons\n"
 		"and equipment, garbage) at its lowest model detail level, wherever it is.\n"
 		"Only the drawing changes." },
+	{ "debug.offscreen_window_wall_seconds", _config_real, "60.0", "HALO_OFFSCREEN_WINDOW_WALL_SECONDS", _environment_value, _platform_all,
+		"How many seconds of wall time an offscreen benchmark window may run before\n"
+		"it is ended where it stands (the report's capped and measured_ticks), from 30\n"
+		"to 1800. A signed catalog case may set it for itself. A slow device needs\n"
+		"more than the default to finish a full window." },
 	{ "debug.collision_type_filter", _config_boolean, "true", "HALO_COLLISION_TYPE_FILTER", _environment_value, _platform_all,
 		"Collision rays and sphere queries skip an object whose type\n"
 		"the query does not test before looking at it, instead of after: the same\n"

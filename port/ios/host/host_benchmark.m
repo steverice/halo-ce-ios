@@ -53,8 +53,11 @@
 /* how long a warm device is given to cool before the suite starts anyway, flagged */
 #define COOL_WAIT_SECONDS 300.0
 /* an offscreen case measures at most this much wall time of its window: a slow device measures what fits and
-   moves on (the report's capped and measured_ticks); presented runs are never cut */
+   moves on (the report's capped and measured_ticks); presented runs are never cut. The default of
+   debug.offscreen_window_wall_seconds, which a signed case may set for itself */
 #define OFFSCREEN_WINDOW_WALL_SECONDS 60.0
+#define OFFSCREEN_WINDOW_WALL_MIN 30.0
+#define OFFSCREEN_WINDOW_WALL_MAX 1800.0
 
 static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 /* under the lock: the open window's measurements, and what happened during it */
@@ -730,6 +733,7 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     record[@"reality_check"] = @(finished->stage == 'P');
     record[@"measured_ticks"] = @(atomic_load(&window_ticks));
     record[@"capped"] = @(run_capped != 0);
+    record[@"window_wall_cap_seconds"] = @(window_wall_cap());
     if (run_started_at > 0) record[@"wall_seconds"] = @(round((CFAbsoluteTimeGetCurrent() - run_started_at) * 10.0) / 10.0);
     text = json_object(host_benchmark_measurement_record(record, presentation, offscreen));
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -1135,15 +1139,24 @@ void host_benchmark_progress(struct host_benchmark_progress *progress) {
         progress->measured_fraction : 0;
 }
 
+/* the wall-time cap in force for the open run: its case's own, else the configuration's, kept within bounds */
+static double window_wall_cap(void) {
+    const struct benchmark_knobs *knobs = &plan.scenes[run.scene].knobs;
+    double seconds = knobs->mask & BENCHMARK_KNOB_WALL_SECONDS ? knobs->wall_seconds :
+        host_config_real("debug.offscreen_window_wall_seconds", OFFSCREEN_WINDOW_WALL_SECONDS);
+
+    return fmin(OFFSCREEN_WINDOW_WALL_MAX, fmax(OFFSCREEN_WINDOW_WALL_MIN, seconds));
+}
+
 int host_benchmark_next(char *text, unsigned int size) {
     const struct benchmark_scene *scene;
 
     if(!text && !size) {
         if (atomic_load(&finish_requested)) return 5;
         if (run_open && !run_finishing && window_started_at > 0 && host_benchmark_offscreen_active() &&
-            CFAbsoluteTimeGetCurrent() - window_started_at >= OFFSCREEN_WINDOW_WALL_SECONDS) {
+            CFAbsoluteTimeGetCurrent() - window_started_at >= window_wall_cap()) {
             if (!run_capped) host_logf(HOST_LOG_INFO, "benchmark: run %d: the window's %.0f s of wall time are up after %ld ticks",
-                run.index, OFFSCREEN_WINDOW_WALL_SECONDS, atomic_load(&window_ticks));
+                run.index, window_wall_cap(), atomic_load(&window_ticks));
             run_capped = 1;
             return 6;
         }

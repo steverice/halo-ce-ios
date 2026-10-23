@@ -55,6 +55,7 @@ CASE_SETTINGS = {
     # (0: no limit)
     "display.clutter_distance": ("number", 0.0, 200.0),
     "debug.clutter_lowest_lod": ("boolean",),
+    "debug.offscreen_window_wall_seconds": ("number", 30.0, 1800.0),
 }
 
 

@@ -115,8 +115,15 @@ def test_offscreen_window_has_a_wall_time_cap():
     host = (ROOT / "port/ios/host/host_benchmark.m").read_text()
     assert "#define OFFSCREEN_WINDOW_WALL_SECONDS 60.0" in host
     # only offscreen frames are cut; the report says so and how much was measured
-    assert "host_benchmark_offscreen_active() &&\n            CFAbsoluteTimeGetCurrent() - window_started_at >= OFFSCREEN_WINDOW_WALL_SECONDS" in host
+    assert "host_benchmark_offscreen_active() &&\n            CFAbsoluteTimeGetCurrent() - window_started_at >= window_wall_cap()" in host
     assert 'record[@"capped"]' in host and 'record[@"measured_ticks"]' in host
+    # the cap is configurable (default 60 s, bounded), a signed case may set it, and the report names it
+    assert 'host_config_real("debug.offscreen_window_wall_seconds", OFFSCREEN_WINDOW_WALL_SECONDS)' in host
+    assert "fmin(OFFSCREEN_WINDOW_WALL_MAX, fmax(OFFSCREEN_WINDOW_WALL_MIN, seconds))" in host
+    assert 'record[@"window_wall_cap_seconds"]' in host
+    catalog = (ROOT / "port/ios/host/host_benchmark_catalog.m").read_text()
+    assert '[name isEqual:@"debug.offscreen_window_wall_seconds"]' in catalog
+    assert "real_number(value, 30.0, 1800.0, &real)" in catalog
     suite = (ROOT / "port/linux/src/benchmark_suite.c").read_text()
     assert "control == 6 && suite.state == suite_measuring" in suite
     assert "if (suite.capped || state.tick - (long)suite.opened_ticks >= (long)(suite.seconds * 30.0))" in suite

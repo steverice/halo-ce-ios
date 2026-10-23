@@ -1398,6 +1398,17 @@
             "desktop"
           ]
         },
+        "offscreen_window_wall_seconds": {
+          "type": "number",
+          "default": 60.0,
+          "description": "How many seconds of wall time an offscreen benchmark window may run before it is ended where it stands (the report's capped and measured_ticks), from 30 to 1800. A signed catalog case may set it for itself. A slow device needs more than the default to finish a full window.",
+          "x-environment": "HALO_OFFSCREEN_WINDOW_WALL_SECONDS",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "collision_type_filter": {
           "type": "boolean",
           "default": true,

@@ -196,6 +196,9 @@ static BOOL case_settings(id raw, unsigned *sim_experiments, unsigned *sim_exper
         } else if ([name isEqual:@"debug.clutter_lowest_lod"]) {
             if (!boolean) return NO;
             knobs->mask |= BENCHMARK_KNOB_CLUTTER_LOD; knobs->clutter_lowest_lod = [value boolValue];
+        } else if ([name isEqual:@"debug.offscreen_window_wall_seconds"]) {
+            if (!real_number(value, 30.0, 1800.0, &real)) return NO;
+            knobs->mask |= BENCHMARK_KNOB_WALL_SECONDS; knobs->wall_seconds = real;
         } else return NO;
     }
     return YES;
