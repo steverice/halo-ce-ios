@@ -16,6 +16,7 @@ layouts).
 #define __GUEST_HOST_H
 
 #include "gpu.h"
+#include "../../shader_observations.h"
 #include "halo_stereo.h"
 #include "halo_spatial.h"
 
@@ -237,3 +238,7 @@ int host_bink_audio_read(short *samples, int capacity, unsigned int until);
 void host_bink_audio_skip(unsigned int position);
 
 #endif
+
+uint32_t host_shader_observation_activate(const char *map_name, int suppressed, char *map_key, uint32_t map_key_size);
+void host_shader_observation_append(uint32_t token, const struct shader_observation *descriptor);
+int host_shader_observation_recording(void);

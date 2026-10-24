@@ -2638,8 +2638,11 @@ static void pipeline_key_from_description(const struct gpu_pipeline_description 
 
 /* pipelines built for draws outside warming, which gpu_pipeline_built_take
 hands to the front end to log and record (shader_list.c), oldest first */
-static NSMutableData *built_during_play;
-static unsigned long built_taken;
+/* The render thread only appends bounded values; it never grows an Objective-C
+   buffer at pipeline creation. Present drains these before map activation. */
+#define BUILT_PIPELINE_CAPACITY 4096
+static struct gpu_pipeline_description built_during_play[BUILT_PIPELINE_CAPACITY];
+static unsigned long built_count, built_taken;
 
 /* a pipeline built on this thread (the game thread, or a worker): its
 descriptor, whose functions may compile first, then the pipeline; the first
@@ -2757,7 +2760,7 @@ static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, con
 		struct gpu_pipeline_description built;
 
 		pipeline_describe(&key, &built);
-		[built_during_play appendBytes:&built length:sizeof(built)];
+		if (built_count < BUILT_PIPELINE_CAPACITY) built_during_play[built_count++] = built;
 		if (async_compiles)
 		{
 			pipeline_request(&key, vertex, pixel, nil, 1);
@@ -2775,16 +2778,15 @@ static id<MTLRenderPipelineState> draw_pipeline(const struct gpu_draw *draw, con
 
 static uint32_t gpu_metal_pipeline_built_take(struct gpu_pipeline_description *description)
 {
-	unsigned long count = built_during_play.length / sizeof(*description);
+	unsigned long count = built_count;
 
 	if (built_taken >= count)
 	{
-		[built_during_play setLength:0];
+		built_count = 0;
 		built_taken = 0;
 		return 0;
 	}
-	memcpy(description, (const struct gpu_pipeline_description *)built_during_play.bytes + built_taken++,
-		sizeof(*description));
+	*description = built_during_play[built_taken++];
 	return 1;
 }
 
@@ -6383,7 +6385,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		async_compiles = (flags & GPU_INITIALIZE_ASYNC_SHADERS) != 0;
 		compile_started = CACurrentMediaTime();
 		metal_compile_totals_initialize(&compile_totals);
-		built_during_play = [NSMutableData data];
+		built_count = built_taken = 0;
 		platform_log(async_compiles ? "Metal: shaders and pipelines compile on worker threads (display.async_shaders); "
 			"a draw whose pipeline isn't ready is skipped" : "Metal: shaders and pipelines compile on the game thread at "
 			"their first use");

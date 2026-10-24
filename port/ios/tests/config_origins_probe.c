@@ -396,9 +396,11 @@ static void check_menus(void)
 	assert(config_integer("display.shadow_map_size") == 128 && !config_boolean("display.upscaled_textures"));
 	/* a setting no profile names behaves the same against its built-in default */
 	assert(config_write("input.snap_angle", "45"));
+	assert(config_explicit("input.snap_angle"));
 	assert(file_has(origins, "input.snap_angle\tchosen\n"));
 	assert(config_write("input.snap_angle", "30"));
 	assert(file_has(origins, "input.snap_angle\tdefault\t30.0\n"));
+	assert(!config_explicit("input.snap_angle"));
 }
 
 /* the environment over everything, and what a profile may not do */
@@ -408,6 +410,7 @@ static void check_environment_and_refusals(void)
 	setenv("HALO_RENDER_HEIGHT", "480", 1);
 	launch(TV_MODEL);
 	assert(config_integer("display.render_height") == 480);
+	assert(config_explicit("display.render_height"));
 	assert(strstr(logged, "settings: display.render_height = 480 [environment HALO_RENDER_HEIGHT] over 1080 [class Apple TV] "
 		"over 0 [default]"));
 	/* (the file keeps the device's value: the environment is one run's) */

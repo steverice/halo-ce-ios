@@ -3303,6 +3303,9 @@ static gpu_shader fragment_shader_first_draw(struct fragment_entry *entry)
 }
 
 typedef char pixel_shader_key_size_assert[sizeof(struct nv2a_pixel_shader_key) % 4 == 0 ? 1 : -1];
+#ifdef HALO_ILP32
+typedef char observation_pixel_size_assert[sizeof(struct nv2a_pixel_shader_key) <= SHADER_OBSERVATION_PIXEL_MAX ? 1 : -1];
+#endif
 
 static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 {
@@ -3347,7 +3350,7 @@ static gpu_shader fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	entry->next = *bucket;
 	*bucket = entry;
 	recent[recent_next++ % RECENT_FRAGMENT_COUNT] = entry;
-	shader_list_pixel_made(key, entry->shader);
+	shader_list_pixel_made(&entry->key, entry->shader);
 	VALIDATION_PIXEL_SHADER(entry);
 	return entry->shader;
 }
@@ -3392,6 +3395,7 @@ struct shader_list_name
 	unsigned char variant;
 	unsigned long packed_mask;
 	uint64_t hash;
+	const struct nv2a_pixel_shader_key *pixel_key;
 };
 
 static struct
@@ -3407,10 +3411,35 @@ static struct
 	unsigned long recorded_count, recorded_capacity;
 } shader_list;
 
+#ifdef HALO_ILP32
+static uint32_t observation_generation;
+static int observation_capture, observation_developer_record;
+static void shader_observation_submit(struct shader_observation *event)
+{
+	if (!observation_capture || shader_list_warming) return;
+	event->metal = shader_dialect.msl;
+	event->warming = shader_list_warming;
+	host_shader_observation_append(observation_generation, event);
+}
+#endif
+
+/* The guest keeps bookkeeping bounded too: a shader hook never grows storage.
+   Saturation skips contribution and leaves rendering unaffected. */
+#ifdef HALO_ILP32
+#define SHADER_OBSERVATION_NAMES 16384
+static struct shader_list_name observation_names[SHADER_OBSERVATION_NAMES];
+#endif
 static struct shader_list_name *shader_list_name(gpu_shader shader)
 {
 	if (!shader)
 		return NULL;
+#ifdef HALO_ILP32
+	if (observation_capture)
+	{
+		if (shader >= SHADER_OBSERVATION_NAMES) return NULL;
+		return &observation_names[shader];
+	}
+#endif
 	if (shader >= shader_list.name_count)
 	{
 		unsigned long count = shader_list.name_count ? shader_list.name_count : 1024;
@@ -3518,6 +3547,15 @@ static void shader_list_vertex_made(struct vertex_shader_object *program, int va
 	name->variant = (unsigned char)variant;
 	name->packed_mask = program->shader_packed_mask[variant];
 	name->hash = program->program_hash;
+#ifdef HALO_ILP32
+	{
+		struct shader_observation event = {0};
+		event.kind = SHADER_OBSERVATION_VERTEX;
+		event.vertex_hash = name->hash; event.variant = variant; event.packed_mask = name->packed_mask;
+		shader_observation_submit(&event);
+		if (observation_capture && !observation_developer_record) return;
+	}
+#endif
 	snprintf(line, sizeof(line), "vs %016llx %d %lx", (unsigned long long)name->hash, variant, name->packed_mask);
 	shader_list_made(line);
 }
@@ -3533,6 +3571,16 @@ static void shader_list_pixel_made(const struct nv2a_pixel_shader_key *key, gpu_
 		return;
 	name->kind = 2;
 	name->hash = hash64(key, sizeof(*key));
+	name->pixel_key = key;
+#ifdef HALO_ILP32
+	{
+		struct shader_observation event = {0};
+		event.kind = SHADER_OBSERVATION_PIXEL; event.pixel_hash = name->hash;
+		event.pixel_size = sizeof(*key); memcpy(event.pixel, key, sizeof(*key));
+		shader_observation_submit(&event);
+		if (observation_capture && !observation_developer_record) return;
+	}
+#endif
 	length = (unsigned long)snprintf(line, sizeof(line), "ps %016llx ", (unsigned long long)name->hash);
 	for (index = 0; index < sizeof(*key); index++)
 		length += (unsigned long)snprintf(line + length, sizeof(line) - length, "%02x", bytes[index]);
@@ -3554,6 +3602,22 @@ static void shader_list_take_pipelines(void)
 
 		if (!vertex || !pixel || vertex->kind != 1 || pixel->kind != 2)
 			continue;
+#ifdef HALO_ILP32
+		if (pixel->pixel_key)
+		{
+			struct shader_observation event = {0};
+			event.kind = SHADER_OBSERVATION_PIPELINE;
+			event.vertex_hash = vertex->hash; event.variant = vertex->variant; event.packed_mask = vertex->packed_mask;
+			event.pixel_hash = pixel->hash; event.pixel_size = sizeof(*pixel->pixel_key);
+			memcpy(event.pixel, pixel->pixel_key, event.pixel_size);
+			event.blend = built.blend; event.source = built.source; event.destination = built.destination;
+			event.operation = built.operation; event.write_mask = built.write_mask; event.exact_borders = built.exact_borders;
+			event.depth = built.depth; event.alpha_source = built.alpha_source; event.alpha_destination = built.alpha_destination;
+			memcpy(event.attribute_kinds, built.attribute_kinds, sizeof(event.attribute_kinds));
+			shader_observation_submit(&event);
+			if (observation_capture && !observation_developer_record) continue;
+		}
+#endif
 		for (index = 0; index < GPU_ATTRIBUTE_COUNT; index++)
 			snprintf(kinds + 2 * index, 3, "%02x", built.attribute_kinds[index]);
 		snprintf(line, sizeof(line), "pipeline %016llx.%u.%lx %016llx %u %u %u %u %u %u %u %s %u %u",
@@ -3591,6 +3655,14 @@ static gpu_shader shader_list_pixel(uint64_t hash)
 {
 	unsigned long index;
 
+#ifdef HALO_ILP32
+	if (observation_capture)
+	{
+		for (index = 1; index < SHADER_OBSERVATION_NAMES; index++)
+			if (observation_names[index].kind == 2 && observation_names[index].hash == hash) return (gpu_shader)index;
+		return 0;
+	}
+#endif
 	for (index = 1; index < shader_list.name_count; index++)
 	{
 		if (shader_list.names[index].kind == 2 && shader_list.names[index].hash == hash)
@@ -3640,14 +3712,34 @@ void halo_shader_list_warm(char const *map_name)
 	char recorded_path[512];
 	FILE *recorded = NULL;
 	uint32_t recorded_size = 0;
+#ifdef HALO_ILP32
+	char observation_map_key[64] = {0};
+#endif
 
+#ifdef HALO_ILP32
+	/* GPU shader handles and their immutable names persist for the process. Drain
+	   completed pipelines before changing the generation they belong to. */
+	shader_list_take_pipelines();
+	observation_capture = host_shader_observation_recording();
+	observation_developer_record = config_explicit("debug.shader_list_record");
+	observation_generation = host_shader_observation_activate(map_name,
+		platform_fixed_timestep() || *config_string("debug.input_replay") ||
+		config_boolean("debug.benchmark") || *config_string("debug.benchmark_suite") ||
+		config_real("debug.exit_after") > 0 || *config_string("debug.gpu_shader_replay") ||
+		*config_string("debug.gpu_dump_shaders"), observation_map_key, sizeof(observation_map_key));
+#endif
 	for (cursor = map_name; *cursor; cursor++)
 	{
 		if (*cursor == '\\' || *cursor == '/')
 			base = cursor + 1;
 	}
+#ifdef HALO_ILP32
+	/* Eligible builds warm only the fingerprint identity resolved by the host.
+	   An identity still being hashed skips warming rather than sharing a name. */
+	if (observation_capture) base = observation_map_key;
+#endif
 	snprintf(shader_list.map, sizeof(shader_list.map), "%s", base);
-	if (!device.gl_ready || !config_boolean("debug.shader_list_warm"))
+	if (!shader_list.map[0] || !device.gl_ready || !config_boolean("debug.shader_list_warm"))
 		return;
 	/* a run that dumps its shaders (debug.gpu_dump_shaders: check-metal's) compiles each at its first draw, as
 	GL does, so the dump holds the shaders the run drew: the lists now carry shaders recorded in played sessions,

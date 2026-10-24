@@ -42,6 +42,8 @@ char *config_file_read(const char *path, size_t *size);
 /* a setting's value when nobody has set it, as text: its default with the
 device's profile (profiles/) over it; 0 if there is no such setting */
 int config_default(const char *name, char *text, size_t size);
+/* Whether a player or developer explicitly selected this setting. */
+int config_explicit(const char *name);
 
 /* The scene classes a device profile may give some settings their own
 values for ([scene.menu.display] in a profile; port/linux/game/scene_class.c

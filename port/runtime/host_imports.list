@@ -120,3 +120,7 @@ host_external_mode_label
 host_touch_replay_active
 host_memory_pressure_poll
 host_memory_available_megabytes
+
+host_shader_observation_activate
+host_shader_observation_append
+host_shader_observation_recording
