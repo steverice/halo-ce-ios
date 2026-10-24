@@ -71,7 +71,7 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
     raise ValueError(f"Unknown facts block: {kind}: {name}")
 
 
-PAGES = ("index", "benchmarks")
+PAGES = ("index",)
 
 NAV_ICONS = {"Get VISR": "download", "Vision Pro": "vision-pro", "iPhone": "iphone", "iPad": "ipad", "Apple TV": "apple-tv",
              "Mac": "mac", "GitHub": "github"}
