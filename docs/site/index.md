@@ -35,7 +35,7 @@
 
 {{ features: apple-tv }}
 
-![Halo on Apple TV fighting Sentinels aboard the Pillar of Autumn in The Maw](./apple-tv.jpg){device=tv}
+![Four-player split screen on Apple TV in Blood Gulch, with one player driving a Warthog](./apple-tv.jpg){device=tv}
 
 ## Mac
 
