@@ -65,6 +65,7 @@ machine (their datum identifiers need not be).
 #include "game/player_queues_new.h"
 #include "networking/network_game_globals.h"
 #include "networking/network_connection.h"
+#include "networking/network_client_manager.h"
 #include "objects/objects.h"
 #include "objects/damage.h"
 #include "scenario/scenario.h"
@@ -637,6 +638,8 @@ static long distributed_host_time = NONE;
 window (halo_network_version.h); NONE once this machine's clock is set, so a
 jump of the clock does not lock the host's datagrams out */
 static long distributed_stamp_latest = NONE;
+/* port: STOCK is also announced once at game start, as message 90 is. */
+static boolean distributed_shield_policy_sent;
 /* the host: each client's round trip, in ticks, and its jitter */
 static struct
 {
@@ -3372,6 +3375,29 @@ static void distributed_send_game_state(
 		_distributed_to_clients_reliably);
 }
 
+/* port: message 91 uses the ordinary distributed header: its four-byte
+stamp is game_time, followed by one four-byte selector. VISR's policy is
+always STOCK, so no received presentation choice is retained or applied. */
+static void distributed_send_shield_policy(
+	long machine_index)
+{
+	struct distributed_shield_policy_message message;
+
+	if (game_connection() != _game_connection_network_server)
+		return;
+	csmemset(&message, 0, sizeof(message));
+	if (machine_index == NONE)
+	{
+		distributed_send(&message, _distributed_message_shield_policy, 1, sizeof(message),
+			_distributed_to_clients_reliably);
+	}
+	else
+	{
+		distributed_send_to_machine_reliably(machine_index, &message,
+			_distributed_message_shield_policy, 1, sizeof(message));
+	}
+}
+
 /* ---------- the game */
 
 /* a new map loading (game.c), before any of the new game's messages can
@@ -3454,6 +3480,7 @@ void network_distributed_new_game(
 	network_actors_new_game();
 	network_coop_new_game();
 	network_aim_assist_reset();
+	distributed_shield_policy_sent = FALSE;
 	distributed_sync_log_reset();
 }
 
@@ -3470,6 +3497,12 @@ void network_distributed_tick(
 	if (connection == _game_connection_network_server)
 	{
 		short player_index;
+
+		if (!distributed_shield_policy_sent)
+		{
+			distributed_send_shield_policy(NONE);
+			distributed_shield_policy_sent = TRUE;
+		}
 
 		/* (a living player's last death is behind them: a death the game
 		does not note, one it does not score, has no killer) */
@@ -4022,6 +4055,29 @@ not overtaken by the newer damage sent with the ticks since
 (distributed_message_stale) */
 static boolean distributed_handling_batch;
 
+static boolean distributed_shield_policy_valid(
+	long machine_index,
+	word const *data,
+	word size)
+{
+	struct distributed_shield_policy_message message;
+
+	/* The client's handler has already matched the host's connection.
+	Reject datagrams and batched messages even when they claim its address. */
+	if (machine_index != NONE || game_connection() != _game_connection_network_client ||
+		!game_in_progress() || main_menu_is_active() || network_game_host_version() < 36 ||
+		network_connection_last_read_was_unreliable() || distributed_handling_batch || size != sizeof(message))
+	{
+		return FALSE;
+	}
+	csmemcpy(&message, data, sizeof(message));
+	/* Versions 36 and 38 use one selector, not three presentation flags.
+	The normal stream stamp may be nonzero, including on late joins. */
+	return GET_MESSAGE_TYPE(message.header.header) == 2 &&
+		message.header.type == _distributed_message_shield_policy &&
+		message.header.count == 1 && message.selector <= 6;
+}
+
 /* a message of the distributed kind; machine_index is the sender's on the
 host, NONE on a client */
 void network_distributed_handle_message(
@@ -4051,6 +4107,12 @@ void network_distributed_handle_message(
 	if (size < sizeof(header) || !game_in_progress())
 		return;
 	csmemcpy(&header, message, sizeof(header));
+	if (header.type == _distributed_message_shield_policy)
+	{
+		if (distributed_shield_policy_valid(machine_index, message, size))
+			distributed_statistics.received++;
+		return;
+	}
 	/* a tick's messages in one: each as if it came alone */
 	if (header.type == _distributed_message_batch)
 	{
@@ -4348,6 +4410,7 @@ void network_distributed_handle_message(
 		/* (its count 1: the client asks again, having failed to make one of
 		the host's objects) */
 		network_aim_assist_send_policy(machine_index);
+		distributed_send_shield_policy(machine_index);
 		if (header.count != 0)
 			distributed_count_resync();
 		network_objects_client_asked(machine_index, header.count != 0);

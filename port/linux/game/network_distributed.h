@@ -130,6 +130,10 @@ enum
 	/* version 32: the host's mouse aim-assist policy, reliably when a client
 	is ready and when it changes (network_aim_assist.c) */
 	_distributed_message_aim_assist_policy = 90,
+	/* versions 36 and 38: the host's shield-effects selector, reliably on
+	readiness and changes. VISR accepts every documented choice and draws
+	stock effects; its host always sends STOCK. */
+	_distributed_message_shield_policy = 91,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };
@@ -176,6 +180,12 @@ struct distributed_message_header
 	long game_time;
 };
 
+struct distributed_shield_policy_message
+{
+	struct distributed_message_header header;
+	unsigned long selector;
+};
+
 /* a vector in 16-bit parts: a unit vector's of 1/32767, a velocity's of
 1/1024 world units a tick, an angular velocity's of 1/4096 of a radian */
 struct distributed_vector
@@ -190,6 +200,8 @@ typedef char distributed_message_header_size_assert[
 	sizeof(struct distributed_message_header) == 8 ? 1 : -1];
 typedef char distributed_message_header_game_time_offset_assert[
 	offsetof(struct distributed_message_header, game_time) == 4 ? 1 : -1];
+typedef char distributed_shield_policy_message_size_assert[
+	sizeof(struct distributed_shield_policy_message) == 12 ? 1 : -1];
 typedef char distributed_vector_size_assert[sizeof(struct distributed_vector) == 6 ? 1 : -1];
 
 /* ---------- macros */
