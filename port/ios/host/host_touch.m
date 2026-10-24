@@ -176,8 +176,8 @@ void host_touch_replay_active(int active) {
     [self addButton:@"PAUSE" label:@"Pause or start" button:SDL_GAMEPAD_BUTTON_START axis:-1];
     [self addButton:@"CROUCH" label:@"Crouch" button:SDL_GAMEPAD_BUTTON_LEFT_STICK axis:-1];
     [self addButton:@"ZOOM" label:@"Zoom" button:SDL_GAMEPAD_BUTTON_RIGHT_STICK axis:-1];
-    [self addButton:@"LIGHT" label:@"Flashlight" button:SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER axis:-1];
-    [self addButton:@"SWAP G" label:@"Switch grenade" button:SDL_GAMEPAD_BUTTON_LEFT_SHOULDER axis:-1];
+    [self addButton:@"LIGHT" label:@"Flashlight" button:SDL_GAMEPAD_BUTTON_LEFT_SHOULDER axis:-1];
+    [self addButton:@"SWAP G" label:@"Switch grenade" button:SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER axis:-1];
     self.toggle=[UIButton buttonWithType:UIButtonTypeSystem];[self.toggle setTitle:@"Hide controls" forState:UIControlStateNormal];
     [self.toggle setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];self.toggle.titleLabel.font=[UIFont systemFontOfSize:12];
     self.toggle.backgroundColor=[UIColor colorWithWhite:0 alpha:.3];self.toggle.layer.cornerRadius=12;

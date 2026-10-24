@@ -14,6 +14,9 @@ BUILD.mkdir(parents=True, exist_ok=True)
 def run(*args):
     subprocess.run([str(a) for a in args], cwd=ROOT, check=True)
 
+# Touch button labels must reach their default game actions.
+run('python3', 'tools/test_touch_mapping.py')
+
 clang = '/opt/homebrew/opt/llvm/bin/clang'
 lld = '/opt/homebrew/opt/lld/bin/ld.lld'
 run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
