@@ -46,7 +46,8 @@ SHADER_UPLOAD_DISCLOSURE = (
 PERF_REPORTS_DISCLOSURE = (
     "VISR automatically sends game performance data to improve the game. "
     "Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. "
-    "Performance diagnostics are required in builds with performance reports enabled."
+    "Performance diagnostics are required in builds with performance reports enabled. "
+    "Sharing this data is part of testing; leaving the beta stops it."
 )
 SUMMARY_HEADING = "### Summary"
 CHANGELOG_DETAILS_HEADING = "### Full changelog"
