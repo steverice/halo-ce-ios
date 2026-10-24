@@ -530,6 +530,8 @@ uint32_t host_shader_observation_activate(const char *name,int suppressed,char *
     path=map_path(path);
     atomic_store(&menu,[path.lastPathComponent.stringByDeletingPathExtension isEqual:@"ui"]);
     dispatch_async(worker,^{checkpoint(YES);if(!atomic_load(&menu) || atomic_load(&runtime_suppressed))[inflight cancel];});
+    const char *stock_name=host_shader_warming_alias(NULL,path.lastPathComponent.stringByDeletingPathExtension.UTF8String);
+    if(stock_name && key && key_size)snprintf(key,key_size,"%s",stock_name);
     NSString *signature=map_signature(path);
     [map_cache_lock lock];NSDictionary *identity=map_cache[path];[map_cache_lock unlock];
     if(!identity || ![identity[@"signature"] isEqual:signature]) {
@@ -539,7 +541,7 @@ uint32_t host_shader_observation_activate(const char *name,int suppressed,char *
         signature=map_signature(path);[map_cache_lock lock];identity=map_cache[path];[map_cache_lock unlock];
         if(!identity || ![identity[@"signature"] isEqual:signature])return 0;
     }
-    const char *trusted_alias=host_shader_official_alias([identity[@"fingerprint"] UTF8String]);
+    const char *trusted_alias=host_shader_warming_alias([identity[@"fingerprint"] UTF8String],stock_name);
     NSString *trusted_key=trusted_alias ? @(trusted_alias) : [@"m_" stringByAppendingString:[identity[@"fingerprint"] substringToIndex:60]];
     if(key && key_size)snprintf(key,key_size,"%s",trusted_key.UTF8String);
     if(suppressed || !atomic_load(&enabled))return 0;
@@ -556,7 +558,6 @@ uint32_t host_shader_observation_activate(const char *name,int suppressed,char *
     NSString *list=[NSString stringWithFormat:@"shader-lists-2:%@:%@",[feed[@"bundled"] boolValue] ? @"bundled" : [feed[@"sequence"] description],hash];
     snprintf(g->shader_list_id,sizeof(g->shader_list_id),"%s",list.UTF8String);
     atomic_store_explicit(&generations[index].ready,1,memory_order_release);
-    if(key && key_size)snprintf(key,key_size,"%s",g->map_key);
     return index+1;
 #else
     (void)name;(void)suppressed;return 0;

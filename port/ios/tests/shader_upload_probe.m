@@ -45,6 +45,14 @@ int main(int argc,const char **argv) { @autoreleasepool {
         NSData *late=[@"headlate imported campaign cache bytes" dataUsingEncoding:NSUTF8StringEncoding];
         assert([late writeToFile:@"maps/new.map" atomically:YES]);
         uint32_t next=host_shader_observation_activate("maps/new.map",0,key,sizeof(key));assert(next && *key);
+        assert([late writeToFile:@"maps/a10.map" atomically:YES]);
+        next=host_shader_observation_activate("maps/a10.map",0,key,sizeof(key));
+        assert(next && !strcmp(key,"a10"));
+        host_shader_observation_append(next,&event);host_shader_upload_test_barrier(1);
+        NSArray *pending=host_typed_outbox_pending(@"shader-upload/outbox",@"shader");
+        assert(pending.count==1);
+        NSDictionary *payload=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:pending[0]] options:0 error:nil];
+        assert([payload[@"mapKey"] hasPrefix:@"m_"] && host_shader_upload_validate(payload));
         assert(host_shader_observation_activate("",0,key,sizeof(key))==0 && !*key);
     } else if([mode isEqual:@"pixelpersist"]) {
         event.kind=SHADER_OBSERVATION_PIXEL;event.pixel_size=252;

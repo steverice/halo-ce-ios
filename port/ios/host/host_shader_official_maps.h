@@ -43,3 +43,16 @@ static inline const char *host_shader_official_alias(const char *fingerprint)
             return host_shader_official_maps[i].alias;
     return NULL;
 }
+
+/* Regional stock maps share compilation descriptors, but their names must never
+   establish the fingerprint identity used by upload validation. */
+static inline const char *host_shader_warming_alias(const char *fingerprint, const char *name)
+{
+    const char *alias = host_shader_official_alias(fingerprint);
+    if (alias) return alias;
+    if (!name) return NULL;
+    for (size_t i = 0; i < sizeof(host_shader_official_maps) / sizeof(host_shader_official_maps[0]); ++i)
+        if (!strcmp(name, host_shader_official_maps[i].alias))
+            return host_shader_official_maps[i].alias;
+    return NULL;
+}

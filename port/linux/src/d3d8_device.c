@@ -3744,8 +3744,8 @@ void halo_shader_list_warm(char const *map_name)
 			base = cursor + 1;
 	}
 #ifdef HALO_ILP32
-	/* Eligible builds warm only the fingerprint identity resolved by the host.
-	   An identity still being hashed skips warming rather than sharing a name. */
+	/* The host resolves fingerprint lists and stock-name regional fallbacks.
+	   Upload generations retain their independent fingerprint identity. */
 	if (observation_capture) base = observation_map_key;
 #endif
 	snprintf(shader_list.map, sizeof(shader_list.map), "%s", base);
