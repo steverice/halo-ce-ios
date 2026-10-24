@@ -19,7 +19,7 @@ enum { _damage_kill_instantly_bit };
 /* COOP_FLAGS */
 #define STATIC_TARGET_TYPES (_object_mask_scenery | _object_mask_device)
 struct damage_data { long owner_player_index, owner_object_index; short owner_team_index; unsigned flags; };
-struct object_fields { short type, owner_team_index; float maximum_body_vitality, maximum_shield_vitality; real_vector3d forward; };
+struct object_fields { short type, owner_team_index; float maximum_body_vitality, maximum_shield_vitality; real_vector3d forward; long owner_player_index; };
 struct unit_datum { struct object_fields object; struct { long player_index; } unit; };
 struct network_game { byte cooperative_flags; };
 static struct { long action_count, state_count; } replay;
@@ -96,7 +96,7 @@ static boolean attached_seen, unattached_seen;
 static void effect_new_from_object(long definition, long owner, long object, long player, float a, float b,
 	void const *color, void const *field)
 {
-	struct damage_data damage = { 3, owner, 0, 0 };
+	struct damage_data damage = { objects[owner].object.owner_player_index, owner, 0, 0 };
 	effect_dealt = network_damage_deals(&damage, 0, NONE, NONE, NONE, NULL, distributed_damage_authorized);
 }
 static void effect_new_attached_from_markers(long definition, long owner, long object, short node, short count,
@@ -158,6 +158,7 @@ int main(void)
 	objects[4].object = (struct object_fields){ _object_type_device, 0, 1, 0 };
 	objects[5].object = (struct object_fields){ _object_type_scenery, 0, 0, 0 };
 	assert(static_target(3) && static_target(4) && !static_target(5) && !static_target(0));
+	objects[3].object.owner_player_index = 3;
 	damage.owner_object_index = 3;
 	assert(network_damage_static_source(&damage));
 	connection = _game_connection_network_server;
@@ -177,6 +178,38 @@ int main(void)
 		assert(attached_seen && !effect_dealt && !damage_report_count && distributed_damage_authorized);
 		damage_effect_new_at_location(9, 3, NONE, &position, &forward, &forward);
 		assert(unattached_seen && !effect_dealt && !damage_report_count && distributed_damage_authorized);
+	}
+
+	/* Destruction keeps the source's player credit without handing that
+	player authority. Exercise client-owned static destruction through the
+	same constructors used by body/shield depletion. */
+	for (long source = 3; source <= 4; source++)
+	{
+		objects[source].object.owner_player_index = 7;
+		damage.owner_object_index = source;
+		damage.owner_player_index = 7;
+		connection = _game_connection_network_server;
+		client = FALSE;
+		damage_report_count = 0;
+		for (int reporting = FALSE; reporting <= TRUE; reporting++)
+		{
+			damage_dealing_report = reporting;
+			assert(network_damage_deals(&damage, 0, NONE, NONE, NONE, NULL, FALSE));
+			damage_effect_new_on_object(9, source);
+			assert(effect_dealt && !damage_report_count && distributed_damage_authorized);
+		}
+		connection = _game_connection_network_client;
+		client = TRUE;
+		/* Neither the remote owner nor a local owner may report secondary damage. */
+		for (int owner = 3; owner <= 7; owner += 4)
+		{
+			objects[source].object.owner_player_index = owner;
+			damage.owner_player_index = owner;
+			assert(!network_damage_deals(&damage, 0, NONE, NONE, NONE, NULL, FALSE));
+			damage_effect_new_on_object(9, source);
+			assert(!effect_dealt && !damage_report_count && distributed_damage_authorized);
+		}
+		damage_dealing_report = FALSE;
 	}
 
 	damage.owner_object_index = 1;
