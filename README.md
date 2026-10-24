@@ -12,11 +12,6 @@ VISR is a native port of Halo: Combat Evolved for Apple Vision Pro and other App
 The goal is to provide the best possible way to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it.
 <!-- end generated -->
 
-<!-- generated: shared: disc -->
-VISR ships no game data. You need a disc image of the original Xbox game, made
-from your own disc.
-<!-- end generated -->
-
 VISR is an unofficial fan project, not affiliated with or
 endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 
@@ -207,9 +202,7 @@ Corporation. VISR is an unofficial fan project. It is not affiliated with,
 sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
 (formerly 343 Industries) or Bungie.
 
-VISR does not include or distribute the game's maps, sounds, textures, videos
-or other content, and it does not help you obtain them. VISR is free and is not
-sold.
+VISR does not include or distribute the game's maps, sounds, textures, videos or other content, and it does not help you obtain them. You need a disc image of the original Xbox game, made from your own disc. VISR is free and is not sold.
 
 It builds on the Halo: CE decompilation, [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and the other projects in its [credits](https://github.com/steverice/visr#credits). The code is licensed under [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE). It includes code that originated in CC0 1.0 projects, credited in the [notices](https://github.com/steverice/visr/blob/main/NOTICE.md).
 

@@ -23,15 +23,12 @@ Corporation. VISR is an unofficial fan project. It is not affiliated with,
 sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
 (formerly 343 Industries) or Bungie.
 
-VISR does not include or distribute the game's maps, sounds, textures, videos
-or other content, and it does not help you obtain them. VISR is free and is not
-sold.
+VISR does not include or distribute the game's maps, sounds, textures, videos or other content, and it does not help you obtain them. You need a disc image of the original Xbox game, made from your own disc. VISR is free and is not sold.
 
 It builds on the Halo: CE decompilation, [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and the other projects in its [credits](https://github.com/steverice/visr#credits). The code is licensed under [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE). It includes code that originated in CC0 1.0 projects, credited in the [notices](https://github.com/steverice/visr/blob/main/NOTICE.md).
 
 Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc.'''
 tailored = "VISR is tailored to each Apple device, so it just works."
-disc = "VISR ships no game data. You need a disc image of the original Xbox game, made\nfrom your own disc."
 
 [platforms.vision-pro]
 name = "Apple Vision Pro"

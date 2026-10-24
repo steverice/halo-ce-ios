@@ -272,8 +272,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
     return Template(template).substitute(
         **{key: escape(value, quote=True) for key, value in metadata.items()},
         content="\n".join(output),
-        legal=md.render(facts["shared"]["legal"] + "\n\n"
-                        + facts["shared"]["disc"].replace("\n", " ")).rstrip(),
+        legal=md.render(facts["shared"]["legal"]).rstrip(),
     )
 
 

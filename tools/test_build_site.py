@@ -208,10 +208,11 @@ def test_committed_readme_matches_facts():
     assert source == render_readme(source, load_facts()), 'Run python3 tools/build_site.py'
 
 
-def test_footer_uses_shared_disc_notice_and_apple_attribution():
+def test_footer_uses_combined_game_data_notice_and_apple_attribution():
     page = render_site(SOURCE)
     assert 'Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc.' in page
     assert 'You need a disc image of the original Xbox game' in page
+    assert 'ships no game data' not in page
     assert 'Apache-2.0</a>' in page
 
 
