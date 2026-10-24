@@ -1,8 +1,19 @@
 # Privacy manifests
 
-The app bundle carries one `PrivacyInfo.xcprivacy`, chosen by the build:
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Turn off Share shader improvements in settings to stop future contributions.
 
-- `plain/`: every ordinary build. The app sends nothing to anyone, so it declares no collected data.
-- `tester/`: builds made with `tools/ios_build.py --tester`, which have the device benchmark's **Benchmark** button beside **Play**. Finishing the benchmark automatically queues and uploads a report when upload is enabled: frame times, memory and thermal state per run (performance data) and the device's model identifier, system version, GPU and display mode (other diagnostic data). It is not linked to the person and is not used for tracking.
+The app bundle carries one `PrivacyInfo.xcprivacy`, chosen by upload capability:
 
-Both declare the same required-reason APIs, which the game and its libraries use in every build: file timestamps of files inside the app's own container (`C617.1`), elapsed time measured inside the app (`35F9.1`), free disk space checked before writing (`E174.1`) and the app's own user defaults (`CA92.1`).
+- `plain/`: builds without benchmark or shader uploads declare no collected data.
+- `shader/`: shader-only upload builds declare Other Diagnostic Data linked to the user, for Analytics, without tracking.
+- `tester/`: benchmark-capable builds declare both Performance Data and Other Diagnostic Data linked to the user, for Analytics, without tracking.
+
+CloudKit attaches a creator user record ID even though the report payload omits account information.
+
+Shader upload capability is independent of benchmark uploads. Local builds default to neither. Eligible builds expose **Share shader improvements**, enabled by default. Turning it off stops collection, cancels delivery and discards pending contributions. Previously uploaded records remain subject to server retention. Local sent hashes remain to prevent repeat contributions; bounded retention of these hashes can permit resends after eviction.
+
+Shader reports contain canonical missing compilation descriptors and their supporting dependencies, a full map-file fingerprint and format, renderer, coarse device model and platform, app version and build, exact guest code hash, descriptor ABI and selected shader-list identity. A random per-batch nonce separates otherwise identical reports. Reports exclude map display names, file paths, usernames, account IDs, session IDs, timestamps, gameplay, settings, shader source and game assets. The nonce identifies an immutable batch, not a player or session.
+
+Raw CloudKit records must be purged after 30 days. Offline curation retains sanitized descriptors and full fingerprints, strips CloudKit creator metadata and quarantines rejected records. Publication requires review and signing; public writes are untrusted.
+
+All three manifests declare the same required-reason APIs, which the game and its libraries use in every build: file timestamps of files inside the app's own container (`C617.1`), elapsed time measured inside the app (`35F9.1`), free disk space checked before writing (`E174.1`) and the app's own user defaults (`CA92.1`).
