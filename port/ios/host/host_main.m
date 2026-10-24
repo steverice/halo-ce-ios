@@ -19,6 +19,7 @@
 #include "host_cloud_saves.h"
 #include "host_shader_upload.h"
 #include "host_perf_reports.h"
+#include "host_perf_hooks.h"
 #include "renderer_build.h"
 #if !TARGET_OS_TV && !HALO_NATIVE_MAC
 #include "host_texture_settings.h"
@@ -263,6 +264,13 @@ int main(int argc,char **argv) {
 #if HALO_NATIVE_MAC
         host_macos_install();
 #endif
+        /* Shadow measurements need resume events even when report uploads are off. */
+#if HALO_NATIVE_MAC
+        NSString *resume_notification=NSApplicationDidBecomeActiveNotification;
+#else
+        NSString *resume_notification=UIApplicationDidBecomeActiveNotification;
+#endif
+        [NSNotificationCenter.defaultCenter addObserverForName:resume_notification object:nil queue:nil usingBlock:^(NSNotification *note){(void)note;host_perf_hooks_dynamic_resume();}];
         host_external_install();
 #if TARGET_OS_TV
         /* tvOS apps may only write to Caches (purgeable). */

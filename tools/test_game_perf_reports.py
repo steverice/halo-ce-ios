@@ -187,3 +187,44 @@ def test_loader_rejects_numbers_that_overflow_float(tmp_path):
     path.write_bytes(b'{"context":{"refreshHz":1e999}}')
     with pytest.raises(ValueError, match='nonfinite'):
         perf.load_report(path)
+
+
+def shadow_report():
+    value = report()
+    rows = [{'frame': i, 'frameID': 500 + i * 10, 'sceneUS': 9000, 'upscaleUS': 0,
+             'hudUS': 300, 'presentedUS': 100000 + i * 16667, 'presentationUS': 16667, 'late': 0, 'actualLines': 1080,
+             'chosenLines': 880, 'ceilingLines': 1080, 'floorLines': 540,
+             'ignore': 4, 'action': 1, 'thermal': 2, 'available': 15} for i in range(2)]
+    value['dynamicResolution'] = {'semantics': {'gpuClockCheck': 'unvalidated_shadow_only'}, 'frames': rows}
+    return value
+
+
+def test_shadow_rows_preserve_exact_timings_and_stable_trace():
+    value = shadow_report()
+    second = value['dynamicResolution']['frames'][1]
+    second.update(sceneUS=None, upscaleUS=None, hudUS=None, presentedUS=None, presentationUS=None, late=None,
+                  chosenLines=None, action=None, available=0)
+    frames = perf.decode_frames(perf.validate_report(value))
+    assert frames[0]['cpu'] == 10
+    assert frames[0]['dynamicResolution']['sceneUS'] == 9000
+    assert frames[0]['dynamicResolution']['upscaleUS'] == 0
+    assert frames[0]['dynamicResolution']['actualLines'] == 1080
+    assert frames[0]['dynamicResolution']['chosenLines'] == 880
+    assert frames[1]['dynamicResolution']['frameID'] == 510
+    assert frames[1]['dynamicResolution']['sceneUS'] is None
+
+
+@pytest.mark.parametrize('mutation', ['count', 'index', 'timing', 'availability'])
+def test_shadow_rows_refuse_misalignment_and_missingness(mutation):
+    value = shadow_report()
+    rows = value['dynamicResolution']['frames']
+    if mutation == 'count':
+        rows.pop()
+    elif mutation == 'index':
+        rows[1]['frame'] = 0
+    elif mutation == 'timing':
+        rows[1]['sceneUS'] = -1
+    else:
+        rows[1]['available'] = 0
+    with pytest.raises(ValueError, match='dynamic resolution'):
+        perf.validate_report(value)

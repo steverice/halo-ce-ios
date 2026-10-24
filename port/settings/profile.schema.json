@@ -212,6 +212,17 @@
       },
       "additionalProperties": false
     },
+    "debug": {
+      "type": "object",
+      "properties": {
+        "dynamic_resolution_shadow": {
+          "type": "boolean",
+          "default": false,
+          "description": "With the Metal renderer, log and record the dynamic resolution planner's choices without changing the rendered resolution. Profile values outside the accepted set are refused, not clamped."
+        }
+      },
+      "additionalProperties": false
+    },
     "schema": {
       "type": "integer",
       "const": 1
@@ -2231,6 +2242,50 @@
           ]
         },
         "display.clutter_distance": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "debug.dynamic_resolution_shadow": {
           "type": "object",
           "properties": {
             "basis": {

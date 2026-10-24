@@ -2,6 +2,10 @@
 #include "host_perf_hooks.h"
 #include "host_perf_reports.h"
 #include <assert.h>
+#include <string.h>
+#include <stdio.h>
+void host_config_string(const char *name, const char *fallback, char *out, size_t size) { (void)name; snprintf(out,size,"%s",fallback); }
+void host_perf_metal_join(game_perf_frame *frame) { (void)frame; }
 static game_perf_frame recorded;
 static game_perf_event event;
 void host_perf_reports_frame(const game_perf_frame *frame) { recorded = *frame; }

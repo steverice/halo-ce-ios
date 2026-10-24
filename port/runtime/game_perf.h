@@ -9,7 +9,7 @@
 #define GAME_PERF_FRAME_CAPACITY 8192
 #define GAME_PERF_EVENT_CAPACITY 4096
 #define GAME_PERF_WINDOW_COUNT 8
-#define GAME_PERF_WINDOW_FRAMES 900
+#define GAME_PERF_WINDOW_FRAMES 512
 #define GAME_PERF_LOADING 1u
 #define GAME_PERF_PRESENT_FAILED 2u
 #define GAME_PERF_GPU_UNAVAILABLE 4u
@@ -28,12 +28,21 @@ typedef struct game_perf_detail {
     uint32_t gpu_pass_us[8];
     uint32_t available;
 } game_perf_detail;
+/* Shadow decisions describe a fixed-resolution observation, never actuation.
+ * available: 1 complete S/U/H, 2 actual presentation interval, 4 decision,
+ * 8 stage-boundary counter capability. Missing samples stay explicit. */
+typedef struct game_perf_dynamic_resolution {
+    uint64_t scene_us, upscale_us, hud_us, presented_us, presentation_us;
+    uint32_t actual_lines, chosen_lines, ceiling_lines, floor_lines;
+    uint32_t ignore, action, thermal, available, late;
+} game_perf_dynamic_resolution;
 typedef struct game_perf_frame {
     uint64_t frame_id, elapsed_us, interval_us;
     uint64_t cpu_us, simulation_us, network_us, render_us, gpu_us, budget_us;
     uint32_t tick_delta;
     uint16_t flags;
     game_perf_detail detail;
+    game_perf_dynamic_resolution drs;
 } game_perf_frame;
 typedef enum game_perf_event_type {
     GAME_PERF_EVENT_START=1, GAME_PERF_EVENT_END, GAME_PERF_EVENT_GAP,

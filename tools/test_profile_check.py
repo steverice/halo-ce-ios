@@ -37,6 +37,14 @@ def refused(text, word, name="box.toml"):
 
 
 assert problems(GOOD)[0] == []
+SHADOW = GOOD + '''[debug]
+dynamic_resolution_shadow = true
+[evidence."debug.dynamic_resolution_shadow"]
+basis = "assumed"
+why = "Collect virtual planner decisions during a fixed-resolution validation run."
+'''
+assert problems(SHADOW)[0] == []
+
 # settings that are the player's, and values outside what a setting accepts
 refused(GOOD + "[network]\nonline = true\n", "network.online is not a setting a profile may set")
 refused(GOOD + "[debug]\nexit_after = 1.0\n", "debug.exit_after is not a setting")

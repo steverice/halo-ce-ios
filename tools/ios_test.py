@@ -325,12 +325,23 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
     'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
 run(BUILD/'benchmark-probe')
+# Shadow measurements retain physical level tags after virtual decisions.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-Iport/ios/host', '-Iport/runtime', 'port/ios/tests/dynamic_resolution_shadow_probe.c',
+    '-o', BUILD/'dynamic-resolution-shadow-probe')
+run(BUILD/'dynamic-resolution-shadow-probe')
 # Scalar game-loop hooks preserve timing and event attribution without host frameworks.
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
     '-DHALO_PERF_REPORTS=1', '-Iport/ios/host', '-Iport/runtime',
     'port/ios/tests/perf_hooks_probe.c', 'port/ios/host/host_perf_hooks.c',
     '-o', BUILD/'perf-hooks-probe')
 run(BUILD/'perf-hooks-probe')
+# Shadow-only builds keep frame IDs alive and flush delayed rows at suspension.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-DHALO_PERF_REPORTS=0', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/dynamic_resolution_hooks_probe.c', 'port/ios/host/host_perf_hooks.c',
+    '-o', BUILD/'dynamic-resolution-hooks-probe')
+run(BUILD/'dynamic-resolution-hooks-probe')
 # Counter metadata remains bounded and refuses stale/partial completion; no GPU submission.
 run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
     '-fobjc-arc', '-fblocks', '-Iport/runtime', '-Iport/ios/host',

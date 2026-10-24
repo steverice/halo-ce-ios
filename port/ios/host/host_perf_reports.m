@@ -76,7 +76,8 @@ static id bounded_json(NSString *path,NSUInteger limit) {
     return data ? [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] : nil;
 }
 static BOOL working_metadata_valid(NSDictionary *value) {
-    if(![value isKindOfClass:NSDictionary.class] || ![value[@"schema"] isEqual:@1])return NO;
+    if(![value isKindOfClass:NSDictionary.class] || ![value[@"schema"] isEqual:@1] ||
+       ![value[@"journalABI"] isEqual:@1] || ![value[@"journalFrameSize"] isEqual:@(sizeof(game_perf_frame))])return NO;
     NSArray *allowed=@[@"schema",@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"mapFormat",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"appVersion",@"appBuild",@"guestSHA256",@"profileHash",@"graphics",@"os",@"networkVersion",@"journalABI",@"journalFrameSize",@"timingSemantics",@"resumed",@"_checkpoint",@"_initialContext"];
     for(id key in value)if(![allowed containsObject:key])return NO;
     for(NSString *key in @[@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"renderer",@"mode",@"appVersion",@"appBuild",@"guestSHA256"])
@@ -234,6 +235,36 @@ static BOOL write_epochs(FILE *out,NSString *working) {
     }
     if(input)fclose(input);free(index);return ok && write_bytes(out,"]",1);
 }
+/* Shadow rows share the retained trace's index, including frames outside spike windows. */
+static BOOL write_dynamic_resolution(FILE *out,NSString *working) {
+    NSDictionary *semantics=@{@"mode":@"shadow_only_no_resolution_changes",
+        @"gpuTiming":@"frame_joined_stage_boundary_scene_upscale_hud_microseconds",
+        @"cpuTiming":@"trace_cpu_subtracts_pacing_slot_visibility_and_readback_waits",
+        @"presentation":@"actual_drawable_timestamp_and_interval_monotonic_microseconds_late_over_1_5_display_shares",
+        @"lines":@"actual_rendered_lines_and_virtual_planner_choice",
+        @"ignore":@"planner_ignore_reason_bitmask",
+        @"action":@{@"0":@"hold",@"1":@"drop",@"2":@"panic",@"3":@"recover"},
+        @"thermal":@{@"0":@"nominal",@"1":@"fair",@"2":@"serious",@"3":@"critical"},
+        @"available":@{@"1":@"scene_upscale_hud",@"2":@"actual_presentation_interval",@"4":@"shadow_decision",@"8":@"stage_counter_capability"},
+        @"gpuClockCheck":@"unvalidated_shadow_only",
+        @"gpuClockLimitation":@"Shadow mode does not render at virtual dropped levels, so it cannot test whether lower resolution holds GPU clocks low. This collector does not measure GPU clock frequency."};
+    BOOL ok=write_bytes(out,",\"dynamicResolution\":{\"semantics\":",sizeof(",\"dynamicResolution\":{\"semantics\":")-1) && json_value(out,semantics) && write_bytes(out,",\"frames\":[",sizeof(",\"frames\":[")-1);
+    FILE *input=fopen(working.fileSystemRepresentation,"rb");if(!input)return NO;
+    uint8_t payload[16384];size_t size;uint32_t type,seq=0;uint64_t index=0;
+    while(ok && read_chunk(input,seq++,&type,payload,sizeof(payload),&size))if(type==1 && size==sizeof(game_perf_frame)) {@autoreleasepool{
+        if(index>=frozen_frames)break;game_perf_frame f;memcpy(&f,payload,sizeof(f));
+        const game_perf_dynamic_resolution *d=&f.drs;BOOL gpu=(d->available&1)!=0,presented=(d->available&2)!=0,shadow=(d->available&4)!=0;
+        if(index)ok=write_bytes(out,",",1);
+        ok=ok && json_value(out,@{@"frame":@(index),@"frameID":@(f.frame_id),
+            @"sceneUS":gpu?@(d->scene_us):NSNull.null,@"upscaleUS":gpu?@(d->upscale_us):NSNull.null,@"hudUS":gpu?@(d->hud_us):NSNull.null,
+            @"presentedUS":presented?@(d->presented_us):NSNull.null,@"presentationUS":presented?@(d->presentation_us):NSNull.null,@"late":presented?@(d->late):NSNull.null,
+            @"actualLines":@(d->actual_lines),@"chosenLines":shadow?@(d->chosen_lines):NSNull.null,
+            @"ceilingLines":@(d->ceiling_lines),@"floorLines":@(d->floor_lines),
+            @"ignore":@(d->ignore),@"action":shadow?@(d->action):NSNull.null,@"thermal":@(d->thermal),@"available":@(d->available)});
+        index++;
+    }}
+    fclose(input);return ok && index==frozen_frames && write_bytes(out,"]}",2);
+}
 static BOOL write_auxiliary(FILE *out,NSString *working) {
     BOOL ok=write_bytes(out,",\"events\":[",sizeof(",\"events\":[")-1);BOOL first=YES;
     FILE *input=fopen(working.fileSystemRepresentation,"rb");uint8_t payload[16384];size_t size;uint32_t type,seq=0;
@@ -361,7 +392,7 @@ static NSString *finish_report(BOOL interrupted) {
         }
         if(columns[i])fclose(columns[i]);
     }
-    if(valid)valid=write_bytes(out,"}",1) && write_epochs(out,working) && write_auxiliary(out,working) && write_bytes(out,"}",1);
+    if(valid)valid=write_bytes(out,"}",1) && write_epochs(out,working) && write_dynamic_resolution(out,working) && write_auxiliary(out,working) && write_bytes(out,"}",1);
     if(out){if(fflush(out) || fsync(fileno(out)))valid=NO;fclose(out);}
     NSNumber *bytes=[NSFileManager.defaultManager attributesOfItemAtPath:temporary error:nil][NSFileSize];if(bytes.unsignedLongLongValue>JOURNAL_LIMIT){[NSFileManager.defaultManager removeItemAtPath:temporary error:nil];if(!omit_detail){omit_detail=YES;return finish_report(interrupted);}if(trace_limit>1000){trace_limit/=2;truncated=YES;return finish_report(interrupted);}valid=NO;}
     FILE *raw=valid?fopen(temporary.fileSystemRepresentation,"rb"):NULL;NSString *gzip=[ROOT stringByAppendingPathComponent:@"freezing.gz"];gzFile compressed=raw?gzopen(gzip.fileSystemRepresentation,"wb"):NULL;
@@ -476,6 +507,7 @@ void host_perf_reports_start(const char *sha) {
 #endif
 }
 void host_perf_reports_activate(const char *name,int suppressed) {
+    host_perf_hooks_dynamic_flush();host_perf_hooks_dynamic_ignore(4);
 #if HALO_PERF_REPORTS
     if(!worker)return;
 #if HALO_PERF_REPORTS_TESTING
@@ -535,7 +567,7 @@ void host_perf_reports_identity(const char *resolved_path) {
 void host_perf_reports_frame(const game_perf_frame *value) {
 #if HALO_PERF_REPORTS
     if(!value)return;atomic_fetch_add(&appenders,1);
-    if(atomic_load_explicit(&collecting,memory_order_acquire)){game_perf_frame frame=*value;frame.elapsed_us=frame.elapsed_us>=start_us?frame.elapsed_us-start_us:0;game_perf_append_frame(recorder,&frame);}
+    if(atomic_load_explicit(&collecting,memory_order_acquire) && value->elapsed_us>=start_us){game_perf_frame frame=*value;frame.elapsed_us-=start_us;game_perf_append_frame(recorder,&frame);}
     atomic_fetch_sub(&appenders,1);
 #else
     (void)value;
@@ -549,6 +581,7 @@ void host_perf_reports_event(const game_perf_event *value) {
 #endif
 }
 void host_perf_reports_suspend(void) {
+    host_perf_hooks_dynamic_pause();
 #if HALO_PERF_REPORTS
     if(!worker)return;atomic_store(&suspended,true);BOOL was_playing=atomic_exchange(&collecting,false);
     dispatch_async(worker,^{host_report_delivery_cancel_performance();resume_play=was_playing;resume_ready=NO;});
@@ -589,7 +622,7 @@ void host_perf_reports_graphics(const char *json) {
     if(!worker || !json)return;uint64_t captured_frame=dispatch_get_specific(&worker_key)?graphics_frame_override:host_perf_hooks_frame_id();size_t length=strnlen(json,16385);if(length>16384)return;
     NSData *bytes=[NSData dataWithBytes:json length:length];id snapshot=[NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil];
     if(![snapshot isKindOfClass:NSDictionary.class] || ![snapshot[@"values"] isKindOfClass:NSDictionary.class])return;
-    NSMutableDictionary *allowed=[NSMutableDictionary dictionary];NSArray *keys=@[@"display.renderer",@"display.render_height",@"display.output_height",@"display.render_scale",@"display.max_fps",@"display.frame_rate",@"display.frame_pacing",@"display.frames_in_flight",@"display.frame_spacing",@"display.frame_repeat",@"display.anisotropic_filtering",@"display.shadow_map_size",@"display.model_lod",@"display.anti_aliasing",@"display.foveation",@"display.effect_resolution",@"display.render_quality",@"display.resolution",@"display.resolution_scaling",@"display.upscaler",@"display.vsync",@"display.async_shaders",@"display.lod_scale",@"display.clutter_distance",@"display.compressed_textures",@"display.upscaled_textures",@"display.shadow_batching",@"display.decal_batching",@"display.immersive",@"display.stereo",@"display.interpolation",@"display.late_start",@"display.late_look",@"debug.metal_state_cache",@"debug.metal_specialize",@"debug.metal_vertex_bgra",@"debug.metal_base_vertex",@"debug.gpu_flush_draws"];
+    NSMutableDictionary *allowed=[NSMutableDictionary dictionary];NSArray *keys=@[@"display.renderer",@"display.render_height",@"display.output_height",@"display.render_scale",@"display.max_fps",@"display.frame_rate",@"display.frame_pacing",@"display.frames_in_flight",@"display.frame_spacing",@"display.frame_repeat",@"display.anisotropic_filtering",@"display.shadow_map_size",@"display.model_lod",@"display.anti_aliasing",@"display.foveation",@"display.effect_resolution",@"display.render_quality",@"display.resolution",@"display.resolution_scaling",@"display.upscaler",@"display.vsync",@"display.async_shaders",@"display.lod_scale",@"display.clutter_distance",@"display.compressed_textures",@"display.upscaled_textures",@"display.shadow_batching",@"display.decal_batching",@"display.immersive",@"display.stereo",@"display.interpolation",@"display.late_start",@"display.late_look",@"debug.metal_state_cache",@"debug.metal_specialize",@"debug.metal_vertex_bgra",@"debug.metal_base_vertex",@"debug.gpu_flush_draws",@"debug.dynamic_resolution_shadow"];
     for(NSString *key in keys){id value=snapshot[@"values"][key];if(([value isKindOfClass:NSNumber.class] && isfinite([value doubleValue])) || ([value isKindOfClass:NSString.class] && graphics_string_allowed(key,value)))allowed[key]=value;}
     dispatch_block_t apply=^{if([graphics isEqual:allowed] && graphics_hash)return;graphics=[allowed copy];
         NSData *canonical=[NSJSONSerialization dataWithJSONObject:graphics options:NSJSONWritingSortedKeys error:nil];uint8_t digest[32];CC_SHA256(canonical.bytes,(CC_LONG)canonical.length,digest);NSMutableString *hash=[NSMutableString string];for(int i=0;i<32;i++)[hash appendFormat:@"%02x",digest[i]];graphics_hash=hash;if(!metadata)return;metadata[@"graphics"]=graphics;metadata[@"profileHash"]=hash;
@@ -618,6 +651,7 @@ int host_perf_reports_enabled(void) {
 #endif
 }
 void host_perf_reports_finish(int interrupted) {
+    host_perf_hooks_dynamic_flush();
 #if HALO_PERF_REPORTS
     if(!worker)return;
     atomic_store(&suspended,true);atomic_store(&collecting,false);

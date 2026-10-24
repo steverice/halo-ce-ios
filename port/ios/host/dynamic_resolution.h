@@ -1,6 +1,7 @@
 /* Dynamic resolution's pure planner. All durations are seconds; pixels are
 content pixels, not attachment pixels. The host supplies presented frames in
-order, with costs and level tags from the same frame. No app caller yet.
+order, with costs and level tags from the same frame. host_perf_hooks.c
+feeds measured shadow frames without applying the suggested resolution.
 port/ios/tests/dynamic_resolution_probe.c drives the rules without graphics. */
 #pragma once
 

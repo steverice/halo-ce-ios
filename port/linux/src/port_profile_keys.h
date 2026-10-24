@@ -6,7 +6,9 @@ may set, each with its type and the values it accepts. This is the whole
 list: a profile that names any other setting fails tools/profile_check.py,
 and the loader ignores the line and says so in the log. Controls, sound,
 network, paths, comfort and layout choices and debug switches are the
-player's on every device and never belong here; the one exception is
+player's on every device and never belong here; measurement-only
+debug.dynamic_resolution_shadow may also be set by a validation profile.
+Other exceptions are
 input.aim_loss_grace, a hardware property (how long a device's hand tracking
 may drop out before the aim leaves the hand) and not a choice, and
 display.texture_idle_seconds (how long the texture cache keeps an undrawn
@@ -79,3 +81,5 @@ PROFILE_EXTERNAL("display.output_height")
 PROFILE_EXTERNAL("display.render_height")
 PROFILE_EXTERNAL("display.render_scale")
 PROFILE_EXTERNAL("display.anti_aliasing")
+
+PROFILE_BOOLEAN("debug.dynamic_resolution_shadow")

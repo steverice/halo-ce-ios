@@ -117,6 +117,7 @@ def chosen_origins(old, keys):
 # what port_config.c defaults these to: a run that doesn't --set one gets
 # the default, not whatever an earlier run's --set left in config.toml
 DEFAULTS = {
+    "debug.dynamic_resolution_shadow": "false",
     "display.screen_width": "0",
     "display.render_height": "0",
     "display.vsync": "true",

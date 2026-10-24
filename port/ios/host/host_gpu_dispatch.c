@@ -84,14 +84,10 @@ static uint32_t present_wrapped(gpu_texture back_buffer)
 	double called = uptime_seconds();
 
 	host_lifecycle_hold();
-#if HALO_PERF_REPORTS
 	host_perf_hooks_context(1, metal_backend ? 1 : 2);
 	host_perf_hooks_present_begin();
-#endif
 	next_frame_due = wrapped_backend->present(back_buffer);
-#if HALO_PERF_REPORTS
 	host_perf_hooks_present_end();
-#endif
 	data_updates_presented();
 	if (!metal_backend)
 	{
@@ -117,14 +113,10 @@ static uint32_t present_stereo_wrapped(const struct gpu_stereo_present *present)
 	uint32_t next_frame_due;
 
 	host_lifecycle_hold();
-#if HALO_PERF_REPORTS
 	host_perf_hooks_context(1, metal_backend ? 1 : 2);
 	host_perf_hooks_present_begin();
-#endif
 	next_frame_due = wrapped_backend->present_stereo(present);
-#if HALO_PERF_REPORTS
 	host_perf_hooks_present_end();
-#endif
 	data_updates_presented();
 	if (frame_counter)
 		host_frame_counter_show(presented++);

@@ -595,6 +595,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.metal_base_vertex` | boolean | `true` | apple | `HALO_METAL_BASE_VERTEX` | With the Metal renderer, indexed draws take a base vertex, so their indices are drawn as the game holds them; false copies and rebases every draw's indices on the CPU, as the OpenGL ES renderer has to, to compare. |
 | `debug.menu_open` | string | `""` | apple, desktop | `HALO_MENU_OPEN` | Start on this screen of the menus (port/assets/menus) instead of the main menu, a player profile being edited; empty for the main menu. |
 | `debug.gpu_flush_draws` | integer | `-1` | desktop | `HALO_GPU_FLUSH_DRAWS` | Flush the GPU's pipeline every this many draws: -1 for every 3 on Intel graphics with Mesa's driver (which can hang without), 0 never. |
+| `debug.dynamic_resolution_shadow` | boolean | `false` | apple | `HALO_DYNAMIC_RESOLUTION_SHADOW` | With the Metal renderer, log and record the dynamic resolution planner's choices without changing the rendered resolution. |
 | `debug.gpu_stats` | boolean | `false` | apple, desktop | `HALO_GPU_STATS` | Log the renderer's draw counts once a second. |
 | `debug.gpu_trace_frame` | integer | `-1` | apple, desktop | `HALO_GPU_TRACE` | Log every draw of this frame; -1 none. |
 | `debug.gpu_trace_constants` | boolean | `false` | apple, desktop | `HALO_GPU_TRACE_CONSTANTS` | With gpu_trace_frame, also the vertex shader constants. |

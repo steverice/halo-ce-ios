@@ -4,6 +4,9 @@
 #include "../host/host_perf_reports.m"
 static uint64_t probe_frame_id=1;
 uint64_t host_perf_hooks_frame_id(void) {return probe_frame_id;}
+void host_perf_hooks_dynamic_flush(void) {}
+void host_perf_hooks_dynamic_pause(void) {}
+void host_perf_hooks_dynamic_ignore(unsigned reason) {(void)reason;}
 void host_map_identity_init(void) {}
 uint64_t host_perf_metal_dropped(void) {return 0;}
 void host_perf_metal_join(game_perf_frame *frame) {(void)frame;}
@@ -29,13 +32,18 @@ int main(void) {@autoreleasepool {
     host_perf_reports_graphics("{\"values\":{\"display.renderer\":\"metal\",\"display.frame_rate\":\"60\",\"display.render_height\":\"/private/perf-secret\"}}");dispatch_sync(worker,^{});
     assert([graphics_hash isEqual:safe_graphics_hash]);assert(!graphics_string_allowed(@"display.frame_rate",@"29") && !graphics_string_allowed(@"display.frame_rate",@"1001"));
     [NSFileManager.defaultManager createDirectoryAtPath:OUTBOX withIntermediateDirectories:YES attributes:nil error:nil];
-    metadata=[@{@"schema":@1,@"nonce":@"0123456789abcdef0123456789abcdef",@"model":@"probe",@"platform":@"macos",@"profileID":@"unknown",@"mapFingerprint":@"unknown",@"renderer":@"metal",@"mode":@"unknown",@"appVersion":@"1",@"appBuild":@"1",@"guestSHA256":@"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"} mutableCopy];
-    initial_context=[metadata copy];
+    metadata=[@{@"journalABI":@1,@"journalFrameSize":@(sizeof(game_perf_frame)),@"schema":@1,@"nonce":@"0123456789abcdef0123456789abcdef",@"model":@"probe",@"platform":@"macos",@"profileID":@"unknown",@"mapFingerprint":@"unknown",@"renderer":@"metal",@"mode":@"unknown",@"appVersion":@"1",@"appBuild":@"1",@"guestSHA256":@"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"} mutableCopy];
+    initial_context=[metadata copy];assert(working_metadata_valid(metadata));
+    NSMutableDictionary *old_abi=[metadata mutableCopy];old_abi[@"journalFrameSize"]=@1;assert(!working_metadata_valid(old_abi));
     journal=fopen([[ROOT stringByAppendingPathComponent:@"working.bin"] fileSystemRepresentation],"wb");assert(journal);
     game_perf_frame frame={.frame_id=1,.elapsed_us=100000,.interval_us=16667,.cpu_us=1000,.simulation_us=500,.network_us=100,.render_us=400,.gpu_us=GAME_PERF_UNAVAILABLE,.budget_us=16667};
+    frame.drs=(game_perf_dynamic_resolution){.scene_us=9000,.upscale_us=800,.hud_us=300,.presented_us=100001,.presentation_us=16667,.late=0,.actual_lines=1080,.chosen_lines=880,.ceiling_lines=1080,.floor_lines=540,.ignore=4,.action=1,.thermal=2,.available=15};
     recorder=game_perf_create();assert(recorder);game_perf_set_enricher(recorder,enrich_frame,NULL);assert(game_perf_start(recorder,1));
+    game_perf_frame previous_segment=frame;previous_segment.elapsed_us=99;start_us=100;atomic_store(&collecting,true);
+    host_perf_reports_frame(&previous_segment);game_perf_status before={0};game_perf_get_status(recorder,&before);assert(before.frames_seen==0);
+    atomic_store(&collecting,false);start_us=0;
     assert(game_perf_append_frame(recorder,&frame));frame.elapsed_us=200000;frame.frame_id=2;assert(game_perf_append_frame(recorder,&frame));
-    frame.elapsed_us=300000;frame.frame_id=3;frame.flags=GAME_PERF_LOADING;frame.interval_us=60000;frame.cpu_us=500;assert(game_perf_append_frame(recorder,&frame));game_perf_end(recorder,300001,GAME_PERF_END_INTERRUPTED);drain();
+    frame.drs.available=0;frame.elapsed_us=300000;frame.frame_id=3;frame.flags=GAME_PERF_LOADING;frame.interval_us=60000;frame.cpu_us=500;assert(game_perf_append_frame(recorder,&frame));game_perf_end(recorder,300001,GAME_PERF_END_INTERRUPTED);drain();
     /* The graphics payload exceeds a frame struct, and epochs arrive out of order. */
     game_perf_event context={.elapsed_us=200000,.type=GAME_PERF_EVENT_CONTEXT,.flags=2,.value=2,.denominator=2};event_row(NULL,&context);
     NSData *epoch=[NSJSONSerialization dataWithJSONObject:@{@"frame":@0,@"context":@{@"graphics":@{@"syntheticPadding":[@"x" stringByPaddingToLength:7000 withString:@"x" startingAtIndex:0]}}} options:0 error:nil];append_chunk(3,epoch.bytes,epoch.length);
@@ -46,7 +54,12 @@ int main(void) {@autoreleasepool {
     assert(host_perf_validate_asset([path stringByAppendingPathExtension:@"gz"],head,head[@"payloadSHA256"]));
     NSMutableDictionary *changed=[head mutableCopy];changed[@"frameCount"]=@4;assert(!host_perf_validate_asset([path stringByAppendingPathExtension:@"gz"],changed,head[@"payloadSHA256"]));
     gzFile input=gzopen([[path stringByAppendingPathExtension:@"gz"] fileSystemRepresentation],"rb");assert(input);NSMutableData *decoded=[NSMutableData data];uint8_t bytes[4096];int n;while((n=gzread(input,bytes,sizeof(bytes)))>0)[decoded appendBytes:bytes length:n];assert(gzclose(input)==Z_OK);
-    NSDictionary *value=[NSJSONSerialization JSONObjectWithData:decoded options:0 error:nil];assert(value);assert([value[@"interrupted"] boolValue]);assert([value[@"traceSummary"][@"play"][@"metrics"][@"cpu"][@"p99US"] isEqual:@1000]);assert([value[@"traceSummary"][@"play"][@"metrics"][@"interval"][@"p99US"] isEqual:@16667]);assert([value[@"traceSummary"][@"loading"][@"metrics"][@"interval"][@"p99US"] isEqual:@60000]);
+    NSDictionary *value=[NSJSONSerialization JSONObjectWithData:decoded options:0 error:nil];assert(value);NSArray *drs=value[@"dynamicResolution"][@"frames"];assert(drs.count==3);
+    assert([drs[0][@"frame"] isEqual:@0] && [drs[0][@"sceneUS"] isEqual:@9000] && [drs[0][@"chosenLines"] isEqual:@880] && [drs[0][@"actualLines"] isEqual:@1080]);
+    assert([drs[1][@"frameID"] isEqual:@2] && [drs[1][@"presentedUS"] isEqual:@100001] && [drs[1][@"presentationUS"] isEqual:@16667] && [drs[1][@"late"] isEqual:@0]);
+    assert(drs[2][@"sceneUS"]==NSNull.null && drs[2][@"action"]==NSNull.null && drs[2][@"presentedUS"]==NSNull.null);
+    assert([value[@"dynamicResolution"][@"semantics"][@"gpuClockCheck"] isEqual:@"unvalidated_shadow_only"]);
+    assert([value[@"interrupted"] boolValue]);assert([value[@"traceSummary"][@"play"][@"metrics"][@"cpu"][@"p99US"] isEqual:@1000]);assert([value[@"traceSummary"][@"play"][@"metrics"][@"interval"][@"p99US"] isEqual:@16667]);assert([value[@"traceSummary"][@"loading"][@"metrics"][@"interval"][@"p99US"] isEqual:@60000]);
     assert([[(NSArray *)value[@"epochs"] firstObject][@"frame"] isEqual:@0]);assert([[(NSArray *)value[@"epochs"] lastObject][@"frame"] isEqual:@1]);assert([value[@"summary"][@"play"][@"metrics"][@"gpu"][@"available"] isEqual:@2]);
     NSData *interval=[[NSData alloc] initWithBase64EncodedString:value[@"trace"][@"intervalUS"] options:0];assert(interval.length==12);
     assert(![NSFileManager.defaultManager fileExistsAtPath:[ROOT stringByAppendingPathComponent:@"working.bin"]]);

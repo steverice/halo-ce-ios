@@ -19,3 +19,16 @@ void host_perf_hooks_gpu_join(struct game_perf_frame *frame);
 void host_perf_hooks_pacing(uint64_t microseconds);
 /* Renderer work excludes its measured pacing waits; supplied before present returns. */
 void host_perf_hooks_cpu(uint64_t microseconds);
+
+/* Shadow-only measurement; no caller consumes a resolution output. */
+int host_perf_hooks_dynamic_enabled(void);
+void host_perf_hooks_dynamic_config(int enabled, int width, int height, int floor, int thermal, int eligible);
+/* Thread-safe events are consumed by the next presented frame. */
+void host_perf_hooks_dynamic_ignore(unsigned reason);
+
+/* Game-thread map boundary: publish remaining rows before changing report. */
+void host_perf_hooks_dynamic_flush(void);
+
+/* Lifecycle threads serialize only the delayed ring, never producer scalars. */
+void host_perf_hooks_dynamic_pause(void);
+void host_perf_hooks_dynamic_resume(void);

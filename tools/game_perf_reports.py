@@ -124,6 +124,37 @@ def validate_report(report, duplicated_fields=None):
     return report
 
 
+def decode_dynamic_resolution(report):
+    """Return optional exact shadow rows indexed like the stable timing columns."""
+    dynamic = report.get('dynamicResolution')
+    if dynamic is None:
+        return None
+    if not isinstance(dynamic, dict) or not isinstance(dynamic.get('semantics'), dict):
+        raise ValueError('invalid dynamic resolution metadata')
+    rows = dynamic.get('frames')
+    if not isinstance(rows, list) or len(rows) != report['frameCount']:
+        raise ValueError('invalid dynamic resolution row count')
+    integers = ('frameID', 'actualLines', 'ceilingLines', 'floorLines', 'ignore', 'thermal', 'available')
+    nullable = ('sceneUS', 'upscaleUS', 'hudUS', 'presentedUS', 'presentationUS', 'late', 'chosenLines', 'action')
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or type(row.get('frame')) is not int or row['frame'] != index:
+            raise ValueError('invalid dynamic resolution frame index')
+        for field in integers + nullable:
+            value = row.get(field)
+            if field in nullable and value is None and field in row:
+                continue
+            if type(value) is not int or not 0 <= value <= 2**64 - 1:
+                raise ValueError('invalid dynamic resolution ' + field)
+        if (row['available'] & ~15 or row['thermal'] > 3 or
+                (row['action'] is not None and row['action'] > 3) or
+                (row['late'] is not None and row['late'] > 1)):
+            raise ValueError('invalid dynamic resolution flags')
+        for bit, fields in ((1, ('sceneUS', 'upscaleUS', 'hudUS')), (2, ('presentedUS', 'presentationUS', 'late')), (4, ('chosenLines', 'action'))):
+            if any((row[field] is not None) != bool(row['available'] & bit) for field in fields):
+                raise ValueError('inconsistent dynamic resolution availability')
+    return rows
+
+
 def decode_frames(report):
     """Decode schema 1 columns; unavailable or unpreserved overflow stays null."""
     trace = report.get('trace', {})
@@ -160,6 +191,10 @@ def decode_frames(report):
         if row['flags'] & 4:
             row['gpu'] = None
         frames.append(row)
+    dynamic = decode_dynamic_resolution(report)
+    if dynamic is not None:
+        for row, shadow in zip(frames, dynamic):
+            row['dynamicResolution'] = shadow
     return frames
 
 

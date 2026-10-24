@@ -4,12 +4,83 @@
 #include <time.h>
 #include <string.h>
 #include <stdatomic.h>
-#if HALO_PERF_REPORTS
+#include <stdio.h>
+#include <pthread.h>
+#include <stdlib.h>
+#include "host_config.h"
+#include "host_perf_metal.h"
+#include "dynamic_resolution_shadow.h"
 static uint64_t began, previous, interval, phases[3], sums[3], network_nested;
 static uint64_t budget = GAME_PERF_UNAVAILABLE, serial;
 static unsigned marked, ticks, loading;
 static int frame_sealed = 1;
 static game_perf_frame pending;
+static struct dynamic_resolution_shadow shadow;
+static _Atomic unsigned dynamic_events;
+static struct { game_perf_frame frame; int width; } delayed[16];
+static unsigned delayed_read, delayed_write;
+static pthread_mutex_t dynamic_lock = PTHREAD_MUTEX_INITIALIZER;
+static int dynamic_paused;
+static int dynamic_width, dynamic_eligible;
+static _Atomic int dynamic_setting = -1;
+int host_perf_hooks_dynamic_enabled(void) {
+    if (dynamic_setting < 0) {
+        char text[16];
+        const char *environment = getenv("HALO_DYNAMIC_RESOLUTION_SHADOW");
+        host_config_string("debug.dynamic_resolution_shadow", "false", text, sizeof(text));
+        dynamic_setting = !strcmp(environment ? environment : text, "true") ||
+            !strcmp(environment ? environment : text, "1");
+    }
+    return dynamic_setting;
+}
+void host_perf_hooks_dynamic_ignore(unsigned reason) { atomic_fetch_or(&dynamic_events, reason); }
+void host_perf_hooks_dynamic_config(int enabled, int width, int height, int floor, int thermal, int eligible) {
+    dynamic_width = width; dynamic_eligible = enabled && eligible;
+    pending.drs.actual_lines = pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
+    pending.drs.floor_lines = floor > 0 ? (uint32_t)floor : 540;
+    if ((height + 1) / 2 > (int)pending.drs.floor_lines) pending.drs.floor_lines = (height + 1) / 2;
+    if (height > 0 && pending.drs.floor_lines > (uint32_t)height) pending.drs.floor_lines = height;
+    pending.drs.thermal = thermal >= 0 && thermal <= 3 ? (uint32_t)thermal : 0;
+}
+static void dynamic_drain_locked(uint64_t frame_id) {
+    while (delayed_read != delayed_write) {
+        unsigned slot = delayed_read % 16;
+        game_perf_frame *frame = &delayed[slot].frame;
+        /* Bounded latency gives asynchronous GPU and display callbacks time to
+         * finish. A missing callback remains unavailable; never block the GPU. */
+        if (frame_id < frame->frame_id + 8) break;
+        host_perf_hooks_gpu_join(frame);
+        host_perf_metal_join(frame);
+        dynamic_resolution_shadow_frame(&shadow, frame, delayed[slot].width);
+        if (frame->drs.action || frame->frame_id % 600 == 0) {
+            fprintf(stderr, "DRS shadow: frame=%llu actual=%u chosen=%u decision_available=%u action=%u S/U/H=%llu/%llu/%llu cpu=%llu budget=%llu late=%u ignore=%u available=%u thermal=%u clock=unvalidated_fixed_pixels\n",
+                (unsigned long long)frame->frame_id, frame->drs.actual_lines, frame->drs.chosen_lines,
+                (frame->drs.available & 4) != 0, frame->drs.action, (unsigned long long)frame->drs.scene_us, (unsigned long long)frame->drs.upscale_us,
+                (unsigned long long)frame->drs.hud_us, (unsigned long long)frame->cpu_us,
+                (unsigned long long)frame->budget_us, frame->drs.late, frame->drs.ignore, frame->drs.available, frame->drs.thermal);
+        }
+        host_perf_reports_frame(frame);
+        ++delayed_read;
+    }
+}
+static void dynamic_drain(uint64_t frame_id) {
+    pthread_mutex_lock(&dynamic_lock);
+    dynamic_drain_locked(frame_id);
+    pthread_mutex_unlock(&dynamic_lock);
+}
+void host_perf_hooks_dynamic_flush(void) { dynamic_drain(UINT64_MAX); }
+void host_perf_hooks_dynamic_pause(void) {
+    pthread_mutex_lock(&dynamic_lock);
+    dynamic_paused = 1;
+    dynamic_drain_locked(UINT64_MAX);
+    pthread_mutex_unlock(&dynamic_lock);
+}
+void host_perf_hooks_dynamic_resume(void) {
+    pthread_mutex_lock(&dynamic_lock);
+    dynamic_paused = 0;
+    host_perf_hooks_dynamic_ignore(DYNAMIC_RESOLUTION_RESUME);
+    pthread_mutex_unlock(&dynamic_lock);
+}
 static uint64_t context_values[10];
 static unsigned context_seen;
 static uint32_t frame_draws, networked_objects;
@@ -69,9 +140,11 @@ void host_perf_hooks_context(unsigned field, uint64_t value) {
         context_values[field] = value;
     }
 }
-void host_perf_hooks_budget(uint64_t value) { budget = value; }
+void host_perf_hooks_budget(uint64_t value) { budget = value; pending.budget_us = value; }
 void host_perf_hooks_loading(int value) {
     loading = value != 0;
+    /* Start a full second of presented frames after either loading edge. */
+    host_perf_hooks_dynamic_ignore(DYNAMIC_RESOLUTION_LOAD);
     if (loading) {
         frame_sealed = 1;
         context_seen = 0;last_received_us = last_stall_us = 0;
@@ -87,6 +160,7 @@ void host_perf_hooks_phase_at(int phase, int value, uint64_t now) {
         interval = previous && now >= previous ? now - previous : GAME_PERF_UNAVAILABLE;
         began = previous = now;
         ++serial;
+        dynamic_drain(serial);
         unsigned slot = serial % 128;
         uint64_t generation = (uint64_t)(uint32_t)serial << 32;
         atomic_store(&gpu_slots[slot].sum, generation);
@@ -173,24 +247,12 @@ void host_perf_hooks_present_failed(void) { pending.flags |= GAME_PERF_PRESENT_F
 void host_perf_hooks_present_end_at(uint64_t now) {
     (void)now;
     atomic_store(&gpu_slots[pending.frame_id % 128].sealed, pending.frame_id);
-    host_perf_reports_frame(&pending);
+    pthread_mutex_lock(&dynamic_lock);
+    if (host_perf_hooks_dynamic_enabled() && dynamic_eligible && !dynamic_paused) {
+        pending.drs.ignore = atomic_exchange(&dynamic_events, 0);
+        unsigned slot = delayed_write++ % 16;
+        delayed[slot].frame = pending; delayed[slot].width = dynamic_width;
+    } else host_perf_reports_frame(&pending);
+    pthread_mutex_unlock(&dynamic_lock);
     frame_sealed = 1;
 }
-#else
-uint64_t host_perf_hooks_frame_id(void) { return 0; }
-uint64_t host_perf_hooks_gpu_reserve(void) { return 0; }
-void host_perf_hooks_gpu_complete(uint64_t token, uint64_t duration_us, int valid) { (void)token; (void)duration_us; (void)valid; }
-void host_perf_hooks_gpu_join(game_perf_frame *frame) { (void)frame; }
-void host_perf_hooks_context(unsigned field, uint64_t value) { (void)field; (void)value; }
-void host_perf_hooks_phase(int phase, int value) { (void)phase; (void)value; }
-void host_perf_hooks_phase_at(int phase, int value, uint64_t now) { (void)phase; (void)value; (void)now; }
-void host_perf_hooks_budget(uint64_t value) { (void)value; }
-void host_perf_hooks_loading(int value) { (void)value; }
-void host_perf_hooks_present_begin(void) {}
-void host_perf_hooks_present_end(void) {}
-void host_perf_hooks_present_begin_at(uint64_t now) { (void)now; }
-void host_perf_hooks_present_end_at(uint64_t now) { (void)now; }
-void host_perf_hooks_present_failed(void) {}
-void host_perf_hooks_cpu(uint64_t microseconds) { (void)microseconds; }
-void host_perf_hooks_pacing(uint64_t microseconds) { (void)microseconds; }
-#endif
