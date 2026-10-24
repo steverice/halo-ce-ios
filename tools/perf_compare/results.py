@@ -131,9 +131,14 @@ def _target_rows(target):
                  ("thermal", "resolution", "cap", "display_hz", "display_rate_basis"))]
 
 
+CAVEAT = ("We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong "
+          "or out of date. Corrections are welcome: [open an issue](https://github.com/steverice/visr/issues).")
+
+
 def render(summary: dict) -> str:
     """Render deterministic Markdown from a public, sanitized summary."""
     lines = ["# Performance benchmarks", "",
+             CAVEAT, "",
              f"Date: {_cell(summary.get('date', 'unknown'))}. "
              f"Refresh wall time: {_cell(summary.get('refresh_seconds', 'unknown'))} seconds.", "",
              f"Machine: {_cell(summary.get('machine', 'unknown'))}. "
