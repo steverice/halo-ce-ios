@@ -36,7 +36,7 @@ static dispatch_queue_t worker;
 static char worker_key;
 static dispatch_source_t timer;
 static game_perf_recorder *recorder;
-static atomic_bool enabled, collecting, menu, suspended;
+static atomic_bool enabled, collecting, menu, suspended, runtime_suppressed;
 static atomic_uint appenders;
 static BOOL resume_play, resume_ready;
 static uint64_t start_us;
@@ -394,7 +394,7 @@ static void deliver(void) {
 #if HALO_PERF_REPORTS_TESTING
     if(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE") && !strcmp(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE"),"1"))return;
 #endif
-    if(!atomic_load(&menu) || atomic_load(&suspended) || !atomic_load(&enabled) || host_benchmark_running())return;
+    if(!atomic_load(&menu) || atomic_load(&suspended) || !atomic_load(&enabled) || atomic_load(&runtime_suppressed) || host_benchmark_running())return;
     NSString *version=[NSString stringWithFormat:@"%@/%@",[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]];
     if([delivery[@"paused"] isEqual:version])return;
     long day=(long)(NSDate.date.timeIntervalSince1970/86400);if([delivery[@"day"] longValue]!=day){delivery[@"day"]=@(day);delivery[@"attempts"]=@0;delivery[@"bytes"]=@0;}
@@ -478,13 +478,14 @@ void host_perf_reports_start(const char *sha) {
 void host_perf_reports_activate(const char *name,int suppressed) {
 #if HALO_PERF_REPORTS
     if(!worker)return;
+#if HALO_PERF_REPORTS_TESTING
+    if(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE") && !strcmp(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE"),"1"))suppressed=0;
+#endif
+    atomic_store(&runtime_suppressed,suppressed!=0);
     NSString *map=name?@(name):@"";BOOL ui=[[[map stringByReplacingOccurrencesOfString:@"\\" withString:@"/"] lastPathComponent].stringByDeletingPathExtension isEqual:@"ui"];
     atomic_store(&menu,ui);atomic_store(&collecting,false);
     game_perf_end(recorder,clock_us(),GAME_PERF_END_NORMAL);
     dispatch_sync(worker,^{host_report_delivery_cancel_performance();resume_play=NO;resume_ready=NO;drain();if(journal)finish_report(NO);trim();});
-    #if HALO_PERF_REPORTS_TESTING
-    if(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE") && !strcmp(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE"),"1"))suppressed=0;
-#endif
     if(ui || suppressed || !name || atomic_load(&suspended) || [NSFileManager.defaultManager fileExistsAtPath:[ROOT stringByAppendingPathComponent:@"working.bin"]])return;
     NSDictionary *identity=host_shader_upload_map_identity(name);
     atomic_store(&abnormal,false);start_us=clock_us();journal_bytes=0;sequence=0;rows=0;first_frame_id=0;duration_us=0;lost_rows=0;lost_events=0;journal_events=0;omitted_begin_us=0;omitted_end_us=0;truncated=NO;trace_limit=MAX_TRACE_ROWS;omit_detail=NO;recovered_summary_valid=NO;recovered_windows_active=NO;

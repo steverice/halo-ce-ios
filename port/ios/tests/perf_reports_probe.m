@@ -100,6 +100,15 @@ int main(void) {@autoreleasepool {
     NSString *gap_report=finish_report(YES);assert(gap_report);input=gzopen([[gap_report stringByAppendingPathExtension:@"gz"] fileSystemRepresentation],"rb");assert(input);[decoded setLength:0];while((n=gzread(input,bytes,sizeof(bytes)))>0)[decoded appendBytes:bytes length:n];assert(gzclose(input)==Z_OK);
     NSDictionary *gap_value=[NSJSONSerialization JSONObjectWithData:decoded options:0 error:nil];NSArray *gap_epochs=gap_value[@"epochs"],*gap_samples=gap_value[@"networkSamples"];assert(gap_epochs.count==2);assert([gap_epochs[1][@"frame"] isEqual:@1]);assert([gap_epochs[1][@"context"][@"playerCount"] isEqual:@2]);assert([gap_epochs[1][@"context"][@"graphics"][@"display.frame_rate"] isEqual:@"240"]);assert(gap_samples.count==1 && [gap_samples[0][@"frame"] isEqual:@1] && [gap_samples[0][@"rttMS"] doubleValue]==20);
     game_perf_destroy(recorder);recorder=NULL;
+    /* Config-only automated runs cannot retry old menu reports. Hold admission so
+       even a failed guard cannot contact CloudKit during this behavior probe. */
+    assert(host_report_delivery_acquire());atomic_store(&enabled,true);atomic_store(&suspended,false);
+    delivery=[@{@"day":@0,@"attempts":@7,@"bytes":@99,@"retries":[NSMutableDictionary dictionary]} mutableCopy];
+    host_perf_reports_activate("ui",1);assert(atomic_load(&menu) && atomic_load(&runtime_suppressed));
+    NSDictionary *suppressed_state=[delivery copy];deliver();assert([delivery isEqual:suppressed_state]);
+    host_perf_reports_activate("ui",0);assert(!atomic_load(&runtime_suppressed));deliver();
+    assert([delivery[@"day"] longValue]!=0 && [delivery[@"attempts"] unsignedIntegerValue]==0 && [delivery[@"bytes"] unsignedLongLongValue]==0);
+    host_report_delivery_release();atomic_store(&enabled,false);atomic_store(&menu,false);
     delivery=[NSMutableDictionary dictionary];assert(!working_metadata_valid(@{}));
     assert([[@"orphan" dataUsingEncoding:NSUTF8StringEncoding] writeToFile:[ROOT stringByAppendingPathComponent:@"working.bin"] atomically:YES]);
     assert([[NSMutableData dataWithLength:65537] writeToFile:[ROOT stringByAppendingPathComponent:@"working.json"] atomically:YES]);assert(!bounded_json([ROOT stringByAppendingPathComponent:@"working.json"],65536));
