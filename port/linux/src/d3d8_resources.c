@@ -355,8 +355,10 @@ HRESULT WINAPI D3DDevice_CreateVertexBuffer(UINT length, DWORD usage, DWORD fvf,
 
 void WINAPI D3DVertexBuffer_Lock(D3DVertexBuffer *buffer, UINT offset, UINT size, BYTE **data, DWORD flags)
 {
+	(void)flags;
 	*data = buffer->Data ? (BYTE *)resource_data(buffer->Data) + offset : NULL;
-	if (*data && !(flags & D3DLOCK_READONLY))
+	/* rasterizer_dynamic_vertices_lock writes after D3DLOCK_READONLY locks too. */
+	if (*data)
 		d3d8_vertex_buffer_prepare_write((unsigned long)*data, size);
 }
 
