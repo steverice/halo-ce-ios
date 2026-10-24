@@ -123,7 +123,6 @@ def test_replay_environment(tmp_path):
     static struct unit_datum *unit_get(long index) { (void)index; return &environment_unit; }
     static const char *tag_get_name(long index) { (void)index; return "cyborg"; }
     static const char *tag_name_strip_path(const char *name) { return name; }
-    unsigned long config_changes(void) { return environment_config_changes; }
     static const char *enhanced_animation_units[] = {"cyborg", "cyborg_mp"};
     """ + function("source/units/units.c", "unit_animation_enhanced")
     source = tmp_path / "replay-environment.c"

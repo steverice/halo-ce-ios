@@ -43,13 +43,17 @@ void host_touch_replay_active(int active) {
 }
 
 static int lip_sync;
+static unsigned long lip_sync_config_reads;
 static int enhanced_animations = 1;
 static unsigned long environment_config_changes = 1;
 static int timed_benchmark, review_take;
 static const char *replay_name = "";
 static const char *record_name = "";
 void platform_log(const char *format, ...) { (void)format; }
-int config_boolean(const char *name) { return !strcmp(name, "debug.scenario_help") ||
+unsigned long config_changes(void) { return environment_config_changes; }
+int config_boolean(const char *name) {
+	if (!strcmp(name, "debug.benchmark_lip_sync")) lip_sync_config_reads++;
+	return !strcmp(name, "debug.scenario_help") ||
 	(!strcmp(name, "debug.benchmark_review_take") && review_take) ||
 	(!strcmp(name, "debug.benchmark_lip_sync") && lip_sync) ||
 	(!strcmp(name, "debug.benchmark") && timed_benchmark) ||
@@ -636,16 +640,25 @@ int main(int argc, char **argv)
 	check_controller_action_format();
 	check_control_pose();
 	clock_tick = 0;
-	lip_sync = 1;
+	lip_sync = 1; environment_config_changes++;
+	unsigned long lip_sync_reads_before = lip_sync_config_reads;
 	assert(!input_replay_benchmark_lip_sync()); /* opt-in alone never changes gameplay */
+	assert(lip_sync_config_reads == lip_sync_reads_before + 1);
+	assert(!input_replay_benchmark_lip_sync());
+	assert(lip_sync_config_reads == lip_sync_reads_before + 1); /* the same revision reuses its setting */
 	strcpy(replay.record_actions_path, "take.actions");
-	lip_sync = 0;
+	lip_sync = 0; environment_config_changes++;
 	assert(input_replay_sim_isolated());
 	assert(!input_replay_benchmark_lip_sync()); /* RNG isolation stays on with original mouths */
-	lip_sync = 1;
+	assert(lip_sync_config_reads == lip_sync_reads_before + 2); /* disabling refreshes the cache */
+	lip_sync = 1; environment_config_changes++;
 	assert(input_replay_benchmark_lip_sync());
+	assert(lip_sync_config_reads == lip_sync_reads_before + 3); /* enabling refreshes it too */
+	assert(input_replay_benchmark_lip_sync());
+	assert(lip_sync_config_reads == lip_sync_reads_before + 3);
 	record_end("probe");
 	assert(!input_replay_benchmark_lip_sync());
+	assert(lip_sync_config_reads == lip_sync_reads_before + 3); /* replay lifetime stays live on a cache hit */
 	input_replay_begin(NULL, 0);
 	assert(!input_replay_benchmark_lip_sync());
 	/* Legacy takes used simulated mouths. The suite opts in without touching persistent config. */
@@ -657,7 +670,7 @@ int main(int argc, char **argv)
 	assert(file);
 	fputs("halo action recording 1\n0 0 0 0 0 0 0 0 0 0\n", file);
 	fclose(file);
-	lip_sync = 0;
+	lip_sync = 0; environment_config_changes++;
 	assert(input_replay_begin("./probe.input", 1));
 	assert(input_replay_benchmark_lip_sync());
 	replay.await_level = TRUE;
@@ -672,7 +685,7 @@ int main(int argc, char **argv)
 	assert(!lip_sync); /* the suite never writes the config */
 	assert(input_replay_begin("./probe.input", 0));
 	assert(!input_replay_benchmark_lip_sync()); /* old replay still needs opt-in */
-	lip_sync = 1;
+	lip_sync = 1; environment_config_changes++;
 	assert(input_replay_benchmark_lip_sync());
 	input_replay_begin(NULL, 0);
 	file = fopen("probe.actions", "w");
@@ -686,7 +699,7 @@ int main(int argc, char **argv)
 	pid_t child = fork();
 	assert(child >= 0);
 	if (!child) {
-		lip_sync = 0;
+		lip_sync = 0; environment_config_changes++;
 		timed_benchmark = 1;
 		replay_name = "./probe.input";
 		configure();

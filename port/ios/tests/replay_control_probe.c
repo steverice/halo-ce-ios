@@ -95,7 +95,6 @@ int halo_controller_network_head_camera(short local) { (void)local; return 0; }
 static void update_client_queue(const struct player_action *action) { queued = *action; }
 struct observer_result { real_vector3d forward, up; };
 static struct observer_result direct_cameras[2];
-unsigned long config_changes(void) { return 1; }
 /* Force direct/late look on; the replay predicate must prevent the override. */
 static int direct_config_boolean(const char *name) { (void)name; return 1; }
 static int director_get_perspective(short local) { (void)local; return _director_perspective_first_person; }

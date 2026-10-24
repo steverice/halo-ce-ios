@@ -1244,7 +1244,16 @@ unsigned char input_replay_sim_isolated(void)
    recording normal play keeps the original mixer behavior, and a completed or cleared replay releases it. */
 unsigned char input_replay_benchmark_lip_sync(void)
 {
-	if (!config_boolean("debug.benchmark_lip_sync") && !replay.benchmark_lip_sync)
+	static unsigned long read_at = (unsigned long)-1;
+	static int configured;
+
+	/* Every unit consults this; only a committed setting changes the answer. */
+	if (read_at != config_changes())
+	{
+		read_at = config_changes();
+		configured = config_boolean("debug.benchmark_lip_sync");
+	}
+	if (!configured && !replay.benchmark_lip_sync)
 		return FALSE;
 	if (replay.action_count)
 		return !replay.await_level && !replay.replay_finished && !replay.recorded_original_lip_sync;
