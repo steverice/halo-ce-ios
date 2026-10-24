@@ -4818,7 +4818,7 @@ static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 		stats.immediate_draws++;
 	else
 		stats.draws++;
-		perf_draws++;
+	perf_draws++;
 }
 
 #if IMMEDIATE_BATCH
