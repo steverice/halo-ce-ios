@@ -18,7 +18,7 @@ false details:
 	p2p_seal_token; a tombstone's zero), players, most players, the
 	gametype's engine (1 each), the game's name,
 	map and gametype (a length byte, then up to 32, 32 and 24 characters of
-	printable ASCII), a stamp (8, reserved: zero), and the signature (64) of
+	printable ASCII), a stamp (8: game kind, then 7 reserved bytes), and the signature (64) of
 	"hceu-lobby-1" and all before it.
 
 Each host has a slot, hceu/3/lobby/s/<its key's hash in hex>: its listing,
@@ -62,6 +62,7 @@ of MAXIMUM_QUEUED; the rest is dropped (hosts publish again).
 #include "halo_port_limits.h"
 #include "halo_network_version.h"
 #include "halo_network_join.h"
+#include "halo_network_content.h"
 #include "delta_list.h"
 
 #include <stdio.h>
@@ -126,7 +127,7 @@ struct listing
 	unsigned char token[P2P_TOKEN_SIZE];
 	/* (_listing_password: its token, sealed) */
 	unsigned char sealed_token[P2P_SEALED_TOKEN_SIZE];
-	int player_count, maximum_player_count, engine_type;
+	int player_count, maximum_player_count, engine_type, kind;
 	char name[P2P_LISTING_NAME_SIZE + 1];
 	char map[P2P_LISTING_MAP_SIZE + 1];
 	char gametype[P2P_LISTING_GAMETYPE_SIZE + 1];
@@ -331,13 +332,11 @@ static int listing_make(unsigned char *bytes, int flags)
 	}
 	bytes[size++] = (unsigned char)(lobby.player_count > 255 ? 255 : lobby.player_count);
 	bytes[size++] = (unsigned char)(lobby.maximum_player_count > 255 ? 255 : lobby.maximum_player_count);
-	/* TODO(net-v37): the internet game-kind field has not been established
-	by the permitted format description. The base engine and reserved stamp
-	are not substitutes; keep this layout until its offset and encoding are known. */
 	bytes[size++] = (unsigned char)lobby.engine_type;
 	size += put_text(bytes + size, lobby.name, P2P_LISTING_NAME_SIZE);
 	size += put_text(bytes + size, lobby.map, P2P_LISTING_MAP_SIZE);
 	size += put_text(bytes + size, lobby.gametype, P2P_LISTING_GAMETYPE_SIZE);
+	/* VISR hosts ordinary kinds; the kind byte and reserved bytes are zero. */
 	memset(bytes + size, 0, STAMP_SIZE);
 	size += STAMP_SIZE;
 	memcpy(data, signature_label, sizeof(signature_label) - 1);
@@ -396,8 +395,6 @@ static int listing_read(const unsigned char *bytes, int size, struct listing *li
 	}
 	listing->player_count = bytes[offset++];
 	listing->maximum_player_count = bytes[offset++];
-	/* TODO(net-v37): decode kind only after its internet offset and encoding
-	are documented; the LAN kind byte does not establish this listing layout. */
 	listing->engine_type = bytes[offset++];
 	if (!get_text(bytes, size, &offset, listing->name, P2P_LISTING_NAME_SIZE) ||
 		!get_text(bytes, size, &offset, listing->map, P2P_LISTING_MAP_SIZE) ||
@@ -405,9 +402,12 @@ static int listing_read(const unsigned char *bytes, int size, struct listing *li
 	{
 		return 0;
 	}
-	offset += STAMP_SIZE;
-	if (offset + P2P_SIGNATURE_SIZE != size)
+	/* The variable-length strings determine the stamp's position. Validate
+	the entire remaining extent before reading its version-37 kind byte. */
+	if (offset + STAMP_SIZE + P2P_SIGNATURE_SIZE != size)
 		return 0;
+	listing->kind = listing->version >= 37 ? bytes[offset] : 0;
+	offset += STAMP_SIZE;
 	listing->signed_size = offset;
 	return 1;
 }
@@ -792,12 +792,13 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->player_count = (unsigned char)listing->player_count;
 	shown->maximum_player_count = (unsigned char)listing->maximum_player_count;
 	shown->engine_type = (unsigned char)listing->engine_type;
+	shown->kind = (unsigned char)listing->kind;
 	shown->open = (listing->flags & _listing_open) != 0;
 	shown->in_progress = (listing->flags & _listing_in_progress) != 0;
 	shown->has_teams = (listing->flags & _listing_has_teams) != 0;
 	shown->ping = -1;
 	shown->network_version = HALO_PORT_NETWORK_VERSION;
-	shown->joinable = 1;
+	shown->joinable = halo_network_kind_reason(shown->kind) == NULL;
 	shown->from_delta = 0;
 }
 

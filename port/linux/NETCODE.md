@@ -157,6 +157,9 @@ Hardcore, unknown kinds, and unknown nonzero extension bytes are refused
 before applying settings, with a visible reason. Hosts offer ordinary VISR
 modes. LAN advertisements carry the kind at reserved byte 3; unsupported
 rows stay selectable so their reason can be shown, and render gray.
+Internet listings carry kind in the first byte of the eight-byte stamp
+after the three length-prefixed strings. The browser applies the same
+kind refusal reasons and gray treatment as LAN.
 
 The host's co-op ally friendly-fire choice uses cooperative-flags bit 1
 (set means OFF). The damage changes retain the historical rules during

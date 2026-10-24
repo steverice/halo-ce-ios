@@ -3858,12 +3858,18 @@ static void lobby_browser_update(struct widget_instance *list)
 		text_set(named(row, "server_item_server_name", 0), text);
 		map_display_name(game->map, text);
 		text_set(named(row, "server_item_map", 0), text);
-		text_set(named(row, "server_item_type", 0), game_type_name(game->engine_type));
+		if (game->kind)
+		{
+			usnprintf(text, ROW_TEXT_LENGTH - 1, L"%hs", halo_network_kind_label(game->kind));
+			text_set(named(row, "server_item_type", 0), text);
+		}
+		else
+			text_set(named(row, "server_item_type", 0), game_type_name(game->engine_type));
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%d/%d", game->player_count, game->maximum_player_count);
 		text_set(named(row, "server_item_players", 0), text);
 		/* (no ping yet: its host is reached only on joining. A game of another network version, from Delta's
 		list, shows it) */
-		if (!game->joinable && !game->failed)
+		if (!game->joinable && !game->failed && !halo_network_kind_reason(game->kind))
 		{
 			usnprintf(text, ROW_TEXT_LENGTH - 1, L"V%d", game->network_version);
 			text_set(named(row, "server_item_ping", 0), text);
@@ -3981,7 +3987,9 @@ static void lobby_browser_update(struct widget_instance *list)
 			wchar_t gametype[P2P_LISTING_GAMETYPE_SIZE + 1];
 
 			text_to_wide(game->gametype, gametype, NUMBEROF(gametype));
-			if (!game->joinable)
+			if (halo_network_kind_reason(game->kind))
+				usnprintf(text, NUMBEROF(text) - 1, L"%hs", halo_network_kind_reason(game->kind));
+			else if (!game->joinable)
 			{
 				usnprintf(text, NUMBEROF(text) - 1, L"%s: network version %d, this build plays %d to %d", gametype,
 					game->network_version, HALO_PORT_NETWORK_OLDEST_JOINABLE, HALO_PORT_NETWORK_VERSION);
