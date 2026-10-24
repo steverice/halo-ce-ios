@@ -19,11 +19,13 @@ enum { _damage_kill_instantly_bit };
 /* COOP_FLAGS */
 #define STATIC_TARGET_TYPES (_object_mask_scenery | _object_mask_device)
 struct damage_data { long owner_player_index, owner_object_index; short owner_team_index; unsigned flags; };
-struct object_fields { short type, owner_team_index; float maximum_body_vitality, maximum_shield_vitality; };
+struct object_fields { short type, owner_team_index; float maximum_body_vitality, maximum_shield_vitality; real_vector3d forward; };
 struct unit_datum { struct object_fields object; struct { long player_index; } unit; };
 struct network_game { byte cooperative_flags; };
 static struct { long action_count, state_count; } replay;
 static boolean coop_active = TRUE, client;
+static unsigned host_version = 38;
+static unsigned network_game_host_version(void) { return host_version; }
 static struct network_game game;
 static struct unit_datum objects[8];
 static boolean network_coop_active(void) { return coop_active; }
@@ -58,7 +60,7 @@ static boolean distributed_player_is_local(long index) { return index == 3; }
 static long distributed_living_unit(struct player_datum *player) { return NONE; }
 static boolean distributed_damage_is_recoil(struct damage_data const *damage, long index) { return FALSE; }
 static void damage_replay_player_effect(long index, struct damage_data *damage, float amount) { }
-static boolean network_objects_client_has(long index) { return TRUE; }
+static boolean network_objects_client_has(long index) { return index < 3; }
 static void distributed_damage_from_data(struct damage_data const *damage, struct damage_data *result) { *result = *damage; }
 static void object_get_origin(long index, real_point3d *point) { memset(point, 0, sizeof(*point)); }
 static long distributed_latest_host_time(void) { return 10; }
@@ -73,6 +75,22 @@ static int settings_sent;
 static struct network_game_server *global_network_game_server_get(void) { return &server; }
 static boolean network_game_server_send_game_data_pregame(struct network_game_server *s) { settings_sent++; return TRUE; }
 static void network_event(char const *message) { assert(0); }
+enum { _effect_vector_normal, _effect_vector_incident, _effect_vector_negative_incident,
+	_effect_vector_reflected, _effect_vector_gravity, NUMBER_OF_EFFECT_MARKERS };
+static real_vector3d down = {0, 0, -1}, forward = {1, 0, 0}, zero;
+static real_vector3d const *global_down3d = &down, *global_forward3d = &forward, *global_zero_vector3d = &zero;
+static struct unit_datum *object_get(long index) { return &objects[index]; }
+static float normalize3d(real_vector3d *vector) { return 1; }
+static void scale_vector3d(real_vector3d const *a, float scale, real_vector3d *b) { *b = *a; }
+static void vector_from_points3d(real_point3d const *a, real_point3d const *b, real_vector3d *result) { *result = zero; }
+static void reflect_vector3d(real_vector3d const *a, real_vector3d const *b, real_vector3d *result) { *result = *a; }
+static void effect_new_attached_from_markers(long definition, long owner, long object, short node, short count,
+	char const **names, real_point3d const *points, real_vector3d const *forwards, float a, float b,
+	void const *color, void const *field);
+static void effect_new_unattached_from_markers(long definition, long owner, real_vector3d const *velocity, short count,
+	char const **names, real_point3d const *points, real_vector3d const *forwards, float a, float b,
+	void const *color, void const *field, boolean extra);
+static boolean attached_seen, unattached_seen;
 /* PRODUCTION_FUNCTIONS */
 /* A break effect deals damage synchronously, while its parent host hit is authorized. */
 static void effect_new_from_object(long definition, long owner, long object, long player, float a, float b,
@@ -80,6 +98,20 @@ static void effect_new_from_object(long definition, long owner, long object, lon
 {
 	struct damage_data damage = { 3, owner, 0, 0 };
 	effect_dealt = network_damage_deals(&damage, 0, NONE, NONE, NONE, NULL, distributed_damage_authorized);
+}
+static void effect_new_attached_from_markers(long definition, long owner, long object, short node, short count,
+	char const **names, real_point3d const *points, real_vector3d const *forwards, float a, float b,
+	void const *color, void const *field)
+{
+	attached_seen = TRUE;
+	effect_new_from_object(definition, owner, object, NONE, a, b, color, field);
+}
+static void effect_new_unattached_from_markers(long definition, long owner, real_vector3d const *velocity, short count,
+	char const **names, real_point3d const *points, real_vector3d const *forwards, float a, float b,
+	void const *color, void const *field, boolean extra)
+{
+	unattached_seen = TRUE;
+	effect_new_from_object(definition, owner, owner, NONE, a, b, color, field);
 }
 int main(void)
 {
@@ -139,6 +171,13 @@ int main(void)
 	distributed_damage_authorized = TRUE;
 	damage_effect_new_on_object(9, 3);
 	assert(!effect_dealt && !damage_report_count && distributed_damage_authorized);
+	{
+		real_point3d position = {0, 0, 0};
+		damage_effect_new_at_location(9, 3, 0, &position, &forward, NULL);
+		assert(attached_seen && !effect_dealt && !damage_report_count && distributed_damage_authorized);
+		damage_effect_new_at_location(9, 3, NONE, &position, &forward, &forward);
+		assert(unattached_seen && !effect_dealt && !damage_report_count && distributed_damage_authorized);
+	}
 
 	damage.owner_object_index = 1;
 	assert(!network_damage_static_source(&damage)); /* player vehicle */
@@ -150,6 +189,52 @@ int main(void)
 	assert(!network_damage_static_source(&damage) && !network_damage_updates_shields(3));
 	client = FALSE;
 	assert(network_damage_updates_shields(0));
+	/* Negotiated legacy hosts keep their pre-33/34 agreements. */
+	replay.action_count = 0;
+	client = TRUE;
+	connection = _game_connection_network_client;
+	damage.owner_player_index = 3;
+	for (host_version = 29; host_version <= 38; host_version++)
+	{
+		assert(network_coop_protects_ally(&damage, 0) == (host_version >= 33));
+		assert(static_target(3) == (host_version >= 34));
+		assert(static_target(4));
+		assert(network_damage_updates_shields(3) == (host_version >= 34));
+		assert(network_damage_updates_shields(4) == (host_version >= 34));
+		assert(!network_damage_updates_shields(0));
+		damage.owner_object_index = 3;
+		assert(network_damage_static_source(&damage) == (host_version >= 34));
+		damage_report_count = 0;
+		assert(!network_damage_deals(&damage, 0, NONE, NONE, NONE, NULL, FALSE));
+		assert(damage_report_count == (host_version < 34)); /* old source reporting */
+		damage.owner_object_index = 1;
+		damage_report_count = 0;
+		assert(!network_damage_deals(&damage, 3, NONE, NONE, NONE, NULL, FALSE));
+		assert(damage_report_count == (host_version >= 34)); /* shield target eligibility */
+		damage_report_count = 0;
+		assert(!network_damage_deals(&damage, 4, NONE, NONE, NONE, NULL, FALSE));
+		assert(damage_report_count == 1); /* body target in every agreement */
+		distributed_damage_authorized = TRUE;
+		damage_report_count = 0;
+		damage_effect_new_on_object(9, 3);
+		assert(effect_dealt == (host_version < 34)); /* old nested replay behavior */
+		assert(distributed_damage_authorized && !damage_report_count);
+		{
+			real_point3d position = {0, 0, 0};
+			damage_effect_new_at_location(9, 3, 0, &position, &forward, NULL);
+			assert(effect_dealt == (host_version < 34) && distributed_damage_authorized);
+			damage_effect_new_at_location(9, 3, NONE, &position, &forward, &forward);
+			assert(effect_dealt == (host_version < 34) && distributed_damage_authorized);
+		}
+	}
+	/* Hosting uses the current agreement, independent of an old remembered host. */
+	host_version = 29;
+	connection = _game_connection_network_server;
+	client = FALSE;
+	assert(network_coop_protects_ally(&damage, 0));
+	assert(static_target(3) && network_damage_updates_shields(3));
+	damage.owner_object_index = 3;
+	assert(network_damage_static_source(&damage));
 	puts("PASS: ally immunity, static shields/authority, replay rules");
 	return 0;
 }

@@ -100,6 +100,7 @@ index and tag, since the map placed them at the same index everywhere.
 #include "models/model_definitions.h"
 #include "models/models.h"
 #include "networking/network_game_globals.h"
+#include "networking/network_client_manager.h"
 #include "networking/network_game_manager.h"
 #include "objects/object_definitions.h"
 #include "objects/objects.h"
@@ -2078,6 +2079,7 @@ boolean network_coop_protects_ally(
 	struct unit_datum *unit;
 
 	if (input_replay_playing() || !network_coop_active() ||
+		(game_connection() == _game_connection_network_client && network_game_host_version() < 33) ||
 		damage->owner_player_index == NONE || TEST_FLAG(damage->flags, _damage_kill_instantly_bit) ||
 		!(game = network_game_get_game()) ||
 		!TEST_FLAG(game->cooperative_flags, _network_game_cooperative_no_ally_friendly_fire_bit))

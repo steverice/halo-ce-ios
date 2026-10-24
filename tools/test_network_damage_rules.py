@@ -22,11 +22,14 @@ def function(path, name):
 def test_damage_rules():
     pieces = [function("port/linux/src/input_replay.c", "input_replay_playing"),
               function("port/linux/game/network_coop.c", "network_coop_protects_ally"),
+              function("port/linux/game/network_damage.c", "network_damage_static_rules"),
               function("port/linux/game/network_damage.c", "static_target"),
               function("port/linux/game/network_damage.c", "network_damage_static_source"),
               function("port/linux/game/network_damage.c", "network_damage_updates_shields"),
               function("port/linux/game/network_damage.c", "network_damage_deals"),
+              function("source/objects/damage.c", "damage_effect_suspend_static_authorization"),
               function("source/objects/damage.c", "damage_effect_new_on_object"),
+              function("source/objects/damage.c", "damage_effect_new_at_location"),
               function("source/networking/network_server_manager.c", "network_game_server_port_set_cooperative_ally_friendly_fire"),
               function("source/networking/network_server_manager.c", "network_game_server_port_set_cooperative_player_collisions")]
     flags = (ROOT / "source/networking/network_game_manager.h").read_text()
@@ -41,6 +44,8 @@ def test_damage_rules():
         ("static source authority", "return authorized || game_connection() != _game_connection_network_client;", "return TRUE;"),
         ("nested explosion", "distributed_damage_authorized = FALSE;", "distributed_damage_authorized = authorized;"),
         ("replay gate", "return replay.state_count != 0 || replay.action_count != 0;", "return FALSE;"),
+        ("static version gate", "network_game_host_version() >= 34", "TRUE"),
+        ("ally version gate", "network_game_host_version() < 33", "FALSE"),
         ("ally flag polarity", "!ally_friendly_fire", "ally_friendly_fire"),
     ):
         assert body.count(before) == 1, label

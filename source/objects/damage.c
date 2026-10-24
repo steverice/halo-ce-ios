@@ -2213,16 +2213,25 @@ static long get_player_index_from_object_or_parents(
 	return player_index;
 }
 
-static void damage_effect_new_on_object(
-	long effect_definition_index,
+/* port: any static-owned effect can cause damage synchronously, including a
+localized impact's attached/unattached constructors. Its secondary damage is
+not authorized by the host hit currently being replayed. */
+static boolean damage_effect_suspend_static_authorization(
 	long object_index)
 {
-	/* port: a host hit can break a client's static copy synchronously. Its
-	own explosion is still the host's decision, not part of that replay. */
 	boolean authorized = distributed_damage_authorized;
 
 	if (network_game_distributed_client() && network_damage_updates_shields(object_index))
 		distributed_damage_authorized = FALSE;
+	return authorized;
+}
+
+static void damage_effect_new_on_object(
+	long effect_definition_index,
+	long object_index)
+{
+	boolean authorized = damage_effect_suspend_static_authorization(object_index);
+
 	effect_new_from_object(
 		effect_definition_index,
 		object_index,
@@ -2249,6 +2258,7 @@ static void damage_effect_new_at_location(
 	real_vector3d marker_forwards[NUMBER_OF_EFFECT_MARKERS];
 	real_vector3d incident;
 	short marker_index;
+	boolean authorized = damage_effect_suspend_static_authorization(object_index);
 
 	marker_names[_effect_vector_normal] = "normal";
 	marker_names[_effect_vector_incident] = "incident";
@@ -2325,6 +2335,7 @@ static void damage_effect_new_at_location(
 			FALSE);
 	}
 
+	distributed_damage_authorized = authorized;
 	return;
 }
 

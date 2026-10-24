@@ -47,6 +47,7 @@ being hit looks and feels like on the clients).
 #include "game/game_globals.h"
 #include "game/players.h"
 #include "networking/network_game_globals.h"
+#include "networking/network_client_manager.h"
 #include "objects/objects.h"
 #include "objects/damage.h"
 #include "objects/damage_effect_definitions.h"
@@ -500,13 +501,22 @@ static boolean distributed_damage_to_data(
 	return TRUE;
 }
 
+/* Clients keep the host's damage agreement; recordings keep the earlier
+rules. A current host does not use a previously joined host's version. */
+static boolean network_damage_static_rules(
+	void)
+{
+	return !input_replay_playing() &&
+		(game_connection() != _game_connection_network_client || network_game_host_version() >= 34);
+}
+
 /* Static objects share hits when they have either a body or a shield. */
 static boolean static_target(
 	long object_index)
 {
 	return object_try_and_get_and_verify_type(object_index, STATIC_TARGET_TYPES) &&
 		(object_get_maximum_body_vitality(object_index, TRUE) > 0.0f ||
-			(!input_replay_playing() && object_get_maximum_shield_vitality(object_index, TRUE) > 0.0f));
+			(network_damage_static_rules() && object_get_maximum_shield_vitality(object_index, TRUE) > 0.0f));
 }
 
 /* A static object's own break damage belongs to the host even if a player
@@ -514,13 +524,13 @@ owns its copy. A shot that breaks it still has the weapon/unit as owner. */
 static boolean network_damage_static_source(
 	struct damage_data const *damage)
 {
-	return !input_replay_playing() && damage->owner_object_index != NONE && static_target(damage->owner_object_index);
+	return network_damage_static_rules() && damage->owner_object_index != NONE && static_target(damage->owner_object_index);
 }
 
 boolean network_damage_updates_shields(
 	long object_index)
 {
-	return !network_game_distributed_client() || (!input_replay_playing() && static_target(object_index));
+	return !network_game_distributed_client() || (network_damage_static_rules() && static_target(object_index));
 }
 
 /* ---------- object_cause_damage (damage.c) */
