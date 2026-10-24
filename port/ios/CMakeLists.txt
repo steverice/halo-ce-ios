@@ -129,12 +129,22 @@ else()
 endif()
 # the texture upscale policy (port/assets/texture-policy.json) as a C table for port/runtime/texture_policy.c
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-# the app's page in the Settings app; a build with iCloud saves takes a copy with their rows added
+# Settings rows follow enabled build capabilities; plain builds use the original bundle.
 set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
-if(HALO_CLOUD_SAVES AND NOT HALO_TVOS)
+if(HALO_CLOUD_SAVES OR HALO_SHADER_UPLOAD)
+    set(HALO_SETTINGS_CLOUD_SAVES off)
+    set(HALO_SETTINGS_SHADER_UPLOAD off)
+    if(HALO_CLOUD_SAVES)
+        set(HALO_SETTINGS_CLOUD_SAVES on)
+    endif()
+    if(HALO_SHADER_UPLOAD)
+        set(HALO_SETTINGS_SHADER_UPLOAD on)
+    endif()
     set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/cloud/Settings.bundle")
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${ROOT}/tools/settings_bundle.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" "${HALO_SETTINGS_BUNDLE}" COMMAND_ERROR_IS_FATAL ANY)
+        "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" "${HALO_SETTINGS_BUNDLE}"
+        --cloud-saves "${HALO_SETTINGS_CLOUD_SAVES}" --shader-upload "${HALO_SETTINGS_SHADER_UPLOAD}"
+        COMMAND_ERROR_IS_FATAL ANY)
 endif()
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
