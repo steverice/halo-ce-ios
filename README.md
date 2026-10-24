@@ -1,6 +1,4 @@
-<img src="port/ios/Assets.xcassets/AppIcon.appiconset/AppIcon-180.png" width="180" alt="The VISR app icon: a helmet with a gold visor on a dark teal grid">
-
-# VISR
+<img src="docs/images/readme-banner.png" width="100%" alt="VISR: the app icon, a helmet with a gold visor, beside the VISR wordmark on a dark teal grid">
 
 ### Experience *Halo: Combat Evolved* in a whole new dimension
 
