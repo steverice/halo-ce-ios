@@ -63,6 +63,7 @@ settings.
 <!-- generated: features: mac -->
 - Native AppKit app
 - Keyboard and mouse support
+- Any window, any size, full screen or not
 <!-- end generated -->
 
 ## Get the app

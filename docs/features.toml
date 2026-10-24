@@ -71,5 +71,6 @@ devices = ["Mac"]
 bullets = [
     "Native AppKit app",
     "Keyboard and mouse support",
+    "Any window, any size, full screen or not",
 ]
 
