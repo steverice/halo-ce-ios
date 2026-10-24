@@ -36,6 +36,7 @@ so the audio callback is handed to a thread that has one.
 #endif
 #include "host_join_link.h"
 #include "host_external.h"
+#include "host_audio_output.h"
 
 #define HANDLE_COUNT 256
 
@@ -337,12 +338,12 @@ void host_extra_scene_test(void);
 
 /* (the system's keyboard, below) */
 static void text_input_update(void);
-/* while a share sheet is up (host_window_up) the player's presses and
+/* while a share or audio output sheet is up the player's presses and
 movements are the sheet's, not the game's: the game gets the releases alone,
 so nothing stays held */
 static int held_back(const SDL_Event *event)
 {
-	if (!host_window_up())
+	if (!host_window_up() && !host_audio_output_up())
 		return 0;
 	switch (event->type)
 	{
@@ -369,6 +370,7 @@ int host_sdl_poll_event(void *event)
 
 	host_extra_scene_poll();
     host_external_poll();
+    host_audio_output_poll();
 #if TARGET_OS_VISION
 	if (test_extra_scene < 0)
 	{
@@ -500,7 +502,7 @@ int host_sdl_gamepad_axis(uint32_t gamepad, int axis)
 	SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
 	/* (at rest while a share sheet is up) */
-	return object && !host_window_up() ? host_ios_gamepad_axis(object, axis) : 0;
+	return object && !host_window_up() && !host_audio_output_up() ? host_ios_gamepad_axis(object, axis) : 0;
 }
 
 int host_sdl_gamepad_button(uint32_t gamepad, int button)
@@ -508,7 +510,7 @@ int host_sdl_gamepad_button(uint32_t gamepad, int button)
 	SDL_Gamepad *object = handle_get(gamepad, _handle_gamepad);
 
 	/* (none pressed while a share sheet is up) */
-	return object && !host_window_up() ? host_ios_gamepad_button(object, button) : 0;
+	return object && !host_window_up() && !host_audio_output_up() ? host_ios_gamepad_button(object, button) : 0;
 }
 
 int host_sdl_gamepad_type(uint32_t gamepad)

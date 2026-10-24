@@ -2452,6 +2452,8 @@ HRESULT WINAPI Direct3D_CreateDevice(UINT adapter, D3DDEVTYPE device_type, void 
 int halo_ui_pointer_update(int menus_active, struct halo_ui_pointer *pointer)
 {
 	(void)pointer;
+	/* The native sender's audio picker belongs to the in-game menus. */
+	host_sdl_set_hint("VISR_PAUSE_MENU", menus_active && halo_scene_class() != CONFIG_SCENE_MENU ? "1" : "0");
 	platform_menus_set_active(menus_active != 0);
 	return 0;
 }

@@ -617,3 +617,51 @@ On a Vision Pro, after installing a `--team` build:
   Keep the same ID when updating and back up `Documents/save` before uninstalling.
 - **Audio issues:** share device/OS and output route along with the runtime
   log. The regression suite checks PCM handoff; it does not test every route.
+
+### AirPlay and external displays
+
+On iPhone or iPad, open Control Center, tap **Screen Mirroring**, and choose
+an Apple TV or compatible receiver. With Metal, VISR automatically sends the
+game to the connected display and keeps its existing touch controls and menu
+companion on the device, just as with a cable. Pair controllers with the
+sending iPhone or iPad. With a hardware controller, the companion dims after
+ten seconds without touch; touching the device brightens it again.
+
+The sender's external-display profile supplies the normal rendering settings.
+VISR first tries a suitable physical display mode. If the receiver offers
+only a larger mode, VISR bounds its drawable to the profile's output size
+(normally 1080 high, within 1920 pixels wide). The receiver's physical mode
+and the game's drawable size are logged separately. This does not establish
+the resolution or frame cadence transported over AirPlay.
+
+While an in-game menu is open, tap **Audio Output** at the top of the device
+screen, then use the route button to choose speakers or an AirPlay audio
+receiver. Wireless audio can be delayed. Audio selection alone keeps video
+on its current display; the audio picker does not start Screen Mirroring.
+Use local speakers or wired audio when playing on the device and response
+time matters.
+
+AirPlay adds video and audio delay. A cable or native Apple TV play is
+preferable when response time matters. TV Game Mode may reduce the TV's own
+processing delay. VISR does not delay controls to compensate for wireless
+audio.
+
+If a separate external scene is unavailable, the system's Screen Mirroring
+is the fallback. OpenGL ES uses system mirroring, including the device's
+picture and touch overlay. Builds made with an SDK older than iOS 27 cannot
+register iOS 27's external scene accessory and use mirroring there. If the TV
+stays blank, stop Screen Mirroring and reconnect, verify the selected
+renderer, or try a cable. After disconnect, check that the game returns to
+the device; during gameplay it pauses when the external output is lost.
+
+On Apple Vision Pro, use the system's **View Mirroring** for spectators.
+Keep play and controls in the headset. This shares the system view, not
+stereo VR or a separate spectator camera. Apple's supported Apple TV
+receivers are Apple TV 4K, second generation or later; Apple TV HD is not a
+supported Vision Pro mirroring receiver. See Apple's
+[View Mirroring instructions](https://support.apple.com/en-us/119944).
+
+The iPhone/iPad display path follows Apple's
+[connected-display lifecycle](https://developer.apple.com/documentation/uikit/presenting-content-on-a-connected-display).
+Audio selection uses the system's
+[route picker](https://developer.apple.com/documentation/avkit/avroutepickerview).

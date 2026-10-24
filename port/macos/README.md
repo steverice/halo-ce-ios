@@ -39,3 +39,12 @@ xcrun --sdk macosx clang -fobjc-arc -mmacosx-version-min=14.0 \
   -o /tmp/visr-macos-import-test
 /tmp/visr-macos-import-test
 ```
+
+For AirPlay video, use macOS Control Center's **Screen Mirroring** controls.
+Choose mirroring or an extended display, then move the VISR window to that
+display or use the normal full-screen controls. The Mac app keeps its regular
+window sizing and rendering settings; it does not use iPhone/iPad companion
+screens or external-display profiles. For audio alone, choose an AirPlay
+output in macOS Sound settings. Wireless video and audio can be delayed;
+use a cable or local audio when response time matters. If a receiver drops,
+check the game window on the Mac and select a working sound output.

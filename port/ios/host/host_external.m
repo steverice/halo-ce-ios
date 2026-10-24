@@ -10,6 +10,8 @@
 #include "ios_host.h"
 #include "host_external.h"
 #include "host_external_mode.h"
+#include "host_external_session.h"
+#include "host_audio_route.h"
 #include "host_config.h"
 #include "host_profile.h"
 
@@ -38,7 +40,12 @@ static int screen_is_external(UIScreen *screen) {
 }
 /* A switch the renderer cannot take yet (before it starts) stays pending and is logged once. */
 static int output_switch(void *layer,UIScreen *screen,int width,int height) {
+    /* gpu_metal_output restarts pacing through host_external_screen before
+       returning, so publish the destination for that call and roll back on refusal. */
+    UIScreen *previous_screen=output_screen;
+    output_screen=screen;
     if(gpu_metal_output(layer,(__bridge void *)screen,width,height)) {output_failures=0;return 1;}
+    output_screen=previous_screen;
     if(++output_failures==1)
         host_logf(HOST_LOG_WARN,"external display: the renderer cannot take the %dx%d output yet",width,height);
     return 0;
@@ -54,16 +61,16 @@ static UIWindowScene *waiting_scene;
 static UIScreen *candidate_screen;
 static NSArray<UIScreenMode *> *offered;
 static struct host_external_mode candidates[64];
-static int candidate_count, preferred_index, requested_index = -1, negotiating, pending;
+static int candidate_count, preferred_index, requested_index = -1;
+static struct host_external_session session_state;
+static int drawable_cap;
 static CFTimeInterval deadline, accessory_available_since;
 static CGSize mode_accepted;
 static int mode_reissued, mode_reasserts;
 static int first_low=-1, accepting_low;
-static NSString *chosen_key;
-static NSMutableDictionary<NSString *, NSValue *> *chosen_modes;
-static NSMutableDictionary<NSString *, NSMutableIndexSet *> *refused_modes;
 static id accessory_registration;
-static double audio_route_rate;
+static struct host_audio_route audio_route;
+static _Atomic int audio_recover;
 static UILabel *playing_label;
 static IMP original_configuration[2];
 static Class configuration_class[2];
@@ -77,21 +84,17 @@ static Class configuration_class[2];
 @property(nonatomic,strong) UIWindow *window;
 @end
 
-static BOOL airplay(void) {
-    for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
-        if ([port.portType isEqualToString:AVAudioSessionPortAirPlay]) return YES;
-    return NO;
-}
 static NSString *audio_route_text(void) {
     NSMutableArray<NSString *> *ports=[NSMutableArray array];
     for(AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
-        [ports addObject:[NSString stringWithFormat:@"%@:%@",port.portType,port.portName]];
+        [ports addObject:[NSString stringWithFormat:@"%@:%@:%@",port.portType,port.UID,port.portName]];
     return [ports componentsJoinedByString:@", "];
 }
 static NSString *port_name(void) {
     for (AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
-        if ([port.portType isEqualToString:AVAudioSessionPortHDMI]) return port.portName;
-    return @"";
+        if ([port.portType isEqualToString:AVAudioSessionPortHDMI] ||
+            [port.portType isEqualToString:AVAudioSessionPortAirPlay]) return port.portName;
+    return @"External display";
 }
 static UISceneConfiguration *external_configuration(void) {
     UISceneConfiguration *config = [UISceneConfiguration configurationWithName:@"VISRExternalDisplay"
@@ -127,23 +130,16 @@ static void begin_modes(void) {
     offered=candidate_screen.availableModes;
     candidate_count=(int)MIN(offered.count,64);
     preferred_index=-1;
-    NSMutableString *key=[NSMutableString stringWithString:port_name()];
     for(int i=0;i<candidate_count;i++) {
         UIScreenMode *mode=offered[i];
         candidates[i]=(struct host_external_mode){(int)mode.size.width,(int)mode.size.height,mode.pixelAspectRatio,0};
         if(mode==candidate_screen.preferredMode)preferred_index=i;
-        [key appendFormat:@"/%dx%d:%.4f",candidates[i].width,candidates[i].height,candidates[i].pixel_aspect];
+        host_logf(HOST_LOG_INFO,"external display: offered %dx%d, pixel aspect %.4f",
+            candidates[i].width,candidates[i].height,candidates[i].pixel_aspect);
     }
-    chosen_key=key;first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_reasserts=0;
-    if(!chosen_modes)chosen_modes=[NSMutableDictionary dictionary];
-    if(!refused_modes)refused_modes=[NSMutableDictionary dictionary];
-    NSMutableIndexSet *refused=refused_modes[chosen_key];
-    if(!refused)refused_modes[chosen_key]=refused=[NSMutableIndexSet indexSet];
-    for(int i=0;i<candidate_count;i++)candidates[i].refused=[refused containsIndex:(NSUInteger)i];
-    NSValue *cached=chosen_modes[chosen_key];
-    if(cached && !forced_width && CGSizeEqualToSize(candidate_screen.currentMode.size,cached.CGSizeValue)) {
-        negotiating=0;pending=1;
-    } else { negotiating=1;pending=0;requested_index=-1; }
+    first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_reasserts=0;
+    requested_index=-1;
+    host_external_session_connect(&session_state,(uintptr_t)(__bridge void *)external_window.windowScene);
     pthread_mutex_lock(&snapshot_lock);
     snapshot.generation++;
     snapshot.mode_count=candidate_count;
@@ -159,13 +155,13 @@ static void begin_modes(void) {
 @implementation VISRExternalSceneDelegate
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session;(void)options;
+    if(![scene isKindOfClass:UIWindowScene.class])return;
     if(!phone_window) { waiting_scene=(UIWindowScene *)scene;return; }
     if(!metal_enabled) {
         host_logf(HOST_LOG_INFO,"external display: renderer is OpenGL ES; the system mirrors this device");return;
     }
-    if(airplay()) { host_logf(HOST_LOG_INFO,"external display: AirPlay route; the system mirrors this device");return; }
-    if(![scene isKindOfClass:UIWindowScene.class])return;
     UIWindowScene *window_scene=(UIWindowScene *)scene;
+    if(self.window && external_window==self.window)return;
     self.window=[[UIWindow alloc]initWithWindowScene:window_scene];
     UIViewController *controller=[UIViewController new];
     controller.view=[[VISRExternalView alloc]initWithFrame:window_scene.coordinateSpace.bounds];
@@ -177,8 +173,8 @@ static void begin_modes(void) {
 }
 - (void)sceneDidDisconnect:(UIScene *)scene {
     if(waiting_scene==scene)waiting_scene=nil;
-    if(self.window && external_window==self.window) {
-        candidate_screen=nil;negotiating=0;pending=1;requested_index=-1;
+    if(host_external_session_disconnect(&session_state,(uintptr_t)(__bridge void *)scene)) {
+        candidate_screen=nil;requested_index=-1;
         pthread_mutex_lock(&snapshot_lock);snapshot.generation++;pthread_mutex_unlock(&snapshot_lock);
     }
     self.window=nil;(void)scene;
@@ -192,6 +188,16 @@ void host_external_install(void) {
     if(installed++)return;
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification object:nil queue:nil
         usingBlock:^(NSNotification *note){(void)note;atomic_store(&audio_changed,1);}];
+    [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note){
+            if([note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]==AVAudioSessionInterruptionTypeEnded) {
+                atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);
+            }
+        }];
+    [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note){
+            (void)note;atomic_store(&audio_recover,1);atomic_store(&audio_changed,1);
+        }];
 #endif
 }
 static void snapshot_output(int external,int width,int height,const char *reason);
@@ -206,10 +212,9 @@ void host_external_attach(void *window_pointer,int metal) {
     snapshot_output(screen_is_external(output_screen),output_width,output_height,"preferred");
     last_touch=CACurrentMediaTime();
     host_external_install();
+    atomic_store(&audio_changed,1);
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-    audio_route_rate=AVAudioSession.sharedInstance.sampleRate;
-    host_logf(HOST_LOG_INFO,"audio route: %s, %.0f Hz",audio_route_text().UTF8String,
-        audio_route_rate);
+    host_audio_route_update(&audio_route,audio_route_text().UTF8String,AVAudioSession.sharedInstance.sampleRate,0);
 #endif
     const char *forced=getenv("HALO_EXTERNAL_MODE");
     char config[512];
@@ -285,7 +290,7 @@ int host_external_force(const char *mode) {
     snprintf(mode_list,sizeof(mode_list),"%s",mode);forced_index=0;
     forced_width=width;forced_height=height;
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-    if(candidate_screen){negotiating=1;requested_index=-1;}
+    if(candidate_screen){session_state.negotiating=1;requested_index=-1;}
 #endif
     return 1;
 }
@@ -297,7 +302,7 @@ int host_external_cycle(int direction) {
     if(!host_external_mode_parse(mode_list,next,&width,&height,&count))return 0;
     forced_index=next;forced_width=width;forced_height=height;
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-    if(candidate_screen){negotiating=1;requested_index=-1;}
+    if(candidate_screen){session_state.negotiating=1;requested_index=-1;}
 #endif
     return 1;
 }
@@ -307,7 +312,7 @@ void host_external_mode_label(char *text,size_t size) {
 }
 int host_external_ready(void) {
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-    return snapshot.external && !negotiating && !pending &&
+    return snapshot.external && !session_state.negotiating && !session_state.pending &&
         (!forced_width || (snapshot.width==forced_width && snapshot.height==forced_height));
 #else
     return 0;
@@ -317,16 +322,19 @@ int host_external_ready(void) {
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
 static CGSize mode_before;
 static void mode_accept(void) {
-    negotiating=0;pending=1;
+    host_external_session_accept(&session_state);
     mode_accepted=candidate_screen.currentMode.size;
-    chosen_modes[chosen_key]=[NSValue valueWithCGSize:candidate_screen.currentMode.size];
-    const char *reason=forced_width?"forced":requested_index==preferred_index?"preferred":"capped";
+    int width=0,height=0;
+    host_external_mode_drawable((int)mode_accepted.width,(int)mode_accepted.height,drawable_cap,&width,&height);
+    const char *reason=forced_width?"forced":
+        width<(int)mode_accepted.width || height<(int)mode_accepted.height?"capped":
+        requested_index==preferred_index?"preferred":"capped";
     pthread_mutex_lock(&snapshot_lock);
     snprintf(snapshot.reason,sizeof(snapshot.reason),"%s",reason);
     pthread_mutex_unlock(&snapshot_lock);
-    host_logf(HOST_LOG_INFO,"external display: output %.0fx%.0f at %ld Hz [%s]%s",
-        candidate_screen.currentMode.size.width,candidate_screen.currentMode.size.height,
-        (long)candidate_screen.maximumFramesPerSecond,reason,forced_width?" OUTPUT FORCED BY debug.external_mode":"");
+    host_logf(HOST_LOG_INFO,"external display: physical %.0fx%.0f at %ld Hz, drawable %dx%d [%s]%s",
+        mode_accepted.width,mode_accepted.height,(long)candidate_screen.maximumFramesPerSecond,
+        width,height,reason,forced_width?" OUTPUT FORCED BY debug.external_mode":"");
 }
 @interface VISRCompanionTouch : UIGestureRecognizer
 @end
@@ -358,12 +366,18 @@ static void label_layout(void) {
 void host_external_poll(void) {
     if(atomic_exchange(&audio_changed,0)) {
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-        double rate=AVAudioSession.sharedInstance.sampleRate;
-        if(rate>0 && fabs(rate-audio_route_rate)>0.5) {
-            host_sdl_audio_route_changed();audio_route_rate=rate;
+        AVAudioSession *audio=AVAudioSession.sharedInstance;
+        if(host_audio_route_update(&audio_route,audio_route_text().UTF8String,audio.sampleRate,
+            atomic_exchange(&audio_recover,0)))host_sdl_audio_route_changed();
+        host_logf(HOST_LOG_INFO,"audio route: category=%s mode=%s output=%s rate=%.0f Hz latency=%.3f s",
+            audio.category.UTF8String,audio.mode.UTF8String,audio_route_text().UTF8String,
+            audio.sampleRate,audio.outputLatency);
+        if(candidate_screen) {
+            pthread_mutex_lock(&snapshot_lock);
+            snprintf(snapshot.name,sizeof(snapshot.name),"%s",port_name().UTF8String);
+            pthread_mutex_unlock(&snapshot_lock);
+            playing_label.text=[NSString stringWithFormat:@"Playing on %@",port_name()];
         }
-        host_logf(HOST_LOG_INFO,"audio route: %s, %.0f Hz",audio_route_text().UTF8String,
-            AVAudioSession.sharedInstance.sampleRate);
 #endif
     }
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
@@ -382,17 +396,23 @@ void host_external_poll(void) {
     label_layout();
     /* The system can put the display back in its preferred mode just after the scene connects, after the
        policy has already accepted the mode it found: choose again, at most twice per connection. */
-    if(candidate_screen && !negotiating && mode_accepted.width>0 && mode_reasserts<2 &&
+    if(candidate_screen && !session_state.negotiating && mode_accepted.width>0 &&
         !CGSizeEqualToSize(candidate_screen.currentMode.size,mode_accepted)) {
         host_logf(HOST_LOG_INFO,"external display: the display changed itself to %.0fx%.0f; choosing the mode again",
             candidate_screen.currentMode.size.width,candidate_screen.currentMode.size.height);
-        mode_reasserts++;mode_accepted=CGSizeZero;negotiating=1;requested_index=-1;
+        if(mode_reasserts<2) {
+            mode_reasserts++;mode_accepted=CGSizeZero;session_state.negotiating=1;requested_index=-1;
+        } else {
+            /* Stop fighting the receiver, but update drawable size and diagnostics. */
+            mode_accept();
+        }
     }
-    if(!candidate_screen || !negotiating)return;
+    if(!candidate_screen || !session_state.negotiating)return;
     if(requested_index<0) {
         char cap_text[80];
         int cap=host_profile_external_value(host_device_profile(),"display.output_height",cap_text,sizeof(cap_text))?
-            atoi(cap_text):0;
+            atoi(cap_text):1080;
+        drawable_cap=forced_width?0:cap;
         int chosen=host_external_mode_choose(candidates,(size_t)candidate_count,preferred_index,cap,forced_width,forced_height);
         if(chosen<0) {
             if(!forced_width && first_low>=0 && !accepting_low) {chosen=first_low;accepting_low=1;}
@@ -402,8 +422,16 @@ void host_external_poll(void) {
                 forced_width=forced_height=0;return;
             } else {
                 host_logf(HOST_LOG_WARN,"external display: no usable mode");
-                negotiating=0;pending=0;
-                if(!companion_on)external_window.hidden=YES;
+                CGSize current=candidate_screen.currentMode.size;
+                if(current.width>0 && current.height>0 &&
+                    fabs(candidate_screen.currentMode.pixelAspectRatio-1.0)<=0.001) {
+                    host_logf(HOST_LOG_WARN,"external display: using current physical mode with bounded drawable");
+                    mode_accept();
+                } else {
+                    /* Return to local rendering if a previously active output becomes unusable. */
+                    candidate_screen=nil;
+                    host_external_session_disconnect(&session_state,session_state.owner);
+                }
                 return;
             }
         }
@@ -432,7 +460,6 @@ void host_external_poll(void) {
     }
     host_logf(HOST_LOG_WARN,"external display: refused %dx%d; current %.0fx%.0f",candidates[requested_index].width,
         candidates[requested_index].height,current.width,current.height);
-    [refused_modes[chosen_key] addIndex:(NSUInteger)requested_index];
     candidates[requested_index].refused=1;requested_index=-1;
 #endif
 }
@@ -444,22 +471,31 @@ void host_external_commit(int allow_pause) {
     test_output_frame++;
 #endif
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
-    if(pending) {
-        pending=0;
+    if(session_state.pending) {
+        host_external_session_complete(&session_state);
         int was_external=snapshot.external;
-        UIScreen *previous_screen=output_screen;
-        if(candidate_screen && external_window) {
-            output_screen=candidate_screen;
-            output_width=(int)candidate_screen.currentMode.size.width;
-            output_height=(int)candidate_screen.currentMode.size.height;
-            if(!output_switch((__bridge void *)external_window.rootViewController.view.layer,
-                output_screen,output_width,output_height)) {
-                output_screen=previous_screen;pending=1;return;
+        if(candidate_screen && !session_state.negotiating && external_window) {
+            int width=0,height=0;
+            if(!host_external_mode_drawable((int)candidate_screen.currentMode.size.width,
+                (int)candidate_screen.currentMode.size.height,drawable_cap,&width,&height)) {
+                session_state.pending=1;return;
             }
+            if(!output_switch((__bridge void *)external_window.rootViewController.view.layer,
+                candidate_screen,width,height)) {
+                session_state.pending=1;return;
+            }
+            output_screen=candidate_screen;output_width=width;output_height=height;
             char reason[32];snprintf(reason,sizeof(reason),"%s",snapshot.reason[0]?snapshot.reason:"preferred");
             companion_on=1;
             external_window.hidden=NO;
             snapshot_output(1,output_width,output_height,reason);
+            pthread_mutex_lock(&snapshot_lock);
+            snapshot.mode_count=candidate_count;
+            snprintf(snapshot.name,sizeof(snapshot.name),"%s",port_name().UTF8String);
+            for(int i=0;i<candidate_count;i++) {
+                snapshot.modes[i].width=candidates[i].width;snapshot.modes[i].height=candidates[i].height;
+            }
+            pthread_mutex_unlock(&snapshot_lock);
             if(!playing_label) {
                 playing_label=[UILabel new];playing_label.text=@"Playing on display";
                 playing_label.textColor=UIColor.lightGrayColor;playing_label.font=[UIFont systemFontOfSize:11];
@@ -469,21 +505,27 @@ void host_external_commit(int allow_pause) {
                 VISRCompanionTouch *touch=[VISRCompanionTouch new];touch.cancelsTouchesInView=NO;
                 [phone_window addGestureRecognizer:touch];
             }
+            playing_label.text=[NSString stringWithFormat:@"Playing on %@",port_name()];
             playing_label.hidden=NO;last_touch=CACurrentMediaTime();label_layout();
             host_logf(HOST_LOG_INFO,"external display: the game moved to the display (drawable %dx%d)",output_width,output_height);
         } else if(!companion_on) {
             /* the display went away before the game moved to it: the renderer never left this device */
-            external_window.hidden=YES;external_window=nil;offered=nil;first_low=-1;accepting_low=0;
-            host_logf(HOST_LOG_INFO,"external display: disconnected before the game moved to it");
+            external_window.hidden=YES;
+            if(!candidate_screen) {external_window=nil;offered=nil;first_low=-1;accepting_low=0;}
+            snapshot_output(screen_is_external(output_screen),output_width,output_height,"preferred");
+            if(!candidate_screen)host_logf(HOST_LOG_INFO,"external display: disconnected before the game moved to it");
         } else {
-            output_screen=phone_window.windowScene.screen;
-            SDL_GetWindowSizeInPixels(host_sdl_window(),&output_width,&output_height);
-            if(!output_switch(phone_layer,output_screen,output_width,output_height)) {
-                output_screen=previous_screen;pending=1;return;    /* never left on a display that is gone */
+            int width=0,height=0;
+            UIScreen *local_screen=phone_window.windowScene.screen;
+            SDL_GetWindowSizeInPixels(host_sdl_window(),&width,&height);
+            if(!output_switch(phone_layer,local_screen,width,height)) {
+                session_state.pending=1;return;    /* retry before the next frame */
             }
+            output_screen=local_screen;output_width=width;output_height=height;
             companion_on=0;
             snapshot_output(screen_is_external(output_screen),output_width,output_height,"preferred");
-            external_window.hidden=YES;external_window=nil;offered=nil;first_low=-1;accepting_low=0;
+            external_window.hidden=YES;
+            if(!candidate_screen) {external_window=nil;offered=nil;first_low=-1;accepting_low=0;}
             playing_label.hidden=YES;
             if(was_external && allow_pause)host_ios_touch_pause();
             host_logf(HOST_LOG_INFO,"external display: disconnected; the game is back on this device%s",

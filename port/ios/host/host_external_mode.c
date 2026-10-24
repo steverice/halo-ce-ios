@@ -25,6 +25,8 @@ int host_external_mode_choose(const struct host_external_mode *modes, size_t cou
             best_matches = matches;
         }
     }
+    if (!forced_width && !forced_height && best < 0 && fallback < 0 && cap > 0)
+        return host_external_mode_choose(modes,count,preferred,0,0,0);
     return forced_width || forced_height ? -1 : best >= 0 ? best : fallback;
 }
 
@@ -62,5 +64,20 @@ int host_external_mode_parse(const char *text, int index, int *width, int *heigh
     }
     if(index>=items)return 0;
     *width=selected_width;*height=selected_height;*count=items;
+    return 1;
+}
+
+/* Bound allocation even when a receiver exposes only a 4K physical mode.
+   The width bound keeps unusually wide modes inside the same pixel budget. */
+int host_external_mode_drawable(int width,int height,int cap,int *out_width,int *out_height)
+{
+    if(width<=0 || height<=0)return 0;
+    double scale=1.0;
+    if(cap>0) {
+        scale=fmin(scale,(double)cap/height);
+        scale=fmin(scale,((double)cap*16.0/9.0)/width);
+    }
+    *out_width=(int)fmax(1,floor(width*scale));
+    *out_height=(int)fmax(1,floor(height*scale));
     return 1;
 }
