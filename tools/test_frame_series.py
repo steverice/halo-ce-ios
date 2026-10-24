@@ -57,3 +57,9 @@ def test_frames_are_placed_by_their_ticks_so_frameless_stretches_leave_gaps():
     plain["runs"][0]["frame_ticks"] = ticks_plus([31, 31, 31, 301, 31, 31, 31, 31])
     rows = frame_series.series(plain)
     assert [row[0] for row in rows] == [0, 1, 2, 3, 13, 14, 15, 16]
+
+
+def test_game_report_seconds_preserve_unavailable_gpu():
+    from test_game_perf_reports import report as game_report
+    rows = frame_series.series(game_report())
+    assert rows == [(0, 10.0, None, 3.0)]

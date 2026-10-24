@@ -1,4 +1,9 @@
-"""Per-second CPU and GPU cost of a replayed take, from a benchmark report's per-frame series.
+"""Per-second CPU and GPU cost from benchmark or schema-1 game frame series.
+
+Game reports use elapsed monotonic seconds, omit loading/gap rows and preserve
+unavailable timings as empty CSV cells. Their CPU column is total CPU work and
+render_cpu is the rendering span. Benchmark reports retain their recorded-tick
+placement and historical simulation-plus-render CPU calculation.
 
 A replay of a whole take through the benchmark suite writes, for every frame of its measured window, the render's CPU
 time, the GPU time and the interval (frame_cpu, frame_gpu, frame_interval), and for the frames that knew their split
@@ -27,10 +32,22 @@ def decode(run, key):
 
 
 def series(report):
-    """[(recorded second, cpu, gpu, render_cpu)] for the first run of a report (a path or the parsed JSON)"""
+    """Return per-second costs from a report path or parsed JSON object."""
     if not isinstance(report, dict):
-        with open(report) as file:
-            report = json.load(file)
+        from game_perf_reports import load_report
+        report = load_report(report)
+    if "trace" in report:
+        from game_perf_reports import decode_frames
+        cells = {}
+        for frame in decode_frames(report):
+            if frame["flags"] & (1 | 16):
+                continue
+            cell = cells.setdefault(frame["elapsedMS"] // 1000, [[], [], []])
+            for values, field in zip(cell, ("cpu", "gpu", "render")):
+                if frame[field] is not None:
+                    values.append(frame[field])
+        return [(second, *(sum(values) / len(values) if values else None for values in cells[second]))
+                for second in sorted(cells)]
     run = report["runs"][0]
     opened = run.get("window_opened_tick")
     if opened is None or opened < 0 or "frame_ticks" not in run:
@@ -65,8 +82,8 @@ def main():
     with open(sys.argv[2], "w") as file:
         file.write("second,cpu,gpu,render_cpu\n")
         for second, cpu, gpu, render in rows:
-            file.write(f"{second},{cpu:.3f},{gpu:.3f},{render:.3f}\n")
-    print(f"{len(rows)} seconds, from {rows[0][0]} to {rows[-1][0]}")
+            file.write(str(second) + "," + ",".join(f"{value:.3f}" if value is not None else "" for value in (cpu, gpu, render)) + "\n")
+    print(f"{len(rows)} seconds" + (f", from {rows[0][0]} to {rows[-1][0]}" if rows else ""))
 
 
 if __name__ == "__main__":
