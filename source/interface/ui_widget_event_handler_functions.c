@@ -932,6 +932,9 @@ symbols in this file:
 #include "text/unicode.h"
 #include "halo_menus.h" /* port: PC_MENU_FUNCTION_BASE */
 
+/* port: the native host presents a specific unsupported-content reason. */
+void platform_show_message(char const *title, char const *message);
+
 /* ---------- constants */
 
 /* ---------- macros */
@@ -5831,6 +5834,18 @@ static boolean multiplayer_profile_set_for_game(
 	}
 	if (playlist_profile_get(profile_index, &profile))
 	{
+		struct game_variant_options options;
+		char const *unsupported;
+
+		/* port: the original menu is also a supported profile chooser. Keep
+		its PC options and apply the same refusal as the native menu. */
+		playlist_profile_get_options(profile_index, &options);
+		unsupported = halo_network_options_reason(options.mode_options);
+		if (unsupported)
+		{
+			platform_show_message("VISR: unsupported gametype", unsupported);
+			return FALSE;
+		}
 		server = global_network_game_server_get();
 		if (saved_game_file_get_path_to_enclosing_directory(profile_index, directory_path))
 			saved_game_file_remember_last_used_multiplayer_variant_directory(directory_path);
@@ -5847,6 +5862,7 @@ static boolean multiplayer_profile_set_for_game(
 			fclose(file);
 		}
 		player_ui_set_game_variant(&profile);
+		player_ui_set_game_variant_options(&options);
 		if (server)
 			network_game_server_change_game_variant(server, &profile);
 		return TRUE;
@@ -6077,6 +6093,8 @@ boolean ui_widget_port_gametype_choose(
 	long profile_index)
 {
 	struct game_variant profile;
+	struct game_variant_options options;
+	char const *unsupported;
 	char directory_path[256];
 	void *server;
 
@@ -6087,17 +6105,19 @@ boolean ui_widget_port_gametype_choose(
 	}
 	if (!playlist_profile_get(profile_index, &profile))
 		return FALSE;
+	playlist_profile_get_options(profile_index, &options);
+	unsupported = halo_network_options_reason(options.mode_options);
+	if (unsupported)
+	{
+		platform_show_message("VISR: unsupported gametype", unsupported);
+		return FALSE;
+	}
 	server = global_network_game_server_get();
 	if (saved_game_file_get_path_to_enclosing_directory(profile_index, directory_path))
 		saved_game_file_remember_last_used_multiplayer_variant_directory(directory_path);
 	player_ui_set_game_variant(&profile);
 	/* (and its PC options: game_engine.h) */
-	{
-		struct game_variant_options options;
-
-		playlist_profile_get_options(profile_index, &options);
-		player_ui_set_game_variant_options(&options);
-	}
+	player_ui_set_game_variant_options(&options);
 	if (server)
 		network_game_server_change_game_variant(server, &profile);
 	return TRUE;
@@ -6268,6 +6288,13 @@ boolean ui_widget_port_game_variant_set(
 {
 	void *server = global_network_game_server_get();
 
+	char const *unsupported = halo_network_options_reason(options->mode_options);
+
+	if (unsupported)
+	{
+		platform_show_message("VISR: unsupported gametype", unsupported);
+		return FALSE;
+	}
 	player_ui_set_game_variant(variant);
 	player_ui_set_game_variant_options(options);
 	if (server)

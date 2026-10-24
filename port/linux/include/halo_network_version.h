@@ -1,14 +1,10 @@
 /*
 HALO_NETWORK_VERSION.H
 
-Which network versions this build plays with, and what each peer's version
-turns on (port/linux/NETCODE.md, "Versions"). A host advertises
-HALO_PORT_NETWORK_VERSION. A client joins a host of that version or of any
-older one back to HALO_PORT_NETWORK_OLDEST_JOINABLE: versions 30 to 32 only
-add (a machine that does not know an addition drops it), so the host's
-version says which additions it sends and takes. A host does not know its
-clients' versions (a join request does not carry one), so it plays every
-client as its own.
+The current agreement is 38. Legacy hosts 29–32 use VISR's known settings
+layout and additive messages; the receiver converts their 28-byte options.
+Intermediate agreements are not enabled without verified codecs and rules.
+A host does not know client versions because join requests do not carry one.
 */
 
 #ifndef __HALO_NETWORK_VERSION_H
@@ -28,7 +24,8 @@ ones add to) */
 /* whether a client of version `ours` joins a host of version `theirs` */
 static inline int halo_network_version_joinable(unsigned ours, unsigned theirs)
 {
-	return theirs == ours || (ours >= theirs && theirs >= HALO_PORT_NETWORK_OLDEST_JOINABLE);
+	return theirs == ours || (ours >= theirs && theirs >= HALO_PORT_NETWORK_OLDEST_JOINABLE &&
+		theirs <= HALO_NETWORK_VERSION_AIM_POLICY);
 }
 
 /* whether a host of the version sends the aim-assist policy (message 90);

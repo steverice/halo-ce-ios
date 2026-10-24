@@ -3694,6 +3694,7 @@ void game_variant_options_default(
 	struct game_variant_options *options)
 {
 	csmemset(options, 0, sizeof(*options));
+	halo_network_options_defaults(options->mode_options);
 	options->friendly_fire = _friendly_fire_on;
 	options->loadout = _loadout_category;
 	options->primary_weapon = _loadout_weapon_assault_rifle;

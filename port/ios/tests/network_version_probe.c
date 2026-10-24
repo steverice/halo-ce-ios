@@ -8,13 +8,14 @@ int main(void)
 {
 	unsigned version;
 
-	assert(HALO_PORT_NETWORK_VERSION == 32 && HALO_PORT_NETWORK_OLDEST_JOINABLE == 29);
+	assert(HALO_PORT_NETWORK_VERSION == 38 && HALO_PORT_NETWORK_OLDEST_JOINABLE == 29);
 	/* a build of 32 joins hosts of 29, 30, 31 and 32, and no others */
 	for (version = 0; version < 40; version++)
 	{
 		int expected = version >= 29 && version <= 32;
 
 		assert(halo_network_version_joinable(32, version) == expected);
+		assert(halo_network_version_joinable(38, version) == (expected || version == 38));
 	}
 	/* a build of 29 (a VISR before the range) joins only its own */
 	assert(halo_network_version_joinable(29, 29) && !halo_network_version_joinable(29, 30));

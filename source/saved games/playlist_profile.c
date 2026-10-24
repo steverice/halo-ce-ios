@@ -100,7 +100,7 @@ enum
 	which do not pass. */
 	PLAYLIST_PROFILE_OPTIONS_OFFSET = 0x100,
 	PLAYLIST_PROFILE_OPTIONS_MAGIC = 0x4F565047, /* 'GPVO' little-endian */
-	PLAYLIST_PROFILE_OPTIONS_VERSION = 1,
+	PLAYLIST_PROFILE_OPTIONS_VERSION = 2,
 	MAXIMUM_GAME_VARIANT_NAME_LENGTH = 12,
 	NUMBER_OF_DEFAULT_PLAYLIST_PROFILES = 26,
 };
@@ -903,19 +903,22 @@ static boolean playlist_profile_options_from_block(
 {
 	struct playlist_profile_options_header header;
 	byte const *data = block + PLAYLIST_PROFILE_OPTIONS_OFFSET;
-	unsigned long size = sizeof(header) + sizeof(*options);
+	unsigned long size;
 	XCALCSIG_SIGNATURE checksum;
 
 	csmemcpy(&header, data, sizeof(header));
-	if (header.magic != PLAYLIST_PROFILE_OPTIONS_MAGIC || header.version != PLAYLIST_PROFILE_OPTIONS_VERSION ||
-		header.size != sizeof(*options))
+	if (header.magic != PLAYLIST_PROFILE_OPTIONS_MAGIC ||
+		!((header.version == 1 && header.size == HALO_NETWORK_LEGACY_OPTIONS_SIZE) ||
+		  (header.version == PLAYLIST_PROFILE_OPTIONS_VERSION && header.size == sizeof(*options))))
 	{
 		return FALSE;
 	}
+	size = sizeof(header) + header.size;
 	saved_game_file_generate_checksum((byte *)data, size, &checksum);
 	if (csmemcmp(&checksum, data + size, sizeof(checksum)))
 		return FALSE;
-	csmemcpy(options, data + sizeof(header), sizeof(*options));
+	game_variant_options_default((struct game_variant const *)block, options);
+	csmemcpy(options, data + sizeof(header), header.size);
 	options->friendly_fire = (short)PIN(options->friendly_fire, 0, NUMBER_OF_FRIENDLY_FIRE_MODES - 1);
 	options->radar_players = (byte)PIN(options->radar_players, 0, NUMBER_OF_RADAR_PLAYERS - 1);
 	options->loadout = (byte)PIN(options->loadout, 0, NUMBER_OF_LOADOUTS - 1);

@@ -392,6 +392,7 @@ symbols in this file:
 #include "networking/network_server_manager.h"
 #include "text/unicode.h"
 #include "map_share.h" /* port: port/linux/game/map_share.c */
+void platform_show_message(char const *title, char const *message);
 #include "halo_network_version.h" /* port: port/linux/include/halo_network_version.h */
 #include "halo_network_content.h" /* port: game-kind refusal */
 
@@ -1289,6 +1290,19 @@ boolean network_game_client_game_settings_updated(
 		VALID_INDEX(message_packet->difficulty, NUMBER_OF_GAME_DIFFICULTY_LEVELS))
 	{
 		struct network_game previous_game;
+		char const *unsupported = halo_network_options_reason(message_packet->variant_options.mode_options);
+
+		/* port: reject before map precaching or applying any unsupported rules.
+		Older advertisements and internet listings may not expose the mode. */
+		if (!unsupported && (message_packet->variant.game_engine_index < game_engine_none ||
+			message_packet->variant.game_engine_index > last_usable_game_engine_index))
+			unsupported = "This game uses a gametype that VISR does not support.";
+		if (unsupported)
+		{
+			platform_show_message("VISR: cannot join this game", unsupported);
+			display_error_when_main_menu_loaded(_error_network_failed_to_join_game);
+			return FALSE;
+		}
 
 		/* port: the record's players: no two the same machine's same
 		controller, no machine with more than its local players; the

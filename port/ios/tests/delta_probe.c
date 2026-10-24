@@ -43,8 +43,8 @@ int main(void)
 	int count, seconds, index;
 
 	/* the joinable versions: this build's, and the older ones back to the oldest joinable */
-	assert(HALO_PORT_NETWORK_VERSION == 32 && HALO_PORT_NETWORK_OLDEST_JOINABLE == 29);
-	assert(halo_network_joinable(32) && halo_network_joinable(31) && halo_network_joinable(29));
+	assert(HALO_PORT_NETWORK_VERSION == 38 && HALO_PORT_NETWORK_OLDEST_JOINABLE == 29);
+	assert(halo_network_joinable(38) && halo_network_joinable(32) && halo_network_joinable(31) && halo_network_joinable(29));
 	assert(!halo_network_joinable(28) && !halo_network_joinable(33) && !halo_network_joinable(0) &&
 		!halo_network_joinable(-1) && !halo_network_joinable(11));
 
@@ -118,7 +118,7 @@ int main(void)
 	announce.version = HALO_PORT_NETWORK_VERSION;
 	assert(delta_announce_form(form, sizeof(form), &announce) > 0);
 	assert(!strcmp(form, "invite=" INVITE_A "&name=Fun%20%26%20games%20%3D%20100%25&map=bloodgulch&engine=2&players=3"
-		"&maximum_players=16&open=1&version=32&teams=0&delta=0"));
+		"&maximum_players=16&open=1&version=38&teams=0&delta=0"));
 	assert(delta_announce_form(form, 20, &announce) == 0);
 	assert(delta_announce_form(form, 1, &announce) == 0);
 	assert(delta_withdraw_form(form, sizeof(form), INVITE_A) == (int)strlen("invite=" INVITE_A));

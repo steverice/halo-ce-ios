@@ -954,10 +954,12 @@ static boolean network_game_client_receive_game_settings_piece(
 	struct message_server_game_settings_update const *piece)
 {
 	boolean result = TRUE;
+	boolean legacy = network_game_host_version() <= 32;
+	unsigned expected_size = legacy ? HALO_NETWORK_LEGACY_SETTINGS_SIZE : sizeof(network_game_client_settings_staging);
 
-	if (piece->total_size != sizeof(network_game_client_settings_staging) ||
+	if (piece->total_size != expected_size ||
 		piece->length > sizeof(piece->data) ||
-		piece->offset + piece->length > sizeof(network_game_client_settings_staging))
+		piece->offset + piece->length > expected_size)
 	{
 		network_event("got a message_server_game_settings_update piece for a different game layout");
 		network_game_client_settings_staging_size = 0;
@@ -985,6 +987,8 @@ static boolean network_game_client_receive_game_settings_piece(
 			if (network_game_client_settings_staging_size == piece->total_size)
 			{
 				network_game_client_settings_staging_size = 0;
+				if (legacy)
+					halo_network_settings_expand_legacy((byte *)&network_game_client_settings_staging);
 				result = network_game_client_game_settings_updated(client, &network_game_client_settings_staging);
 				if (!result)
 				{

@@ -54,3 +54,12 @@ def test_coop_friendly_fire_byte_is_byte_two_of_the_input_entry():
     fields = [line.strip() for line in body.splitlines() if line.strip().endswith(";") and not line.strip().startswith("/*")]
     assert fields[0].startswith("byte player_index") and fields[1].startswith("byte structure_bsp_index")
     assert fields[2].startswith("byte coop_no_friendly_fire")
+
+
+def test_documented_options_content_and_legacy_settings_fixtures():
+    with tempfile.TemporaryDirectory() as directory:
+        executable = Path(directory) / "network_content_probe"
+        subprocess.run(["clang", "-std=c11", "-Wall", "-Werror", "-o", str(executable),
+                        str(ROOT / "port/ios/tests/network_content_probe.c")], check=True)
+        result = subprocess.run([str(executable)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr

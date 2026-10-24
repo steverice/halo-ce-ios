@@ -9,6 +9,7 @@ header included in hcex build.
 #pragma once
 
 #include "math/real_math.h"
+#include "halo_network_content.h"
 
 /* ---------- constants */
 
@@ -236,9 +237,15 @@ struct game_variant_options
 	/* no weapons spawn on the map (its grenades and powerups do): for
 	a loadout of none, melee only */
 	boolean no_map_weapons;
+	/* port: version 35 adds mode/options bytes after the unchanged legacy block.
+	VISR carries these fields but refuses rules it does not implement. */
+	byte mode_options[HALO_NETWORK_MODE_OPTIONS_SIZE];
 };
 
-typedef char verify_game_variant_options_size[sizeof(struct game_variant_options) == 0x1C ? 1 : -1];
+typedef char verify_game_variant_options_size[sizeof(struct game_variant_options) == 0x2C ? 1 : -1];
+
+typedef char verify_game_variant_mode_options_offset[
+	offsetof(struct game_variant_options, mode_options) == 28 ? 1 : -1];
 
 struct game_engine
 {

@@ -149,6 +149,36 @@ lockstep netcode was removed, set to play it): it tells the player why.
 
 ## Versions
 
+VISR's current agreement is network version 38. It preserves the legacy
+28-byte PC options prefix and appends the documented 16-byte mode/options
+extension, for a 44-byte options block and 13,136-byte settings record.
+Inactive mode parameters do not activate a mode. SWAT, Infection, Gun Game,
+Hardcore, unknown kinds, and unknown nonzero extension bytes are refused
+before applying settings, with a visible reason. Hosts offer ordinary VISR
+modes. LAN advertisements carry the kind at reserved byte 3; unsupported
+rows stay selectable so their reason can be shown, and render gray.
+
+The host's co-op ally friendly-fire choice uses cooperative-flags bit 1
+(set means OFF). The damage changes retain the historical rules during
+recording playback. Static shield eligibility and host authority are
+extended where specified; the two fallback target searches remain TODOs
+because their numerical and matching rules are not established.
+
+Message 91 carries a four-byte shield-presentation selector after the
+normal stamped distributed header. Selectors 0–6 are accepted only from
+the host's reliable stream. VISR always renders stock shield effects and
+hosts send the synchronized STOCK selector (0). Selector 6 leaves player
+presentation choices local in other implementations; VISR still draws stock.
+
+Clients retain joins to known host versions 29–32 through an explicit
+legacy settings conversion. Versions 33–37 are refused pending verified
+agreements. Current hosts do not negotiate a downgrade with older clients.
+The internet listing's new kind encoding and Bonjour identity for other
+implementations remain unverified; LAN kind support does not establish
+internet interoperability. These partial additions derive from independently
+described behavior and black-box formats, not outside source code.
+
+
 The native builds' network code has a version, an unsigned 16-bit number
 (`HALO_PORT_NETWORK_VERSION` in `port/linux/include/halo_port_limits.h`),
 raised with any change to what the machines send each other. A host puts it
