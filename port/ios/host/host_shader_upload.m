@@ -114,6 +114,7 @@ static dispatch_block_t test_timeout, test_previous_timeout;
 static NSUInteger epoch, active_attempt;
 static BOOL eligible;
 static NSTimeInterval idle_start;
+static NSData *journal_written;   /* worker only: the journal bytes last synced to working.json */
 static BOOL durable(NSData *data,NSString *path) {
     if(![data writeToFile:path options:NSDataWritingAtomic error:nil])return NO;
     int fd=open(path.fileSystemRepresentation,O_RDONLY);if(fd<0)return NO;
@@ -240,7 +241,9 @@ static void checkpoint(BOOL force) {
         journal[key]=@{@"metadata":g[@"metadata"],@"misses":[g[@"misses"] allObjects],@"links":links};
     }
     NSData *journal_bytes=[NSJSONSerialization dataWithJSONObject:journal options:NSJSONWritingSortedKeys error:nil];
-    if(journal_bytes.length<=256*1024)durable(journal_bytes,[ROOT stringByAppendingPathComponent:@"working.json"]);
+    /* The worker wakes every minute during play; it rewrites and syncs the journal only when it changed. */
+    if(journal_bytes.length<=256*1024 && ![journal_bytes isEqual:journal_written] &&
+       durable(journal_bytes,[ROOT stringByAppendingPathComponent:@"working.json"]))journal_written=journal_bytes;
     }
     BOOL idle=atomic_load(&menu) && !atomic_load(&runtime_suppressed) && !host_benchmark_running();
     if(!idle)idle_start=0;else if(!idle_start)idle_start=NSDate.date.timeIntervalSince1970;
@@ -393,7 +396,7 @@ static void setting_changed(void) {
             [NSFileManager.defaultManager removeItemAtPath:temporary error:nil];
             [NSFileManager.defaultManager createDirectoryAtPath:temporary withIntermediateDirectories:YES attributes:nil error:nil];
             [NSFileManager.defaultManager createDirectoryAtPath:OUTBOX withIntermediateDirectories:YES attributes:nil error:nil];
-            [NSFileManager.defaultManager removeItemAtPath:[ROOT stringByAppendingPathComponent:@"working.json"] error:nil];
+            [NSFileManager.defaultManager removeItemAtPath:[ROOT stringByAppendingPathComponent:@"working.json"] error:nil];journal_written=nil;
             state[@"retries"]=[NSMutableDictionary dictionary];save_state();
             struct shader_observation_item ignored;while(shader_observations_take(&collector,&ignored)){}
             if(requested==atomic_load(&purge_request))atomic_store(&purge_pending,0);
