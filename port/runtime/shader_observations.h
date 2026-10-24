@@ -2,7 +2,9 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#ifndef HALO_ILP32
 #include <stdatomic.h>
+#endif
 #define SHADER_OBSERVATION_ABI "shader-lists-2"
 #define SHADER_OBSERVATION_PIXEL_MAX 512
 #define SHADER_OBSERVATION_CAPACITY 512
@@ -26,6 +28,7 @@ struct shader_observation_item {
     struct shader_observation_generation generation;
     struct shader_observation descriptor;
 };
+#ifndef HALO_ILP32
 /* One render producer and one worker consumer. Never reset while either is active. */
 struct shader_observation_collector {
     _Atomic uint32_t read, write, dropped;
@@ -40,3 +43,5 @@ int shader_observations_take(struct shader_observation_collector *collector, str
 int shader_observations_lines(const struct shader_observation *descriptor,
     char line[SHADER_OBSERVATION_LINE_MAX], char vertex[SHADER_OBSERVATION_LINE_MAX],
     char pixel[SHADER_OBSERVATION_LINE_MAX]);
+
+#endif /* !HALO_ILP32: native collector storage and worker API */

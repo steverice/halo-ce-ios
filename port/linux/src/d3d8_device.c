@@ -31,6 +31,10 @@ Conventions carried over from the Xbox:
 #include "halo_display.h"
 #ifdef HALO_ILP32
 #include "guest_host.h"
+#include "shader_observation_path.h"
+/* The physical cache paths, resolved after the map has loaded. */
+const char *cache_files_map_directory(void);
+const char *custom_edition_cache_loaded_path(void);
 #endif
 #include "gpu_companion.h"
 #include "halo_stereo.h"
@@ -3714,6 +3718,7 @@ void halo_shader_list_warm(char const *map_name)
 	uint32_t recorded_size = 0;
 #ifdef HALO_ILP32
 	char observation_map_key[64] = {0};
+	char observation_xbox_path[1024], observation_host_path[1024] = {0};
 #endif
 
 #ifdef HALO_ILP32
@@ -3722,8 +3727,13 @@ void halo_shader_list_warm(char const *map_name)
 	shader_list_take_pipelines();
 	observation_capture = host_shader_observation_recording();
 	observation_developer_record = config_explicit("debug.shader_list_record");
-	observation_generation = host_shader_observation_activate(map_name,
-		platform_fixed_timestep() || *config_string("debug.input_replay") ||
+	/* Logical tags such as levels\\a10\\a10 are not file paths. A loaded
+	   Custom Edition cache may live in a pack directory with a reused name. */
+	if (shader_observation_map_path(map_name, cache_files_map_directory(),
+		custom_edition_cache_loaded_path(), observation_xbox_path, sizeof(observation_xbox_path)))
+		platform_translate_path(observation_xbox_path, observation_host_path, sizeof(observation_host_path));
+	observation_generation = host_shader_observation_activate(observation_host_path,
+		!shader_dialect.msl || platform_fixed_timestep() || *config_string("debug.input_replay") ||
 		config_boolean("debug.benchmark") || *config_string("debug.benchmark_suite") ||
 		config_real("debug.exit_after") > 0 || *config_string("debug.gpu_shader_replay") ||
 		*config_string("debug.gpu_dump_shaders"), observation_map_key, sizeof(observation_map_key));

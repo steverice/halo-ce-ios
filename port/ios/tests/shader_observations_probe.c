@@ -1,5 +1,6 @@
 /* Portable collector contract: bounded append, immutable generations, dependencies. */
 #include "shader_observations.h"
+#include "../../linux/src/shader_observation_path.h"
 #include "../host/host_shader_official_maps.h"
 #include <assert.h>
 #include <stdio.h>
@@ -12,6 +13,17 @@ int main(void)
     struct shader_observation_item item;
     char line[SHADER_OBSERVATION_LINE_MAX], vertex[SHADER_OBSERVATION_LINE_MAX], pixel[SHADER_OBSERVATION_LINE_MAX];
     unsigned i;
+    char path[1024];
+    assert(shader_observation_map_path("levels\\ui\\ui", "d:\\maps\\", NULL, path, sizeof(path)));
+    assert(!strcmp(path, "d:\\maps\\ui.map"));
+    assert(shader_observation_map_path("levels\\a10\\a10", "d:\\maps_fr\\", NULL, path, sizeof(path)));
+    assert(!strcmp(path, "d:\\maps_fr\\a10.map"));
+    assert(shader_observation_map_path("custom_maps\\same", "d:\\maps\\", "d:\\custom_maps\\pack-one\\same.map", path, sizeof(path)));
+    assert(!strcmp(path, "d:\\custom_maps\\pack-one\\same.map"));
+    assert(shader_observation_map_path("custom_maps\\same", "d:\\maps\\", "h:\\maps\\pack-two\\same.map", path, sizeof(path)));
+    assert(!strcmp(path, "h:\\maps\\pack-two\\same.map"));
+    assert(!shader_observation_map_path("levels\\a10\\a10", "d:\\maps\\", NULL, path, 4));
+    assert(!path[0]);
     assert(!strcmp(host_shader_official_alias("f7461e5b6eaf0314c4f03a1c6e43752b06ae3e4782b70b240a8c15e5f634b3ce"), "a10"));
     assert(host_shader_official_alias("0000000000000000000000000000000000000000000000000000000000000000") == NULL);
     assert(!strcmp(host_shader_official_alias("35e3e560478d85178749be310ad13d6d6ecde618d32675261a3554592333a833"), "ui"));
