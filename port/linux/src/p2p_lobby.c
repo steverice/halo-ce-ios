@@ -331,6 +331,9 @@ static int listing_make(unsigned char *bytes, int flags)
 	}
 	bytes[size++] = (unsigned char)(lobby.player_count > 255 ? 255 : lobby.player_count);
 	bytes[size++] = (unsigned char)(lobby.maximum_player_count > 255 ? 255 : lobby.maximum_player_count);
+	/* TODO(net-v37): the internet game-kind field has not been established
+	by the permitted format description. The base engine and reserved stamp
+	are not substitutes; keep this layout until its offset and encoding are known. */
 	bytes[size++] = (unsigned char)lobby.engine_type;
 	size += put_text(bytes + size, lobby.name, P2P_LISTING_NAME_SIZE);
 	size += put_text(bytes + size, lobby.map, P2P_LISTING_MAP_SIZE);
@@ -393,6 +396,8 @@ static int listing_read(const unsigned char *bytes, int size, struct listing *li
 	}
 	listing->player_count = bytes[offset++];
 	listing->maximum_player_count = bytes[offset++];
+	/* TODO(net-v37): decode kind only after its internet offset and encoding
+	are documented; the LAN kind byte does not establish this listing layout. */
 	listing->engine_type = bytes[offset++];
 	if (!get_text(bytes, size, &offset, listing->name, P2P_LISTING_NAME_SIZE) ||
 		!get_text(bytes, size, &offset, listing->map, P2P_LISTING_MAP_SIZE) ||

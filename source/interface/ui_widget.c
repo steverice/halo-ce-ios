@@ -1367,6 +1367,10 @@ static boolean ui_widget_load_children_recursive(
 /* port: whether the tag is one of the menus' (port/linux/game/menu_tags.c) */
 boolean pc_menu_tag(
 	long tag_index);
+/* port: unavailable browser rows stay focusable for their reason text
+(port/linux/game/menu_functions.c), and draw in gray. */
+boolean ui_widget_port_browser_row_unavailable(
+	struct widget_instance *widget);
 /* port: where in its widget, and how large, the menus draw a frame of
 ui.map's that they scale (port/linux/game/menu_tags.c) */
 boolean pc_menu_frame_placement(
@@ -5350,6 +5354,9 @@ static void widget_instance_render_text_box(
 			color_alpha = color.alpha;
 		}
 	}
+	/* port: unsupported modes and incompatible versions in the browser. */
+	if (ui_widget_port_browser_row_unavailable(widget))
+		color.red = color.green = color.blue = 0.5f;
 	color.alpha = alpha_modifier * color_alpha;
 	if (TEST_FLAG(definition->text_box_flags, _text_box_flashing_text_bit))
 	{

@@ -80,6 +80,7 @@ their handlers open opens.
 
 #include "halo_menus.h"
 #include "halo_network_version.h"
+#include "halo_network_content.h"
 #include "custom_edition_cache.h"
 #include "custom_edition_maps.h"
 #include "text_filter.h"
@@ -2302,6 +2303,9 @@ boolean ui_widget_port_host(struct widget_instance *widget, struct event_record 
 boolean ui_widget_port_browse(struct widget_instance *widget, struct event_record *event, boolean *widget_deleted);
 boolean ui_widget_port_open(struct widget_instance *widget, char const *name, boolean *widget_deleted);
 boolean network_game_client_advertised_game_in_progress(void *client, struct advertised_game *game);
+unsigned int network_game_client_advertised_game_version(void *client, struct advertised_game *game);
+unsigned int network_game_client_advertised_game_kind(void *client, struct advertised_game *game);
+boolean network_game_client_advertised_game_compatible(void *client, struct advertised_game *game, boolean tell);
 boolean ui_widget_port_join(struct widget_instance *widget, void *advertised_game, char const *lobby_name,
 	boolean *widget_deleted);
 boolean ui_widget_port_multiplayer_player(short controller_index, long profile_index);
@@ -3560,6 +3564,31 @@ static wchar_t const *game_type_name(long engine_type)
 	return engine_type == 0 ? L"CO-OP" : engine_names[PIN(engine_type, 0, 5)];
 }
 
+static unsigned advertised_kind(struct advertised_game *game)
+{
+	return network_game_client_advertised_game_kind(global_network_game_client_get(), game);
+}
+
+/* The advertised kind is independent of the base engine: Hardcore CTF
+still uses the CTF engine; Gun Game still uses Slayer. */
+static void advertised_game_type_text(struct advertised_game *game, wchar_t *text, short size)
+{
+	unsigned kind = advertised_kind(game);
+
+	if (kind & 0x80 && !(kind & 0x7C))
+	{
+		if (kind & 3)
+			usnprintf(text, size - 1, L"HC %hs", halo_network_kind_label(kind & 3));
+		else
+			usnprintf(text, size - 1, L"HC %s", game_type_name(game->engine_type));
+	}
+	else if (kind)
+		usnprintf(text, size - 1, L"%hs", halo_network_kind_label(kind));
+	else
+		usnprintf(text, size - 1, L"%s", game_type_name(game->engine_type));
+	text[size - 1] = 0;
+}
+
 /* a map's name as the menus show it (a campaign level's too, hosted as
 network co-op; its scenario's name, if not one of theirs), from its
 scenario's path or name */
@@ -3650,6 +3679,31 @@ static struct
 	struct p2p_listing password_game;
 	boolean password_joined;
 } lobby_browser;
+
+/* Called by ui_widget.c for a row's text. Keep unavailable rows focusable
+so their version or unsupported-mode reason remains visible in the ticker. */
+boolean ui_widget_port_browser_row_unavailable(struct widget_instance *widget)
+{
+	short index;
+
+	for (; widget; widget = widget->parent)
+	{
+		if (!widget->parent || strcmp(widget->parent->name, "join_game_items_list"))
+			continue;
+		index = browser_row_index(widget);
+		if (index == NONE)
+			return FALSE;
+		if (multiplayer.mode == _multiplayer_mode_server_browser)
+		{
+			index = (short)(index + lobby_browser.first);
+			return index >= 0 && index < lobby_browser.count && !lobby_browser.games[index].joinable;
+		}
+		return index >= 0 && index < multiplayer.game_count &&
+			!network_game_client_advertised_game_compatible(global_network_game_client_get(),
+				multiplayer.games[index], FALSE);
+	}
+	return FALSE;
+}
 
 static void lobby_browser_begin(void)
 {
@@ -4001,7 +4055,7 @@ static boolean lobby_browser_select(struct widget_instance *widget, short contro
 		struct advertised_game *found = lobby_browser_joined_game();
 
 		lobby_browser.joining = lobby_browser.ready = FALSE;
-		if (!found)
+		if (!found || !network_game_client_advertised_game_compatible(global_network_game_client_get(), found, TRUE))
 			return campaign_fail();
 		if (advertised_in_progress(found))
 		{
@@ -4181,10 +4235,19 @@ static void browser_update(struct widget_instance *list)
 		text_set(named(row, "server_item_server_name", 0), text);
 		game_map_name(game, text);
 		text_set(named(row, "server_item_map", 0), text);
-		text_set(named(row, "server_item_type", 0), game_type_name(game->engine_type));
+		advertised_game_type_text(game, text, ROW_TEXT_LENGTH);
+		text_set(named(row, "server_item_type", 0), text);
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%d/%d", game->player_count, game->maximum_player_count);
 		text_set(named(row, "server_item_players", 0), text);
-		text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" : L"");
+		if (!network_game_client_advertised_game_compatible(global_network_game_client_get(), game, FALSE) &&
+			!halo_network_kind_reason(advertised_kind(game)))
+		{
+			usnprintf(text, ROW_TEXT_LENGTH - 1, L"V%u",
+				network_game_client_advertised_game_version(global_network_game_client_get(), game));
+			text_set(named(row, "server_item_ping", 0), text);
+		}
+		else
+			text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" : L"");
 		visible_set(named(row, "server_item_locked", 0), FALSE);
 		visible_set(named(row, "server_item_dedicated", 0), FALSE);
 		visible_set(named(row, "server_item_classic", 0), FALSE);
@@ -4239,8 +4302,16 @@ static void browser_update(struct widget_instance *list)
 		{
 			struct advertised_game *game = multiplayer.games[multiplayer.game_chosen];
 
-			usnprintf(text, NUMBEROF(text) - 1, L"%d players of %d, on %d machines%s", game->player_count,
-				game->maximum_player_count, game->machine_count, advertised_in_progress(game) ? L": under way" : L"");
+			char const *reason = halo_network_kind_reason(advertised_kind(game));
+
+			if (reason)
+				usnprintf(text, NUMBEROF(text) - 1, L"%hs", reason);
+			else if (!network_game_client_advertised_game_compatible(global_network_game_client_get(), game, FALSE))
+				usnprintf(text, NUMBEROF(text) - 1, L"Network version %u is not compatible with this build",
+					network_game_client_advertised_game_version(global_network_game_client_get(), game));
+			else
+				usnprintf(text, NUMBEROF(text) - 1, L"%d players of %d, on %d machines%s", game->player_count,
+					game->maximum_player_count, game->machine_count, advertised_in_progress(game) ? L": under way" : L"");
 		}
 		text[NUMBEROF(text) - 1] = 0;
 		text_set(named(list, "ticker_player_info", 0), text);
@@ -4402,6 +4473,10 @@ static boolean browser_select(struct widget_instance *widget, struct event_recor
 		multiplayer.game_chosen = row;
 	if (row != NONE || strstr(widget->name, "button_join"))
 	{
+		if (multiplayer.game_chosen < multiplayer.game_count &&
+			!network_game_client_advertised_game_compatible(global_network_game_client_get(),
+				multiplayer.games[multiplayer.game_chosen], TRUE))
+			return campaign_fail();
 		/* (a game under way: its lobby first, then JOIN GAME) */
 		if (multiplayer.game_chosen < multiplayer.game_count &&
 			advertised_in_progress(multiplayer.games[multiplayer.game_chosen]))
@@ -4850,8 +4925,12 @@ static void preview_update(struct widget_instance *list)
 	visible_set(named(description, "lobby_right_item", 0), valid);
 	if (valid)
 	{
+		wchar_t type[ROW_TEXT_LENGTH];
+
 		lobby_map_show(description, game->map_name);
-		usnprintf(text, NUMBEROF(text) - 1, L"%s\r\n%d of %d players\r\non %d machines", game_type_name(game->engine_type),
+
+		advertised_game_type_text(game, type, NUMBEROF(type));
+		usnprintf(text, NUMBEROF(text) - 1, L"%s\r\n%d of %d players\r\non %d machines", type,
 			game->player_count, game->maximum_player_count, game->machine_count);
 		text[NUMBEROF(text) - 1] = 0;
 		text_set_length(named(description, "lobby_game_data", 0), text, LOBBY_TEXT_LENGTH);

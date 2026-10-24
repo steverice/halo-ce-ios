@@ -393,6 +393,7 @@ symbols in this file:
 #include "text/unicode.h"
 #include "map_share.h" /* port: port/linux/game/map_share.c */
 #include "halo_network_version.h" /* port: port/linux/include/halo_network_version.h */
+#include "halo_network_content.h" /* port: game-kind refusal */
 
 /* ---------- constants */
 
@@ -801,12 +802,13 @@ static unsigned long network_game_client_link_down_time;
 static unsigned long network_game_client_link_checked_time;
 static boolean network_game_client_link_down;
 
-/* each advertised game's host's network version and netcode, by its place
+/* port: each advertised game's host's network version, netcode, and kind, by its place
 in the client's available_games (HALO_PORT_NETWORK_VERSION) */
 static struct
 {
 	word version;
 	byte flags;
+	byte kind;
 } network_game_client_advertised_versions[MAXIMUM_NETWORK_ADVERTISED_GAMES];
 
 /* port: the network version of the host this client joined (this machine's
@@ -2523,6 +2525,11 @@ static boolean add_advertised_game(
 				(advertisement->__unknown5A[HALO_PORT_ADVERTISED_VERSION_OFFSET + 1] << 8));
 			network_game_client_advertised_versions[game_index].flags =
 				advertisement->__unknown5A[HALO_PORT_ADVERTISED_FLAGS_OFFSET];
+			/* port: version 37 assigns this reserved byte to the mode and
+			Hardcore flag. Earlier hosts do not advertise a game kind. */
+			network_game_client_advertised_versions[game_index].kind =
+				network_game_client_advertised_versions[game_index].version >= 37 ?
+				advertisement->__unknown5A[HALO_PORT_ADVERTISED_KIND_OFFSET] : 0;
 		}
 
 		if (advertisement->game_name[0] != L'\0')
@@ -3102,11 +3109,12 @@ the system link list does (network_game_join_game_from_server_list) */
 /* the platform layer's (sdl_platform.c) */
 void platform_show_message(char const *title, char const *message);
 
-/* whether this client can join the advertised game: its host's network
+/* port: whether this client can join the advertised game: its host's network
 version is this machine's (HALO_PORT_NETWORK_VERSION) or an older one it
 plays with (halo_network_version_joinable), and it plays the
 distributed netcode (a host of this version built before the lockstep
-netcode was removed may play that). If not the player is told why (when
+netcode was removed may play that), and its game kind is supported.
+If not the player is told why (when
 tell), and nothing is joined. */
 boolean network_game_client_advertised_game_compatible(
 	struct network_game_client *client,
@@ -3126,7 +3134,16 @@ boolean network_game_client_advertised_game_compatible(
 		HALO_PORT_ADVERTISED_DISTRIBUTED_FLAG) != 0;
 	if (halo_network_version_joinable(ours, theirs) && distributed)
 	{
-		network_event("joining a host of network version %u", theirs);
+		char const *reason = halo_network_kind_reason(network_game_client_advertised_versions[game_index].kind);
+
+		if (reason)
+		{
+			if (tell)
+				platform_show_message("VISR: cannot join this game", reason);
+			return FALSE;
+		}
+		if (tell)
+			network_event("joining a host of network version %u", theirs);
 		return TRUE;
 	}
 	if (halo_network_version_joinable(ours, theirs))
@@ -3158,6 +3175,28 @@ boolean network_game_client_advertised_game_compatible(
 		platform_show_message("Halo: cannot join this game", message);
 	}
 	return FALSE;
+}
+
+/* port: browser metadata kept beside available_games, without changing the
+engine's advertised-game record or its pointer offsets. */
+unsigned int network_game_client_advertised_game_version(
+	struct network_game_client *client,
+	struct network_advertised_game const *game)
+{
+	long index = client ? game - client->available_games : NONE;
+
+	return index >= 0 && index < MAXIMUM_NETWORK_ADVERTISED_GAMES ?
+		network_game_client_advertised_versions[index].version : 0;
+}
+
+unsigned int network_game_client_advertised_game_kind(
+	struct network_game_client *client,
+	struct network_advertised_game const *game)
+{
+	long index = client ? game - client->available_games : NONE;
+
+	return index >= 0 && index < MAXIMUM_NETWORK_ADVERTISED_GAMES ?
+		network_game_client_advertised_versions[index].kind : 0;
 }
 
 /* port: whether the advertised game is under way (HALO_PORT_ADVERTISED_IN_PROGRESS_FLAG),
