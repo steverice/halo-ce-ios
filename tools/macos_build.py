@@ -43,6 +43,8 @@ def validate_native(args):
         raise ValueError('--app-store-package and --signing-profile need --team')
     if args.team and getattr(args, 'sandbox', None) == 'off':
         raise ValueError('team-signed native macOS builds always use the App Sandbox')
+    if args.team and getattr(args, 'local_routes', False):
+        raise ValueError('--local-routes is for ad hoc development builds; a team-signed build runs signed catalogs only')
 
 
 def native_commands(args, data_packs):

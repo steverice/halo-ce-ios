@@ -43,7 +43,7 @@ def test_native_local_routes_flag_is_off_by_default_and_opt_in():
     dict(app_store_package=Path('out')), dict(upload=True), dict(tester=True),
     dict(simulator=True), dict(ipa=Path('out.ipa')), dict(signing_profile='profile'),
     dict(extended_virtual_addressing=True), dict(team='TEAM', sandbox='off'),
-    dict(team='TEAM', upload=True, app_store_package=Path('out'))])
+    dict(team='TEAM', upload=True, app_store_package=Path('out')), dict(team='TEAM', local_routes=True)])
 def test_native_rejects_other_platform_and_account_flows(change):
     with pytest.raises(ValueError):
         macos_build.validate_native(options(**change))
