@@ -1,5 +1,7 @@
 # Performance benchmarks
 
+We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong or out of date. Corrections are welcome: [open an issue](https://github.com/steverice/visr/issues).
+
 Date: 2026-10-24. Refresh wall time: 182.2 seconds.
 
 Machine: Mac mini (M4). OS: 27.0.1.

@@ -226,3 +226,10 @@ def test_render_separates_offscreen_submission_and_unknown_timing_bases():
     assert unknown_section < output.index("| Mac |")
     assert "self-reported" in output[submission_section:unknown_section]
     assert "not displayed pacing" in output[submission_section:unknown_section]
+
+
+def test_page_opens_with_the_fairness_caveat():
+    from perf_compare.results import CAVEAT
+    page = render({})
+    assert page.splitlines()[2] == CAVEAT
+    assert "https://github.com/steverice/visr/issues" in CAVEAT
