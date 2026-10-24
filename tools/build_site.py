@@ -73,8 +73,6 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
         key = name.replace("-", "_")
         if key in facts["shared"]:
             return facts["shared"][key]
-    if kind == "copy" and name in facts["copy"]:
-        return facts["copy"][name]
     raise ValueError(f"Unknown facts block: {kind}: {name}")
 
 
@@ -274,9 +272,8 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
     return Template(template).substitute(
         **{key: escape(value, quote=True) for key, value in metadata.items()},
         content="\n".join(output),
-        legal=md.render(facts["copy"]["site-legal"] + "\n\n"
-                        + facts["shared"]["disc"].replace("\n", " ") + "\n\n"
-                        + facts["shared"]["apple_trademarks"]).rstrip(),
+        legal=md.render(facts["shared"]["legal"] + "\n\n"
+                        + facts["shared"]["disc"].replace("\n", " ")).rstrip(),
     )
 
 

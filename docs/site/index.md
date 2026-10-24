@@ -4,9 +4,9 @@
 
 ## Experience *Halo: Combat Evolved* in a whole new dimension
 
-VISR is a native port of Halo: Combat Evolved for Apple Vision Pro and other Apple devices: iPhone, iPad, Apple TV and Mac. Based on a lot of hard work from the community, optimized for Metal and Apple Silicon.
+{{ shared: introduction }}
 
-The goal is to provide the best possible ways to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it.
+{{ shared: goal }}
 
 > "The first VISR systems date back to the early 21st century…"
 >

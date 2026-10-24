@@ -4,12 +4,13 @@
 
 ### Experience *Halo: Combat Evolved* in a whole new dimension
 
-VISR is a native port of Halo: Combat Evolved to Apple Vision Pro, built from
-the Halo: CE decompilation, running natively on-device in Metal.
+<!-- generated: shared: introduction -->
+VISR is a native port of Halo: Combat Evolved for Apple Vision Pro and other Apple devices: iPhone, iPad, Apple TV and Mac. Based on a lot of hard work from the community, optimized for Metal and Apple Silicon.
+<!-- end generated -->
 
-The goal is to provide the best possible way to experience Halo while staying
-faithful to the original game. VISR builds on my love of the game and the many
-thousands of hours I have spent playing it.
+<!-- generated: shared: goal -->
+The goal is to provide the best possible way to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it.
+<!-- end generated -->
 
 <!-- generated: shared: disc -->
 VISR ships no game data. You need a disc image of the original Xbox game, made
@@ -28,14 +29,15 @@ endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 
 ## VR
 
-<!-- generated: copy: readme-vr -->
-- Full stereo VR with head tracking, through Compositor Services
-- Foveated rendering through the Compositor's rate maps
-- The HUD in CE's own corners, out in the periphery, following the body's turn
-  rather than the head
+<!-- generated: features: vision-pro -->
+- Full stereo VR with head tracking and foveated rendering
+- Gameplay elements reimagined for a first-class VR experience
+- The HUD in CE's own corners, out in the periphery, following the body's turn rather than the head
 - Scope zoom fills the view
-- Third-person cutscenes on a 3D screen in the room
-- (Coming Soon) Support for gun / aim control with PSVR2 controllers
+- Third-person cutscenes on a large 3D screen in the room
+- Support for PlayStation VR2 Sense controllers
+- Supports both M2 and M5 Vision Pro
+<!-- end generated -->
 
 VISR also plays in 2D, in a window or on a virtual screen in the room (theater
 mode). A game controller is required.
@@ -44,15 +46,6 @@ Settings live in `config.toml` in the VISR folder in Files.
 [ROADMAP.md](ROADMAP.md) names the setting behind each feature, and
 [port/ios/README.md](port/ios/README.md) describes the display and renderer
 settings.
-<!-- end generated -->
-
-## Other Apple Platforms
-
-<!-- generated: copy: readme-other -->
-The same app will also build and run on iPhone, iPad, Apple TV and the Mac.
-While builds on these platforms may be tested, they are not an official target
-and may have issues.
-<!-- end generated -->
 
 ## iPhone and iPad
 
@@ -77,7 +70,7 @@ and may have issues.
 
 ## Get the app
 
-There are no releases. Each run of the [iOS workflow](https://github.com/steverice/visr/actions/workflows/ios.yml)
+Each run of the [iOS workflow](https://github.com/steverice/visr/actions/workflows/ios.yml)
 uploads unsigned IPAs as artifacts: `visr-visionos-unsigned` for Apple Vision
 Pro, `visr-ios-unsigned` and `visr-tvos-unsigned` for the others. GitHub keeps
 them for 14 days. Sign one with your own Apple account
@@ -207,7 +200,7 @@ own copy of the game.
 
 ## Legal
 
-<!-- generated: copy: readme-legal -->
+<!-- generated: shared: legal -->
 Halo, Halo: Combat Evolved, Master Chief and the related names and logos are
 trademarks of Microsoft Corporation. Halo: Combat Evolved © Microsoft
 Corporation. VISR is an unofficial fan project. It is not affiliated with,
@@ -217,8 +210,8 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
 VISR does not include or distribute the game's maps, sounds, textures, videos
 or other content, and it does not help you obtain them. VISR is free and is not
 sold.
-<!-- end generated -->
 
-<!-- generated: shared: apple-trademarks -->
+It builds on the Halo: CE decompilation, [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and the other projects in its [credits](https://github.com/steverice/visr#credits). The code is licensed under [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE). It includes code that originated in CC0 1.0 projects, credited in the [notices](https://github.com/steverice/visr/blob/main/NOTICE.md).
+
 Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc.
 <!-- end generated -->
