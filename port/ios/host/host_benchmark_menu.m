@@ -20,9 +20,17 @@
 @property(nonatomic) BOOL launchMenu;
 @property(nonatomic, strong) UIButton *playButton, *benchmarkButton;
 @property(nonatomic, strong) UILabel *detailLabel, *benchmarkStatus;
+#if TARGET_OS_VISION
+@property(nonatomic, strong) UILabel *disabledBenchmarkTitle;
+#endif
 @property(nonatomic, strong) UIActivityIndicatorView *benchmarkSpinner;
 @property(nonatomic, strong) UIStackView *brand, *menuContent, *buttons;
 @property(nonatomic, strong) UIControl *splashShield;
+@property(nonatomic, strong) UIImageView *brandIcon;
+@property(nonatomic, strong) UILabel *brandTitle;
+@property(nonatomic, strong) UIStackView *layoutStack;
+@property(nonatomic, strong) NSLayoutConstraint *iconWidth, *contentWidth;
+@property(nonatomic) CGFloat layoutScale;
 @property(nonatomic) CFAbsoluteTime splashStarted;
 @property(nonatomic) BOOL splashVisible, skippingPress;
 - (void)refreshBenchmark;
@@ -62,6 +70,22 @@ static UIColor *brandColor(unsigned rgb) {
         blue:(rgb & 255) / 255.0 alpha:1];
 }
 
+static CGFloat menuScale(UITraitCollection *traits) {
+#if TARGET_OS_MACCATALYST
+    /* Catalyst can report the iPad idiom; only an actual iPad gets the larger layout. */
+    return 1;
+#else
+    return traits.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
+        traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular &&
+        traits.verticalSizeClass == UIUserInterfaceSizeClassRegular ? 1.75 : 1;
+#endif
+}
+
+static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloat scale) {
+    UIFont *font = [UIFont preferredFontForTextStyle:style compatibleWithTraitCollection:traits];
+    return [font fontWithSize:font.pointSize * scale];
+}
+
 @implementation HaloBenchmarkMenuController
 - (void)viewDidLoad {
     UIStackView *stack = [UIStackView new];
@@ -74,6 +98,7 @@ static UIColor *brandColor(unsigned rgb) {
     self.view.backgroundColor = brandColor(0x081216);
     self.splashStarted = CFAbsoluteTimeGetCurrent();
     self.splashVisible = self.launchMenu;
+    self.layoutStack = stack;
     stack.axis = UILayoutConstraintAxisVertical;
     stack.alignment = UIStackViewAlignmentCenter;
     stack.spacing = 24;
@@ -97,8 +122,17 @@ static UIColor *brandColor(unsigned rgb) {
         UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"VISRIcon"]];
         icon.contentMode = UIViewContentModeScaleAspectFit;
         icon.isAccessibilityElement = NO;
+        icon.clipsToBounds = YES;
+#if TARGET_OS_VISION
+        icon.layer.cornerCurve = kCACornerCurveCircular;
+#else
+        icon.layer.cornerCurve = kCACornerCurveContinuous;
+#endif
+        self.brandIcon = icon;
+        self.brandTitle = title;
         [self.brand addArrangedSubview:icon];
-        [icon.widthAnchor constraintEqualToConstant:104].active = YES;
+        self.iconWidth = [icon.widthAnchor constraintEqualToConstant:104];
+        self.iconWidth.active = YES;
         [icon.heightAnchor constraintEqualToAnchor:icon.widthAnchor].active = YES;
         [self.brand addArrangedSubview:title];
         [stack addArrangedSubview:self.brand];
@@ -145,13 +179,26 @@ static UIColor *brandColor(unsigned rgb) {
         configuration.baseForegroundColor = index == 0 ? brandColor(0x081216) : brandColor(0xe8f6fa);
         configuration.contentInsets = NSDirectionalEdgeInsetsMake(14, 32, 14, 32);
         button.configuration = configuration;
+        BOOL branded = self.launchMenu;
         button.configurationUpdateHandler = ^(UIButton *updated) {
             UIButtonConfiguration *style = updated.configuration;
             style.baseForegroundColor = !updated.enabled ? brandColor(0x93adb6) :
                 updated.focused ? brandColor(0x081216) : updated.tag == 0 ? brandColor(0x081216) : brandColor(0xe8f6fa);
             style.baseBackgroundColor = updated.focused || updated.tag == 0 ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
             UIColor *ink = style.baseForegroundColor;
-            UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline compatibleWithTraitCollection:updated.traitCollection];
+#if TARGET_OS_VISION
+            if (branded && updated.tag == 1 && !updated.enabled) ink = UIColor.clearColor;
+#endif
+            CGFloat scale = branded ? menuScale(updated.traitCollection) : 1;
+            UIFont *font = menuFont(UIFontTextStyleHeadline, updated.traitCollection, scale);
+            style.contentInsets = NSDirectionalEdgeInsetsMake(14 * scale, 32 * scale, 14 * scale, 32 * scale);
+#if TARGET_OS_VISION
+            /* visionOS dims disabled configuration colors again unless their transformers are explicit. */
+            style.background.backgroundColor = style.baseBackgroundColor;
+            style.background.backgroundColorTransformer = ^UIColor *(UIColor *color) { return color; };
+            style.background.strokeColor = brandColor(0x1d3640);
+            style.background.strokeWidth = 1;
+#endif
             style.titleTextAttributesTransformer = ^NSDictionary<NSAttributedStringKey,id> *(NSDictionary<NSAttributedStringKey,id> *attributes) {
                 NSMutableDictionary *result = attributes.mutableCopy;
                 result[NSForegroundColorAttributeName] = ink;
@@ -162,7 +209,24 @@ static UIColor *brandColor(unsigned rgb) {
         };
         button.tag = index++;
         if (button.tag == 0) self.playButton = button;
-        if (self.launchMenu && button.tag == 1) self.benchmarkButton = button;
+        if (self.launchMenu && button.tag == 1) {
+            self.benchmarkButton = button;
+#if TARGET_OS_VISION
+            /* The system's disabled vibrancy multiplies title opacity by 0.25.
+               Keep the disabled label outside that effect so muted ink stays legible. */
+            self.disabledBenchmarkTitle = [UILabel new];
+            self.disabledBenchmarkTitle.text = choice;
+            self.disabledBenchmarkTitle.textColor = brandColor(0x93adb6);
+            self.disabledBenchmarkTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+            self.disabledBenchmarkTitle.adjustsFontForContentSizeCategory = YES;
+            self.disabledBenchmarkTitle.isAccessibilityElement = NO;
+            self.disabledBenchmarkTitle.translatesAutoresizingMaskIntoConstraints = NO;
+            [button addSubview:self.disabledBenchmarkTitle];
+            [NSLayoutConstraint activateConstraints:@[
+                [self.disabledBenchmarkTitle.centerXAnchor constraintEqualToAnchor:button.centerXAnchor],
+                [self.disabledBenchmarkTitle.centerYAnchor constraintEqualToAnchor:button.centerYAnchor]]];
+#endif
+        }
         [button addTarget:self action:@selector(pressed:) forControlEvents:UIControlEventPrimaryActionTriggered];
         [buttons addArrangedSubview:button];
     }
@@ -195,7 +259,7 @@ static UIColor *brandColor(unsigned rgb) {
         [stack.bottomAnchor constraintLessThanOrEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-24],
         [scroll.contentLayoutGuide.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.frameLayoutGuide.heightAnchor],
         [scroll.contentLayoutGuide.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor],
-        [stack.widthAnchor constraintLessThanOrEqualToConstant:480],
+        (self.contentWidth = [stack.widthAnchor constraintLessThanOrEqualToConstant:480]),
         [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:24],
         [stack.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-24]]];
     NSLayoutConstraint *preferredHeight = [scroll.contentLayoutGuide.heightAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.heightAnchor];
@@ -219,6 +283,36 @@ static UIColor *brandColor(unsigned rgb) {
 #endif
 - (void)viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
+    if (self.launchMenu) {
+        CGFloat scale = menuScale(self.traitCollection);
+        CGFloat brandScale = scale;
+#if TARGET_OS_TV
+        brandScale = 2;
+#endif
+        self.iconWidth.constant = 104 * brandScale;
+#if TARGET_OS_VISION
+        self.brandIcon.layer.cornerRadius = self.iconWidth.constant / 2;
+#else
+        self.brandIcon.layer.cornerRadius = self.iconWidth.constant * 0.225;
+#endif
+        self.brand.spacing = 16 * brandScale;
+        UIFont *font = [UIFont fontWithName:@"Orbitron-Regular" size:36 * brandScale] ?: [UIFont systemFontOfSize:36 * brandScale];
+        self.brandTitle.attributedText = [[NSAttributedString alloc] initWithString:@"VISR"
+            attributes:@{NSFontAttributeName:font, NSKernAttributeName:@(2.16 * brandScale)}];
+        self.layoutStack.spacing = 24 * scale;
+        self.menuContent.spacing = 20 * scale;
+        self.buttons.spacing = 16 * scale;
+        self.contentWidth.constant = 480 * scale;
+#if TARGET_OS_VISION
+        self.disabledBenchmarkTitle.font = menuFont(UIFontTextStyleHeadline, self.traitCollection, scale);
+#endif
+        self.detailLabel.font = menuFont(UIFontTextStyleBody, self.traitCollection, scale);
+        self.benchmarkStatus.font = menuFont(UIFontTextStyleFootnote, self.traitCollection, scale);
+        if (self.layoutScale != scale) {
+            self.layoutScale = scale;
+            for (UIButton *button in self.buttons.arrangedSubviews) [button setNeedsUpdateConfiguration];
+        }
+    }
     BOOL compact = self.view.bounds.size.height < 500 && self.view.bounds.size.width > self.view.bounds.size.height;
     self.buttons.axis = compact ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
 }
@@ -283,6 +377,9 @@ static UIColor *brandColor(unsigned rgb) {
     NSString *reason = state[@"reason"];
     BOOL wasEnabled = self.benchmarkButton.enabled;
     self.benchmarkButton.enabled = ready;
+#if TARGET_OS_VISION
+    self.disabledBenchmarkTitle.hidden = ready;
+#endif
     NSString *status = ready ? @"" : loading ? @"Downloading benchmark data…" :
         reason.length ? reason : @"Benchmark data is unavailable";
     self.benchmarkStatus.text = status;
