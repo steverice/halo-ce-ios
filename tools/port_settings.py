@@ -102,11 +102,13 @@ SCREENS = {
     "network_setup": {
         "screen": "network_settings_screen",
         "header": ("header_profile_network_settings", f"{PE}/network_setup/header_profile_network_settings"),
-        # Twelve rows fit above the help text and buttons.
-        "spacing": 23,
+        # Updates and iCloud saves occupy the same row on different platforms.
+        "spacing": 21,
+        "same_place": ["host.cloud_saves"],
         "row_top": 71,
         "help_top": 354,
         "help_height": 50,
+        "cloud_status": True,
         "rows": [
             ("INTERNET PLAY:", "network.online", ON_OFF,
              "Host and join games over the internet by invite\nlinks; off keeps to the local network.", None),
@@ -116,6 +118,8 @@ SCREENS = {
              "Join the game of an invite link copied before\nswitching to the game.", None),
             ("CHECK FOR UPDATES:", "update.auto", ON_OFF,
              "Look for a new version when the game starts.", "desktop"),
+            ("ICLOUD SAVES:", "host.cloud_saves", ON_OFF,
+             "Sync saves with iCloud. Turning on applies next\nlaunch; turning off stops syncing now.", "apple"),
             ("PLAYER NAMES:", "display.player_names",
              [("ALL", "all"), ("ALLIES", "allies"), ("ENEMIES", "enemies"), ("NONE", "none")],
              "In multiplayer, whose names are drawn above their\nheads.", None),
@@ -221,7 +225,9 @@ def _screen(folder: str, spec: dict, rows: list, list_inputs: list, list_handler
                       ("bitmap", "bitmaps/gradient")],
                      ['<on event="b" back="true"/>', '<on event="back" back="true"/>',
                       f'<child{attributes([("widget", f"{base}/{header}")])}/>',
-                      f'<child{attributes([("widget", f"{base}/options_menu")])}/>'])
+                      f'<child{attributes([("widget", f"{base}/options_menu")])}/>'] +
+                     ([f'<child widget="{base}/cloud_saves_status" platform="apple"/>']
+                      if spec.get("cloud_status") else []))
     lines += _widget(f"{base}/{header}", [("controller", 1), ("left", 35), ("top", 11), ("width", 605), ("height", 59),
                                           ("bitmap", header_bitmap)], [])
     lines += _widget(f"{base}/help", [("type", "text"), ("controller", 1), ("left", 68),
@@ -275,6 +281,12 @@ def _setting_screen(folder: str, spec: dict) -> list:
                           ("header_bitmap", "bitmaps/arrow_sm_left"), ("footer_bitmap", "bitmaps/arrow_sm_right"),
                           ("header_bounds", "7 -6 19 0"), ("footer_bounds", "7 150 19 156")],
                          ['<on event="created" run="port setting load"/>'])
+    if spec.get("cloud_status"):
+        extra += _widget(f"{base}/cloud_saves_status",
+                         [("type", "text"), ("controller", 1), ("left", 68), ("top", 332),
+                          ("width", 482), ("height", 20), ("font", "ui\\small_ui"),
+                          ("color", "#FFFFFFFF"), ("platform", "apple")],
+                         ['<data input="port cloud saves status"/>'])
     extra += _button(f"{base}/button_defaults", 3, ['<on event="a" run="port settings defaults"/>',
                                                     '<on event="start" run="port settings defaults"/>'])
     extra += _button(f"{base}/button_ok", 1, ['<on event="a" run="port settings save" back="true"/>',

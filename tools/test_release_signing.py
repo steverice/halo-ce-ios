@@ -81,3 +81,18 @@ def test_upload_profile_accepts_ios_cloudkit_service_wildcard() -> None:
     profile = cloud_profile("production")
     profile["Entitlements"]["com.apple.developer.icloud-services"] = "*"
     validate_profile_entitlements(profile, "ios", benchmark_upload=True)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("com.apple.developer.icloud-services", []),
+    ("com.apple.developer.icloud-container-identifiers", ["iCloud.example.other"]),
+    ("aps-environment", "development"),
+])
+def test_cloud_saves_profile_requires_cloudkit_container_and_production_aps(field, value):
+    from tools.release_signing import validate_profile_entitlements
+
+    profile = cloud_profile("production")
+    validate_profile_entitlements(profile, "ios", cloud_saves=True)
+    profile["Entitlements"][field] = value
+    with pytest.raises(ValueError):
+        validate_profile_entitlements(profile, "ios", cloud_saves=True)

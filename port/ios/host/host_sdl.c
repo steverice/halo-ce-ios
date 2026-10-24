@@ -17,6 +17,7 @@ so the audio callback is handed to a thread that has one.
 #endif
 #include "host.h"
 #include "host_config.h"
+#include "host_cloud_saves.h"
 #include "host_frame_pacer.h"
 
 #include <SDL3/SDL.h>
@@ -910,4 +911,22 @@ int host_sdl_show_message_box(unsigned int flags, const char *title, const char 
 	if (shown >= 0)
 		return shown;
 	return SDL_ShowMessageBox(&data, &answer) ? answer : -1;
+}
+
+/* Settings use the same preference as Settings.bundle on every Apple host. */
+int host_sdl_cloud_saves_enabled(void)
+{
+    return host_cloud_saves_enabled();
+}
+
+void host_sdl_cloud_saves_set_enabled(int enabled)
+{
+    host_cloud_saves_set_enabled(enabled);
+}
+
+void host_sdl_cloud_saves_status(char *buffer, unsigned int size)
+{
+    if (!size) return;
+    strncpy(buffer, host_cloud_saves_status(), size - 1);
+    buffer[size - 1] = 0;
 }

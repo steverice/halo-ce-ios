@@ -236,4 +236,9 @@ void host_bink_copy_frame(void *pixels, int pitch, int height);
 int host_bink_audio_read(short *samples, int capacity, unsigned int until);
 void host_bink_audio_skip(unsigned int position);
 
+/* iCloud settings share the host preference; status is copied into guest memory. */
+int host_sdl_cloud_saves_enabled(void);
+void host_sdl_cloud_saves_set_enabled(int enabled);
+void host_sdl_cloud_saves_status(char *buffer, unsigned int size);
+
 #endif

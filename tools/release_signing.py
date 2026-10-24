@@ -53,6 +53,7 @@ def validate_profile_entitlements(
     platform: str,
     *,
     benchmark_upload: bool = False,
+    cloud_saves: bool = False,
     container_identifier: str = "iCloud.org.steverice.visr",
 ) -> None:
     """Require the capabilities in the exact entitlement file used by release archives."""
@@ -68,7 +69,7 @@ def validate_profile_entitlements(
     for name, value in required.items():
         if value is True and entitlements.get(name) is not True:
             raise ValueError(f"{platform} distribution profile must allow {name}")
-    if benchmark_upload:
+    if benchmark_upload or cloud_saves:
         services = entitlements.get("com.apple.developer.icloud-services", [])
         containers = entitlements.get("com.apple.developer.icloud-container-identifiers", [])
         service_allowed = services == "*" or (
@@ -76,7 +77,7 @@ def validate_profile_entitlements(
         )
         if not service_allowed:
             raise ProfileCapabilityError(
-                f"{platform} distribution profile must allow the CloudKit service for benchmark uploads"
+                f"{platform} distribution profile must allow the CloudKit service"
             )
         if container_identifier not in containers:
             raise ProfileCapabilityError(
@@ -84,7 +85,7 @@ def validate_profile_entitlements(
             )
         if entitlements.get("aps-environment") != "production":
             raise ProfileCapabilityError(
-                f"{platform} distribution profile must allow production APS for benchmark uploads"
+                f"{platform} distribution profile must allow production APS"
             )
 
 
@@ -129,8 +130,9 @@ def install(folder: Path) -> None:
     upload_enabled = bool(policy_value) and validation.benchmark_upload_enabled(
         validation.load_policy(policy_value)
     )
+    saves_enabled = bool(policy_value) and validation.cloud_saves_enabled(validation.load_policy(policy_value))
     cloud = cloud_definitions(
-        os.environ["APPLE_BUNDLE_ID"], False, None, upload_enabled
+        os.environ["APPLE_BUNDLE_ID"], saves_enabled, None, upload_enabled
     )
     container_identifier = next(
         (
@@ -222,6 +224,7 @@ def install(folder: Path) -> None:
                 profile,
                 platform,
                 benchmark_upload=upload_enabled,
+                cloud_saves=saves_enabled,
                 container_identifier=container_identifier,
             )
             if not any(

@@ -11,9 +11,13 @@ def validate_native(args):
     renderer = args.renderer.upper() if args.renderer else 'METAL'
     if renderer != 'METAL':
         raise ValueError('native macOS supports only --renderer metal')
-    forbidden = ('cloud_saves', 'benchmark_upload', 'team', 'register_device',
+    forbidden = ('benchmark_upload', 'register_device',
                  'app_store_package', 'upload', 'tester', 'simulator', 'ipa', 'signing_profile',
                  'extended_virtual_addressing')
+    if args.cloud_saves and not args.team and not getattr(args, 'unsigned', False):
+        raise ValueError('--native-mac with --cloud-saves needs --team')
+    if args.team and not args.cloud_saves:
+        raise ValueError('--team requires --cloud-saves for native macOS')
     if any(getattr(args, name, None) for name in forbidden):
         raise ValueError('native macOS currently supports local ad hoc development builds only')
 
@@ -30,7 +34,8 @@ def native_commands(args, data_packs):
         '-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0', '-DHALO_RENDERER=METAL',
         f'-DHALO_BUNDLE_IDENTIFIER={args.bundle_id}', f'-DHALO_BINK={args.bink.upper()}',
         f'-DHALO_RENDER_HEIGHT={args.render_height}',
-        f'-DHALO_RENDER_VALIDATION={args.render_validation.upper()}', '-DHALO_CLOUD_SAVES=OFF',
+        f'-DHALO_RENDER_VALIDATION={args.render_validation.upper()}',
+        *ios_build.cloud_definitions(args.bundle_id, args.cloud_saves, getattr(args, 'cloud_container', None)),
         '-DHALO_BENCHMARK_UPLOAD=OFF', '-DHALO_TESTER_BUILD=OFF', '-DHALO_BENCHMARK_ROUTES=OFF',
         f'-DHALO_BUILD_NUMBER={args.build_number or time.strftime("%Y%m%d.%H%M%S")}',
         *ios_build.host_pgo_flags(args.host_pgo), *data_packs]
@@ -40,8 +45,11 @@ def native_commands(args, data_packs):
         configure.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     if args.marketing_version:
         configure.append(f'-DHALO_MARKETING_VERSION={args.marketing_version}')
+    if args.team:
+        configure.append(f'-DHALO_DEVELOPMENT_TEAM={args.team}')
     return configure, ['cmake', '--build', str(build), '--config', 'Release', '--target',
-                       'VISR', '--', '-quiet', 'CODE_SIGNING_ALLOWED=NO']
+                       'VISR', '--', '-quiet',
+                       *(['-allowProvisioningUpdates'] if args.cloud_saves and not getattr(args, 'unsigned', False) else ['CODE_SIGNING_ALLOWED=NO'])]
 
 
 def build_native(args, data_packs):
@@ -53,8 +61,10 @@ def build_native(args, data_packs):
     ios_build.run(*configure)
     ios_build.run(*build)
     app = ROOT / 'build/macos/app-native/host/Release/VISR.app'
-    ios_build.run('codesign', '--force', '--sign', '-', app)
-    ios_build.run('codesign', '--verify', '--deep', '--strict', app)
+    if not args.cloud_saves and not getattr(args, 'unsigned', False):
+        ios_build.run('codesign', '--force', '--sign', '-', app)
+    if not getattr(args, 'unsigned', False):
+        ios_build.run('codesign', '--verify', '--deep', '--strict', app)
     print(f'App: {app}')
 
 

@@ -6,6 +6,13 @@
 #define HOST_CLOUD_SAVES_H
 
 #if HALO_CLOUD_SAVES
+/* The Settings app and guest menu share this device-local opt-in preference.
+   Enabling waits for the next launch; disabling stops subsequent sync passes. */
+int host_cloud_saves_enabled(void);
+void host_cloud_saves_set_enabled(int enabled);
+const char *host_cloud_saves_status(void);
+/* Store operations also check the run gate after an in-flight operation finishes. */
+int host_cloud_saves_sync_allowed(void);
 /* As soon as the data folder is known, before the import screen: starts the launch pass (restores,
    downloads, uploads) when the build's signature carries the iCloud container, the player has not
    turned the setting off, and this is not a test run. */
@@ -24,6 +31,9 @@ struct cloud_store;
    cannot be opened (no entitlement in this signature) */
 int host_cloudkit_store(const char *container, struct cloud_store *store);
 #else
+static inline int host_cloud_saves_enabled(void) { return 0; }
+static inline void host_cloud_saves_set_enabled(int enabled) { (void)enabled; }
+static inline const char *host_cloud_saves_status(void) { return "Not available in this build"; }
 static inline void host_cloud_saves_start(const char *data_root, const char *save_root) { (void)data_root; (void)save_root; }
 static inline void host_cloud_saves_before_game(void) {}
 static inline void host_cloud_saves_directory_removed(const char *path) { (void)path; }

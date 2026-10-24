@@ -107,3 +107,23 @@ def test_native_metadata_matches_shared_encryption_declaration():
     info = plistlib.loads((macos_build.ROOT / 'port/macos/Info.plist').read_bytes())
     assert info.get('ITSAppUsesNonExemptEncryption') is False
     assert 'ITSEncryptionExportComplianceCode' not in info
+
+
+def test_native_cloud_saves_requires_signed_build_and_preserves_container():
+    with pytest.raises(ValueError, match="team"):
+        macos_build.validate_native(options(cloud_saves=True))
+    configure, build = macos_build.native_commands(options(
+        cloud_saves=True, cloud_container='iCloud.org.steverice.visr', team='TEAM'), [])
+    assert '-DHALO_CLOUD_SAVES=ON' in configure
+    assert '-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr' in configure
+    assert '-DHALO_DEVELOPMENT_TEAM=TEAM' in configure
+    assert 'CODE_SIGNING_ALLOWED=NO' not in build
+    assert '-allowProvisioningUpdates' in build
+
+
+def test_native_unsigned_cloud_saves_build_does_not_request_provisioning():
+    configure, build = macos_build.native_commands(options(
+        unsigned=True, cloud_saves=True, cloud_container='iCloud.org.steverice.visr'), [])
+    assert '-DHALO_CLOUD_SAVES=ON' in configure
+    assert 'CODE_SIGNING_ALLOWED=NO' in build
+    assert '-allowProvisioningUpdates' not in build

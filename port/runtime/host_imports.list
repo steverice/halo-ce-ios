@@ -120,3 +120,6 @@ host_external_mode_label
 host_touch_replay_active
 host_memory_pressure_poll
 host_memory_available_megabytes
+host_sdl_cloud_saves_enabled
+host_sdl_cloud_saves_set_enabled
+host_sdl_cloud_saves_status

@@ -2058,3 +2058,11 @@ def test_benchmark_upload_release_argument_defaults_off_and_is_policy_pinned():
     assert release.benchmark_upload_arguments(
         {**policy(), "benchmark_upload": "on"}
     ) == ["--benchmark-upload"]
+
+
+def test_cloud_saves_release_arguments_are_policy_pinned():
+    assert release.cloud_saves_arguments(policy()) == []
+    assert release.cloud_saves_arguments({**policy(), "cloud_saves": "off"}) == []
+    assert release.cloud_saves_arguments({**policy(), "cloud_saves": "on"}) == [
+        "--cloud-saves", "--cloud-container", "iCloud.org.steverice.visr"
+    ]

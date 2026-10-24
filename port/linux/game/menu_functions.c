@@ -89,6 +89,11 @@ their handlers open opens.
 #ifdef HALO_IOS
 #include "../src/halo_lan_targets.h"
 #include "../src/posix.h"
+/* These host imports are declared here because game sources do not include
+   the guest runtime headers (guest/runtime/guest_host.h). */
+int host_sdl_cloud_saves_enabled(void);
+void host_sdl_cloud_saves_set_enabled(int enabled);
+void host_sdl_cloud_saves_status(char *buffer, unsigned int size);
 #endif
 
 #include <stdlib.h>
@@ -330,6 +335,13 @@ static boolean setting_text(char const *name, char *text, unsigned int size, boo
 {
 	short index;
 
+#ifdef HALO_IOS
+	if (!strcmp(name, "host.cloud_saves"))
+	{
+		snprintf(text, size, "%s", !default_value && host_sdl_cloud_saves_enabled() ? "true" : "false");
+		return TRUE;
+	}
+#endif
 	if (strncmp(name, "profile.", 8))
 	{
 		if (!(default_value ? config_default(name, text, size) : config_text(name, text, size)))
@@ -386,6 +398,13 @@ static boolean setting_write(char const *name, char const *value)
 {
 	short index;
 
+#ifdef HALO_IOS
+	if (!strcmp(name, "host.cloud_saves"))
+	{
+		host_sdl_cloud_saves_set_enabled(!strcmp(value, "true"));
+		return TRUE;
+	}
+#endif
 	if (strncmp(name, "profile.", 8))
 		return config_write(name, value);
 	for (index = 0; index < NUMBEROF(profile_settings); index++)
@@ -1490,6 +1509,10 @@ static boolean setting_changed_save(struct widget_instance *spinner, struct pc_m
 			platform_show_message("Internet Play", "Internet Play turns off the next time VISR starts.");
 	}
 #endif
+#ifdef HALO_IOS
+	if (!strcmp(setting->setting, "host.cloud_saves"))
+		return setting_load(spinner);
+#endif
 	setting->loaded_index = index;
 	return TRUE;
 }
@@ -1523,6 +1546,21 @@ static void settings_help(struct widget_instance *list)
 			index = label + 1;
 	}
 	help->parameters.text_box.string_list_index = index;
+}
+
+/* The host copies status into guest memory; its pointer cannot cross the ABI. */
+static void cloud_saves_status_show(struct widget_instance *widget)
+{
+#ifdef HALO_IOS
+	char status[160];
+	wchar_t text[160];
+
+	host_sdl_cloud_saves_status(status, sizeof(status));
+	halo_menus_utf16(status, (unsigned short *)text, NUMBEROF(text));
+	text_set_length(widget, text, NUMBEROF(text));
+#else
+	(void)widget;
+#endif
 }
 
 /* Video Setup's Resolution and Window Size, in the one row's place
@@ -5987,6 +6025,8 @@ void pc_menu_game_data_function_invoke(
 		preview_update(widget);
 	else if (!strcmp(name, "port lobby update"))
 		lobby_update(widget);
+	else if (!strcmp(name, "port cloud saves status"))
+		cloud_saves_status_show(widget);
 	else if (!strcmp(name, "port settings help"))
 	{
 		video_rows_show(widget);

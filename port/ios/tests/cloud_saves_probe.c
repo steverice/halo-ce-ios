@@ -911,6 +911,116 @@ static void test_same_name_on_two_devices(void)
 	device_end(&a); device_end(&b); device_end(&c);
 }
 
+/* Check the actual set-aside payload, rather than only its claimed content hash. */
+static int copy_holds_file(const char *unit, const struct device *device, const char *name)
+{
+	char path[512];
+	size_t size;
+	uint8_t *bytes;
+	int i, matches = 0;
+
+	slot_path(device, SLOT, name, path, sizeof(path));
+	bytes = file_bytes(path, &size);
+	CHECK(bytes != NULL);
+	for (i = 0; i < cloud.count; i++)
+	{
+		const struct fake_record *record = &cloud.records[i];
+		uLongf raw_size;
+		uint8_t *raw;
+		size_t used = 1;
+		int j;
+
+		if (!record->record.copy || strcmp(record->record.unit, unit))
+			continue;
+		raw_size = (uLongf)(record->payload[8] | record->payload[9] << 8 |
+			record->payload[10] << 16 | (uLongf)record->payload[11] << 24);
+		raw = malloc(raw_size);
+		CHECK(uncompress(raw, &raw_size, record->payload + 16, (uLong)(record->size - 16)) == Z_OK);
+		for (j = 0; j < raw[0]; j++)
+		{
+			size_t length = raw[used++], file_size;
+			int named = strlen(name) == length && !memcmp(raw + used, name, length);
+
+			used += length;
+			file_size = raw[used] | raw[used + 1] << 8 | raw[used + 2] << 16 | (size_t)raw[used + 3] << 24;
+			used += 8;
+			if (named && file_size == size && !memcmp(raw + used, bytes, size))
+				matches = 1;
+			used += file_size;
+		}
+		free(raw);
+	}
+	free(bytes);
+	return matches;
+}
+
+static void first_opt_in_conflict(int local_wins)
+{
+	struct device cloud_device, local_device, original;
+	struct cloud_notice notice;
+	char checkpoint[CLOUD_RECORD_NAME_SIZE];
+	int i;
+
+	cloud_reset();
+	device_make(&cloud_device, "iPhone");
+	device_make(&local_device, "Apple TV");
+	device_make(&original, "Original");
+	put_profile(&cloud_device, SLOT, "Chief", 5, 1, 50);
+	put_saved_game(&cloud_device, SLOT, "b30", 1, 50);
+	CHECK(launch(&cloud_device) == CLOUD_STATE_IDLE);
+	snprintf(checkpoint, sizeof(checkpoint), "%s", saved_game_unit(SLOT));
+	/* Local play happened with sync off: neither local device has ever run a pass. */
+	put_profile(&local_device, SLOT, "Chief", local_wins ? 7 : 3, 2, 10);
+	put_saved_game(&local_device, SLOT, local_wins ? "c10" : "a50", 2, 10);
+	put_profile(&original, SLOT, "Chief", local_wins ? 7 : 3, 2, 10);
+	put_saved_game(&original, SLOT, local_wins ? "c10" : "a50", 2, 10);
+	{
+		/* Creating the engine persists its identity, but neither unit has a sync base. */
+		FILE *state = fopen(local_device.state_path, "r");
+		char line[1024];
+
+		CHECK(state != NULL);
+		while (fgets(line, sizeof(line), state))
+			CHECK(strncmp(line, "base\t", 5) != 0);
+		fclose(state);
+	}
+	CHECK(cloud_engine_synced_slots(local_device.engine) == 0);
+	CHECK(launch(&local_device) == CLOUD_STATE_IDLE);
+	CHECK(cloud_copies("slot-" SLOT) == 1 && cloud_copies(checkpoint) == 1);
+	/* The write-end guard above also checks these bytes reached the cloud before replacement. */
+	CHECK(copy_holds_file("slot-" SLOT, local_wins ? &cloud_device : &original, "blam.sav"));
+	CHECK(copy_holds_file("slot-" SLOT, local_wins ? &cloud_device : &original, "SaveMeta.xbx"));
+	CHECK(copy_holds_file(checkpoint, local_wins ? &cloud_device : &original, "savegame.bin"));
+	CHECK(same_file(&local_device, local_wins ? &original : &cloud_device, SLOT, "blam.sav"));
+	CHECK(same_file(&local_device, local_wins ? &original : &cloud_device, SLOT, "savegame.bin"));
+	/* Both notices survive relaunch and identify the two versions and the chosen winner. */
+	device_restart(&local_device);
+	for (i = 0; i < 2; i++)
+	{
+		CHECK(cloud_engine_notice(local_device.engine, &notice));
+		CHECK(notice.kind == CLOUD_NOTICE_CONFLICT && notice.kept_local == local_wins);
+		CHECK(!strcmp(notice.unit, i ? checkpoint : "slot-" SLOT));
+		CHECK(!strcmp(notice.kept.device, local_wins ? "Apple TV" : "iPhone"));
+		CHECK(!strcmp(notice.aside.device, local_wins ? "iPhone" : "Apple TV"));
+		if (!i)
+			CHECK(notice.kept.levels == (local_wins ? 7 : 5) && notice.aside.levels == (local_wins ? 5 : 3));
+		cloud_engine_notice_done(local_device.engine);
+	}
+	CHECK(!notices(&local_device, NULL));
+	CHECK(cloud_engine_restore_copy(local_device.engine, "slot-" SLOT) == CLOUD_OK);
+	CHECK(cloud_engine_restore_copy(local_device.engine, checkpoint) == CLOUD_OK);
+	CHECK(same_file(&local_device, local_wins ? &cloud_device : &original, SLOT, "blam.sav"));
+	CHECK(same_file(&local_device, local_wins ? &cloud_device : &original, SLOT, "SaveMeta.xbx"));
+	CHECK(same_file(&local_device, local_wins ? &cloud_device : &original, SLOT, "savegame.bin"));
+	CHECK(copy_holds_file("slot-" SLOT, local_wins ? &original : &cloud_device, "blam.sav"));
+	CHECK(copy_holds_file(checkpoint, local_wins ? &original : &cloud_device, "savegame.bin"));
+	CHECK(launch(&local_device) == CLOUD_STATE_IDLE && !notices(&local_device, NULL));
+	device_end(&cloud_device); device_end(&local_device); device_end(&original);
+}
+
+static void test_first_opt_in_local_wins(void) { first_opt_in_conflict(1); }
+static void test_first_opt_in_cloud_wins(void) { first_opt_in_conflict(0); }
+
 static void test_identical_without_base(void)
 {
 	struct device a, b;
@@ -1640,6 +1750,8 @@ int main(int argc, char **argv)
 		{ "conflict, the cloud further along", test_conflict_cloud_wins },
 		{ "conflict found while the game runs", test_conflict_found_while_running },
 		{ "the same name on two devices", test_same_name_on_two_devices },
+		{ "first opt-in, this device further along", test_first_opt_in_local_wins },
+		{ "first opt-in, the cloud further along", test_first_opt_in_cloud_wins },
 		{ "identical without a base", test_identical_without_base },
 		{ "a tie is the same from both sides", test_tie_is_the_same_from_both_sides },
 		{ "an upload's reply lost", test_reply_lost },

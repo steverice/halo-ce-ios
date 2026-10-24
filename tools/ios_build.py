@@ -102,7 +102,7 @@ def main():
     parser.add_argument('--cloud-saves', action='store_true',
                         help='sync saves through the player\'s private iCloud database (docs/cloud-saves.md). The App ID '
                              'needs the iCloud capability with CloudKit and the container; a signed build with this '
-                             'option lets Xcode add them to your developer account')
+                             'option lets Xcode add them to your developer account unless --signing-profile selects an existing profile')
     parser.add_argument('--cloud-container',
                         help='--cloud-saves: the iCloud container (default iCloud.org.steverice.visr for the '
                              'org.steverice.visr bundle IDs; required with any other bundle ID)')
@@ -192,7 +192,7 @@ def main():
         parser.error('--marketing-version must have three numeric components')
     if args.build_number and not re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,2}', args.build_number):
         parser.error('--build-number must have one to three numeric components')
-    if args.signing_profile and (not args.team or args.register_device or args.cloud_saves):
+    if args.signing_profile and (not args.team or args.register_device):
         parser.error('--signing-profile requires --team and cannot change account capabilities or register devices')
     if args.signing_profile and args.upload:
         parser.error('--signing-profile archives/exports only; the CI release helper uploads with API authentication')
@@ -245,7 +245,7 @@ def main():
     )
     try:
         benchmark_aps = benchmark_upload_aps_environment(
-            args.benchmark_upload,
+            args.benchmark_upload or args.cloud_saves,
             bool(args.app_store_package),
             args.signing_profile,
             platform_name,
@@ -257,10 +257,10 @@ def main():
         data_packs = data_pack_definitions(*data_pack_settings(args))
     except ValueError as error:
         parser.error(str(error))
-    if args.mac and (args.cloud_saves or args.benchmark_upload) and not args.team:
+    if (args.mac or args.native_mac) and (args.cloud_saves or args.benchmark_upload) and not args.team and not (args.native_mac and args.unsigned):
         parser.error('--mac with --cloud-saves or --benchmark-upload needs --team: macOS does not run an ad hoc signed '
                      'app with iCloud entitlements')
-    if args.cloud_saves and args.team:
+    if args.cloud_saves and args.team and not args.signing_profile:
         print(f'iCloud saves: this signed build lets Xcode enable the iCloud capability and the container '
               f'{cloud[1].split("=", 1)[1]} on the App ID {args.bundle_id} and make a new profile', flush=True)
     if not re.fullmatch(r'[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', args.bundle_id):
@@ -336,7 +336,7 @@ def main():
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
-    if args.benchmark_upload:
+    if args.benchmark_upload or args.cloud_saves:
         command.append(f'-DHALO_BENCHMARK_APS_ENVIRONMENT={benchmark_aps}')
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')

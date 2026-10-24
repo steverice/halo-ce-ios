@@ -92,7 +92,7 @@ def recording_feed_required(policy: dict[str, Any]) -> bool:
 
 def load_policy(value: str) -> dict[str, Any]:
     policy = json.loads(value or "{}")
-    optional = {"benchmark_upload", "recording_feed_required", FIELD}
+    optional = {"cloud_saves", "benchmark_upload", "recording_feed_required", FIELD}
     fields = {
         "guest_sha256",
         "guest_compiler_version",
@@ -126,11 +126,13 @@ def load_policy(value: str) -> dict[str, Any]:
         raise ValueError(
             "RELEASE_BUILD_POLICY must contain the exact documented build and feed pins"
         )
+    if "cloud_saves" in policy and policy["cloud_saves"] not in {"on", "off"}:
+        raise ValueError("RELEASE_BUILD_POLICY cloud_saves must be on or off")
     if "benchmark_upload" in policy and policy["benchmark_upload"] not in {"on", "off"}:
         raise ValueError("RELEASE_BUILD_POLICY benchmark_upload must be on or off")
     if FIELD in policy:
         parse_guest_epoch(policy[FIELD])
-    for name in set(policy) - {"benchmark_upload", "recording_feed_required", "profile_feed_sha256s"}:
+    for name in set(policy) - {"cloud_saves", "benchmark_upload", "recording_feed_required", "profile_feed_sha256s"}:
         value = policy[name]
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing build policy pin: {name}")
@@ -170,6 +172,11 @@ def load_policy(value: str) -> dict[str, Any]:
     return policy
 
 
+def cloud_saves_enabled(policy: dict[str, str]) -> bool:
+    """Legacy release policies keep cloud saves disabled."""
+    return policy.get("cloud_saves", "off") == "on"
+
+
 def benchmark_upload_enabled(policy: dict[str, str]) -> bool:
     """Legacy release policies omit benchmark_upload and therefore keep it off."""
     return policy.get("benchmark_upload", "off") == "on"
@@ -206,7 +213,7 @@ def toolchain(selected: list[str], *, root: Path | None = None) -> dict[str, str
     return result
 
 
-def build_command(target: str, benchmark_upload: bool = False) -> list[str]:
+def build_command(target: str, benchmark_upload: bool = False, cloud_saves: bool = False) -> list[str]:
     # This first-stage artifact establishes the guest identity. It is never signed or distributed.
     return [
         sys.executable,
@@ -229,6 +236,7 @@ def build_command(target: str, benchmark_upload: bool = False) -> list[str]:
         "on",
         "--extended-virtual-addressing",
         *(["--benchmark-upload"] if benchmark_upload else []),
+        *(["--cloud-saves", "--cloud-container", "iCloud.org.steverice.visr"] if cloud_saves else []),
         "--jobs",
         "3",
         *([f"--{target}"] if target != "ios" else []),
@@ -242,6 +250,7 @@ def inspect_build(
     *,
     app: Path | None = None,
     benchmark_upload: bool = False,
+    cloud_saves: bool = False,
     guest_source_date_epoch: str | None = None,
 ) -> dict[str, str]:
     signed_app = app is not None
@@ -328,17 +337,19 @@ def inspect_build(
         raise ValueError(
             "Release build carries the unsigned local benchmark catalog path"
         )
-    cloud_saves = "HALO_CLOUD_SAVES=1" in definitions
+    saves_enabled = "HALO_CLOUD_SAVES=1" in definitions
     upload_enabled = "HALO_BENCHMARK_UPLOAD=1" in definitions
-    if cloud_saves or "HALO_RENDER_VALIDATION=1" in definitions:
+    if saves_enabled != cloud_saves:
+        raise ValueError("Release cloud-saves build differs from the reviewed policy")
+    if "HALO_RENDER_VALIDATION=1" in definitions:
         raise ValueError(
-            "Release build unexpectedly enables cloud saves or render validation"
+            "Release build unexpectedly enables render validation"
         )
     if upload_enabled != benchmark_upload:
         raise ValueError(
             "Release benchmark-upload build differs from the reviewed policy"
         )
-    if benchmark_upload and signed_app:
+    if (benchmark_upload or cloud_saves) and signed_app:
         verify_benchmark_upload_entitlements(
             signed_app_entitlements(app), "iCloud.org.steverice.visr", archive=True
         )
@@ -361,6 +372,7 @@ def inspect_build(
         "tester": "on",
         "benchmark_routes": "off",
         "benchmark_upload": "on" if benchmark_upload else "off",
+        "cloud_saves": "on" if cloud_saves else "off",
     }
 
 
@@ -439,6 +451,7 @@ def verify_exported_ipa(
 def probe(
     root: Path, source: str, selected: list[str], benchmark_upload: bool = False,
     guest_source_date_epoch: str | None = None,
+    cloud_saves: bool = False,
 ) -> dict[str, Any]:
     source = release.full_sha(source)
     if run("git", "rev-parse", "HEAD", capture=True) != source:
@@ -454,10 +467,10 @@ def probe(
         "platforms": {},
     }
     for target in selected:
-        run(*build_command(target, benchmark_upload), env=build_env)
-        if benchmark_upload:
+        run(*build_command(target, benchmark_upload, cloud_saves), env=build_env)
+        if benchmark_upload or cloud_saves:
             report["platforms"][target] = inspect_build(
-                root, target, benchmark_upload=True, guest_source_date_epoch=epoch
+                root, target, benchmark_upload=benchmark_upload, cloud_saves=cloud_saves, guest_source_date_epoch=epoch
             )
         else:
             report["platforms"][target] = inspect_build(root, target, guest_source_date_epoch=epoch)
@@ -477,6 +490,8 @@ def compare_evidence(evidence: dict[str, str], policy: dict[str, str]) -> None:
     ):
         if evidence[name] != policy[name]:
             raise ValueError(f"Actual build differs from reviewed policy: {name}")
+    if evidence.get("cloud_saves", "off") != policy.get("cloud_saves", "off"):
+        raise ValueError("Actual cloud-saves build differs from reviewed policy")
     if evidence.get("benchmark_upload", "off") != policy.get("benchmark_upload", "off"):
         raise ValueError("Actual benchmark-upload build differs from reviewed policy")
 
@@ -880,6 +895,7 @@ def main() -> None:
         report = probe(
             release.ROOT, args.source_sha, selected, benchmark_upload_enabled(policy),
             args.guest_source_date_epoch if args.guest_source_date_epoch is not None else policy.get(FIELD),
+            cloud_saves=cloud_saves_enabled(policy),
         )
         report["github_run_id"] = os.environ.get("GITHUB_RUN_ID", "")
         report["github_run_attempt"] = os.environ.get("GITHUB_RUN_ATTEMPT", "")

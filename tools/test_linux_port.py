@@ -312,7 +312,7 @@ def test_menu_settings_exist():
     profile = set(re.findall(r'\{ "(profile\.[a-z_]+)", \d', functions))
     for path in (MENUS / "ce").glob("*.xml"):
         for setting in re.findall(r'setting="([^"]+)"', path.read_text()):
-            assert setting in known | profile, f"{path.name}: {setting}"
+            assert setting in known | profile | {"host.cloud_saves"}, f"{path.name}: {setting}"
     controls = set(re.findall(r'"(controls\.[a-z_]+)"', (root / "port/linux/src/xinput_sdl.c").read_text()))
     assert controls == {name for name in known if name.startswith("controls.")}
     assert controls == set(re.findall(r'\{ "(controls\.[a-z_]+)", L"', functions))
@@ -555,3 +555,29 @@ def test_port_posix_functions_are_defined_everywhere():
         assert _defines(name, [root / "port/linux/src/posix_net.c"]), f"posix_net.c does not define {name}"
         assert _defines(name, [root / "port/windows/src/win32_net.c"]), f"win32_net.c does not define {name}"
         assert _defines(name, host), f"port/ios/host does not define {name}"
+
+
+def test_icloud_setting_and_status_share_network_screen():
+    """All Apple hosts expose the preference and live status in Network Setup."""
+    import xml.etree.ElementTree as ElementTree
+
+    name = "main_menu.settings_select.player_setup.player_profile_edit.network_setup.xml"
+    generated = "\n".join(port_settings.settings_files()[name])
+    assert (MENUS / "ce" / name).read_text() == generated
+    root = ElementTree.fromstring(generated)
+    base = f"{port_settings.PE}/network_setup"
+    row = root.find(f"widget[@name='{base}/op_cloud_saves']")
+    assert row is not None and row.get("platform") == "apple"
+    spinner = root.find(f"widget[@name='{base}/cloud_saves_spinner']")
+    assert spinner.get("setting") == "host.cloud_saves"
+    assert spinner.get("values") == "true|false"
+    screen = root.find(f"widget[@name='{base}/network_settings_screen']")
+    assert screen.find(f"child[@widget='{base}/cloud_saves_status']").get("platform") == "apple"
+    status = root.find(f"widget[@name='{base}/cloud_saves_status']")
+    assert status.find("data").get("input") == "port cloud saves status"
+    options = root.find(f"widget[@name='{base}/options_menu']")
+    positions = [int(child.get("y")) for child in options.findall("child") if "/op_" in child.get("widget")]
+    assert max(positions) + 28 <= int(status.get("top"))
+    help_text = root.find(f"widget[@name='{base}/help']")
+    assert int(status.get("top")) + int(status.get("height")) <= int(help_text.get("top"))
+    assert int(help_text.get("top")) + int(help_text.get("height")) <= 414

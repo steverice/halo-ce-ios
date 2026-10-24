@@ -61,6 +61,7 @@ static enum cloud_status cloud_status_of(NSError *error, const char *what) {
 
 /* runs one operation and waits for finish to be signaled; NO when it took too long (and is cancelled) */
 static BOOL cloud_run(CKDatabaseOperation *operation, dispatch_semaphore_t finished) {
+    if (!host_cloud_saves_sync_allowed()) return NO;
     operation.qualityOfService = NSQualityOfServiceUserInitiated;
     operation.configuration.timeoutIntervalForRequest = 20;
     operation.configuration.timeoutIntervalForResource = CLOUD_CALL_SECONDS;
@@ -98,6 +99,7 @@ static CKRecordID *cloud_record_id(const char *name) {
 
 static enum cloud_status cloud_account(void *context, char *identifier, size_t size) {
     (void)context;
+    if (!host_cloud_saves_sync_allowed()) return CLOUD_RETRY;
     dispatch_semaphore_t finished = dispatch_semaphore_create(0);
     __block CKAccountStatus status = CKAccountStatusCouldNotDetermine;
     __block NSError *failure = nil;
@@ -113,6 +115,7 @@ static enum cloud_status cloud_account(void *context, char *identifier, size_t s
     @synchronized (cloud_container) { user = cloud_user; }
     if (!user) {
         __block NSString *fetched = nil;
+        if (!host_cloud_saves_sync_allowed()) return CLOUD_RETRY;
         [cloud_container fetchUserRecordIDWithCompletionHandler:^(CKRecordID *record, NSError *error) {
             fetched = record.recordName; failure = error;
             dispatch_semaphore_signal(finished);

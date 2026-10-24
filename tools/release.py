@@ -62,6 +62,15 @@ def benchmark_upload_arguments(policy: dict[str, str]) -> list[str]:
     return ["--benchmark-upload"] if validation.benchmark_upload_enabled(policy) else []
 
 
+def cloud_saves_arguments(policy: dict[str, str]) -> list[str]:
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    return (["--cloud-saves", "--cloud-container", "iCloud.org.steverice.visr"]
+            if validation.cloud_saves_enabled(policy) else [])
+
+
 def manifest_guest_epoch(manifest: dict[str, Any]) -> str:
     policy = manifest["build_policy"]
     if GUEST_EPOCH_FIELD not in manifest and GUEST_EPOCH_FIELD not in policy:
@@ -1249,6 +1258,7 @@ def publish(args: argparse.Namespace) -> None:
                 "--benchmark-routes",
                 "off",
                 *benchmark_upload_arguments(policy),
+                *cloud_saves_arguments(policy),
                 *(
                     ["--shader-feed-url", policy["shader_feed_url"]]
                     if "shader_feed_url" in policy
@@ -1264,7 +1274,7 @@ def publish(args: argparse.Namespace) -> None:
             if platform != "ios":
                 command.append(f"--{platform}")
             run(*command, root=root, env=build_env)
-            if validation.benchmark_upload_enabled(policy):
+            if validation.benchmark_upload_enabled(policy) or validation.cloud_saves_enabled(policy):
                 validation.verify_exported_ipa(package)
             require_clean_checkout(root)
             archive = package / "VISR.xcarchive"
@@ -1275,6 +1285,7 @@ def publish(args: argparse.Namespace) -> None:
                     "app-device",
                     app=archive / "Products/Applications/VISR.app",
                     benchmark_upload=validation.benchmark_upload_enabled(policy),
+                    cloud_saves=validation.cloud_saves_enabled(policy),
                     guest_source_date_epoch=guest_epoch if GUEST_EPOCH_FIELD in manifest else None,
                 ),
                 policy,

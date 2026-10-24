@@ -8,11 +8,12 @@ import plistlib
 from pathlib import Path
 
 CLOUD_ROWS = [
-    {'Type': 'PSGroupSpecifier', 'Title': 'iCloud saves',
+    {'Type': 'PSGroupSpecifier', 'Title': 'iCloud Saves',
      'FooterText': 'Profiles, finished levels, the Save and Quit checkpoint and custom game types are copied to your '
                    'private iCloud storage and follow you to your other devices. Game data, textures and settings stay '
-                   'on this device. Changes to these switches take effect the next time VISR starts.'},
-    {'Type': 'PSToggleSwitchSpecifier', 'Title': 'iCloud saves', 'Key': 'cloud_saves', 'DefaultValue': True},
+                   'on this device. Turning iCloud Saves on takes effect at the next launch. Turning it off stops further sync operations. '
+                   'Recovery actions take effect at the next launch with iCloud Saves on.'},
+    {'Type': 'PSToggleSwitchSpecifier', 'Title': 'iCloud Saves', 'Key': 'cloud_saves', 'DefaultValue': False},
     {'Type': 'PSTitleValueSpecifier', 'Title': 'Status', 'Key': 'cloud_saves_status', 'DefaultValue': 'Off'},
     {'Type': 'PSToggleSwitchSpecifier', 'Title': 'Restore the last set-aside save', 'Key': 'cloud_saves_restore',
      'DefaultValue': False},

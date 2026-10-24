@@ -1,6 +1,6 @@
 # iCloud saves
 
-A build made with `--cloud-saves` copies your profiles and campaign saves to the private part of your own iCloud account, so they follow you between iPhone, iPad, Apple Vision Pro, Apple TV and the Mac, and come back on an Apple TV after tvOS has emptied the app's storage. Builds without the option, which is every build unless you ask for it, do not contain any of this.
+A build made with `--cloud-saves` copies your profiles and campaign saves to the private part of your own iCloud account, so they follow you between iPhone, iPad, Apple Vision Pro, Apple TV and the Mac, and come back on an Apple TV after tvOS has emptied the app's storage. The setting starts off on every device. Until you turn it on, VISR makes no CloudKit calls, waits for nothing from iCloud, and shows no iCloud notices. Builds without the option do not contain the sync engine.
 
 ## What is copied
 
@@ -25,16 +25,20 @@ VISR never replaces or deletes a save on the device unless iCloud holds those ex
 
 ## Settings
 
-On iPhone, iPad and Apple Vision Pro, VISR's page in the Settings app gains a group:
+On every Apple platform, open **Network Setup** in the game's profile settings to find **iCloud Saves** and its status line. Use **OK** to save the change; **Cancel** leaves it as it was. The setting belongs to this device, even though the menu is reached through a profile.
+
+On iPhone, iPad and Apple Vision Pro, VISR's page in the Settings app exposes the same stored setting and status, plus recovery actions:
 
 | Row | |
 | --- | --- |
-| iCloud saves | On by default. Off stops uploads at once; turning it on takes effect at the next launch |
+| iCloud saves | Off by default. Turning it on takes effect at the next launch; turning it off stops further sync operations. An operation already sent to iCloud may finish |
 | Status | For example "Up to date · 3 saves · 2:14 PM", "Waiting for iCloud", "Not signed in to iCloud", "iCloud storage is full" |
 | Restore the last set-aside save | Acts at the next launch: the most recent set-aside or deleted save becomes the current one, and the current one is set aside |
 | Delete saves from iCloud | Acts at the next launch: removes VISR's saves from iCloud, leaves the saves on this device, and turns iCloud saves off here. Your other devices then ask whether to upload theirs again |
 
-Apple TV and the Mac do not have this page yet. There the feature is on, and the notices at launch are the interface. On the Mac the same keys can be set with `defaults write <bundle id> cloud_saves_restore -bool YES`.
+Apple TV and the Mac use the in-game row. On the Mac, recovery actions can also be requested with `defaults write <bundle id> cloud_saves_restore -bool YES` or `defaults write <bundle id> cloud_saves_delete -bool YES`; they run at the next launch with iCloud Saves enabled. Turning the setting off leaves both the saves on this device and the copies already in iCloud in place. Turning it back on during the same run still waits for the next launch.
+
+The first time you turn it on, existing saves on this device are compared with iCloud using the same conflict rules as later launches. If both have different progress, VISR keeps the winner and sets the other aside before replacing anything on this device. The launch notice offers **Use the other one**. Nothing local is deleted just because iCloud is empty or cannot be reached.
 
 `HALO_CLOUD_SAVES=0` in the environment turns the feature off for one run. A run started by `tools/mac_run.py` never uses it.
 
@@ -53,11 +57,15 @@ python3 tools/ios_build.py --team YOUR_TEAM_ID --bundle-id com.yourname.visr \
 ```
 
 - You need a paid Apple developer team. A free account cannot use iCloud, and an unsigned build re-signed by a sideloading tool loses the entitlement; in both cases the app notices at launch and runs exactly as a build without the option.
-- The container belongs to your team. Use the same one for every platform's build (`--tvos`, `--visionos`, `--mac`) so they share saves. A container cannot be renamed or deleted once it exists.
+- The container belongs to your team. Use the same one for every platform's build (`--tvos`, `--visionos`, `--native-mac`, or Catalyst `--mac`) so they share saves. A container cannot be renamed or deleted once it exists.
 - The first signed build with the option lets Xcode's automatic signing enable the iCloud capability with CloudKit on that App ID, attach the container, and make a new provisioning profile. If the build cannot create the container, add it once in Xcode (Signing & Capabilities, iCloud, Containers) or on the developer website, then build again.
-- `--mac --cloud-saves` needs `--team` as well: macOS does not run an ad hoc signed app that carries iCloud entitlements.
-- Development-signed builds use the container's Development environment, where CloudKit creates the record type the first time a save is uploaded. A TestFlight or App Store build uses Production, which needs the schema deployed once from the CloudKit Console.
+- `--native-mac --cloud-saves` and Catalyst `--mac --cloud-saves` need `--team` as well: macOS does not run an ad hoc signed app that carries iCloud entitlements.
+- Development-signed builds use the container's Development environment, where CloudKit creates the record type the first time a save is uploaded. An App Store distribution build uses Production, which needs the schema deployed once from the CloudKit Console.
 - CloudKit may answer "Invalid bundle ID for container" for a while after the capability is first enabled.
+
+Release builds include support only when the reviewed `RELEASE_BUILD_POLICY` sets `cloud_saves` to `on`; an absent key means `off`. The player still has to opt in. Release signing checks that the existing profile allows CloudKit and `iCloud.org.steverice.visr`; mobile profiles also need production push entitlements. See [Releasing](releasing.md).
+
+The native AppKit target accepts `--cloud-saves`; `--unsigned` can compile it without account access, but that output cannot sync without a valid signature and embedded profile. Its App Store packaging is handled separately from the mobile release commands.
 
 What the option adds: `port/ios/VISR-cloud.entitlements`, the CloudKit framework, and three source files. `Info.plist` does not change.
 

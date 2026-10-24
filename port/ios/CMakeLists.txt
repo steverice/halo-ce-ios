@@ -13,7 +13,7 @@ if(HALO_NATIVE_MAC)
     if(HALO_MAC OR NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         message(FATAL_ERROR "HALO_NATIVE_MAC requires a separate macOS SDK target")
     endif()
-    if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_TESTER_BUILD)
+    if(HALO_BENCHMARK_UPLOAD OR HALO_TESTER_BUILD)
         message(FATAL_ERROR "Native macOS currently supports local development only")
     endif()
 endif()
@@ -420,10 +420,9 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
         string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
         string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
     endif()
-    # App Store Connect refuses a tvOS app with CloudKit but no push environment: the benchmark's send (CloudKit's
-    # own subscriptions use it; the app sends and receives no notification of its own). Xcode signs an App Store
-    # export with "production" from the distribution profile
-    if(HALO_BENCHMARK_UPLOAD)
+    # App Store Connect requires a push environment for CloudKit on tvOS, including saves-only builds.
+    # Use the selected profile's APS environment; native macOS uses different push entitlements.
+    if(NOT HALO_NATIVE_MAC)
         string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>${HALO_BENCHMARK_APS_ENVIRONMENT}</string>"
             HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
     endif()

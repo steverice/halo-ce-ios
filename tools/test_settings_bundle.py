@@ -35,3 +35,9 @@ def test_a_bundle_that_has_the_rows_is_refused():
     root = settings_bundle.with_cloud_rows({"PreferenceSpecifiers": []})
     with pytest.raises(ValueError, match="already has"):
         settings_bundle.with_cloud_rows(root)
+
+
+def test_cloud_saves_require_player_opt_in():
+    rows = settings_bundle.with_cloud_rows({"PreferenceSpecifiers": []})["PreferenceSpecifiers"]
+    switch = next(row for row in rows if row.get("Key") == "cloud_saves")
+    assert switch["DefaultValue"] is False

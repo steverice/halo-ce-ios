@@ -188,6 +188,7 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
     monkeypatch.setattr(validation.release, "verify_guest", lambda *_: None)
     host_flags = ""
     upload_enabled = False
+    saves_enabled = False
     codesign_calls = []
 
     def run(*args: Any, **kwargs: Any) -> str:
@@ -213,7 +214,8 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
                         "buildSettings": {
                             "OTHER_CFLAGS": host_flags,
                             "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1"
-                            + (" HALO_BENCHMARK_UPLOAD=1" if upload_enabled else ""),
+                            + (" HALO_BENCHMARK_UPLOAD=1" if upload_enabled else "")
+                            + (" HALO_CLOUD_SAVES=1" if saves_enabled else ""),
                         },
                     }
                 ]
@@ -225,6 +227,17 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
         validation.inspect_build(tmp_path, "ios")
     host_flags = "-fprofile-instr-use=" + str(tmp_path / "pgo/visr_host.profdata")
     result = validation.inspect_build(tmp_path, "ios")
+    saves_enabled = True
+    with pytest.raises(ValueError, match="cloud-saves"):
+        validation.inspect_build(tmp_path, "ios")
+    saves_probe = validation.inspect_build(tmp_path, "ios", cloud_saves=True)
+    assert saves_probe["cloud_saves"] == "on"
+    saves_archive = validation.inspect_build(tmp_path, "ios", app=app, cloud_saves=True)
+    assert saves_archive["cloud_saves"] == "on"
+    codesign_calls.clear()
+    saves_enabled = False
+    with pytest.raises(ValueError, match="cloud-saves"):
+        validation.inspect_build(tmp_path, "ios", cloud_saves=True)
     upload_enabled = True
     unsigned_probe = validation.inspect_build(tmp_path, "ios", benchmark_upload=True)
     assert unsigned_probe["benchmark_upload"] == "on"
@@ -1137,3 +1150,19 @@ def test_release_workflow_selects_xcode_by_build_in_every_xcode_job() -> None:
     assert workflow.count("run: python3 tools/xcode_select.py") == workflow.count(
         "runs-on: xcode-27"
     )
+
+
+def test_cloud_saves_policy_is_explicit_and_defaults_off():
+    assert not validation.cloud_saves_enabled(policy())
+    enabled = {**policy(), "cloud_saves": "on"}
+    assert validation.load_policy(json.dumps(enabled)) == enabled
+    assert validation.cloud_saves_enabled(enabled)
+    assert validation.load_policy(json.dumps({**policy(), "cloud_saves": "off"}))
+    with pytest.raises(ValueError, match="cloud_saves"):
+        validation.load_policy(json.dumps({**policy(), "cloud_saves": "yes"}))
+    assert "--cloud-saves" not in validation.build_command("ios")
+    command = validation.build_command("tvos", cloud_saves=True)
+    assert "--cloud-saves" in command
+    assert command[command.index("--cloud-container") + 1] == "iCloud.org.steverice.visr"
+    with pytest.raises(ValueError, match="cloud-saves"):
+        validation.compare_evidence({**policy(), "cloud_saves": "on"}, policy())

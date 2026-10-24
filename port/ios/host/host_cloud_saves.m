@@ -7,7 +7,11 @@
    only between the engine's local_write_begin and local_write_end, which hold cloud_gate; once
    the game starts, begin answers no for the rest of the run. */
 #import <Foundation/Foundation.h>
+#if HALO_NATIVE_MAC
+#import <AppKit/AppKit.h>
+#else
 #import <UIKit/UIKit.h>
+#endif
 #include <SDL3/SDL.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -39,7 +43,7 @@ static void cloud_random(void *context, uint8_t *bytes, size_t size) { (void)con
 static int cloud_write_begin(void *context) {
     (void)context;
     pthread_mutex_lock(&cloud_gate);
-    if (!cloud_game_started) return 1;
+    if (!cloud_game_started && atomic_load(&cloud_active) && host_cloud_saves_enabled()) return 1;
     pthread_mutex_unlock(&cloud_gate);
     return 0;
 }
@@ -51,10 +55,12 @@ static void cloud_write_end(void *context) {
 
 /* the Settings page's status line */
 static void cloud_publish(NSString *status) {
-    [NSUserDefaults.standardUserDefaults setObject:status forKey:@"cloud_saves_status"];
+    [NSUserDefaults.standardUserDefaults setObject:host_cloud_saves_enabled() ? status : @"Off"
+        forKey:@"cloud_saves_status"];
 }
 
 static void cloud_publish_state(enum cloud_state state) {
+    if (!atomic_load(&cloud_active)) return;
     NSString *time = [NSDateFormatter localizedStringFromDate:NSDate.date dateStyle:NSDateFormatterNoStyle
         timeStyle:NSDateFormatterShortStyle];
     int slots = cloud_engine_synced_slots(cloud_engine);
@@ -77,6 +83,44 @@ static void cloud_stop(void) {
     cloud_timer = nil;
 }
 
+int host_cloud_saves_enabled(void) {
+    return [NSUserDefaults.standardUserDefaults boolForKey:@"cloud_saves"];
+}
+
+int host_cloud_saves_sync_allowed(void) {
+    if (!host_cloud_saves_enabled()) {
+        /* A Settings-app change must also latch this run off before a later reenable. */
+        if (atomic_exchange(&cloud_active, 0)) {
+            cloud_publish(@"Off");
+            if (cloud_queue) dispatch_async(cloud_queue, ^{ cloud_stop(); });
+        }
+        return 0;
+    }
+    return atomic_load(&cloud_active);
+}
+
+void host_cloud_saves_set_enabled(int enabled) {
+    [NSUserDefaults.standardUserDefaults setBool:enabled != 0 forKey:@"cloud_saves"];
+    if (!enabled) {
+        /* Close the gate before returning to the guest; queued passes must see the change. */
+        atomic_store(&cloud_active, 0);
+        cloud_publish(@"Off");
+        if (cloud_queue) dispatch_async(cloud_queue, ^{ cloud_stop(); });
+    } else if (!atomic_load(&cloud_active)) {
+        cloud_publish(@"Starts next launch");
+    }
+}
+
+const char *host_cloud_saves_status(void) {
+    static _Thread_local char status[512];
+    NSString *value = host_cloud_saves_enabled() ?
+        [NSUserDefaults.standardUserDefaults stringForKey:@"cloud_saves_status"] : @"Off";
+    if (host_cloud_saves_enabled() && !atomic_load(&cloud_active) &&
+            (!value.length || [value isEqualToString:@"Off"])) value = @"Starts next launch";
+    snprintf(status, sizeof(status), "%s", (value ?: @"Starts next launch").UTF8String);
+    return status;
+}
+
 /* cloud_queue only: the local saves as of the last pass that left nothing to do, as of the last
    pass whatever it left, and when that was */
 static char cloud_idle_signature[CLOUD_HASH_SIZE], cloud_tried_signature[CLOUD_HASH_SIZE];
@@ -84,7 +128,7 @@ static CFAbsoluteTime cloud_last_pass;
 
 /* one pass, on cloud_queue */
 static void cloud_pass(enum cloud_pass pass) {
-    if (!atomic_load(&cloud_active)) return;
+    if (!host_cloud_saves_sync_allowed()) return;
     char signature[CLOUD_HASH_SIZE];
     cloud_local_signature(cloud_save_root, cloud_state_path, signature);
     /* While the game runs a pass only uploads, and each pass begins by asking iCloud what it holds:
@@ -110,7 +154,7 @@ static void cloud_pass(enum cloud_pass pass) {
    drops the entitlement, so the profile is read first. 1 yes, 0 no, -1 no profile to read. */
 static int cloud_profile_has_container(NSString *container) {
     NSString *path = [NSBundle.mainBundle pathForResource:@"embedded" ofType:@"mobileprovision"];
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
     if (!path) path = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Contents/embedded.provisionprofile"];
 #endif
     NSData *profile = path ? [NSData dataWithContentsOfFile:path] : nil;
@@ -138,14 +182,14 @@ static int cloud_profile_has_container(NSString *container) {
 void host_cloud_saves_start(const char *data_root, const char *save_root) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSDictionary<NSString *, NSString *> *environment = NSProcessInfo.processInfo.environment;
-    [defaults registerDefaults:@{ @"cloud_saves": @YES, @"cloud_saves_restore": @NO, @"cloud_saves_delete": @NO,
+    [defaults registerDefaults:@{ @"cloud_saves": @NO, @"cloud_saves_restore": @NO, @"cloud_saves_delete": @NO,
         @"cloud_saves_status": @"Off" }];
     /* a test run (tools/mac_run.py) plays with a data folder of its own and must not reach an account */
     if (environment[@"HALO_RUNNER"] || [environment[@"HALO_BENCHMARK_SUITE"] length] || [environment[@"HALO_CLOUD_SAVES"] isEqualToString:@"0"]) {
         host_logf(HOST_LOG_INFO, "cloud saves: off for this run");
         return;
     }
-    if (![defaults boolForKey:@"cloud_saves"]) {
+    if (!host_cloud_saves_enabled()) {
         cloud_publish(@"Off");
         host_logf(HOST_LOG_INFO, "cloud saves: off in Settings");
         return;
@@ -173,17 +217,19 @@ void host_cloud_saves_start(const char *data_root, const char *save_root) {
     [[NSURL fileURLWithPath:folder] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
     snprintf(cloud_save_root, sizeof(cloud_save_root), "%s", save_root);
     snprintf(cloud_state_path, sizeof(cloud_state_path), "%s/state", folder.fileSystemRepresentation);
-#if TARGET_OS_MACCATALYST
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
     NSString *device = @"Mac";
+    const char *platform = "macOS";
 #else
     NSString *device = UIDevice.currentDevice.model;
+    const char *platform = TARGET_OS_TV ? "tvOS" : TARGET_OS_VISION ? "visionOS" : "iOS";
 #endif
     NSString *app = [NSString stringWithFormat:@"%@ (%@)",
         [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],
         [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]];
     struct cloud_config config = {
         .save_root = cloud_save_root, .state_path = cloud_state_path, .device = device.UTF8String,
-        .platform = TARGET_OS_TV ? "tvOS" : TARGET_OS_VISION ? "visionOS" : TARGET_OS_MACCATALYST ? "macOS" : "iOS",
+        .platform = platform,
         .app = app.UTF8String, .image = HALO_GUEST_SHA256, .state_size = HALO_PORT_GAME_STATE_SIZE,
         .saved_game_version = HALO_PORT_SAVED_GAME_VERSION,
         .network_version = HALO_PORT_NETWORK_VERSION, .now = cloud_now, .log = cloud_log,
@@ -200,6 +246,10 @@ void host_cloud_saves_start(const char *data_root, const char *save_root) {
     [defaults setBool:NO forKey:@"cloud_saves_restore"];
     [defaults setBool:NO forKey:@"cloud_saves_delete"];
     dispatch_async(cloud_queue, ^{
+        if (!atomic_load(&cloud_active) || !host_cloud_saves_enabled()) {
+            atomic_store(&cloud_launch_done, 1);
+            return;
+        }
         if (delete) {
             /* the Settings page's "Delete saves from iCloud": the cloud's copy goes, this device's saves stay,
                and the setting goes off so that nothing is uploaded again unasked */
@@ -225,7 +275,7 @@ static BOOL cloud_wait(double seconds, void (^block)(void)) {
     if (block) dispatch_async(cloud_queue, ^{ block(); dispatch_semaphore_signal(done); });
     CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + seconds;
     while (block ? dispatch_semaphore_wait(done, DISPATCH_TIME_NOW) != 0 : !atomic_load(&cloud_launch_done)) {
-        if (CFAbsoluteTimeGetCurrent() >= deadline) return NO;
+        if (!atomic_load(&cloud_active) || !host_cloud_saves_enabled() || CFAbsoluteTimeGetCurrent() >= deadline) return NO;
         @autoreleasepool { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true); }
     }
     return YES;
@@ -259,10 +309,11 @@ static NSString *cloud_describe(const struct cloud_summary *summary, BOOL this_d
 
 /* what the passes so far left for the player, before the game starts */
 static void cloud_show_notices(void) {
-    for (int shown = 0; shown < 8 && atomic_load(&cloud_active); shown++) {
+    for (int shown = 0; shown < 8 && atomic_load(&cloud_active) && host_cloud_saves_enabled(); shown++) {
         __block struct cloud_notice notice;
         __block int have = 0;
-        if (!cloud_wait(5, ^{ have = cloud_engine_notice(cloud_engine, &notice); }) || !have) return;
+        if (!cloud_wait(5, ^{ have = cloud_engine_notice(cloud_engine, &notice); }) || !have ||
+            !atomic_load(&cloud_active) || !host_cloud_saves_enabled()) return;
         const struct cloud_notice current = notice;
         switch (current.kind) {
         case CLOUD_NOTICE_CONFLICT: {
@@ -326,7 +377,7 @@ static void cloud_scan(void (^then)(void)) {
 }
 
 void host_cloud_saves_before_game(void) {
-    if (!atomic_load(&cloud_active)) return;
+    if (!host_cloud_saves_sync_allowed()) return;
     int seconds = cloud_local_slot_count(cloud_save_root) ? CLOUD_WAIT_SECONDS : CLOUD_WAIT_EMPTY_SECONDS;
     if (cloud_wait(seconds, nil))
         cloud_show_notices();
@@ -344,6 +395,12 @@ void host_cloud_saves_before_game(void) {
     dispatch_source_set_event_handler(cloud_timer, ^{ cloud_pass(CLOUD_PASS_RUNNING); });
     dispatch_resume(cloud_timer);
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserverForName:NSUserDefaultsDidChangeNotification object:NSUserDefaults.standardUserDefaults queue:nil
+        usingBlock:^(NSNotification *note) { (void)note; host_cloud_saves_sync_allowed(); }];
+#if HALO_NATIVE_MAC
+    [center addObserverForName:NSApplicationWillResignActiveNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note) { (void)note; if (atomic_load(&cloud_active)) cloud_scan(nil); }];
+#else
     [center addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
         usingBlock:^(NSNotification *note) { (void)note; if (atomic_load(&cloud_active)) cloud_scan(nil); }];
     [center addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil
@@ -361,14 +418,21 @@ void host_cloud_saves_before_game(void) {
             task = [UIApplication.sharedApplication beginBackgroundTaskWithName:@"VISRCloudSaves" expirationHandler:end];
             cloud_scan(end);
         }];
+#endif
     /* the switch turned off in Settings while the app was away stops the uploads at once; turned on, it
        takes effect at the next launch, when the saves may be compared before the game runs */
-    [center addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil
+#if HALO_NATIVE_MAC
+    NSString *foreground = NSApplicationWillBecomeActiveNotification;
+#else
+    NSString *foreground = UIApplicationWillEnterForegroundNotification;
+#endif
+    [center addObserverForName:foreground object:nil queue:nil
         usingBlock:^(NSNotification *note) {
             (void)note;
             if (atomic_load(&cloud_active) && ![NSUserDefaults.standardUserDefaults boolForKey:@"cloud_saves"]) {
                 host_logf(HOST_LOG_INFO, "cloud saves: turned off in Settings");
                 cloud_publish(@"Off");
+                atomic_store(&cloud_active, 0);
                 dispatch_async(cloud_queue, ^{ cloud_stop(); });
             }
         }];
@@ -383,7 +447,7 @@ void host_cloud_saves_directory_removed(const char *path) {
 }
 
 void host_cloud_saves_leaving(double seconds) {
-    if (!atomic_load(&cloud_active) || !cloud_queue) return;
+    if (!host_cloud_saves_sync_allowed() || !cloud_queue) return;
     pthread_mutex_lock(&cloud_gate);
     int started = cloud_game_started;
     pthread_mutex_unlock(&cloud_gate);
