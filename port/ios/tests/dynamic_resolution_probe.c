@@ -25,6 +25,22 @@ static enum dynamic_resolution_action present(struct dynamic_resolution *p, doub
 	return dynamic_resolution_present(p, &f);
 }
 
+/* Feed a second eligible frame: one late sample alone must hold. */
+static enum dynamic_resolution_action pressure(struct dynamic_resolution *p,
+	struct dynamic_resolution_frame *f)
+{
+	assert(dynamic_resolution_present(p, f) == DYNAMIC_RESOLUTION_HOLD);
+	f->frame_id++;
+	return dynamic_resolution_present(p, f);
+}
+
+static enum dynamic_resolution_action fight(struct dynamic_resolution *p, double hz,
+	double a, double b, double fixed)
+{
+	struct dynamic_resolution_frame f = frame(p, hz, a + b * p->pixels[p->level], fixed, 1);
+	return pressure(p, &f);
+}
+
 static void levels_and_examples(void)
 {
 	struct dynamic_resolution p;
@@ -35,7 +51,7 @@ static void levels_and_examples(void)
 	f = frame(&p, 60, 0.012, 0.002, 0);
 	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
 	f = frame(&p, 60, 0.017, 0.002, 1);
-	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+	assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 	assert(p.lines[p.level] == 880);
 	CLOSE(p.b, 0.016 / 2073600.0);
 	CLOSE(p.a, 0.001);
@@ -44,7 +60,7 @@ static void levels_and_examples(void)
 	the predicted 12.679 ms exceeds the 12.5 ms target. */
 	dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5.3e-9);
 	f.thermal = DYNAMIC_RESOLUTION_SERIOUS;
-	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+	assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 	assert(p.lines[p.level] == 800);
 	assert(dynamic_resolution_predict(&p, p.level, 0.002) <= 0.0125);
 	assert(dynamic_resolution_predict(&p, p.level - 1, 0.002) > 0.0125);
@@ -56,7 +72,7 @@ static void levels_and_examples(void)
 	f = frame(&p, 120, 0.0053, 0.0012, 0);
 	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
 	f = frame(&p, 120, 0.0075, 0.0012, 1);
-	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+	assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 	assert(p.lines[p.level] == 1027);
 	CLOSE(p.b, 0.0069 / (2622.0 * 1206));
 	dynamic_resolution_init(&p, 3840, 2160, 540, 0, 0);
@@ -123,7 +139,7 @@ static void panic_and_settle(void)
 		f = frame(&p, 120, 0.020, 0.0012, 1); f.level = 0;
 		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
 		f.level = p.level; f.deadline_miss = 1; f.late = 0;
-		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+		assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 	}
 }
 
@@ -146,7 +162,7 @@ static void ignore_windows(void)
 			assert(p.count == 0 && p.level == 0);
 		}
 		f.ignore = 0;
-		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+		assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 	}
 	dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5e-9);
 	f = frame(&p, 60, 0.3, 0.002, 1); f.elapsed = 0.25;
@@ -168,7 +184,7 @@ static void recovery_seconds(void)
 		int hz = rates[r];
 		double scale = 60.0 / hz;
 		dynamic_resolution_init(&p, 1920, 1080, 540, 0.001 * scale, 5.3e-9 * scale);
-		assert(present(&p, hz, 0.001 * scale, 0.016 / 2073600 * scale, 0.002 * scale, 1) == DYNAMIC_RESOLUTION_DROP);
+		assert(fight(&p, hz, 0.001 * scale, 0.016 / 2073600 * scale, 0.002 * scale) == DYNAMIC_RESOLUTION_DROP);
 		/* At 60 Hz this is the worked fight's 880 -> 1080 recovery. */
 		recoveries = 0;
 		for (i = 1; i <= 3 * hz; i++)
@@ -221,21 +237,21 @@ static void lateness_window(void)
 	for (age = 1; age <= 3; age++)
 	{
 		dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5e-9);
-		f = frame(&p, 60, 0.005, 0.002, 1);
+		f = frame(&p, 60, 0.020, 0.002, 1);
 		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
 		for (i = 1; i < age; i++)
 		{
-			f.late = 0;
+			f = frame(&p, 60, 0.009, 0.002, 0);
 			assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
 		}
-		f.late = 0; f.scene = 0.020;
+		f = frame(&p, 60, 0.020, 0.002, 0);
 		assert(dynamic_resolution_present(&p, &f) ==
 			(age <= 2 ? DYNAMIC_RESOLUTION_DROP : DYNAMIC_RESOLUTION_HOLD));
 	}
 	/* Exactly the CPU cutoff is eligible; above it cannot drop. */
 	dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5e-9);
 	f = frame(&p, 60, 0.020, 0.002, 1); f.cpu = 0.9 * f.budget;
-	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+	assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 }
 
 static void thermal_and_floor(void)
@@ -247,7 +263,7 @@ static void thermal_and_floor(void)
 	{
 		dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5.3e-9);
 		f = frame(&p, 60, 0.017, 0.002, 1); f.thermal = thermal;
-		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+		assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 		assert(p.lines[p.level] == (thermal < 2 ? 880 : 800));
 		p.level = 1; p.settle = 0; p.count = p.next = 0;
 		for (i = 0; i < 120; i++)
@@ -259,7 +275,7 @@ static void thermal_and_floor(void)
 	}
 	dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5e-9);
 	f = frame(&p, 60, 0.1, 0.002, 1);
-	assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+	assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
 	assert(p.level == p.levels - 1);
 	for (i = 0; i < 120; i++) present(&p, 60, 0.1, 0, 0.002, 1);
 	assert(p.level == p.levels - 1 && p.since_drop == 0.0);
@@ -278,7 +294,7 @@ static void dampening(void)
 			present(&p, 60, 0.001, 5.3e-9, 0.002, 0);
 		assert(p.level == 0);
 		for (i = 0; i < 4; i++) present(&p, 60, 0.001, 5.3e-9, 0.002, 0);
-		assert(present(&p, 60, 0.001, 0.016 / 2073600, 0.002, 1) == DYNAMIC_RESOLUTION_DROP);
+		assert(fight(&p, 60, 0.001, 0.016 / 2073600, 0.002) == DYNAMIC_RESOLUTION_DROP);
 		assert(p.recovery_delay == delays[cycle]);
 	}
 	p.level = 0; p.good = 0.0;
@@ -314,8 +330,112 @@ static void bursts(void)
 
 }
 
+/* Device traces showed isolated 20–39 ms scene spikes over about 9 ms.
+A one-frame estimate must neither trigger nor size a sustained-pressure drop. */
+static void isolated_spikes(void)
+{
+	struct dynamic_resolution p;
+	int spike, i;
+	for (spike = 20; spike <= 39; spike++)
+	{
+		dynamic_resolution_init(&p, 1441, 1080, 540, 0, 0);
+		for (i = 0; i < 180; i++)
+		{
+			struct dynamic_resolution_frame f = frame(&p, 60,
+				i == 60 ? spike / 1000.0 : 0.009, 0.003, i == 60);
+			assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
+			assert(p.level == 0);
+		}
+	}
+}
+
+/* The twelve recorded 1080/60 drops, replayed as isolated spikes. The
+stderr stream logs actions and every 600th frame, so this is a pattern
+replay over the measured ~9 ms baseline, not a full presentation trace. */
+static void recorded_spikes(void)
+{
+	static const struct { int scene, fixed, cpu, thermal; } spikes[] = {
+		{19075, 3580, 9098, 0},
+		{33148, 3003, 12171, 0},
+		{35068, 3191, 7579, 1},
+		{39047, 3091, 7910, 1},
+		{33450, 3498, 12808, 2},
+		{29697, 3225, 7304, 2},
+		{27716, 3354, 4132, 2},
+		{35937, 3038, 10819, 2},
+		{34777, 4078, 12234, 2},
+		{33881, 3078, 11981, 2},
+		{33036, 2941, 6838, 0},
+		{26576, 3093, 5947, 0},
+	};
+	struct dynamic_resolution p;
+	unsigned spike;
+	int i;
+	for (spike = 0; spike < sizeof(spikes) / sizeof(spikes[0]); spike++)
+	{
+		dynamic_resolution_init(&p, 1441, 1080, 540, 0, 0);
+		for (i = 0; i < 240; i++)
+		{
+			struct dynamic_resolution_frame f = frame(&p, 60, 0.009, 0.003, i == 60);
+			f.budget = 0.016670;
+			f.thermal = spikes[spike].thermal;
+			if (i == 60)
+			{
+				f.scene = spikes[spike].scene / 1e6;
+				f.upscale = 0;
+				f.hud = spikes[spike].fixed / 1e6;
+				f.cpu = spikes[spike].cpu / 1e6;
+				f.elapsed *= 2;
+			}
+			assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
+			assert(p.level == 0);
+		}
+	}
+}
+
+static void sustained_pressure(void)
+{
+	struct dynamic_resolution p;
+	struct dynamic_resolution_frame f;
+	int scene, i, expected = 0;
+	for (scene = 18; scene <= 20; scene++)
+	{
+		dynamic_resolution_init(&p, 1441, 1080, 540, 0, 0);
+		f = frame(&p, 60, scene / 1000.0, 0.003, 1);
+		assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+		assert(p.level > 0);
+	}
+	/* Increasing just one spike must not enlarge the drop. */
+	for (scene = 20; scene <= 39; scene++)
+	{
+		dynamic_resolution_init(&p, 1441, 1080, 540, 0, 0);
+		f = frame(&p, 60, 0.020, 0.003, 1);
+		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
+		f = frame(&p, 60, scene / 1000.0, 0.003, 1);
+		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+		if (scene == 20) expected = p.level;
+		assert(p.level == expected);
+	}
+	/* Even severe measured pressure waits for corroboration, then reaches floor. */
+	dynamic_resolution_init(&p, 1441, 1080, 540, 0, 0);
+	f = frame(&p, 60, 0.080, 0.003, 1);
+	assert(pressure(&p, &f) == DYNAMIC_RESOLUTION_DROP);
+	assert(p.level == p.levels - 1);
+	/* CPU-attributed spikes cannot supply either qualifying pressure sample. */
+	dynamic_resolution_init(&p, 1441, 1080, 540, 0, 0);
+	for (i = 0; i < 30; i++)
+	{
+		f = frame(&p, 60, i % 3 == 0 ? 0.020 : 0.039, 0.003, 1);
+		if (i % 3) f.cpu = f.budget;
+		assert(dynamic_resolution_present(&p, &f) == DYNAMIC_RESOLUTION_HOLD);
+	}
+}
+
 int main(void)
 {
+	isolated_spikes();
+	recorded_spikes();
+	sustained_pressure();
 	levels_and_examples();
 	ceiling_and_cpu();
 	panic_and_settle();

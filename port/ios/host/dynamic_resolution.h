@@ -72,7 +72,8 @@ struct dynamic_resolution
 	int recovered, settle, ignore_frames;
 	double ignore_seconds;
 	unsigned ignore_reason;
-	unsigned late_history;
+	unsigned late_history, pressure_history;
+	double pressure_scene[3], pressure_fixed[3];
 	int consecutive_late;
 	unsigned long cpu_bound_late;
 	unsigned long long last_frame_id;
@@ -196,7 +197,7 @@ static inline enum dynamic_resolution_action dynamic_resolution_present(
 	double dt = frame->elapsed, total = frame->scene + frame->upscale + frame->hud;
 	double drop_target = frame->thermal >= DYNAMIC_RESOLUTION_SERIOUS ? 0.75 : 0.85;
 	double recover_target = frame->thermal >= DYNAMIC_RESOLUTION_SERIOUS ? 0.85 : 0.95;
-	int late = frame->late || frame->deadline_miss, valid, cpu_bound, trigger, target, settling;
+	int late = frame->late || frame->deadline_miss, valid, cpu_bound, trigger, target, settling, pressure, i;
 	enum dynamic_resolution_action action = DYNAMIC_RESOLUTION_HOLD;
 	plan->last_frame_id = frame->frame_id;
 	if (frame->ignore & DYNAMIC_RESOLUTION_COMPILE)
@@ -220,7 +221,7 @@ static inline enum dynamic_resolution_action dynamic_resolution_present(
 	{
 		if (plan->ignore_frames > 0) plan->ignore_frames--;
 		if (plan->ignore_seconds > 0.0) plan->ignore_seconds -= dt;
-		plan->late_history = 0; plan->consecutive_late = 0; plan->good = 0.0;
+		plan->late_history = plan->pressure_history = 0; plan->consecutive_late = 0; plan->good = 0.0;
 		plan->recovery_headroom = 0.0;
 		return action;
 	}
@@ -238,8 +239,22 @@ static inline enum dynamic_resolution_action dynamic_resolution_present(
 	if (settling || frame->level != plan->level) late = 0;
 	plan->late_history = ((plan->late_history << 1) | (late && !cpu_bound)) & 7;
 	plan->consecutive_late = late && !cpu_bound ? plan->consecutive_late + 1 : 0;
-	trigger = !settling && frame->level == plan->level && plan->late_history &&
-		!cpu_bound && valid && total > frame->budget - 0.0005;
+	/* Two pressured frames out of three reject an isolated scene hitch while
+	reacting to a sustained fight on its second frame. CPU work, stale levels
+	and settling frames cannot corroborate GPU pressure. Keep recent lateness
+	as a separate requirement, including the suspicious-timing panic below. */
+	pressure = !settling && frame->level == plan->level && !cpu_bound && valid &&
+		total > frame->budget - 0.0005;
+	plan->pressure_history = ((plan->pressure_history << 1) | pressure) & 7;
+	for (i = 2; i > 0; i--)
+	{
+		plan->pressure_scene[i] = plan->pressure_scene[i - 1];
+		plan->pressure_fixed[i] = plan->pressure_fixed[i - 1];
+	}
+	plan->pressure_scene[0] = frame->scene;
+	plan->pressure_fixed[0] = frame->upscale + frame->hud;
+	trigger = pressure && plan->late_history &&
+		(plan->pressure_history & (plan->pressure_history - 1));
 	target = plan->level;
 	if (plan->consecutive_late >= 3 && (!valid || total < frame->budget))
 	{
@@ -251,10 +266,17 @@ static inline enum dynamic_resolution_action dynamic_resolution_present(
 	}
 	else if (trigger)
 	{
-		/* Spike estimate: preserve the fixed cost from the seed/online fit. */
-		plan->b = fmax(0.0, frame->scene - plan->a) / plan->pixels[frame->level];
+		/* Use the lower pressured cost, so one large spike cannot size the
+		drop. Preserve its paired U+H and the fit's fixed scene term. */
+		int sustained = 0;
+		for (i = 1; i < 3; i++)
+			if ((plan->pressure_history & (1u << i)) &&
+				plan->pressure_scene[i] + plan->pressure_fixed[i] <
+				plan->pressure_scene[sustained] + plan->pressure_fixed[sustained])
+				sustained = i;
+		plan->b = fmax(0.0, plan->pressure_scene[sustained] - plan->a) / plan->pixels[frame->level];
 		for (target = plan->level; target < plan->levels - 1; target++)
-			if (dynamic_resolution_predict(plan, target, frame->upscale + frame->hud) <= drop_target * frame->budget)
+			if (dynamic_resolution_predict(plan, target, plan->pressure_fixed[sustained]) <= drop_target * frame->budget)
 				break;
 		if (target > plan->level) action = DYNAMIC_RESOLUTION_DROP;
 	}
@@ -306,7 +328,7 @@ static inline enum dynamic_resolution_action dynamic_resolution_present(
 	{
 		plan->level = target; plan->settle = DYNAMIC_RESOLUTION_SETTLE;
 		plan->since_step = 0.0;
-		plan->late_history = 0; plan->consecutive_late = 0;
+		plan->late_history = plan->pressure_history = 0; plan->consecutive_late = 0;
 	}
 	return action;
 }

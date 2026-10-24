@@ -8,12 +8,15 @@ int main(void) {
         .scene_us=19000,.presentation_us=33334,.presented_us=1000000,.available=1|2|8,.late=1};
     dynamic_resolution_shadow_frame(&shadow,&frame,1920);
     assert(frame.drs.available & 4);
+    assert(frame.drs.action==DYNAMIC_RESOLUTION_HOLD && frame.drs.chosen_lines==1080);
+    frame.frame_id++;
+    dynamic_resolution_shadow_frame(&shadow,&frame,1920);
     assert(frame.drs.action==DYNAMIC_RESOLUTION_DROP && frame.drs.chosen_lines<1080);
     assert(frame.drs.actual_lines==1080 && shadow.plan.history[0].level==0);
     frame.frame_id++;
     frame.drs.late=0;
     dynamic_resolution_shadow_frame(&shadow,&frame,1920);
-    assert(shadow.plan.history[1].level==0); /* still measured at the physical ceiling after a virtual drop */
+    assert(shadow.plan.history[2].level==0); /* still measured at the physical ceiling after a virtual drop */
     assert(frame.drs.actual_lines==1080);
     frame.frame_id++;
     frame.drs.ignore=DYNAMIC_RESOLUTION_COMPILE;
