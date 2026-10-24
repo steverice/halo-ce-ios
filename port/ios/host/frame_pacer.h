@@ -89,8 +89,12 @@ server can hold the frame on screen for a tenth of a second at a time (a
 trace of a network game showed one about every 5 seconds, its frames held
 96 ms with the game's CPU and GPU idle), and waiting the whole hold stops
 the game loop with it: input, the game's ticks and the network's messages.
-There a frame waits about its share of the display (one refresh, or two
-under a 60 Hz cap on a 120 Hz display) and then gives up its present, so
+There a frame waits its share of the display plus one refresh of grace
+and 1 ms for callback delivery, then gives up its present. A 120 Hz display
+link does not guarantee 120 Hz presentation: the compositor may deliver
+ordinary frames at 60 Hz even without a frame-rate cap. Timing out after
+one refresh would discard a present between almost every pair shown. The
+grace allows that cadence while keeping a 96 ms hold out of the loop, so
 the loop keeps going and the window keeps the frame it has. Elsewhere, and
 once frames have been giving up for limit seconds (a presented notice that
 never comes must not keep every frame off the screen), a frame waits up to
@@ -107,7 +111,8 @@ static inline double frame_pacer_slot_wait(int drops, double period, double shar
 
 	if (!drops || backlog >= limit)
 		return limit;
-	turn = (period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 1.0 / 60.0) * (share >= 1.0 ? share : 1.0);
+	turn = (period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 1.0 / 60.0) *
+		((share >= 1.0 ? share : 1.0) + 1.0) + 0.001;
 	return turn < limit - backlog ? turn : limit - backlog;
 }
 

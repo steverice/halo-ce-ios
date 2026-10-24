@@ -55,13 +55,13 @@ int main(void)
 	CHECK(near(frame_pacer_slot_wait(0, 1.0 / 120.0, 1.0, 0.0, 0.1), 0.1));
 	CHECK(!frame_pacer_slot_give_up(0, 0.1, 0.1));
 	CHECK(!frame_pacer_slot_give_up(0, 0.0, 0.1));
-	/* on the Mac it waits its share of the display: a refresh, two under a 60 Hz cap at 120 Hz */
-	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 1.0, 0.0, 0.1), 1.0 / 120.0));
-	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 2.0, 0.0, 0.1), 2.0 / 120.0));
-	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 60.0, 1.0, 0.0, 0.1), 1.0 / 60.0));
+	/* on the Mac: the frame share plus one refresh and callback grace */
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 1.0, 0.0, 0.1), 2.0 / 120.0 + 0.001));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 2.0, 0.0, 0.1), 3.0 / 120.0 + 0.001));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 60.0, 1.0, 0.0, 0.1), 2.0 / 60.0 + 0.001));
 	/* (no display period yet, or a made-up one: a 60 Hz refresh) */
-	CHECK(near(frame_pacer_slot_wait(1, 0.0, 1.0, 0.0, 0.1), 1.0 / 60.0));
-	CHECK(near(frame_pacer_slot_wait(1, 1.0, 1.0, 0.0, 0.1), 1.0 / 60.0));
+	CHECK(near(frame_pacer_slot_wait(1, 0.0, 1.0, 0.0, 0.1), 2.0 / 60.0 + 0.001));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0, 1.0, 0.0, 0.1), 2.0 / 60.0 + 0.001));
 	/* and then gives up its present, while frames have been giving up for less than the limit */
 	CHECK(frame_pacer_slot_give_up(1, 1.0 / 120.0, 0.1));
 	CHECK(frame_pacer_slot_give_up(1, 0.096, 0.1));
@@ -73,7 +73,7 @@ int main(void)
 	CHECK(!frame_pacer_slot_give_up(1, 0.1, 0.1));
 	CHECK(!frame_pacer_slot_give_up(1, 0.25, 0.1));
 	/* a 96 ms hold at 60 frames a second on a 120 Hz display: every frame gives up after its share until the
-	slot comes back, none waits more than 17 ms, and the hold never reaches the limit */
+	slot comes back, none waits more than 26 ms, and the hold never reaches the limit */
 	{
 		double backlog = 0.0, longest = 0.0;
 		int given_up = 0, frame;
@@ -88,8 +88,27 @@ int main(void)
 			if (backlog < 0.096 && frame_pacer_slot_give_up(1, backlog, 0.1))
 				given_up++;
 		}
-		CHECK(longest <= 2.0 / 120.0 + 1e-9);
-		CHECK(given_up == 5);
+		CHECK(longest <= 3.0 / 120.0 + 0.001 + 1e-9);
+		CHECK(given_up == 3);
+	}
+	/* Regression: uncapped 120 Hz link, ordinary 60 Hz compositor delivery.
+	Every frame arrives with both slots full, just after a presentation.
+	Include up to 0.5 ms of callback delay. The old one-refresh deadline
+	gave up all 600 presents; these callbacks must arrive within the wait. */
+	{
+		int frame, given_up = 0;
+		double wait = frame_pacer_slot_wait(1, 1.0 / 120.0,
+			frame_pacer_share(1.0 / 120.0, 0.0), 0.0, 0.1);
+
+		for (frame = 0; frame < 600; frame++)
+		{
+			double callback = 1.0 / 60.0 + (frame % 6) * 0.0001;
+
+			if (callback > wait && frame_pacer_slot_give_up(1, wait, 0.1))
+				given_up++;
+		}
+		CHECK(given_up == 0);
+		CHECK(wait < 0.02);
 	}
 	/* a limit of 1 is one at a time */
 	{
