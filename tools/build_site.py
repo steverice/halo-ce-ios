@@ -18,8 +18,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULTS = {
     "title": "VISR",
-    "description": "A native port of Halo: Combat Evolved to Apple Vision Pro: full stereo VR with head tracking and foveated rendering. Bring your own Xbox disc.",
-    "og_title": "VISR: Halo: Combat Evolved on Apple Vision Pro",
+    "description": "A native port of Halo: Combat Evolved for Apple Vision Pro, iPhone, iPad, Apple TV and Mac, optimized for Metal and Apple Silicon.",
+    "og_title": "VISR: Halo: Combat Evolved on Apple devices",
+    "path": "",
 }
 
 
@@ -70,7 +71,9 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
     raise ValueError(f"Unknown facts block: {kind}: {name}")
 
 
-NAV_ICONS = {"Vision Pro": "vision-pro", "iPhone": "iphone", "iPad": "ipad", "Apple TV": "apple-tv",
+PAGES = ("index", "benchmarks")
+
+NAV_ICONS = {"Get VISR": "download", "Vision Pro": "vision-pro", "iPhone": "iphone", "iPad": "ipad", "Apple TV": "apple-tv",
              "Mac": "mac", "GitHub": "github"}
 
 
@@ -146,7 +149,7 @@ def front_matter(source: str) -> tuple[dict[str, str], str]:
             raise ValueError("Front matter needs a closing --- line")
         values = yaml.safe_load("".join(lines[1:end])) or {}
         if not isinstance(values, dict) or values.keys() - DEFAULTS.keys():
-            raise ValueError("Front matter supports title, description and og_title")
+            raise ValueError("Front matter supports title, description, og_title and path")
         if any(not isinstance(value, str) for value in values.values()):
             raise ValueError("Front matter values must be strings")
         metadata.update(values)
@@ -317,10 +320,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="report stale generated files without writing")
     args = parser.parse_args()
-    source = (ROOT / "docs/site/index.md").read_text(encoding="utf-8")
+    site = ROOT / "docs/site"
     readme = ROOT / "README.md"
     return write_outputs({
-        ROOT / "docs/site/index.html": render_site(source),
+        **{site / f"{page}.html": render_site((site / f"{page}.md").read_text(encoding="utf-8")) for page in PAGES},
         readme: render_readme(readme.read_text(encoding="utf-8"), load_facts()),
     }, check=args.check)
 

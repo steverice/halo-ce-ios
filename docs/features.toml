@@ -4,7 +4,7 @@
 # Each item is a column on the site (icon from docs/site/icons/) and a bullet in the README.
 items = [
     { icon = "cloud", title = "Cross-device sync", text = "Your saves and player profiles sync across all your devices through iCloud. Zero setup required." },
-    { icon = "just-works", title = "It just works", text = "VISR is specifically optimized for each Apple device for [unmatched performance](https://github.com/steverice/visr/blob/main/docs/benchmarks.md) out of the box." },
+    { icon = "just-works", title = "It just works", text = "VISR is specifically optimized for each Apple device for [unmatched performance](https://code.steverice.org/visr/benchmarks.html) out of the box." },
     { icon = "community", title = "Compatible with the community", text = "VISR aims for cross-play with the popular Halo: CE ports like [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and [Chupathingy](https://chupathingy.org)." },
 ]
 
