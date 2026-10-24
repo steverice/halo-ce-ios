@@ -48,7 +48,7 @@ def test_layout_preserves_markdown_and_unique_section_ids():
     assert '<p class="links"><a href="https://github.com/steverice/visr">GitHub</a></p>' in page
     for identifier in ("apple-vision-pro", "apple-vision-pro-2"):
         assert f'<section aria-labelledby="{identifier}">' in page
-        assert f'<h2 id="{identifier}">Apple Vision Pro</h2>' in page
+        assert re.search(rf'<h2 id="{identifier}">(<span class="nav-icon">.*?</span>)*Apple Vision Pro</h2>', page)
     assert '<li>A feature</li>' in page
     assert '<img src="a30.png" alt="Gameplay" width=' in page
     assert '<h1>Experience Halo: Combat Evolved</h1>' in render_site(SOURCE.replace('*', ''))
@@ -253,3 +253,10 @@ def test_platform_links_carry_their_glyphs():
     page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
     nav = page.split('<nav class="platform-nav"', 1)[1].split('</nav>', 1)[0]
     assert nav.count('<span class="nav-icon"><svg') == nav.count('<a href=')
+
+
+def test_platform_headings_carry_their_glyphs():
+    page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
+    for identifier, count in [('apple-vision-pro', 1), ('iphone-and-ipad', 2), ('apple-tv', 1), ('mac', 1)]:
+        heading = page.split(f'<h2 id="{identifier}">', 1)[1].split('</h2>', 1)[0]
+        assert heading.count('<span class="nav-icon"><svg') == count

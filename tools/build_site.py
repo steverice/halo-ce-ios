@@ -74,15 +74,28 @@ NAV_ICONS = {"Vision Pro": "vision-pro", "iPhone": "iphone", "iPad": "ipad", "Ap
              "Mac": "mac", "GitHub": "github"}
 
 
+SECTION_ICONS = {"apple-vision-pro": ["vision-pro"], "iphone-and-ipad": ["iphone", "ipad"],
+                 "apple-tv": ["apple-tv"], "mac": ["mac"]}
+
+
+def glyph(name: str) -> str:
+    """a platform glyph from docs/site/icons/nav/, inlined so it takes the text color"""
+    icon = (ROOT / "docs/site/icons/nav" / f"{name}.svg").read_text(encoding="utf-8").strip()
+    return f'<span class="nav-icon">{icon}</span>'
+
+
 def nav_with_icons(html: str) -> str:
-    """prefix each platform link with its glyph from docs/site/icons/nav/, inlined so it takes the text color"""
+    """prefix each platform link with its glyph"""
     def add_icon(match: re.Match) -> str:
         name = NAV_ICONS.get(match[2])
-        if name is None:
-            return match[0]
-        icon = (ROOT / "docs/site/icons/nav" / f"{name}.svg").read_text(encoding="utf-8").strip()
-        return f'{match[1]}<span class="nav-icon">{icon}</span>{match[2]}</a>'
+        return match[0] if name is None else f'{match[1]}{glyph(name)}{match[2]}</a>'
     return re.sub(r'(<a href="[^"]*">)([^<]+)</a>', add_icon, html)
+
+
+def heading_with_icons(html: str, identifier: str) -> str:
+    """prefix a platform section's heading with its glyphs"""
+    icons = "".join(glyph(name) for name in SECTION_ICONS.get(identifier, []))
+    return html.replace(f'<h2 id="{identifier}">', f'<h2 id="{identifier}">{icons}', 1) if icons else html
 
 
 EVERY_DEVICE_MARKER = "VISR-EVERY-DEVICE-COLUMNS"
@@ -263,7 +276,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
             first.attrSet("id", identifier)
             output.append(f'  <section aria-labelledby="{escape(identifier, quote=True)}">')
             section = True
-            copy.append(md.renderer.render(block, md.options, {}).rstrip())
+            copy.append(heading_with_icons(md.renderer.render(block, md.options, {}).rstrip(), identifier))
             continue
         elif not section and first.type == "paragraph_open":
             children = inline(block)
