@@ -44,7 +44,10 @@ enum
 
 /* whether this is a network co-op game (not its lobby, whose menu scene also
 has no game engine) */
+struct damage_data;
 boolean network_coop_active(void);
+/* The host-selected immunity for friendly non-player units and vehicles. */
+boolean network_coop_protects_ally(struct damage_data const *damage, long object_index);
 /* whether the players collide with each other: FALSE in a co-op game whose
 host set Server Setup's PLAYER COLLISIONS off (bipeds.c, collisions.c) */
 boolean network_coop_player_collisions(void);

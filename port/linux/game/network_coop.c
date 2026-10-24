@@ -73,6 +73,7 @@ index and tag, since the map placed them at the same index everywhere.
 /* ---------- headers */
 
 #include "cseries.h"
+#include "../src/input_replay.h"
 #include "cseries/errors.h"
 #include "cache/cache_files.h"
 #include "camera/camera_scripting.h"
@@ -2065,6 +2066,27 @@ boolean network_coop_player_collisions(
 	if (!network_coop_active() || !(game = network_game_get_game()))
 		return TRUE;
 	return !TEST_FLAG(game->cooperative_flags, _network_game_cooperative_no_player_collisions_bit);
+}
+
+/* The host's ally switch does not change player-to-player damage or scripted
+kills. Checking each recipient in damage.c also covers vehicle passthrough. */
+boolean network_coop_protects_ally(
+	struct damage_data const *damage,
+	long object_index)
+{
+	struct network_game *game;
+	struct unit_datum *unit;
+
+	if (input_replay_playing() || !network_coop_active() ||
+		damage->owner_player_index == NONE || TEST_FLAG(damage->flags, _damage_kill_instantly_bit) ||
+		!(game = network_game_get_game()) ||
+		!TEST_FLAG(game->cooperative_flags, _network_game_cooperative_no_ally_friendly_fire_bit))
+	{
+		return FALSE;
+	}
+	unit = (struct unit_datum *)object_try_and_get_and_verify_type(object_index, _object_mask_unit);
+	return unit && unit->unit.player_index == NONE &&
+		!game_team_is_enemy(unit->object.owner_team_index, damage->owner_team_index);
 }
 
 boolean network_coop_own_friendly_fire(

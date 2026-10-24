@@ -2310,6 +2310,7 @@ boolean ui_widget_port_unjoin_player(struct widget_instance *widget, struct even
 void network_game_server_port_set_settings(wchar_t const *name, long maximum_players);
 void network_game_server_port_set_cooperative_friendly_fire(short friendly_fire);
 void network_game_server_port_set_cooperative_player_collisions(boolean player_collisions);
+void network_game_server_port_set_cooperative_ally_friendly_fire(boolean ally_friendly_fire);
 void *global_network_game_client_get(void);
 void *global_network_game_server_get(void);
 boolean network_game_is_splitscreen_local(void);
@@ -2361,6 +2362,7 @@ static struct
 	short cooperative_friendly_fire;
 	/* co-op's PLAYER COLLISIONS shown, OFF (network.coop_player_collisions's) */
 	boolean cooperative_no_player_collisions;
+	boolean cooperative_ally_friendly_fire;
 	/* the browser's games */
 	struct advertised_game *games[MAXIMUM_ADVERTISED_GAMES];
 	short game_count, game_chosen;
@@ -2972,6 +2974,7 @@ help_strings, tools/port_settings.py) */
 #define SERVER_PASSWORD_HELP 23
 /* ... and for SHARE MAPS, by its choice (port/linux/game/map_share.c) */
 #define MAP_SHARE_HELP 24
+#define COOPERATIVE_ALLY_FRIENDLY_FIRE_HELP 26
 
 /* co-op's EXTRA ENEMIES' choices (port_settings.COOP_ENEMIES_MODES, in this
 order): its amount's row is the choice's */
@@ -3159,6 +3162,16 @@ static void server_settings_update(struct widget_instance *list)
 			if (help && list->focused_child == named(list, "op_player_collisions", 0))
 				help->parameters.text_box.string_list_index = (short)(COOPERATIVE_PLAYER_COLLISIONS_HELP + choice);
 		}
+		visible_set(named(list, "op_ally_friendly_fire", 0), cooperative);
+		if (cooperative && (spinner = named(list, "ally_friendly_fire_spinner", 0)) != NULL)
+		{
+			short choice = (short)PIN(spinner->parameters.list.selected_index, 0, 1);
+			struct widget_instance *help = list->parameters.list.extended_description;
+
+			multiplayer.cooperative_ally_friendly_fire = choice == 0;
+			if (help && list->focused_child == named(list, "op_ally_friendly_fire", 0))
+				help->parameters.text_box.string_list_index = (short)(COOPERATIVE_ALLY_FRIENDLY_FIRE_HELP + choice);
+		}
 	}
 	/* SHARE MAPS (any game's: map_share.c), ON or OFF: its help is its
 	choice's. Its spinner keeps network.map_share itself */
@@ -3283,6 +3296,7 @@ static boolean server_start(void)
 		gametype_setup_end();
 		network_game_server_port_set_cooperative_friendly_fire(multiplayer.cooperative_friendly_fire);
 		network_game_server_port_set_cooperative_player_collisions(!multiplayer.cooperative_no_player_collisions);
+		network_game_server_port_set_cooperative_ally_friendly_fire(multiplayer.cooperative_ally_friendly_fire);
 	}
 	else if (!gametype_setup_apply())
 		return campaign_fail();

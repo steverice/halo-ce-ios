@@ -145,6 +145,8 @@ boolean network_game_distributed_client(void);
 boolean network_damage_deals(struct damage_data const *damage, long object_index, short node_index,
 	short region_index, short material_index, real_vector3d const *object_normal, boolean authorized);
 boolean network_damage_replaying_kill(void);
+boolean network_damage_updates_shields(long object_index);
+boolean network_coop_protects_ally(struct damage_data const *damage, long object_index);
 void network_damage_player_effect(long player_index, struct damage_data const *damage, real total_damage);
 void network_damage_aftermath(long object_index, struct damage_data const *damage, unsigned long being_damaged_flags,
 	real shield_damage, real body_damage, real body_damage_multiplier, short body_part, short node_index,
@@ -154,10 +156,8 @@ void network_damage_aftermath(long object_index, struct damage_data const *damag
 act of god: the host's word, network_distributed.c, or the world's) */
 static boolean distributed_damage_authorized;
 
-/* whether this machine runs objects' shields (their stun, recharge and
-overcharge): not a client of the distributed netcode, which has the host's
-(damage_set_network_state) */
-#define objects_update_shields() (!network_game_distributed_client())
+/* port: units receive shield state from the host; static targets advance
+stun and recharge locally (network_damage_updates_shields). */
 
 /* ---------- constants */
 
@@ -1683,6 +1683,10 @@ void object_cause_damage(
 				return;
 
 			current_object_index = damaged_object_indices[damaged_object_count];
+			/* port: suppress harm and allegiance incidents, keeping the separate
+			player policy for riders and the other damage recipients. */
+			if (network_coop_protects_ally(damage, current_object_index))
+				continue;
 			current_object = object_get(current_object_index);
 			current_definition = object_definition_get(current_object->definition_index);
 			collision_model_index = current_definition->object.collision_model.index;
@@ -2033,10 +2037,10 @@ void object_damage_update(
 				FLAG(_object_die_act_of_god_no_statistics_bit));
 	}
 
-	if (objects_update_shields())
+	if (network_damage_updates_shields(object_index))
 		SET_FLAG(object->object.damage_flags, _object_shield_charging_bit, FALSE);
 	damage_flags = object->object.damage_flags;
-	if (objects_update_shields() &&
+	if (network_damage_updates_shields(object_index) &&
 		object->object.maximum_shield_vitality > 0.f &&
 		!TEST_FLAG(damage_flags, _object_dead_bit))
 	{
@@ -2213,6 +2217,12 @@ static void damage_effect_new_on_object(
 	long effect_definition_index,
 	long object_index)
 {
+	/* port: a host hit can break a client's static copy synchronously. Its
+	own explosion is still the host's decision, not part of that replay. */
+	boolean authorized = distributed_damage_authorized;
+
+	if (network_game_distributed_client() && network_damage_updates_shields(object_index))
+		distributed_damage_authorized = FALSE;
 	effect_new_from_object(
 		effect_definition_index,
 		object_index,
@@ -2222,6 +2232,7 @@ static void damage_effect_new_on_object(
 		0.f,
 		NULL,
 		NULL);
+	distributed_damage_authorized = authorized;
 	return;
 }
 

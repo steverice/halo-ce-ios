@@ -41,6 +41,7 @@ being hit looks and feels like on the clients).
 */
 
 #include "cseries.h"
+#include "../src/input_replay.h"
 #include "cseries/errors.h"
 #include "game/game.h"
 #include "game/game_globals.h"
@@ -499,12 +500,27 @@ static boolean distributed_damage_to_data(
 	return TRUE;
 }
 
-/* whether the object is scenery or a device that damage can destroy */
+/* Static objects share hits when they have either a body or a shield. */
 static boolean static_target(
 	long object_index)
 {
 	return object_try_and_get_and_verify_type(object_index, STATIC_TARGET_TYPES) &&
-		object_get_maximum_body_vitality(object_index, TRUE) > 0.0f;
+		(object_get_maximum_body_vitality(object_index, TRUE) > 0.0f ||
+			(!input_replay_playing() && object_get_maximum_shield_vitality(object_index, TRUE) > 0.0f));
+}
+
+/* A static object's own break damage belongs to the host even if a player
+owns its copy. A shot that breaks it still has the weapon/unit as owner. */
+static boolean network_damage_static_source(
+	struct damage_data const *damage)
+{
+	return !input_replay_playing() && damage->owner_object_index != NONE && static_target(damage->owner_object_index);
+}
+
+boolean network_damage_updates_shields(
+	long object_index)
+{
+	return !network_game_distributed_client() || (!input_replay_playing() && static_target(object_index));
 }
 
 /* ---------- object_cause_damage (damage.c) */
@@ -634,6 +650,11 @@ boolean network_damage_deals(
 	real_vector3d const *object_normal,
 	boolean authorized)
 {
+	/* A static object's break/explosion runs here once on the host. Clients
+	must not report their locally replayed copies' secondary damage. */
+	if (network_damage_static_source(damage))
+		return authorized || game_connection() != _game_connection_network_client;
+
 	if (game_connection() == _game_connection_network_client)
 	{
 		struct unit_datum *unit;
@@ -1772,6 +1793,11 @@ static boolean distributed_report_valid(
 	{
 		return FALSE;
 	}
+	/* TODO(net-v34): a missing static index needs a nearest eligible target
+	near target_position. The client-hit search uses target size plus a
+	one-world-unit tolerance; its size/distance formula and tie rule are not
+	specified by the clean-room description. Keep rejecting missing indices
+	until those facts are established, then retain all validation below. */
 	/* one of the host's objects (the index whole: identifier 0 is any
 	object at the index) */
 	if (!distributed_object_index_valid(report->object_index))
@@ -2255,6 +2281,10 @@ void network_damage_handle_events(
 			}
 			break;
 		case _damage_event_static:
+			/* TODO(net-v34): a missing static index needs a separate nearest
+			search near the damage location, bounded by impact tolerance and
+			explosion radius. The numeric tolerance, distance/size formula and
+			tie rule are unknown; do not reuse the client-hit search bounds. */
 			if (distributed_object_index_valid(event->object_index) && static_target(event->object_index) &&
 				distributed_damage_indices_valid(event->object_index, event->node_index, event->region_index,
 					event->material_index))

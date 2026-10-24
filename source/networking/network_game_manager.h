@@ -48,6 +48,8 @@ enum
 	/* the players pass through each other (Server Setup's PLAYER COLLISIONS:
 	OFF, co-op's): network_coop_player_collisions */
 	_network_game_cooperative_no_player_collisions_bit = 0,
+	/* port: ALLY FRIENDLY FIRE is OFF when bit 1 is set. */
+	_network_game_cooperative_no_ally_friendly_fire_bit = 1,
 };
 
 struct network_game

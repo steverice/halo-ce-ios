@@ -1251,6 +1251,12 @@ unsigned char input_replay_benchmark_lip_sync(void)
 	return *replay.record_actions_path && !replay.record_ended;
 }
 
+/* Damage rules introduced after the existing recordings stay off during playback. */
+unsigned char input_replay_playing(void)
+{
+	return replay.state_count != 0 || replay.action_count != 0;
+}
+
 /* whether a replay is under way: its sounds play, but the mixer sets nothing the simulation reads (a unit's mouth,
 game_sound_set_mouth_aperture) */
 unsigned char input_replay_mixer_detached(void)

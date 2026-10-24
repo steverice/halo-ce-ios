@@ -71,6 +71,7 @@ static boolean distributed_damage_is_recoil(struct damage_data const *damage, lo
 static void damage_replay_player_effect(long index, struct damage_data *damage, real amount) { }
 static boolean network_objects_client_has(long index) { return TRUE; }
 static boolean static_target(long index) { return FALSE; }
+static boolean network_damage_static_source(struct damage_data const *damage) { return FALSE; }
 static void distributed_damage_from_data(struct damage_data const *damage, struct damage_data *result) { *result = *damage; }
 static void object_get_origin(long index, real_point3d *point) { memset(point, 0, sizeof(*point)); }
 static long distributed_latest_host_time(void) { return 10; }

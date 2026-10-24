@@ -2906,7 +2906,7 @@
         "coop_friendly_fire": {
           "type": "string",
           "default": "on",
-          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Their AI allies they always can, as in the campaign.",
+          "description": "Whether the players of an online co-op game hurt each other: \"off\", \"on\", \"shields_only\" or \"explosives_only\" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). Damage to AI allies is controlled separately by network.coop_ally_friendly_fire.",
           "x-environment": "HALO_NET_COOP_FRIENDLY_FIRE",
           "x-environment-style": "value",
           "x-platforms": [
@@ -2919,6 +2919,17 @@
           "default": true,
           "description": "Whether this machine's players hurt, and are hurt by, the other players of an online co-op game: two players hurt each other only if both have it true. A player away from the controls for over 70 seconds is hurt by every player, whatever either chose.",
           "x-environment": "HALO_NET_COOP_OWN_FRIENDLY_FIRE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "coop_ally_friendly_fire": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether players can hurt friendly non-player units and vehicles in online co-op. Server Setup's ALLY FRIENDLY FIRE writes its choice here; false protects allies without changing player-to-player damage, enemy damage, AI-on-AI damage or scripted deaths.",
+          "x-environment": "HALO_NET_COOP_ALLY_FRIENDLY_FIRE",
           "x-environment-style": "value",
           "x-platforms": [
             "apple",

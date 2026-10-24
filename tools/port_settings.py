@@ -871,6 +871,8 @@ def _server_settings() -> list:
     # server_start)
     spinner_row("player_collisions", 14, ["ON", "OFF"], "network.coop_player_collisions", ["true", "false"])
     rows.append((f"{base}/op_player_collisions", None, SETUP_OPTIONS_PLACE + 3))
+    spinner_row("ally_friendly_fire", 17, ["ON", "OFF"], "network.coop_ally_friendly_fire", ["true", "false"])
+    rows.append((f"{base}/op_ally_friendly_fire", None, SETUP_OPTIONS_PLACE + 4))
     # SHARE MAPS (port/linux/game/map_share.c), for any game, above the
     # options' rows (SETUP_OPTIONS_PLACE): whether players who join without
     # the game's Custom Edition map download it (network.map_share). The
@@ -908,7 +910,7 @@ def _server_settings() -> list:
                                          "PLAYER OPTIONS:", "ITEM OPTIONS:", "VEHICLE OPTIONS:", "INDICATOR OPTIONS:",
                                          "TEAMPLAY OPTIONS:", "LISTING:", "FRIENDLY FIRE:", "EXTRA ENEMIES:",
                                          "PER PLAYER:", "MULTIPLIER:", "PLAYER COLLISIONS:", "PASSWORD:",
-                                         "SHARE MAPS:"])
+                                         "SHARE MAPS:", "ALLY FRIENDLY FIRE:"])
     extra += _strings(f"{base}/help_strings", [
         "",
         "The name the game shows in the lists of games.\\nEnter changes it.",
@@ -943,6 +945,8 @@ def _server_settings() -> list:
         # (SHARE MAPS', by its choice)
         "Players who join without the game's Custom Edition\\nmap download it from you and the other players.",
         "Players who join without the map cannot play.",
+        "Players can hurt friendly AI and vehicles.",
+        "Friendly AI and vehicles are protected from players.\\nPlayer-to-player friendly fire keeps its own rules.",
     ])
     lines = _screen(base, spec, rows, ["server settings update"],
                     ['<on event="created" run="server settings init"/>'], extra)
