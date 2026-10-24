@@ -45,6 +45,33 @@ def parse_hud(text: str) -> list[float]:
     return intervals
 
 
+def parse_metal_trace(record: dict, resolution=None) -> list[float]:
+    """Read on-glass intervals, never CPU/GPU durations or aggregate FPS."""
+    frames = {}
+    layers = set()
+    for trace in record['traces']:
+        for process in trace:
+            if process['PID'] != record['pid']:
+                continue
+            for layer in process['Layers']:
+                timeline = layer.get('On-Glass Drawable Timeline', [])
+                if timeline:
+                    layers.add(layer['Layer ID'])
+                    sizes = {str(item['Width (pixels)']) + '×' + str(item['Height (pixels)'])
+                             for item in layer.get('Configuration Timeline', [])}
+                    if resolution is not None and sizes != {resolution}:
+                        raise ValueError('resolution-mismatch')
+                for frame in timeline:
+                    start = frame['Start Mach Continuous Time']
+                    seconds = frame['Duration MCT Seconds']
+                    if not math.isfinite(seconds) or seconds <= 0:
+                        raise ValueError('invalid on-glass interval')
+                    frames[start] = seconds * 1000
+    if len(layers) > 1:
+        raise ValueError('multiple presentation layers')
+    return [frames[start] for start in sorted(frames)]
+
+
 def parse_raf(timestamps: list[float]) -> list[float]:
     """Convert strictly increasing browser millisecond timestamps to intervals."""
     if not all(math.isfinite(value) for value in timestamps):
@@ -146,7 +173,20 @@ def render(summary: dict) -> str:
              "Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. "
              "Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance. "
              "The methods measure different events and are not ranked against one another.", "",
-             "## Builds and availability", ""]
+             ]
+    if summary.get("cpu_policy") == "baseline":
+        lines.extend(["Background CPU is sampled for five seconds immediately before each native sampling window. "
+                        "Runs are rejected when average outside-process CPU rises more than half a core above that baseline. "
+                        "Steady background work remains active and may affect these estimates. "
+                        "Each round allows up to three attempts; rejected attempts do not enter the ranges.", ""])
+    if summary.get("native_scenario") == "opening-sequence":
+        lines.extend(["Native runs use the opening a10 and b30 sequences with no input: 15 seconds of warm-up "
+                        "after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. "
+                        "Opening cinematics are included. "
+                        "Both apps use 1280×960 drawables on a 60 Hz display, interpolation and a requested 60 fps cap; "
+                        "other graphics settings retain each app's defaults. These runs do not establish combat performance "
+                        "or identical image quality.", ""])
+    lines.extend(["## Builds and availability", ""])
     targets = sorted(summary.get("targets", []), key=lambda target: str(target.get("id", "")))
     if targets:
         _table(lines, ["Target", "Version", "SHA-256", "Method", "Status", "Reason"],
@@ -154,7 +194,8 @@ def render(summary: dict) -> str:
                 for target in targets])
     else:
         lines.extend(["No targets recorded.", ""])
-    groups = [("Mac native Metal HUD", "hud"), ("Safari requestAnimationFrame", "raf"), ("Other methods", "other")]
+    groups = [("Mac native Metal performance trace", "trace"), ("Mac native Metal HUD", "hud"),
+              ("Safari requestAnimationFrame", "raf"), ("Other methods", "other")]
     headings = ["Target", "Scenario", "Status", "FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
                 "On time (%)", "Worst (ms)", "Frames", "Duration (s)", "Thermal", "Resolution", "Cap (fps)",
                 "Display (Hz)", "Display rate basis"]
@@ -163,14 +204,19 @@ def render(summary: dict) -> str:
         method = str(target.get("method", "")).lower()
         if "raf" in method or "safari" in method:
             return "raf"
+        if "metalperftrace" in method:
+            return "trace"
         return "hud" if "hud" in method else "other"
 
     for title, group in groups:
         selected = [target for target in targets if method_group(target) == group]
-        if group == "other" and not selected:
+        if group in {"other", "trace"} and not selected:
             continue
         lines.extend([f"## {title}", ""])
-        if group == "hud":
+        if group == "trace":
+            lines.extend(["Apple's metalperftrace records per-frame on-glass drawable intervals. "
+                          "CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.", ""])
+        elif group == "hud":
             lines.extend(["Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.", ""])
         elif group == "raf":
             lines.extend(["Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.", ""])

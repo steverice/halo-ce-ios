@@ -282,3 +282,68 @@ def test_load_average_tail_does_not_reject_currently_quiet_host(monkeypatch):
     monkeypatch.setattr(m.adapters, 'cpu_snapshot', lambda: next(snapshots))
     monkeypatch.setattr(m.adapters.time, 'sleep', lambda *args: None)
     assert m.adapters.host_state()['load'] == 10
+
+
+def test_baseline_accepts_steady_load_but_rejects_material_increase():
+    adapters = engine().adapters
+    assert not adapters.background_changed(2.1, 2.0)
+    assert adapters.background_changed(2.6, 2.0)
+    assert adapters.background_changed(1.1, None)
+
+
+def test_disabled_safari_is_never_fetched_or_launched(tmp_path, monkeypatch):
+    m = engine()
+    def forbidden(*args, **kwargs):
+        pytest.fail('disabled Safari must not be contacted')
+    monkeypatch.setattr(m, 'fetch', forbidden)
+    monkeypatch.setattr(m.adapters, 'safari', forbidden)
+    monkeypatch.setattr(m.adapters, 'host_state', lambda **kwargs: {})
+    config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)',
+              'cpu_policy': 'baseline', 'targets': [{'id': 'opence-web',
+              'unavailable_reason': 'safari-remote-automation-disabled'}]}
+    summary = tmp_path / 'summary.json'
+    assert m.refresh(config, summary, tmp_path / 'page.md') == 1
+    import json
+    record = json.loads(summary.read_text())['targets'][0]
+    assert record['reason'] == 'safari-remote-automation-disabled'
+    assert 'half a core' in (tmp_path / 'page.md').read_text()
+
+
+def test_readiness_requires_a_complete_output_line_instead_of_console_echo():
+    ready = engine().adapters.console_ready
+    assert not ready('(if (> (list_count (players)) 0) (print "PERF_READY"))\r\n')
+    assert not ready('perf_ready')
+    assert ready('> (print "PERF_READY")\r\nperf_ready\r\n')
+
+
+def test_contention_retry_keeps_only_successful_evidence_at_run_root(tmp_path, monkeypatch):
+    m = engine()
+    calls = []
+    def attempt(target, scenario, folder, config):
+        calls.append(folder)
+        if len(calls) == 1:
+            (folder / 'hud.log').write_text('rejected')
+            raise RuntimeError('host-not-quiet')
+        (folder / 'hud.log').write_text('accepted')
+        return {'thermal': 'nominal'}
+    monkeypatch.setattr(m.adapters, '_native', attempt)
+    assert m.adapters.native({}, 'a10', tmp_path, {'cpu_policy': 'baseline'}) == {'thermal': 'nominal'}
+    assert len(calls) == 2
+    assert (tmp_path / 'attempt-error.txt').read_text() == 'host-not-quiet'
+    assert (tmp_path / 'hud.log').read_text() == 'accepted'
+    assert (tmp_path / 'rejected-hud.log').read_text() == 'rejected'
+
+
+def test_baseline_excludes_game_cpu(monkeypatch):
+    m = engine()
+    snapshots = iter([{1: 0, 2: 0}, {1: 50, 2: 5}])
+    stamps = iter([0, 5])
+    monkeypatch.setattr(m.adapters, 'cpu_snapshot', lambda: next(snapshots))
+    monkeypatch.setattr(m.adapters.time, 'monotonic', lambda: next(stamps))
+    monkeypatch.setattr(m.adapters.time, 'sleep', lambda seconds: None)
+    assert m.adapters.sample_background(owned={1}) == 1
+
+
+def test_native_baseline_cannot_skip_the_quiet_gate_for_active_safari():
+    with pytest.raises(ValueError, match='Safari targets to be skipped'):
+        engine().validate_config({'cpu_policy': 'baseline', 'targets': [{'id': 'opence-web'}]})

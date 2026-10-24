@@ -2,21 +2,36 @@
 
 We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong or out of date. Corrections are welcome: [open an issue](https://github.com/steverice/visr/issues).
 
-Date: 2026-10-24. Refresh wall time: 182.2 seconds.
+Date: 2026-10-24. Refresh wall time: 1098.4 seconds.
 
 Machine: Mac mini (M4). OS: 27.0.1.
 
 Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance. The methods measure different events and are not ranked against one another.
 
+Background CPU is sampled for five seconds immediately before each native sampling window. Runs are rejected when average outside-process CPU rises more than half a core above that baseline. Steady background work remains active and may affect these estimates. Each round allows up to three attempts; rejected attempts do not enter the ranges.
+
+Native runs use the opening a10 and b30 sequences with no input: 15 seconds of warm-up after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. Opening cinematics are included. Both apps use 1280×960 drawables on a 60 Hz display, interpolation and a requested 60 fps cap; other graphics settings retain each app's defaults. These runs do not establish combat performance or identical image quality.
+
 ## Builds and availability
 
 | Target | Version | SHA-256 | Method | Status | Reason |
 | --- | --- | --- | --- | --- | --- |
-| chupathingy | v0.8.0g | 0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a | Metal HUD present intervals | unavailable | host-not-quiet |
-| halo-og | v0.5.1 | 28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6 | Metal HUD present intervals | unavailable | host-not-quiet |
-| opence-macos | v1.0.2 | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | Metal HUD present intervals | unavailable | host-not-quiet |
-| opence-web | hosted entry document | 93277da132ad0801b993c01e1bad5b5a7c7a19caf8b24ecdd7aab971a7cbe5ba | Safari RAF callbacks (entry-document hash) | unavailable | host-not-quiet |
-| visr | 8d26312ddb4ad2e97074f0c9ba42ce386241d55a | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | Metal HUD present intervals | unavailable | host-not-quiet |
+| chupathingy | v0.8.0g | 0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a | Metal HUD present intervals | unavailable | console-unavailable |
+| halo-og | v0.5.1 | 28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6 | Metal HUD present intervals | unavailable | console-unavailable |
+| opence-macos | v1.0.2 | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | metalperftrace on-glass intervals | ok |  |
+| opence-web | unavailable |  | Safari RAF callbacks (entry-document hash) | unavailable | safari-remote-automation-disabled |
+| visr | 8d26312ddb4ad2e97074f0c9ba42ce386241d55a | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | metalperftrace on-glass intervals | ok |  |
+
+## Mac native Metal performance trace
+
+Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.
+
+| Target | Scenario | Status | FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| opence-macos | a10 | ok; 3 rounds | 59.33–59.98 | 16.65–16.66 | 18.23–18.48 | 19.41–19.59 | 85.13–89.97 | 31.52–484.67 | 3560–3599 | 60.00–60.00 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| opence-macos | b30 | ok; 3 rounds | 59.02–59.92 | 16.65–16.66 | 18.16–18.31 | 19.24–19.79 | 87.88–89.74 | 97.10–165.96 | 3541–3595 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| visr | a10 | ok; 3 rounds | 59.95–59.97 | 16.66–16.66 | 18.14–18.45 | 19.64–19.86 | 88.58–89.97 | 34.09–39.64 | 3598–3599 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| visr | b30 | ok; 3 rounds | 59.85–59.88 | 16.66–16.67 | 18.11–18.30 | 19.52–19.58 | 87.89–88.84 | 116.40–119.43 | 3591–3594 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
 
 ## Mac native Metal HUD
 
@@ -24,14 +39,10 @@ Metal HUD per-frame intervals describe native presentation pacing. GPU duration 
 
 | Target | Scenario | Status | FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| chupathingy | a10 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| chupathingy | b30 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| halo-og | a10 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| halo-og | b30 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| opence-macos | a10 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| opence-macos | b30 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| visr | a10 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| visr | b30 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| chupathingy | a10 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| chupathingy | b30 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| halo-og | a10 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| halo-og | b30 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
 
 ## Safari requestAnimationFrame
 
@@ -39,8 +50,8 @@ Safari callbacks measure browser scheduling and may include repeated game images
 
 | Target | Scenario | Status | FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| opence-web | a10 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
-| opence-web | b30 | unavailable; incomplete (0/3 rounds); host-not-quiet | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| opence-web | a10 | unavailable; incomplete (0/3 rounds); safari-remote-automation-disabled | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| opence-web | b30 | unavailable; incomplete (0/3 rounds); safari-remote-automation-disabled | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
 
 ## VISR offscreen sweep
 
