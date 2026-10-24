@@ -73,3 +73,5 @@ pre { margin: 0 0 14px; background: var(--code-bg); color: var(--code-ink); bord
 pre code { font-size: inherit; white-space: pre; }
 
 .foot { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
+
+section img { max-width: 100%; height: auto; }
