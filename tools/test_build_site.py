@@ -274,12 +274,8 @@ def test_platform_bullets_name_each_minimum_os_and_columns_render_links():
     assert '<a href="https://github.com/OpenCommunityEdition/OpenCE">OpenCE</a>' in columns
 
 
-def test_benchmarks_placeholder_page_is_built_with_its_own_url():
-    from tools.build_site import PAGES
-    assert 'benchmarks' in PAGES
-    page = render_site((ROOT / 'docs/site/benchmarks.md').read_text(encoding='utf-8'))
-    assert '<meta property="og:url" content="https://code.steverice.org/visr/benchmarks.html">' in page
-    assert (ROOT / 'docs/site/benchmarks.html').read_text(encoding='utf-8') == page
+
+def test_home_page_keeps_its_own_url_and_links_benchmarks_on_github():
     home = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
     assert '<meta property="og:url" content="https://code.steverice.org/visr/">' in home
-    assert 'Apple Vision Pro, iPhone, iPad, Apple TV and Mac' in home
+    assert 'https://github.com/steverice/visr/blob/main/docs/benchmarks.md' in home
