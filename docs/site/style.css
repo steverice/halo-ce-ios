@@ -75,3 +75,84 @@ pre code { font-size: inherit; white-space: pre; }
 .foot { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
 
 section img { max-width: 100%; height: auto; }
+
+/* Keep prose readable while giving gameplay room beside each platform's features. */
+.page { max-width: 1160px; }
+.head { max-width: 760px; margin-inline: auto; }
+.head blockquote { margin-inline: 0; }
+section { padding-top: 36px; margin-top: 44px; }
+section > p:has(img) { margin-top: 24px; }
+section > p > img { display: block; width: 100%; border-radius: 16px; }
+.foot { max-width: 760px; margin-inline: auto; }
+
+.platform-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 26px 8px; }
+.platform-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+.platform-nav a:hover { border-color: var(--accent); text-decoration: underline; }
+.platform-layout { display: grid; gap: 26px; align-items: center; }
+.platform-copy { min-width: 0; }
+.platform-copy h2 { margin-bottom: 18px; }
+.platform-media { display: grid; gap: 28px; min-width: 0; padding-bottom: 16px; }
+
+/* Generic bezels use no manufacturer artwork. */
+.device {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid #51616a;
+  border-radius: 26px;
+  background: #11191f;
+  box-shadow: 0 10px 24px #0003, inset 0 0 0 2px #242f37;
+}
+.device img { display: block; width: 100%; height: auto; border-radius: 18px; }
+.device-iphone { width: 94%; justify-self: center; padding: 8px 17px; border-radius: 32px; }
+.device-iphone img { border-radius: 24px; }
+.device-ipad { padding: 12px; border-radius: 23px; }
+.device-ipad img { border-radius: 12px; }
+.device-tv { border-radius: 9px; padding: 7px; margin-bottom: 24px; }
+.device-tv img { border-radius: 3px; }
+.device-tv::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  bottom: -23px;
+  left: 30%;
+  width: 40%;
+  height: 23px;
+  background: #3a4851;
+  clip-path: polygon(42% 0, 58% 0, 64% 80%, 100% 88%, 100% 100%, 0 100%, 0 88%, 36% 80%);
+}
+.device-mac { border-radius: 12px 12px 4px 4px; padding: 9px 9px 14px; margin-bottom: 12px; }
+.device-mac img { border-radius: 5px; }
+.device-mac::after {
+  content: "";
+  position: absolute;
+  left: -3%;
+  bottom: -11px;
+  width: 106%;
+  height: 11px;
+  border: 1px solid #51616a;
+  border-radius: 2px 2px 14px 14px;
+  background: linear-gradient(#596771, #26343e);
+}
+
+@media (min-width: 900px) {
+  .platform-layout { grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.5fr); gap: 64px; }
+  section:nth-of-type(3) .platform-layout { grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.8fr); }
+  section:nth-of-type(3) .platform-copy { grid-column: 2; grid-row: 1; }
+  section:nth-of-type(3) .platform-media { grid-column: 1; grid-row: 1; }
+  section { padding-top: 44px; margin-top: 60px; }
+  section > h2 { margin-bottom: 24px; }
+}

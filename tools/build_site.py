@@ -6,6 +6,7 @@ from __future__ import annotations
 from html import escape
 from pathlib import Path
 import re
+import struct
 from string import Template
 
 from markdown_it import MarkdownIt
@@ -36,8 +37,31 @@ def front_matter(source: str) -> tuple[dict[str, str], str]:
     return metadata, source
 
 
-def render_site(source: str, template: str | None = None) -> str:
+def image_size(path: Path) -> tuple[int, int]:
+    """Read web image dimensions without adding an image decoder to the build."""
+    with path.open("rb") as image:
+        header = image.read(24)
+        if header.startswith(b"\x89PNG\r\n\x1a\n"):
+            return struct.unpack(">II", header[16:24])
+        if header[:2] == b"\xff\xd8":
+            image.seek(2)
+            while image.read(1) == b"\xff":
+                marker = image.read(1)
+                while marker == b"\xff":
+                    marker = image.read(1)
+                length = int.from_bytes(image.read(2), "big")
+                if marker in (b"\xc0", b"\xc1", b"\xc2"):
+                    _, height, width = struct.unpack(">BHH", image.read(5))
+                    return width, height
+                if length < 2:
+                    break
+                image.seek(length - 2, 1)
+    raise ValueError(f"Unsupported site image: {path.name}")
+
+
+def render_site(source: str, template: str | None = None, *, asset_root: Path | None = None) -> str:
     metadata, source = front_matter(source)
+    asset_root = (asset_root or ROOT / "docs/site").resolve()
     md = MarkdownIt("commonmark", {"html": False})
     tokens = md.parse(source)
     # Work on top-level blocks so nested paragraphs retain their Markdown layout.
@@ -52,6 +76,36 @@ def render_site(source: str, template: str | None = None) -> str:
 
     def inline(block):
         return block[1].children or []
+
+    def local_image_size(image, required=False):
+        path = (asset_root / image.attrGet("src")).resolve()
+        if not path.is_relative_to(asset_root) or not path.is_file():
+            if required:
+                raise ValueError("A device image must be a local site image")
+            return
+        width, height = image_size(path)
+        image.attrSet("width", str(width))
+        image.attrSet("height", str(height))
+
+    device_blocks = {}
+    for index, block in enumerate(blocks[3:], 3):
+        if block[0].type != "paragraph_open":
+            continue
+        children = inline(block)
+        if not children or children[0].type != "image":
+            continue
+        annotation = "".join(child.content for child in children[1:]).strip()
+        image = children[0]
+        if annotation.startswith("{device="):
+            match = re.fullmatch(r"\{device=(iphone|ipad|tv|mac)\}", annotation)
+            if not match:
+                raise ValueError("Use device=iphone, ipad, tv or mac on a standalone image")
+            device_blocks[index] = match.group(1)
+            local_image_size(image, required=True)
+            image.attrSet("loading", "lazy")
+            image.attrSet("decoding", "async")
+        elif len(children) == 1:
+            local_image_size(image)
 
     if (len(blocks) < 3 or blocks[0][0].type != "paragraph_open"
             or len(inline(blocks[0])) != 1 or inline(blocks[0])[0].type != "image"
@@ -70,11 +124,28 @@ def render_site(source: str, template: str | None = None) -> str:
     blocks[2][0].tag = blocks[2][-1].tag = "h1"
     output.append(md.renderer.render(blocks[2], md.options, {}).rstrip())
     section = False
+    copy = []
+    media = []
+
+    def finish_section():
+        if media:
+            output.extend(['    <div class="platform-layout">', '      <div class="platform-copy">',
+                           *copy, '      </div>', '      <div class="platform-media">',
+                           *media, '      </div>', '    </div>'])
+        else:
+            output.extend(copy)
+        output.append("  </section>")
+        copy.clear()
+        media.clear()
+
     identifiers = set()
-    for block in blocks[3:]:
+    for index, block in enumerate(blocks[3:], 3):
         first = block[0]
         if first.type == "heading_open" and first.tag == "h2":
-            output.append("  </section>" if section else "  </header>")
+            if section:
+                finish_section()
+            else:
+                output.append("  </header>")
             text = md.renderer.renderInlineAsText(inline(block), md.options, {})
             base = re.sub(r"[^\w-]+", "-", text.lower()).strip("-") or "section"
             identifier = base
@@ -86,14 +157,33 @@ def render_site(source: str, template: str | None = None) -> str:
             first.attrSet("id", identifier)
             output.append(f'  <section aria-labelledby="{escape(identifier, quote=True)}">')
             section = True
+            copy.append(md.renderer.render(block, md.options, {}).rstrip())
+            continue
         elif not section and first.type == "paragraph_open":
             children = inline(block)
+            links = [child for child in children if child.type == "link_open"]
+            if len(links) > 1 and all(child.attrGet("href").startswith(("#", "https://github.com/")) for child in links):
+                for child in children:
+                    if child.type == "text" and child.content.strip() == "•":
+                        child.content = " "
+                output.extend(['    <nav class="platform-nav" aria-label="Platforms">',
+                               md.renderer.render(children, md.options, {}).rstrip(), '    </nav>'])
+                continue
             lone_link = (children and children[0].type == "link_open"
                          and children[-1].type == "link_close"
                          and sum(child.type == "link_open" for child in children) == 1)
             first.attrSet("class", "links" if lone_link else "lede")
-        output.append(md.renderer.render(block, md.options, {}).rstrip())
-    output.append("  </section>" if section else "  </header>")
+        if index in device_blocks:
+            if not section:
+                raise ValueError("Place a device image inside a section")
+            image = md.renderer.render([inline(block)[0]], md.options, {})
+            media.append(f'        <figure class="device device-{device_blocks[index]}">{image}</figure>')
+        else:
+            (copy if section else output).append(md.renderer.render(block, md.options, {}).rstrip())
+    if section:
+        finish_section()
+    else:
+        output.append("  </header>")
     if template is None:
         template = (ROOT / "tools/site_template.html").read_text(encoding="utf-8")
     return Template(template).substitute(

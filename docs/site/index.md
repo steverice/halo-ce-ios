@@ -2,16 +2,17 @@
 
 # VISR
 
-## Experience Halo: Combat Evolved in a whole new dimension
+## Experience *Halo: Combat Evolved* in a whole new dimension
 
 VISR is a native port of Halo: Combat Evolved for Apple Vision Pro and other Apple devices: iPhone, iPad, Apple TV and Mac. Based on a lot of hard work from the community, optimized for Metal and Apple Silicon.
 
 The goal is to provide the best possible ways to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it.
 
 > "The first VISR systems date back to the early 21st century…"
+>
 > — ["Dynasty" VISR, Halo 5: Guardians](https://www.halopedia.org/Armor_customization_(Halo_5:_Guardians)/Visor)
 
-[VISR on GitHub](https://github.com/steverice/visr)
+[Vision Pro](#apple-vision-pro) • [iPhone](#iphone-and-ipad) • [iPad](#iphone-and-ipad) • [AppleTV](#apple-tv) • [Mac](#mac) • [GitHub](https://github.com/steverice/visr)
 
 ## Apple Vision Pro
 
@@ -29,10 +30,18 @@ The goal is to provide the best possible ways to experience Halo while staying f
 - Play on a connected TV or monitor
 - iOS 16+, iPhone 8 or newer
 
+![Halo on iPhone with touch controls during the Silent Cartographer beach battle](./iphone.jpg){device=iphone}
+
+![Halo on iPad during the Silent Cartographer beach battle](./ipad.jpg){device=ipad}
+
 ## Apple TV
 
 - Full controller support
 
+![Halo on Apple TV during the Silent Cartographer beach battle](./apple-tv.jpg){device=tv}
 
 ## Mac
 
+- Native AppKit app
+
+![Halo on Mac during the Silent Cartographer beach battle](./mac.jpg){device=mac}
