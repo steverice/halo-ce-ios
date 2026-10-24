@@ -5,6 +5,8 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 set(HALO_BUNDLE_IDENTIFIER "org.steverice.visr.native" CACHE STRING "Native app bundle identifier")
 set(HALO_NATIVE_MAC ON CACHE BOOL "Native AppKit host" FORCE)
+# a shared VISR scheme, which the App Store archive (tools/macos_build.py) names
+set(CMAKE_XCODE_GENERATE_SCHEME ON)
 set(HALO_RENDERER "METAL" CACHE STRING "Native renderer")
 set(HALO_BENCHMARK_ROUTES OFF CACHE BOOL "Downloaded catalog execution only" FORCE)
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../ios" host)

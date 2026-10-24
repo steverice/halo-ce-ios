@@ -22,6 +22,9 @@ Set these environment values. Supply only preexisting credentials and profiles; 
 | `APPLE_PROFILE_IOS_BASE64` | Secret | Base64 existing App Store distribution provisioning profile for iOS |
 | `APPLE_PROFILE_TVOS_BASE64` | Secret | Corresponding existing tvOS profile, when selected |
 | `APPLE_PROFILE_VISIONOS_BASE64` | Secret | Corresponding existing visionOS profile, when selected |
+| `APPLE_PROFILE_MACOS_BASE64` | Secret | Corresponding existing Mac App Store profile (`.provisionprofile`), when `macos` is selected |
+| `APPLE_INSTALLER_P12_BASE64` | Secret | Base64 Mac Installer Distribution certificate with its private key, when `macos` is selected |
+| `APPLE_INSTALLER_P12_PASSWORD` | Secret | Password of that `.p12` export |
 | `ASC_KEY_ID` | Secret | Existing App Store Connect team API key ID |
 | `ASC_ISSUER_ID` | Secret | Issuer ID of that key |
 | `ASC_PRIVATE_KEY` | Secret | Complete PEM `.p8` private key for that key |
@@ -35,7 +38,7 @@ The Claude federation rule must trust only the release environment on `main` for
 
 Use an App Store Connect API key with permission to upload builds and edit beta build localizations for this app. Limit app access where the account supports it. An Admin key is not required by this flow. `GITHUB_TOKEN` supplies repository contents access; no personal GitHub token is required if the repository permits that token to create the release commit and tag. If the repository requires a dedicated bot token, configure and review its scope before changing the workflow.
 
-The signing helper creates a random-password temporary keychain, imports the existing distribution identity, validates profile ownership and expiration, and installs only the selected profiles. When `benchmark_upload` is `on`, each selected profile must also allow CloudKit, the configured container, and production `aps-environment`; a missing capability stops the job before signing. The release build keeps iCloud saves off. The `always()` cleanup step restores the previous keychain search list and deletes its keychain, installed profiles, and `.p12`, including after failures. No signing material is cached or uploaded as an artifact. GitHub-hosted runners are discarded after the job. Do not move this workflow to persistent runners without reviewing interruption and cleanup behavior.
+The signing helper creates a random-password temporary keychain, imports the existing distribution identity, validates profile ownership and expiration, and installs only the selected profiles. When `benchmark_upload` is `on`, each selected profile must also allow CloudKit, the configured container, and production `aps-environment`; a missing capability stops the job before signing. The release build keeps iCloud saves off. With `macos` selected, the helper also imports the installer certificate, checks that it is a Mac Installer Distribution identity, and requires the Mac profile to allow CloudKit and the `iCloud.org.steverice.visr` container, which the signed Mac app declares. The `always()` cleanup step restores the previous keychain search list and deletes its keychain, installed profiles, and `.p12`, including after failures. No signing material is cached or uploaded as an artifact. GitHub-hosted runners are discarded after the job. Do not move this workflow to persistent runners without reviewing interruption and cleanup behavior.
 
 ## Validate before releasing
 
@@ -77,7 +80,7 @@ In `release` mode, the workflow repeats the unsigned probe, then validates exist
 | --- | --- |
 | `mode` | `validate` (default) produces unsigned provenance only; `auth` checks Claude WIF without building or publishing; `release` enables the protected release stages |
 | `source_sha` | Reviewed, full 40-character `main` commit SHA for `validate` and `release`; not needed for `auth`; for recovery, use the original source SHA from `.release/current.json` |
-| `platforms` | Unique comma-separated subset of `ios,tvos,visionos`; defaults to `ios,tvos` |
+| `platforms` | Unique comma-separated subset of `ios,tvos,visionos,macos`; defaults to `ios,tvos` |
 | `increment` | `auto`, `patch`, `minor`, or `major`; default `auto` |
 | `resume_tag` | Empty for a new release; the existing `visr-vX.Y.Z` tag for recovery |
 | `bootstrap_since` | First managed release only: explicitly reviewed full ancestor SHA defining the initial changelog range |
@@ -102,6 +105,8 @@ Every Pages deployment, including ordinary source deployments, preserves previou
 The older `recording_commit` input still accepts exactly one recording-feed file directly on the workflow source, including an existing guest-specific recording path. It keeps its original validation and gains the same preservation of other deployed signed assets. Do not provide both inputs. These steps do not change deployment protection rules or the application's frozen source.
 
 Selected platforms build serially in one job and one guest cache. Distribution commands explicitly require guest PGO, full LTO, host PGO, tester mode, routes disabled, movies enabled, render validation disabled, and the reviewed feed URLs. Each archive must match the probe guest, exact Xcode/SDK, bundle ID, and tester feed metadata before upload. The tag supplies `CFBundleShortVersionString`; the source commit's UTC timestamp supplies the stable unique `CFBundleVersion` for that release. Each numeric component omits leading zeros, matching App Store Connect's canonical form. Recovery queries also normalize component padding in older manifests while still requiring the exact app, platform, marketing version, and numeric build identity. `SOURCE_DATE_EPOCH` fixes the guest's compilation date and time across recovery runs. Each actual archived app must match the release version, build number, SDK platform, shared guest ELF load segments, and guest hash. The flow compares archived guest identities across all selected targets. A recovery build with a different toolchain or guest fails that comparison.
+
+The `macos` platform is the native AppKit app (`port/macos`) on the same App Store Connect record as iOS (universal purchase). It has no tester build, benchmark upload or extended virtual addressing: its probe and archive require `HALO_NATIVE_MAC` with routes disabled and no tester definition, and its evidence records benchmark upload off whatever the policy sets for the other platforms. The archive names the tester feed channel itself, runs in the App Sandbox, and must embed the same guest as the other targets. Export writes one installer package signed with the Mac Installer Distribution certificate, which the release checks before upload.
 
 The existing packaging implementation uses manual signing with the supplied profile. When benchmark uploads are enabled, validation checks the CloudKit service, exact container, and production APS environment in both the signed archive and exported IPA. Export disables Xcode's automatic version/build-number management and sets `testFlightInternalTestingOnly`. Upload uses the existing App Store Connect API key. Archives, exported IPAs, dSYMs, signing material, and game data are not attached to the GitHub release. The actual archived bundle identifier selects the existing App Store Connect app; the script does not assume an app ID.
 

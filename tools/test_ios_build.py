@@ -451,3 +451,26 @@ def test_every_apple_app_declares_exempt_encryption(name):
     values = plistlib.loads((ios_build.ROOT / 'port/ios' / name).read_bytes())
     assert values.get('ITSAppUsesNonExemptEncryption') is False
     assert 'ITSEncryptionExportComplianceCode' not in values
+
+
+def test_native_mac_downloads_the_stable_feeds_by_default(monkeypatch, tmp_path):
+    configure = configure_with(monkeypatch, tmp_path, '--native-mac')
+    assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/stable/profiles' in configure
+    assert '-DHALO_SHADER_FEED_URL=https://code.steverice.org/visr/packs/stable/shaders.json' in configure
+    assert '-DHALO_DATA_PACK_CHANNEL_NAME=' in configure
+    assert '-DHALO_BUNDLE_IDENTIFIER=org.steverice.visr.native' in configure
+
+
+def test_native_mac_testflight_build_names_the_tester_channel_and_the_ios_record(monkeypatch, tmp_path):
+    configure = configure_with(monkeypatch, tmp_path, '--native-mac', '--team', 'TEAM', '--signing-profile', 'UUID',
+                               '--data-pack-channel', 'tester')
+    assert '-DHALO_DATA_PACK_CHANNEL_NAME=tester' in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/tester/profiles' in configure
+    assert '-DHALO_BUNDLE_IDENTIFIER=org.steverice.visr' in configure
+    assert '-DHALO_TESTER_BUILD=OFF' in configure
+
+
+def test_sandbox_is_only_for_the_native_mac(monkeypatch, tmp_path):
+    with pytest.raises(SystemExit):
+        configure_with(monkeypatch, tmp_path, '--unsigned', '--sandbox', 'on')
