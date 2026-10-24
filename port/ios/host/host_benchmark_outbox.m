@@ -8,14 +8,14 @@ static BOOL sync_file(NSString *path) {
     if(fd<0)return NO;
     int result=fsync(fd); close(fd); return result==0;
 }
-NSString *host_benchmark_outbox_store(NSString *folder, NSData *report, NSError **error) {
+NSString *host_typed_outbox_store(NSString *folder, NSData *report, NSString *prefix, HostOutboxValidator validate, NSError **error) {
     id parsed=report ? [NSJSONSerialization JSONObjectWithData:report options:0 error:error] : nil;
-    if(![parsed isKindOfClass:NSDictionary.class] || ![parsed[@"code"] isKindOfClass:NSString.class] ||
-        ![parsed[@"runs"] isKindOfClass:NSArray.class])return nil;
+    if(![parsed isKindOfClass:NSDictionary.class] || !validate || !validate(parsed) ||
+        ![@[@"benchmark", @"shader"] containsObject:prefix])return nil;
     if(![NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:error])return nil;
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(report.bytes,(CC_LONG)report.length,digest);
-    NSMutableString *name=[NSMutableString stringWithString:@"benchmark-"];
+    NSMutableString *name=[NSMutableString stringWithFormat:@"%@-",prefix];
     for(size_t i=0;i<sizeof(digest);i++)[name appendFormat:@"%02x",digest[i]];
     NSString *path=[folder stringByAppendingPathComponent:[name stringByAppendingPathExtension:@"json"]];
     if([NSFileManager.defaultManager fileExistsAtPath:path])
@@ -23,17 +23,23 @@ NSString *host_benchmark_outbox_store(NSString *folder, NSData *report, NSError 
     if(![report writeToFile:path options:NSDataWritingAtomic error:error] || !sync_file(path) || !sync_file(folder))return nil;
     return path;
 }
-NSArray<NSString *> *host_benchmark_outbox_pending(NSString *folder) {
+NSArray<NSString *> *host_typed_outbox_pending(NSString *folder, NSString *prefix) {
     NSMutableArray *pending=[NSMutableArray array];
     NSArray *names=[NSFileManager.defaultManager contentsOfDirectoryAtPath:folder error:nil];
     for(NSString *name in [names sortedArrayUsingSelector:@selector(compare:)]) {
         NSString *path=[folder stringByAppendingPathComponent:name];
-        if([name.pathExtension isEqual:@"json"] &&
+        if([name hasPrefix:[prefix stringByAppendingString:@"-"]] && [name.pathExtension isEqual:@"json"] &&
             ![NSFileManager.defaultManager fileExistsAtPath:[path stringByAppendingPathExtension:@"sent"]])
             [pending addObject:path];
     }
     return pending;
 }
+NSString *host_benchmark_outbox_store(NSString *folder, NSData *report, NSError **error) {
+    return host_typed_outbox_store(folder,report,@"benchmark",^BOOL(NSDictionary *value) {
+        return [value[@"code"] isKindOfClass:NSString.class] && [value[@"runs"] isKindOfClass:NSArray.class];
+    },error);
+}
+NSArray<NSString *> *host_benchmark_outbox_pending(NSString *folder) { return host_typed_outbox_pending(folder,@"benchmark"); }
 BOOL host_benchmark_outbox_acknowledge(NSString *path, NSError **error) {
     NSString *receipt=[path stringByAppendingPathExtension:@"sent"];
     NSData *data=[@"CloudKit confirmed this immutable report.\n" dataUsingEncoding:NSUTF8StringEncoding];
