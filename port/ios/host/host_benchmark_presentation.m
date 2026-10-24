@@ -188,7 +188,7 @@ NSDictionary *host_benchmark_presentation_finish(double timeout) {
         @"stalls_50ms": @(s->stalls), @"unknown_gaps": @(s->unknown_gaps), @"unknown_stalls_50ms": @(s->unknown_stalls),
         @"callback_coverage": @(s->callback_coverage), @"positive_coverage": @(s->positive_coverage),
         @"interval_ms": s->intervals ? @{ @"mean": number(s->interval.mean), @"median": number(s->interval.median),
-            @"p95": number(s->interval.high), @"p99": number(s->interval.higher), @"max": number(s->interval.worst) } : NSNull.null,
+            @"p90": number(s->interval.p90), @"p95": number(s->interval.high), @"p99": number(s->interval.higher), @"max": number(s->interval.worst) } : NSNull.null,
         @"display_synchronized": sync < 0 ? NSNull.null : @(sync != 0),
         @"allows_tearing": tear < 0 ? NSNull.null : @(tear != 0), @"policy_changed": @(policy != 0),
         @"interpretation": @"drawable_timestamps_not_whole_refresh_images", @"trace": trace };
@@ -224,12 +224,12 @@ NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictiona
     NSMutableDictionary *result = [record mutableCopy];
     /* offscreen_uncapped: frames drawn as fast as the device goes, never shown (debug.benchmark_offscreen) */
     result[@"timing_basis"] = @(host_benchmark_timing_basis(offscreen));
-    result[@"measurement_semantics_version"] = presentation ? @2 : @1;
+    result[@"measurement_semantics_version"] = presentation ? @3 : @1;
     result[@"measurement_semantics"] = @{ @"interval_ms": @"submission_timing", @"frame_interval": @"submission_timing", @"frames_a_second": @"submission_throughput",
         @"shown_refreshes": @"inferred_refresh_bins_from_submission_intervals", @"on_time_full": @"inferred_from_submission_intervals", @"on_time_half": @"inferred_from_submission_intervals",
         @"cpu_ms": @"cpu_duration", @"gpu_ms": @"gpu_duration", @"simulation_cpu_ms": @"simulation_cpu_duration",
         @"render_cpu_ms": @"render_cpu_duration", @"translation_cpu_ms": @"translation_cpu_duration",
-        @"ticks_per_frame": @"simulation_ticks_per_frame", @"decision_basis": @"submission_timing" };
+        @"ticks_per_frame": @"simulation_ticks_per_frame", @"percentiles": @"nearest_rank_measured_samples", @"decision_basis": @"submission_timing" };
     result[@"presentation"] = presentation ?: @{ @"supported": NSNull.null, @"capability": @"unknown",
         @"status": @"unavailable_recovered_run" };
     return result;
@@ -237,7 +237,7 @@ NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictiona
 
 NSString *host_benchmark_submission_summary(NSDictionary *record) {
     BOOL cutscene = [record[@"kind"] isEqual:@"cutscene"];
-    return [NSString stringWithFormat:@"%@: %.0f submissions a second, %.0f%% of submission intervals in rounded bins of %@ inferred refresh%@\n",
-        record[@"scene"], [record[@"frames_a_second"] doubleValue],
+    return [NSString stringWithFormat:@"%@: %.0f submissions a second, submission interval p90 %@ ms, %.0f%% of submission intervals in rounded bins of %@ inferred refresh%@\n",
+        record[@"scene"], [record[@"frames_a_second"] doubleValue], record[@"interval_ms"][@"p90"] ?: @"unavailable",
         100.0 * [record[cutscene ? @"on_time_half" : @"on_time_full"] doubleValue], cutscene ? @"1 or 2" : @"1", cutscene ? @"es" : @""];
 }

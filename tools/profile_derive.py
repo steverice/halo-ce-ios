@@ -8,13 +8,13 @@
 prints a proposal in the device-profiles format (profiles/TEMPLATE.toml), each value with the measurement
 behind it. It never writes into profiles/ and never commits: a person reviews the proposal.
 
-The targets: 60 frames a second or better in play and in the menu, 30 in cutscenes. A run holds a target when
-its 99th percentile frame interval is within the target's frame time plus 5%, its CPU time at the 95th percentile
-is under 85% of it, and at least 300 MB stayed free before the system's memory limit. GPU time is shown and not
-judged. A gameplay
-profile that only holds 30 is never proposed: when nothing holds 60 the proposal says so and is marked
-"below target". On a display that refreshes at 100 Hz or more, the proposal still aims for 60 and adds a line on
-whether 120 is within reach.
+The targets: 60 frames a second or better in play and in the menu, 30 in cutscenes. The profile resolution
+is the highest tried with p90 frame time within the frame budget after warm-up. Dynamic resolution, when it
+exists, covers the rest. A frame-rate target still requires 99.5% on-time frames and CPU p95 within 85% of the
+budget. Both checks require at least 300 MB free before the memory limit. GPU time is shown and not judged.
+A gameplay profile that only holds 30 is never proposed: when nothing holds 60 the proposal says so and is
+marked "below target". On a display that refreshes at 100 Hz or more, the proposal still aims for 60 and adds
+a line on whether the display's highest rate is within reach.
 
 `from-runs` builds a report from result folders of one-launch runs (step-tools/device-run.py with
 debug.gpu_stats), whose logs carry a summary every 600 frames and no per-frame times, so that measurements made
@@ -25,6 +25,7 @@ import argparse
 import base64
 import gzip
 import json
+import math
 import re
 import struct
 import sys
@@ -59,25 +60,75 @@ def frame_times(run, name):
     return [value / 10.0 for value in struct.unpack(f"<{len(data) // 2}H", data)]
 
 
-def holds(run, frames_a_second):
-    """whether a run holds a target, and the reason it does not"""
-    if run.get("status") != "ok":
-        return False, f"ended {run.get('status')}"
+def percentile(run, summary, rank, series=None):
+    """A measured summary value, or nearest rank from an older report's actual frame samples."""
+    value = (run.get(summary) or {}).get(f"p{rank}")
+    if value is not None:
+        return value
+    values = sorted(frame_times(run, series)) if series else []
+    return values[math.ceil(rank / 100.0 * len(values)) - 1] if values else None
+
+
+def frame_budget(run, frames_a_second):
     hertz = run.get("refresh_hertz") or 0.0
     if hertz <= 0:
+        return None
+    ratio = hertz / frames_a_second
+    refreshes = round(ratio)
+    # Nominal 60/120 Hz includes 59.94/119.88 Hz; fractional ratios must not enlarge the budget.
+    if refreshes >= 1 and math.isclose(ratio, refreshes, rel_tol=0.002):
+        return 1000.0 * refreshes / hertz
+    return 1000.0 / min(hertz, frames_a_second)
+
+
+def holds(run, frames_a_second):
+    """Whether the resolution holds its budget at p90 in the measured window after warm-up."""
+    if run.get("status") != "ok":
+        return False, f"ended {run.get('status')}"
+    period = frame_budget(run, frames_a_second)
+    if period is None:
         return False, "no refresh rate"
-    refreshes = max(1, round(hertz / frames_a_second))
-    period = 1000.0 * refreshes / hertz
-    if run["interval_ms"]["p99"] > period * 1.05:
-        return False, f"99th percentile frame {run['interval_ms']['p99']:.1f} ms over {period * 1.05:.1f}"
-    # the GPU time is reported and not judged: on an Apple TV HD it read far over a frame's time for frames that
-    # were all shown on time, so it spans more than one frame's own work there (port/runtime/benchmark_plan.c)
-    if run["cpu_ms"]["p95"] > period * 0.85:
-        return False, f"CPU 95th percentile {run['cpu_ms']['p95']:.1f} ms over {period * 0.85:.1f}"
+    p90 = percentile(run, "interval_ms", 90, "frame_interval")
+    if p90 is None:
+        return False, "measured frame p90 unavailable"
+    # Submission samples are stored in tenths of a millisecond; compare at that same precision.
+    if round(p90, 1) > round(period, 1):
+        return False, f"90th percentile frame {p90:.1f} ms over {period:.1f}"
+    # GPU time can span more than one frame on pipelined Metal; it is diagnostic only.
     left = run.get("memory_mb", {}).get("left_least", -1)
     if 0 <= left < MEMORY_FLOOR:
         return False, f"only {left} MB left before the memory limit"
     return True, ""
+
+
+def holds_frame_rate(run, frames_a_second):
+    """The frame-rate target keeps the stricter on-time and CPU-headroom requirements."""
+    good, why = holds(run, frames_a_second)
+    if not good:
+        return good, why
+    period = frame_budget(run, frames_a_second)
+    hertz = run["refresh_hertz"]
+    if hertz < frames_a_second and not math.isclose(hertz, frames_a_second, rel_tol=0.002):
+        return False, f"display refresh {hertz:.2f} Hz is below the {frames_a_second:.0f} fps target"
+    ratio = hertz / frames_a_second
+    refreshes = round(ratio)
+    # The stored shares describe whole refresh bins, not a fractional target interval.
+    name = {1: "on_time_full", 2: "on_time_half"}.get(refreshes)
+    share = run.get(name) if name and math.isclose(ratio, refreshes, rel_tol=0.002) else None
+    if share is None:
+        intervals = frame_times(run, "frame_interval")
+        if intervals:
+            share = sum(round(value, 1) <= round(period, 1) for value in intervals) / len(intervals)
+    if share is None or share < 0.995:
+        return False, "fewer than 99.5% of frames on time" if share is not None else "on-time share unavailable"
+    if run["cpu_ms"]["p95"] > period * 0.85:
+        return False, f"CPU 95th percentile {run['cpu_ms']['p95']:.1f} ms over {period * 0.85:.1f}"
+    return True, ""
+
+
+def p90_text(run, summary="interval_ms", series="frame_interval"):
+    value = percentile(run, summary, 90, series)
+    return f"{value:.1f}" if value is not None else "unavailable"
 
 
 def settings_key(run):
@@ -91,7 +142,7 @@ def describe(run):
     if run.get("status") != "ok" or "interval_ms" not in run:
         return f"{run['scene']} ended {run.get('status')}"
     return (f"{run['scene']} {run['frames_a_second']:.0f} fps, {100 * run['on_time_full']:.0f}% of frames on time, "
-            f"frame 99th {run['interval_ms']['p99']:.1f} ms, CPU {run['cpu_ms']['p95']:.1f} and GPU {run['gpu_ms']['p95']:.1f} ms "
+            f"frame p90 {p90_text(run)} ms, frame 99th {run['interval_ms']['p99']:.1f} ms, CPU {run['cpu_ms']['p95']:.1f} and GPU {run['gpu_ms']['p95']:.1f} ms "
             f"at the 95th percentile")
 
 
@@ -132,7 +183,7 @@ def choose_play(runs):
         return tuple(best), "provisional", evidence, notes
     # nothing holds 60: say so, and name the cheapest settings tried, never a 30 target
     key = min(by_key)
-    worst = max(by_key[key], key=lambda run: run.get("interval_ms", {}).get("p99", 0.0))
+    worst = max(by_key[key], key=lambda run: percentile(run, "interval_ms", 90, "frame_interval") or 0.0)
     notes.append(f"NO SETTINGS TRIED HOLD {PLAY_TARGET:.0f} FRAMES A SECOND IN PLAY ON THIS DEVICE. The cheapest tried "
                  f"({key[0]} lines, {key[1]}x filtering, {key[2]} shadows, model detail {'max' if key[3] else 'auto'}) "
                  f"gives: {describe(worst)}.")
@@ -143,6 +194,24 @@ def choose_play(runs):
     else:
         notes.append("These are the lowest sensible settings. This device needs a decision by a person, not a profile value.")
     return key, "below target", by_key[key], notes
+
+
+def qualify_play_rate(runs, ceiling):
+    """Qualify the target independently, using a complete tried configuration at or below the p90 ceiling."""
+    play = [run for run in runs if run["kind"] == "gameplay"]
+    scenes = {run["scene"] for run in play if run["stage"] in "AE"} or {run["scene"] for run in play}
+    by_key = {}
+    for run in play:
+        key = settings_key(run)
+        if key[0] <= ceiling[0] and key[1:] == ceiling[1:]:
+            by_key.setdefault(key, []).append(run)
+    good = [key for key, group in by_key.items() if {run["scene"] for run in group} >= scenes
+            and all(holds_frame_rate(run, PLAY_TARGET)[0] for run in group)]
+    if good:
+        return max(good), ""
+    reasons = sorted({why for group in by_key.values() for run in group
+                      if not (result := holds_frame_rate(run, PLAY_TARGET))[0] for why in [result[1]]})
+    return None, "; ".join(reasons) or "no complete configuration measured every gameplay scene"
 
 
 def choose_scene(runs, kind, target):
@@ -179,6 +248,20 @@ def derive(reports):
     runs = usable_runs(reports)
     key, status, evidence, play_notes = choose_play(runs)
     notes += play_notes
+    resolution_holds = status == "provisional"
+    rate_key = None
+    if key is not None and resolution_holds:
+        rate_key, why_rate = qualify_play_rate(runs, key)
+        if rate_key is None:
+            status = "below target"
+            notes.append(f"The {PLAY_TARGET:.0f} fps target is unqualified at every complete configuration tried at or below "
+                         f"the p90 ceiling with the selected settings: {why_rate}. The p90 ceiling is retained.")
+        else:
+            notes.append(f"The {PLAY_TARGET:.0f} fps target qualifies at {rate_key[0]} lines: at least 99.5% of frames "
+                         "on time and CPU p95 within 85% of the budget in every gameplay window.")
+        if not all(holds_frame_rate(run, PLAY_TARGET)[0] for run in evidence):
+            notes.append(f"The {key[0]}-line p90 ceiling does not qualify the fixed-resolution frame-rate target. "
+                         "Dynamic resolution, when available, needs validation at this ceiling before relying on it.")
     codes = ", ".join(sorted({report["code"] for report in reports}))
     source = f"device benchmark report {codes}"
     lines = [f"# Proposed by tools/profile_derive.py from {source}. Review before copying into profiles/.", "",
@@ -198,7 +281,11 @@ def derive(reports):
     play_lines, anisotropy, shadow, lod = key
     height = max(value for value in (play_lines, menu_lines, cutscene_lines) if value)
     why = "; ".join(describe(run) for run in sorted(evidence, key=lambda run: run["scene"])[:6])
-    if status == "below target":
+    if resolution_holds:
+        why = f"p90 within the {PLAY_TARGET:.0f} fps budget after warm-up. " + why
+        if rate_key is None:
+            why = "FRAME-RATE TARGET UNQUALIFIED: " + why
+    else:
         why = f"BELOW TARGET: no settings tried hold {PLAY_TARGET:.0f} fps. " + why
     lines += ["[display]", f"render_height = {height}", f"render_scale = {play_lines / drawable:.3f}".rstrip("0").rstrip("."),
               f"anisotropic_filtering = {anisotropy}", f"shadow_map_size = {shadow}",
@@ -209,39 +296,44 @@ def derive(reports):
                                ("display.model_lod", "max" if lod else "auto", 3)):
         tried = sorted({settings_key(run)[index] for run in runs if run["kind"] == "gameplay"})
         shown = ["max" if item else "auto" for item in tried] if index == 3 else tried
-        evidence_for(name, (f"{value} is the best value tried that held {PLAY_TARGET:.0f} fps in play" if status != "below target"
+        evidence_for(name, (f"{value} is the best value tried with p90 within the {PLAY_TARGET:.0f} fps budget in play" if resolution_holds
                             else f"{value}: the cheapest value tried; the target was not held")
                      + f" (tried: {', '.join(map(str, shown))}).")
     for scene, scene_lines, scene_runs, target in (("menu", menu_lines, menu_runs, PLAY_TARGET),
                                                    ("cutscene", cutscene_lines, cutscene_runs, CUTSCENE_TARGET)):
         if scene_lines is None:
             if scene_runs:
-                notes.append(f"No {scene} run held {target:.0f} fps: " + "; ".join(describe(run) for run in scene_runs[:3])
+                notes.append(f"No {scene} run had p90 within the {target:.0f} fps budget: " + "; ".join(describe(run) for run in scene_runs[:3])
                              + f". The {scene} keeps gameplay's size.")
             continue
+        if not all(holds_frame_rate(run, target)[0] for run in scene_runs):
+            reasons = sorted({why for run in scene_runs if not (result := holds_frame_rate(run, target))[0]
+                              for why in [result[1]]})
+            notes.append(f"The {scene} p90 ceiling is {scene_lines} lines; its {target:.0f} fps target is unqualified "
+                         f"at this fixed resolution: {'; '.join(reasons)}. Dynamic resolution needs validation.")
         if scene_lines == play_lines:
             continue
         lines += [f"[scene.{scene}.display]", f"render_scale = {scene_lines / drawable:.3f}".rstrip("0").rstrip("."), ""]
-        evidence_for(f"scene.{scene}.display.render_scale", f"{scene_lines} lines holds {target:.0f} fps: "
+        evidence_for(f"scene.{scene}.display.render_scale", f"{scene_lines} lines has p90 within the {target:.0f} fps budget: "
                      + "; ".join(describe(run) for run in scene_runs[:3]))
     hertz = max((run.get("refresh_hertz") or 0.0) for run in runs)
     if hertz >= FAST_REFRESH and status != "below target":
         at_choice = [run for run in runs if run["kind"] == "gameplay" and settings_key(run) == key]
-        if at_choice and all(holds(run, hertz)[0] for run in at_choice):
+        if at_choice and all(holds_frame_rate(run, hertz)[0] for run in at_choice):
             notes.append(f"120: the chosen settings also hold {hertz:.0f} fps on this display, so {hertz:.0f} can be the default.")
         else:
             lower = [run for run in runs if run["stage"] == "F"]
-            reach = "; one size lower: " + "; ".join(f"{describe(run)} ({'holds' if holds(run, hertz)[0] else 'does not hold'} "
+            reach = "; one size lower: " + "; ".join(f"{describe(run)} ({'holds' if holds_frame_rate(run, hertz)[0] else 'does not hold'} "
                                                      f"{hertz:.0f})" for run in lower) if lower else ""
-            notes.append(f"120: the chosen settings hold {PLAY_TARGET:.0f} but not {hertz:.0f} fps on this display{reach}. "
+            notes.append(f"120: the chosen settings fit the {PLAY_TARGET:.0f} fps budget at p90 but do not qualify {hertz:.0f} fps on this display{reach}. "
                          f"{hertz:.0f} is an option, not the default.")
     return "\n".join(lines + evidence_tables), notes
 
 
 def run_table(reports):
     """every run as a Markdown table, for the reviewer"""
-    rows = ["| Report | Run | Stage | Scene | Lines | Filtering | Shadows | Detail | Status | fps | On time | Frame p99 | CPU p95 | "
-            "GPU p95 | Hz | Memory left | Heat | Holds |", "|" + "---|" * 18]
+    rows = ["| Report | Run | Stage | Scene | Lines | Filtering | Shadows | Detail | Status | fps | On time | Frame p90 | Frame p99 | CPU p90 | CPU p95 | "
+            "GPU p90 | GPU p95 | Hz | Memory left | Heat | Resolution holds | Rate holds |", "|" + "---|" * 22]
     for report in reports:
         for run in report["runs"]:
             settings = run["settings"]
@@ -252,10 +344,12 @@ def run_table(reports):
                 report["code"], run["index"], run["stage"], run["scene"], settings["render_lines"],
                 settings["anisotropic_filtering"], settings["shadow_map_size"], settings["model_lod"], run["status"],
                 f"{run['frames_a_second']:.1f}" if measured else "", f"{100 * run['on_time_full']:.0f}%" if measured else "",
-                f"{run['interval_ms']['p99']:.1f}" if measured else "", f"{run['cpu_ms']['p95']:.1f}" if measured else "",
-                f"{run['gpu_ms']['p95']:.1f}" if measured else "", f"{run['refresh_hertz']:.1f}" if measured else "",
+                p90_text(run) if measured else "", f"{run['interval_ms']['p99']:.1f}" if measured else "",
+                p90_text(run, "cpu_ms", "frame_cpu") if measured else "", f"{run['cpu_ms']['p95']:.1f}" if measured else "",
+                p90_text(run, "gpu_ms", "frame_gpu") if measured else "", f"{run['gpu_ms']['p95']:.1f}" if measured else "", f"{run['refresh_hertz']:.1f}" if measured else "",
                 run.get("memory_mb", {}).get("left_least", ""), THERMAL.get(run.get("thermal", {}).get("worst"), ""),
-                f"{target:.0f}: yes" if good else f"{target:.0f}: no ({why})")) + " |")
+                f"{target:.0f}: yes" if good else f"{target:.0f}: no ({why})",
+                "yes" if holds_frame_rate(run, target)[0] else "no")) + " |")
     return "\n".join(rows) + "\n"
 
 
@@ -311,10 +405,10 @@ def folder_run(folder, index, default_lines):
     def spread(median_column, high_column):
         medians = sorted(float(window[median_column]) for window in windows)
         return {"mean": sum(medians) / len(medians), "median": medians[len(medians) // 2],
-                "p95": max(float(window[high_column]) for window in windows), "p99": 0.0, "worst": 0.0}
+                "p90": None, "p95": max(float(window[high_column]) for window in windows), "p99": 0.0, "worst": 0.0}
 
     return dict(run, status="ok", frames=frames, seconds=seconds, frames_a_second=frames / seconds, refresh_hertz=hertz,
-                interval_ms={"mean": 1000.0 * seconds / frames, "median": 0.0, "p95": 0.0, "p99": 1000.0 * p99 / hertz, "worst": 0.0},
+                interval_ms={"mean": 1000.0 * seconds / frames, "median": 0.0, "p90": None, "p95": 0.0, "p99": 1000.0 * p99 / hertz, "worst": 0.0},
                 cpu_ms=spread(6, 8), gpu_ms=spread(7, 9), shown_refreshes=shown, on_time_full=shown[0] / frames,
                 on_time_half=(shown[0] + shown[1]) / frames,
                 memory_mb={"footprint_first": foot[0] if foot else -1, "footprint_last": foot[-1] if foot else -1,

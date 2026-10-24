@@ -45,6 +45,19 @@ static void distribution(void) {
     CHECK(NEAR(p.records[2].milliseconds, 70) && NEAR(p.records[4].milliseconds, 40));
     benchmark_presentation_free(&p);
 }
+static void p90_rank(void) {
+    struct benchmark_presentation p = {0};
+    CHECK(benchmark_presentation_reset(&p, 1, 31)); CHECK(benchmark_presentation_open(&p, 1));
+    double time = 1.0;
+    for (size_t i = 0; i <= 30; i++) {
+        time += i / 1000.0;
+        struct benchmark_presentation_token t = reserve(&p); ACCEPT(&p, t, time);
+    }
+    const struct benchmark_presentation_summary *s = benchmark_presentation_seal(&p, 0);
+    CHECK(s->intervals == 30 && NEAR(s->interval.p90, 27));
+    CHECK(NEAR(s->interval.high, 29) && NEAR(s->interval.higher, 30));
+    benchmark_presentation_free(&p);
+}
 static void gaps_and_order(void) {
     struct benchmark_presentation p = {0};
     CHECK(benchmark_presentation_reset(&p,2,16)); CHECK(benchmark_presentation_open(&p,1));
@@ -169,7 +182,7 @@ static void submission_is_not_presentation(void) {
     benchmark_presentation_free(&p);
 }
 int main(void) {
-    reordered(); distribution(); gaps_and_order(); segments_and_reuse(); bounded(); long_uncapped_run(); finite_clock_extremes(); submission_is_not_presentation();
+    reordered(); distribution(); p90_rank(); gaps_and_order(); segments_and_reuse(); bounded(); long_uncapped_run(); finite_clock_extremes(); submission_is_not_presentation();
     printf("benchmark presentation: %d checks, %d failures\n",checks,failures);
     return failures ? 1 : 0;
 }

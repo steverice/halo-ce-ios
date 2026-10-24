@@ -147,6 +147,7 @@ static void distribution(uint16_t *sorted, size_t count, struct benchmark_distri
     for (index = 0; index < count; index++) total += sorted[index];
     out->mean = total / (double)count / 10.0;
     out->median = sorted[(count - 1) / 2] / 10.0;
+    out->p90 = sorted[(size_t)ceil(0.90 * (double)count) - 1] / 10.0;
     out->high = sorted[(size_t)ceil(0.95 * (double)count) - 1] / 10.0;
     out->higher = sorted[(size_t)ceil(0.99 * (double)count) - 1] / 10.0;
     out->worst = sorted[count - 1] / 10.0;
@@ -242,8 +243,8 @@ static void append(struct text *text, const char *format, ...) {
 }
 
 static void append_distribution(struct text *text, const char *name, const struct benchmark_distribution *d) {
-    append(text, "\"%s\":{\"mean\":%.2f,\"median\":%.1f,\"p95\":%.1f,\"p99\":%.1f,\"worst\":%.1f},", name, d->mean, d->median,
-        d->high, d->higher, d->worst);
+    append(text, "\"%s\":{\"mean\":%.2f,\"median\":%.1f,\"p90\":%.1f,\"p95\":%.1f,\"p99\":%.1f,\"worst\":%.1f},", name, d->mean, d->median,
+        d->p90, d->high, d->higher, d->worst);
 }
 
 static void append_frames(struct text *text, const char *name, const uint16_t *values, size_t count) {

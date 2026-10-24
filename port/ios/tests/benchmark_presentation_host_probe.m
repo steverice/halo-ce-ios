@@ -39,6 +39,7 @@ static void *tests(void *unused) { (void)unused; @autoreleasepool {
     CHECK([r[@"expected"] intValue]==3 && [r[@"received"] intValue]==3);
     CHECK([r[@"interval_count"] intValue]==1);
     CHECK([trace(r) count]==3);
+    CHECK(fabs([r[@"interval_ms"][@"p90"] doubleValue]-20.0)<1e-7);
     CHECK(token(5,0).generation==0); /* end closes admission */
     host_benchmark_presentation_complete(a,50); /* immutable after finalization */
     CHECK([r[@"received"] intValue]==3);
@@ -78,7 +79,8 @@ static void *tests(void *unused) { (void)unused; @autoreleasepool {
     NSData *json=[NSJSONSerialization dataWithJSONObject:mixed options:0 error:NULL];
     NSArray *read=[NSJSONSerialization JSONObjectWithData:json options:0 error:NULL];
     CHECK(read[0][@"measurement_semantics_version"]==nil);
-    CHECK([read[1][@"measurement_semantics_version"] intValue]==2 && read[1][@"presentation"]!=nil);
+    CHECK([read[1][@"measurement_semantics_version"] intValue]==3 && read[1][@"presentation"]!=nil);
+    CHECK([read[1][@"measurement_semantics"][@"percentiles"] isEqual:@"nearest_rank_measured_samples"]);
     CHECK([read[1][@"measurement_semantics"][@"decision_basis"] isEqual:@"submission_timing"]);
     CHECK([read[1][@"measurement_semantics"][@"simulation_cpu_ms"] isEqual:@"simulation_cpu_duration"]);
     CHECK([read[1][@"measurement_semantics"][@"render_cpu_ms"] isEqual:@"render_cpu_duration"]);
@@ -126,8 +128,8 @@ int main(void) { @autoreleasepool {
     NSArray *kinds = @[ @"gameplay", @"cutscene" ];
     NSArray *names = @[ @"24ms", @"40ms" ];
     NSArray *expected = @[
-        @"24ms: 42 submissions a second, 100% of submission intervals in rounded bins of 1 inferred refresh\n",
-        @"40ms: 25 submissions a second, 100% of submission intervals in rounded bins of 1 or 2 inferred refreshes\n" ];
+        @"24ms: 42 submissions a second, submission interval p90 24 ms, 100% of submission intervals in rounded bins of 1 inferred refresh\n",
+        @"40ms: 25 submissions a second, submission interval p90 40 ms, 100% of submission intervals in rounded bins of 1 or 2 inferred refreshes\n" ];
     for (int i=0; i<2; i++) {
         struct benchmark_metrics metrics = { 0 };
         benchmark_metrics_reset(&metrics,60);

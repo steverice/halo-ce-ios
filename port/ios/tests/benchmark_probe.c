@@ -36,6 +36,8 @@ static void test_metrics(void) {
     CHECK(summary.shown[1] == 90 && summary.shown[2] == 8 && summary.shown[3] == 1 && summary.shown[5] == 1);
     CHECK(NEAR(summary.on_time_full, 0.90, 1e-9) && NEAR(summary.on_time_half, 0.98, 1e-9));
     CHECK(NEAR(summary.interval.median, 16.7, 0.05));
+    CHECK(NEAR(summary.interval.p90, 16.7, 0.05));
+    CHECK(NEAR(summary.cpu.p90, 5.0, 0.05) && NEAR(summary.gpu.p90, 8.0, 0.05));
     CHECK(NEAR(summary.interval.high, 33.3, 0.05));      /* the 95th of 100 is the 95th value */
     CHECK(NEAR(summary.interval.higher, 50.0, 0.05));    /* the 99th */
     CHECK(NEAR(summary.interval.worst, 120.0, 0.05));
@@ -132,7 +134,7 @@ static void test_metrics_split(void) {
     CHECK(NEAR(summary.translation_cpu.mean, 3.0, 1e-9) && NEAR(summary.translation_cpu.worst, 3.0, 1e-9));
     json = benchmark_metrics_json(&metrics);
     CHECK(json && strstr(json, "\"cpu_ms\":{\"mean\":11.00,"));
-    CHECK(json && strstr(json, "\"simulation_cpu_ms\":{\"mean\":4.00,\"median\":4.0,\"p95\":4.0,\"p99\":4.0,\"worst\":4.0}"));
+    CHECK(json && strstr(json, "\"simulation_cpu_ms\":{\"mean\":4.00,\"median\":4.0,\"p90\":4.0,\"p95\":4.0,\"p99\":4.0,\"worst\":4.0}"));
     CHECK(json && strstr(json, "\"render_cpu_ms\":{\"mean\":6.00,"));
     CHECK(json && strstr(json, "\"ticks_per_frame\":1.50"));
     CHECK(json && strstr(json, "\"translation_cpu_ms\":{\"mean\":3.00,"));

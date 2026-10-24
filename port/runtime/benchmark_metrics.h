@@ -49,7 +49,7 @@ struct benchmark_metrics {
     double compile_milliseconds, compile_longest;
 };
 
-struct benchmark_distribution { double mean, median, high, higher, worst; };   /* high = 95th, higher = 99th */
+struct benchmark_distribution { double mean, median, p90, high, higher, worst; };   /* high = 95th, higher = 99th */
 
 struct benchmark_summary {
     size_t frames;

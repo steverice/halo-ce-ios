@@ -46,6 +46,7 @@
 #define FOLDER "benchmark"
 #define JOURNAL FOLDER "/journal.txt"
 #define REPORT FOLDER "/report.json"
+/* Additive timing fields are versioned by measurement_semantics_version; retain format-1 readers. */
 #define REPORT_FORMAT 1
 /* seconds on a still screen between runs, so one run's heat does not land on the next; and after a run that throttled */
 #define PAUSE_SECONDS 15.0
@@ -1813,9 +1814,9 @@ static BOOL finish_run(NSDictionary *presentation) {
     benchmark_journal_end(JOURNAL, run.index, &outcome);
     run_open = 0;
     if (outcome_count < BENCHMARK_RUNS_MAXIMUM) outcomes[outcome_count++] = outcome;
-    host_logf(HOST_LOG_INFO, "benchmark: run %d %s: %zu submissions, %.1f a second, submission interval 99th %.1f ms, CPU 95th %.1f, GPU 95th %.1f, "
+    host_logf(HOST_LOG_INFO, "benchmark: run %d %s: %zu submissions, %.1f a second, submission interval 90th %.1f ms, 99th %.1f ms, CPU 95th %.1f, GPU 95th %.1f, "
         "at %.1f Hz, %dx%d, least memory left %ld MB", run.index, benchmark_status_name(outcome.status), summary.frames,
-        summary.frames_a_second, outcome.interval_p99, outcome.cpu_p95, outcome.gpu_p95, outcome.refresh_hertz, window_width,
+        summary.frames_a_second, summary.interval.p90, outcome.interval_p99, outcome.cpu_p95, outcome.gpu_p95, outcome.refresh_hertz, window_width,
         window_height, outcome.left_least);
     host_logf(HOST_LOG_INFO, "benchmark: run %d offered %lu submissions; %lu had no drawable and %lu no picture", run.index,
         pending_offered, pending_no_drawable, pending_no_picture);

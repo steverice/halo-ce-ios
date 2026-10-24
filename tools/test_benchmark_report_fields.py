@@ -17,7 +17,9 @@ int main(int argc, char **argv) {
     struct benchmark_metrics metrics = { 0 };
     benchmark_metrics_reset(&metrics, 60.0);
     for (int index = 0; index < 30; index++) {
-        if (argc > 1) benchmark_metrics_frame(&metrics, 16.7, 11.0, 8.0);
+        if (argc > 2) benchmark_metrics_frame_split(&metrics, index + 1, index + 1, index + 1,
+            index + 1, index + 1, index + 1, 1);
+        else if (argc > 1) benchmark_metrics_frame(&metrics, 16.7, 11.0, 8.0);
         else benchmark_metrics_frame_split(&metrics, 16.7, 11.0, 8.0, 4.0 + index % 3, 6.0, 3.0, 1 + index % 2);
     }
     char *members = benchmark_metrics_json(&metrics);
@@ -43,8 +45,8 @@ def measurements(tmp_path: Path, *arguments: str) -> dict:
 
 def test_split_fields(tmp_path):
     record = measurements(tmp_path)
-    for name in ("cpu_ms", "simulation_cpu_ms", "render_cpu_ms", "translation_cpu_ms"):
-        assert set(record[name]) == {"mean", "median", "p95", "p99", "worst"}
+    for name in ("interval_ms", "gpu_ms", "cpu_ms", "simulation_cpu_ms", "render_cpu_ms", "translation_cpu_ms"):
+        assert set(record[name]) == {"mean", "median", "p90", "p95", "p99", "worst"}
     assert record["simulation_cpu_ms"]["mean"] == pytest.approx(5.0)
     assert record["simulation_cpu_ms"]["worst"] == pytest.approx(6.0)
     assert record["render_cpu_ms"]["mean"] == pytest.approx(6.0)
@@ -77,3 +79,11 @@ def test_translation_timed_at_device_entry_points():
         start = device.index(f" {name}(")
         body = device[device.index("{", start):device.index("{", start) + 200]
         assert "TRANSLATION_TIMED();" in body, name
+
+
+def test_p90_uses_nearest_rank_for_every_timing(tmp_path):
+    record = measurements(tmp_path, "ramp", "ramp")
+    for name in ("interval_ms", "cpu_ms", "gpu_ms", "simulation_cpu_ms", "render_cpu_ms", "translation_cpu_ms"):
+        assert record[name]["p90"] == 27.0
+        assert record[name]["p95"] == 29.0
+        assert record[name]["p99"] == 30.0

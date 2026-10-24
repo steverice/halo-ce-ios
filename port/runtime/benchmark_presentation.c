@@ -167,6 +167,7 @@ const struct benchmark_presentation_summary *benchmark_presentation_seal(struct 
         qsort(p->sort_buffer, count, sizeof(*p->sort_buffer), compare_double);
         s->interval.mean = mean;
         s->interval.median = p->sort_buffer[(size_t)ceil(count * 0.5) - 1];
+        s->interval.p90 = p->sort_buffer[(size_t)ceil(count * 0.90) - 1];
         s->interval.high = p->sort_buffer[(size_t)ceil(count * 0.95) - 1];
         s->interval.higher = p->sort_buffer[(size_t)ceil(count * 0.99) - 1];
         s->interval.worst = p->sort_buffer[count - 1];

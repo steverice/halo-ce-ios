@@ -18,9 +18,9 @@ def run(index, stage, scene, kind, lines, *, gpu, cpu=6.0, hertz=59.94, status="
             "recording": None, "note": "", "status": status, "render_size": [lines * 16 // 9, lines],
             "settings": {"render_lines": lines, "anisotropic_filtering": anisotropy, "shadow_map_size": shadow, "model_lod": lod},
             "frames": 3600, "seconds": 3600 * interval / 1000.0, "frames_a_second": 1000.0 / interval, "refresh_hertz": hertz,
-            "interval_ms": {"mean": interval, "median": interval, "p95": interval, "p99": interval, "worst": interval},
-            "cpu_ms": {"mean": cpu, "median": cpu, "p95": cpu, "p99": cpu, "worst": cpu},
-            "gpu_ms": {"mean": gpu, "median": gpu, "p95": gpu, "p99": gpu, "worst": gpu},
+            "interval_ms": {"mean": interval, "median": interval, "p90": interval, "p95": interval, "p99": interval, "worst": interval},
+            "cpu_ms": {"mean": cpu, "median": cpu, "p90": cpu, "p95": cpu, "p99": cpu, "worst": cpu},
+            "gpu_ms": {"mean": gpu, "median": gpu, "p90": gpu, "p95": gpu, "p99": gpu, "worst": gpu},
             "shown_refreshes": [3600, 0, 0, 0, 0], "on_time_full": 1.0 if interval <= period * 1.05 else 0.0, "on_time_half": 1.0,
             "memory_mb": {"footprint_first": 500, "footprint_last": 520, "footprint_peak": 600, "left_least": left},
             "thermal": {"first": 0, "worst": 0, "last": 0, "changes": [], "change_count": 0}}
@@ -167,3 +167,82 @@ def test_a_report_from_run_logs(tmp_path):
     assert abs(one["interval_ms"]["p99"] - 2000.0 / 59.9) < 1e-6
     proposal, notes = profile_derive.derive([built])
     assert 'status = "below target"' in proposal
+
+
+def test_resolution_uses_p90_but_frame_rate_keeps_995_percent_rule():
+    low = run(0, "A", "a10-crew", "gameplay", 720, gpu=8.0)
+    high = run(1, "A", "a10-crew", "gameplay", 1080, gpu=8.0)
+    high["interval_ms"].update(p90=16.7, p95=33.3, p99=50.0)
+    high["on_time_full"] = 0.90
+    assert profile_derive.choose_play([low, high])[0][0] == 1080
+    assert not profile_derive.holds_frame_rate(high, 60.0)[0]
+    high["on_time_full"] = 0.995
+    assert profile_derive.holds_frame_rate(high, 60.0)[0]
+    high["on_time_full"] = 0.9949
+    assert not profile_derive.holds_frame_rate(high, 60.0)[0]
+    high["interval_ms"]["p90"] = 16.8
+    assert profile_derive.choose_play([low, high])[0][0] == 720
+
+
+def test_missing_p90_is_measured_from_series_or_left_unknown():
+    one = run(0, "A", "a10-crew", "gameplay", 1080, gpu=8.0)
+    del one["interval_ms"]["p90"]
+    assert not profile_derive.holds(one, 60.0)[0]
+    assert "unavailable" in profile_derive.holds(one, 60.0)[1]
+    assert "Frame p90" in profile_derive.run_table([report([one])])
+    one["frame_interval"] = base64.b64encode(struct.pack("<10H", *([167] * 9 + [500]))).decode()
+    assert profile_derive.holds(one, 60.0)[0]
+
+
+def test_cutscene_rate_uses_two_refresh_on_time_share():
+    one = run(0, "A", "opening", "cutscene", 1080, gpu=20.0)
+    one["on_time_full"] = 0.0
+    one["on_time_half"] = 0.995
+    assert profile_derive.holds_frame_rate(one, 30.0)[0]
+    one["cpu_ms"]["p95"] = 30.0
+    assert not profile_derive.holds_frame_rate(one, 30.0)[0]
+
+
+def test_cpu_limit_does_not_lower_p90_ceiling_but_leaves_rate_unqualified():
+    one = run(0, "A", "a10-crew", "gameplay", 1080, gpu=8.0, cpu=16.0)
+    one["interval_ms"].update(p90=16.7, p95=16.7, p99=16.7)
+    one["on_time_full"] = 1.0
+    proposal, notes = profile_derive.derive([report([one])])
+    assert "render_scale = 0.5" in proposal
+    assert 'status = "below target"' in proposal
+    assert any("CPU" in note and "qualif" in note for note in notes)
+    assert "p90 within the 60 fps budget" in proposal
+
+
+def test_lower_resolution_qualifies_rate_without_lowering_p90_ceiling():
+    low = run(0, "A", "a10-crew", "gameplay", 720, gpu=8.0)
+    high = run(1, "A", "a10-crew", "gameplay", 1080, gpu=8.0)
+    high["interval_ms"].update(p90=16.7, p95=33.3, p99=50.0)
+    high["on_time_full"] = 0.9
+    proposal, notes = profile_derive.derive([report([low, high])])
+    assert "render_scale = 0.5" in proposal
+    assert 'status = "provisional"' in proposal
+    assert any("720" in note and "99.5%" in note for note in notes)
+    assert any("dynamic resolution" in note.lower() and "validation" in note for note in notes)
+    assert "p90 within the 60 fps budget" in proposal
+
+
+def test_fractional_refresh_ratio_does_not_relax_frame_budget():
+    one = run(0, "A", "crew", "gameplay", 1080, gpu=8.0, hertz=90.0)
+    one["interval_ms"]["p90"] = 22.2
+    assert not profile_derive.holds(one, 60.0)[0]
+    one["interval_ms"]["p90"] = 16.7
+    assert profile_derive.holds(one, 60.0)[0]
+    assert not profile_derive.holds_frame_rate(one, 60.0)[0]  # refresh bins cannot measure this target's share
+    one["frame_interval"] = base64.b64encode(struct.pack("<200H", *([167] * 199 + [222]))).decode()
+    assert profile_derive.holds_frame_rate(one, 60.0)[0]
+    one["frame_interval"] = base64.b64encode(struct.pack("<200H", *([167] * 198 + [222] * 2))).decode()
+    assert not profile_derive.holds_frame_rate(one, 60.0)[0]
+
+
+def test_slow_display_does_not_qualify_higher_frame_rate():
+    one = run(0, "A", "crew", "gameplay", 1080, gpu=8.0, hertz=50.0)
+    assert profile_derive.holds(one, 60.0)[0]  # resolution can fit the display's own budget
+    assert not profile_derive.holds_frame_rate(one, 60.0)[0]
+    one = run(0, "A", "crew", "gameplay", 1080, gpu=8.0, hertz=59.94)
+    assert profile_derive.holds_frame_rate(one, 60.0)[0]
