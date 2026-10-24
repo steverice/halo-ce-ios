@@ -139,3 +139,100 @@ def test_device_image_before_a_section_fails_instead_of_moving():
     source = SOURCE.replace('## Apple Vision Pro', '![Gameplay](a30.png){device=iphone}\n\n## Apple Vision Pro', 1)
     with pytest.raises(ValueError, match='section'):
         render_site(source)
+
+
+def test_shared_features_expand_from_facts():
+    from tools.build_site import expand_includes, load_facts
+    facts = load_facts()
+    source = '{{ features: iphone-and-ipad }}'
+    expanded = expand_includes(source, facts)
+    assert '- Full controller support' in expanded
+    assert 'iOS 16+, iPhone 8 or newer' in expanded
+    assert '{{' not in expanded
+    facts['platforms']['iphone-and-ipad']['bullets'][1] = 'Changed controller support'
+    assert 'Changed controller support' in expand_includes(source, facts)
+
+
+def test_cloud_save_exceptions_and_build_condition_are_rendered():
+    from tools.build_site import expand_includes, load_facts
+    facts = load_facts()
+    text = expand_includes('{{ shared: every-device }}', facts)
+    assert 'Your saves and player profiles sync across your devices through iCloud.' in text
+    assert 'builds made with cloud saves' in text
+    assert 'Mac coming soon' in text
+    assert 'iPhone, iPad and Apple TV' in text
+    assert 'VISR is tailored to each Apple device, so it just works.' in text
+    facts['cloud_saves']['exceptions'] = []
+    assert 'coming soon' not in expand_includes('{{ shared: every-device }}', facts)
+
+
+def test_deployment_versions_follow_build_script_without_importing_it():
+    from tools.build_site import deployment_versions
+    assert deployment_versions("system,deployment={'ios':('iOS','18.5'),'tvos':('tvOS','19.0'),'visionos':('visionOS','3.0')}[platform_name]", "x = '-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0'") == {
+        'ios': '18.5', 'tvos': '19.0', 'visionos': '3.0', 'macos': '15.0'}
+
+
+def test_unknown_include_fails_build():
+    from tools.build_site import expand_includes, load_facts
+    with pytest.raises(ValueError, match='Unknown'):
+        expand_includes('{{ features: typo }}', load_facts())
+
+
+def test_readme_generation_preserves_unmarked_prose():
+    from tools.build_site import render_readme, load_facts
+    source = 'Personal introduction.\n\n<!-- generated: features: apple-tv -->\nOld text\n<!-- end generated -->\n\nPersonal closing.\n'
+    result = render_readme(source, load_facts())
+    assert result.startswith('Personal introduction.\n\n')
+    assert result.endswith('\n\nPersonal closing.\n')
+    assert '- Full controller support\n' in result
+    assert 'Old text' not in result
+    assert render_readme(result, load_facts()) == result
+
+
+def test_check_detects_both_stale_outputs_without_writing(tmp_path):
+    from tools.build_site import write_outputs
+    readme = tmp_path / 'README.md'
+    page = tmp_path / 'index.html'
+    readme.write_text('stale README')
+    page.write_text('stale site')
+    assert write_outputs({readme: 'new README', page: 'new site'}, check=True) == 1
+    assert readme.read_text() == 'stale README'
+    assert page.read_text() == 'stale site'
+    assert write_outputs({readme: 'new README', page: 'new site'}, check=False) == 0
+    assert write_outputs({readme: 'new README', page: 'new site'}, check=True) == 0
+
+
+def test_committed_readme_matches_facts():
+    from tools.build_site import render_readme, load_facts
+    source = (ROOT / 'README.md').read_text(encoding='utf-8')
+    assert source == render_readme(source, load_facts()), 'Run python3 tools/build_site.py'
+
+
+def test_footer_uses_shared_disc_notice_and_apple_attribution():
+    page = render_site(SOURCE)
+    assert 'Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc.' in page
+    assert 'You need a disc image of the original Xbox game' in page
+    assert 'Apache-2.0</a>' in page
+
+
+def test_readme_rejects_unbalanced_generated_markers():
+    from tools.build_site import render_readme, load_facts
+    with pytest.raises(ValueError, match='markers'):
+        render_readme('<!-- generated: features: apple-tv -->\nEdited text', load_facts())
+
+
+def test_feature_requirement_keeps_minor_deployment_version(tmp_path, monkeypatch):
+    import tools.build_site as builder
+    facts = builder.load_facts()
+    (tmp_path / 'tools').mkdir()
+    build = (builder.ROOT / 'tools/ios_build.py').read_text(encoding='utf-8')
+    build = build.replace("'ios':('iOS','16.0')", "'ios':('iOS','18.5')")
+    (tmp_path / 'tools/ios_build.py').write_text(build, encoding='utf-8')
+    (tmp_path / 'tools/macos_build.py').write_text((builder.ROOT / 'tools/macos_build.py').read_text(encoding='utf-8'), encoding='utf-8')
+    monkeypatch.setattr(builder, 'ROOT', tmp_path)
+    assert 'iOS 18.5+' in builder.expand_includes('{{ features: iphone-and-ipad }}', facts)
+
+
+def test_native_mac_minimum_comes_from_appkit_build_not_catalyst():
+    from tools.build_site import load_facts
+    assert load_facts()['platforms']['mac']['minimum_os'] == '14.0'

@@ -11,12 +11,24 @@ The goal is to provide the best possible way to experience Halo while staying
 faithful to the original game. VISR builds on my love of the game and the many
 thousands of hours I have spent playing it.
 
+<!-- generated: shared: disc -->
 VISR ships no game data. You need a disc image of the original Xbox game, made
-from your own disc. VISR is an unofficial fan project, not affiliated with or
+from your own disc.
+<!-- end generated -->
+
+VISR is an unofficial fan project, not affiliated with or
 endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
+
+## On every device
+
+<!-- generated: shared: every-device -->
+- Your saves and player profiles sync across your devices through iCloud. Available on iPhone, iPad and Apple TV builds made with cloud saves. Mac coming soon.
+- VISR is tailored to each Apple device, so it just works.
+<!-- end generated -->
 
 ## VR
 
+<!-- generated: copy: readme-vr -->
 - Full stereo VR with head tracking, through Compositor Services
 - Foveated rendering through the Compositor's rate maps
 - The HUD in CE's own corners, out in the periphery, following the body's turn
@@ -32,12 +44,36 @@ Settings live in `config.toml` in the VISR folder in Files.
 [ROADMAP.md](ROADMAP.md) names the setting behind each feature, and
 [port/ios/README.md](port/ios/README.md) describes the display and renderer
 settings.
+<!-- end generated -->
 
 ## Other Apple Platforms
 
+<!-- generated: copy: readme-other -->
 The same app will also build and run on iPhone, iPad, Apple TV and the Mac.
 While builds on these platforms may be tested, they are not an official target
 and may have issues.
+<!-- end generated -->
+
+## iPhone and iPad
+
+<!-- generated: features: iphone-and-ipad -->
+- Built-in touch controls for an on-the-go experience
+- Full controller support
+- Play on a connected TV or monitor
+- iOS 16+, iPhone 8 or newer
+<!-- end generated -->
+
+## Apple TV
+
+<!-- generated: features: apple-tv -->
+- Full controller support
+<!-- end generated -->
+
+## Mac
+
+<!-- generated: features: mac -->
+- Native AppKit app
+<!-- end generated -->
 
 ## Get the app
 
@@ -171,6 +207,7 @@ own copy of the game.
 
 ## Legal
 
+<!-- generated: copy: readme-legal -->
 Halo, Halo: Combat Evolved, Master Chief and the related names and logos are
 trademarks of Microsoft Corporation. Halo: Combat Evolved © Microsoft
 Corporation. VISR is an unofficial fan project. It is not affiliated with,
@@ -180,3 +217,8 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
 VISR does not include or distribute the game's maps, sounds, textures, videos
 or other content, and it does not help you obtain them. VISR is free and is not
 sold.
+<!-- end generated -->
+
+<!-- generated: shared: apple-trademarks -->
+Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc.
+<!-- end generated -->

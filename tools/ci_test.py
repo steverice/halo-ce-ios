@@ -51,6 +51,7 @@ def main() -> None:
         args.junit.parent.mkdir(parents=True, exist_ok=True)
         options.append(f"--junitxml={args.junit}")
     run(sys.executable, "-m", "pytest", *options, *tests)
+    run(sys.executable, "tools/build_site.py", "--check")
     run(sys.executable, "tools/settings_schema.py", "--check")
     run(sys.executable, "tools/profile_check.py")
     run(sys.executable, "tools/profile_catalog_check.py")

@@ -1,0 +1,96 @@
+# Shared public facts. Run python3 tools/build_site.py after editing.
+# Existing audience-specific disagreements are preserved under copy pending review.
+
+[cloud_saves]
+summary = "Your saves and player profiles sync across your devices through iCloud."
+platforms = ["iPhone", "iPad", "Apple TV"]
+condition = "builds made with cloud saves"
+exceptions = ["Mac"]
+synced = [
+    "player profiles (including controls)",
+    "finished levels",
+    "the Save and Quit checkpoint",
+    "custom game types",
+]
+excluded = ["config.toml settings"]
+
+[shared]
+tailored = "VISR is tailored to each Apple device, so it just works."
+disc = "VISR ships no game data. You need a disc image of the original Xbox game, made\nfrom your own disc."
+apple_trademarks = "Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc."
+
+[platforms.vision-pro]
+name = "Apple Vision Pro"
+deployment = "visionos"
+devices = ["M2 Vision Pro", "M5 Vision Pro"]
+bullets = [
+    "Full stereo VR with head tracking and foveated rendering",
+    "Gameplay elements reimagined for a first-class VR experience",
+    "Full support for PlayStation VR2 Sense controllers",
+    "Supports both M2 and M5 Vision Pro",
+]
+
+[platforms.iphone-and-ipad]
+name = "iPhone and iPad"
+deployment = "ios"
+devices = ["iPhone 8 or newer", "iPad"]
+bullets = [
+    "Built-in touch controls for an on-the-go experience",
+    "Full controller support",
+    "Play on a connected TV or monitor",
+    "iOS {ios_minimum}+, iPhone 8 or newer",
+]
+
+[platforms.apple-tv]
+name = "Apple TV"
+deployment = "tvos"
+devices = ["Apple TV"]
+bullets = [
+    "Full controller support",
+]
+
+[platforms.mac]
+name = "Mac"
+deployment = "macos"
+devices = ["Mac"]
+bullets = [
+    "Native AppKit app",
+]
+
+[copy]
+readme-vr = '''
+- Full stereo VR with head tracking, through Compositor Services
+- Foveated rendering through the Compositor's rate maps
+- The HUD in CE's own corners, out in the periphery, following the body's turn
+  rather than the head
+- Scope zoom fills the view
+- Third-person cutscenes on a 3D screen in the room
+- (Coming Soon) Support for gun / aim control with PSVR2 controllers
+
+VISR also plays in 2D, in a window or on a virtual screen in the room (theater
+mode). A game controller is required.
+
+Settings live in `config.toml` in the VISR folder in Files.
+[ROADMAP.md](ROADMAP.md) names the setting behind each feature, and
+[port/ios/README.md](port/ios/README.md) describes the display and renderer
+settings.'''
+
+readme-other = '''
+The same app will also build and run on iPhone, iPad, Apple TV and the Mac.
+While builds on these platforms may be tested, they are not an official target
+and may have issues.'''
+
+readme-legal = '''
+Halo, Halo: Combat Evolved, Master Chief and the related names and logos are
+trademarks of Microsoft Corporation. Halo: Combat Evolved © Microsoft
+Corporation. VISR is an unofficial fan project. It is not affiliated with,
+sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
+(formerly 343 Industries) or Bungie.
+
+VISR does not include or distribute the game's maps, sounds, textures, videos
+or other content, and it does not help you obtain them. VISR is free and is not
+sold.'''
+
+site-legal = '''
+VISR is an unofficial fan project, not affiliated with, sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios or Bungie. Halo and Halo: Combat Evolved are trademarks of Microsoft Corporation. VISR contains no game assets and does not help you obtain them. It builds on the Halo: CE decompilation, [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and the other projects in its [credits](https://github.com/steverice/visr#credits). The code is licensed under [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE). It includes code that originated in CC0 1.0 projects, credited in the [notices](https://github.com/steverice/visr/blob/main/NOTICE.md).'''
+

@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Render the Markdown landing page with the site's existing layout."""
+"""Regenerate the site and marked README blocks from shared public facts."""
 
 from __future__ import annotations
 
+import argparse
+import ast
 from html import escape
 from pathlib import Path
 import re
 import struct
 from string import Template
+import tomllib
 
 from markdown_it import MarkdownIt
 import yaml
@@ -18,6 +21,86 @@ DEFAULTS = {
     "description": "A native port of Halo: Combat Evolved to Apple Vision Pro: full stereo VR with head tracking and foveated rendering. Bring your own Xbox disc.",
     "og_title": "VISR: Halo: Combat Evolved on Apple Vision Pro",
 }
+
+
+def deployment_versions(source: str, mac_source: str | None = None) -> dict[str, str]:
+    """Read literal build targets without importing the build script's dependencies."""
+    tree = ast.parse(source)
+    versions = {}
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Tuple)
+                        and [getattr(item, "id", None) for item in target.elts] == ["system", "deployment"]
+                        for target in node.targets)
+                and isinstance(node.value, ast.Subscript)):
+            targets = ast.literal_eval(node.value.value)
+            versions.update({key: value[1] for key, value in targets.items()})
+    # ios_build.py's --mac target is Catalyst; the native AppKit app has its own target.
+    if mac_source is None:
+        mac_source = (ROOT / "tools/macos_build.py").read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(mac_source)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            match = re.fullmatch(r"-DCMAKE_OSX_DEPLOYMENT_TARGET=(\d+(?:\.\d+)*)", node.value)
+            if match:
+                versions["macos"] = match[1]
+    if set(versions) != {"ios", "tvos", "visionos", "macos"}:
+        raise ValueError("Cannot read deployment targets from tools/ios_build.py")
+    return versions
+
+
+def load_facts() -> dict:
+    facts = tomllib.loads((ROOT / "docs/features.toml").read_text(encoding="utf-8"))
+    versions = deployment_versions((ROOT / "tools/ios_build.py").read_text(encoding="utf-8"))
+    for platform in facts["platforms"].values():
+        platform["minimum_os"] = versions[platform["deployment"]]
+    return facts
+
+
+def fact_block(kind: str, name: str, facts: dict) -> str:
+    if kind == "features" and name in facts["platforms"]:
+        versions = deployment_versions((ROOT / "tools/ios_build.py").read_text(encoding="utf-8"))
+        values = {"ios_minimum": versions["ios"].removesuffix(".0")}
+        return "\n".join("- " + bullet.format(**values) for bullet in facts["platforms"][name]["bullets"])
+    if kind == "shared" and name == "every-device":
+        cloud = facts["cloud_saves"]
+        platforms = cloud["platforms"]
+        supported = ", ".join(platforms[:-1]) + " and " + platforms[-1] if len(platforms) > 1 else platforms[0]
+        condition = f"Available on {supported} {cloud['condition']}."
+        exceptions = " ".join(f"{platform} coming soon." for platform in cloud["exceptions"])
+        return (f"- {cloud['summary']} {condition} {exceptions}".rstrip()
+                + f"\n- {facts['shared']['tailored']}")
+    if kind == "shared":
+        key = name.replace("-", "_")
+        if key in facts["shared"]:
+            return facts["shared"][key]
+    if kind == "copy" and name in facts["copy"]:
+        return facts["copy"][name]
+    raise ValueError(f"Unknown facts block: {kind}: {name}")
+
+
+def expand_includes(source: str, facts: dict) -> str:
+    return re.sub(r"\{\{\s*([\w-]+):\s*([\w-]+)\s*\}\}",
+                  lambda match: fact_block(*match.groups(), facts), source)
+
+
+def render_readme(source: str, facts: dict) -> str:
+    if source.count("<!-- generated:") != source.count("<!-- end generated -->"):
+        raise ValueError("Unbalanced generated README markers")
+    pattern = r"(<!-- generated: ([\w-]+): ([\w-]+) -->)\n.*?\n?(<!-- end generated -->)"
+    return re.sub(pattern, lambda match: (match[1] + "\n" + fact_block(match[2], match[3], facts)
+                                          + "\n" + match[4]), source, flags=re.S)
+
+
+def write_outputs(outputs: dict[Path, str], *, check: bool) -> int:
+    stale = [path for path, expected in outputs.items()
+             if not path.is_file() or path.read_text(encoding="utf-8") != expected]
+    if check:
+        for path in stale:
+            print(f"Stale generated file: {path.name}; run python3 tools/build_site.py")
+        return int(bool(stale))
+    for path in stale:
+        path.write_text(outputs[path], encoding="utf-8")
+    return 0
 
 
 def front_matter(source: str) -> tuple[dict[str, str], str]:
@@ -60,7 +143,9 @@ def image_size(path: Path) -> tuple[int, int]:
 
 
 def render_site(source: str, template: str | None = None, *, asset_root: Path | None = None) -> str:
+    facts = load_facts()
     metadata, source = front_matter(source)
+    source = expand_includes(source, facts)
     asset_root = (asset_root or ROOT / "docs/site").resolve()
     md = MarkdownIt("commonmark", {"html": False})
     tokens = md.parse(source)
@@ -189,13 +274,23 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
     return Template(template).substitute(
         **{key: escape(value, quote=True) for key, value in metadata.items()},
         content="\n".join(output),
+        legal=md.render(facts["copy"]["site-legal"] + "\n\n"
+                        + facts["shared"]["disc"].replace("\n", " ") + "\n\n"
+                        + facts["shared"]["apple_trademarks"]).rstrip(),
     )
 
 
-def main() -> None:
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true", help="report stale generated files without writing")
+    args = parser.parse_args()
     source = (ROOT / "docs/site/index.md").read_text(encoding="utf-8")
-    (ROOT / "docs/site/index.html").write_text(render_site(source), encoding="utf-8")
+    readme = ROOT / "README.md"
+    return write_outputs({
+        ROOT / "docs/site/index.html": render_site(source),
+        readme: render_readme(readme.read_text(encoding="utf-8"), load_facts()),
+    }, check=args.check)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

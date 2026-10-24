@@ -14,21 +14,19 @@ The goal is to provide the best possible ways to experience Halo while staying f
 
 [Vision Pro](#apple-vision-pro) • [iPhone](#iphone-and-ipad) • [iPad](#iphone-and-ipad) • [AppleTV](#apple-tv) • [Mac](#mac) • [GitHub](https://github.com/steverice/visr)
 
+## On every device
+
+{{ shared: every-device }}
+
 ## Apple Vision Pro
 
-- Full stereo VR with head tracking and foveated rendering
-- Gameplay elements reimagined for a first-class VR experience
-- Full support for PlayStation VR2 Sense controllers
-- Supports both M2 and M5 Vision Pro
+{{ features: vision-pro }}
 
 ![Halo on Vision Pro](./a30.png)
 
 ## iPhone and iPad
 
-- Built-in touch controls for an on-the-go experience
-- Full controller support
-- Play on a connected TV or monitor
-- iOS 16+, iPhone 8 or newer
+{{ features: iphone-and-ipad }}
 
 ![Halo on iPhone with touch controls during the Silent Cartographer beach battle](./iphone.jpg){device=iphone}
 
@@ -36,12 +34,12 @@ The goal is to provide the best possible ways to experience Halo while staying f
 
 ## Apple TV
 
-- Full controller support
+{{ features: apple-tv }}
 
 ![Halo on Apple TV during the Silent Cartographer beach battle](./apple-tv.jpg){device=tv}
 
 ## Mac
 
-- Native AppKit app
+{{ features: mac }}
 
 ![Halo on Mac during the Silent Cartographer beach battle](./mac.jpg){device=mac}

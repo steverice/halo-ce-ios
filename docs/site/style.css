@@ -150,9 +150,9 @@ section > p > img { display: block; width: 100%; border-radius: 16px; }
 
 @media (min-width: 900px) {
   .platform-layout { grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.5fr); gap: 64px; }
-  section:nth-of-type(3) .platform-layout { grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.8fr); }
-  section:nth-of-type(3) .platform-copy { grid-column: 2; grid-row: 1; }
-  section:nth-of-type(3) .platform-media { grid-column: 1; grid-row: 1; }
+  section[aria-labelledby="apple-tv"] .platform-layout { grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.8fr); }
+  section[aria-labelledby="apple-tv"] .platform-copy { grid-column: 2; grid-row: 1; }
+  section[aria-labelledby="apple-tv"] .platform-media { grid-column: 1; grid-row: 1; }
   section { padding-top: 44px; margin-top: 60px; }
   section > h2 { margin-bottom: 24px; }
 }
