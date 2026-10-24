@@ -1,6 +1,6 @@
 # Privacy manifests
 
-VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+Builds made with shader uploads enabled automatically send missing shader descriptions and device model information to improve loading. Builds from source do not send these reports unless built with `--shader-upload`. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier.
 
 The app bundle carries one `PrivacyInfo.xcprivacy`, chosen by upload capability:
 
