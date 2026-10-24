@@ -9,6 +9,7 @@ NSData *host_shader_update_list(const char *name);
 NSDictionary *host_data_updates_metadata(void);
 /* These calls only read or publish immutable memory snapshots; disk and feeds run in the background. */
 void host_data_updates_menu_start(void);
+/* profileFinished waits for the fresh check even when cached data already makes Benchmark ready. */
 NSDictionary *host_data_updates_menu_state(void);
 void host_data_updates_menu_finish(void);
 #endif

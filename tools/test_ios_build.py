@@ -13,7 +13,7 @@ def test_ipad_multitasking_declares_all_distribution_required_orientations():
 
     info = plistlib.loads((ios_build.ROOT / 'port/ios/Info.plist').read_bytes())
     landscape = {'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'}
-    assert set(info['UISupportedInterfaceOrientations']) == landscape
+    assert set(info['UISupportedInterfaceOrientations']) == landscape | {'UIInterfaceOrientationPortrait'}
     if not info.get('UIRequiresFullScreen', False):
         ipad = info.get('UISupportedInterfaceOrientations~ipad', info['UISupportedInterfaceOrientations'])
         assert set(ipad) >= landscape | {

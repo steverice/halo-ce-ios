@@ -267,6 +267,7 @@ static void publishMenuState(void)
         BOOL failed = menuInitialized && ((!profileReady && !profileLoading) || (!recordingReady && !recordingLoading));
         BOOL loading = !ready && !failed && (!menuInitialized || profileLoading || recordingLoading);
         menuState = @{@"ready": @(ready), @"loading": @(loading),
+            @"profileFinished": @(menuInitialized && !profileLoading),
             @"reason": ready || loading ? @"" : !profileReady && !profileLoading ? @"Can't reach the profile server" : @"Benchmark recordings are unavailable"};
     }
 }

@@ -3,7 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+static BOOL probe_reduce_motion;
+#define UIAccessibilityIsReduceMotionEnabled() probe_reduce_motion
 #import "../host/host_benchmark_menu.m"
+#undef UIAccessibilityIsReduceMotionEnabled
 
 static NSDictionary *feed_state;
 static int menu_starts;
@@ -77,6 +80,10 @@ static void refresh(HaloBenchmarkMenuController *controller) {
         UIActivityIndicatorView *spinner = [controller valueForKey:@"benchmarkSpinner"];
         check(spinner.isAnimating, "Pending download shows a spinner");
         check((benchmark.accessibilityTraits & UIAccessibilityTraitNotEnabled) != 0, "VoiceOver announces unavailable Benchmark");
+        check(controller.splashVisible && controller.menuContent.alpha == 0, "Splash hides menu content");
+        [controller pressesBegan:[NSSet set] withEvent:nil];
+        [controller pressesEnded:[NSSet set] withEvent:nil];
+        check(controller.chosen == -1 && !controller.splashVisible, "First input skips splash without choosing Play");
         check([controller.preferredFocusEnvironments.firstObject isEqual:play], "Initial focus lands on Play");
         [controller pressed:benchmark];
         check(controller.chosen == -1, "Controller activation cannot select pending Benchmark");
@@ -122,6 +129,7 @@ static void refresh(HaloBenchmarkMenuController *controller) {
                 HaloBenchmarkMenuController *menu = visible_menu();
                 if (!menu || !atomic_load(&sender_started)) return;
                 check(menu.playButton.enabled, "Play remains usable while iCloud delivery waits");
+                if (menu.splashVisible) { [menu pressed:menu.playButton]; return; }
                 pressedWhileSending = YES;
                 [menu pressed:menu.playButton];
                 [timer invalidate];
@@ -136,6 +144,27 @@ static void refresh(HaloBenchmarkMenuController *controller) {
                 refresh(controller);
             } while (![controller.detailLabel.text containsString:@"Pending upload retried"] && CFAbsoluteTimeGetCurrent() < until);
             check([controller.detailLabel.text containsString:@"Pending upload retried"], "Delivery status repaints after background completion");
+            feed_state = @{ @"ready": @NO, @"loading": @YES, @"reason": @"" };
+            HaloBenchmarkMenuController *(^fresh)(void) = ^{
+                HaloBenchmarkMenuController *menu = [HaloBenchmarkMenuController new];
+                menu.launchMenu = YES; menu.heading = @"VISR"; menu.choices = @[@"Play", @"Benchmark"];
+                [menu loadViewIfNeeded];
+                return menu;
+            };
+            HaloBenchmarkMenuController *early = fresh();
+            check(early.splashVisible, "A cached-ready profile does not skip the fresh-download wait");
+            feed_state = @{ @"ready": @NO, @"loading": @YES, @"profileFinished": @YES, @"reason": @"" };
+            probe_reduce_motion = YES;
+            [early refreshBenchmark];
+            check(!early.splashVisible && !early.benchmarkButton.enabled, "Profile completion ends splash before recordings finish");
+            check(CGAffineTransformIsIdentity(early.brand.transform), "Reduce Motion uses a crossfade without translated branding");
+            probe_reduce_motion = NO;
+            feed_state = @{ @"ready": @YES, @"loading": @NO, @"profileFinished": @NO, @"reason": @"" };
+            HaloBenchmarkMenuController *timeout = fresh();
+            check(timeout.splashVisible, "Valid cached data still waits for a fresh profile");
+            CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 2.1;
+            while (CFAbsoluteTimeGetCurrent() < deadline) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
+            check(!timeout.splashVisible && timeout.chosen == -1, "Two-second timeout shows the menu without starting Play");
             puts("benchmark menu probe: passed");
             exit(0);
         }];

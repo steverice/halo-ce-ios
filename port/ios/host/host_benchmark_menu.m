@@ -3,6 +3,7 @@
    Remote's focus, a controller or a touch can press. Ordinary builds do not
    compile this in: there the benchmark is debug.benchmark_suite's alone. */
 #import <UIKit/UIKit.h>
+#import <CoreText/CoreText.h>
 #include "ios_host.h"
 #include "host_benchmark.h"
 #include "benchmark_plan.h"
@@ -20,7 +21,12 @@
 @property(nonatomic, strong) UIButton *playButton, *benchmarkButton;
 @property(nonatomic, strong) UILabel *detailLabel, *benchmarkStatus;
 @property(nonatomic, strong) UIActivityIndicatorView *benchmarkSpinner;
+@property(nonatomic, strong) UIStackView *brand, *menuContent, *buttons;
+@property(nonatomic, strong) UIControl *splashShield;
+@property(nonatomic) CFAbsoluteTime splashStarted;
+@property(nonatomic) BOOL splashVisible, skippingPress;
 - (void)refreshBenchmark;
+- (void)endSplash:(NSString *)reason;
 @end
 
 static NSString *delivery_status;
@@ -51,6 +57,11 @@ static void retry_pending_reports(void) {
 #endif
 }
 
+static UIColor *brandColor(unsigned rgb) {
+    return [UIColor colorWithRed:((rgb >> 16) & 255) / 255.0 green:((rgb >> 8) & 255) / 255.0
+        blue:(rgb & 255) / 255.0 alpha:1];
+}
+
 @implementation HaloBenchmarkMenuController
 - (void)viewDidLoad {
     UIStackView *stack = [UIStackView new];
@@ -59,37 +70,103 @@ static void retry_pending_reports(void) {
 
     [super viewDidLoad];
     self.chosen = -1;
-    self.view.backgroundColor = UIColor.blackColor;
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    self.view.backgroundColor = brandColor(0x081216);
+    self.splashStarted = CFAbsoluteTimeGetCurrent();
+    self.splashVisible = self.launchMenu;
     stack.axis = UILayoutConstraintAxisVertical;
     stack.alignment = UIStackViewAlignmentCenter;
     stack.spacing = 24;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:stack];
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:scroll];
+    [NSLayoutConstraint activateConstraints:@[
+        [scroll.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]]];
+    [scroll addSubview:stack];
+    if (self.launchMenu) {
+        NSURL *fontURL = [NSBundle.mainBundle URLForResource:@"Orbitron" withExtension:@"ttf"];
+        if (fontURL) CTFontManagerRegisterFontsForURL((__bridge CFURLRef)fontURL, kCTFontManagerScopeProcess, NULL);
+        self.brand = [UIStackView new];
+        self.brand.axis = UILayoutConstraintAxisVertical;
+        self.brand.alignment = UIStackViewAlignmentCenter;
+        self.brand.spacing = 16;
+        UIImageView *icon = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"VISRIcon"]];
+        icon.contentMode = UIViewContentModeScaleAspectFit;
+        icon.isAccessibilityElement = NO;
+        [self.brand addArrangedSubview:icon];
+        [icon.widthAnchor constraintEqualToConstant:104].active = YES;
+        [icon.heightAnchor constraintEqualToAnchor:icon.widthAnchor].active = YES;
+        [self.brand addArrangedSubview:title];
+        [stack addArrangedSubview:self.brand];
+    }
     title.text = self.heading;
+    title.numberOfLines = 0;
+    title.textAlignment = NSTextAlignmentCenter;
+    title.adjustsFontForContentSizeCategory = YES;
     title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle1];
-    title.textColor = UIColor.whiteColor;
-    [stack addArrangedSubview:title];
+    title.textColor = brandColor(0xe8f6fa);
+    if (self.launchMenu) {
+        UIFont *font = [UIFont fontWithName:@"Orbitron-Regular" size:36] ?: [UIFont systemFontOfSize:36];
+        title.attributedText = [[NSAttributedString alloc] initWithString:@"VISR"
+            attributes:@{NSFontAttributeName:font, NSKernAttributeName:@2.16}];
+        self.menuContent = [UIStackView new];
+        self.menuContent.axis = UILayoutConstraintAxisVertical;
+        self.menuContent.alignment = UIStackViewAlignmentCenter;
+        self.menuContent.spacing = 20;
+        self.menuContent.alpha = 0;
+        self.menuContent.accessibilityElementsHidden = YES;
+        [stack addArrangedSubview:self.menuContent];
+    } else [stack addArrangedSubview:title];
+    UIStackView *content = self.menuContent ?: stack;
     self.detailLabel = text;
     text.text = self.detail;
     text.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    text.textColor = UIColor.lightGrayColor;
+    text.textColor = brandColor(0x93adb6);
+    text.adjustsFontForContentSizeCategory = YES;
     text.numberOfLines = 0;
     text.textAlignment = NSTextAlignmentCenter;
-    [stack addArrangedSubview:text];
     UIStackView *buttons=[UIStackView new];
-    buttons.axis=UILayoutConstraintAxisHorizontal; buttons.spacing=36;
-    [stack addArrangedSubview:buttons];
+    self.buttons = buttons;
+    buttons.axis=UILayoutConstraintAxisVertical; buttons.spacing=16;
+    buttons.alignment = UIStackViewAlignmentFill;
+    [content addArrangedSubview:buttons];
     for (NSString *choice in self.choices) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
 
         [button setTitle:choice forState:UIControlStateNormal];
         button.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+        button.titleLabel.adjustsFontForContentSizeCategory = YES;
+        UIButtonConfiguration *configuration = index == 0 ? UIButtonConfiguration.filledButtonConfiguration : UIButtonConfiguration.borderedButtonConfiguration;
+        configuration.baseBackgroundColor = index == 0 ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
+        configuration.baseForegroundColor = index == 0 ? brandColor(0x081216) : brandColor(0xe8f6fa);
+        configuration.contentInsets = NSDirectionalEdgeInsetsMake(14, 32, 14, 32);
+        button.configuration = configuration;
+        button.configurationUpdateHandler = ^(UIButton *updated) {
+            UIButtonConfiguration *style = updated.configuration;
+            style.baseForegroundColor = !updated.enabled ? brandColor(0x93adb6) :
+                updated.focused ? brandColor(0x081216) : updated.tag == 0 ? brandColor(0x081216) : brandColor(0xe8f6fa);
+            style.baseBackgroundColor = updated.focused || updated.tag == 0 ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
+            UIColor *ink = style.baseForegroundColor;
+            UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline compatibleWithTraitCollection:updated.traitCollection];
+            style.titleTextAttributesTransformer = ^NSDictionary<NSAttributedStringKey,id> *(NSDictionary<NSAttributedStringKey,id> *attributes) {
+                NSMutableDictionary *result = attributes.mutableCopy;
+                result[NSForegroundColorAttributeName] = ink;
+                result[NSFontAttributeName] = font;
+                return result;
+            };
+            updated.configuration = style;
+        };
         button.tag = index++;
         if (button.tag == 0) self.playButton = button;
         if (self.launchMenu && button.tag == 1) self.benchmarkButton = button;
         [button addTarget:self action:@selector(pressed:) forControlEvents:UIControlEventPrimaryActionTriggered];
         [buttons addArrangedSubview:button];
     }
+    [content addArrangedSubview:text];
     if (self.launchMenu) {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(menuBecameActive:)
             name:UIApplicationDidBecomeActiveNotification object:nil];
@@ -98,25 +175,95 @@ static void retry_pending_reports(void) {
         status.alignment = UIStackViewAlignmentCenter;
         status.spacing = 10;
         self.benchmarkSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-        self.benchmarkSpinner.color = UIColor.whiteColor;
+        self.benchmarkSpinner.color = brandColor(0x93adb6);
         self.benchmarkSpinner.hidesWhenStopped = YES;
         self.benchmarkStatus = [UILabel new];
         self.benchmarkStatus.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
-        self.benchmarkStatus.textColor = UIColor.lightGrayColor;
+        self.benchmarkStatus.textColor = brandColor(0x93adb6);
+        self.benchmarkStatus.adjustsFontForContentSizeCategory = YES;
         self.benchmarkStatus.numberOfLines = 0;
         self.benchmarkStatus.textAlignment = NSTextAlignmentCenter;
         [status addArrangedSubview:self.benchmarkSpinner];
         [status addArrangedSubview:self.benchmarkStatus];
-        [stack addArrangedSubview:status];
+        [content addArrangedSubview:status];
         [self refreshBenchmark];
     }
     [NSLayoutConstraint activateConstraints:@[
-        [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
-        [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor multiplier:0.7]]];
+        [stack.centerXAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.centerYAnchor],
+        [stack.topAnchor constraintGreaterThanOrEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:24],
+        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-24],
+        [scroll.contentLayoutGuide.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.frameLayoutGuide.heightAnchor],
+        [scroll.contentLayoutGuide.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToConstant:480],
+        [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:24],
+        [stack.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-24]]];
+    NSLayoutConstraint *preferredHeight = [scroll.contentLayoutGuide.heightAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.heightAnchor];
+    preferredHeight.priority = UILayoutPriorityDefaultLow;
+    preferredHeight.active = YES;
+    if (self.splashVisible) {
+        self.splashShield = [UIControl new];
+        self.splashShield.accessibilityLabel = @"VISR. Show menu";
+        self.splashShield.isAccessibilityElement = YES;
+        self.splashShield.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        self.splashShield.frame = self.view.bounds;
+        [self.splashShield addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(skipSplash)]];
+        [self.splashShield addTarget:self action:@selector(skipSplash) forControlEvents:UIControlEventPrimaryActionTriggered];
+        [self.view addSubview:self.splashShield];
+        __weak HaloBenchmarkMenuController *weak = self;
+        [NSTimer scheduledTimerWithTimeInterval:2 repeats:NO block:^(NSTimer *timer) { [weak endSplash:@"timeout"]; }];
+    }
+}
+#if !TARGET_OS_TV && !TARGET_OS_VISION
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskAllButUpsideDown; }
+#endif
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    BOOL compact = self.view.bounds.size.height < 500 && self.view.bounds.size.width > self.view.bounds.size.height;
+    self.buttons.axis = compact ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    if (self.splashVisible) {
+        self.brand.transform = CGAffineTransformIdentity;
+        CGRect frame = [self.brand.superview convertRect:self.brand.frame toView:self.view];
+        self.brand.transform = CGAffineTransformMakeTranslation(0, CGRectGetMidY(self.view.bounds) - CGRectGetMidY(frame));
+    }
+}
+- (void)skipSplash { [self endSplash:@"input"]; }
+- (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if (self.splashVisible) { self.skippingPress = YES; [self skipSplash]; return; }
+    [super pressesBegan:presses withEvent:event];
+}
+- (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if (self.skippingPress) { self.skippingPress = NO; return; }
+    [super pressesEnded:presses withEvent:event];
+}
+- (void)pressesCancelled:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if (self.skippingPress) { self.skippingPress = NO; return; }
+    [super pressesCancelled:presses withEvent:event];
+}
+- (void)endSplash:(NSString *)reason {
+    if (!self.splashVisible) return;
+    self.splashVisible = NO;
+    host_logf(HOST_LOG_INFO, "splash ended: %s at %.1f s", reason.UTF8String, CFAbsoluteTimeGetCurrent() - self.splashStarted);
+    [self.splashShield removeFromSuperview];
+    self.menuContent.accessibilityElementsHidden = NO;
+    if (UIAccessibilityIsReduceMotionEnabled()) {
+        [UIView transitionWithView:self.view duration:0.35 options:UIViewAnimationOptionTransitionCrossDissolve animations:^{
+            self.brand.transform = CGAffineTransformIdentity;
+            self.menuContent.alpha = 1;
+        } completion:nil];
+    } else
+    [UIView animateWithDuration:0.35 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+        self.brand.transform = CGAffineTransformIdentity;
+        self.menuContent.alpha = 1;
+    } completion:nil];
+    [self setNeedsFocusUpdate];
+    UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, self.playButton);
 }
 - (NSArray<id<UIFocusEnvironment>> *)preferredFocusEnvironments {
-    return self.playButton ? @[ self.playButton ] : [super preferredFocusEnvironments];
+    return self.splashVisible && self.splashShield ? @[ self.splashShield ] : self.playButton ? @[ self.playButton ] : [super preferredFocusEnvironments];
 }
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
@@ -131,6 +278,7 @@ static void retry_pending_reports(void) {
 - (void)refreshBenchmark {
     if (!self.launchMenu) return;
     NSDictionary *state = host_data_updates_menu_state();
+    if ([state[@"profileFinished"] boolValue]) [self endSplash:@"download finished"];
     BOOL ready = [state[@"ready"] boolValue], loading = [state[@"loading"] boolValue];
     NSString *reason = state[@"reason"];
     BOOL wasEnabled = self.benchmarkButton.enabled;
@@ -146,6 +294,7 @@ static void retry_pending_reports(void) {
     if (wasEnabled && !ready) [self setNeedsFocusUpdate];
 }
 - (void)pressed:(UIButton *)button {
+    if (self.splashVisible) { [self skipSplash]; return; }
     /* Controller primary actions must honor the same gate as touch and focus. */
     if (self.launchMenu && button.tag == 1) [self refreshBenchmark];
     if (button.enabled) self.chosen = button.tag;
@@ -184,6 +333,11 @@ static NSInteger ask(NSString *heading, NSString *detail, NSArray<NSString *> *c
     chosen = controller.chosen;
     window.hidden = YES;
     window.rootViewController = nil;
+#if !TARGET_OS_TV && !TARGET_OS_VISION
+    if (@available(iOS 16.0, macCatalyst 16.0, *))
+        for (UIWindow *candidate in scene.windows)
+            if (!candidate.hidden) [candidate.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+#endif
     return chosen;
 }
 

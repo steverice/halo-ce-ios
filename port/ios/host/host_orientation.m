@@ -46,7 +46,11 @@ HALO_LANDSCAPE_PREFERENCES
 @implementation SDLUIKitSceneDelegate (HaloLandscape)
 /* iPadOS 27 consults the scene delegate in preference to Info.plist. */
 - (UIInterfaceOrientationMask)supportedInterfaceOrientationsForWindowScene:(UIWindowScene *)scene {
-    (void)scene;
+    /* Only the native launch menu supports portrait; gameplay keeps its landscape contract. */
+    Class menuClass = NSClassFromString(@"HaloBenchmarkMenuController");
+    if (menuClass) for (UIWindow *window in scene.windows)
+        if (!window.hidden && [window.rootViewController isKindOfClass:menuClass])
+            return UIInterfaceOrientationMaskAllButUpsideDown;
     return UIInterfaceOrientationMaskLandscape;
 }
 #if __IPHONE_OS_VERSION_MAX_ALLOWED >= 260000

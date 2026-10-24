@@ -337,6 +337,15 @@ else()
     target_sources(VISR PRIVATE "${HALO_SETTINGS_BUNDLE}")
     set_source_files_properties("${HALO_SETTINGS_BUNDLE}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
+if(NOT HALO_NATIVE_MAC)
+    if(HALO_TVOS)
+        set(HALO_LAUNCH_STORYBOARD LaunchScreen-tvOS.storyboard)
+    else()
+        set(HALO_LAUNCH_STORYBOARD LaunchScreen.storyboard)
+    endif()
+    target_sources(VISR PRIVATE ${HALO_LAUNCH_STORYBOARD})
+    set_source_files_properties(${HALO_LAUNCH_STORYBOARD} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+endif()
 set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon")
 # An archive (tools/ios_build.py --app-store-package) holds only what its targets install. CMake's targets skip the
 # install step, which leaves an archive with no app in it that no distribution method accepts; the app alone is
@@ -346,6 +355,12 @@ set_target_properties(VISR PROPERTIES XCODE_ATTRIBUTE_SKIP_INSTALL NO XCODE_ATTR
 # beside config.toml at each start, as upstream's Android app does
 target_sources(VISR PRIVATE "${ROOT}/port/assets/network/brokers.txt")
 set_source_files_properties("${ROOT}/port/assets/network/brokers.txt" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+target_link_libraries(VISR PRIVATE "-framework CoreText" "-framework CoreGraphics")
+target_sources(VISR PRIVATE "${ROOT}/port/assets/brand/Orbitron.ttf" "${ROOT}/port/assets/brand/VISRIcon.png"
+    "${ROOT}/port/assets/brand/OFL-Orbitron.txt")
+set_source_files_properties("${ROOT}/port/assets/brand/Orbitron.ttf" "${ROOT}/port/assets/brand/VISRIcon.png"
+    PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+set_source_files_properties("${ROOT}/port/assets/brand/OFL-Orbitron.txt" PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
 file(GLOB HALO_LICENSES "${ROOT}/build/ios/licenses/*.txt")
 target_sources(VISR PRIVATE ${HALO_LICENSES})
 set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
