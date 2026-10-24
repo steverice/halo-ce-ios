@@ -174,7 +174,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
         annotation = "".join(child.content for child in children[1:]).strip()
         image = children[0]
         if annotation.startswith("{device="):
-            match = re.fullmatch(r"\{device=(iphone|ipad|tv|mac)\}", annotation)
+            match = re.fullmatch(r"\{device=(iphone|ipad|tv|mac|vision)\}", annotation)
             if not match:
                 raise ValueError("Use device=iphone, ipad, tv or mac on a standalone image")
             device_blocks[index] = match.group(1)

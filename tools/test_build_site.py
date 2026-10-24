@@ -96,6 +96,13 @@ def test_device_images_keep_alt_text_dimensions_and_section_copy(tmp_path):
     assert '{device=' not in page
 
 
+def test_vision_pro_image_sits_beside_its_bullets():
+    page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
+    section = page.split('aria-labelledby="apple-vision-pro"', 1)[1].split('</section>', 1)[0]
+    assert 'class="platform-layout"' in section
+    assert 'class="device device-vision"' in section
+
+
 @pytest.mark.parametrize('device', ['watch', 'iphone onclick=alert(1)'])
 def test_invalid_device_annotation_fails_build(device):
     with pytest.raises(ValueError, match='device'):

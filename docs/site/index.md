@@ -22,7 +22,7 @@
 
 {{ features: vision-pro }}
 
-![Halo on Vision Pro](./a30.png)
+![Halo on Vision Pro](./a30.png){device=vision}
 
 ## iPhone and iPad
 
