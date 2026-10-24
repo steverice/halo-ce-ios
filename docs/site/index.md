@@ -30,16 +30,16 @@ The goal is to provide the best possible ways to experience Halo while staying f
 
 ![Halo on iPhone with touch controls during the Silent Cartographer beach battle](./iphone.jpg){device=iphone}
 
-![Halo on iPad during the Silent Cartographer beach battle](./ipad.jpg){device=ipad}
+![Halo on iPad fighting the Flood in the Library](./ipad.jpg){device=ipad}
 
 ## Apple TV
 
 {{ features: apple-tv }}
 
-![Halo on Apple TV during the Silent Cartographer beach battle](./apple-tv.jpg){device=tv}
+![Halo on Apple TV fighting Sentinels aboard the Pillar of Autumn in The Maw](./apple-tv.jpg){device=tv}
 
 ## Mac
 
 {{ features: mac }}
 
-![Halo on Mac during the Silent Cartographer beach battle](./mac.jpg){device=mac}
+![Halo on Mac fighting Covenant forces in Two Betrayals](./mac.jpg){device=mac}
