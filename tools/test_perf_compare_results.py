@@ -259,3 +259,24 @@ def test_trace_rejects_ambiguous_layers():
         {'Layer ID': i, 'On-Glass Drawable Timeline': [frame]} for i in (1, 2)]}]]}
     with pytest.raises(ValueError, match='multiple presentation layers'):
         parse_metal_trace(record)
+
+
+def test_render_keeps_capped_uncapped_and_later_windows_distinct():
+    summary = summary_fixture()
+    target = summary['targets'][0]
+    target.update(frame_mode='uncapped', native_delay_seconds=90)
+    other = dict(target, frame_mode='capped', native_delay_seconds=0)
+    summary['targets'].append(other)
+    output = render(summary)
+    assert 'uncapped; +90 s' in output
+    assert 'capped; +0 s' in output
+    assert 'max_fps = -1' in output and 'vsync = false' in output
+
+
+def test_uncapped_rows_disclose_unverified_above_refresh_meaning():
+    summary = summary_fixture()
+    summary['targets'][0].update(frame_mode='uncapped', quality_preset='matched-stock')
+    output = render(summary)
+    assert 'Above-refresh trace rates have unverified physical meaning' in output
+    assert 'not verified submission throughput' in output
+    assert '128-pixel shadow maps' in output

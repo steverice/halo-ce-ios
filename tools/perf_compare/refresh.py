@@ -176,11 +176,22 @@ def export_sweep(rows, devices, build):
 
 
 def validate_config(config):
+    if config.get('quality_preset', 'defaults') not in {'defaults', 'matched-stock'}:
+        raise ValueError('unknown quality preset')
+    if any(t['id'] == 'opence-web' and t.get('unavailable_reason') != 'safari-remote-automation-disabled'
+           for t in config.get('targets', [])) and (config.get('frame_mode', 'capped') != 'capped' or
+           config.get('native_delay_seconds', 0) != 0 or config.get('quality_preset', 'defaults') != 'defaults'):
+        raise ValueError('Safari does not support native mode, delay, or quality overrides')
+    if config.get('frame_mode', 'capped') not in {'capped', 'uncapped'}:
+        raise ValueError('unknown frame mode')
+    if not 0 <= config.get('native_delay_seconds', 0) <= 600:
+        raise ValueError('native delay must be between 0 and 600 seconds')
     if config.get('rounds', 3) != 3:
         raise ValueError('three rounds are required')
     if config.get('seconds', 60) != 60 or config.get('warmup_seconds', 15) < 15:
         raise ValueError('60 seconds and at least 15 seconds warm-up are required')
-    if config.get('scenarios', ['a10', 'b30']) != ['a10', 'b30']:
+    scenarios = config.get('scenarios', ['a10', 'b30'])
+    if scenarios != ['a10', 'b30'] and not (scenarios == ['b30'] and config.get('native_delay_seconds', 0) > 0):
         raise ValueError('a10 and b30 scenarios are required')
     if config.get('cpu_policy') == 'baseline' and any(
             target['id'] == 'opence-web' and
@@ -199,7 +210,7 @@ def failure_code(error):
     message = str(error)
     known = {'host-not-quiet', 'display-locked', 'console-unavailable', 'scenario-not-ready',
              'browser-game-setup-required', 'app-exited', 'browser-hidden', 'no-intervals',
-             'scene-unverified', 'short-window', 'app-not-frontmost', 'app-window-unavailable'}
+             'scene-unverified', 'short-window', 'app-not-frontmost', 'app-window-unavailable', 'resolution-mismatch'}
     return message if message in known else 'adapter-failed'
 
 
@@ -258,6 +269,11 @@ def refresh(config, summary_path, page_path):
                       else ('metalperftrace on-glass intervals' if config.get('native_method') == 'metalperftrace'
                             else 'Metal HUD present intervals'), 'reason': '', 'runs': []}
             summary['targets'].append(record)
+            record['frame_mode'] = config.get('frame_mode', 'capped')
+            record['native_delay_seconds'] = config.get('native_delay_seconds', 0)
+            record['scenarios'] = config.get('scenarios', ['a10', 'b30'])
+            record['quality_preset'] = config.get('quality_preset', 'defaults')
+            record['warmup_seconds'] = config.get('warmup_seconds', 15)
             records[target['id']] = record
             if target.get('unavailable_reason') == 'safari-remote-automation-disabled':
                 record['reason'] = target['unavailable_reason']
@@ -293,16 +309,20 @@ def refresh(config, summary_path, page_path):
                 record = records[target['id']]
                 if record['status'] == 'unavailable':
                     continue
-                for scenario in ('a10', 'b30'):
+                for scenario in config.get('scenarios', ['a10', 'b30']):
                     if record['status'] == 'unavailable':
                         break
                     folder = out / f'{target["id"]}-{scenario}-{round_index + 1}'
                     folder.mkdir()
+                    print(f'Round {round_index + 1}: {target["id"]} {scenario} '
+                          f'{config.get("frame_mode", "capped")} +{config.get("native_delay_seconds", 0)} s', flush=True)
                     try:
                         before = adapters.host_state(check_load=False)
                         (folder / 'host-before.json').write_text(json.dumps(before))
                         adapter = adapters.safari if target['id'] == 'opence-web' else adapters.native
                         run_record = adapter(target, scenario, folder, config)
+                        if target['id'] != 'opence-web' and run_record.get('scene_verified') and run_record['resolution'] != '1280×960':
+                            raise RuntimeError('resolution-mismatch')
                         if target['id'] == 'opence-web':
                             intervals = parse_raf(json.loads((folder / 'raf.json').read_text())['timestamps'])
                         elif config.get('native_method') == 'metalperftrace':
@@ -326,13 +346,13 @@ def refresh(config, summary_path, page_path):
                         raise
                     except Exception as error:
                         record['reason'] = failure_code(error)
-                        if record['reason'] in {'console-unavailable', 'browser-game-setup-required', 'scene-unverified', 'no-intervals', 'host-not-quiet', 'display-locked'}:
+                        if record['reason'] in {'console-unavailable', 'browser-game-setup-required', 'scene-unverified', 'no-intervals', 'host-not-quiet', 'display-locked', 'resolution-mismatch'}:
                             record['status'] = 'unavailable'
                         errors.append({'target': target['id'], 'scenario': scenario, 'round': round_index + 1,
                                        'error': str(error)})
             (out / 'errors.json').write_text(json.dumps(errors, indent=2))
         for record in summary['targets']:
-            if len(record['runs']) == 6:
+            if len(record['runs']) == 3 * len(config.get('scenarios', ['a10', 'b30'])):
                 record['status'] = 'ok'
                 record['reason'] = ''
             elif record['runs']:

@@ -347,3 +347,87 @@ def test_baseline_excludes_game_cpu(monkeypatch):
 def test_native_baseline_cannot_skip_the_quiet_gate_for_active_safari():
     with pytest.raises(ValueError, match='Safari targets to be skipped'):
         engine().validate_config({'cpu_policy': 'baseline', 'targets': [{'id': 'opence-web'}]})
+
+
+def test_uncapped_display_uses_each_apps_documented_settings():
+    m = engine()
+    visr = m.adapters.native_display('visr', 'uncapped')
+    other = m.adapters.native_display('opence-macos', 'uncapped')
+    assert 'frame_rate = "unlimited"' in visr and 'vsync = false' in visr
+    assert 'max_fps = -1' in other and 'vsync = false' in other
+    assert 'frame_rate' not in other
+    assert 'window_size = "640x480"' in visr and 'window_size = "640x480"' in other
+    with pytest.raises(ValueError, match='uncapped'):
+        m.adapters.native_display('unsupported', 'uncapped')
+
+
+def test_uncapped_qualification_requires_matching_mode_and_delay():
+    m = engine()
+    target = {'sha256': 'a' * 64, 'qualification': {'sha256': 'a' * 64, 'display_hz': 60,
+              'scenarios': {'a10': {'resolution': '1280×960', 'cap': 'unlimited'}}}}
+    assert not m.adapters.qualification(target, 'a10', 60, 'uncapped', 90)['scene_verified']
+    target['qualification'].update(frame_mode='uncapped', native_delay_seconds=90)
+    assert m.adapters.qualification(target, 'a10', 60, 'uncapped', 90)['scene_verified']
+    assert not m.adapters.qualification(target, 'a10', 60, 'uncapped', 0)['scene_verified']
+
+
+def test_matrix_rejects_unknown_frame_modes_and_invalid_delays():
+    m = engine()
+    for config in ({'frame_mode': 'anything'}, {'native_delay_seconds': -1}, {'native_delay_seconds': 601}):
+        with pytest.raises(ValueError):
+            m.validate_config(config)
+
+
+def test_later_b30_matrix_is_explicit_and_rejects_unknown_maps():
+    m = engine()
+    m.validate_config({'scenarios': ['b30'], 'native_delay_seconds': 90})
+    for scenarios in ([], ['c40'], ['b30', 'b30']):
+        with pytest.raises(ValueError):
+            m.validate_config({'scenarios': scenarios, 'native_delay_seconds': 90})
+
+
+def test_uncapped_proof_cannot_claim_a_numeric_cap():
+    m = engine()
+    target = {'sha256': 'a' * 64, 'qualification': {'sha256': 'a' * 64, 'display_hz': 60,
+              'frame_mode': 'uncapped', 'scenarios': {'a10': {'resolution': '1280×960', 'cap': '60'}}}}
+    assert not m.adapters.qualification(target, 'a10', 60, 'uncapped')['scene_verified']
+
+
+def test_active_safari_rejects_native_only_conditions():
+    m = engine()
+    for change in ({'frame_mode': 'uncapped'}, {'native_delay_seconds': 90}, {'quality_preset': 'matched-stock'}):
+        with pytest.raises(ValueError, match='Safari'):
+            m.validate_config({'targets': [{'id': 'opence-web'}], **change})
+
+
+def test_stock_quality_matches_documented_options_and_binds_proof():
+    m = engine()
+    visr = m.adapters.native_display('visr', 'uncapped', 'matched-stock')
+    other = m.adapters.native_display('opence-macos', 'uncapped', 'matched-stock')
+    assert 'shadow_map_size = 128' in visr and 'shadow_resolution = 128' in other
+    assert 'effect_resolution = "xbox"' in visr and 'model_lod = "auto"' in visr
+    for text in (visr, other):
+        assert 'anti_aliasing = "off"' in text and 'high_res_hud = false' in text
+        assert 'high_res_text = false' in text
+    target = {'sha256': 'a' * 64, 'qualification': {'sha256': 'a' * 64, 'display_hz': 60,
+              'scenarios': {'a10': {'resolution': '1280×960', 'cap': '60'}}}}
+    assert not m.adapters.qualification(target, 'a10', 60, quality_preset='matched-stock')['scene_verified']
+    target['qualification']['quality_preset'] = 'matched-stock'
+    assert m.adapters.qualification(target, 'a10', 60, quality_preset='matched-stock')['scene_verified']
+    assert not m.adapters.qualification(target, 'a10', 60, quality_preset='matched-stock', warmup_seconds=30)['scene_verified']
+
+
+def test_native_matrix_excludes_an_individually_qualified_wrong_size(tmp_path, monkeypatch):
+    m = engine()
+    monkeypatch.setattr(m, 'fetch', lambda *args: {'version': 'v1', 'sha256': 'a' * 64})
+    monkeypatch.setattr(m.adapters, 'host_state', lambda **kwargs: {})
+    def measure(target, scenario, folder, config):
+        (folder / 'hud.log').write_text('metal-HUD: 1,0,0,' + ','.join(['16', '1'] * 4000))
+        return {'scene_verified': True, 'resolution': '1280×720', 'cap': '60', 'thermal': 'nominal'}
+    monkeypatch.setattr(m.adapters, 'native', measure)
+    config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini', 'targets': [{'id': 'visr'}]}
+    assert m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md') == 1
+    import json
+    summary = json.loads((tmp_path / 'summary.json').read_text())
+    assert not summary['targets'][0]['runs']
+    assert summary['targets'][0]['reason'] == 'resolution-mismatch'
