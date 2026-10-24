@@ -18,7 +18,7 @@ endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 ## On every device
 
 <!-- generated: shared: every-device -->
-- Your saves and player profiles sync across your devices through iCloud. Available on iPhone, iPad and Apple TV builds made with cloud saves. Mac coming soon.
+- Your saves and player profiles sync across your devices through iCloud.
 - VISR is tailored to each Apple device, so it just works.
 <!-- end generated -->
 

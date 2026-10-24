@@ -153,17 +153,11 @@ def test_shared_features_expand_from_facts():
     assert 'Changed controller support' in expand_includes(source, facts)
 
 
-def test_cloud_save_exceptions_and_build_condition_are_rendered():
+def test_every_device_block_is_the_cloud_summary_and_tailoring_line():
     from tools.build_site import expand_includes, load_facts
-    facts = load_facts()
-    text = expand_includes('{{ shared: every-device }}', facts)
-    assert 'Your saves and player profiles sync across your devices through iCloud.' in text
-    assert 'builds made with cloud saves' in text
-    assert 'Mac coming soon' in text
-    assert 'iPhone, iPad and Apple TV' in text
-    assert 'VISR is tailored to each Apple device, so it just works.' in text
-    facts['cloud_saves']['exceptions'] = []
-    assert 'coming soon' not in expand_includes('{{ shared: every-device }}', facts)
+    text = expand_includes('{{ shared: every-device }}', load_facts())
+    assert text == ('- Your saves and player profiles sync across your devices through iCloud.\n'
+                    '- VISR is tailored to each Apple device, so it just works.')
 
 
 def test_deployment_versions_follow_build_script_without_importing_it():

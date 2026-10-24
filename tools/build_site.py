@@ -62,13 +62,7 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
         values = {"ios_minimum": versions["ios"].removesuffix(".0")}
         return "\n".join("- " + bullet.format(**values) for bullet in facts["platforms"][name]["bullets"])
     if kind == "shared" and name == "every-device":
-        cloud = facts["cloud_saves"]
-        platforms = cloud["platforms"]
-        supported = ", ".join(platforms[:-1]) + " and " + platforms[-1] if len(platforms) > 1 else platforms[0]
-        condition = f"Available on {supported} {cloud['condition']}."
-        exceptions = " ".join(f"{platform} coming soon." for platform in cloud["exceptions"])
-        return (f"- {cloud['summary']} {condition} {exceptions}".rstrip()
-                + f"\n- {facts['shared']['tailored']}")
+        return f"- {facts['cloud_saves']['summary']}\n- {facts['shared']['tailored']}"
     if kind == "shared":
         key = name.replace("-", "_")
         if key in facts["shared"]:

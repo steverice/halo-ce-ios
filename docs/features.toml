@@ -2,9 +2,6 @@
 
 [cloud_saves]
 summary = "Your saves and player profiles sync across your devices through iCloud."
-platforms = ["iPhone", "iPad", "Apple TV"]
-condition = "builds made with cloud saves"
-exceptions = ["Mac"]
 synced = [
     "player profiles (including controls)",
     "finished levels",
