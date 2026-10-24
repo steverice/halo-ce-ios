@@ -1,5 +1,7 @@
 """Keep the published landing page synchronized with its Markdown source."""
 
+import re
+
 import pytest
 
 from tools.build_site import ROOT, render_site
@@ -76,7 +78,7 @@ def test_platform_navigation_is_a_labeled_group_of_links():
                             '[Vision Pro](#apple-vision-pro) • [iPad](#iphone-and-ipad) • [GitHub](https://github.com/steverice/visr)')
     page = render_site(source)
     assert '<nav class="platform-nav" aria-label="Platforms">' in page
-    assert '<a href="#iphone-and-ipad">iPad</a>' in page
+    assert re.search(r'<a href="#iphone-and-ipad"><span class="nav-icon"><svg[^>]*>.*?</svg></span>iPad</a>', page)
     assert ' • ' not in page
 
 
@@ -245,3 +247,9 @@ def test_feature_requirement_keeps_minor_deployment_version(tmp_path, monkeypatc
 def test_native_mac_minimum_comes_from_appkit_build_not_catalyst():
     from tools.build_site import load_facts
     assert load_facts()['platforms']['mac']['minimum_os'] == '14.0'
+
+
+def test_platform_links_carry_their_glyphs():
+    page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
+    nav = page.split('<nav class="platform-nav"', 1)[1].split('</nav>', 1)[0]
+    assert nav.count('<span class="nav-icon"><svg') == nav.count('<a href=')

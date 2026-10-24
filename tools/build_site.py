@@ -70,6 +70,21 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
     raise ValueError(f"Unknown facts block: {kind}: {name}")
 
 
+NAV_ICONS = {"Vision Pro": "vision-pro", "iPhone": "iphone", "iPad": "ipad", "Apple TV": "apple-tv",
+             "Mac": "mac", "GitHub": "github"}
+
+
+def nav_with_icons(html: str) -> str:
+    """prefix each platform link with its glyph from docs/site/icons/nav/, inlined so it takes the text color"""
+    def add_icon(match: re.Match) -> str:
+        name = NAV_ICONS.get(match[2])
+        if name is None:
+            return match[0]
+        icon = (ROOT / "docs/site/icons/nav" / f"{name}.svg").read_text(encoding="utf-8").strip()
+        return f'{match[1]}<span class="nav-icon">{icon}</span>{match[2]}</a>'
+    return re.sub(r'(<a href="[^"]*">)([^<]+)</a>', add_icon, html)
+
+
 EVERY_DEVICE_MARKER = "VISR-EVERY-DEVICE-COLUMNS"
 
 
@@ -258,7 +273,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
                     if child.type == "text" and child.content.strip() == "•":
                         child.content = " "
                 output.extend(['    <nav class="platform-nav" aria-label="Platforms">',
-                               md.renderer.render(children, md.options, {}).rstrip(), '    </nav>'])
+                               nav_with_icons(md.renderer.render(children, md.options, {}).rstrip()), '    </nav>'])
                 continue
             lone_link = (children and children[0].type == "link_open"
                          and children[-1].type == "link_close"
