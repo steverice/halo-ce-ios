@@ -21,7 +21,7 @@ endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 - **Compatible with the community:** VISR aims for cross-play with the popular Halo: CE ports like [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and [Chupathingy](https://chupathingy.org).
 <!-- end generated -->
 
-## VR
+## Apple Vision Pro
 
 <!-- generated: features: vision-pro -->
 - A whole new way to experience Halo
