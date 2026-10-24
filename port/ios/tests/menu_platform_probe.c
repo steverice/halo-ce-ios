@@ -30,6 +30,11 @@ int main(int argc, char **argv)
 #else
 	int want_quit = 1, want_desktop = 1, want_android = 0;
 #endif
+#if defined(HALO_IOS)
+	check("cloud_saves", getenv("HALO_HOST_CLOUD_SAVES") && !strcmp(getenv("HALO_HOST_CLOUD_SAVES"), "1"));
+#else
+	check("cloud_saves", 0);
+#endif
 	check("quit", want_quit);
 	check("desktop", want_desktop);
 	check("android", want_android);

@@ -699,12 +699,14 @@ run(BUILD/'interface-rank-probe')
 
 # The menus' platform attribute: "quit" is for the desktop ports and the Mac app (the host sets HALO_APP_CAN_QUIT), not
 # for an iPhone, an iPad, an Apple TV or a Vision Pro (menu_platform.h)
-for name, defines, mac in (('menu-platform-desktop', [], False), ('menu-platform-apple', ['-DHALO_ILP32=1'], False),
-                           ('menu-platform-mac', ['-DHALO_ILP32=1'], True), ('menu-platform-android', ['-DHALO_ANDROID=1'], False)):
+for name, defines, mac in (('menu-platform-desktop', [], False), ('menu-platform-apple', ['-DHALO_ILP32=1', '-DHALO_IOS=1'], False),
+                           ('menu-platform-mac', ['-DHALO_ILP32=1', '-DHALO_IOS=1'], True), ('menu-platform-android', ['-DHALO_ANDROID=1'], False)):
     run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', *defines, 'port/ios/tests/menu_platform_probe.c', '-o', BUILD / name)
     kind = name.split('-', 2)[2]
-    subprocess.run([str(BUILD / name), kind], cwd=ROOT, check=True,
-                   env={**os.environ, **({'HALO_APP_CAN_QUIT': '1'} if mac else {})})
+    for cloud in ('0', '1'):
+        subprocess.run([str(BUILD / name), kind], cwd=ROOT, check=True,
+                       env={**os.environ, 'HALO_HOST_CLOUD_SAVES': cloud,
+                            **({'HALO_APP_CAN_QUIT': '1'} if mac else {})})
 # ... and the main menu uses it: Quit's item and the B and Back handlers that open its question are the only elements
 # for platform "quit", every other item stays, and the items run one row apart from the first, so the menu has no
 # gap where Quit was and the list's wrap is its own over the items left (the pause menu's quit to main menu is another

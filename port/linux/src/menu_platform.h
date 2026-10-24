@@ -11,7 +11,8 @@ the system, and a Quit there only asked a question whose OK did nothing.
 "mac_app" is the Apple host's Mac app alone, which says so by setting
 HALO_HOST_MAC: the one Apple build with a setting the others ignore
 (display.frame_rate). "apple" is every Apple host build (HALO_IOS): the
-lobby's Y, which shares the invite link. Returns -1 for a value that is none of these. A header
+lobby's Y, which shares the invite link. "cloud_saves" requires an Apple host
+with the cloud-saves capability, advertised through HALO_HOST_CLOUD_SAVES. Returns -1 for a value that is none of these. A header
 of its own so that tools/ios_test.py can build the three cases.
 */
 
@@ -39,6 +40,16 @@ static int menu_platform_matches(char const *platform)
 		char const *mac = getenv("HALO_HOST_MAC");
 
 		return mac && *mac == '1';
+#else
+		return 0;
+#endif
+	}
+	if (!strcmp(platform, "cloud_saves"))
+	{
+#if defined(HALO_IOS)
+		char const *capability = getenv("HALO_HOST_CLOUD_SAVES");
+
+		return capability && !strcmp(capability, "1");
 #else
 		return 0;
 #endif

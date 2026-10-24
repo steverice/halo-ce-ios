@@ -119,7 +119,7 @@ SCREENS = {
             ("CHECK FOR UPDATES:", "update.auto", ON_OFF,
              "Look for a new version when the game starts.", "desktop"),
             ("ICLOUD SAVES:", "host.cloud_saves", ON_OFF,
-             "Sync saves with iCloud. Turning on applies next\nlaunch; turning off stops syncing now.", "apple"),
+             "Sync saves with iCloud. Turning on applies next\nlaunch; turning off stops syncing now.", "cloud_saves"),
             ("PLAYER NAMES:", "display.player_names",
              [("ALL", "all"), ("ALLIES", "allies"), ("ENEMIES", "enemies"), ("NONE", "none")],
              "In multiplayer, whose names are drawn above their\nheads.", None),
@@ -226,7 +226,7 @@ def _screen(folder: str, spec: dict, rows: list, list_inputs: list, list_handler
                      ['<on event="b" back="true"/>', '<on event="back" back="true"/>',
                       f'<child{attributes([("widget", f"{base}/{header}")])}/>',
                       f'<child{attributes([("widget", f"{base}/options_menu")])}/>'] +
-                     ([f'<child widget="{base}/cloud_saves_status" platform="apple"/>']
+                     ([f'<child widget="{base}/cloud_saves_status" platform="cloud_saves"/>']
                       if spec.get("cloud_status") else []))
     lines += _widget(f"{base}/{header}", [("controller", 1), ("left", 35), ("top", 11), ("width", 605), ("height", 59),
                                           ("bitmap", header_bitmap)], [])
@@ -285,7 +285,7 @@ def _setting_screen(folder: str, spec: dict) -> list:
         extra += _widget(f"{base}/cloud_saves_status",
                          [("type", "text"), ("controller", 1), ("left", 68), ("top", 332),
                           ("width", 482), ("height", 20), ("font", "ui\\small_ui"),
-                          ("color", "#FFFFFFFF"), ("platform", "apple")],
+                          ("color", "#FFFFFFFF"), ("platform", "cloud_saves")],
                          ['<data input="port cloud saves status"/>'])
     extra += _button(f"{base}/button_defaults", 3, ['<on event="a" run="port settings defaults"/>',
                                                     '<on event="start" run="port settings defaults"/>'])

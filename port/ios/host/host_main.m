@@ -479,6 +479,12 @@ int main(int argc,char **argv) {
         snprintf(env_build,sizeof(env_build),"HALO_APP_BUILD=%s",
             [[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"] description].UTF8String?:"");
         env[env_count++]=env_build;
+#if HALO_CLOUD_SAVES
+        /* The shared guest only offers cloud controls when this host can sync saves. */
+        env[env_count++]="HALO_HOST_CLOUD_SAVES=1";
+#else
+        env[env_count++]="HALO_HOST_CLOUD_SAVES=0";
+#endif
         mkdir("recordings",0755);
 #if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
         /* the Mac app can end itself, so its menus keep Quit (menu_files.c's platform="quit"); on an iPhone, an

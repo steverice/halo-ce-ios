@@ -241,7 +241,7 @@ def test_menus_are_well_formed():
             where = f"{path.name}: <{element.tag} {element.get('name', '')}>"
             assert element.tag in MENU_ATTRIBUTES, where
             assert set(element.attrib) <= MENU_ATTRIBUTES[element.tag], where
-            assert element.get("platform") in (None, "desktop", "android", "apple", "quit", "mac_app"), where
+            assert element.get("platform") in (None, "desktop", "android", "apple", "cloud_saves", "quit", "mac_app"), where
             # (menu_files.c's whole numbers, which the tags keep in shorts,
             # its true/false attributes, and no text but whitespace outside
             # <string>s)
@@ -558,7 +558,7 @@ def test_port_posix_functions_are_defined_everywhere():
 
 
 def test_icloud_setting_and_status_share_network_screen():
-    """All Apple hosts expose the preference and live status in Network Setup."""
+    """Cloud-capable Apple hosts expose the preference and live status in Network Setup."""
     import xml.etree.ElementTree as ElementTree
 
     name = "main_menu.settings_select.player_setup.player_profile_edit.network_setup.xml"
@@ -567,12 +567,12 @@ def test_icloud_setting_and_status_share_network_screen():
     root = ElementTree.fromstring(generated)
     base = f"{port_settings.PE}/network_setup"
     row = root.find(f"widget[@name='{base}/op_cloud_saves']")
-    assert row is not None and row.get("platform") == "apple"
+    assert row is not None and row.get("platform") == "cloud_saves"
     spinner = root.find(f"widget[@name='{base}/cloud_saves_spinner']")
     assert spinner.get("setting") == "host.cloud_saves"
     assert spinner.get("values") == "true|false"
     screen = root.find(f"widget[@name='{base}/network_settings_screen']")
-    assert screen.find(f"child[@widget='{base}/cloud_saves_status']").get("platform") == "apple"
+    assert screen.find(f"child[@widget='{base}/cloud_saves_status']").get("platform") == "cloud_saves"
     status = root.find(f"widget[@name='{base}/cloud_saves_status']")
     assert status.find("data").get("input") == "port cloud saves status"
     options = root.find(f"widget[@name='{base}/options_menu']")
@@ -581,3 +581,25 @@ def test_icloud_setting_and_status_share_network_screen():
     help_text = root.find(f"widget[@name='{base}/help']")
     assert int(status.get("top")) + int(status.get("height")) <= int(help_text.get("top"))
     assert int(help_text.get("top")) + int(help_text.get("height")) <= 414
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="clang is required")
+@pytest.mark.parametrize("kind,defines", [
+    ("desktop", []), ("android", ["-DHALO_ANDROID=1"]),
+    ("apple", ["-DHALO_ILP32=1", "-DHALO_IOS=1"]),
+    ("mac", ["-DHALO_ILP32=1", "-DHALO_IOS=1"]),
+])
+def test_cloud_menu_capability_is_host_specific(tmp_path, kind, defines):
+    root = Path(__file__).resolve().parents[1]
+    probe = tmp_path / "menu-platform"
+    subprocess.run(["clang", *defines, str(root / "port/ios/tests/menu_platform_probe.c"),
+                    "--output", str(probe)], check=True)
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in {"HALO_APP_CAN_QUIT", "HALO_HOST_CLOUD_SAVES"}}
+    if kind == "mac":
+        environment["HALO_APP_CAN_QUIT"] = "1"
+    for capability in (None, "0", "1"):
+        current = dict(environment)
+        if capability is not None:
+            current["HALO_HOST_CLOUD_SAVES"] = capability
+        subprocess.run([str(probe), kind], env=current, check=True)
