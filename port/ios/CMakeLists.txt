@@ -424,7 +424,7 @@ endif()
 if(HALO_SHADER_UPLOAD)
     target_link_libraries(VISR PRIVATE sqlite3)
     target_compile_definitions(VISR PRIVATE HALO_SHADER_UPLOAD=1
-        "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
+        "HALO_SHADER_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
 if(HALO_CLOUD_SAVES)
     # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit

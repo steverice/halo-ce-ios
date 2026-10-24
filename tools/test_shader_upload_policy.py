@@ -117,3 +117,17 @@ def test_generated_upload_entitlements_use_the_platform_key_and_reset(tmp_path, 
     subprocess.run(["cmake", "-P", str(script)], check=True)
     entitlements = plistlib.loads(output.read_bytes())
     assert key not in entitlements and other not in entitlements
+
+
+def test_shader_only_container_definition_does_not_enable_benchmark_sender():
+    cmake = (Path(__file__).resolve().parents[1] / "port/ios/CMakeLists.txt").read_text()
+    start = cmake.index("if(HALO_SHADER_UPLOAD)\n    target_link_libraries(VISR PRIVATE sqlite3)")
+    shader = cmake[start:cmake.index("\nendif()", start)]
+    assert "HALO_SHADER_UPLOAD=1" in shader
+    assert "HALO_SHADER_CLOUD=" in shader
+    assert "HALO_BENCHMARK_CLOUD=" not in shader
+    start = cmake.index("if(HALO_BENCHMARK_UPLOAD)\n    target_sources")
+    benchmark = cmake[start:cmake.index("\nendif()", start)]
+    assert "host/host_benchmark_send.m" in benchmark
+    assert "HALO_BENCHMARK_CLOUD=" in benchmark
+    assert "HALO_SHADER_CLOUD=" not in benchmark
