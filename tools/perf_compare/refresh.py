@@ -182,6 +182,11 @@ def validate_config(config):
         raise ValueError('60 seconds and at least 15 seconds warm-up are required')
     if config.get('scenarios', ['a10', 'b30']) != ['a10', 'b30']:
         raise ValueError('a10 and b30 scenarios are required')
+    if config.get('cpu_policy') == 'baseline' and any(
+            target['id'] == 'opence-web' and
+            target.get('unavailable_reason') != 'safari-remote-automation-disabled'
+            for target in config.get('targets', [])):
+        raise ValueError('baseline CPU policy requires Safari targets to be skipped')
     if config.get('display_hz', 60) <= 0:
         raise ValueError('display rate must be positive')
 
@@ -233,7 +238,7 @@ def bind_routed_visr(config):
 
 
 def refresh(config, summary_path, page_path):
-    from results import metrics, parse_hud, parse_raf, render
+    from results import metrics, parse_hud, parse_metal_trace, parse_raf, render
     bind_routed_visr(config)
     validate_config(config)
     start = time.monotonic()
@@ -241,6 +246,8 @@ def refresh(config, summary_path, page_path):
     out.mkdir(parents=True)
     summary = {'date': datetime.now(timezone.utc).date().isoformat(), 'machine': config['public_machine'],
                'os': platform.mac_ver()[0], 'targets': [], 'sweep': [], 'refresh_seconds': 0}
+    if config.get('native_scenario') == 'opening-sequence':
+        summary['native_scenario'] = 'opening-sequence'
     records = {}
     errors = []
     denied = None
@@ -248,9 +255,13 @@ def refresh(config, summary_path, page_path):
         for target in config['targets']:
             record = {'id': target['id'], 'version': 'unavailable', 'sha256': '', 'status': 'unavailable',
                       'method': 'Safari RAF callbacks (entry-document hash)' if target['id'] == 'opence-web'
-                      else 'Metal HUD present intervals', 'reason': '', 'runs': []}
+                      else ('metalperftrace on-glass intervals' if config.get('native_method') == 'metalperftrace'
+                            else 'Metal HUD present intervals'), 'reason': '', 'runs': []}
             summary['targets'].append(record)
             records[target['id']] = record
+            if target.get('unavailable_reason') == 'safari-remote-automation-disabled':
+                record['reason'] = target['unavailable_reason']
+                continue
             try:
                 record.update(fetch(target, out))
                 target['sha256'] = record['sha256']
@@ -263,7 +274,11 @@ def refresh(config, summary_path, page_path):
                 record['reason'] = failure_code(error)
                 errors.append({'target': target['id'], 'stage': 'fetch', 'error': str(error)})
         try:
-            wait_quiet(config.get('quiet_wait_seconds', 180))
+            if config.get('cpu_policy') == 'baseline':
+                adapters.host_state(check_load=False)
+                summary['cpu_policy'] = 'baseline'
+            else:
+                wait_quiet(config.get('quiet_wait_seconds', 180))
         except adapters.PermissionDenied:
             raise
         except Exception as error:
@@ -290,6 +305,9 @@ def refresh(config, summary_path, page_path):
                         run_record = adapter(target, scenario, folder, config)
                         if target['id'] == 'opence-web':
                             intervals = parse_raf(json.loads((folder / 'raf.json').read_text())['timestamps'])
+                        elif config.get('native_method') == 'metalperftrace':
+                            intervals = parse_metal_trace(json.loads((folder / 'timeline.json').read_text()),
+                                                          run_record['resolution'])
                         else:
                             intervals = parse_hud((folder / 'hud.log').read_text())
                         if not intervals:

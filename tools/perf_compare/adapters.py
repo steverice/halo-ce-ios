@@ -7,6 +7,7 @@ from pathlib import Path
 import plistlib
 import re
 import socket
+import shutil
 import subprocess
 import sys
 import time
@@ -117,7 +118,51 @@ def background_cpu(before, after, owned):
                if pid not in owned)
 
 
+def console_ready(text):
+    """The console lowercases output and may echo expressions before evaluation."""
+    return 'perf_ready' in [line.strip().lower() for line in text.replace('\r', '').split('\n')[:-1]]
+
+
+def sample_background(seconds=5, owned=frozenset()):
+    """Measure outside-process work immediately before the sampling window."""
+    started = time.monotonic()
+    before = cpu_snapshot()
+    time.sleep(seconds)
+    after = cpu_snapshot()
+    if not before or not after:
+        raise RuntimeError('cpu-telemetry-unavailable')
+    return background_cpu(before, after, owned) / (time.monotonic() - started)
+
+
+def background_changed(cores, baseline, absolute_limit=1.0):
+    # A half-core increase is material; steady indexing remains in the baseline.
+    return cores > (baseline + 0.5 if baseline is not None else absolute_limit)
+
+
 def native(target, scenario, out, config):
+    """Retry transient contention, preserving every rejected attempt privately."""
+    attempts = 3 if config.get('cpu_policy') == 'baseline' else 1
+    for attempt in range(attempts):
+        folder = out if attempt == 0 else out / f'retry-{attempt + 1}'
+        if attempt:
+            folder.mkdir()
+        try:
+            result = _native(target, scenario, folder, config)
+        except RuntimeError as error:
+            (folder / 'attempt-error.txt').write_text(str(error))
+            if str(error) != 'host-not-quiet' or attempt == attempts - 1:
+                raise
+        else:
+            if attempt:
+                for name in ('hud.log', 'timeline.json', 'qualification.png'):
+                    if (folder / name).exists():
+                        if (out / name).exists():
+                            shutil.copyfile(out / name, out / ('rejected-' + name))
+                        shutil.copyfile(folder / name, out / name)
+            return result
+
+
+def _native(target, scenario, out, config):
     """Reuse isolated data/config and console readiness from the earlier Mac experiments."""
     app = Path(target['app'])
     binary = executable(app)
@@ -133,7 +178,8 @@ def native(target, scenario, out, config):
         port_socket.bind(('127.0.0.1', 0))
         port = port_socket.getsockname()[1]
     display = ('renderer = "metal"\n' if target['id'] == 'visr' else '')
-    display += 'fullscreen = false\nscreen_width = 1280\nscreen_height = 720\nrender_height = 720\n'
+    display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
+                'window_scale = 1\nwindow_size = "640x480"\n')
     display += 'frame_rate = "60"\nframe_limit = 60\nvsync = true\ninterpolation = true\n'
     text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n'
             '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
@@ -144,7 +190,7 @@ def native(target, scenario, out, config):
     level = scenario if target['id'] == 'visr' else 'levels\\' + scenario + '\\' + scenario
     (data / 'init.txt').write_text('game_difficulty_set normal\nmap_name ' + level + '\n')
     env = {**os.environ, 'HALO_DATA_ROOT': str(data), 'HALO_SAVE_ROOT': str(saves),
-           'HALO_HOST_DISPLAY': '1280x720@1', 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
+           'HALO_HOST_DISPLAY': '640x480@2', 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
            'MTL_HUD_LOG_ENABLED': '1'}
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
@@ -165,10 +211,12 @@ def native(target, scenario, out, config):
         if connection is None:
             raise RuntimeError('console-unavailable')
         ready = False
+        console_text = ''
         while time.monotonic() < deadline and process.poll() is None:
             connection.sendall(b'(if (> (list_count (players)) 0) (print "PERF_READY"))\n')
             try:
-                if b'PERF_READY' in connection.recv(65536):
+                console_text += connection.recv(65536).decode('latin1')
+                if console_ready(console_text):
                     ready = True
                     break
             except socket.timeout:
@@ -182,21 +230,34 @@ def native(target, scenario, out, config):
             capture_window(process.pid, out / 'qualification.png')
         before = thermal()
         log_stream = (out / 'hud.log').open('w')
+        if config.get('native_method') == 'metalperftrace':
+            run(['metalperftrace', 'setup', '--enable', 'per-frame-metrics', '--pid', str(process.pid)])
+        baseline = sample_background(owned={process.pid}) if config.get('cpu_policy') == 'baseline' else None
         cpu_before = cpu_snapshot()
         measured_start = time.monotonic()
+        trace_start = time.time()
         logger = subprocess.Popen(['/usr/bin/log', 'stream', '--style', 'ndjson', '--level', 'debug',
                                    '--predicate', f'processIdentifier == {process.pid} AND subsystem == "com.apple.metal.hud"'],
                                   stdout=log_stream, stderr=subprocess.STDOUT)
         time.sleep(config.get('seconds', 60))
         if process.poll() is not None:
             raise RuntimeError('app-exited')
+        trace_end = time.time()
         host_state(check_load=False)
         background = background_cpu(cpu_before, cpu_snapshot(), {process.pid})
         elapsed = time.monotonic() - measured_start
-        (out / 'background-cpu.json').write_text(json.dumps({'seconds': background, 'window': elapsed}))
-        if background / elapsed > config.get('max_background_cores', 1.0):
+        (out / 'background-cpu.json').write_text(json.dumps({'seconds': background, 'window': elapsed,
+                                                         'baseline_cores': baseline}))
+        if background_changed(background / elapsed, baseline, config.get('max_background_cores', 1.0)):
             raise RuntimeError('host-not-quiet')
         frontmost(process.pid)
+        if config.get('native_method') == 'metalperftrace':
+            collect = json.loads(run(['metalperftrace', 'collect', '--start', '@' + str(trace_start),
+                                      '--end', '@' + str(trace_end), '--json', str(out / 'traces')]))
+            timelines = [json.loads(run(['metalperftrace', 'overview', '--json', '--json-include-timeline',
+                                        '--predicate', 'pid == ' + str(process.pid), path]))
+                         for path in collect['traces']]
+            (out / 'timeline.json').write_text(json.dumps({'pid': process.pid, 'traces': timelines}))
         return {'thermal': before['state'] + ' → ' + thermal()['state'], **qualification(target, scenario, config.get('display_hz', 60))}
     finally:
         if connection:
@@ -212,6 +273,10 @@ def native(target, scenario, out, config):
         if log_stream:
             log_stream.close()
         stderr.close()
+        # Isolated map decompression caches are regenerated at every fresh launch.
+        for cache_root in (data / 'save/z', saves / 'z'):
+            for cache in cache_root.glob('cache00?.map'):
+                cache.unlink()
 
 
 class WebDriver:

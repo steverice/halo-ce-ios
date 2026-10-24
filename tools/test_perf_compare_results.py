@@ -233,3 +233,29 @@ def test_page_opens_with_the_fairness_caveat():
     page = render({})
     assert page.splitlines()[2] == CAVEAT
     assert "https://github.com/steverice/visr/issues" in CAVEAT
+
+
+def test_trace_uses_only_owned_on_glass_intervals_and_deduplicates():
+    from perf_compare.results import parse_metal_trace
+    layer = {'Layer ID': 7, 'Configuration Timeline': [{'Width (pixels)': 1280, 'Height (pixels)': 960}],
+             'On-Glass Drawable Timeline': [
+                 {'Start Mach Continuous Time': 10, 'Duration MCT Seconds': 0.016,
+                  'In-Flight Drawable Info': {'On-GPU Time (seconds)': 0.001}},
+                 {'Start Mach Continuous Time': 20, 'Duration MCT Seconds': 0.017}]}
+    trace = [{'PID': 1, 'Layers': [layer]}, {'PID': 2, 'Layers': []}]
+    record = {'pid': 1, 'traces': [trace, trace]}
+    assert parse_metal_trace(record, '1280×960') == [16, 17]
+    with pytest.raises(ValueError, match='resolution-mismatch'):
+        parse_metal_trace(record, '1280×720')
+    layer['On-Glass Drawable Timeline'][0]['Duration MCT Seconds'] = float('nan')
+    with pytest.raises(ValueError, match='invalid on-glass'):
+        parse_metal_trace(record)
+
+
+def test_trace_rejects_ambiguous_layers():
+    from perf_compare.results import parse_metal_trace
+    frame = {'Start Mach Continuous Time': 1, 'Duration MCT Seconds': 0.016}
+    record = {'pid': 1, 'traces': [[{'PID': 1, 'Layers': [
+        {'Layer ID': i, 'On-Glass Drawable Timeline': [frame]} for i in (1, 2)]}]]}
+    with pytest.raises(ValueError, match='multiple presentation layers'):
+        parse_metal_trace(record)

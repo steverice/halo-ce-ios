@@ -1,8 +1,10 @@
 {
+  "cpu_policy": "baseline",
   "date": "2026-10-24",
   "machine": "Mac mini (M4)",
+  "native_scenario": "opening-sequence",
   "os": "27.0.1",
-  "refresh_seconds": 182.2,
+  "refresh_seconds": 1098.4,
   "sweep": [
     {
       "build": "fe18f775b",
@@ -3479,26 +3481,256 @@
   "targets": [
     {
       "id": "visr",
-      "method": "Metal HUD present intervals",
-      "reason": "host-not-quiet",
-      "runs": [],
+      "method": "metalperftrace on-glass intervals",
+      "reason": "",
+      "runs": [
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.01673447713256,
+            "fps": 59.96660816944785,
+            "frames": 3599,
+            "on_time_pct": 88.96915809947208,
+            "p50_ms": 16.655458137392998,
+            "p95_ms": 18.446124531328678,
+            "p99_ms": 19.85942766070366,
+            "worst_ms": 34.090541303157806
+          },
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.01984548009932,
+            "fps": 59.88019414664532,
+            "frames": 3594,
+            "on_time_pct": 88.20255982192543,
+            "p50_ms": 16.65566675364971,
+            "p95_ms": 18.303733319044113,
+            "p99_ms": 19.538045972585678,
+            "worst_ms": 119.32691931724548
+          },
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.01699945051223,
+            "fps": 59.949681472609704,
+            "frames": 3598,
+            "on_time_pct": 89.96664813785436,
+            "p50_ms": 16.658646054565907,
+            "p95_ms": 18.135929200798273,
+            "p99_ms": 19.639941379427903,
+            "worst_ms": 34.219540655612946
+          },
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.00152282137424,
+            "fps": 59.865147267902806,
+            "frames": 3592,
+            "on_time_pct": 88.83630289532294,
+            "p50_ms": 16.658145003020763,
+            "p95_ms": 18.113345745950937,
+            "p99_ms": 19.515496101230386,
+            "worst_ms": 119.42528933286667
+          },
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 59.99968477152288,
+            "fps": 59.96698172167209,
+            "frames": 3598,
+            "on_time_pct": 88.57698721511952,
+            "p50_ms": 16.655208542943,
+            "p95_ms": 18.302153702825308,
+            "p99_ms": 19.817823115736246,
+            "worst_ms": 39.64304178953171
+          },
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.00179084856063,
+            "fps": 59.84821368187786,
+            "frames": 3591,
+            "on_time_pct": 87.88638262322473,
+            "p50_ms": 16.66758395731449,
+            "p95_ms": 18.154311925172806,
+            "p99_ms": 19.58440914750099,
+            "worst_ms": 116.3957491517067
+          },
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
       "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
-      "status": "unavailable",
+      "status": "ok",
       "version": "8d26312ddb4ad2e97074f0c9ba42ce386241d55a"
     },
     {
       "id": "opence-macos",
-      "method": "Metal HUD present intervals",
-      "reason": "host-not-quiet",
-      "runs": [],
+      "method": "metalperftrace on-glass intervals",
+      "reason": "",
+      "runs": [
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.000904268585145,
+            "fps": 59.33243912565364,
+            "frames": 3560,
+            "on_time_pct": 89.97191011235955,
+            "p50_ms": 16.65912475436926,
+            "p95_ms": 18.241656664758917,
+            "p99_ms": 19.406973905861374,
+            "worst_ms": 484.66962575912476
+          },
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.00095610320568,
+            "fps": 59.015726247915815,
+            "frames": 3541,
+            "on_time_pct": 87.88477831121152,
+            "p50_ms": 16.657250002026558,
+            "p95_ms": 18.311582505702972,
+            "p99_ms": 19.794408231973648,
+            "worst_ms": 165.96129536628723
+          },
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 59.99933827202767,
+            "fps": 59.98399488478845,
+            "frames": 3599,
+            "on_time_pct": 85.13475965545985,
+            "p50_ms": 16.657209023833275,
+            "p95_ms": 18.48448682576418,
+            "p99_ms": 19.58898052573204,
+            "worst_ms": 31.516708433628082
+          },
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.00009854417294,
+            "fps": 59.91656825952226,
+            "frames": 3595,
+            "on_time_pct": 89.56884561891516,
+            "p50_ms": 16.65220782160759,
+            "p95_ms": 18.161883205175396,
+            "p99_ms": 19.236435890197754,
+            "worst_ms": 99.80712831020355
+          },
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.0020646173507,
+            "fps": 59.964603267327774,
+            "frames": 3598,
+            "on_time_pct": 89.77209560867148,
+            "p50_ms": 16.649874858558178,
+            "p95_ms": 18.228761851787567,
+            "p99_ms": 19.49592048302292,
+            "worst_ms": 48.425957560539246
+          },
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "metrics": {
+            "duration_s": 60.01669910363853,
+            "fps": 59.899995396148874,
+            "frames": 3595,
+            "on_time_pct": 89.73574408901251,
+            "p50_ms": 16.662999987602234,
+            "p95_ms": 18.191763013601303,
+            "p99_ms": 19.310937598347664,
+            "worst_ms": 97.09695726633072
+          },
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
       "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
-      "status": "unavailable",
+      "status": "ok",
       "version": "v1.0.2"
     },
     {
       "id": "chupathingy",
       "method": "Metal HUD present intervals",
-      "reason": "host-not-quiet",
+      "reason": "console-unavailable",
       "runs": [],
       "sha256": "0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a",
       "status": "unavailable",
@@ -3507,7 +3739,7 @@
     {
       "id": "halo-og",
       "method": "Metal HUD present intervals",
-      "reason": "host-not-quiet",
+      "reason": "console-unavailable",
       "runs": [],
       "sha256": "28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6",
       "status": "unavailable",
@@ -3516,11 +3748,11 @@
     {
       "id": "opence-web",
       "method": "Safari RAF callbacks (entry-document hash)",
-      "reason": "host-not-quiet",
+      "reason": "safari-remote-automation-disabled",
       "runs": [],
-      "sha256": "93277da132ad0801b993c01e1bad5b5a7c7a19caf8b24ecdd7aab971a7cbe5ba",
+      "sha256": "",
       "status": "unavailable",
-      "version": "hosted entry document"
+      "version": "unavailable"
     }
   ]
 }
