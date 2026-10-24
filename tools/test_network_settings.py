@@ -252,7 +252,7 @@ typedef int boolean;
 #define FALSE 0
 #define NONE -1
 #define match_vassert(file, line, value, message) assert(value)
-#define fopen(...) ((FILE *)0)
+#define fopen(...) fixture_automation_file()
 struct game_variant { int value; };
 struct game_variant_options { unsigned char mode_options[16]; };
 struct event_record { int unused; };
@@ -266,7 +266,11 @@ struct widget_instance {
 struct ui_widget_definition { int child_count, type; };
 static struct ui_widget_definition definitions[] = {{1, 0}, {3, 0}, {3, 2}};
 static struct game_variant_options selected, applied;
-static int told, hosting;
+static int told, hosting, automate;
+static FILE *fixture_automation_file(void) {
+    if (!automate) return 0;
+    FILE *file = tmpfile(); assert(file); fputs("Slayer\n", file); rewind(file); return file;
+}
 static struct ui_widget_definition *ui_widget_definition_get(int i) { return &definitions[i]; }
 static void ui_play_audio_feedback_sound(int i) { (void)i; }
 static void display_error_deferred(int a, int b, int c, int d) { (void)a; (void)b; (void)c; (void)d; }
@@ -275,7 +279,8 @@ static int playlist_profile_get_options(long i, struct game_variant_options *v) 
 static void *global_network_game_server_get(void) { return &hosting; }
 static int saved_game_file_get_path_to_enclosing_directory(long i, char *p) { (void)i; (void)p; return 0; }
 static void saved_game_file_remember_last_used_multiplayer_variant_directory(char *p) { (void)p; }
-static struct game_variant *game_engine_get_variant_by_name(struct game_variant *v, char *s) { (void)s; return v; }
+static struct game_variant *game_engine_get_variant_by_name(struct game_variant *v, char *s) { (void)s; v->value = 42; return v; }
+static void game_variant_options_default(struct game_variant const *v, struct game_variant_options *o) { (void)v; halo_network_options_defaults(o->mode_options); }
 static void player_ui_set_game_variant(struct game_variant *v) { (void)v; memset(&applied, 0, sizeof(applied)); }
 static void player_ui_set_game_variant_options(struct game_variant_options const *v) { applied = *v; }
 static void network_game_server_change_game_variant(void *s, struct game_variant *v) { (void)s; (void)v; hosting++; }
@@ -297,6 +302,9 @@ int main(void) {
     selected.mode_options[1] = 0; selected.mode_options[3] = 175;
     assert(multiplayer_profile_set_for_game(&root, 0, 0));
     assert(hosting == 1 && !memcmp(&selected, &applied, sizeof(selected)));
+    automate = 1;
+    assert(multiplayer_profile_set_for_game(&root, 0, 0));
+    assert(hosting == 2 && applied.mode_options[3] == 150);
     return 0;
 }
 '''

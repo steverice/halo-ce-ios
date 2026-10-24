@@ -5858,7 +5858,10 @@ static boolean multiplayer_profile_set_for_game(
 			memset(&empty_profile, 0, sizeof(empty_profile));
 			automation_profile = *game_engine_get_variant_by_name(&temporary_profile, variant_name);
 			if (memcmp(&automation_profile, &empty_profile, sizeof(automation_profile)))
+			{
 				profile = automation_profile;
+				game_variant_options_default(&profile, &options);
+			}
 			fclose(file);
 		}
 		player_ui_set_game_variant(&profile);
