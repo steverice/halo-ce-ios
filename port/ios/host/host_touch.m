@@ -57,7 +57,10 @@ int host_ios_gamepad_type(SDL_Gamepad *pad) {
 }
 int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     int value=SDL_GetGamepadAxis(pad,axis);
-    if(SDL_GetGamepadID(pad)==touch_id && host_touch_replay_blocked(&replay_gate))
+    /* Keep touch movement/look out of in-game menus; hardware still navigates
+       them through the merge below. The guest publishes this hint with the UI. */
+    if(SDL_GetGamepadID(pad)==touch_id && (host_touch_replay_blocked(&replay_gate) ||
+        (axis<SDL_GAMEPAD_AXIS_LEFT_TRIGGER && SDL_GetHintBoolean("VISR_PAUSE_MENU",0))))
         value=0;
     if(SDL_GetGamepadID(pad)==touch_id && primary_hardware) {
         int physical=SDL_GetGamepadAxis(SDL_GetGamepadFromID(primary_hardware),axis);

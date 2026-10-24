@@ -16,6 +16,8 @@ def run(*args):
 
 # Touch button labels must reach their default game actions.
 run('python3', 'tools/test_touch_mapping.py')
+# Held touch sticks must stop feeding movement while the pause menu is open.
+run('python3', 'tools/test_touch_pause.py')
 
 clang = '/opt/homebrew/opt/llvm/bin/clang'
 lld = '/opt/homebrew/opt/lld/bin/ld.lld'
