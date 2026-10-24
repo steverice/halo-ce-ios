@@ -104,9 +104,9 @@ int main(void) {@autoreleasepool {
        even a failed guard cannot contact CloudKit during this behavior probe. */
     assert(host_report_delivery_acquire());atomic_store(&enabled,true);atomic_store(&suspended,false);
     delivery=[@{@"day":@0,@"attempts":@7,@"bytes":@99,@"retries":[NSMutableDictionary dictionary]} mutableCopy];
-    host_perf_reports_activate("ui",1);assert(atomic_load(&menu) && atomic_load(&runtime_suppressed));
+    host_perf_reports_activate("ui",1);dispatch_sync(worker,^{});assert(atomic_load(&menu) && atomic_load(&runtime_suppressed));
     NSDictionary *suppressed_state=[delivery copy];deliver();assert([delivery isEqual:suppressed_state]);
-    host_perf_reports_activate("ui",0);assert(!atomic_load(&runtime_suppressed));deliver();
+    host_perf_reports_activate("ui",0);dispatch_sync(worker,^{});assert(!atomic_load(&runtime_suppressed));deliver();
     assert([delivery[@"day"] longValue]!=0 && [delivery[@"attempts"] unsignedIntegerValue]==0 && [delivery[@"bytes"] unsignedLongLongValue]==0);
     host_report_delivery_release();atomic_store(&enabled,false);atomic_store(&menu,false);
     delivery=[NSMutableDictionary dictionary];assert(!working_metadata_valid(@{}));

@@ -44,7 +44,7 @@ static NSString *guest,*active_map;
 static NSMutableDictionary *metadata,*delivery;
 static NSDictionary *graphics,*initial_context;
 static NSString *graphics_hash;
-static atomic_bool abnormal;
+static atomic_bool abnormal,load_begin_logged;
 static struct {struct game_perf_graphics_snapshot value;uint64_t frame_id;} graphics_queue[2];
 static uint64_t graphics_frame_override;
 static atomic_uint graphics_head,graphics_tail,graphics_dropped;
@@ -171,7 +171,7 @@ static void resume_segment(void) {
     resume_play=NO;resume_ready=NO;atomic_store(&abnormal,false);metadata=[metadata mutableCopy];metadata[@"nonce"]=[NSUUID.UUID.UUIDString stringByReplacingOccurrencesOfString:@"-" withString:@""].lowercaseString;metadata[@"resumed"]=@YES;initial_context=[metadata copy];
     journal_bytes=0;sequence=0;rows=0;first_frame_id=0;duration_us=0;lost_rows=0;lost_events=0;journal_events=0;omitted_begin_us=0;omitted_end_us=0;truncated=NO;trace_limit=MAX_TRACE_ROWS;omit_detail=NO;recovered_summary_valid=NO;recovered_windows_active=NO;start_us=clock_us();
     persist(metadata,[ROOT stringByAppendingPathComponent:@"working.json"]);journal=fopen([[ROOT stringByAppendingPathComponent:@"working.bin"] fileSystemRepresentation],"wb");
-    if(journal && game_perf_start(recorder,start_us)){thermal_event();atomic_store(&collecting,true);}
+    if(journal && game_perf_start(recorder,start_us)){atomic_store(&load_begin_logged,false);thermal_event();atomic_store(&collecting,true);}
 }
 static void refresh_map_identity(void) {
     if(!journal || !active_map)return;NSDictionary *identity=host_shader_upload_map_identity(active_map.UTF8String);
@@ -481,13 +481,21 @@ void host_perf_reports_activate(const char *name,int suppressed) {
 #if HALO_PERF_REPORTS_TESTING
     if(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE") && !strcmp(getenv("HALO_PERF_REPORTS_TEST_OVERRIDE"),"1"))suppressed=0;
 #endif
+    if(host_benchmark_running())suppressed=1;
     atomic_store(&runtime_suppressed,suppressed!=0);
     NSString *map=name?@(name):@"";BOOL ui=[[[map stringByReplacingOccurrencesOfString:@"\\" withString:@"/"] lastPathComponent].stringByDeletingPathExtension isEqual:@"ui"];
     atomic_store(&menu,ui);atomic_store(&collecting,false);
-    game_perf_end(recorder,clock_us(),GAME_PERF_END_NORMAL);
-    dispatch_sync(worker,^{host_report_delivery_cancel_performance();resume_play=NO;resume_ready=NO;drain();if(journal)finish_report(NO);trim();});
-    if(ui || suppressed || !name || atomic_load(&suspended) || [NSFileManager.defaultManager fileExistsAtPath:[ROOT stringByAppendingPathComponent:@"working.bin"]])return;
-    NSDictionary *identity=host_shader_upload_map_identity(name);
+    /* The game thread only publishes the boundary. Ending, finishing (compression can
+       take seconds after a long game) and the next segment's setup run on the serial
+       worker, ordered after any earlier start. The game thread is the producer and has
+       stopped appending; other appenders are waited out as at exit. */
+    BOOL named=name!=NULL;uint64_t ended=clock_us();
+    dispatch_async(worker,^{@autoreleasepool{
+    uint64_t deadline=clock_us()+100000;while(atomic_load(&appenders) && clock_us()<deadline)usleep(1000);
+    game_perf_end(recorder,ended,GAME_PERF_END_NORMAL);
+    host_report_delivery_cancel_performance();resume_play=NO;resume_ready=NO;drain();if(journal)finish_report(NO);trim();
+    if(ui || suppressed || !named || atomic_load(&suspended) || [NSFileManager.defaultManager fileExistsAtPath:[ROOT stringByAppendingPathComponent:@"working.bin"]])return;
+    NSDictionary *identity=host_shader_upload_map_identity(map.UTF8String);
     atomic_store(&abnormal,false);start_us=clock_us();journal_bytes=0;sequence=0;rows=0;first_frame_id=0;duration_us=0;lost_rows=0;lost_events=0;journal_events=0;omitted_begin_us=0;omitted_end_us=0;truncated=NO;trace_limit=MAX_TRACE_ROWS;omit_detail=NO;recovered_summary_valid=NO;recovered_windows_active=NO;
     char model[128]="unknown";size_t length=sizeof(model);
 #if HALO_NATIVE_MAC || TARGET_OS_MACCATALYST
@@ -505,8 +513,12 @@ void host_perf_reports_activate(const char *name,int suppressed) {
 #endif
     const struct host_profile *profile=host_device_profile();
     metadata=[@{@"schema":@1,@"nonce":[NSUUID.UUID.UUIDString stringByReplacingOccurrencesOfString:@"-" withString:@""].lowercaseString,@"model":@(model),@"platform":platform,@"profileID":profile && profile->model_name[0]?@(profile->model_name):profile && profile->class_name[0]?@(profile->class_name):@"default",@"mapFingerprint":identity[@"fingerprint"]?:@"unknown",@"mapFormat":identity[@"format"]?:@"unknown",@"renderer":@"unknown",@"mode":@"unknown",@"appVersion":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]?:@"unknown",@"appBuild":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]?:@"unknown",@"guestSHA256":guest,@"graphics":graphics?:@{},@"profileHash":graphics_hash?:@"unknown",@"os":NSProcessInfo.processInfo.operatingSystemVersionString,@"networkVersion":@(HALO_PORT_NETWORK_VERSION),@"journalABI":@1,@"journalFrameSize":@(sizeof(game_perf_frame)),@"timingSemantics":@{@"interval":@"frame_start_interval",@"gpu":@"completed_main_command_buffers_joined_by_frame_id",@"presentation":@"attempt_evidence_only",@"deadlineMiss":@"interval_over_budget_proxy",@"packetCounts":@"successful_application_datagrams",@"packetLoss":@"unavailable",@"rtt":@"mean_supported_positive_remote_player_ping_observations",@"networkStall":@"measured_network_cpu_span_over_50ms_not_transport_progress",@"gpuPasses":@"frame_joined_color_depth_color_only_depth_only_encoder_durations_draw_boundaries_or_overlapping_stage_envelopes_not_additive_gpu_busy_time"}} mutableCopy];
-    dispatch_sync(worker,^{active_map=map;initial_context=[metadata copy];persist(metadata,[ROOT stringByAppendingPathComponent:@"working.json"]);journal=fopen([[ROOT stringByAppendingPathComponent:@"working.bin"] fileSystemRepresentation],"wb");
-        if(journal && game_perf_start(recorder,start_us)){thermal_event();atomic_store(&collecting,true);}});
+active_map=map;initial_context=[metadata copy];persist(metadata,[ROOT stringByAppendingPathComponent:@"working.json"]);journal=fopen([[ROOT stringByAppendingPathComponent:@"working.bin"] fileSystemRepresentation],"wb");
+        if(journal && game_perf_start(recorder,start_us)){
+            /* The guest's load-begin hook usually runs before this start; record it here instead. */
+            game_perf_event begin={.type=GAME_PERF_EVENT_MAP_LOAD_BEGIN};game_perf_append_event(recorder,&begin);atomic_store(&load_begin_logged,true);
+            thermal_event();atomic_store(&collecting,true);}
+    }});
 #else
     (void)name;(void)suppressed;
 #endif
@@ -531,7 +543,7 @@ void host_perf_reports_frame(const game_perf_frame *value) {
 }
 void host_perf_reports_event(const game_perf_event *value) {
 #if HALO_PERF_REPORTS
-    if(value){atomic_fetch_add(&appenders,1);if(atomic_load_explicit(&collecting,memory_order_acquire)){if(value->type==14)atomic_store(&abnormal,true);game_perf_event event=*value;event.elapsed_us=event.elapsed_us>=start_us?event.elapsed_us-start_us:0;game_perf_append_event(recorder,&event);}atomic_fetch_sub(&appenders,1);}
+    if(value){atomic_fetch_add(&appenders,1);if(atomic_load_explicit(&collecting,memory_order_acquire)){if(value->type==14)atomic_store(&abnormal,true);if(value->type==GAME_PERF_EVENT_MAP_LOAD_BEGIN && atomic_exchange(&load_begin_logged,true)){atomic_fetch_sub(&appenders,1);return;}game_perf_event event=*value;event.elapsed_us=event.elapsed_us>=start_us?event.elapsed_us-start_us:0;game_perf_append_event(recorder,&event);}atomic_fetch_sub(&appenders,1);}
 #else
     (void)value;
 #endif
