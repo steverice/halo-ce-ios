@@ -22,6 +22,8 @@ layouts).
 #include "halo_spatial.h"
 
 /* Whether the current output is an external display (context values are never saved). */
+int host_device_profile_pending(char *values, unsigned long capacity, char *version, unsigned long size);
+void host_device_profile_applied(int point, int networked, int changed, int metalfx, int frame_rate);
 int host_external_active(void);
 void host_external_commit(int allow_pause);
 

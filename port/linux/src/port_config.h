@@ -45,6 +45,26 @@ int config_default(const char *name, char *text, size_t size);
 /* Whether a player or developer explicitly selected this setting. */
 int config_explicit(const char *name);
 
+/* Gameplay breaks at which a verified pending profile may replace profile defaults. */
+enum
+{
+	CONFIG_PROFILE_LEVEL_LOAD = 1,
+	CONFIG_PROFILE_CUTSCENE_START,
+	CONFIG_PROFILE_CUTSCENE_END,
+	CONFIG_PROFILE_LOCAL_DEATH,
+	CONFIG_PROFILE_LOCAL_RESPAWN
+};
+enum
+{
+	CONFIG_PROFILE_FROZEN = 1,
+	CONFIG_PROFILE_NETWORKED = 2
+};
+/* context is a CONFIG_PROFILE_* bit mask; the game helper supplies exclusions. */
+void config_profile_safe_point(int point, int context);
+int config_profile_apply_snapshot(const char *snapshot, const char *version, int point, int context);
+/* Game-side eligibility, shared by the level, cinematic and local player hooks. */
+void config_profile_game_safe_point(int point);
+
 /* The scene classes a device profile may give some settings their own
 values for ([scene.menu.display] in a profile; port/linux/game/scene_class.c
 says which one a frame is). */

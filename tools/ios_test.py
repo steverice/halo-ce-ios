@@ -153,6 +153,10 @@ for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-d
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
     'port/ios/tests/config_origins_probe.c', *sdl_flags, '-o', BUILD / 'config-origins-probe')
 run(BUILD / 'config-origins-probe')
+# Safe-point profile merges preserve choices, defer resource settings and handle removals.
+run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
+    'port/ios/tests/profile_hot_apply_probe.c', *sdl_flags, '-o', BUILD / 'profile-hot-apply-probe')
+run(BUILD / 'profile-hot-apply-probe')
 # device profiles: which files a device gets and in what order, what a profile may not set, and the shipped
 # profiles for the devices measured so far (port/ios/host/host_profile.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-Iport/ios/host', '-Iport/third_party/tomlc17',
@@ -188,6 +192,12 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblo
     'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
     '-o', BUILD / 'data-pack-launch-probe')
 run(BUILD / 'data-pack-launch-probe')
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-Wl,-dead_strip',
+    '-DHALO_NATIVE_MAC=1', '-Iport/ios/host', '-Iport/linux/src', '-Iport/runtime/include', '-framework', 'Foundation',
+    '-lz', 'port/ios/tests/data_pack_launch_probe.m', 'port/ios/host/host_data_pack.m',
+    'port/third_party/monocypher/monocypher.c', 'port/third_party/monocypher/monocypher-ed25519.c',
+    '-o', BUILD / 'data-pack-launch-mac-probe')
+run(BUILD / 'data-pack-launch-mac-probe')
 run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
     '-Iport/ios/host', '-Iport/runtime/include', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
     '-lz', 'port/ios/tests/data_updates_probe.m', 'port/ios/host/host_data_pack.m',

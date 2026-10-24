@@ -72,6 +72,11 @@ Metal backend reports its own, with the GPU's time (gpu_metal.m's pacing_schedul
 The interval is from one Present's return to the next's; the CPU time is the game's work between them. */
 static int metal_backend;
 
+int host_gpu_metal_active(void)
+{
+    return metal_backend && wrapped_backend != NULL;
+}
+
 static double uptime_seconds(void)
 {
 	return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
@@ -153,9 +158,12 @@ __attribute__((unused)) static void frame_rate_cap_set(uint32_t rate)
 	frame_rate.interval = (uint64_t)(1e9 / (double)rate * (double)timebase.denom / (double)timebase.numer);
 }
 
+static uint32_t frame_rate_requested;
+
 static void frame_rate_initialize(uint32_t flags)
 {
 	uint32_t rate = flags >> GPU_INITIALIZE_FRAME_RATE_SHIFT;
+    frame_rate_requested = rate;
 
 	if (!rate)
 		return;
@@ -195,6 +203,17 @@ static void frame_rate_initialize(uint32_t flags)
 		}
 	}
 #endif
+}
+
+/* Safe points run on the drawing thread, as do the pacing reads and benchmark overrides. */
+void host_frame_rate_profile(int rate)
+{
+    if (rate < -1 || rate > 1000) return;
+    uint32_t requested = rate == -1 ? GPU_INITIALIZE_FRAME_RATE_UNLIMITED : (uint32_t)rate;
+    if (requested == frame_rate_requested) return;
+    memset(&frame_rate, 0, sizeof(frame_rate));
+    frame_rate_initialize((requested << GPU_INITIALIZE_FRAME_RATE_SHIFT) |
+        (metal_backend ? GPU_INITIALIZE_METAL : 0));
 }
 
 /* what the configuration asked for, which a benchmark case's override (host_frame_rate_override) returns to */

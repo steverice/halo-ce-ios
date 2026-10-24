@@ -100,6 +100,7 @@ symbols in this file:
 #include "real_math.h"
 #include "console.h"
 #include "game_state.h"
+#include "../../port/linux/src/port_config.h" /* port: checkpoint revival is a local respawn boundary */
 #include "game.h"
 #include "tag_files.h"
 #include "cache_files.h"
@@ -354,6 +355,9 @@ void game_state_port_restamp_revert_time(
 void game_state_revert(
 	void)
 {
+	long local_player_index;
+	boolean local_was_dead;
+
 	if (!game_state_globals.saved_game_valid && !recover_saved_games_hack)
 	{
 		main_reset_map();
@@ -361,6 +365,12 @@ void game_state_revert(
 		return;
 	}
 
+	/* port: restoring the checkpoint bypasses player_spawn. Capture death
+	before replacing the state, then apply only if the load revives this player. */
+	local_player_index = local_player_get_player_index(0);
+	local_was_dead = local_player_index != NONE &&
+		(player_get(local_player_index)->unit_index == NONE ||
+		TEST_FLAG(object_get(player_get(local_player_index)->unit_index)->object.damage_flags, _object_dead_bit));
 	game_state_note_event("checkpoint revert");
 	game_state_call_before_load_procs();
 	/* port: a file that is not a saved game of this build is not taken, and
@@ -369,6 +379,13 @@ void game_state_revert(
 	{
 		game_state_globals.saved_game_valid = FALSE;
 		main_reset_map();
+	}
+	else if (local_was_dead)
+	{
+		local_player_index = local_player_get_player_index(0);
+		if (local_player_index != NONE && player_get(local_player_index)->unit_index != NONE &&
+			!TEST_FLAG(object_get(player_get(local_player_index)->unit_index)->object.damage_flags, _object_dead_bit))
+			config_profile_game_safe_point(CONFIG_PROFILE_LOCAL_RESPAWN);
 	}
 	game_state_call_after_load_procs();
 

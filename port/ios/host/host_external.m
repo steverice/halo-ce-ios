@@ -410,7 +410,9 @@ void host_external_poll(void) {
     if(!candidate_screen || !session_state.negotiating)return;
     if(requested_index<0) {
         char cap_text[80];
-        int cap=host_profile_external_value(host_device_profile(),"display.output_height",cap_text,sizeof(cap_text))?
+        struct host_profile profile;
+        host_device_profile_copy(&profile);
+        int cap=host_profile_external_value(&profile,"display.output_height",cap_text,sizeof(cap_text))?
             atoi(cap_text):1080;
         drawable_cap=forced_width?0:cap;
         int chosen=host_external_mode_choose(candidates,(size_t)candidate_count,preferred_index,cap,forced_width,forced_height);

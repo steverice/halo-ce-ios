@@ -1084,12 +1084,16 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 {
 	static long shadow_size = -1;
 	static int effect_level = -1;
+	static unsigned long read_at;
+	unsigned long revision = config_changes();
 
-	if (shadow_size < 0)
+	/* port: a level-load profile replaces the defaults before target allocation. */
+	if (shadow_size < 0 || read_at != revision)
 	{
 		shadow_size = config_integer("display.shadow_map_size");
 		shadow_size = shadow_size < 128 ? 128 : shadow_size > 2048 ? 2048 : shadow_size;
 		effect_level = effect_resolution_level(config_string("display.effect_resolution"));
+		read_at = revision;
 	}
 	if (width == 128 && height == 128 && (format == D3DFMT_R5G6B5 || format == D3DFMT_LIN_R5G6B5))
 	{
@@ -4095,15 +4099,18 @@ static uint8_t gpu_address(DWORD mode)
 }
 
 /* display.anisotropic_filtering as it stands: the benchmark's value while it has one, else debug.knob_cycle's, else
-the setting (read once) */
+the setting (refreshed when profile defaults change) */
 static long anisotropy_in_force(void)
 {
 	static long setting = -1;
+	static unsigned long read_at;
+	unsigned long revision = config_changes();
 
-	if (setting < 0)
+	if (setting < 0 || read_at != revision)
 	{
 		setting = config_integer("display.anisotropic_filtering");
 		setting = setting < 1 ? 1 : setting > 16 ? 16 : setting;
+		read_at = revision;
 	}
 	return benchmark_anisotropy > 0 ? benchmark_anisotropy : knob_anisotropy > 0 ? knob_anisotropy : setting;
 }

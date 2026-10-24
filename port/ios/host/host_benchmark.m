@@ -626,6 +626,8 @@ static BOOL catalog_signed(void) {
 }
 
 static NSString *report_header(void) {
+    struct host_profile profile;
+    host_device_profile_copy(&profile);
     NSProcessInfo *process = NSProcessInfo.processInfo;
     NSOperatingSystemVersion version = process.operatingSystemVersion;
     id<MTLDevice> gpu = MTLCreateSystemDefaultDevice();
@@ -666,11 +668,11 @@ static NSString *report_header(void) {
         json_string(external_modes.count ? external_modes[external_mode_index] : @""),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"]),
         json_string([NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]), HALO_GUEST_SHA256,
-        json_string(host_device_profile()->inherited ? @"inherited" : host_device_profile()->model_file[0] ? @"exact" : @"class"),
-        json_string(@(host_device_profile()->source_hardware)), json_string(@(host_device_profile()->target_hardware)),
-        host_device_profile()->source_tier, host_device_profile()->target_tier, json_string(@(host_device_profile()->catalog_version)),
-        json_string(@(host_device_profile()->class_file)), json_string(@(host_device_profile()->model_file)),
-        host_device_profile()->drop_in ? "true" : "false",
+        json_string(profile.inherited ? @"inherited" : profile.model_file[0] ? @"exact" : @"class"),
+        json_string(@(profile.source_hardware)), json_string(@(profile.target_hardware)),
+        profile.source_tier, profile.target_tier, json_string(@(profile.catalog_version)),
+        json_string(@(profile.class_file)), json_string(@(profile.model_file)),
+        profile.drop_in ? "true" : "false",
         plan.device.drawable_lines, plan.device.base_lines, plan.device.anisotropy, plan.device.shadow_size,
         plan.device.model_lod_max ? "max" : "auto",
         json_object(pinned_snapshot[@"updates"]), json_string(pinned_snapshot[@"sha256"]),
@@ -946,7 +948,9 @@ static NSString *active_catalog_sha256(void) {
 /* A resumed journal must describe the same guest, catalog, resolved profile and baseline settings. The pinned
    snapshot still owns the exact replay files, so a later feed update cannot replace an unfinished suite. */
 static NSDictionary *snapshot_identity(const char *mode) {
-    const struct host_profile *profile = host_device_profile();
+    struct host_profile snapshot;
+    host_device_profile_copy(&snapshot);
+    const struct host_profile *profile = &snapshot;
     NSMutableArray *values = [NSMutableArray array];
     for (int i = 0; i < profile->count; i++) {
         const struct host_profile_value *value = &profile->values[i];
@@ -1343,7 +1347,9 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
     }
     if (only) flag(@"scenes_filtered");
     /* a drop-in profile is somebody trying values: the report must never be read as the shipped profile's */
-    if (host_device_profile()->drop_in) flag(@"drop_in_profile");
+    struct host_profile profile;
+    host_device_profile_copy(&profile);
+    if (profile.drop_in) flag(@"drop_in_profile");
 #if TARGET_OS_SIMULATOR
     flag(@"simulator");
 #endif

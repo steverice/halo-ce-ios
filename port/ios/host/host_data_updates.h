@@ -2,6 +2,8 @@
 #ifdef __OBJC__
 #import <Foundation/Foundation.h>
 NSString *host_profile_update_folder(NSString *bundled);
+/* Resolves verified generations off presentation; the visitor must not call back into launch setup. */
+void host_profile_updates_watch(NSString *dropIn, void (^visitor)(NSString *folder, NSDictionary *identity));
 NSString *host_recording_update_folder(NSString *bundled);
 NSData *host_shader_update_list(const char *name);
 NSDictionary *host_data_updates_metadata(void);

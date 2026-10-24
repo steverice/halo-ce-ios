@@ -238,6 +238,7 @@ symbols in this file:
 #include "devices/devices.h"
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "cutscene/cinematics.h" /* port: network co-op's first spawns */
+#include "../../port/linux/src/port_config.h" /* port: pending profiles at local death and respawn */
 #include "editor/editor_stubs.h"
 #include "effects/effects.h"
 #include "effects/player_effects.h"
@@ -820,6 +821,9 @@ void player_died(
 	struct data_iterator iterator;
 
 	player = player_get(player_index);
+	/* port: a remote player's death must not change this machine's picture. */
+	if (player->local_player_index != NONE && player->unit_index != NONE)
+		config_profile_game_safe_point(CONFIG_PROFILE_LOCAL_DEATH);
 	player->dead_unit_index = player->unit_index;
 	player->unit_index = NONE;
 	if (player->local_player_index != NONE)
@@ -852,6 +856,9 @@ void players_set_local_player_unit(
 	struct unit_datum *unit;
 
 	old_unit_index = player_control_get_unit_index(local_player_index);
+	/* port: saved-unit revival takes this path rather than creating a unit. */
+	if (old_unit_index == NONE && unit_index != NONE)
+		config_profile_game_safe_point(CONFIG_PROFILE_LOCAL_RESPAWN);
 	match_assert(
 		"c:\\halo\\SOURCE\\game\\players.c",
 		1060,
@@ -1385,6 +1392,9 @@ static void player_spawn(
 	short starting_location_index;
 
 	player = player_get(player_index);
+	/* port: apply before making the local player's new unit and first view. */
+	if (player->local_player_index != NONE && player->unit_index == NONE)
+		config_profile_game_safe_point(CONFIG_PROFILE_LOCAL_RESPAWN);
 	saved_unit_index = NONE;
 	if (!game_engine_running() && player->local_player_index != NONE)
 	{
@@ -1546,6 +1556,10 @@ void network_player_attach_unit(
 {
 	struct player_datum *player = player_get(player_index);
 	struct unit_datum *unit = unit_get(unit_index);
+
+	/* port: clients receive their local respawn from the host. */
+	if (player->local_player_index != NONE && player->unit_index == NONE)
+		config_profile_game_safe_point(CONFIG_PROFILE_LOCAL_RESPAWN);
 
 	/* port: the host's team for the player (auto team balance moves a
 	player to the other team at his death: game_engine_player_killed) */

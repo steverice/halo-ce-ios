@@ -9,6 +9,7 @@
 static HostDataPackStore *launchStore;
 static int healthSignals;
 void host_logf(int priority, const char *format, ...) { (void)priority; (void)format; }
+void platform_log(const char *format, ...) { (void)format; }
 const struct gpu_backend gpu_backend_metal = {0}, gpu_backend_gl = {0};
 void host_lifecycle_hold(void) {}
 /* Presentation timing also runs in shadow-only builds. */
@@ -50,7 +51,32 @@ static NSData *Envelope(uint8_t *secret) {
         @"signature": [[NSData dataWithBytes:signature length:64] base64EncodedStringWithOptions:0],
         @"payload": [payload base64EncodedStringWithOptions:0]} options:0 error:NULL];
 }
+static void profile_frame_rate(void) {
+    metal_backend = 1;
+    host_frame_rate_scene(24);
+    host_frame_rate_profile(60);
+    assert(host_frame_rate_cap() == 60 && !host_frame_rate_unlimited());
+    assert(host_frame_rate_target() == 24);
+    frame_rate.next = 123;
+    host_frame_rate_profile(60);
+    assert(frame_rate.next == 123); /* An unchanged profile does not restart pacing. */
+    host_frame_rate_profile(30);
+    assert(host_frame_rate_cap() == 30 && frame_rate.next == 0 && frame_rate.interval);
+    host_frame_rate_profile(0);
+    assert(host_frame_rate_cap() == 0 && !frame_rate.interval && !host_frame_rate_unlimited());
+    host_frame_rate_profile(-1);
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
+    assert(host_frame_rate_unlimited());
+#else
+    assert(!host_frame_rate_unlimited());
+#endif
+    assert(host_frame_rate_cap() == 0 && !frame_rate.interval);
+    host_frame_rate_profile(0);
+    assert(!host_frame_rate_unlimited());
+    host_frame_rate_scene(0);
+}
 int main(void) { @autoreleasepool {
+    profile_frame_rate();
     uint8_t seed[32] = {2}, secret[64], public[32]; // Public fixture, never a release key.
     crypto_ed25519_key_pair(secret, public, seed);
     NSData *key = [NSData dataWithBytes:public length:32], *envelope = Envelope(secret);

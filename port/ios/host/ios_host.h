@@ -66,6 +66,8 @@ int host_sdl_output_cap_requested(void);
 void gpu_metal_request_output_cap(int cap);
 void gpu_metal_output_cap_commit(void);
 int gpu_metal_output_cap_settled(void);
+/* Game-thread query after GPU initialization, including validation wrappers. */
+int host_gpu_metal_active(void);
 void gpu_metal_set_upscaler(int metalfx);
 int gpu_metal_upscaler(void);
 /* display.frame_rate (host_gpu_dispatch.c), any cap or "unlimited" in the Mac
@@ -75,6 +77,8 @@ wait that holds the cap, called once a frame before it is shown, which
 returns the seconds it slept */
 int host_frame_rate_unlimited(void);
 double host_frame_rate_cap(void);
+/* Effective game setting at a safe point: 0 display, -1 unlimited, 1..1000 cap. */
+void host_frame_rate_profile(int rate);
 /* the most frames a second for the frames from now on: a scene class's rate from the device profile
    (gpu_frame_context, gpu_metal.m) when one is in force, else host_frame_rate_cap's; 0 for none. What the
    frame pacer spaces frames for and judges them against (host_frame_pacer.c) */

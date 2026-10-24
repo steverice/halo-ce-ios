@@ -23,6 +23,7 @@ config_origin_decide.
 
 #include "platform.h"
 #include "port_config.h"
+#include "port_profile_apply.h"
 #include "tomlc17.h"
 
 #include <SDL3/SDL.h>
@@ -2333,9 +2334,8 @@ HALO_DEVICE_PROFILE_VALUES: a line for each value, lowest layer first,
 "name<tab>value<tab>layer", and for a scene class's value a fourth field,
 the class. Not one of the settings' own HALO_ variables, which win over the
 file: these sit under it. A build with no host (the desktop's) has none. */
-static void config_profile_load(void)
+static void config_profile_load_text(const char *line, int point, int networked)
 {
-	const char *line = getenv("HALO_DEVICE_PROFILE_VALUES");
 
 	while (line && *line)
 	{
@@ -2357,6 +2357,7 @@ static void config_profile_load(void)
 		line = *end ? end + 1 : end;
 		if (count < 3)
 			continue;
+		if (point && !port_profile_apply_allowed(fields[0], point, networked)) continue;
 		/* Output mode selection belongs to the host, never to config.toml. */
 		if (!strcmp(fields[0], "display.output_height"))
 			continue;
@@ -2842,7 +2843,7 @@ static void config_load(void)
 	size_t index;
 	int migrated;
 
-	config_profile_load();
+	config_profile_load_text(getenv("HALO_DEVICE_PROFILE_VALUES"), 0, 0);
 	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
 		config_keep_device(index);
 	config_origins_read();
@@ -3217,6 +3218,120 @@ unsigned long config_changes(void)
 	return config_change_count;
 }
 
+/* A profile replacement changes defaults, never player/environment choices.
+   The latest complete snapshot is offered at each break, so deferred keys and
+   removals naturally follow the newest generation without a second pending list. */
+static void config_profile_signature(size_t index, char *text, size_t size)
+{
+	struct config_setting_state *state = &config_states[index];
+	snprintf(text,size,"%s",state->device_literal ? state->device_literal : "");
+	for (int i=0;i<NUMBER_OF_CONFIG_SCENES;i++)
+	{
+		size_t used = strlen(text);
+		snprintf(text+used,size-used,"|%s|%s",state->scene[i].text ? state->scene[i].text : "",
+			state->external[i].text ? state->external[i].text : "");
+	}
+}
+
+int config_profile_apply_snapshot(const char *snapshot, const char *version, int point, int context)
+{
+	static const char *const points[] = {"", "level load", "cutscene start", "cutscene end", "local death", "local respawn"};
+	struct profile_saved { char signature[1024]; struct config_value value; enum config_source source; };
+	struct profile_saved *saved;
+	char changes[2048] = "";
+	int changed = 0;
+	if (!snapshot || point < 1 || point > 5 || (context & CONFIG_PROFILE_FROZEN)) return 0;
+	saved = calloc(NUMBER_OF_CONFIG_SETTINGS,sizeof(*saved));
+	if (!saved) return 0;
+	(void)config_integer("display.render_height");
+	pthread_mutex_lock(&config_lock);
+	for (size_t index=0;index<NUMBER_OF_CONFIG_SETTINGS;index++)
+	{
+		struct config_setting_state *state = &config_states[index];
+		if (!config_is_profile_setting(index) || !port_profile_apply_allowed(config_settings[index].name,point,context & CONFIG_PROFILE_NETWORKED)) continue;
+		config_profile_signature(index,saved[index].signature,sizeof(saved[index].signature));
+		saved[index].value = config_values[index];
+		saved[index].source = state->source;
+		config_values[index].string = NULL;
+		for (int layer=0;layer<state->profile_count;layer++)
+		{
+			free(state->profile[layer].text); free(state->profile[layer].source);
+			memset(&state->profile[layer],0,sizeof(state->profile[layer]));
+		}
+		state->profile_count = 0;
+		for (int scene=0;scene<NUMBER_OF_CONFIG_SCENES;scene++)
+		{
+			free(state->scene[scene].text); free(state->scene[scene].source);
+			free(state->scene_value[scene].string);
+			free(state->external[scene].text); free(state->external[scene].source);
+			free(state->external_value[scene].string);
+			memset(&state->scene[scene],0,sizeof(state->scene[scene]));
+			memset(&state->scene_value[scene],0,sizeof(state->scene_value[scene]));
+			memset(&state->external[scene],0,sizeof(state->external[scene]));
+			memset(&state->external_value[scene],0,sizeof(state->external_value[scene]));
+		}
+	}
+	config_profile_load_text(snapshot,point,context & CONFIG_PROFILE_NETWORKED);
+	for (size_t index=0;index<NUMBER_OF_CONFIG_SETTINGS;index++)
+	{
+		struct config_setting_state *state = &config_states[index];
+		char after[1024], old_value[600], new_value[600];
+		if (!config_is_profile_setting(index) || !port_profile_apply_allowed(config_settings[index].name,point,context & CONFIG_PROFILE_NETWORKED)) continue;
+		config_keep_device(index);
+		config_profile_signature(index,after,sizeof(after));
+		if (saved[index].source == _source_file || saved[index].source == _source_environment)
+		{
+			free(config_values[index].string);
+			config_values[index] = saved[index].value;
+			state->source = saved[index].source;
+		}
+		else
+		{
+			config_literal(config_settings[index].type,&saved[index].value,old_value,sizeof(old_value));
+			config_literal(config_settings[index].type,&config_values[index],new_value,sizeof(new_value));
+			if (strcmp(saved[index].signature,after))
+			{
+				size_t used = strlen(changes);
+				snprintf(changes+used,sizeof(changes)-used,"%s%s %s→%s",used ? ", " : "",config_settings[index].name,old_value,new_value);
+			}
+			free(saved[index].value.string);
+		}
+		if (strcmp(saved[index].signature,after)) changed++;
+	}
+	if (changed) config_change_count++;
+	pthread_mutex_unlock(&config_lock);
+	if (changed) platform_log("profile %.63s applied at %s: %s",version ? version : "unknown",points[point],*changes ? changes : "profile defaults updated (explicit overrides preserved)");
+	free(saved);
+	return changed;
+}
+
+#ifdef HALO_ILP32
+int host_device_profile_pending(char *values, unsigned long capacity, char *version, unsigned long size);
+void host_device_profile_applied(int point, int networked, int changed, int metalfx, int frame_rate);
+#endif
+void config_profile_safe_point(int point, int context)
+{
+#ifdef HALO_ILP32
+	char version[64];
+	static char snapshot[128 * 256];
+	int changed;
+	const char *rate;
+	char *end;
+	long cap;
+	if ((context & CONFIG_PROFILE_FROZEN) || point < 1 || point > 5) return;
+	if (!host_device_profile_pending(snapshot,sizeof(snapshot),version,sizeof(version))) return;
+	changed = config_profile_apply_snapshot(snapshot,version,point,context);
+	rate = config_string("display.frame_rate");
+	cap = strtol(rate,&end,10);
+	if (!strcmp(rate,"unlimited")) cap = -1;
+	else if (!*rate || *end || cap < 1 || cap > 1000) cap = 0;
+	host_device_profile_applied(point,context & CONFIG_PROFILE_NETWORKED,changed,
+		!strcmp(config_string("display.upscaler"),"metalfx"),(int)cap);
+#else
+	(void)point; (void)context;
+#endif
+}
+
 /* the setting's value when nobody has set it: its default with the device's
 profile over it (what the menus' Defaults shows and writes) */
 int config_default(const char *name, char *text, size_t size)
@@ -3553,12 +3668,27 @@ int config_reload_boolean(const char *name)
 	text = config_read_file(path, &size);
 	pthread_mutex_lock(&config_lock);
 	config_set_device((size_t)index);
+	config_states[index].source = config_states[index].profile_count ? _source_profile : _source_default;
 	if (text)
 	{
 		toml_result_t result = toml_parse(text, (int)size);
 
 		if (result.ok)
-			config_set_from_file(&config_values[index], &config_settings[index], result.toptab);
+		{
+			struct config_value read = {0};
+			if (config_set_from_file(&read,&config_settings[index],result.toptab))
+			{
+				char literal[600];
+				config_literal(config_settings[index].type,&read,literal,sizeof(literal));
+				if (config_states[index].origin != _origin_default || !config_states[index].origin_literal ||
+					strcmp(literal,config_states[index].origin_literal))
+				{
+					config_values[index].boolean = read.boolean;
+					config_states[index].source = _source_file;
+				}
+				free(read.string);
+			}
+		}
 		toml_free(result);
 	}
 	config_set_from_environment((size_t)index);

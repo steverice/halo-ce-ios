@@ -16,7 +16,7 @@ NSDictionary *host_shader_upload_map_identity(const char *name) {
     return name && !strcmp(name,"/resolved/custom.map")?@{@"fingerprint":@"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",@"format":@"cache-7"}:nil;
 }
 NSTimeInterval host_shader_upload_retry(NSUInteger attempt,NSTimeInterval cloud,double jitter) {(void)attempt;(void)jitter;return MAX(60,cloud);}
-const struct host_profile *host_device_profile(void) {return NULL;}
+void host_device_profile_copy(struct host_profile *profile) {*profile=(struct host_profile){0};}
 int host_benchmark_running(void) {return 0;}
 int main(void) {@autoreleasepool {
     NSString *directory=[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];

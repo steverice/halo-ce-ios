@@ -16,6 +16,8 @@ void platform_log(const char *format, ...)
 
 int host_external_active(void) { return 0; }
 
+int host_device_profile_pending(char *values, unsigned long capacity, char *version, unsigned long size) { (void)values; (void)capacity; (void)version; (void)size; return 0; }
+void host_device_profile_applied(int point, int networked, int changed, int metalfx, int frame_rate) { (void)point; (void)networked; (void)changed; (void)metalfx; (void)frame_rate; }
 #include "port_config.c"
 #include <assert.h>
 #include <unistd.h>

@@ -132,3 +132,6 @@ host_perf_hooks_loading
 host_perf_reports_activate
 host_perf_reports_graphics_snapshot
 host_perf_reports_identity
+
+host_device_profile_pending
+host_device_profile_applied

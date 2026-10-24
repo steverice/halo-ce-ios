@@ -2,6 +2,7 @@
    may not set, and that nothing in a profile folder can leave the loader without an answer. The shipped
    profiles/ folder is checked for the devices we have measured: tools/ios_test.py passes its path. */
 #include "host_profile.h"
+#include "host_profile_merge.h"
 
 #include <assert.h>
 #include <dirent.h>
@@ -784,8 +785,36 @@ static void check_long_profile_path(void)
 	assert(reported);
 }
 
+static void hot_apply_merge(void)
+{
+    struct host_profile old = {0}, next = {0}, merged;
+    old.count = HOST_PROFILE_MAXIMUM_VALUES;
+    for (int i = 0; i < old.count; i++) {
+        snprintf(old.values[i].name, sizeof(old.values[i].name), "display.high_res_hud");
+        snprintf(old.values[i].text, sizeof(old.values[i].text), "%s", i == old.count - 1 ? "true" : "false");
+    }
+    next.count = 3;
+    snprintf(next.values[0].name, sizeof(next.values[0].name), "display.render_height");
+    snprintf(next.values[0].text, sizeof(next.values[0].text), "900");
+    next.values[1] = next.values[0];
+    snprintf(next.values[1].text, sizeof(next.values[1].text), "1080");
+    next.values[2] = next.values[1];
+    snprintf(next.values[2].scene, sizeof(next.values[2].scene), "cutscene");
+    next.values[2].external = 1;
+    host_profile_merge_at_break(&old, &next, 2, 0, &merged);
+    assert(merged.count == 3);
+    char text[80];
+    assert(host_profile_value(&merged, "display.high_res_hud", text, sizeof(text)) && !strcmp(text, "true"));
+    assert(host_profile_value(&merged, "display.render_height", text, sizeof(text)) && !strcmp(text, "1080"));
+    assert(merged.values[2].external && !strcmp(merged.values[2].scene, "cutscene"));
+    host_profile_merge_at_break(&merged, &next, 1, 0, &old);
+    assert(old.count == 2);
+    assert(!host_profile_value(&old, "display.high_res_hud", text, sizeof(text)));
+}
+
 int main(int argc, char **argv)
 {
+    hot_apply_merge();
 	char command[128];
 
 	snprintf(folder, sizeof(folder), "/tmp/profile-probe-XXXXXX");

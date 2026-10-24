@@ -439,7 +439,9 @@ int main(int argc,char **argv) {
         if(!pinned){
             char cap_text[32]="",override_text[32]="",renderer[16]="";
 #if TARGET_OS_TV
-            host_profile_value(host_device_profile(),"display.output_height",cap_text,sizeof(cap_text));
+            struct host_profile profile;
+            host_device_profile_copy(&profile);
+            host_profile_value(&profile,"display.output_height",cap_text,sizeof(cap_text));
 #endif
             const char *launch_cap=getenv("HALO_OUTPUT_HEIGHT");
             if(launch_cap&&*launch_cap)snprintf(override_text,sizeof(override_text),"%s",launch_cap);

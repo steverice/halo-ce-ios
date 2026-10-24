@@ -185,6 +185,7 @@ def test_anisotropy_returns_to_the_setting_when_the_benchmark_clears_its_value(t
 #include <assert.h>
 static long benchmark_anisotropy, knob_anisotropy;
 static long config_integer(const char *name){ (void)name; return 8; }
+static unsigned long config_changes(void) { return 0; }
 ''' + function(source, "static long anisotropy_in_force(") + r'''
 int main(void){
  assert(anisotropy_in_force()==8);

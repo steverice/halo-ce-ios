@@ -340,17 +340,15 @@ Asymmetric bounds, as the headset's are, show what symmetric ones hide */
 static float side_by_side_tangents[4] = {
 	SIDE_BY_SIDE_TANGENT, SIDE_BY_SIDE_TANGENT, SIDE_BY_SIDE_TANGENT, SIDE_BY_SIDE_TANGENT
 };
-/* display.lod_scale, read once (mapping_settings): HEAD mode's multiplier
+/* display.lod_scale: HEAD mode's multiplier
 on the pixel size the game picks model detail by (halo_stereo_lod_scale) */
 #define LOD_SCALE_MIN 0.5f
 #define LOD_SCALE_MAX 4.0f
-static float lod_scale_setting = 1.0f;
-/* display.hud_resolution, read once (mapping_settings): the HUD's targets'
+/* display.hud_resolution: the HUD's targets'
 pixels per axis against the view's, in HEAD mode and the side-by-side view
 (halo_stereo_hud_resolution) */
 #define HUD_RESOLUTION_MIN 0.5f
 #define HUD_RESOLUTION_MAX 1.0f
-static float hud_resolution_setting = 1.0f;
 /* display.weapon_offset_down, display.weapon_offset_back and
 display.eye_height_offset, read once (mapping_settings), world units: the
 first-person weapon moved down and back in the full view's eye passes
@@ -629,9 +627,9 @@ static void mapping_settings(void)
 	pod_look_fade_end *= TWO_PI / 360.0f;
 	stereo_stats = config_boolean("debug.gpu_stats") != 0;
 	head_yaw_log = config_boolean("debug.head_yaw_log") != 0;
-	lod_scale_setting = clamped_setting("display.lod_scale", (float)config_real("display.lod_scale"),
+	clamped_setting("display.lod_scale", (float)config_real("display.lod_scale"),
 		LOD_SCALE_MIN, LOD_SCALE_MAX, "times the Xbox's pixel scale");
-	hud_resolution_setting = clamped_setting("display.hud_resolution", (float)config_real("display.hud_resolution"),
+	clamped_setting("display.hud_resolution", (float)config_real("display.hud_resolution"),
 		HUD_RESOLUTION_MIN, HUD_RESOLUTION_MAX, "of the view's pixels per axis");
 	weapon_offset_down_setting = clamped_setting("display.weapon_offset_down",
 		(float)config_real("display.weapon_offset_down"), WEAPON_OFFSET_MIN, WEAPON_OFFSET_MAX, "units");
@@ -1907,7 +1905,13 @@ const union real_point3d *halo_stereo_eye_position(void)
 
 float halo_stereo_lod_scale(void)
 {
-	return stereo_mode == HALO_STEREO_HEAD || stereo_mode == HALO_STEREO_SIDE_BY_SIDE ? lod_scale_setting : 1.0f;
+	float scale;
+
+	if (stereo_mode != HALO_STEREO_HEAD && stereo_mode != HALO_STEREO_SIDE_BY_SIDE)
+		return 1.0f;
+	/* port: safe-point profile changes take effect without repeating startup logs. */
+	scale = (float)config_real("display.lod_scale");
+	return fminf(fmaxf(scale, LOD_SCALE_MIN), LOD_SCALE_MAX);
 }
 
 int halo_stereo_weapon_offset(float *down, float *back)
@@ -1925,7 +1929,13 @@ int halo_stereo_weapon_offset(float *down, float *back)
 
 float halo_stereo_hud_resolution(void)
 {
-	return stereo_mode == HALO_STEREO_HEAD || stereo_mode == HALO_STEREO_SIDE_BY_SIDE ? hud_resolution_setting : 1.0f;
+	float resolution;
+
+	if (stereo_mode != HALO_STEREO_HEAD && stereo_mode != HALO_STEREO_SIDE_BY_SIDE)
+		return 1.0f;
+	/* port: targets read the new profile at the next level's allocation. */
+	resolution = (float)config_real("display.hud_resolution");
+	return fminf(fmaxf(resolution, HUD_RESOLUTION_MIN), HUD_RESOLUTION_MAX);
 }
 
 float halo_stereo_vignette(void)

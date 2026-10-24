@@ -1,4 +1,4 @@
-/* Signed data snapshots are selected once, before any profile or replay is read. */
+/* Recordings and shaders stay fixed for a launch; verified profiles may be offered at gameplay breaks. */
 #import "host_data_updates.h"
 #import "host_data_pack.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -10,10 +10,52 @@
 #include "guest_image.h"
 #endif
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 static HostDataPackStore *profiles, *recordings, *shaders;
 static NSString *profileFolder, *recordingFolder;
 static NSDictionary *profileIdentity, *recordingIdentity, *shaderIdentity, *shaderLists;
+static dispatch_queue_t profileRefreshQueue;
+static dispatch_source_t profileRefreshTimer, profileDirectoryWatch, profileFileWatch;
+static NSString *profileDropIn;
+static unsigned profileWatchGeneration;
+static void (^profileVisitor)(NSString *, NSDictionary *);
+
+static void offerProfileSnapshot(void)
+{
+    if (profileVisitor) [profiles visitPendingSnapshot:profileVisitor];
+}
+
+static void watchProfileFile(void);
+static void profileDropInChanged(void)
+{
+    unsigned generation = ++profileWatchGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4), profileRefreshQueue, ^{
+        @autoreleasepool {
+            if (generation != profileWatchGeneration) return;
+            watchProfileFile();
+            offerProfileSnapshot();
+        }
+    });
+}
+static dispatch_source_t profileVnode(NSString *path)
+{
+    int descriptor = open(path.fileSystemRepresentation, O_EVTONLY | O_CLOEXEC);
+    if (descriptor < 0) return nil;
+    dispatch_source_t source = dispatch_source_create(DISPATCH_SOURCE_TYPE_VNODE, descriptor,
+        DISPATCH_VNODE_WRITE | DISPATCH_VNODE_DELETE | DISPATCH_VNODE_RENAME, profileRefreshQueue);
+    if (!source) { close(descriptor); return nil; }
+    dispatch_source_set_event_handler(source, ^{ profileDropInChanged(); });
+    dispatch_source_set_cancel_handler(source, ^{ close(descriptor); });
+    dispatch_resume(source);
+    return source;
+}
+static void watchProfileFile(void)
+{
+    if (profileFileWatch) dispatch_source_cancel(profileFileWatch);
+    profileFileWatch = profileVnode(profileDropIn);
+}
 
 static NSString *digest(NSData *data)
 {
@@ -147,6 +189,12 @@ static void initialize(void)
             if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:3 userInfo:@{NSLocalizedDescriptionKey: @"Invalid shader snapshot"}];
             return valid;
         });
+        profileRefreshQueue = dispatch_queue_create("visr.profile-refresh",
+            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+        [NSNotificationCenter.defaultCenter addObserverForName:HostDataPackSnapshotStagedNotification object:profiles queue:nil usingBlock:^(NSNotification *note) {
+            (void)note;
+            dispatch_async(profileRefreshQueue, ^{ @autoreleasepool { offerProfileSnapshot(); } });
+        }];
         profileFolder = [profiles beginLaunch];
         recordingFolder = [recordings beginLaunch];
         profileIdentity = identity(profiles, profileFolder);
@@ -164,12 +212,32 @@ static void initialize(void)
             NSString *profileURL = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloProfileFeedURL"];
             NSString *recordingURL = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRecordingFeedURL"];
             NSURL *targetURL = identified ? profileFeedURL(profileURL,&device) : nil;
-            if (targetURL) [profiles checkForUpdateAtURL:targetURL];
+            if (targetURL) {
+                [profiles checkForUpdateAtURL:targetURL];
+                /* Match launch's conditional request and signature checks, with a bounded play cadence. */
+                profileRefreshTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, profileRefreshQueue);
+                dispatch_source_set_timer(profileRefreshTimer, dispatch_time(DISPATCH_TIME_NOW, 15 * 60 * NSEC_PER_SEC),
+                    15 * 60 * NSEC_PER_SEC, 30 * NSEC_PER_SEC);
+                dispatch_source_set_event_handler(profileRefreshTimer, ^{ @autoreleasepool { [profiles checkForUpdateAtURL:targetURL]; } });
+                dispatch_resume(profileRefreshTimer);
+            }
             NSString *shaderURL = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloShaderFeedURL"];
             if (shaderURL.length) [shaders checkForUpdateAtURL:[NSURL URLWithString:shaderURL]];
             if (recordingURL.length) [recordings checkForUpdateAtURL:[NSURL URLWithString:recordingURL]];
         }
     });
+}
+void host_profile_updates_watch(NSString *dropIn, void (^visitor)(NSString *, NSDictionary *))
+{
+    initialize();
+    dispatch_async(profileRefreshQueue, ^{ @autoreleasepool {
+        profileVisitor = [visitor copy];
+        profileDropIn = [dropIn copy];
+        if (profileDirectoryWatch) dispatch_source_cancel(profileDirectoryWatch);
+        profileDirectoryWatch = profileVnode(profileDropIn.stringByDeletingLastPathComponent);
+        watchProfileFile();
+        offerProfileSnapshot();
+    } });
 }
 NSString *host_profile_update_folder(NSString *bundled) { (void)bundled; initialize(); return profileFolder; }
 NSString *host_recording_update_folder(NSString *bundled) { (void)bundled; initialize(); return recordingFolder; }

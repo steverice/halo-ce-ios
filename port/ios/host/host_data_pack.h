@@ -2,6 +2,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT NSString * const HostDataPackSnapshotStagedNotification;
+
 typedef BOOL (^HostPackValidator)(NSString *folder, NSError **error);
 
 // Each instance serves one kind/channel and freezes its selected folder for a launch.
@@ -19,6 +21,9 @@ typedef BOOL (^HostPackValidator)(NSString *folder, NSError **error);
 - (BOOL)stageEnvelope:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
 - (void)checkForUpdateAtURL:(NSURL *)url;
 - (NSDictionary *)metadata;
+// The visitor runs under the store lock so pruning cannot remove files during resolution.
+// It sees the authenticated, fully validated pending generation, or the launch selection.
+- (void)visitPendingSnapshot:(void (^)(NSString *folder, NSDictionary *identity))visitor;
 @end
 
 NS_ASSUME_NONNULL_END

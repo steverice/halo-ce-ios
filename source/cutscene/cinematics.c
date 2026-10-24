@@ -75,6 +75,7 @@ symbols in this file:
 #include "text/draw_string.h"
 #include "text/text_group.h"
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
+#include "../../port/linux/src/port_config.h" /* port: pending profiles at cinematic boundaries */
 
 /* ---------- constants */
 
@@ -202,6 +203,9 @@ void cinematic_dispose_from_old_map(
 void cinematic_start(
 	void)
 {
+	/* port: only a transition, rather than repeated cinematic_start calls. */
+	if (!cinematic_globals->in_progress)
+		config_profile_game_safe_point(CONFIG_PROFILE_CUTSCENE_START);
 	player_input_enable(FALSE);
 	ai_globals_dialogue_triggers_enabled(FALSE);
 	cinematic_globals->show_letterbox = TRUE;
@@ -263,6 +267,9 @@ boolean cinematic_in_progress(
 void cinematic_stop(
 	void)
 {
+	/* port: apply before the first frame returning control to the player. */
+	if (cinematic_globals->in_progress)
+		config_profile_game_safe_point(CONFIG_PROFILE_CUTSCENE_END);
 	cinematic_globals->show_letterbox = FALSE;
 	player_input_enable(TRUE);
 	ai_globals_dialogue_triggers_enabled(TRUE);

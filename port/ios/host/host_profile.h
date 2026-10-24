@@ -79,7 +79,8 @@ size_t host_profile_encode(const struct host_profile *profile, char *text, size_
    reader told to ask it. values is HALO_DEVICE_PROFILE_VALUES for the game's environment */
 void host_device_identify(struct host_device *device);
 const char *host_device_profile_install(const char *data_root);
-const struct host_profile *host_device_profile(void);
+/* Caller-owned consistent copy, including while the game applies another profile. */
+void host_device_profile_copy(struct host_profile *profile);
 
 /* Internal catalog selection: resolves a source without drop-ins or recursive fallback. */
 int host_profile_inherit(const struct host_device *device, const char *folder,
@@ -96,3 +97,8 @@ int host_profile_validate_device_folder(const char *folder, const struct host_de
 int host_profile_capacity_validate(const char *path);
 
 int host_profile_catalog_device_validate(const char *folder, const struct host_device *device, const char *profile);
+
+/* Nonblocking gameplay offer copied into guest-owned buffers: 0 if none is ready or capacity is too small.
+   The game calls applied only after consuming a successful offer at the same safe point. */
+int host_device_profile_pending(char *values, unsigned long capacity, char *version, unsigned long version_size);
+void host_device_profile_applied(int point, int networked, int changed, int metalfx, int frame_rate);

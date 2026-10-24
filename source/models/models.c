@@ -238,28 +238,37 @@ cryotube's 3000 */
 
 /* port: port_config.c's */
 const char *config_string(const char *name);
+unsigned long config_changes(void);
 
-/* port: display.model_lod is "max" (the default) rather than "auto". It is read on
-first use and kept, since the config never reloads; halo_model_lod_set replaces
-it while the game runs (the device benchmark, between its runs): 1 for "max",
-0 for "auto", negative to read the setting again. */
+/* port: profile defaults can change at gameplay breaks; a benchmark's explicit
+LOD override stays in force until halo_model_lod_set releases it. */
 static int model_lod_setting = -1;
+static int model_lod_override = -1;
+static unsigned long model_lod_revision;
 
 void halo_model_lod_set(int is_max)
 {
-	model_lod_setting = is_max<0 ? -1 : is_max!=0;
+	model_lod_override = is_max<0 ? -1 : is_max!=0;
+	if (is_max<0)
+		model_lod_setting = -1;
 }
 
 int halo_model_lod_override_state(void)
 {
-	return model_lod_setting;
+	return model_lod_override;
 }
 
 static boolean model_lod_is_max(void)
 {
-	if (model_lod_setting<0)
+	unsigned long revision;
+
+	if (model_lod_override>=0)
+		return model_lod_override;
+	revision = config_changes();
+	if (model_lod_setting<0 || model_lod_revision!=revision)
 	{
 		model_lod_setting = strcmp(config_string("display.model_lod"), "auto")!=0;
+		model_lod_revision = revision;
 	}
 	return model_lod_setting;
 }

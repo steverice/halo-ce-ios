@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <zlib.h>
 
+NSString * const HostDataPackSnapshotStagedNotification = @"HostDataPackSnapshotStaged";
+
 static const uint64_t PackMaxSequence = 9007199254740991ULL;
 static BOOL PackError(NSError **error, NSString *message) {
     if (error) *error = [NSError errorWithDomain:@"VISRDataPack" code:1 userInfo:@{NSLocalizedDescriptionKey: message}];
@@ -429,11 +431,23 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
         next[@"highest"] = manifest[@"sequence"]; next[@"pending"] = name;
         if (![self writeState:next error:error]) { [manager removeItemAtPath:destination error:NULL]; return NO; }
         success = YES; [self prune];
+        [NSNotificationCenter.defaultCenter postNotificationName:HostDataPackSnapshotStagedNotification object:self];
         return YES;
     } @finally {
         if (!success) [manager removeItemAtPath:temporary error:NULL];
     }
 }
+- (void)visitPendingSnapshot:(void (^)(NSString *, NSDictionary *))visitor { @synchronized(self) {
+    if (![_kind isEqual:@"profiles"] || !_stateValid || !_launchStarted) return;
+    NSString *name = _state[@"pending"];
+    if (!name.length) { visitor([_launchFolder copy], [_identity copy]); return; }
+    NSDictionary *pack = [self generation:name];
+    if (!pack || [pack[@"manifest"][@"sequence"] unsignedLongLongValue] <= [_state[@"quarantined"] unsignedLongLongValue]) return;
+    NSDictionary *manifest = pack[@"manifest"];
+    NSDictionary *snapshotIdentity = @{@"kind": _kind, @"channel": _channel, @"compatibility": _compatibility,
+        @"sequence": manifest[@"sequence"], @"sha256": manifest[@"sha256"], @"bundled": @NO};
+    visitor([[self generationPath:name] stringByAppendingPathComponent:@"files"], snapshotIdentity);
+} }
 - (NSDictionary *)metadata { @synchronized(self) { return [_identity copy]; } }
 // The file holds the sequence of the last accepted envelope, a newline, then its ETag. It applies only while that
 // sequence is still the highest seen and a snapshot is installed, so a store that started over asks for the full feed.
