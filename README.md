@@ -55,12 +55,14 @@ settings.
 
 <!-- generated: features: apple-tv -->
 - Full controller support
+- Split-screen multiplayer on one TV
 <!-- end generated -->
 
 ## Mac
 
 <!-- generated: features: mac -->
 - Native AppKit app
+- Keyboard and mouse support
 <!-- end generated -->
 
 ## Get the app

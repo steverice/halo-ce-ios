@@ -61,6 +61,7 @@ deployment = "tvos"
 devices = ["Apple TV"]
 bullets = [
     "Full controller support",
+    "Split-screen multiplayer on one TV",
 ]
 
 [platforms.mac]
@@ -69,5 +70,6 @@ deployment = "macos"
 devices = ["Mac"]
 bullets = [
     "Native AppKit app",
+    "Keyboard and mouse support",
 ]
 
