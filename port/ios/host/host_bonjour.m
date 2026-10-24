@@ -21,7 +21,7 @@ com.apple.developer.networking.multicast */
 #endif
 
 /* network.lan_broadcast, read once: whether real broadcasts are sent ("auto":
-on a Mac, both the iPad app and the Mac Catalyst runner, and on an iOS or
+on a Mac, including AppKit, Catalyst and the iPad app, and on an iOS or
 visionOS device only with the multicast entitlement) */
 static int broadcast_allowed(void)
 {
@@ -37,8 +37,12 @@ static int broadcast_allowed(void)
 		else if (!strcmp(setting, "off"))
 			allowed = 0;
 		else
+#if HALO_NATIVE_MAC
+			allowed = 1;
+#else
 			allowed = (NSProcessInfo.processInfo.isiOSAppOnMac || NSProcessInfo.processInfo.isMacCatalystApp) ? 1 :
 				HALO_MULTICAST_ENTITLED;
+#endif
 		host_logf(HOST_LOG_INFO, "LAN: broadcasts %s (network.lan_broadcast = \"%s\")",
 			allowed ? "on" : "off", setting);
 	}
