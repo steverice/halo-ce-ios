@@ -17,9 +17,16 @@ typedef BOOL (^HostPackValidator)(NSString *folder, NSError **error);
                compatibility:(NSString *)compatibility
                    validator:(HostPackValidator)validator;
 - (NSString *)beginLaunch;
+// Menu candidates remain pending until the user starts Play or Benchmark.
+// These methods validate/read disk and must run off the presentation thread.
+- (NSDictionary *)menuSnapshot;
+- (void)selectMenuFolder:(NSString *)folder;
+// Release candidates after the manager has atomically published its selection.
+- (void)retainMenuFolder:(NSString *)folder;
 - (void)markHealthy;
 - (BOOL)stageEnvelope:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
 - (void)checkForUpdateAtURL:(NSURL *)url;
+- (void)checkForUpdateAtURL:(NSURL *)url completion:(void (^ _Nullable)(BOOL success))completion;
 - (NSDictionary *)metadata;
 // The visitor runs under the store lock so pruning cannot remove files during resolution.
 // It sees the authenticated, fully validated pending generation, or the launch selection.

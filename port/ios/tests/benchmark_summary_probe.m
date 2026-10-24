@@ -26,7 +26,32 @@ static void verify(NSData *raw) {
     assert(inflate(&stream,Z_FINISH)==Z_STREAM_END); decoded.length=stream.total_out; inflateEnd(&stream);
     assert([decoded isEqual:original]);
 }
+/* A worker wait must not pump unrelated callbacks from its run loop. */
+static void verify_background_wait(void) {
+    dispatch_group_t group = dispatch_group_create();
+    dispatch_group_async(group, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        @autoreleasepool {
+            dispatch_semaphore_t done = dispatch_semaphore_create(0);
+            __block BOOL timer_fired = NO;
+            NSTimer *timer = [NSTimer timerWithTimeInterval:0.001 repeats:NO block:^(NSTimer *timer) {
+                (void)timer;
+                timer_fired = YES;
+            }];
+            [NSRunLoop.currentRunLoop addTimer:timer forMode:NSDefaultRunLoopMode];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC),
+                dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ dispatch_semaphore_signal(done); });
+            assert(wait_for(done, CFAbsoluteTimeGetCurrent() + 1));
+            assert(!timer_fired && "Background upload waits must not pump the worker run loop");
+            [timer invalidate];
+            assert(!wait_for(done, CFAbsoluteTimeGetCurrent() + 0.001));
+            dispatch_semaphore_signal(done);
+            assert(wait_for(done, CFAbsoluteTimeGetCurrent() - 1));
+        }
+    });
+    dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+}
 int main(int argc, char **argv) { @autoreleasepool {
+    verify_background_wait();
     NSString *trace=[@"A" stringByPaddingToLength:9*1024*1024 withString:@"A" startingAtIndex:0];
     NSDictionary *report=@{ @"code":@"LARGE", @"format":@1, @"suite":@3, @"mode":@"full-unified",
         @"flags":@[@"finished_early"], @"runs":@[@{ @"index":@0, @"scene":@"a10", @"status":@"partial",
