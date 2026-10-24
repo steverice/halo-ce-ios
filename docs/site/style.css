@@ -85,7 +85,7 @@ section > p:has(img) { margin-top: 24px; }
 section > p > img { display: block; width: 100%; border-radius: 16px; }
 .foot { max-width: 760px; margin-inline: auto; }
 
-.platform-nav { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 26px 8px; }
+.platform-nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-block: 26px 8px; }
 .platform-nav a {
   display: inline-flex;
   align-items: center;

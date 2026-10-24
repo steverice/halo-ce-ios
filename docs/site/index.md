@@ -12,7 +12,7 @@
 >
 > — ["Dynasty" VISR, Halo 5: Guardians](https://www.halopedia.org/Armor_customization_(Halo_5:_Guardians)/Visor)
 
-[Vision Pro](#apple-vision-pro) • [iPhone](#iphone-and-ipad) • [iPad](#iphone-and-ipad) • [AppleTV](#apple-tv) • [Mac](#mac) • [GitHub](https://github.com/steverice/visr)
+[Vision Pro](#apple-vision-pro) • [iPhone](#iphone-and-ipad) • [iPad](#iphone-and-ipad) • [Apple TV](#apple-tv) • [Mac](#mac) • [GitHub](https://github.com/steverice/visr)
 
 ## On every device
 
