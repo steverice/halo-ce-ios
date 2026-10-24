@@ -16,6 +16,7 @@ layouts).
 #define __GUEST_HOST_H
 
 #include "gpu.h"
+#include "../../shader_observations.h"
 #include "halo_stereo.h"
 #include "halo_spatial.h"
 
@@ -242,3 +243,7 @@ void host_sdl_cloud_saves_set_enabled(int enabled);
 void host_sdl_cloud_saves_status(char *buffer, unsigned int size);
 
 #endif
+
+uint32_t host_shader_observation_activate(const char *map_name, int suppressed, char *map_key, uint32_t map_key_size);
+void host_shader_observation_append(uint32_t token, const struct shader_observation *descriptor);
+int host_shader_observation_recording(void);

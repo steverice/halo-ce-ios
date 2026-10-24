@@ -158,6 +158,13 @@ run(BUILD / 'profile-pack-probe', ROOT / 'profiles')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror',
     'port/ios/tests/shader_pack_probe.c', 'port/ios/host/host_shader_pack.c', '-o', BUILD / 'shader-pack-probe')
 run(BUILD / 'shader-pack-probe', ROOT / 'port/shader-lists')
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror',
+    'port/ios/tests/shader_admission_memory_probe.c', '-o', BUILD / 'shader-admission-memory-probe')
+run(BUILD / 'shader-admission-memory-probe')
+run('xcrun', 'clang', '-std=c11', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror',
+    '-Iport/runtime', 'port/ios/tests/shader_observations_probe.c', 'port/runtime/shader_observations.c',
+    '-o', BUILD / 'shader-observations-probe')
+run(BUILD / 'shader-observations-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror',
     'port/ios/tests/recording_pack_probe.c', 'port/ios/host/host_recording_pack.c',
     'port/runtime/benchmark_plan.c', '-o', BUILD / 'recording-pack-probe')
@@ -726,3 +733,6 @@ run('python3', 'tools/macos_test.py')
 # the Bink movie decoder (port/runtime/bink_decoder.c on port/third_party/ffmpeg-bink) builds for this Mac,
 # and decodes the game's intro where the game's files are (tools/bink_test.py)
 run('python3', 'tools/bink_test.py', '--if-present')
+
+# Ordinary-play worker probes run without networking or launching the game.
+run("python3", "tools/shader_worker_probe.py")

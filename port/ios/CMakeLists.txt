@@ -14,7 +14,7 @@ if(HALO_NATIVE_MAC)
         message(FATAL_ERROR "HALO_NATIVE_MAC requires a separate macOS SDK target")
     endif()
     if(HALO_BENCHMARK_UPLOAD OR HALO_TESTER_BUILD)
-        message(FATAL_ERROR "Native macOS currently supports local development only")
+        message(FATAL_ERROR "Native macOS does not support benchmark upload or tester builds")
     endif()
 endif()
 # tools/ios_build.py --renderer: Metal is always present; BOTH also includes OpenGL ES.
@@ -44,6 +44,8 @@ option(HALO_BINK "Play the game's Bink movies with the vendored FFmpeg decoders 
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
 # iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
 # On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
+option(HALO_SHADER_UPLOAD "Contribute missing Metal compilation descriptors" OFF)
+option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to CloudKit" OFF)
 option(HALO_CLOUD_SAVES "Sync saves through the player's private iCloud database" OFF)
 set(HALO_CLOUD_CONTAINER "iCloud.org.steverice.visr" CACHE STRING "iCloud container for HALO_CLOUD_SAVES")
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
@@ -127,12 +129,22 @@ else()
 endif()
 # the texture upscale policy (port/assets/texture-policy.json) as a C table for port/runtime/texture_policy.c
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-# the app's page in the Settings app; a build with iCloud saves takes a copy with their rows added
+# Settings rows follow enabled build capabilities; plain builds use the original bundle.
 set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle")
-if(HALO_CLOUD_SAVES AND NOT HALO_TVOS)
+if(HALO_CLOUD_SAVES OR HALO_SHADER_UPLOAD)
+    set(HALO_SETTINGS_CLOUD_SAVES off)
+    set(HALO_SETTINGS_SHADER_UPLOAD off)
+    if(HALO_CLOUD_SAVES)
+        set(HALO_SETTINGS_CLOUD_SAVES on)
+    endif()
+    if(HALO_SHADER_UPLOAD)
+        set(HALO_SETTINGS_SHADER_UPLOAD on)
+    endif()
     set(HALO_SETTINGS_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/cloud/Settings.bundle")
     execute_process(COMMAND "${Python3_EXECUTABLE}" "${ROOT}/tools/settings_bundle.py"
-        "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" "${HALO_SETTINGS_BUNDLE}" COMMAND_ERROR_IS_FATAL ANY)
+        "${CMAKE_CURRENT_SOURCE_DIR}/Settings.bundle" "${HALO_SETTINGS_BUNDLE}"
+        --cloud-saves "${HALO_SETTINGS_CLOUD_SAVES}" --shader-upload "${HALO_SETTINGS_SHADER_UPLOAD}"
+        COMMAND_ERROR_IS_FATAL ANY)
 endif()
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
@@ -151,6 +163,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_shader_pack.c host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m host/host_benchmark_catalog.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
     "${ROOT}/port/third_party/monocypher/monocypher-ed25519.c"
+    host/host_shader_upload.m "${ROOT}/port/runtime/shader_observations.c"
     host/host_benchmark.m host/host_benchmark_outbox.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
@@ -261,6 +274,8 @@ if(NOT CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
 endif()
 if(HALO_NATIVE_MAC)
     target_link_libraries(VISR PRIVATE "-framework UniformTypeIdentifiers")
+    target_sources(VISR PRIVATE "${HALO_NATIVE_DIR}/Assets-macOS.xcassets")
+    set_source_files_properties("${HALO_NATIVE_DIR}/Assets-macOS.xcassets" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 elseif(HALO_TVOS)
     target_link_libraries(VISR PRIVATE "-framework Network" "-framework CoreImage")
     set_source_files_properties(Assets-tvOS.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -319,13 +334,16 @@ set_source_files_properties("${ROOT}/port/assets/network/brokers.txt" PROPERTIES
 file(GLOB HALO_LICENSES "${ROOT}/build/ios/licenses/*.txt")
 target_sources(VISR PRIVATE ${HALO_LICENSES})
 set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
-# The privacy manifest (port/ios/privacy): a tester build, whose benchmark can send a report when its tester
-# agrees, declares that; every other build sends nothing and declares nothing collected
+# CloudKit upload capabilities select linked diagnostic disclosure independently of the tester interface.
 option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
 if(HALO_TESTER_BUILD)
     target_sources(VISR PRIVATE host/host_benchmark_menu.m)
-    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
     target_compile_definitions(VISR PRIVATE HALO_TESTER_BUILD=1)
+endif()
+if(HALO_TESTER_BUILD OR HALO_BENCHMARK_UPLOAD)
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
+elseif(HALO_SHADER_UPLOAD)
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/shader/PrivacyInfo.xcprivacy")
 else()
     set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/plain/PrivacyInfo.xcprivacy")
 endif()
@@ -333,7 +351,14 @@ set(HALO_DATA_PACK_PUBLIC_KEY "" CACHE STRING "Pinned Ed25519 public key (64 hex
 set(HALO_PROFILE_FEED_URL "" CACHE STRING "Device-keyed signed profile HTTPS directory")
 set(HALO_SHADER_FEED_URL "" CACHE STRING "Signed additive shader envelope HTTPS URL")
 set(HALO_RECORDING_FEED_URL "" CACHE STRING "Signed recording envelope HTTPS URL")
-if(HALO_TESTER_BUILD)
+# tools/ios_build.py --data-pack-channel; empty follows the tester build. The native Mac app has no tester build,
+# and its TestFlight build names the tester channel
+set(HALO_DATA_PACK_CHANNEL_NAME "" CACHE STRING "Signed update channel: stable, tester, or empty for the build's own")
+if(HALO_DATA_PACK_CHANNEL_NAME STREQUAL "tester" OR HALO_DATA_PACK_CHANNEL_NAME STREQUAL "stable")
+    set(HALO_DATA_PACK_CHANNEL "${HALO_DATA_PACK_CHANNEL_NAME}")
+elseif(HALO_DATA_PACK_CHANNEL_NAME)
+    message(FATAL_ERROR "HALO_DATA_PACK_CHANNEL_NAME must be stable or tester, got '${HALO_DATA_PACK_CHANNEL_NAME}'")
+elseif(HALO_TESTER_BUILD)
     set(HALO_DATA_PACK_CHANNEL "tester")
 else()
     set(HALO_DATA_PACK_CHANNEL "stable")
@@ -392,44 +417,57 @@ if(HALO_DEVELOPMENT_TEAM)
 endif()
 # Automatic benchmark report delivery (host/host_benchmark_send.m): one record in the public
 # database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
-option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to the iCloud container's public database" OFF)
 set(HALO_BENCHMARK_APS_ENVIRONMENT "development" CACHE STRING "APS environment authorized by the benchmark upload signing profile")
-if(HALO_BENCHMARK_UPLOAD)
+if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
     if(NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "development" AND
        NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "production")
         message(FATAL_ERROR "HALO_BENCHMARK_APS_ENVIRONMENT must match the selected signing profile")
     endif()
+endif()
+if(HALO_BENCHMARK_UPLOAD)
     target_sources(VISR PRIVATE host/host_benchmark_send.m)
     target_compile_definitions(VISR PRIVATE
         "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\""
         HALO_BENCHMARK_UPLOAD=1)
+endif()
+if(HALO_SHADER_UPLOAD)
+    target_link_libraries(VISR PRIVATE sqlite3)
+    target_compile_definitions(VISR PRIVATE HALO_SHADER_UPLOAD=1
+        "HALO_SHADER_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
 if(HALO_CLOUD_SAVES)
     # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit
     target_sources(VISR PRIVATE "${ROOT}/port/runtime/cloud_saves.c" host/cloud_store_cloudkit.m host/host_cloud_saves.m)
     target_compile_definitions(VISR PRIVATE HALO_CLOUD_SAVES=1 "HALO_CLOUD_CONTAINER=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
-if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
+if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
     target_link_libraries(VISR PRIVATE "-framework CloudKit")
     # the iCloud keys, added to whatever entitlements the target already signs with (visionOS's, or the
     # extended virtual addressing entitlement of a visionOS or tvOS build), which this block must run after
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_CLOUD_ENTITLEMENTS)
+    include("${CMAKE_CURRENT_LIST_DIR}/CloudUploadEntitlements.cmake")
     get_target_property(HALO_BASE_ENTITLEMENTS_FILE VISR XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS)
-    if(HALO_BASE_ENTITLEMENTS_FILE)
-        file(READ "${HALO_BASE_ENTITLEMENTS_FILE}" HALO_BASE_ENTITLEMENTS)
-        string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
-        string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
-    endif()
-    # App Store Connect requires a push environment for CloudKit on tvOS, including saves-only builds.
-    # Use the selected profile's APS environment; native macOS uses different push entitlements.
-    if(NOT HALO_NATIVE_MAC)
-        string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>${HALO_BENCHMARK_APS_ENVIRONMENT}</string>"
-            HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
-    endif()
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements" "${HALO_CLOUD_ENTITLEMENTS}")
+    halo_cloud_upload_entitlements("${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
+        "${HALO_BASE_ENTITLEMENTS_FILE}")
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
         XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
+else()
+    file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements")
+endif()
+# The native Mac app's App Sandbox (port/macos/VISR-macOS.entitlements). A team-signed build, the one that goes to
+# TestFlight, always runs sandboxed and also declares the iCloud container, so the App Store profile that signs it
+# already carries the container when CloudKit saves arrive on the Mac. An ad hoc build signs after the build
+# (tools/macos_build.py) and leaves the iCloud keys out: macOS does not launch an ad hoc app that claims them.
+# This replaces the generated VISR-cloud.entitlements on the Mac, which therefore signs CloudKit without push.
+if(HALO_NATIVE_MAC AND HALO_DEVELOPMENT_TEAM)
+    file(READ "${HALO_NATIVE_DIR}/VISR-macOS.entitlements" HALO_NATIVE_ENTITLEMENTS)
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_NATIVE_CLOUD)
+    string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_NATIVE_CLOUD_KEYS "${HALO_NATIVE_CLOUD}")
+    string(REPLACE "$(HALO_CLOUD_CONTAINER)" "${HALO_CLOUD_CONTAINER}" HALO_NATIVE_CLOUD_KEYS "${HALO_NATIVE_CLOUD_KEYS}")
+    string(REPLACE "</dict>" "${HALO_NATIVE_CLOUD_KEYS}</dict>" HALO_NATIVE_ENTITLEMENTS "${HALO_NATIVE_ENTITLEMENTS}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-macOS.entitlements" "${HALO_NATIVE_ENTITLEMENTS}")
+    set_target_properties(VISR PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-macOS.entitlements")
 endif()
 # The multicast entitlement (spec section 2): with it in the chosen
 # entitlements file, iOS and visionOS may broadcast, and network.lan_broadcast

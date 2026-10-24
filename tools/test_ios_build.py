@@ -156,13 +156,13 @@ def test_an_app_store_package_is_archived_then_exported_and_uploads_only_when_as
 
 def test_cloud_saves_are_off_unless_asked_for():
     assert ios_build.cloud_definitions("org.steverice.visr", False, None) == [
-        "-DHALO_CLOUD_SAVES=OFF", "-DHALO_BENCHMARK_UPLOAD=OFF"]
+        "-DHALO_CLOUD_SAVES=OFF", "-DHALO_BENCHMARK_UPLOAD=OFF", "-DHALO_SHADER_UPLOAD=OFF"]
 
 
 def test_the_project_s_bundle_ids_share_its_container():
     for bundle_id in ("org.steverice.visr", "org.steverice.visr.tvos", "org.steverice.visr.visionos", "org.steverice.visr.mac"):
         assert ios_build.cloud_definitions(bundle_id, True, None) == [
-            "-DHALO_CLOUD_SAVES=ON", "-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr", "-DHALO_BENCHMARK_UPLOAD=OFF"]
+            "-DHALO_CLOUD_SAVES=ON", "-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr", "-DHALO_BENCHMARK_UPLOAD=OFF", "-DHALO_SHADER_UPLOAD=OFF"]
 
 
 def test_another_bundle_id_must_name_its_own_container():
@@ -187,7 +187,7 @@ def test_a_container_without_the_option_is_refused():
 
 def test_benchmark_upload_takes_the_container_without_turning_cloud_saves_on():
     assert ios_build.cloud_definitions("org.steverice.visr.tvos", False, None, True) == [
-        "-DHALO_CLOUD_SAVES=OFF", "-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr", "-DHALO_BENCHMARK_UPLOAD=ON"]
+        "-DHALO_CLOUD_SAVES=OFF", "-DHALO_CLOUD_CONTAINER=iCloud.org.steverice.visr", "-DHALO_BENCHMARK_UPLOAD=ON", "-DHALO_SHADER_UPLOAD=OFF"]
     assert ios_build.cloud_definitions("org.steverice.visr.tvos", True, None, True)[0] == "-DHALO_CLOUD_SAVES=ON"
     with pytest.raises(ValueError, match="needs --cloud-container"):
         ios_build.cloud_definitions("com.example.visr", False, None, True)
@@ -451,3 +451,26 @@ def test_every_apple_app_declares_exempt_encryption(name):
     values = plistlib.loads((ios_build.ROOT / 'port/ios' / name).read_bytes())
     assert values.get('ITSAppUsesNonExemptEncryption') is False
     assert 'ITSEncryptionExportComplianceCode' not in values
+
+
+def test_native_mac_downloads_the_stable_feeds_by_default(monkeypatch, tmp_path):
+    configure = configure_with(monkeypatch, tmp_path, '--native-mac')
+    assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/stable/profiles' in configure
+    assert '-DHALO_SHADER_FEED_URL=https://code.steverice.org/visr/packs/stable/shaders.json' in configure
+    assert '-DHALO_DATA_PACK_CHANNEL_NAME=' in configure
+    assert '-DHALO_BUNDLE_IDENTIFIER=org.steverice.visr.native' in configure
+
+
+def test_native_mac_testflight_build_names_the_tester_channel_and_the_ios_record(monkeypatch, tmp_path):
+    configure = configure_with(monkeypatch, tmp_path, '--native-mac', '--team', 'TEAM', '--signing-profile', 'UUID',
+                               '--data-pack-channel', 'tester')
+    assert '-DHALO_DATA_PACK_CHANNEL_NAME=tester' in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/tester/profiles' in configure
+    assert '-DHALO_BUNDLE_IDENTIFIER=org.steverice.visr' in configure
+    assert '-DHALO_TESTER_BUILD=OFF' in configure
+
+
+def test_sandbox_is_only_for_the_native_mac(monkeypatch, tmp_path):
+    with pytest.raises(SystemExit):
+        configure_with(monkeypatch, tmp_path, '--unsigned', '--sandbox', 'on')

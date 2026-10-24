@@ -17,6 +17,7 @@
 #include "host_benchmark.h"
 #include "host_external.h"
 #include "host_cloud_saves.h"
+#include "host_shader_upload.h"
 #include "renderer_build.h"
 #if !TARGET_OS_TV && !HALO_NATIVE_MAC
 #include "host_texture_settings.h"
@@ -65,6 +66,7 @@ void host_exit(int code) {
     host_spatial_rumble_hold(1);
     /* a save made just before the app is left still goes up (nothing without HALO_CLOUD_SAVES) */
     host_cloud_saves_leaving(3);
+    host_shader_upload_suspend();
     exit(code);
 }
 
@@ -313,6 +315,7 @@ int main(int argc,char **argv) {
         if(getenv("HALO_MEMORY_LOG")||access("memory-log",F_OK)==0)memory_log_start();
 #endif
         host_memory_pressure_start();
+        host_shader_upload_start(HALO_GUEST_SHA256);
         /* halo://join links (host_join_link.c): before the import screen can spin the run loop,
            which is when SDL's scene delegate passes on the link the app was launched with */
         host_join_link_install(data_root);
@@ -573,6 +576,7 @@ int main(int argc,char **argv) {
         /* the saves are compared with iCloud's before the game reads them, and not replaced after */
         host_cloud_saves_before_game();
         host_logf(HOST_LOG_INFO,"entering guest at %08x, data %s",host_image.header->start,data_root);
+        host_shader_upload_prepare();
         host_guest_on_stack((uintptr_t)host_pointer(host_image.header->start),guest_pointer(boot),host_arena,(char *)stack+stack_size+0x4000);
     }
     return 0;

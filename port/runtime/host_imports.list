@@ -123,3 +123,7 @@ host_memory_available_megabytes
 host_sdl_cloud_saves_enabled
 host_sdl_cloud_saves_set_enabled
 host_sdl_cloud_saves_status
+
+host_shader_observation_activate
+host_shader_observation_append
+host_shader_observation_recording

@@ -3144,6 +3144,14 @@ int config_write_boolean(const char *name, int value)
 
 /* a setting's value as text ("true", "60", "1.5", "all"): 0 if there is no
 such setting */
+int config_explicit(const char *name)
+{
+	long index = config_setting_index(name);
+	if (index < 0) return 0;
+	(void)config_value(name, config_settings[index].type);
+	return config_states[index].origin == _origin_chosen || config_states[index].source == _source_environment;
+}
+
 int config_text(const char *name, char *text, size_t size)
 {
 	long index = config_setting_index(name);

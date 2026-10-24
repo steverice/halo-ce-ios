@@ -107,6 +107,12 @@ is copied, the privacy notes and how to build with it.
 > **Do not ask** where to obtain an XISO. If you do not have an XISO from your own,
 > legally purchased copy of Halo: Combat Evolved then this project is not for you.
 
+## Shader improvements
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Turn off Share shader improvements in settings to stop future contributions.
+
+See [shader contribution privacy](port/ios/privacy/README.md) for retention and build policy.
+
 ## Build from source
 
 You need an Apple silicon Mac with Xcode, Python 3 and Homebrew. The validated

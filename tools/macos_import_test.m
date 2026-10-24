@@ -68,8 +68,19 @@ int main(void) {
         assert(progress((__bridge void *)operation,"",0,1));
         [operation cancel:nil];
         assert(!progress((__bridge void *)operation,"",0,1));
+        /* The chosen disc image is remembered as a bookmark, and a missing or unreadable bookmark is dropped. */
+        NSString *image=[root stringByAppendingPathComponent:@"disc image.iso"];
+        assert([@"disc" writeToFile:image atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+        BOOL stale=NO;
+        assert(!remembered(root,&stale));
+        remember([NSURL fileURLWithPath:image],root);
+        NSURL *again=remembered(root,&stale);
+        assert(again && [again.URLByStandardizingPath.path isEqualToString:[NSURL fileURLWithPath:image].URLByStandardizingPath.path]);
+        assert([@"not a bookmark" writeToFile:bookmark_path(root) atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+        assert(!remembered(root,&stale));
+        assert(![files fileExistsAtPath:bookmark_path(root)]);
         assert([files removeItemAtPath:root error:nil]);
-        puts("Native import publication, rollback, recovery, and cancellation checks passed");
+        puts("Native import publication, rollback, recovery, bookmark, and cancellation checks passed");
     }
     return 0;
 }

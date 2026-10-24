@@ -126,13 +126,33 @@ static int load(const char *text, size_t size, struct record *records, size_t *c
     }
     return n > 0;
 }
+/* Ordinary-play batches contain only a few descriptors. Reserve their actual
+   record count instead of the maximum catalog size on every worker checkpoint. */
+static int record_capacity(const char *text, size_t size, size_t *count)
+{
+    size_t at = 0, lines = 0;
+    if (!text) return 1;
+    if (size > HOST_SHADER_PACK_MAX_FILE_BYTES || memchr(text, 0, size)) return 0;
+    while (at < size) {
+        size_t first = at;
+        while (at < size && text[at] != '\n') at++;
+        while (first < at && (text[first] == ' ' || text[first] == '\t' || text[first] == '\r')) first++;
+        if (first < at && text[first] != '#' && ++lines > HOST_SHADER_LIST_MAX_RECORDS) return 0;
+        if (at < size) at++;
+    }
+    *count += lines;
+    return 1;
+}
 int host_shader_list_merge(const char *base, size_t base_size, const char *additions, size_t additions_size,
     char **merged, size_t *merged_size)
 {
-    struct record *r = calloc(2 * HOST_SHADER_LIST_MAX_RECORDS,sizeof(*r));
+    size_t capacity = 0;
+    struct record *r = NULL;
     size_t n = 0, length = 0; char *output = NULL; int valid = 0;
     if (merged) *merged = NULL;
     if (merged_size) *merged_size = 0;
+    if (!record_capacity(base,base_size,&capacity) || !record_capacity(additions,additions_size,&capacity) || !capacity) goto done;
+    r = calloc(capacity,sizeof(*r));
     if (!r || (base && !load(base,base_size,r,&n)) || (additions && !load(additions,additions_size,r,&n)) || !n) goto done;
     qsort(r,n,sizeof(*r),compare_key);
     for (size_t i = 1; i < n; i++) if (r[i].kind < 2 && !strcmp(r[i].key,r[i-1].key) && strcmp(r[i].line,r[i-1].line)) goto done;

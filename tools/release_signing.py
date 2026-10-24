@@ -27,6 +27,10 @@ def security(*args: str, capture: bool = False) -> str:
     return result.stdout.decode().strip() if capture else ""
 
 
+# the common name of a Mac Installer Distribution certificate
+MAC_INSTALLER_IDENTITY = "3rd Party Mac Developer Installer"
+
+
 class XcodeManagedProfileError(ValueError):
     """A safe signing-preflight failure that can be reported without profile data."""
 
@@ -57,6 +61,12 @@ def validate_profile_entitlements(
     container_identifier: str = "iCloud.org.steverice.visr",
 ) -> None:
     """Require the capabilities in the exact entitlement file used by release archives."""
+    entitlements = profile.get("Entitlements", {})
+    if platform == "macos":
+        # The Mac app's sandbox keys need no profile, but its team-signed build declares the iCloud container
+        # (port/ios/CMakeLists.txt), which the profile must allow even without benchmark upload
+        require_cloudkit(entitlements, platform, container_identifier, "the declared iCloud container")
+        return
     target = {"ios": "iOS", "tvos": "tvOS", "visionos": "visionOS"}[platform]
     required = plistlib.loads(
         (
@@ -65,7 +75,6 @@ def validate_profile_entitlements(
             / f"VISR-{target}-extended.entitlements"
         ).read_bytes()
     )
-    entitlements = profile.get("Entitlements", {})
     for name, value in required.items():
         if value is True and entitlements.get(name) is not True:
             raise ValueError(f"{platform} distribution profile must allow {name}")
@@ -89,13 +98,37 @@ def validate_profile_entitlements(
             )
 
 
+def require_cloudkit(
+    entitlements: dict[str, Any], platform: str, container_identifier: str, purpose: str
+) -> None:
+    services = entitlements.get("com.apple.developer.icloud-services", [])
+    containers = entitlements.get("com.apple.developer.icloud-container-identifiers", [])
+    if not (services == "*" or (isinstance(services, list) and ("CloudKit" in services or "*" in services))):
+        raise ProfileCapabilityError(
+            f"{platform} distribution profile must allow the CloudKit service for {purpose}"
+        )
+    if container_identifier not in containers:
+        raise ProfileCapabilityError(
+            f"{platform} distribution profile must allow the configured CloudKit container"
+        )
+
+
+def profile_extension(platform: str) -> str:
+    """Xcode keeps a Mac profile as .provisionprofile and the others as .mobileprovision."""
+    return ".provisionprofile" if platform == "macos" else ".mobileprovision"
+
+
 def installed_profile(profile_uuid: str) -> dict[str, Any]:
     """Read a locally installed profile by UUID without invoking provisioning."""
     roots = (
         Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
         Path.home() / "Library/MobileDevice/Provisioning Profiles",
     )
-    paths = [root / f"{profile_uuid}.mobileprovision" for root in roots]
+    paths = [
+        root / f"{profile_uuid}{extension}"
+        for root in roots
+        for extension in (".mobileprovision", ".provisionprofile")
+    ]
     profile_path = next((path for path in paths if path.is_file()), None)
     if profile_path is None:
         raise ValueError("The selected manual signing profile is not installed")
@@ -127,10 +160,10 @@ def install(folder: Path) -> None:
         import release_validation as validation
         from ios_build import cloud_definitions
     policy_value = os.environ.get("RELEASE_BUILD_POLICY", "")
-    upload_enabled = bool(policy_value) and validation.benchmark_upload_enabled(
-        validation.load_policy(policy_value)
-    )
-    saves_enabled = bool(policy_value) and validation.cloud_saves_enabled(validation.load_policy(policy_value))
+    policy = validation.load_policy(policy_value) if policy_value else {}
+    upload_enabled = (validation.benchmark_upload_enabled(policy)
+                      or validation.shader_upload_enabled(policy))
+    saves_enabled = validation.cloud_saves_enabled(policy)
     cloud = cloud_definitions(
         os.environ["APPLE_BUNDLE_ID"], saves_enabled, None, upload_enabled
     )
@@ -169,6 +202,33 @@ def install(folder: Path) -> None:
         "-T",
         "/usr/bin/security",
     )
+    selected = platforms(os.environ["RELEASE_PLATFORMS"])
+    if "macos" in selected:
+        # the Mac App Store installer package is signed by the team's Mac Installer Distribution certificate
+        installer = folder / "installer.p12"
+        state["files"].append(str(installer))
+        state_path.write_text(json.dumps(state))
+        write_secret(
+            installer,
+            base64.b64decode(os.environ["APPLE_INSTALLER_P12_BASE64"], validate=True),
+        )
+        security(
+            "import",
+            str(installer),
+            "-P",
+            os.environ["APPLE_INSTALLER_P12_PASSWORD"],
+            "-t",
+            "cert",
+            "-f",
+            "pkcs12",
+            "-k",
+            str(keychain),
+            "-T",
+            "/usr/bin/productbuild",
+            "-T",
+            "/usr/bin/security",
+        )
+        installer.unlink()
     security(
         "set-key-partition-list",
         "-S",
@@ -178,13 +238,17 @@ def install(folder: Path) -> None:
         str(keychain),
     )
     security("list-keychains", "-d", "user", "-s", str(keychain), *old_search)
+    if "macos" in selected and MAC_INSTALLER_IDENTITY not in security(
+        "find-identity", "-v", str(keychain), capture=True
+    ):
+        raise ValueError("The installer certificate is not a Mac Installer Distribution identity")
     identities = security(
         "find-identity", "-v", "-p", "codesigning", str(keychain), capture=True
     )
     env_file = Path(os.environ["GITHUB_ENV"])
     with env_file.open("a") as output:
-        for platform in platforms(os.environ["RELEASE_PLATFORMS"]):
-            raw = folder / f"{platform}.mobileprovision"
+        for platform in selected:
+            raw = folder / f"{platform}{profile_extension(platform)}"
             state["files"].append(str(raw))
             state_path.write_text(json.dumps(state))
             write_secret(
@@ -198,13 +262,18 @@ def install(folder: Path) -> None:
             profile = plistlib.loads(decoded.encode())
             reject_xcode_managed_profile(profile, platform)
             entitlements = profile["Entitlements"]
+            # a Mac profile names its keys with the com.apple. prefix
+            application = entitlements.get("application-identifier") or entitlements.get(
+                "com.apple.application-identifier"
+            )
             if (
                 profile["TeamIdentifier"] != [os.environ["APPLE_TEAM_ID"]]
-                or entitlements["application-identifier"]
+                or application
                 != f"{os.environ['APPLE_TEAM_ID']}.{os.environ['APPLE_BUNDLE_ID']}"
                 or profile.get("ProvisionedDevices")
                 or profile.get("ProvisionsAllDevices")
                 or entitlements.get("get-task-allow", False)
+                or entitlements.get("com.apple.security.get-task-allow", False)
                 or profile["ExpirationDate"]
                 <= datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
             ):
@@ -215,6 +284,7 @@ def install(folder: Path) -> None:
                 "ios": {"iOS"},
                 "tvos": {"tvOS"},
                 "visionos": {"xrOS", "visionOS"},
+                "macos": {"OSX", "macOS"},
             }[platform]
             if not expected_platform.intersection(profile.get("Platform", [])):
                 raise ValueError(
@@ -240,7 +310,7 @@ def install(folder: Path) -> None:
             destination = (
                 Path.home()
                 / "Library/Developer/Xcode/UserData/Provisioning Profiles"
-                / f"{uuid}.mobileprovision"
+                / f"{uuid}{profile_extension(platform)}"
             )
             if destination.exists():
                 raise ValueError("Refusing to replace an existing provisioning profile")

@@ -34,8 +34,15 @@ PLATFORMS = {
     "ios": ("IOS", "iphoneos"),
     "tvos": ("TV_OS", "appletvos"),
     "visionos": ("VISION_OS", "xros"),
+    # the native AppKit app (port/macos), on the iOS app's record (universal purchase)
+    "macos": ("MAC_OS", "macosx"),
 }
 MARKER = "\n\n<!-- visr-release-state "
+SHADER_UPLOAD_DISCLOSURE = (
+    "VISR automatically sends missing shader descriptions and device model information to improve loading. "
+    "Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. "
+    "Turn off Share shader improvements in settings to stop future contributions."
+)
 SUMMARY_HEADING = "### Summary"
 CHANGELOG_DETAILS_HEADING = "### Full changelog"
 TESTFLIGHT_NOTES_LIMIT = 4000
@@ -60,6 +67,14 @@ def benchmark_upload_arguments(policy: dict[str, str]) -> list[str]:
     else:
         import release_validation as validation
     return ["--benchmark-upload"] if validation.benchmark_upload_enabled(policy) else []
+
+
+def shader_upload_arguments(policy: dict[str, str]) -> list[str]:
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    return ["--shader-upload"] if validation.shader_upload_enabled(policy) else []
 
 
 def cloud_saves_arguments(policy: dict[str, str]) -> list[str]:
@@ -113,7 +128,7 @@ def platforms(value: str) -> list[str]:
         or any(p not in PLATFORMS for p in selected)
     ):
         raise ValueError(
-            "Platforms must be a unique comma-separated selection of ios,tvos,visionos"
+            "Platforms must be a unique comma-separated selection of ios,tvos,visionos,macos"
         )
     return selected
 
@@ -220,6 +235,10 @@ def extract_testflight_summary(full_notes: str) -> str:
 
 def testflight_summary_for_release(full_notes: str, manifest: dict[str, Any]) -> str:
     """Use a pinned summary, or the original full note for legacy manifests."""
+    if manifest.get("build_policy", {}).get("shader_upload", "off") == "on":
+        candidate = manifest.get("testflight_summary", full_notes)
+        if SHADER_UPLOAD_DISCLOSURE not in candidate:
+            raise ValueError("Shader upload What to Test disclosure is missing")
     summary_key = "testflight_summary"
     digest_key = "testflight_summary_sha256"
     has_summary, has_digest = summary_key in manifest, digest_key in manifest
@@ -241,6 +260,13 @@ def testflight_summary_for_release(full_notes: str, manifest: dict[str, Any]) ->
     if extract_testflight_summary(full_notes) != summary:
         raise ValueError("Release manifest TestFlight summary differs from changelog")
     return summary
+
+
+def shader_upload_summary(summary: str, policy: dict[str, str]) -> str:
+    """Pin the shader disclosure into the reviewed What to Test text."""
+    if policy.get("shader_upload", "off") == "on" and SHADER_UPLOAD_DISCLOSURE not in summary:
+        summary = summary.rstrip() + "\n\n" + SHADER_UPLOAD_DISCLOSURE
+    return validate_testflight_summary(summary)
 
 
 def release_summary_model() -> str:
@@ -738,6 +764,7 @@ def prepare(args: argparse.Namespace) -> None:
             catalog_context=catalog_context,
             model=summary_model,
         )
+        summary = shader_upload_summary(summary, policy)
         changelog = insert_testflight_summary_into_changelog(
             changelog, version, summary
         )
@@ -1032,6 +1059,73 @@ def verify_encryption_declaration(info: dict[str, Any]) -> None:
         )
 
 
+def bundle_info_path(app: Path, platform: str) -> Path:
+    """A Mac app keeps its Info.plist and executable under Contents."""
+    return app / ("Contents/Info.plist" if platform == "macos" else "Info.plist")
+
+
+def bundle_executable(app: Path, platform: str, info: dict[str, Any]) -> Path:
+    return app / ("Contents/MacOS" if platform == "macos" else ".") / info["CFBundleExecutable"]
+
+
+def platform_build_command(
+    platform: str, manifest: dict[str, Any], policy: dict[str, Any], profile: str, package: Path
+) -> list[str | Path]:
+    """The signed archive and App Store export for one platform. The iOS family builds the tester app; the Mac app
+    has no tester build, benchmark upload or extended addressing, and names the tester feeds' channel itself."""
+    common: list[str | Path] = [
+        "--team",
+        os.environ["APPLE_TEAM_ID"],
+        "--bundle-id",
+        os.environ["APPLE_BUNDLE_ID"],
+        "--signing-profile",
+        profile,
+        "--marketing-version",
+        manifest["version"],
+        "--build-number",
+        manifest["build_number"],
+        "--pgo",
+        "use",
+        "--lto",
+        "full",
+        "--host-pgo",
+        "use",
+        "--bink",
+        "on",
+        "--render-validation",
+        "off",
+        "--data-packs",
+        "on",
+        "--profile-feed-url",
+        policy["profile_feed_url"],
+        "--recording-feed-url",
+        policy["recording_feed_url"],
+        *(
+            ["--shader-feed-url", policy["shader_feed_url"]]
+            if "shader_feed_url" in policy
+            else []
+        ),
+        *shader_upload_arguments(policy),
+        *cloud_saves_arguments(policy),
+    ]
+    tail: list[str | Path] = ["--internal-only", "--jobs", "3", "--app-store-package", package]
+    if platform == "macos":
+        return [sys.executable, "tools/ios_build.py", "--native-mac", *common,
+                "--data-pack-channel", "tester", *tail]
+    return [
+        sys.executable,
+        "tools/ios_build.py",
+        *common,
+        "--tester",
+        "--benchmark-routes",
+        "off",
+        *benchmark_upload_arguments(policy),
+        "--extended-virtual-addressing",
+        *tail,
+        *([f"--{platform}"] if platform != "ios" else []),
+    ]
+
+
 def archive_identity(
     archive: Path,
     manifest: dict[str, Any],
@@ -1040,7 +1134,7 @@ def archive_identity(
     source_root: Path | None = None,
 ) -> dict[str, str]:
     app = archive / "Products/Applications/VISR.app"
-    info = plistlib.loads((app / "Info.plist").read_bytes())
+    info = plistlib.loads(bundle_info_path(app, platform).read_bytes())
     verify_encryption_declaration(info)
     if (
         info["CFBundleShortVersionString"] != manifest["version"]
@@ -1054,7 +1148,7 @@ def archive_identity(
         (source_root if source_root is not None else ROOT) / "build/ios/halo_guest.elf"
     ).read_bytes()
     guest_hash = hashlib.sha256(guest).hexdigest()
-    executable = (app / info["CFBundleExecutable"]).read_bytes()
+    executable = bundle_executable(app, platform, info).read_bytes()
     verify_guest(executable, guest, guest_hash)
     policy = manifest["build_policy"]
     if guest_hash != policy["guest_sha256"]:
@@ -1225,56 +1319,12 @@ def publish(args: argparse.Namespace) -> None:
         if not record or record["state"] == "prepared":
             profile = os.environ[f"PROFILE_UUID_{platform.upper()}"]
             package = root / "build/release" / platform
-            command: list[str | Path] = [
-                sys.executable,
-                "tools/ios_build.py",
-                "--team",
-                os.environ["APPLE_TEAM_ID"],
-                "--bundle-id",
-                os.environ["APPLE_BUNDLE_ID"],
-                "--signing-profile",
-                profile,
-                "--marketing-version",
-                manifest["version"],
-                "--build-number",
-                manifest["build_number"],
-                "--tester",
-                "--pgo",
-                "use",
-                "--lto",
-                "full",
-                "--host-pgo",
-                "use",
-                "--bink",
-                "on",
-                "--render-validation",
-                "off",
-                "--data-packs",
-                "on",
-                "--profile-feed-url",
-                policy["profile_feed_url"],
-                "--recording-feed-url",
-                policy["recording_feed_url"],
-                "--benchmark-routes",
-                "off",
-                *benchmark_upload_arguments(policy),
-                *cloud_saves_arguments(policy),
-                *(
-                    ["--shader-feed-url", policy["shader_feed_url"]]
-                    if "shader_feed_url" in policy
-                    else []
-                ),
-                "--internal-only",
-                "--extended-virtual-addressing",
-                "--jobs",
-                "3",
-                "--app-store-package",
-                package,
-            ]
-            if platform != "ios":
-                command.append(f"--{platform}")
+            command = platform_build_command(platform, manifest, policy, profile, package)
             run(*command, root=root, env=build_env)
-            if validation.benchmark_upload_enabled(policy) or validation.cloud_saves_enabled(policy):
+            cloudkit = validation.shader_upload_enabled(policy) or validation.cloud_saves_enabled(policy)
+            if platform == "macos":
+                validation.verify_exported_pkg(package, cloudkit=cloudkit)
+            elif validation.benchmark_upload_enabled(policy) or cloudkit:
                 validation.verify_exported_ipa(package)
             require_clean_checkout(root)
             archive = package / "VISR.xcarchive"
@@ -1284,11 +1334,13 @@ def publish(args: argparse.Namespace) -> None:
                     platform,
                     "app-device",
                     app=archive / "Products/Applications/VISR.app",
-                    benchmark_upload=validation.benchmark_upload_enabled(policy),
+                    benchmark_upload=validation.benchmark_upload_enabled(policy) and platform != "macos",
+                    shader_upload=validation.shader_upload_enabled(policy),
                     cloud_saves=validation.cloud_saves_enabled(policy),
                     guest_source_date_epoch=guest_epoch if GUEST_EPOCH_FIELD in manifest else None,
                 ),
                 policy,
+                platform=platform,
             )
             identity = archive_identity(archive, manifest, platform, source_root=root)
             prior_hashes = {item["guest_sha256"] for item in journal.values()}
