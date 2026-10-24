@@ -4353,9 +4353,14 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 
 	*next_frame_due = 0;
 	host_frame_cpu_split(&simulation_cpu, &render_cpu, &translation_cpu, &ticks);
-	cpu = pacing.work_started > 0.0 ? now - pacing.work_started - pacing_waited - perf_gpu_waited : 0.0;
+	cpu = pacing.work_started > 0.0 ? now - pacing.work_started - pacing_waited : 0.0;
+	/* (shadow mode's CPU input also leaves out readback and visibility waits;
+	pacing, the benchmark and reports without it keep the plain figure) */
+	{
+		double perf_cpu = cpu - (host_perf_hooks_dynamic_enabled() ? perf_gpu_waited : 0.0);
+		host_perf_hooks_cpu(perf_cpu >= 0.0 ? (uint64_t)(perf_cpu * 1e6) : UINT64_MAX);
+	}
 	perf_gpu_waited = 0.0;
-	host_perf_hooks_cpu(cpu >= 0.0 ? (uint64_t)(cpu * 1e6) : UINT64_MAX);
 	gpu = (double)(gpu_total - pacing.gpu_counted) / 1e9;
 	pacing.gpu_counted = gpu_total;
 	/* (no measurement, not an idle GPU: the benchmark keeps it apart) */
@@ -6348,7 +6353,8 @@ static void stereo_pacing_count(void)
 	CFTimeInterval presentation = host_theater_presentation_time();
 	CFTimeInterval interval = 0.0;
 	uint64_t gpu_total = atomic_load(&pacing_gpu_nanoseconds);
-	double cpu = pacing.work_started > 0.0 ? now - pacing.work_started - waited - perf_gpu_waited : 0.0;
+	double cpu = pacing.work_started > 0.0 ? now - pacing.work_started - waited : 0.0;
+	double perf_cpu = cpu - (host_perf_hooks_dynamic_enabled() ? perf_gpu_waited : 0.0);
 	perf_gpu_waited = 0.0;
 	double gpu = (double)(gpu_total - stereo_pacing.gpu_counted) / 1e9;
 
@@ -6358,7 +6364,7 @@ static void stereo_pacing_count(void)
 		interval = presentation - stereo_pacing.last_presentation;
 	if (presentation > 0.0)
 		stereo_pacing.last_presentation = presentation;
-host_perf_hooks_cpu(cpu >= 0.0 ? (uint64_t)(cpu * 1e6) : UINT64_MAX);
+	host_perf_hooks_cpu(perf_cpu >= 0.0 ? (uint64_t)(perf_cpu * 1e6) : UINT64_MAX);
 	/* Reuse stereo pacing samples for the opt-in host overlay, without GPU queries. */
 	host_frame_counter_sample(interval, cpu, gpu);
 	/* a quarter second or more is a load or the background, not a frame */
