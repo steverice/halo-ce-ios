@@ -18,21 +18,21 @@ endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 ## On every device
 
 <!-- generated: shared: every-device -->
-- **iCloud saves:** Your saves and player profiles sync across your devices through iCloud.
-- **It just works:** VISR is tailored to each Apple device, so it just works.
-- **Compatible with the community:** VISR aims for cross-play with the popular Halo: CE ports, such as OpenCE and Chupathingy.
+- **Cross-device sync:** Your saves and player profiles sync across all your devices through iCloud.
+- **It just works:** VISR is specifically optimized for each Apple device, for unmatched performance.
+- **Compatible with the community:** VISR aims for cross-play with the popular Halo: CE ports like [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and [Chupathingy](https://chupathingy.org).
 <!-- end generated -->
 
 ## VR
 
 <!-- generated: features: vision-pro -->
+- A whole new way to experience Halo
 - Full stereo VR with head tracking and foveated rendering
 - Gameplay elements reimagined for a first-class VR experience
-- The HUD in CE's own corners, out in the periphery, following the body's turn rather than the head
-- Scope zoom fills the view
-- Third-person cutscenes on a large 3D screen in the room
-- Support for PlayStation VR2 Sense controllers
-- Supports both M2 and M5 Vision Pro
+- Immersive cutscenes true to the directorial intent
+- Supports PlayStation VR2 Sense controllers for hand-tracked gunplay
+- Works on both M2 and M5 Vision Pro
+- visionOS 2 or later
 <!-- end generated -->
 
 VISR also plays in 2D, in a window or on a virtual screen in the room (theater
@@ -48,8 +48,9 @@ settings.
 <!-- generated: features: iphone-and-ipad -->
 - Built-in touch controls for an on-the-go experience
 - Full controller support
-- Play on a connected TV or monitor
-- iOS 16+, iPhone 8 or newer
+- Play on a TV or monitor via cable or AirPlay
+- iPhone 8 or newer
+- iOS/iPadOS 16 or later
 <!-- end generated -->
 
 ## Apple TV
@@ -57,6 +58,8 @@ settings.
 <!-- generated: features: apple-tv -->
 - Full controller support
 - Split-screen multiplayer on one TV
+- Apple TV HD or 4K
+- tvOS 16 or later
 <!-- end generated -->
 
 ## Mac
@@ -64,7 +67,8 @@ settings.
 <!-- generated: features: mac -->
 - Native AppKit app
 - Keyboard and mouse support
-- Any window, any size, full screen or not
+- Any size, full screen or windowed
+- Any Apple Silicon Mac, macOS 14 or later
 <!-- end generated -->
 
 ## Get the app

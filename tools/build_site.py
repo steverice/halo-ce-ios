@@ -59,7 +59,7 @@ def load_facts() -> dict:
 def fact_block(kind: str, name: str, facts: dict) -> str:
     if kind == "features" and name in facts["platforms"]:
         versions = deployment_versions((ROOT / "tools/ios_build.py").read_text(encoding="utf-8"))
-        values = {"ios_minimum": versions["ios"].removesuffix(".0")}
+        values = {f"{system}_minimum": version.removesuffix(".0") for system, version in versions.items()}
         return "\n".join("- " + bullet.format(**values) for bullet in facts["platforms"][name]["bullets"])
     if kind == "shared" and name == "every-device":
         return "\n".join(f"- **{item['title']}:** {item['text']}" for item in facts["every-device"]["items"])
@@ -98,6 +98,7 @@ def heading_with_icons(html: str, identifier: str) -> str:
     return html.replace(f'<h2 id="{identifier}">', f'<h2 id="{identifier}">{icons}', 1) if icons else html
 
 
+INLINE = MarkdownIt("commonmark", {"html": False})
 EVERY_DEVICE_MARKER = "VISR-EVERY-DEVICE-COLUMNS"
 
 
@@ -107,7 +108,7 @@ def every_device_columns(facts: dict) -> str:
     for item in facts["every-device"]["items"]:
         icon = (ROOT / "docs/site/icons" / f"{item['icon']}.svg").read_text(encoding="utf-8").strip()
         columns.append(f'      <li><span class="pillar-icon">{icon}</span>'
-                       f'<h3>{escape(item["title"])}</h3><p>{escape(item["text"])}</p></li>')
+                       f'<h3>{escape(item["title"])}</h3><p>{INLINE.renderInline(item["text"]).strip()}</p></li>')
     return "\n".join(['    <ul class="pillars">', *columns, '    </ul>'])
 
 

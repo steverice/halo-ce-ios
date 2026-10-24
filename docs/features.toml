@@ -3,9 +3,9 @@
 [every-device]
 # Each item is a column on the site (icon from docs/site/icons/) and a bullet in the README.
 items = [
-    { icon = "cloud", title = "iCloud saves", text = "Your saves and player profiles sync across your devices through iCloud." },
-    { icon = "just-works", title = "It just works", text = "VISR is tailored to each Apple device, so it just works." },
-    { icon = "community", title = "Compatible with the community", text = "VISR aims for cross-play with the popular Halo: CE ports, such as OpenCE and Chupathingy." },
+    { icon = "cloud", title = "Cross-device sync", text = "Your saves and player profiles sync across all your devices through iCloud." },
+    { icon = "just-works", title = "It just works", text = "VISR is specifically optimized for each Apple device, for unmatched performance." },
+    { icon = "community", title = "Compatible with the community", text = "VISR aims for cross-play with the popular Halo: CE ports like [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and [Chupathingy](https://chupathingy.org)." },
 ]
 
 [shared]
@@ -29,13 +29,13 @@ name = "Apple Vision Pro"
 deployment = "visionos"
 devices = ["M2 Vision Pro", "M5 Vision Pro"]
 bullets = [
+    "A whole new way to experience Halo",
     "Full stereo VR with head tracking and foveated rendering",
     "Gameplay elements reimagined for a first-class VR experience",
-    "The HUD in CE's own corners, out in the periphery, following the body's turn rather than the head",
-    "Scope zoom fills the view",
-    "Third-person cutscenes on a large 3D screen in the room",
-    "Support for PlayStation VR2 Sense controllers",
-    "Supports both M2 and M5 Vision Pro",
+    "Immersive cutscenes true to the directorial intent",
+    "Supports PlayStation VR2 Sense controllers for hand-tracked gunplay",
+    "Works on both M2 and M5 Vision Pro",
+    "visionOS {visionos_minimum} or later",
 ]
 
 [platforms.iphone-and-ipad]
@@ -45,8 +45,9 @@ devices = ["iPhone 8 or newer", "iPad"]
 bullets = [
     "Built-in touch controls for an on-the-go experience",
     "Full controller support",
-    "Play on a connected TV or monitor",
-    "iOS {ios_minimum}+, iPhone 8 or newer",
+    "Play on a TV or monitor via cable or AirPlay",
+    "iPhone 8 or newer",
+    "iOS/iPadOS {ios_minimum} or later",
 ]
 
 [platforms.apple-tv]
@@ -56,6 +57,8 @@ devices = ["Apple TV"]
 bullets = [
     "Full controller support",
     "Split-screen multiplayer on one TV",
+    "Apple TV HD or 4K",
+    "tvOS {tvos_minimum} or later",
 ]
 
 [platforms.mac]
@@ -65,6 +68,7 @@ devices = ["Mac"]
 bullets = [
     "Native AppKit app",
     "Keyboard and mouse support",
-    "Any window, any size, full screen or not",
+    "Any size, full screen or windowed",
+    "Any Apple Silicon Mac, macOS {macos_minimum} or later",
 ]
 

@@ -156,7 +156,7 @@ def test_shared_features_expand_from_facts():
     source = '{{ features: iphone-and-ipad }}'
     expanded = expand_includes(source, facts)
     assert '- Full controller support' in expanded
-    assert 'iOS 16+, iPhone 8 or newer' in expanded
+    assert 'iOS/iPadOS 16 or later' in expanded
     assert '{{' not in expanded
     facts['platforms']['iphone-and-ipad']['bullets'][1] = 'Changed controller support'
     assert 'Changed controller support' in expand_includes(source, facts)
@@ -241,7 +241,7 @@ def test_feature_requirement_keeps_minor_deployment_version(tmp_path, monkeypatc
     (tmp_path / 'tools/ios_build.py').write_text(build, encoding='utf-8')
     (tmp_path / 'tools/macos_build.py').write_text((builder.ROOT / 'tools/macos_build.py').read_text(encoding='utf-8'), encoding='utf-8')
     monkeypatch.setattr(builder, 'ROOT', tmp_path)
-    assert 'iOS 18.5+' in builder.expand_includes('{{ features: iphone-and-ipad }}', facts)
+    assert 'iOS/iPadOS 18.5 or later' in builder.expand_includes('{{ features: iphone-and-ipad }}', facts)
 
 
 def test_native_mac_minimum_comes_from_appkit_build_not_catalyst():
@@ -260,3 +260,15 @@ def test_platform_headings_carry_their_glyphs():
     for identifier, count in [('apple-vision-pro', 1), ('iphone-and-ipad', 2), ('apple-tv', 1), ('mac', 1)]:
         heading = page.split(f'<h2 id="{identifier}">', 1)[1].split('</h2>', 1)[0]
         assert heading.count('<span class="nav-icon"><svg') == count
+
+
+def test_platform_bullets_name_each_minimum_os_and_columns_render_links():
+    from tools.build_site import deployment_versions, expand_includes, load_facts
+    facts = load_facts()
+    versions = deployment_versions((ROOT / 'tools/ios_build.py').read_text(encoding='utf-8'))
+    for platform, system in [('vision-pro', 'visionos'), ('apple-tv', 'tvos'), ('mac', 'macos'), ('iphone-and-ipad', 'ios')]:
+        text = expand_includes(f'{{{{ features: {platform} }}}}', facts)
+        assert versions[system].removesuffix('.0') in text and '{' not in text
+    page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
+    columns = page.split('<ul class="pillars">', 1)[1].split('</ul>', 1)[0]
+    assert '<a href="https://github.com/OpenCommunityEdition/OpenCE">OpenCE</a>' in columns
