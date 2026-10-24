@@ -1008,6 +1008,12 @@ static struct
 	int failed;
 } art[MAXIMUM_ART];
 static long art_count;
+static unsigned long art_generation;
+
+unsigned long menu_art_generation(void)
+{
+	return art_generation;
+}
 
 void halo_menus_art_register(void const *texture, char const *png)
 {
@@ -1038,6 +1044,7 @@ void halo_menus_art_register(void const *texture, char const *png)
 		if (art[index].texture)
 			gpu_texture_destroy(art[index].texture);
 	}
+	art_generation++;
 	memset(&art[index], 0, sizeof(art[index]));
 	art[index].data = data;
 	art[index].png = strdup(png);
@@ -1046,6 +1053,8 @@ void halo_menus_art_register(void const *texture, char const *png)
 void halo_menus_art_forget(void)
 {
 	long index;
+
+	art_generation++;
 
 	for (index = 0; index < art_count; index++)
 	{

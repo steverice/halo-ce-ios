@@ -24,4 +24,7 @@ extern const unsigned int menu_files_embedded_count;
 decoded from its PNG on first use, and its mip levels; 0 if it is none */
 unsigned int menu_art_texture(unsigned long data, unsigned long *levels);
 
+/* Changes when registering or forgetting art can replace a cached GPU texture. */
+unsigned long menu_art_generation(void);
+
 #endif

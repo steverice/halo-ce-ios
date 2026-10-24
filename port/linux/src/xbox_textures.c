@@ -814,6 +814,12 @@ struct texture_entry
 	/* texture holds BGRA8 although the texels are DXT: the device has no
 	S3TC, or the texels were once in a Custom Edition channel order */
 	BOOL decoded;
+	/* Menu registration can replace a handle without changing the bitmap. */
+	BOOL result_valid, result_replacement;
+	unsigned long result_menu_generation;
+	gpu_texture result_texture;
+	uint32_t result_type;
+	struct xgpu_texture_description result_description;
 };
 
 #define TEXTURE_BUCKET_COUNT 4096
@@ -1038,22 +1044,12 @@ static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *
 
 /* an entry's texture, type and description: its high-res HUD texture's, if
 it has one, with the bitmap's own size (which its coordinates are in) */
-static gpu_texture texture_entry_result(struct texture_entry *entry, uint32_t *type,
+static gpu_texture texture_entry_result_uncached(struct texture_entry *entry, uint32_t *type,
 	struct xgpu_texture_description *description)
 {
 	*type = entry->type;
 	*description = entry->description;
-	/* (the high-res text's atlas, for its placeholder bitmap: text_hires.h) */
-	{
-		gpu_texture atlas = text_hires_atlas_texture(entry->data);
-
-		if (atlas)
-		{
-			*type = GPU_TEXTURE_2D;
-			description->levels = 1;
-			return atlas;
-		}
-	}
+	entry->result_replacement = FALSE;
 	/* (a menu's bitmap: menu_files.h) */
 	{
 		unsigned long levels;
@@ -1084,15 +1080,46 @@ static gpu_texture texture_entry_result(struct texture_entry *entry, uint32_t *t
 	{
 		/* (debug.texture_override_directory: its own levels, sampled as the
 		game samples the texture; never hires) */
-#ifdef HALO_IOS
-		/* Count actual replacement selections during a measured benchmark window. */
-		extern void benchmark_graphics_texture_replacement_selected(void);
-		benchmark_graphics_texture_replacement_selected();
-#endif
+		entry->result_replacement = TRUE;
 		description->levels = entry->texture_override_levels;
 		return entry->texture_override;
 	}
 	return entry->texture;
+}
+
+static gpu_texture texture_entry_result(struct texture_entry *entry, uint32_t *type,
+	struct xgpu_texture_description *description)
+{
+	unsigned long menu_generation;
+	/* The atlas uploads newly rasterized glyphs when bound, even on a cache hit. */
+	gpu_texture atlas = text_hires_atlas_texture(entry->data);
+
+	if (atlas)
+	{
+		*type = GPU_TEXTURE_2D;
+		*description = entry->description;
+		description->levels = 1;
+		return atlas;
+	}
+	menu_generation = menu_art_generation();
+	if (!entry->result_valid || entry->result_menu_generation != menu_generation)
+	{
+		entry->result_texture = texture_entry_result_uncached(entry, &entry->result_type,
+			&entry->result_description);
+		entry->result_menu_generation = menu_generation;
+		entry->result_valid = TRUE;
+	}
+	*type = entry->result_type;
+	*description = entry->result_description;
+#ifdef HALO_IOS
+	if (entry->result_replacement)
+	{
+		/* Count selections on every bind, including cached results. */
+		extern void benchmark_graphics_texture_replacement_selected(void);
+		benchmark_graphics_texture_replacement_selected();
+	}
+#endif
+	return entry->result_texture;
 }
 
 gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uint32_t *type,
@@ -1211,6 +1238,7 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 	}
 	if (!entry->generation || generation > entry->generation || no_cache)
 	{
+		entry->result_valid = FALSE;
 		/* protect first, so a write racing with the upload is noticed */
 		memory_watch_protect(entry->address, entry->size);
 		entry->generation = memory_watch_generation(entry->address, entry->size);

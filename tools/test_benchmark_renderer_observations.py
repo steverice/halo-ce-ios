@@ -65,23 +65,31 @@ def test_replacement_counts_only_a_selected_texture_in_an_open_window(tmp_path):
     textures = (ROOT / "port/linux/src/xbox_textures.c").read_text()
     actual = section(suite, "void benchmark_graphics_texture_replacement_selected(",
         "static int benchmark_graphics_snapshot_json(") + section(textures,
-        "static gpu_texture texture_entry_result(", "gpu_texture xgpu_texture_get(")
+        "static gpu_texture texture_entry_result_uncached(", "gpu_texture xgpu_texture_get(")
     compile_and_run(tmp_path, "textures", r'''
 #include <assert.h>
 #include <stdint.h>
 #define HALO_IOS 1
 #define TRUE 1
+#define FALSE 0
 #define GPU_TEXTURE_2D 1
 typedef unsigned long gpu_texture;
 typedef unsigned long DWORD;
 typedef uint32_t D3DCOLOR;
 struct xgpu_texture_description { unsigned long levels; int hires; int hires_coverage; int hires_point_threshold; };
 struct texture_entry { DWORD data; uint32_t type; struct xgpu_texture_description description;
-    int override; gpu_texture texture_override; unsigned long texture_override_levels; gpu_texture texture; };
+    int override; gpu_texture texture_override; unsigned long texture_override_levels; gpu_texture texture;
+    int result_valid, result_replacement; unsigned long result_menu_generation; gpu_texture result_texture;
+    uint32_t result_type; struct xgpu_texture_description result_description; };
 static int graphics_window_open;
 static unsigned long long texture_replacement_selections;
-static gpu_texture text_hires_atlas_texture(DWORD data) { (void)data; return 0; }
-static gpu_texture menu_art_texture(DWORD data, unsigned long *levels) { (void)data; (void)levels; return 0; }
+static unsigned long menu_generation;
+static int menu_queries, atlas_binds;
+static gpu_texture menu_texture, atlas_texture;
+static unsigned long menu_art_generation(void) { return menu_generation; }
+static gpu_texture text_hires_atlas_texture(DWORD data) { (void)data; atlas_binds++; return atlas_texture; }
+static gpu_texture menu_art_texture(DWORD data, unsigned long *levels) {
+    (void)data; menu_queries++; *levels=5; return menu_texture; }
 static gpu_texture hud_hires_override_texture(int value, unsigned long *levels) { (void)value; (void)levels; return 0; }
 static int hud_hires_override_coverage(int value) { (void)value; return 0; }
 static int hud_hires_override_point_threshold(int value) { (void)value; return 0; }
@@ -92,14 +100,30 @@ int main(void) {
     uint32_t type;
     entry.override=-1; entry.texture=1;
     assert(texture_entry_result(&entry,&type,&description)==1 && texture_replacement_selections==0);
-    entry.texture_override=2; entry.texture_override_levels=3;
+    assert(menu_queries==1);
+    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==1);
+    entry.texture_override=2; entry.texture_override_levels=3; entry.result_valid=FALSE;
     assert(texture_entry_result(&entry,&type,&description)==2 && texture_replacement_selections==0);
     graphics_window_open=1;
     assert(texture_entry_result(&entry,&type,&description)==2 && texture_replacement_selections==1);
     assert(description.levels==3);
     texture_replacement_selections=9007199254740991ULL;
     assert(texture_entry_result(&entry,&type,&description)==2 && texture_replacement_selections==9007199254740991ULL);
-    texture_replacement_selections=0; entry.texture_override=0;
+    texture_replacement_selections=0; entry.texture_override=0; entry.result_valid=FALSE;
     assert(texture_entry_result(&entry,&type,&description)==1 && texture_replacement_selections==0);
+    assert(menu_queries==3);
+    menu_texture=4; menu_generation++;
+    assert(texture_entry_result(&entry,&type,&description)==4 && description.levels==5);
+    assert(description.hires==TRUE && menu_queries==4);
+    assert(texture_entry_result(&entry,&type,&description)==4 && menu_queries==4);
+    menu_texture=0; menu_generation++;
+    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==5);
+    atlas_texture=7;
+    assert(texture_entry_result(&entry,&type,&description)==7 && description.levels==1);
+    int previous_binds=atlas_binds;
+    assert(texture_entry_result(&entry,&type,&description)==7 && atlas_binds==previous_binds+1);
+    assert(menu_queries==5);
+    atlas_texture=0;
+    assert(texture_entry_result(&entry,&type,&description)==1 && menu_queries==5);
 }
 ''')
