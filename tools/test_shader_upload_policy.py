@@ -50,11 +50,14 @@ def test_native_shader_build_supports_signed_shipping_and_unsigned_validation():
     configure, command = macos_build.native_commands(options(shader_upload=True, unsigned=True), [])
     assert "-DHALO_SHADER_UPLOAD=ON" in configure
     assert "CODE_SIGNING_ALLOWED=NO" in command
-    configure, command = macos_build.native_commands(options(shader_upload=True, team="TEAM"), [])
+    # the shipping build signs with an existing profile and never asks Xcode to change the account
+    configure, command = macos_build.native_commands(
+        options(shader_upload=True, team="TEAM", signing_profile="UUID"), [])
     assert "-DHALO_DEVELOPMENT_TEAM=TEAM" in configure
     assert "CODE_SIGNING_ALLOWED=NO" not in command
-    assert "-DHALO_SHADER_UPLOAD=OFF" in macos_build.native_commands(options(), [])[0]
+    assert "PROVISIONING_PROFILE_SPECIFIER=UUID" in command
     assert not any("ProvisioningUpdates" in item for item in command)
+    assert "-DHALO_SHADER_UPLOAD=OFF" in macos_build.native_commands(options(), [])[0]
 
 
 def test_cloudkit_diagnostics_are_linked_for_every_upload_manifest():
