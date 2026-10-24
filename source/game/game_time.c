@@ -78,6 +78,8 @@ symbols in this file:
 #include "main/main.h"
 /* port/linux/game/network_distributed.c's */
 void network_distributed_tick(void);
+/* port: aligned diagnostic samples, port/linux/game/network_test.c */
+void network_test_log_tick(void);
 
 /* ---------- constants */
 
@@ -479,6 +481,7 @@ void game_time_update(
 						game_time_globals->local_time++;
 						/* the distributed netcode's per-tick state */
 						network_distributed_tick();
+						network_test_log_tick();
 						/* port: what the main loop does between ticks comes before the next one (main_tick_end) */
 						if (main_tick_end())
 							break;

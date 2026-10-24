@@ -77,6 +77,7 @@ int config_boolean(char const *name);
 double config_real(char const *name);
 long config_integer(char const *name);
 void platform_log(char const *format, ...);
+boolean main_port_main_menu_loaded(void);
 /* damage.c's */
 void damage_kill_object_for_player(long object_index, long player_index);
 /* network_distributed.c's */
@@ -879,6 +880,20 @@ static void network_test_log_players(
 	}
 }
 
+/* Sampling from game_time.c after each distributed tick avoids permanently
+shifting the sample phase when one rendered frame advances several ticks. */
+void network_test_log_tick(
+	void)
+{
+	long tick;
+
+	if (network_test.mode == _network_test_off || !game_in_progress() || main_port_main_menu_loaded())
+		return;
+	tick = game_time_get();
+	if (tick > 0 && tick % TICKS_PER_SECOND == 0)
+		network_test_log_players();
+}
+
 /* each of this machine's players hits the next player with their weapon's
 projectile, as its impact would, when it is within the projectile's reach
 (as a real shot is: the host checks it) */
@@ -1304,7 +1319,6 @@ void network_test_update(
 	if (game_in_progress() && !main_menu_loaded && game_time_get() - network_test.logged_time >= TICKS_PER_SECOND)
 	{
 		network_test.logged_time = game_time_get();
-		network_test_log_players();
 		if (network_test_suite_combat_ready() && network_test.shoot_interval > 0.0f &&
 			game_time_get() % MAX(1, (long)(network_test.shoot_interval * TICKS_PER_SECOND)) < TICKS_PER_SECOND)
 		{
