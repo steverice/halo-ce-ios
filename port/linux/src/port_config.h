@@ -79,6 +79,7 @@ it again when this moves */
 unsigned long config_changes(void);
 
 #include "../../runtime/graphics_capture.h"
+#include "../../runtime/game_perf_graphics.h"
 /* Bounded JSON of the supported display namespace after chosen/env/profile/context resolution.
    Returns 0 with an empty buffer on unsupported or nonfinite/unbounded data. */
 int config_graphics_settings_json(int scene, char *text, size_t size);

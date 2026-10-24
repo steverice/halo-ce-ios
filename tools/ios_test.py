@@ -325,6 +325,42 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/benchmark_probe.c', 'port/runtime/benchmark_metrics.c', 'port/runtime/benchmark_plan.c',
     'port/runtime/benchmark_journal.c', '-o', BUILD/'benchmark-probe')
 run(BUILD/'benchmark-probe')
+# Scalar game-loop hooks preserve timing and event attribution without host frameworks.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-DHALO_PERF_REPORTS=1', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/perf_hooks_probe.c', 'port/ios/host/host_perf_hooks.c',
+    '-o', BUILD/'perf-hooks-probe')
+run(BUILD/'perf-hooks-probe')
+# Counter metadata remains bounded and refuses stale/partial completion; no GPU submission.
+run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-fobjc-arc', '-fblocks', '-Iport/runtime', '-Iport/ios/host',
+    '-framework', 'Foundation', '-framework', 'Metal',
+    'port/ios/tests/perf_metal_probe.m', '-o', BUILD/'perf-metal-probe')
+run(BUILD/'perf-metal-probe')
+# Recorder bounds, spike windows, and checksummed journal recovery.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-Iport/runtime', 'port/ios/tests/game_perf_probe.c', 'port/runtime/game_perf.c',
+    '-o', BUILD/'game-perf-probe')
+run(BUILD/'game-perf-probe')
+# Worker persistence uses temporary files and never submits a CloudKit operation.
+run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-fobjc-arc', '-fblocks', '-DHALO_PERF_REPORTS=1', '-DHALO_NATIVE_MAC=1',
+    '-DHALO_PERF_CLOUD="iCloud.org.steverice.visr"', '-Iport/ios/host', '-Iport/runtime',
+    '-Iport/runtime/include', '-framework', 'Foundation', '-framework', 'AppKit', '-framework', 'CloudKit',
+    'port/ios/tests/perf_reports_probe.m', 'port/ios/host/host_benchmark_outbox.m',
+    'port/ios/host/host_report_delivery.m', 'port/ios/host/host_perf_validation.m',
+    'port/runtime/game_perf.c', '-lz',
+    '-o', BUILD/'perf-reports-probe')
+run(BUILD/'perf-reports-probe')
+# Performance identity remains available independently of shader delivery; plain builds stay inert.
+for perf_reports in (1, 0):
+    probe = BUILD/f'map-identity-probe-{perf_reports}'
+    run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+        '-fobjc-arc', '-fblocks', '-DHALO_NATIVE_MAC=1', f'-DHALO_PERF_REPORTS={perf_reports}',
+        '-DHALO_SHADER_UPLOAD=0', '-Iport/ios/host', '-framework', 'Foundation', '-framework', 'AppKit',
+        'port/ios/tests/map_identity_probe.m', 'port/ios/host/host_map_identity.m',
+        'port/ios/host/host_shader_upload.m', 'port/ios/host/host_shader_pack.c', '-lz', '-o', probe)
+    run(probe)
 # debug.benchmark_offscreen's rules: honored only in a suite named at launch, never on the stereo path
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/benchmark_offscreen_probe.c', '-o', BUILD/'benchmark-offscreen-probe')

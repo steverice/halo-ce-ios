@@ -98,7 +98,7 @@ def recording_feed_required(policy: dict[str, Any]) -> bool:
 
 def load_policy(value: str) -> dict[str, Any]:
     policy = json.loads(value or "{}")
-    optional = {"cloud_saves", "benchmark_upload", "shader_upload", "recording_feed_required", FIELD}
+    optional = {"cloud_saves", "benchmark_upload", "shader_upload", "perf_reports", "recording_feed_required", FIELD}
     fields = {
         "guest_sha256",
         "guest_compiler_version",
@@ -138,9 +138,11 @@ def load_policy(value: str) -> dict[str, Any]:
         raise ValueError("RELEASE_BUILD_POLICY benchmark_upload must be on or off")
     if "shader_upload" in policy and policy["shader_upload"] not in {"on", "off"}:
         raise ValueError("RELEASE_BUILD_POLICY shader_upload must be on or off")
+    if "perf_reports" in policy and policy["perf_reports"] not in {"on", "off"}:
+        raise ValueError("RELEASE_BUILD_POLICY perf_reports must be on or off")
     if FIELD in policy:
         parse_guest_epoch(policy[FIELD])
-    for name in set(policy) - {"cloud_saves", "benchmark_upload", "shader_upload", "recording_feed_required", "profile_feed_sha256s"}:
+    for name in set(policy) - {"cloud_saves", "benchmark_upload", "shader_upload", "perf_reports", "recording_feed_required", "profile_feed_sha256s"}:
         value = policy[name]
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing build policy pin: {name}")
@@ -195,6 +197,11 @@ def shader_upload_enabled(policy: dict[str, str]) -> bool:
     return policy.get("shader_upload", "off") == "on"
 
 
+def perf_reports_enabled(policy: dict[str, str]) -> bool:
+    """Game performance delivery requires an explicit independent policy opt-in."""
+    return policy.get("perf_reports", "off") == "on"
+
+
 def preflight_identity(source: str, selected: list[str], policy: dict[str, str]) -> str:
     value = {"source_sha": source, "platforms": selected, "build_policy": policy}
     return hashlib.sha256(
@@ -227,7 +234,7 @@ def toolchain(selected: list[str], *, root: Path | None = None) -> dict[str, str
 
 
 def build_command(
-    target: str, benchmark_upload: bool = False, shader_upload: bool = False, cloud_saves: bool = False
+    target: str, benchmark_upload: bool = False, shader_upload: bool = False, cloud_saves: bool = False, perf_reports: bool = False
 ) -> list[str]:
     # This first-stage artifact establishes the guest identity. It is never signed or distributed.
     if target == "macos":
@@ -250,8 +257,9 @@ def build_command(
             "on",
             # a CloudKit build cannot be signed ad hoc, and the probe is never signed
             *(["--shader-upload"] if shader_upload else []),
+            *(["--perf-reports"] if perf_reports else []),
             *(["--cloud-saves", "--cloud-container", "iCloud.org.steverice.visr"] if cloud_saves else []),
-            *(["--unsigned"] if shader_upload or cloud_saves else []),
+            *(["--unsigned"] if shader_upload or perf_reports or cloud_saves else []),
             "--jobs",
             "3",
         ]
@@ -277,6 +285,7 @@ def build_command(
         "--extended-virtual-addressing",
         *(["--benchmark-upload"] if benchmark_upload else []),
         *(["--shader-upload"] if shader_upload else []),
+        *(["--perf-reports"] if perf_reports else []),
         *(["--cloud-saves", "--cloud-container", "iCloud.org.steverice.visr"] if cloud_saves else []),
         "--jobs",
         "3",
@@ -293,6 +302,7 @@ def inspect_build(
     benchmark_upload: bool = False,
     shader_upload: bool = False,
     cloud_saves: bool = False,
+    perf_reports: bool = False,
     guest_source_date_epoch: str | None = None,
 ) -> dict[str, str]:
     signed_app = app is not None
@@ -404,7 +414,9 @@ def inspect_build(
         )
     if ("HALO_SHADER_UPLOAD=1" in definitions) != shader_upload:
         raise ValueError("Release shader-upload build differs from the reviewed policy")
-    if (benchmark_upload or shader_upload or cloud_saves) and signed_app:
+    if ("HALO_PERF_REPORTS=1" in definitions) != perf_reports:
+        raise ValueError("Release perf-reports build differs from the reviewed policy")
+    if (benchmark_upload or shader_upload or perf_reports or cloud_saves) and signed_app:
         verify_benchmark_upload_entitlements(
             signed_app_entitlements(app), "iCloud.org.steverice.visr", archive=True, push=not mac
         )
@@ -428,6 +440,7 @@ def inspect_build(
         "benchmark_routes": "off",
         "benchmark_upload": "on" if benchmark_upload else "off",
         "shader_upload": "on" if shader_upload else "off",
+        "perf_reports": "on" if perf_reports else "off",
         "cloud_saves": "on" if cloud_saves else "off",
     }
 
@@ -535,6 +548,7 @@ def probe(
     guest_source_date_epoch: str | None = None,
     shader_upload: bool = False,
     cloud_saves: bool = False,
+    perf_reports: bool = False,
 ) -> dict[str, Any]:
     source = release.full_sha(source)
     if run("git", "rev-parse", "HEAD", capture=True) != source:
@@ -552,9 +566,9 @@ def probe(
     for target in selected:
         # the native Mac app has no benchmark upload, whatever the policy sets for the other platforms
         upload = benchmark_upload and target != "macos"
-        run(*build_command(target, upload, shader_upload, cloud_saves), env=build_env)
+        run(*build_command(target, upload, shader_upload, cloud_saves, perf_reports), env=build_env)
         report["platforms"][target] = inspect_build(
-            root, target, benchmark_upload=upload, shader_upload=shader_upload, cloud_saves=cloud_saves,
+            root, target, benchmark_upload=upload, shader_upload=shader_upload, cloud_saves=cloud_saves, perf_reports=perf_reports,
             guest_source_date_epoch=epoch
         )
     if len({item["guest_sha256"] for item in report["platforms"].values()}) != 1:
@@ -583,6 +597,8 @@ def compare_evidence(
         raise ValueError("Actual benchmark-upload build differs from reviewed policy")
     if evidence.get("shader_upload", "off") != policy.get("shader_upload", "off"):
         raise ValueError("Actual shader-upload build differs from reviewed policy")
+    if evidence.get("perf_reports", "off") != policy.get("perf_reports", "off"):
+        raise ValueError("Actual perf-reports build differs from reviewed policy")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -985,6 +1001,7 @@ def main() -> None:
             release.ROOT, args.source_sha, selected, benchmark_upload_enabled(policy),
             args.guest_source_date_epoch if args.guest_source_date_epoch is not None else policy.get(FIELD),
             shader_upload=shader_upload_enabled(policy),
+            perf_reports=perf_reports_enabled(policy),
             cloud_saves=cloud_saves_enabled(policy),
         )
         report["github_run_id"] = os.environ.get("GITHUB_RUN_ID", "")

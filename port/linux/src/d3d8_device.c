@@ -1,3 +1,4 @@
+#include "../../runtime/game_perf_graphics.h"
 /*
 D3D8_DEVICE.C
 
@@ -743,6 +744,7 @@ static struct
 	/* vertex and index bytes drawn from the mirror, and streamed */
 	unsigned long mirrored_bytes, streamed_bytes;
 } stats;
+static uint32_t perf_draws;
 
 static D3DDevice *device_pointer(void)
 {
@@ -3796,6 +3798,23 @@ static struct vertex_shader_object *shader_list_program(struct vertex_shader_obj
 map's list: a10's whole list is under half a megabyte */
 #define SHADER_LIST_RECORD_MAXIMUM (4L * 1024 * 1024)
 
+/* port: begin the performance segment before loading; identities are cached by
+   host_shader_upload.m, so no map bytes are read on the frame path. */
+void halo_perf_reports_map_begin(char const *map_name)
+{
+#ifdef HALO_ILP32
+	/* The old custom cache may still be loaded here. Its identity is published
+	   by halo_shader_list_warm only after game_load selects the new cache. */
+	host_perf_reports_activate(map_name,
+		platform_fixed_timestep() || *config_string("debug.input_replay") ||
+		config_boolean("debug.benchmark") || *config_string("debug.benchmark_suite") ||
+		config_real("debug.exit_after") > 0 || *config_string("debug.gpu_shader_replay") ||
+		*config_string("debug.gpu_dump_shaders"));
+#else
+	(void)map_name;
+#endif
+}
+
 void halo_shader_list_warm(char const *map_name)
 {
 	const char *base = map_name;
@@ -3825,6 +3844,7 @@ void halo_shader_list_warm(char const *map_name)
 	if (shader_observation_map_path(map_name, cache_files_map_directory(),
 		custom_edition_cache_loaded_path(), observation_xbox_path, sizeof(observation_xbox_path)))
 		platform_translate_path(observation_xbox_path, observation_host_path, sizeof(observation_host_path));
+	host_perf_reports_identity(observation_host_path);
 	observation_generation = host_shader_observation_activate(observation_host_path,
 		!shader_dialect.msl || platform_fixed_timestep() || *config_string("debug.input_replay") ||
 		config_boolean("debug.benchmark") || *config_string("debug.benchmark_suite") ||
@@ -4798,6 +4818,7 @@ static void submit_draw(const struct gpu_draw *draw, BOOL immediate)
 		stats.immediate_draws++;
 	else
 		stats.draws++;
+		perf_draws++;
 }
 
 #if IMMEDIATE_BATCH
@@ -6585,6 +6606,29 @@ static struct render_target_entry *companion_reissue(void)
 void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destination_rectangle,
 	void *unused, void *unused2)
 {
+#ifdef HALO_ILP32
+	host_frame_cpu_phase(19, (int)perf_draws);
+#endif
+	perf_draws = 0;
+#ifdef HALO_ILP32
+	/* Fixed context copies only when settings or output class change. */
+	{
+		static unsigned long perf_revision = (unsigned long)-1;
+		static int perf_scene = -1, perf_external = -1;
+		static struct game_perf_graphics_snapshot perf_graphics;
+		int scene = halo_scene_class(), external = host_external_active();
+		unsigned long revision = config_changes();
+		if (revision != perf_revision || scene != perf_scene || external != perf_external)
+		{
+			if (config_graphics_settings_snapshot(scene, &perf_graphics))
+			{
+				host_perf_reports_graphics_snapshot(&perf_graphics);
+				perf_revision = revision; perf_scene = scene; perf_external = external;
+			}
+		}
+	}
+#endif
+
 	static long screenshot_every = -1;
 
 	(void)source_rectangle;

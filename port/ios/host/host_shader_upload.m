@@ -1,7 +1,9 @@
 /* Apache-2.0. The render producer only copies into the bounded portable collector.
    All persistence, admission, compression and networking runs on one utility worker. */
 #import "host_shader_upload.h"
+#import "host_map_identity.h"
 #import "host_benchmark_outbox.h"
+#import "host_report_delivery.h"
 #import <CommonCrypto/CommonDigest.h>
 #include "host_shader_pack.h"
 #include "host_shader_official_maps.h"
@@ -27,6 +29,7 @@
 #define OUTBOX @"shader-upload/outbox"
 #define DECODED_LIMIT (256*1024)
 #define COMPRESSED_LIMIT (128*1024)
+#if HALO_SHADER_UPLOAD
 static NSString *sha(NSData *data) {
     unsigned char bytes[CC_SHA256_DIGEST_LENGTH]; CC_SHA256(data.bytes,(CC_LONG)data.length,bytes);
     NSMutableString *result=[NSMutableString string];
@@ -37,6 +40,7 @@ static NSData *bounded_read(NSString *path,NSUInteger limit) {
     NSNumber *size=[NSFileManager.defaultManager attributesOfItemAtPath:path error:nil][NSFileSize];
     return size && size.unsignedLongLongValue<=limit ? [NSData dataWithContentsOfFile:path] : nil;
 }
+#endif
 static BOOL hex(id text, NSUInteger length) {
     return [text isKindOfClass:NSString.class] && [text length]==length &&
         [text rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"] invertedSet]].location==NSNotFound;
@@ -90,7 +94,7 @@ NSTimeInterval host_shader_upload_retry(NSUInteger attempt,NSTimeInterval delay,
     return MAX(delay,steps[MIN(attempt,(NSUInteger)4)]*(1+MAX(0,MIN(jitter,1))*.2));
 }
 #if HALO_SHADER_UPLOAD
-static dispatch_queue_t worker, identity_worker, ui_identity_worker;
+static dispatch_queue_t worker;
 static dispatch_source_t timer;
 static struct shader_observation_collector collector;
 /* Slots are immutable after publication and never reused while the producer lives. */
@@ -100,8 +104,6 @@ static atomic_int enabled, menu, suspended, runtime_suppressed;
 static NSMutableDictionary *groups, *state;
 static sqlite3 *membership_db;
 static NSString *guest;
-static NSMutableDictionary *map_cache;
-static NSLock *map_cache_lock;
 static CKOperation *inflight;
 #if HALO_SHADER_UPLOAD_TESTING
 static NSInteger test_outcome=-1;
@@ -251,14 +253,6 @@ static void checkpoint(BOOL force) {
         if(![g[@"misses"] count])[groups removeObjectForKey:key];
     }
 }
-static NSData *unzip(NSData *data) {
-    if(data.length>COMPRESSED_LIMIT)return nil;
-    NSMutableData *out=[NSMutableData dataWithLength:DECODED_LIMIT+1];z_stream stream={0};
-    if(inflateInit2(&stream,31)!=Z_OK)return nil;
-    stream.next_in=(Bytef *)data.bytes;stream.avail_in=(uInt)data.length;stream.next_out=out.mutableBytes;stream.avail_out=(uInt)out.length;
-    int result=inflate(&stream,Z_FINISH);NSUInteger length=stream.total_out;BOOL complete=stream.avail_in==0;inflateEnd(&stream);
-    if(result!=Z_STREAM_END || !complete || length>DECODED_LIMIT)return nil;out.length=length;return out;
-}
 static void acknowledge(NSString *path,NSDictionary *payload) {
     if(sqlite3_exec(membership_db,"BEGIN IMMEDIATE",NULL,NULL,NULL)!=SQLITE_OK)return;
     sqlite3_exec(membership_db,"DELETE FROM sent WHERE rowid NOT IN (SELECT rowid FROM sent ORDER BY age DESC LIMIT 5900)",NULL,NULL,NULL);
@@ -302,29 +296,23 @@ static void deliver(void) {
         if(![record_name isEqual:[@"shader-" stringByAppendingString:sha(raw)]])continue;
         NSURL *asset=[NSURL fileURLWithPath:[[ROOT stringByAppendingPathComponent:@"temporary"] stringByAppendingPathComponent:[record_name stringByAppendingPathExtension:@"gz"]]];
         if(![compressed writeToURL:asset atomically:YES])return;
-        CKContainer *container=nil;
-#if HALO_SHADER_UPLOAD_TESTING
-        if(test_outcome<0)
-#endif
-        container=[CKContainer containerWithIdentifier:@HALO_SHADER_CLOUD];
+        if(!host_report_delivery_acquire()){[NSFileManager.defaultManager removeItemAtURL:asset error:nil];return;}
+        NSUInteger operation_attempt=++active_attempt;
         CKRecordID *identifier=[[CKRecordID alloc] initWithRecordName:record_name];
-        CKRecord *record=[[CKRecord alloc] initWithRecordType:@"ShaderObservation" recordID:identifier];
-        for(NSString *key in @[@"schema",@"mapFingerprint",@"mapKey",@"mapFormat",@"model",@"platform",@"renderer",@"appVersion",@"appBuild",@"guestSHA256",@"descriptorABI",@"shaderListID"])record[key]=payload[key];
-        record[@"payloadSHA256"]=sha(raw);record[@"descriptorCount"]=@([payload[@"descriptors"] count]);
-        record[@"payload"]=[[CKAsset alloc] initWithFileURL:asset];
-        NSUInteger operation_attempt=++active_attempt;NSTimeInterval operation_deadline=NSDate.date.timeIntervalSince1970+12;
-        CKModifyRecordsOperation *operation=[[CKModifyRecordsOperation alloc] initWithRecordsToSave:@[record] recordIDsToDelete:nil];
-        operation.savePolicy=CKRecordSaveIfServerRecordUnchanged;operation.atomic=YES;
-        operation.configuration.timeoutIntervalForRequest=12;operation.configuration.timeoutIntervalForResource=12;
-        inflight=operation;
+        /* The collector keeps a local admission token; the shared transport owns CK operations. */
+        inflight=[[CKModifyRecordsOperation alloc] initWithRecordsToSave:nil recordIDsToDelete:nil];
+        BOOL shared_transport=YES;
+#if HALO_SHADER_UPLOAD_TESTING
+        shared_transport=test_outcome<0;
+#endif
         /* Charge attempts durably, including a timed-out operation that might reach the server. */
         state[@"count"]=@([state[@"count"] unsignedIntegerValue]+1);
         state[@"bytes"]=@([state[@"bytes"] unsignedIntegerValue]+compressed.length);
-        if(!save_state()){inflight=nil;[NSFileManager.defaultManager removeItemAtURL:asset error:nil];return;}
+        if(!save_state()){host_report_delivery_release();inflight=nil;[NSFileManager.defaultManager removeItemAtURL:asset error:nil];return;}
         __block BOOL finished=NO;
         void (^finish)(BOOL,NSError *)=^(BOOL success,NSError *error) {
             dispatch_async(worker,^{
-                if(finished)return;finished=YES;
+                if(finished)return;finished=YES;if(!shared_transport)host_report_delivery_release();
                 [NSFileManager.defaultManager removeItemAtURL:asset error:nil];
                 if(!atomic_load(&enabled))return;
                 if(operation_attempt==active_attempt)inflight=nil;
@@ -341,84 +329,27 @@ static void deliver(void) {
                 save_state();
             });
         };
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        operation.modifyRecordsCompletionBlock=^(NSArray *saved,NSArray *deleted,NSError *error) {
-            (void)saved;(void)deleted;
-            NSError *specific=error.code==CKErrorPartialFailure ? error.userInfo[CKPartialErrorsByItemIDKey][identifier] : error;
-            if(specific.code!=CKErrorServerRecordChanged){finish(error==nil,error);return;}
-            /* A conflict is acknowledged only after fetching and hashing immutable asset bytes. */
-            CKFetchRecordsOperation *fetch=[[CKFetchRecordsOperation alloc] initWithRecordIDs:@[identifier]];
-            fetch.configuration.timeoutIntervalForRequest=12;fetch.configuration.timeoutIntervalForResource=12;
-            fetch.fetchRecordsCompletionBlock=^(NSDictionary *records,NSError *failure) {
-                CKRecord *existing=records[identifier];CKAsset *existing_asset=existing[@"payload"];
-                NSData *decoded=unzip(bounded_read(existing_asset.fileURL.path,COMPRESSED_LIMIT));
-                BOOL equal=!failure && [existing[@"payloadSHA256"] isEqual:sha(raw)] && [decoded isEqual:raw];
-                finish(equal,failure ?: specific);
-            };
-            dispatch_async(worker,^{if(!finished && operation_attempt==active_attempt && atomic_load(&enabled) && NSDate.date.timeIntervalSince1970<operation_deadline){inflight=fetch;[container.publicCloudDatabase addOperation:fetch];}else [fetch cancel];});
-        };
-#pragma clang diagnostic pop
 #if HALO_SHADER_UPLOAD_TESTING
         if(test_outcome>=0) {
             test_attempts++;
             if(test_outcome==3)test_completion=[finish copy];
-            else finish(test_outcome==0,test_outcome==0 ? nil : [NSError errorWithDomain:CKErrorDomain code:test_outcome==2 ? CKErrorServerRejectedRequest : CKErrorNetworkFailure userInfo:nil]);
+            else finish(test_outcome==0,test_outcome==0?nil:[NSError errorWithDomain:CKErrorDomain code:test_outcome==2?CKErrorServerRejectedRequest:CKErrorNetworkFailure userInfo:nil]);
+            dispatch_block_t deadline_block=^{if(!finished){if(operation_attempt==active_attempt){host_report_delivery_cancel_shader();[inflight cancel];inflight=nil;}finish(NO,[NSError errorWithDomain:CKErrorDomain code:CKErrorNetworkFailure userInfo:nil]);}};
+            if(test_outcome==3)test_timeout=[deadline_block copy];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,12*NSEC_PER_SEC),worker,deadline_block);
         } else
 #endif
-        [container.publicCloudDatabase addOperation:operation];
-        dispatch_block_t deadline_block=^{
-            if(!finished){
-                if(operation_attempt==active_attempt){[inflight cancel];inflight=nil;}
-                finish(NO,[NSError errorWithDomain:CKErrorDomain code:CKErrorNetworkFailure userInfo:nil]);
-            }
-        };
-#if HALO_SHADER_UPLOAD_TESTING
-        if(test_outcome==3)test_timeout=[deadline_block copy];
-#endif
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,12*NSEC_PER_SEC),worker,deadline_block);
+        host_report_delivery_submit_shader(path,asset.path,payload,sha(raw),worker,finish);
         return;
     }
 }
 
 #endif
-#if HALO_SHADER_UPLOAD
-static NSString *map_path(NSString *path) {
-    return [(path.isAbsolutePath ? path : [NSFileManager.defaultManager.currentDirectoryPath stringByAppendingPathComponent:path]) stringByStandardizingPath];
-}
-static NSString *map_signature(NSString *path) {
-    struct stat info;
-    if(stat(path.fileSystemRepresentation,&info) || !S_ISREG(info.st_mode))return nil;
-    return [NSString stringWithFormat:@"%llu:%llu:%lld:%lld:%ld:%lld:%ld",(unsigned long long)info.st_dev,(unsigned long long)info.st_ino,(long long)info.st_size,(long long)info.st_mtimespec.tv_sec,info.st_mtimespec.tv_nsec,(long long)info.st_ctimespec.tv_sec,info.st_ctimespec.tv_nsec];
-}
-static void hash_map(NSString *path) {
-    path=map_path(path);
-    NSString *before=map_signature(path);if(!before)return;
-    [map_cache_lock lock];NSDictionary *cached=map_cache[path];BOOL unchanged=[cached[@"signature"] isEqual:before];[map_cache_lock unlock];
-    if(unchanged)return;
-    NSInputStream *input=[NSInputStream inputStreamWithFileAtPath:path];[input open];
-    CC_SHA256_CTX context;CC_SHA256_Init(&context);uint8_t buffer[65536];NSInteger length;uint32_t version=0;BOOL first=YES;
-    while((length=[input read:buffer maxLength:sizeof(buffer)])>0){if(first && length>=8){memcpy(&version,buffer+4,4);first=NO;}CC_SHA256_Update(&context,buffer,(CC_LONG)length);}
-    [input close];if(length<0 || first)return;
-    if(![before isEqual:map_signature(path)])return;
-    uint8_t bytes[32];CC_SHA256_Final(bytes,&context);NSMutableString *fingerprint=[NSMutableString string];
-    for(size_t i=0;i<32;i++)[fingerprint appendFormat:@"%02x",bytes[i]];
-    [map_cache_lock lock];
-    for(NSDictionary *existing in map_cache.allValues) {
-        NSString *prior=existing[@"fingerprint"];
-        if([prior isKindOfClass:NSString.class] && prior.length==64 &&
-           [[prior substringToIndex:60] isEqual:[fingerprint substringToIndex:60]] && ![prior isEqual:fingerprint]){[map_cache_lock unlock];return;}
-    }
-    if(map_cache.count<128)map_cache[path]=@{@"fingerprint":fingerprint,@"format":[NSString stringWithFormat:@"cache-%u",version],@"signature":before};NSData *cache_bytes=[NSJSONSerialization dataWithJSONObject:map_cache options:NSJSONWritingSortedKeys error:nil];
-    [map_cache_lock unlock];if(cache_bytes.length<=65536)durable(cache_bytes,[ROOT stringByAppendingPathComponent:@"map-identities.json"]);
-}
-#endif
 void host_shader_upload_start(const char *guest_sha256) {
 #if HALO_SHADER_UPLOAD
     static dispatch_once_t once;dispatch_once(&once,^{
         worker=dispatch_queue_create("org.visr.shader-upload",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
-        identity_worker=dispatch_queue_create("org.visr.shader-map-identity",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
-        ui_identity_worker=dispatch_queue_create("org.visr.shader-ui-identity",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
+        host_map_identity_init();
         eligible=YES;
 #if TARGET_OS_SIMULATOR
         eligible=NO;
@@ -428,7 +359,7 @@ void host_shader_upload_start(const char *guest_sha256) {
         if(getenv("HALO_SHADER_UPLOAD_TEST_OVERRIDE"))eligible=YES;
 #endif
         guest=guest_sha256 ? @(guest_sha256) : @"";if(!hex(guest,64))eligible=NO;
-        shader_observations_init(&collector);groups=[NSMutableDictionary dictionary];map_cache=[NSMutableDictionary dictionary];map_cache_lock=[NSLock new];
+        shader_observations_init(&collector);groups=[NSMutableDictionary dictionary];
         /* Discard the retired preference; collection follows build and run eligibility. */
         [NSUserDefaults.standardUserDefaults removeObjectForKey:@"share_shader_improvements"];
         atomic_store(&enabled,eligible);
@@ -443,20 +374,6 @@ void host_shader_upload_start(const char *guest_sha256) {
         sqlite3_open([[ROOT stringByAppendingPathComponent:@"sent.sqlite"] fileSystemRepresentation],&membership_db);
         sqlite3_exec(membership_db,"PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA cache_size=-32; PRAGMA max_page_count=1024; CREATE TABLE IF NOT EXISTS sent(key TEXT PRIMARY KEY, age REAL)",NULL,NULL,NULL);
         if(![state[@"retries"] isKindOfClass:NSMutableDictionary.class])state[@"retries"]=[NSMutableDictionary dictionary];
-        NSData *cache_bytes=bounded_read([ROOT stringByAppendingPathComponent:@"map-identities.json"],65536);
-        NSDictionary *cached=cache_bytes && cache_bytes.length<=65536 ? [NSJSONSerialization JSONObjectWithData:cache_bytes options:NSJSONReadingMutableContainers error:nil] : nil;
-        if([cached isKindOfClass:NSDictionary.class] && cached.count<=128)for(id path in cached) {
-            id identity=cached[path];
-            if([path isKindOfClass:NSString.class] && [identity isKindOfClass:NSDictionary.class] &&
-               hex(identity[@"fingerprint"],64) && [identity[@"signature"] isKindOfClass:NSString.class] && [identity[@"signature"] length]<256 &&
-               [identity[@"format"] isKindOfClass:NSString.class] && [identity[@"format"] length]<32)map_cache[path]=identity;
-        }
-        dispatch_async(ui_identity_worker,^{hash_map(@"maps/ui.map");});
-        dispatch_async(identity_worker,^{
-            for(NSString *folder in @[@"maps",@"custom_maps"])
-                for(NSString *name in [NSFileManager.defaultManager subpathsAtPath:folder])
-                    if([name.pathExtension isEqual:@"map"] && ![name isEqual:@"ui.map"]){@autoreleasepool{hash_map([folder stringByAppendingPathComponent:name]);}}
-        });
 #if HALO_NATIVE_MAC
         NSString *leave=NSApplicationWillResignActiveNotification,*resume=NSApplicationDidBecomeActiveNotification;
 #else
@@ -516,31 +433,23 @@ void host_shader_upload_start(const char *guest_sha256) {
 }
 void host_shader_upload_suspend(void) {
 #if HALO_SHADER_UPLOAD
-    if(!worker)return;atomic_store(&suspended,1);dispatch_async(worker,^{checkpoint(YES);[inflight cancel];});
+    if(!worker)return;atomic_store(&suspended,1);dispatch_async(worker,^{checkpoint(YES);host_report_delivery_cancel_shader();[inflight cancel];});
 #endif
 }
 uint32_t host_shader_observation_activate(const char *name,int suppressed,char *key,uint32_t key_size) {
     if(key && key_size)*key=0;
 #if HALO_SHADER_UPLOAD
     if(!worker)return 0;
-    if(!name || !*name){atomic_store(&menu,0);atomic_store(&runtime_suppressed,1);dispatch_async(worker,^{[inflight cancel];});return 0;}
+    if(!name || !*name){atomic_store(&menu,0);atomic_store(&runtime_suppressed,1);dispatch_async(worker,^{host_report_delivery_cancel_shader();[inflight cancel];});return 0;}
     atomic_store(&runtime_suppressed,suppressed!=0);
     NSString *path=@(name);
-    if(![path.pathExtension isEqual:@"map"]){atomic_store(&menu,0);atomic_store(&runtime_suppressed,1);dispatch_async(worker,^{[inflight cancel];});return 0;}
-    path=map_path(path);
+    if(![path.pathExtension isEqual:@"map"]){atomic_store(&menu,0);atomic_store(&runtime_suppressed,1);dispatch_async(worker,^{host_report_delivery_cancel_shader();[inflight cancel];});return 0;}
     atomic_store(&menu,[path.lastPathComponent.stringByDeletingPathExtension isEqual:@"ui"]);
-    dispatch_async(worker,^{checkpoint(YES);if(!atomic_load(&menu) || atomic_load(&runtime_suppressed))[inflight cancel];});
+    dispatch_async(worker,^{checkpoint(YES);if(!atomic_load(&menu) || atomic_load(&runtime_suppressed)){host_report_delivery_cancel_shader();[inflight cancel];}});
     const char *stock_name=host_shader_warming_alias(NULL,path.lastPathComponent.stringByDeletingPathExtension.UTF8String);
     if(stock_name && key && key_size)snprintf(key,key_size,"%s",stock_name);
-    NSString *signature=map_signature(path);
-    [map_cache_lock lock];NSDictionary *identity=map_cache[path];[map_cache_lock unlock];
-    if(!identity || ![identity[@"signature"] isEqual:signature]) {
-        /* Map activation is a loading boundary, outside shader creation hooks.
-           Complete a cold or changed identity on the priority worker before warmup. */
-        dispatch_sync(ui_identity_worker,^{hash_map(path);});
-        signature=map_signature(path);[map_cache_lock lock];identity=map_cache[path];[map_cache_lock unlock];
-        if(!identity || ![identity[@"signature"] isEqual:signature])return 0;
-    }
+    /* Activation is a loading boundary; complete cold identities before warmup. */
+    NSDictionary *identity=host_map_identity_resolve(name);if(!identity)return 0;
     const char *trusted_alias=host_shader_warming_alias([identity[@"fingerprint"] UTF8String],stock_name);
     NSString *trusted_key=trusted_alias ? @(trusted_alias) : [@"m_" stringByAppendingString:[identity[@"fingerprint"] substringToIndex:60]];
     if(key && key_size)snprintf(key,key_size,"%s",trusted_key.UTF8String);
@@ -580,7 +489,7 @@ int host_shader_observation_recording(void) {
 }
 #if HALO_SHADER_UPLOAD && HALO_SHADER_UPLOAD_TESTING
 void host_shader_upload_test_barrier(int force) {
-    dispatch_sync(identity_worker,^{});dispatch_sync(ui_identity_worker,^{});dispatch_sync(worker,^{checkpoint(force!=0);});
+    host_map_identity_wait();dispatch_sync(worker,^{checkpoint(force!=0);});
 }
 
 void host_shader_upload_test_acknowledge(NSString *path) {
@@ -608,6 +517,9 @@ void host_shader_upload_prepare(void) {
 #if HALO_SHADER_UPLOAD
     if(!worker || !eligible)return;
     /* Loading is outside shader hooks. Complete UI identity before the guest activates it. */
-    dispatch_sync(ui_identity_worker,^{hash_map(@"maps/ui.map");});
+    host_map_identity_prepare_ui();
 #endif
+}
+NSDictionary *host_shader_upload_map_identity(const char *name) {
+    return host_map_identity_lookup(name);
 }

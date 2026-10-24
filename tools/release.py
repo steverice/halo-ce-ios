@@ -43,6 +43,11 @@ SHADER_UPLOAD_DISCLOSURE = (
     "Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. "
     "Shader diagnostics are required in builds with shader uploads enabled."
 )
+PERF_REPORTS_DISCLOSURE = (
+    "VISR automatically sends game performance data to improve the game. "
+    "Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. "
+    "Performance diagnostics are required in builds with performance reports enabled."
+)
 SUMMARY_HEADING = "### Summary"
 CHANGELOG_DETAILS_HEADING = "### Full changelog"
 TESTFLIGHT_NOTES_LIMIT = 4000
@@ -75,6 +80,14 @@ def shader_upload_arguments(policy: dict[str, str]) -> list[str]:
     else:
         import release_validation as validation
     return ["--shader-upload"] if validation.shader_upload_enabled(policy) else []
+
+
+def perf_reports_arguments(policy: dict[str, str]) -> list[str]:
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    return ["--perf-reports"] if validation.perf_reports_enabled(policy) else []
 
 
 def cloud_saves_arguments(policy: dict[str, str]) -> list[str]:
@@ -239,6 +252,10 @@ def testflight_summary_for_release(full_notes: str, manifest: dict[str, Any]) ->
         candidate = manifest.get("testflight_summary", full_notes)
         if SHADER_UPLOAD_DISCLOSURE not in candidate:
             raise ValueError("Shader upload What to Test disclosure is missing")
+    if manifest.get("build_policy", {}).get("perf_reports", "off") == "on":
+        candidate = manifest.get("testflight_summary", full_notes)
+        if PERF_REPORTS_DISCLOSURE not in candidate:
+            raise ValueError("Performance report What to Test disclosure is missing")
     summary_key = "testflight_summary"
     digest_key = "testflight_summary_sha256"
     has_summary, has_digest = summary_key in manifest, digest_key in manifest
@@ -266,6 +283,13 @@ def shader_upload_summary(summary: str, policy: dict[str, str]) -> str:
     """Pin the shader disclosure into the reviewed What to Test text."""
     if policy.get("shader_upload", "off") == "on" and SHADER_UPLOAD_DISCLOSURE not in summary:
         summary = summary.rstrip() + "\n\n" + SHADER_UPLOAD_DISCLOSURE
+    return validate_testflight_summary(summary)
+
+
+def perf_reports_summary(summary: str, policy: dict[str, str]) -> str:
+    """Pin the performance disclosure into the reviewed What to Test text."""
+    if policy.get("perf_reports", "off") == "on" and PERF_REPORTS_DISCLOSURE not in summary:
+        summary = summary.rstrip() + "\n\n" + PERF_REPORTS_DISCLOSURE
     return validate_testflight_summary(summary)
 
 
@@ -764,7 +788,7 @@ def prepare(args: argparse.Namespace) -> None:
             catalog_context=catalog_context,
             model=summary_model,
         )
-        summary = shader_upload_summary(summary, policy)
+        summary = perf_reports_summary(shader_upload_summary(summary, policy), policy)
         changelog = insert_testflight_summary_into_changelog(
             changelog, version, summary
         )
@@ -1106,6 +1130,7 @@ def platform_build_command(
             else []
         ),
         *shader_upload_arguments(policy),
+        *perf_reports_arguments(policy),
         *cloud_saves_arguments(policy),
     ]
     tail: list[str | Path] = ["--internal-only", "--jobs", "3", "--app-store-package", package]
@@ -1321,7 +1346,8 @@ def publish(args: argparse.Namespace) -> None:
             package = root / "build/release" / platform
             command = platform_build_command(platform, manifest, policy, profile, package)
             run(*command, root=root, env=build_env)
-            cloudkit = validation.shader_upload_enabled(policy) or validation.cloud_saves_enabled(policy)
+            cloudkit = (validation.shader_upload_enabled(policy) or validation.perf_reports_enabled(policy)
+                        or validation.cloud_saves_enabled(policy))
             if platform == "macos":
                 validation.verify_exported_pkg(package, cloudkit=cloudkit)
             elif validation.benchmark_upload_enabled(policy) or cloudkit:
@@ -1336,6 +1362,7 @@ def publish(args: argparse.Namespace) -> None:
                     app=archive / "Products/Applications/VISR.app",
                     benchmark_upload=validation.benchmark_upload_enabled(policy) and platform != "macos",
                     shader_upload=validation.shader_upload_enabled(policy),
+                    perf_reports=validation.perf_reports_enabled(policy),
                     cloud_saves=validation.cloud_saves_enabled(policy),
                     guest_source_date_epoch=guest_epoch if GUEST_EPOCH_FIELD in manifest else None,
                 ),

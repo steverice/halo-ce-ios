@@ -62,7 +62,8 @@ def native_commands(args, data_packs):
         f'-DHALO_BINK={args.bink.upper()}', f'-DHALO_RENDER_HEIGHT={args.render_height}',
         f'-DHALO_RENDER_VALIDATION={args.render_validation.upper()}',
         *ios_build.cloud_definitions(args.bundle_id, args.cloud_saves, getattr(args, 'cloud_container', None),
-                                     shader_upload=getattr(args, 'shader_upload', False)),
+                                     shader_upload=getattr(args, 'shader_upload', False),
+                                     perf_reports=getattr(args, 'perf_reports', False)),
         '-DHALO_TESTER_BUILD=OFF', '-DHALO_BENCHMARK_ROUTES=OFF',
         f'-DHALO_BUILD_NUMBER={args.build_number or time.strftime("%Y%m%d.%H%M%S")}',
         f'-DHALO_DATA_PACK_CHANNEL_NAME={getattr(args, "data_pack_channel", None) or ""}',
@@ -73,8 +74,8 @@ def native_commands(args, data_packs):
         configure.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     if args.marketing_version:
         configure.append(f'-DHALO_MARKETING_VERSION={args.marketing_version}')
-    if getattr(args, 'shader_upload', False) and not args.team and not getattr(args, 'unsigned', False):
-        raise ValueError('--native-mac --shader-upload needs --team or --unsigned for compile validation')
+    if (getattr(args, 'shader_upload', False) or getattr(args, 'perf_reports', False)) and not args.team and not getattr(args, 'unsigned', False):
+        raise ValueError('--native-mac --shader-upload/--perf-reports needs --team or --unsigned for compile validation')
     build = ['cmake', '--build', str(BUILD), '--config', 'Release', '--target', 'VISR', '--', '-quiet']
     if args.team:
         build.extend(ios_build.manual_signing(args.signing_profile) or ['-allowProvisioningUpdates'])

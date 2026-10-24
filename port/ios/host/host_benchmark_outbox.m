@@ -11,7 +11,7 @@ static BOOL sync_file(NSString *path) {
 NSString *host_typed_outbox_store(NSString *folder, NSData *report, NSString *prefix, HostOutboxValidator validate, NSError **error) {
     id parsed=report ? [NSJSONSerialization JSONObjectWithData:report options:0 error:error] : nil;
     if(![parsed isKindOfClass:NSDictionary.class] || !validate || !validate(parsed) ||
-        ![@[@"benchmark", @"shader"] containsObject:prefix])return nil;
+        ![@[@"benchmark", @"shader", @"perf"] containsObject:prefix])return nil;
     if(![NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:error])return nil;
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(report.bytes,(CC_LONG)report.length,digest);
@@ -79,4 +79,18 @@ BOOL host_benchmark_archive_interrupted(NSString *folder, NSError **error) {
     NSString *receipt_path=[archive stringByAppendingPathComponent:@"preservation.json"];
     return receipt && [receipt writeToFile:receipt_path options:NSDataWritingAtomic error:error] &&
         sync_file(receipt_path) && sync_file(archive) && sync_file(archive.stringByDeletingLastPathComponent);
+}
+NSString *host_typed_outbox_store_asset(NSString *folder,NSString *asset,NSDictionary *metadata,NSString *prefix,NSString *hash,HostOutboxAssetValidator validate,NSError **error) {
+    if(![prefix isEqual:@"perf"] || ![metadata isKindOfClass:NSDictionary.class] || hash.length!=64 ||
+       [hash rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"] invertedSet]].location!=NSNotFound || !validate || !validate(asset,metadata,hash))return nil;
+    if(![NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:error])return nil;
+    NSString *path=[folder stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@.json",prefix,hash]],*destination=[path stringByAppendingPathExtension:@"gz"];
+    NSData *manifest=[NSJSONSerialization dataWithJSONObject:metadata options:NSJSONWritingSortedKeys error:error];
+    if([NSFileManager.defaultManager fileExistsAtPath:path])return [[NSData dataWithContentsOfFile:path] isEqual:manifest] && validate(destination,metadata,hash) ? path:nil;
+    NSString *temporary=[destination stringByAppendingPathExtension:NSUUID.UUID.UUIDString];
+    if(![NSFileManager.defaultManager copyItemAtPath:asset toPath:temporary error:error] || !sync_file(temporary))return nil;
+    [NSFileManager.defaultManager removeItemAtPath:destination error:nil];
+    BOOL ok=[NSFileManager.defaultManager moveItemAtPath:temporary toPath:destination error:error] &&
+        [manifest writeToFile:path options:NSDataWritingAtomic error:error] && sync_file(path) && sync_file(folder);
+    [NSFileManager.defaultManager removeItemAtPath:temporary error:nil];return ok?path:nil;
 }

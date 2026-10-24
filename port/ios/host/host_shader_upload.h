@@ -15,3 +15,7 @@ BOOL host_shader_upload_validate(NSDictionary *payload);
 NSData *host_shader_upload_gzip(NSData *payload);
 NSTimeInterval host_shader_upload_retry(NSUInteger attempt, NSTimeInterval cloud_delay, double jitter);
 #endif
+#ifdef __OBJC__
+/* Cached identities only; schedules cold hashing without waiting. */
+NSDictionary *host_shader_upload_map_identity(const char *map_name);
+#endif

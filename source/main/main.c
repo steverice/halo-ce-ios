@@ -380,6 +380,7 @@ symbols in this file:
 #include "networking/network_game_globals.h"
 #include "networking/network_game_manager.h"
 #include "networking/network_server_manager.h" /* port: a co-op game's level won */
+#include "network_distributed.h"
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "map_share.h" /* port: port/linux/game/map_share.c */
 #include "network_away.h" /* port: port/linux/game/network_away.c */
@@ -406,6 +407,10 @@ and 1 bracket the ticks, with how many ran, and 2 and 3 the render; 4 passes
 the D3D8 device's translation time within it (d3d8_device.c) */
 void host_frame_cpu_phase(int phase, int ticks);
 int halo_translation_nanoseconds_take(void);
+/* port: per-game loading boundaries (d3d8_device.c resolves cache paths). */
+void halo_perf_reports_map_begin(const char *map_name);
+void host_perf_hooks_loading(int loading);
+long network_objects_perf_count(void);
 #define MAIN_CPU_PHASE(phase, ticks) host_frame_cpu_phase((phase), (ticks))
 #else
 #define MAIN_CPU_PHASE(phase, ticks) ((void)0)
@@ -1485,6 +1490,10 @@ short main_get_window_count(
 static void main_new_map(
 	struct game_options *options)
 {
+#ifdef HALO_IOS
+	halo_perf_reports_map_begin(options->map_name);
+	host_perf_hooks_loading(1);
+#endif
 	input_flush();
 	if (game_load(options))
 	{
@@ -1527,6 +1536,10 @@ static void main_new_map(
 	/* port: the loading screen stays up until the level's shaders and
 	pipelines are compiled (port/linux/game/loading_screen.c) */
 	halo_loading_screen_finish();
+#ifdef HALO_IOS
+	host_perf_hooks_loading(0);
+	MAIN_CPU_PHASE(8, 5); /* port: map-load end */
+#endif
 
 	return;
 }
@@ -1980,6 +1993,8 @@ void main_pregame_render(
 	   at the top of the function is unattested. January corroborates: .bss +0, the 0xAC-byte window
 	   padded to 0xB0 before main_globals, referenced only by this function. */
 	static struct render_window window;
+	/* port: loading screens render outside main_loop, but still own frame IDs. */
+	MAIN_CPU_PHASE(7, 0);
 
 #ifdef HALO_IOS
 	/* port: a rendered frame abandoned before Present must not bless a loading frame. */
@@ -2035,7 +2050,8 @@ static boolean main_coop_host_revert(
 
 	if (!game_state_port_saved_game_valid())
 		return FALSE;
-	game_state_revert();
+	MAIN_CPU_PHASE(8, 7); /* port: checkpoint rewind event */
+		game_state_revert();
 	network_coop_reverted(now);
 	ui_widgets_disable_pause_game(30);
 	return TRUE;
@@ -2130,6 +2146,7 @@ static void main_skip_private(
 static void main_saving_map_private(
 	void)
 {
+	MAIN_CPU_PHASE(8, 6); /* port: checkpoint save event */
 	game_state_save();
 	/* port: noted in the recorded time (input_replay.c) */
 	{
@@ -2377,6 +2394,7 @@ static void main_respawn_private(
 static void main_load_core_private(
 	void)
 {
+	MAIN_CPU_PHASE(8, 7); /* port: checkpoint/core rewind event */
 	game_state_load_core(main_globals.core_name);
 	main_globals.load_core = FALSE;
 	return;
@@ -2385,6 +2403,7 @@ static void main_load_core_private(
 static void main_save_core_private(
 	void)
 {
+	MAIN_CPU_PHASE(8, 6); /* port: checkpoint/core save event */
 	game_state_save_core(main_globals.core_name);
 	main_globals.save_core = FALSE;
 	return;
@@ -3448,6 +3467,7 @@ static void main_game_render(
 	long window_count;
 	short last_local_player_index;
 
+	MAIN_CPU_PHASE(7, 0);
 	lock_global_random_seed();
 	halo_render_random_begin(); /* port: render_random.c */
 	collision_log_continue_period(TRUE);
@@ -3563,6 +3583,30 @@ void main_loop(
 
 	while (TRUE)
 	{
+		MAIN_CPU_PHASE(7, 0); /* port: start-to-start interval includes pacing waits. */
+		/* port: numeric context only; the worker creates epochs without player identities. */
+		MAIN_CPU_PHASE(11, game_engine ? 2 : 1);
+		MAIN_CPU_PHASE(12, main_globals.connection == _game_connection_network_server ? 2 :
+			main_globals.connection == _game_connection_network_client ? 3 : 1);
+		MAIN_CPU_PHASE(13, player_data && player_data->valid ? player_data->actual_count : 0);
+		MAIN_CPU_PHASE(14, local_player_count());
+#ifdef HALO_IOS
+		{
+			static unsigned long perf_network_time;
+			if (main_globals.frame_start_milliseconds - perf_network_time >= 1000)
+			{
+				unsigned long total = 0, samples = 0;
+				for (short player = 0; player < MAXIMUM_TRACKED_PLAYERS; player++)
+				{
+					long ping = distributed_player_ping(player);
+					if (ping > 0) { total += (unsigned long)ping; samples++; }
+				}
+				MAIN_CPU_PHASE(22, samples ? (int)(total / samples) : -1);
+				MAIN_CPU_PHASE(23, (int)network_objects_perf_count());
+				perf_network_time = main_globals.frame_start_milliseconds;
+			}
+		}
+#endif
 		if (!game_in_editor())
 		{
 			if (main_globals.switch_to_structure_bsp_index!=NONE)
@@ -3678,6 +3722,7 @@ void main_loop(
 			/* port: apply and replicate the host's mouse aim-assist policy. */
 			network_aim_assist_update();
 			connection = main_globals.connection;
+			MAIN_CPU_PHASE(5, 0); /* port: network work has its own CPU span. */
 			if (connection==_game_connection_network_client)
 			{
 				if (!network_game_client_start_frame())
@@ -3685,6 +3730,7 @@ void main_loop(
 					display_error_when_main_menu_loaded(6);
 					error(_error_silent, "the game host went down");
 					/* port: joined again if it or its host was away (port/linux/game/network_away.c) */
+					MAIN_CPU_PHASE(8, 14); /* port: retain short disconnected segments. */
 					network_away_game_lost();
 					network_game_abort();
 				}
@@ -3695,19 +3741,23 @@ void main_loop(
 				{
 					display_error_when_main_menu_loaded(1);
 					error(_error_silent, "the game host went down");
+					MAIN_CPU_PHASE(8, 14); /* port: retain short disconnected segments. */
 					network_game_abort();
 				}
 				else if (!network_game_server_start_frame())
 				{
 					display_error_when_main_menu_loaded(1);
 					error(_error_silent, "the game host went down");
+					MAIN_CPU_PHASE(8, 14); /* port: retain short disconnected segments. */
 					network_game_abort();
 				}
 			}
 			else if (connection==_game_connection_film_playback)
 			{
+				MAIN_CPU_PHASE(6, 0);
 				break;
 			}
+			MAIN_CPU_PHASE(6, 0);
 
 			main_update_time();
 			process_ui_widgets();
@@ -3734,12 +3784,15 @@ void main_loop(
 					player_control_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 
 					connection = main_globals.connection;
+					MAIN_CPU_PHASE(5, 0);
 					if (connection>_game_connection_local && connection<=_game_connection_network_server && !network_game_client_end_frame())
 					{
 						display_error_when_main_menu_loaded(1);
-						network_game_abort();
+						MAIN_CPU_PHASE(8, 14); /* port: retain short disconnected segments. */
+					network_game_abort();
 					}
 
+					MAIN_CPU_PHASE(6, 0);
 					{
 						long ticks_before = game_time_get(); /* port: the benchmark's CPU split */
 

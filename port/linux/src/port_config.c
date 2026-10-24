@@ -3252,27 +3252,35 @@ stands in for the device's while the scene is that class, and only while
 the setting's value comes from its default or the profile: one the player
 or the environment set is the value in every scene. */
 
-static const struct config_value *config_scene_value(const char *name, enum config_type type, int scene)
+/* The game-thread sampler shares resolution without config_value's initialization lock. */
+static const struct config_value *config_scene_value_cached(size_t index, int scene, int external)
 {
-	const struct config_value *value = config_value(name, type);
-	long index = config_setting_index(name);
-
-	if (index >= 0 && config_settings[index].type == type &&
-		(config_states[index].source == _source_default || config_states[index].source == _source_profile))
+	const struct config_setting_state *state = &config_states[index];
+	if (state->source == _source_default || state->source == _source_profile)
 	{
-		const struct config_setting_state *state = &config_states[index];
-#ifdef HALO_ILP32
-		if (host_external_active())
+		if (external)
 		{
 			if (scene > 0 && scene < NUMBER_OF_CONFIG_SCENES && state->external[scene].text)
 				return &state->external_value[scene];
 			if (state->external[0].text)
 				return &state->external_value[0];
 		}
-#endif
 		if (scene > 0 && scene < NUMBER_OF_CONFIG_SCENES && state->scene[scene].text)
 			return &state->scene_value[scene];
 	}
+	return &config_values[index];
+}
+
+static const struct config_value *config_scene_value(const char *name, enum config_type type, int scene)
+{
+	const struct config_value *value = config_value(name, type);
+	long index = config_setting_index(name);
+	int external = 0;
+#ifdef HALO_ILP32
+	external = host_external_active();
+#endif
+	if (index >= 0 && config_settings[index].type == type)
+		return config_scene_value_cached((size_t)index, scene, external);
 	return value;
 }
 
@@ -3388,6 +3396,65 @@ static int graphics_setting(const char *name)
 #undef CAPTURE_NAME
 	return 0;
 }
+int config_graphics_settings_snapshot(int scene, struct game_perf_graphics_snapshot *snapshot)
+{
+	int external = 0;
+	if (!snapshot) return 0;
+	memset(snapshot, 0, sizeof(*snapshot));
+	/* Initialization and updates belong to ordinary settings access, never this sampler. */
+	if (!config_loaded || scene < 0 || scene >= NUMBER_OF_CONFIG_SCENES) return 0;
+#ifdef HALO_ILP32
+	external = host_external_active();
+#endif
+	snapshot->schema = 1;
+	snapshot->scene = (uint32_t)scene;
+	snapshot->configuration_revision = config_changes();
+	snapshot->external_output = external != 0;
+	for (size_t index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting *setting = &config_settings[index];
+		if (!(setting->platforms & CONFIG_PLATFORM) || !graphics_setting(setting->name)) continue;
+		if (snapshot->count == GAME_PERF_GRAPHICS_MAX_KEYS) goto invalid;
+		struct game_perf_graphics_value *entry = &snapshot->entries[snapshot->count];
+		size_t length = strnlen(setting->name, sizeof(entry->name));
+		if (length == sizeof(entry->name)) goto invalid;
+		memcpy(entry->name, setting->name, length + 1);
+		const struct config_value *value = config_scene_value_cached(index, scene, external);
+		switch (setting->type)
+		{
+		case _config_boolean:
+			entry->type = GAME_PERF_GRAPHICS_BOOLEAN;
+			entry->value.boolean = value->boolean != 0;
+			break;
+		case _config_integer:
+			entry->type = GAME_PERF_GRAPHICS_INTEGER;
+			entry->value.integer = value->integer;
+			break;
+		case _config_real:
+			if (!isfinite(value->real)) goto invalid;
+			entry->type = GAME_PERF_GRAPHICS_REAL;
+			entry->value.real = value->real;
+			break;
+		case _config_string:
+		{
+			const char *text = value->string ? value->string : "";
+			length = strnlen(text, sizeof(entry->value.string));
+			if (length == sizeof(entry->value.string)) goto invalid;
+			entry->type = GAME_PERF_GRAPHICS_STRING;
+			memcpy(entry->value.string, text, length + 1);
+			break;
+		}
+		default: goto invalid;
+		}
+		snapshot->count++;
+	}
+	snapshot->valid = 1;
+	return 1;
+invalid:
+	snapshot->count = 0;
+	return 0;
+}
+
 int config_graphics_settings_json(int scene, char *text, size_t size)
 {
 	struct graphics_json json = { text, size < CONFIG_GRAPHICS_MAXIMUM_BYTES ? size : CONFIG_GRAPHICS_MAXIMUM_BYTES, 0, 1 };

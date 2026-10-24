@@ -188,6 +188,7 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
     monkeypatch.setattr(validation.release, "verify_guest", lambda *_: None)
     host_flags = ""
     upload_enabled = False
+    perf_enabled = False
     saves_enabled = False
     codesign_calls = []
 
@@ -215,7 +216,8 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
                             "OTHER_CFLAGS": host_flags,
                             "GCC_PREPROCESSOR_DEFINITIONS": "HALO_TESTER_BUILD=1 HALO_BENCHMARK_NO_ROUTES=1"
                             + (" HALO_BENCHMARK_UPLOAD=1" if upload_enabled else "")
-                            + (" HALO_CLOUD_SAVES=1" if saves_enabled else ""),
+                            + (" HALO_CLOUD_SAVES=1" if saves_enabled else "")
+                            + (" HALO_PERF_REPORTS=1" if perf_enabled else ""),
                         },
                     }
                 ]
@@ -238,6 +240,15 @@ def test_effective_compile_flags_reject_host_pgo_fallback(
     saves_enabled = False
     with pytest.raises(ValueError, match="cloud-saves"):
         validation.inspect_build(tmp_path, "ios", cloud_saves=True)
+    perf_enabled = True
+    with pytest.raises(ValueError, match="perf-reports"):
+        validation.inspect_build(tmp_path, "ios")
+    perf_probe = validation.inspect_build(tmp_path, "ios", perf_reports=True)
+    assert perf_probe["perf_reports"] == "on"
+    assert perf_probe["shader_upload"] == "off"
+    perf_enabled = False
+    with pytest.raises(ValueError, match="perf-reports"):
+        validation.inspect_build(tmp_path, "ios", perf_reports=True)
     upload_enabled = True
     unsigned_probe = validation.inspect_build(tmp_path, "ios", benchmark_upload=True)
     assert unsigned_probe["benchmark_upload"] == "on"

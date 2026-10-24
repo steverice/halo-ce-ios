@@ -127,3 +127,8 @@ host_sdl_cloud_saves_status
 host_shader_observation_activate
 host_shader_observation_append
 host_shader_observation_recording
+
+host_perf_hooks_loading
+host_perf_reports_activate
+host_perf_reports_graphics_snapshot
+host_perf_reports_identity

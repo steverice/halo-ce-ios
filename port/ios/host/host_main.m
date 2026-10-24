@@ -18,6 +18,7 @@
 #include "host_external.h"
 #include "host_cloud_saves.h"
 #include "host_shader_upload.h"
+#include "host_perf_reports.h"
 #include "renderer_build.h"
 #if !TARGET_OS_TV && !HALO_NATIVE_MAC
 #include "host_texture_settings.h"
@@ -67,6 +68,7 @@ void host_exit(int code) {
     /* a save made just before the app is left still goes up (nothing without HALO_CLOUD_SAVES) */
     host_cloud_saves_leaving(3);
     host_shader_upload_suspend();
+    host_perf_reports_finish(code != 0);
     exit(code);
 }
 
@@ -316,6 +318,7 @@ int main(int argc,char **argv) {
 #endif
         host_memory_pressure_start();
         host_shader_upload_start(HALO_GUEST_SHA256);
+        host_perf_reports_start(HALO_GUEST_SHA256);
         /* halo://join links (host_join_link.c): before the import screen can spin the run loop,
            which is when SDL's scene delegate passes on the link the app was launched with */
         host_join_link_install(data_root);

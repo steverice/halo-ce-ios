@@ -16,6 +16,7 @@ layouts).
 #define __GUEST_HOST_H
 
 #include "gpu.h"
+#include "../../game_perf_graphics.h"
 #include "../../shader_observations.h"
 #include "halo_stereo.h"
 #include "halo_spatial.h"
@@ -45,6 +46,10 @@ void host_data_updates_frame_ready(int ready);
 ticks (0 and 1, with how many ran) and its render (2 and 3), and the D3D8
 device's translation time within the render (4, in nanoseconds) */
 void host_frame_cpu_phase(int phase, int ticks);
+void host_perf_hooks_loading(int loading);
+void host_perf_reports_activate(const char *map_name, int suppressed);
+void host_perf_reports_identity(const char *resolved_path);
+void host_perf_reports_graphics_snapshot(const struct game_perf_graphics_snapshot *snapshot);
 
 /* 1 once for each memory warning since the last call, else 0 (the texture
    cache drops what was not drawn lately), and the memory left to the app in

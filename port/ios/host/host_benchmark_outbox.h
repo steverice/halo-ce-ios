@@ -11,3 +11,6 @@ BOOL host_benchmark_archive_interrupted(NSString *folder, NSError **error);
 typedef BOOL (^HostOutboxValidator)(NSDictionary *payload);
 NSString *host_typed_outbox_store(NSString *folder, NSData *payload, NSString *prefix, HostOutboxValidator validate, NSError **error);
 NSArray<NSString *> *host_typed_outbox_pending(NSString *folder, NSString *prefix);
+/* Asset validators stream decoded bytes and compare the duplicated metadata. */
+typedef BOOL (^HostOutboxAssetValidator)(NSString *asset, NSDictionary *metadata, NSString *payload_hash);
+NSString *host_typed_outbox_store_asset(NSString *folder, NSString *asset, NSDictionary *metadata, NSString *prefix, NSString *payload_hash, HostOutboxAssetValidator validate, NSError **error);

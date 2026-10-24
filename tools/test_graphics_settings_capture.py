@@ -39,6 +39,24 @@ static int SDL_SaveFile(const char *path, const void *data, size_t size) {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include "../../runtime/game_perf_graphics.h"
+static int capture_calls, capturing;
+static int capture_mutex_lock(pthread_mutex_t *mutex) { if (capturing) capture_calls++; return pthread_mutex_lock(mutex); }
+static void *capture_malloc(size_t size) { if (capturing) capture_calls++; return malloc(size); }
+static void *capture_calloc(size_t n, size_t size) { if (capturing) capture_calls++; return calloc(n,size); }
+static void *capture_realloc(void *p, size_t size) { if (capturing) capture_calls++; return realloc(p,size); }
+static char *capture_strdup(const char *text) { if (capturing) capture_calls++; return strdup(text); }
+static int capture_snprintf(char *out, size_t size, const char *format, ...) {
+    if (capturing) capture_calls++; va_list args; va_start(args,format); int n=vsnprintf(out,size,format,args); va_end(args); return n;
+}
+#define pthread_mutex_lock capture_mutex_lock
+#define malloc capture_malloc
+#define calloc capture_calloc
+#define realloc capture_realloc
+#define strdup capture_strdup
+#undef snprintf
+#define snprintf capture_snprintf
 #define __HALO_LINUX_PLATFORM_H
 void platform_log(const char *format, ...) { (void)format; }
 static int external;
@@ -54,20 +72,47 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[2],"locale")) { (void)config_boolean("debug.settings_dump"); assert(setlocale(LC_NUMERIC,"fr_FR.UTF-8")); }
     external = !strcmp(argv[2],"external");
     if (!strcmp(argv[2],"environment")) setenv("HALO_RENDER_SCALE","0.9",1);
+    struct game_perf_graphics_snapshot snapshot;
+    if (!config_loaded) {
+        capturing=1; assert(!config_graphics_settings_snapshot(CONFIG_SCENE_MENU,&snapshot)); capturing=0;
+        assert(!snapshot.valid && !snapshot.count && !capture_calls);
+    }
     char text[CONFIG_GRAPHICS_MAXIMUM_BYTES];
     assert(config_graphics_settings_json(CONFIG_SCENE_MENU,text,sizeof(text)));
     puts(text);
+    capturing=1; assert(config_graphics_settings_snapshot(CONFIG_SCENE_MENU,&snapshot)); capturing=0;
+    assert(!capture_calls && snapshot.valid && snapshot.count && snapshot.count<=128);
+    assert(sizeof(snapshot)<32*1024 && snapshot.scene==CONFIG_SCENE_MENU);
+    assert(snapshot.external_output==(unsigned)external);
+    unsigned kinds=0;
+    for (unsigned i=0;i<snapshot.count;i++) {
+        const struct game_perf_graphics_value *v=&snapshot.entries[i];
+        assert(graphics_setting(v->name));
+        assert(v->type>=GAME_PERF_GRAPHICS_BOOLEAN && v->type<=GAME_PERF_GRAPHICS_STRING);
+        kinds |= 1u << v->type;
+        if (!strcmp(v->name,"display.render_scale")) {
+            assert(v->type==GAME_PERF_GRAPHICS_REAL);
+            printf("snapshot_scale=%.17g\n",v->value.real);
+        }
+    }
+    assert(kinds==30);
+    capturing=1; assert(!config_graphics_settings_snapshot(-1,&snapshot)); capturing=0;
+    assert(!snapshot.valid && !snapshot.count && !capture_calls);
     char escaped[64]; struct graphics_json encoded = {escaped,sizeof(escaped),0,1};
     graphics_string(&encoded,"quote\"slash\\\n");
     assert(encoded.valid && !strcmp(escaped,"\"quote\\\"slash\\\\\\u000a\""));
     long scale = config_setting_index("display.render_scale");
     config_states[scale].source = _source_file; config_values[scale].real = NAN;
     assert(!config_graphics_settings_json(CONFIG_SCENE_MENU,text,sizeof(text)) && !text[0]);
+    capturing=1; assert(!config_graphics_settings_snapshot(CONFIG_SCENE_MENU,&snapshot)); capturing=0;
+    assert(!snapshot.valid && !snapshot.count && !capture_calls);
     config_values[scale].real = 0.5;
     long menus = config_setting_index("display.menus");
     char oversized[CONFIG_GRAPHICS_MAXIMUM_STRING_BYTES+2]; memset(oversized,'x',sizeof(oversized)-1); oversized[sizeof(oversized)-1] = 0;
     free(config_values[menus].string); config_values[menus].string = strdup(oversized); config_states[menus].source = _source_file;
     assert(!config_graphics_settings_json(CONFIG_SCENE_MENU,text,sizeof(text)) && !text[0]);
+    capturing=1; assert(!config_graphics_settings_snapshot(CONFIG_SCENE_MENU,&snapshot)); capturing=0;
+    assert(!snapshot.valid && !snapshot.count && !capture_calls);
     free(config_values[menus].string); config_values[menus].string = strdup("classic");
     char small[8] = "unsafe";
     assert(!config_graphics_settings_json(CONFIG_SCENE_MENU,small,sizeof(small)) && !small[0]);
@@ -88,7 +133,9 @@ int main(int argc, char **argv) {
             (folder / "config.toml").write_text(config)
         env = os.environ.copy(); env.pop("HALO_RENDER_SCALE",None)
         result = subprocess.run([str(binary),str(folder),mode],env=env,capture_output=True,text=True,check=True)
-        snapshot = json.loads(result.stdout)
+        json_line, scale_line = result.stdout.splitlines()
+        assert float(scale_line.split("=",1)[1].replace(",", ".")) == expected
+        snapshot = json.loads(json_line)
         values = snapshot["values"]
         assert values["display.render_scale"] == expected
         assert type(values["display.native_hud"]) is bool
@@ -106,3 +153,17 @@ int main(int argc, char **argv) {
         assert all(key.startswith("display.") or key in safe for key in values)
         assert "network.online" not in values and "input.look_invert_pitch" not in values
         assert len(result.stdout.encode()) < 32768
+
+
+def test_performance_graphics_context_has_identical_guest_and_host_layout(tmp_path):
+    import shutil
+
+    compiler = shutil.which("clang")
+    if not compiler:
+        pytest.skip("Clang is required for the guest ABI cross-check")
+    source = tmp_path / "graphics_abi.c"
+    source.write_text('#include "game_perf_graphics.h"\n')
+    common = [compiler, "-std=c11", "-ffreestanding", "-fsyntax-only",
+              "--include-directory=" + str(ROOT / "port/runtime"), str(source)]
+    subprocess.run(common, check=True)
+    subprocess.run([*common, "--target=i386-unknown-none"], check=True)

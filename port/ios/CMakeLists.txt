@@ -44,6 +44,7 @@ option(HALO_BINK "Play the game's Bink movies with the vendored FFmpeg decoders 
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
 # iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
 # On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
+option(HALO_PERF_REPORTS "Collect automatic game performance reports" OFF)
 option(HALO_SHADER_UPLOAD "Contribute missing Metal compilation descriptors" OFF)
 option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to CloudKit" OFF)
 option(HALO_CLOUD_SAVES "Sync saves through the player's private iCloud database" OFF)
@@ -163,7 +164,8 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_shader_pack.c host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m host/host_benchmark_catalog.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
     "${ROOT}/port/third_party/monocypher/monocypher-ed25519.c"
-    host/host_shader_upload.m "${ROOT}/port/runtime/shader_observations.c"
+    host/host_shader_upload.m host/host_map_identity.m "${ROOT}/port/runtime/shader_observations.c"
+    host/host_perf_reports.m host/host_perf_hooks.c host/host_perf_metal.m host/host_perf_validation.m host/host_report_delivery.m "${ROOT}/port/runtime/game_perf.c"
     host/host_benchmark.m host/host_benchmark_outbox.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
@@ -341,7 +343,7 @@ if(HALO_TESTER_BUILD)
     target_sources(VISR PRIVATE host/host_benchmark_menu.m)
     target_compile_definitions(VISR PRIVATE HALO_TESTER_BUILD=1)
 endif()
-if(HALO_TESTER_BUILD OR HALO_BENCHMARK_UPLOAD)
+if(HALO_TESTER_BUILD OR HALO_BENCHMARK_UPLOAD OR HALO_PERF_REPORTS)
     set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
 elseif(HALO_SHADER_UPLOAD)
     set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/shader/PrivacyInfo.xcprivacy")
@@ -419,7 +421,7 @@ endif()
 # Automatic benchmark report delivery (host/host_benchmark_send.m): one record in the public
 # database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
 set(HALO_BENCHMARK_APS_ENVIRONMENT "development" CACHE STRING "APS environment authorized by the benchmark upload signing profile")
-if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
+if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD OR HALO_PERF_REPORTS)
     if(NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "development" AND
        NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "production")
         message(FATAL_ERROR "HALO_BENCHMARK_APS_ENVIRONMENT must match the selected signing profile")
@@ -436,12 +438,16 @@ if(HALO_SHADER_UPLOAD)
     target_compile_definitions(VISR PRIVATE HALO_SHADER_UPLOAD=1
         "HALO_SHADER_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
+if(HALO_PERF_REPORTS)
+    target_compile_definitions(VISR PRIVATE HALO_PERF_REPORTS=1
+        "HALO_PERF_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
+endif()
 if(HALO_CLOUD_SAVES)
     # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit
     target_sources(VISR PRIVATE "${ROOT}/port/runtime/cloud_saves.c" host/cloud_store_cloudkit.m host/host_cloud_saves.m)
     target_compile_definitions(VISR PRIVATE HALO_CLOUD_SAVES=1 "HALO_CLOUD_CONTAINER=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
-if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
+if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD OR HALO_PERF_REPORTS)
     target_link_libraries(VISR PRIVATE "-framework CloudKit")
     # the iCloud keys, added to whatever entitlements the target already signs with (visionOS's, or the
     # extended virtual addressing entitlement of a visionOS or tvOS build), which this block must run after

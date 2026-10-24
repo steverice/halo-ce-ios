@@ -92,9 +92,10 @@ def test_shader_evidence_cannot_silently_differ_from_policy():
     validation.compare_evidence({**pins, "shader_upload": "on"}, {**pins, "shader_upload": "on"})
 
 
+@pytest.mark.parametrize("capability", ["HALO_SHADER_UPLOAD", "HALO_PERF_REPORTS"])
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("environment", ["development", "production"])
-def test_generated_upload_entitlements_use_the_platform_key_and_reset(tmp_path, native, environment):
+def test_generated_upload_entitlements_use_the_platform_key_and_reset(tmp_path, native, environment, capability):
     import subprocess
 
     root = Path(__file__).resolve().parents[1]
@@ -105,7 +106,7 @@ def test_generated_upload_entitlements_use_the_platform_key_and_reset(tmp_path, 
     script.write_text(
         f'include("{root / "port/ios/CloudUploadEntitlements.cmake"}")\n'
         f'set(HALO_NATIVE_MAC {"ON" if native else "OFF"})\n'
-        'set(HALO_SHADER_UPLOAD ON)\n'
+        f'set({capability} ON)\n'
         f'set(HALO_BENCHMARK_APS_ENVIRONMENT "{environment}")\n'
         f'halo_cloud_upload_entitlements("{output}" "{base}")\n'
     )
@@ -118,7 +119,7 @@ def test_generated_upload_entitlements_use_the_platform_key_and_reset(tmp_path, 
     assert entitlements["example.base-capability"] is True
     assert entitlements["com.apple.developer.icloud-services"] == ["CloudKit"]
     # Reuse the same generated output after both upload switches turn off.
-    script.write_text(script.read_text().replace("set(HALO_SHADER_UPLOAD ON)", "set(HALO_SHADER_UPLOAD OFF)"))
+    script.write_text(script.read_text().replace(f"set({capability} ON)", f"set({capability} OFF)"))
     subprocess.run(["cmake", "-P", str(script)], check=True)
     entitlements = plistlib.loads(output.read_bytes())
     assert key not in entitlements and other not in entitlements

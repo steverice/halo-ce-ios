@@ -1,3 +1,6 @@
+#ifdef HALO_ILP32
+void host_frame_cpu_phase(int phase, int value);
+#endif
 /*
 XNET.C
 
@@ -609,7 +612,7 @@ int WSAAPI halo_ws_send(SOCKET socket, const char *buffer, int length, int flags
 	return winsock_result(posix_socket_send((int)socket, buffer, length, flags));
 }
 
-int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int flags,
+static int WSAAPI perf_sendto_inner(SOCKET socket, const char *buffer, int length, int flags,
 	const struct sockaddr *address, int address_length)
 {
 	/* the rewritten destination: it must outlive the send */
@@ -742,6 +745,17 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 	}
 	return result;
 }
+/* port: count successful application datagrams, without reading payloads or endpoints. */
+int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int flags,
+	const struct sockaddr *address, int address_length)
+{
+	int result = perf_sendto_inner(socket, buffer, length, flags, address, address_length);
+#ifdef HALO_ILP32
+	if (result >= 0) host_frame_cpu_phase(20, result);
+#endif
+	return result;
+}
+
 
 /* debug.network_latency and debug.network_loss: what this machine receives
 is held back that many milliseconds (both ways between two machines: a
@@ -1066,7 +1080,7 @@ int WSAAPI halo_ws_recv(SOCKET socket, char *buffer, int length, int flags)
 	return winsock_result(posix_socket_recv((int)socket, buffer, length, flags));
 }
 
-int WSAAPI halo_ws_recvfrom(SOCKET socket, char *buffer, int length, int flags,
+static int WSAAPI perf_recvfrom_inner(SOCKET socket, char *buffer, int length, int flags,
 	struct sockaddr *address, int *address_length)
 {
 	int result;
@@ -1078,6 +1092,17 @@ int WSAAPI halo_ws_recvfrom(SOCKET socket, char *buffer, int length, int flags,
 		peer_incoming_address(0, address, address_length);
 	return winsock_result(result);
 }
+/* port: this is delivery to the game; transport loss remains unavailable. */
+int WSAAPI halo_ws_recvfrom(SOCKET socket, char *buffer, int length, int flags,
+	struct sockaddr *address, int *address_length)
+{
+	int result = perf_recvfrom_inner(socket, buffer, length, flags, address, address_length);
+#ifdef HALO_ILP32
+	if (result >= 0) host_frame_cpu_phase(21, result);
+#endif
+	return result;
+}
+
 
 int WSAAPI halo_ws_shutdown(SOCKET socket, int how)
 {

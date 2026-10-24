@@ -414,6 +414,17 @@ static struct
 } objects_host_vehicle_predictions[MAXIMUM_TRACKED_PLAYERS];
 /* a client: the host's objects it has, by absolute index */
 static long objects_client_has[MAXIMUM_TRACKED_OBJECTS];
+/* port: coarse performance count, sampled once a second; never exports object identities. */
+long network_objects_perf_count(void)
+{
+	long count = 0;
+	short role = game_connection();
+	if (role != _game_connection_network_client && role != _game_connection_network_server) return -1;
+	const long *objects = role == _game_connection_network_server ? objects_host_told : objects_client_has;
+	for (long index = 0; index < MAXIMUM_TRACKED_OBJECTS; index++) if (objects[index] != NONE) count++;
+	return count;
+}
+
 /* ... the bipeds, no player's, the host said were dead while they lived
 here, and when it first did (DEAD_BIPED_FALLBACK_TICKS) */
 static struct

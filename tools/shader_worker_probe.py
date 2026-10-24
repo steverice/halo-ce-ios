@@ -8,7 +8,7 @@ import sys
 if len(sys.argv) == 1:
     build = pathlib.Path(tempfile.mkdtemp(prefix="shader-worker-probe-"))
     probe = build / "shader-upload-probe"
-    subprocess.run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-DHALO_NATIVE_MAC=1", "-DHALO_SHADER_UPLOAD=1", "-DHALO_SHADER_UPLOAD_TESTING=1", '-DHALO_SHADER_CLOUD="iCloud.test"', "-Iport/ios/host", "-Iport/runtime/include", "-framework", "Foundation", "-framework", "AppKit", "-framework", "CloudKit", "-lz", "-lsqlite3", "port/ios/tests/shader_upload_probe.m", "port/ios/host/host_shader_upload.m", "port/ios/host/host_benchmark_outbox.m", "port/ios/host/host_shader_pack.c", "port/runtime/shader_observations.c", "-o", str(probe)], check=True)
+    subprocess.run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-DHALO_NATIVE_MAC=1", "-DHALO_SHADER_UPLOAD=1", "-DHALO_SHADER_UPLOAD_TESTING=1", '-DHALO_SHADER_CLOUD="iCloud.test"', "-Iport/ios/host", "-Iport/runtime/include", "-framework", "Foundation", "-framework", "AppKit", "-framework", "CloudKit", "-lz", "-lsqlite3", "port/ios/tests/shader_upload_probe.m", "port/ios/host/host_shader_upload.m", "port/ios/host/host_map_identity.m", "port/ios/host/host_report_delivery.m", "port/ios/host/host_benchmark_outbox.m", "port/ios/host/host_shader_pack.c", "port/runtime/shader_observations.c", "-o", str(probe)], check=True)
     outbox = build / "shader-outbox-probe"
     subprocess.run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-Iport/ios/host", "-framework", "Foundation", "port/ios/tests/shader_outbox_probe.m", "port/ios/host/host_benchmark_outbox.m", "-o", str(outbox)], check=True)
     subprocess.run([str(outbox)], check=True)

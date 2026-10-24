@@ -9,7 +9,7 @@ function(halo_cloud_upload_entitlements output base_file)
     # App Store Connect requires a push environment for CloudKit on tvOS, including saves-only builds; a Catalyst
     # test host with saves alone signs without one, as before. The native Mac app's team-signed entitlements
     # replace this file (CMakeLists.txt)
-    if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD OR (HALO_CLOUD_SAVES AND NOT HALO_MAC))
+    if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD OR HALO_PERF_REPORTS OR (HALO_CLOUD_SAVES AND NOT HALO_MAC))
         if(HALO_NATIVE_MAC)
             set(push_key "com.apple.developer.aps-environment")
         else()

@@ -1,3 +1,4 @@
+#include "host_perf_hooks.h"
 /* The device benchmark's host side (host_benchmark.h).
 
    Everything it writes is in the data folder's "benchmark" folder (the process's
@@ -421,6 +422,7 @@ int host_benchmark_presented(int on) {
 }
 
 void host_benchmark_frame_unshown(int why) {
+    host_perf_hooks_present_failed();
     if (!atomic_load(&running)) return;
     atomic_fetch_add(why ? &frames_no_picture : &frames_no_drawable, 1);
 }
@@ -432,6 +434,8 @@ static double split_began[2], split_seconds[3];
 static int split_ticks, split_marked, split_translated;
 
 void host_frame_cpu_phase(int phase, int ticks) {
+    host_perf_hooks_phase(phase, ticks);
+    if (phase >= 5) return;
     double now = CACurrentMediaTime();
     int which = phase >= HOST_FRAME_RENDER_BEGIN;
     if (phase == HOST_FRAME_TRANSLATION) {
@@ -469,6 +473,10 @@ static double run_budget_hertz(void);
 
 void host_benchmark_frame(double interval, double cpu, double gpu, double refresh_period, double simulation_cpu,
     double render_cpu, double translation_cpu, int ticks) {
+    /* The per-game collector reuses renderer CPU work, not completed GPU deltas. */
+#if HALO_PERF_REPORTS
+    host_perf_hooks_cpu(cpu >= 0.0 ? (uint64_t)(cpu * 1e6) : UINT64_MAX);
+#endif
     host_frame_counter_sample(interval, cpu, gpu);
     if (!atomic_load(&running)) return;
     atomic_fetch_add(&frames_offered, 1);

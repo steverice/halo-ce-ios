@@ -1,3 +1,5 @@
+#include "host_perf_hooks.h"
+#include "host_perf_metal.h"
 /*
 GPU_METAL.M
 
@@ -194,6 +196,7 @@ more handles, and each was a message and an autoreleased return before */
 static id<MTLDevice> device;
 static id<MTLCommandQueue> queue;
 static CAMetalLayer *layer;
+static int perf_output = 1;
 /* reversed-Z (see depth_compare_function) */
 static float reversed_depth(float depth);
 @class MetalTexture;
@@ -248,6 +251,7 @@ static int encoder_depth_clamp;
 _Static_assert(GPU_STAGE_COUNT == 4 && GPU_ATTRIBUTE_COUNT == 16, "metal_state_cache.h's slots");
 static gpu_texture pass_color, pass_depth;
 static unsigned long pass_commands;
+static uint32_t perf_pass_token;
 /* the open command buffer's serial; every earlier one has been committed */
 static uint64_t current_serial = 1;
 static _Atomic uint64_t completed_serial;
@@ -649,6 +653,7 @@ static struct
 	struct metal_state_cache cache;
 	int depth_clamp, entry_open;
 	unsigned long pass_commands;
+	uint32_t perf_token;
 	/* since the last frame's log line */
 	unsigned long parks, in_order;
 } native_pass;
@@ -663,6 +668,8 @@ static void native_park(void)
 	native_pass.depth_clamp = encoder_depth_clamp;
 	native_pass.entry_open = visibility.entry_open;
 	native_pass.pass_commands = pass_commands;
+	native_pass.perf_token = perf_pass_token;
+	perf_pass_token = 0;
 	native_pass.parked = YES;
 	native_pass.parks++;
 	commands = nil;
@@ -683,8 +690,13 @@ static void native_unpark(void)
 	pass_finish_open(NO);
 	if (commands)
 	{
+		uint64_t perf_frame = host_perf_hooks_gpu_reserve();
 		[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
 		{
+			host_perf_metal_complete(completed);
+			double duration = completed.GPUEndTime - completed.GPUStartTime;
+			host_perf_hooks_gpu_complete(perf_frame, duration > 0.0 ? (uint64_t)(duration * 1e6) : 0,
+				completed.status == MTLCommandBufferStatusCompleted && completed.GPUStartTime > 0.0 && duration > 0.0);
 			if (completed.status == MTLCommandBufferStatusError)
 				platform_log("Metal: a command buffer ahead of the HUD's failed: %s", completed.error.description.UTF8String);
 			gpu_busy_count(completed);
@@ -697,6 +709,7 @@ static void native_unpark(void)
 	encoder_depth_clamp = native_pass.depth_clamp;
 	visibility.entry_open = native_pass.entry_open;
 	pass_commands = native_pass.pass_commands;
+	perf_pass_token = native_pass.perf_token;
 	pass_color = native_pass.color;
 	pass_depth = 0;
 	native_pass.commands = nil;
@@ -734,6 +747,8 @@ static void pass_finish_open(BOOL frame_end)
 	if (encoder && pass_log)
 		[pass_log appendFormat:@"; %lu draws and clears", pass_commands];
 	pass_depth_texture = nil;
+	host_perf_metal_end(perf_pass_token, encoder);
+	perf_pass_token = 0;
 	[encoder endEncoding];
 	encoder = nil;
 	metal_state_reset(&state_cache);
@@ -756,6 +771,7 @@ static void commit(BOOL frame_end)
 {
 	id<MTLCommandBuffer> committed;
 	uint64_t serial = current_serial;
+	uint64_t perf_frame = host_perf_hooks_gpu_reserve();
 
 	NSData *pending = visibility.pending;
 	id<MTLBuffer> results = visibility_buffer;
@@ -776,6 +792,10 @@ static void commit(BOOL frame_end)
 			GPU_VALIDATION_REPORT(GPU_VALIDATION_COMMAND_BUFFER_FAILED, 0, "command buffer %llu: %s", (unsigned long long)serial,
 				completed.error.description.UTF8String);
 		}
+		host_perf_metal_complete(completed);
+		double perf_duration = completed.GPUEndTime - completed.GPUStartTime;
+		host_perf_hooks_gpu_complete(perf_frame, perf_duration > 0.0 ? (uint64_t)(perf_duration * 1e6) : 0,
+			completed.status == MTLCommandBufferStatusCompleted && completed.GPUStartTime > 0.0 && perf_duration > 0.0);
 		gpu_busy_count(completed);
 		for (test = 0; test < pending.length / sizeof(*tests); test++)
 		{
@@ -1848,7 +1868,10 @@ static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_cl
 				(unsigned long)depth_record->texture.height, load_name(pass.depthAttachment.loadAction),
 				load_name(pass.stencilAttachment.loadAction)];
 	}
-	encoder = [command_buffer() renderCommandEncoderWithDescriptor:pass];
+	id<MTLCommandBuffer> perf_commands = command_buffer();
+	perf_pass_token = host_perf_metal_prepare(perf_commands, pass, !color ? 2 : depth ? 0 : 1);
+	encoder = [perf_commands renderCommandEncoderWithDescriptor:pass];
+	host_perf_metal_begin(perf_pass_token, encoder);
 	metal_state_reset(&state_cache);
 	encoder_depth_clamp = 0;
 	if (metal_debug)
@@ -4317,13 +4340,20 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 	pacing.gpu_counted = gpu_total;
 	/* (no measurement, not an idle GPU: the benchmark keeps it apart) */
 	gpu_measured = gpu_metal_gpu_spans(&pacing.gpu_used, &pacing.gpu_refused);
+	host_perf_hooks_pacing(pacing_waited > 0.0 ? (uint64_t)(pacing_waited * 1e6) : 0);
 	pacing_waited = 0.0;
 	interval = pacing.last_present > 0.0 ? now - pacing.last_present : 0.0;
 	pacing.last_present = now;
 	os_unfair_lock_lock(&pacing_lock);
 	period = refresh_period;
 	os_unfair_lock_unlock(&pacing_lock);
-	/* the device benchmark (host_benchmark.m): every presented frame while a run's window is open */
+	/* Match the effective cap and scene hold; unknown periods remain unavailable. */
+    double perf_target = host_frame_rate_target();
+    double perf_budget = period > 0.0 ? period * fmax(pacing.off ? 1 : pacing.refreshes, frame_context_refreshes(period)) : 0.0;
+    if (perf_target > 0.0 && 1.0 / perf_target > perf_budget) perf_budget = 1.0 / perf_target;
+    host_perf_hooks_context(8, period > 0.0 ? (uint64_t)(1000.0 / period) : 0);
+    host_perf_hooks_budget(perf_budget > 0.0 ? (uint64_t)(perf_budget * 1e6) : UINT64_MAX);
+    /* the device benchmark (host_benchmark.m): every presented frame while a run's window is open */
 	if (!frame_log.skip_transition)
 	{
 		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
@@ -4785,7 +4815,6 @@ static id<CAMetalDrawable> system_frame_take(void)
 /* Called by host_external_commit before the next frame's first draw. */
 int gpu_metal_output(void *new_layer, void *screen, int width, int height)
 {
-    (void)screen;
     if(!device || !new_layer || width<=0 || height<=0)return 0;
     if(frame_started)commit(YES);
     for(int slot=0;slot<FRAMES;slot++)dispatch_semaphore_wait(frame_slots,DISPATCH_TIME_FOREVER);
@@ -4797,6 +4826,7 @@ int gpu_metal_output(void *new_layer, void *screen, int width, int height)
     if(stale)(void)(__bridge_transfer id<CAMetalDrawable>)stale;
     system_frames.active=NO;
 #endif
+    perf_output = screen ? 3 : 1;
     layer=(__bridge CAMetalLayer *)new_layer;
     layer.device=device;layer.pixelFormat=MTLPixelFormatBGRA8Unorm;layer.framebufferOnly=YES;
     layer.drawableSize=CGSizeMake(width,height);
@@ -4934,11 +4964,14 @@ static void frame_load_draw(id<MTLTexture> picture)
 		pass.colorAttachments[0].texture = frame_load_target;
 		pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
 		pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+		uint32_t perf_token = host_perf_metal_prepare(commands, pass, 1);
 		load = [commands renderCommandEncoderWithDescriptor:pass];
+		host_perf_metal_begin(perf_token, load);
 		[load setRenderPipelineState:present_pipeline];
 		[load setFragmentTexture:picture atIndex:0];
 		[load setFragmentSamplerState:present_sampler atIndex:0];
 		[load drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		host_perf_metal_end(perf_token, load);
 		[load endEncoding];
 	}
 }
@@ -5334,7 +5367,10 @@ static void post_pass(id<MTLTexture> target, BOOL clear, id<MTLRenderPipelineSta
 	pass.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 0.0);
 	pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 	pass_traffic_count(pass);
-	post_encoder = [command_buffer() renderCommandEncoderWithDescriptor:pass];
+	id<MTLCommandBuffer> perf_commands = command_buffer();
+	uint32_t perf_token = host_perf_metal_prepare(perf_commands, pass, 1);
+	post_encoder = [perf_commands renderCommandEncoderWithDescriptor:pass];
+	host_perf_metal_begin(perf_token, post_encoder);
 	if (metal_debug)
 		post_encoder.label = label;
 	if (pass_log)
@@ -5350,6 +5386,7 @@ static void post_pass(id<MTLTexture> target, BOOL clear, id<MTLRenderPipelineSta
 	if (parameters)
 		[post_encoder setFragmentBytes:parameters length:size atIndex:0];
 	[post_encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+	host_perf_metal_end(perf_token, post_encoder);
 	[post_encoder endEncoding];
 }
 
@@ -5635,7 +5672,10 @@ static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, 
 	pass.colorAttachments[0].texture = output;
 	pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
 	pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-	resolve = [command_buffer() renderCommandEncoderWithDescriptor:pass];
+	id<MTLCommandBuffer> perf_commands = command_buffer();
+	uint32_t perf_token = host_perf_metal_prepare(perf_commands, pass, 1);
+	resolve = [perf_commands renderCommandEncoderWithDescriptor:pass];
+	host_perf_metal_begin(perf_token, resolve);
 	if (metal_debug)
 		resolve.label = [NSString stringWithFormat:@"foveation resolve of %lux%lu", (unsigned long)screen.width,
 			(unsigned long)screen.height];
@@ -5646,6 +5686,7 @@ static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, 
 	[resolve setFragmentBuffer:foveation_parameters(record) offset:0 atIndex:0];
 	[resolve setFragmentBytes:&sizes length:sizeof(sizes) atIndex:1];
 	[resolve drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+	host_perf_metal_end(perf_token, resolve);
 	[resolve endEncoding];
 	use_texture(record);
 	return output;
@@ -5996,7 +6037,9 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 #if HALO_FRAME_PACING
 			frame_load_draw(picture);
 #endif
+			uint32_t perf_token = host_perf_metal_prepare(commands, pass, 1);
 			present = [commands renderCommandEncoderWithDescriptor:pass];
+			host_perf_metal_begin(perf_token, present);
 			if (metal_debug)
 				present.label = @"present";
 			if (pass_log)
@@ -6009,11 +6052,15 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			[present setFragmentTexture:picture atIndex:0];
 			[present setFragmentSamplerState:present_sampler atIndex:0];
 			[present drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+			host_perf_metal_end(perf_token, present);
 			[present endEncoding];
 			use_texture(record);
 			{
 				CFTimeInterval hold;
 
+				host_perf_hooks_context(6, (uint64_t)target.width);
+				host_perf_hooks_context(7, (uint64_t)target.height);
+				host_perf_hooks_context(9, perf_output);
 				frame_log.width = (unsigned)picture.width;
 				frame_log.height = (unsigned)picture.height;
 				if (!offscreen)
@@ -6208,11 +6255,15 @@ static void stereo_pacing_count(void)
 	double cpu = pacing.work_started > 0.0 ? now - pacing.work_started - waited : 0.0;
 	double gpu = (double)(gpu_total - stereo_pacing.gpu_counted) / 1e9;
 
+	host_perf_hooks_pacing(waited > 0.0 ? (uint64_t)(waited * 1e6) : 0);
 	stereo_pacing.gpu_counted = gpu_total;
 	if (presentation > 0.0 && stereo_pacing.last_presentation > 0.0)
 		interval = presentation - stereo_pacing.last_presentation;
 	if (presentation > 0.0)
 		stereo_pacing.last_presentation = presentation;
+#if HALO_PERF_REPORTS
+	host_perf_hooks_cpu(cpu >= 0.0 ? (uint64_t)(cpu * 1e6) : UINT64_MAX);
+#endif
 	/* Reuse stereo pacing samples for the opt-in host overlay, without GPU queries. */
 	host_frame_counter_sample(interval, cpu, gpu);
 	/* a quarter second or more is a load or the background, not a frame */
@@ -6262,6 +6313,12 @@ static uint32_t gpu_metal_present_stereo(const struct gpu_stereo_present *presen
 		MetalTexture *hud = present->hud ? texture_record(present->hud) : nil;
 		MetalTexture *zoom = present->zoom ? texture_record(present->zoom) : nil;
 		BOOL on_screen = present->mode == HALO_STEREO_SCREEN || present->cinematic;
+		host_perf_hooks_context(9, 2);
+		if (color[0] && color[0]->texture) {
+			host_perf_hooks_context(6, (uint64_t)color[0]->texture.width);
+			host_perf_hooks_context(7, (uint64_t)color[0]->texture.height);
+		}
+		/* Compositor timing is asynchronous; an unobserved target stays unknown. */
 
 		if (theater_wanted && !on_screen && present->mode == HALO_STEREO_HEAD && color[0] && color[0]->texture && color[1] &&
 			color[1]->texture && depth[0] && depth[0]->texture && depth[1] && depth[1]->texture && host_stereo_ready())
@@ -6413,6 +6470,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		device = MTLCreateSystemDefaultDevice();
 		if (!layer || !device)
 			host_fatal("Metal is unavailable (layer %p, device %p)", (__bridge void *)layer, (__bridge void *)device);
+		host_perf_metal_initialize(device);
 		queue = [device newCommandQueue];
 		/* (after the device: the archive is the device's, and named by its GPU) */
 		if (!(flags & GPU_INITIALIZE_NO_PIPELINE_ARCHIVE))
