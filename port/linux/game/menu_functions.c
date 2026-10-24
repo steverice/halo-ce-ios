@@ -3571,22 +3571,25 @@ static unsigned advertised_kind(struct advertised_game *game)
 
 /* The advertised kind is independent of the base engine: Hardcore CTF
 still uses the CTF engine; Gun Game still uses Slayer. */
-static void advertised_game_type_text(struct advertised_game *game, wchar_t *text, short size)
+static void game_kind_type_text(unsigned kind, long engine_type, wchar_t *text, short size)
 {
-	unsigned kind = advertised_kind(game);
-
 	if (kind & 0x80 && !(kind & 0x7C))
 	{
 		if (kind & 3)
 			usnprintf(text, size - 1, L"HC %hs", halo_network_kind_label(kind & 3));
 		else
-			usnprintf(text, size - 1, L"HC %s", game_type_name(game->engine_type));
+			usnprintf(text, size - 1, L"HC %s", game_type_name(engine_type));
 	}
 	else if (kind)
 		usnprintf(text, size - 1, L"%hs", halo_network_kind_label(kind));
 	else
-		usnprintf(text, size - 1, L"%s", game_type_name(game->engine_type));
+		usnprintf(text, size - 1, L"%s", game_type_name(engine_type));
 	text[size - 1] = 0;
+}
+
+static void advertised_game_type_text(struct advertised_game *game, wchar_t *text, short size)
+{
+	game_kind_type_text(advertised_kind(game), game->engine_type, text, size);
 }
 
 /* a map's name as the menus show it (a campaign level's too, hosted as
@@ -3858,13 +3861,8 @@ static void lobby_browser_update(struct widget_instance *list)
 		text_set(named(row, "server_item_server_name", 0), text);
 		map_display_name(game->map, text);
 		text_set(named(row, "server_item_map", 0), text);
-		if (game->kind)
-		{
-			usnprintf(text, ROW_TEXT_LENGTH - 1, L"%hs", halo_network_kind_label(game->kind));
-			text_set(named(row, "server_item_type", 0), text);
-		}
-		else
-			text_set(named(row, "server_item_type", 0), game_type_name(game->engine_type));
+		game_kind_type_text(game->kind, game->engine_type, text, ROW_TEXT_LENGTH);
+		text_set(named(row, "server_item_type", 0), text);
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%d/%d", game->player_count, game->maximum_player_count);
 		text_set(named(row, "server_item_players", 0), text);
 		/* (no ping yet: its host is reached only on joining. A game of another network version, from Delta's

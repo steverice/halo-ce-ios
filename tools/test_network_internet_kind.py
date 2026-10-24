@@ -81,3 +81,51 @@ int main(void)
                     str(probe), "--output=" + str(binary)], check=True)
     result = subprocess.run([str(binary)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_internet_kind_labels_match_lan(tmp_path):
+    source = (ROOT / "port/linux/game/menu_functions.c").read_text()
+    update = function(source, "static void lobby_browser_update(struct widget_instance *list)\n{")
+    start = update.index("\t\tif (game->kind)") if "\t\tif (game->kind)" in update else update.index("\t\tgame_kind_type_text(")
+    block = update[start:update.index('\t\tusnprintf(text, ROW_TEXT_LENGTH - 1, L"%d/%d"', start)]
+    declarations = function(source, "static wchar_t const *game_type_name(")
+    if "static void game_kind_type_text(" in source:
+        declarations += "\n" + function(source, "static void game_kind_type_text(")
+    fixture = (ROOT / "port/ios/tests/network_browser_probe.c").read_text().split("/* DECLARATIONS */")[0]
+    program = fixture + declarations + r'''
+static void render_internet(unsigned kind, int engine)
+{
+    struct { unsigned kind; int engine_type; } data = {kind, engine}, *game = &data;
+    struct widget_instance *row = NULL;
+    wchar_t text[ROW_TEXT_LENGTH];
+    /* LABEL */
+}
+int main(void)
+{
+    unsigned kinds[] = {0, 1, 2, 3, 0x80, 0x81, 0x82, 0x83, 4, 0xff};
+    wchar_t const *labels[] = {L"CTF", L"SWAT", L"INFECTION", L"GUN GAME",
+        L"HC CTF", L"HC SWAT", L"HC INFECTION", L"HC GUN GAME", L"UNSUPPORTED", L"UNSUPPORTED"};
+    for (unsigned i = 0; i < NUMBEROF(kinds); i++)
+    {
+        render_internet(kinds[i], 1);
+        assert(!wcscmp(type.text, labels[i]));
+    }
+    for (int engine = 0; engine <= 5; engine++)
+    {
+        render_internet(0, engine);
+        assert(!wcscmp(type.text, engine == 0 ? L"CO-OP" : engine_names[engine]));
+        render_internet(0x80, engine);
+        wchar_t expected[ROW_TEXT_LENGTH];
+        swprintf(expected, ROW_TEXT_LENGTH, L"HC %ls", engine == 0 ? L"CO-OP" : engine_names[engine]);
+        assert(!wcscmp(type.text, expected));
+    }
+    return 0;
+}
+'''
+    probe, binary = tmp_path / "labels.c", tmp_path / "labels"
+    probe.write_text(program.replace("/* LABEL */", block))
+    subprocess.run(["clang", "-std=c11", "-Wall", "-Werror", "-Wno-unused-function",
+                    "-Wno-unused-variable", "-iquote", str(ROOT / "port/linux/include"),
+                    str(probe), "--output=" + str(binary)], check=True)
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

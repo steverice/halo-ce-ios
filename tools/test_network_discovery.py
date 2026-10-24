@@ -59,6 +59,7 @@ def test_lan_kind_is_retained_and_older_reserved_bytes_are_ignored(tmp_path):
 def test_browser_names_the_advertised_mode_before_join(tmp_path):
     source = (ROOT / "port/linux/game/menu_functions.c").read_text()
     declarations = function(source, "static wchar_t const *game_type_name(long engine_type)")
+    declarations += "\n" + function(source, "static void game_kind_type_text(")
     if "static void advertised_game_type_text(" in source:
         declarations += "\n" + function(source, "static void advertised_game_type_text(")
     browser = function(source, "static void browser_update(struct widget_instance *list)\n{")
