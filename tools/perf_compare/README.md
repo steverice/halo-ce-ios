@@ -1,0 +1,32 @@
+# Performance comparisons
+
+Run published competitors as black boxes. This tool never downloads source, changes other projects, enables Remote Automation, or changes security settings. Supply your own extracted Xbox maps. Keep configuration, apps, raw logs and game data outside git.
+
+For a routed one-command refresh, add a private `route` object with `router`, `host`, `local_scratch` and `remote_scratch`. The router must map the scratch directories to one another. The command fetches explicit public live main into a detached source worktree in private scratch (reused for incremental builds, serialized by a task lock), builds through a `build` job, then runs the matrix through a `runner` job and fetches the generated summary/page. It stops on a failed build. The measured VISR path is bound to that build output. Transfer directories are unique per refresh; missing fresh output fails the command. The scratch paths must have the same mapping as the source worktree in the router. Routed sweep input paths refer to the local source; sweep import happens after collection. Completed source worktrees remain in private scratch for inspection and can be removed with normal `git worktree remove` when no job uses them.
+
+For an already-routed job, build the live-main AppKit app with `python3 tools/macos_build.py --renderer metal --jobs 4` through the project job router. Copy `config.example.json` into private scratch, fill in paths and the exact build commit, and run on a quiet, dedicated Mac under the host job lock:
+
+```sh
+python3 tools/perf_compare/refresh.py refresh --config /path/to/private/config.json
+```
+
+The command fetches the newest matching published release, including prereleases (preferring `gh release download`; hosts without a GitHub CLI login use the public release API and asset URL without changing accounts); installs into private scratch; rotates three rounds of a10 and b30; imports the supplied sweep; writes `summary.json`; and regenerates `docs/benchmarks.md`. Exit 1 means at least one target is unavailable or incomplete. Exit 3 means a permission denial: stop and report the exact command and reason in the private `errors.json`. Do not work around it.
+
+The default native setup reuses the earlier comparison's isolated data directories and console player-readiness probe. Configuration support differs among published apps: unsupported console/data-root overrides are an unavailable result. No edits to another app are made. Native scene and effective-resolution qualification requires a build-bound `qualification` record; numbers from unverified scenarios are excluded. The first matrix is a feasibility test until those qualifications pass.
+
+Safari needs Remote Automation already enabled by the operator. Every WebDriver session starts with clean storage, so the private target configuration must supply documented UI setup selectors and a `ready_selector`; it must arrange game data import and scenario selection within that session. A bare website or menu is never a game measurement. A private `qualification` record must bind the archive SHA-256, display rate and per-scenario effective resolution/cap to a visually verified setup. Requalify when the build changes. The runner does not read the site's JavaScript or WASM. Its entry HTML hash does not pin all fetched assets. A downloaded, versioned web release is preferable for later refreshes.
+
+The requestAnimationFrame probe measures browser callback scheduling, which can continue while the game repeats a frame. Metal HUD intervals measure the presentation stream Apple reports; GPU durations are discarded. Neither method establishes unique scanout frames. Keep these methods separate when interpreting results. The native xctrace Game Performance/Display fallback and physical-device Safari qualification remain phase 2; private WebDriver capabilities support assigned devices, with `device_slot` required. Vision Pro Remote Automation availability must be verified before use. Apple TV has no Safari target.
+
+Default conditions are 15 seconds of warm-up after readiness, then 60 seconds, three runs each at requested 1280×720 and 60 fps. Scene, camera and effective settings must be qualified per release. The tool refuses a locked display and waits up to 180 seconds for a two-second outside-process CPU sample to fall to one core or lower before the matrix. Load average is recorded for context; it can retain earlier work after a host becomes idle. During native sampling it checks background CPU separately from the game and rejects more than one background core on average. Safari retains only the initial quiet-host check; the job lock prevents competing routed Mac work. It never unlocks the display or stops unrelated work. Thermal state comes from macOS `NSProcessInfo.thermalState`; raw `pmset` diagnostics stay private.
+
+Regenerate or check the page without running apps:
+
+```sh
+python3 tools/perf_compare/refresh.py render
+python3 tools/perf_compare/refresh.py render --check
+```
+
+The public summary is an allowlisted export, with public hardware model names supplied explicitly for sweep aliases. Review it before committing. Valid offscreen sweep records appear separately, without a claim that the device holds a display tier. Invalid/diverged records and unmapped device aliases are excluded; repeated report/case identities are deduplicated. Raw evidence is not committed.
+
+Source references: [Apple Metal HUD logging](https://developer.apple.com/documentation/xcode/monitoring-your-metal-apps-graphics-performance), [Safari Remote Automation](https://webkit.org/blog/9395/webdriver-is-coming-to-safari-in-ios-13/). Parser and renderer tests run in `tools/ci_test.py` without apps, devices or game data.
