@@ -107,6 +107,34 @@ def wordmark(stroke=46, gap=84, color=ICE):
                    f'stroke-linejoin="miter" stroke-miterlimit="2" stroke-linecap="{cap}"/>' for cap, d in paths.items())
 
 
+# Orbitron Regular (wght 400) outlines from docs/site/fonts/Orbitron-VariableFont_wght.woff2.
+# SIL OFL 1.1: see docs/site/fonts/OFL-Orbitron.txt. Coordinates use a 1000-unit em;
+# tracking matches the site wordmark's 0.06em (60 units between glyphs).
+# Extract with fontTools.ttLib.TTFont, varLib.instancer.instantiateVariableFont
+# at {"wght": 400}, and pens.svgPathPen.SVGPathPen on the V, I, S, R glyphs.
+ORBITRON_LETTERS = {
+    "V": (1003, "M452 0 35 720H130L499 79L867 720H962L546 0Z"),
+    "I": (214, "M66 0V720H148V0Z"),
+    "S": (822, "M171 0Q138 0 110.5 16.0Q83 32 67.0 59.5Q51 87 51 120V148H132V120Q132 104 143.5 92.5Q155 81 171 81H651Q667 81 678.5 92.5Q690 104 690 120V281Q690 297 678.5 308.0Q667 319 651 319H171Q138 319 110.5 335.5Q83 352 67.0 379.0Q51 406 51 439V600Q51 633 67.0 660.5Q83 688 110.5 704.0Q138 720 171 720H651Q684 720 711.5 704.0Q739 688 755.0 660.5Q771 633 771 600V572H690V600Q690 616 678.5 627.5Q667 639 651 639H171Q155 639 143.5 627.5Q132 616 132 600V439Q132 423 143.5 412.0Q155 401 171 401H651Q684 401 711.5 384.5Q739 368 755.0 341.0Q771 314 771 281V120Q771 87 755.0 59.5Q739 32 711.5 16.0Q684 0 651 0Z"),
+    "R": (825, "M664 0 429 280H535L771 1V0ZM56 0V719H656Q689 719 716.5 702.5Q744 686 760.0 659.0Q776 632 776 599V388Q776 355 760.0 328.0Q744 301 716.5 284.5Q689 268 656 268H137V0ZM176 350H656Q672 350 683.5 361.0Q695 372 695 388V599Q695 615 683.5 626.5Q672 638 656 638H176Q160 638 148.5 626.5Q137 615 137 599V388Q137 372 148.5 361.0Q160 350 176 350Z"),
+}
+
+
+def topshelf_wordmark(color=ICE):
+    """Orbitron VISR, centered by its visible bounds, fitted to the old wordmark width."""
+    # Ink bounds after advancing VISR with 60 units of tracking: x=35..2995, y=0..720.
+    # Preserve the old 778-unit ink width without stretching the font's letterforms.
+    scale = 778 / (2995 - 35)
+    x = 0
+    paths = []
+    for c in "VISR":
+        advance, outline = ORBITRON_LETTERS[c]
+        paths.append(f'<path transform="translate({x} 0)" d="{outline}"/>')
+        x += advance + 60
+    return (f'<g fill="{color}" transform="scale({scale} {-scale}) translate(-1515 -360)">'
+            + "".join(paths) + "</g>")
+
+
 def reticle_middle():
     ring = "".join(f'<path d="{arc(360, q + 14, q + 76)}"/>' for q in (0, 90, 180, 270))
     ticks = []
@@ -272,7 +300,7 @@ def layer_svgs(concept, width, height, mark_scale, x=None, y=None, with_wordmark
     if with_wordmark:
         # top shelf: the word beside the mark
         wx = width * 0.66
-        extra = f'<g transform="{place(width, height, mark_scale * 1.4, wx, height / 2)}"><g filter="url(#glow)">{wordmark()}</g></g>'
+        extra = f'<g transform="{place(width, height, mark_scale * 1.4, wx, height / 2)}"><g filter="url(#glow)">{topshelf_wordmark()}</g></g>'
     fr = svg(width, height, f'<g transform="{t}">{front()}</g>{extra}', blur)
     return back, mid, fr
 

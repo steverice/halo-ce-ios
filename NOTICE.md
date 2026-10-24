@@ -86,6 +86,7 @@ its own notice.
 | [Overpass](https://overpassfont.org/) | SIL Open Font License 1.1 | `port/assets/fonts/Overpass-OFL.txt` |
 | OpenCE (Newtown, respaced) | SIL Open Font License 1.1 | `port/assets/fonts/OpenCE-OFL.txt` |
 | Newtown by Roger White | Public domain | `port/assets/fonts/Newtown-LICENSE.txt` |
+| Orbitron (site font and Top Shelf wordmark outlines) | SIL Open Font License 1.1 | `docs/site/fonts/OFL-Orbitron.txt` |
 
 ## Game content and trademarks
 
