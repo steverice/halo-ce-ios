@@ -19,7 +19,7 @@ endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 
 <!-- generated: shared: every-device -->
 - **Cross-device sync:** Your saves and player profiles sync across all your devices through iCloud.
-- **It just works:** VISR is specifically optimized for each Apple device, for unmatched performance.
+- **It just works:** VISR is specifically optimized for each Apple device, for [unmatched performance](https://github.com/steverice/visr/blob/main/docs/benchmarks.md).
 - **Compatible with the community:** VISR aims for cross-play with the popular Halo: CE ports like [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and [Chupathingy](https://chupathingy.org).
 <!-- end generated -->
 
