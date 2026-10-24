@@ -160,11 +160,18 @@ def test_shared_features_expand_from_facts():
     assert 'Changed controller support' in expand_includes(source, facts)
 
 
-def test_every_device_block_is_the_cloud_summary_and_tailoring_line():
+def test_every_device_items_are_readme_bullets_and_site_columns():
     from tools.build_site import expand_includes, load_facts
-    text = expand_includes('{{ shared: every-device }}', load_facts())
-    assert text == ('- Your saves and player profiles sync across your devices through iCloud.\n'
-                    '- VISR is tailored to each Apple device, so it just works.')
+    facts = load_facts()
+    items = facts['every-device']['items']
+    text = expand_includes('{{ shared: every-device }}', facts)
+    assert text.splitlines() == [f"- **{item['title']}:** {item['text']}" for item in items]
+    page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
+    columns = page.split('<ul class="pillars">', 1)[1].split('</ul>', 1)[0]
+    assert columns.count('<li>') == len(items)
+    assert columns.count('<svg') == len(items)
+    assert all(item['title'] in columns for item in items)
+    assert 'VISR-EVERY-DEVICE-COLUMNS' not in page
 
 
 def test_deployment_versions_follow_build_script_without_importing_it():

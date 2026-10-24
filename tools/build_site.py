@@ -62,12 +62,25 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
         values = {"ios_minimum": versions["ios"].removesuffix(".0")}
         return "\n".join("- " + bullet.format(**values) for bullet in facts["platforms"][name]["bullets"])
     if kind == "shared" and name == "every-device":
-        return f"- {facts['cloud_saves']['summary']}\n- {facts['shared']['tailored']}"
+        return "\n".join(f"- **{item['title']}:** {item['text']}" for item in facts["every-device"]["items"])
     if kind == "shared":
         key = name.replace("-", "_")
         if key in facts["shared"]:
             return facts["shared"][key]
     raise ValueError(f"Unknown facts block: {kind}: {name}")
+
+
+EVERY_DEVICE_MARKER = "VISR-EVERY-DEVICE-COLUMNS"
+
+
+def every_device_columns(facts: dict) -> str:
+    """the every-device items as centered columns, each icon inlined so it takes the theme's color"""
+    columns = []
+    for item in facts["every-device"]["items"]:
+        icon = (ROOT / "docs/site/icons" / f"{item['icon']}.svg").read_text(encoding="utf-8").strip()
+        columns.append(f'      <li><span class="pillar-icon">{icon}</span>'
+                       f'<h3>{escape(item["title"])}</h3><p>{escape(item["text"])}</p></li>')
+    return "\n".join(['    <ul class="pillars">', *columns, '    </ul>'])
 
 
 def expand_includes(source: str, facts: dict) -> str:
@@ -137,6 +150,7 @@ def image_size(path: Path) -> tuple[int, int]:
 def render_site(source: str, template: str | None = None, *, asset_root: Path | None = None) -> str:
     facts = load_facts()
     metadata, source = front_matter(source)
+    source = re.sub(r"\{\{\s*shared:\s*every-device\s*\}\}", EVERY_DEVICE_MARKER, source)
     source = expand_includes(source, facts)
     asset_root = (asset_root or ROOT / "docs/site").resolve()
     md = MarkdownIt("commonmark", {"html": False})
@@ -265,7 +279,7 @@ def render_site(source: str, template: str | None = None, *, asset_root: Path | 
         template = (ROOT / "tools/site_template.html").read_text(encoding="utf-8")
     return Template(template).substitute(
         **{key: escape(value, quote=True) for key, value in metadata.items()},
-        content="\n".join(output),
+        content="\n".join(output).replace(f"<p>{EVERY_DEVICE_MARKER}</p>", every_device_columns(facts)),
         legal=md.render(facts["shared"]["legal"]).rstrip(),
     )
 

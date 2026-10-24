@@ -9,7 +9,7 @@ VISR is a native port of Halo: Combat Evolved for Apple Vision Pro and other App
 <!-- end generated -->
 
 <!-- generated: shared: goal -->
-The goal is to provide the best possible way to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it.
+VISR aims to provide the best possible way to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it.
 <!-- end generated -->
 
 VISR is an unofficial fan project, not affiliated with or
@@ -18,8 +18,9 @@ endorsed by Microsoft, Halo Studios or Bungie. See [Legal](#legal).
 ## On every device
 
 <!-- generated: shared: every-device -->
-- Your saves and player profiles sync across your devices through iCloud.
-- VISR is tailored to each Apple device, so it just works.
+- **iCloud saves:** Your saves and player profiles sync across your devices through iCloud.
+- **It just works:** VISR is tailored to each Apple device, so it just works.
+- **Compatible with the community:** VISR aims for cross-play with the popular Halo: CE ports, such as OpenCE and Chupathingy.
 <!-- end generated -->
 
 ## VR

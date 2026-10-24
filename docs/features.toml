@@ -1,18 +1,16 @@
 # Shared public facts. Run python3 tools/build_site.py after editing.
 
-[cloud_saves]
-summary = "Your saves and player profiles sync across your devices through iCloud."
-synced = [
-    "player profiles (including controls)",
-    "finished levels",
-    "the Save and Quit checkpoint",
-    "custom game types",
+[every-device]
+# Each item is a column on the site (icon from docs/site/icons/) and a bullet in the README.
+items = [
+    { icon = "cloud", title = "iCloud saves", text = "Your saves and player profiles sync across your devices through iCloud." },
+    { icon = "just-works", title = "It just works", text = "VISR is tailored to each Apple device, so it just works." },
+    { icon = "community", title = "Compatible with the community", text = "VISR aims for cross-play with the popular Halo: CE ports, such as OpenCE and Chupathingy." },
 ]
-excluded = ["config.toml settings"]
 
 [shared]
 introduction = "VISR is a native port of Halo: Combat Evolved for Apple Vision Pro and other Apple devices: iPhone, iPad, Apple TV and Mac. Based on a lot of hard work from the community, optimized for Metal and Apple Silicon."
-goal = "The goal is to provide the best possible way to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it."
+goal = "VISR aims to provide the best possible way to experience Halo while staying faithful to the original game. VISR builds on my love of the game and the many thousands of hours I have spent playing it."
 legal = '''
 Halo, Halo: Combat Evolved, Master Chief and the related names and logos are
 trademarks of Microsoft Corporation. Halo: Combat Evolved © Microsoft
@@ -25,7 +23,6 @@ VISR does not include or distribute the game's maps, sounds, textures, videos or
 It builds on the Halo: CE decompilation, [OpenCE](https://github.com/OpenCommunityEdition/OpenCE) and the other projects in its [credits](https://github.com/steverice/visr#credits). The code is licensed under [Apache-2.0](https://github.com/steverice/visr/blob/main/LICENSE). It includes code that originated in CC0 1.0 projects, credited in the [notices](https://github.com/steverice/visr/blob/main/NOTICE.md).
 
 Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc.'''
-tailored = "VISR is tailored to each Apple device, so it just works."
 
 [platforms.vision-pro]
 name = "Apple Vision Pro"
