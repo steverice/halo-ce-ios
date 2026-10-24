@@ -116,6 +116,13 @@ static NSString *summary_json(NSData *report) {
 }
 
 static BOOL wait_for(dispatch_semaphore_t done, CFAbsoluteTime deadline) {
+    /* A worker has no UI to service and may have no run-loop sources. Waiting
+       on the semaphore avoids spinning an empty run loop during launch. */
+    if (!NSThread.isMainThread) {
+        double remaining = MAX(0, deadline - CFAbsoluteTimeGetCurrent());
+        return dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW,
+            (int64_t)(remaining * NSEC_PER_SEC))) == 0;
+    }
     while(CFAbsoluteTimeGetCurrent()<deadline) {
         if(dispatch_semaphore_wait(done,DISPATCH_TIME_NOW)==0)return YES;
         @autoreleasepool { CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.05,true); }

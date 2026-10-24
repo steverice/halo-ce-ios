@@ -256,19 +256,30 @@ int main(int argc, const char **argv) { @autoreleasepool {
     [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json?id=device"]];
     [store checkForUpdateAtURL:[NSURL URLWithString:@"https://name:secret@packs.invalid/profiles.json"]];
     CHECK(requests == 0, "unsafe update URLs do not start requests");
-    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
+    dispatch_semaphore_t checked = dispatch_semaphore_create(0);
+    __block BOOL checkSucceeded = NO;
+    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"] completion:^(BOOL success) {
+        checkSucceeded = success; dispatch_semaphore_signal(checked);
+    }];
     WaitForPending(root);
     for (int attempt = 0; attempt < 200 && ![[NSFileManager defaultManager] fileExistsAtPath:[root stringByAppendingPathComponent:@"feed-validator.txt"]]; attempt++) [NSThread sleepForTimeInterval:0.01];
     CHECK(requests == 1, "HTTPS update is fetched once");
+    CHECK(dispatch_semaphore_wait(checked, dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC)) == 0 && checkSucceeded,
+        "successful staging completes the readiness check");
     CHECK([[store beginLaunch] isEqual:@"/bundled"], "network update does not hot swap");
     store = Store(root);
     CHECK(![[store beginLaunch] isEqual:@"/bundled"], "download activates on next launch");
     [store markHealthy];
-    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"]];
+    checkSucceeded = NO;
+    [store checkForUpdateAtURL:[NSURL URLWithString:@"https://packs.invalid/profiles.json"] completion:^(BOOL success) {
+        checkSucceeded = success; dispatch_semaphore_signal(checked);
+    }];
     for (int attempt = 0; attempt < 200 && requests < 2; attempt++) [NSThread sleepForTimeInterval:0.01];
     CHECK(requests == 2, "every launch checks the feed again");
     for (int attempt = 0; attempt < 200 && !notModified; attempt++) [NSThread sleepForTimeInterval:0.01];
     CHECK(notModified == 1, "an unchanged feed answers the saved validator with 304");
+    CHECK(dispatch_semaphore_wait(checked, dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC)) == 0 && checkSucceeded,
+        "a valid cached 304 completes successfully despite response cancellation");
     CHECK([[store beginLaunch] isEqual:[Store(root) beginLaunch]], "a 304 leaves the snapshot in use");
     [NSThread sleepForTimeInterval:0.3];
     [[NSFileManager defaultManager] removeItemAtPath:[root stringByAppendingPathComponent:@"feed-validator.txt"] error:NULL];

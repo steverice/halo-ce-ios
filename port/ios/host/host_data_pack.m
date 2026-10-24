@@ -151,7 +151,10 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
 @property(nonatomic, copy) NSData *publicKey;
 @property(nonatomic, copy) HostPackValidator validator;
 @property(nonatomic) NSMutableDictionary *state;
-@property(nonatomic) BOOL stateValid, launchStarted;
+@property(nonatomic) BOOL stateValid, launchStarted, menuPrepared;
+@property(nonatomic) NSMutableSet<NSString *> *menuGenerations;
+@property(nonatomic, copy) void (^updateCompletion)(BOOL);
+@property(nonatomic) BOOL notModified;
 @property(nonatomic, copy) NSString *launchFolder;
 @property(nonatomic, copy) NSDictionary *identity;
 @property(nonatomic) NSURLSession *session;
@@ -311,7 +314,8 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     state[@"quarantined"] = @(MAX(sequence, [state[@"quarantined"] unsignedLongLongValue]));
 }
 - (void)prune {
-    NSSet *keep = [NSSet setWithObjects:_state[@"active"], _state[@"healthy"], _state[@"pending"], @"state.json", @"feed-validator.txt", nil];
+    NSMutableSet *keep = [NSMutableSet setWithObjects:_state[@"active"], _state[@"healthy"], _state[@"pending"], @"state.json", @"feed-validator.txt", nil];
+    [keep unionSet:_menuGenerations ?: [NSSet set]];
     for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:_root error:NULL]) {
         if (![keep containsObject:name] && ([self generationName:name] || [name hasPrefix:@".stage-"])) [NSFileManager.defaultManager removeItemAtPath:[self generationPath:name] error:NULL];
     }
@@ -350,6 +354,66 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     if (activePack) [self selectGeneration:active pack:activePack]; else [self selectBundled];
     [self prune];
     return [_launchFolder copy];
+} }
+- (NSDictionary *)menuSnapshot { @synchronized(self) {
+    // Roll back a prior crashed launch once, but do not start a new trial for a menu candidate.
+    if (!_menuPrepared && !_launchStarted && _stateValid) {
+        NSMutableDictionary *next = [_state mutableCopy];
+        if ([next[@"trial"] boolValue]) {
+            [self quarantine:next[@"active"] state:next];
+            next[@"active"] = next[@"healthy"]; next[@"trial"] = @NO;
+        }
+        NSString *active = next[@"active"];
+        if (active.length && ![self generation:active]) {
+            [self quarantine:active state:next];
+            next[@"active"] = @""; next[@"healthy"] = @"";
+        }
+        if (![self writeState:next error:NULL]) return @{@"folder": _bundled, @"metadata": [self bundledIdentity]};
+    }
+    _menuPrepared = YES;
+    NSString *name = _state[@"pending"];
+    NSDictionary *pack = _stateValid && name.length ? [self generation:name] : nil;
+    if (!pack || [pack[@"manifest"][@"sequence"] unsignedLongLongValue] <= [_state[@"quarantined"] unsignedLongLongValue]) {
+        if (_stateValid && name.length) {
+            NSMutableDictionary *next = [_state mutableCopy];
+            [self quarantine:name state:next]; next[@"pending"] = @"";
+            [self writeState:next error:NULL];
+        }
+        name = _state[@"active"];
+        pack = _stateValid && name.length ? [self generation:name] : nil;
+    }
+    if (!pack) return @{@"folder": _bundled, @"metadata": [self bundledIdentity]};
+    if (!_menuGenerations) _menuGenerations = [NSMutableSet set];
+    // A published candidate may be selected while another download is staging.
+    [_menuGenerations addObject:name];
+    NSDictionary *manifest = pack[@"manifest"];
+    return @{@"folder": [[self generationPath:name] stringByAppendingPathComponent:@"files"],
+        @"metadata": @{@"kind": _kind, @"channel": _channel, @"compatibility": _compatibility,
+            @"sequence": manifest[@"sequence"], @"sha256": manifest[@"sha256"], @"bundled": @NO}};
+} }
+- (void)retainMenuFolder:(NSString *)folder { @synchronized(self) {
+    NSString *name = folder.stringByDeletingLastPathComponent.lastPathComponent;
+    BOOL retained = [_menuGenerations containsObject:name] && [folder isEqual:[[self generationPath:name] stringByAppendingPathComponent:@"files"]];
+    _menuGenerations = retained ? [NSMutableSet setWithObject:name] : [NSMutableSet set];
+    if (_stateValid) [self prune];
+} }
+- (void)selectMenuFolder:(NSString *)folder { @synchronized(self) {
+    _launchStarted = YES;
+    if ([folder isEqual:_bundled]) { [self selectBundled]; [self retainMenuFolder:folder]; return; }
+    NSString *name = folder.stringByDeletingLastPathComponent.lastPathComponent;
+    if (!_stateValid || ![_menuGenerations containsObject:name] || ![folder isEqual:[[self generationPath:name] stringByAppendingPathComponent:@"files"]]) { [self selectBundled]; return; }
+    NSDictionary *pack = [self generation:name];
+    if (!pack) { [self selectBundled]; return; }
+    NSMutableDictionary *next = [_state mutableCopy];
+    next[@"active"] = name;
+    next[@"trial"] = @(![name isEqual:next[@"healthy"]]);
+    if ([name isEqual:next[@"pending"]]) next[@"pending"] = @"";
+    if ([self writeState:next error:NULL]) [self selectGeneration:name pack:pack];
+    else {
+        host_logf(HOST_LOG_WARN, "data-packs: %s selected snapshot trial could not be persisted", _kind.UTF8String);
+        [self selectBundled];
+    }
+    [self retainMenuFolder:folder];
 } }
 - (void)markHealthy { @synchronized(self) {
     if (!_stateValid || !_launchStarted || [_identity[@"bundled"] boolValue] || ![_state[@"trial"] boolValue] || ![self generation:_state[@"active"]]) return;
@@ -444,12 +508,20 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     BOOL installed = [_state[@"active"] length] || [_state[@"pending"] length];
     return parts.count == 2 && installed && [parts[0] isEqual:[_state[@"highest"] stringValue]] ? parts[1] : nil;
 }
-- (void)checkForUpdateAtURL:(NSURL *)url { @synchronized(self) {
-    if (!_stateValid || _session || ![url.scheme.lowercaseString isEqual:@"https"] || !url.host.length || url.user || url.password || url.query || url.fragment) return;
+- (void)checkForUpdateAtURL:(NSURL *)url { [self checkForUpdateAtURL:url completion:nil]; }
+- (void)checkForUpdateAtURL:(NSURL *)url completion:(void (^)(BOOL))completion { @synchronized(self) {
+    if (!_stateValid || _session || ![url.scheme.lowercaseString isEqual:@"https"] || !url.host.length || url.user || url.password || url.query || url.fragment) {
+        if (completion) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ completion(NO); });
+        return;
+    }
     // Every launch checks. The request is cheap when the feed is unchanged: it carries the validator saved with the
     // last accepted envelope, and a 304 answer stops there.
     NSMutableDictionary *next = [_state mutableCopy]; next[@"last_check"] = @(NSDate.date.timeIntervalSince1970);
-    if (![self writeState:next error:NULL]) return;
+    if (![self writeState:next error:NULL]) {
+        if (completion) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ completion(NO); });
+        return;
+    }
+    _updateCompletion = [completion copy]; _notModified = NO;
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;
@@ -493,6 +565,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler { @synchronized(self) {
     NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? [(NSHTTPURLResponse *)response statusCode] : 0;
+    _notModified = !_mapName && status == 304 && [self savedValidator].length;
     NSString *etag = status == 200 ? [(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"ETag"] : nil;
     if (!_mapName) _responseValidator = etag.length && etag.length <= 256 && PackMatches(etag, @"^(W/)?\"[\\x21\\x23-\\x7e]*\"\\z") ? etag : nil;
     if (status != 200 && status != 304) host_logf(HOST_LOG_WARN, "data-packs: %s feed answered HTTP %ld; keeping the current snapshot", _kind.UTF8String, (long)status);
@@ -508,7 +581,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     (void)task;
     NSError *stageError = nil;
     BOOL staged = NO;
-    if (error) host_logf(HOST_LOG_WARN, "data-packs: %s feed check ended (%s); keeping the current snapshot", _kind.UTF8String, error.localizedDescription.UTF8String);
+    if (error && !_notModified) host_logf(HOST_LOG_WARN, "data-packs: %s feed check ended (%s); keeping the current snapshot", _kind.UTF8String, error.localizedDescription.UTF8String);
     else if (_responseAccepted) @autoreleasepool {
         if (self.shaderIndex) {
             if (!_indexPack) {
@@ -533,6 +606,10 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
             if (_responseValidator) [[NSString stringWithFormat:@"%@\n%@", _state[@"highest"], _responseValidator] writeToFile:self.validatorPath atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         } else host_logf(HOST_LOG_WARN, "data-packs: %s feed not staged (%s); keeping the current snapshot", _kind.UTF8String, stageError.localizedDescription.UTF8String);
     }
+    void (^completion)(BOOL) = _updateCompletion;
+    BOOL success = staged || _notModified;
+    _updateCompletion = nil;
+    if (completion) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ completion(success); });
     _download = nil; _session = nil; _indexEnvelope = nil; _indexPack = nil; _mapFiles = nil; _mapName = nil; _feedURL = nil;
     [session finishTasksAndInvalidate];
 } }

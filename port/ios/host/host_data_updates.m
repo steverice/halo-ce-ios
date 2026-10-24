@@ -10,10 +10,12 @@
 #include "guest_image.h"
 #endif
 #include <sys/stat.h>
+#import <Network/Network.h>
 
 static HostDataPackStore *profiles, *recordings, *shaders;
 static NSString *profileFolder, *recordingFolder;
 static NSDictionary *profileIdentity, *recordingIdentity, *shaderIdentity, *shaderLists;
+static NSString *shaderSnapshotFolder;
 
 static NSString *digest(NSData *data)
 {
@@ -24,23 +26,11 @@ static NSString *digest(NSData *data)
     return result;
 }
 
+static NSDictionary *snapshotIdentity(NSDictionary *snapshot);
 /* Bundled data also needs a content identity: app versions may contain changed files. */
 static NSDictionary *identity(HostDataPackStore *store, NSString *folder)
 {
-    NSMutableDictionary *result = [[store metadata] mutableCopy];
-    if ([result[@"bundled"] boolValue]) {
-        NSMutableData *bytes = [NSMutableData data];
-        NSArray *paths = [[NSFileManager.defaultManager subpathsAtPath:folder] sortedArrayUsingSelector:@selector(compare:)];
-        for (NSString *path in paths) {
-            NSData *file = [NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:path]];
-            if (!file) continue;
-            [bytes appendData:[path dataUsingEncoding:NSUTF8StringEncoding]];
-            [bytes appendBytes:"\0" length:1];
-            [bytes appendData:[digest(file) dataUsingEncoding:NSUTF8StringEncoding]];
-        }
-        result[@"sha256"] = digest(bytes);
-    }
-    return result;
+    return snapshotIdentity(@{@"metadata": [store metadata], @"folder": folder});
 }
 
 static NSData *publicKey(NSString *text)
@@ -119,7 +109,7 @@ static NSDictionary *snapshotShaderLists(NSString *folder, NSString *bundled)
     return result.count ? [result copy] : nil;
 }
 
-static void initialize(void)
+static void initializeLegacy(void)
 {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -171,14 +161,286 @@ static void initialize(void)
         }
     });
 }
-NSString *host_profile_update_folder(NSString *bundled) { (void)bundled; initialize(); return profileFolder; }
-NSString *host_recording_update_folder(NSString *bundled) { (void)bundled; initialize(); return recordingFolder; }
-NSData *host_shader_update_list(const char *name) { initialize(); return name && host_shader_map_name_valid(name) ? shaderLists[@(name)] : nil; }
-NSDictionary *host_data_updates_metadata(void) { initialize(); return @{@"profiles": profileIdentity, @"recordings": recordingIdentity, @"shaders": shaderIdentity}; }
+/* Presentation only holds this lock while copying memory. Validators and stores never take it. */
+static NSObject *selectionLock(void)
+{
+    static NSObject *lock; static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
+static dispatch_queue_t updatesQueue(void)
+{
+    static dispatch_queue_t queue; static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("org.visr.data-updates", DISPATCH_QUEUE_SERIAL); });
+    return queue;
+}
+static BOOL menuRequested, menuFrozen, menuVisible, menuInitialized;
+static BOOL profileReady, recordingReady, profileLoading, recordingLoading;
+static BOOL profileChecking, recordingChecking, profileRetryPending, recordingRetryPending;
+static NSURL *menuProfileURL, *menuRecordingURL;
+static NSDictionary *menuState;
+
+static void publishMenuState(void)
+{
+    @synchronized(selectionLock()) {
+        BOOL ready = profileReady && recordingReady;
+        BOOL failed = menuInitialized && ((!profileReady && !profileLoading) || (!recordingReady && !recordingLoading));
+        BOOL loading = !ready && !failed && (!menuInitialized || profileLoading || recordingLoading);
+        menuState = @{@"ready": @(ready), @"loading": @(loading),
+            @"reason": ready || loading ? @"" : !profileReady && !profileLoading ? @"Can't reach the profile server" : @"Benchmark recordings are unavailable"};
+    }
+}
+static NSString *bundledFolder(NSString *name)
+{
+    return [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:name];
+}
+static NSDictionary *snapshotIdentity(NSDictionary *snapshot)
+{
+    NSMutableDictionary *result = [snapshot[@"metadata"] mutableCopy];
+    if ([result[@"bundled"] boolValue]) {
+        NSMutableData *bytes = [NSMutableData data];
+        NSString *folder = snapshot[@"folder"];
+        for (NSString *path in [[NSFileManager.defaultManager subpathsAtPath:folder] sortedArrayUsingSelector:@selector(compare:)]) {
+            NSData *file = [NSData dataWithContentsOfFile:[folder stringByAppendingPathComponent:path]];
+            if (!file) continue;
+            [bytes appendData:[path dataUsingEncoding:NSUTF8StringEncoding]];
+            [bytes appendBytes:"\0" length:1];
+            [bytes appendData:[digest(file) dataUsingEncoding:NSUTF8StringEncoding]];
+        }
+        result[@"sha256"] = digest(bytes);
+    }
+    return result;
+}
+static NSString *publishMenuSnapshot(BOOL profile, NSDictionary *snapshot)
+{
+    NSString *bundled = bundledFolder(profile ? @"profiles" : @"benchmark-recordings");
+    @synchronized(selectionLock()) {
+        NSString *selected = profile ? profileFolder : recordingFolder;
+        if (menuFrozen && ![snapshot[@"folder"] isEqual:selected ?: bundled] && (!selected || [selected isEqual:bundled])) {
+            NSMutableDictionary *metadata = [snapshot[@"metadata"] mutableCopy];
+            metadata[@"bundled"] = @YES; metadata[@"sequence"] = @0; metadata[@"sha256"] = @"";
+            snapshot = @{@"folder": bundled, @"metadata": metadata};
+        }
+    }
+    NSDictionary *metadata = snapshotIdentity(snapshot);
+    NSString *folder = snapshot[@"folder"];
+    BOOL needsFallback = NO;
+    NSString *selectedFolder;
+    @synchronized(selectionLock()) {
+        NSString *selected = profile ? profileFolder : recordingFolder;
+        if (!menuFrozen) {
+            if (profile) { profileFolder = folder; profileIdentity = metadata; }
+            else { recordingFolder = folder; recordingIdentity = metadata; }
+        } else if ([folder isEqual:selected ?: bundled]) {
+            // A fallback selected before hashing completed may acquire its content identity, never a new folder.
+            if (profile) profileIdentity = metadata; else recordingIdentity = metadata;
+        } else needsFallback = !selected || [selected isEqual:bundled];
+        selectedFolder = (profile ? profileFolder : recordingFolder) ?: bundled;
+    }
+    // Play may have frozen a fallback during hashing. One worker-only second pass hashes that exact folder.
+    // The freeze is permanent, so the second pass cannot need another retry.
+    return needsFallback ? publishMenuSnapshot(profile, snapshot) : selectedFolder;
+}
+static BOOL selectionFrozen(void)
+{
+    @synchronized(selectionLock()) { return menuFrozen; }
+}
+static void refreshMenu(void)
+{
+    if (!profiles || !recordings) return;
+    @synchronized(selectionLock()) { if (!menuVisible) return; }
+    if (menuProfileURL && !profileChecking) {
+        profileChecking = YES;
+        @synchronized(selectionLock()) { if (!menuFrozen) profileLoading = YES; }
+        [profiles checkForUpdateAtURL:menuProfileURL completion:^(BOOL success) {
+            dispatch_async(updatesQueue(), ^{
+                profileChecking = NO;
+                if (!selectionFrozen()) {
+                    NSDictionary *snapshot = [profiles menuSnapshot];
+                    NSString *selected = publishMenuSnapshot(YES, snapshot);
+                    [profiles retainMenuFolder:selected];
+                    @synchronized(selectionLock()) {
+                        profileReady = profileIdentity && ![profileIdentity[@"bundled"] boolValue];
+                        profileLoading = NO;
+                    }
+                    (void)success;
+                }
+                @synchronized(selectionLock()) { profileLoading = NO; }
+                publishMenuState();
+                if (profileRetryPending) { profileRetryPending = NO; refreshMenu(); }
+            });
+        }];
+    }
+    if (menuRecordingURL && !recordingChecking) {
+        recordingChecking = YES;
+        @synchronized(selectionLock()) { if (!menuFrozen) recordingLoading = YES; }
+        [recordings checkForUpdateAtURL:menuRecordingURL completion:^(BOOL success) {
+            dispatch_async(updatesQueue(), ^{
+                recordingChecking = NO;
+                if (!selectionFrozen()) {
+                    NSDictionary *snapshot = [recordings menuSnapshot];
+                    NSString *selected = publishMenuSnapshot(NO, snapshot);
+                    [recordings retainMenuFolder:selected];
+                    BOOL valid = host_benchmark_catalog_validate_folder(selected, NULL);
+                    @synchronized(selectionLock()) { recordingReady = valid; recordingLoading = NO; }
+                    (void)success;
+                }
+                @synchronized(selectionLock()) { recordingLoading = NO; }
+                publishMenuState();
+                if (recordingRetryPending) { recordingRetryPending = NO; refreshMenu(); }
+            });
+        }];
+    }
+    publishMenuState();
+}
+static void requestMenuRefresh(void)
+{
+    if (profileChecking) profileRetryPending = YES;
+    if (recordingChecking) recordingRetryPending = YES;
+    refreshMenu();
+}
+static void commitMenuSelection(void)
+{
+    NSString *profile, *recording, *shader;
+    @synchronized(selectionLock()) {
+        profile = profileFolder ?: bundledFolder(@"profiles");
+        recording = recordingFolder ?: bundledFolder(@"benchmark-recordings");
+        shader = shaderSnapshotFolder ?: bundledFolder(@"shader-lists");
+    }
+    [profiles selectMenuFolder:profile]; [recordings selectMenuFolder:recording]; [shaders selectMenuFolder:shader];
+}
+static void initializeMenu(struct host_device device)
+{
+    NSString *resources = NSBundle.mainBundle.resourcePath;
+    NSString *bundledProfiles = [resources stringByAppendingPathComponent:@"profiles"];
+    NSString *bundledRecordings = [resources stringByAppendingPathComponent:@"benchmark-recordings"];
+    char deviceKey[192]; BOOL identified = host_profile_device_key(&device, deviceKey, sizeof(deviceKey));
+    NSData *key = publicKey([NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloDataPackPublicKey"]);
+    menuProfileURL = key.length == 32 && identified ? profileFeedURL([NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloProfileFeedURL"], &device) : nil;
+    NSString *recordingURL = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRecordingFeedURL"];
+    menuRecordingURL = key.length == 32 && recordingURL.length ? [NSURL URLWithString:recordingURL] : nil;
+    NSString *compatibility = identified ? [@"device-profiles-1:" stringByAppendingString:@(deviceKey)] : @"device-profiles-1:unidentified";
+    profiles = store(@"profiles", bundledProfiles, compatibility, ^BOOL(NSString *folder, NSError **error) {
+        (void)error; return identified && host_profile_validate_device_folder(folder.fileSystemRepresentation, &device, NULL);
+    });
+    NSDictionary *profile = [profiles menuSnapshot];
+    NSString *selectedProfile = publishMenuSnapshot(YES, profile);
+    [profiles retainMenuFolder:selectedProfile];
+    @synchronized(selectionLock()) {
+        profileReady = !menuProfileURL || (profileIdentity && ![profileIdentity[@"bundled"] boolValue]);
+        profileLoading = menuProfileURL != nil;
+    }
+    recordings = store(@"recordings", bundledRecordings, @"benchmark-catalog-1:" HALO_GUEST_SHA256, ^BOOL(NSString *folder, NSError **error) {
+        return host_recording_pack_validate(folder.fileSystemRepresentation, NULL) && host_benchmark_catalog_validate_folder(folder, error);
+    });
+    NSDictionary *recording = [recordings menuSnapshot];
+    NSString *selectedRecording = publishMenuSnapshot(NO, recording);
+    [recordings retainMenuFolder:selectedRecording];
+    BOOL valid = host_benchmark_catalog_validate_folder(selectedRecording, NULL);
+    @synchronized(selectionLock()) {
+        recordingReady = valid; recordingLoading = menuRecordingURL != nil; menuInitialized = YES;
+    }
+    publishMenuState();
+    if (selectionFrozen()) commitMenuSelection();
+    refreshMenu();
+    // Shader validation/hashing never delays profile availability or benchmark readiness.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSString *bundled = [resources stringByAppendingPathComponent:@"shader-lists"];
+        HostDataPackStore *shaderStore = store(@"shaders", bundled, @HOST_SHADER_PACK_COMPATIBILITY, ^BOOL(NSString *folder, NSError **error) {
+            (void)error; return host_shader_pack_validate(folder.fileSystemRepresentation, bundled.fileSystemRepresentation, NULL);
+        });
+        NSDictionary *snapshot = [shaderStore menuSnapshot];
+        NSDictionary *metadata = snapshotIdentity(snapshot);
+        NSDictionary *lists = [metadata[@"bundled"] boolValue] ? nil : snapshotShaderLists(snapshot[@"folder"], bundled);
+        if (![metadata[@"bundled"] boolValue] && !lists) {
+            NSMutableDictionary *fallback = [metadata mutableCopy]; fallback[@"effective_bundled_fallback"] = @YES; metadata = fallback;
+        }
+        dispatch_async(updatesQueue(), ^{
+            shaders = shaderStore;
+            BOOL published = NO;
+            @synchronized(selectionLock()) {
+                if (!menuFrozen) { shaderIdentity = metadata; shaderLists = lists; shaderSnapshotFolder = snapshot[@"folder"]; published = YES; }
+            }
+            if (!published) {
+                [shaders selectMenuFolder:bundled];
+                NSDictionary *fallback = snapshotIdentity(@{@"folder": bundled, @"metadata": [shaders metadata]});
+                @synchronized(selectionLock()) { if (!shaderIdentity) shaderIdentity = fallback; }
+            }
+            NSString *url = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloShaderFeedURL"];
+            if (key.length == 32 && url.length) [shaders checkForUpdateAtURL:[NSURL URLWithString:url]];
+        });
+    });
+    static nw_path_monitor_t monitor;
+    monitor = nw_path_monitor_create();
+    __block nw_path_t previous;
+    nw_path_monitor_set_queue(monitor, updatesQueue());
+    nw_path_monitor_set_update_handler(monitor, ^(nw_path_t path) {
+        BOOL changed = previous && !nw_path_is_equal(previous, path);
+        previous = path;
+        if (changed) requestMenuRefresh();
+    });
+    nw_path_monitor_start(monitor);
+}
+void host_data_updates_menu_start(void)
+{
+    @synchronized(selectionLock()) { menuRequested = YES; menuVisible = YES; }
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        // host_device_identify reads UIScreen; capture it without waiting for the presentation thread.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            struct host_device device; host_device_identify(&device);
+            dispatch_async(updatesQueue(), ^{ initializeMenu(device); });
+        });
+    });
+    dispatch_async(updatesQueue(), ^{ requestMenuRefresh(); });
+}
+NSDictionary *host_data_updates_menu_state(void)
+{
+    @synchronized(selectionLock()) {
+        return menuState ?: @{@"ready": @NO, @"loading": @YES, @"reason": @""};
+    }
+}
+void host_data_updates_menu_finish(void)
+{
+    @synchronized(selectionLock()) {
+        if (menuFrozen) return;
+        menuRequested = YES; menuFrozen = YES; menuVisible = NO;
+    }
+    dispatch_async(updatesQueue(), ^{ commitMenuSelection(); });
+}
+static BOOL usesMenu(void)
+{
+    @synchronized(selectionLock()) { return menuRequested; }
+}
+NSString *host_profile_update_folder(NSString *bundled)
+{
+    if (!usesMenu()) initializeLegacy();
+    @synchronized(selectionLock()) { return profileFolder ?: bundled; }
+}
+NSString *host_recording_update_folder(NSString *bundled)
+{
+    if (!usesMenu()) initializeLegacy();
+    @synchronized(selectionLock()) { return recordingFolder ?: bundled; }
+}
+NSData *host_shader_update_list(const char *name)
+{
+    if (!usesMenu()) initializeLegacy();
+    @synchronized(selectionLock()) { return name && host_shader_map_name_valid(name) ? shaderLists[@(name)] : nil; }
+}
+NSDictionary *host_data_updates_metadata(void)
+{
+    if (!usesMenu()) initializeLegacy();
+    @synchronized(selectionLock()) {
+        NSDictionary *bundled = @{@"bundled": @YES, @"sequence": @0, @"sha256": @""};
+        return @{@"profiles": profileIdentity ?: bundled, @"recordings": recordingIdentity ?: bundled, @"shaders": shaderIdentity ?: bundled};
+    }
+}
 void host_data_updates_healthy(void)
 {
-    /* Validation of a newly downloaded snapshot can hold the store lock. Keep it off presentation. */
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        @autoreleasepool { initialize(); [profiles markHealthy]; [recordings markHealthy]; if (shaderLists) [shaders markHealthy]; }
+    dispatch_async(updatesQueue(), ^{
+        @autoreleasepool {
+            if (!usesMenu()) initializeLegacy();
+            [profiles markHealthy]; [recordings markHealthy]; if (shaderLists) [shaders markHealthy];
+        }
     });
 }

@@ -6,6 +6,11 @@
 #include "../host/host_gpu_dispatch.c"
 #include <assert.h>
 
+@interface HostDataPackStore (MenuContract)
+- (NSDictionary *)menuSnapshot;
+- (void)selectMenuFolder:(NSString *)folder;
+- (void)retainMenuFolder:(NSString *)folder;
+@end
 static HostDataPackStore *launchStore;
 static int healthSignals;
 void host_logf(int priority, const char *format, ...) { (void)priority; (void)format; }
@@ -33,14 +38,14 @@ static HostDataPackStore *Store(NSString *root, NSData *key) {
             return [NSFileManager.defaultManager fileExistsAtPath:[folder stringByAppendingPathComponent:@"test.toml"]];
         }];
 }
-static NSData *Envelope(uint8_t *secret) {
+static NSData *Envelope(uint8_t *secret, int sequence) {
     NSData *payload = [NSJSONSerialization dataWithJSONObject:@{@"files": @{@"test.toml": @"eA=="}} options:0 error:NULL];
     uint8_t hash[CC_SHA256_DIGEST_LENGTH], signature[64];
     CC_SHA256(payload.bytes, (CC_LONG)payload.length, hash);
     NSMutableString *digest = [NSMutableString string];
     for (NSUInteger i = 0; i < sizeof(hash); i++) [digest appendFormat:@"%02x", hash[i]];
     NSData *manifest = [NSJSONSerialization dataWithJSONObject:@{@"schema": @1, @"kind": @"profiles", @"channel": @"stable",
-        @"sequence": @1, @"minimum_engine": @1, @"maximum_engine": @1, @"compatibility": @"profiles-2", @"sha256": digest, @"notes": @"test"} options:0 error:NULL];
+        @"sequence": @(sequence), @"minimum_engine": @1, @"maximum_engine": @1, @"compatibility": @"profiles-2", @"sha256": digest, @"notes": @"test"} options:0 error:NULL];
     crypto_ed25519_sign(signature, secret, manifest.bytes, manifest.length);
     return [NSJSONSerialization dataWithJSONObject:@{@"manifest": [manifest base64EncodedStringWithOptions:0],
         @"signature": [[NSData dataWithBytes:signature length:64] base64EncodedStringWithOptions:0],
@@ -49,7 +54,39 @@ static NSData *Envelope(uint8_t *secret) {
 int main(void) { @autoreleasepool {
     uint8_t seed[32] = {2}, secret[64], public[32]; // Public fixture, never a release key.
     crypto_ed25519_key_pair(secret, public, seed);
-    NSData *key = [NSData dataWithBytes:public length:32], *envelope = Envelope(secret);
+    NSData *key = [NSData dataWithBytes:public length:32], *envelope = Envelope(secret, 1);
+    // Menu candidates stay pending until selected; abandoned menus do not quarantine them.
+    NSString *menuRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    HostDataPackStore *menu = Store(menuRoot, key);
+    [menu beginLaunch];
+    assert([menu stageEnvelope:envelope error:NULL]);
+    NSDictionary *candidate = [menu menuSnapshot];
+    assert([candidate[@"metadata"][@"sequence"] intValue] == 1);
+    NSDictionary *reopened = [Store(menuRoot, key) menuSnapshot];
+    assert([reopened[@"folder"] isEqual:candidate[@"folder"]]);
+    // A later staged generation must not prune the candidate the user just selected.
+    assert([menu stageEnvelope:Envelope(secret, 2) error:NULL]);
+    assert([NSFileManager.defaultManager fileExistsAtPath:candidate[@"folder"]]);
+    NSDictionary *superseded = [menu menuSnapshot];
+    [menu retainMenuFolder:candidate[@"folder"]];
+    assert([menu stageEnvelope:Envelope(secret, 3) error:NULL]);
+    assert(![NSFileManager.defaultManager fileExistsAtPath:superseded[@"folder"]]);
+    assert([NSFileManager.defaultManager fileExistsAtPath:candidate[@"folder"]]);
+    [menu selectMenuFolder:candidate[@"folder"]];
+    assert([[menu metadata][@"sequence"] intValue] == 1);
+    [menu markHealthy];
+    HostDataPackStore *nextMenu = Store(menuRoot, key);
+    assert(![[nextMenu beginLaunch] isEqual:candidate[@"folder"]]);
+    [NSFileManager.defaultManager removeItemAtPath:menuRoot error:NULL];
+    NSString *invalidRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    HostDataPackStore *invalidMenu = Store(invalidRoot, key);
+    assert([invalidMenu stageEnvelope:envelope error:NULL]);
+    NSDictionary *invalidCandidate = [invalidMenu menuSnapshot];
+    [@"corrupted" writeToFile:[invalidCandidate[@"folder"] stringByAppendingPathComponent:@"test.toml"] atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    assert([[[invalidMenu menuSnapshot] objectForKey:@"folder"] isEqual:@"/bundled"]);
+    NSDictionary *invalidState = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[invalidRoot stringByAppendingPathComponent:@"state.json"]] options:0 error:NULL];
+    assert([invalidState[@"quarantined"] intValue] == 1 && ![invalidState[@"pending"] length]);
+    [NSFileManager.defaultManager removeItemAtPath:invalidRoot error:NULL];
     for (int mode = 0; mode < 7; mode++) {
         /* Menu, direct gameplay, opening cutscene/stereo, loading-only,
            failure before rendering, failure before presentation, and a loading frame after an abandoned world frame. */

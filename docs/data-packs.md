@@ -1,6 +1,6 @@
 # Signed data updates
 
-VISR keeps bundled device profiles, shader lists, and benchmark data. Signed updates are selected at launch and checked asynchronously for the next launch. Downloads cannot change a running session. An interrupted first launch quarantines its trial snapshot; the next launch uses the previous healthy generation or bundled data. A completed menu or world frame marks a trial healthy. Loading frames do not.
+VISR keeps bundled device profiles, shader lists, and benchmark data. Signed updates are checked in the background. The launch menu keeps Play available while profiles and benchmark recordings are verified and downloaded. Benchmark stays visible with a progress indicator until its profile and recordings are ready; a failed check displays a short reason and retries when the network changes or the menu reappears. Valid cached data can make Benchmark available during a refresh. The menu freezes its selected data when starting Play or Benchmark, so later downloads apply on the next launch. Shader downloads do not gate either choice. Downloads cannot change a running session. An interrupted first launch quarantines its trial snapshot; the next launch uses the previous healthy generation or bundled data. A completed menu or world frame marks a trial healthy. Loading frames do not.
 
 Device and simulator builds use the project's pinned Ed25519 public key and the `tester` channel with `--tester`, or `stable` otherwise. Mac runner builds download nothing unless a key or feed is explicitly named. Disable updates with `--data-packs off`.
 
