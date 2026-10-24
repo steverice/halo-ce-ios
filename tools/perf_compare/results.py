@@ -138,7 +138,7 @@ def _conditions(runs, key):
 
 def _target_rows(target):
     runs = target.get("runs", [])
-    scenarios = sorted({"a10", "b30"} | {str(run["scenario"]) for run in runs})
+    scenarios = sorted(set(target.get('scenarios', ['a10', 'b30'])) | {str(run["scenario"]) for run in runs})
     for scenario in scenarios:
         rounds = {}
         for run in runs:
@@ -152,10 +152,13 @@ def _target_rows(target):
             status += f"; {len(valid)} rounds"
         if target.get("reason"):
             status += "; " + str(target["reason"])
+        conditions = (f"{target.get('frame_mode', 'capped')}; +{target.get('native_delay_seconds', 0)} s; "
+                      f"{target.get('quality_preset', 'defaults')}; warm-up {target.get('warmup_seconds', 15)} s")
         yield [target.get("id", "unknown"), scenario, status,
-               *(_range(valid, key) for key in _METRICS),
+               *("—" if target.get('frame_mode') == 'uncapped' and key == 'on_time_pct' else _range(valid, key)
+                 for key in _METRICS),
                *(_conditions(valid, key) for key in
-                 ("thermal", "resolution", "cap", "display_hz", "display_rate_basis"))]
+                 ("thermal", "resolution", "cap", "display_hz", "display_rate_basis")), conditions]
 
 
 CAVEAT = ("We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong "
@@ -171,34 +174,70 @@ def render(summary: dict) -> str:
              f"Machine: {_cell(summary.get('machine', 'unknown'))}. "
              f"OS: {_cell(summary.get('os', 'unknown'))}.", "",
              "Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. "
-             "Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance. "
+             "Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance; "
+             "it is omitted for uncapped rows and does not establish a display tier. "
              "The methods measure different events and are not ranked against one another.", "",
              ]
+    if summary.get('combined_matrices'):
+        lines.extend(['Refresh wall time is the sum of collection time across the retained matrices; '
+                      'setup pilots and time waiting between jobs are excluded.', ''])
     if summary.get("cpu_policy") == "baseline":
         lines.extend(["Background CPU is sampled for five seconds immediately before each native sampling window. "
                         "Runs are rejected when average outside-process CPU rises more than half a core above that baseline. "
                         "Steady background work remains active and may affect these estimates. "
                         "Each round allows up to three attempts; rejected attempts do not enter the ranges.", ""])
     if summary.get("native_scenario") == "opening-sequence":
-        lines.extend(["Native runs use the opening a10 and b30 sequences with no input: 15 seconds of warm-up "
+        lines.extend(["Capped opening runs use a10 and b30 with no input: 15 seconds of warm-up "
                         "after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. "
                         "Opening cinematics are included. "
                         "Both apps use 1280×960 drawables on a 60 Hz display, interpolation and a requested 60 fps cap; "
                         "other graphics settings retain each app's defaults. These runs do not establish combat performance "
-                        "or identical image quality.", ""])
+                        "or identical image quality. Player readiness does not align cinematic clocks, so opening "
+                        "sequences can have phase offsets between apps.", ""])
+    if any(target.get('frame_mode') == 'uncapped' for target in summary.get('targets', [])):
+        lines.extend(['Uncapped runs request `display.frame_rate = "unlimited"` in VISR and '
+                      '`display.max_fps = -1` in OpenCE-macOS, with `display.vsync = false` and '
+                      'interpolation enabled in both. The Conditions column identifies each mode and extra delay after warm-up '
+                      '(+0 s is the opening window). The 60 Hz display still limits visible refreshes; '
+                      'presentation intervals do not establish simulation speed or unique displayed frames. '
+                      'Above-refresh trace rates have unverified physical meaning and are not verified submission throughput. '
+                      'The same elapsed window does not prove identical gameplay. Each launch uses fresh isolated data/save '
+                      'folders; OS and driver caches are not reset or equalized.', ''])
+    if summary.get('mixed_bundle_storage'):
+        lines.extend(['For these uncapped runs, VISR\'s bundle loads from internal storage and OpenCE-macOS\'s '
+                      'from external USB storage. Both use the same maps and per-run data storage; bundle I/O '
+                      'and caches may still affect stalls.', ''])
+    if any(t.get('quality_preset') == 'matched-stock' for t in summary.get('targets', [])):
+        lines.extend(['The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in both apps; '
+                      'both use direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size '
+                      'effect buffer, 1× anisotropic filtering, no replacement textures, and no first-person body. '
+                      'OpenCE-macOS uses native resolution scaling, stock world/weapon FOV, and disables optional per-pixel '
+                      'lighting, weapon shields, and shield glow. Other defaults remain unchanged. '
+                      'VISR uses native Metal and compressed GPU textures; OpenCE-macOS uses ANGLE over Metal. '
+                      'These runs could not verify OpenCE-macOS\'s internal filtering, LOD, effect-buffer, or texture-storage policy, '
+                      'so identical image quality remains unverified. Weapon framing and texture filtering still differ visibly. '
+                      'Earlier capped rows retain each app\'s graphics defaults and are not quality-matched to the new rows.', ''])
+        lines.extend(['Configuration references: [VISR settings](../port/ios/README.md), '
+                      '[OpenCE-macOS v1.0.2 settings](https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings).', ''])
+    if any(t.get('native_delay_seconds') == 90 for t in summary.get('targets', [])):
+        lines.extend(['The later b30 window adds 90 seconds after warm-up, reaching the beach encounter at about '
+                      '110 seconds after player readiness once the CPU baseline is included. It samples 60 seconds '
+                      'with a stationary player and no input. Start/end screenshots qualify the camera location, '
+                      'but AI and combat state can vary between apps and rounds; this is not a deterministic combat replay.', ''])
     lines.extend(["## Builds and availability", ""])
     targets = sorted(summary.get("targets", []), key=lambda target: str(target.get("id", "")))
     if targets:
-        _table(lines, ["Target", "Version", "SHA-256", "Method", "Status", "Reason"],
-               [[target.get(key, "unknown") for key in ("id", "version", "sha256", "method", "status", "reason")]
+        _table(lines, ["Target", "Version", "SHA-256", "Method", "Status", "Reason", "Mode", "Delay (s)", "Quality"],
+               [[*[target.get(key, "unknown") for key in ("id", "version", "sha256", "method", "status", "reason")],
+                 target.get('frame_mode', 'capped'), target.get('native_delay_seconds', 0), target.get('quality_preset', 'defaults')]
                 for target in targets])
     else:
         lines.extend(["No targets recorded.", ""])
     groups = [("Mac native Metal performance trace", "trace"), ("Mac native Metal HUD", "hud"),
               ("Safari requestAnimationFrame", "raf"), ("Other methods", "other")]
-    headings = ["Target", "Scenario", "Status", "FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
+    headings = ["Target", "Scenario", "Status", "Avg FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
                 "On time (%)", "Worst (ms)", "Frames", "Duration (s)", "Thermal", "Resolution", "Cap (fps)",
-                "Display (Hz)", "Display rate basis"]
+                "Display (Hz)", "Display rate basis", "Conditions"]
 
     def method_group(target):
         method = str(target.get("method", "")).lower()

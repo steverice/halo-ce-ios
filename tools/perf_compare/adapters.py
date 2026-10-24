@@ -84,15 +84,22 @@ def capture_window(pid, output):
     run(['/usr/sbin/screencapture', '-x', '-o', '-l', str(owned['id']), str(output)])
 
 
-def qualification(target, scenario, display_hz=None):
+def qualification(target, scenario, display_hz=None, frame_mode='capped', native_delay_seconds=0,
+                  quality_preset='defaults', warmup_seconds=15):
     proof = target.get('qualification', {})
     matched = bool(target.get('sha256')) and proof.get('sha256') == target.get('sha256')
     if display_hz is not None:
         matched = matched and proof.get('display_hz') == display_hz
+    matched = matched and proof.get('frame_mode', 'capped') == frame_mode
+    matched = matched and proof.get('native_delay_seconds', 0) == native_delay_seconds
+    matched = matched and proof.get('quality_preset', 'defaults') == quality_preset
+    matched = matched and proof.get('warmup_seconds', 15) == warmup_seconds
     settings = proof.get('scenarios', {}).get(scenario, {}) if matched else {}
     if not re.fullmatch(r'[0-9]{2,5}×[0-9]{2,5}', str(settings.get('resolution', ''))):
         settings = {}
-    if settings and not re.fullmatch(r'[0-9]{1,3}|display|browser', str(settings.get('cap', ''))):
+    if settings and not re.fullmatch(r'[0-9]{1,3}|display|browser|unlimited', str(settings.get('cap', ''))):
+        settings = {}
+    if frame_mode == 'uncapped' and settings.get('cap') != 'unlimited':
         settings = {}
     return {'scene_verified': bool(settings.get('resolution') and settings.get('cap') and proof.get('display_hz')),
             'resolution': settings.get('resolution', 'effective resolution unverified'),
@@ -154,12 +161,43 @@ def native(target, scenario, out, config):
                 raise
         else:
             if attempt:
-                for name in ('hud.log', 'timeline.json', 'qualification.png'):
+                for name in ('hud.log', 'timeline.json', 'qualification.png', 'qualification-end.png', 'background-cpu.json'):
                     if (folder / name).exists():
                         if (out / name).exists():
                             shutil.copyfile(out / name, out / ('rejected-' + name))
                         shutil.copyfile(folder / name, out / name)
             return result
+
+
+def native_display(target_id, frame_mode='capped', quality_preset='defaults'):
+    display = ('renderer = "metal"\n' if target_id == 'visr' else '')
+    display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
+                'window_scale = 1\nwindow_size = "640x480"\ninterpolation = true\n')
+    if frame_mode == 'uncapped':
+        if target_id == 'visr':
+            display += 'frame_rate = "unlimited"\nvsync = false\n'
+        elif target_id == 'opence-macos':
+            display += 'max_fps = -1\nvsync = false\n'
+        else:
+            raise ValueError('uncapped settings undocumented for target')
+    elif frame_mode == 'capped':
+        display += 'frame_rate = "60"\nframe_limit = 60\nmax_fps = 60\nvsync = true\n'
+    else:
+        raise ValueError('unknown frame mode')
+    if quality_preset == 'matched-stock':
+        display += ('anti_aliasing = "off"\nhigh_res_hud = false\nhigh_res_text = false\n'
+                    'direct_camera = true\nfirst_person_legs = false\n')
+        if target_id == 'visr':
+            display += ('shadow_map_size = 128\neffect_resolution = "xbox"\nmodel_lod = "auto"\n'
+                        'anisotropic_filtering = 1\nupscaled_textures = false\nfirst_person_body = false\n')
+        elif target_id == 'opence-macos':
+            display += ('shadow_resolution = 128\nresolution_scaling = "native"\nfov = 0.0\n'
+                        'viewmodel_fov = 0.0\nper_pixel_lighting = false\nviewmodel_shield = false\nshield_glow = false\n')
+        else:
+            raise ValueError('stock settings undocumented for target')
+    elif quality_preset != 'defaults':
+        raise ValueError('unknown quality preset')
+    return display
 
 
 def _native(target, scenario, out, config):
@@ -177,10 +215,7 @@ def _native(target, scenario, out, config):
     with socket.socket() as port_socket:
         port_socket.bind(('127.0.0.1', 0))
         port = port_socket.getsockname()[1]
-    display = ('renderer = "metal"\n' if target['id'] == 'visr' else '')
-    display += ('fullscreen = false\nscreen_width = 0\nscreen_height = 480\nrender_height = 0\n'
-                'window_scale = 1\nwindow_size = "640x480"\n')
-    display += 'frame_rate = "60"\nframe_limit = 60\nvsync = true\ninterpolation = true\n'
+    display = native_display(target['id'], config.get('frame_mode', 'capped'), config.get('quality_preset', 'defaults'))
     text = ('[display]\n' + display + '[audio]\nenabled = false\n[network]\nonline = false\n'
             '[update]\nauto = false\n[community_maps]\nauto_download = false\n'
             '[timer_audio]\nauto_download = false\n[discord]\napplication_id = \"\"\n'
@@ -225,6 +260,7 @@ def _native(target, scenario, out, config):
             raise RuntimeError('scenario-not-ready')
         frontmost(process.pid, activate=True)
         time.sleep(config.get('warmup_seconds', 15))
+        time.sleep(config.get('native_delay_seconds', 0))
         host_state(check_load=False)
         if config.get('capture_windows'):
             capture_window(process.pid, out / 'qualification.png')
@@ -251,6 +287,8 @@ def _native(target, scenario, out, config):
         if background_changed(background / elapsed, baseline, config.get('max_background_cores', 1.0)):
             raise RuntimeError('host-not-quiet')
         frontmost(process.pid)
+        if config.get('capture_windows'):
+            capture_window(process.pid, out / 'qualification-end.png')
         if config.get('native_method') == 'metalperftrace':
             collect = json.loads(run(['metalperftrace', 'collect', '--start', '@' + str(trace_start),
                                       '--end', '@' + str(trace_end), '--json', str(out / 'traces')]))
@@ -258,7 +296,10 @@ def _native(target, scenario, out, config):
                                         '--predicate', 'pid == ' + str(process.pid), path]))
                          for path in collect['traces']]
             (out / 'timeline.json').write_text(json.dumps({'pid': process.pid, 'traces': timelines}))
-        return {'thermal': before['state'] + ' → ' + thermal()['state'], **qualification(target, scenario, config.get('display_hz', 60))}
+        return {'thermal': before['state'] + ' → ' + thermal()['state'],
+                **qualification(target, scenario, config.get('display_hz', 60),
+                                config.get('frame_mode', 'capped'), config.get('native_delay_seconds', 0),
+                                config.get('quality_preset', 'defaults'), config.get('warmup_seconds', 15))}
     finally:
         if connection:
             connection.close()
@@ -373,7 +414,8 @@ const argumentsDuration = arguments[0]; requestAnimationFrame(frame);'''
         if result['hidden']:
             raise RuntimeError('browser-hidden')
         host_state(check_load=False)
-        return {'thermal': thermal()['state'], **qualification(target, scenario, config.get('display_hz', 60))}
+        return {'thermal': thermal()['state'], **qualification(target, scenario, config.get('display_hz', 60),
+                                                              warmup_seconds=config.get('warmup_seconds', 15))}
     finally:
         original_error = sys.exc_info()[1]
         cleanup_denied = None
