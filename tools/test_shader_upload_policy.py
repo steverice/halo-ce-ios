@@ -66,7 +66,9 @@ def test_cloudkit_diagnostics_are_linked_for_every_upload_manifest():
         manifest = plistlib.loads((root / "port/ios/privacy" / name / "PrivacyInfo.xcprivacy").read_bytes())
         assert manifest["NSPrivacyTracking"] is False
         entries = manifest["NSPrivacyCollectedDataTypes"]
-        assert any(item["NSPrivacyCollectedDataType"] == "NSPrivacyCollectedDataTypeOtherDiagnosticData" for item in entries)
+        types = {item["NSPrivacyCollectedDataType"] for item in entries}
+        assert {"NSPrivacyCollectedDataTypeOtherDiagnosticData",
+                "NSPrivacyCollectedDataTypeProductInteraction"} <= types
         for entry in entries:
             assert entry["NSPrivacyCollectedDataTypeLinked"] is True
             assert entry["NSPrivacyCollectedDataTypeTracking"] is False

@@ -5,10 +5,10 @@ Builds made with shader uploads enabled automatically send missing shader descri
 The app bundle carries one `PrivacyInfo.xcprivacy`, chosen by upload capability:
 
 - `plain/`: builds without benchmark or shader uploads declare no collected data.
-- `shader/`: shader-only upload builds declare Other Diagnostic Data linked to the user, for Analytics, without tracking.
-- `tester/`: benchmark-capable builds declare both Performance Data and Other Diagnostic Data linked to the user, for Analytics, without tracking.
+- `shader/`: shader-only upload builds declare Product Interaction and Other Diagnostic Data linked to the user, for Analytics, without tracking.
+- `tester/`: benchmark-capable builds declare Performance Data, Product Interaction and Other Diagnostic Data linked to the user, for Analytics, without tracking.
 
-CloudKit attaches a creator user record ID even though the report payload omits account information.
+Map fingerprints reveal which maps were loaded. CloudKit attaches a creator user record ID even though the report payload omits account information.
 
 Shader upload capability is independent of benchmark uploads. Local builds default to neither. Builds with shader uploads enabled collect and deliver reports automatically. There is no player preference to disable them. Scripted runs, runners and replays suppress uploads. Previously uploaded records remain subject to server retention. Local sent hashes remain to prevent repeat contributions; bounded retention of these hashes can permit resends after eviction.
 
