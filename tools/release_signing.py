@@ -126,9 +126,9 @@ def install(folder: Path) -> None:
         import release_validation as validation
         from ios_build import cloud_definitions
     policy_value = os.environ.get("RELEASE_BUILD_POLICY", "")
-    upload_enabled = bool(policy_value) and validation.benchmark_upload_enabled(
-        validation.load_policy(policy_value)
-    )
+    policy = validation.load_policy(policy_value) if policy_value else {}
+    upload_enabled = (validation.benchmark_upload_enabled(policy)
+                      or validation.shader_upload_enabled(policy))
     cloud = cloud_definitions(
         os.environ["APPLE_BUNDLE_ID"], False, None, upload_enabled
     )

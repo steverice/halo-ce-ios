@@ -14,7 +14,7 @@ if(HALO_NATIVE_MAC)
         message(FATAL_ERROR "HALO_NATIVE_MAC requires a separate macOS SDK target")
     endif()
     if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_TESTER_BUILD)
-        message(FATAL_ERROR "Native macOS currently supports local development only")
+        message(FATAL_ERROR "Native macOS does not support cloud saves or benchmark tester builds")
     endif()
 endif()
 # tools/ios_build.py --renderer: Metal is always present; BOTH also includes OpenGL ES.
@@ -44,6 +44,8 @@ option(HALO_BINK "Play the game's Bink movies with the vendored FFmpeg decoders 
 set(HALO_GLES_FRAMEWORKS "" CACHE PATH "Catalyst: folder with OpenGLES.framework (headers and a macCatalyst link stub)")
 # iCloud saves (host/host_cloud_saves.m): off, the app has no CloudKit code, entitlement or Settings rows.
 # On needs the iCloud capability with CloudKit and this container on the App ID (docs/cloud-saves.md).
+option(HALO_SHADER_UPLOAD "Contribute missing Metal compilation descriptors" OFF)
+option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to CloudKit" OFF)
 option(HALO_CLOUD_SAVES "Sync saves through the player's private iCloud database" OFF)
 set(HALO_CLOUD_CONTAINER "iCloud.org.steverice.visr" CACHE STRING "iCloud container for HALO_CLOUD_SAVES")
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
@@ -151,6 +153,7 @@ add_executable(VISR MACOSX_BUNDLE
     host/host_shader_pack.c host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m host/host_benchmark_catalog.m
     "${ROOT}/port/third_party/monocypher/monocypher.c"
     "${ROOT}/port/third_party/monocypher/monocypher-ed25519.c"
+    host/host_shader_upload.m "${ROOT}/port/runtime/shader_observations.c"
     host/host_benchmark.m host/host_benchmark_outbox.m host/host_benchmark_presentation.m host/host_benchmark_page.m "${ROOT}/port/runtime/benchmark_metrics.c" "${ROOT}/port/runtime/benchmark_presentation.c"
     "${ROOT}/port/runtime/benchmark_plan.c" "${ROOT}/port/runtime/benchmark_journal.c"
     host/host_stereo.m host/host_stereo_head.c host/host_stereo_hud.c
@@ -319,13 +322,16 @@ set_source_files_properties("${ROOT}/port/assets/network/brokers.txt" PROPERTIES
 file(GLOB HALO_LICENSES "${ROOT}/build/ios/licenses/*.txt")
 target_sources(VISR PRIVATE ${HALO_LICENSES})
 set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
-# The privacy manifest (port/ios/privacy): a tester build, whose benchmark can send a report when its tester
-# agrees, declares that; every other build sends nothing and declares nothing collected
+# CloudKit upload capabilities select linked diagnostic disclosure independently of the tester interface.
 option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
 if(HALO_TESTER_BUILD)
     target_sources(VISR PRIVATE host/host_benchmark_menu.m)
-    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
     target_compile_definitions(VISR PRIVATE HALO_TESTER_BUILD=1)
+endif()
+if(HALO_TESTER_BUILD OR HALO_BENCHMARK_UPLOAD)
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/tester/PrivacyInfo.xcprivacy")
+elseif(HALO_SHADER_UPLOAD)
+    set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/shader/PrivacyInfo.xcprivacy")
 else()
     set(HALO_PRIVACY_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/privacy/plain/PrivacyInfo.xcprivacy")
 endif()
@@ -392,24 +398,30 @@ if(HALO_DEVELOPMENT_TEAM)
 endif()
 # Automatic benchmark report delivery (host/host_benchmark_send.m): one record in the public
 # database of the same container. It needs the iCloud entitlement as cloud saves do, and nothing else of theirs
-option(HALO_BENCHMARK_UPLOAD "Let the device benchmark send its report to the iCloud container's public database" OFF)
 set(HALO_BENCHMARK_APS_ENVIRONMENT "development" CACHE STRING "APS environment authorized by the benchmark upload signing profile")
-if(HALO_BENCHMARK_UPLOAD)
+if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
     if(NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "development" AND
        NOT HALO_BENCHMARK_APS_ENVIRONMENT STREQUAL "production")
         message(FATAL_ERROR "HALO_BENCHMARK_APS_ENVIRONMENT must match the selected signing profile")
     endif()
+endif()
+if(HALO_BENCHMARK_UPLOAD)
     target_sources(VISR PRIVATE host/host_benchmark_send.m)
     target_compile_definitions(VISR PRIVATE
         "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\""
         HALO_BENCHMARK_UPLOAD=1)
+endif()
+if(HALO_SHADER_UPLOAD)
+    target_link_libraries(VISR PRIVATE sqlite3)
+    target_compile_definitions(VISR PRIVATE HALO_SHADER_UPLOAD=1
+        "HALO_BENCHMARK_CLOUD=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
 if(HALO_CLOUD_SAVES)
     # the sync rules (port/runtime/cloud_saves.c) behind a store interface; here the store is CloudKit
     target_sources(VISR PRIVATE "${ROOT}/port/runtime/cloud_saves.c" host/cloud_store_cloudkit.m host/host_cloud_saves.m)
     target_compile_definitions(VISR PRIVATE HALO_CLOUD_SAVES=1 "HALO_CLOUD_CONTAINER=\"${HALO_CLOUD_CONTAINER}\"")
 endif()
-if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
+if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
     target_link_libraries(VISR PRIVATE "-framework CloudKit")
     # the iCloud keys, added to whatever entitlements the target already signs with (visionOS's, or the
     # extended virtual addressing entitlement of a visionOS or tvOS build), which this block must run after
@@ -423,7 +435,7 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD)
     # App Store Connect refuses a tvOS app with CloudKit but no push environment: the benchmark's send (CloudKit's
     # own subscriptions use it; the app sends and receives no notification of its own). Xcode signs an App Store
     # export with "production" from the distribution profile
-    if(HALO_BENCHMARK_UPLOAD)
+    if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
         string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>${HALO_BENCHMARK_APS_ENVIRONMENT}</string>"
             HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
     endif()

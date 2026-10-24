@@ -106,6 +106,8 @@ def main():
     parser.add_argument('--cloud-container',
                         help='--cloud-saves: the iCloud container (default iCloud.org.steverice.visr for the '
                              'org.steverice.visr bundle IDs; required with any other bundle ID)')
+    parser.add_argument('--shader-upload', action='store_true',
+                        help='contribute missing Metal shader descriptions through CloudKit')
     parser.add_argument('--benchmark-upload', action='store_true',
                         help='let the device benchmark automatically send its report to the public database '
                              'of the iCloud container (--cloud-container, or the project\'s own). Signs with the iCloud '
@@ -204,6 +206,8 @@ def main():
         parser.error('--archive-only goes with --app-store-package and without --upload')
     if args.tester and args.mac:
         parser.error('--tester is for device and simulator builds')
+    if args.shader_upload and args.app_store_package and not args.signing_profile:
+        parser.error('--shader-upload App Store packages require an existing --signing-profile')
     if args.benchmark_upload and args.simulator:
         parser.error('--benchmark-upload needs a device build')
     if args.benchmark_upload and args.app_store_package and not args.signing_profile:
@@ -229,10 +233,10 @@ def main():
             validate_native(args)
         except ValueError as error:
             parser.error(str(error))
-    if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload))):
+    if args.mac and (args.simulator or args.unsigned or (args.team and not (args.cloud_saves or args.benchmark_upload or args.shader_upload))):
         parser.error('--mac builds are ad hoc signed; drop --simulator, --unsigned and --team')
     try:
-        cloud = cloud_definitions(args.bundle_id, args.cloud_saves, args.cloud_container, args.benchmark_upload)
+        cloud = cloud_definitions(args.bundle_id, args.cloud_saves, args.cloud_container, args.benchmark_upload, args.shader_upload)
     except ValueError as error:
         parser.error(str(error))
     cloud_container = next(
@@ -245,7 +249,7 @@ def main():
     )
     try:
         benchmark_aps = benchmark_upload_aps_environment(
-            args.benchmark_upload,
+            args.benchmark_upload or args.shader_upload,
             bool(args.app_store_package),
             args.signing_profile,
             platform_name,
@@ -257,7 +261,7 @@ def main():
         data_packs = data_pack_definitions(*data_pack_settings(args))
     except ValueError as error:
         parser.error(str(error))
-    if args.mac and (args.cloud_saves or args.benchmark_upload) and not args.team:
+    if args.mac and (args.cloud_saves or args.benchmark_upload or args.shader_upload) and not args.team:
         parser.error('--mac with --cloud-saves or --benchmark-upload needs --team: macOS does not run an ad hoc signed '
                      'app with iCloud entitlements')
     if args.cloud_saves and args.team:
@@ -336,7 +340,7 @@ def main():
              f'-DHALO_EXTENDED_VIRTUAL_ADDRESSING={"ON" if args.extended_virtual_addressing else "OFF"}', *cloud, *data_packs,
              f'-DHALO_RENDER_VALIDATION={"ON" if validation else "OFF"}',
              *host_pgo_flags(args.host_pgo)]
-    if args.benchmark_upload:
+    if args.benchmark_upload or args.shader_upload:
         command.append(f'-DHALO_BENCHMARK_APS_ENVIRONMENT={benchmark_aps}')
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
@@ -513,13 +517,13 @@ def benchmark_upload_aps_environment(
     return profile["Entitlements"]["aps-environment"]
 
 
-def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=False):
+def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=False, shader_upload=False):
     """the CMake definitions for --cloud-saves and --benchmark-upload: off unless asked for, and then with a
     container, which only the project's own bundle IDs have a default for (a container belongs to one developer team)"""
-    if not cloud_saves and not benchmark_upload:
+    if not cloud_saves and not benchmark_upload and not shader_upload:
         if cloud_container:
             raise ValueError('--cloud-container is for --cloud-saves builds')
-        return ['-DHALO_CLOUD_SAVES=OFF', '-DHALO_BENCHMARK_UPLOAD=OFF']   # both named: CMake's cache keeps an earlier ON
+        return ['-DHALO_CLOUD_SAVES=OFF', '-DHALO_BENCHMARK_UPLOAD=OFF', '-DHALO_SHADER_UPLOAD=OFF']   # all named: CMake's cache keeps an earlier ON
     if not cloud_container:
         if bundle_id != 'org.steverice.visr' and not bundle_id.startswith('org.steverice.visr.'):
             raise ValueError(f'--cloud-saves with the bundle ID {bundle_id} needs --cloud-container '
@@ -528,7 +532,8 @@ def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=
     if not re.fullmatch(r'iCloud\.[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+', cloud_container):
         raise ValueError('--cloud-container must look like iCloud.com.yourname.visr')
     return [f'-DHALO_CLOUD_SAVES={"ON" if cloud_saves else "OFF"}', f'-DHALO_CLOUD_CONTAINER={cloud_container}',
-            f'-DHALO_BENCHMARK_UPLOAD={"ON" if benchmark_upload else "OFF"}']
+            f'-DHALO_BENCHMARK_UPLOAD={"ON" if benchmark_upload else "OFF"}',
+            f'-DHALO_SHADER_UPLOAD={"ON" if shader_upload else "OFF"}']
 
 
 def data_pack_settings(args):
@@ -603,7 +608,7 @@ def build_mac(args, cloud, data_packs=()):
         *host_pgo_flags(args.host_pgo))
     # ad hoc, except with --cloud-saves or --benchmark-upload: iCloud entitlements need a development signature and a
     # Mac profile (and the Mac itself registered with the team, which a Mac profile lists as its device)
-    signing=(['-allowProvisioningUpdates','-allowProvisioningDeviceRegistration'] if args.cloud_saves or args.benchmark_upload else
+    signing=(['-allowProvisioningUpdates','-allowProvisioningDeviceRegistration'] if args.cloud_saves or args.benchmark_upload or args.shader_upload else
              ['CODE_SIGN_STYLE=Manual','CODE_SIGN_IDENTITY=-','DEVELOPMENT_TEAM='])
     drop_stale_ffmpeg_license(build, args.bink)
     run('cmake','--build',build,'--config','Release','--target','VISR','--','-quiet',

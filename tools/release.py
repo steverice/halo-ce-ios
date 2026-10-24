@@ -36,6 +36,11 @@ PLATFORMS = {
     "visionos": ("VISION_OS", "xros"),
 }
 MARKER = "\n\n<!-- visr-release-state "
+SHADER_UPLOAD_DISCLOSURE = (
+    "VISR automatically sends missing shader descriptions and device model information to improve loading. "
+    "Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. "
+    "Turn off Share shader improvements in settings to stop future contributions."
+)
 SUMMARY_HEADING = "### Summary"
 CHANGELOG_DETAILS_HEADING = "### Full changelog"
 TESTFLIGHT_NOTES_LIMIT = 4000
@@ -60,6 +65,14 @@ def benchmark_upload_arguments(policy: dict[str, str]) -> list[str]:
     else:
         import release_validation as validation
     return ["--benchmark-upload"] if validation.benchmark_upload_enabled(policy) else []
+
+
+def shader_upload_arguments(policy: dict[str, str]) -> list[str]:
+    if __package__:
+        from . import release_validation as validation
+    else:
+        import release_validation as validation
+    return ["--shader-upload"] if validation.shader_upload_enabled(policy) else []
 
 
 def manifest_guest_epoch(manifest: dict[str, Any]) -> str:
@@ -211,6 +224,10 @@ def extract_testflight_summary(full_notes: str) -> str:
 
 def testflight_summary_for_release(full_notes: str, manifest: dict[str, Any]) -> str:
     """Use a pinned summary, or the original full note for legacy manifests."""
+    if manifest.get("build_policy", {}).get("shader_upload", "off") == "on":
+        candidate = manifest.get("testflight_summary", full_notes)
+        if SHADER_UPLOAD_DISCLOSURE not in candidate:
+            raise ValueError("Shader upload What to Test disclosure is missing")
     summary_key = "testflight_summary"
     digest_key = "testflight_summary_sha256"
     has_summary, has_digest = summary_key in manifest, digest_key in manifest
@@ -232,6 +249,13 @@ def testflight_summary_for_release(full_notes: str, manifest: dict[str, Any]) ->
     if extract_testflight_summary(full_notes) != summary:
         raise ValueError("Release manifest TestFlight summary differs from changelog")
     return summary
+
+
+def shader_upload_summary(summary: str, policy: dict[str, str]) -> str:
+    """Pin the shader disclosure into the reviewed What to Test text."""
+    if policy.get("shader_upload", "off") == "on" and SHADER_UPLOAD_DISCLOSURE not in summary:
+        summary = summary.rstrip() + "\n\n" + SHADER_UPLOAD_DISCLOSURE
+    return validate_testflight_summary(summary)
 
 
 def release_summary_model() -> str:
@@ -729,6 +753,7 @@ def prepare(args: argparse.Namespace) -> None:
             catalog_context=catalog_context,
             model=summary_model,
         )
+        summary = shader_upload_summary(summary, policy)
         changelog = insert_testflight_summary_into_changelog(
             changelog, version, summary
         )
@@ -1249,6 +1274,7 @@ def publish(args: argparse.Namespace) -> None:
                 "--benchmark-routes",
                 "off",
                 *benchmark_upload_arguments(policy),
+                *shader_upload_arguments(policy),
                 *(
                     ["--shader-feed-url", policy["shader_feed_url"]]
                     if "shader_feed_url" in policy
@@ -1264,7 +1290,7 @@ def publish(args: argparse.Namespace) -> None:
             if platform != "ios":
                 command.append(f"--{platform}")
             run(*command, root=root, env=build_env)
-            if validation.benchmark_upload_enabled(policy):
+            if validation.benchmark_upload_enabled(policy) or validation.shader_upload_enabled(policy):
                 validation.verify_exported_ipa(package)
             require_clean_checkout(root)
             archive = package / "VISR.xcarchive"
@@ -1275,6 +1301,7 @@ def publish(args: argparse.Namespace) -> None:
                     "app-device",
                     app=archive / "Products/Applications/VISR.app",
                     benchmark_upload=validation.benchmark_upload_enabled(policy),
+                    shader_upload=validation.shader_upload_enabled(policy),
                     guest_source_date_epoch=guest_epoch if GUEST_EPOCH_FIELD in manifest else None,
                 ),
                 policy,
