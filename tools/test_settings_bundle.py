@@ -53,18 +53,12 @@ def test_generated_settings_follow_each_build_capability(tmp_path, cloud, shader
     rows = plistlib.loads((output / "Root.plist").read_bytes())["PreferenceSpecifiers"]
     keys = {row.get("Key"): row for row in rows}
     assert ("cloud_saves" in keys) == (cloud == "on")
-    assert ("share_shader_improvements" in keys) == (shader == "on")
-    if shader == "on":
-        assert keys["share_shader_improvements"]["DefaultValue"] is True
-        from tools.release import SHADER_UPLOAD_DISCLOSURE
-        assert any(row.get("FooterText") == SHADER_UPLOAD_DISCLOSURE for row in rows)
+    assert "share_shader_improvements" not in keys
 
 
 def test_base_settings_do_not_offer_inactive_shader_controls():
     root = plistlib.loads((ROOT / "port/ios/Settings.bundle/Root.plist").read_bytes())
     assert not any(row.get("Key") == "share_shader_improvements" for row in root["PreferenceSpecifiers"])
-    with pytest.raises(ValueError, match="already has"):
-        settings_bundle.with_shader_rows(settings_bundle.with_shader_rows(root))
 
 
 @pytest.mark.parametrize("cloud", [False, True])
@@ -89,4 +83,4 @@ def test_cmake_settings_selection_resets_after_shader_upload_turns_off(tmp_path,
         rows = plistlib.loads((bundle / "Root.plist").read_bytes())["PreferenceSpecifiers"]
         keys = {row.get("Key") for row in rows}
         assert ("cloud_saves" in keys) == cloud
-        assert ("share_shader_improvements" in keys) == shader
+        assert "share_shader_improvements" not in keys

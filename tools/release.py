@@ -41,7 +41,7 @@ MARKER = "\n\n<!-- visr-release-state "
 SHADER_UPLOAD_DISCLOSURE = (
     "VISR automatically sends missing shader descriptions and device model information to improve loading. "
     "Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. "
-    "Turn off Share shader improvements in settings to stop future contributions."
+    "Shader diagnostics are required in builds with shader uploads enabled."
 )
 SUMMARY_HEADING = "### Summary"
 CHANGELOG_DETAILS_HEADING = "### Full changelog"

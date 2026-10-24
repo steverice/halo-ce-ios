@@ -19,15 +19,15 @@ with tempfile.TemporaryDirectory() as folder:
     (root / "maps" / "sample.map").write_bytes(b"head" + struct.pack("<I", 7) + bytes(128))
     for mode in ("persist", "recover", "sent"):
         subprocess.run([sys.argv[1], folder, mode], check=True)
-print("shader worker: persistence, recovery, sent membership, opt-out and retry probes passed")
+print("shader worker: persistence, recovery, sent membership and retry probes passed")
 
-for mode in ("offline", "quota", "race", "schema", "limits", "threshold", "lateimport", "timeout-race", "producer-race", "activation-race", "fallback"):
+for mode in ("offline", "quota", "race", "schema", "limits", "threshold", "lateimport", "timeout-race", "fallback", "suppress-HALO_RUNNER", "suppress-HALO_BENCHMARK_SUITE", "suppress-HALO_RENDER_REPLAY", "suppress-HALO_PROBE"):
     with tempfile.TemporaryDirectory() as folder:
         root = pathlib.Path(folder)
         (root / "maps").mkdir()
         (root / "maps" / "sample.map").write_bytes(b"head" + struct.pack("<I", 7) + bytes(128))
         subprocess.run([sys.argv[1], folder, mode], check=True)
-print("shader worker: offline retry, daily quota, schema pause and late opt-out completion passed")
+print("shader worker: offline retry, daily quota, schema pause and suspended completion and scripted-run suppression passed")
 
 with tempfile.TemporaryDirectory() as folder:
     root = pathlib.Path(folder)

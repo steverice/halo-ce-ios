@@ -109,7 +109,7 @@ is copied, the privacy notes and how to build with it.
 
 ## Shader improvements
 
-VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Turn off Share shader improvements in settings to stop future contributions.
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
 
 See [shader contribution privacy](port/ios/privacy/README.md) for retention and build policy.
 

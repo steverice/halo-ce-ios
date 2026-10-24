@@ -5,7 +5,6 @@ struct shader_observation;
 void host_shader_upload_start(const char *guest_sha256);
 void host_shader_upload_suspend(void);
 void host_shader_upload_prepare(void);
-void host_shader_upload_settings(void);
 uint32_t host_shader_observation_activate(const char *map_name, int suppressed, char *map_key, uint32_t map_key_size);
 void host_shader_observation_append(uint32_t token, const struct shader_observation *descriptor);
 int host_shader_observation_recording(void);

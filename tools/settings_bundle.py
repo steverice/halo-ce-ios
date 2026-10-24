@@ -19,24 +19,6 @@ CLOUD_ROWS = [
 ]
 
 
-SHADER_ROWS = [
-    {'Type': 'PSGroupSpecifier', 'Title': 'Shader improvements',
-     'FooterText': 'VISR automatically sends missing shader descriptions and device model information to improve loading. '
-                   "Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. "
-                   'Turn off Share shader improvements in settings to stop future contributions.'},
-    {'Type': 'PSToggleSwitchSpecifier', 'Title': 'Share shader improvements',
-     'Key': 'share_shader_improvements', 'DefaultValue': True},
-]
-
-
-def with_shader_rows(root):
-    """Add the contribution control only when its build capability is enabled."""
-    keys = {row.get('Key') for row in root['PreferenceSpecifiers']}
-    if any(row['Key'] in keys for row in SHADER_ROWS if 'Key' in row):
-        raise ValueError('the Settings bundle already has a shader improvements row')
-    return {**root, 'PreferenceSpecifiers': [*root['PreferenceSpecifiers'], *SHADER_ROWS]}
-
-
 def with_cloud_rows(root):
     """the bundle's Root.plist content with the iCloud saves group after the rows it has"""
     keys = {row.get('Key') for row in root['PreferenceSpecifiers']}
@@ -59,8 +41,6 @@ def main():
     root = plistlib.loads((args.source / 'Root.plist').read_bytes())
     if args.cloud_saves == 'on':
         root = with_cloud_rows(root)
-    if args.shader_upload == 'on':
-        root = with_shader_rows(root)
     (args.output / 'Root.plist').write_bytes(plistlib.dumps(root, fmt=plistlib.FMT_XML, sort_keys=False))
 
 

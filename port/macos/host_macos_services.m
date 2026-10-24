@@ -40,14 +40,8 @@ const char *host_macos_data_root(void) {
 }
 @interface VISRMacActions : NSObject
 - (void)quit:(id)sender;
-#if HALO_SHADER_UPLOAD
-- (void)shaderSettings:(id)sender;
-#endif
 @end
 @implementation VISRMacActions
-#if HALO_SHADER_UPLOAD
-- (void)shaderSettings:(id)sender { (void)sender; host_shader_upload_settings(); }
-#endif
 - (void)quit:(id)sender {
     (void)sender;
     SDL_Event event = { .type = SDL_EVENT_QUIT };
@@ -87,10 +81,6 @@ void host_macos_window_ready(void *sdl_window) {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@"VISR"];
     NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Quit VISR" action:@selector(quit:) keyEquivalent:@"q"];
     quit.target = actions;
-#if HALO_SHADER_UPLOAD
-    NSMenuItem *settings=[[NSMenuItem alloc] initWithTitle:@"Share shader improvements…" action:@selector(shaderSettings:) keyEquivalent:@","];
-    settings.target=actions;[menu addItem:settings];
-#endif
     [menu addItem:quit];
     application.submenu = menu;
     NSApp.mainMenu = bar;

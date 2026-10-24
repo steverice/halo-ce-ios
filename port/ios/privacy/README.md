@@ -1,6 +1,6 @@
 # Privacy manifests
 
-VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Turn off Share shader improvements in settings to stop future contributions.
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
 
 The app bundle carries one `PrivacyInfo.xcprivacy`, chosen by upload capability:
 
@@ -10,7 +10,7 @@ The app bundle carries one `PrivacyInfo.xcprivacy`, chosen by upload capability:
 
 CloudKit attaches a creator user record ID even though the report payload omits account information.
 
-Shader upload capability is independent of benchmark uploads. Local builds default to neither. Eligible builds expose **Share shader improvements**, enabled by default. Turning it off stops collection, cancels delivery and discards pending contributions. Previously uploaded records remain subject to server retention. Local sent hashes remain to prevent repeat contributions; bounded retention of these hashes can permit resends after eviction.
+Shader upload capability is independent of benchmark uploads. Local builds default to neither. Builds with shader uploads enabled collect and deliver reports automatically. There is no player preference to disable them. Scripted runs, runners and replays suppress uploads. Previously uploaded records remain subject to server retention. Local sent hashes remain to prevent repeat contributions; bounded retention of these hashes can permit resends after eviction.
 
 Shader reports contain canonical missing compilation descriptors and their supporting dependencies, a full map-file fingerprint and format, renderer, coarse device model and platform, app version and build, exact guest code hash, descriptor ABI and selected shader-list identity. A random per-batch nonce separates otherwise identical reports. Reports exclude map display names, file paths, usernames, account IDs, session IDs, timestamps, gameplay, settings, shader source and game assets. The nonce identifies an immutable batch, not a player or session.
 

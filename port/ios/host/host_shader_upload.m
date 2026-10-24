@@ -25,7 +25,6 @@
 #endif
 #define ROOT @"shader-upload"
 #define OUTBOX @"shader-upload/outbox"
-#define SETTING @"share_shader_improvements"
 #define DECODED_LIMIT (256*1024)
 #define COMPRESSED_LIMIT (128*1024)
 static NSString *sha(NSData *data) {
@@ -95,10 +94,9 @@ static dispatch_queue_t worker, identity_worker, ui_identity_worker;
 static dispatch_source_t timer;
 static struct shader_observation_collector collector;
 /* Slots are immutable after publication and never reused while the producer lives. */
-static struct { struct shader_observation_generation value; atomic_int ready; unsigned consent_epoch; } generations[128];
-static atomic_uint token_count, collection_epoch;
-static atomic_int enabled, menu, suspended, runtime_suppressed, purge_pending;
-static atomic_uint purge_request;
+static struct { struct shader_observation_generation value; atomic_int ready; } generations[128];
+static atomic_uint token_count;
+static atomic_int enabled, menu, suspended, runtime_suppressed;
 static NSMutableDictionary *groups, *state;
 static sqlite3 *membership_db;
 static NSString *guest;
@@ -111,7 +109,7 @@ static NSUInteger test_attempts;
 static void (^test_completion)(BOOL,NSError *);
 static dispatch_block_t test_timeout, test_previous_timeout;
 #endif
-static NSUInteger epoch, active_attempt;
+static NSUInteger active_attempt;
 static BOOL eligible;
 static NSTimeInterval idle_start;
 static NSData *journal_written;   /* worker only: the journal bytes last synced to working.json */
@@ -216,11 +214,11 @@ static void freeze(NSMutableDictionary *group) {
     trim_pending();
 }
 static void checkpoint(BOOL force) {
-    if(!atomic_load(&enabled) || atomic_load(&purge_pending))return;
+    if(!atomic_load(&enabled))return;
     NSUInteger total=0;for(NSDictionary *g in groups.allValues)total+=[g[@"misses"] count];
     struct shader_observation_item item;NSUInteger drained=0;
     while(drained++<SHADER_OBSERVATION_CAPACITY && shader_observations_take(&collector,&item)) { @autoreleasepool {
-        if(!item.generation.token || item.generation.token>128 || (!atomic_load_explicit(&generations[item.generation.token-1].ready,memory_order_acquire) || generations[item.generation.token-1].consent_epoch!=atomic_load_explicit(&collection_epoch,memory_order_acquire)))continue;
+        if(!item.generation.token || item.generation.token>128 || (!atomic_load_explicit(&generations[item.generation.token-1].ready,memory_order_acquire)))continue;
         char line[SHADER_OBSERVATION_LINE_MAX],v[SHADER_OBSERVATION_LINE_MAX],p[SHADER_OBSERVATION_LINE_MAX];
         if(!shader_observations_lines(&item.descriptor,line,v,p) || item.descriptor.warming)continue;
         NSString *key=[NSString stringWithFormat:@"%u",item.generation.token];NSMutableDictionary *group=groups[key];
@@ -282,7 +280,7 @@ static void acknowledge(NSString *path,NSDictionary *payload) {
     }
 }
 static void deliver(void) {
-    if(inflight || atomic_load(&purge_pending) || !atomic_load(&enabled) || atomic_load(&runtime_suppressed) || atomic_load(&suspended) || !atomic_load(&menu) || host_benchmark_running())return;
+    if(inflight || !atomic_load(&enabled) || atomic_load(&runtime_suppressed) || atomic_load(&suspended) || !atomic_load(&menu) || host_benchmark_running())return;
     NSString *version=[NSString stringWithFormat:@"%@/%@",[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"], [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]];
     if([state[@"paused"] isEqual:version])return;
     NSTimeInterval now=NSDate.date.timeIntervalSince1970;
@@ -314,7 +312,7 @@ static void deliver(void) {
         for(NSString *key in @[@"schema",@"mapFingerprint",@"mapKey",@"mapFormat",@"model",@"platform",@"renderer",@"appVersion",@"appBuild",@"guestSHA256",@"descriptorABI",@"shaderListID"])record[key]=payload[key];
         record[@"payloadSHA256"]=sha(raw);record[@"descriptorCount"]=@([payload[@"descriptors"] count]);
         record[@"payload"]=[[CKAsset alloc] initWithFileURL:asset];
-        NSUInteger operation_epoch=epoch, operation_attempt=++active_attempt;NSTimeInterval operation_deadline=NSDate.date.timeIntervalSince1970+12;
+        NSUInteger operation_attempt=++active_attempt;NSTimeInterval operation_deadline=NSDate.date.timeIntervalSince1970+12;
         CKModifyRecordsOperation *operation=[[CKModifyRecordsOperation alloc] initWithRecordsToSave:@[record] recordIDsToDelete:nil];
         operation.savePolicy=CKRecordSaveIfServerRecordUnchanged;operation.atomic=YES;
         operation.configuration.timeoutIntervalForRequest=12;operation.configuration.timeoutIntervalForResource=12;
@@ -328,7 +326,7 @@ static void deliver(void) {
             dispatch_async(worker,^{
                 if(finished)return;finished=YES;
                 [NSFileManager.defaultManager removeItemAtURL:asset error:nil];
-                if(operation_epoch!=epoch || !atomic_load(&enabled))return;
+                if(!atomic_load(&enabled))return;
                 if(operation_attempt==active_attempt)inflight=nil;
                 if(success){acknowledge(path,payload);[state[@"retries"] removeObjectForKey:path.lastPathComponent];}
                 else {
@@ -358,7 +356,7 @@ static void deliver(void) {
                 BOOL equal=!failure && [existing[@"payloadSHA256"] isEqual:sha(raw)] && [decoded isEqual:raw];
                 finish(equal,failure ?: specific);
             };
-            dispatch_async(worker,^{if(!finished && operation_epoch==epoch && operation_attempt==active_attempt && atomic_load(&enabled) && NSDate.date.timeIntervalSince1970<operation_deadline){inflight=fetch;[container.publicCloudDatabase addOperation:fetch];}else [fetch cancel];});
+            dispatch_async(worker,^{if(!finished && operation_attempt==active_attempt && atomic_load(&enabled) && NSDate.date.timeIntervalSince1970<operation_deadline){inflight=fetch;[container.publicCloudDatabase addOperation:fetch];}else [fetch cancel];});
         };
 #pragma clang diagnostic pop
 #if HALO_SHADER_UPLOAD_TESTING
@@ -371,7 +369,7 @@ static void deliver(void) {
         [container.publicCloudDatabase addOperation:operation];
         dispatch_block_t deadline_block=^{
             if(!finished){
-                if(operation_epoch==epoch && operation_attempt==active_attempt){[inflight cancel];inflight=nil;}
+                if(operation_attempt==active_attempt){[inflight cancel];inflight=nil;}
                 finish(NO,[NSError errorWithDomain:CKErrorDomain code:CKErrorNetworkFailure userInfo:nil]);
             }
         };
@@ -382,27 +380,7 @@ static void deliver(void) {
         return;
     }
 }
-static void setting_changed(void) {
-    BOOL on=eligible && [NSUserDefaults.standardUserDefaults boolForKey:SETTING];
-    unsigned requested=0;
-    if(!on){atomic_store(&purge_pending,1);requested=atomic_fetch_add(&purge_request,1)+1;}
-    BOOL previous=atomic_exchange(&enabled,on);
-    if(previous!=on)atomic_fetch_add_explicit(&collection_epoch,1,memory_order_acq_rel);
-    if(!on)for(NSUInteger i=0;i<128;i++)atomic_store_explicit(&generations[i].ready,0,memory_order_release);
-    dispatch_async(worker,^{
-        if(!on){epoch++;[inflight cancel];inflight=nil;[groups removeAllObjects];
-            [NSFileManager.defaultManager removeItemAtPath:OUTBOX error:nil];
-            NSString *temporary=[ROOT stringByAppendingPathComponent:@"temporary"];
-            [NSFileManager.defaultManager removeItemAtPath:temporary error:nil];
-            [NSFileManager.defaultManager createDirectoryAtPath:temporary withIntermediateDirectories:YES attributes:nil error:nil];
-            [NSFileManager.defaultManager createDirectoryAtPath:OUTBOX withIntermediateDirectories:YES attributes:nil error:nil];
-            [NSFileManager.defaultManager removeItemAtPath:[ROOT stringByAppendingPathComponent:@"working.json"] error:nil];journal_written=nil;
-            state[@"retries"]=[NSMutableDictionary dictionary];save_state();
-            struct shader_observation_item ignored;while(shader_observations_take(&collector,&ignored)){}
-            if(requested==atomic_load(&purge_request))atomic_store(&purge_pending,0);
-        }
-    });
-}
+
 #endif
 #if HALO_SHADER_UPLOAD
 static NSString *map_path(NSString *path) {
@@ -435,25 +413,6 @@ static void hash_map(NSString *path) {
     [map_cache_lock unlock];if(cache_bytes.length<=65536)durable(cache_bytes,[ROOT stringByAppendingPathComponent:@"map-identities.json"]);
 }
 #endif
-#if TARGET_OS_TV && HALO_SHADER_UPLOAD
-@interface VISRShaderSettingsAction : NSObject
-- (void)show:(id)sender;
-@end
-@implementation VISRShaderSettingsAction
-- (void)show:(id)sender { (void)sender;host_shader_upload_settings(); }
-@end
-static void refresh_settings_button(void) {
-    static UIButton *button;static VISRShaderSettingsAction *action;
-    UIWindow *window=nil;
-    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes)if([scene isKindOfClass:UIWindowScene.class])for(UIWindow *candidate in ((UIWindowScene *)scene).windows)if(candidate.isKeyWindow)window=candidate;
-    if(!window)return;
-    if(!button){action=[VISRShaderSettingsAction new];button=[UIButton buttonWithType:UIButtonTypeSystem];
-        [button setTitle:@"Share shader improvements" forState:UIControlStateNormal];button.accessibilityLabel=@"Share shader improvements";
-        [button addTarget:action action:@selector(show:) forControlEvents:UIControlEventPrimaryActionTriggered];
-        button.frame=CGRectMake(40,40,400,64);[window addSubview:button];}
-    button.hidden=!atomic_load(&menu) || host_benchmark_running();
-}
-#endif
 void host_shader_upload_start(const char *guest_sha256) {
 #if HALO_SHADER_UPLOAD
     static dispatch_once_t once;dispatch_once(&once,^{
@@ -465,10 +424,14 @@ void host_shader_upload_start(const char *guest_sha256) {
         eligible=NO;
 #endif
         if(getenv("HALO_RUNNER") || getenv("HALO_BENCHMARK_SUITE") || getenv("HALO_RENDER_REPLAY") || getenv("HALO_PROBE"))eligible=NO;
+#if HALO_SHADER_UPLOAD_TESTING
         if(getenv("HALO_SHADER_UPLOAD_TEST_OVERRIDE"))eligible=YES;
+#endif
         guest=guest_sha256 ? @(guest_sha256) : @"";if(!hex(guest,64))eligible=NO;
         shader_observations_init(&collector);groups=[NSMutableDictionary dictionary];map_cache=[NSMutableDictionary dictionary];map_cache_lock=[NSLock new];
-        [NSUserDefaults.standardUserDefaults registerDefaults:@{SETTING:@YES}];
+        /* Discard the retired preference; collection follows build and run eligibility. */
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:@"share_shader_improvements"];
+        atomic_store(&enabled,eligible);
         [NSFileManager.defaultManager createDirectoryAtPath:OUTBOX withIntermediateDirectories:YES attributes:nil error:nil];
         NSString *temporary=[ROOT stringByAppendingPathComponent:@"temporary"];
         [NSFileManager.defaultManager removeItemAtPath:temporary error:nil];
@@ -494,8 +457,6 @@ void host_shader_upload_start(const char *guest_sha256) {
                 for(NSString *name in [NSFileManager.defaultManager subpathsAtPath:folder])
                     if([name.pathExtension isEqual:@"map"] && ![name isEqual:@"ui.map"]){@autoreleasepool{hash_map([folder stringByAppendingPathComponent:name]);}}
         });
-        setting_changed();
-        [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){(void)note;setting_changed();}];
 #if HALO_NATIVE_MAC
         NSString *leave=NSApplicationWillResignActiveNotification,*resume=NSApplicationDidBecomeActiveNotification;
 #else
@@ -547,9 +508,6 @@ void host_shader_upload_start(const char *guest_sha256) {
         timer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,worker);
         dispatch_source_set_timer(timer,dispatch_time(DISPATCH_TIME_NOW,60*NSEC_PER_SEC),60*NSEC_PER_SEC,NSEC_PER_SEC);
         dispatch_source_set_event_handler(timer,^{@autoreleasepool{checkpoint(NO);deliver();
-#if TARGET_OS_TV
-            dispatch_async(dispatch_get_main_queue(),^{refresh_settings_button();});
-#endif
         }});dispatch_resume(timer);
     });
 #else
@@ -565,18 +523,13 @@ uint32_t host_shader_observation_activate(const char *name,int suppressed,char *
     if(key && key_size)*key=0;
 #if HALO_SHADER_UPLOAD
     if(!worker)return 0;
-    unsigned activation_epoch=atomic_load_explicit(&collection_epoch,memory_order_acquire);
     if(!name || !*name){atomic_store(&menu,0);atomic_store(&runtime_suppressed,1);dispatch_async(worker,^{[inflight cancel];});return 0;}
-    if(getenv("HALO_SHADER_UPLOAD_TEST_OVERRIDE"))suppressed=0;
     atomic_store(&runtime_suppressed,suppressed!=0);
     NSString *path=@(name);
     if(![path.pathExtension isEqual:@"map"]){atomic_store(&menu,0);atomic_store(&runtime_suppressed,1);dispatch_async(worker,^{[inflight cancel];});return 0;}
     path=map_path(path);
     atomic_store(&menu,[path.lastPathComponent.stringByDeletingPathExtension isEqual:@"ui"]);
     dispatch_async(worker,^{checkpoint(YES);if(!atomic_load(&menu) || atomic_load(&runtime_suppressed))[inflight cancel];});
-#if TARGET_OS_TV
-    dispatch_async(dispatch_get_main_queue(),^{refresh_settings_button();});
-#endif
     NSString *signature=map_signature(path);
     [map_cache_lock lock];NSDictionary *identity=map_cache[path];[map_cache_lock unlock];
     if(!identity || ![identity[@"signature"] isEqual:signature]) {
@@ -602,7 +555,6 @@ uint32_t host_shader_observation_activate(const char *name,int suppressed,char *
     NSString *hash=feed[@"sha256"];if(!hex(hash,64))return 0;
     NSString *list=[NSString stringWithFormat:@"shader-lists-2:%@:%@",[feed[@"bundled"] boolValue] ? @"bundled" : [feed[@"sequence"] description],hash];
     snprintf(g->shader_list_id,sizeof(g->shader_list_id),"%s",list.UTF8String);
-    generations[index].consent_epoch=activation_epoch;
     atomic_store_explicit(&generations[index].ready,1,memory_order_release);
     if(key && key_size)snprintf(key,key_size,"%s",g->map_key);
     return index+1;
@@ -612,7 +564,7 @@ uint32_t host_shader_observation_activate(const char *name,int suppressed,char *
 }
 void host_shader_observation_append(uint32_t token,const struct shader_observation *descriptor) {
 #if HALO_SHADER_UPLOAD
-    if(!atomic_load(&enabled) || !token || token>128 || (!atomic_load_explicit(&generations[token-1].ready,memory_order_acquire) || generations[token-1].consent_epoch!=atomic_load_explicit(&collection_epoch,memory_order_acquire)))return;
+    if(!atomic_load(&enabled) || !token || token>128 || (!atomic_load_explicit(&generations[token-1].ready,memory_order_acquire)))return;
     shader_observations_append(&collector,&generations[token-1].value,descriptor);
 #else
     (void)token;(void)descriptor;
@@ -625,32 +577,11 @@ int host_shader_observation_recording(void) {
     return 0;
 #endif
 }
-void host_shader_upload_settings(void) {
-#if HALO_SHADER_UPLOAD
-#if HALO_NATIVE_MAC
-    NSAlert *alert=[NSAlert new];alert.messageText=@"Share shader improvements";
-    alert.informativeText=@"Send missing shader descriptions and device model information to improve loading. Apple's upload service attaches an account-specific identifier. Previously sent reports follow server retention.";
-    [alert addButtonWithTitle:@"Turn On"];[alert addButtonWithTitle:@"Turn Off"];[alert addButtonWithTitle:@"Cancel"];
-    NSModalResponse choice=[alert runModal];
-    if(choice==NSAlertFirstButtonReturn || choice==NSAlertSecondButtonReturn){[NSUserDefaults.standardUserDefaults setBool:choice==NSAlertFirstButtonReturn forKey:SETTING];setting_changed();}
-#else
-    UIViewController *root=nil;
-    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes)if([scene isKindOfClass:UIWindowScene.class])for(UIWindow *window in ((UIWindowScene *)scene).windows)if(window.isKeyWindow)root=window.rootViewController;
-    while(root.presentedViewController)root=root.presentedViewController;
-    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Share shader improvements" message:@"Send missing shader descriptions and device model information to improve loading. Apple's upload service attaches an account-specific identifier. Previously sent reports follow server retention." preferredStyle:UIAlertControllerStyleAlert];
-    for(NSNumber *on in @[@YES,@NO])[alert addAction:[UIAlertAction actionWithTitle:on.boolValue ? @"Turn On" : @"Turn Off" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){(void)action;[NSUserDefaults.standardUserDefaults setBool:on.boolValue forKey:SETTING];setting_changed();}]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];[root presentViewController:alert animated:YES completion:nil];
-#endif
-#endif
-}
-
 #if HALO_SHADER_UPLOAD && HALO_SHADER_UPLOAD_TESTING
 void host_shader_upload_test_barrier(int force) {
     dispatch_sync(identity_worker,^{});dispatch_sync(ui_identity_worker,^{});dispatch_sync(worker,^{checkpoint(force!=0);});
 }
-void host_shader_upload_test_opt_out(void) {
-    [NSUserDefaults.standardUserDefaults setBool:NO forKey:SETTING];setting_changed();dispatch_sync(worker,^{});
-}
+
 void host_shader_upload_test_acknowledge(NSString *path) {
     dispatch_sync(worker,^{NSDictionary *payload=[NSJSONSerialization JSONObjectWithData:bounded_read(path,DECODED_LIMIT) options:0 error:nil];acknowledge(path,payload);});
 }
@@ -666,11 +597,7 @@ void host_shader_upload_test_send(int outcome,int advance) {
 }
 NSUInteger host_shader_upload_test_attempts(void) {__block NSUInteger result;dispatch_sync(worker,^{result=test_attempts;});return result;}
 void host_shader_upload_test_complete(void) {dispatch_sync(worker,^{if(test_completion){test_completion(YES,nil);test_completion=nil;}});dispatch_sync(worker,^{});}
-void host_shader_upload_test_late_activation(uint32_t token) {atomic_store_explicit(&generations[token-1].ready,1,memory_order_release);}
-void host_shader_upload_test_late_append(uint32_t token,const struct shader_observation *descriptor) {
-    shader_observations_append(&collector,&generations[token-1].value,descriptor);
-}
-void host_shader_upload_test_opt_in(void) {[NSUserDefaults.standardUserDefaults setBool:YES forKey:SETTING];setting_changed();dispatch_sync(worker,^{});}
+void host_shader_upload_test_timeout(void) {dispatch_sync(worker,^{test_timeout();});dispatch_sync(worker,^{});}
 void host_shader_upload_test_archive_timeout(void) {dispatch_sync(worker,^{test_previous_timeout=[test_timeout copy];});}
 BOOL host_shader_upload_test_old_timeout(void) {__block BOOL result;dispatch_sync(worker,^{test_previous_timeout();result=inflight!=nil;test_previous_timeout=nil;});dispatch_sync(worker,^{});return result;}
 void host_shader_upload_test_trim(void) {dispatch_sync(worker,^{trim_pending();});}
