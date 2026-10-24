@@ -199,8 +199,11 @@ picture's pass is not ended and begun again around every shadow. A shadow
 the frame already generated for the same object with the same matrix (the
 other eye's, or a mirror's window) is applied again from its targets
 rather than drawn again. A frame with more shadows than slots generates
-the rest the game's own way, in the apply stretch. */
-#define DEFERRED_SHADOW_ENTRIES 95
+the rest the game's own way, in the apply stretch. The shadows are drawn
+into tiles of the shadow atlas (rasterizer_xbox.c), one render pass a page
+rather than one a shadow, and blurred out of them once the window's are
+all drawn. */
+#define DEFERRED_SHADOW_ENTRIES 256
 
 struct deferred_shadow
 {
@@ -221,6 +224,23 @@ static short deferred_shadow_current = NONE;
 
 boolean rasterizer_shadow_slot_select(short slot);
 short rasterizer_shadow_slot_count(void);
+void rasterizer_shadow_atlas_frame_begin(void);
+short rasterizer_shadow_atlas_capacity(void);
+boolean rasterizer_shadow_atlas_select(short tile);
+boolean rasterizer_shadow_atlas_mapping(real *u0, real *v0, real *scale);
+
+/* the window's first deferred shadow (rasterizer_environment_shadows_defer_begin): those from it on are
+blurred when the window's shadows are all drawn */
+static short deferred_shadow_window_first = 0;
+
+/* with the atlas: a frame's deferred shadows are drawn into atlas tiles, each blurred from there into its
+slot's second target when the window's are all drawn. The atlas needs the blur (with
+shadow_convolution_enabled off, the shadow is applied from its first target, which is then a tile) */
+static boolean deferred_shadows_in_atlas(
+	void)
+{
+	return rasterizer_debug_options.shadow_convolution_enabled && rasterizer_shadow_atlas_capacity() > 0;
+}
 
 /* ---------- public code */
 
@@ -274,7 +294,12 @@ boolean _rasterizer_environment_shadow_begin(
 				*shadow_volume_bounding_radius = object_bounding_radius;
 			return TRUE;
 		}
-		if (deferred_shadow_count < DEFERRED_SHADOW_ENTRIES && rasterizer_shadow_slot_select(deferred_shadow_count + 1))
+		if (deferred_shadow_count < DEFERRED_SHADOW_ENTRIES &&
+			(deferred_shadows_in_atlas() ?
+				deferred_shadow_count < rasterizer_shadow_atlas_capacity() &&
+					rasterizer_shadow_atlas_select(deferred_shadow_count) :
+				deferred_shadow_count + 1 < rasterizer_shadow_slot_count() &&
+					rasterizer_shadow_slot_select(deferred_shadow_count + 1)))
 		{
 			struct deferred_shadow *entry = &deferred_shadows[deferred_shadow_count];
 
@@ -934,7 +959,9 @@ boolean rasterizer_environment_shadows_defer_begin(
 	{
 		deferred_shadow_frame = rasterizer_globals.fps_accumulation_frame_index;
 		deferred_shadow_count = 0;
+		rasterizer_shadow_atlas_frame_begin();
 	}
+	deferred_shadow_window_first = deferred_shadow_count;
 	deferred_shadows_generating = TRUE;
 	return TRUE;
 }
@@ -963,7 +990,8 @@ void rasterizer_environment_shadow_generate_end(
 		{
 			error(_error_silent, "### WARNING empty shadow has been cast");
 		}
-		if (rasterizer_debug_options.shadow_convolution_enabled)
+		/* (from the atlas, once the window's are all drawn: rasterizer_environment_shadows_defer_end) */
+		if (rasterizer_debug_options.shadow_convolution_enabled && !deferred_shadows_in_atlas())
 		{
 			rasterizer_shadow_convolve();
 		}
@@ -977,6 +1005,17 @@ void rasterizer_environment_shadows_defer_end(
 	void)
 {
 	deferred_shadows_generating = FALSE;
+	/* the window's new shadows, blurred out of their tiles: one render pass each, into their slots */
+	if (deferred_shadows_drawn && deferred_shadows_in_atlas())
+	{
+		short index;
+
+		for (index = deferred_shadow_window_first; index < deferred_shadow_count; index++)
+		{
+			if (rasterizer_shadow_atlas_select(index))
+				rasterizer_shadow_convolve();
+		}
+	}
 	rasterizer_shadow_slot_select(0);
 	if (deferred_shadows_drawn)
 	{
@@ -1002,7 +1041,8 @@ void rasterizer_environment_shadow_apply_begin(
 	if (handle < 0 || handle >= deferred_shadow_count)
 		return;
 	entry = &deferred_shadows[handle];
-	rasterizer_shadow_slot_select(handle + 1);
+	if (!deferred_shadows_in_atlas() || !rasterizer_shadow_atlas_select(handle))
+		rasterizer_shadow_slot_select(handle + 1);
 	local_shadow_matrix = entry->matrix;
 	local_shadow_color = entry->color;
 	local_object_bounding_radius = entry->radius;
@@ -1130,6 +1170,24 @@ static void rasterizer_shadow_convolve(
 		vertex_constants[7][1] = 1.0f;
 		vertex_constants[7][2] = 0.0f;
 		vertex_constants[7][3] = -0.00390625f;
+		/* port: from an atlas tile, the coordinates moved into it (the gutter
+		past its edges is black, as the border the taps there read) */
+		{
+			real u0, v0, scale;
+
+			if (rasterizer_shadow_atlas_mapping(&u0, &v0, &scale))
+			{
+				short row;
+
+				for (row = 0; row < 8; row++)
+				{
+					vertex_constants[row][0] *= scale;
+					vertex_constants[row][1] *= scale;
+					vertex_constants[row][2] *= scale;
+					vertex_constants[row][3] = vertex_constants[row][3] * scale + ((row & 1) ? v0 : u0);
+				}
+			}
+		}
 		IDirect3DDevice8_SetVertexShaderConstant(
 			global_d3d_device,
 			-81,

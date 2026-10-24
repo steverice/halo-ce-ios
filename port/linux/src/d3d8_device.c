@@ -1110,6 +1110,87 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 	}
 }
 
+/* the object shadows' atlas pages (rasterizer_xbox.c, rasterizer_shadow_atlas_*): R5G6B5 targets whose tiles
+are the game's 128x128 shadow maps, so they are drawn at the shadow maps' scale like them. The game names
+them here as it makes them, and forgets them before it frees them. */
+#define SHADOW_ATLAS_PAGES 64
+static unsigned long shadow_atlas_pages[SHADOW_ATLAS_PAGES];
+
+static int shadow_atlas_page(unsigned long data)
+{
+	int index;
+
+	for (index = 0; index < SHADOW_ATLAS_PAGES; index++)
+		if (data && shadow_atlas_pages[index] == data)
+			return 1;
+	return 0;
+}
+
+/* how much larger than the game's 128 texels a shadow map is drawn (display.shadow_map_size, or a benchmark
+case's or the knob cycle's) */
+float halo_shadow_target_scale(void)
+{
+	float scale[2];
+
+	offscreen_target_scale(128, 128, D3DFMT_R5G6B5, scale);
+	return scale[0];
+}
+
+static void recent_render_targets_forget(void);
+
+/* out of its address bucket, and freed (the backend holds the texture until the frames using it are done) */
+static void render_target_entry_free(struct render_target_entry *entry)
+{
+	struct render_target_entry **bucket = render_target_bucket(entry->target.data);
+
+	while (*bucket && *bucket != entry)
+		bucket = &(*bucket)->next_in_bucket;
+	if (*bucket)
+		*bucket = entry->next_in_bucket;
+	gpu_texture_destroy(entry->target.texture);
+	free(entry);
+}
+
+void halo_shadow_atlas_register(D3DSurface *surface)
+{
+	int index;
+
+	if (!surface || !surface->Data || shadow_atlas_page(surface->Data))
+		return;
+	for (index = 0; index < SHADOW_ATLAS_PAGES; index++)
+		if (!shadow_atlas_pages[index])
+		{
+			shadow_atlas_pages[index] = surface->Data;
+			return;
+		}
+}
+
+/* the page's targets go with it (its memory may be another texture's next) */
+void halo_shadow_atlas_forget(D3DSurface *surface)
+{
+	struct render_target_entry **link = &render_targets;
+	int index;
+
+	if (!surface || !surface->Data)
+		return;
+	for (index = 0; index < SHADOW_ATLAS_PAGES; index++)
+		if (shadow_atlas_pages[index] == surface->Data)
+			shadow_atlas_pages[index] = 0;
+	recent_render_targets_forget();
+	while (*link)
+	{
+		struct render_target_entry *entry = *link;
+
+		if (entry->target.data != surface->Data)
+		{
+			link = &entry->next;
+			continue;
+		}
+		*link = entry->next;
+		render_target_entry_free(entry);
+	}
+}
+
 /* the layer a screen-sized target is drawn for now: in a stereo frame each
 eye, the HUD and the zoomed picture have their own textures (the one layer
 key: a new layer is a change to halo_stereo.h), else the one the game
@@ -1219,6 +1300,8 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 			scale[1] *= halo_stereo_hud_resolution();
 		}
 	}
+	else if (shadow_atlas_page(surface->Data))
+		scale[0] = scale[1] = halo_shadow_target_scale();
 	else
 		offscreen_target_scale(width, height, format, scale);
 	for (entry = *render_target_bucket(surface->Data); entry; entry = entry->next_in_bucket)
@@ -6373,6 +6456,8 @@ static void knob_targets_release(void)
 				(entry->target.width == 320 && entry->target.height == 240)))
 			offscreen_target_scale(entry->target.width, entry->target.height,
 				entry->target.depth ? D3DFMT_D24S8 : D3DFMT_R5G6B5, scale);
+		else if (shadow_atlas_page(entry->target.data))
+			scale[0] = scale[1] = halo_shadow_target_scale();
 		else
 		{
 			link = &entry->next;
