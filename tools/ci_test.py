@@ -59,6 +59,7 @@ def main() -> None:
     run(sys.executable, "tools/settings_schema.py", "--check")
     run(sys.executable, "tools/profile_check.py")
     run(sys.executable, "tools/profile_catalog_check.py")
+    run(sys.executable, "tools/perf_compare/refresh.py", "render", "--check")
     if args.linux:
         for name in sorted(STANDALONE):
             run(sys.executable, f"tools/{name}")

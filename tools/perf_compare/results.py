@@ -1,0 +1,204 @@
+"""Parse interval evidence and render the sanitized benchmark summary."""
+
+import html
+import json
+import math
+
+
+def parse_hud(text: str) -> list[float]:
+    """Read millisecond intervals from Apple's per-frame Metal HUD CSV logs."""
+    intervals = []
+    seen = set()
+    for line in text.splitlines():
+        if line.lstrip().startswith("{"):
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            line = record.get("eventMessage", record.get("message", ""))
+            if not isinstance(line, str):
+                continue
+        if "metal-HUD:" not in line:
+            continue
+        fields = line.split("metal-HUD:", 1)[1].strip().split(",")
+        if len(fields) < 5 or (len(fields) - 3) % 2:
+            continue
+        try:
+            first_frame = int(fields[0])
+            memory = [float(field) for field in fields[1:3]]
+        except ValueError:
+            continue
+        if first_frame < 0 or any(not math.isfinite(value) or value < 0 for value in memory):
+            continue
+        # Invalid pairs still occupy their documented frame number. Shifting
+        # later pairs would silently defeat overlap deduplication.
+        for index in range(3, len(fields), 2):
+            frame = first_frame + (index - 3) // 2
+            try:
+                interval, gpu = float(fields[index]), float(fields[index + 1])
+            except ValueError:
+                continue
+            if not math.isfinite(interval) or interval <= 0 or not math.isfinite(gpu) or gpu < 0 or frame in seen:
+                continue
+            seen.add(frame)
+            intervals.append(interval)
+    return intervals
+
+
+def parse_raf(timestamps: list[float]) -> list[float]:
+    """Convert strictly increasing browser millisecond timestamps to intervals."""
+    if not all(math.isfinite(value) for value in timestamps):
+        raise ValueError("RAF timestamps must be finite")
+    intervals = [current - previous for previous, current in zip(timestamps, timestamps[1:])]
+    if any(value <= 0 or not math.isfinite(value) for value in intervals):
+        raise ValueError("RAF timestamps must be strictly increasing")
+    return intervals
+
+
+def metrics(intervals: list[float], display_hz: float) -> dict:
+    """Summarize positive millisecond intervals at the recorded display rate."""
+    if not math.isfinite(display_hz) or display_hz <= 0:
+        raise ValueError("Display rate must be finite and positive")
+    if not intervals or any(not math.isfinite(value) or value <= 0 for value in intervals):
+        raise ValueError("Intervals must be nonempty, finite, and positive")
+    ordered = sorted(intervals)
+    duration_ms = math.fsum(intervals)
+    if not math.isfinite(duration_ms):
+        raise ValueError("Interval duration must be finite")
+
+    def percentile(fraction):
+        index = (len(ordered) - 1) * fraction
+        lower = math.floor(index)
+        upper = math.ceil(index)
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
+
+    return {
+        "fps": len(intervals) * 1000 / duration_ms,
+        "p50_ms": percentile(0.5), "p95_ms": percentile(0.95),
+        "p99_ms": percentile(0.99),
+        "on_time_pct": sum(value <= 1000 / display_hz * 1.05 for value in intervals) * 100 / len(intervals),
+        "worst_ms": ordered[-1], "frames": len(intervals),
+        "duration_s": duration_ms / 1000,
+    }
+
+
+_METRICS = ("fps", "p50_ms", "p95_ms", "p99_ms", "on_time_pct", "worst_ms", "frames", "duration_s")
+
+
+def _cell(value):
+    value = html.escape(str(value), quote=False).replace("\r", " ").replace("\n", " ")
+    return "".join("\\" + character if character in "\\|`*_[]" else character for character in value)
+
+
+def _table(lines, headings, rows):
+    lines.append("| " + " | ".join(_cell(value) for value in headings) + " |")
+    lines.append("| " + " | ".join("---" for _ in headings) + " |")
+    lines.extend("| " + " | ".join(_cell(value) for value in row) + " |" for row in rows)
+    lines.append("")
+
+
+def _range(runs, key):
+    values = [run["metrics"][key] for run in runs]
+    if not values:
+        return "—"
+    precision = 0 if key == "frames" else 2
+    return f"{min(values):.{precision}f}–{max(values):.{precision}f}"
+
+
+def _conditions(runs, key):
+    return ", ".join(sorted({str(run.get(key, "unknown")) for run in runs})) or "unknown"
+
+
+def _target_rows(target):
+    runs = target.get("runs", [])
+    scenarios = sorted({"a10", "b30"} | {str(run["scenario"]) for run in runs})
+    for scenario in scenarios:
+        rounds = {}
+        for run in runs:
+            if str(run["scenario"]) == scenario and all(key in run.get("metrics", {}) for key in _METRICS):
+                rounds.setdefault(run["round"], run)
+        valid = list(rounds.values())
+        status = target.get("status", "unknown")
+        if len(valid) < 3:
+            status += f"; incomplete ({len(valid)}/3 rounds)"
+        else:
+            status += f"; {len(valid)} rounds"
+        if target.get("reason"):
+            status += "; " + str(target["reason"])
+        yield [target.get("id", "unknown"), scenario, status,
+               *(_range(valid, key) for key in _METRICS),
+               *(_conditions(valid, key) for key in
+                 ("thermal", "resolution", "cap", "display_hz", "display_rate_basis"))]
+
+
+def render(summary: dict) -> str:
+    """Render deterministic Markdown from a public, sanitized summary."""
+    lines = ["# Performance benchmarks", "",
+             f"Date: {_cell(summary.get('date', 'unknown'))}. "
+             f"Refresh wall time: {_cell(summary.get('refresh_seconds', 'unknown'))} seconds.", "",
+             f"Machine: {_cell(summary.get('machine', 'unknown'))}. "
+             f"OS: {_cell(summary.get('os', 'unknown'))}.", "",
+             "Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. "
+             "Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance. "
+             "The methods measure different events and are not ranked against one another.", "",
+             "## Builds and availability", ""]
+    targets = sorted(summary.get("targets", []), key=lambda target: str(target.get("id", "")))
+    if targets:
+        _table(lines, ["Target", "Version", "SHA-256", "Method", "Status", "Reason"],
+               [[target.get(key, "unknown") for key in ("id", "version", "sha256", "method", "status", "reason")]
+                for target in targets])
+    else:
+        lines.extend(["No targets recorded.", ""])
+    groups = [("Mac native Metal HUD", "hud"), ("Safari requestAnimationFrame", "raf"), ("Other methods", "other")]
+    headings = ["Target", "Scenario", "Status", "FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
+                "On time (%)", "Worst (ms)", "Frames", "Duration (s)", "Thermal", "Resolution", "Cap (fps)",
+                "Display (Hz)", "Display rate basis"]
+
+    def method_group(target):
+        method = str(target.get("method", "")).lower()
+        if "raf" in method or "safari" in method:
+            return "raf"
+        return "hud" if "hud" in method else "other"
+
+    for title, group in groups:
+        selected = [target for target in targets if method_group(target) == group]
+        if group == "other" and not selected:
+            continue
+        lines.extend([f"## {title}", ""])
+        if group == "hud":
+            lines.extend(["Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.", ""])
+        elif group == "raf":
+            lines.extend(["Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.", ""])
+        if selected:
+            _table(lines, headings, [row for target in selected for row in _target_rows(target)])
+        else:
+            lines.extend(["No measurements recorded.", ""])
+    sweep = summary.get("sweep", [])
+    sweep_groups = [
+        ("VISR offscreen sweep", "offscreen_uncapped",
+         "Offscreen throughput uses the report's timing basis and is separate from displayed native intervals and Safari callbacks."),
+        ("VISR submission timing", "submission_timing",
+         "These self-reported submission timings measure submission throughput, not displayed pacing. They are separate from offscreen throughput, native presentation intervals, and Safari callbacks."),
+        ("VISR other timing bases", "other",
+         "These reports have unrecognized timing bases; their relationship to displayed pacing is unverified."),
+    ]
+    for title, basis, caveat in sweep_groups:
+        if basis == "other":
+            selected = [row for row in sweep if row.get("timing_basis") not in ("offscreen_uncapped", "submission_timing")]
+        else:
+            selected = [row for row in sweep if row.get("timing_basis") == basis]
+        if basis != "offscreen_uncapped" and not selected:
+            continue
+        lines.extend([f"## {title}", "", caveat, ""])
+        if basis == "offscreen_uncapped" and summary.get("sweep_status"):
+            lines.extend([f"Sweep status: {_cell(summary['sweep_status'])}.", ""])
+        if selected:
+            keys = ("device", "build", "workload", "resolution", "configuration", "settings_hash", "trials",
+                    "fps", "timing_basis", "thermal", "report")
+            _table(lines, ["Device", "Build", "Workload", "Resolution", "Configuration", "Settings hash", "Trials",
+                           "FPS", "Timing basis", "Thermal", "Report"],
+                   [[row.get(key, "unknown") for key in keys]
+                    for row in sorted(selected, key=lambda row: tuple(str(row.get(key, "")) for key in keys))])
+        else:
+            lines.extend(["No sweep results recorded.", ""])
+    return "\n".join(lines).rstrip() + "\n"
