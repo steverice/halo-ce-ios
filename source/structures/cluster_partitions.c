@@ -308,13 +308,6 @@ void cluster_partitions_port_forget(
 		cluster_partition_port_forget(cluster_partitions_port[index]);
 }
 
-long cluster_partition_get_next_datum(
-	struct cluster_partition const *partition,
-	long *reference_index)
-{
-	return reference_list_get_next_datum_index(partition->data_reference_data, reference_index);
-}
-
 long cluster_partition_get_first_cluster(
 	struct cluster_partition const *partition,
 	long *reference_index,

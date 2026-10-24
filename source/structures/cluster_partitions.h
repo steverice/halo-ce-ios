@@ -12,6 +12,8 @@ header included in hcex build.
 
 #include "math/real_math.h"
 #include "memory/data.h"
+#include "cseries/errors.h" /* port: reference-list inline diagnostics */
+#include "objects/reference_lists.h" /* port: inline reference traversal */
 
 /* ---------- constants */
 
@@ -103,9 +105,13 @@ long cluster_partition_get_first_datum(
 	struct cluster_partition const *partition,
 	long *reference_index,
 	short cluster_index);
-long cluster_partition_get_next_datum(
+/* port: inline the hot traversal without changing reference-list order. */
+static inline long cluster_partition_get_next_datum(
 	struct cluster_partition const *partition,
-	long *reference_index);
+	long *reference_index)
+{
+	return reference_list_get_next_datum_index(partition->data_reference_data, reference_index);
+}
 /* port: the partition keeps, per cluster, a list of only the data that
 candidate accepts, in the order cluster_partition_get_first_datum and
 cluster_partition_get_next_datum return them. candidate must give the same
