@@ -2451,9 +2451,17 @@ HRESULT WINAPI Direct3D_CreateDevice(UINT adapter, D3DDEVTYPE device_type, void 
 #ifdef HALO_ILP32
 int halo_ui_pointer_update(int menus_active, struct halo_ui_pointer *pointer)
 {
+	static int pause_menu = -1;
+	int paused = menus_active && halo_scene_class() != CONFIG_SCENE_MENU;
+
 	(void)pointer;
-	/* The native sender's audio picker belongs to the in-game menus. */
-	host_sdl_set_hint("VISR_PAUSE_MENU", menus_active && halo_scene_class() != CONFIG_SCENE_MENU ? "1" : "0");
+	/* The native sender's audio picker belongs to the in-game menus. This
+	runs every frame, so only changes cross to the host. */
+	if (paused != pause_menu)
+	{
+		pause_menu = paused;
+		host_sdl_set_hint("VISR_PAUSE_MENU", paused ? "1" : "0");
+	}
 	platform_menus_set_active(menus_active != 0);
 	return 0;
 }
