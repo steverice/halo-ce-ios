@@ -5956,10 +5956,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
         perf_group = HOST_PERF_HUD;
         static BOOL perf_capability_noted;
         if (host_perf_hooks_dynamic_enabled()) {
-            /* (startup-only: read the floor once, never config.toml per frame) */
-            static int perf_floor = -1;
-            if (perf_floor < 0)
-                perf_floor = (int)host_config_real("display.dynamic_resolution_floor", 540.0);
+            /* (the design's 540-line floor; no setting names it until actuation) */
+            enum { perf_floor = 540 };
             host_perf_hooks_dynamic_config(1,
                 (int)(perf_scene_width ?: (record ? record->description.width : 0)),
                 (int)(perf_scene_height ?: (record ? record->description.height : 0)),
