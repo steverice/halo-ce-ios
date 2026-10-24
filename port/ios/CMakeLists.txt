@@ -425,24 +425,15 @@ if(HALO_CLOUD_SAVES OR HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
     target_link_libraries(VISR PRIVATE "-framework CloudKit")
     # the iCloud keys, added to whatever entitlements the target already signs with (visionOS's, or the
     # extended virtual addressing entitlement of a visionOS or tvOS build), which this block must run after
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VISR-cloud.entitlements" HALO_CLOUD_ENTITLEMENTS)
+    include("${CMAKE_CURRENT_LIST_DIR}/CloudUploadEntitlements.cmake")
     get_target_property(HALO_BASE_ENTITLEMENTS_FILE VISR XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS)
-    if(HALO_BASE_ENTITLEMENTS_FILE)
-        file(READ "${HALO_BASE_ENTITLEMENTS_FILE}" HALO_BASE_ENTITLEMENTS)
-        string(REGEX REPLACE "^.*<dict>(.*)</dict>.*$" "\\1" HALO_BASE_KEYS "${HALO_BASE_ENTITLEMENTS}")
-        string(REPLACE "<dict>" "<dict>${HALO_BASE_KEYS}" HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
-    endif()
-    # App Store Connect refuses a tvOS app with CloudKit but no push environment: the benchmark's send (CloudKit's
-    # own subscriptions use it; the app sends and receives no notification of its own). Xcode signs an App Store
-    # export with "production" from the distribution profile
-    if(HALO_BENCHMARK_UPLOAD OR HALO_SHADER_UPLOAD)
-        string(REPLACE "<dict>" "<dict>\n\t<key>aps-environment</key>\n\t<string>${HALO_BENCHMARK_APS_ENVIRONMENT}</string>"
-            HALO_CLOUD_ENTITLEMENTS "${HALO_CLOUD_ENTITLEMENTS}")
-    endif()
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements" "${HALO_CLOUD_ENTITLEMENTS}")
+    halo_cloud_upload_entitlements("${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
+        "${HALO_BASE_ENTITLEMENTS_FILE}")
     set_target_properties(VISR PROPERTIES
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements"
         XCODE_ATTRIBUTE_HALO_CLOUD_CONTAINER "${HALO_CLOUD_CONTAINER}")
+else()
+    file(REMOVE "${CMAKE_CURRENT_BINARY_DIR}/VISR-cloud.entitlements")
 endif()
 # The multicast entitlement (spec section 2): with it in the chosen
 # entitlements file, iOS and visionOS may broadcast, and network.lan_broadcast
