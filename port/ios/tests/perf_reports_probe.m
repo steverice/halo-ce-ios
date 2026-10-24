@@ -5,6 +5,7 @@
 static uint64_t probe_frame_id=1;
 uint64_t host_perf_hooks_frame_id(void) {return probe_frame_id;}
 void host_perf_hooks_dynamic_flush(void) {}
+int host_perf_hooks_dynamic_enabled(void) {return 1;}
 void host_perf_hooks_dynamic_pause(void) {}
 void host_perf_hooks_dynamic_ignore(unsigned reason) {(void)reason;}
 void host_map_identity_init(void) {}

@@ -392,7 +392,7 @@ static NSString *finish_report(BOOL interrupted) {
         }
         if(columns[i])fclose(columns[i]);
     }
-    if(valid)valid=write_bytes(out,"}",1) && write_epochs(out,working) && write_dynamic_resolution(out,working) && write_auxiliary(out,working) && write_bytes(out,"}",1);
+    if(valid)valid=write_bytes(out,"}",1) && write_epochs(out,working) && (!host_perf_hooks_dynamic_enabled() || write_dynamic_resolution(out,working)) && write_auxiliary(out,working) && write_bytes(out,"}",1);
     if(out){if(fflush(out) || fsync(fileno(out)))valid=NO;fclose(out);}
     NSNumber *bytes=[NSFileManager.defaultManager attributesOfItemAtPath:temporary error:nil][NSFileSize];if(bytes.unsignedLongLongValue>JOURNAL_LIMIT){[NSFileManager.defaultManager removeItemAtPath:temporary error:nil];if(!omit_detail){omit_detail=YES;return finish_report(interrupted);}if(trace_limit>1000){trace_limit/=2;truncated=YES;return finish_report(interrupted);}valid=NO;}
     FILE *raw=valid?fopen(temporary.fileSystemRepresentation,"rb"):NULL;NSString *gzip=[ROOT stringByAppendingPathComponent:@"freezing.gz"];gzFile compressed=raw?gzopen(gzip.fileSystemRepresentation,"wb"):NULL;
