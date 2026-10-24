@@ -72,6 +72,30 @@ void data_compact(struct data_array *data);
 void data_make_valid(struct data_array *data);
 
 
+/* port: keep successful hot lookups in the caller; the external function
+retains every assertion and diagnostic for an invalid datum. */
+static inline void *datum_get_inline(struct data_array *data, long index)
+{
+	short identifier = index >> 16;
+	short absolute_index = index;
+
+	if (data->valid && (identifier || !data->identifier_zero_invalid) &&
+		absolute_index >= 0 && absolute_index < data->count)
+	{
+		struct datum_header *header = (struct datum_header *)
+			((byte *)data->data + data->size * absolute_index);
+
+		if (header->identifier && (!identifier || identifier == header->identifier))
+		{
+			return header;
+		}
+	}
+
+	return (datum_get)(data, index);
+}
+
+#define datum_get(data, index) datum_get_inline((data), (index))
+
 /* ---------- globals */
 
 /* ---------- public code */

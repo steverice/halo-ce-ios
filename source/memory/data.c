@@ -142,7 +142,8 @@ void *datum_try_and_get(
 	return header;
 }
 
-void *datum_get(
+/* port: parentheses retain the external fallback behind data.h's inline path. */
+void *(datum_get)(
 	struct data_array *data,
 	long index)
 {
