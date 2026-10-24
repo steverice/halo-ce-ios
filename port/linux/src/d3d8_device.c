@@ -5077,6 +5077,27 @@ static struct
 	unsigned long rewritten_frame[MIRROR_PAGE_COUNT];
 } mirror;
 
+void d3d8_vertex_buffer_prepare_write(unsigned long address, unsigned long size)
+{
+	unsigned long start = address - PLATFORM_CONTIGUOUS_BASE;
+	unsigned long page, last;
+
+	if (!size || address < PLATFORM_CONTIGUOUS_BASE || start >= PLATFORM_CONTIGUOUS_SIZE ||
+		size > PLATFORM_CONTIGUOUS_SIZE - start)
+		return;
+	last = (start + size - 1) / MIRROR_PAGE_SIZE + 1;
+	for (page = start / MIRROR_PAGE_SIZE; page < last; page++)
+	{
+		/* Queued draws keep the old segment; stream subsequent draws instead
+		of making mirror_refresh rename and copy the entire segment. */
+		if (mirror.state[page] != _mirror_page_absent)
+		{
+			mirror.state[page] = _mirror_page_volatile;
+			mirror.rewritten_frame[page] = device.frame;
+		}
+	}
+}
+
 /* uploads the pages of [first, last) that are absent or stale; FALSE if one
 of them turns out to be volatile */
 static BOOL mirror_refresh(unsigned long first, unsigned long last)

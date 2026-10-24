@@ -16,6 +16,9 @@ guest memory write tracking (memory_watch.c) and the device itself
 /* what the GPU backend can do (gpu_initialize, d3d8_device.c) */
 extern struct gpu_capabilities device_capabilities;
 
+/* d3d8_device.c: writing locks make cached vertex pages stream on draws. */
+void d3d8_vertex_buffer_prepare_write(unsigned long address, unsigned long size);
+
 /* ---------- generated source text */
 
 struct xgpu_text
