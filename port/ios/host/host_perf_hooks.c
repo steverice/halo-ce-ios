@@ -160,7 +160,7 @@ void host_perf_hooks_phase_at(int phase, int value, uint64_t now) {
         interval = previous && now >= previous ? now - previous : GAME_PERF_UNAVAILABLE;
         began = previous = now;
         ++serial;
-        dynamic_drain(serial);
+        if (host_perf_hooks_dynamic_enabled()) dynamic_drain(serial);
         unsigned slot = serial % 128;
         uint64_t generation = (uint64_t)(uint32_t)serial << 32;
         atomic_store(&gpu_slots[slot].sum, generation);
@@ -247,9 +247,18 @@ void host_perf_hooks_present_failed(void) { pending.flags |= GAME_PERF_PRESENT_F
 void host_perf_hooks_present_end_at(uint64_t now) {
     (void)now;
     atomic_store(&gpu_slots[pending.frame_id % 128].sealed, pending.frame_id);
+    /* Setting off: the report path as before, with no lock on the frame path. */
+    if (!host_perf_hooks_dynamic_enabled()) {
+        host_perf_reports_frame(&pending);
+        frame_sealed = 1;
+        return;
+    }
     pthread_mutex_lock(&dynamic_lock);
-    if (host_perf_hooks_dynamic_enabled() && dynamic_eligible && !dynamic_paused) {
+    if (dynamic_eligible && !dynamic_paused) {
         pending.drs.ignore = atomic_exchange(&dynamic_events, 0);
+        /* A full ring publishes its oldest row early rather than overwrite it. */
+        if (delayed_write - delayed_read >= 16)
+            dynamic_drain_locked(delayed[delayed_read % 16].frame.frame_id + 8);
         unsigned slot = delayed_write++ % 16;
         delayed[slot].frame = pending; delayed[slot].width = dynamic_width;
     } else host_perf_reports_frame(&pending);

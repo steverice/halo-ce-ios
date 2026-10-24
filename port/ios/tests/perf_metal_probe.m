@@ -33,7 +33,7 @@ int main(void) {
         test_shadow = 1;
         assert(host_perf_metal_needs_split()); /* shadow-only stage collection */
         test_shadow = 0; test_collecting = 1;
-        assert(host_perf_metal_needs_split()); /* report stage collection */
+        assert(!host_perf_metal_needs_split()); /* reports alone keep the shared encoder */
         mode = 1;
         assert(!host_perf_metal_needs_split()); /* draw samples share the encoder */
         test_collecting = 1;
@@ -65,7 +65,12 @@ int main(void) {
             assert(host_perf_metal_prepare((id)commands[i], nil, 2, HOST_PERF_SCENE));
         assert(!host_perf_metal_prepare((id)commands[BUFFER_COUNT], nil, 2, HOST_PERF_SCENE));
         assert(host_perf_metal_dropped() == 2);
+        /* Shadow off: reports touch no semantic-group state or lock. */
+        test_frame = 400; frame_prepare(test_frame);
+        host_perf_metal_unavailable(HOST_PERF_SCENE);
+        assert(grouped[400 % FRAME_COUNT].frame != 400 && !grouped[400 % FRAME_COUNT].invalid);
         /* Presentation callbacks repair frame-ID attribution when reordered. */
+        test_shadow = 1;
         test_frame = 500;
         frame_prepare(test_frame);
         host_perf_metal_presented(500, 1000000, 16667);

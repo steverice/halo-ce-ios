@@ -5948,13 +5948,19 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 	@autoreleasepool
 	{
 		MetalTexture *record = texture_record(back_buffer);
-        host_perf_hooks_dynamic_config(host_perf_hooks_dynamic_enabled(),
-            (int)(perf_scene_width ?: (record ? record->description.width : 0)),
-            (int)(perf_scene_height ?: (record ? record->description.height : 0)),
-            (int)host_config_real("display.dynamic_resolution_floor", 540.0),
-            (int)NSProcessInfo.processInfo.thermalState, perf_scene_height != 0 && perf_scene_views == 1);
         perf_group = HOST_PERF_HUD;
         static BOOL perf_capability_noted;
+        if (host_perf_hooks_dynamic_enabled()) {
+            /* (startup-only: read the floor once, never config.toml per frame) */
+            static int perf_floor = -1;
+            if (perf_floor < 0)
+                perf_floor = (int)host_config_real("display.dynamic_resolution_floor", 540.0);
+            host_perf_hooks_dynamic_config(1,
+                (int)(perf_scene_width ?: (record ? record->description.width : 0)),
+                (int)(perf_scene_height ?: (record ? record->description.height : 0)),
+                perf_floor, (int)NSProcessInfo.processInfo.thermalState,
+                perf_scene_height != 0 && perf_scene_views == 1);
+        }
         if (host_perf_hooks_dynamic_enabled() && !perf_capability_noted) {
             if (!host_perf_metal_stage_supported())
                 platform_log("DRS shadow: stage-boundary GPU timing is unavailable");
@@ -6149,16 +6155,16 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					gpu_metal_presentation_observe(drawable, CACurrentMediaTime(), frame_context.scene_class == 2,
 						presentation_transition);
 #if !TARGET_OS_SIMULATOR
-                    uint64_t perf_shown_frame = host_perf_hooks_frame_id();
-                    uint64_t perf_shown_budget = perf_presentation_budget;
-                    [drawable addPresentedHandler:^(id<MTLDrawable> shown) {
-                        static _Atomic unsigned presentation_diagnostics;
-                        if (atomic_fetch_add(&presentation_diagnostics, 1) < 4)
-                            platform_log("DRS drawable diagnostic: frame=%llu presented_seconds=%.9f",
-                                (unsigned long long)perf_shown_frame, shown.presentedTime);
-                        host_perf_metal_presented(perf_shown_frame,
-                            shown.presentedTime > 0.0 ? (uint64_t)(shown.presentedTime * 1e6) : 0, perf_shown_budget);
-                    }];
+                    /* (shadow mode only: no block or callback per frame otherwise) */
+                    if (host_perf_hooks_dynamic_enabled())
+                    {
+                        uint64_t perf_shown_frame = host_perf_hooks_frame_id();
+                        uint64_t perf_shown_budget = perf_presentation_budget;
+                        [drawable addPresentedHandler:^(id<MTLDrawable> shown) {
+                            host_perf_metal_presented(perf_shown_frame,
+                                shown.presentedTime > 0.0 ? (uint64_t)(shown.presentedTime * 1e6) : 0, perf_shown_budget);
+                        }];
+                    }
 #endif
 
 #if HALO_FRAME_PACING
@@ -6395,8 +6401,8 @@ host_perf_hooks_cpu(cpu >= 0.0 ? (uint64_t)(cpu * 1e6) : UINT64_MAX);
 static uint32_t gpu_metal_present_stereo(const struct gpu_stereo_present *present)
 {
     /* Vision Pro DRS remains an experiment; clear a preceding mono frame's eligibility. */
-    host_perf_hooks_dynamic_config(host_perf_hooks_dynamic_enabled(), 0, 0, 540,
-        (int)NSProcessInfo.processInfo.thermalState, 0);
+    if (host_perf_hooks_dynamic_enabled())
+        host_perf_hooks_dynamic_config(1, 0, 0, 540, (int)NSProcessInfo.processInfo.thermalState, 0);
 #if TARGET_OS_VISION
 	@autoreleasepool
 	{

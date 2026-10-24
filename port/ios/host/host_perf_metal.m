@@ -46,6 +46,8 @@ static void frame_prepare(uint64_t frame) {
     if (last_frame == frame) return;
     last_frame = frame;
     for (unsigned c = 0; c < CATEGORY_COUNT; ++c) atomic_store(&sums[frame % FRAME_COUNT][c], generation(frame));
+    /* Semantic groups serve only the shadow planner; reports keep categories. */
+    if (!host_perf_hooks_dynamic_enabled()) return;
     os_unfair_lock_lock(&group_lock);
     memset(&grouped[frame % FRAME_COUNT], 0, sizeof(grouped[0]));
     grouped[frame % FRAME_COUNT].frame = frame;
@@ -135,12 +137,14 @@ uint32_t host_perf_metal_prepare(id<MTLCommandBuffer> commands, MTLRenderPassDes
     return 1 + slot * INTERVAL_COUNT + interval;
 }
 int host_perf_metal_needs_split(void) {
-    return mode == 2 && (host_perf_reports_collecting() || host_perf_hooks_dynamic_enabled());
+    /* Only shadow mode splits encoders; report builds keep the shared encoder. */
+    return mode == 2 && host_perf_hooks_dynamic_enabled();
 }
 int host_perf_metal_stage_supported(void) {
     return counter_device && mode && [counter_device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
 }
 void host_perf_metal_unavailable(unsigned group) {
+    if (!host_perf_hooks_dynamic_enabled()) return;
     uint64_t frame = host_perf_hooks_frame_id();
     if (!frame || group > HOST_PERF_HUD) return;
     frame_prepare(frame);
@@ -234,6 +238,7 @@ void host_perf_metal_complete(id<MTLCommandBuffer> commands) {
                 double duration = valid && end >= start ? (double)(end - start) * scale : -1.0;
                 valid = isfinite(duration) && duration >= 0 && duration <= VALUE_MASK;
                 add(buffers[slot].frame, buffers[slot].categories[i], valid ? (uint64_t)duration : 0, valid);
+                if (!host_perf_hooks_dynamic_enabled()) continue;
                 os_unfair_lock_lock(&group_lock);
                 typeof(grouped[0]) *frame = &grouped[buffers[slot].frame % FRAME_COUNT];
                 if (frame->frame == buffers[slot].frame) {
@@ -254,7 +259,7 @@ void host_perf_metal_complete(id<MTLCommandBuffer> commands) {
         break;
     }
 }
-void host_perf_metal_join(game_perf_frame *frame) {
+static void dynamic_join(game_perf_frame *frame) {
     if (host_perf_metal_stage_supported()) frame->drs.available |= 8;
     os_unfair_lock_lock(&group_lock);
     typeof(grouped[0]) *entry = &grouped[frame->frame_id % FRAME_COUNT];
@@ -288,6 +293,9 @@ void host_perf_metal_join(game_perf_frame *frame) {
         }
     }
     os_unfair_lock_unlock(&group_lock);
+}
+void host_perf_metal_join(game_perf_frame *frame) {
+    if (host_perf_hooks_dynamic_enabled()) dynamic_join(frame);
     if (frame->flags & GAME_PERF_GPU_UNAVAILABLE) return;
     for (unsigned c = 0; c < CATEGORY_COUNT; ++c) {
         uint64_t value = atomic_load(&sums[frame->frame_id % FRAME_COUNT][c]);
