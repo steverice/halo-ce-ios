@@ -45,10 +45,13 @@ def run(cc):
 /* Suppress header dependencies unrelated to the partition's layout. */
 #define __REAL_MATH_H
 #define __DATA_H
+#define __ERRORS_H
+#define __REFERENCE_LISTS_H
 typedef union real_point3d real_point3d;
 struct location;
 struct data_array {{ unsigned long signature; }};
 typedef unsigned char boolean;
+static inline long reference_list_get_next_datum_index(struct data_array *data, long *index) {{ (void)data; (void)index; return -1; }}
 #include "{header}"
 typedef char require_32_bit_abi[sizeof(void *) == 4 && sizeof(long) == 4 ? 1 : -1];
 '''
