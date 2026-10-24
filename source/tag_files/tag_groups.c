@@ -113,7 +113,8 @@ void* tag_data_get_pointer(
 	return (void *)((byte *)data->address + offset);
 }
 
-void *tag_block_get_element_with_size(
+/* port: retain the external fallback behind tag_groups.h's inline path. */
+void *(tag_block_get_element_with_size)(
 	const struct tag_block *block,
 	long index, 
 	long element_size) 

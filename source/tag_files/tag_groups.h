@@ -131,6 +131,24 @@ long tag_loaded(long group_tag, const char *name);
 
 void *tag_get(long group_tag, long tag_index);
 
+/* port: avoid an out-of-line call for a valid element; all failed checks
+still reach tag_groups.c's assertions and empty-data fallback. */
+static inline void *tag_block_get_element_with_size_inline(
+	struct tag_block const *block, long index, long element_size)
+{
+	if (block && block->count >= 0 &&
+		(!block->definition || block->definition->element_size == element_size) &&
+		index >= 0 && index < block->count && block->address)
+	{
+		return (void *)((byte *)block->address + index * element_size);
+	}
+
+	return (tag_block_get_element_with_size)(block, index, element_size);
+}
+
+#define tag_block_get_element_with_size(block, index, element_size) \
+	tag_block_get_element_with_size_inline((block), (index), (element_size))
+
 /* ---------- globals */
 
 /* ---------- public code */
