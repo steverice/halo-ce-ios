@@ -84,6 +84,40 @@ static inline void frame_pacer_flight_give(struct frame_pacer_flight *flight)
 		flight->count--;
 }
 
+/* When every slot is taken, a frame waits for one. On a Mac the window
+server can hold the frame on screen for a tenth of a second at a time (a
+trace of a network game showed one about every 5 seconds, its frames held
+96 ms with the game's CPU and GPU idle), and waiting the whole hold stops
+the game loop with it: input, the game's ticks and the network's messages.
+There a frame waits about its share of the display (one refresh, or two
+under a 60 Hz cap on a 120 Hz display) and then gives up its present, so
+the loop keeps going and the window keeps the frame it has. Elsewhere, and
+once frames have been giving up for limit seconds (a presented notice that
+never comes must not keep every frame off the screen), a frame waits up to
+limit and then goes ahead without a slot, as before.
+
+drops: whether frames may give up (the Mac); period: the refresh period in
+seconds (0 unknown); share: the frame's share of the display in refreshes
+(frame_pacer_share); backlog: how long frames have been finding every slot
+taken, in seconds (0: this is the first); limit: the longest wait. Returns
+the most this frame may wait, in seconds. */
+static inline double frame_pacer_slot_wait(int drops, double period, double share, double backlog, double limit)
+{
+	double turn;
+
+	if (!drops || backlog >= limit)
+		return limit;
+	turn = (period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 1.0 / 60.0) * (share >= 1.0 ? share : 1.0);
+	return turn < limit - backlog ? turn : limit - backlog;
+}
+
+/* a frame's wait for a slot ran out (backlog now counts its wait too):
+1 to give up its present, 0 to go ahead without a slot */
+static inline int frame_pacer_slot_give_up(int drops, double backlog, double limit)
+{
+	return drops && backlog < limit;
+}
+
 /* ---------- a minimum time on screen */
 
 /* how many refreshes a frame's share of the display is: one, or under a

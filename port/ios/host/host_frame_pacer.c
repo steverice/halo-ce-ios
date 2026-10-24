@@ -20,7 +20,7 @@ has the measurements behind it */
 #define IN_FLIGHT_DEFAULT 2
 /* a frame goes ahead without a slot after this long: the window may be
 hidden, and a presented notice that never comes mustn't stop the game */
-#define SLOT_WAIT_NANOSECONDS 100000000L
+#define SLOT_WAIT_SECONDS 0.1
 /* the display isn't refreshing (the background) after this long */
 #define BLANK_WAIT_NANOSECONDS 50000000L
 
@@ -50,6 +50,9 @@ static struct
 	double load_every;               /* debug.frame_load_every, seconds: the made-up load is on in every other span */
 	double load_from;
 	unsigned long reported;          /* shown.frames at the last report */
+	int drops;                       /* a frame with every slot taken may give up its present (frame_pacer_slot_wait) */
+	double backlog_since;            /* when frames began finding every slot taken; 0 none */
+	unsigned long given_up;          /* presents given up since the last report */
 } pacer = { .lock = PTHREAD_MUTEX_INITIALIZER, .shown_or_ticked = PTHREAD_COND_INITIALIZER };
 
 /* CACurrentMediaTime's clock, which a display link's and a drawable's times use */
@@ -103,6 +106,13 @@ void frame_pacer_start(int fixed_timestep)
 #else
 	pacer.late_start = !strcmp(value, "true");
 #endif
+	/* (the hold has been seen only on the Mac, where other windows share the window server: frame_pacer_slot_wait) */
+#if TARGET_OS_MACCATALYST || HALO_NATIVE_MAC
+	pacer.drops = 1;
+#else
+	pacer.drops = 0;
+#endif
+	pacer.backlog_since = 0.0;
 	pacer.started = 1;
 	pthread_mutex_unlock(&pacer.lock);
 	platform_log("frame pacer: %d frame%s in flight%s, frame spacing %s%s (display.frames_in_flight, display.frame_spacing)",
@@ -203,13 +213,15 @@ void frame_pacer_refresh(double timestamp, double period)
 	pthread_mutex_unlock(&pacer.lock);
 }
 
-void frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display)
+int frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display)
 {
+	int present = 1;
+
 	memset(frame, 0, sizeof(*frame));
 	frame->number = number;
 	frame->began = began;
 	if (!pacer.started)
-		return;
+		return 1;
 	/* (a made-up load, to see what the settings do when a frame's work
 	doesn't fit in a refresh; with debug.frame_load_every, on in every other
 	span of that many seconds, as a fight coming and going) */
@@ -235,21 +247,42 @@ void frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long numb
 	frame->waits_for_display = waits_for_display != 0;
 	frame->watched = pacer.times != 0;
 	if (!waits_for_display)
-		return;
+		return 1;
 	pthread_mutex_lock(&pacer.lock);
 	if (frame_pacer_flight_holds(&pacer.flight))
 	{
 		struct timespec deadline;
-		int taken;
+		int taken = frame_pacer_flight_take(&pacer.flight);
 
-		deadline_after(&deadline, SLOT_WAIT_NANOSECONDS);
-		while (!(taken = frame_pacer_flight_take(&pacer.flight)))
-			if (pthread_cond_timedwait(&pacer.shown_or_ticked, &pacer.lock, &deadline))
-				break;
+		if (!taken)
+		{
+			double now = now_seconds();
+			double backlog = pacer.backlog_since > 0.0 ? now - pacer.backlog_since : 0.0;
+			double wait = frame_pacer_slot_wait(pacer.drops, pacer.period, frame_pacer_share(pacer.period,
+				host_frame_rate_target()), backlog, SLOT_WAIT_SECONDS);
+
+			if (pacer.backlog_since <= 0.0)
+				pacer.backlog_since = now;
+			deadline_after(&deadline, (long)(wait * 1e9));
+			while (!(taken = frame_pacer_flight_take(&pacer.flight)) && pacer.started)
+				if (pthread_cond_timedwait(&pacer.shown_or_ticked, &pacer.lock, &deadline))
+					break;
+		}
 		if (taken)
+		{
 			frame->slot = frame->watched = 1;
+			pacer.backlog_since = 0.0;
+		}
+		else if (frame_pacer_slot_give_up(pacer.drops, now_seconds() - pacer.backlog_since, SLOT_WAIT_SECONDS))
+		{
+			present = 0;
+			pacer.given_up++;
+		}
+		else
+			pacer.backlog_since = 0.0;
 	}
 	pthread_mutex_unlock(&pacer.lock);
+	return present;
 }
 
 double frame_pacer_present(const struct frame_pacer_frame *frame)
@@ -270,7 +303,7 @@ double frame_pacer_present(const struct frame_pacer_frame *frame)
 void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
 {
 	double interval, period;
-	unsigned long frames = 0, intervals = 0, late = 0;
+	unsigned long frames = 0, intervals = 0, late = 0, given_up = 0;
 	double longest = 0.0;
 	int noticed = at <= 0.0;
 
@@ -294,6 +327,8 @@ void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
 		late = pacer.shown.late;
 		longest = pacer.shown.longest;
 		pacer.reported = pacer.shown.frames;
+		given_up = pacer.given_up;
+		pacer.given_up = 0;
 		pacer.shown.intervals = pacer.shown.late = 0;
 		pacer.shown.longest = 0.0;
 	}
@@ -314,9 +349,9 @@ void frame_pacer_presented(const struct frame_pacer_frame *frame, double at)
 		pthread_mutex_unlock(&pacer.lock);
 		platform_log("frame pacer: of the last %lu frames shown, %lu came over 1.5 times their share of the display after the "
 			"one before (longest %.1f ms, of %lu intervals at %.1f Hz); late starts %lu, at once %lu, cost jumps %lu, "
-			"shown late %lu, worst cost %.1f ms, lead %.1f ms", frames, late, longest * 1e3, intervals,
+			"shown late %lu, worst cost %.1f ms, lead %.1f ms; presents given up %lu", frames, late, longest * 1e3, intervals,
 			period > 0.0 ? 1.0 / period : 0.0, starts.late_starts, starts.at_once, starts.jumps, starts.misses,
-			frame_pacer_late_worst(&starts) * 1e3, frame_pacer_late_lead(&starts) * 1e3);
+			frame_pacer_late_worst(&starts) * 1e3, frame_pacer_late_lead(&starts) * 1e3, given_up);
 	}
 }
 

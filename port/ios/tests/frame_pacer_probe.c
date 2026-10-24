@@ -51,6 +51,46 @@ int main(void)
 		frame_pacer_flight_give(&flight);
 		CHECK(flight.count == 0);
 	}
+	/* every slot taken: elsewhere than the Mac a frame waits the whole limit, then goes ahead without a slot */
+	CHECK(near(frame_pacer_slot_wait(0, 1.0 / 120.0, 1.0, 0.0, 0.1), 0.1));
+	CHECK(!frame_pacer_slot_give_up(0, 0.1, 0.1));
+	CHECK(!frame_pacer_slot_give_up(0, 0.0, 0.1));
+	/* on the Mac it waits its share of the display: a refresh, two under a 60 Hz cap at 120 Hz */
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 1.0, 0.0, 0.1), 1.0 / 120.0));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 2.0, 0.0, 0.1), 2.0 / 120.0));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 60.0, 1.0, 0.0, 0.1), 1.0 / 60.0));
+	/* (no display period yet, or a made-up one: a 60 Hz refresh) */
+	CHECK(near(frame_pacer_slot_wait(1, 0.0, 1.0, 0.0, 0.1), 1.0 / 60.0));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0, 1.0, 0.0, 0.1), 1.0 / 60.0));
+	/* and then gives up its present, while frames have been giving up for less than the limit */
+	CHECK(frame_pacer_slot_give_up(1, 1.0 / 120.0, 0.1));
+	CHECK(frame_pacer_slot_give_up(1, 0.096, 0.1));
+	/* near the limit it waits only what is left of it */
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 60.0, 1.0, 0.095, 0.1), 0.005));
+	/* past the limit (a presented notice that never came) it waits the limit and goes ahead without a slot */
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 1.0, 0.1, 0.1), 0.1));
+	CHECK(near(frame_pacer_slot_wait(1, 1.0 / 120.0, 1.0, 0.5, 0.1), 0.1));
+	CHECK(!frame_pacer_slot_give_up(1, 0.1, 0.1));
+	CHECK(!frame_pacer_slot_give_up(1, 0.25, 0.1));
+	/* a 96 ms hold at 60 frames a second on a 120 Hz display: every frame gives up after its share until the
+	slot comes back, none waits more than 17 ms, and the hold never reaches the limit */
+	{
+		double backlog = 0.0, longest = 0.0;
+		int given_up = 0, frame;
+
+		for (frame = 0; frame < 6 && backlog < 0.096; frame++)
+		{
+			double wait = frame_pacer_slot_wait(1, 1.0 / 120.0, 2.0, backlog, 0.1);
+
+			if (wait > longest)
+				longest = wait;
+			backlog += wait;
+			if (backlog < 0.096 && frame_pacer_slot_give_up(1, backlog, 0.1))
+				given_up++;
+		}
+		CHECK(longest <= 2.0 / 120.0 + 1e-9);
+		CHECK(given_up == 5);
+	}
 	/* a limit of 1 is one at a time */
 	{
 		struct frame_pacer_flight flight = { 1, 0 };

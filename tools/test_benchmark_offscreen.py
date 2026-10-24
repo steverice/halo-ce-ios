@@ -48,7 +48,7 @@ def present_function():
 def test_offscreen_frame_skips_the_display():
     body = present_function()
     # every drawable, display wait and Present sits behind the offscreen check
-    acquire = body.index("drawable = frame_held ? nil :")
+    acquire = body.index("drawable = frame_held || gave_up ? nil :")
     guard = body.rindex("if (offscreen)", 0, acquire)
     assert "offscreen_target(" in body[guard:acquire]
     assert re.search(r"if \(!offscreen\)\s*\n\s*host_frame_rate_limit\(\);", body)

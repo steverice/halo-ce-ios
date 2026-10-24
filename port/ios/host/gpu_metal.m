@@ -5920,8 +5920,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		frame's CPU time */
 		if (!offscreen)
 			host_frame_rate_limit();
-		/* (unsynchronized, a frame with no drawable ready isn't shown) */
-		frame_pacer_frame_begin(&paced, frames, pacing.work_started, !frame_held && !unsynced && !offscreen);
+		/* (unsynchronized, a frame with no drawable ready isn't shown; a frame
+		that gave up waiting for a frame in flight's slot isn't either, and the
+		window keeps the frame it has: host_frame_pacer.h) */
+		BOOL gave_up = !frame_pacer_frame_begin(&paced, frames, pacing.work_started,
+			!frame_held && !unsynced && !offscreen);
 		if (offscreen)
 		{
 			drawable = nil;
@@ -5930,10 +5933,11 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		else
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
 		if (system_frames.active)
-			drawable = frame_held ? nil : system_frame_take();
+			drawable = frame_held || gave_up ? nil : system_frame_take();
 		else
 #endif
-		drawable = frame_held ? nil : unsynced ? free_drawable_take(YES) : (free_drawable_take(NO) ?: [layer nextDrawable]);
+		drawable = frame_held || gave_up ? nil :
+			unsynced ? free_drawable_take(YES) : (free_drawable_take(NO) ?: [layer nextDrawable]);
 		/* (a held frame waits a refresh, as the drawable would have, so the
 		game doesn't spin through frames of skipped draws, taking a core from
 		the compiles) */

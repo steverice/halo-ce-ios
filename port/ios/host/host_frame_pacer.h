@@ -103,8 +103,12 @@ int frame_pacer_late_start_toggle(void);
 when its work began (0 unknown); waits_for_display: whether it will be shown
 in step with the display (not when frames run faster than the display and
 may not be shown at all, or when this frame is held back). Waits here for
-one of the frames in flight's slots, 100 ms at most. */
-void frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display);
+one of the frames in flight's slots, 100 ms at most; on a Mac about one
+refresh, after which the frame gives up its present (frame_pacer.h,
+frame_pacer_slot_wait). Returns 1 to present the frame, 0 when it gives up
+its present: the renderer then shows nothing (no drawable) and the frame is
+dropped (frame_pacer_frame_dropped), its work done all the same. */
+int frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display);
 
 /* the frame is being presented: the least time it must stay on screen after
 the frame before it, in seconds (presentDrawable:afterMinimumDuration:), or 0
@@ -177,12 +181,13 @@ static inline int frame_pacer_late_start_toggle(void)
 	return 0;
 }
 
-static inline void frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display)
+static inline int frame_pacer_frame_begin(struct frame_pacer_frame *frame, unsigned long number, double began, int waits_for_display)
 {
 	(void)frame;
 	(void)number;
 	(void)began;
 	(void)waits_for_display;
+	return 1;
 }
 
 static inline double frame_pacer_present(const struct frame_pacer_frame *frame)
