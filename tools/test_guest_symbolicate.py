@@ -68,23 +68,30 @@ def test_guest_addresses_are_the_arena_alias_s_low_32_bits():
     assert guest_symbolicate.describe(0x88001004, table) is None
 
 
+def packed_registers(text):
+    """x0-x28 as host_crash.c's trap leaves them: the magic, then text in x1-x15 and x19-x28"""
+    data = text.encode().ljust(25 * 8, b"\0")
+    words = [int.from_bytes(data[index:index + 8], "little") for index in range(0, len(data), 8)]
+    return [guest_symbolicate.REASON_MAGIC] + words[:15] + [0x16, 0x17, 0x18] + words[15:]
+
+
 def test_an_ips_report_names_its_guest_frames_and_shows_its_reason():
+    registers = packed_registers(f"{SHA[:12]}|EXCEPTION halt in units.c,#12: unit_index!=NONE")
     body = {
-        "exception": {"type": "EXC_CRASH", "signal": "SIGABRT"},
-        "asi": {"CoreFoundation": ["*** Terminating app due to uncaught exception 'VISRGuestHalt', reason: "
-                                   "'EXCEPTION halt in units.c,#12: x [guest: display_assert+0x4] "
-                                   f"(guest image {SHA[:12]})'"]},
+        "exception": {"type": "EXC_BREAKPOINT", "signal": "SIGTRAP"},
         "usedImages": [{"name": "VISR", "base": 0x1_0000_0000, "size": 0x100000}, {"size": 0, "base": 0}],
         "lastExceptionBacktrace": [{"imageIndex": 1, "imageOffset": ARENA + 0x88002008}],
         "threads": [{"frames": [{"imageIndex": 0, "imageOffset": 0x10, "symbol": "main", "symbolLocation": 4}]},
-                    {"triggered": True, "frames": [{"imageIndex": 1, "imageOffset": ARENA + 0x88001010},
+                    {"triggered": True, "threadState": {"x": [{"value": value} for value in registers]},
+                     "frames": [{"imageIndex": 1, "imageOffset": ARENA + 0x88001010},
                                                    {"imageIndex": 0, "imageOffset": 0x20}]}],
     }
     report = json.dumps({"app_name": "VISR"}) + "\n" + json.dumps(body)
     lines = guest_symbolicate.symbolicate(report, symbols())
-    assert lines[0] == "exception: EXC_CRASH SIGABRT"
-    assert lines[1].startswith("reason (CoreFoundation): ")
-    assert "guest 0x88002008 halt_and_catch_fire+0x8" in lines[3]
+    assert lines[0] == "exception: EXC_BREAKPOINT SIGTRAP"
+    assert lines[1] == "reason: EXCEPTION halt in units.c,#12: unit_index!=NONE"
+    assert lines[2] == f"guest image {SHA[:12]}"
+    assert "guest 0x88002008 halt_and_catch_fire+0x8" in lines[4]
     crashed = lines.index("thread 1 (crashed)")
     assert crashed < lines.index("thread 0")
     assert "guest 0x88001010 display_assert+0x10" in lines[crashed + 1]
@@ -100,3 +107,12 @@ def test_text_gets_names_after_its_guest_addresses_and_a_wrong_build_is_named():
     assert lines[0].startswith("warning: the report names guest image 0123456789ab")
     assert lines[1].endswith("[guest 0x88001020 display_assert+0x20]")
     assert lines[2].endswith("halt_and_catch_fire+0x0")
+
+
+def test_a_crash_report_s_text_registers_give_the_reason():
+    registers = packed_registers("0123456789ab|guest abort: debug.crash_test")
+    text = "Thread 0 crashed with ARM Thread State (64-bit):\n" + "\n".join(
+        f"    x{index}: 0x{value:016x}" for index, value in enumerate(registers))
+    lines = guest_symbolicate.symbolicate(text, symbols())
+    assert lines[0].startswith("warning: the report names guest image 0123456789ab")
+    assert lines[1] == "reason: guest abort: debug.crash_test"

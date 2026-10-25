@@ -14,9 +14,11 @@ artifacts) names them.
 table in its __TEXT,__halosyms section.
 
 An .ips report (JSON) prints its exception, its reason and every thread's frames with the guest ones named,
-the crashed thread and the last exception backtrace first; any other text is printed with a guest name
-after each address that is one. The report's reason names its guest image ("guest image 0123456789ab");
-the tool warns when that is not the symbol file's.
+the crashed thread and the last exception backtrace first; any other text (a .crash report,
+ios-runtime.log) is printed with a guest name after each address that is one. A crash the app made itself
+(visr_guest_halt, visr_guest_abort, visr_host_error: port/ios/host/host_crash.c) carries its reason packed
+into the crashed thread's registers, "VISRCRSH" in x0, then the guest image's short hash, "|" and the text
+in x1-x15 and x19-x28; the tool prints it, and warns when that guest image is not the symbol file's.
 """
 
 import argparse
@@ -33,6 +35,9 @@ GUEST_BASE = 0x88000000
 HEADER = re.compile(r"guest image sha256 ([0-9a-f]{64})")
 RANGE = re.compile(r"code from 0x([0-9a-f]+) to 0x([0-9a-f]+)")
 IMAGE_NAMED = re.compile(r"guest image ([0-9a-f]{12})")
+REASON_MAGIC = int.from_bytes(b"VISRCRSH", "little")
+REASON_REGISTERS = list(range(1, 16)) + list(range(19, 29))
+REGISTER = re.compile(r"\bx(\d{1,2}):\s*0x([0-9a-fA-F]+)")
 ADDRESS = re.compile(r"0x([0-9a-fA-F]{9,16})\b")
 
 
@@ -174,6 +179,32 @@ def read_ips(text):
     return header if "threads" in header else None
 
 
+def register_reason(registers):
+    """the reason packed into a crash's registers (a list of x0-x28's values), as "image|text", or None"""
+    if len(registers) < 29 or registers[0] != REASON_MAGIC:
+        return None
+    packed = b"".join(registers[index].to_bytes(8, "little") for index in REASON_REGISTERS)
+    return packed.split(b"\0", 1)[0].decode("utf-8", "replace")
+
+
+def ips_registers(thread):
+    state = thread.get("threadState", {})
+    return [entry.get("value", 0) for entry in state.get("x", [])]
+
+
+def text_registers(text):
+    """x0-x28 from a .crash report's thread state ("x0: 0x..."), the first thread state it has"""
+    found = {}
+    for match in REGISTER.finditer(text):
+        found.setdefault(int(match.group(1)), int(match.group(2), 16))
+    return [found.get(index, 0) for index in range(29)] if 0 in found else []
+
+
+def reason_lines(reason):
+    image, _, message = reason.partition("|")
+    return [f"reason: {message}", f"guest image {image}"]
+
+
 def frame_line(frame, images, symbols):
     image = images[frame["imageIndex"]] if 0 <= frame.get("imageIndex", -1) < len(images) else {}
     address = image.get("base", 0) + frame.get("imageOffset", 0)
@@ -186,6 +217,10 @@ def frame_line(frame, images, symbols):
     return f"0x{address:016x}  {where}"
 
 
+def threads_of(report):
+    return report.get("threads", [])
+
+
 def ips_report(report, symbols):
     """the lines that describe an .ips report, its guest frames named"""
     images = report.get("usedImages", [])
@@ -194,6 +229,9 @@ def ips_report(report, symbols):
     if exception:
         lines.append(f"exception: {exception.get('type', '')} {exception.get('signal', '')} "
                      f"{exception.get('subtype', '')}".rstrip())
+    for thread in threads_of(report):
+        if thread.get("triggered") and (reason := register_reason(ips_registers(thread))):
+            lines += reason_lines(reason)
     asi = report.get("asi") or {}
     for owner, messages in asi.items():
         for message in messages:
@@ -202,7 +240,7 @@ def ips_report(report, symbols):
         lines.append("last exception backtrace:")
         lines += [f"  {index:2d}  {frame_line(frame, images, symbols)}"
                   for index, frame in enumerate(report["lastExceptionBacktrace"])]
-    threads = report.get("threads", [])
+    threads = threads_of(report)
     order = sorted(range(len(threads)), key=lambda index: not threads[index].get("triggered"))
     for index in order:
         thread = threads[index]
@@ -217,7 +255,8 @@ def ips_report(report, symbols):
 
 def text_report(text, symbols):
     """text (a .crash report, ios-runtime.log) with a guest name after each address that is one"""
-    lines = []
+    reason = register_reason(text_registers(text))
+    lines = reason_lines(reason) if reason else []
     for line in text.splitlines():
         names = [describe(int(match.group(1), 16), symbols) for match in ADDRESS.finditer(line)]
         names = [name for name in names if name and name.split()[1] not in line]
@@ -225,9 +264,9 @@ def text_report(text, symbols):
     return lines
 
 
-def image_warning(text, symbols):
+def image_warning(text, symbols, lines):
     """a warning when the report names a guest image other than the symbols' own, else None"""
-    named = set(IMAGE_NAMED.findall(text))
+    named = set(IMAGE_NAMED.findall(text + "\n" + "\n".join(lines)))
     if symbols.sha256 and named and not any(symbols.sha256.startswith(name) for name in named):
         return (f"warning: the report names guest image {', '.join(sorted(named))}, but the symbols are for "
                 f"{symbols.sha256[:12]}: use that build's guest-symbols.txt")
@@ -237,7 +276,7 @@ def image_warning(text, symbols):
 def symbolicate(text, symbols):
     report = read_ips(text)
     lines = ips_report(report, symbols) if report else text_report(text, symbols)
-    warning = image_warning(text, symbols)
+    warning = image_warning(text, symbols, lines)
     return ([warning] if warning else []) + lines
 
 
