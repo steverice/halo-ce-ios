@@ -32,6 +32,11 @@ enum astc_encode_result astc_encode_level_discardable(enum astc_dxt_format forma
 	unsigned width, unsigned height, void *output);
 bool astc_encode_level(enum astc_dxt_format format, const void *source,
 	unsigned width, unsigned height, void *output);
+/* Generator input is already RGBA8. Linear LDR, edge-repeated 4x4 blocks; preset
+   0 fastest, 1 fast, 2 medium. Discardable output, with no quality gate here.
+   Independent 128-row bands bound per-thread scratch; threads is capped at 4. */
+enum astc_encode_result astc_encode_rgba_level(const uint8_t *rgba, unsigned width,
+	unsigned height, void *output, unsigned preset, unsigned threads);
 #ifdef __cplusplus
 }
 #endif

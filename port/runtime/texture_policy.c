@@ -825,6 +825,10 @@ size_t texture_policy_classify(struct texture_policy_catalog *c, const struct te
 
 			d->hash = e->hash; d->width = e->width; d->height = e->height;
 			d->kind = kinds[i]; d->result = results[i]; d->treatment = e->treatment;
+			enum research_class cls = research_class(e);
+			d->wrap = cls != DECAL && cls != EFFECTS && cls != HUD_UI;
+			d->dilates = e->alpha_tested || cls == DECAL || cls == EFFECTS;
+			d->pinned = pins[i] != NULL;
 			for (j = 0; tags && j < e->tag_count; j++)
 				tags[j] = e->tags[j].tag;
 			d->scale = texture_policy_scale(t, d->kind, d->result, d->treatment, d->hash, d->width, d->height,

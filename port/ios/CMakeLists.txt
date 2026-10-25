@@ -190,8 +190,37 @@ target_include_directories(halo_astcenc PUBLIC "${ROOT}/port/third_party/astcenc
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/astc_encode.cpp"
     "${ROOT}/port/linux/src/astc_rewrite.c" "${ROOT}/port/runtime/astc_store.c"
     host/host_astc_store.m host/host_astc_texture.c)
+target_sources(VISR PRIVATE host/host_texture_upscale.m host/texture_upscale_generate.m host/texture_upscale_pixels.c
+    host/texture_refine_bounded.c host/texture_upscale_encode.cpp "${ROOT}/port/third_party/bc7enc16/bc7enc16.c"
+    "${ROOT}/port/third_party/bc7enc16/bc7decomp.c")
+target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/bc7enc16")
+target_link_libraries(VISR PRIVATE "-framework Accelerate")
+if(HALO_TVOS OR HALO_NATIVE_MAC)
+    target_sources(VISR PRIVATE host/texture_refine.m)
+endif()
 target_compile_features(VISR PRIVATE cxx_std_14)
 target_link_libraries(VISR PRIVATE halo_astcenc)
+# Compile the CC0 model on the build host; inference never compiles a package on the device.
+# tvOS and native macOS do not run the phase-2 generator, but share its unavailable-service behavior.
+target_sources(VISR PRIVATE host/texture_upscale_model.m)
+target_link_libraries(VISR PRIVATE "-framework CoreML")
+if(NOT HALO_TVOS AND NOT HALO_NATIVE_MAC)
+    set(HALO_UPSCALE_MODEL_PACKAGE "${ROOT}/port/assets/models/S4g.mlpackage")
+    set(HALO_UPSCALE_MODEL_COMPILED "${CMAKE_CURRENT_BINARY_DIR}/models/S4g.mlmodelc")
+    file(GLOB_RECURSE HALO_UPSCALE_MODEL_INPUTS CONFIGURE_DEPENDS "${HALO_UPSCALE_MODEL_PACKAGE}/*")
+    add_custom_command(
+        OUTPUT "${HALO_UPSCALE_MODEL_COMPILED}/coremldata.bin"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/models"
+        COMMAND xcrun coremlcompiler compile "${HALO_UPSCALE_MODEL_PACKAGE}" "${CMAKE_CURRENT_BINARY_DIR}/models"
+        DEPENDS ${HALO_UPSCALE_MODEL_INPUTS}
+        COMMENT "Compiling the S4g texture upscale model"
+        VERBATIM)
+    add_custom_target(halo_upscale_model DEPENDS "${HALO_UPSCALE_MODEL_COMPILED}/coremldata.bin")
+    add_dependencies(VISR halo_upscale_model)
+    set_source_files_properties("${HALO_UPSCALE_MODEL_COMPILED}" PROPERTIES
+        GENERATED TRUE MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(VISR PRIVATE "${HALO_UPSCALE_MODEL_COMPILED}")
+endif()
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
     "${ROOT}/build/ios/embedded" "${ROOT}/port/third_party/tomlc17")
@@ -366,6 +395,8 @@ set_source_files_properties("${ROOT}/port/assets/brand/OFL-Orbitron.txt" PROPERT
 file(GLOB HALO_LICENSES "${ROOT}/build/ios/licenses/*.txt")
 target_sources(VISR PRIVATE ${HALO_LICENSES})
 set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
+target_sources(VISR PRIVATE Licenses/PBRify-CC0-1.0.txt Licenses/BC7-MIT-ISC.txt)
+set_source_files_properties(Licenses/PBRify-CC0-1.0.txt Licenses/BC7-MIT-ISC.txt PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
 # CloudKit upload capabilities select linked diagnostic disclosure independently of the tester interface.
 option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
 if(HALO_TESTER_BUILD)

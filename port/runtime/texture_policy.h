@@ -112,6 +112,7 @@ struct texture_policy_decision
 	enum texture_policy_kind kind;
 	enum texture_policy_result result;
 	enum texture_policy_treatment treatment;
+	int wrap, dilates, pinned; /* addressing, coverage dilation (binary alpha also dilates), explicit override */
 	uint32_t scale;  /* the replacement's size over the original's: 2, 4 or 8; 1 for an original */
 };
 

@@ -2536,6 +2536,26 @@
             "apple"
           ]
         },
+        "texture_upscale_generate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Generate the on-device upscaled texture cache in menus for development.",
+          "x-environment": "HALO_TEXTURE_UPSCALE_GENERATE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "texture_upscale_export": {
+          "type": "boolean",
+          "default": false,
+          "description": "Export the generator's policy table and uncompressed textures for parity checks.",
+          "x-environment": "HALO_TEXTURE_UPSCALE_EXPORT",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "texture_dump_directory": {
           "type": "string",
           "default": "",

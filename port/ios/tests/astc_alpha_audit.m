@@ -3,6 +3,10 @@
 #include "bridge.h"
 #include <assert.h>
 #include <stdarg.h>
+void host_texture_upscale_init(const char *root) {(void)root;}
+void host_texture_upscale_scan(void) {}
+void host_texture_upscale_map_will_load(const char *name) {(void)name;}
+void host_texture_upscale_game_started(int is_game) {(void)is_game;}
 void host_config_string(const char *name,const char *fallback,char *out,size_t size) {
     snprintf(out,size,"%s",!strcmp(name,"debug.texture_astc")?"force":fallback);
 }
@@ -61,7 +65,7 @@ static BOOL audit_bitmap(FILE *map,uint64_t size,const uint8_t *b,BOOL pc,NSStri
 static BOOL audit_map(NSString *path) {
     NSString *name=path.lastPathComponent.stringByDeletingPathExtension;
     planning=YES;alpha_policies=[NSMutableDictionary new];projected_bytes=0;
-    if(!walk_map(path,@"0000000000000000000000000000000000000000000000000000000000000000",NULL,NULL))return NO;
+    if(!walk_map(path,@"0000000000000000000000000000000000000000000000000000000000000000",NULL,NULL,NULL))return NO;
     planning=NO;uint8_t header[2048];uint64_t size=0;FILE *map=map_open(path,header,&size);if(!map)return NO;
     uint32_t version=u32(header+4),tag_offset=u32(header+16);int64_t translation=(int64_t)tag_offset-(version==5?0x803a6000u:0x40440000u);
     uint8_t index[40];BOOL ok=read_at(map,tag_offset,index,40);int64_t instances=(int64_t)u32(index)+translation;uint32_t count=u32(index+12);

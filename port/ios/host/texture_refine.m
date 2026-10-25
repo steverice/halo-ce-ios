@@ -126,7 +126,7 @@ struct filter { __unsafe_unretained id<MTLBuffer> weights; uint32_t taps, up, do
 	   bound to a dispatch) so no nil reaches an array literal; the call then ends encoding and returns -1 */
 	BOOL failed;
 	id<MTLBuffer> placeholder;
-	struct filter down2, up_lanczos[5], up_mitchell[5];   /* up_*[scale] for scale 2 and 4 */
+	struct filter down2, up_lanczos[9], up_mitchell[9];   /* up_*[scale] for scale 2, 4 and 8 */
 }
 @end
 @implementation TextureRefineContext
@@ -223,11 +223,14 @@ struct texture_refine_context *texture_refine_create(void *device_pointer, char 
 	context->down2 = make_filter(context, lanczos3, 3, 1, 1);
 	context->up_lanczos[2] = make_filter(context, lanczos3, 3, 2, 0);
 	context->up_lanczos[4] = make_filter(context, lanczos3, 3, 4, 0);
+	context->up_lanczos[8] = make_filter(context, lanczos3, 3, 8, 0);
 	context->up_mitchell[2] = make_filter(context, mitchell, 2, 2, 0);
 	context->up_mitchell[4] = make_filter(context, mitchell, 2, 4, 0);
+	context->up_mitchell[8] = make_filter(context, mitchell, 2, 8, 0);
 	context->placeholder = [device newBufferWithLength:sizeof(float) options:MTLResourceStorageModeShared];
 	if (!context->queue || !context->placeholder || !context->down2.weights || !context->up_lanczos[2].weights
-		|| !context->up_lanczos[4].weights || !context->up_mitchell[2].weights || !context->up_mitchell[4].weights)
+		|| !context->up_lanczos[4].weights || !context->up_lanczos[8].weights || !context->up_mitchell[2].weights
+		|| !context->up_mitchell[4].weights || !context->up_mitchell[8].weights)
 	{
 		snprintf(error, error_size, "texture_refine: could not allocate the command queue or filter weights");
 		return NULL;
@@ -395,7 +398,7 @@ static int run(TextureRefineContext *context, id<MTLCommandBuffer> command, id<M
 
 static int valid(uint32_t width, uint32_t height, uint32_t scale, const struct texture_refine_params *params)
 {
-	return width > 0 && height > 0 && (scale == 2 || scale == 4) && params;
+	return width > 0 && height > 0 && (scale == 2 || scale == 4 || scale == 8) && params;
 }
 
 int texture_refine_color(struct texture_refine_context *handle, float *top, const float *reference, uint32_t width,

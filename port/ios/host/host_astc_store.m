@@ -15,7 +15,10 @@
 #include "astc_encode.h"
 #include "astc_policy.h"
 #include "astc_material.h"
+#include "texture_override.h"
+#include "host_texture_upscale.h"
 #include <zlib.h>
+#include <errno.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -77,6 +80,7 @@ static FILE *snapshot(FILE *input) {
     if(ferror(input)){fclose(output);return NULL;}fflush(output);rewind(output);return output;
 }
 static FILE *resource_open(NSString *path) {
+    if(!path.length)return NULL;
     FILE *input=fopen(path.fileSystemRepresentation,"rb");if(!input)return NULL;
     FILE *output=snapshot(input);fclose(input);return output;
 }
@@ -104,6 +108,159 @@ static FILE *map_open(NSString *path,uint8_t header[2048],uint64_t *size) {
     }
     if(ok)ok=written==declared&&status==Z_STREAM_END;
     inflateEnd(&z);fclose(f);if(!ok){fclose(out);return NULL;}fflush(out);*size=written;return out;
+}
+/* The guest's global_vector_palette (source/bitmaps/bitmaps.c), kept on the
+ * host so disk decoding never reads the running game's mutable arena. */
+static const uint32_t source_vector_palette[256] =
+{
+	0xFF7A19CC, 0xFF7E19CC, 0xFF8019CC, 0xFF8119CC, 0xFF8519CC, 0xFF742FE2, 0xFF7A2FE2, 0xFF7E2FE2,
+	0xFF802FE2, 0xFF812FE2, 0xFF852FE2, 0xFF8B2FE2, 0xFF6B42ED, 0xFF7442EE, 0xFF7A42EF, 0xFF7E42EF,
+	0xFF8042EF, 0xFF8142EF, 0xFF8542EF, 0xFF8B42EE, 0xFF9442ED, 0xFF6052F2, 0xFF6B52F5, 0xFF7452F6,
+	0xFF7A52F7, 0xFF7E52F7, 0xFF8052F7, 0xFF8152F7, 0xFF8552F7, 0xFF8B52F6, 0xFF9452F5, 0xFF9F52F2,
+	0xFF5260F2, 0xFF6060F7, 0xFF6B60F9, 0xFF7460FB, 0xFF7A60FB, 0xFF7E60FB, 0xFF8060FB, 0xFF8160FB,
+	0xFF8560FB, 0xFF8B60FB, 0xFF9460F9, 0xFF9F60F7, 0xFFAD60F2, 0xFF426BED, 0xFF526BF5, 0xFF606BF9,
+	0xFF6B6BFC, 0xFF746BFD, 0xFF7A6BFD, 0xFF7E6BFD, 0xFF806BFD, 0xFF816BFD, 0xFF856BFD, 0xFF8B6BFD,
+	0xFF946BFC, 0xFF9F6BF9, 0xFFAD6BF5, 0xFFBD6BED, 0xFF2F74E2, 0xFF4274EE, 0xFF5274F6, 0xFF6074FB,
+	0xFF6B74FD, 0xFF7474FE, 0xFF7A74FE, 0xFF7E74FE, 0xFF8074FE, 0xFF8174FE, 0xFF8574FE, 0xFF8B74FE,
+	0xFF9474FD, 0xFF9F74FB, 0xFFAD74F6, 0xFFBD74EE, 0xFFD074E2, 0xFF197ACC, 0xFF2F7AE2, 0xFF427AEF,
+	0xFF527AF7, 0xFF607AFB, 0xFF6B7AFD, 0xFF747AFE, 0xFF7A7AFF, 0xFF7E7AFF, 0xFF807AFF, 0xFF817AFF,
+	0xFF857AFF, 0xFF8B7AFE, 0xFF947AFD, 0xFF9F7AFB, 0xFFAD7AF7, 0xFFBD7AEF, 0xFFD07AE2, 0xFFE57ACC,
+	0xFF197ECC, 0xFF2F7EE2, 0xFF427EEF, 0xFF527EF7, 0xFF607EFB, 0xFF6B7EFD, 0xFF747EFE, 0xFF7A7EFF,
+	0xFF7E7EFF, 0xFF807EFF, 0xFF817EFF, 0xFF857EFF, 0xFF8B7EFE, 0xFF947EFD, 0xFF9F7EFB, 0xFFAD7EF7,
+	0xFFBD7EEF, 0xFFD07EE2, 0xFFE57ECC, 0xFF1980CC, 0xFF2F80E2, 0xFF4280EF, 0xFF5280F7, 0xFF6080FB,
+	0xFF6B80FD, 0xFF7480FE, 0xFF7A80FF, 0xFF7E80FF, 0xFF8080FF, 0xFF8180FF, 0xFF8580FF, 0xFF8B80FE,
+	0xFF9480FD, 0xFF9F80FB, 0xFFAD80F7, 0xFFBD80EF, 0xFFD080E2, 0xFFE580CC, 0xFF1981CC, 0xFF2F81E2,
+	0xFF4281EF, 0xFF5281F7, 0xFF6081FB, 0xFF6B81FD, 0xFF7481FE, 0xFF7A81FF, 0xFF7E81FF, 0xFF8081FF,
+	0xFF8181FF, 0xFF8581FF, 0xFF8B81FE, 0xFF9481FD, 0xFF9F81FB, 0xFFAD81F7, 0xFFBD81EF, 0xFFD081E2,
+	0xFFE581CC, 0xFF1985CC, 0xFF2F85E2, 0xFF4285EF, 0xFF5285F7, 0xFF6085FB, 0xFF6B85FD, 0xFF7485FE,
+	0xFF7A85FF, 0xFF7E85FF, 0xFF8085FF, 0xFF8185FF, 0xFF8585FF, 0xFF8B85FE, 0xFF9485FD, 0xFF9F85FB,
+	0xFFAD85F7, 0xFFBD85EF, 0xFFD085E2, 0xFFE585CC, 0xFF2F8BE2, 0xFF428BEE, 0xFF528BF6, 0xFF608BFB,
+	0xFF6B8BFD, 0xFF748BFE, 0xFF7A8BFE, 0xFF7E8BFE, 0xFF808BFE, 0xFF818BFE, 0xFF858BFE, 0xFF8B8BFE,
+	0xFF948BFD, 0xFF9F8BFB, 0xFFAD8BF6, 0xFFBD8BEE, 0xFFD08BE2, 0xFF4294ED, 0xFF5294F5, 0xFF6094F9,
+	0xFF6B94FC, 0xFF7494FD, 0xFF7A94FD, 0xFF7E94FD, 0xFF8094FD, 0xFF8194FD, 0xFF8594FD, 0xFF8B94FD,
+	0xFF9494FC, 0xFF9F94F9, 0xFFAD94F5, 0xFFBD94ED, 0xFF529FF2, 0xFF609FF7, 0xFF6B9FF9, 0xFF749FFB,
+	0xFF7A9FFB, 0xFF7E9FFB, 0xFF809FFB, 0xFF819FFB, 0xFF859FFB, 0xFF8B9FFB, 0xFF949FF9, 0xFF9F9FF7,
+	0xFFAD9FF2, 0xFF60ADF2, 0xFF6BADF5, 0xFF74ADF6, 0xFF7AADF7, 0xFF7EADF7, 0xFF80ADF7, 0xFF81ADF7,
+	0xFF85ADF7, 0xFF8BADF6, 0xFF94ADF5, 0xFF9FADF2, 0xFF6BBDED, 0xFF74BDEE, 0xFF7ABDEF, 0xFF7EBDEF,
+	0xFF80BDEF, 0xFF81BDEF, 0xFF85BDEF, 0xFF8BBDEE, 0xFF94BDED, 0xFF74D0E2, 0xFF7AD0E2, 0xFF7ED0E2,
+	0xFF80D0E2, 0xFF81D0E2, 0xFF85D0E2, 0xFF8BD0E2, 0xFF7AE5CC, 0xFF7EE5CC, 0xFF80E5CC, 0xFF81E5CC,
+	0xFF85E5CC, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x008080FF,
+};
+struct source_walk {
+    host_texture_source_callback callback;
+    void *context;
+    BOOL canceled;
+};
+static unsigned source_texel_bytes(unsigned format) {
+    switch(format) {
+    case 0:case 1:case 2:case 17:return 1;
+    case 3:case 6:case 8:case 9:return 2;
+    case 10:case 11:return 4;
+    default:return 0;
+    }
+}
+static size_t source_level_bytes(unsigned format,unsigned width,unsigned height) {
+    return format>=14&&format<=16?(size_t)((width+3)/4)*((height+3)/4)*(format==14?8:16):(size_t)width*height*source_texel_bytes(format);
+}
+static void source_rgba(uint32_t argb,uint8_t *out) {
+    out[0]=argb>>16;out[1]=argb>>8;out[2]=argb;out[3]=argb>>24;
+}
+static unsigned source_expand5(unsigned x) {return (x<<3)|(x>>2);}
+static unsigned source_expand6(unsigned x) {return (x<<2)|(x>>4);}
+static uint32_t source_565(unsigned x) {
+    return 0xff000000u|source_expand5(x>>11)<<16|source_expand6((x>>5)&63)<<8|source_expand5(x&31);
+}
+static void source_decode_dxt(const uint8_t *input,unsigned format,unsigned width,unsigned height,uint8_t *out) {
+    for(unsigned by=0;by<(height+3)/4;by++)for(unsigned bx=0;bx<(width+3)/4;bx++) {
+        const uint8_t *block=input+((size_t)by*((width+3)/4)+bx)*(format==14?8:16);
+        const uint8_t *color=block+(format==14?0:8);unsigned c0=u16(color),c1=u16(color+2);
+        uint8_t palette[4][4];source_rgba(source_565(c0),palette[0]);source_rgba(source_565(c1),palette[1]);
+        for(unsigned channel=0;channel<3;channel++) {
+            palette[2][channel]=c0>c1||format!=14?(2*palette[0][channel]+palette[1][channel])/3:(palette[0][channel]+palette[1][channel])/2;
+            palette[3][channel]=c0>c1||format!=14?(palette[0][channel]+2*palette[1][channel])/3:0;
+        }
+        palette[2][3]=255;palette[3][3]=c0>c1||format!=14?255:0;
+        unsigned alpha[8]={block[0],block[1]};uint64_t alpha_bits=0;
+        if(format==16) {
+            for(unsigned i=0;i<6;i++)alpha_bits|=(uint64_t)block[i+2]<<(8*i);
+            for(unsigned i=2;i<8;i++)alpha[i]=alpha[0]>alpha[1]?((8-i)*alpha[0]+(i-1)*alpha[1])/7:i<6?((6-i)*alpha[0]+(i-1)*alpha[1])/5:i==6?0:255;
+        }
+        uint32_t indices=u32(color+4);
+        for(unsigned y=0;y<4&&by*4+y<height;y++)for(unsigned x=0;x<4&&bx*4+x<width;x++) {
+            unsigned texel=y*4+x;uint8_t *pixel=out+((size_t)(by*4+y)*width+bx*4+x)*4;
+            memcpy(pixel,palette[(indices>>(texel*2))&3],4);
+            if(format==15)pixel[3]=((block[texel/2]>>((texel&1)*4))&15)*17;
+            if(format==16)pixel[3]=alpha[(alpha_bits>>(texel*3))&7];
+        }
+    }
+}
+static size_t source_swizzled(unsigned x,unsigned y,unsigned width,unsigned height) {
+    size_t offset=0,mask=1;
+    for(unsigned bit=1;bit<width||bit<height;bit<<=1) {
+        if(bit<width){if(x&bit)offset|=mask;mask<<=1;}
+        if(bit<height){if(y&bit)offset|=mask;mask<<=1;}
+    }
+    return offset;
+}
+static void source_decode_texels(const uint8_t *input,unsigned format,unsigned width,unsigned height,BOOL swizzled,uint8_t *out) {
+    unsigned bytes=source_texel_bytes(format);
+    for(unsigned y=0;y<height;y++)for(unsigned x=0;x<width;x++) {
+        const uint8_t *pixel=input+(swizzled?source_swizzled(x,y,width,height):(size_t)y*width+x)*bytes;
+        uint32_t value=0;unsigned word=bytes>=2?u16(pixel):pixel[0];
+        switch(format) {
+        case 0:value=(uint32_t)word<<24|0xffffffu;break;
+        case 1:value=0xff000000u|word*0x010101u;break;
+        case 2:value=word*0x01010101u;break;
+        case 3:value=(uint32_t)pixel[1]<<24|pixel[0]*0x010101u;break;
+        case 6:value=source_565(word);break;
+        case 8:value=(word&0x8000?0xff000000u:0)|source_expand5((word>>10)&31)<<16|source_expand5((word>>5)&31)<<8|source_expand5(word&31);break;
+        case 9:value=((word>>12)*17)<<24|(((word>>8)&15)*17)<<16|(((word>>4)&15)*17)<<8|(word&15)*17;break;
+        case 10:value=u32(pixel)|0xff000000u;break;
+        case 11:value=u32(pixel);break;
+        case 17:value=source_vector_palette[word];break;
+        }
+        source_rgba(value,out+((size_t)y*width+x)*4);
+    }
+}
+static BOOL source_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,struct source_walk *walk) {
+    struct host_texture_source source={0};
+    source.width=u16(b+4);source.height=u16(b+6);source.format=u16(b+12);source.flags=u16(b+14);
+    /* Match texture_policy_add_map: only non-linear 2D textures have keys. */
+    if(u16(b+10)!=0||(source.flags&16))return YES;
+    if(!source_level_bytes(source.format,1,1))return YES;
+    if(!source.width||!source.height||source.width>4096||source.height>4096)return NO;
+    if(!pc&&(source.flags&1)&&source_texel_bytes(source.format)&&
+        ((source.width&(source.width-1))||(source.height&(source.height-1))))return NO;
+    source.level_count=1;
+    if(source.flags&1) {
+        unsigned side=MAX(source.width,source.height),limit=0;
+        if(source.format>=14&&source.format<=16)side=MAX(source.width/4,source.height/4);
+        side=MAX(side,(unsigned)u16(b+8));while(side>1){side>>=1;limit++;}
+        source.level_count=MIN((unsigned)u16(b+20),limit)+1;
+    }
+    if(source.level_count>13)return NO;
+    size_t encoded_size=0;
+    for(unsigned level=0;level<source.level_count;level++) {
+        unsigned w=MAX(1u,source.width>>level),h=MAX(1u,source.height>>level);
+        source.level_offsets[level]=source.rgba_size;source.rgba_size+=(size_t)w*h*4;
+        encoded_size+=source_level_bytes(source.format,w,h);
+    }
+    uint64_t offset=u32(b+24);
+    if(offset>size||encoded_size>size-offset||encoded_size>u32(b+28))return NO;
+    uint8_t *encoded=malloc(encoded_size),*rgba=malloc(source.rgba_size);BOOL ok=encoded&&rgba&&read_at(pixels,offset,encoded,encoded_size);
+    if(ok) {
+        source.hash=texture_override_hash(encoded,source_level_bytes(source.format,source.width,source.height));
+        size_t at=0;
+        for(unsigned level=0;level<source.level_count;level++) {
+            unsigned w=MAX(1u,source.width>>level),h=MAX(1u,source.height>>level);
+            if(source.format>=14&&source.format<=16)source_decode_dxt(encoded+at,source.format,w,h,rgba+source.level_offsets[level]);
+            else source_decode_texels(encoded+at,source.format,w,h,!pc&&(source.flags&1),rgba+source.level_offsets[level]);
+            at+=source_level_bytes(source.format,w,h);
+        }
+        source.rgba=rgba;
+        if(!walk->callback(walk->context,&source)){walk->canceled=YES;ok=NO;}
+    }
+    free(encoded);free(rgba);return ok;
 }
 static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,NSString *fingerprint,uint64_t *stored,const struct astc_alpha_policy *policy) {
     unsigned width=u16(b+4),height=u16(b+6),type=u16(b+10),source_format=u16(b+12),flags=u16(b+14),levels=1;
@@ -172,48 +329,52 @@ static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,N
     if(output)munmap(output,output_size);if(output_file)fclose(output_file);munmap(mapping,mapping_size);
     return ok;
 }
-static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t translation,FILE *resource,uint64_t resource_size,NSString *fingerprint,BOOL pc,NSString *shared,uint64_t *stored,const struct astc_alpha_policy *policy) {
+static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t translation,FILE *resource,uint64_t resource_size,NSString *fingerprint,BOOL pc,NSString *shared,uint64_t *stored,const struct astc_alpha_policy *policy,struct source_walk *source) {
     uint8_t block[12];if(group>map_size||map_size-group<108||!read_at(map,group+96,block,12))return NO;
     uint32_t count=u32(block);if(!count)return YES;int64_t elements=(int64_t)u32(block+4)+translation;
     if(count>65536||elements<0||(uint64_t)elements>map_size||(uint64_t)count*48>map_size-(uint64_t)elements)return NO;
     BOOL ok=YES;
-    for(uint32_t i=0;i<count;i++){@autoreleasepool {if(cancellation&&!cancellation(cancellation_context,progress_done,progress_total)){interrupted=YES;return NO;}uint8_t b[48];if(!read_at(map,(uint64_t)elements+i*48,b,48))return NO;
+    for(uint32_t i=0;i<count;i++){@autoreleasepool {if(!source&&cancellation&&!cancellation(cancellation_context,progress_done,progress_total)){interrupted=YES;return NO;}uint8_t b[48];if(!read_at(map,(uint64_t)elements+i*48,b,48))return NO;
         BOOL external=(u16(b+14)&(1u<<8))!=0;
-        if(external&&(!resource||!shared)){ok=NO;continue;}
-        if(!convert_bitmap(external?resource:map,external?resource_size:map_size,b,pc,external?shared:fingerprint,stored,external?NULL:policy))ok=NO;
+        if(external&&(!resource||(!source&&!shared))){ok=NO;continue;}
+        if(source){if(!source_bitmap(external?resource:map,external?resource_size:map_size,b,pc,source))return NO;}
+        else if(!convert_bitmap(external?resource:map,external?resource_size:map_size,b,pc,external?shared:fingerprint,stored,external?NULL:policy))ok=NO;
+        if(source)continue;
         [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:converting_path];[line_lock unlock];if(preempt||atomic_load(&playing)||(converting_path&&![converting_stamp isEqual:stamp(converting_path)])){interrupted=YES;return NO;}
     }}return ok;
 }
-static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress progress,void *context) {
+static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress progress,void *context,struct source_walk *source) {
     uint8_t header[2048];uint64_t size=0,stored=0;double start=NSProcessInfo.processInfo.systemUptime;
-    FILE *map=map_open(path,header,&size);metrics.read_seconds+=NSProcessInfo.processInfo.systemUptime-start;if(!map)return NO;
+    FILE *map=map_open(path,header,&size);if(!source)metrics.read_seconds+=NSProcessInfo.processInfo.systemUptime-start;if(!map)return NO;
     uint32_t version=u32(header+4),tag_offset=u32(header+16),tag_size=u32(header+20);BOOL ok=YES;
     if((version!=5&&version!=609&&version!=7)||tag_offset>size||tag_size>size-tag_offset||tag_size<40){fclose(map);return NO;}
     uint8_t index[40];if(!read_at(map,tag_offset,index,40)){fclose(map);return NO;}
     uint32_t base=version==5?0x803a6000u:0x40440000u;int64_t translation=(int64_t)tag_offset-base;
     int64_t instances=(int64_t)u32(index)+translation;uint32_t count=u32(index+12);
     if(count>65536||instances<0||(uint64_t)instances>size||(uint64_t)count*32>size-(uint64_t)instances){fclose(map);return NO;}
-    struct astc_alpha_policy *policies=version==5?astc_material_collect(map,size,(uint64_t)instances,count,translation):NULL;
+    struct astc_alpha_policy *policies=!source&&version==5?astc_material_collect(map,size,(uint64_t)instances,count,translation):NULL;
     NSString *shared=nil;
-    NSString *resource_path=shared_path();
+    NSString *resource_path=source?[path.stringByDeletingLastPathComponent stringByAppendingPathComponent:@"bitmaps.map"]:shared_path();
+    if(source&&!stamp(resource_path))resource_path=shared_path();
     FILE *resource=resource_open(resource_path);uint64_t resource_size=0;uint8_t resource_header[16]={0};
     if(resource){struct stat st;if(fstat(fileno(resource),&st)||!read_at(resource,0,resource_header,16)){fclose(resource);resource=NULL;}else resource_size=st.st_size;}
-    if(resource)shared=host_map_identity_resolve(resource_path.fileSystemRepresentation)[@"fingerprint"];
+    if(resource&&!source)shared=host_map_identity_resolve(resource_path.fileSystemRepresentation)[@"fingerprint"];
     for(uint32_t i=0;ok&&i<count;i++){@autoreleasepool {
-        progress_done=i;progress_total=count;if(progress&&!progress(context,i,count)){interrupted=YES;ok=NO;break;}
+        if(!source){progress_done=i;progress_total=count;}if(progress&&!progress(context,i,count)){interrupted=YES;ok=NO;break;}
         uint8_t instance[32];if(!read_at(map,(uint64_t)instances+i*32,instance,32)){ok=NO;break;}
         if(memcmp(instance,"bitm",4)&&memcmp(instance,"mtib",4))continue;
         if(version!=5&&u32(instance+24)) {
             uint32_t item=u32(instance+20),items=u32(resource_header+12),offset=u32(resource_header+8);uint8_t entry[12];
             if(!resource||item>=items||(uint64_t)offset+(uint64_t)item*12+12>resource_size||!read_at(resource,(uint64_t)offset+item*12,entry,12)){ok=NO;break;}
-            uint32_t group=u32(entry+8);ok=walk_group(resource,resource_size,group,group,resource,resource_size,shared,YES,shared,&stored,NULL);
+            uint32_t group=u32(entry+8);ok=walk_group(resource,resource_size,group,group,resource,resource_size,shared,YES,shared,&stored,NULL,source);
         }else {if(!u32(instance+20))continue;int64_t group=(int64_t)u32(instance+20)+translation;
-            if(group<0){ok=NO;break;}ok=walk_group(map,size,(uint64_t)group,translation,resource,resource_size,fingerprint,version!=5,shared,&stored,policies?&policies[i]:NULL);}
+            if(group<0){ok=NO;break;}ok=walk_group(map,size,(uint64_t)group,translation,resource,resource_size,fingerprint,version!=5,shared,&stored,policies?&policies[i]:NULL,source);}
+        if(source)continue;
         [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:path];[line_lock unlock];
         if(preempt||atomic_load(&playing)){interrupted=YES;ok=NO;break;}
     }}
     free(policies);if(resource)fclose(resource);fclose(map);
-    host_logf(HOST_LOG_INFO,"ASTC: map preparation %s, %.3f seconds, %llu bytes stored",ok?"finished":"paused",NSProcessInfo.processInfo.systemUptime-start,(unsigned long long)stored);
+    if(!source)host_logf(HOST_LOG_INFO,"ASTC: map preparation %s, %.3f seconds, %llu bytes stored",ok?"finished":"paused",NSProcessInfo.processInfo.systemUptime-start,(unsigned long long)stored);
     return ok;
 }
 static BOOL walk_resource(NSString *path,NSString *fingerprint) {
@@ -225,7 +386,7 @@ static BOOL walk_resource(NSString *path,NSString *fingerprint) {
         for(uint32_t i=0;ok&&i<count;i++){uint8_t item[12];ok=read_at(f,(uint64_t)offset+i*12,item,12);if(!ok)break;
             /* Resource entries alternate raw pixels and tag metadata. Only a tag has a bounded bitmap block. */
             if(u32(item+4)>=108){uint8_t block[12];uint32_t group=u32(item+8);if(read_at(f,(uint64_t)group+96,block,12)&&u32(block)>0&&u32(block)<65536&&(uint64_t)u32(block+4)+(uint64_t)u32(block)*48<=u32(item+4))
-                ok=walk_group(f,st.st_size,group,group,f,st.st_size,fingerprint,YES,fingerprint,&stored,NULL);}
+                ok=walk_group(f,st.st_size,group,group,f,st.st_size,fingerprint,YES,fingerprint,&stored,NULL,NULL);}
         }if(f)fclose(f);
     }
     return ok;
@@ -239,10 +400,10 @@ static BOOL prepare(NSString *path,host_astc_progress progress,void *context) {
     BOOL ok;
     planning=YES;projected_bytes=0;alpha_policies=[NSMutableDictionary new];
     BOOL resource=[path.lastPathComponent.lowercaseString isEqual:@"bitmaps.map"];
-    ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context);
+    ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context,NULL);
     planning=NO;
     if(ok&&!astc_store_has_space(projected_bytes)){host_logf(HOST_LOG_WARN,"ASTC: not enough free storage for %llu projected bytes",(unsigned long long)projected_bytes);ok=NO;}
-    if(ok)ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context);
+    if(ok)ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context,NULL);
     alpha_policies=nil;
     if(ok&&![before isEqual:stamp(path)]){interrupted=YES;ok=NO;}
     if(ok)ok=astc_store_mark_complete(fingerprint.UTF8String);
@@ -276,6 +437,7 @@ void astc_store_map_arrived(const char *name) {
     [line_lock lock];if(![line containsObject:path])[line addObject:path];[line_lock unlock];schedule();
 }
 void host_astc_store_scan(void) {
+    host_texture_upscale_scan();
     if(!enabled)return;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{@autoreleasepool {
         NSMutableArray *fingerprints=[NSMutableArray new];
@@ -287,7 +449,10 @@ void host_astc_store_scan(void) {
 }
 void host_astc_store_init(const char *root) {
     static dispatch_once_t once;dispatch_once(&once,^{
-        data_root=[@(root) stringByStandardizingPath];char setting[32],install[4096];host_config_string("debug.texture_astc","auto",setting,sizeof(setting));if(getenv("HALO_TEXTURE_ASTC"))snprintf(setting,sizeof(setting),"%s",getenv("HALO_TEXTURE_ASTC"));
+        data_root=[@(root) stringByStandardizingPath];char setting[32],install[4096];
+        host_config_string("paths.custom_edition","",install,sizeof(install));install_root=@(install);
+        host_texture_upscale_init(root);
+        host_config_string("debug.texture_astc","auto",setting,sizeof(setting));if(getenv("HALO_TEXTURE_ASTC"))snprintf(setting,sizeof(setting),"%s",getenv("HALO_TEXTURE_ASTC"));
         id<MTLDevice> device=MTLCreateSystemDefaultDevice();BOOL bc=NO;
         if(@available(iOS 16.4,tvOS 16.4,macOS 11.0,*))bc=device.supportsBCTextureCompression;
         char compressed[16];host_config_string("display.compressed_textures","true",compressed,sizeof(compressed));if(getenv("HALO_COMPRESSED_TEXTURES"))snprintf(compressed,sizeof(compressed),"%s",getenv("HALO_COMPRESSED_TEXTURES"));
@@ -295,7 +460,6 @@ void host_astc_store_init(const char *root) {
         enabled=astc_policy_converts(setting,bc)&&(!strcmp(compressed,"true")||!strcmp(compressed,"1"))&&[device supportsFamily:MTLGPUFamilyApple2];
         if(!enabled)return;
         char sync[16];host_config_string("debug.texture_astc_sync","false",sync,sizeof(sync));if(getenv("HALO_TEXTURE_ASTC_SYNC"))snprintf(sync,sizeof(sync),"%s",getenv("HALO_TEXTURE_ASTC_SYNC"));synchronous=!strcmp(sync,"true");
-        host_config_string("paths.custom_edition","",install,sizeof(install));install_root=@(install);
         char model[128]={0};size_t length=sizeof(model);sysctlbyname("hw.machine",model,&length,NULL,0);
         two_core=!strcmp(model,"AppleTV5,3")||!strncmp(model,"iPad6,7",7)||!strncmp(model,"iPad6,8",7)||!strncmp(model,"iPad6,3",7)||!strncmp(model,"iPad6,4",7);
         worker=dispatch_queue_create("org.visr.astc",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,two_core?QOS_CLASS_BACKGROUND:QOS_CLASS_UTILITY,0));
@@ -321,10 +485,12 @@ static NSString *resolve_map_name(NSString *name) {
     return path;
 }
 void astc_store_map_will_load(const char *name) {
-    if(!enabled||!name||!*name)return;NSString *requested=@(name);
+    if(!name||!*name)return;NSString *requested=@(name);
     /* Loading is not play: the worker may convert this map until the game starts. */
     atomic_store(&game_map,![requested.lastPathComponent.stringByDeletingPathExtension.lowercaseString isEqual:@"ui"]);
     atomic_store(&playing,false);
+    host_texture_upscale_map_will_load(name);
+    if(!enabled)return;
     unsigned serial=atomic_fetch_add(&load_serial,1)+1;
     /* A sentinel interrupts current conversion at its next texture boundary.
      * Resolution, stat and directory enumeration all stay off the game thread. */
@@ -364,11 +530,67 @@ void host_astc_store_prepare_import(const char *root,host_astc_progress progress
     if(progress)progress(context,paths.count,paths.count);
 }
 
-void host_astc_map_arrived(const char *path) { astc_store_map_arrived(path); }
+void host_astc_map_arrived(const char *path) { host_texture_upscale_scan();astc_store_map_arrived(path); }
 void host_astc_map_will_load(const char *name) { astc_store_map_will_load(name); }
 /* Called by game_initialize_for_new_map: a level's game begins, or the menus open. */
 void host_astc_game_started(void) {
-    if(!enabled)return;
     atomic_store(&playing,atomic_load(&game_map));
+    host_texture_upscale_game_started(atomic_load(&playing));
+    if(!enabled)return;
     if(!atomic_load(&playing))schedule();
+}
+
+int host_texture_source_is_playing(void) {return atomic_load(&playing);}
+FILE *host_texture_source_open_policy_map(const char *path,uint64_t *size,char *error,size_t error_size) {
+    if(error&&error_size)error[0]=0;
+    if(size)*size=0;
+    if(!path||!*path||!size) {
+        if(error&&error_size)snprintf(error,error_size,"map path and size output are required");
+        return NULL;
+    }
+    @autoreleasepool {
+        uint8_t header[2048];uint64_t inflated_size=0;
+        FILE *file=map_open([@(path) stringByStandardizingPath],header,&inflated_size);
+        if(!file) {
+            if(error&&error_size)snprintf(error,error_size,"cannot open, snapshot, or inflate map");
+            return NULL;
+        }
+        if(u32(header+4)!=5) {
+            if(error&&error_size)snprintf(error,error_size,"texture policy supports Xbox cache version 5; map has version %u",u32(header+4));
+            fclose(file);errno=ENOTSUP;return NULL;
+        }
+        *size=inflated_size;return file;
+    }
+}
+int host_texture_source_scan(const char *root,host_texture_map_callback callback,void *context) {
+    if(!root||!*root||!callback)return -1;
+    @autoreleasepool {
+        NSString *base=[@(root) stringByStandardizingPath];
+        NSMutableArray<NSString *> *folders=[NSMutableArray arrayWithObjects:[base stringByAppendingPathComponent:@"maps"],[base stringByAppendingPathComponent:@"custom_maps"],nil];
+        char install[4096];host_config_string("paths.custom_edition","",install,sizeof(install));
+        if(*install)[folders addObject:[@(install) stringByAppendingPathComponent:@"maps"]];
+        NSMutableSet<NSString *> *paths=[NSMutableSet new];
+        for(NSString *folder in folders)for(NSString *name in [NSFileManager.defaultManager enumeratorAtPath:folder]) {
+            NSString *path=[[folder stringByAppendingPathComponent:name] stringByStandardizingPath];
+            if([name.pathExtension.lowercaseString isEqual:@"map"]&&![name.lastPathComponent.lowercaseString isEqual:@"bitmaps.map"]&&stamp(path))
+                [paths addObject:path];
+        }
+        NSArray<NSString *> *sorted=[paths.allObjects sortedArrayUsingComparator:^NSComparisonResult(NSString *left,NSString *right) {
+            NSComparisonResult order=[left.lastPathComponent compare:right.lastPathComponent options:NSLiteralSearch];
+            return order==NSOrderedSame?[left compare:right options:NSLiteralSearch]:order;
+        }];
+        for(NSString *path in sorted)if(!callback(context,path.fileSystemRepresentation))return 0;
+        return 1;
+    }
+}
+int host_texture_source_walk_map(const char *path,host_texture_source_callback callback,void *context) {
+    if(!path||!*path||!callback)return -1;
+    @autoreleasepool {
+        NSString *name=[@(path) stringByStandardizingPath],*before=stamp(name);
+        if(!before)return -1;
+        struct source_walk source={callback,context,NO};
+        BOOL complete=walk_map(name,nil,NULL,NULL,&source);
+        if(source.canceled)return 0;
+        return complete&&[before isEqual:stamp(name)]?1:-1;
+    }
 }

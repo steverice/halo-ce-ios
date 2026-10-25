@@ -6,6 +6,10 @@
 #include <cstring>
 #include <memory>
 #include <new>
+#include <algorithm>
+#include <atomic>
+#include <thread>
+#include <vector>
 
 namespace {
 struct buffers_free { void operator()(uint8_t *p) const { free(p); } };
@@ -181,4 +185,66 @@ astc_encode_result astc_encode_level_policy(astc_dxt_format format, const void *
 {
 	try { return encode_level(format, source, width, height, output, true, policy); }
 	catch (const std::bad_alloc &) { return ASTC_ENCODE_ERROR; }
+}
+
+astc_encode_result astc_encode_rgba_level(const uint8_t *rgba, unsigned width, unsigned height,
+	void *output, unsigned preset, unsigned threads)
+{
+	if (!rgba || !output || !width || !height || width > 8192 || height > 8192 || preset > 2)
+		return ASTC_ENCODE_ERROR;
+	const float qualities[] = { ASTCENC_PRE_FASTEST, ASTCENC_PRE_FAST, ASTCENC_PRE_MEDIUM };
+	const unsigned tile_size = 128, blocks_x = (width + 3) / 4;
+	threads = std::min(std::min(threads ? threads : 4, 4u), (height + tile_size - 1) / tile_size);
+	std::atomic<unsigned> next_band { 0 };
+	std::atomic<bool> failed { false };
+	auto work = [&]() {
+		astcenc_config config;
+		astcenc_context *context = nullptr;
+		if (astcenc_config_init(ASTCENC_PRF_LDR, 4, 4, 1, qualities[preset], 0, &config) != ASTCENC_SUCCESS ||
+			astcenc_context_alloc(&config, 1, &context, nullptr) != ASTCENC_SUCCESS)
+		{
+			failed = true;
+			return;
+		}
+		buffer pixels(static_cast<uint8_t *>(malloc(tile_size * tile_size * 4)));
+		buffer compressed(static_cast<uint8_t *>(malloc(tile_size * tile_size)));
+		if (!pixels || !compressed) failed = true;
+		while (!failed)
+		{
+			unsigned top = next_band.fetch_add(1) * tile_size;
+			if (top >= height) break;
+			unsigned th = std::min(tile_size, height - top);
+			for (unsigned left = 0; left < width && !failed; left += tile_size)
+			{
+				unsigned tw = std::min(tile_size, width - left), tbx = (tw + 3) / 4, tby = (th + 3) / 4;
+				for (unsigned y = 0; y < th; ++y)
+					memcpy(pixels.get() + size_t(y) * tw * 4, rgba + (size_t(top + y) * width + left) * 4, size_t(tw) * 4);
+				void *slice = pixels.get();
+				astcenc_image image { tw, th, 1, ASTCENC_TYPE_U8, &slice };
+				if (astcenc_compress_image(context, &image, &swizzle, compressed.get(), size_t(tbx) * tby * 16, 0) != ASTCENC_SUCCESS)
+				{
+					failed = true;
+					break;
+				}
+				/* Contexts own per-image state even though their worker count is one. */
+				astcenc_compress_reset(context);
+				for (unsigned by = 0; by < tby; ++by)
+					memcpy(static_cast<uint8_t *>(output) + ((size_t(top / 4 + by) * blocks_x + left / 4) * 16),
+						compressed.get() + size_t(by) * tbx * 16, size_t(tbx) * 16);
+			}
+		}
+		astcenc_context_free(context);
+	};
+	std::vector<std::thread> workers;
+	try
+	{
+		for (unsigned i = 1; i < threads; ++i) workers.emplace_back(work);
+		work();
+	}
+	catch (...)
+	{
+		failed = true;
+	}
+	for (auto &worker : workers) worker.join();
+	return failed ? ASTC_ENCODE_ERROR : ASTC_ENCODE_OK;
 }

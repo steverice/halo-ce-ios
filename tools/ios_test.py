@@ -839,3 +839,28 @@ run('python3', 'tools/bink_test.py', '--if-present')
 
 # Ordinary-play worker probes run without networking or launching the game.
 run("python3", "tools/shader_worker_probe.py")
+
+# Bounded model tile packing, numerical pixel parity, and gated cache records.
+run('xcrun', 'clang', '-O2', '-fobjc-arc', '-Iport/ios/host',
+    'port/ios/tests/texture_upscale_model_probe.m', '-framework', 'Foundation', '-framework', 'CoreML',
+    '-o', BUILD/'texture-upscale-model-probe')
+run(BUILD/'texture-upscale-model-probe')
+run('xcrun', 'clang', '-O2', '-Iport/ios/host', 'port/ios/tests/texture_upscale_pixels_probe.c',
+    'port/ios/host/texture_upscale_pixels.c', '-framework', 'Accelerate', '-o', BUILD/'texture-upscale-pixels-probe')
+run(BUILD/'texture-upscale-pixels-probe')
+run('python3', 'tools/test_texture_upscale_encode.py')
+
+run('xcrun', 'clang', '-O2', '-Iport/ios/host', 'port/ios/tests/texture_refine_bounded_probe.c',
+    'port/ios/host/texture_refine_bounded.c', 'port/ios/host/texture_upscale_pixels.c',
+    '-framework', 'Accelerate', '-o', BUILD/'texture-refine-bounded-probe')
+run(BUILD/'texture-refine-bounded-probe')
+run('xcrun', 'clang', '-O2', '-std=c11', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/texture_upscale_generate_probe.c', '-x', 'c', 'port/ios/host/texture_upscale_generate.m',
+    '-o', BUILD/'texture-upscale-generate-probe')
+run(BUILD/'texture-upscale-generate-probe')
+
+run('xcrun', 'clang', '-O2', '-fobjc-arc', '-Iport/ios/host', '-Iport/runtime',
+    '-Iport/runtime/include', '-Iport/linux/src', 'port/ios/tests/texture_upscale_driver_probe.m',
+    'port/runtime/texture_cache.c', '-framework', 'Foundation', '-framework', 'Metal', '-framework', 'AppKit',
+    '-o', BUILD/'texture-upscale-driver-probe')
+run(BUILD/'texture-upscale-driver-probe')

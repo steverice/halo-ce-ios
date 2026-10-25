@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "texture_refine.h"
+#include "texture_upscale_pixel_fixtures.h"
 
 static double psnr(const float *a, const float *b, size_t n, double peak)
 {
@@ -86,6 +87,24 @@ static void one_wide(struct texture_refine_context *context)
 	puts("texture_refine_probe: one-wide ok");
 }
 
+static void scale_eight(struct texture_refine_context *context)
+{
+	float top[32 * 16], mask[4 * 2];
+	struct texture_refine_params params = { 12, 30, 1, 3 };
+
+	for (int fallback = 0; fallback <= 1; fallback++)
+	{
+		const float *expected = fallback ? pixel_refine8_bpf : pixel_refine8_bp;
+		memcpy(top, pixel_refine8_top, sizeof(top));
+		assert(texture_refine_color(context, top, pixel_refine8_reference, 4, 2, 1, 8, 1, &params, fallback, mask) == 0);
+		for (size_t i = 0; i < 32 * 16; i++)
+			assert(fabsf(top[i] - expected[i]) < 1e-4f);
+		for (size_t i = 0; i < 4 * 2; i++)
+			assert(fabsf(mask[i] - pixel_refine8_mask[i]) < 1e-4f);
+	}
+	puts("texture_refine_probe: scale eight ok");
+}
+
 static int fixture(struct texture_refine_context *context, NSString *path)
 {
 	NSData *data = [NSData dataWithContentsOfFile:path];
@@ -160,6 +179,7 @@ int main(int argc, char **argv)
 		}
 		synthetic(context);
 		one_wide(context);
+		scale_eight(context);
 		if (argc > 1)
 			for (NSString *name in [[NSFileManager.defaultManager contentsOfDirectoryAtPath:@(argv[1]) error:nil]
 				sortedArrayUsingSelector:@selector(compare:)])
