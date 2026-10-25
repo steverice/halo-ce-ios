@@ -673,29 +673,6 @@ char **custom_edition_maps_level_list(
 	return globals->levels;
 }
 
-boolean custom_edition_maps_have(
-	char const *name)
-{
-	struct custom_edition_maps_globals *globals = &custom_edition_maps_globals;
-	short length = (short)csstrlen(name);
-	short map_index;
-
-	if (!globals->looked_for)
-	{
-		custom_edition_maps_look_for();
-	}
-	for (map_index = 0; length > 0 && map_index < globals->map_count + globals->campaign_count; map_index++)
-	{
-		char const *file = map_index < globals->map_count ? globals->maps[map_index].name :
-			globals->campaigns[map_index - globals->map_count].name;
-
-		if (map_share_name_base_length(file) == length && !_strnicmp(file, name, length))
-			return TRUE;
-	}
-
-	return FALSE;
-}
-
 void custom_edition_maps_look_again(
 	void)
 {

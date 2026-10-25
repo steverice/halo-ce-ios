@@ -1412,7 +1412,7 @@
         "show_modded_servers": {
           "type": "boolean",
           "default": false,
-          "description": "The server browser also shows the games it leaves out because their map is not one this machine plays: a Custom Edition map it does not have in custom_maps (with network.map_download off), or a map pack's map. Joining one still checks the map as any join does.",
+          "description": "The server browser also shows the games it leaves out because their map is not one of the game's own: a Custom Edition map's or a map pack's. Joining one still checks the map as any join does.",
           "x-environment": "HALO_SHOW_MODDED_SERVERS",
           "x-environment-style": "value",
           "x-platforms": [

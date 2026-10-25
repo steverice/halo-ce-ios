@@ -3777,15 +3777,13 @@ static void text_to_wide(char const *text, wchar_t *wide, short size)
 /* the games whose names are valid, as a host keeps the names of the
 machines and players that join it (network_game_server_clean_name): each
 name cleaned (player_name_clean), and a game whose name has nothing left
-that names it left out; and the games on a map this machine cannot play
-left out (debug.show_modded_servers shows them): a Custom Edition map's
-unless custom_maps has a map of its name or network.map_download is on, a
-map pack's always. Returns how many are left */
+that names it left out; and the games on any map but the game's own left
+out (Custom Edition maps and map packs: debug.show_modded_servers shows
+them). Returns how many are left */
 static short lobby_browser_valid_games(struct p2p_listing *games, short count)
 {
 	/* (a game on a map this build does not play is not shown: p2p_listing_map_shown) */
 	boolean every_map = config_boolean("debug.show_modded_servers");
-	boolean downloads = config_boolean("network.map_download");
 	short read;
 	short written = 0;
 
@@ -3794,9 +3792,7 @@ static short lobby_browser_valid_games(struct p2p_listing *games, short count)
 		wchar_t name[P2P_LISTING_NAME_SIZE + 1];
 		short index;
 
-		if (!every_map && !p2p_listing_map_shown(&games[read],
-			p2p_listing_map_kind(&games[read]) == P2P_MAP_CUSTOM && custom_edition_maps_have(games[read].map),
-			downloads))
+		if (!every_map && !p2p_listing_map_shown(&games[read]))
 		{
 			continue;
 		}

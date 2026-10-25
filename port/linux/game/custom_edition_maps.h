@@ -58,13 +58,6 @@ Scans for maps the first time. */
 short custom_edition_maps_display_index(
 	char const *level_name);
 
-/* Whether this machine has a Custom Edition map (multiplayer or campaign)
-of the file name `name` (a server browser listing's map: without a folder,
-an extension or the hash another version's name ends in), whatever its
-version. Scans for maps the first time. */
-boolean custom_edition_maps_have(
-	char const *name);
-
 /* whether the display index is a campaign level (stock or CE), i.e. co-op */
 boolean custom_edition_maps_campaign(
 	short display_index);

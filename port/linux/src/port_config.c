@@ -606,9 +606,8 @@ static const struct config_setting config_settings[] =
 	{ "debug.show_modded_servers", _config_boolean, "false", "HALO_SHOW_MODDED_SERVERS", _environment_value,
 		_platform_all,
 		"The server browser also shows the games it leaves out because their\n"
-		"map is not one this machine plays: a Custom Edition map it does not\n"
-		"have in custom_maps (with network.map_download off), or a map pack's map.\n"
-		"Joining one still checks the map as any join does." },
+		"map is not one of the game's own: a Custom Edition map's or a map\n"
+		"pack's. Joining one still checks the map as any join does." },
 	{ "debug.clutter_lowest_lod", _config_boolean, "false", "HALO_CLUTTER_LOWEST_LOD", _environment_value, _platform_all,
 		"Draw the clutter display.clutter_distance names (dead bodies, loose weapons\n"
 		"and equipment, garbage) at its lowest model detail level, wherever it is.\n"

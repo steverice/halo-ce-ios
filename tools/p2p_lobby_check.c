@@ -330,16 +330,14 @@ static void map_checks(void)
 	memset(&listing, 0, sizeof(listing));
 	strcpy(listing.map, "bloodgulch");
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_STOCK, "a stock multiplayer map is stock");
-	check(p2p_listing_map_shown(&listing, 0, 0), "a stock map's game is shown");
+	check(p2p_listing_map_shown(&listing), "a stock map's game is shown");
 	strcpy(listing.map, "BoardingAction");
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_STOCK, "a stock map is told by its name in any case");
 	strcpy(listing.map, "a10");
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_STOCK, "a campaign level (co-op) is stock");
 	strcpy(listing.map, "bigass_open_v1.1");
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "a map of another name is a Custom Edition map");
-	check(!p2p_listing_map_shown(&listing, 0, 0), "a Custom Edition map's game is hidden from a machine without it");
-	check(p2p_listing_map_shown(&listing, 1, 0), "... and shown to one that has a map of its name");
-	check(p2p_listing_map_shown(&listing, 0, 1), "... and to one that downloads maps");
+	check(!p2p_listing_map_shown(&listing), "a Custom Edition map's game is hidden");
 	strcpy(listing.map, "icefields");
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "Halo PC's own maps are Custom Edition maps here");
 	strcpy(listing.map, "bloodgulch");
@@ -348,7 +346,7 @@ static void map_checks(void)
 	strcpy(listing.map, "wizard");
 	listing.map_family = P2P_MAP_FAMILY_OTHER;
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_UNSUPPORTED, "a map pack's map is not supported");
-	check(!p2p_listing_map_shown(&listing, 1, 1), "a map pack's game is never shown");
+	check(!p2p_listing_map_shown(&listing), "a map pack's game is hidden");
 	strcpy(listing.map, "");
 	listing.map_family = P2P_MAP_FAMILY_XBOX;
 	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "a game naming no map is not stock");
