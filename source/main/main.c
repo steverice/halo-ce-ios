@@ -418,6 +418,8 @@ long network_objects_perf_count(void);
 /* port: a level that does not load is a bad or missing map file, which the
 player can fix: a message, not a crash (port/ios/host/host_crash.c) */
 void host_map_load_failed(const char *map_name, const char *messages);
+/* port: debug.crash_test "map" (port/runtime/guest/runtime/guest_crash_test.c) */
+int guest_crash_test_map_load(void);
 #define MAIN_CPU_PHASE(phase, ticks) host_frame_cpu_phase((phase), (ticks))
 #else
 #define MAIN_CPU_PHASE(phase, ticks) ((void)0)
@@ -1512,7 +1514,11 @@ static void main_new_map(
 	host_perf_hooks_loading(1);
 #endif
 	input_flush();
+#ifdef HALO_IOS
+	if (game_load(options) && !guest_crash_test_map_load())
+#else
 	if (game_load(options))
+#endif
 	{
 		game_initialize_for_new_map();
 	}

@@ -1147,7 +1147,8 @@ static const struct config_setting config_settings[] =
 	{ "debug.crash_test", _config_string, "\"\"", "HALO_CRASH_TEST", _environment_value, _platform_ios,
 		"Fail on purpose 150 frames after the game starts, to check crash reports:\n"
 		"\"halt\" (a failed assertion), \"fault\" (a memory fault in game code), \"trap\"\n"
-		"(a trap instruction) or \"abort\" (the game runtime's fatal error); empty, never." },
+		"(a trap instruction) or \"abort\" (the game runtime's fatal error); \"map\" fails\n"
+		"the first level load instead, which shows a message; empty, never." },
 	{ "debug.upscaled_textures_toggle", _config_boolean, "false", "HALO_UPSCALED_TEXTURES_TOGGLE", _environment_value,
 		_platform_ios,
 		"While Back is held, the D-pad's up switches all of the level's textures\n"

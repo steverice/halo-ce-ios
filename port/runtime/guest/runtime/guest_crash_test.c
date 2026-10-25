@@ -12,6 +12,8 @@ setting names:
 - "fault": a write to guest address 0x10, a memory fault in guest code.
 - "trap": a trap instruction in guest code, as musl's abort ends.
 - "abort": the guest runtime's host_abort, a fatal error the host is told of.
+- "map": the first level load fails as a damaged map file's does
+  (main_new_map), which shows the player a message instead of crashing.
 
 Each goes through two functions of its own first, kept out of line, so that
 a report's guest frames can be checked against known names.
@@ -57,6 +59,18 @@ __attribute__((noinline)) static void guest_crash_test_frame(const char *mode)
 	__asm__ volatile("" ::: "memory");
 }
 
+/* nonzero once, for debug.crash_test "map": main_new_map then takes its game_load failure path */
+int guest_crash_test_map_load(void)
+{
+	static int done;
+
+	if (done || strcmp(config_string("debug.crash_test"), "map"))
+		return 0;
+	done = 1;
+	host_log(6, "debug.crash_test: failing the level load");
+	return 1;
+}
+
 void guest_crash_test_update(void)
 {
 	static int frames = -1;
@@ -67,7 +81,7 @@ void guest_crash_test_update(void)
 		mode = config_string("debug.crash_test");
 		frames = 0;
 	}
-	if (!*mode || ++frames != CRASH_TEST_FRAME)
+	if (!*mode || !strcmp(mode, "map") || ++frames != CRASH_TEST_FRAME)
 		return;
 	host_log(6, "debug.crash_test: failing now");
 	guest_crash_test_frame(mode);
