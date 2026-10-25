@@ -883,6 +883,23 @@ void scripted_hud_time_code_reset(
 	return;
 }
 
+#ifdef HALO_IOS
+/* port/linux/src/port_config.c's */
+int config_boolean(const char *name);
+
+static boolean hud_port_time_code_drawn(
+	void)
+{
+	static int drawn = -1;
+
+	if (drawn < 0)
+		drawn = config_boolean("debug.terminal_on_screen") != 0;
+	return drawn != 0;
+}
+#else
+#define hud_port_time_code_drawn() TRUE
+#endif
+
 void hud_render_timer(
 	void)
 {
@@ -1012,7 +1029,11 @@ void hud_render_timer(
 		}
 	}
 
-	if (time_code_time != NONE)
+	/* port: the time code is a developer counter (ticks since a script's
+	time_code_reset, in the terminal font at the top left); Apple builds
+	keep it off the picture, as they do the console, unless
+	debug.terminal_on_screen asks for developer output */
+	if (time_code_time != NONE && hud_port_time_code_drawn())
 	{
 		long stop_time = time_code_stop_time;
 
