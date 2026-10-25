@@ -1320,6 +1320,30 @@ def seed_native_movies(args, data):
         run_command("cp", "-c", "-R", movies, data / "bink")
 
 
+# where macOS's crash reporter writes a user's app crash reports
+DIAGNOSTIC_REPORTS = Path.home() / "Library/Logs/DiagnosticReports"
+
+
+def collect_crash_reports(app, since, out, reports=DIAGNOSTIC_REPORTS):
+    """copy the crash reports of app's executable written since the launch (a time.time()) to out/crash-reports,
+    waiting up to 30 seconds for the crash reporter to write one; the copies, newest last. Their guest frames
+    are named by tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt"""
+    name = app_executable(app) if (app / "Info.plist").is_file() else Path(NATIVE_EXECUTABLE).name
+    found = []
+    for _ in range(30):
+        found = sorted((path for path in reports.glob(f"{name}-*.ips") if path.stat().st_mtime >= since - 1),
+                       key=lambda path: path.stat().st_mtime) if reports.is_dir() else []
+        if found:
+            break
+        time.sleep(1)
+    copies = []
+    for path in found:
+        (out / "crash-reports").mkdir(parents=True, exist_ok=True)
+        copies.append(out / "crash-reports" / path.name)
+        shutil.copy2(path, copies[-1])
+    return copies
+
+
 def run_native(args):
     args.app = args.app or native_app_default()
     if not (args.app / NATIVE_EXECUTABLE).is_file():
@@ -1349,6 +1373,7 @@ def run_native(args):
         # (unused bindings, redundant sets), so ignore them here (Metal's default): any validation line
         # left in the native stderr.log is then an error
         environment["MTL_DEBUG_LAYER_WARNING_MODE"] = "ignore"
+    launched = time.time()
     finished = launch_native(args.app, data, args.out, environment, limit)
     collect(data, args.out)
     if not finished:
@@ -1357,7 +1382,9 @@ def run_native(args):
     log = args.out / "ios-runtime.log"
     status = game_exit(log.read_text(errors="replace")) if log.is_file() else None
     if status != 0:
-        sys.exit(f"the game did not exit cleanly (game exit {status}); logs are in {args.out}")
+        reports = collect_crash_reports(args.app, launched, args.out)
+        crashed = f"; crash report: {', '.join(str(path) for path in reports)}" if reports else ""
+        sys.exit(f"the game did not exit cleanly (game exit {status}); logs are in {args.out}{crashed}")
     print(f"results: {args.out}")
 
 
