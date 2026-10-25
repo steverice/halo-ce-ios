@@ -213,7 +213,9 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     struct texture_cache_record desired={d->hash,d->width,d->height,d->result,d->treatment,
         texture_recipe_key(&globals,&recipe),texture_recipe_global_key(&globals,d->treatment,d->result),0};
     struct texture_cache_record *previous=find_record(d);
-    if(previous&&previous->recipe_key==desired.recipe_key&&previous->global_key==desired.global_key&&valid_record(previous)&&!export_enabled)return 0;
+    /* An export redoes a cached texture once per launch, not on every pass a thermal or foreground change starts. */
+    BOOL exported=export_enabled&&texture_log[key(d->hash,d->width,d->height)]!=nil;
+    if(previous&&previous->recipe_key==desired.recipe_key&&previous->global_key==desired.global_key&&valid_record(previous)&&(!export_enabled||exported))return 0;
     uint64_t top_width=(uint64_t)d->width*d->scale,top_height=(uint64_t)d->height*d->scale;
     unsigned channels=alpha!=TEXTURE_UPSCALE_ALPHA_NONE||d->treatment==TEXTURE_POLICY_MULTIPURPOSE?4:3;
     if((uint64_t)d->width*d->height>(1024ull*1024)||top_width>TEXTURE_RECORD_MAXIMUM_DIMENSION||top_height>TEXTURE_RECORD_MAXIMUM_DIMENSION||
