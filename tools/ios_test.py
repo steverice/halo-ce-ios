@@ -236,6 +236,10 @@ run('python3', 'tools/test_profile_check.py')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-Iport/ios/host',
     'port/ios/tests/touch_replay_probe.c', '-o', BUILD / 'touch-replay-probe')
 run(BUILD / 'touch-replay-probe')
+# the touch overlay goes away again when a hardware controller is used, not for the touch gamepad or a resting stick
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-Iport/ios/host',
+    'port/ios/tests/touch_controller_probe.c', '-o', BUILD / 'touch-controller-probe')
+run(BUILD / 'touch-controller-probe')
 # a recorded route replays: tools/route_check.py's verdicts, and the suite's difficulty for the next map
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/input_replay_probe.c', '-o', BUILD / 'input-replay-probe')

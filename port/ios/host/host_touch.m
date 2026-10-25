@@ -7,9 +7,12 @@
 #import "host_orientation.h"
 #include <math.h>
 #include "host_touch_replay.h"
+#include "host_touch_controller.h"
 
 static struct host_touch_replay_gate replay_gate;
 static void touch_replay_ui_update(void);
+/* whether an attached overlay is out, so controller input knows to put it away (host_touch_controller.h) */
+static atomic_int controls_showing, controller_hide_pending;
 
 static int pause_pending;
 void host_ios_touch_pause(void) { if (!host_touch_replay_blocked(&replay_gate)) pause_pending=1; }
@@ -191,7 +194,8 @@ void host_touch_replay_active(int active) {
     [self.toggle addTarget:self action:@selector(toggleControls) forControlEvents:UIControlEventTouchUpInside];[self addSubview:self.toggle];
     [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(reset) name:UIApplicationWillResignActiveNotification object:nil];
     /* The overlay hides while a game controller is connected, and returns when the last one
-       disconnects or on a touch of the screen. (Approach from CoreCE PR #1 (CC0).) */
+       disconnects or on a touch of the screen, and goes again when the controller is used
+       (controller_input_watch). (Approach from CoreCE PR #1 (CC0).) */
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllersChanged) name:GCControllerDidConnectNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerDisconnected:) name:GCControllerDidDisconnectNotification object:nil];
     [self controllersChanged];
@@ -210,7 +214,14 @@ void host_touch_replay_active(int active) {
     BOOL hidden=self.manuallyHidden||self.controllerHidden;
     self.moveStick.hidden=self.lookStick.hidden=hidden;for(UIView *b in self.buttons)b.hidden=hidden;
     self.toggle.hidden=self.controllerHidden;
+    atomic_store(&controls_showing,!self.controllerHidden);
     [self.toggle setTitle:self.manuallyHidden?@"Show controls":@"Hide controls" forState:UIControlStateNormal];
+}
+/* A hardware controller in use puts the overlay away again after a touch brought it back,
+   and covers a controller connected before its notification could reach us. */
+- (void)controllerUsed {
+    if(self.controllerHidden)return;
+    self.controllerHidden=YES;[self applyVisibility];
 }
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if(self.controllerHidden){self.controllerHidden=NO;self.manuallyHidden=NO;[self applyVisibility];return;}
@@ -267,6 +278,21 @@ static void touch_replay_ui_update(void) {
     }
 }
 
+static bool SDLCALL controller_input_watch(void *userdata,SDL_Event *event) {
+    (void)userdata;
+    enum host_touch_controller_input input=HOST_TOUCH_CONTROLLER_OTHER;uint32_t device=0;int value=0;
+    if(event->type==SDL_EVENT_GAMEPAD_BUTTON_DOWN){input=HOST_TOUCH_CONTROLLER_BUTTON_DOWN;device=event->gbutton.which;}
+    else if(event->type==SDL_EVENT_GAMEPAD_AXIS_MOTION){input=HOST_TOUCH_CONTROLLER_AXIS;device=event->gaxis.which;value=event->gaxis.value;}
+    else return true;
+    if(!atomic_load(&controls_showing) || !host_touch_controller_hides(input,device,touch_id,value))return true;
+    if(atomic_exchange(&controller_hide_pending,1))return true;
+    dispatch_async(dispatch_get_main_queue(),^{
+        atomic_store(&controller_hide_pending,0);
+        for(HaloControls *controls in attached_controls)[controls controllerUsed];
+    });
+    return true;
+}
+
 void host_ios_touch_attach(SDL_Window *window) {
     UIWindow *native=(__bridge UIWindow *)SDL_GetPointerProperty(SDL_GetWindowProperties(window),SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER,NULL);
     /* Retire SDL's temporary launch window before entering the non-returning
@@ -285,6 +311,8 @@ void host_ios_touch_attach(SDL_Window *window) {
     [root addSubview:controls];
     if(!attached_controls)attached_controls=[NSHashTable weakObjectsHashTable];
     [attached_controls addObject:controls];
+    static bool watching;
+    if(!watching){watching=true;SDL_AddEventWatch(controller_input_watch,NULL);}
     touch_replay_ui_update();
     host_logf(HOST_LOG_INFO,"touch controls attached, %.0fx%.0f",root.bounds.size.width,root.bounds.size.height);
 }
