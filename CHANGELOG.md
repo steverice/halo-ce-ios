@@ -1,3 +1,230 @@
+## visr-v0.5.0 (2026-10-25)
+
+### Summary
+
+- iCloud Saves is now off by default. To turn it on, sign in to iCloud and enable it under Network Setup.
+- The Mac app is now part of this beta, with the chosen disc image remembered between launches.
+- The touch overlay now hides when a game controller is connected, and returns when you disconnect it or touch the screen. Hide controls still works.
+- The launch menu now has VISR branding and fades in after the splash. Play is available while benchmark data loads, and it retries quietly if the profile server can't be reached.
+- On devices without BC texture support, textures now convert to ASTC automatically.
+- The VISR splash now appears on an external display while the launch menu is up. AirPlay display and audio routing are also supported.
+- Touch fixes: the flashlight and grenade switch buttons are no longer reversed, and the touch stick no longer moves anything in pause menus.
+- Multiplayer: LAN and internet game types VISR can't play are now labeled or refused before you join, and ally and static damage rules follow the host.
+
+iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+
+VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+
+### Full changelog
+
+### feat
+
+- **release**: pin how to turn on iCloud Saves into What to Test — with `cloud_saves` on in the build policy, `prepare` appends `CLOUD_SAVES_NOTE` after the generated summary, as it does for the shader and performance disclosures, so testers learn that the setting starts off, needs iCloud sign-in and is under Network Setup
+- **metal**: convert textures to ASTC automatically on GPUs without BC — `VISR_ASTC_AUTOMATIC` in `port/linux/src/astc_policy.h` is now 1, so `debug.texture_astc = "auto"` converts where `supportsBCTextureCompression` is false. On an A10X iPad 100% of frames were on time with conversion on and off, peak memory fell 33-57 MB, map loads were unchanged and the worker paused during gameplay. Forced ASTC against plain Metal on the menu and a10 added no differing pixels in any frame, and `tools/astc_upload_test.py` passes with the flag at 0 and 1.
+- **textures**: encode bump maps with the normal-angle gate, and log each one's `mean_angle` in `texture-upscale-generate.json`
+- **textures**: gate a bump map's compression on the mean angle of its normals instead of RGB PSNR — `TEXTURE_UPSCALE_ENCODE_NORMALS` in the alpha mode holds the decoded normals to a mean of at most 2 degrees from the uncompressed ones, the bound the device parity check uses against the Mac set: a height difference of a fraction of a level turns into a large RGB difference where normals are steep, and 38 dB had stored 27 of the 78 bump maps uncompressed on an M1 iPad Pro; with the angle, 14 noisy ones that BC7 cannot keep within 2 degrees stay BGRA8; the encoders become `bc7-v4` and `astc4x4-fast-gated-v3`
+- **textures**: generate the upscaled-texture cache on the device behind `debug.texture_upscale_generate` — the bundled `S4g` Core ML model runs on the Neural Engine only, refinement, bump integration, damage measure, mips and the BC7 or ASTC 4x4 encode feed `texture_record.h` records and `manifest.tsv`
+- **ios**: hide the touch overlay while a game controller is connected — `HaloControls` in `host_touch.m` hides on `GCControllerDidConnectNotification` and returns on the last disconnect or on a touch; the manual Hide controls button still works. Approach from CoreCE PR #1 (CC0).
+- **ios**: fall back to a shorter guest arena when the 4 GB reservation is refused — `host_memory_initialize` tries 4 GiB first, then a 4 GiB-aligned reservation ending at the guest image's end (at least `0x8B000000`), and logs which size it took; guest pointer values are unchanged, though a stray pointer above the shorter range no longer faults. `memory_probe` now also runs against the shorter arena. Approach from CoreCE PR #1 (CC0).
+- **ios**: show the VISR splash on an external display while the launch menu is up — `VISRExternalSceneDelegate` builds the menu's icon and wordmark window for a scene that connects before `host_external_attach`, `host_external_menu_splash` covers a scene already connected, `host_external_splash.h` tracks the handoff, and the launch menu skips external scenes when choosing its own
+- **tools**: fill the upscaled-texture cache from a Mac set — `tools/texture_cache_write.py` encodes each `<hash>.rgba` of a set as a `texture_record.h` record, BC7 (etcpak's bc7enc) or ASTC 4x4 at astc-encoder's medium preset, writes `manifest.tsv` in `texture_cache.c`'s format, can keep to the textures of given maps, and with `--psnr` decodes level 0 again to report its RGB PSNR against the 38 dB gate. The encoders are MIT-licensed Python packages run with `uv`, not part of the app. `tools/test_texture_cache_write.py` checks its records with the reader's own checks.
+- **textures**: draw upscaled textures from compressed cache records — `port/linux/src/texture_record.h` defines one record per texture in `texture-cache/` (`<hash>-<width>x<height>.bin`): the whole mip chain of the 2x, 4x or 8x replacement as BC7 or ASTC 4x4 blocks, a level table, the recipe key and a checksum. At each level load `texture_override_cache_records` reads the cache's `manifest.tsv`, and a record is drawn only when the manifest lists it with the record's recipe, it is this GPU's format and its checksum holds; it uploads as blocks with no decode and counts toward `display.upscaled_textures_memory` at its compressed size, about a quarter of the RGBA8 replacement's.
+- **textures**: choose each texture's 2x, 4x or 8x scale from the policy file — `port/assets/texture-policy.json` (policy version 5) gains `scales`: an upscaled texture is twice the original's size, four times for the first-person treatment, and twice that again for graphics, first-person textures, the audit's graphics (by key) and three named a10 bitmaps, the rule the shipping set was composed by. `texture_policy_classify` puts the result in `texture_policy_decision.scale` (1 for an original) through the new `texture_policy_scale`, and `tools/embed_texture_policy.py` embeds the block.
+- **textures**: compare approved and higher resolutions live
+- **textures**: switch a level's textures between upscaled and original in game with `debug.upscaled_textures_toggle`
+- **launch**: brand the menu and fade it in after the profile splash — `HaloBenchmarkMenuController` keeps Play independent of benchmark downloads
+- **site**: point Get VISR at the newest release — a page script resolves the newest GitHub release, since `/releases/latest` skips prereleases, and falls back to the releases list
+- **release**: publish releases before 1.0 as GitHub prereleases — `publish_flags` sets `prerelease` and leaves `make_latest` off below 1.0, and `publish` verifies the published prerelease state
+- **textures**: choose ASTC from the GPU's BC support — `debug.texture_astc` defaults to `auto`, gated by `VISR_ASTC_AUTOMATIC`
+- **textures**: prepare ASTC map packs in the background — `host_astc_store` resumes validated encoder output and swaps live textures at frame boundaries
+- **textures**: encode varying-alpha DXT as ASTC — preserve direct blocks and reject quality failures before publication
+- **render**: smooth HUD flashes and motion tracker animation between ticks — reuse the render clock without advancing HUD state
+- **metal**: rewrite eligible DXT textures as ASTC — gate uploads behind `debug.texture_astc`
+- **profiles**: apply verified updates at gameplay breaks — preserve overrides and defer expensive changes
+- **metal**: add dynamic resolution shadow measurements — evaluate planner decisions without changing resolution
+- **perf**: collect per-game performance reports — `game_perf` records bounded traces and spike windows
+- **tools**: aggregate game performance reports — `game_perf_reports.py` ranks context epochs with timing coverage
+- **ios**: add `dynamic_resolution.h` and its probe — plan resolution changes from frame feedback
+- **net**: encode version 38 settings — `game_variant_options` preserves legacy fields and refuses unsupported rules
+- **network**: label unsupported LAN game kinds — `network_game_client_advertised_game_compatible` refuses rules VISR cannot play
+- **net**: apply the host's ally and static damage rules — `network_coop_protects_ally` honors the shared switch while static shields recharge locally and their break damage stays on the host
+- **net**: accept host shield policies — `network_distributed.c` keeps stock effects and syncs the STOCK default
+- **benchmark**: report measured `p90` — derive resolution ceilings without weakening frame-rate qualification
+- **ios**: support AirPlay display and audio routing — `host_external.m` keeps display ownership independent of audio routes
+- **tools**: compare desktop network peers — `net_lockstep.py` checks sampled state and owns both process groups
+- **release**: add the native Mac app as the `macos` platform
+- **macos**: remember the chosen disc image with a security-scoped bookmark
+- **macos**: build the AppKit app for TestFlight — App Store signing, App Sandbox, Mac icon and signed feeds
+- **ios**: persist shader contributions — `host_shader_upload` retries ordinary-play observations without blocking rendering
+- **metal**: verify stock map identities — `host_shader_official_alias` maps complete retail fingerprints to bundled lists
+- **tools**: validate and stage shader contributions — `shader_observations.py` admits complete descriptors for manual review
+- **metal**: collect bounded shader observations — copy immutable dependencies before worker persistence
+- **build**: gate shader contributions with independent policy — `shader_upload` defaults off and supports shader-only CloudKit builds
+- **ios**: make iCloud saves opt-in — keep `cloud_saves` off until enabled on each device
+- **icon**: use Orbitron Bold on Top Shelf — `visr_icon.py` embeds weight 700 outlines while preserving wordmark width and centering
+- **icon**: set the Top Shelf wordmark in Orbitron — `visr_icon.py` embeds regular-weight outlines to match the site without a system font
+- **site**: center the header, add a Get VISR link and a benchmarks placeholder page — the share title, description and `og.png` now cover every Apple device, `build_site.py` builds `benchmarks.md` beside `index.md` with a per-page `og:url`, "unmatched performance" links to that page, the iPad shot is narrower so its section balances, and the platform links lead with an accent Get VISR pill that points at the README's install section
+- **site**: crop the Master Chief icon toward his face — `just-works.svg` scales the glyph so the bottom 15 percent falls outside the tile
+- **site**: flatten the Master Chief icon to match the other tiles — `just-works.svg` is now a straight-on bust with the index finger curled to the chin, two armor tones, a single gold visor and a dark glove
+- **site**: put the platform glyphs in front of each section heading — `heading_with_icons` in `build_site.py` reuses the nav outlines, with both iPhone and iPad glyphs on their shared section
+- **site**: drop the hover underline on the platform pills — `.platform-nav a:hover` in `style.css` only highlights the border
+- **site**: add device glyphs to the platform links and put the Vision Pro image first — `nav_with_icons` in `build_site.py` prefixes each link with an outline from `docs/site/icons/nav/` (the GitHub mark is from Octicons), and `style.css` lays out the Vision Pro section image-left like Apple TV
+- **site**: keep the VISR quote's attribution on the next line without paragraph spacing — `docs/site/index.md` uses a hard line break inside the blockquote
+- **site**: center the platform links and spell Apple TV with a space — `.platform-nav` in `style.css` centers its pills and `docs/site/index.md` reads "Apple TV"
+- **site**: let the icon columns stand without a visible heading — `style.css` hides `#on-every-device` visually but keeps it for screen readers
+- **site**: sharpen the cloud and community icons — deeper cyan shapes with brighter gold details read better at icon size, and `community.svg` is now three helmeted figures with gold visors, the front one outlined against the two behind
+- **site**: flat, larger every-device icons with a posed Master Chief — the tiles in `docs/site/icons/` use flat VISR cyan and amber shapes on the icon's background and grid, `just-works.svg` is a tone-layered trace of the game's cyborg model posed hand to chin, and `.pillar-icon` grows to 108 px
+- **site**: use the VISR icon's palette for the every-device tiles — each tile in `docs/site/icons/` now has the app icon's dark radial background, teal grid and rim, with cyan glyphs and gold accents
+- **site**: draw the every-device icons as rounded app-style tiles — `cloud.svg` and `community.svg` are gradient tiles with solid white glyphs, `just-works.svg` holds a placeholder helmet on a green tile, and `.pillar-icon` in `style.css` sizes and shadows them
+- **site**: show the every-device features as icon columns — `docs/features.toml` gains an `every-device` table of icon, title and text (iCloud saves, It just works, Compatible with the community) that the README lists as bullets and `build_site.py` renders as centered columns with inline SVG icons from `docs/site/icons/`; the unused `cloud_saves` fields and `tailored` line are gone, and the goal line now opens with "VISR aims to provide"
+- **site**: put the Vision Pro screenshot beside its bullets — a new `{device=vision}` image kind in `build_site.py` uses the platform layout without a bezel (`.device-vision` in `style.css`)
+- **docs**: share public facts — `build_site.py` regenerates `README.md` and the site from `docs/features.toml`
+- **site**: frame gameplay images in `index.md` - pair device captures with platform features
+- **macos**: `--local-routes` lets the native Mac build replay takes from `benchmark/local-routes` — the AppKit build compiled in `HALO_BENCHMARK_NO_ROUTES`, so `tools/replay_check.py` and the window review found no catalog; the new `HALO_BENCHMARK_LOCAL_ROUTES` option keeps recordings out of the bundle but allows the unsigned local catalog
+- **benchmark**: highlight measured windows while replaying whole takes — `debug.benchmark_review_take` keeps playback going after measurement ends
+
+### fix
+
+- **metal**: accept ASTC cube maps again under `debug.texture_astc = "force"` — `format_supported` returned early for any texture in `upscaled_format`, so with the format at ASTC 4x4 (where there is no BC, or when forced) a cube map the ASTC rewrite produced was refused and sampled wrong, which showed as millions of differing pixels in the menu and a10 against plain Metal. The early return now covers only 2D records and cube maps fall through to the `astc_textures` rule.
+- **textures**: redo a cached texture for an export once per launch — with `debug.texture_upscale_export` every pass regenerated the whole game, and a thermal-state change or a return to the foreground starts a pass, so on the iPhone 12 Pro the generator began the game again as soon as it finished
+- **textures**: apply the compression gate the spec gives each texture, and store a texture no encoding passes as BGRA8 — the device run kept 248 of 861 textures original: graded alpha was held to the binary-alpha endpoint test, and noisy bump normals cannot reach 38 dB in any block format
+- **textures**: encode BC7 with bc7enc's alpha modes so cutouts keep their edges — bc7enc16 has only modes 1 and 6, and mode 6 shares its indices between color and alpha, so a texture whose color changes where its alpha switches between 0 and 255 decoded endpoint alpha 20 to 98 levels off and failed the gate; on the device about a quarter of the textures were kept original for it
+- **ios**: retry the launch menu's data checks and benchmark a model with no published profile — a failed profile or recording check left "Can't reach the profile server. Benchmarking disabled." for the rest of the menu, so one timeout or a network that was not up yet at launch disabled the benchmark until the next launch; and a model the tester feed has no shard for (the feed answers 404, as it does for the iPad Air 4) could never benchmark at all. While the menu is up, a failed check now retries quietly after 5, 15 and 30 s, then every minute, and at once when the network path changes, leaving the failure text in place until the data loads; a 404 for the device's profile shard counts as nothing published, so the bundled profiles stand. `HostDataPackStore` exposes `lastFeedStatus`, names the URL in its HTTP status warning, and no longer logs a second "(cancelled)" line for the response it refused. `data_updates_probe` checks the retry delays, that a retry does not bring back "Downloading", the 404 rule, a 503 retrying, and that Play stops the retries.
+- **ios**: bound guest memory calls by the arena actually reserved — `guest_range_valid` in `host_memory.c` accepted any range below 4 GiB, so with the shorter arena a guest `mprotect` or `munmap` above its end would have reached host memory past it; it now checks against `host_arena_size`. `HALO_ARENA_SHORT=1` in the app's environment skips the 4 GiB attempt so the shorter arena can be tested on a host that grants 4 GiB, and `memory_probe` checks the refusal.
+- **ios**: reserve the guest arena before the import screen — a device that refuses the arena now fails at once with the existing message in `host_main.m`, not after a multi-GB import; the message and docs no longer say 4 GB since a shorter arena is accepted. Approach from CoreCE PR #1 (CC0).
+- **textures**: leave manifest entries kept original out of the cache's records — `texture_override_cache_records` listed every line of `manifest.tsv`, so an entry whose result is `TEXTURE_POLICY_ORIGINAL` counted as an upscaled texture and was looked for on disk at each draw
+- **textures**: keep the ASTC swap off textures drawn upscaled — `texture_astc_swap_ready` relied on `texture_entry_result_uncached` returning the replacement, which it no longer does since replacements are looked up at bind, so it now asks `texture_entry_replaced` as the upload's eligibility check does
+- **textures**: free replacement textures under a memory budget, and let two sets share it — `texture_replacement_cache.h` keeps the replacements of `debug.texture_override_directory` within `display.upscaled_textures_memory` (default from the device's memory: a quarter of what the system still lets the app take, else an eighth of the machine's, 64 MB to 2 GB): a load that does not fit drops the ones drawn longest ago, never one drawn in the last 60 frames, and a texture with no room is drawn as the map has it and tried again later; a dropped one is read again when drawn; 600 frames after a map load the ones the new level has not drawn go; a system memory warning (`host_memory_pressure_poll`) also drops the replacements the last two frames did not draw and halves their budget. Before this the table only grew until the system ended the app.
+- **profiles**: offer verified profile updates after the launch menu freezes its selection — `commitMenuSelection` creates the refresh queue, starts the play-time feed check and offers the pending generation, and `host_profile_updates_watch` waits for the menu's selection instead of starting the legacy launch path
+- **launch**: use the final benchmark menu wording — clarify the explanation and disabled status
+- **launch**: clarify benchmarking and distinguish unavailable actions — preserve blue focus and readable disabled states
+- **launch**: mask the icon and size the menu for larger screens
+- **launch**: show Play while benchmark data loads — keep feed checks off the menu
+- **textures**: gate ASTC alpha coverage at proven shader thresholds
+- **hud**: allow preloading with unknown desktop headroom — preserve low-memory guards on device targets
+- **textures**: stop re-walking maps that cannot be prepared — a malformed map or a full disk waits for the next scan instead of looping in the menus
+- **lights**: initialize `limited` and log cap stats only when caps are on — `lights_render_diffuse` read it uninitialized when lights were disabled
+- **textures**: invalidate the cached texture result after an ASTC format swap — the eligibility check filled `result_texture` with the BGRA8 handle that `texture_entry_format` then destroyed, so the next cached bind returned a freed texture
+- **touch**: suppress touch stick input in pause menus — keep hardware menu navigation available
+- **touch**: align flashlight and grenade switch buttons — correct the reversed shoulder mappings
+- **ios**: require sustained GPU pressure — isolated spikes should not lower resolution
+- **metal**: use the design's fixed 540-line floor in shadow mode — `display.dynamic_resolution_floor` is not a defined setting, so the schema and `tools/profile_check.py` would refuse it
+- **metal**: keep the pacer's CPU figure unchanged by shadow measurement — subtracting readback and visibility waits from `cpu` in `pacing_schedule` changed adaptive pacing and benchmark CPU for every build
+- **net**: share browser kind labels — show Hardcore variants in internet rows
+- **pacer**: allow ordinary compositor cadence before giving up — `frame_pacer_slot_wait` grants one refresh of grace
+- **mac**: enable automatic LAN broadcasts in AppKit — `broadcast_allowed` includes the native host
+- **net**: refuse unsupported internet game kinds — use the signed listing stamp before joining
+- **perf**: suppress delivery during scripted games — `runtime_suppressed` keeps pending reports local
+- **menus**: keep automation variant defaults — `multiplayer_profile_set_for_game` resets options when its automation hook replaces the selected profile
+- **net**: preserve each host's damage agreement — `network_damage_static_rules` gates new behavior and localized static effects cannot inherit a replayed hit's authority
+- **network**: align test state samples — `network_test_log_tick` keeps slow frames from shifting the sampling phase
+- **pacer**: give up a held frame's present on the Mac instead of freezing the game loop
+- **privacy**: disclose loaded maps — upload manifests include `ProductInteraction` analytics
+- **ios**: hide unavailable iCloud controls — `cloud_saves` menus require the host capability
+- **metal**: preserve regional stock-map warming — keep `map_key` uploads tied to fingerprints
+- **ios**: require diagnostics in upload-capable builds — remove `share_shader_improvements` and its controls
+- **macos**: refuse `--local-routes` in team-signed builds — a TestFlight build must run only signed benchmark catalogs, and `validate_native` now says so instead of leaving the release probe to catch it
+- **ci**: read the sandbox entitlements with PlistBuddy — `plutil -extract` splits the dotted entitlement names into a key path and finds nothing
+- **metal**: resolve loaded map identities — translate cache paths and keep atomics outside the guest ABI
+- **build**: separate shader and benchmark CloudKit macros — `HALO_SHADER_CLOUD` keeps shader-only builds from referencing the benchmark sender
+- **build**: show shader settings only in capable builds — `settings_bundle.py` generates independent cloud and contribution controls
+- **build**: use the native Mac push entitlement — `CloudUploadEntitlements.cmake` generates platform keys and clears stale upload signing files
+- **tools**: link the window marker probe with `libm` — Linux needs explicit math linkage for `sqrt`, `fmod`, and `lround`
+
+### perf
+
+- **textures**: finish one texture on another thread while the next one's predictions run — the generator copies each source out of the map walk, runs `texture_upscale_generate_begin` on the worker and hands `texture_upscale_generate_end`, the encode, the record and the log to a serial finisher, so the CPU's refinement, damage measure and encode overlap the Neural Engine; two textures overlap only while their float tops fit 128 MB together, and before a larger one the finisher drains and freed memory is returned, so the peak is set by one large texture; `texture-upscale-generate.json` reports the footprint before the model, the generator's sampled peak, each texture's peak and its footprint at every step, the model's calls and Neural Engine seconds, and when the last texture finished
+- **textures**: run the development generator at user-initiated priority, the import phase's, instead of utility; its refinement bands and encoder threads run at the caller's priority, and background work after import is phase 3's to lower again
+- **textures**: encode BC7 on every core, at most eight — the generator passed four threads and `encode_bc7` capped them at four, which leaves half of an M1's cores idle; serious thermal state still halves them, and ASTC keeps its own cap
+- **textures**: predict each texture's source once for every level made from it, and bound the generator's large tops — a 2x base and its 4x top, or a 4x base and its `S4g` 2x mip, came from two predictions of the same image; a texture of more than one tile now gets its 2x level inside each tile, from the 4x pixels predicted around the tile's core, so no 4x image exists for a 2x result (`texture_upscale_tiles_probe` holds this to down2 of the whole image, wrapped and clamped); requested 4x and 8x tops are kept as `_Float16` and turned into bytes in their own allocation; the bpf damage measure quantizes the refined top in place instead of copying it; and generation splits into `texture_upscale_generate_begin` (the first predictions) and `texture_upscale_generate_end` (the CPU work), with the model serialized, so a caller can overlap two textures
+- **textures**: bundle `S4g` as a one-channel package — the generator calls it once per channel and tile; on an M1 iPad Pro it needs about 70 MB of Core ML memory where the three-plane batch needed about 190 MB, and on the iPhone 12 Pro each channel runs in 23 ms instead of 26 (on the M1 iPad Pro 19 ms instead of 16); its outputs match the three-plane package within 0.001, and the weights are byte for byte the same
+- **textures**: hand `S4g` tiles to a consumer while the Neural Engine runs the next call, packing as many tile channels per call as the package has planes — `texture_upscale_model_predict_tiles` gives each tile's 4x output, including 64 output pixels of real-neighbor context around its core, to a consumer on another thread, double-buffered, so packing, conversion and the generator's own per-tile work overlap the prediction; a single-channel image (alpha, bump height) now fills all three planes of a three-plane package with three tiles instead of replicating one; `predict4x` and `predict4x_strided` are consumers of it, and `HALO_TEXTURE_UPSCALE_MODEL` loads another compiled package for development
+- **textures**: run the bounded refinement's downsampling on every core and let it refine a top kept as `_Float16` — on an M1 iPad Pro refinement and the damage measure took 361 of 799 busy seconds, mostly in `texture_upscale_down2_channel` on one thread with a modulo per tap; output rows now go to 32 bands at the caller's quality of service, every source position is computed once per pass, and the sums are the same doubles in the same order, so the results are bit for bit the same (6 to 10 times faster on a 12-core Mac); `texture_refine_color_bounded_half` and `texture_upscale_down2_channel_half` read and write the top as `_Float16`, which halves a 4096 px top, at about 76 dB against the float refinement
+- **textures**: give the bundled `S4g` package one fixed 288 by 288 input instead of 16 enumerated shapes — the generator only ever predicts 288 px tiles, and with the enumerated package the app's footprint went from 26 MB at the menu to 2.5 to 2.8 GB from the first prediction on; the weights are byte for byte the same
+- **textures**: predict a texture's R, G and B in one S4g call — the package already runs S4g on each of its three input channels as a batch, but `infer_color` sent each color channel alone, replicated to three, so every color texture cost three predictions where one gives the same result; a 2x result keeps the 4x RGB image only while it is at most 64 MiB and otherwise still goes a channel at a time, and alpha stays its own prediction
+- **textures**: run the bounded refinement's row passes on every core — `texture_refine_color_bounded` and `texture_refine_bump_bounded` filled each output row in turn on the generator's one thread, and refinement took 430 of the first 1,080 busy seconds on the device; each row is independent, so 32 bands go through `dispatch_apply_f`, each with its own row temporaries, and the output is unchanged
+- **hud**: finish startup decoding before gameplay — keep remaining worker waits inside map initialization
+- **hud**: predecode startup sheets within a bounded cache — keep PNG work off the rendering thread and upload on demand
+- **textures**: pause ASTC preparation during play on every device — the worker runs only in the menus, while loading and at import
+- **lights**: cap level lights by device profile — preserve object lighting and replay state
+- **replay**: cache the lip-sync setting — `input_replay_benchmark_lip_sync` refreshes when configuration changes
+- **renderer**: cache texture replacement results — `texture_entry_result` refreshes after menu and upload changes
+- **structures**: inline cluster traversal — `cluster_partition_get_next_datum` keeps reference-list order
+- **tags**: inline valid block element lookups — `tag_block_get_element_with_size` keeps its existing failure path
+- **memory**: inline successful datum lookups — `datum_get` retains its checked fallback for invalid entries
+- **perf**: leave the `dynamicResolution` rows out of reports when shadow mode is off — every tester report carried one all-zero row per retained trace frame
+- **metal**: keep dynamic resolution shadow work off the frame path when the setting is off — `gpu_metal_present` read `config.toml` through `host_config_real` and added a presented handler every frame, `host_perf_hooks_present_end_at` and `host_perf_hooks_phase_at` took the shadow mutex, and report builds split the upscale and HUD encoder on stage-boundary GPUs
+- **renderer**: include read-only vertex locks — dynamic vertices are written after those locks too
+- **renderer**: stream mirrored pages on writing vertex locks — avoid segment copies for locked ranges
+- **perf**: finish reports off the game thread — `host_perf_reports_activate` queued the previous game's compression with `dispatch_sync`, stalling every map load and return to the menu; the worker now ends, finishes and starts segments in order, records the map-load start itself, and also suppresses collection while the device benchmark runs
+- **shadows**: draw a window's object shadows into atlas pages instead of a render pass each
+- **ios**: mirror the pause-menu hint by callback — `host_audio_output_poll` looked the hint up and reordered views on every event poll; it now acts only when the pause menu opens or closes
+- **ios**: send the pause-menu hint on changes only — `halo_ui_pointer_update` crossed to the host to set `VISR_PAUSE_MENU` every frame on every Apple platform
+- **ios**: sync the shader journal only when it changes — the upload worker wakes every minute during play and `checkpoint` rewrote and fsynced `working.json` each time, even with nothing collected
+- **render**: restore structure triangle culling — on Apple Vision Pro, `structure_culling` on cut late frames from 17.7 to 5.1 percent with no visible difference, so this reverts `cc84a5307` and brings back the CC0 pick of upstream `c53c31c00` (OpenCE PR #404, authored and committed before OpenCE's license change, with a CC0 tree)
+- **metal**: bound small-batch admission storage — `host_shader_list_merge` reserves only the input record count
+
+### refactor
+
+- **perf**: fix misleading indentation around the new performance hooks — `perf_draws` counts every draw in `submit_draw`
+
+### build
+
+- **benchmark**: bind the 20-case tester catalog to the 0.5.0 guest at its own feed — `docs/site/packs/tester/recordings-28e06eaaa33443bbcce7ad8b4415d73bf3d21ab2d00a5846d8b85ec3b183f995.json` is the unchanged ship-042 catalog signed as sequence 1792940384 with compatibility `benchmark-catalog-1:28e06eaaa33443bbcce7ad8b4415d73bf3d21ab2d00a5846d8b85ec3b183f995`, which 0.5.0 builds read; `docs/site/packs/tester/recordings.json` stays byte-identical so 0.4.2 builds keep their catalog, and `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
+- **profiles**: re-sign the 20 tester profile shards from the 0.5.0 settings sweep profiles — every shard under `docs/site/packs/tester/profiles/` still carried the profiles from before `eeba44df7`, and a downloaded shard replaces the bundled profiles, so 0.5.0 builds would have run the old frame rates and render lines; each shard is re-signed one sequence higher from the current `profiles/` tree and `docs/site/packs/tester/publication.json` names the new SHA-256s. The 0.4.2 profile validator accepts every new shard.
+- **third_party**: vendor `bc7enc16` for BC7 encoding on the device — Rich Geldreich's encoder and decoder (MIT or public domain, `port/third_party/bc7enc16/LICENSE`), unmodified
+- **benchmark**: bind the 20-case tester catalog to the 0.4.2 guest — `docs/site/packs/tester/recordings.json` is re-signed as sequence 1792805638 with compatibility `benchmark-catalog-1:d9cfd3692f72f1443e822d9804f75e5505784dc9207fdcb1d5fec5ef086656cb`, adding 1.5x and 2x windows on a50 and d40, 2x on a10, and Apple TV 4K (1st generation) display variants; `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256, and the six cases a10-heroic-x2, a50-x1-5, a50-x2, d40-x1-5, d40-x2 and d40-maw-fight replayed alike at 30 fps and unlimited on the 0.4.2 source
+
+### docs
+
+- **site**: add the privacy policy and link it from the footer — `docs/site/privacy.html` for the App Store Connect privacy policy URL and `docs/site/privacy-tv.txt` as the plain-text Apple TV policy; the legal block in `docs/features.toml` links it, so the site and README footers show it
+- **release**: say in the performance What to Test disclosure that leaving the beta stops sharing — `PERF_REPORTS_DISCLOSURE` carries the approved withdrawal wording
+- **privacy**: qualify automatic shader reports — source builds require `--shader-upload`
+- link "unmatched performance" to `docs/benchmarks.md` on GitHub instead of a site page — `build_site.py` builds only `index.md` again, the placeholder `docs/site/benchmarks.*` pages are gone, and `docs/benchmarks.md` holds the fairness caveat until the comparison engine generates it
+- **roadmap**: match `ROADMAP.md` to what main ships — checks off PlayStation VR2 Sense aiming and rumble, signed profile data, FXAA/SMAA and shadow resolution, Bonjour discovery and the share sheet, corrects setting names and defaults, adds the 0.4.0 to 0.4.2 work that was missing, splits partly done lines, and lists the 0.5.0 network version 36 and AirPlay work
+- **readme**: title the headset section Apple Vision Pro
+- **readme**: open with the wide VISR banner — `docs/images/readme-banner.png` (icon beside the bold wordmark) replaces the app icon and the plain heading at the top of `README.md`
+- tighten the sync and performance column text in `docs/features.toml`
+- link "unmatched performance" to the benchmark page — the every-device text in `docs/features.toml` points at `docs/benchmarks.md`
+- revise the platform and every-device copy, with each platform's minimum OS — `docs/features.toml` gets new feature text plus `{visionos_minimum}`, `{tvos_minimum}`, `{macos_minimum}` and `{ios_minimum}` placeholders that `build_site.py` fills from the build scripts, and the icon columns now render inline Markdown links
+- **site**: show four-player split screen in the Apple TV section — `apple-tv.jpg` is now a Blood Gulch split-screen frame with varied weapons and a Warthog driver, replacing The Maw
+- drop the cloud-save availability caveat — the every-device iCloud bullet is now only its summary, and `build_site.py` no longer renders the platform list, build condition or Mac exception from `docs/features.toml`
+- say the Mac app plays in any window size or full screen in `docs/features.toml`
+- list split screen on Apple TV and keyboard and mouse on Mac in `docs/features.toml`
+- merge the two game-data notices into the shared legal text — the separate `disc` line in `docs/features.toml` repeated the legal paragraph, so the disc-image requirement now lives in `legal` and `build_site.py` no longer appends it to the footer
+- **site**: show the full HUD in the Apple TV and Mac screenshots — `apple-tv.jpg` and `mac.jpg` are now uncropped 16:9 and 16:10 renders of the same The Maw and Two Betrayals moments, so the motion tracker stays in frame
+- reconcile README and site copy in `docs/features.toml` so both use the approved platform, VR and legal text
+- **site**: show a different level on each device — the Library on iPad, the Maw on Apple TV and Two Betrayals on Mac, with the touch-control beach shot kept on iPhone, and alt text that names each scene
+- **site**: keep the legal footer as a fixed part of the page template — the unofficial-project notice, trademarks, no-assets statement, credits and license links render below every build of `index.md`, so editing the Markdown never drops them
+- **site**: fix four typos in the landing page text — "port of Halo: Combat Evolved for", "Mac. Based on", "PlayStation VR2" and "Built-in touch controls"
+- **site**: build the landing page from `index.md` — keep content editable in Markdown
+
+### test
+
+- **runner**: reset `debug.upscaled_textures_toggle` to off in `tools/mac_run.py`'s defaults, so a run that turned it on doesn't leak into the next
+- **profiles**: expect A17 Pro fallbacks in `profile_probe` — the iPhone 15 Pro Max now matches `iphone-15-pro.toml`, and the iPhone 16 and 17 inherit it from the catalog tier just below them instead of the iPhone 16e's
+- **hud**: stub `host_astc_game_started` in the map-load harness — the extracted `game_initialize_for_new_map` now calls it after the rebase onto main
+- **lights**: stub the reference-list traversal in the light-storage link probe — `cluster_partitions.h` now includes `reference_lists.h` and `errors.h` for its inline `cluster_partition_get_next_datum`, which the probe's layout check does not need
+- **net**: cover client-owned static destruction — verify host authority through effect ownership
+- **macos**: check the signed shader build with an existing profile — after the AppKit merge a team build without `--signing-profile` uses Xcode's automatic signing, so the no-provisioning-updates assertion belongs to the profile-signed shipping build
+
+### chore
+
+- **profiles**: set frame rates and render lines from the 0.5.0 settings sweep — several profiles claimed rates their devices do not hold with 99.5% of frames on time
+- **textures**: let `HALO_TEXTURE_UPSCALE_CLEAN` also remove compiled packages copied into the data root for `HALO_TEXTURE_UPSCALE_MODEL`
+- **textures**: raise the generator's encoder strings to `bc7-v3` and `astc4x4-fast-gated-v2` — a texture the old gate kept original is in the manifest under the old recipe, so the new gate and the BGRA8 exception must redo it
+- **textures**: let `HALO_TEXTURE_UPSCALE_CLEAN` empty what the generator left in the data root — the texture cache, `texture-upscale-export/` and `texture-upscale-generate.json`, since a device's app container cannot be emptied from the Mac after a development run
+- **profiles**: add provisional A17 Pro settings — native rendering holds 60 fps; 120 fails the 1.5x workload
+
+### merge
+
+- main's benchmark-link docs change into opt-in iCloud saves
+- the native shader signing test fix into opt-in iCloud saves
+- the AppKit app and shader uploads into opt-in iCloud saves — `cloud_saves` and `shader_upload` are separate policy keys bound to every release platform, the Mac release build and probe take both, `halo_cloud_upload_entitlements` adds the push key for saves-only device builds, and Network Setup keeps both features' rows and imports
+- the AppKit TestFlight app into shader uploads — every release platform takes `--shader-upload` from the policy, the Mac probe compiles it unsigned, the Mac export checks the Production CloudKit environment when it is on, and the native Mac app signs CloudKit with its sandbox entitlements and without a push key
+
 ## visr-v0.4.2 (2026-10-23)
 
 ### Summary
