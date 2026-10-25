@@ -1409,17 +1409,6 @@
             "desktop"
           ]
         },
-        "show_modded_servers": {
-          "type": "boolean",
-          "default": false,
-          "description": "The server browser also shows the games it leaves out because their map is not one of the game's own: a Custom Edition map's or a map pack's. Joining one still checks the map as any join does.",
-          "x-environment": "HALO_SHOW_MODDED_SERVERS",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple",
-            "desktop"
-          ]
-        },
         "clutter_lowest_lod": {
           "type": "boolean",
           "default": false,
@@ -3076,6 +3065,17 @@
           "default": 256,
           "description": "Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536).",
           "x-environment": "HALO_NET_MAP_SEED_UPLOAD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
+        "custom_maps": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental: the server browser also shows games on Custom Edition maps, those of a map in custom_maps or, with network.map_download on, any. Off by default: it shows only the games on the game's own maps. Games on a map pack's maps are never shown. Joining still checks that the map is the host's version.",
+          "x-environment": "HALO_NET_CUSTOM_MAPS",
           "x-environment-style": "value",
           "x-platforms": [
             "apple",

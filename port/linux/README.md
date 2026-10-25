@@ -351,7 +351,6 @@ the setting for one start of the game. It has priority over the file.
 | `debug.aim_loss_grace` | number | `-1.0` | apple | `HALO_AIM_LOSS_GRACE_DEBUG` | Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand tracking that hold the last aim, in place of the device profile's. |
 | `debug.texture_idle_seconds` | number | `-1.0` | apple, desktop | `HALO_TEXTURE_IDLE_SECONDS_DEBUG` | Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. |
 | `debug.clutter_distance` | number | `-1.0` | apple, desktop | `HALO_CLUTTER_DISTANCE_DEBUG` | Tuning display.clutter_distance live: from 0 up, the distance in world units in place of the device profile's. |
-| `debug.show_modded_servers` | boolean | `false` | apple, desktop | `HALO_SHOW_MODDED_SERVERS` | The server browser also shows the games it leaves out because their map is not one of the game's own: a Custom Edition map's or a map pack's. |
 | `debug.clutter_lowest_lod` | boolean | `false` | apple, desktop | `HALO_CLUTTER_LOWEST_LOD` | Draw the clutter display.clutter_distance names (dead bodies, loose weapons and equipment, garbage) at its lowest model detail level, wherever it is. |
 | `debug.offscreen_window_wall_seconds` | number | `60.0` | apple, desktop | `HALO_OFFSCREEN_WINDOW_WALL_SECONDS` | How many seconds of wall time an offscreen benchmark window may run before it is ended where it stands (the report's capped and measured_ticks), from 30 to 1800. |
 | `debug.collision_type_filter` | boolean | `true` | apple, desktop | `HALO_COLLISION_TYPE_FILTER` | Collision rays and sphere queries skip an object whose type the query does not test before looking at it, instead of after: the same answers with less work in a crowded cluster. |
@@ -494,6 +493,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.map_share_upload` | integer | `1024` | apple, desktop | `HALO_NET_MAP_SHARE_UPLOAD` | Hosting: the most kilobytes a second the host sends of maps (16 to 65536), so that the game's own traffic keeps the rest of the upload. |
 | `network.map_seed` | boolean | `false`; desktop `true` | apple, desktop | `HALO_NET_MAP_SEED` | Playing in another's game: help send its map to players who join without it, as a torrent's peers do (the pieces this machine has, at most network.map_seed_upload). |
 | `network.map_seed_upload` | integer | `256` | apple, desktop | `HALO_NET_MAP_SEED_UPLOAD` | Playing in another's game: the most kilobytes a second this machine sends of maps to other players (16 to 65536). |
+| `network.custom_maps` | boolean | `false` | apple, desktop | `HALO_NET_CUSTOM_MAPS` | Experimental: the server browser also shows games on Custom Edition maps, those of a map in custom_maps or, with network.map_download on, any. |
 | `network.map_download` | boolean | `false`; desktop `true` | apple, desktop | `HALO_NET_MAP_DOWNLOAD` | Joining a game on a Custom Edition map this machine does not have: download it (and the resource maps it needs, up to about 2.3 GB) from the game's players into custom_maps, if its host shares it (network.map_share); false leaves the game, saying which map is missing and that downloads are off. |
 | `network.coop_public` | boolean | `false` | apple, desktop | `HALO_NET_COOP_PUBLIC` | Whether an online co-op game (Create Game > Internet, a SINGLEPLAYER map) starts as PUBLIC or, false, PRIVATE: Server Setup's LISTING in co-op, which writes its choice here. |
 | `network.coop_friendly_fire` | string | `"on"` | apple, desktop | `HALO_NET_COOP_FRIENDLY_FIRE` | Whether the players of an online co-op game hurt each other: "off", "on", "shields_only" or "explosives_only" (Server Setup's FRIENDLY FIRE in co-op, which writes its choice here). |
@@ -886,18 +886,19 @@ If it cannot reach the host in 30 seconds, it marks the game FAILED. A game
 that is full or starting shows CLOSED. REFRESH asks the hosts for their
 listings again.
 
-The Server Browser shows only the games on the game's own maps: its
-multiplayer maps, and the campaign levels of a co-op game. A game on any
-other map (a Custom Edition map, or the map of a map pack: Delta's list
-names the family of the map, such as `ce` or `pack` for CE+'s
-`wizard@cex`) is left out, whatever maps `custom_maps` holds and whatever
-`network.map_download` says. A game joined by its invite link is not
-filtered, and a client takes only a Custom Edition map of the version of
-the host, as for any join. A host's map with
+The Server Browser shows the games on the game's own maps (its multiplayer
+maps, and the campaign levels of a co-op game). A game on any other map is
+a game on a Custom Edition map, and is shown only with CUSTOM MAPS
+(EXPERIMENTAL) on in Settings > Network Setup (`network.custom_maps`, off
+by default), and then if `custom_maps` has a map of that name or map
+downloads are on (`network.map_download`, DOWNLOAD MAPS). A game on the map
+of a map pack (Delta's
+list says that the family of the map is `pack`, such as CE+'s
+`wizard@cex`) is never shown. On joining, a client takes only a Custom
+Edition map of the version of the host, as for any join. A host's map with
 a name of the game's own maps but other contents cannot be detected: the
 host does not send a version for those maps, and the client plays its own
 copy. If the host sends a version for one, the client logs it.
-`debug.show_modded_servers = true` shows every game.
 
 #### Delta's game list
 

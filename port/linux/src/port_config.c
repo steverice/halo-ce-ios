@@ -603,11 +603,6 @@ static const struct config_setting config_settings[] =
 	{ "debug.clutter_distance", _config_real, "-1.0", "HALO_CLUTTER_DISTANCE_DEBUG", _environment_value, _platform_all,
 		"Tuning display.clutter_distance live: from 0 up, the distance in world units\n"
 		"in place of the device profile's. Negative uses the profile's." },
-	{ "debug.show_modded_servers", _config_boolean, "false", "HALO_SHOW_MODDED_SERVERS", _environment_value,
-		_platform_all,
-		"The server browser also shows the games it leaves out because their\n"
-		"map is not one of the game's own: a Custom Edition map's or a map\n"
-		"pack's. Joining one still checks the map as any join does." },
 	{ "debug.clutter_lowest_lod", _config_boolean, "false", "HALO_CLUTTER_LOWEST_LOD", _environment_value, _platform_all,
 		"Draw the clutter display.clutter_distance names (dead bodies, loose weapons\n"
 		"and equipment, garbage) at its lowest model detail level, wherever it is.\n"
@@ -1040,6 +1035,12 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"Playing in another's game: the most kilobytes a second this machine\n"
 		"sends of maps to other players (16 to 65536)." },
+	{ "network.custom_maps", _config_boolean, "false", "HALO_NET_CUSTOM_MAPS", _environment_value, _platform_all,
+		"Experimental: the server browser also shows games on Custom Edition\n"
+		"maps, those of a map in custom_maps or, with network.map_download on,\n"
+		"any. Off by default: it shows only the games on the game's own maps.\n"
+		"Games on a map pack's maps are never shown. Joining still checks that\n"
+		"the map is the host's version." },
 	{ "network.map_download", _config_boolean, DEFAULT_MAP_DOWNLOAD, "HALO_NET_MAP_DOWNLOAD", _environment_value,
 		_platform_all,
 		"Joining a game on a Custom Edition map this machine does not have:\n"

@@ -1250,9 +1250,17 @@ int p2p_listing_map_kind(const struct p2p_listing *listing)
 	return P2P_MAP_CUSTOM;
 }
 
-int p2p_listing_map_shown(const struct p2p_listing *listing)
+int p2p_listing_map_shown(const struct p2p_listing *listing, int custom, int installed, int downloads)
 {
-	return p2p_listing_map_kind(listing) == P2P_MAP_STOCK;
+	switch (p2p_listing_map_kind(listing))
+	{
+	case P2P_MAP_STOCK:
+		return 1;
+	case P2P_MAP_CUSTOM:
+		return custom && (installed || downloads);
+	default:
+		return 0;
+	}
 }
 
 void p2p_lobby_mark_failed(const unsigned char *identifier)

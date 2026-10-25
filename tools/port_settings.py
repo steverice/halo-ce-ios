@@ -132,6 +132,8 @@ SCREENS = {
              "Draw a panel behind the scoreboard, for clearer\ntext.", None),
             # (map sharing, port/linux/game/map_share.c: this machine's part in
             # another's game)
+            ("CUSTOM MAPS (EXPERIMENTAL):", "network.custom_maps", ON_OFF,
+             "Show games on Custom Edition maps. These are not\nfully supported yet.", None),
             ("DOWNLOAD MAPS:", "network.map_download", ON_OFF,
              "Joining a game on a Custom Edition map you do not\nhave: download it from the players (if shared).",
              None),
