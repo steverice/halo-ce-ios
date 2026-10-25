@@ -38,6 +38,10 @@ static struct {double read_seconds,encode_seconds,write_seconds;uint64_t direct_
  * worker does no encoding then, on any device; it resumes in the menus and
  * while a level loads. game_map: the map loading or loaded is a level. */
 static atomic_bool playing,game_map;
+/* A pass stopped by play, a priority map, cancellation or a changing file is
+ * resumed; a malformed map or a full disk waits for the next scan instead of
+ * looping in the menus. */
+static BOOL interrupted;
 static uint16_t u16(const uint8_t *p) { return p[0]|(uint16_t)p[1]<<8; }
 static uint32_t u32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
 static NSString *stamp(NSString *path) {
@@ -152,11 +156,11 @@ static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t transl
     uint32_t count=u32(block);if(!count)return YES;int64_t elements=(int64_t)u32(block+4)+translation;
     if(count>65536||elements<0||(uint64_t)elements>map_size||(uint64_t)count*48>map_size-(uint64_t)elements)return NO;
     BOOL ok=YES;
-    for(uint32_t i=0;i<count;i++){@autoreleasepool {if(cancellation&&!cancellation(cancellation_context,progress_done,progress_total))return NO;uint8_t b[48];if(!read_at(map,(uint64_t)elements+i*48,b,48))return NO;
+    for(uint32_t i=0;i<count;i++){@autoreleasepool {if(cancellation&&!cancellation(cancellation_context,progress_done,progress_total)){interrupted=YES;return NO;}uint8_t b[48];if(!read_at(map,(uint64_t)elements+i*48,b,48))return NO;
         BOOL external=(u16(b+14)&(1u<<8))!=0;
         if(external&&(!resource||!shared)){ok=NO;continue;}
         if(!convert_bitmap(external?resource:map,external?resource_size:map_size,b,pc,external?shared:fingerprint,stored))ok=NO;
-        [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:converting_path];[line_lock unlock];if(preempt||atomic_load(&playing)||(converting_path&&![converting_stamp isEqual:stamp(converting_path)]))return NO;
+        [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:converting_path];[line_lock unlock];if(preempt||atomic_load(&playing)||(converting_path&&![converting_stamp isEqual:stamp(converting_path)])){interrupted=YES;return NO;}
     }}return ok;
 }
 static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress progress,void *context) {
@@ -174,7 +178,7 @@ static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress pro
     if(resource){struct stat st;if(fstat(fileno(resource),&st)||!read_at(resource,0,resource_header,16)){fclose(resource);resource=NULL;}else resource_size=st.st_size;}
     if(resource)shared=host_map_identity_resolve(resource_path.fileSystemRepresentation)[@"fingerprint"];
     for(uint32_t i=0;ok&&i<count;i++){@autoreleasepool {
-        progress_done=i;progress_total=count;if(progress&&!progress(context,i,count)){ok=NO;break;}
+        progress_done=i;progress_total=count;if(progress&&!progress(context,i,count)){interrupted=YES;ok=NO;break;}
         uint8_t instance[32];if(!read_at(map,(uint64_t)instances+i*32,instance,32)){ok=NO;break;}
         if(memcmp(instance,"bitm",4)&&memcmp(instance,"mtib",4))continue;
         if(version!=5&&u32(instance+24)) {
@@ -184,7 +188,7 @@ static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress pro
         }else {if(!u32(instance+20))continue;int64_t group=(int64_t)u32(instance+20)+translation;
             if(group<0){ok=NO;break;}ok=walk_group(map,size,(uint64_t)group,translation,resource,resource_size,fingerprint,version!=5,shared,&stored);}
         [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:path];[line_lock unlock];
-        if(preempt||atomic_load(&playing)){ok=NO;break;}
+        if(preempt||atomic_load(&playing)){interrupted=YES;ok=NO;break;}
     }}
     if(resource)fclose(resource);fclose(map);
     host_logf(HOST_LOG_INFO,"ASTC: map preparation %s, %.3f seconds, %llu bytes stored",ok?"finished":"paused",NSProcessInfo.processInfo.systemUptime-start,(unsigned long long)stored);
@@ -209,7 +213,7 @@ static BOOL prepare(NSString *path,host_astc_progress progress,void *context) {
     NSDictionary *identity=host_map_identity_resolve(path.fileSystemRepresentation);NSString *fingerprint=identity[@"fingerprint"];
     if(!fingerprint)return NO;
     if(astc_store_map_complete(fingerprint.UTF8String))return YES;
-    converting_path=path;converting_stamp=before;cancellation=progress;cancellation_context=context;progress_done=0;progress_total=1;memset(&metrics,0,sizeof(metrics));double began=NSProcessInfo.processInfo.systemUptime;
+    converting_path=path;converting_stamp=before;cancellation=progress;cancellation_context=context;interrupted=NO;progress_done=0;progress_total=1;memset(&metrics,0,sizeof(metrics));double began=NSProcessInfo.processInfo.systemUptime;
     BOOL ok;
     planning=YES;projected_bytes=0;
     BOOL resource=[path.lastPathComponent.lowercaseString isEqual:@"bitmaps.map"];
@@ -217,7 +221,8 @@ static BOOL prepare(NSString *path,host_astc_progress progress,void *context) {
     planning=NO;
     if(ok&&!astc_store_has_space(projected_bytes)){host_logf(HOST_LOG_WARN,"ASTC: not enough free storage for %llu projected bytes",(unsigned long long)projected_bytes);ok=NO;}
     if(ok)ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context);
-    if(ok&&[before isEqual:stamp(path)])ok=astc_store_mark_complete(fingerprint.UTF8String);
+    if(ok&&![before isEqual:stamp(path)]){interrupted=YES;ok=NO;}
+    if(ok)ok=astc_store_mark_complete(fingerprint.UTF8String);
     host_logf(HOST_LOG_INFO,"ASTC map %s: complete=%d seconds=%.6f read=%.6f encode=%.6f write=%.6f rewritten_blocks=%llu encoded_textures=%llu encoded_texels=%llu excluded=%llu thermal=%ld",path.lastPathComponent.UTF8String,ok,NSProcessInfo.processInfo.systemUptime-began,metrics.read_seconds,metrics.encode_seconds,metrics.write_seconds,(unsigned long long)metrics.direct_blocks,(unsigned long long)metrics.encoded_textures,(unsigned long long)metrics.encoded_texels,(unsigned long long)metrics.excluded,(long)NSProcessInfo.processInfo.thermalState);
     return ok;
 }
@@ -235,9 +240,9 @@ static void pump(void) {
         /* The game is about to read a priority map itself, so it is not mid-copy:
          * convert during loading without the arrival stability wait. prepare
          * still rejects a file whose stamp changes underneath it. */
-        else if(priority){[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];BOOL finished=prepare(path,NULL,NULL);[observations removeObjectForKey:path];if(!finished){[line_lock lock];if(![line containsObject:path])[line insertObject:path atIndex:0];[line_lock unlock];}}
+        else if(priority){[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];BOOL finished=prepare(path,NULL,NULL);[observations removeObjectForKey:path];if(!finished&&interrupted){[line_lock lock];if(![line containsObject:path])[line insertObject:path atIndex:0];[line_lock unlock];}}
         else if(![prior[@"stamp"] isEqual:current]){observations[path]=@{@"stamp":current,@"time":@(now)};[line_lock lock];[line insertObject:path atIndex:0];[line_lock unlock];}
-        else if(now-[prior[@"time"] doubleValue]>=10){[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];BOOL finished=prepare(path,NULL,NULL);[observations removeObjectForKey:path];if(!finished){[line_lock lock];if(![line containsObject:path])[line insertObject:path atIndex:0];[line_lock unlock];}}
+        else if(now-[prior[@"time"] doubleValue]>=10){[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];BOOL finished=prepare(path,NULL,NULL);[observations removeObjectForKey:path];if(!finished&&interrupted){[line_lock lock];if(![line containsObject:path])[line insertObject:path atIndex:0];[line_lock unlock];}}
         else {[line_lock lock];[line insertObject:path atIndex:0];[line_lock unlock];}
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),worker,^{pump();});
     }
