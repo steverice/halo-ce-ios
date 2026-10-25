@@ -685,6 +685,32 @@ On a Vision Pro, after installing a `--team` build:
 - **Audio issues:** share device/OS and output route along with the runtime
   log. The regression suite checks PCM handoff; it does not test every route.
 
+### Crash reports
+
+A fatal error ends the app as a native crash, so the system keeps a crash
+report: TestFlight crash feedback, Xcode's Organizer, and Settings > Privacy &
+Security > Analytics Data on the device (`~/Library/Logs/DiagnosticReports` on
+a Mac). The game's own fatal errors (a failed assertion, a halt) crash in
+`visr_guest_halt`, the guest runtime's in `visr_guest_abort` and the host's in
+`visr_host_error`; a fault in game code crashes where it happened. Errors the
+player can act on (no game data, a device that cannot reserve the game's
+memory) still show a message instead.
+
+`ios-runtime.log` has the error, the registers and every frame, the game's
+named. A report keeps no message text of the app's own, so the error goes into
+the crashed thread's registers (`x0` reads `VISRCRSH`), and the game's frames,
+which run from an alias in the guest arena, show as addresses outside every
+image. `tools/guest_symbolicate.py` prints the error and names those frames:
+
+```sh
+python3 tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt VISR-2026-10-25-120000.ips
+python3 tools/guest_symbolicate.py --symbols VISR.app ios-runtime.log   # or an .ipa: the app carries the table
+```
+
+`debug.halt_screen = true` keeps the game's blue halt screen instead of the
+crash. `debug.crash_test` (`"halt"`, `"fault"`, `"trap"` or `"abort"`) fails on
+purpose 150 frames after the game starts, to check what a report shows.
+
 ### AirPlay and external displays
 
 On iPhone or iPad, open Control Center, tap **Screen Mirroring**, and choose
