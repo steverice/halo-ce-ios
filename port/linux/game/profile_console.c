@@ -38,6 +38,27 @@ boolean main_menu_is_loaded(void);
 
 static boolean profile_console_installed;
 
+#if defined(HALO_IOS) && defined(__aarch64__)
+/* port: the Apple builds' guest asks the host for clock_gettime by a system
+call, which costs more than most scopes it would time; the counter the
+benchmark's translation time reads (d3d8_device.c) is a register read. It
+runs at CNTFRQ_EL0: 24 MHz on most Apple chips, 1 GHz on some */
+static unsigned long long profile_console_counter_ns(void)
+{
+	static unsigned long long frequency;
+	unsigned long long ticks;
+
+	if (!frequency)
+		__asm__ volatile("mrs %0, cntfrq_el0" : "=r"(frequency));
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(ticks));
+	if (frequency == 24000000ULL)
+		return ticks * 125ULL / 3ULL;
+	if (frequency == 1000000000ULL)
+		return ticks;
+	return ticks / frequency * 1000000000ULL + ticks % frequency * 1000000000ULL / frequency;
+}
+#endif
+
 static void profile_console_map_component(const char *map, char *name, int size)
 {
 	const char *component = map;
@@ -170,6 +191,9 @@ static void profile_console_install(
 	if (profile_console_installed)
 		return;
 	profile_console_installed = TRUE;
+#if defined(HALO_IOS) && defined(__aarch64__)
+	profile_trace_set_clock(profile_console_counter_ns);
+#endif
 	profile_trace_set_log(profile_console_log);
 	profile_trace_set_notify(profile_console_notify);
 	profile_trace_set_ready(profile_console_ready);

@@ -53,8 +53,11 @@ def config_settings(text=None):
     pattern = (r'\{\s*(' + C_STRING + r')\s*,\s*_config_(boolean|integer|real|string)\s*,\s*('
                + C_STRING + r'|DEFAULT_\w+)\s*,\s*(' + C_STRING + r')\s*,\s*'
                r'(_environment_\w+)\s*,\s*(_platform_\w+)\s*,\s*((?:' + C_STRING + r'\s*)+)\}')
+    # a profiling build's own settings (configure.py --profile): a block of the table that only it compiles
+    profile_spans = [match.span() for match in re.finditer(r'^#ifdef HALO_PROFILE$.*?^#endif$', table, re.M | re.S)]
     entries = list(re.finditer(pattern, table))
     remainder = re.sub(pattern, '', table)
+    remainder = re.sub(r'^#(?:ifdef HALO_PROFILE|endif)$', '', remainder, flags=re.M)
     if remainder.strip(' \t\n{},') or not entries:
         raise ValueError('unrecognized config_settings syntax; update the generator')
     result = {}
@@ -78,6 +81,8 @@ def config_settings(text=None):
                 'x-platforms': platforms}
         if defaults['apple'] != defaults['desktop']:
             item['x-defaults'] = defaults
+        if any(start <= entry.start() < end for start, end in profile_spans):
+            item['x-profiling-build'] = True
         result[name] = item
     return result
 
@@ -234,7 +239,8 @@ def markdown(kind, settings):
             default += '; desktop ' + literal(item['x-defaults']['desktop'])
         if kind == 'config':
             accepted = item['type']
-            extra = ', '.join(item['x-platforms']) + ' | `' + item['x-environment'] + '`'
+            extra = ', '.join(item['x-platforms']) + (' (profiling builds)' if item.get('x-profiling-build') else '') \
+                + ' | `' + item['x-environment'] + '`'
         else:
             typ, low, high, choices = keys[name]
             accepted = typ

@@ -12,6 +12,7 @@ from typing import Any, Dict, List
 
 from .embed_assets import hud_assets_build
 from .linux_build import (LINUX_PROFILE, MUSL_MATH_DIR, STB_VORBIS_SOURCE, XDK_INCLUDE, compile_launcher,
+                          configuration_defines,
                           game_defines_and_includes,
                           game_sources, lto_mode, musl_math_cflags, musl_math_sources, pgo_mode, pgo_profile, profile_use_flags,
                           xdk_headers)
@@ -316,7 +317,7 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     # build is the code it always was.
     branch_ranges = ["-mllvm", "-aarch64-tbz-offset-bits=12", "-mllvm", "-aarch64-cbz-offset-bits=17",
                      "-mllvm", "-aarch64-bcc-offset-bits=17"] if lto or profile else []
-    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-DHALO_IMMEDIATE_BATCH=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + branch_ranges + (["-DHALO_RELEASE"] if getattr(sln, "port_release", False) else []) + (["-DHALO_COLLISION_LOG"] if getattr(sln, "port_collision_log", False) else []) + (["-DHALO_RENDER_VALIDATION=1"] if validation else []))
+    guest_abi = " ".join(GUEST_ABI_FLAGS + ["-DHALO_IOS=1", "-DHALO_IMMEDIATE_BATCH=1", "-ffixed-x15", "-ffixed-x27", "-mllvm", "-aarch64-enable-compress-jump-tables=false"] + branch_ranges + configuration_defines(sln) + (["-DHALO_RENDER_VALIDATION=1"] if validation else []))
     guest_code = " ".join(GUEST_CODE_FLAGS)
     tool_implicit = [Path(converter), Path("tools/guest_asm_convert.py"), *generated_headers]
     bitcode_implicit = [*generated_headers]

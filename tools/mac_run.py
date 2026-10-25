@@ -1060,6 +1060,9 @@ def collect(documents, out):
             shutil.copy2(documents / name, out / name)
     if (documents / "runner").is_dir():
         shutil.copytree(documents / "runner", out / "runner", dirs_exist_ok=True)
+    # a profiling build's CPU recordings (tools/ios_build.py --profile; docs/profiling.md)
+    if (documents / "profiles").is_dir():
+        shutil.copytree(documents / "profiles", out / "profiles", dirs_exist_ok=True)
     # automatic takes (debug.input_record = "auto"), newest last
     if (documents / "recordings").is_dir():
         shutil.copytree(documents / "recordings", out / "recordings", dirs_exist_ok=True)

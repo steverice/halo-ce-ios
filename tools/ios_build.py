@@ -166,6 +166,10 @@ def main():
     parser.add_argument('--collision-log', action='store_true',
                         help='time and count the collision functions for the on-screen collision log (a debug and profiling '
                              'aid); without it the clock reads and counters are compiled out')
+    parser.add_argument('--profile', action='store_true',
+                        help='a profiling build: the game records CPU scopes into trace parts in the data folder\'s '
+                             'profiles folder (debug.profile_record, or the profile_record console command; '
+                             'docs/profiling.md); without it the recorder is compiled out')
     parser.add_argument('--render-validation', choices=('on', 'off'),
                         default='on' if os.environ.get('HALO_RENDER_VALIDATION_BUILD') == '1' else 'off',
                         help='check every call into the GPU backend before it is made, and name every fallback '
@@ -206,6 +210,8 @@ def main():
         parser.error('--signing-profile requires --team and cannot change account capabilities or register devices')
     if args.signing_profile and args.upload:
         parser.error('--signing-profile archives/exports only; the CI release helper uploads with API authentication')
+    if args.profile and args.app_store_package:
+        parser.error('--profile is for development builds, never an App Store package')
     if args.upload and not args.app_store_package:
         parser.error('--upload needs --app-store-package')
     if args.internal_only and not args.app_store_package:
@@ -290,7 +296,8 @@ def main():
             if not target.exists() or target.read_bytes()!=data:target.write_bytes(data)
     validation = args.render_validation == 'on'
     run(sys.executable,'configure.py','--ios',f'--pgo={args.pgo}',f'--lto={args.lto}','--ios-llvm',args.llvm,'--ios-lld',args.lld,
-        *(['--render-validation'] if validation else []),*(['--collision-log'] if args.collision_log else []))
+        *(['--render-validation'] if validation else []),*(['--collision-log'] if args.collision_log else []),
+        *(['--profile'] if args.profile else []))
     run('ninja','ios_guest','-j',args.jobs)
     run(sys.executable,'tools/ios_bridges.py',*(['--render-validation'] if validation else []))
     # what a render capture is checked against when it is replayed (port/ios/host/gpu_capture.h)

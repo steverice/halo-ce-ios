@@ -631,6 +631,9 @@ the setting for one start of the game. It has priority over the file.
 | `debug.frame_log` | string | `"auto"` | apple | `HALO_FRAME_LOG` | With the Metal renderer: append to frame-log.txt, in this folder, a line every 5 seconds and at each change of scene class with the frames drawn, frames a second, the 95th and 99th percentile frame times, late frames, the render size, the scene class, the map, memory and thermal state, so a session played by hand can be read afterwards (tools/frame_log.py). "auto" (default) logs on an Apple TV only; "on" and "off" force it. |
 | `debug.test_win_level` | number | `0.0` | apple | `HALO_TEST_WIN_LEVEL` | Win the level after this many seconds of its game time, once, as when the player reaches its end: a run nobody plays then goes through the change to the next level. 0 (default) does nothing. |
 | `debug.settings_dump` | boolean | `false` | apple | `HALO_SETTINGS_DUMP` | Log every setting a device profile may set at start, with the layer each value came from; false logs only those something set. |
+| `debug.profile_record` | boolean | `false` | apple, desktop (profiling builds) | `HALO_PROFILE_RECORD` | Record a profile with no command (configure.py --profile and tools/ios_build.py --profile builds; docs/profiling.md): from when profile_record_when says until profile_stop, a map change or the end, into numbered part files in the data folder's profiles folder (tools/net_report.py reads it). |
+| `debug.profile_record_when` | string | `"start"` | apple, desktop (profiling builds) | `HALO_PROFILE_RECORD_WHEN` | "start": from the first frame until the first map change; "game": each game that is not the main menu, a recording each, until its map goes. |
+| `debug.profile_memory` | integer | `256` | apple, desktop (profiling builds) | `HALO_PROFILE_MEMORY` | Megabytes a recording keeps in memory, 4 to 1024: two halves, each written out as a part when it fills. |
 
 <!-- END GENERATED SETTINGS config -->
 

@@ -2683,6 +2683,42 @@
           "x-platforms": [
             "apple"
           ]
+        },
+        "profile_record": {
+          "type": "boolean",
+          "default": false,
+          "description": "Record a profile with no command (configure.py --profile and tools/ios_build.py --profile builds; docs/profiling.md): from when profile_record_when says until profile_stop, a map change or the end, into numbered part files in the data folder's profiles folder (tools/net_report.py reads it).",
+          "x-environment": "HALO_PROFILE_RECORD",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-profiling-build": true
+        },
+        "profile_record_when": {
+          "type": "string",
+          "default": "start",
+          "description": "\"start\": from the first frame until the first map change; \"game\": each game that is not the main menu, a recording each, until its map goes.",
+          "x-environment": "HALO_PROFILE_RECORD_WHEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-profiling-build": true
+        },
+        "profile_memory": {
+          "type": "integer",
+          "default": 256,
+          "description": "Megabytes a recording keeps in memory, 4 to 1024: two halves, each written out as a part when it fills.",
+          "x-environment": "HALO_PROFILE_MEMORY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ],
+          "x-profiling-build": true
         }
       },
       "additionalProperties": false

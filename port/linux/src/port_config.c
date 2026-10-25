@@ -1538,7 +1538,8 @@ static const struct config_setting config_settings[] =
 		"value came from; false logs only those something set." },
 #ifdef HALO_PROFILE
 	{ "debug.profile_record", _config_boolean, "false", "HALO_PROFILE_RECORD", _environment_value, _platform_all,
-		"Record a profile with no command (configure.py --profile builds): from\n"
+		"Record a profile with no command (configure.py --profile and\n"
+		"tools/ios_build.py --profile builds; docs/profiling.md): from\n"
 		"when profile_record_when says until profile_stop, a map change or the\n"
 		"end, into numbered part files in the data folder's profiles folder\n"
 		"(tools/net_report.py reads it)." },

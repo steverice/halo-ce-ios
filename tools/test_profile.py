@@ -9,6 +9,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,12 +33,25 @@ def test_configuration_defines():
 
 
 def test_every_native_build_takes_the_configuration_defines():
-    # (the guest, the game and the platform layer of all three: one place
-    # decides what --release and --profile define)
-    for name in ("linux_build.py", "windows_build.py"):
+    # (the game and the platform layer of each, and the Apple builds' guest: one
+    # place decides what --release and --profile define)
+    for name in ("linux_build.py", "windows_build.py", "ios_guest_build.py"):
         text = (ROOT / "tools" / name).read_text(encoding="utf-8")
         assert "configuration_defines(sln)" in text, name
         assert '["-DHALO_RELEASE"] if' not in text, name
+
+
+def test_configuration_defines_keep_the_collision_log_order():
+    # (the Apple guest's flags had -DHALO_RELEASE then -DHALO_COLLISION_LOG: the same order keeps a normal
+    # build's commands, and so its objects, as they were)
+    assert linux_build.configuration_defines(SimpleNamespace(port_release=True, port_collision_log=True)) == [
+        "-DHALO_RELEASE", "-DHALO_COLLISION_LOG"]
+
+
+def test_apple_build_passes_profile_to_configure():
+    text = (ROOT / "tools" / "ios_build.py").read_text(encoding="utf-8")
+    assert "*(['--profile'] if args.profile else [])" in text
+    assert "--profile is for development builds" in text
 
 
 def test_profile_refuses_pgo_training():
@@ -99,7 +113,9 @@ def build_check(tmp_path, sanitizers):
 def run_check(program, folder):
     folder.mkdir(exist_ok=True)
     result = subprocess.run([str(program), str(folder)], capture_output=True, text=True, timeout=300,
-                            env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1", "TSAN_OPTIONS": "halt_on_error=1"})
+                            env={**os.environ, "TSAN_OPTIONS": "halt_on_error=1",
+                                 # (macOS's AddressSanitizer has no leak checker, and stops when asked for one)
+                                 "ASAN_OPTIONS": "detect_leaks=0" if sys.platform == "darwin" else "detect_leaks=1"})
     assert result.returncode == 0, result.stdout + result.stderr[-4000:]
     assert "PASS" in result.stdout
 
@@ -397,7 +413,21 @@ int main(void) {
 
 # ---------- a normal build is unchanged
 
-PROFILE_PREFIXES = ("profile_trace_", "profile_net_", "profile_json_", "profile_overlay_")
+PROFILE_PREFIXES = ("profile_trace_", "profile_net_", "profile_json_", "profile_overlay_", "gpu_profile_",
+                    "translation_profile_", "profile_console_counter")
+# the Apple builds' guest (configure.py --ios; HALO_PROFILE_OBJECTS=build/ios/guest/obj): its runtime units
+# (port/runtime/guest/runtime) are compiled with flags of their own, by the guest's own clang (HALO_PROFILE_CC)
+APPLE_GUEST_OBJECTS = "build/ios/guest/obj"
+APPLE_GUEST_IMAGE = "build/ios/halo_guest.elf"
+APPLE_RUNTIME = "port/runtime/guest/runtime/"
+
+
+def apple_guest():
+    return (os.environ.get("HALO_PROFILE_OBJECTS") or "").rstrip("/") == APPLE_GUEST_OBJECTS
+
+
+def preprocessor():
+    return os.environ.get("HALO_PROFILE_CC") or "clang"
 
 
 def parse_compile_command(command, windows=False):
@@ -418,7 +448,7 @@ def preprocess_flags():
     """the game's or the platform layer's compile flags for this computer's
     build, as ninja has them, without HALO_PROFILE and without what makes
     an object; absolute where they name a generated file"""
-    missing = [name for name in ("clang", "ninja") if not shutil.which(name)]
+    missing = [name for name in (preprocessor(), "ninja") if not shutil.which(name)]
     if not (ROOT / "build.ninja").is_file():
         missing.append("a configured build (build.ninja)")
     if missing:
@@ -429,6 +459,10 @@ def preprocess_flags():
 
     def flags(object_path):
         listing = subprocess.run(["ninja", "-t", "commands", object_path], cwd=ROOT, capture_output=True, text=True)
+        # (the Apple guest's link-time optimized units are bitcode)
+        if listing.returncode != 0 and apple_guest() and object_path.endswith(".o"):
+            listing = subprocess.run(["ninja", "-t", "commands", object_path[:-2] + ".bc"], cwd=ROOT,
+                                     capture_output=True, text=True)
         if listing.returncode != 0:
             unavailable(f"needs a build.ninja that has {object_path}")
         command = listing.stdout.strip().splitlines()[-1]
@@ -460,8 +494,10 @@ def preprocess_flags():
         "platform": flags(f"{objects}/port/linux/src/p2p.o"),
         "port_game": flags(f"{objects}/port/linux/game/network_coop.o"),
     }
+    if apple_guest():
+        flag_sets["runtime"] = flags(f"{objects}/{APPLE_RUNTIME}guest_gpu.o")
     # (only a missing 32-bit C library is "no build here"; any other error is a wrong command, which must not hide)
-    probe = subprocess.run(["clang", *flag_sets["game"], "-E", "-P", "-x", "c", "-"], cwd=ROOT,
+    probe = subprocess.run([preprocessor(), *flag_sets["game"], "-E", "-P", "-x", "c", "-"], cwd=ROOT,
                            input="#include <stddef.h>\n#include <stdio.h>\n",
                            capture_output=True, text=True)
     if probe.returncode != 0:
@@ -473,6 +509,8 @@ def preprocess_flags():
 
 
 def flags_for(path, flag_sets):
+    if path.startswith(APPLE_RUNTIME):
+        return flag_sets.get("runtime")
     if path.startswith("port/linux/src/"):
         return flag_sets["platform"]
     if path.startswith("port/linux/game/"):
@@ -485,7 +523,7 @@ def preprocessed(tree, path, flags):
     arguments = ["-x", "c", "-"] if path is None else [path]
     # (__DATE__ and __TIME__ pinned: main.c prints them, and the two trees can be preprocessed a second apart)
     pinned = ["-Wno-builtin-macro-redefined", '-D__DATE__="Jan  1 2000"', '-D__TIME__="00:00:00"']
-    result = subprocess.run(["clang", *flags, *pinned, "-E", "-P", *arguments], cwd=tree,
+    result = subprocess.run([preprocessor(), *flags, *pinned, "-E", "-P", *arguments], cwd=tree,
                             input="" if path is None else None,
                             capture_output=True, text=True)
     assert result.returncode == 0, f"{path}: {result.stderr[-2000:]}"
@@ -504,7 +542,7 @@ def includers_of_changed_headers(base, already):
         pattern = r'#[ 	]*include[ 	]*[<"]([^">]*/)?' + re.escape(header.rsplit("/", 1)[-1]) + '[">]'
         for path in names("grep", "-l", "-E", pattern, "HEAD", "--", "*.c"):
             path = path.split(":", 1)[1]
-            if path.startswith(("source/", "port/linux/src/", "port/linux/game/")) and path not in added:
+            if path.startswith(("source/", "port/linux/src/", "port/linux/game/", APPLE_RUNTIME)) and path not in added:
                 found.add(path)
     return sorted(found - set(already))
 
@@ -522,9 +560,15 @@ def test_normal_build_preprocesses_as_before(tmp_path):
     archive = subprocess.run([GIT, "archive", "--format=tar", base], cwd=ROOT, check=True, capture_output=True).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as reference:
         reference.extractall(tree)
+    checked = 0
     for path in changed:
         flags = flags_for(path, flag_sets)
+        # (a unit this build does not compile: the Apple guest's runtime in a Linux build, a tool, another port's)
+        if flags is None or not path.startswith(("source/", "port/linux/src/", "port/linux/game/", APPLE_RUNTIME)):
+            continue
         assert preprocessed(tree, path, flags) == preprocessed(ROOT, path, flags), path
+        checked += 1
+    assert checked, "no changed C file is compiled by this build"
 
 
 def test_new_files_are_empty_in_a_normal_build():
@@ -546,7 +590,10 @@ def test_normal_build_has_no_profiling_symbols():
     if "-DHALO_PROFILE" in ninja_file.read_text(encoding="utf-8"):
         pytest.skip("a profiling build is configured")
     nm = shutil.which("llvm-nm") or shutil.which("nm")
-    if os.name == "nt" or os.environ.get("HALO_PROFILE_OBJECTS"):
+    if apple_guest():
+        nm = shutil.which("llvm-nm") or str(Path(preprocessor()).with_name("llvm-nm"))
+        objects = [str(ROOT / APPLE_GUEST_IMAGE)] if (ROOT / APPLE_GUEST_IMAGE).is_file() else []
+    elif os.name == "nt" or os.environ.get("HALO_PROFILE_OBJECTS"):
         folder = ROOT / (os.environ.get("HALO_PROFILE_OBJECTS") or "build/windows/obj")
         objects = sorted(str(path) for path in folder.rglob("*.o"))
     else:
