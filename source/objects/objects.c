@@ -4624,8 +4624,27 @@ void objects_update(
 			{
 				if (TEST_FLAG(object_header->flags, _object_header_active_bit))
 				{
-					match_assert("c:\\halo\\SOURCE\\objects\\objects.c", 369, object_header->cluster_index!=NONE);
-					if (!BIT_VECTOR_TEST_FLAG(active_cluster_bits, object_header->cluster_index))
+					/* An object outside the map has no cluster: a weapon that never
+					touched the map, dropped by a unit that died outside it, is
+					reconnected with none and then activated (object_detach). The
+					game asserted here (objects.c #369, halting crowded co-op games)
+					and its release build read the bit before the vector. Such an
+					object is treated as outside the players' view, as
+					object_reconnect_to_map treats it. */
+					if (object_header->cluster_index==NONE)
+					{
+						static long outside_count = 0;
+						extern void platform_log(char const *format, ...);
+
+						/* (the first few noted, for the record of a crowded game) */
+						if (outside_count++ < 8)
+						{
+							platform_log("objects: active object %d (type %d) outside the map, deactivated",
+								(int)i, (int)object_header->type);
+						}
+					}
+					if (object_header->cluster_index==NONE ||
+						!BIT_VECTOR_TEST_FLAG(active_cluster_bits, object_header->cluster_index))
 					{
 						if (TEST_FLAG(object_header->datum->object.flags, _object_deleted_when_deactivated_bit))
 						{
