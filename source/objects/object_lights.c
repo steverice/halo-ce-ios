@@ -1848,7 +1848,7 @@ void lights_render_diffuse(
 	short cluster_indices[MAXIMUM_CLUSTERS_PER_LIGHT];
 	short light_index;
 	unsigned char diffuse[128], specular[128];
-	boolean limited;
+	boolean limited = FALSE;
 	static unsigned long views, total, weapons, retained;
 	unsigned long view_total = 0, view_weapons = 0, view_retained = 0;
 
@@ -1908,7 +1908,7 @@ void lights_render_diffuse(
 	total += view_total;
 	weapons += view_weapons;
 	retained += view_retained;
-	if (++views == 300)
+	if (limited && ++views == 300)
 	{
 		platform_log("level lights diffuse: views=%lu candidates=%lu weapon=%lu retained=%lu dropped=%lu",
 			views, total, weapons, retained, total - retained);
@@ -1924,7 +1924,7 @@ void lights_render_specular(
 	short cluster_indices[MAXIMUM_CLUSTERS_PER_LIGHT];
 	short light_index;
 	unsigned char diffuse[128], specular[128];
-	boolean limited;
+	boolean limited = FALSE;
 	static unsigned long views, total, weapons, retained;
 	unsigned long view_total = 0, view_weapons = 0, view_retained = 0;
 
@@ -1986,7 +1986,7 @@ void lights_render_specular(
 	total += view_total;
 	weapons += view_weapons;
 	retained += view_retained;
-	if (++views == 300)
+	if (limited && ++views == 300)
 	{
 		platform_log("level lights specular: views=%lu candidates=%lu weapon=%lu retained=%lu dropped=%lu",
 			views, total, weapons, retained, total - retained);

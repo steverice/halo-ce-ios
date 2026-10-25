@@ -633,7 +633,7 @@ static void next_run(void)
 		sim_experiment_override(0, 0);
 		halo_benchmark_knobs(-1, -1, 0.0);
 		halo_benchmark_clutter(-1.0, -1);
-	lights_port_benchmark_limits(-1, -1);
+		lights_port_benchmark_limits(-1, -1);
 		halo_model_lod_set(-1);
 		benchmark_scenario_load("", "");
 		input_replay_suite_restore();
