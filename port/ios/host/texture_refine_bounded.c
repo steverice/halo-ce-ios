@@ -1,5 +1,6 @@
 #include "texture_refine.h"
 #include "texture_upscale_pixels.h"
+#include <dispatch/dispatch.h>
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
@@ -111,6 +112,86 @@ static int blur_mask(float *mask, uint32_t w, uint32_t h, float sigma, int wrap)
     return 0;
 }
 
+static void normal(float c, float l, float r, float u, float d, float *n);
+/* Output rows are independent, so the row passes run in bands across the cores; each band owns its source-width
+   and row temporaries (a few KiB), so the bounded memory stays bounded. */
+#define REFINE_BANDS 32u
+enum band_pass { BAND_ADD_COLOR, BAND_FALLBACK_COLOR, BAND_ADD_HEIGHT, BAND_FALLBACK_BUMP };
+struct band_work
+{
+	enum band_pass pass;
+	float *top, *normals;
+	const float *small, *reference, *mask;
+	uint32_t w, h, bw, bh, channels, scale;
+	int wrap;
+	const struct up_filter *filter, *smooth;
+	_Atomic int failed;
+};
+
+static void band_rows(void *context, size_t band)
+{
+	struct band_work *work = context;
+	uint32_t first = (uint32_t)((uint64_t)work->bh * band / REFINE_BANDS);
+	uint32_t last = (uint32_t)((uint64_t)work->bh * (band + 1) / REFINE_BANDS);
+	uint32_t channels = work->channels, w = work->w, bw = work->bw, bh = work->bh;
+	float *vertical = malloc((size_t)w * channels * sizeof(float)), *row = malloc((size_t)bw * channels * sizeof(float));
+	float *mask_vertical = malloc((size_t)w * sizeof(float)), *mask_row = malloc((size_t)bw * sizeof(float));
+	float *up = malloc((size_t)bw * sizeof(float)), *below = malloc((size_t)bw * sizeof(float));
+	if (!vertical || !row || !mask_vertical || !mask_row || !up || !below) { work->failed = 1; goto done; }
+	for (uint32_t y = first; y < last; y++) switch (work->pass) {
+	case BAND_ADD_COLOR: {
+		float *out = work->top + (size_t)y * bw * channels;
+		up_row(work->small, w, work->h, channels, y, work->filter, work->wrap, vertical, row);
+		for (size_t i = 0; i < (size_t)bw * channels; i++) out[i] = unit(out[i] + row[i]);
+		break;
+	}
+	case BAND_FALLBACK_COLOR: {
+		float *out = work->top + (size_t)y * bw * channels;
+		up_row(work->reference, w, work->h, channels, y, work->filter, work->wrap, vertical, row);
+		up_row(work->mask, w, work->h, 1, y, work->smooth, work->wrap, mask_vertical, mask_row);
+		for (uint32_t x = 0; x < bw; x++) {
+			float s = unit(mask_row[x]);
+			for (uint32_t c = 0; c < channels; c++) {
+				size_t i = (size_t)x * channels + c;
+				out[i] = unit(out[i] * (1 - s) + unit(row[i]) * s);
+			}
+		}
+		break;
+	}
+	case BAND_ADD_HEIGHT:
+		up_row(work->small, w, work->h, 1, y, work->filter, 1, vertical, row);
+		for (uint32_t x = 0; x < bw; x++) work->top[(size_t)y * bw + x] += row[x];
+		break;
+	case BAND_FALLBACK_BUMP: {
+		uint32_t scale = work->scale;
+		up_row(work->reference, w, work->h, 1, (y + bh - 1) % bh, work->filter, 1, vertical, up);
+		up_row(work->reference, w, work->h, 1, y, work->filter, 1, vertical, row);
+		up_row(work->reference, w, work->h, 1, (y + 1) % bh, work->filter, 1, vertical, below);
+		up_row(work->mask, w, work->h, 1, y, work->smooth, 1, mask_vertical, mask_row);
+		for (uint32_t x = 0; x < bw; x++) {
+			float target[3], *out = work->normals + ((size_t)y * bw + x) * 3, s = unit(mask_row[x]);
+			normal(row[x] * scale, row[(x + bw - 1) % bw] * scale, row[(x + 1) % bw] * scale,
+				up[x] * scale, below[x] * scale, target);
+			float nx = out[0] * (1 - s) + target[0] * s, ny = out[1] * (1 - s) + target[1] * s;
+			float nz = sqrtf(fmaxf(1 - nx * nx - ny * ny, 0));
+			float length = fmaxf(sqrtf(nx * nx + ny * ny + nz * nz), 1e-6f);
+			out[0] = nx / length; out[1] = ny / length; out[2] = nz / length;
+		}
+		break;
+	}
+	}
+done:
+	free(vertical); free(row); free(mask_vertical); free(mask_row); free(up); free(below);
+}
+
+static int run_bands(struct band_work *work)
+{
+	work->failed = 0;
+	dispatch_apply_f(REFINE_BANDS, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), work, band_rows);
+	return work->failed ? -1 : 0;
+}
+
+
 int texture_refine_color_bounded(float *top, const float *reference, uint32_t w, uint32_t h,
     uint32_t channels, uint32_t scale, int wrap, const struct texture_refine_params *params, int fallback, float *mask_out)
 {
@@ -153,24 +234,17 @@ int texture_refine_color_bounded(float *top, const float *reference, uint32_t w,
         small = down(top, w, h, channels, scale, wrap);
         if (!small) goto done;
         for (size_t i = 0; i < count * channels; i++) small[i] = reference[i] - small[i];
-        for (uint32_t y = 0; y < bh; y++) {
-            float *out = top + (size_t)y * bw * channels;
-            up_row(small, w, h, channels, y, &filter, wrap, vertical, row);
-            for (size_t i = 0; i < (size_t)bw * channels; i++) out[i] = unit(out[i] + row[i]);
+        {
+            struct band_work work = { BAND_ADD_COLOR, top, NULL, small, reference, mask, w, h, bw, bh, channels, scale,
+                wrap, &filter, &smooth, 0 };
+            if (run_bands(&work)) goto done;
         }
         free(small); small = NULL;
     }
-    if (fallback) for (uint32_t y = 0; y < bh; y++) {
-        float *out = top + (size_t)y * bw * channels;
-        up_row(reference, w, h, channels, y, &filter, wrap, vertical, row);
-        up_row(mask, w, h, 1, y, &smooth, wrap, mask_vertical, mask_row);
-        for (uint32_t x = 0; x < bw; x++) {
-            float s = unit(mask_row[x]);
-            for (uint32_t c = 0; c < channels; c++) {
-                size_t i = (size_t)x * channels + c;
-                out[i] = unit(out[i] * (1 - s) + unit(row[i]) * s);
-            }
-        }
+    if (fallback) {
+        struct band_work work = { BAND_FALLBACK_COLOR, top, NULL, NULL, reference, mask, w, h, bw, bh, channels, scale,
+            wrap, &filter, &smooth, 0 };
+        if (run_bands(&work)) goto done;
     }
     if (mask_out) memcpy(mask_out, mask, count * sizeof(float));
     result = 0;
@@ -194,6 +268,7 @@ static void normal_at(const float *height, uint32_t w, uint32_t h, uint32_t x, u
         height[(size_t)y * w + (x + 1) % w], height[(size_t)((y + h - 1) % h) * w + x],
         height[(size_t)((y + 1) % h) * w + x], n);
 }
+
 
 int texture_refine_bump_bounded(float *top, const float *reference, uint32_t w, uint32_t h, uint32_t scale,
     const struct texture_refine_params *params, int fallback, float *normals, float *mask_out)
@@ -235,27 +310,18 @@ int texture_refine_bump_bounded(float *top, const float *reference, uint32_t w, 
         small = down(top, w, h, 1, scale, 1);
         if (!small) goto done;
         for (size_t i = 0; i < count; i++) small[i] = reference[i] - small[i];
-        for (uint32_t y = 0; y < bh; y++) {
-            up_row(small, w, h, 1, y, &filter, 1, vertical, row);
-            for (uint32_t x = 0; x < bw; x++) top[(size_t)y * bw + x] += row[x];
+        {
+            struct band_work work = { BAND_ADD_HEIGHT, top, NULL, small, reference, mask, w, h, bw, bh, 1, scale, 1,
+                &filter, &smooth, 0 };
+            if (run_bands(&work)) goto done;
         }
         free(small); small = NULL;
     }
     texture_upscale_derive_normals(top, bw, bh, (float)scale, normals);
-    if (fallback) for (uint32_t y = 0; y < bh; y++) {
-        up_row(reference, w, h, 1, (y + bh - 1) % bh, &filter, 1, vertical, up);
-        up_row(reference, w, h, 1, y, &filter, 1, vertical, row);
-        up_row(reference, w, h, 1, (y + 1) % bh, &filter, 1, vertical, below);
-        up_row(mask, w, h, 1, y, &smooth, 1, mask_vertical, mask_row);
-        for (uint32_t x = 0; x < bw; x++) {
-            float target[3], *out = normals + ((size_t)y * bw + x) * 3, s = unit(mask_row[x]);
-            normal(row[x] * scale, row[(x + bw - 1) % bw] * scale, row[(x + 1) % bw] * scale,
-                up[x] * scale, below[x] * scale, target);
-            float nx = out[0] * (1 - s) + target[0] * s, ny = out[1] * (1 - s) + target[1] * s;
-            float nz = sqrtf(fmaxf(1 - nx * nx - ny * ny, 0));
-            float length = fmaxf(sqrtf(nx * nx + ny * ny + nz * nz), 1e-6f);
-            out[0] = nx / length; out[1] = ny / length; out[2] = nz / length;
-        }
+    if (fallback) {
+        struct band_work work = { BAND_FALLBACK_BUMP, top, normals, NULL, reference, mask, w, h, bw, bh, 1, scale, 1,
+            &filter, &smooth, 0 };
+        if (run_bands(&work)) goto done;
     }
     if (mask_out) memcpy(mask_out, mask, count * sizeof(float));
     result = 0;
