@@ -619,6 +619,13 @@ static int gpu_family(id<MTLDevice> device) {
     return highest;
 }
 
+/* whether the GPU samples BC1-3 natively; without it, original textures are decoded or converted to ASTC */
+static BOOL bc_textures(id<MTLDevice> device) {
+    if (@available(iOS 16.4, tvOS 16.4, visionOS 1.0, *))
+        return device.supportsBCTextureCompression;
+    return NO;
+}
+
 /* the report's first members: the device, the app and the suite; never a name or an identifier of the device */
 /* whether the pinned snapshot's catalog came from a signed recordings pack */
 static BOOL catalog_signed(void) {
@@ -648,7 +655,7 @@ static NSString *report_header(void) {
 #endif
     return [NSString stringWithFormat:@"\"format\":%d,\"code\":%@,\"suite\":%d,\"mode\":\"%s\",\"started\":\"%@\","
         "\"device\":{\"model\":%@,\"chip\":%@,\"platform\":\"%@\",\"host\":\"%@\",\"os\":\"%ld.%ld.%ld\",\"os_build\":%@,"
-        "\"gpu\":%@,\"gpu_family\":%d,\"memory_mb\":%llu,"
+        "\"gpu\":%@,\"gpu_family\":%d,\"bc_textures\":%s,\"memory_mb\":%llu,"
         "\"screen\":{\"width\":%.0f,\"height\":%.0f,\"maximum_frames_a_second\":%ld,\"frame_rate_cap\":%ld}},"
         "\"external_modes_complete\":%s,\"output\":%@,\"output_reports\":%@,\"requested_output\":%@,\"app\":{\"version\":%@,\"build\":%@,\"image\":\"%s\"},"
         "\"profile\":{\"selection\":%@,\"source_hardware\":%@,\"target_hardware\":%@,\"source_tier\":%d,\"target_tier\":%d,\"catalog_version\":%@,\"class\":%@,\"model\":%@,\"drop_in\":%s,\"drawable_lines\":%ld,\"render_lines\":%ld,\"anisotropic_filtering\":%ld,\"shadow_map_size\":%ld,"
@@ -661,7 +668,7 @@ static NSString *report_header(void) {
         /* "Version 26.6 (Build 23M5311a)": the build's name alone */
         json_string([[process.operatingSystemVersionString componentsSeparatedByString:@"Build "].lastObject
             stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@")"]]),
-        json_string(gpu.name), gpu ? gpu_family(gpu) : 0, process.physicalMemory >> 20,
+        json_string(gpu.name), gpu ? gpu_family(gpu) : 0, bc_textures(gpu) ? "true" : "false", process.physicalMemory >> 20,
         screen_width, screen_height, (long)screen_rate(), lround(host_frame_rate_cap()),
         external_modes.count && external_mode_index + 1 < external_modes.count ? "false" : "true",
         json_object(suite_output ?: output_now()), json_object(output_reports ?: @[]),

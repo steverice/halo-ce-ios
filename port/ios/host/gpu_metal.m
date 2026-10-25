@@ -1,3 +1,4 @@
+#include "astc_policy.h"
 #include "host_perf_hooks.h"
 #include "host_perf_metal.h"
 #include "dynamic_resolution.h"
@@ -6762,14 +6763,15 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		{
 			char astc[16];
 
-			host_config_string("debug.texture_astc", "off", astc, sizeof(astc));
+			host_config_string("debug.texture_astc", "auto", astc, sizeof(astc));
 			if (@available(iOS 16.4, tvOS 16.4, visionOS 1.0, *))
 				compressed_textures = device.supportsBCTextureCompression;
+			/* astc_policy.h: "auto" converts only without BC, behind VISR_ASTC_AUTOMATIC. */
+			astc_textures = astc_policy_converts(astc, compressed_textures) &&
+				[device supportsFamily:MTLGPUFamilyApple2];
 			/* Force the no-BC path on an Apple silicon Mac for screenshot comparisons. */
 			if (!strcmp(astc, "force"))
 				compressed_textures = NO;
-			astc_textures = (!strcmp(astc, "on") || !strcmp(astc, "force")) &&
-				[device supportsFamily:MTLGPUFamilyApple2];
 			platform_log("Metal: compressed textures %s", compressed_textures ? "upload as BC1-3" :
 				astc_textures ? "rewrite eligible DXT as ASTC 4x4" : "are decoded to BGRA8");
 		}

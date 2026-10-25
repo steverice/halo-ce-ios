@@ -9,6 +9,7 @@
 #include <string.h>
 #include "gpu.h"
 #include "astc_store.h"
+#include "astc_policy.h"
 #define HALO_IOS 1
 
 typedef uint32_t DWORD, D3DCOLOR;
@@ -215,12 +216,15 @@ static void expect_fallback(void)
 
 int main(void)
 {
-	/* Backend selection: absent/off, on with/without BC, force, unsupported
+	/* Backend selection: off, auto/on with/without BC, force, unsupported
 	 * hardware, and display.compressed_textures=false. */
 	fixture_mode = "off"; fixture_bc = FALSE; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
 	assert(!device_capabilities.astc && !device_capabilities.s3tc);
+	/* "auto" (and the older "on") convert without BC only once the release flag allows it. */
+	fixture_mode = "auto"; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(device_capabilities.astc == VISR_ASTC_AUTOMATIC && !device_capabilities.s3tc);
 	fixture_mode = "on"; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
-	assert(device_capabilities.astc && !device_capabilities.s3tc);
+	assert(device_capabilities.astc == VISR_ASTC_AUTOMATIC && !device_capabilities.s3tc);
 	fixture_bc = TRUE; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
 	assert(device_capabilities.s3tc);
 	fixture_mode = "force"; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);

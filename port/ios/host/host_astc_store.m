@@ -13,6 +13,7 @@
 #include "ios_host.h"
 #include "astc_store.h"
 #include "astc_encode.h"
+#include "astc_policy.h"
 #include <zlib.h>
 #include <pthread.h>
 #include <sys/stat.h>
@@ -248,11 +249,12 @@ void host_astc_store_scan(void) {
 }
 void host_astc_store_init(const char *root) {
     static dispatch_once_t once;dispatch_once(&once,^{
-        data_root=[@(root) stringByStandardizingPath];char setting[32],install[4096];host_config_string("debug.texture_astc","off",setting,sizeof(setting));if(getenv("HALO_TEXTURE_ASTC"))snprintf(setting,sizeof(setting),"%s",getenv("HALO_TEXTURE_ASTC"));
+        data_root=[@(root) stringByStandardizingPath];char setting[32],install[4096];host_config_string("debug.texture_astc","auto",setting,sizeof(setting));if(getenv("HALO_TEXTURE_ASTC"))snprintf(setting,sizeof(setting),"%s",getenv("HALO_TEXTURE_ASTC"));
         id<MTLDevice> device=MTLCreateSystemDefaultDevice();BOOL bc=NO;
         if(@available(iOS 16.4,tvOS 16.4,macOS 11.0,*))bc=device.supportsBCTextureCompression;
         char compressed[16];host_config_string("display.compressed_textures","true",compressed,sizeof(compressed));if(getenv("HALO_COMPRESSED_TEXTURES"))snprintf(compressed,sizeof(compressed),"%s",getenv("HALO_COMPRESSED_TEXTURES"));
-        enabled=(!strcmp(setting,"on")||!strcmp(setting,"force"))&&(!strcmp(compressed,"true")||!strcmp(compressed,"1"))&&[device supportsFamily:MTLGPUFamilyApple2]&&(!strcmp(setting,"force")||!bc);
+        /* astc_policy.h decides; the release flag VISR_ASTC_AUTOMATIC gates "auto". */
+        enabled=astc_policy_converts(setting,bc)&&(!strcmp(compressed,"true")||!strcmp(compressed,"1"))&&[device supportsFamily:MTLGPUFamilyApple2];
         if(!enabled)return;
         char sync[16];host_config_string("debug.texture_astc_sync","false",sync,sizeof(sync));if(getenv("HALO_TEXTURE_ASTC_SYNC"))snprintf(sync,sizeof(sync),"%s",getenv("HALO_TEXTURE_ASTC_SYNC"));synchronous=!strcmp(sync,"true");
         host_config_string("paths.custom_edition","",install,sizeof(install));install_root=@(install);

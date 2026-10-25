@@ -62,11 +62,13 @@ def main():
         fixture = fixture.replace('@' + token + '@', value)
     generated = build / 'astc_upload_probe.c'
     generated.write_text(fixture)
-    executable = build / 'astc-upload-probe'
-    subprocess.run(['xcrun', 'clang', '-O1', '-g', '-Wall', '-Wextra',
-                    '-fsanitize=address,undefined', '--include-directory=' + str(tree / 'port/linux/src'),
-                    str(generated), '--output', str(executable)], check=True)
-    subprocess.run([str(executable)], check=True)
+    # Both settings of the release flag in astc_policy.h: automatic conversion gated off and on.
+    for automatic in (0, 1):
+        executable = build / f'astc-upload-probe-{automatic}'
+        subprocess.run(['xcrun', 'clang', '-O1', '-g', '-Wall', '-Wextra',
+                        '-fsanitize=address,undefined', '--include-directory=' + str(tree / 'port/linux/src'),
+                        f'-DVISR_ASTC_AUTOMATIC={automatic}', str(generated), '--output', str(executable)], check=True)
+        subprocess.run([str(executable)], check=True)
 
 
 if __name__ == '__main__':
