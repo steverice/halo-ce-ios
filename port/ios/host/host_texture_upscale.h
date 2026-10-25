@@ -29,3 +29,6 @@ int host_texture_upscale_busy(void);
 void host_texture_upscale_background_stop(int stop);
 /* host_texture_upscale_continued.m: the import phase began (1) or ended (0); does nothing where the API is missing */
 void host_texture_upscale_continued_phase(int began);
+/* the Settings app's delete: through the worker when the upscaler runs (between textures, the manifest emptied with
+   the files), else at once; 0 on success or when scheduled */
+int host_texture_upscale_delete_cache(const char *directory);

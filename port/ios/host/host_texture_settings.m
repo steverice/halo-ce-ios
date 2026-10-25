@@ -62,7 +62,7 @@ void host_texture_settings_apply(const char *data_root)
 	apply_switch(defaults);
 	if ([defaults boolForKey:@"delete_upscaled_textures"])
 	{
-		if (texture_cache_delete_all(directory.fileSystemRepresentation))
+		if (host_texture_upscale_delete_cache(directory.fileSystemRepresentation))
 			NSLog(@"texture cache: could not delete everything in %@", directory);
 		[defaults setBool:NO forKey:@"delete_upscaled_textures"];
 	}
