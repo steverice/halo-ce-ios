@@ -9,6 +9,7 @@
 - On devices without BC texture support, textures now convert to ASTC automatically.
 - The VISR splash now appears on an external display while the launch menu is up. AirPlay display and audio routing are also supported.
 - Touch fixes: the flashlight and grenade switch buttons are no longer reversed, and the touch stick no longer moves anything in pause menus.
+- Multiplayer now speaks network version 38, the version current OpenCE builds use, so you can join and host games with them. Hosts on versions 29 to 32 can still be joined.
 - Multiplayer: LAN and internet game types VISR can't play are now labeled or refused before you join, and ally and static damage rules follow the host.
 
 iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
