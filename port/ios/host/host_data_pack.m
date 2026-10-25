@@ -169,6 +169,8 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
 @property(nonatomic) NSMutableDictionary *mapFiles;
 @property(nonatomic, copy) NSString *mapName;
 @property(nonatomic) NSUInteger transferBytes;
+@property(atomic, readwrite) NSInteger lastFeedStatus;
+@property(nonatomic) BOOL statusRefused;
 @end
 
 @implementation HostDataPackStore
@@ -535,7 +537,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
         if (completion) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ completion(NO); });
         return;
     }
-    _updateCompletion = [completion copy]; _notModified = NO;
+    _updateCompletion = [completion copy]; _notModified = NO; self.lastFeedStatus = 0; _statusRefused = NO;
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;
@@ -582,7 +584,12 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     _notModified = !_mapName && status == 304 && [self savedValidator].length;
     NSString *etag = status == 200 ? [(NSHTTPURLResponse *)response valueForHTTPHeaderField:@"ETag"] : nil;
     if (!_mapName) _responseValidator = etag.length && etag.length <= 256 && PackMatches(etag, @"^(W/)?\"[\\x21\\x23-\\x7e]*\"\\z") ? etag : nil;
-    if (status != 200 && status != 304) host_logf(HOST_LOG_WARN, "data-packs: %s feed answered HTTP %ld; keeping the current snapshot", _kind.UTF8String, (long)status);
+    if (!_mapName) self.lastFeedStatus = status;
+    if (status != 200 && status != 304) {
+        // The cancel below then ends the task; its error says nothing more than this line.
+        _statusRefused = YES;
+        host_logf(HOST_LOG_WARN, "data-packs: %s feed answered HTTP %ld for %s; keeping the current snapshot", _kind.UTF8String, (long)status, response.URL.absoluteString.UTF8String ?: "?");
+    }
     _responseAccepted = status == 200 && (response.expectedContentLength < 0 || (uint64_t)response.expectedContentLength <= self.downloadLimit);
     completionHandler(_responseAccepted ? NSURLSessionResponseAllow : NSURLSessionResponseCancel);
 } }
@@ -595,8 +602,8 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     (void)task;
     NSError *stageError = nil;
     BOOL staged = NO;
-    if (error && !_notModified) host_logf(HOST_LOG_WARN, "data-packs: %s feed check ended (%s); keeping the current snapshot", _kind.UTF8String, error.localizedDescription.UTF8String);
-    else if (_responseAccepted) @autoreleasepool {
+    if (error && !_notModified && !_statusRefused) host_logf(HOST_LOG_WARN, "data-packs: %s feed check ended (%s); keeping the current snapshot", _kind.UTF8String, error.localizedDescription.UTF8String);
+    else if (!error && _responseAccepted) @autoreleasepool {
         if (self.shaderIndex) {
             if (!_indexPack) {
                 NSDictionary *authenticated = nil;

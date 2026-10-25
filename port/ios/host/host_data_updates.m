@@ -2,6 +2,7 @@
 #import "host_data_updates.h"
 #import "host_data_pack.h"
 #import <CommonCrypto/CommonDigest.h>
+#include "host.h"
 #include "host_profile.h"
 #include "host_shader_pack.h"
 #include "host_recording_pack.h"
@@ -259,6 +260,13 @@ static BOOL profileReady, recordingReady, profileLoading, recordingLoading;
 static BOOL profileChecking, recordingChecking, profileRetryPending, recordingRetryPending;
 static NSURL *menuProfileURL, *menuRecordingURL;
 static NSDictionary *menuState;
+/* While the menu is up, a failed check is tried again quietly (the failure text stays until the data loads):
+   after 5, 15 and 30 s, then every minute, and at once when the network path changes. The retry state belongs to
+   the updates queue. */
+static const double menuRetryDelays[] = {5, 15, 30, 60};
+static unsigned menuRetryAttempt, menuRetryGeneration;
+static BOOL menuRetryScheduled, profileAttempted, recordingAttempted, profileUnpublishedLogged;
+static void refreshMenuKinds(BOOL profile, BOOL recording);
 
 static void publishMenuState(void)
 {
@@ -326,13 +334,44 @@ static BOOL selectionFrozen(void)
 {
     @synchronized(selectionLock()) { return menuFrozen; }
 }
-static void refreshMenu(void)
+static BOOL menuShowing(void)
+{
+    @synchronized(selectionLock()) { return menuVisible && !menuFrozen; }
+}
+static void scheduleMenuRetry(void)
+{
+    BOOL needed;
+    @synchronized(selectionLock()) { needed = (menuProfileURL && !profileReady) || (menuRecordingURL && !recordingReady); }
+    if (!needed) { menuRetryAttempt = 0; return; }
+    if (menuRetryScheduled || profileChecking || recordingChecking || !menuShowing()) return;
+    unsigned count = sizeof(menuRetryDelays) / sizeof(menuRetryDelays[0]);
+    double delay = menuRetryDelays[menuRetryAttempt < count ? menuRetryAttempt : count - 1];
+    if (menuRetryAttempt < count) menuRetryAttempt++;
+    unsigned generation = ++menuRetryGeneration;
+    menuRetryScheduled = YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), updatesQueue(), ^{
+        if (generation != menuRetryGeneration) return;
+        menuRetryScheduled = NO;
+        if (!menuShowing()) return;
+        BOOL profile, recording;
+        @synchronized(selectionLock()) { profile = !profileReady; recording = !recordingReady; }
+        refreshMenuKinds(profile, recording);
+    });
+}
+/* Cancels a waiting retry; the next failure starts the delays over. */
+static void resetMenuRetry(void)
+{
+    menuRetryGeneration++; menuRetryScheduled = NO; menuRetryAttempt = 0;
+}
+static void refreshMenuKinds(BOOL profile, BOOL recording)
 {
     if (!profiles || !recordings) return;
     @synchronized(selectionLock()) { if (!menuVisible) return; }
-    if (menuProfileURL && !profileChecking) {
+    if (profile && menuProfileURL && !profileChecking) {
         profileChecking = YES;
-        @synchronized(selectionLock()) { if (!menuFrozen) profileLoading = YES; }
+        // Only the first check shows "Downloading"; a retry leaves the failure text until the data arrives.
+        @synchronized(selectionLock()) { if (!menuFrozen && !profileAttempted) profileLoading = YES; }
+        profileAttempted = YES;
         [profiles checkForUpdateAtURL:menuProfileURL completion:^(BOOL success) {
             dispatch_async(updatesQueue(), ^{
                 profileChecking = NO;
@@ -340,21 +379,32 @@ static void refreshMenu(void)
                     NSDictionary *snapshot = [profiles menuSnapshot];
                     NSString *selected = publishMenuSnapshot(YES, snapshot);
                     [profiles retainMenuFolder:selected];
+                    // The feed has no profile for this model (the publisher shards by model): its bundled profiles
+                    // are the best there is, so they do not hold the benchmark back.
+                    BOOL unpublished = profiles.lastFeedStatus == 404;
+                    BOOL bundled;
                     @synchronized(selectionLock()) {
-                        profileReady = profileIdentity && ![profileIdentity[@"bundled"] boolValue];
+                        bundled = !profileIdentity || [profileIdentity[@"bundled"] boolValue];
+                        profileReady = !bundled || unpublished;
                         profileLoading = NO;
+                    }
+                    if (bundled && unpublished && !profileUnpublishedLogged) {
+                        profileUnpublishedLogged = YES;
+                        host_logf(HOST_LOG_INFO, "data-packs: no profile is published for this device; the benchmark uses the bundled profiles");
                     }
                     (void)success;
                 }
                 @synchronized(selectionLock()) { profileLoading = NO; }
                 publishMenuState();
-                if (profileRetryPending) { profileRetryPending = NO; refreshMenu(); }
+                if (profileRetryPending) { profileRetryPending = NO; refreshMenuKinds(YES, NO); }
+                scheduleMenuRetry();
             });
         }];
     }
-    if (menuRecordingURL && !recordingChecking) {
+    if (recording && menuRecordingURL && !recordingChecking) {
         recordingChecking = YES;
-        @synchronized(selectionLock()) { if (!menuFrozen) recordingLoading = YES; }
+        @synchronized(selectionLock()) { if (!menuFrozen && !recordingAttempted) recordingLoading = YES; }
+        recordingAttempted = YES;
         [recordings checkForUpdateAtURL:menuRecordingURL completion:^(BOOL success) {
             dispatch_async(updatesQueue(), ^{
                 recordingChecking = NO;
@@ -368,14 +418,17 @@ static void refreshMenu(void)
                 }
                 @synchronized(selectionLock()) { recordingLoading = NO; }
                 publishMenuState();
-                if (recordingRetryPending) { recordingRetryPending = NO; refreshMenu(); }
+                if (recordingRetryPending) { recordingRetryPending = NO; refreshMenuKinds(NO, YES); }
+                scheduleMenuRetry();
             });
         }];
     }
     publishMenuState();
 }
+static void refreshMenu(void) { refreshMenuKinds(YES, YES); }
 static void requestMenuRefresh(void)
 {
+    resetMenuRetry();
     if (profileChecking) profileRetryPending = YES;
     if (recordingChecking) recordingRetryPending = YES;
     refreshMenu();

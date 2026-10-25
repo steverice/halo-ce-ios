@@ -28,6 +28,9 @@ typedef BOOL (^HostPackValidator)(NSString *folder, NSError **error);
 - (void)checkForUpdateAtURL:(NSURL *)url;
 - (void)checkForUpdateAtURL:(NSURL *)url completion:(void (^ _Nullable)(BOOL success))completion;
 - (NSDictionary *)metadata;
+// The HTTP status the last feed check's first request was answered with, read in its completion: 0 when no answer
+// came (offline, timed out, refused), so a caller can tell a feed that has nothing for it (404) from one it cannot reach.
+@property(atomic, readonly) NSInteger lastFeedStatus;
 // The visitor runs under the store lock so pruning cannot remove files during resolution.
 // It sees the authenticated, fully validated pending generation, or the launch selection.
 - (void)visitPendingSnapshot:(void (^)(NSString *folder, NSDictionary *identity))visitor;

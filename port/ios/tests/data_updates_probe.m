@@ -18,6 +18,41 @@ static NSData *blockedRead(id object, SEL selector, NSString *path)
     }
     return ((NSData *(*)(id, SEL, NSString *))originalRead)(object, selector, path);
 }
+/* Answers every feed request in the probe without a network: a status, or a connection failure. */
+static NSInteger stubStatus;
+@interface FeedStub : NSURLProtocol
+@end
+@implementation FeedStub
++ (BOOL)canInitWithRequest:(NSURLRequest *)request { (void)request; return YES; }
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    if (!stubStatus) {
+        [self.client URLProtocol:self didFailWithError:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNotConnectedToInternet userInfo:nil]];
+        return;
+    }
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:stubStatus HTTPVersion:@"HTTP/1.1" headerFields:@{}];
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    [self.client URLProtocolDidFinishLoading:self];
+}
+- (void)stopLoading {}
+@end
+static IMP originalEphemeral;
+static NSURLSessionConfiguration *stubbedEphemeral(id object, SEL selector)
+{
+    NSURLSessionConfiguration *configuration = ((NSURLSessionConfiguration *(*)(id, SEL))originalEphemeral)(object, selector);
+    configuration.protocolClasses = @[FeedStub.class];
+    return configuration;
+}
+static void waitForMenuChecks(void)
+{
+    for (int i = 0; i < 300; i++) {
+        __block BOOL busy;
+        dispatch_sync(updatesQueue(), ^{ busy = profileChecking || recordingChecking; });
+        if (!busy) return;
+        usleep(10000);
+    }
+    assert(!"menu checks finished");
+}
 int main(void)
 {
     @autoreleasepool {
@@ -129,8 +164,52 @@ int main(void)
         });
         assert(dispatch_semaphore_wait(offered, dispatch_time(DISPATCH_TIME_NOW, 3*NSEC_PER_SEC)) == 0);
         assert(profiles == watched && [offeredFolder isEqual:current]);
+        // While the menu is up, a failed check retries quietly with growing delays, and a model the feed has no
+        // profile for (404) benchmarks with its bundled profiles.
+        Method ephemeral = class_getClassMethod(NSURLSessionConfiguration.class, @selector(ephemeralSessionConfiguration));
+        originalEphemeral = method_setImplementation(ephemeral, (IMP)stubbedEphemeral);
+        HostDataPackStore *menuStore = [[HostDataPackStore alloc] initWithRoot:[base stringByAppendingPathComponent:@"menu-cache"] bundled:current kind:@"profiles" channel:@"tester" publicKey:[NSMutableData dataWithLength:32] compatibility:@"profiles-1" validator:^BOOL(NSString *folder, NSError **error) { (void)folder; (void)error; return YES; }];
+        dispatch_sync(updatesQueue(), ^{
+            profiles = menuStore; recordings = menuStore;
+            menuProfileURL = [NSURL URLWithString:@"https://example.com/packs/profiles/ios/iPhone18,1/_.json"]; menuRecordingURL = nil;
+            @synchronized(selectionLock()) {
+                menuFrozen = NO; menuVisible = YES; menuInitialized = YES; profileFolder = nil; profileIdentity = nil;
+                profileReady = NO; profileLoading = YES; recordingReady = YES; recordingLoading = NO;
+            }
+            resetMenuRetry(); profileAttempted = NO; stubStatus = 0;
+            refreshMenu();
+        });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{
+            assert(menuStore.lastFeedStatus == 0);
+            assert(!profileReady && menuRetryScheduled && menuRetryAttempt == 1);
+        });
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:@"Can't reach the profile server. Benchmarking disabled."]);
+        // The retry itself does not bring back "Downloading": the failure text stays until the data loads.
+        dispatch_sync(updatesQueue(), ^{ menuRetryScheduled = NO; refreshMenuKinds(YES, NO); });
+        assert(![host_data_updates_menu_state()[@"loading"] boolValue]);
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(menuRetryScheduled && menuRetryAttempt == 2); });
+        // A network path change retries at once and starts the delays over.
+        dispatch_sync(updatesQueue(), ^{ stubStatus = 404; requestMenuRefresh(); assert(menuRetryAttempt == 0 && !menuRetryScheduled); });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(menuStore.lastFeedStatus == 404 && profileReady && !menuRetryScheduled); });
+        assert([host_data_updates_menu_state()[@"ready"] boolValue]);
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:@""]);
+        // A server error is not "nothing published": it retries.
+        dispatch_sync(updatesQueue(), ^{
+            @synchronized(selectionLock()) { profileReady = NO; }
+            stubStatus = 503; requestMenuRefresh();
+        });
+        waitForMenuChecks();
+        dispatch_sync(updatesQueue(), ^{ assert(!profileReady && menuRetryScheduled && menuRetryAttempt == 1); });
+        // Once Play froze the selection, nothing retries.
+        host_data_updates_menu_finish();
+        dispatch_sync(updatesQueue(), ^{ resetMenuRetry(); scheduleMenuRetry(); assert(!menuRetryScheduled); });
+        method_setImplementation(ephemeral, originalEphemeral);
         [fm removeItemAtPath:base error:NULL];
         puts("PASS: data update identity and bounded compatibility roots");
+        puts("PASS: the launch menu retries failed data checks quietly and accepts an unpublished profile");
     }
     return 0;
 }
