@@ -19,6 +19,7 @@ run('python3', 'tools/test_touch_mapping.py')
 # Held touch sticks must stop feeding movement while the pause menu is open.
 run('python3', 'tools/test_touch_pause.py')
 run('python3', 'tools/test_astc_rewrite.py')
+run('python3', 'tools/test_astc_encode.py')
 run('python3', 'tools/astc_upload_test.py')
 
 clang = '/opt/homebrew/opt/llvm/bin/clang'

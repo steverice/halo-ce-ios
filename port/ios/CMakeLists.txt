@@ -180,6 +180,17 @@ if(HALO_NATIVE_MAC)
     target_compile_definitions(VISR PRIVATE HALO_NATIVE_MAC=1)
     target_include_directories(VISR PRIVATE "${HALO_NATIVE_DIR}")
 endif()
+# astc-encoder detects NEON on every arm64 Apple target. Keep its C++ flags
+# separate from the host and guest translation units.
+file(GLOB HALO_ASTCENC_SOURCES CONFIGURE_DEPENDS "${ROOT}/port/third_party/astcenc/*.cpp")
+add_library(halo_astcenc STATIC ${HALO_ASTCENC_SOURCES})
+target_compile_features(halo_astcenc PRIVATE cxx_std_14)
+target_compile_definitions(halo_astcenc PRIVATE ASTCENC_BLOCK_MAX_TEXELS=16)
+target_include_directories(halo_astcenc PUBLIC "${ROOT}/port/third_party/astcenc")
+target_sources(VISR PRIVATE "${ROOT}/port/linux/src/astc_encode.cpp"
+    "${ROOT}/port/linux/src/astc_rewrite.c")
+target_compile_features(VISR PRIVATE cxx_std_14)
+target_link_libraries(VISR PRIVATE halo_astcenc)
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"
     "${ROOT}/port/runtime/guest/runtime" "${ROOT}/port/linux/src" "${ROOT}/build/ios/host"
     "${ROOT}/build/ios/embedded" "${ROOT}/port/third_party/tomlc17")
