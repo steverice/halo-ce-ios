@@ -835,6 +835,7 @@ run('python3', 'tools/ios_xiso_test.py')
 run('python3', 'tools/test_network_light_state.py')
 run('python3', 'tools/test_network_shader_warmup.py')
 run('python3', 'tools/test_shader_list_warmup.py')
+run('python3', 'tools/test_shader_list_record.py')
 # AppKit import publication, SDL event services, and native/mobile window flags.
 run('python3', 'tools/macos_test.py')
 # the Bink movie decoder (port/runtime/bink_decoder.c on port/third_party/ffmpeg-bink) builds for this Mac,

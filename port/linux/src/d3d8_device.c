@@ -3600,6 +3600,14 @@ static void shader_observation_submit(struct shader_observation *event)
 	event->warming = shader_list_warming;
 	host_shader_observation_append(observation_generation, event);
 }
+/* An active observation generation replaces the local miss record unless
+   debug.shader_list_record is set explicitly. A suppressed or inactive one
+   (benchmarks, replays, fixed timestep) collects nothing, so the record
+   stays: the benchmark's per-run shader capture reads it. */
+static int shader_observation_replaces_record(void)
+{
+	return observation_capture && observation_generation && !observation_developer_record;
+}
 #endif
 
 /* The guest keeps bookkeeping bounded too: a shader hook never grows storage.
@@ -3732,7 +3740,7 @@ static void shader_list_vertex_made(struct vertex_shader_object *program, int va
 		event.kind = SHADER_OBSERVATION_VERTEX;
 		event.vertex_hash = name->hash; event.variant = variant; event.packed_mask = name->packed_mask;
 		shader_observation_submit(&event);
-		if (observation_capture && !observation_developer_record) return;
+		if (shader_observation_replaces_record()) return;
 	}
 #endif
 	snprintf(line, sizeof(line), "vs %016llx %d %lx", (unsigned long long)name->hash, variant, name->packed_mask);
@@ -3757,7 +3765,7 @@ static void shader_list_pixel_made(const struct nv2a_pixel_shader_key *key, gpu_
 		event.kind = SHADER_OBSERVATION_PIXEL; event.pixel_hash = name->hash;
 		event.pixel_size = sizeof(*key); memcpy(event.pixel, key, sizeof(*key));
 		shader_observation_submit(&event);
-		if (observation_capture && !observation_developer_record) return;
+		if (shader_observation_replaces_record()) return;
 	}
 #endif
 	length = (unsigned long)snprintf(line, sizeof(line), "ps %016llx ", (unsigned long long)name->hash);
@@ -3794,7 +3802,7 @@ static void shader_list_take_pipelines(void)
 			event.depth = built.depth; event.alpha_source = built.alpha_source; event.alpha_destination = built.alpha_destination;
 			memcpy(event.attribute_kinds, built.attribute_kinds, sizeof(event.attribute_kinds));
 			shader_observation_submit(&event);
-			if (observation_capture && !observation_developer_record) continue;
+			if (shader_observation_replaces_record()) continue;
 		}
 #endif
 		for (index = 0; index < GPU_ATTRIBUTE_COUNT; index++)
