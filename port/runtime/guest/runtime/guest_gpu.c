@@ -143,6 +143,12 @@ uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size)
 	return host_gpu_texture_read(texture, pixels, size);
 }
 
+void gpu_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
+{
+	IMMEDIATE_FLUSH();
+	host_gpu_texture_set_content(texture, width, height);
+}
+
 gpu_buffer gpu_buffer_create(uint32_t size)
 {
 	IMMEDIATE_FLUSH();

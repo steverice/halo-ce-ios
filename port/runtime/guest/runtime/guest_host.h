@@ -26,6 +26,13 @@ int host_device_profile_pending(char *values, unsigned long capacity, char *vers
 void host_device_profile_applied(int point, int networked, int changed, int metalfx, int frame_rate);
 int host_external_active(void);
 void host_external_commit(int allow_pause);
+/* dynamic resolution (port/ios/host/host_perf_hooks.c): asked between frames
+(d3d8_device.c's screen_mode_choose) with the lines the scene would render at
+without it, or 0 when this frame cannot scale (refused: d3d8_device.c's
+dynamic_resolution_refused). The lines the next frames' scene renders at, from
+the floor to the ceiling; 0 when dynamic resolution is off, and the targets
+stay as before. -1 asks only whether it is on: 1 or 0 */
+int host_dynamic_resolution_lines(int ceiling_lines);
 
 /* Only gameplay touch controls are suppressed; native dialogs remain interactive. */
 void host_touch_replay_active(int active);
@@ -195,6 +202,7 @@ void host_gpu_texture_copy_level(gpu_texture source, gpu_texture destination, ui
 void host_gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
 void host_gpu_texture_destroy(gpu_texture texture);
 uint32_t host_gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size);
+void host_gpu_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height);
 gpu_buffer host_gpu_buffer_create(uint32_t size);
 void host_gpu_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags);
 void host_gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes);

@@ -20,9 +20,16 @@ void host_perf_hooks_pacing(uint64_t microseconds);
 /* Renderer work excludes its measured pacing waits; supplied before present returns. */
 void host_perf_hooks_cpu(uint64_t microseconds);
 
-/* Shadow-only measurement; no caller consumes a resolution output. */
+/* The planner's inputs are collected (shadow mode or actuation). */
 int host_perf_hooks_dynamic_enabled(void);
-void host_perf_hooks_dynamic_config(int enabled, int width, int height, int floor, int thermal, int eligible);
+/* display.dynamic_resolution (or a debug pin or sweep): the guest renders the
+ * planner's lines (host_dynamic_resolution_lines, a guest import). */
+int host_perf_hooks_dynamic_actuates(void);
+int host_dynamic_resolution_lines(int ceiling_lines);
+/* width x height: the scene target's allocation, the ceiling; actual: the
+ * lines this frame's scene rendered (its content), 0 for the ceiling; floor 0
+ * for display.dynamic_resolution_floor */
+void host_perf_hooks_dynamic_config(int enabled, int width, int height, int actual, int floor, int thermal, int eligible);
 /* Thread-safe events are consumed by the next presented frame. */
 void host_perf_hooks_dynamic_ignore(unsigned reason);
 

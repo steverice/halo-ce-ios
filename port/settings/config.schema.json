@@ -214,6 +214,26 @@
             "apple"
           ]
         },
+        "dynamic_resolution": {
+          "type": "boolean",
+          "default": false,
+          "description": "Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. The HUD and menus stay at the display's resolution. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_floor": {
+          "type": "integer",
+          "default": 540,
+          "description": "The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_FLOOR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "anti_aliasing": {
           "type": "string",
           "default": "off",
@@ -2399,6 +2419,36 @@
           "default": false,
           "description": "With the Metal renderer, log and record the dynamic resolution planner's choices without changing the rendered resolution.",
           "x-environment": "HALO_DYNAMIC_RESOLUTION_SHADOW",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_lines": {
+          "type": "integer",
+          "default": 0,
+          "description": "Turn dynamic resolution on and hold the 3D view at this many lines inside its ceiling's targets (from its floor to its ceiling), for comparisons; 0 for the planner's choice. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_LINES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_validate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Turn dynamic resolution on, also in benchmark runs, where a case's lines are the ceiling: the per-model validation run. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_VALIDATE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_sweep": {
+          "type": "boolean",
+          "default": false,
+          "description": "Turn dynamic resolution on and step the 3D view from its ceiling to its floor and back, a level every 30 frames, in place of the planner. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_SWEEP",
           "x-environment-style": "value",
           "x-platforms": [
             "apple"

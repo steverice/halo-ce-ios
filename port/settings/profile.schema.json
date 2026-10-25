@@ -196,6 +196,18 @@
           "default": true,
           "description": "Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. Profile values outside the accepted set are refused, not clamped."
         },
+        "dynamic_resolution": {
+          "type": "boolean",
+          "default": false,
+          "description": "Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. The HUD and menus stay at the display's resolution. Read at launch. Profile values outside the accepted set are refused, not clamped."
+        },
+        "dynamic_resolution_floor": {
+          "type": "integer",
+          "minimum": 240.0,
+          "maximum": 2160.0,
+          "default": 540,
+          "description": "The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. Read at launch. Profile values outside the accepted set are refused, not clamped."
+        },
         "texture_idle_seconds": {
           "type": "number",
           "minimum": 10.0,
@@ -2225,6 +2237,94 @@
           ]
         },
         "display.interpolation": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.dynamic_resolution": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.dynamic_resolution_floor": {
           "type": "object",
           "properties": {
             "basis": {

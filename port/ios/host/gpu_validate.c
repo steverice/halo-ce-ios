@@ -591,6 +591,12 @@ static uint32_t validate_texture_read(gpu_texture texture, void *pixels, uint32_
 	return validation.backend.texture_read(texture, pixels, size);
 }
 
+static void validate_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
+{
+	validation.call = "texture_set_content";
+	validation.backend.texture_set_content(texture, width, height);
+}
+
 /* ---------- buffers and streams */
 
 static gpu_buffer validate_buffer_create(uint32_t size)

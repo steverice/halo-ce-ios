@@ -371,6 +371,14 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     'port/ios/tests/dynamic_resolution_hooks_probe.c', 'port/ios/host/host_perf_hooks.c',
     '-o', BUILD/'dynamic-resolution-hooks-probe')
 run(BUILD/'dynamic-resolution-hooks-probe')
+# Actuation: lines handed to the guest between frames follow the planner, a refusal returns to the ceiling, and the
+# debug pin and sweep hold or step them.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-DHALO_PERF_REPORTS=0', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/dynamic_resolution_actuation_probe.c', 'port/ios/host/host_perf_hooks.c',
+    '-o', BUILD/'dynamic-resolution-actuation-probe')
+for mode in ('plan', 'pin', 'sweep'):
+    run(BUILD/'dynamic-resolution-actuation-probe', mode)
 # Counter metadata remains bounded and refuses stale/partial completion; no GPU submission.
 run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
     '-fobjc-arc', '-fblocks', '-Iport/runtime', '-Iport/ios/host',

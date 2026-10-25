@@ -89,6 +89,10 @@ Handles index tables of these; 0 is none. */
 	id<MTLTexture> texture;          /* nil until an upload texture's first upload */
 	unsigned long levels;            /* description.levels, at most what the size allows */
 	uint64_t used;                   /* the last command buffer serial that read or wrote it */
+	/* gpu_texture_set_content: the picture's part of a render target
+	allocated at dynamic resolution's ceiling, from the top left; 0 for the
+	whole texture */
+	uint32_t content_width, content_height;
 }
 @end
 @implementation MetalTexture
@@ -572,6 +576,8 @@ static BOOL busy(uint64_t used)
 static unsigned frame_upscale_paths;
 static unsigned perf_group = HOST_PERF_SCENE;
 static unsigned perf_scene_width, perf_scene_height, perf_scene_views;
+/* the scene's lines this frame (its content), under its allocation's height */
+static unsigned perf_scene_lines;
 static CFTimeInterval perf_gpu_waited;
 static uint64_t perf_presentation_budget;
 
@@ -591,7 +597,7 @@ static void frame_begin(void)
 	transient_reset(&snapshots[frame_slot]);
 	frame_upscale_paths = 0;
 	perf_group = HOST_PERF_SCENE;
-	perf_scene_width = perf_scene_height = perf_scene_views = 0;
+	perf_scene_width = perf_scene_height = perf_scene_views = perf_scene_lines = 0;
 	frame_started = 1;
 }
 
@@ -1095,6 +1101,27 @@ static void gpu_metal_texture_destroy(gpu_texture texture)
 			pass_end();
 		[textures remove:texture];
 	}
+}
+
+static void gpu_metal_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
+{
+	MetalTexture *record = texture_record(texture);
+
+	if (!record)
+		return;
+	/* (the whole texture, or nothing larger than it) */
+	if (!width || !height || width > record->description.width || height > record->description.height ||
+		(width == record->description.width && height == record->description.height))
+		width = height = 0;
+	record->content_width = width;
+	record->content_height = height;
+}
+
+/* the picture's size in a texture: its content's, else the whole texture's */
+static void texture_content(const MetalTexture *record, id<MTLTexture> texture, NSUInteger *width, NSUInteger *height)
+{
+	*width = record && record->content_width ? record->content_width : texture.width;
+	*height = record && record->content_height ? record->content_height : texture.height;
 }
 
 static uint32_t gpu_metal_texture_read(gpu_texture texture, void *pixels, uint32_t size)
@@ -1976,11 +2003,14 @@ static NSString *const utility_source =
 	"fragment float4 companion_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
 	"\tsampler linear [[sampler(0)]], constant float &brightness [[buffer(0)]])\n"
 	"{ return float4(picture.sample(linear, in.coordinates).rgb * brightness, 1.0); }\n"
-	/* gpu_upscale: alpha too, which the game's later draws may read */
+	/* gpu_upscale: alpha too, which the game's later draws may read; the
+	picture's part of its texture (gpu_texture_set_content): xy its size as
+	texture coordinates, zw its outermost texel centers (2 for a whole
+	texture, which leaves every coordinate as it was) */
 	"fragment float4 upscale_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
-	"\tsampler linear [[sampler(0)]])\n"
+	"\tsampler linear [[sampler(0)]], constant float4 &content [[buffer(0)]])\n"
 	"{\n"
-	"\treturn picture.sample(linear, in.coordinates);\n"
+	"\treturn picture.sample(linear, min(in.coordinates * content.xy, content.zw));\n"
 	"}\n";
 
 static id<MTLRenderPipelineState> clear_pipeline(MTLPixelFormat color, MTLPixelFormat depth, uint32_t mask)
@@ -5160,13 +5190,15 @@ static NSString *const fxaa_source =
 	"scene into the display-sized target, each of its pixels FXAA's at the\n"
 	"pixel's place in the scene, or the plain bilinear sample where there is no\n"
 	"edge, alpha always the sample's (the game's later draws may read it) */\n"
-	"struct UpscaleFxaaParameters { FxaaParameters fxaa; float2 target; };\n"
+	"/* content: the picture's part of its texture as texture coordinates, and\n"
+	"its outermost texel centers (2 for a whole texture) */\n"
+	"struct UpscaleFxaaParameters { FxaaParameters fxaa; float2 target; float2 content; float2 limit; float2 pad; };\n"
 	"fragment float4 upscale_fxaa_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
 	"\tconstant UpscaleFxaaParameters &u [[buffer(0)]])\n"
 	"{\n"
 	"\tFxaaParameters p = u.fxaa;\n"
-	"\tfloat2 position = in.position.xy / u.target;\n"
-	"\tfloat4 sampled = color_texture.sample(fxaa_linear, position, level(0.0));\n"
+	"\tfloat2 position = in.position.xy / u.target * u.content;\n"
+	"\tfloat4 sampled = color_texture.sample(fxaa_linear, min(position, u.limit), level(0.0));\n"
 	"\tfloat3 blended;\n"
 	"\treturn fxaa_at(color_texture, p, position, blended) ? float4(blended, sampled.a) : sampled;\n"
 	"}\n";
@@ -5533,7 +5565,8 @@ static void gpu_metal_flush(void)
 
 /* the back buffer scaled to width x height by MetalFX when it's smaller and
 display.upscaler asks for it, else the back buffer itself */
-static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output);
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, NSUInteger content_width, NSUInteger content_height,
+	long width, long height, id<MTLTexture> output);
 
 static unsigned scene_upscale_path(long source_width, long source_height, long output_width, long output_height, int metalfx_encoded)
 {
@@ -5544,17 +5577,68 @@ static unsigned scene_upscale_path(long source_width, long source_height, long o
 
 static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long height)
 {
-	return upscale_into(back_buffer, width, height, nil);
+	return upscale_into(back_buffer, back_buffer.width, back_buffer.height, width, height, nil);
 }
 
+/* MetalFX's upscale as a command buffer of its own while dynamic resolution
+collects its inputs: MetalFX owns its encoders, so no counter sample can
+bracket it (host_perf_metal.h), but a command buffer's GPU span can. The
+scene's work goes ahead in the buffer before it. */
+static void scaler_timing_begin(void)
+{
+	if (!host_perf_hooks_dynamic_enabled())
+		return;
+	commit(NO);
+	command_buffer();
+	host_perf_metal_upscale_expected();
+}
+
+static void scaler_timing_end(void)
+{
+	uint64_t frame = host_perf_hooks_frame_id();
+
+	if (!host_perf_hooks_dynamic_enabled() || !commands || !frame)
+		return;
+	[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
+	{
+		double seconds = completed.GPUEndTime - completed.GPUStartTime;
+		int valid = completed.status == MTLCommandBufferStatusCompleted && completed.GPUStartTime > 0.0 && seconds > 0.0;
+
+		host_perf_metal_upscale_time(frame, valid ? (uint64_t)(seconds * 1e6) : 0, valid);
+	}];
+}
+
+#ifdef HAVE_METALFX
+/* The scene's scaler: the picture (content_width x content_height at the top
+left of color, which dynamic resolution allocates at its ceiling) into
+output. The spatial scaler is built once per allocation and output size and
+takes the content size on every encode, so a change of dynamic resolution's
+level never rebuilds it. A temporal scaler takes the same content rectangle,
+with the scene's depth, motion and jitter, in this one place. */
+static void scene_scaler_encode(id<MTLTexture> color, NSUInteger content_width, NSUInteger content_height,
+	id<MTLTexture> output) API_AVAILABLE(ios(16.0), tvos(16.0), visionos(1.0))
+{
+	upscaler.colorTexture = color;
+	upscaler.outputTexture = output;
+	upscaler.inputContentWidth = content_width;
+	upscaler.inputContentHeight = content_height;
+	scaler_timing_begin();
+	[upscaler encodeToCommandBuffer:command_buffer()];
+	scaler_timing_end();
+}
+#endif
+
 /* (output: a texture of that size to scale into in place of the scaler's
-own, if its usage allows; the result says which was written) */
-static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output)
+own, if its usage allows; the result says which was written. The picture is
+content_width x content_height at the back buffer's top left: the whole of
+it but under dynamic resolution) */
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, NSUInteger content_width, NSUInteger content_height,
+	long width, long height, id<MTLTexture> output)
 {
 #ifdef HAVE_METALFX
 	if (@available(iOS 16.0, tvOS 16.0, visionOS 1.0, *))
 	{
-		if (!metalfx_wanted || (long)back_buffer.width >= width || (long)back_buffer.height >= height)
+		if (!metalfx_wanted || (long)content_width >= width || (long)content_height >= height)
 			return back_buffer;
 		if (!upscaler || upscaler.inputWidth != back_buffer.width || upscaler.inputHeight != back_buffer.height ||
 			upscaler.outputWidth != (NSUInteger)width || upscaler.outputHeight != (NSUInteger)height)
@@ -5590,22 +5674,16 @@ static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long 
 		if (!output || (output.usage & upscaler.outputTextureUsage) != upscaler.outputTextureUsage ||
 			output.pixelFormat != upscaled.pixelFormat || (long)output.width != width || (long)output.height != height)
 			output = upscaled;
-		upscaler.colorTexture = back_buffer;
-		upscaler.outputTexture = output;
-		upscaler.inputContentWidth = back_buffer.width;
-		upscaler.inputContentHeight = back_buffer.height;
-		/* MetalFX owns its encoders; stage samples cannot be attached to them.
-         * Refuse a complete S/U/H reading rather than count CPU encode time. */
-        host_perf_metal_unavailable(HOST_PERF_UPSCALE);
-        static BOOL perf_metalfx_noted;
-        if (host_perf_hooks_dynamic_enabled() && !perf_metalfx_noted) {
-            platform_log("DRS shadow: MetalFX stage timing is unavailable; GPU cost decisions are refused");
-            perf_metalfx_noted = YES;
-        }
-        [upscaler encodeToCommandBuffer:commands];
+		/* With timing, MetalFX runs in its own command buffer and is measured
+		(scaler_timing_begin); otherwise no complete S/U/H reading exists */
+		if (!host_perf_hooks_dynamic_enabled())
+			host_perf_metal_unavailable(HOST_PERF_UPSCALE);
+		scene_scaler_encode(back_buffer, content_width, content_height, output);
 		return output;
 	}
 #endif
+	(void)content_width;
+	(void)content_height;
 	(void)width;
 	(void)height;
 	(void)output;
@@ -5838,12 +5916,15 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		struct gpu_clear whole_clear;
 		BOOL whole, scaled = NO, fxaa;
 		struct gpu_rect scene;
+		/* the picture's part of the source (dynamic resolution's content) */
+		NSUInteger content_width, content_height;
 
 		frame_begin();
 		if (!source_record || !source_record->texture || !destination_record || !destination_record->texture)
 			return;
 		picture = source_record->texture;
 		target = destination_record->texture;
+		texture_content(source_record, picture, &content_width, &content_height);
 		if (!clamp_rect(area, target.width, target.height, &scissor))
 			return;
 		whole = scissor.x == 0 && scissor.y == 0 && scissor.width == target.width && scissor.height == target.height;
@@ -5851,12 +5932,12 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		MetalFX scales this picture (it reads the scene itself) or the
 		folded pipeline is missing; then as its own pass first, over the
 		matching rectangle of the scene */
-		scene.x = (int32_t)((unsigned long)scissor.x * picture.width / target.width);
-		scene.y = (int32_t)((unsigned long)scissor.y * picture.height / target.height);
-		scene.width = (int32_t)((unsigned long)(scissor.x + scissor.width) * picture.width / target.width) - scene.x;
-		scene.height = (int32_t)((unsigned long)(scissor.y + scissor.height) * picture.height / target.height) - scene.y;
+		scene.x = (int32_t)((unsigned long)scissor.x * content_width / target.width);
+		scene.y = (int32_t)((unsigned long)scissor.y * content_height / target.height);
+		scene.width = (int32_t)((unsigned long)(scissor.x + scissor.width) * content_width / target.width) - scene.x;
+		scene.height = (int32_t)((unsigned long)(scissor.y + scissor.height) * content_height / target.height) - scene.y;
 		fxaa = anti_alias == GPU_ANTI_ALIAS_FXAA && post.upscale_fxaa_pipeline &&
-			!(whole && metalfx_wanted && (picture.width < target.width || picture.height < target.height));
+			!(whole && metalfx_wanted && (content_width < target.width || content_height < target.height));
 		if (anti_alias == GPU_ANTI_ALIAS_FXAA && !fxaa)
 			gpu_metal_anti_alias(GPU_ANTI_ALIAS_FXAA, source, &scene);
 		command_buffer();
@@ -5868,6 +5949,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		use_texture(source_record);
         perf_scene_width = (unsigned)picture.width;
         perf_scene_height = (unsigned)picture.height;
+        perf_scene_lines = (unsigned)content_height;
         if (++perf_scene_views > 1) {
             /* The next view's scene can follow the first view's HUD. Phase 2
              * refuses this mixed ordering until view boundaries are explicit. */
@@ -5886,7 +5968,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		the scaler's own texture, which the quad copies */
 		if (whole)
 		{
-			picture = upscale_into(picture, (long)target.width, (long)target.height, target);
+			picture = upscale_into(picture, content_width, content_height, (long)target.width, (long)target.height, target);
 			if (pass_log && picture != source_record->texture)
 				[pass_log appendFormat:@"\n  upscale: MetalFX, texture %u %lux%lu into %s %lux%lu", source,
 					(unsigned long)source_record->texture.width, (unsigned long)source_record->texture.height,
@@ -5911,7 +5993,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
         if (scaled) perf_group = HOST_PERF_HUD;
 		if (!pass_begin(destination, 0, whole && !scaled ? &whole_clear : NULL))
 			return;
-		unsigned observed_path = picture ? scene_upscale_path((long)source_record->texture.width, (long)source_record->texture.height,
+		unsigned observed_path = picture ? scene_upscale_path((long)content_width, (long)content_height,
 			(long)scissor.width, (long)scissor.height, picture != source_record->texture) : HOST_UPSCALER_UNKNOWN;
 		if (observed_path != HOST_UPSCALER_NONE) frame_upscale_paths |= observed_path;
 		native_pass.color = destination;
@@ -5930,17 +6012,32 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		[encoder setFragmentSamplerState:present_sampler atIndex:0];
 		if (visibility.entry_open)
 			[encoder setVisibilityResultMode:MTLVisibilityResultModeDisabled offset:0];
+		/* the picture's part of its texture, as texture coordinates, and its
+		outermost texel centers; the whole texture's leave the quad's
+		coordinates exactly as they were (MetalFX's own texture is whole) */
+		BOOL part = picture == source_record->texture &&
+			(content_width != picture.width || content_height != picture.height);
+		float content[4] = { 1.0f, 1.0f, 2.0f, 2.0f };
+		if (part)
+		{
+			content[0] = (float)content_width / (float)picture.width;
+			content[1] = (float)content_height / (float)picture.height;
+			content[2] = ((float)content_width - 0.5f) / (float)picture.width;
+			content[3] = ((float)content_height - 0.5f) / (float)picture.height;
+		}
 		if (fxaa)
 		{
 			float width = (float)picture.width, height = (float)picture.height;
-			/* the scene's size, the view's outermost texel centers (split
-			screen: no texel of the next view is read), and the target's size */
-			struct { float metrics[4], bounds[4], target[2], pad[2]; } parameters =
+			/* the scene's texels, the view's outermost texel centers (split
+			screen: no texel of the next view is read), the target's size and
+			the picture's part of its texture */
+			struct { float metrics[4], bounds[4], target[2], content[2], limit[2], pad[2]; } parameters =
 			{
 				{ 1.0f / width, 1.0f / height, width, height },
 				{ ((float)scene.x + 0.5f) / width, ((float)scene.y + 0.5f) / height,
 					((float)(scene.x + scene.width) - 0.5f) / width, ((float)(scene.y + scene.height) - 0.5f) / height },
-				{ (float)target.width, (float)target.height }, { 0.0f, 0.0f },
+				{ (float)target.width, (float)target.height }, { content[0], content[1] }, { content[2], content[3] },
+				{ 0.0f, 0.0f },
 			};
 
 			[encoder setFragmentBytes:&parameters length:sizeof(parameters) atIndex:0];
@@ -5948,7 +6045,10 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 			[encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 		}
 		else
+		{
+			[encoder setFragmentBytes:content length:sizeof(content) atIndex:0];
 			[encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+		}
 		pass_commands++;
 		visibility.entry_open = 0;
         perf_group = HOST_PERF_HUD;
@@ -5978,12 +6078,13 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
         perf_group = HOST_PERF_HUD;
         static BOOL perf_capability_noted;
         if (host_perf_hooks_dynamic_enabled()) {
-            /* (the design's 540-line floor; no setting names it until actuation) */
-            enum { perf_floor = 540 };
+            /* the scene's allocation is the ceiling (dynamic resolution's pool
+             * is allocated there), its content this frame's lines; the floor
+             * is display.dynamic_resolution_floor's */
             host_perf_hooks_dynamic_config(1,
                 (int)(perf_scene_width ?: (record ? record->description.width : 0)),
                 (int)(perf_scene_height ?: (record ? record->description.height : 0)),
-                perf_floor, (int)NSProcessInfo.processInfo.thermalState,
+                (int)perf_scene_lines, 0, (int)NSProcessInfo.processInfo.thermalState,
                 perf_scene_height != 0 && perf_scene_views == 1);
         }
         if (host_perf_hooks_dynamic_enabled() && !perf_capability_noted) {
@@ -6428,7 +6529,7 @@ static uint32_t gpu_metal_present_stereo(const struct gpu_stereo_present *presen
 {
     /* Vision Pro DRS remains an experiment; clear a preceding mono frame's eligibility. */
     if (host_perf_hooks_dynamic_enabled())
-        host_perf_hooks_dynamic_config(1, 0, 0, 540, (int)NSProcessInfo.processInfo.thermalState, 0);
+        host_perf_hooks_dynamic_config(1, 0, 0, 0, 0, (int)NSProcessInfo.processInfo.thermalState, 0);
 #if TARGET_OS_VISION
 	@autoreleasepool
 	{

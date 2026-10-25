@@ -599,6 +599,15 @@ static uint32_t capture_texture_read(gpu_texture texture, void *pixels, uint32_t
 	return capture.backend.texture_read(texture, pixels, size);
 }
 
+static void capture_unrecorded(const char *call);
+
+static void capture_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
+{
+	if (width || height)
+		capture_unrecorded("gpu_texture_set_content");
+	capture.backend.texture_set_content(texture, width, height);
+}
+
 static gpu_buffer capture_buffer_create(uint32_t size)
 {
 	gpu_buffer handle = capture.backend.buffer_create(size);

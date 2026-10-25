@@ -197,6 +197,8 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | `display.frame_rate` | string: `display`, `unlimited`, quoted 30 to 1000 | `"display"` | gameplay, ⓢ scene | The most frames a second: "display" (default) draws one frame for each refresh of the display; a number ("60", "240") holds that rate; "unlimited" draws as fast as it can. |
 | `display.async_shaders` | string: `auto`, `on`, `off` | `"auto"` | gameplay | How the Metal renderer compiles shaders: "auto" (default) on worker threads, skipping a draw for the frames until its pipeline is ready, so the game never waits on the compiler (on Apple Vision Pro a long wait ends the app); a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) compiles each at its first draw instead. "on" or "off" forces either. |
 | `display.interpolation` | boolean | `true` | gameplay | Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. |
+| `display.dynamic_resolution` | boolean | `false` | gameplay | Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. |
+| `display.dynamic_resolution_floor` | integer, 240 to 2160 | `540` | gameplay | The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. |
 ### input
 
 | Setting | Type and accepted values | Default (Apple) | Contexts | Description |

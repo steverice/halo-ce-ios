@@ -1274,6 +1274,14 @@ static void gpu_gl_texture_copy_level(gpu_texture source, gpu_texture destinatio
 		destination, GL_TEXTURE_2D, (GLint)level, 0, 0, 0, width, height, 1);
 }
 
+/* dynamic resolution is Metal-only (d3d8_device.c refuses it here) */
+static void gpu_gl_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
+{
+	(void)texture;
+	(void)width;
+	(void)height;
+}
+
 static uint32_t gpu_gl_texture_read(gpu_texture texture, void *pixels, uint32_t size)
 {
 	const struct gpu_texture_description *description = &texture_record(texture)->description;

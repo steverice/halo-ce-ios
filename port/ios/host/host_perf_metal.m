@@ -37,6 +37,10 @@ static os_unfair_lock group_lock = OS_UNFAIR_LOCK_INIT;
 static struct {
     uint64_t frame, presented, interval, budget;
     unsigned count, invalid, late;
+    /* MetalFX owns its encoders, so counters cannot bracket it; with timing
+     * it runs alone in a command buffer whose GPU span is the upscale. */
+    unsigned upscale_expected, upscale_seen;
+    uint64_t upscale_us;
     double scale;
     struct { uint64_t start, end; unsigned group; } ranges[GROUP_INTERVALS];
 } grouped[FRAME_COUNT];
@@ -167,6 +171,25 @@ uint32_t host_perf_metal_switch(uint32_t token, id<MTLRenderCommandEncoder> enco
     host_perf_metal_begin(next, encoder);
     return next;
 }
+void host_perf_metal_upscale_expected(void) {
+    if (!host_perf_hooks_dynamic_enabled()) return;
+    uint64_t frame = host_perf_hooks_frame_id();
+    if (!frame) return;
+    frame_prepare(frame);
+    os_unfair_lock_lock(&group_lock);
+    grouped[frame % FRAME_COUNT].upscale_expected++;
+    os_unfair_lock_unlock(&group_lock);
+}
+void host_perf_metal_upscale_time(uint64_t frame, uint64_t duration_us, int valid) {
+    if (!frame) return;
+    os_unfair_lock_lock(&group_lock);
+    typeof(grouped[0]) *entry = &grouped[frame % FRAME_COUNT];
+    if (entry->frame == frame) {
+        if (valid) { entry->upscale_seen++; entry->upscale_us += duration_us; }
+        else entry->invalid |= 1u << HOST_PERF_UPSCALE;
+    }
+    os_unfair_lock_unlock(&group_lock);
+}
 void host_perf_metal_presented(uint64_t frame, uint64_t time_us, uint64_t budget_us) {
     if (!frame) return;
     os_unfair_lock_lock(&group_lock);
@@ -285,9 +308,10 @@ static void dynamic_join(game_perf_frame *frame) {
                 totals[entry->ranges[i].group] += entry->ranges[i].end - start;
             if (entry->ranges[i].end > end) end = entry->ranges[i].end;
         }
-        if (!entry->invalid && entry->count && host_perf_metal_stage_supported() && !(frame->flags & GAME_PERF_GPU_UNAVAILABLE)) {
+        if (!entry->invalid && entry->count && host_perf_metal_stage_supported() && !(frame->flags & GAME_PERF_GPU_UNAVAILABLE) &&
+            entry->upscale_seen == entry->upscale_expected) {
             frame->drs.scene_us = (uint64_t)(totals[0] * entry->scale);
-            frame->drs.upscale_us = (uint64_t)(totals[1] * entry->scale);
+            frame->drs.upscale_us = (uint64_t)(totals[1] * entry->scale) + entry->upscale_us;
             frame->drs.hud_us = (uint64_t)(totals[2] * entry->scale);
             frame->drs.available |= 1;
         }

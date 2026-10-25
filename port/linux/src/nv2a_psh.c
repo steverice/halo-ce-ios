@@ -385,6 +385,10 @@ static void sample(struct xgpu_text *text, const struct nv2a_dialect *dialect, c
 	default:
 		xgpu_text_append(text, "texture(tex%d, (%s).xy * texture_scale[%d].xy", stage, coordinates, stage);
 		break;
+	case _xgpu_sampler_2d_content:
+		xgpu_text_append(text, "texture(tex%d, min((%s).xy * texture_scale[%d].xy, texture_scale[%d].zw)", stage,
+			coordinates, stage, stage);
+		break;
 	}
 	/* ES samplers have no LOD bias: pass D3DTSS_MIPMAPLODBIAS to the lookup */
 	if (dialect->shader_lod_bias)

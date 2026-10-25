@@ -141,6 +141,12 @@ nothing drew), for debugging. Returns 0 and writes nothing if size is short of
 width * height * 4 or the backend cannot read the texture (ES: block-compressed
 textures and depth) */
 uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size);
+/* dynamic resolution (d3d8_device.c): a render target allocated at the
+resolution ceiling holds a picture of width x height texels at its top left;
+gpu_upscale reads only that part, and MetalFX takes it as its input content.
+0 x 0 restores the whole texture, as a new target has. A backend that
+cannot draw a part ignores it (GL: dynamic resolution is Metal-only) */
+void gpu_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height);
 
 /* ---------- buffers: the vertex mirror's segments */
 
@@ -730,6 +736,7 @@ its own functions. */
 	P(texture_generate_mipmaps, (gpu_texture texture, uint32_t base_level), (texture, base_level)) \
 	P(texture_destroy, (gpu_texture texture), (texture)) \
 	F(uint32_t, texture_read, (gpu_texture texture, void *pixels, uint32_t size), (texture, pixels, size)) \
+	P(texture_set_content, (gpu_texture texture, uint32_t width, uint32_t height), (texture, width, height)) \
 	F(gpu_buffer, buffer_create, (uint32_t size), (size)) \
 	P(buffer_write, (gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags), \
 		(buffer, offset, size, data, flags)) \

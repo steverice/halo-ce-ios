@@ -23,20 +23,75 @@ static pthread_mutex_t dynamic_lock = PTHREAD_MUTEX_INITIALIZER;
 static int dynamic_paused;
 static int dynamic_width, dynamic_eligible;
 static _Atomic int dynamic_setting = -1;
+/* Actuation: display.dynamic_resolution, or a debug pin or sweep. Each is
+ * read once, as the shadow switch is: a profile sets them for the session. */
+static int dynamic_actuate, dynamic_pin, dynamic_sweep, dynamic_floor = 540;
+static int setting_true(const char *name, const char *environment_name) {
+    char text[16];
+    const char *environment = getenv(environment_name);
+    host_config_string(name, "false", text, sizeof(text));
+    return !strcmp(environment ? environment : text, "true") || !strcmp(environment ? environment : text, "1");
+}
+static int setting_integer(const char *name, const char *environment_name, const char *fallback) {
+    char text[16];
+    const char *environment = getenv(environment_name);
+    host_config_string(name, fallback, text, sizeof(text));
+    return atoi(environment ? environment : text);
+}
 int host_perf_hooks_dynamic_enabled(void) {
     if (dynamic_setting < 0) {
-        char text[16];
-        const char *environment = getenv("HALO_DYNAMIC_RESOLUTION_SHADOW");
-        host_config_string("debug.dynamic_resolution_shadow", "false", text, sizeof(text));
-        dynamic_setting = !strcmp(environment ? environment : text, "true") ||
-            !strcmp(environment ? environment : text, "1");
+        int shadow_on = setting_true("debug.dynamic_resolution_shadow", "HALO_DYNAMIC_RESOLUTION_SHADOW");
+        int floor = setting_integer("display.dynamic_resolution_floor", "HALO_DYNAMIC_RESOLUTION_FLOOR", "540");
+        dynamic_pin = setting_integer("debug.dynamic_resolution_lines", "HALO_DYNAMIC_RESOLUTION_LINES", "0");
+        dynamic_sweep = setting_true("debug.dynamic_resolution_sweep", "HALO_DYNAMIC_RESOLUTION_SWEEP");
+        dynamic_floor = floor > 0 ? floor : 540;
+        dynamic_actuate = setting_true("display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
+            setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE") ||
+            dynamic_pin > 0 || dynamic_sweep;
+        dynamic_setting = shadow_on || dynamic_actuate;
     }
     return dynamic_setting;
 }
+int host_perf_hooks_dynamic_actuates(void) { return host_perf_hooks_dynamic_enabled() && dynamic_actuate; }
 void host_perf_hooks_dynamic_ignore(unsigned reason) { atomic_fetch_or(&dynamic_events, reason); }
-void host_perf_hooks_dynamic_config(int enabled, int width, int height, int floor, int thermal, int eligible) {
+/* Between frames, on the game thread. The planner's level was decided from
+ * frames presented at least eight frames ago (dynamic_drain_locked); the
+ * guest renders the next frames at the returned lines. A refused frame resets
+ * the planner to the ceiling, so a refusal never strands a lower picture. */
+int host_dynamic_resolution_lines(int ceiling_lines) {
+    int lines;
+    if (!host_perf_hooks_dynamic_actuates()) return 0;
+    /* (asked whether it is on at all, with nothing changed) */
+    if (ceiling_lines < 0) return 1;
+    pthread_mutex_lock(&dynamic_lock);
+    shadow.actuate = 1;
+    if (ceiling_lines <= 0) {
+        if (shadow.plan.levels && shadow.plan.level) {
+            shadow.plan.level = 0;
+            shadow.plan.settle = DYNAMIC_RESOLUTION_SETTLE;
+        }
+        pthread_mutex_unlock(&dynamic_lock);
+        return 0;
+    }
+    lines = ceiling_lines;
+    /* Until the first frame at this ceiling is measured, render the ceiling. */
+    if (shadow.height == ceiling_lines && shadow.plan.levels) {
+        int floor = shadow.plan.lines[shadow.plan.levels - 1];
+        if (dynamic_pin > 0) lines = dynamic_pin < floor ? floor : dynamic_pin > ceiling_lines ? ceiling_lines : dynamic_pin;
+        else if (dynamic_sweep && shadow.plan.levels > 1) {
+            /* floor to ceiling and back, one level each half second at 60 a second */
+            unsigned span = 2u * (unsigned)(shadow.plan.levels - 1), step = (unsigned)((serial / 30) % span);
+            lines = shadow.plan.lines[step < (unsigned)shadow.plan.levels ? step : span - step];
+        } else lines = shadow.plan.lines[shadow.plan.level];
+    }
+    pthread_mutex_unlock(&dynamic_lock);
+    return lines;
+}
+void host_perf_hooks_dynamic_config(int enabled, int width, int height, int actual, int floor, int thermal, int eligible) {
     dynamic_width = width; dynamic_eligible = enabled && eligible;
-    pending.drs.actual_lines = pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
+    pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
+    pending.drs.actual_lines = actual > 0 && actual <= height ? (uint32_t)actual : pending.drs.ceiling_lines;
+    if (floor <= 0) floor = dynamic_floor;
     pending.drs.floor_lines = floor > 0 ? (uint32_t)floor : 540;
     if ((height + 1) / 2 > (int)pending.drs.floor_lines) pending.drs.floor_lines = (height + 1) / 2;
     if (height > 0 && pending.drs.floor_lines > (uint32_t)height) pending.drs.floor_lines = height;
@@ -53,11 +108,13 @@ static void dynamic_drain_locked(uint64_t frame_id) {
         host_perf_metal_join(frame);
         dynamic_resolution_shadow_frame(&shadow, frame, delayed[slot].width);
         if (frame->drs.action || frame->frame_id % 600 == 0) {
-            fprintf(stderr, "DRS shadow: frame=%llu actual=%u chosen=%u decision_available=%u action=%u S/U/H=%llu/%llu/%llu cpu=%llu budget=%llu late=%u ignore=%u available=%u thermal=%u clock=unvalidated_fixed_pixels\n",
+            fprintf(stderr, "%s frame=%llu actual=%u chosen=%u decision_available=%u action=%u S/U/H=%llu/%llu/%llu cpu=%llu budget=%llu late=%u ignore=%u available=%u thermal=%u clock=%s\n",
+                shadow.actuate ? "DRS:" : "DRS shadow:",
                 (unsigned long long)frame->frame_id, frame->drs.actual_lines, frame->drs.chosen_lines,
                 (frame->drs.available & 4) != 0, frame->drs.action, (unsigned long long)frame->drs.scene_us, (unsigned long long)frame->drs.upscale_us,
                 (unsigned long long)frame->drs.hud_us, (unsigned long long)frame->cpu_us,
-                (unsigned long long)frame->budget_us, frame->drs.late, frame->drs.ignore, frame->drs.available, frame->drs.thermal);
+                (unsigned long long)frame->budget_us, frame->drs.late, frame->drs.ignore, frame->drs.available, frame->drs.thermal,
+                shadow.actuate ? "actuated" : "unvalidated_fixed_pixels");
         }
         host_perf_reports_frame(frame);
         ++delayed_read;

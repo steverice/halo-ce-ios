@@ -191,6 +191,14 @@ static const struct config_setting config_settings[] =
 		"menus, text and letterbox bars at the display's own resolution over the\n"
 		"scaled-up scene. false scales them up with the scene. No effect, and no\n"
 		"cost, at native resolution or on Apple Vision Pro." },
+	{ "display.dynamic_resolution", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION", _environment_value, _platform_ios,
+		"Metal renderer, in gameplay: lower the 3D view's resolution while the GPU\n"
+		"cannot keep up and raise it again when it can, between frames, from\n"
+		"display.render_height (the ceiling) down to display.dynamic_resolution_floor.\n"
+		"The HUD and menus stay at the display's resolution. Read at launch." },
+	{ "display.dynamic_resolution_floor", _config_integer, "540", "HALO_DYNAMIC_RESOLUTION_FLOOR", _environment_value, _platform_ios,
+		"The fewest lines display.dynamic_resolution draws the 3D view at; never\n"
+		"fewer than half the ceiling's. Read at launch." },
 	{ "display.anti_aliasing", _config_string, "\"off\"", "HALO_ANTI_ALIASING", _environment_value, _platform_all,
 		"Smoothing of jagged edges, which the Xbox did not have: \"off\", or\n"
 		"\"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size\n"
@@ -1477,6 +1485,17 @@ static const struct config_setting config_settings[] =
 	{ "debug.dynamic_resolution_shadow", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION_SHADOW", _environment_value, _platform_ios,
 		"With the Metal renderer, log and record the dynamic resolution planner's\n"
 		"choices without changing the rendered resolution." },
+	{ "debug.dynamic_resolution_lines", _config_integer, "0", "HALO_DYNAMIC_RESOLUTION_LINES", _environment_value, _platform_ios,
+		"Turn dynamic resolution on and hold the 3D view at this many lines inside\n"
+		"its ceiling's targets (from its floor to its ceiling), for comparisons; 0\n"
+		"for the planner's choice. Read at launch." },
+	{ "debug.dynamic_resolution_validate", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION_VALIDATE", _environment_value, _platform_ios,
+		"Turn dynamic resolution on, also in benchmark runs, where a case's lines\n"
+		"are the ceiling: the per-model validation run. Read at launch." },
+	{ "debug.dynamic_resolution_sweep", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION_SWEEP", _environment_value, _platform_ios,
+		"Turn dynamic resolution on and step the 3D view from its ceiling to its\n"
+		"floor and back, a level every 30 frames, in place of the planner. Read at\n"
+		"launch." },
 	{ "debug.gpu_stats", _config_boolean, "false", "HALO_GPU_STATS", _environment_set_is_true, _platform_all,
 		"Log the renderer's draw counts once a second." },
 	{ "debug.gpu_trace_frame", _config_integer, "-1", "HALO_GPU_TRACE", _environment_value, _platform_all,

@@ -27,6 +27,7 @@ static void mock_texture_copy_level(gpu_texture s, gpu_texture d, uint32_t l) { 
 static void mock_texture_generate_mipmaps(gpu_texture t, uint32_t b) { (void)t; (void)b; }
 static void mock_texture_destroy(gpu_texture t) { (void)t; }
 static uint32_t mock_texture_read(gpu_texture t, void *p, uint32_t s) { (void)t; (void)p; (void)s; return 0; }
+static void mock_texture_set_content(gpu_texture t, uint32_t w, uint32_t h) { (void)t; (void)w; (void)h; }
 static gpu_buffer mock_buffer_create(uint32_t size) { (void)size; return ++next_handle; }
 static void mock_buffer_write(gpu_buffer b, uint32_t o, uint32_t s, const void *d, uint32_t f) { (void)b; (void)o; (void)s; (void)d; (void)f; }
 static void mock_stream_reserve(uint32_t v, uint32_t i) { (void)v; (void)i; }

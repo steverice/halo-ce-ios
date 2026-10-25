@@ -9,6 +9,11 @@ int host_perf_metal_stage_supported(void);
 int host_perf_metal_needs_split(void);
 void host_perf_metal_presented(uint64_t frame, uint64_t time_us, uint64_t budget_us);
 void host_perf_metal_unavailable(unsigned group);
+/* MetalFX's upscale, timed as a command buffer of its own: expected while
+ * encoding the current frame, then its GPU duration from the completion
+ * handler. A frame whose expected durations have not all arrived has no U. */
+void host_perf_metal_upscale_expected(void);
+void host_perf_metal_upscale_time(uint64_t frame, uint64_t duration_us, int valid);
 enum host_perf_metal_group { HOST_PERF_SCENE, HOST_PERF_UPSCALE, HOST_PERF_HUD };
 #ifdef __OBJC__
 #import <Metal/Metal.h>

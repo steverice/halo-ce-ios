@@ -65,6 +65,7 @@ host_gpu_texture_copy_level
 host_gpu_texture_generate_mipmaps
 host_gpu_texture_destroy
 host_gpu_texture_read
+host_gpu_texture_set_content
 host_gpu_buffer_create
 host_gpu_buffer_write
 host_gpu_stream_reserve
@@ -120,6 +121,9 @@ host_external_commit
 host_external_cycle
 host_external_force
 host_external_mode_label
+
+# Dynamic resolution's lines for the next frame (host_perf_hooks.c)
+host_dynamic_resolution_lines
 
 host_touch_replay_active
 host_memory_pressure_poll
