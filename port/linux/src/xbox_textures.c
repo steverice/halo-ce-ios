@@ -1065,6 +1065,8 @@ static BOOL texture_entry_format(struct texture_entry *entry, uint32_t format)
 		return FALSE;
 	gpu_texture_destroy(entry->texture);
 	entry->texture = replacement;
+	/* (a cached result may still name the destroyed handle) */
+	entry->result_valid = FALSE;
 	entry->gpu_format = format;
 	entry->decoded = format == GPU_FORMAT_BGRA8 && entry->description.compressed;
 	return TRUE;
@@ -1359,7 +1361,8 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 				entry->type != GPU_TEXTURE_3D && !entry->runtime_written &&
 				!(resource[0] & D3DCOMMON_D3DCREATED) && channel_order == _custom_edition_channels_xbox &&
 				!*config_string("debug.texture_dump_directory") &&
-				texture_entry_result(entry, &result_type, &result_description) == entry->texture;
+				!text_hires_atlas_texture(entry->data) &&
+				texture_entry_result_uncached(entry, &result_type, &result_description) == entry->texture;
 			if (eligible)
 				astc = texture_astc_prepare(entry);
 			/* Unsupported alpha, replacements, allocation failure, and runtime writes

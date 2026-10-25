@@ -202,7 +202,8 @@ int main(void)
 	for (unsigned format = 0xc; format <= 0xf; format += format == 0xc ? 2 : 1)
 	{
 		reset(format, TRUE);
-		assert(get() && entry()->gpu_format == GPU_FORMAT_ASTC4X4);
+		/* The result cache must name the ASTC object, not the destroyed BGRA8 one. */
+		assert(get() == entry()->texture && entry()->gpu_format == GPU_FORMAT_ASTC4X4);
 		assert(upload_calls == 24 && rewrite_calls == 24 && !fallback_calls);
 		for (unsigned i = 0; i < 24; i++)
 		{
@@ -210,7 +211,7 @@ int main(void)
 			assert(uploads_marker[i] == i + 1);
 			assert(uploads_size[i] == (i % 4 == 0 ? 64 : 16));
 		}
-		assert(get() && upload_calls == 24); /* recent cache hit */
+		assert(get() == entry()->texture && upload_calls == 24); /* recent cache hit */
 		fixture_generation++; fixture_serial++;
 		assert(get() && entry()->runtime_written && entry()->decoded);
 		assert(entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1 && last_decode);
