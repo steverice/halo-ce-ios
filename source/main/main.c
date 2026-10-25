@@ -415,6 +415,9 @@ int halo_translation_nanoseconds_take(void);
 void halo_perf_reports_map_begin(const char *map_name);
 void host_perf_hooks_loading(int loading);
 long network_objects_perf_count(void);
+/* port: a level that does not load is a bad or missing map file, which the
+player can fix: a message, not a crash (port/ios/host/host_crash.c) */
+void host_map_load_failed(const char *map_name, const char *messages);
 #define MAIN_CPU_PHASE(phase, ticks) host_frame_cpu_phase((phase), (ticks))
 #else
 #define MAIN_CPU_PHASE(phase, ticks) ((void)0)
@@ -1515,6 +1518,10 @@ static void main_new_map(
 	}
 	else
 	{
+#ifdef HALO_IOS
+		error(_error_silent, "game_load() failed.");
+		host_map_load_failed(options->map_name, error_get());
+#endif
 		error(_error_immediate, "game_load() failed.");
 	}
 
@@ -1525,6 +1532,10 @@ static void main_new_map(
 	}
 	else
 	{
+#ifdef HALO_IOS
+		error(_error_silent, "main_new_map() failed.");
+		host_map_load_failed(options->map_name, error_get());
+#endif
 		error(_error_immediate, "main_new_map() failed.");
 	}
 	game_initial_pulse();

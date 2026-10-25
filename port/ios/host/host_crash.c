@@ -601,3 +601,11 @@ int host_guest_halt(const char *messages)
 	host_logf(HOST_LOG_ERROR, "the game halted; its recent messages:\n%s", messages ? messages : "");
 	crash_now(_crash_guest_halt, reason);
 }
+
+void host_map_load_failed(const char *map_name, const char *messages)
+{
+	host_logf(HOST_LOG_ERROR, "the level %s did not load; the game's recent messages:\n%s", map_name ? map_name : "?",
+		messages ? messages : "");
+	host_fatal("The level \"%s\" could not be loaded. Its map file may be damaged or missing: import the game again.",
+		map_name && *map_name ? map_name : "?");
+}

@@ -44,6 +44,9 @@ void host_abort(const char *reason) __attribute__((noreturn));
 recent errors: a native crash with them as the reason, unless debug.halt_screen
 asks for the game's halt screen, when it returns 0 (port/ios/host/host_crash.h) */
 int host_guest_halt(const char *messages);
+/* a level failed to load (main_new_map, source/main/main.c): a message for the
+player, as host_fatal shows, not a crash; messages are the game's recent errors */
+void host_map_load_failed(const char *map_name, const char *messages) __attribute__((noreturn));
 void host_exit(int code) __attribute__((noreturn));
 /* 1 after main_game_render finishes, 0 before main_pregame_render draws.
    The host waits for the following presentation before accepting trial data. */

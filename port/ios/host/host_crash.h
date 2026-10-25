@@ -28,4 +28,8 @@ Crashes, unless debug.halt_screen asks for the game's blue halt screen:
 then returns 0 and the game draws it */
 int host_guest_halt(const char *messages);
 
+/* a level failed to load: almost always a damaged or missing map file, which
+a crash report cannot help with, so the player is told (host_fatal) */
+void host_map_load_failed(const char *map_name, const char *messages) __attribute__((noreturn));
+
 #endif
