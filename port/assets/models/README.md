@@ -7,9 +7,11 @@ The weights are released under CC0 1.0; the license is in
 
 The package accepts NCHW floats as `image` and returns a 4x `upscaled` tensor.
 Each input channel is replicated to three SPAN channels independently, then its
-three output channels are averaged. It enumerates every pair of 160, 288, 544,
-and 1056 texels. The app uses only 288 by 288 inputs, with a 256 by 256 texture
-core and 16 texels of real wrap or clamp context on each side. It uses Core ML's
+three output channels are averaged. Its one input shape is 288 by 288 texels,
+the generator's tiles: a 256 by 256 texture core and 16 texels of real wrap or
+clamp context on each side. (The Mac package enumerates every pair of 160, 288,
+544 and 1056 with the same weights; on the Neural Engine each enumerated shape
+costs memory, even unused.) It uses Core ML's
 CPU and Neural Engine compute units.
 
 The source weights have SHA-256
