@@ -606,6 +606,9 @@ void host_map_load_failed(const char *map_name, const char *messages)
 {
 	host_logf(HOST_LOG_ERROR, "the level %s did not load; the game's recent messages:\n%s", map_name ? map_name : "?",
 		messages ? messages : "");
-	host_fatal("The level \"%s\" could not be loaded. Its map file may be damaged or missing: import the game again.",
-		map_name && *map_name ? map_name : "?");
+	/* the map file's own name ("levels\\a10\\a10" is a10.map) */
+	const char *name = map_name && *map_name ? map_name : "?", *slash = strrchr(name, '\\');
+
+	host_fatal("The level %s could not be loaded. Its map file (%s.map) may be damaged or missing: import the game again.",
+		slash ? slash + 1 : name, slash ? slash + 1 : name);
 }
