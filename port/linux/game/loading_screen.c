@@ -52,6 +52,12 @@ still once they have, and the displayed value eases the rest of the way to
 1, where the picture and the blur have faded to black, as the original's
 do. The level's first frame follows that.
 
+On a device that makes upscaled textures (port/ios/host/host_texture_upscale.m),
+halo_loading_screen_begin then waits, drawing the screen, while the level's
+textures that are not upscaled yet are made ("Upscaling assets", A skips).
+A level plays upscaled only if all of them are ready when its load ends; a
+skipped wait plays it with the original textures.
+
 The picture is the player's own (port/runtime/loading_picture.h); without
 it the screen is the blur and the tone alone.
 
@@ -72,10 +78,12 @@ game.loading_screen = "on" and display.async_shaders = "on".
 #include "main/main.h"
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
+#include "input/input.h"
 #include "../src/halo_stereo.h"
 #include "../src/halo_loading_progress.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 void platform_log(const char *format, ...);
@@ -133,6 +141,8 @@ static struct
 	real shown;            /* the displayed progress */
 	unsigned long updated; /* system_milliseconds of the last update */
 	unsigned long logged;
+	boolean upscale_waiting; /* the wait for the level's upscaled textures */
+	real upscale_fraction;   /* 0 to 1: how much of that wait's work is done */
 } loading_screen;
 
 static boolean loading_screen_wanted(void)
@@ -170,6 +180,86 @@ static void loading_screen_frame(void)
 		Sleep(FRAME_MILLISECONDS - elapsed);
 }
 
+#ifdef HALO_IOS
+/* port/ios/host/host_texture_upscale.m (guest_host.h); the states are texture_upscale_schedule.h's */
+int host_texture_upscale_level_begin(const char *name);
+int host_texture_upscale_level_poll(unsigned long long *done, unsigned long long *total);
+void host_texture_upscale_level_end(int skipped);
+enum
+{
+	UPSCALE_LEVEL_NONE,
+	UPSCALE_LEVEL_CHECKING,
+	UPSCALE_LEVEL_WORKING,
+	UPSCALE_LEVEL_DONE
+};
+
+/* whether A is down on any controller */
+static boolean upscale_skip_down(void)
+{
+	short index;
+
+	for (index = 0; index < MAXIMUM_GAMEPADS; index++)
+	{
+		struct gamepad_state const *gamepad = input_get_gamepad_state(index);
+
+		if (gamepad && gamepad->buttons[FIRST_GAMEPAD_ANALOG_BUTTON + _gamepad_analog_button_a] > 0)
+			return TRUE;
+	}
+	return FALSE;
+}
+
+/* Rule 5 of the on-device design: before the level, its textures not yet
+upscaled are made behind the screen; A skips, and the level then plays with
+its original textures. The menu's A that picked the level must be let go
+before a press counts. */
+static void loading_screen_upscale_wait(char const *map_name)
+{
+	unsigned long long done, total;
+	unsigned long began = system_milliseconds();
+	boolean held = TRUE, skipped = FALSE;
+	int state = UPSCALE_LEVEL_NONE;
+
+	if (!host_texture_upscale_level_begin(map_name))
+		return;
+	for (;;)
+	{
+		boolean down;
+
+		state = host_texture_upscale_level_poll(&done, &total);
+		if (state == UPSCALE_LEVEL_NONE || state == UPSCALE_LEVEL_DONE)
+			break;
+		input_frame_begin();
+		input_update();
+		down = upscale_skip_down();
+		input_frame_end();
+		if (down && !held)
+		{
+			skipped = TRUE;
+			break;
+		}
+		held = down;
+		loading_screen.upscale_waiting = TRUE;
+		loading_screen.upscale_fraction = total ? (real)((double)done / (double)total) : 0.0f;
+		loading_screen_frame();
+	}
+	loading_screen.upscale_waiting = FALSE;
+	host_texture_upscale_level_end(skipped);
+	platform_log("loading screen: upscaled textures %s after %lu ms (%llu of %llu units)",
+		skipped ? "skipped" : state == UPSCALE_LEVEL_NONE ? "ready" : "not all made",
+		system_milliseconds() - began, done, total);
+}
+#endif
+
+/* while the screen waits for upscaled textures: 1, and how much of that work is
+done (render_frame_pregame draws its line under the band) */
+boolean halo_loading_screen_upscale_note(real *fraction)
+{
+	if (!loading_screen.active || !loading_screen.upscale_waiting)
+		return FALSE;
+	*fraction = loading_screen.upscale_fraction;
+	return TRUE;
+}
+
 void halo_loading_screen_begin(char const *map_name)
 {
 	double seconds = config_real("game.loading_screen_seconds");
@@ -193,6 +283,9 @@ void halo_loading_screen_begin(char const *map_name)
 	/* over the last frame (a map is loaded: the menu's or the level left) */
 	progress_bar_begin(global_scenario_index != NONE);
 	loading_screen_frame();
+#ifdef HALO_IOS
+	loading_screen_upscale_wait(map_name);
+#endif
 }
 
 /* whether the loading screen is up, and the progress it draws

@@ -968,6 +968,12 @@ static void texture_replacements_log(const char *when)
 }
 
 /* ---------- upscaled textures, per level (texture_upscale_state.h) */
+/* port_config.c: the setting's value with nobody's choice over it (its default and the device's profile) */
+int config_default(const char *name, char *text, size_t size);
+#ifdef HALO_IOS
+/* port/ios/host/host_texture_upscale.m (guest_host.h) */
+int host_texture_upscale_level_ready(void);
+#endif
 static struct texture_upscale_state texture_upscale;
 /* the upscaled textures' cache (texture_record.h) is this level's first set
 when nonzero: the records its manifest lists */
@@ -1007,7 +1013,19 @@ void texture_upscale_map_loaded(void)
 	static int source = -1;
 	int now;
 
-	texture_upscale_state_map_loaded(&texture_upscale, config_reload_boolean("display.upscaled_textures"));
+	char profile[16] = "true";
+	int switch_on;
+
+	/* the player's switch turns them off, never on where the device's profile has them off (rule 1 of the
+	on-device design: the resolved value is the profile's AND the player's) */
+	config_default("display.upscaled_textures", profile, sizeof(profile));
+	switch_on = config_reload_boolean("display.upscaled_textures") && !strcmp(profile, "true");
+#ifdef HALO_IOS
+	/* a level plays upscaled only if every texture its policy upscales is made: never some of each */
+	if (switch_on && !*override && !host_texture_upscale_level_ready())
+		texture_upscale_state_request_original(&texture_upscale);
+#endif
+	texture_upscale_state_map_loaded(&texture_upscale, switch_on);
 	/* debug.texture_override_directory wins over the cache, whose manifest is read again at each level load */
 	texture_records_listed = 0;
 	if (*override || !texture_upscale_state_enabled(&texture_upscale) || !format)

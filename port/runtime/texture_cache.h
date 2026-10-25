@@ -52,6 +52,27 @@ uint64_t texture_recipe_global_key(const struct texture_recipe_globals *, enum t
 uint64_t texture_recipe_key(const struct texture_recipe_globals *, const struct texture_recipe *);
 enum texture_cache_action texture_cache_action(const struct texture_cache_record *stored /* NULL: none */,
 	const struct texture_cache_record *desired, uint64_t stored_global_now);
+/* ---------- readiness (spec 2026-10-24 on-device design, "Order"): a level plays upscaled only if every texture
+its policy upscales has an entry on the current global recipe when its load finishes. An entry the damage rule or the
+compression gate kept original counts as made. A per-texture recipe change (the source's alpha) leaves the old entry
+serving until the background replaces it, so readiness reads only the manifest, never the sources. */
+struct texture_cache_key
+{
+	uint64_t hash;
+	uint32_t width, height;
+};
+struct texture_cache_progress
+{
+	size_t textures, ready;            /* the textures the policy upscales, and those with a current entry */
+	uint64_t units, ready_units;       /* the same in work units: input texels (four times for an 8x texture) */
+};
+/* keys NULL: every decision (the whole game); else the keys of one map, in any order, those the decisions do not
+   list ignored. decisions are sorted by hash, width and height (texture_policy_classify's order) */
+void texture_cache_progress(const struct texture_cache_key *keys, size_t key_count,
+	const struct texture_policy_decision *decisions, size_t decision_count,
+	const struct texture_cache_record *records, size_t record_count, const struct texture_recipe_globals *globals,
+	struct texture_cache_progress *progress);
+
 /* the manifest: <directory>/manifest.tsv, one record per line; load returns 0 with *records malloc'd and *count set (a missing manifest: 0 records), or -1 if it exists but cannot be read (no records) */
 int texture_cache_manifest_load(const char *directory, struct texture_cache_record **records, size_t *count);
 int texture_cache_manifest_save(const char *directory, const struct texture_cache_record *records, size_t count);

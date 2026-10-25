@@ -76,6 +76,8 @@ settings: display.upscaled_textures = true [config.toml, chosen] over false [cla
 scene: menu (display.render_scale 1.0 [model Apple TV HD])
 ```
 
+`display.upscaled_textures` is the one setting where a player's choice does not win over the profile: the textures are drawn upscaled only where the profile and the player's switch both say so, and a device whose profile sets false never makes them.
+
 `debug.settings_dump = true` in `config.toml` lists every profile setting, defaults included. The log is `ios-runtime.log` in the app's data folder.
 
 ## Editor schemas and generated references

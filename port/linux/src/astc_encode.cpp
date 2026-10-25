@@ -187,9 +187,17 @@ astc_encode_result astc_encode_level_policy(astc_dxt_format format, const void *
 	catch (const std::bad_alloc &) { return ASTC_ENCODE_ERROR; }
 }
 
+static thread_local const volatile int *rgba_cancel = nullptr;
+
+void astc_encode_set_cancel(const volatile int *flag)
+{
+	rgba_cancel = flag;
+}
+
 astc_encode_result astc_encode_rgba_level(const uint8_t *rgba, unsigned width, unsigned height,
 	void *output, unsigned preset, unsigned threads)
 {
+	const volatile int *cancel = rgba_cancel;
 	if (!rgba || !output || !width || !height || width > 8192 || height > 8192 || preset > 2)
 		return ASTC_ENCODE_ERROR;
 	const float qualities[] = { ASTCENC_PRE_FASTEST, ASTCENC_PRE_FAST, ASTCENC_PRE_MEDIUM };
@@ -216,6 +224,11 @@ astc_encode_result astc_encode_rgba_level(const uint8_t *rgba, unsigned width, u
 			unsigned th = std::min(tile_size, height - top);
 			for (unsigned left = 0; left < width && !failed; left += tile_size)
 			{
+				if (cancel && *cancel)
+				{
+					failed = true;
+					break;
+				}
 				unsigned tw = std::min(tile_size, width - left), tbx = (tw + 3) / 4, tby = (th + 3) / 4;
 				for (unsigned y = 0; y < th; ++y)
 					memcpy(pixels.get() + size_t(y) * tw * 4, rgba + (size_t(top + y) * width + left) * 4, size_t(tw) * 4);

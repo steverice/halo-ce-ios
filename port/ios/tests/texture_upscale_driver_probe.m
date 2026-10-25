@@ -10,6 +10,7 @@ void host_config_string(const char *name,const char *fallback,char *out,size_t s
 }
 void host_logf(int level,const char *format,...) {(void)level;(void)format;}
 int texture_upscale_model_available(void) {return 0;}
+int host_device_profile_peek(const char *root,const char *name,char *text,size_t size) {(void)root;(void)name;snprintf(text,size,"true");return 1;}
 struct texture_upscale_generator *texture_upscale_generate_create(char *error,size_t size) {
     snprintf(error,size,"synthetic model failure");return NULL;
 }
@@ -69,8 +70,33 @@ int main(void) {@autoreleasepool {
     /* A menu wake arriving while a pump is exiting must survive its queued flag. */
     upscale_enabled=YES;atomic_store(&pump_queued,true);atomic_store(&pump_requested,false);
     host_texture_upscale_game_started(0);assert(atomic_load(&pump_requested));
+    /* Rules 4 and 6: a level's game stops the work at once; a pause lets it run only after two seconds; the game
+       resuming stops it again; the next map's load frees it and makes that map first. */
+    work_group=dispatch_group_create();activity_token=[NSObject new];
+    host_texture_upscale_game_started(1);assert(stop_flag&&atomic_load(&upscale_playing));
+    host_texture_upscale_paused(1);assert(stop_flag);
+    activity.paused_since-=TEXTURE_UPSCALE_PAUSE_SECONDS;host_texture_upscale_paused(1);assert(stop_flag);
+    resume_if_allowed();assert(!stop_flag&&!atomic_load(&upscale_playing));
+    host_texture_upscale_paused(0);assert(stop_flag);
+    unsigned serial=atomic_load(&priority_serial);
+    host_texture_upscale_map_will_load("levels\\b30\\b30");
+    assert(!stop_flag&&[priority_snapshot() isEqual:@"b30"]&&atomic_load(&priority_serial)==serial+1);
+    /* the loading screen's wait: a level whose textures are not listed is checked, then plays original; a skip
+       always does */
+    assert(host_texture_upscale_level_begin("levels\\a10\\a10")&&[level_name isEqual:@"a10"]);
+    assert(host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_CHECKING);
+    /* a queue that stops without listing the level (here: no catalog) ends the wait */
+    atomic_store(&pump_queued,false);atomic_fetch_add(&pumps_ended,1);
+    assert(host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_DONE);
+    host_texture_upscale_level_end(1);assert(atomic_load(&urgent)==0);
+    assert(!host_texture_upscale_level_ready());
+    assert(!host_texture_upscale_level_ready());   /* not listed: original, too */
+    upscale_mode=TEXTURE_UPSCALE_MODE_AUTO;profile_upscales=0;
+    char status[64];host_texture_upscale_status(status,sizeof(status));assert(!strcmp(status,"Not used on this device"));
     upscale_enabled=NO;
+    assert(host_texture_upscale_level_ready()&&host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_NONE);
+    assert(!host_texture_upscale_prepare_import(directory,NULL,NULL));
     free(decisions);free(manifest);decisions=NULL;manifest=NULL;
     assert([NSFileManager.defaultManager removeItemAtPath:upscale_root error:nil]);
-    puts("texture upscale driver: publication rollback, original reconciliation, failure JSON, unavailable model and menu wake PASS");
+    puts("texture upscale driver: publication rollback, original reconciliation, failure JSON, unavailable model, menu wake, gameplay stop, pause, level wait and readiness PASS");
 }}

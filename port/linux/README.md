@@ -620,7 +620,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.screenshot_every` | integer | `0` | apple, desktop | `HALO_SCREENSHOT_EVERY` | Save every this many frames to screenshot_directory; 0 none. |
 | `debug.texture_astc` | string | `"auto"` | apple | `HALO_TEXTURE_ASTC` | DXT-to-ASTC texture preparation: "auto" (default) converts on GPUs without BC once the release enables it, "force" emulates a GPU without BC for validation, "off" disables it. |
 | `debug.texture_astc_sync` | boolean | `false` | apple | `HALO_TEXTURE_ASTC_SYNC` | Wait for ASTC map preparation before loading, for screenshot validation only. |
-| `debug.texture_upscale_generate` | boolean | `false` | apple | `HALO_TEXTURE_UPSCALE_GENERATE` | Generate the on-device upscaled texture cache in menus for development. |
+| `debug.texture_upscale_generate` | string | `"off"` | apple | `HALO_TEXTURE_UPSCALE_GENERATE` | Make upscaled textures on this device: "auto" where the device's profile and the display.upscaled_textures switch both say so (at import, in menus, loading and pauses, never in gameplay), "force" whatever the profile says, "off" (default) never. |
 | `debug.texture_upscale_export` | boolean | `false` | apple | `HALO_TEXTURE_UPSCALE_EXPORT` | Export the generator's policy table and uncompressed textures for parity checks. |
 | `debug.texture_dump_directory` | string | `""` | apple, desktop | `HALO_TEXTURE_DUMP` | A folder to write every texture to as it is uploaded; empty none. |
 | `debug.texture_override_directory` | string | `""` | apple, desktop | `HALO_TEXTURE_OVERRIDE` | A folder of replacement textures, <hash>.rgba (step-tools/texture-upscale.py), each drawn in place of the texture whose first mip level hashes to <hash>; empty none. |

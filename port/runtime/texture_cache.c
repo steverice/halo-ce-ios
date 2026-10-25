@@ -72,6 +72,97 @@ enum texture_cache_action texture_cache_action(const struct texture_cache_record
 	return TEXTURE_CACHE_KEEP;
 }
 
+static int key_compare(uint64_t hash_a, uint32_t width_a, uint32_t height_a, uint64_t hash_b, uint32_t width_b,
+	uint32_t height_b)
+{
+	if (hash_a != hash_b)
+		return hash_a < hash_b ? -1 : 1;
+	if (width_a != width_b)
+		return width_a < width_b ? -1 : 1;
+	return height_a < height_b ? -1 : height_a > height_b;
+}
+
+static int record_order(const void *a, const void *b)
+{
+	const struct texture_cache_record *x = a, *y = b;
+
+	return key_compare(x->hash, x->width, x->height, y->hash, y->width, y->height);
+}
+
+static const struct texture_policy_decision *find_decision(const struct texture_policy_decision *decisions,
+	size_t count, uint64_t hash, uint32_t width, uint32_t height)
+{
+	size_t low = 0, high = count;
+
+	while (low < high)
+	{
+		size_t middle = low + (high - low) / 2;
+		int order = key_compare(decisions[middle].hash, decisions[middle].width, decisions[middle].height, hash,
+			width, height);
+
+		if (!order)
+			return &decisions[middle];
+		if (order < 0)
+			low = middle + 1;
+		else
+			high = middle;
+	}
+	return NULL;
+}
+
+static void progress_add(const struct texture_policy_decision *d, const struct texture_cache_record *sorted,
+	size_t record_count, const struct texture_recipe_globals *globals, struct texture_cache_progress *progress)
+{
+	struct texture_cache_record wanted;
+	const struct texture_cache_record *found;
+	uint64_t units;
+
+	if (d->result == TEXTURE_POLICY_ORIGINAL)
+		return;
+	units = (uint64_t)d->width * d->height * (d->scale == 8 ? 4 : 1);
+	progress->textures++;
+	progress->units += units;
+	memset(&wanted, 0, sizeof(wanted));
+	wanted.hash = d->hash;
+	wanted.width = d->width;
+	wanted.height = d->height;
+	found = sorted ? bsearch(&wanted, sorted, record_count, sizeof(*sorted), record_order) : NULL;
+	if (found && found->global_key == texture_recipe_global_key(globals, d->treatment, d->result))
+	{
+		progress->ready++;
+		progress->ready_units += units;
+	}
+}
+
+void texture_cache_progress(const struct texture_cache_key *keys, size_t key_count,
+	const struct texture_policy_decision *decisions, size_t decision_count,
+	const struct texture_cache_record *records, size_t record_count, const struct texture_recipe_globals *globals,
+	struct texture_cache_progress *progress)
+{
+	struct texture_cache_record *sorted = NULL;
+	size_t i;
+
+	memset(progress, 0, sizeof(*progress));
+	if (record_count && (sorted = malloc(record_count * sizeof(*sorted))))
+	{
+		memcpy(sorted, records, record_count * sizeof(*sorted));
+		qsort(sorted, record_count, sizeof(*sorted), record_order);
+	}
+	if (!keys)
+		for (i = 0; i < decision_count; i++)
+			progress_add(&decisions[i], sorted, sorted ? record_count : 0, globals, progress);
+	else
+		for (i = 0; i < key_count; i++)
+		{
+			const struct texture_policy_decision *d = find_decision(decisions, decision_count, keys[i].hash,
+				keys[i].width, keys[i].height);
+
+			if (d)
+				progress_add(d, sorted, sorted ? record_count : 0, globals, progress);
+		}
+	free(sorted);
+}
+
 int texture_cache_manifest_load(const char *directory, struct texture_cache_record **records, size_t *count_out)
 {
 	char path[1024], line[256];

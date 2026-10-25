@@ -274,6 +274,13 @@ unsigned long long host_astc_texture_generation(void);
 void host_astc_map_arrived(const char *path);
 void host_astc_map_will_load(const char *name);
 void host_astc_game_started(void);
+/* The on-device upscaler (port/ios/host/host_texture_upscale.h): a pause is not gameplay; the loading screen's wait
+   before a level; whether a level's textures are all ready to play upscaled. */
+void host_texture_upscale_paused(int paused);
+int host_texture_upscale_level_begin(const char *name);
+int host_texture_upscale_level_poll(unsigned long long *done, unsigned long long *total);
+void host_texture_upscale_level_end(int skipped);
+int host_texture_upscale_level_ready(void);
 
 #endif
 

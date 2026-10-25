@@ -5,6 +5,7 @@
 #include "xiso.h"
 #import "host_orientation.h"
 #include "host_astc_store.h"
+#include "host_texture_upscale.h"
 
 #if !__has_feature(objc_arc)
 #error The asynchronous importer requires Objective-C ARC.
@@ -52,6 +53,20 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
         controller.progress.hidden=NO;[controller.spinner stopAnimating];
         controller.progress.progress=total?(float)done/total:0;
         controller.statusLabel.text=@"Preparing textures for this device";
+        [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
+    });return 1;
+}
+/* the on-device upscaler's import phase (rule 2): the same bar and the same "Start playing" skip */
+static int upscale_progress(void *context,unsigned long long done,unsigned long long total) {
+    HaloImportController *controller=(__bridge HaloImportController *)context;
+    if(controller.cancelled)return 0;
+    double now=NSProcessInfo.processInfo.systemUptime;
+    if(now-controller.lastProgressTime<0.1)return 1;controller.lastProgressTime=now;
+    float fraction=total?(float)((double)done/total):0;
+    dispatch_async(dispatch_get_main_queue(),^{
+        controller.progress.hidden=NO;[controller.spinner stopAnimating];
+        controller.progress.progress=fraction;
+        controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling textures · %.0f%%\nYou can start playing now; the rest continues in menus.",fraction*100];
         [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
     });return 1;
 }
@@ -181,6 +196,7 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
                     /* Successful completion marker used only for diagnostics; game data stays separate. */
                     host_logf(HOST_LOG_INFO,"XISO import complete; original map bytes preserved");
                     host_astc_store_prepare_import(self.documents.fileSystemRepresentation,texture_progress,(__bridge void *)self);
+                    host_texture_upscale_prepare_import(self.documents.fileSystemRepresentation,upscale_progress,(__bridge void *)self);
                 }
                 /* Preserve the backup if an unexpected restore failure left it here. */
                 if (!imported && [files fileExistsAtPath:backup]) staging=nil;

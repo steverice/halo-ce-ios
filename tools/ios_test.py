@@ -611,6 +611,10 @@ run(BUILD/'texture-cache-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/texture_upscale_state_probe.c', '-o', BUILD/'texture-upscale-state-probe')
 run(BUILD/'texture-upscale-state-probe')
+# when the on-device upscaler may run: the profile gate, gameplay and pauses (port/runtime/texture_upscale_schedule.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/texture_upscale_schedule_probe.c', '-o', BUILD/'texture-upscale-schedule-probe')
+run(BUILD/'texture-upscale-schedule-probe')
 # the host's write of one setting into config.toml, for the Settings app's switch (port/ios/host/host_config.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host', 'port/ios/tests/host_config_write_probe.c',
     'port/ios/host/host_config.c', '-o', BUILD/'host-config-write-probe')

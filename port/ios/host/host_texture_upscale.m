@@ -1,4 +1,7 @@
-/* Apache-2.0. One debug texture at a time; the manifest is the durable progress record. */
+/* Apache-2.0. The on-device upscaler's scheduler (spec 2026-10-24-halo-ce-ios-on-device-upscaling-design.md, phase
+3): the device profile is asked first; at import the work runs behind a progress bar with Skip, then in menus, while
+a level loads and in pauses, never while a level is played; the level being loaded goes first and its loading screen
+waits for it unless the player skips. One texture at a time; the manifest is the durable progress record. */
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <TargetConditionals.h>
@@ -14,6 +17,8 @@
 #include "texture_cache.h"
 #include "texture_record.h"
 #include "texture_upscale_generate.h"
+#include "texture_upscale_schedule.h"
+#include "host_profile.h"
 #include <stdatomic.h>
 #include <sys/statvfs.h>
 #include <sys/mman.h>
@@ -26,7 +31,32 @@
 static dispatch_queue_t upscale_worker;
 static NSString *upscale_root;
 static BOOL upscale_enabled, export_enabled;
+/* upscale_playing: the work must stop (a level is played); stop_flag mirrors it for Core ML and the encoders */
 static atomic_bool upscale_playing, scan_pending, pump_queued, thermal_blocked, pump_requested;
+static volatile int stop_flag;
+static struct texture_upscale_activity activity;
+static NSObject *activity_token;
+/* textures between the start of their predictions and the end of their encode: the pause handoff waits for them */
+static dispatch_group_t work_group;
+/* the import phase or a level's wait is on screen: the worker runs at user-initiated priority, else utility */
+static atomic_int urgent;
+/* the gate (rule 1): debug.texture_upscale_generate's mode, the profile's display.upscaled_textures (-1 not yet
+   read), the player's switch */
+static enum texture_upscale_mode upscale_mode;
+static int profile_upscales=-1, player_upscales=1;
+/* pumps that ended without another queued: the import phase ends at one that began after it did */
+static atomic_uint pumps_ended;
+/* the level being loaded (its name as priority_name has it): its textures' keys, whether its walk is done for the
+   serial it was asked for, and whether its wait was skipped */
+static NSMutableDictionary<NSString *, NSData *> *map_keys;
+static NSArray<NSString *> *published_paths;
+static atomic_uint level_walked_serial, level_serial;
+static atomic_bool level_skipped;
+/* pumps_ended when the level's wait began: a queue that stopped since without finishing the level (an error, a
+   catalog that cannot be read, critical thermal state) ends the wait rather than holding the loading screen */
+static atomic_uint level_pumps;
+static NSString *level_name;
+static NSMutableArray *generator_releases;
 static NSMutableArray<NSString *> *map_paths;
 static NSMutableDictionary<NSString *, NSNumber *> *decision_slots;
 static NSMutableSet<NSString *> *pass_hashes;
@@ -86,7 +116,7 @@ static void save_log(void) {@synchronized(state_token){
         if([row[@"result_status"] isEqual:@"compression-excluded"])excluded++;
         for(NSString *stage in row[@"stage_seconds"])stage_totals[stage]=@([stage_totals[stage] doubleValue]+[row[@"stage_seconds"][stage] doubleValue]);
     }
-    NSDictionary *contents=@{@"textures":texture_log.allValues,@"thermal":thermal_log,
+    NSDictionary *contents=@{@"textures":texture_log.allValues,@"thermal":thermal_log,@"generator_releases":generator_releases?:@[],
         @"peak_footprint":@(peak_footprint),@"footprint_before_model":@(footprint_before_model),@"generator_peak":@(generator_peak),@"model":model_totals(),@"totals":@{@"textures":@(texture_log.count),@"catalog":@(decision_count),@"seconds":@(now()-started),@"last_texture_seconds":@(last_texture_seconds),@"ready":@(ready),@"excluded":@(excluded),@"stage_seconds":stage_totals}};
     NSData *data=[NSJSONSerialization dataWithJSONObject:contents options:NSJSONWritingPrettyPrinted error:nil];
     [data writeToFile:[upscale_root stringByAppendingPathComponent:@"texture-upscale-generate.json"] options:NSDataWritingAtomic error:nil];
@@ -107,6 +137,20 @@ static void export_table(void) {@synchronized(state_token){
 }
 }
 static int collect_map(void *context,const char *path) { (void)context;[map_paths addObject:@(path)];return 1; }
+static NSString *map_base(NSString *path) { return path.lastPathComponent.stringByDeletingPathExtension.lowercaseString; }
+/* The order after the level being loaded (spec "Order"): the main menu's map, the campaign in order, then the
+   multiplayer maps, then community maps by name. */
+static NSInteger map_rank(NSString *path) {
+    static NSArray *campaign;static dispatch_once_t once;
+    dispatch_once(&once,^{campaign=@[@"ui",@"a10",@"a30",@"a50",@"b30",@"b40",@"c10",@"c20",@"c40",@"d20",@"d40"];});
+    NSUInteger index=[campaign indexOfObject:map_base(path)];
+    if(index!=NSNotFound)return (NSInteger)index;
+    return [path.stringByDeletingLastPathComponent.lastPathComponent isEqual:@"custom_maps"]?2000:1000;
+}
+static void order_maps(NSMutableArray<NSString *> *paths) {
+    [paths sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(NSString *a,NSString *b){
+        NSInteger x=map_rank(a),y=map_rank(b);return x<y?NSOrderedAscending:x>y?NSOrderedDescending:NSOrderedSame;}];
+}
 static BOOL build_catalog(void) {
     struct texture_policy_catalog *catalog=texture_policy_catalog_new();if(!catalog)return NO;
     map_paths=[NSMutableArray new];decision_slots=[NSMutableDictionary new];
@@ -124,11 +168,53 @@ static BOOL build_catalog(void) {
         if(classified){host_logf(HOST_LOG_WARN,"Upscale catalog: %s",error);ok=NO;break;}
         [classified_maps addObject:path];
     }
-    if(ok){map_paths=classified_maps;free(decisions);decisions=NULL;decision_count=texture_policy_classify(catalog,&texture_policy_embedded,&decisions,NULL,NULL);
-        ok=decisions!=NULL;
+    if(ok){
+        struct texture_policy_decision *classified=NULL;size_t count=texture_policy_classify(catalog,&texture_policy_embedded,&classified,NULL,NULL);
+        ok=classified!=NULL;order_maps(classified_maps);map_paths=classified_maps;
+        /* (the level's wait and readiness read these from other threads) */
+        @synchronized(state_token){free(decisions);decisions=classified;decision_count=ok?count:0;published_paths=[classified_maps copy];}
+        @synchronized(map_keys){[map_keys removeAllObjects];}
         for(size_t i=0;ok&&i<decision_count;i++)decision_slots[key(decisions[i].hash,decisions[i].width,decisions[i].height)]=@(i);
     }
     texture_policy_catalog_free(catalog);return ok;
+}
+static struct texture_recipe_globals recipe_globals(void) {
+    const struct texture_policy_table *policy=&texture_policy_embedded;
+    return (struct texture_recipe_globals){.model_id="S4g: PBRify SPAN V4 per channel",
+        .model_sha256="d1f1fa1af7a5ab23fcf143e75aac4951e6c52d56bf77d9ccd4d004a4831d0461",.pipeline_version={1,1,1,1,1,1},
+        .low=policy->low,.high=policy->high,.sigma=policy->sigma,.iterations=(uint32_t)policy->iterations,.post_version=1,
+        .encoder=texture_upscale_encoder_name(record_format),.damage_share=policy->damage_share,.damage_structure_loss=policy->damage_structure_loss,
+        .damage_bpf_structure_loss=policy->damage_bpf_structure_loss,.damage_measure_version=(uint32_t)policy->damage_measure_version};
+}
+/* One map's texture keys, from its own classification: what a level needs ready to play upscaled. Cached per map
+   until the next catalog; nil when the map is not installed or cannot be read. Any thread. */
+static NSData *keys_for_map(NSString *name) {
+    if(!name.length)return nil;
+    @synchronized(map_keys){NSData *known=map_keys[name];if(known)return known;}
+    NSString *path=nil;
+    @synchronized(state_token){for(NSString *candidate in published_paths)if([map_base(candidate) isEqual:name]){path=candidate;break;}}
+    if(!path)return nil;
+    char error[256]={0};uint64_t size=0;FILE *map=host_texture_source_open_policy_map(path.fileSystemRepresentation,&size,error,sizeof(error));
+    if(!map){host_logf(HOST_LOG_WARN,"Upscale level %s: %s",name.UTF8String,error);return nil;}
+    const unsigned char *mapping=mmap(NULL,(size_t)size,PROT_READ,MAP_PRIVATE,fileno(map),0);
+    struct texture_policy_catalog *catalog=texture_policy_catalog_new();struct texture_policy_decision *found=NULL;size_t count=0;
+    if(catalog&&mapping!=MAP_FAILED&&!texture_policy_add_map(catalog,mapping,(size_t)size,error,sizeof(error)))
+        count=texture_policy_classify(catalog,&texture_policy_embedded,&found,NULL,NULL);
+    if(mapping!=MAP_FAILED)munmap((void *)mapping,(size_t)size);fclose(map);texture_policy_catalog_free(catalog);
+    if(!found)return nil;
+    NSMutableData *keys=[NSMutableData dataWithLength:count*sizeof(struct texture_cache_key)];struct texture_cache_key *k=keys.mutableBytes;
+    for(size_t i=0;i<count;i++)k[i]=(struct texture_cache_key){found[i].hash,found[i].width,found[i].height};
+    free(found);
+    @synchronized(map_keys){map_keys[name]=keys;}
+    return keys;
+}
+/* how much of a level (keys) or of the whole game (nil) has current entries */
+static struct texture_cache_progress progress_of(NSData *keys) {
+    struct texture_cache_progress progress={0};struct texture_recipe_globals globals=recipe_globals();
+    @synchronized(state_token){
+        texture_cache_progress(keys?keys.bytes:NULL,keys.length/sizeof(struct texture_cache_key),decisions,decision_count,manifest,manifest_count,&globals,&progress);
+    }
+    return progress;
 }
 /* A classifier change to original must stop the reader from serving a stale replacement. */
 static BOOL reconcile_manifest(void) {
@@ -227,11 +313,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     if(!binary)alpha=TEXTURE_UPSCALE_ALPHA_GRADED;
     BOOL dilate=alpha!=TEXTURE_UPSCALE_ALPHA_NONE&&(d->dilates||alpha==TEXTURE_UPSCALE_ALPHA_BINARY)&&d->treatment!=TEXTURE_POLICY_MULTIPURPOSE&&d->treatment!=TEXTURE_POLICY_BUMP_MAP;
     const struct texture_policy_table *policy=&texture_policy_embedded;
-    struct texture_recipe_globals globals={.model_id="S4g: PBRify SPAN V4 per channel",
-        .model_sha256="d1f1fa1af7a5ab23fcf143e75aac4951e6c52d56bf77d9ccd4d004a4831d0461",.pipeline_version={1,1,1,1,1,1},
-        .low=policy->low,.high=policy->high,.sigma=policy->sigma,.iterations=(uint32_t)policy->iterations,.post_version=1,
-        .encoder=texture_upscale_encoder_name(record_format),.damage_share=policy->damage_share,.damage_structure_loss=policy->damage_structure_loss,
-        .damage_bpf_structure_loss=policy->damage_bpf_structure_loss,.damage_measure_version=(uint32_t)policy->damage_measure_version};
+    struct texture_recipe_globals globals=recipe_globals();
     struct texture_recipe recipe={d->hash,d->width,d->height,d->result,d->treatment,d->wrap,dilate,alpha,d->scale};
     struct texture_cache_record desired={d->hash,d->width,d->height,d->result,d->treatment,
         texture_recipe_key(&globals,&recipe),texture_recipe_global_key(&globals,d->treatment,d->result),0};
@@ -272,15 +354,20 @@ static int generate_source(void *opaque,const struct host_texture_source *source
             levels[i]=(struct texture_upscale_rgba_level){owned+offset,w,h};offset+=(size_t)w*h*4;w=MAX(1u,w/2);h=MAX(1u,h/2);}}
     struct texture_upscale_generate_input input={*d,policy,levels,source->level_count,alpha,d->wrap,dilate,d->pinned};
     char error[512]={0};double start=now();
-    if(!generator){footprint_before_model=footprint();generator=texture_upscale_generate_create(error,sizeof(error));}
+    dispatch_group_enter(work_group);
+    if(!generator){footprint_before_model=footprint();generator=texture_upscale_generate_create(error,sizeof(error));
+        host_logf(HOST_LOG_INFO,"Upscale: made the generator at %llu MB",(unsigned long long)(footprint_before_model>>20));}
     /* Two textures overlap only while both float tops fit in OVERLAP_BUDGET together, so the peak is set by the
        largest texture alone; before a large one, freed memory goes back to the system. */
     uint64_t estimate=(uint64_t)d->width*d->height*d->scale*d->scale*16;
     if(estimate+finisher_estimate>OVERLAP_BUDGET){dispatch_sync(finisher,^{});malloc_zone_pressure_relief(NULL,0);}
     struct texture_upscale_job *job=NULL;
     if(!generator||texture_upscale_generate_begin(generator,&input,&job,error,sizeof(error))){
-        peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
-        host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);context->failed=YES;free(owned);free(levels);return 0;
+        /* (a stop for gameplay ends predictions with an error: the texture is simply made later) */
+        if(stop_flag)host_logf(HOST_LOG_INFO,"Upscale %016llx: stopped for gameplay",(unsigned long long)d->hash);
+        else {peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
+            host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);}
+        context->failed=YES;free(owned);free(levels);dispatch_group_leave(work_group);return 0;
     }
     double begun=now();
     /* One texture's CPU work, encode and publication run on the finisher while the walk goes on to predict the next. */
@@ -288,13 +375,18 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     finisher_estimate=estimate;
     struct texture_policy_decision decision=*d;
     dispatch_async(finisher,^{@autoreleasepool {
+      void (^finish)(void)=^{
         const struct texture_policy_decision *d=&decision;
+        texture_upscale_encode_set_cancel(&stop_flag);
+        /* gameplay began while the predictions ran: nothing more, the texture is made later */
+        if(stop_flag){texture_upscale_generate_abandon(job);free(owned);free(levels);finisher_estimate=0;return;}
         struct texture_cache_record record=desired;
         struct texture_upscale_generate_input job_input=input;
         struct texture_upscale_generate_output output={0};char error[512]={0};
         BOOL failed=NO;
         double end_start=now();
         if(texture_upscale_generate_end(generator,job,&output,error,sizeof(error))){
+            if(stop_flag){free(owned);free(levels);finisher_estimate=0;return;}
             peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
             host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);atomic_store(&finisher_failed,true);free(owned);free(levels);return;
         }
@@ -302,6 +394,8 @@ static int generate_source(void *opaque,const struct host_texture_source *source
         enum texture_upscale_encode_result encoded=TEXTURE_UPSCALE_ENCODE_OK;
         if(output.result!=TEXTURE_POLICY_ORIGINAL)encoded=texture_upscale_encode_record(output.levels,output.level_count,d->width,d->height,d->hash,
             record.recipe_key,record_format,(unsigned)alpha|(d->treatment==TEXTURE_POLICY_BUMP_MAP?TEXTURE_UPSCALE_ENCODE_NORMALS:0),encoder_threads(),&bytes,&size,&metrics);
+        if(stop_flag&&encoded==TEXTURE_UPSCALE_ENCODE_ERROR){free(bytes);texture_upscale_generate_free_output(&output);free(owned);free(levels);finisher_estimate=0;
+            host_logf(HOST_LOG_INFO,"Upscale %016llx: stopped for gameplay",(unsigned long long)d->hash);return;}
         uint64_t encoded_footprint=footprint();
         NSString *steps=[NSString stringWithFormat:@"%s encoded %llu",texture_upscale_generate_trace(generator),(unsigned long long)(encoded_footprint>>20)];
         double encode_seconds=now()-encode_start;BOOL excluded=encoded==TEXTURE_UPSCALE_ENCODE_EXCLUDED;
@@ -346,6 +440,8 @@ static int generate_source(void *opaque,const struct host_texture_source *source
         finisher_estimate=0;
         @synchronized(state_token){peak_footprint=MAX(peak_footprint,stats.peak_footprint);generator_peak=MAX(generator_peak,stats.sampled_peak);
             last_texture_seconds=now()-started;texture_log[key(d->hash,d->width,d->height)]=row;save_log();export_table();}
+      };
+      finish();dispatch_group_leave(work_group);
     }});
     return 0;
 }
@@ -370,45 +466,108 @@ static int generate_map_source(void *opaque,const struct host_texture_source *so
     return !map->failed&&!atomic_load(&upscale_playing)&&thermal_may_run()&&!atomic_load(&scan_pending)&&map->serial==atomic_load(&priority_serial);
 }
 static void schedule_pump(void);
+static NSString *priority_snapshot(void) { @synchronized(activity_token){return priority_name;} }
+/* The generator holds the model and its working memory; it goes whenever the queue stops (empty, gameplay, an
+   error), so none of it is kept across gameplay, and is made again when there is work. */
+static void release_generator(const char *why) {
+    if(!generator)return;
+    dispatch_sync(finisher,^{});
+    uint64_t before=footprint();
+    texture_upscale_generate_destroy(generator);generator=NULL;
+    malloc_zone_pressure_relief(NULL,0);
+    uint64_t after=footprint();
+    host_logf(HOST_LOG_INFO,"Upscale: released the generator (%s): footprint %llu MB, then %llu MB; %llu MB before it was made",
+        why,(unsigned long long)(before>>20),(unsigned long long)(after>>20),(unsigned long long)(footprint_before_model>>20));
+    @synchronized(state_token){[generator_releases addObject:@{@"seconds":@(now()-started),@"why":@(why),@"before":@(before),
+        @"after":@(after),@"before_model":@(footprint_before_model)}];}
+}
 static void pump(void) {
     @autoreleasepool {
         NSMutableArray<NSString *> *ordered=nil;
+        NSString *first=nil;
+        BOOL complete=YES;
+        unsigned serial=0;
+        const char *why="queue empty";
         atomic_store(&pump_requested,false);
-        if(atomic_load(&upscale_playing)||!thermal_may_run())goto done;
+        if(atomic_load(&upscale_playing)){why="gameplay";goto done;}
+        if(!thermal_may_run()){why="critical thermal state";goto done;}
         atomic_store(&finisher_failed,false);
-        if(atomic_exchange(&scan_pending,false))catalog_ready=NO;
-        if(!catalog_ready){catalog_ready=build_catalog();if(!catalog_ready)goto done;if(!reconcile_manifest()){catalog_ready=NO;goto done;}}
-        unsigned serial=atomic_load(&priority_serial);
-        @synchronized(upscale_root){sorting_priority=priority_name;}
+        if(atomic_exchange(&scan_pending,false)){
+            catalog_ready=NO;
+            /* (the Settings app's delete may have emptied the folder since the manifest was read) */
+            struct texture_cache_record *loaded=NULL;size_t count=0;
+            if(!texture_cache_manifest_load(cache_directory().fileSystemRepresentation,&loaded,&count))
+                @synchronized(state_token){free(manifest);manifest=loaded;manifest_count=count;}
+        }
+        if(!catalog_ready){catalog_ready=build_catalog();if(!catalog_ready){why="catalog";goto done;}
+            BOOL reconciled;@synchronized(state_token){reconciled=reconcile_manifest();}
+            if(!reconciled){catalog_ready=NO;why="manifest";goto done;}}
+        serial=atomic_load(&priority_serial);
+        sorting_priority=priority_snapshot();
         ordered=[map_paths mutableCopy];pass_hashes=[NSMutableSet new];
         if(sorting_priority.length) {
-            for(NSString *path in map_paths)if([path.lastPathComponent.stringByDeletingPathExtension.lowercaseString isEqual:sorting_priority]) {
-                [ordered removeObject:path];[ordered insertObject:path atIndex:0];break;
+            for(NSString *path in map_paths)if([map_base(path) isEqual:sorting_priority]) {
+                [ordered removeObject:path];[ordered insertObject:path atIndex:0];first=path;break;
             }
+            /* (the level's wait shows its progress from these; a map not installed has nothing to wait for) */
+            keys_for_map(sorting_priority);
+            if(!first)atomic_store(&level_walked_serial,serial);
         }
         /* Every prediction uses the same 288x288 shape, so walking each map
            once preserves shape grouping without inflating it for each texture. */
         for(NSString *path in ordered){@autoreleasepool {
-            if(serial!=atomic_load(&priority_serial)||atomic_load(&scan_pending)||atomic_load(&upscale_playing)||!thermal_may_run())break;
+            if(serial!=atomic_load(&priority_serial)||atomic_load(&scan_pending)||atomic_load(&upscale_playing)||!thermal_may_run()){complete=NO;break;}
             struct map_generation_context context={serial,NO};
             int result=host_texture_source_walk_map(path.fileSystemRepresentation,generate_map_source,&context);
             if(result<0)host_logf(HOST_LOG_WARN,"Upscale: malformed source map");
-            if(result!=1||context.failed)break;
+            if(result!=1||context.failed){complete=NO;break;}
+            /* the level being loaded is done once its last texture is encoded */
+            if(path==first&&serial==atomic_load(&priority_serial)){dispatch_sync(finisher,^{});atomic_store(&level_walked_serial,serial);}
         }}
         dispatch_sync(finisher,^{});
         pass_hashes=nil;
         export_table();save_log();
+        if(!complete)why=atomic_load(&upscale_playing)?"gameplay":atomic_load(&finisher_failed)?"error":"interrupted";
     done:
         atomic_store(&pump_queued,false);
         if((atomic_load(&scan_pending)||atomic_load(&pump_requested))&&!atomic_load(&upscale_playing)&&thermal_may_run())schedule_pump();
+        else {release_generator(why);save_log();atomic_fetch_add(&pumps_ended,1);}
     }
 }
+/* One pump at a time; at user-initiated priority while the import phase or a level's wait is on screen. */
 static void schedule_pump(void) {
     if(!upscale_enabled)return;
     atomic_store(&pump_requested,true);
-    if(!atomic_exchange(&pump_queued,true))dispatch_async(upscale_worker,^{pump();});
+    if(!atomic_exchange(&pump_queued,true)) {
+        dispatch_qos_class_t qos=atomic_load(&urgent)>0?QOS_CLASS_USER_INITIATED:QOS_CLASS_UTILITY;
+        dispatch_async(upscale_worker,dispatch_block_create_with_qos_class(DISPATCH_BLOCK_ENFORCE_QOS_CLASS,qos,0,^{pump();}));
+    }
+}
+static void set_stop(BOOL stop) { stop_flag=stop?1:0;atomic_store(&upscale_playing,stop); }
+/* Rule 4: a level's game is about to run. Predictions stop before their next call and the encoders at their next
+   slice; this waits for the texture in hand to let go, so the first gameplay frame never shares the device. */
+static void stop_for_gameplay(const char *why) {
+    if(!upscale_enabled)return;
+    set_stop(YES);
+    double began=now();
+    long busy=dispatch_group_wait(work_group,dispatch_time(DISPATCH_TIME_NOW,(int64_t)(3*NSEC_PER_SEC)));
+    host_logf(busy?HOST_LOG_WARN:HOST_LOG_INFO,"Upscale: paused for gameplay (%s) after %.0f ms%s",why,(now()-began)*1000,busy?", a texture still running":"");
+}
+/* Re-reads whether the work may run now (activity), and resumes it if so. */
+static void resume_if_allowed(void) {
+    BOOL may;double wait;
+    @synchronized(activity_token){may=texture_upscale_activity_may_run(&activity,now());wait=texture_upscale_activity_wait(&activity,now());}
+    if(may){set_stop(NO);schedule_pump();return;}
+    if(wait>0)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(wait*NSEC_PER_SEC)+NSEC_PER_MSEC),dispatch_get_main_queue(),^{resume_if_allowed();});
 }
 void host_texture_upscale_scan(void) {if(upscale_enabled){atomic_store(&scan_pending,true);schedule_pump();}}
+static BOOL text_true(const char *text) { return !strcmp(text,"true")||!strcmp(text,"1"); }
+void host_texture_upscale_resolve_profile(const char *root) {
+    if(profile_upscales>=0||!root)return;
+    char text[32]="";
+    /* (the game's own default where no profile sets it: on) */
+    profile_upscales=host_device_profile_peek(root,"display.upscaled_textures",text,sizeof(text))?text_true(text):1;
+}
 void host_texture_upscale_init(const char *root) {
     static dispatch_once_t once;dispatch_once(&once,^{
         /* Development only: HALO_TEXTURE_UPSCALE_CLEAN removes what the generator and its export left in the data
@@ -425,20 +584,41 @@ void host_texture_upscale_init(const char *root) {
             host_logf(HOST_LOG_INFO,"Upscale: removed the texture cache, the export and the generator log");
             return;
         }
-        if(!root||!bool_setting("debug.texture_upscale_generate","HALO_TEXTURE_UPSCALE_GENERATE")||!texture_upscale_model_available())return;
+        if(!root)return;
+        /* Rule 1, before anything else: the profile, then the player's switch, then a Neural Engine (rule 8). */
+        char mode[16]="off",player[16]="";
+        const char *environment=getenv("HALO_TEXTURE_UPSCALE_GENERATE");
+        if(environment)snprintf(mode,sizeof(mode),"%s",environment);else host_config_string("debug.texture_upscale_generate","off",mode,sizeof(mode));
+        upscale_mode=texture_upscale_mode_parse(mode);
+        host_texture_upscale_resolve_profile(root);
+        environment=getenv("HALO_UPSCALED_TEXTURES");
+        if(environment)snprintf(player,sizeof(player),"%s",environment);else host_config_string("display.upscaled_textures",profile_upscales?"true":"false",player,sizeof(player));
+        player_upscales=text_true(player);
+        if(upscale_mode==TEXTURE_UPSCALE_MODE_OFF)return;
+        int model=texture_upscale_model_available();
+        if(!texture_upscale_gate(upscale_mode,profile_upscales,player_upscales,model)){
+            host_logf(HOST_LOG_INFO,"Upscale: off on this device (profile %s, switch %s, Neural Engine %s)",profile_upscales?"on":"off",
+                player_upscales?"on":"off",model?"available":"unavailable");
+            return;
+        }
+        host_logf(HOST_LOG_INFO,"Upscale: on (%s; profile %s, switch %s)",upscale_mode==TEXTURE_UPSCALE_MODE_FORCE?"forced":"auto",
+            profile_upscales?"on":"off",player_upscales?"on":"off");
         upscale_enabled=YES;export_enabled=bool_setting("debug.texture_upscale_export","HALO_TEXTURE_UPSCALE_EXPORT");upscale_root=@(root);started=now();
-        /* The development generator runs as the import phase will, at user-initiated priority; phase 3's scheduler
-           drops background work to utility. */
-        upscale_worker=dispatch_queue_create("org.visr.texture-upscale",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_USER_INITIATED,0));
-        finisher=dispatch_queue_create("org.visr.texture-upscale.finish",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_USER_INITIATED,0));
-        state_token=[NSObject new];
+        /* Background work at utility; the import phase and a level's wait raise each pump to user-initiated. */
+        upscale_worker=dispatch_queue_create("org.visr.texture-upscale",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
+        finisher=dispatch_queue_create("org.visr.texture-upscale.finish",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
+        state_token=[NSObject new];activity_token=[NSObject new];work_group=dispatch_group_create();
+        map_keys=[NSMutableDictionary new];generator_releases=[NSMutableArray new];
+        texture_upscale_model_set_cancel(&stop_flag);
         texture_log=[NSMutableDictionary new];thermal_log=[NSMutableArray new];
         [NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil];
         [[NSURL fileURLWithPath:cache_directory()] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
         texture_cache_manifest_load(cache_directory().fileSystemRepresentation,&manifest,&manifest_count);
         id<MTLDevice> device=MTLCreateSystemDefaultDevice();record_format=TEXTURE_RECORD_ASTC4X4;
+        /* rule 7: ASTC 4x4 where the GPU has no BC */
         if(@available(iOS 16.4,tvOS 16.4,macOS 11.0,*))if(device.supportsBCTextureCompression)record_format=TEXTURE_RECORD_BC7;
-        [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoThermalStateDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){(void)note;if(NSProcessInfo.processInfo.thermalState<=NSProcessInfoThermalStateFair)schedule_pump();}];
+        host_logf(HOST_LOG_INFO,"Upscale: records are %s",record_format==TEXTURE_RECORD_BC7?"BC7":"ASTC 4x4");
+        [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoThermalStateDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){(void)note;if(NSProcessInfo.processInfo.thermalState<=NSProcessInfoThermalStateFair&&!atomic_load(&upscale_playing))schedule_pump();}];
         #if TARGET_OS_OSX
         NSString *active_notification=NSApplicationWillBecomeActiveNotification;
 #else
@@ -448,13 +628,108 @@ void host_texture_upscale_init(const char *root) {
         host_texture_upscale_scan();
     });
 }
+int host_texture_upscale_enabled(void) { return upscale_enabled; }
+static void set_priority(const char *name) {
+    NSString *normalized=[@(name) stringByReplacingOccurrencesOfString:@"\\" withString:@"/"];
+    @synchronized(activity_token){priority_name=map_base(normalized);}
+    atomic_fetch_add(&priority_serial,1);
+}
 void host_texture_upscale_map_will_load(const char *name) {
     if(!upscale_enabled)return;
-    if(name){NSString *normalized=[@(name) stringByReplacingOccurrencesOfString:@"\\" withString:@"/"];
-        @synchronized(upscale_root){priority_name=normalized.lastPathComponent.stringByDeletingPathExtension.lowercaseString;}
-        atomic_fetch_add(&priority_serial,1);}
-    atomic_store(&upscale_playing,false);schedule_pump();
+    if(name)set_priority(name);
+    @synchronized(activity_token){texture_upscale_activity_map_will_load(&activity);}
+    set_stop(NO);schedule_pump();
 }
 void host_texture_upscale_game_started(int is_game) {
-    atomic_store(&upscale_playing,is_game!=0);if(!is_game)schedule_pump();
+    if(!upscale_enabled)return;
+    @synchronized(activity_token){texture_upscale_activity_game_started(&activity,is_game);}
+    if(is_game)stop_for_gameplay("a level's game started");
+    else {set_stop(NO);schedule_pump();}
+}
+/* rule 6: a pause is not gameplay (game_time_set_paused) */
+void host_texture_upscale_paused(int paused) {
+    if(!upscale_enabled)return;
+    BOOL in_game,was;
+    @synchronized(activity_token){in_game=activity.in_game;was=activity.paused;texture_upscale_activity_paused(&activity,paused,now());}
+    if(!in_game||was==(paused!=0))return;
+    if(paused)resume_if_allowed();
+    else stop_for_gameplay("the game resumed");
+}
+
+/* ---------- the import phase (rule 2) */
+int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_progress progress,void *context) {
+    host_texture_upscale_init(root);
+    if(!upscale_enabled)return 0;
+    atomic_fetch_add(&urgent,1);
+    unsigned ended=atomic_load(&pumps_ended);
+    host_texture_upscale_scan();
+    double start=now();BOOL skipped=NO;
+    for(;;) {
+        struct texture_cache_progress p={0};
+        if(catalog_ready)p=progress_of(nil);
+        /* done: a pump has ended since the import's scan with nothing queued after it */
+        BOOL idle=atomic_load(&pumps_ended)!=ended&&!atomic_load(&pump_queued);
+        if(progress&&!progress(context,p.ready_units,p.units)){skipped=YES;break;}
+        if(idle&&catalog_ready)break;
+        usleep(100000);
+    }
+    struct texture_cache_progress p=progress_of(nil);
+    host_logf(HOST_LOG_INFO,"Upscale import: %s after %.1f s, %zu of %zu textures ready",skipped?"skipped":"finished",now()-start,p.ready,p.textures);
+    atomic_fetch_sub(&urgent,1);
+    return 1;
+}
+
+/* ---------- a level's wait and readiness (the loading screen, texture_upscale_map_loaded) */
+int host_texture_upscale_level_begin(const char *name) {
+    if(!upscale_enabled||!name)return 0;
+    atomic_fetch_add(&urgent,1);
+    atomic_store(&level_skipped,false);
+    set_priority(name);
+    @synchronized(activity_token){level_name=priority_name;texture_upscale_activity_map_will_load(&activity);}
+    atomic_store(&level_serial,atomic_load(&priority_serial));
+    atomic_store(&level_pumps,atomic_load(&pumps_ended));
+    set_stop(NO);schedule_pump();
+    return 1;
+}
+int host_texture_upscale_level_poll(unsigned long long *done,unsigned long long *total) {
+    if(done)*done=0;
+    if(total)*total=0;
+    if(!upscale_enabled)return TEXTURE_UPSCALE_LEVEL_NONE;
+    BOOL stopped=atomic_load(&pumps_ended)!=atomic_load(&level_pumps)&&!atomic_load(&pump_queued);
+    NSString *name;@synchronized(activity_token){name=level_name;}
+    NSData *keys;@synchronized(map_keys){keys=name?map_keys[name]:nil;}
+    if(!keys)return stopped||(catalog_ready&&atomic_load(&level_walked_serial)==atomic_load(&level_serial))?TEXTURE_UPSCALE_LEVEL_DONE:TEXTURE_UPSCALE_LEVEL_CHECKING;
+    struct texture_cache_progress p=progress_of(keys);
+    if(done)*done=p.ready_units;
+    if(total)*total=p.units;
+    if(p.ready==p.textures)return TEXTURE_UPSCALE_LEVEL_NONE;
+    if(stopped||atomic_load(&level_walked_serial)==atomic_load(&level_serial))return TEXTURE_UPSCALE_LEVEL_DONE;
+    return TEXTURE_UPSCALE_LEVEL_WORKING;
+}
+void host_texture_upscale_level_end(int skipped) {
+    if(!upscale_enabled)return;
+    if(skipped)atomic_store(&level_skipped,true);
+    atomic_fetch_sub(&urgent,1);
+}
+/* the no-mix rule: 1 when every texture the level's policy upscales has a current entry, else the level plays
+   original (and a skipped wait always does); 1 when the generator is off, which leaves the reader as it was */
+int host_texture_upscale_level_ready(void) {
+    if(!upscale_enabled)return 1;
+    NSString *name=priority_snapshot();
+    if(atomic_exchange(&level_skipped,false)){host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (the wait was skipped)",name.UTF8String);return 0;}
+    NSData *keys=keys_for_map(name);
+    if(!keys){host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (its textures are not listed yet)",name.UTF8String);return 0;}
+    struct texture_cache_progress p=progress_of(keys);
+    BOOL ready=p.ready==p.textures;
+    host_logf(HOST_LOG_INFO,"Upscale level %s: %s textures (%zu of %zu ready)",name.UTF8String,ready?"upscaled":"original",p.ready,p.textures);
+    return ready;
+}
+/* the Settings app's line (host_texture_settings.m): empty when the switch is not this module's to explain */
+void host_texture_upscale_status(char *text,size_t size) {
+    if(!size)return;
+    text[0]=0;
+    if(upscale_mode==TEXTURE_UPSCALE_MODE_AUTO&&!profile_upscales){snprintf(text,size,"Not used on this device");return;}
+    if(!upscale_enabled||!catalog_ready)return;
+    struct texture_cache_progress p=progress_of(nil);
+    snprintf(text,size,"%zu of %zu ready",p.ready,p.textures);
 }

@@ -117,7 +117,7 @@
         "upscaled_textures": {
           "type": "boolean",
           "default": true,
-          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. Takes effect at the next level load. Profile values outside the accepted set are refused, not clamped."
+          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. A device profile that sets false turns them off whatever this says. Takes effect at the next level load. Profile values outside the accepted set are refused, not clamped."
         },
         "anti_aliasing": {
           "type": "string",

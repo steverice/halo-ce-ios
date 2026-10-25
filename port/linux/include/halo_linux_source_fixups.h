@@ -94,6 +94,7 @@ unsigned char halo_loading_screen_holding(void);
 unsigned char halo_loading_screen_tail(void);
 void halo_loading_screen_tail_frame(void);
 unsigned char halo_loading_screen_smooth(void);
+unsigned char halo_loading_screen_upscale_note(float *fraction);
 void halo_main_time_restart(void);
 /* main_loop's passes that present nothing: debug.fixed_timestep's clock still
 moves a frame (port/linux/src/xbox_kernel.c) */

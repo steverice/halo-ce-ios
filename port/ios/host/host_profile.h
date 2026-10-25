@@ -81,6 +81,10 @@ void host_device_identify(struct host_device *device);
 const char *host_device_profile_install(const char *data_root);
 /* Caller-owned consistent copy, including while the game applies another profile. */
 void host_device_profile_copy(struct host_profile *profile);
+/* name's profile value (layers 1 to 4 without the game's built-in default) as text, before or after the install:
+   the installed profile once there is one, else this device's resolved now in the same way, without logging or
+   watching for updates; 0 if no profile sets it. For decisions made before the game starts (the texture import) */
+int host_device_profile_peek(const char *data_root, const char *name, char *text, size_t size);
 
 /* Internal catalog selection: resolves a source without drop-ins or recursive fallback. */
 int host_profile_inherit(const struct host_device *device, const char *folder,

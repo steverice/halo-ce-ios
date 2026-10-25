@@ -9,6 +9,7 @@
 #include "ios_host.h"
 #include "xiso.h"
 #include "host_astc_store.h"
+#include "host_texture_upscale.h"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -77,6 +78,14 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
     status_set(import_extracting,done,total,@"Preparing textures for this device");
     return !atomic_load(&skip_textures);
 }
+
+/* the on-device upscaler's import phase (rule 2), skipped with the same button */
+static int upscale_progress(void *context,unsigned long long done,unsigned long long total) {
+    (void)context;
+    atomic_store(&preparing_textures,1);
+    status_set(import_extracting,done,total,@"Upscaling textures. You can start playing now; the rest continues in menus.");
+    return !atomic_load(&skip_textures);
+}
 /* Called with a complete upload; runs on its own thread. */
 static void import_image(void) {
     @autoreleasepool {
@@ -106,6 +115,7 @@ static void import_image(void) {
             host_logf(HOST_LOG_INFO,"XISO import complete");
             atomic_store(&skip_textures,0);
             host_astc_store_prepare_import(documents.fileSystemRepresentation,texture_progress,NULL);
+            host_texture_upscale_prepare_import(documents.fileSystemRepresentation,upscale_progress,NULL);
             atomic_store(&preparing_textures,0);
             [files removeItemAtPath:staging error:nil];
             status_set(import_done,1,1,@"Imported. Starting Halo…");

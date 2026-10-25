@@ -756,7 +756,8 @@ static const struct config_setting config_settings[] =
 		"from port/assets/titles; false draws the maps' bitmap fonts and titles." },
 	{ "display.upscaled_textures", _config_boolean, "true", "HALO_UPSCALED_TEXTURES", _environment_value, _platform_all,
 		"Draw upscaled textures (made on this device from your copy of the game)\n"
-		"where they exist; false draws the maps' own. Takes effect at the next\n"
+		"where they exist; false draws the maps' own. A device profile that sets\n"
+		"false turns them off whatever this says. Takes effect at the next\n"
 		"level load." },
 	{ "display.upscaled_textures_memory", _config_integer, "0", "HALO_UPSCALED_TEXTURES_MEMORY", _environment_value,
 		_platform_all,
@@ -1505,8 +1506,10 @@ static const struct config_setting config_settings[] =
 		"once the release enables it, \"force\" emulates a GPU without BC for validation, \"off\" disables it. Requires compressed_textures." },
 	{ "debug.texture_astc_sync", _config_boolean, "false", "HALO_TEXTURE_ASTC_SYNC", _environment_set_is_true, _platform_ios,
 		"Wait for ASTC map preparation before loading, for screenshot validation only." },
-	{ "debug.texture_upscale_generate", _config_boolean, "false", "HALO_TEXTURE_UPSCALE_GENERATE", _environment_set_is_true, _platform_ios,
-		"Generate the on-device upscaled texture cache in menus for development." },
+	{ "debug.texture_upscale_generate", _config_string, "\"off\"", "HALO_TEXTURE_UPSCALE_GENERATE", _environment_value, _platform_ios,
+		"Make upscaled textures on this device: \"auto\" where the device's profile and the\n"
+		"display.upscaled_textures switch both say so (at import, in menus, loading and\n"
+		"pauses, never in gameplay), \"force\" whatever the profile says, \"off\" (default) never." },
 	{ "debug.texture_upscale_export", _config_boolean, "false", "HALO_TEXTURE_UPSCALE_EXPORT", _environment_set_is_true, _platform_ios,
 		"Export the generator's policy table and uncompressed textures for parity checks." },
 	{ "debug.texture_dump_directory", _config_string, "\"\"", "HALO_TEXTURE_DUMP", _environment_value, _platform_all,

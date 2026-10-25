@@ -846,7 +846,7 @@
         "upscaled_textures": {
           "type": "boolean",
           "default": true,
-          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. Takes effect at the next level load.",
+          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. A device profile that sets false turns them off whatever this says. Takes effect at the next level load.",
           "x-environment": "HALO_UPSCALED_TEXTURES",
           "x-environment-style": "value",
           "x-platforms": [
@@ -2557,11 +2557,11 @@
           ]
         },
         "texture_upscale_generate": {
-          "type": "boolean",
-          "default": false,
-          "description": "Generate the on-device upscaled texture cache in menus for development.",
+          "type": "string",
+          "default": "off",
+          "description": "Make upscaled textures on this device: \"auto\" where the device's profile and the display.upscaled_textures switch both say so (at import, in menus, loading and pauses, never in gameplay), \"force\" whatever the profile says, \"off\" (default) never.",
           "x-environment": "HALO_TEXTURE_UPSCALE_GENERATE",
-          "x-environment-style": "set_is_true",
+          "x-environment-style": "value",
           "x-platforms": [
             "apple"
           ]
