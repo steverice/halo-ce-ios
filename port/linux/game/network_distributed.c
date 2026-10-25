@@ -489,6 +489,7 @@ PROFILE_SECTION(distributed_tick_objects_client_tick_section, "network_distribut
 PROFILE_SECTION(distributed_tick_damage_client_tick_section, "network_distributed_tick.damage_client_tick")
 PROFILE_SECTION(distributed_tick_coop_client_tick_section, "network_distributed_tick.coop_client_tick")
 PROFILE_SECTION(distributed_tick_batches_flush_section, "network_distributed_tick.batches_flush")
+PROFILE_SECTION(distributed_tick_sync_log_section, "network_distributed_tick.sync_log")
 
 /* how each player last died, by absolute index: the host's own, which it
 sends its clients, and a client's copy of the host's */
@@ -3579,7 +3580,7 @@ void network_distributed_tick(
 	}
 	profile_scope(distributed_tick_batches_flush_section, distributed_batches_flush();)
 	if (connection == _game_connection_network_server || connection == _game_connection_network_client)
-		distributed_sync_log_tick();
+		profile_scope(distributed_tick_sync_log_section, distributed_sync_log_tick();)
 	distributed_machines.in_tick = FALSE;
 	distributed_machines.valid = FALSE;
 }

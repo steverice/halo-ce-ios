@@ -78,5 +78,16 @@ game thread's track; the internet play thread has a track of its own. Names
 that run many times a frame are summed a frame rather than recorded one by one;
 their row's longest time is the largest sum in one frame.
 
+The port adds:
+
+| Section | What it times |
+| --- | --- |
+| `gpu_draw`, `gpu_clear`, `gpu_texture`, `gpu_buffer`, `gpu_shader_create`, `gpu_visibility` (an occlusion query's start and end), `gpu_visibility_result` (reading one back), `gpu_pipeline_warm` (summed a frame) | each call into the GPU backend (`gpu.h`), from the call until the backend returns; on the Apple builds, the Metal backend's encoding in the host |
+| `gpu_frame_start`, `gpu_present`, `gpu_flush`, `gpu_upscale`, `gpu_anti_alias`, `gpu_warm`, `gpu_initialize` | the backend's frame start, presentation and the other whole-frame calls |
+| `d3d8_draw_vertices`, `d3d8_draw_indexed_vertices`, `d3d8_draw_quad_ranges`, `d3d8_end`, `d3d8_clear`, `d3d8_set_vertex_shader_constant`, `d3d8_set_render_target` (summed a frame) | the Direct3D 8 front end's outermost calls (`d3d8_device.c`), translation and backend call together; less the `gpu_*` time inside them, the translation's own |
+| `benchmark_suite_update` | a benchmark suite's actions in the main loop |
+| `port_network_update` | the network tests, map sharing, away players and aim assist before the network frame |
+| `network_distributed_tick.sync_log` | the network sync log |
+
 The Apple builds read the CPU's counter register for the recording's clock,
 rather than asking the host for the time.

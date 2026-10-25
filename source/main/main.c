@@ -3586,6 +3586,10 @@ PROFILE_SECTION(main_game_time_update_section, "game_time_update")
 PROFILE_SECTION(main_non_deterministic_update_section, "non_deterministic_update")
 PROFILE_SECTION(main_throttle_section, "throttle")
 PROFILE_SECTION(main_present_section, "present")
+/* port: the port's own steps: a benchmark suite's actions, and the network
+tests, map sharing, away players and aim assist before the network frame */
+PROFILE_SECTION(main_benchmark_suite_section, "benchmark_suite_update")
+PROFILE_SECTION(main_port_network_section, "port_network_update")
 
 void main_loop(
 	void)
@@ -3728,14 +3732,14 @@ void main_loop(
 		input_frame_begin();
 		input_update();
 		input_abstraction_update();
+		profile_scope_exit(main_input_section)
 #ifdef HALO_IOS
 		/* port: drain suite-owned map/network actions outside Present. */
 		{
 			extern void benchmark_suite_mainloop_update(void);
-			benchmark_suite_mainloop_update();
+			profile_scope(main_benchmark_suite_section, benchmark_suite_mainloop_update();)
 		}
 #endif
-		profile_scope_exit(main_input_section)
 		profile_scope_enter(main_platform_events_section)
 		shell_idle();
 		event_manager_update();
@@ -3746,6 +3750,7 @@ void main_loop(
 		{
 			render_frame = TRUE;
 
+			profile_scope_enter(main_port_network_section)
 			/* automated system link tests (port/linux/game/network_test.c) */
 			network_test_update(main_globals.main_menu_scenario_loaded, main_globals.seconds_elapsed);
 			/* port: map sharing, in the lobby and in game (port/linux/game/map_share.c) */
@@ -3754,6 +3759,7 @@ void main_loop(
 			network_away_update(main_globals.main_menu_scenario_loaded);
 			/* port: apply and replicate the host's mouse aim-assist policy. */
 			network_aim_assist_update();
+			profile_scope_exit(main_port_network_section)
 			profile_scope_enter(main_network_start_frame_section)
 			connection = main_globals.connection;
 			MAIN_CPU_PHASE(5, 0); /* port: network work has its own CPU span. */

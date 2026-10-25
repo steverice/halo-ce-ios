@@ -235,7 +235,9 @@ static void profile_trace_sample_session(void)
 
 static const char *profile_trace_platform(void)
 {
-#if defined(HALO_ANDROID)
+#if defined(HALO_IOS)
+	return "apple";
+#elif defined(HALO_ANDROID)
 	return "android";
 #elif defined(_WIN32)
 	return "windows";
@@ -675,7 +677,8 @@ void profile_trace_name_aggregate(
 	profile_trace_aggregates[profile_trace_aggregate_count].time = 0;
 	profile_trace_aggregates[profile_trace_aggregate_count].count = 0;
 	profile_trace_aggregate_count++;
-	profile_trace_aggregate_names[id] = 1;
+	/* (its slot, plus one: profile_trace_end finds it without a search) */
+	profile_trace_aggregate_names[id] = (unsigned char)profile_trace_aggregate_count;
 }
 
 const char *profile_trace_name_text(
@@ -760,19 +763,12 @@ void profile_trace_end(
 	duration = profile_trace_seams.now() - open->start;
 	if (profile_trace_aggregate_names[name])
 	{
-		int index;
+		struct profile_trace_aggregate *aggregate = &profile_trace_aggregates[profile_trace_aggregate_names[name] - 1];
 
 		if (track->index != _profile_track_game)
 			return;
-		for (index = 0; index < profile_trace_aggregate_count; index++)
-		{
-			if (profile_trace_aggregates[index].name == name)
-			{
-				profile_trace_aggregates[index].time += duration;
-				profile_trace_aggregates[index].count++;
-				break;
-			}
-		}
+		aggregate->time += duration;
+		aggregate->count++;
 		return;
 	}
 	{

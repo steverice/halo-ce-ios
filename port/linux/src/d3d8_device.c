@@ -523,6 +523,72 @@ void halo_render_before_hud(short local_player_index, short rasterizer_target,
 
 /* ---------- state the XDK header's inline functions read and write */
 
+/* port: the profiling build (configure.py --profile, docs/profiling.md): the
+same outermost calls as scopes of the recording, each name summed a frame
+(they run thousands of times in one); without it they leave nothing */
+#ifdef HALO_PROFILE
+#include "profile_trace.h"
+#include <pthread.h>
+
+enum
+{
+	_translation_profile_set_render_target,
+	_translation_profile_set_vertex_shader_constant,
+	_translation_profile_draw_vertices,
+	_translation_profile_draw_quad_ranges,
+	_translation_profile_draw_indexed_vertices,
+	_translation_profile_end,
+	_translation_profile_clear,
+	NUMBER_OF_TRANSLATION_PROFILE_NAMES,
+};
+
+static const char *const translation_profile_texts[NUMBER_OF_TRANSLATION_PROFILE_NAMES] =
+{
+	"d3d8_set_render_target", "d3d8_set_vertex_shader_constant", "d3d8_draw_vertices", "d3d8_draw_quad_ranges",
+	"d3d8_draw_indexed_vertices", "d3d8_end", "d3d8_clear",
+};
+static int translation_profile_ids[NUMBER_OF_TRANSLATION_PROFILE_NAMES];
+/* (registered once, by whichever thread calls first: the guest's C library has no pthread_once) */
+static int translation_profile_registered;
+static pthread_mutex_t translation_profile_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void translation_profile_register(void)
+{
+	int index;
+
+	for (index = 0; index < NUMBER_OF_TRANSLATION_PROFILE_NAMES; index++)
+	{
+		profile_trace_name_aggregate(translation_profile_texts[index]);
+		translation_profile_ids[index] = profile_trace_name(translation_profile_texts[index]);
+	}
+}
+
+static inline int translation_profile_begin(int index)
+{
+	if (!__atomic_load_n(&translation_profile_registered, __ATOMIC_ACQUIRE))
+	{
+		pthread_mutex_lock(&translation_profile_lock);
+		if (!translation_profile_registered)
+		{
+			translation_profile_register();
+			__atomic_store_n(&translation_profile_registered, 1, __ATOMIC_RELEASE);
+		}
+		pthread_mutex_unlock(&translation_profile_lock);
+	}
+	profile_trace_begin(translation_profile_ids[index]);
+	return translation_profile_ids[index];
+}
+
+static inline void translation_profile_end(const int *id)
+{
+	profile_trace_end(*id);
+}
+
+#define TRANSLATION_PROFILED_DECLARATION(name) \
+	int translation_profiled __attribute__((cleanup(translation_profile_end), unused)) = \
+		translation_profile_begin(_translation_profile_##name)
+#endif
+
 /* port: the benchmark's translation time (port/ios/host/host_benchmark.h):
 the CPU time spent inside the device's outermost draw, clear, constant and
 target calls, which translate D3D8 state and encode it for the GPU. One
@@ -551,8 +617,14 @@ static inline void translation_end(unsigned long long *began)
 		translation_ticks += translation_clock() - *began;
 }
 
-#define TRANSLATION_TIMED() \
+#ifdef HALO_PROFILE
+#define TRANSLATION_TIMED(name) \
+	unsigned long long translation_began __attribute__((cleanup(translation_end), unused)) = translation_begin(); \
+	TRANSLATION_PROFILED_DECLARATION(name)
+#else
+#define TRANSLATION_TIMED(name) \
 	unsigned long long translation_began __attribute__((cleanup(translation_end), unused)) = translation_begin()
+#endif
 
 /* the nanoseconds since the last take (main_loop, at the end of its render) */
 int halo_translation_nanoseconds_take(void)
@@ -569,7 +641,11 @@ int halo_translation_nanoseconds_take(void)
 	return nanoseconds > 0x7fffffffULL ? 0x7fffffff : (int)nanoseconds;
 }
 #else
-#define TRANSLATION_TIMED() ((void)0)
+#ifdef HALO_PROFILE
+#define TRANSLATION_TIMED(name) TRANSLATION_PROFILED_DECLARATION(name)
+#else
+#define TRANSLATION_TIMED(name) ((void)0)
+#endif
 
 int halo_translation_nanoseconds_take(void)
 {
@@ -2746,7 +2822,7 @@ static BOOL trace_frame(void);
 
 void WINAPI D3DDevice_SetRenderTarget(D3DSurface *render_target, D3DSurface *depth_stencil)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(set_render_target); /* port */
 	if (trace_frame())
 		platform_log("set render target %08lx depth %08lx", render_target ? (unsigned long)render_target->Data : 0,
 			depth_stencil ? (unsigned long)depth_stencil->Data : 0);
@@ -3241,7 +3317,7 @@ void WINAPI D3DDevice_GetVertexShaderSize(DWORD handle, UINT *size)
 
 void WINAPI D3DDevice_SetVertexShaderConstant(INT reg, CONST void *constant_data, DWORD constant_count)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(set_vertex_shader_constant); /* port */
 	long first = reg + XGPU_VERTEX_CONSTANT_BIAS;
 
 	if (first < 0 || first >= XGPU_VERTEX_CONSTANT_COUNT)
@@ -5606,7 +5682,7 @@ static void hud_draw_extent(const float *vertices, unsigned long count)
 
 void WINAPI D3DDevice_DrawVertices(D3DPRIMITIVETYPE primitive_type, UINT start_vertex, UINT vertex_count)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(draw_vertices); /* port */
 	struct gpu_draw *draw = &draw_packet;
 
 	VALIDATION_BEGIN(GPU_VALIDATION_DRAW_VERTICES);
@@ -5643,7 +5719,7 @@ colors holds a red, green, blue and alpha byte for each range. */
 void halo_draw_quad_ranges(const UINT *first_vertex, const UINT *quad_count, const BYTE (*colors)[4], UINT count,
 	INT color_reg)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(draw_quad_ranges); /* port */
 	struct gpu_draw *draw = &draw_packet;
 	static float *values = NULL;
 	static unsigned long value_capacity = 0;
@@ -5716,7 +5792,7 @@ void halo_draw_quad_ranges(const UINT *first_vertex, const UINT *quad_count, con
 
 void WINAPI D3DDevice_DrawIndexedVertices(D3DPRIMITIVETYPE primitive_type, UINT vertex_count, CONST WORD *index_data)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(draw_indexed_vertices); /* port */
 	struct gpu_draw *draw = &draw_packet;
 	unsigned long minimum, maximum, index, count, generation = 0, index_offset = 0;
 	WORD *indices = NULL;
@@ -5796,7 +5872,7 @@ static void immediate_emit(void)
 
 void WINAPI D3DDevice_End(void)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(end); /* port */
 	struct gpu_draw *draw = &draw_packet;
 	unsigned long stride = XGPU_VERTEX_ATTRIBUTE_COUNT * 4 * sizeof(float);
 	unsigned long index, count = device.immediate_count;
@@ -5892,7 +5968,7 @@ void WINAPI D3DDevice_SetVertexDataColor(INT reg, D3DCOLOR color)
 
 void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags, D3DCOLOR color, float z, DWORD stencil)
 {
-	TRANSLATION_TIMED(); /* port */
+	TRANSLATION_TIMED(clear); /* port */
 	struct gpu_clear clear;
 	struct gpu_rect *list;
 	uint32_t listed = 0;
