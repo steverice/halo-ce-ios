@@ -513,7 +513,9 @@ x27 plus the zero-extended 32-bit guest pointer, so the arena can start at any
 16 KB boundary, not only at a multiple of 4 GB. Guest pointer values and
 structure layouts stay 32-bit. PC-relative addresses, and pointers made from
 sp or the frame pointer x29 (which hold native addresses), are converted back
-to guest offsets by subtracting x27. A small signed assembly entry switches
+to guest offsets by subtracting x27. To read a native address in a crash
+report as a guest address, subtract the arena's start, which `ios-runtime.log`
+gives as `guest arena at …`. A small signed assembly entry switches
 to an arena stack; host bridges translate pointers at the ABI boundary.
 
 Guest code is embedded in the app's signed `__TEXT` and aliased into the arena

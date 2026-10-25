@@ -2,8 +2,6 @@
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from guest_asm_convert import ConvertError  # noqa: E402
 from ios_asm_convert import lift  # noqa: E402
@@ -36,8 +34,33 @@ def test_stack_and_frame_stay_native():
                                            "add x29, x29, x27"]
 
 
-@pytest.mark.parametrize("line", ["mov x29, x0", "and sp, x9, #-16", "ldr w29, [x8]", "str x29, [x8]",
-                                  "ldr w0, [x8, x29]", "mov w15, w0", "sub x0, x29, sp"])
-def test_unknown_native_uses_are_rejected(line):
-    with pytest.raises(ConvertError):
-        lift(f"\t{line}")
+REFUSED = ["mov x29, x0", "and sp, x9, #-16", "ldr w29, [x8]", "str x29, [x8]",
+                                  "ldr w0, [x8, x29]", "mov w15, w0", "sub x0, x29, sp", "ldr x29, [sp, #16]",
+                                  "ldp x28, x29, [sp, #96]", "mov x15, x27"]
+
+
+def test_unknown_native_uses_are_rejected():
+    for line in REFUSED:
+        try:
+            lift(f"\t{line}")
+        except ConvertError:
+            continue
+        raise AssertionError(f"accepted: {line}")
+
+
+def test_symbols_named_like_native_registers_pass_through():
+    assert lifted("ldr w0, [x8, :lo12:f.sp]") == ["add x15, x27, w8, uxtw", "ldr w0, [x15, :lo12:f.sp]"]
+    assert lifted("add x8, x8, :lo12:a.sp") == ["add x8, x8, :lo12:a.sp"]
+    assert lifted("add x8, x8, :lo12:.L.str.x29") == ["add x8, x8, :lo12:.L.str.x29"]
+
+
+def test_frame_record_and_arena_reads_are_allowed():
+    assert lifted("ldp x29, x30, [sp], #16") == ["ldp x29, x30, [sp], #16"]
+    assert lifted("mov x8, x27") == ["mov x8, x27"]
+
+
+if __name__ == "__main__":
+    tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
+    for test in tests:
+        test()
+    print(f"ios_asm_convert: {len(tests)} tests passed")
