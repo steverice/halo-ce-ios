@@ -20,6 +20,7 @@ app's `Licenses` folder (`tools/ios_build.py`).
 
 | Component | License | Location | In the Apple apps |
 | --- | --- | --- | --- |
+| [Arm astc-encoder](https://github.com/ARM-software/astc-encoder), reference decoder | Apache-2.0 | `port/third_party/astcenc-reference/LICENSE.txt` | No, tests only |
 | [FFmpeg](https://ffmpeg.org/) 9.0.2, its Bink demuxer and decoders only | LGPL-2.1-or-later | `port/third_party/ffmpeg-bink/COPYING.LGPLv2.1`, `port/third_party/ffmpeg-bink/` | Yes, unless built with `--bink off` |
 | [extract-xiso](https://github.com/XboxDev/extract-xiso) | BSD-style, 4 clauses, with an advertising clause | `port/third_party/extract-xiso/LICENSE.TXT`, `port/runtime/xiso.c`, `port/linux/src/xiso.c` | Yes |
 | [Expat](https://libexpat.github.io/) | MIT | `port/third_party/expat/COPYING` | Yes |

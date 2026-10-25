@@ -15,6 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 # These compile through xcrun and are already executed by ios_test.py.
 APPLE_PROBES = {
+    "test_astc_rewrite.py",
     "test_menu_cancel.py",
     "test_loading_progress.py",
     "test_replay_control.py",

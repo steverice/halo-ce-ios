@@ -1,0 +1,251 @@
+/* Production source is inserted by tools/astc_upload_test.py. The service
+ * stubs capture resource behavior; block encoding has separate decode tests. */
+#include <assert.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "gpu.h"
+
+typedef uint32_t DWORD, D3DCOLOR;
+typedef int BOOL;
+#define TRUE 1
+#define FALSE 0
+#define NO 0
+#define D3DFORMAT_FORMAT_MASK 0xff
+#define D3DFORMAT_FORMAT_SHIFT 0
+#define D3DTEXTURE_CUBEFACE_ALIGNMENT 128
+#define D3DCOMMON_D3DCREATED 0x01000000
+#define VALIDATION_NOTE(...) ((void)0)
+#define _custom_edition_channels_xbox 0
+enum astc_dxt_format { ASTC_DXT1, ASTC_DXT3, ASTC_DXT5 };
+
+@DESCRIPTION@
+@FORMATS@
+@LAYOUT@
+@CACHE@
+
+static unsigned char arena[16384];
+#define PLATFORM_PHYSICAL_TO_VIRTUAL(data) (arena + (data))
+struct gpu_capabilities device_capabilities;
+static struct xgpu_texture_description input_description;
+static unsigned long fixture_generation = 1, fixture_serial = 1;
+static unsigned fixture_channel_order, fixture_menu, fixture_text, fixture_hud;
+static unsigned fixture_override, fallback_calls, rewrite_calls, upload_calls;
+static unsigned fail_format, fail_count, next_texture;
+static uint32_t created_format[1024];
+static unsigned uploads_face[128], uploads_level[128], uploads_size[128];
+static unsigned uploads_marker[128];
+static BOOL last_decode;
+static const char *fixture_dump = "", *fixture_mode = "off";
+static BOOL compressed_textures, astc_textures;
+static BOOL fixture_bc, fixture_bc_api = TRUE, fixture_astc = TRUE;
+
+static void platform_log(const char *format, ...) { (void)format; }
+static BOOL platform_is_contiguous(const void *pointer)
+{
+	return (const unsigned char *)pointer >= arena && (const unsigned char *)pointer < arena + sizeof(arena);
+}
+static int config_boolean(const char *key) { (void)key; return FALSE; }
+static const char *config_string(const char *key)
+{
+	return !strcmp(key, "debug.texture_dump_directory") ? fixture_dump : "";
+}
+static void host_config_string(const char *key, const char *fallback, char *result, size_t size)
+{
+	(void)key; (void)fallback; snprintf(result, size, "%s", fixture_mode);
+}
+static void initialize(unsigned flags)
+{
+	@INITIALIZATION@
+	device_capabilities.s3tc = compressed_textures;
+	device_capabilities.astc = astc_textures;
+}
+static void xgpu_texture_describe(DWORD format, DWORD size, struct xgpu_texture_description *description)
+{
+	(void)format; (void)size; *description = input_description;
+}
+static unsigned long memory_watch_generation(unsigned long address, unsigned long size)
+{
+	(void)address; (void)size; return fixture_generation;
+}
+static unsigned long memory_watch_serial(void) { return fixture_serial; }
+static void memory_watch_protect(unsigned long address, unsigned long size) { (void)address; (void)size; }
+static unsigned char custom_edition_texels_order(unsigned long address)
+{
+	(void)address; return fixture_channel_order;
+}
+static long hud_hires_override_find(unsigned long address, unsigned long width, unsigned long height, unsigned long size)
+{
+	(void)address; (void)width; (void)height; (void)size; return fixture_hud ? 1 : -1;
+}
+static gpu_texture hud_hires_override_texture(long index, unsigned long *levels)
+{
+	(void)index; *levels = 1; return fixture_hud ? 999 : 0;
+}
+static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *palette)
+{
+	(void)palette; entry->texture_override = fixture_override ? 998 : 0;
+}
+static gpu_texture text_hires_atlas_texture(DWORD data)
+{
+	(void)data; return fixture_text ? 996 : 0;
+}
+static gpu_texture menu_art_texture(DWORD data, unsigned long *levels)
+{
+	(void)data; *levels = 1; return fixture_menu ? 997 : 0;
+}
+static BOOL hud_hires_override_coverage(long index) { (void)index; return FALSE; }
+static BOOL hud_hires_override_point_threshold(long index) { (void)index; return FALSE; }
+@RESULT@
+gpu_texture gpu_texture_create(const struct gpu_texture_description *description)
+{
+	if (description->format == fail_format && fail_count) { fail_count--; return 0; }
+	assert(next_texture + 1 < 1024);
+	created_format[++next_texture] = description->format;
+	return next_texture;
+}
+void gpu_texture_destroy(gpu_texture texture) { (void)texture; }
+void gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *bytes, uint32_t size)
+{
+	assert(created_format[texture] == GPU_FORMAT_ASTC4X4);
+	assert(upload_calls < 128);
+	uploads_face[upload_calls] = face; uploads_level[upload_calls] = level;
+	uploads_size[upload_calls] = size; uploads_marker[upload_calls] = *(const unsigned char *)bytes;
+	upload_calls++;
+}
+static BOOL astc_rewrite_level(enum astc_dxt_format format, const unsigned char *source,
+	unsigned long width, unsigned long height, unsigned char *destination)
+{
+	(void)format; rewrite_calls++;
+	if (*source == 0xff) return FALSE;
+	memset(destination, *source, ((width + 3) / 4) * ((height + 3) / 4) * 16);
+	return TRUE;
+}
+static void upload(gpu_texture texture, uint32_t type, const struct xgpu_texture_description *description,
+	const unsigned char *bytes, const D3DCOLOR *palette, BOOL decode, unsigned char order)
+{
+	(void)type; (void)description; (void)bytes; (void)palette; (void)order;
+	fallback_calls++; last_decode = decode;
+	assert(created_format[texture] != GPU_FORMAT_ASTC4X4);
+}
+
+@HELPERS@
+@GET@
+
+static DWORD resource[5];
+static gpu_texture get(void)
+{
+	uint32_t type;
+	struct xgpu_texture_description description;
+	return xgpu_texture_get(resource, NULL, &type, &description);
+}
+static struct texture_entry *entry(void)
+{
+	return texture_buckets[bucket_index(resource[1], resource[3], resource[4])];
+}
+static void reset(unsigned format, unsigned cube)
+{
+	for (unsigned bucket = 0; bucket < TEXTURE_BUCKET_COUNT; bucket++)
+	{
+		struct texture_entry *current = texture_buckets[bucket];
+		while (current) { struct texture_entry *next = current->next; free(current); current = next; }
+	}
+	memset(texture_buckets, 0, sizeof(texture_buckets));
+	memset(recent_textures, 0, sizeof(recent_textures));
+	memset(arena, 0, sizeof(arena));
+	memset(resource, 0, sizeof(resource));
+	resource[1] = 128; resource[3] = format;
+	input_description = (struct xgpu_texture_description){
+		.format = format, .width = 8, .height = 8, .depth = 1, .levels = 4,
+		.cube_map = cube, .compressed = format == 0xc || format == 0xe || format == 0xf,
+	};
+	fixture_generation = fixture_serial = 1;
+	fixture_channel_order = fixture_menu = fixture_text = fixture_hud = fixture_override = 0;
+	fallback_calls = rewrite_calls = upload_calls = fail_count = 0;
+	fixture_dump = ""; fixture_mode = "force"; fixture_bc = TRUE;
+	initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	/* A distinct marker for each face and mip exposes wrong face padding,
+	 * level offsets, and destination packing even for the 2x2 and 1x1 mips. */
+	for (unsigned face = 0; face < (cube ? 6u : 1u); face++)
+		for (unsigned level = 0; level < 4; level++)
+			memset(arena + resource[1] + face * xgpu_texture_face_size(&input_description) +
+				xgpu_texture_level_offset(&input_description, level), 1 + face * 4 + level,
+				level_bytes(&input_description, level));
+}
+static void expect_fallback(void)
+{
+	gpu_texture texture = get(); assert(texture);
+	assert(entry()->gpu_format == GPU_FORMAT_BGRA8);
+	assert(!upload_calls && fallback_calls == 1 && !rewrite_calls);
+}
+
+int main(void)
+{
+	/* Backend selection: absent/off, on with/without BC, force, unsupported
+	 * hardware, and display.compressed_textures=false. */
+	fixture_mode = "off"; fixture_bc = FALSE; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(!device_capabilities.astc && !device_capabilities.s3tc);
+	fixture_mode = "on"; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(device_capabilities.astc && !device_capabilities.s3tc);
+	fixture_bc = TRUE; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(device_capabilities.s3tc);
+	fixture_mode = "force"; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(device_capabilities.astc && !device_capabilities.s3tc);
+	initialize(0); assert(!device_capabilities.astc && !device_capabilities.s3tc);
+	fixture_astc = FALSE; initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(!device_capabilities.astc); fixture_astc = TRUE;
+	for (unsigned format = 0xc; format <= 0xf; format += format == 0xc ? 2 : 1)
+	{
+		reset(format, TRUE);
+		assert(get() && entry()->gpu_format == GPU_FORMAT_ASTC4X4);
+		assert(upload_calls == 24 && rewrite_calls == 24 && !fallback_calls);
+		for (unsigned i = 0; i < 24; i++)
+		{
+			assert(uploads_face[i] == i / 4 && uploads_level[i] == i % 4);
+			assert(uploads_marker[i] == i + 1);
+			assert(uploads_size[i] == (i % 4 == 0 ? 64 : 16));
+		}
+		assert(get() && upload_calls == 24); /* recent cache hit */
+		fixture_generation++; fixture_serial++;
+		assert(get() && entry()->runtime_written && entry()->decoded);
+		assert(entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1 && last_decode);
+		/* A late unsupported block must discard every staged face and level. */
+		reset(format, TRUE);
+		arena[resource[1] + 5 * xgpu_texture_face_size(&input_description) +
+			xgpu_texture_level_offset(&input_description, 3)] = 0xff;
+		assert(get() && entry()->gpu_format == GPU_FORMAT_BGRA8);
+		assert(!upload_calls && fallback_calls == 1 && last_decode && rewrite_calls == 24);
+	}
+	reset(0xc, FALSE); resource[0] = D3DCOMMON_D3DCREATED; expect_fallback();
+	reset(0xc, FALSE); input_description.depth = 2; expect_fallback();
+	reset(0xc, FALSE); fixture_channel_order = 1; expect_fallback();
+	reset(0xc, FALSE); fixture_dump = "dump"; expect_fallback();
+	reset(0xc, FALSE); fixture_menu = 1; expect_fallback();
+	reset(0xc, FALSE); fixture_text = 1; expect_fallback();
+	reset(0xc, FALSE); fixture_override = 1; expect_fallback();
+	reset(0xc, FALSE); fixture_hud = 1;
+	assert(get() == 999 && !rewrite_calls && !upload_calls && !fallback_calls);
+	reset(0xc, FALSE); fixture_mode = "off"; fixture_bc = FALSE;
+	initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES); expect_fallback();
+	reset(0xc, FALSE); fixture_mode = "on"; fixture_bc = TRUE;
+	initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
+	assert(get() && entry()->gpu_format == GPU_FORMAT_BC1 && !last_decode && !rewrite_calls);
+	/* A failed initial BGRA allocation must be retried when alpha rejects ASTC. */
+	reset(0xc, FALSE); fail_format = GPU_FORMAT_BGRA8; fail_count = 1;
+	arena[resource[1]] = 0xff;
+	assert(get() && entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1 && last_decode);
+	reset(0xc, FALSE); fail_format = GPU_FORMAT_ASTC4X4; fail_count = 1;
+	assert(get() && entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1 && last_decode);
+	reset(0xc, FALSE); assert(get() && entry()->gpu_format == GPU_FORMAT_ASTC4X4);
+	fixture_generation++; fixture_serial++;
+	fail_format = GPU_FORMAT_BGRA8; fail_count = 1;
+	assert(!get() && !entry()->generation);
+	assert(get() && entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1);
+	reset(0x6, FALSE); expect_fallback();
+	reset(0xc, FALSE); /* release fixture cache allocations for ASan */
+	puts("PASS: production ASTC upload selection, fallback, mutation, mip and cube integration");
+	return 0;
+}

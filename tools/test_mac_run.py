@@ -377,7 +377,7 @@ def test_compare_across_backends_requires_matching_capabilities(tmp_path):
 
 
 def test_compare_across_backends_allows_the_capabilities_only_metal_has(tmp_path):
-    line = "GPU capabilities: vertex BGRA {0}, base vertex {0}, triangle fans 1, max texture size {1}\n" \
+    line = "GPU capabilities: vertex BGRA {0}, base vertex {0}, ASTC {0}, triangle fans 1, max texture size {1}\n" \
         "frame 60: 5 draws, 2 immediate; skipped 0 link; {2} KB mirrored, {3} KB streamed, {4} GL calls\n"
     gl = _result(tmp_path / "gl", {}, {}, line.format(0, 16384, 10, 90, 7))
     metal = _result(tmp_path / "metal", {}, {}, line.format(1, 16384, 80, 20, 0))

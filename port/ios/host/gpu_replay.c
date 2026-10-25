@@ -536,15 +536,16 @@ int gpu_replay_run(const char *path, const struct gpu_backend *backend, const st
 		capabilities.triangle_fans != header.capabilities.triangle_fans || capabilities.line_loops != header.capabilities.line_loops ||
 		capabilities.sampler_lod_bias != header.capabilities.sampler_lod_bias ||
 		capabilities.occlusion_mode != header.capabilities.occlusion_mode || capabilities.s3tc != header.capabilities.s3tc ||
-		capabilities.border_clamp != header.capabilities.border_clamp ||
+		capabilities.astc != header.capabilities.astc || capabilities.border_clamp != header.capabilities.border_clamp ||
 		capabilities.shader_language != header.capabilities.shader_language || capabilities.shader_es != header.capabilities.shader_es ||
 		capabilities.clip_y_flip != header.capabilities.clip_y_flip || capabilities.clip_z_remap != header.capabilities.clip_z_remap)
 	{
 		snprintf(result->error, sizeof(result->error), "the capture was made for another backend: shader language %u (this one %u), "
-			"vertex BGRA %u (%u), base vertex %u (%u), fans %u (%u), S3TC %u (%u), border clamp %u (%u), occlusion %u (%u)",
+			"vertex BGRA %u (%u), base vertex %u (%u), fans %u (%u), S3TC %u (%u), ASTC %u (%u), border clamp %u (%u), occlusion %u (%u)",
 			header.capabilities.shader_language, capabilities.shader_language, header.capabilities.vertex_bgra,
 			capabilities.vertex_bgra, header.capabilities.base_vertex, capabilities.base_vertex, header.capabilities.triangle_fans,
-			capabilities.triangle_fans, header.capabilities.s3tc, capabilities.s3tc, header.capabilities.border_clamp,
+			capabilities.triangle_fans, header.capabilities.s3tc, capabilities.s3tc, header.capabilities.astc, capabilities.astc,
+			header.capabilities.border_clamp,
 			capabilities.border_clamp, header.capabilities.occlusion_mode, capabilities.occlusion_mode);
 		goto done;
 	}

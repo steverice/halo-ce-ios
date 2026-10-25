@@ -19,6 +19,7 @@ and a good draw none. Built with HALO_RENDER_VALIDATION=1 (tools/ios_test.py).
 static uint32_t next_handle, draws, draw_result = 1, visibility_ends, report_in_draw = GPU_VALIDATION_REASON_COUNT;
 static unsigned char stream_memory[1 << 16];
 static uint32_t stream_offset;
+static uint8_t mock_astc = 1;
 
 static gpu_texture mock_texture_create(const struct gpu_texture_description *description) { (void)description; return ++next_handle; }
 static void mock_texture_upload(gpu_texture t, uint32_t f, uint32_t l, const void *d, uint32_t s) { (void)t; (void)f; (void)l; (void)d; (void)s; }
@@ -81,6 +82,7 @@ static void mock_initialize(uint32_t flags, struct gpu_capabilities *capabilitie
 	(void)flags;
 	memset(capabilities, 0, sizeof(*capabilities));
 	capabilities->vertex_bgra = capabilities->base_vertex = capabilities->border_clamp = capabilities->s3tc = 1;
+	capabilities->astc = mock_astc;
 	capabilities->max_texture_size = 4096;
 }
 
@@ -414,6 +416,43 @@ int main(void)
 		gpu.texture_create(&description);
 		EXPECT_ONLY(TEXTURE_FORMAT_UNSUPPORTED, "a texture format the backends do not take");
 	}
+
+	/* ASTC 4x4 has one 16-byte block even at the smallest mip. */
+	scene_make(GPU_VALIDATION_LOG, NULL);
+	{
+		struct gpu_texture_description description = { GPU_TEXTURE_2D, GPU_FORMAT_ASTC4X4, GPU_USAGE_UPLOAD, 0, 1, 1, 1, 1 };
+		unsigned char block[16] = { 0 };
+		gpu_texture texture = gpu.texture_create(&description);
+
+		gpu.texture_upload(texture, 0, 0, block, sizeof(block));
+		EXPECT(findings() == 0, "a complete ASTC block uploads at 1x1");
+	}
+
+	scene_make(GPU_VALIDATION_LOG, NULL);
+	{
+		struct gpu_texture_description description = { GPU_TEXTURE_CUBE, GPU_FORMAT_ASTC4X4, GPU_USAGE_UPLOAD, 0, 8, 8, 1, 4 };
+		unsigned char blocks[64] = { 0 };
+		gpu_texture texture = gpu.texture_create(&description);
+		unsigned face, level;
+
+		for (face = 0; face < 6; face++)
+			for (level = 0; level < 4; level++)
+				gpu.texture_upload(texture, face, level, blocks, level ? 16 : 64);
+		EXPECT(findings() == 0, "ASTC cube faces and the full mip chain use block sizing");
+		gpu.texture_upload(texture, 5, 3, blocks, 15);
+		EXPECT_ONLY(UPLOAD_SHORT, "the 1x1 ASTC mip still needs 16 bytes");
+	}
+	scene_make(GPU_VALIDATION_LOG, NULL);
+	texture_make(GPU_TEXTURE_2D, GPU_FORMAT_ASTC4X4, GPU_USAGE_RENDER_TARGET, 8, 8, 1, 0);
+	EXPECT_ONLY(TEXTURE_FORMAT_UNSUPPORTED, "ASTC cannot be a render target");
+	scene_make(GPU_VALIDATION_LOG, NULL);
+	texture_make(GPU_TEXTURE_3D, GPU_FORMAT_ASTC4X4, GPU_USAGE_UPLOAD, 8, 8, 1, 0);
+	EXPECT_ONLY(TEXTURE_FORMAT_UNSUPPORTED, "ASTC 3D is excluded");
+	mock_astc = 0;
+	scene_make(GPU_VALIDATION_LOG, NULL);
+	texture_make(GPU_TEXTURE_2D, GPU_FORMAT_ASTC4X4, GPU_USAGE_UPLOAD, 8, 8, 1, 0);
+	EXPECT_ONLY(TEXTURE_FORMAT_UNSUPPORTED, "ASTC needs the backend capability");
+	mock_astc = 1;
 
 	/* targets */
 	scene_make(GPU_VALIDATION_LOG, NULL);

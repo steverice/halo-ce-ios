@@ -43,8 +43,8 @@ GL_CALLS = re.compile(r",? \d+ GL calls$")
 # what a backend reports it can do (gpu_gl.c, gpu_metal.m)
 CAPABILITIES = re.compile(r"GPU capabilities: (.*)$")
 # the capabilities Metal has and Apple's OpenGL ES lacks, so a GL run and a Metal run report them differently:
-# they decide how the front end uploads vertex colors and indices (d3d8_device.c), not what is drawn
-BACKEND_CAPABILITIES = re.compile(r"(?:vertex BGRA|base vertex) \d+(?:, )?")
+# they decide how the front end uploads vertex colors, indices and textures, not what is drawn
+BACKEND_CAPABILITIES = re.compile(r"(?:vertex BGRA|base vertex|ASTC) \d+(?:, )?")
 # the upload totals in a debug.gpu_stats summary, which follow those capabilities
 UPLOAD_BYTES = re.compile(r"\d+ KB mirrored, \d+ KB streamed(?:, )?")
 # a translated shader's source (.glsl or .metal) and the inputs it was translated from
@@ -123,6 +123,7 @@ DEFAULTS = {
     "display.shadow_map_size": "128",
     "display.effect_resolution": "false",
     "display.compressed_textures": "false",
+    "debug.texture_astc": '"off"',
     "display.frame_pacing": '"off"',
     "display.frame_rate": '"display"',
     # (a runner run sets debug.exit_after, so "auto" compiles at each first draw, as before)

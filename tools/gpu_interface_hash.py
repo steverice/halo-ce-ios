@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INTERFACE = ("port/linux/src/gpu.h", "port/linux/src/gpu_uniforms.h", "port/linux/src/halo_stereo.h")
 FRONT_END = ("port/linux/src/d3d8_device.c", "port/linux/src/d3d8_resources.c", "port/linux/src/xbox_textures.c",
              "port/linux/src/nv2a_vsh.c", "port/linux/src/nv2a_psh.c", "port/linux/src/nv2a_msl.c", "port/linux/src/xgpu.h",
+             "port/linux/src/astc_rewrite.c", "port/linux/src/astc_rewrite.h",
              "port/linux/src/xgpu_text.c", "port/linux/src/hud_hires.c", "port/linux/src/text_hires.c")
 
 

@@ -2520,6 +2520,16 @@
             "desktop"
           ]
         },
+        "texture_astc": {
+          "type": "string",
+          "default": "off",
+          "description": "Direct DXT-to-ASTC uploads: \"off\" (default), \"on\" on GPUs without BC, or \"force\" to emulate a GPU without BC for validation. Requires compressed_textures.",
+          "x-environment": "HALO_TEXTURE_ASTC",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "texture_dump_directory": {
           "type": "string",
           "default": "",

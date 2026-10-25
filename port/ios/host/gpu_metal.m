@@ -209,6 +209,7 @@ static int metal_debug;
 /* display.compressed_textures, where the GPU has BC formats: DXT textures
 upload as they are, not decoded to BGRA8 (gpu_capabilities.s3tc) */
 static BOOL compressed_textures;
+static BOOL astc_textures;
 /* debug.metal_specialize = false: vertex_function returns the unspecialized
 function, its fallback when specializing fails */
 static BOOL specialize_off;
@@ -699,10 +700,25 @@ static unsigned long level_dimension(uint32_t size, unsigned long level)
 	return size >> level ? size >> level : 1;
 }
 
+/* Creation and upload must agree: an accepted format needs storage on its first upload. */
+static BOOL format_supported(const struct gpu_texture_description *description)
+{
+	if (description->format == GPU_FORMAT_BGRA8 || description->format == GPU_FORMAT_DEPTH_STENCIL)
+		return YES;
+	if (description->usage != GPU_USAGE_UPLOAD)
+		return NO;
+	if (description->format == GPU_FORMAT_ASTC4X4)
+		return astc_textures && (description->type == GPU_TEXTURE_2D || description->type == GPU_TEXTURE_CUBE);
+	return compressed_textures && (description->format == GPU_FORMAT_BC1 || description->format == GPU_FORMAT_BC2 ||
+		description->format == GPU_FORMAT_BC3);
+}
+
 static MTLPixelFormat texture_format(const struct gpu_texture_description *description)
 {
 	if (description->format == GPU_FORMAT_DEPTH_STENCIL)
 		return MTLPixelFormatDepth32Float_Stencil8;
+	if (description->format == GPU_FORMAT_ASTC4X4)
+		return MTLPixelFormatASTC_4x4_LDR;
 	/* compressed_textures is set only where these exist */
 	if (@available(iOS 16.4, tvOS 16.4, visionOS 1.0, *))
 	{
@@ -717,12 +733,13 @@ static MTLPixelFormat texture_format(const struct gpu_texture_description *descr
 }
 
 /* a level's bytes per row and per image: 4x4 blocks of 8 bytes (BC1) or 16
-(BC2, BC3) for the compressed formats (gpu_capabilities.s3tc), else 4 bytes
+(BC2, BC3, ASTC4X4) for the compressed formats, else 4 bytes
 a texel */
 static void level_layout(uint32_t format, unsigned long width, unsigned long height,
 	unsigned long *row, unsigned long *image)
 {
-	if (format == GPU_FORMAT_BC1 || format == GPU_FORMAT_BC2 || format == GPU_FORMAT_BC3)
+	if (format == GPU_FORMAT_BC1 || format == GPU_FORMAT_BC2 || format == GPU_FORMAT_BC3 ||
+		format == GPU_FORMAT_ASTC4X4)
 	{
 		*row = (width + 3) / 4 * (format == GPU_FORMAT_BC1 ? 8 : 16);
 		*image = *row * ((height + 3) / 4);
@@ -811,10 +828,7 @@ static gpu_texture gpu_metal_texture_create(const struct gpu_texture_description
 		(xbox_textures.c); GL ignores levels past the smallest, Metal can't
 		create them */
 		record->levels = description->levels < 1 ? 1 : description->levels > possible ? possible : description->levels;
-		if (description->format != GPU_FORMAT_BGRA8 && description->format != GPU_FORMAT_DEPTH_STENCIL &&
-			!(compressed_textures && description->usage != GPU_USAGE_RENDER_TARGET &&
-				(description->format == GPU_FORMAT_BC1 || description->format == GPU_FORMAT_BC2 ||
-				description->format == GPU_FORMAT_BC3)))
+		if (!format_supported(description))
 			platform_log("Metal: texture format %u is not supported; it samples black", description->format);
 		/* render targets have storage at once; upload textures get theirs
 		from their first upload, as under GL, and sample black until then */
@@ -836,7 +850,7 @@ static void gpu_metal_texture_upload(gpu_texture texture, uint32_t face, uint32_
 		unsigned long width, height, depth, row, image;
 
 		if (!record || record->description.format == GPU_FORMAT_DEPTH_STENCIL || level >= record->levels ||
-			(record->description.format != GPU_FORMAT_BGRA8 && !compressed_textures))
+			!format_supported(&record->description))
 		{
 			GPU_VALIDATION_REPORT(GPU_VALIDATION_UPLOAD_IGNORED, 1, "Metal: texture %u face %u level %u: no such texture or "
 				"level, a depth target, or a format this GPU does not take", texture, face, level);
@@ -6188,12 +6202,21 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		/* the class shows whether Metal's API validation wraps the device
 		(MTLDebugDevice; tools/mac_run.py run --metal-validation) */
 		platform_log("Metal on %s (%s)", device.name.UTF8String, NSStringFromClass([device class]).UTF8String);
+		compressed_textures = astc_textures = NO;
 		if (flags & GPU_INITIALIZE_COMPRESSED_TEXTURES)
 		{
+			char astc[16];
+
+			host_config_string("debug.texture_astc", "off", astc, sizeof(astc));
 			if (@available(iOS 16.4, tvOS 16.4, visionOS 1.0, *))
 				compressed_textures = device.supportsBCTextureCompression;
+			/* Force the no-BC path on an Apple silicon Mac for screenshot comparisons. */
+			if (!strcmp(astc, "force"))
+				compressed_textures = NO;
+			astc_textures = (!strcmp(astc, "on") || !strcmp(astc, "force")) &&
+				[device supportsFamily:MTLGPUFamilyApple2];
 			platform_log("Metal: compressed textures %s", compressed_textures ? "upload as BC1-3" :
-				"are decoded (this GPU has no BC formats)");
+				astc_textures ? "rewrite eligible DXT as ASTC 4x4" : "are decoded to BGRA8");
 		}
 
 		/* the vertex shaders fetch their own attributes (nv2a_msl.c's
@@ -6233,6 +6256,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		}
 		capabilities->occlusion_mode = visibility_counts ? GPU_OCCLUSION_EXACT : GPU_OCCLUSION_ANY_SAMPLE;
 		capabilities->s3tc = compressed_textures ? 1 : 0;
+		capabilities->astc = astc_textures ? 1 : 0;
 		/* border colors stay inside the backend: the front end doesn't read
 		border_clamp, and a GL run and a Metal run report the same line */
 		border_colors = [device supportsFamily:MTLGPUFamilyApple7] || [device supportsFamily:MTLGPUFamilyMac2];

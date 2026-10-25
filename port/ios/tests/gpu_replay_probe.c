@@ -100,12 +100,14 @@ static void mock_compile_progress(uint32_t action, struct gpu_compile_progress *
 	progress->sealed = 1;
 }
 static uint32_t mock_compiles_outstanding(void) { return 0; }
+static uint8_t mock_astc;
 static void mock_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 {
 	(void)flags;
 	memset(capabilities, 0, sizeof(*capabilities));
 	capabilities->vertex_bgra = capabilities->base_vertex = capabilities->border_clamp = capabilities->s3tc = 1;
 	capabilities->shader_language = GPU_SHADER_LANGUAGE_MSL;
+	capabilities->astc = mock_astc;
 	capabilities->max_texture_size = 4096;
 }
 
@@ -156,11 +158,26 @@ static void frames_draw(struct gpu_backend *gpu, int frames)
 		texels[index] = (unsigned char)(index * 7);
 	for (index = 0; index < 4096; index++)
 		game_memory[index] = (float)index * 0.5f;
+	if (mock_astc)
+		texture_description.format = GPU_FORMAT_ASTC4X4;
 	color = gpu->texture_create(&color_description);
 	depth = gpu->texture_create(&depth_description);
 	texture = gpu->texture_create(&texture_description);
-	gpu->texture_upload(texture, 0, 0, texels, sizeof(texels));
-	gpu->texture_generate_mipmaps(texture, 0);
+	if (mock_astc)
+	{
+		for (index = 0; index < 6; index++)
+		{
+			unsigned width = 32u >> index;
+			unsigned size = ((width + 3) / 4) * ((width + 3) / 4) * 16;
+
+			gpu->texture_upload(texture, 0, index, texels, size);
+		}
+	}
+	else
+	{
+		gpu->texture_upload(texture, 0, 0, texels, sizeof(texels));
+		gpu->texture_generate_mipmaps(texture, 0);
+	}
 	/* a texture no draw uses: it must not reach the file */
 	unused = gpu->texture_create(&texture_description);
 	gpu->texture_upload(unused, 0, 0, texels, sizeof(texels));
@@ -292,7 +309,7 @@ static void fuzz_mutated(void *context, uint32_t operation, int refused)
 int main(void)
 {
 	char folder[] = "/tmp/gpu-replay-probe-XXXXXX", path[256], damaged[256], expected[1 << 15], replayed[1 << 15];
-	struct gpu_capture_host capture_host = { log_line, folder, "1+2", 0x1234abcd, 0x5678, "guest", "probe" };
+	struct gpu_capture_host capture_host = { log_line, folder, "1+2,5+2", 0x1234abcd, 0x5678, "guest", "probe" };
 	struct gpu_replay_host replay_host = { log_line, NULL, same_flags, NULL, NULL, NULL, 0x1234abcd, 0x5678, 0 };
 	struct gpu_replay_result result;
 	struct gpu_backend gpu = mock, player;
@@ -362,6 +379,13 @@ int main(void)
 			EXPECT(strstr(notes, wanted) != NULL, "the mirrored page is the game's memory, read where it lies");
 		}
 	}
+
+	/* ASTC changes the front end's uploads, so captures require the same capability. */
+	mock_astc = 1;
+	reset_mock(1, 0);
+	EXPECT(gpu_replay_run(path, &player, &replay_host, &result) == -1 && strstr(result.error, "ASTC"),
+		"a capture from a backend with another ASTC capability is refused");
+	mock_astc = 0;
 
 	/* stale and foreign captures */
 	replay_host.interface_hash = 0x999;
@@ -454,6 +478,27 @@ int main(void)
 		EXPECT(gpu_replay_run(path, &player, &replay_host, &result) == 0 && gpu_validation_failures() == 0 &&
 			gpu_validation_rejected() == 0, "the unmutated capture has no failures");
 	}
+	/* Keep ASTC's full blocks in captures, including the 2x2 and 1x1 mips. */
+	mock_astc = 1;
+	reset_mock(100, 0);
+	gpu.initialize(0, &capabilities);
+	frames_draw(&gpu, 4);
+	snprintf(path, sizeof(path), "%s/frames-00005.capture", folder);
+	reset_mock(5000, 4096);
+	player = mock;
+	EXPECT(gpu_replay_run(path, &player, &replay_host, &result) == 0, "ASTC uploads replay");
+	{
+		unsigned char block[16];
+		char wanted[64];
+		unsigned index;
+
+		for (index = 0; index < sizeof(block); index++)
+			block[index] = (unsigned char)(index * 7);
+		snprintf(wanted, sizeof(wanted), "texture_upload 00000005 %08x", hash_bytes(block, sizeof(block)));
+		EXPECT(strstr(notes, wanted) != NULL, "the 1x1 ASTC capture keeps all 16 bytes");
+	}
+	unlink(path);
+	snprintf(path, sizeof(path), "%s/frames-00001.capture", folder);
 	unlink(path);
 	unlink(damaged);
 	rmdir(folder);

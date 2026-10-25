@@ -437,7 +437,8 @@ static uint64_t level_bytes(const struct gpu_texture_description *description, u
 
 	if (description->format == GPU_FORMAT_BC1)
 		return ((width + 3) / 4) * ((height + 3) / 4) * 8 * depth;
-	if (description->format == GPU_FORMAT_BC2 || description->format == GPU_FORMAT_BC3)
+	if (description->format == GPU_FORMAT_BC2 || description->format == GPU_FORMAT_BC3 ||
+		description->format == GPU_FORMAT_ASTC4X4)
 		return ((width + 3) / 4) * ((height + 3) / 4) * 16 * depth;
 	return width * height * 4 * depth;
 }
@@ -473,14 +474,16 @@ static gpu_texture validate_texture_create(const struct gpu_texture_description 
 		REPORT(TEXTURE_DESCRIPTION_INVALID, description->type | description->usage << 8 | description->format << 16,
 			"type %u format %u usage %u, %ux%ux%u", description->type, description->format, description->usage,
 			description->width, description->height, description->depth);
-	if (description->format < GPU_FORMAT_BGRA8 || description->format > GPU_FORMAT_DEPTH_STENCIL ||
+	if (description->format < GPU_FORMAT_BGRA8 || description->format > GPU_FORMAT_ASTC4X4 ||
 		(description->format >= GPU_FORMAT_BC1 && description->format <= GPU_FORMAT_BC3 &&
-			(!validation.capabilities.s3tc || description->usage == GPU_USAGE_RENDER_TARGET)))
+			(!validation.capabilities.s3tc || description->usage == GPU_USAGE_RENDER_TARGET)) ||
+		(description->format == GPU_FORMAT_ASTC4X4 && (!validation.capabilities.astc ||
+			description->usage != GPU_USAGE_UPLOAD || description->type == GPU_TEXTURE_3D)))
 	{
 		unsupported = 1;
 		REPORT(TEXTURE_FORMAT_UNSUPPORTED, description->format | description->usage << 8,
-			"format %u (usage %u, S3TC %u) is not one the backend takes; the texture samples black", description->format,
-			description->usage, validation.capabilities.s3tc);
+			"format %u (usage %u, S3TC %u, ASTC %u) is not one the backend takes; the texture samples black", description->format,
+			description->usage, validation.capabilities.s3tc, validation.capabilities.astc);
 	}
 	if (description->levels < 1 || description->levels > possible)
 		REPORT(TEXTURE_LEVELS_CLAMPED, description->levels > possible, "%u levels for a %ux%ux%u texture, which has %u",
