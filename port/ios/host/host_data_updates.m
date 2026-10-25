@@ -268,7 +268,7 @@ static void publishMenuState(void)
         BOOL loading = !ready && !failed && (!menuInitialized || profileLoading || recordingLoading);
         menuState = @{@"ready": @(ready), @"loading": @(loading),
             @"profileFinished": @(menuInitialized && !profileLoading),
-            @"reason": ready || loading ? @"" : !profileReady && !profileLoading ? @"Can't reach the profile server" : @"Benchmark recordings are unavailable"};
+            @"reason": ready || loading ? @"" : !profileReady && !profileLoading ? @"Can't reach the profile server. Benchmarking disabled." : @"Benchmark recordings are unavailable"};
     }
 }
 static NSString *bundledFolder(NSString *name)

@@ -74,7 +74,7 @@ static NSString *benchmark_menu_detail(void) {
 #else
     name = UIDevice.currentDevice.model;
 #endif
-    return [NSString stringWithFormat:NSLocalizedString(@"Benchmarking collects performance data about your %@ so we can deliver a more optimized experience.",
+    return [NSString stringWithFormat:NSLocalizedString(@"Benchmarking collects performance data so we can deliver a more optimized experience for your %@.",
         @"Launch menu benchmark explanation; %@ is the device family name"), name];
 }
 

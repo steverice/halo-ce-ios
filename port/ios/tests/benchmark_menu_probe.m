@@ -80,7 +80,7 @@ static void refresh(HaloBenchmarkMenuController *controller) {
     [self.window makeKeyAndVisible];
     dispatch_async(dispatch_get_main_queue(), ^{
         UIButton *play = button(controller.view, 0), *benchmark = button(controller.view, 1);
-        check([controller.detailLabel.text isEqual:@"Benchmarking collects performance data about your Mac so we can deliver a more optimized experience."], "Menu uses exact device-specific explanation");
+        check([controller.detailLabel.text isEqual:@"Benchmarking collects performance data so we can deliver a more optimized experience for your Mac."], "Menu uses exact device-specific explanation");
         check([controller.detailLabel.accessibilityLabel isEqual:controller.detailLabel.text], "VoiceOver reads the device-specific explanation");
         check(play.enabled, "Play is usable during download");
         check(benchmark && !benchmark.enabled, "Benchmark is visible and disabled during download");
@@ -115,11 +115,12 @@ static void refresh(HaloBenchmarkMenuController *controller) {
         [controller pressed:benchmark];
         check(controller.chosen == 1, "Ready Benchmark can be selected");
         controller.chosen = -1;
-        feed_state = @{ @"ready": @NO, @"loading": @NO, @"reason": @"Can't reach the profile server" };
+        feed_state = @{ @"ready": @NO, @"loading": @NO, @"reason": @"Can't reach the profile server. Benchmarking disabled." };
         refresh(controller);
         check(!benchmark.enabled, "Failed download keeps Benchmark disabled");
         UILabel *status = [controller valueForKey:@"benchmarkStatus"];
-        check([status.text containsString:@"Can't reach"], "Failed download shows a reason");
+        check([status.text isEqual:@"Can't reach the profile server. Benchmarking disabled."], "Failed download shows the exact status");
+        check([benchmark.accessibilityLabel isEqual:@"Benchmark. Can't reach the profile server. Benchmarking disabled."], "VoiceOver reads the exact failure status");
         check(!spinner.isAnimating, "Failed download stops the spinner");
         [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
         check(spinner.isAnimating && !benchmark.enabled, "Returning to the visible menu retries a failed download");
