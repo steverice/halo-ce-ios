@@ -25,6 +25,9 @@ char const *hud_hires_asset_tag(long asset);
 long hud_hires_asset_bitmap(long asset);
 long hud_hires_asset_fits(long asset, long width, long height);
 
+void hud_hires_preload(const long *assets, long count);
+void hud_hires_preload_reset(void);
+
 void hud_hires_tags_loaded(void);
 void hud_hires_tags_unloaded(void);
 long hud_hires_asset_at(unsigned long address, long width, long height);
@@ -53,6 +56,7 @@ void hud_hires_tags_loaded(
 	long asset_count = hud_hires_asset_count();
 	long asset;
 	long missing = 0;
+	long candidates[MAXIMUM_HIRES_BITMAPS];
 
 	hires_bitmap_count = 0;
 	for (asset = 0; asset < asset_count && hires_bitmap_count < MAXIMUM_HIRES_BITMAPS; asset++)
@@ -75,18 +79,21 @@ void hud_hires_tags_loaded(
 		{
 			hires_bitmaps[hires_bitmap_count].bitmap = bitmap;
 			hires_bitmaps[hires_bitmap_count].asset = asset;
+			candidates[hires_bitmap_count] = asset;
 			hires_bitmap_count++;
 		}
 	}
 	platform_log("high-res hud: %ld of %ld bitmaps in this map (%ld not in it)",
 		hires_bitmap_count, asset_count, missing);
 
+	hud_hires_preload(candidates, hires_bitmap_count);
 	return;
 }
 
 void hud_hires_tags_unloaded(
 	void)
 {
+	hud_hires_preload_reset();
 	hires_bitmap_count = 0;
 
 	return;

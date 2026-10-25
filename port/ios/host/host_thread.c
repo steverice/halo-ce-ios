@@ -200,3 +200,9 @@ int host_thread_create(uint32_t guest_thread, uint32_t stack_size)
 {
 	return host_native_thread_create(guest_thread_main, (void *)(uintptr_t)guest_thread, stack_size);
 }
+
+/* Used only by speculative decoding, never by game or audio workers. */
+void host_thread_background(void)
+{
+	pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0);
+}

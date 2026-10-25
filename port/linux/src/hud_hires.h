@@ -53,6 +53,10 @@ texture was drawn for (another language's maps, which have their own text,
 or modified ones) */
 long hud_hires_override_find(unsigned long address, unsigned long width, unsigned long height,
 	unsigned long level0_size);
+/* Map lifecycle, called on the rendering thread. Only copied candidate IDs
+ * and immutable embedded images are read by the background decoder. */
+void hud_hires_preload(const long *assets, long count);
+void hud_hires_preload_reset(void);
 /* its GL texture (decoded and uploaded, mipmapped, on first use; 0 if it
 could not be), and the number of its mip levels */
 unsigned int hud_hires_override_texture(long asset, unsigned long *levels);

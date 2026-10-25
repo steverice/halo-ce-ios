@@ -6,7 +6,9 @@ uploaded, and each one's GL texture.
 
 Which bitmap is at an address the game knows (from the loaded map's tags:
 port/linux/game/hud_hires_tags.c). Each texture is decoded from its PNG when
-first drawn and kept: up to 69 of the HUD's, about 225 MB with their mip
+needed and kept: common startup sheets decode ahead on a bounded worker;
+the rendering thread uploads them on first draw. Up to 69 of the HUD's
+textures take about 225 MB with their mip
 levels, though a game draws only some (the scopes' only when zoomed), and
 the titles of the menus shown, about 3 MB each (11 MB for the carnage
 report's, a whole panel).
@@ -28,14 +30,16 @@ the port's zlib (port/third_party/zlib: a menus folder's PNGs are anyone's).
 
 #include <stdlib.h>
 #include <string.h>
+#ifndef HALO_IOS
+#include <sys/resource.h>
+#endif
 
 /* the game's (port/linux/game/hud_hires_tags.c) */
 long hud_hires_asset_at(unsigned long address, long width, long height);
 
 #define MAXIMUM_TEXTURES 128
-/* a PNG's inflated rows and its texels, which are held at once: 128 MB for
-a 4096 by 4096 sheet (the largest shipped, 2048 by 2048, takes 32 MB), and
-no more for a small file that names a large size (a menus folder's) */
+/* Preserve the existing size admission limit for custom menu PNGs. Rows
+ * now reconstruct and compact in one allocation, halving full-image scratch. */
 #define MAXIMUM_DECODED_SIZE (192UL << 20)
 
 static struct
@@ -158,7 +162,7 @@ static unsigned char paeth(unsigned char left, unsigned char up, unsigned char u
 	return to_up <= to_up_left ? up : up_left;
 }
 
-/* the PNG's texels, RGBA in rows top first, and its size; NULL if it is not
+/* The PNG's texels, BGRA in rows top first, and its size; NULL if it is not
 one that tools/hud_assets.py writes */
 static unsigned char *png_decode(const unsigned char *data, unsigned long size, unsigned long *png_width,
 	unsigned long *png_height)
@@ -203,7 +207,7 @@ static unsigned char *png_decode(const unsigned char *data, unsigned long size, 
 		position += 12 + length;
 	}
 	filtered = compressed ? malloc(filtered_size) : NULL;
-	pixels = filtered ? malloc(stride * height) : NULL;
+	pixels = filtered;
 	if (!pixels)
 		goto failed;
 	result = uncompress(filtered, &inflated_size, compressed, compressed_size);
@@ -217,8 +221,8 @@ static unsigned char *png_decode(const unsigned char *data, unsigned long size, 
 	{
 		const unsigned char *line = filtered + row * (stride + 1) + 1;
 		unsigned char filter = line[-1];
-		unsigned char *out = pixels + row * stride;
-		const unsigned char *above = row ? out - stride : NULL;
+		unsigned char *out = filtered + row * (stride + 1) + 1;
+		const unsigned char *above = row ? out - stride - 1 : NULL;
 
 		if (filter > 4)
 			goto failed;
@@ -229,10 +233,8 @@ static unsigned char *png_decode(const unsigned char *data, unsigned long size, 
 		switch (filter)
 		{
 		case 0:
-			memcpy(out, line, stride);
 			break;
 		case 1:
-			memcpy(out, line, 4);
 			for (column = 4; column < stride; column++)
 				out[column] = (unsigned char)(line[column] + out[column - 4]);
 			break;
@@ -256,38 +258,43 @@ static unsigned char *png_decode(const unsigned char *data, unsigned long size, 
 			break;
 		}
 	}
+	/* Previous rows must stay RGBA until all filters have been reconstructed.
+	 * Compact forward only afterward; source and destination can overlap. */
+	for (row = 0; row < height; row++)
+	{
+		const unsigned char *line = filtered + row * (stride + 1) + 1;
+		unsigned char *out = pixels + row * stride;
+
+		for (column = 0; column < stride; column += 4)
+		{
+			unsigned char red = line[column], green = line[column + 1];
+			unsigned char blue = line[column + 2], alpha = line[column + 3];
+
+			out[column] = blue;
+			out[column + 1] = green;
+			out[column + 2] = red;
+			out[column + 3] = alpha;
+		}
+	}
 	free(compressed);
-	free(filtered);
 	return pixels;
 
 failed:
 	free(compressed);
 	free(filtered);
-	free(pixels);
 	return NULL;
 }
 
-unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned long *levels)
+static unsigned int png_upload(unsigned char *pixels, unsigned long width, unsigned long height,
+	unsigned long *levels)
 {
-	unsigned long width = 0, height = 0, largest, index, count;
-	unsigned char *pixels = png_decode(png, size, &width, &height);
+	unsigned long largest;
 	struct gpu_texture_description description = { 0 };
 	gpu_texture texture;
 
-	if (!pixels)
-		return 0;
 	*levels = 1;
 	for (largest = width > height ? width : height; largest > 1; largest >>= 1)
 		(*levels)++;
-	/* the PNG's RGBA as gpu.h's BGRA8 */
-	count = width * height;
-	for (index = 0; index < count; index++)
-	{
-		unsigned char red = pixels[index * 4];
-
-		pixels[index * 4] = pixels[index * 4 + 2];
-		pixels[index * 4 + 2] = red;
-	}
 	description.type = GPU_TEXTURE_2D;
 	description.format = GPU_FORMAT_BGRA8;
 	description.usage = GPU_USAGE_UPLOAD;
@@ -296,15 +303,186 @@ unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned
 	description.depth = 1;
 	description.levels = (uint32_t)*levels;
 	texture = gpu_texture_create(&description);
-	gpu_texture_upload(texture, 0, 0, pixels, (uint32_t)(count * 4));
+	if (!texture) return 0;
+	gpu_texture_upload(texture, 0, 0, pixels, (uint32_t)(width * height * 4));
 	gpu_texture_generate_mipmaps(texture, 0);
+	return texture;
+}
+
+unsigned int hud_hires_png_texture(const void *png, unsigned long size, unsigned long *levels)
+{
+	unsigned long width = 0, height = 0;
+	unsigned char *pixels = png_decode(png, size, &width, &height);
+	unsigned int texture = pixels ? png_upload(pixels, width, height, levels) : 0;
+
 	free(pixels);
 	return texture;
+}
+
+/* ---------- bounded startup decoding */
+
+#define PRELOAD_LIMIT (32UL << 20)
+/* Allow for one guest stack and a conservative zlib inflate workspace.
+ * Native stacks are reaped asynchronously after guest join; that runtime
+ * overhead can briefly overlap on map changes, outside the decoded buffers. */
+#define PRELOAD_STACK (1UL << 20)
+#define PRELOAD_INFLATE (256UL << 10)
+
+enum { PRELOAD_NONE, PRELOAD_PENDING, PRELOAD_DECODING, PRELOAD_READY };
+static struct
+{
+	int state;
+	unsigned char *pixels;
+	unsigned long width, height, bytes;
+} preload[MAXIMUM_TEXTURES];
+static pthread_mutex_t preload_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t preload_condition = PTHREAD_COND_INITIALIZER;
+static pthread_t preload_thread;
+static int preload_started, preload_stop;
+static unsigned long preload_bytes;
+
+#ifdef HALO_IOS
+void host_thread_background(void);
+int host_memory_available_megabytes(void);
+#endif
+
+/* These sheets were drawn at campaign startup. Scope/weapon variants and
+ * titles stay on demand rather than filling the cache with unused images. */
+static int preload_startup_asset(long asset)
+{
+	const struct hud_hires_embedded *image = &hud_hires_embedded[asset];
+	const char *name = strrchr(image->tag, '\\');
+
+	if (image->title || !name) return 0;
+	name++;
+	return ((!strcmp(name, "hud_reticles") || !strcmp(name, "hud_unit_meters")) && image->bitmap == 0) ||
+		(!strcmp(name, "hud_unit_backgrounds") &&
+			(image->bitmap == 0 || image->bitmap == 2 || image->bitmap == 6)) ||
+		(!strcmp(name, "hud_weapon_backgrounds") && image->bitmap == 3);
+}
+
+static void *preload_worker(void *unused)
+{
+	long asset;
+	(void)unused;
+#ifdef HALO_IOS
+	host_thread_background();
+#else
+	/* On Linux, priority zero names the calling thread. */
+	setpriority(PRIO_PROCESS, 0, 10);
+#endif
+	for (asset = 0; asset < hud_hires_asset_count(); asset++)
+	{
+		const struct hud_hires_embedded *image = &hud_hires_embedded[asset];
+		unsigned long width, height, bytes, scratch;
+		unsigned char *pixels;
+
+		pthread_mutex_lock(&preload_lock);
+		if (preload_stop) { pthread_mutex_unlock(&preload_lock); break; }
+		if (preload[asset].state != PRELOAD_PENDING)
+		{ pthread_mutex_unlock(&preload_lock); continue; }
+		/* Only embedded, dimension-checked sheets are speculative work. Charge
+		 * the filtered allocation even after its pixels have been compacted. */
+		if (image->png_size < 33 || image->png_size > PRELOAD_LIMIT ||
+			big_endian_long((const unsigned char *)image->png + 16) != image->width ||
+			big_endian_long((const unsigned char *)image->png + 20) != image->height)
+		{
+			preload[asset].state = PRELOAD_NONE;
+			pthread_mutex_unlock(&preload_lock);
+			continue;
+		}
+		width = image->width;
+		height = image->height;
+		bytes = width && width <= 8192 && height && height <= 8192 ? height * (width * 4 + 1) : PRELOAD_LIMIT;
+		scratch = image->png_size + PRELOAD_INFLATE;
+		if (bytes > PRELOAD_LIMIT || scratch > PRELOAD_LIMIT - bytes ||
+			preload_bytes > PRELOAD_LIMIT - bytes - scratch)
+		{
+			preload[asset].state = PRELOAD_NONE;
+			pthread_mutex_unlock(&preload_lock);
+			continue;
+		}
+		preload_bytes += bytes + scratch;
+		preload[asset].state = PRELOAD_DECODING;
+		pthread_mutex_unlock(&preload_lock);
+		pixels = png_decode((const unsigned char *)image->png, image->png_size, &width, &height);
+		pthread_mutex_lock(&preload_lock);
+		preload_bytes -= scratch;
+		if (preload_stop || !pixels)
+		{
+			free(pixels);
+			preload_bytes -= bytes;
+			preload[asset].state = PRELOAD_NONE;
+		}
+		else
+		{
+			preload[asset].pixels = pixels;
+			preload[asset].width = width;
+			preload[asset].height = height;
+			preload[asset].bytes = bytes;
+			preload[asset].state = PRELOAD_READY;
+		}
+		pthread_cond_broadcast(&preload_condition);
+		pthread_mutex_unlock(&preload_lock);
+	}
+	return NULL;
+}
+
+void hud_hires_preload_reset(void)
+{
+	long asset;
+
+	pthread_mutex_lock(&preload_lock);
+	preload_stop = 1;
+	pthread_cond_broadcast(&preload_condition);
+	pthread_mutex_unlock(&preload_lock);
+	/* Never hold the publication lock while joining. */
+	if (preload_started) pthread_join(preload_thread, NULL);
+	pthread_mutex_lock(&preload_lock);
+	for (asset = 0; asset < MAXIMUM_TEXTURES; asset++) free(preload[asset].pixels);
+	memset(preload, 0, sizeof(preload));
+	preload_started = preload_stop = 0;
+	preload_bytes = 0;
+	pthread_mutex_unlock(&preload_lock);
+}
+
+void hud_hires_preload(const long *assets, long count)
+{
+	long index, pending = 0;
+
+	hud_hires_preload_reset();
+	if (!config_boolean("display.high_res_hud")) return;
+#ifdef HALO_IOS
+	{
+		int available = host_memory_available_megabytes();
+		if (available >= 0 && available < 128) return;
+	}
+#endif
+	for (index = 0; index < count; index++)
+	{
+		long asset = assets[index];
+		if (asset >= 0 && asset < hud_hires_asset_count() && !textures[asset].texture &&
+			!textures[asset].failed && preload_startup_asset(asset))
+		{
+			preload[asset].state = PRELOAD_PENDING;
+			pending++;
+		}
+	}
+	if (pending)
+	{
+		preload_bytes = PRELOAD_STACK;
+		if (pthread_create(&preload_thread, NULL, preload_worker, NULL) == 0)
+			preload_started = 1;
+		else
+			hud_hires_preload_reset();
+	}
 }
 
 unsigned int hud_hires_override_texture(long asset, unsigned long *levels)
 {
 	const struct hud_hires_embedded *embedded;
+	unsigned char *pixels;
+	unsigned long bytes, width, height;
 
 	if (asset < 0 || asset >= hud_hires_asset_count() || textures[asset].failed)
 		return 0;
@@ -314,7 +492,28 @@ unsigned int hud_hires_override_texture(long asset, unsigned long *levels)
 		return textures[asset].texture;
 	}
 	embedded = &hud_hires_embedded[asset];
-	textures[asset].texture = hud_hires_png_texture(embedded->png, embedded->png_size, &textures[asset].levels);
+	pthread_mutex_lock(&preload_lock);
+	/* Demand never waits behind other images. Claim queued work immediately;
+	 * only an image already being decoded needs a wait. */
+	while (preload[asset].state == PRELOAD_DECODING)
+		pthread_cond_wait(&preload_condition, &preload_lock);
+	pixels = preload[asset].pixels;
+	bytes = preload[asset].bytes;
+	width = preload[asset].width;
+	height = preload[asset].height;
+	preload[asset].pixels = NULL;
+	preload[asset].state = PRELOAD_NONE;
+	pthread_mutex_unlock(&preload_lock);
+	if (pixels)
+	{
+		textures[asset].texture = png_upload(pixels, width, height, &textures[asset].levels);
+		free(pixels);
+		pthread_mutex_lock(&preload_lock);
+		preload_bytes -= bytes;
+		pthread_mutex_unlock(&preload_lock);
+	}
+	else
+		textures[asset].texture = hud_hires_png_texture(embedded->png, embedded->png_size, &textures[asset].levels);
 	if (!textures[asset].texture)
 	{
 		platform_log("high-res hud: could not decode the texture for %s bitmap %d", embedded->tag, embedded->bitmap);

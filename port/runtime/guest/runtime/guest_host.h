@@ -105,6 +105,8 @@ void host_set_tp(unsigned int thread);
 /* starts a host thread with a stack in guest memory that calls the image's
 __guest_thread_start(thread); returns 0 or an errno value */
 int host_thread_create(unsigned int thread, unsigned int stack_size);
+/* lowers only the calling speculative worker to background QoS */
+void host_thread_background(void);
 
 /* ---------- memory write tracking (port/linux/src/memory_watch.c) */
 
