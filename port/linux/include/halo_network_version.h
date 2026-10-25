@@ -48,7 +48,8 @@ static inline int halo_network_version_joinable(unsigned ours, unsigned theirs)
 {
 	if (theirs == ours)
 		return 1;
-	if (ours < theirs || theirs < HALO_PORT_NETWORK_OLDEST_JOINABLE || theirs >= HALO_PORT_NETWORK_VERSION)
+	if (ours < theirs || theirs < HALO_PORT_NETWORK_OLDEST_JOINABLE ||
+		theirs - HALO_PORT_NETWORK_OLDEST_JOINABLE >= 32u)
 		return 0;
 	return (HALO_NETWORK_JOINABLE_OLDER_MASK >> (theirs - HALO_PORT_NETWORK_OLDEST_JOINABLE)) & 1u;
 }
