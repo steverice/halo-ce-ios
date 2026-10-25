@@ -364,7 +364,9 @@ void host_texture_upscale_init(const char *root) {
         }
         if(!root||!bool_setting("debug.texture_upscale_generate","HALO_TEXTURE_UPSCALE_GENERATE")||!texture_upscale_model_available())return;
         upscale_enabled=YES;export_enabled=bool_setting("debug.texture_upscale_export","HALO_TEXTURE_UPSCALE_EXPORT");upscale_root=@(root);started=now();
-        upscale_worker=dispatch_queue_create("org.visr.texture-upscale",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
+        /* The development generator runs as the import phase will, at user-initiated priority; phase 3's scheduler
+           drops background work to utility. */
+        upscale_worker=dispatch_queue_create("org.visr.texture-upscale",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_USER_INITIATED,0));
         texture_log=[NSMutableDictionary new];thermal_log=[NSMutableArray new];
         [NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil];
         [[NSURL fileURLWithPath:cache_directory()] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
