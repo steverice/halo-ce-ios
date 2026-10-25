@@ -18,6 +18,7 @@
 #include <sys/statvfs.h>
 #include <sys/mman.h>
 #include <mach/mach.h>
+#include <malloc/malloc.h>
 #include <math.h>
 #include <errno.h>
 #include <unistd.h>
@@ -39,6 +40,13 @@ static struct texture_upscale_generator *generator;
 static uint32_t record_format;
 static uint64_t peak_footprint;
 static double started;
+static uint64_t footprint_before_model, generator_peak;
+static double last_texture_seconds;    /* when the last texture was finished, from the generator's start */
+static dispatch_queue_t finisher;    /* the second step of one texture at a time (texture_upscale_generate_end) */
+static uint64_t finisher_estimate;    /* the float top of the texture the finisher holds */
+#define OVERLAP_BUDGET (128ull<<20)
+static atomic_bool finisher_failed;
+static NSObject *state_token;    /* the manifest, texture_log and the files written from them */
 static BOOL catalog_ready;
 static NSString *priority_name,*sorting_priority;
 static atomic_uint priority_serial;
@@ -47,11 +55,13 @@ static NSString *key(uint64_t hash, uint32_t width, uint32_t height) {
     return [NSString stringWithFormat:@"%016llx-%ux%u",(unsigned long long)hash,width,height];
 }
 static double now(void) { return NSProcessInfo.processInfo.systemUptime; }
+/* The current footprint; peak_footprint keeps the process's ledger peak, which includes the app's own launch. */
 static uint64_t footprint(void) {
     task_vm_info_data_t info={0};mach_msg_type_number_t count=TASK_VM_INFO_COUNT;
     if(task_info(mach_task_self(),TASK_VM_INFO,(task_info_t)&info,&count)!=KERN_SUCCESS)return 0;
     peak_footprint=MAX(peak_footprint,(uint64_t)info.ledger_phys_footprint_peak);
-    return MAX((uint64_t)info.phys_footprint,(uint64_t)info.ledger_phys_footprint_peak);
+    generator_peak=MAX(generator_peak,(uint64_t)info.phys_footprint);
+    return info.phys_footprint;
 }
 static NSString *cache_directory(void) { return [upscale_root stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY]; }
 static const char *treatment_name(enum texture_policy_treatment value) {
@@ -62,7 +72,12 @@ static int bool_setting(const char *setting,const char *environment) {
     const char *override=getenv(environment);char value[32];host_config_string(setting,"false",value,sizeof(value));
     return !strcmp(override?override:value,"true")||!strcmp(override?override:value,"1");
 }
-static void save_log(void) {
+static NSDictionary *model_totals(void) {
+    struct texture_upscale_model_stats stats={0};if(generator)texture_upscale_generate_stats(generator,&stats);
+    return @{@"calls":@(stats.predictions),@"tiles":@(stats.tiles),@"neural_engine":@(stats.seconds),@"pack":@(stats.pack_seconds),
+        @"consume":@(stats.consume_seconds),@"footprint_before":@(stats.footprint_before),@"footprint_after":@(stats.footprint_after)};
+}
+static void save_log(void) {@synchronized(state_token){
     peak_footprint=MAX(peak_footprint,footprint());
     [thermal_log addObject:@{@"seconds":@(now()-started),@"state":@(NSProcessInfo.processInfo.thermalState)}];
     NSMutableDictionary *stage_totals=[NSMutableDictionary new];uint64_t ready=0,excluded=0;
@@ -72,11 +87,12 @@ static void save_log(void) {
         for(NSString *stage in row[@"stage_seconds"])stage_totals[stage]=@([stage_totals[stage] doubleValue]+[row[@"stage_seconds"][stage] doubleValue]);
     }
     NSDictionary *contents=@{@"textures":texture_log.allValues,@"thermal":thermal_log,
-        @"peak_footprint":@(peak_footprint),@"totals":@{@"textures":@(texture_log.count),@"catalog":@(decision_count),@"seconds":@(now()-started),@"ready":@(ready),@"excluded":@(excluded),@"stage_seconds":stage_totals}};
+        @"peak_footprint":@(peak_footprint),@"footprint_before_model":@(footprint_before_model),@"generator_peak":@(generator_peak),@"model":model_totals(),@"totals":@{@"textures":@(texture_log.count),@"catalog":@(decision_count),@"seconds":@(now()-started),@"last_texture_seconds":@(last_texture_seconds),@"ready":@(ready),@"excluded":@(excluded),@"stage_seconds":stage_totals}};
     NSData *data=[NSJSONSerialization dataWithJSONObject:contents options:NSJSONWritingPrettyPrinted error:nil];
     [data writeToFile:[upscale_root stringByAppendingPathComponent:@"texture-upscale-generate.json"] options:NSDataWritingAtomic error:nil];
 }
-static void export_table(void) {
+}
+static void export_table(void) {@synchronized(state_token){
     if(!export_enabled)return;
     NSMutableString *table=[NSMutableString stringWithString:@"hash\twidth\theight\tkind\tresult\ttreatment\tscale\tdamage_share\tstructure_loss\n"];
     for(size_t i=0;i<decision_count;i++) {
@@ -88,6 +104,7 @@ static void export_table(void) {
     NSString *folder=[upscale_root stringByAppendingPathComponent:@"texture-upscale-export"];
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
     [table writeToFile:[folder stringByAppendingPathComponent:@"policy.tsv"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
 }
 static int collect_map(void *context,const char *path) { (void)context;[map_paths addObject:@(path)];return 1; }
 static BOOL build_catalog(void) {
@@ -185,13 +202,14 @@ static NSArray *half_offset_scores(const struct texture_upscale_generate_input *
     for(unsigned c=0;c<channels;c++)[scores addObject:@(sums[c]==0?99:fmin(99,10*log10(values/sums[c])))];
     return scores;
 }
-static void log_texture_error(const struct texture_policy_decision *d,const char *stage,const char *message,double elapsed) {
+static void log_texture_error(const struct texture_policy_decision *d,const char *stage,const char *message,double elapsed) {@synchronized(state_token){
     texture_log[key(d->hash,d->width,d->height)]=@{@"hash":[NSString stringWithFormat:@"%016llx",(unsigned long long)d->hash],
         @"width":@(d->width),@"height":@(d->height),@"kind":@(texture_policy_kind_name(d->kind)),
         @"treatment":@(treatment_name(d->treatment)),@"result":@(texture_policy_result_name(d->result)),@"scale":@(d->scale),
         @"result_status":@"error",@"failed_stage":@(stage),@"error":@(message),@"stage_seconds":@{@"total":@(elapsed)},
         @"damage_share":@(-1),@"structure_loss":@(-1)};
     save_log();export_table();
+}
 }
 /* Every core, at most eight; half of them from serious thermal state on. */
 static unsigned encoder_threads(void) {
@@ -217,18 +235,24 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     struct texture_recipe recipe={d->hash,d->width,d->height,d->result,d->treatment,d->wrap,dilate,alpha,d->scale};
     struct texture_cache_record desired={d->hash,d->width,d->height,d->result,d->treatment,
         texture_recipe_key(&globals,&recipe),texture_recipe_global_key(&globals,d->treatment,d->result),0};
-    struct texture_cache_record *previous=find_record(d);
-    /* An export redoes a cached texture once per launch, not on every pass a thermal or foreground change starts. */
-    BOOL exported=export_enabled&&texture_log[key(d->hash,d->width,d->height)]!=nil;
-    if(previous&&previous->recipe_key==desired.recipe_key&&previous->global_key==desired.global_key&&valid_record(previous)&&(!export_enabled||exported))return 0;
+    BOOL current=NO,exported=NO;
+    @synchronized(state_token){
+        struct texture_cache_record *previous=find_record(d);
+        current=previous&&previous->recipe_key==desired.recipe_key&&previous->global_key==desired.global_key&&valid_record(previous);
+        /* An export redoes a cached texture once per launch, not on every pass a thermal or foreground change starts. */
+        exported=export_enabled&&texture_log[key(d->hash,d->width,d->height)]!=nil;
+    }
+    if(current&&(!export_enabled||exported))return 0;
     uint64_t top_width=(uint64_t)d->width*d->scale,top_height=(uint64_t)d->height*d->scale;
     unsigned channels=alpha!=TEXTURE_UPSCALE_ALPHA_NONE||d->treatment==TEXTURE_POLICY_MULTIPURPOSE?4:3;
     if((uint64_t)d->width*d->height>(1024ull*1024)||top_width>TEXTURE_RECORD_MAXIMUM_DIMENSION||top_height>TEXTURE_RECORD_MAXIMUM_DIMENSION||
         top_width*top_height*channels*sizeof(float)>(256ull<<20)) {
-        desired.result=TEXTURE_POLICY_ORIGINAL;context->failed=!publish_record(&desired);
+        desired.result=TEXTURE_POLICY_ORIGINAL;
+        @synchronized(state_token){context->failed=!publish_record(&desired);
         texture_log[key(d->hash,d->width,d->height)]=@{@"hash":[NSString stringWithFormat:@"%016llx",(unsigned long long)d->hash],
             @"width":@(d->width),@"height":@(d->height),@"kind":@(texture_policy_kind_name(d->kind)),@"result":@"original",@"scale":@1,
             @"treatment":@(treatment_name(d->treatment)),@"result_status":@"working-set-excluded",@"damage_share":@(-1),@"structure_loss":@(-1)};
+        }
         host_logf(HOST_LOG_WARN,"Upscale %016llx: output exceeds the bounded working set",(unsigned long long)d->hash);
         save_log();export_table();return 0;
     }
@@ -238,56 +262,92 @@ static int generate_source(void *opaque,const struct host_texture_source *source
         host_logf(HOST_LOG_WARN,"Upscale: insufficient storage for %016llx",(unsigned long long)d->hash);
         log_texture_error(d,"storage","insufficient free storage",0);context->failed=YES;return 0;
     }
-    struct texture_upscale_rgba_level levels[13];uint32_t width=d->width,height=d->height;
-    for(unsigned i=0;i<source->level_count;i++){levels[i]=(struct texture_upscale_rgba_level){source->rgba+source->level_offsets[i],width,height};width=MAX(1u,width/2);height=MAX(1u,height/2);}
+    /* The walk's source is valid only during this call; the job keeps its own copy until the finisher is done. */
+    size_t source_bytes=0;
+    {uint32_t w=d->width,h=d->height;for(unsigned i=0;i<source->level_count;i++){source_bytes+=(size_t)w*h*4;w=MAX(1u,w/2);h=MAX(1u,h/2);}}
+    uint8_t *owned=malloc(source_bytes?source_bytes:1);struct texture_upscale_rgba_level *levels=calloc(source->level_count?source->level_count:1,sizeof(*levels));
+    if(!owned||!levels){free(owned);free(levels);log_texture_error(d,"generate","could not copy the source levels",0);context->failed=YES;return 0;}
+    {uint32_t w=d->width,h=d->height;size_t offset=0;
+        for(unsigned i=0;i<source->level_count;i++){memcpy(owned+offset,source->rgba+source->level_offsets[i],(size_t)w*h*4);
+            levels[i]=(struct texture_upscale_rgba_level){owned+offset,w,h};offset+=(size_t)w*h*4;w=MAX(1u,w/2);h=MAX(1u,h/2);}}
     struct texture_upscale_generate_input input={*d,policy,levels,source->level_count,alpha,d->wrap,dilate,d->pinned};
-    struct texture_upscale_generate_output output={0};char error[512]={0};double start=now();
-    if(!generator)generator=texture_upscale_generate_create(error,sizeof(error));
-    if(!generator||texture_upscale_generate(generator,&input,&output,error,sizeof(error))){
+    char error[512]={0};double start=now();
+    if(!generator){footprint_before_model=footprint();generator=texture_upscale_generate_create(error,sizeof(error));}
+    /* Two textures overlap only while both float tops fit in OVERLAP_BUDGET together, so the peak is set by the
+       largest texture alone; before a large one, freed memory goes back to the system. */
+    uint64_t estimate=(uint64_t)d->width*d->height*d->scale*d->scale*16;
+    if(estimate+finisher_estimate>OVERLAP_BUDGET){dispatch_sync(finisher,^{});malloc_zone_pressure_relief(NULL,0);}
+    struct texture_upscale_job *job=NULL;
+    if(!generator||texture_upscale_generate_begin(generator,&input,&job,error,sizeof(error))){
         peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
-        host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);context->failed=YES;return 0;
+        host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);context->failed=YES;free(owned);free(levels);return 0;
     }
-    struct texture_upscale_encode_metrics metrics={0};void *bytes=NULL;size_t size=0;double encode_start=now();
-    enum texture_upscale_encode_result encoded=TEXTURE_UPSCALE_ENCODE_OK;
-    if(output.result!=TEXTURE_POLICY_ORIGINAL)encoded=texture_upscale_encode_record(output.levels,output.level_count,d->width,d->height,d->hash,
-        desired.recipe_key,record_format,(unsigned)alpha|(d->treatment==TEXTURE_POLICY_BUMP_MAP?TEXTURE_UPSCALE_ENCODE_NORMALS:0),encoder_threads(),&bytes,&size,&metrics);
-    double encode_seconds=now()-encode_start;BOOL excluded=encoded==TEXTURE_UPSCALE_ENCODE_EXCLUDED;
-    if(encoded==TEXTURE_UPSCALE_ENCODE_ERROR){peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"encode","encoder failed",now()-start);context->failed=YES;texture_upscale_generate_free_output(&output);return 0;}
-    desired.result=excluded?TEXTURE_POLICY_ORIGINAL:output.result;desired.bytes=size;
-    double write_start=now();
-    if(size&&texture_cache_write_entry(cache_directory().fileSystemRepresentation,&desired,bytes,size))context->failed=YES;
-    if(!context->failed&&!publish_record(&desired))context->failed=YES;
-    if(export_enabled&&output.level_count){
-        NSString *folder=[upscale_root stringByAppendingPathComponent:@"texture-upscale-export"];
-        [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
-        uint32_t header[3]={output.levels[0].width,output.levels[0].height,1};
-        NSString *path=[folder stringByAppendingPathComponent:[NSString stringWithFormat:@"%016llx.rgba",(unsigned long long)d->hash]];
-        NSString *temporary=[path stringByAppendingString:@".tmp"];FILE *file=fopen(temporary.fileSystemRepresentation,"wb");
-        if(file){BOOL ok=fwrite(header,1,sizeof(header),file)==sizeof(header)&&fwrite(output.levels[0].pixels,4,(size_t)header[0]*header[1],file)==(size_t)header[0]*header[1];
-            ok=fclose(file)==0&&ok;if(ok)rename(temporary.fileSystemRepresentation,path.fileSystemRepresentation);else unlink(temporary.fileSystemRepresentation);}
-
-    }
-    struct texture_upscale_model_stats stats={0};texture_upscale_generate_stats(generator,&stats);peak_footprint=MAX(peak_footprint,stats.peak_footprint);
-    texture_log[key(d->hash,d->width,d->height)]=@{@"hash":[NSString stringWithFormat:@"%016llx",(unsigned long long)d->hash],@"width":@(d->width),@"height":@(d->height),
-        @"kind":@(texture_policy_kind_name(d->kind)),@"result":@(texture_policy_result_name(desired.result)),@"treatment":@(treatment_name(d->treatment)),
-        @"scale":@(desired.result==TEXTURE_POLICY_ORIGINAL?1:output.scale),@"format":metrics.raw?@"bgra8":record_format==TEXTURE_RECORD_BC7?@"bc7":@"astc4x4",@"alpha_psnr":@(isfinite(metrics.alpha_psnr)?metrics.alpha_psnr:999),@"mean_angle":@(metrics.mean_angle),
-        @"stage_seconds":@{@"predict":@(output.seconds.predict),@"refine":@(output.seconds.refine),@"damage":@(output.seconds.damage),@"bump":@(output.seconds.bump),@"mips":@(output.seconds.mips),@"encode":@(encode_seconds),@"write":@(now()-write_start),@"total":@(now()-start)},
-        @"psnr":@(isfinite(metrics.rgb_psnr)?metrics.rgb_psnr:999),@"binary_alpha_max_error":@(metrics.binary_alpha_max_error),@"psnr_mask":@"alpha>0",
-        @"compression_gate":@(!excluded),@"encoder_attempts":@(metrics.attempts),@"encoder_preset":@(metrics.preset),@"result_status":context->failed?@"write-error":excluded?@"compression-excluded":metrics.raw?@"complete-raw":@"complete",
-        @"damage_share":@(output.damage_share),@"structure_loss":@(output.structure_loss_s4g),
-        @"shape":@{@"width":@(stats.input_width),@"height":@(stats.input_height),@"footprint_before":@(stats.footprint_before),@"footprint_after":@(stats.footprint_after)}};
-    host_logf(HOST_LOG_INFO,"Upscale %016llx: %s, damage %.4f in %.3fs, compression %.2f dB",(unsigned long long)d->hash,
-        context->failed?"write failed":excluded?"kept original":"complete",output.damage_share,output.seconds.damage,metrics.rgb_psnr);
-    free(bytes);texture_upscale_generate_free_output(&output);
-    if(export_enabled&&input.wrap&&!context->failed) {
-        double seam_start=now();NSArray *scores=half_offset_scores(&input,error,sizeof(error));
-        NSMutableDictionary *row=[texture_log[key(d->hash,d->width,d->height)] mutableCopy];
-        if(scores){row[@"half_offset_psnr"]=scores;row[@"half_offset_stage"]=@"raw4x";}
-        else {row[@"seam_error"]=@(error[0]?error:"half-offset prediction failed");host_logf(HOST_LOG_WARN,"Upscale seam %016llx: %s",(unsigned long long)d->hash,error);}
-        NSMutableDictionary *times=[row[@"stage_seconds"] mutableCopy];times[@"seam"]=@(now()-seam_start);row[@"stage_seconds"]=times;
-        texture_log[key(d->hash,d->width,d->height)]=row;
-    }
-    save_log();export_table();return 0;
+    double begun=now();
+    /* One texture's CPU work, encode and publication run on the finisher while the walk goes on to predict the next. */
+    dispatch_sync(finisher,^{});
+    finisher_estimate=estimate;
+    struct texture_policy_decision decision=*d;
+    dispatch_async(finisher,^{@autoreleasepool {
+        const struct texture_policy_decision *d=&decision;
+        struct texture_cache_record record=desired;
+        struct texture_upscale_generate_input job_input=input;
+        struct texture_upscale_generate_output output={0};char error[512]={0};
+        BOOL failed=NO;
+        double end_start=now();
+        if(texture_upscale_generate_end(generator,job,&output,error,sizeof(error))){
+            peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
+            host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);atomic_store(&finisher_failed,true);free(owned);free(levels);return;
+        }
+        struct texture_upscale_encode_metrics metrics={0};void *bytes=NULL;size_t size=0;double encode_start=now();
+        enum texture_upscale_encode_result encoded=TEXTURE_UPSCALE_ENCODE_OK;
+        if(output.result!=TEXTURE_POLICY_ORIGINAL)encoded=texture_upscale_encode_record(output.levels,output.level_count,d->width,d->height,d->hash,
+            record.recipe_key,record_format,(unsigned)alpha|(d->treatment==TEXTURE_POLICY_BUMP_MAP?TEXTURE_UPSCALE_ENCODE_NORMALS:0),encoder_threads(),&bytes,&size,&metrics);
+        uint64_t encoded_footprint=footprint();
+        NSString *steps=[NSString stringWithFormat:@"%s encoded %llu",texture_upscale_generate_trace(generator),(unsigned long long)(encoded_footprint>>20)];
+        double encode_seconds=now()-encode_start;BOOL excluded=encoded==TEXTURE_UPSCALE_ENCODE_EXCLUDED;
+        if(encoded==TEXTURE_UPSCALE_ENCODE_ERROR){peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"encode","encoder failed",now()-start);atomic_store(&finisher_failed,true);texture_upscale_generate_free_output(&output);free(owned);free(levels);return;}
+        record.result=excluded?TEXTURE_POLICY_ORIGINAL:output.result;record.bytes=size;
+        double write_start=now();
+        if(size&&texture_cache_write_entry(cache_directory().fileSystemRepresentation,&record,bytes,size))failed=YES;
+        @synchronized(state_token){if(!failed&&!publish_record(&record))failed=YES;}
+        if(export_enabled&&output.level_count){
+            NSString *folder=[upscale_root stringByAppendingPathComponent:@"texture-upscale-export"];
+            [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
+            uint32_t header[3]={output.levels[0].width,output.levels[0].height,1};
+            NSString *path=[folder stringByAppendingPathComponent:[NSString stringWithFormat:@"%016llx.rgba",(unsigned long long)d->hash]];
+            NSString *temporary=[path stringByAppendingString:@".tmp"];FILE *file=fopen(temporary.fileSystemRepresentation,"wb");
+            if(file){BOOL ok=fwrite(header,1,sizeof(header),file)==sizeof(header)&&fwrite(output.levels[0].pixels,4,(size_t)header[0]*header[1],file)==(size_t)header[0]*header[1];
+                ok=fclose(file)==0&&ok;if(ok)rename(temporary.fileSystemRepresentation,path.fileSystemRepresentation);else unlink(temporary.fileSystemRepresentation);}
+        }
+        struct texture_upscale_model_stats stats={0};texture_upscale_generate_stats(generator,&stats);
+        NSDictionary *row=@{@"hash":[NSString stringWithFormat:@"%016llx",(unsigned long long)d->hash],@"width":@(d->width),@"height":@(d->height),
+            @"kind":@(texture_policy_kind_name(d->kind)),@"result":@(texture_policy_result_name(record.result)),@"treatment":@(treatment_name(d->treatment)),
+            @"scale":@(record.result==TEXTURE_POLICY_ORIGINAL?1:output.scale),@"format":metrics.raw?@"bgra8":record_format==TEXTURE_RECORD_BC7?@"bc7":@"astc4x4",@"alpha_psnr":@(isfinite(metrics.alpha_psnr)?metrics.alpha_psnr:999),@"mean_angle":@(metrics.mean_angle),
+            @"stage_seconds":@{@"predict":@(output.seconds.predict),@"refine":@(output.seconds.refine),@"damage":@(output.seconds.damage),@"bump":@(output.seconds.bump),@"mips":@(output.seconds.mips),@"encode":@(encode_seconds),@"write":@(now()-write_start),
+                @"begin":@(begun-start),@"end":@(encode_start-end_start),@"total":@(now()-start)},
+            @"psnr":@(isfinite(metrics.rgb_psnr)?metrics.rgb_psnr:999),@"binary_alpha_max_error":@(metrics.binary_alpha_max_error),@"psnr_mask":@"alpha>0",
+            @"compression_gate":@(!excluded),@"encoder_attempts":@(metrics.attempts),@"encoder_preset":@(metrics.preset),@"result_status":failed?@"write-error":excluded?@"compression-excluded":metrics.raw?@"complete-raw":@"complete",
+            @"damage_share":@(output.damage_share),@"structure_loss":@(output.structure_loss_s4g),
+            @"footprint_peak":@(MAX(stats.texture_peak,encoded_footprint)),@"footprint_steps":steps};
+        host_logf(HOST_LOG_INFO,"Upscale %016llx: %s, damage %.4f in %.3fs, compression %.2f dB",(unsigned long long)d->hash,
+            failed?"write failed":excluded?"kept original":"complete",output.damage_share,output.seconds.damage,metrics.rgb_psnr);
+        free(bytes);texture_upscale_generate_free_output(&output);
+        if(export_enabled&&job_input.wrap&&!failed) {
+            double seam_start=now();NSArray *scores=half_offset_scores(&job_input,error,sizeof(error));
+            NSMutableDictionary *seam=[row mutableCopy];
+            if(scores){seam[@"half_offset_psnr"]=scores;seam[@"half_offset_stage"]=@"raw4x";}
+            else {seam[@"seam_error"]=@(error[0]?error:"half-offset prediction failed");host_logf(HOST_LOG_WARN,"Upscale seam %016llx: %s",(unsigned long long)d->hash,error);}
+            NSMutableDictionary *times=[seam[@"stage_seconds"] mutableCopy];times[@"seam"]=@(now()-seam_start);seam[@"stage_seconds"]=times;
+            row=seam;
+        }
+        if(failed)atomic_store(&finisher_failed,true);
+        free(owned);free(levels);
+        if(estimate>=(32ull<<20))malloc_zone_pressure_relief(NULL,0);
+        finisher_estimate=0;
+        @synchronized(state_token){peak_footprint=MAX(peak_footprint,stats.peak_footprint);generator_peak=MAX(generator_peak,stats.sampled_peak);
+            last_texture_seconds=now()-started;texture_log[key(d->hash,d->width,d->height)]=row;save_log();export_table();}
+    }});
+    return 0;
 }
 static BOOL thermal_may_run(void) {
     NSProcessInfoThermalState state=NSProcessInfo.processInfo.thermalState;
@@ -298,6 +358,7 @@ static BOOL thermal_may_run(void) {
 struct map_generation_context { unsigned serial; BOOL failed; };
 static int generate_map_source(void *opaque,const struct host_texture_source *source) {
     struct map_generation_context *map=opaque;
+    if(atomic_load(&finisher_failed)){map->failed=YES;return 0;}
     if(atomic_load(&upscale_playing)||!thermal_may_run()||atomic_load(&scan_pending)||map->serial!=atomic_load(&priority_serial))return 0;
     NSString *name=key(source->hash,source->width,source->height);NSNumber *slot=decision_slots[name];
     if(!slot||[pass_hashes containsObject:name])return 1;
@@ -314,6 +375,7 @@ static void pump(void) {
         NSMutableArray<NSString *> *ordered=nil;
         atomic_store(&pump_requested,false);
         if(atomic_load(&upscale_playing)||!thermal_may_run())goto done;
+        atomic_store(&finisher_failed,false);
         if(atomic_exchange(&scan_pending,false))catalog_ready=NO;
         if(!catalog_ready){catalog_ready=build_catalog();if(!catalog_ready)goto done;if(!reconcile_manifest()){catalog_ready=NO;goto done;}}
         unsigned serial=atomic_load(&priority_serial);
@@ -333,6 +395,7 @@ static void pump(void) {
             if(result<0)host_logf(HOST_LOG_WARN,"Upscale: malformed source map");
             if(result!=1||context.failed)break;
         }}
+        dispatch_sync(finisher,^{});
         pass_hashes=nil;
         export_table();save_log();
     done:
@@ -367,6 +430,8 @@ void host_texture_upscale_init(const char *root) {
         /* The development generator runs as the import phase will, at user-initiated priority; phase 3's scheduler
            drops background work to utility. */
         upscale_worker=dispatch_queue_create("org.visr.texture-upscale",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_USER_INITIATED,0));
+        finisher=dispatch_queue_create("org.visr.texture-upscale.finish",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_USER_INITIATED,0));
+        state_token=[NSObject new];
         texture_log=[NSMutableDictionary new];thermal_log=[NSMutableArray new];
         [NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil];
         [[NSURL fileURLWithPath:cache_directory()] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
