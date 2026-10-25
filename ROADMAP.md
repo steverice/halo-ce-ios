@@ -9,6 +9,7 @@ Planned releases, which may change. The sections below list every item.
 - [ ] AI-upscaled textures, generated on the device at import
 - [ ] MetalFX temporal upscaling and anti-aliasing
 - [ ] A CPU profiling build, and fixes for the CPU costs it finds in large multiplayer games
+- [ ] Dynamic resolution, feeding the temporal upscaler
 - [ ] Multiplayer player limits in device profiles
 
 ### 0.7.0: device experience
