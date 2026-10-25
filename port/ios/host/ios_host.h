@@ -4,6 +4,8 @@
 #include "host.h"
 #include <stdint.h>
 extern uintptr_t host_arena;
+extern uint64_t host_arena_size;   /* 4 GiB, or the shorter reservation used when that is refused */
+extern int host_arena_try_full;    /* tests set 0 to take the shorter reservation */
 static inline void *host_pointer(uint64_t p) { return p ? (void *)(host_arena | (uint32_t)p) : NULL; }
 static inline uint32_t guest_pointer(const void *p) { return (uint32_t)(uintptr_t)p; }
 uint32_t host_ios_default_framebuffer(void);

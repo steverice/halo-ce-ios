@@ -20,8 +20,13 @@ static void *writer(void *arg) {
     unsigned n=0;while(!__atomic_load_n(&finished,__ATOMIC_RELAXED))*p=++n;
     return NULL;
 }
-int main(void) {
-    if(host_memory_initialize(0,0))return 1;
+int main(int argc,char **argv) {
+    int reduced=argc>1&&!strcmp(argv[1],"reduced");
+    if(reduced)host_arena_try_full=0;
+    if(host_memory_initialize(0,0x8a70b000u))return 1;
+    if(reduced?host_arena_size!=0x8b000000ull:host_arena_size!=0x100000000ull)return 30;
+    if(!host_low_owns((uintptr_t)host_pointer(0x8a000000u),4))return 31;
+    if(reduced&&host_low_owns((uintptr_t)host_pointer(0x8c000000u),4))return 32;
     host_install_signal_handlers();host_memory_watch_initialize();
     /* Reproduce the map inflater's writable 4 KB tail beside a read-only
        buffer. The boundary Apple page must remain writable. */

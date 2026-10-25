@@ -53,16 +53,38 @@ static void arena_report(void) {
     }
 }
 
+/* Set to 0 by a test to exercise the shorter reservation. */
+int host_arena_try_full = 1;
+uint64_t host_arena_size;
+
+/* The guest image ends near 0x8A70B000, so a reservation of about 2.2 GiB covers
+   every address the guest uses. A device that refuses 4 GiB (first seen on an
+   Apple TV HD) may still give this much. Guest pointers keep their values either
+   way; with the shorter range, a stray guest pointer above its end no longer
+   faults inside the arena. Approach from CoreCE PR #1 (CC0). */
+#define ARENA_MINIMUM_END 0x8B000000ull
+
 int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
-    (void)image_base; (void)image_size;
+    uint64_t short_size = (uint64_t)image_base + image_size;
+    short_size = (short_size + 0xffffffull) & ~0xffffffull;
+    if (short_size < ARENA_MINIMUM_END) short_size = ARENA_MINIMUM_END;
     vm_address_t arena = 0;
-    kern_return_t result = vm_map(mach_task_self(), &arena, 0x100000000ull, 0xffffffffull,
-        VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE);
+    uint64_t size = 0x100000000ull;
+    kern_return_t result = host_arena_try_full ? vm_map(mach_task_self(), &arena, size, 0xffffffffull,
+        VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE) : KERN_FAILURE;
     if (result != KERN_SUCCESS || (arena & 0xffffffffull)) {
-        host_logf(HOST_LOG_ERROR,"cannot reserve aligned guest arena: %d",result);
-        arena_report();
-        return -1;
+        if (host_arena_try_full) host_logf(HOST_LOG_WARN,"cannot reserve the 4 GB guest arena (%d); trying %llu MB",result,(unsigned long long)(short_size>>20));
+        arena = 0; size = short_size;
+        result = vm_map(mach_task_self(), &arena, size, 0xffffffffull,
+            VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE);
+        if (result != KERN_SUCCESS || (arena & 0xffffffffull)) {
+            host_logf(HOST_LOG_ERROR,"cannot reserve aligned guest arena: %d",result);
+            arena_report();
+            return -1;
+        }
     }
+    host_arena_size = size;
+    host_logf(HOST_LOG_INFO,"guest arena size %llu MB%s",(unsigned long long)(size>>20),size==0x100000000ull?"":" (reduced)");
     host_arena = arena;
     if (mprotect(host_pointer(HALO_GUEST_WINDOW_BASE),HALO_GUEST_WINDOW_SIZE,PROT_READ|PROT_WRITE)) return -1;
     host_logf(HOST_LOG_INFO,"guest arena at %llx, native pages %d",(unsigned long long)arena,getpagesize());
@@ -114,7 +136,7 @@ uint32_t host_memory_physical_megabytes(void) {
     return (uint32_t)(memory>>20);
 }
 int host_low_owns(uintptr_t p,size_t n) {
-    return host_arena && p>=host_arena && p-host_arena+n<=0x100000000ull;
+    return host_arena && p>=host_arena && p-host_arena+n<=host_arena_size;
 }
 
 static int guest_range_valid(uint64_t address,uint64_t size) {
