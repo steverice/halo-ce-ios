@@ -819,10 +819,17 @@ size_t texture_policy_classify(struct texture_policy_catalog *c, const struct te
 	for (i = 0; i < c->count; i++)
 		if (c->entries[i].has_hash)
 		{
+			const struct entry *e = &c->entries[i];
 			struct texture_policy_decision *d = &(*out)[n++];
+			const char **tags = malloc((e->tag_count ? e->tag_count : 1) * sizeof(*tags));
 
-			d->hash = c->entries[i].hash; d->width = c->entries[i].width; d->height = c->entries[i].height;
-			d->kind = kinds[i]; d->result = results[i]; d->treatment = c->entries[i].treatment;
+			d->hash = e->hash; d->width = e->width; d->height = e->height;
+			d->kind = kinds[i]; d->result = results[i]; d->treatment = e->treatment;
+			for (j = 0; tags && j < e->tag_count; j++)
+				tags[j] = e->tags[j].tag;
+			d->scale = texture_policy_scale(t, d->kind, d->result, d->treatment, d->hash, d->width, d->height,
+				tags, tags ? e->tag_count : 0);
+			free(tags);
 		}
 	qsort(*out, n, sizeof(**out), by_key);
 done:
@@ -831,6 +838,25 @@ done:
 	free(kinds);
 	free(decided);
 	return n;
+}
+
+uint32_t texture_policy_scale(const struct texture_policy_table *t, enum texture_policy_kind kind,
+	enum texture_policy_result result, enum texture_policy_treatment treatment, uint64_t hash, uint32_t width,
+	uint32_t height, const char *const *tags, size_t tag_count)
+{
+	uint32_t scale = treatment == TEXTURE_POLICY_FIRST_PERSON ? t->scale_first_person : t->scale_base;
+	int doubled = (t->doubled_kinds >> kind & 1u) || (t->doubled_treatments >> treatment & 1u);
+	size_t i, j;
+
+	if (result == TEXTURE_POLICY_ORIGINAL || kind == TEXTURE_POLICY_KIND_ORIGINAL)
+		return 1;
+	for (i = 0; i < t->doubled_texture_count && !doubled; i++)
+		doubled = t->doubled_textures[i].hash == hash && t->doubled_textures[i].width == width &&
+			t->doubled_textures[i].height == height;
+	for (i = 0; i < t->doubled_tag_count && !doubled; i++)
+		for (j = 0; j < tag_count && !doubled; j++)
+			doubled = same_text(tags[j], t->doubled_tags[i]);
+	return doubled ? scale * 2 : scale;
 }
 
 const char *texture_policy_result_name(enum texture_policy_result result)

@@ -29,7 +29,7 @@ struct texture_recipe
 	enum texture_policy_treatment treatment;
 	int wrap, dilates;
 	int alpha;                         /* 0 none, 1 binary, 2 graded */
-	uint32_t scale;                    /* 2, or 4 for first-person paths */
+	uint32_t scale;                    /* 2, 4 or 8: texture_policy_decision.scale */
 };
 struct texture_cache_record
 {
@@ -74,7 +74,7 @@ enum texture_cache_level_start
 	TEXTURE_CACHE_UPSCALE_FIRST,       /* the blocking screen ("Upscaling assets", press A to skip) */
 	TEXTURE_CACHE_LOW_STORAGE          /* the notice, then the level plays original */
 };
-/* new levels only: the 2x level, plus the 4x level for scale 4 */
+/* new levels only: the 2x level, plus the 4x level for scale 4 and both for scale 8 */
 uint64_t texture_cache_entry_bytes(uint32_t width, uint32_t height, uint32_t scale, uint32_t bits_per_texel);
 /* free storage covers the missing bytes plus TEXTURE_CACHE_FLOOR_SLACK */
 int texture_cache_floor_ok(uint64_t free_bytes, uint64_t missing_bytes);

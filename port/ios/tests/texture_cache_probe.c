@@ -152,6 +152,7 @@ static void storage(void)
 
 	assert(texture_cache_entry_bytes(256, 256, 2, 32) == 512ull * 512 * 4);
 	assert(texture_cache_entry_bytes(256, 256, 4, 32) == (1024ull * 1024 + 512ull * 512) * 4);
+	assert(texture_cache_entry_bytes(256, 256, 8, 32) == (2048ull * 2048 + 1024ull * 1024 + 512ull * 512) * 4);
 	assert(texture_cache_entry_bytes(256, 256, 2, 8) == 512ull * 512);           /* BC3 or ASTC 4x4: a byte per texel */
 	assert(texture_cache_floor_ok(TEXTURE_CACHE_FLOOR_SLACK + 100, 100));
 	assert(!texture_cache_floor_ok(TEXTURE_CACHE_FLOOR_SLACK + 99, 100));

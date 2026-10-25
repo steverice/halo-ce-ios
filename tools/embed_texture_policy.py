@@ -56,6 +56,51 @@ def material_values(source: Path, raw: dict, lines: list[str]) -> str:
     return f"{array('material_names', names, lines)}, {RESULTS[result]}"
 
 
+KINDS = ["graphic", "surface", "companion", "bump", "original"]          # enum texture_policy_kind
+TREATMENTS = ["skip", "color", "first-person", "emissive", "multipurpose", "bump"]   # enum texture_policy_treatment
+SCALES = {1, 2, 4, 8}
+SCALE_FIELDS = {"base", "first_person", "doubled"}
+DOUBLED_FIELDS = {"kinds", "treatments", "tags", "textures", "reason"}
+
+
+def scale_values(source: Path, scales, lines: list[str]) -> str:
+    """"scales" as the table's last eight fields"""
+    def fail(problem):
+        raise SystemExit(f"embed_texture_policy: {source}: scales {problem}")
+    if not isinstance(scales, dict) or set(scales) != SCALE_FIELDS:
+        fail(f"needs exactly {sorted(SCALE_FIELDS)}")
+    base, first_person, doubled = scales["base"], scales["first_person"], scales["doubled"]
+    for name, value in (("base", base), ("first_person", first_person)):
+        if value not in SCALES or isinstance(value, bool) or value * 2 > 8:
+            fail(f"{name} must be 1, 2 or 4 (doubled, at most 8)")
+    if not isinstance(doubled, dict) or set(doubled) != DOUBLED_FIELDS:
+        fail(f"doubled needs exactly {sorted(DOUBLED_FIELDS)}")
+    if not all(k in KINDS for k in doubled["kinds"]) or not all(t in TREATMENTS for t in doubled["treatments"]):
+        fail(f"doubled kinds must be in {KINDS} and treatments in {TREATMENTS}")
+    kinds = sum(1 << KINDS.index(k) for k in doubled["kinds"])
+    treatments = sum(1 << TREATMENTS.index(t) for t in doubled["treatments"])
+    tags = array("doubled_tags", doubled["tags"], lines)
+    keys = []
+    for key in doubled["textures"]:
+        try:
+            digest, size = key.split("-")
+            width, height = (int(v) for v in size.split("x"))
+            int(digest, 16)
+            if len(digest) != 16 or digest != digest.lower():
+                raise ValueError
+        except ValueError:
+            fail(f"doubled texture {key!r} is not HASH-WIDTHxHEIGHT (16 lowercase hex digits)")
+        keys.append(f"{{ 0x{digest}ull, {width}, {height} }}")
+    if keys:
+        lines.append("static const struct texture_policy_key doubled_textures[] = {")
+        lines += [f"\t{key}," for key in keys]
+        lines.append("};")
+        textures = f"doubled_textures, {len(keys)}"
+    else:
+        textures = "NULL, 0"
+    return f"{base}, {first_person}, {kinds:#x}, {treatments:#x}, {tags}, {textures}"
+
+
 def main() -> None:
     source, output = Path(sys.argv[1]), Path(sys.argv[2])
     raw = json.loads(source.read_text())
@@ -68,6 +113,7 @@ def main() -> None:
     groups = array("graphic_groups", raw["graphic_groups"], lines)
     prefixes = array("decal_surface_prefixes", raw["decal_surface_prefixes"], lines)
     materials = material_values(source, raw, lines)
+    scales = scale_values(source, raw.get("scales"), lines)
     if raw["overrides"]:
         lines.append("static const struct texture_policy_override overrides[] = {")
         for o in raw["overrides"]:
@@ -82,7 +128,7 @@ def main() -> None:
               f"\t{raw['schema']}, {raw['policy_version']},",
               f"\t{RESULTS[r['graphic']]}, {RESULTS[r['surface']]}, {RESULTS[r['companion']]}, {RESULTS[r['bump']]},",
               f"\t{float(f['low'])}f, {float(f['high'])}f, {float(f['sigma'])}f, {int(f['iterations'])},",
-              f"\t{names}, {groups}, {prefixes},", f"\t{overrides},", f"\t{damage},", f"\t{materials} }};", ""]
+              f"\t{names}, {groups}, {prefixes},", f"\t{overrides},", f"\t{damage},", f"\t{materials},", f"\t{scales} }};", ""]
     text = "\n".join(lines)
     if not output.is_file() or output.read_text() != text:
         output.parent.mkdir(parents=True, exist_ok=True)

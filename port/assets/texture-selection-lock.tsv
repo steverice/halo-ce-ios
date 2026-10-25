@@ -1,0 +1,863 @@
+# 861 textures of policy-game-selective-round3, by scale: 2x 706, 4x 129, 8x 26; written by tools/texture_selection_lock.py
+hash	width	height	kind	treatment	scale	tags
+006b9365bb083cd7	128	128	surface	color	2	scenery\index\bitmaps\index_lock
+0077e9b64c5e0350	512	256	surface	color	2	sky\planets\threshold dusk
+00819e98fb77efc8	512	512	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-c bump
+0089c57285cda2b6	32	32	surface	color	2	scenery\lockpick\bitmaps\lockpick_light
+00e5ffe99c9c03d5	128	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal arrow up 3
+0161b9b9ec782d89	128	128	surface	color	2	vehicles\fighterbomber\bitmaps\afterburners
+0222b3fbb138e720	128	128	companion	multipurpose	2	characters\hunter\bitmaps\hunter head multi
+02382622a6fbab0a	512	512	surface	color	2	levels\test\boardingaction\bitmaps\poa3
+025e96b7b6d638eb	256	256	surface	color	2	characters\grunt\bitmaps\grunt head and back
+0286b512f1670d95	256	512	surface	color	2	levels\c10\bitmaps\c10_crashtree
+02cce3f567ce2734	512	256	surface	color	2	characters\crewman\bitmaps\crewman_body
+032ec253df5c8045	512	512	surface	color	2	levels\a10\bitmaps\burn tech mount
+03305ed8bfd5b6cb	512	256	companion	multipurpose	2	scenery\c_storage\bitmaps\c_storage_multi
+034b3287aa8e7c91	128	8	surface	color	2	weapons\needler\bitmaps\needler needles 3p
+034e6d4ed9ca8732	512	512	surface	color	2	levels\c10\bitmaps\c10_fungal
+0357f17bef06e46d	64	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lg 5
+03b1782a5f38cb63	128	256	surface	color	2	levels\a50\devices\light_ground\bitmaps\light fixture ground
+03e988b092be3410	256	256	graphic	color	4	scenery\rocks\boulder_doublewide\bitmaps\boulder_doublewide
+0452dce1c8453348	128	64	companion	multipurpose	2	weapons\shotgun\bitmaps\shotgun_card multipurpose
+0461aa9b565fecc9	128	128	surface	color	2	levels\b40\devices\b40_outerdoor\bitmaps\b40_doorlock
+04ad347d3eeb3277	256	256	surface	color	2	levels\a50\bitmaps\covenant circuits
+04cbc4b76337655f	256	256	companion	multipurpose	2	vehicles\warthog\bitmaps\warthog chaingun multipurpose
+04d2807912ef1e1a	128	128	surface	color	2	sky\planets\basis dusk
+0515d947596e7b81	256	256	surface	color	2	characters\elite\bitmaps\elite head
+0546f419b04f8cdc	256	256	companion	multipurpose	2	characters\elite\elite_special\bitmaps\elite special multi
+0578d22f913bed9a	512	256	bump	bump	2	levels\b30\bitmaps\metal strips narrow bump
+05df28a05b7ef847	512	512	surface	color	2	sky\planets\threshold night
+06714ae5432db640	512	512	bump	bump	2	levels\c10\bitmaps\c10_canopy_bump
+0699195f453e0239	512	512	companion	multipurpose	2	weapons\flamethrower\bitmaps\flamethrower multipurpose
+0704899ff77cbccd	128	256	surface	color	2	scenery\trees\tree_wall1\bitmaps\tree_wall_leaf
+0705d8f1d7ac6a97	128	128	surface	color	2	powerups\needler ammo\bitmaps\needler ammo glow
+0716080275668485	512	512	surface	color	2	levels\a30\bitmaps\cell02_ground
+077c387e2c9f2e04	512	256	surface	color	2	levels\a50\devices\prison door\bitmaps\prison energy door
+07804943165fdc65	256	256	surface	color	2	levels\b40\bitmaps\b40_icefall
+07edbf0e395b91b9	64	64	graphic	color	4	levels\b30\devices\interior tech objects\holo control room display\bitmaps\self illuminated edge
+080b6b2367f60b97	128	128	companion	multipurpose	2	vehicles\warthog\bitmaps\warthog tires multipurpose
+083d20a57520d2d7	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\3_red
+0871f089b071c8af	128	128	companion	multipurpose	2	weapons\rocket launcher\projectile\bitmaps\rocket multipuropse
+08a6e3e38de8123c	512	512	surface	color	2	sky\dusk\bitmaps\ring dusk
+094a4449a092851c	256	256	surface	color	2	characters\cortana\bitmaps\particle_stream
+097e3d10e945fbe6	256	256	graphic	color	4	levels\b30\bitmaps\metal panels generic ext clean
+09a1dd7450fac06c	256	256	surface	color	2	powerups\sniper rifle ammo\bitmaps\sr ammo
+0a7936917a79179a	512	512	surface	color	2	weapons\sniper rifle\bitmaps\sniper rifle
+0ab29a45901b4fb6	256	256	surface	color	2	levels\b30\bitmaps\metal plate floor
+0b768f04ab185f45	256	256	companion	multipurpose	2	characters\floodcombat elite\bitmaps\floodcombat_elite_mutipurpose
+0b83164c9ae3bf59	256	256	surface	color	2	weapons\frag grenade\bitmaps\frag grenade
+0b91842755fbbdd0	128	128	companion	multipurpose	2	levels\c20\devices\door_mainshaft\bitmaps\door_mainshaft multi
+0bd328533d6159e9	2048	128	companion	multipurpose	2	scenery\halo\bitmaps\halo inner ring multi
+0c1cbfe1da55a711	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\3_blue
+0c9a93b0cbbe0f41	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal symbol bridge
+0cd1d2c6eba1e682	1024	64	graphic	color	4	scenery\halo\bitmaps\halo inner ring mask
+0cfc83e2c7be4038	256	256	surface	color	2	levels\a50\bitmaps\covenant cor floor
+0d2f465f5c05c18b	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal danger biohazard
+0d3a752bb6a4245c	256	256	companion	multipurpose	2	levels\a30\devices\torpedo_bridge\bitmaps\metal flat generic bridge_multi
+0d421a618ae222f9	512	512	companion	multipurpose	2	characters\cyborg\bitmaps\cyborg multipurpose
+0d4b12530a602388	128	128	surface	color	2	powerups\pistol ammo\bitmaps\p ammo
+0db4540eb4c3d506	512	512	surface	color	2	vehicles\fighterbomber\bitmaps\fb_cockpit
+0de464a8c2ce7ec4	1024	256	surface	color	2	levels\a30\bitmaps\cliff rock
+0e3635de460ff58e	512	512	surface	color	2	characters\floodcombat_human\bitmaps\floodhuman_damaged
+0e686fc2c9f66c5a	128	128	surface	color	2	levels\b30\bitmaps\lights strip1
+0e6e24aa2f350e01	512	512	surface	color	2	scenery\vehicles\lifepod_crashed\bitmaps\lifepod_crashed
+0eedee2a7c293c20	128	32	bump	bump	2	levels\c20\bitmaps\column_strip bump
+0fa5d3f455b47b65	128	128	surface	color	2	scenery\trees\tree_desert_whitebark\bitmaps\whitebark_leaves
+0fc088e0368f4e6e	256	256	surface	color	2	sky\ring\ring doom
+0fcfa4776385c065	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb blue b
+100e4fad0c2b38a8	256	128	surface	color	2	weapons\flag\bitmaps\flag_red
+107a52cd2494f8f6	128	64	surface	color	2	levels\d40\bitmaps\d40_cross_supports
+10863ec0480e9b63	512	256	companion	multipurpose	2	levels\a30\devices\torpedo_bridge\bitmaps\metal strips narrow bridge_multi
+1159acc296a5aa32	512	256	surface	color	2	characters\marine\bitmaps\marine_body
+12324703d651ac0a	64	256	surface	color	2	scenery\trees\tree_wall1\bitmaps\tree_wall_bark
+12aaedd927775c1f	128	128	surface	color	2	levels\a10\bitmaps\steel
+12c038035ee97be1	256	256	companion	multipurpose	2	characters\floodcombat_human\bitmaps\floodhuman_multipurpose
+13281dd1d7320181	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal symbol lifepod
+13784a997b9cad2f	512	512	companion	multipurpose	2	weapons\needler\bitmaps\needler multipurpose map
+13c54e156be2398d	256	256	companion	multipurpose	2	characters\monitor\bitmaps\monitor_multipurpose
+13f5d7b96950595d	512	512	surface	color	2	cinematics\scenery\planets\halo_closeup\bitmaps\blastoff1
+13ff39e65168a751	256	256	surface	color	2	characters\jackal\bitmaps\jackal legs
+14006315a1ae32e1	256	64	graphic	color	4	weapons\sniper rifle\bitmaps\sr bolt
+14d877c6b3b39c45	16	16	surface	color	2	levels\a10\bitmaps\light
+14eb0f7454ffcbc6	1024	256	surface	color	2	levels\b30\bitmaps\alpha grate b
+1534b5750a7e31df	256	256	surface	color	2	levels\c20\bitmaps\metal flat generic-copper
+15997c6cf1dce2d6	256	512	surface	color	2	characters\marine_armored\bitmaps\marine_arms_johnson
+1620eef47331dcee	128	128	surface	color	2	characters\hunter\bitmaps\hunter head
+163d3e093d9f66d8	512	256	surface	color	2	levels\test\sidewinder\bitmaps\sidewinder lights
+163e9319720e8706	512	32	companion	multipurpose	2	scenery\halo_destroyed\bitmaps\halo inner ring destroyed multi
+16fb7c54ad522dd5	512	512	surface	color	2	levels\a10\bitmaps\burn poa-bridge
+184f03a664c0c79b	1024	256	surface	color	2	levels\a10\bitmaps\alpha test
+185a7d0267449e9f	256	256	surface	color	2	levels\test\beavercreek\bitmaps\beavercreek bridge
+18bd945b0e5028bc	512	512	surface	color	2	characters\floodcombat elite\bitmaps\floodcombat elite_damaged
+191f2909b734366a	32	128	bump	bump	2	levels\c10\bitmaps\c10 moss1
+19457f9e57112d03	32	32	surface	color	2	sky\clear afternoon\bitmaps\detail star twinkle|sky\dusk\bitmaps\detail star twinkle
+195f315d42ea5d57	256	256	surface	color	2	scenery\hilltop\bitmaps\hilltop
+1973477854e42ee9	128	64	surface	color	2	characters\pilot\bitmaps\teeth pilot
+1985c9b26701c455	512	512	surface	color	2	characters\cyborg\bitmaps\cyborg
+19b5cac1e8e3f5b2	512	512	surface	color	2	levels\b30\bitmaps\metal strips decorative circle
+19f85ace644ef948	256	256	companion	multipurpose	2	characters\grunt\bitmaps\grunt torso multi
+19fbf78de27ef410	512	512	companion	multipurpose	2	vehicles\c_dropship\bitmaps\c_dropship_multi
+1a7e3914716b61b8	128	128	surface	color	2	characters\marine\bitmaps\face_shiek
+1b76ac2d5ae311d6	256	256	companion	multipurpose	2	characters\grunt\bitmaps\grunt torso multi
+1b99feafbc6f0a6d	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\4_blue
+1ba055e015862c0c	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_paul multipurpose
+1bde8539ecfdf95b	64	64	surface	color	2	levels\b30\devices\interior tech objects\bitmaps\static blue vertical
+1c2cee927dcd28f3	128	128	surface	color	2	weapons\needler\bitmaps\needler_card
+1c390896e0dcbe20	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+1c68a3385f5f2e70	128	64	bump	bump	2	levels\d40\bitmaps\d40_cross_supports_bump
+1c79711732ade0ce	512	512	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-b bump
+1d27540f690b0edf	128	128	surface	color	2	sky\dusk\bitmaps\water dusk
+1defcc1552ff7da3	256	256	surface	color	2	cinematics\effects\lights\shaft open lens\bitmaps\shaft open lens
+1e32e24ffbe45d94	256	256	companion	multipurpose	2	levels\a10\bitmaps\obj oxy tank multi
+1eb0eed24e2b5b96	256	256	surface	color	2	characters\hunter\bitmaps\hunter legs and arm
+1ec42e8d4d1f4b60	256	256	companion	multipurpose	2	weapons\ball\bitmaps\gameball_l00 multipurpose
+1ef88d690379acd8	64	64	graphic	color	4	characters\marine_armored\bitmaps\marine_helmet_hud
+1f2e8d314897d4e2	512	512	bump	bump	2	levels\b30\bitmaps\metal strips decorative wide bump
+1f3450990e3e8478	512	512	surface	color	2	vehicles\wraith\bitmaps\wraith_burned
+1f876379c5f20fdb	256	64	graphic	color	4	levels\test\sidewinder\decals-environment\bitmaps\fore_stripe_plate_blue
+1f8fe9afce22dd5c	128	128	surface	color	2	characters\marine\bitmaps\face_rob
+1ffa009dfb528f6e	256	256	surface	color	2	levels\test\prisoner\bitmaps\prisoner floor indicator
+2021fecfaea702bd	64	64	graphic	color	4	weapons\sniper rifle\bitmaps\sr subscreen ghost
+2046c4c126456f9b	1024	256	bump	bump	2	levels\a10\bitmaps\burn monitors bump
+2078fbef49ea6753	256	256	surface	color	2	weapons\fuel rod gun\bitmaps\fuelrod gun
+2087b245a7ada639	256	256	surface	color	2	scenery\c_uplink\bitmaps\c_uplink
+2116c7f360e6caf1	64	16	surface	color	2	scenery\halo_destroyed\bitmaps\shockwave_surface
+215aa3c37c1f7635	1024	256	surface	color	2	levels\c20\bitmaps\metal strips wide 02
+217a3eefe5547b31	128	128	companion	multipurpose	2	scenery\rocks\boulder_granite_large\bitmaps\boulder_granite_large_multi
+21a858aea6bdb5a9	512	512	surface	color	2	vehicles\warthog\bitmaps\warthog
+224037f1ebde40c9	512	512	surface	color	2	weapons\flamethrower\bitmaps\flamethrower
+224b049e7ac76187	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_matt_multipurpose
+22cdf7f0f1c8e8a0	256	512	surface	color	2	levels\a10\bitmaps\debris pile
+22edf8e94f68d3d5	128	128	companion	multipurpose	2	levels\b40\devices\b40_outerdoor\bitmaps\b40_doorlock_glow
+230a72c6e6a84fc7	512	256	bump	bump	2	levels\b40\bitmaps\b40_ctrlmirror_bump
+23232172744d0bff	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\1_red
+23f15dc9cf5a9c21	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+245f8de48bfecf28	256	128	surface	color	2	levels\a50\devices\prison door\bitmaps\prison energy door offset
+252c64c7b1a5b72d	512	512	surface	color	2	vehicles\wraith\bitmaps\wraith
+258f26bc20f21b48	256	256	surface	color	2	levels\b40\bitmaps\b40_landingpad
+260154d5bd99ff45	256	256	companion	emissive	2	levels\a50\bitmaps\covenant rounded caripace glow
+2625c8911dd13498	512	512	surface	color	2	characters\floodcombat_human\bitmaps\floodhuman
+26613aef3d41f696	128	256	surface	color	2	levels\test\beavercreek\bitmaps\beavercreek_flow
+26ffa7729c947f0a	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb cyan
+2860aa23e6d5d5a8	128	64	companion	multipurpose	2	characters\crewman\bitmaps\crewman_body_flesh_multipurpose
+28790efc0597ba10	512	256	companion	multipurpose	2	characters\marine_armored\bitmaps\marine_helmet_hires_multipurpose
+2886fdafad4cf384	512	512	surface	color	2	scenery\debris\banshee_crashed\bitmaps\banshee_crashed
+28974310c9dcdbe3	512	512	companion	multipurpose	2	weapons\rocket launcher\bitmaps\rocket launcher multipurpose
+28e9a6d3c3f947f7	128	256	surface	color	2	scenery\trees\tree_pine_tall\bitmaps\pine_bark
+2910075e790f331e	128	128	surface	color	2	cinematics\scenery\pipe\bitmaps\pipe
+292714d82076c723	128	128	graphic	color	4	characters\captain\bitmaps\capn_patches_decal
+2955a7359e0b3687	128	128	graphic	color	4	weapons\sniper rifle\bitmaps\sr decal
+2961ca53d65bd863	512	512	surface	color	2	sky\planets\threshold space
+29860a91057a0b75	512	512	companion	multipurpose	2	vehicles\banshee\bitmaps\banshee multi
+29ba00dc6c9db2c0	1024	256	surface	color	2	levels\a10\bitmaps\panels airlock
+2a33fd50f02ea033	256	256	companion	multipurpose	2	characters\elite\bitmaps\elite arms multi
+2a3a15b9e05d1fb1	256	256	graphic	color	4	levels\a10\bitmaps\heated ceramic
+2a4e73f33861438e	1024	256	surface	color	2	levels\b30\bitmaps\metal strips wide 1
+2a4f5ca7d518c736	512	512	surface	color	2	levels\c10\bitmaps\c10_canopy
+2a8b0887af1086e0	128	128	surface	color	2	levels\a10\bitmaps\burn steel
+2b56f2c2b4692cab	128	128	surface	color	2	scenery\teleporter_shield\bitmaps\teleporter_shield_energy mask
+2b8dff79a89ca0ab	256	256	surface	color	2	levels\a50\bitmaps\covenant metal panel
+2bb5547c0642bf01	128	128	surface	color	2	effects\debris objects\forerunner dark structure\bitmaps\forerunner dark structure
+2bbf193d537ebca9	256	128	surface	color	2	levels\b40\bitmaps\b40_ctrlmirrorb
+2c722f074ac15d96	256	256	surface	color	2	levels\test\carousel\bitmaps\car_circlelight
+2d1ee5f57636a7c9	256	256	companion	emissive	2	levels\a50\bitmaps\c_mothership3_illum
+2d411e40f5a3285c	256	256	bump	bump	2	levels\b40\bitmaps\b40_cliff_wall_bump
+2d6e45c11373a0d8	128	128	surface	color	2	levels\b40\bitmaps\b40_volumelight
+2da1fe0d7aa571ca	128	64	companion	multipurpose	2	scenery\helmet_chip\bitmaps\helmetchip_multipurpose
+2e777343c2b4c1d6	256	256	surface	color	2	characters\flood_infection\bitmaps\flood_infection
+2e86b3a692577dc6	1024	256	bump	bump	2	levels\a10\bitmaps\burn panels bump
+2eadb8d05cdf9f57	128	128	surface	color	2	weapons\energy sword\bitmaps\energy sword
+2ec4e83a8e2b5fda	512	512	surface	color	2	levels\test\ratrace\bitmaps\rat_cave_floor
+2f0d486f87687933	128	128	surface	color	2	levels\a50\devices\small door\bitmaps\floor level symbols
+2f1802a4378ec1f5	32	128	companion	multipurpose	2	scenery\baton\bitmaps\baton multi
+2f40408d4fbf3056	128	128	companion	multipurpose	2	scenery\index\bitmaps\index_multi
+2f9f194b83cb8341	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-tile burnt
+2fd5df157f0793d8	256	256	companion	multipurpose	2	powerups\rocket launcher ammo\bitmaps\rocket launcher ammo multipurpose
+3007642173688d32	512	512	graphic	color	4	levels\d40\bitmaps\d40_terrain
+3007b10236c33a45	128	128	companion	multipurpose	2	levels\b30\devices\light fixtures\light fixture ceiling1\bitmaps\light fixtures multi
+306f03e4dac158e3	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-a burnt
+3098e71b4249a86f	256	256	surface	color	2	vehicles\c gun turret\bitmaps\gun turret weapon
+30a38eb9f50cc85c	64	64	graphic	color	4	cinematics\effects\lights\covenant blast bolt\bitmaps\cov blast bolt vol
+30e57431274c8931	256	256	surface	color	2	characters\grunt\bitmaps\grunt arms and legs
+30f2121e5b0b7325	128	128	surface	color	2	weapons\needler\bitmaps\needler needles
+30fec554ff4c3d46	128	256	surface	color	2	scenery\trees\tree_pine_snow\bitmaps\snowpine_bark
+315109a18de7dd2f	256	256	surface	color	2	characters\elite\bitmaps\elite legs
+315fb739445c10f9	256	256	bump	bump	2	levels\a50\bitmaps\covenant circuits bump
+3198019424e95436	2048	128	surface	color	2	scenery\halo\bitmaps\halo inner ring
+31a1033d30f2032b	128	512	surface	color	2	levels\a30\bitmaps\waterfalla_mask
+31b8c06e52c7cb02	256	256	surface	color	2	levels\a50\bitmaps\grav lift energy
+326cd759a208dd2d	1024	256	surface	color	2	levels\a50\bitmaps\a50 cliff rock_inner
+32d487fe652e1311	256	256	bump	bump	2	levels\b30\bitmaps\water choppy
+3361510e5bfd5cbb	64	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lg 1
+337fbdf0ec226521	256	256	bump	bump	2	levels\a50\bitmaps\covenant metal generic bump
+33d494e95e522e80	256	256	companion	multipurpose	2	powerups\healthpack\bitmaps\healthpack_multi
+344f29f9a58179df	256	256	surface	color	2	levels\a10\bitmaps\burn panel scuff
+34803a4b893b316d	1024	256	surface	color	2	levels\b30\bitmaps\glass strip-mirror
+349709247e308e5d	256	256	surface	color	2	levels\c20\devices\index platform\bitmaps\index beam
+34de0da3cbdf759c	256	256	bump	bump	2	levels\a50\bitmaps\covenant metal panel bump
+34eb13749acbb7b5	128	128	graphic	color	4	weapons\flamethrower\bitmaps\flamethrower decal
+352280c40fd6a1da	256	256	surface	color	2	levels\test\beavercreek\bitmaps\beaver ladder
+35ead5abbd10f4e4	256	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal eng
+35f2d96b067156a8	64	64	surface	color	2	levels\a50\devices\interior tech objects\holo control\bitmaps\static covenant
+36003fa1caa7f6ca	512	512	surface	color	2	levels\d20\bitmaps\d20_ground
+360ff42730016886	256	256	surface	color	2	sky\sky_a30\skydusk0\bitmaps\stars
+36235b63ff2a83cf	128	128	surface	color	2	vehicles\warthog\bitmaps\warthog reflection mask
+374ad22814e32429	128	128	surface	color	2	weapons\plasma rifle\bitmaps\plasma rifle_card
+376cfe2776adade3	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb purple
+377b7d6490b566bd	128	128	surface	color	2	characters\marine_armored\bitmaps\face_johnson_sarge
+37fcdc69df2ea4c7	512	512	surface	color	2	vehicles\scorpion\bitmaps\scorpion_body
+386c461abebb5edf	1024	256	surface	color	2	levels\b30\bitmaps\metal strips wide
+391ef182a61ca04a	512	512	companion	multipurpose	2	levels\b30\bitmaps\c20 platform multi
+398e9e396a0ce179	256	256	companion	multipurpose	2	characters\elite\bitmaps\elite legs multi
+399bbfa31a8f5486	256	256	surface	color	2	levels\b40\scenery\b40_metal_wide\bitmaps\b40_metaldamaged
+39a6209e97ccbd5d	256	64	graphic	color	4	levels\test\sidewinder\decals-environment\bitmaps\fore_stripe_plate_red
+39a8da216f87f1f5	256	256	surface	color	2	characters\jackal\bitmaps\jackal torso
+3a09ab1e831f348d	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+3ab27074499652dd	128	128	surface	color	2	powerups\flamethrower ammo\bitmaps\flamethrower ammo
+3ab27b299d7607b1	64	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lg 4
+3abd0427a355bed9	512	256	surface	color	2	levels\test\bloodgulch\bitmaps\cap_metal
+3af69311ec7fe8c0	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor cryo b
+3b17c0a18be20a9b	256	256	surface	color	2	characters\elite\bitmaps\elite head1
+3b19e1eb8593c8c9	512	512	bump	bump	2	levels\a10\bitmaps\tech rack mount bump
+3b7c90a3be025802	1024	128	graphic	color	4	scenery\vehicles\poa\bitmaps\poa-registry
+3c147fa5e649e61d	256	256	bump	bump	2	levels\b40\bitmaps\b40_cliffs_ice_bump
+3c8f1b26e8503d58	128	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal arrow down 2
+3ce4046ffa2fb2d3	128	128	surface	color	2	levels\a50\devices\small door\bitmaps\floor level symbols
+3cfdfb05fa95097e	256	256	surface	color	2	sky\planets\basis doom
+3d03c8a35a1fbba9	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_chris_multipurpose
+3d03d7d2427f9733	1024	256	surface	color	2	levels\test\beavercreek\bitmaps\beavercreek cliffs
+3d78c2113cf5756d	256	256	bump	bump	2	levels\a30\bitmaps\waves bump|levels\b30\bitmaps\waves bump|sky\sky_a30\skydusk0\bitmaps\waves bump
+3deba5cd79d63c97	128	256	surface	color	2	scenery\trees\tree_desert_whitebark\bitmaps\whitebark_trunk
+3df03a6b41a40551	256	256	graphic	color	4	weapons\rocket launcher\bitmaps\rocket launcher decal
+3e1ba3432ab926ab	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb purple b
+3e2966d59aaea2f6	256	256	companion	multipurpose	2	scenery\trees\tree_pine_tall\bitmaps\pine_tree_multi
+3e32960ff57328fb	256	256	companion	multipurpose	2	characters\grunt\bitmaps\grunt head and back multi
+3e70fd795e183c93	512	512	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-a bump
+3e762f1b6f9a1c36	512	512	surface	color	2	scenery\rocks\boulder_granite_large\bitmaps\boulder_granite_large
+3ecb3043161a7fac	32	128	graphic	color	4	weapons\shotgun\bitmaps\sg loading port
+3efc14a4eb1143d5	256	128	surface	color	2	characters\elite\elite_corpse\bitmaps\gutted elite torso
+3f197b13b454cdd9	256	512	surface	color	2	levels\test\bloodgulch\bitmaps\blood cliff rock
+3f87e3b292c74318	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+3f8b6e952cbf138a	256	256	bump	bump	2	levels\c20\bitmaps\metal flat generic x bump
+403e83cf8ec93696	256	256	surface	color	2	scenery\rocks\boulder_large_grey\bitmaps\boulder_large_grey
+40946678220fc66c	1024	128	surface	color	2	sky\sky_a30\skydusk0\bitmaps\clouds dusk
+40b3359e1ed7afdf	64	256	surface	color	2	levels\a30\bitmaps\river_cell01
+40f7a7461e853b3e	256	256	surface	color	2	effects\debris objects\forerunner light structure\bitmaps\forerunner light structure
+411450df75fe5af6	128	128	surface	color	2	levels\b40\bitmaps\b40_cliff_snow
+414c1c9e686aa2c0	256	256	companion	multipurpose	2	weapons\assault rifle\fp\bitmaps\display multipurpose
+41949f466ab38281	512	256	surface	color	2	levels\a50\devices\interior tech objects\holo control\bitmaps\holo map
+419bba7c81a6c45d	256	256	surface	color	2	levels\a50\bitmaps\covenant alpha grate
+41e0326caaf6cfe0	512	512	graphic	color	4	levels\b30\bitmaps\metal panels generic ext
+42c7345c843170fc	512	512	surface	first-person	8	weapons\assault rifle\fp\bitmaps\assault rifle_fp
+4337b4509cbc40e1	256	128	companion	multipurpose	2	scenery\halo_destroyed\bitmaps\halo outer ring destroyed multi
+444b05d52ea642d7	256	256	companion	multipurpose	2	characters\elite\bitmaps\elite head1 multi
+44706b9af2fb76a2	256	128	surface	color	2	sky\planets\threshold doom
+44aee1b389e800d6	256	256	companion	multipurpose	2	vehicles\ghost\bitmaps\ghost_destroyed_multi
+44bf900bb23edd22	512	512	surface	color	2	levels\a30\bitmaps\tubes ext|levels\c10\bitmaps\swamp pipes
+44d200f280c33264	256	256	surface	color	2	levels\test\bloodgulch\bitmaps\cap_moss01b
+45290633f3e50920	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+457bf3f9cd0ee39e	256	256	graphic	color	4	levels\a50\devices\interior tech objects\holo control\bitmaps\holo control readout
+467c01101ae0b094	256	256	surface	color	2	scenery\rocks\b40_snowrocks\bitmaps\snowrock
+46e7bdad59c94d5d	512	512	companion	emissive	2	levels\b40\bitmaps\b40_metal panels generator glow
+46edb50ed67d0f10	1024	256	companion	emissive	4	levels\a10\bitmaps\monitors glow
+46f5e71645be9c8c	256	256	surface	color	2	levels\test\bloodgulch\bitmaps\cap_ramp01
+47a5198d72c54765	16	16	surface	color	2	levels\b40\scenery\b40_doorblinker\bitmaps\doorblinker
+47f20dab6157c4c5	256	256	surface	color	2	scenery\plants\vines_hanging\bitmaps\vines_hanging
+485997535bfa9904	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_rob_multipurpose
+4888413e9e245ccf	128	64	companion	multipurpose	2	scenery\c_field_generator\bitmaps\c_field_generator_multi
+48ea239ccd1646a6	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+49322e8b29b566d1	256	256	surface	color	2	sky\clear afternoon\bitmaps\stars
+493674e1824a1833	256	256	surface	color	2	characters\jackal\bitmaps\jackal shield
+4958e9ab3ad48e7e	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-b
+495da9f39eb8bfc3	256	256	surface	color	2	characters\jackal\bitmaps\jackal head
+49ffe4627545c786	128	128	surface	color	2	levels\d40\bitmaps\lt steel
+4a305ea747dad4c0	128	128	surface	color	2	levels\b30\devices\interior tech objects\holo control room display\bitmaps\hologram markers
+4a3e04ee85d94312	128	128	companion	multipurpose	2	vehicles\wraith\bitmaps\wraith_destroyed_multi
+4a952e021df7f63a	128	128	surface	color	2	characters\marine\bitmaps\face_paul
+4b083335c7fb3273	512	512	surface	color	2	levels\b30\bitmaps\metal panels generic
+4b57a0893fadadf2	1024	256	surface	color	2	levels\a50\bitmaps\covenant metal strips wide
+4bc09957388759a5	128	128	graphic	color	4	levels\a50\bitmaps\forerunner text
+4c1f9bc4083a1ccd	128	256	companion	multipurpose	2	vehicles\scorpion\bitmaps\scorpion_treads_multipurpose
+4c62f0febdcc85ad	256	256	surface	color	2	levels\a50\bitmaps\covenant plate floor
+4c75a691eb1ba97b	128	512	surface	color	2	scenery\plants\plant_yellowbig\bitmaps\plant_yellowleaf
+4cf0bfc81d6b2ace	256	256	companion	emissive	2	levels\a50\bitmaps\c_mothership2_illum
+4cf7f00a26f32bcf	128	128	surface	color	2	weapons\rocket launcher\projectile\bitmaps\rocket
+4d0999f07fd75007	512	512	surface	color	2	levels\c20\bitmaps\metal panels generator-copper
+4d17ce93d3e3dc45	512	256	bump	bump	2	levels\a50\bitmaps\covenant metal strips narrow bump
+4d37c96912e24132	128	128	surface	color	2	scenery\cortana_chip\bitmaps\cortana_chip
+4dda35246c57b0c2	64	256	companion	multipurpose	2	weapons\flag\fp\bitmaps\flag fp multipurpose
+4f6b6e59b7b2d7ce	256	256	companion	multipurpose	2	characters\elite\bitmaps\elite head multi
+4ff5e78306ef6821	64	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lg 2
+50350d526ef46dfd	256	256	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-marathon bump
+5036bc37f68b98f6	256	256	companion	multipurpose	2	vehicles\lifepod\bitmaps\lifepod_interior_multi
+50465e0d40f428c1	128	128	surface	color	2	vehicles\wraith\bitmaps\blown_open_damage
+50fe38726a4b5371	512	512	companion	multipurpose	2	characters\flood_captain\bitmaps\flood_captain_multi
+51868f14f29d58a8	1024	256	surface	color	2	levels\a30\bitmaps\cliff rock tiled
+51c548e554b8e80b	128	128	surface	color	2	levels\a50\devices\small door\bitmaps\floor level symbols
+52295530586c771e	128	128	surface	color	2	powerups\assault rifle ammo\bitmaps\ar ammo
+52813f4395a93779	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+53234f734a2a637a	256	128	graphic	first-person	8	weapons\plasma rifle\fp\bitmaps\heat gauge
+54030bccaf68b395	512	256	graphic	color	4	scenery\trees\tree_leafy_stump\bitmaps\tree_leafy_stump
+54982b877f4ac560	128	32	graphic	color	4	levels\a10\devices\command display\bitmaps\command nos
+556cb971db6f1961	512	512	surface	color	2	levels\c10\bitmaps\swamp_a
+55cda2d6e906358b	64	32	surface	color	2	vehicles\warthog\bitmaps\chain gun_blur
+5642071750956d0c	512	512	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-tile bump
+569718929e50f1d5	256	256	surface	color	2	vehicles\warthog\bitmaps\warthog chaingun
+56baddf5bd3e5cf3	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb cyan b
+570cafcd53ee5ba9	256	256	companion	multipurpose	2	characters\pilot\bitmaps\pilot_body multi
+57164b54b0ca190b	128	128	surface	color	2	levels\b40\devices\b40_generator_fx\bitmaps\generator field
+5739785275fa42c2	512	256	surface	color	2	levels\b30\bitmaps\metal strips narrow
+5760c6b64af59fb3	128	64	surface	color	2	scenery\helmet_chip\bitmaps\helmetchip
+5808f941cc544997	512	512	companion	emissive	2	levels\a10\bitmaps\c_boarding ship glow
+582f8d1f5f85fe60	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_charles_multipurpose
+58389cb42f494846	256	256	surface	color	2	levels\b40\bitmaps\b40_bridgeramp_mid
+585bc99d115301bf	512	512	companion	multipurpose	2	vehicles\fighterbomber\bitmaps\fb_cockpit_multi
+5871925762a293ed	512	128	surface	color	2	levels\a10\bitmaps\engine piston
+58bab8ab9e681a73	64	64	surface	color	2	effects\decals\bullet holes\bitmaps\dirt pistol
+58f8bfd63e4e3f23	512	512	surface	color	2	weapons\needler\bitmaps\needler
+58fe95e7fd4b3904	128	128	surface	color	2	characters\marine\bitmaps\face_charles
+59262b090989bbf3	256	256	graphic	color	4	powerups\healthpack\bitmaps\healthpack
+59fe8ef1e02ff4cd	512	512	companion	emissive	2	levels\a10\bitmaps\tech rack mount glow
+5a133a84f62ac108	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\1_blue
+5aef8c69ec44b6b3	1024	256	surface	color	2	levels\a10\bitmaps\panel strip
+5b098ed6a36da1c2	512	512	surface	color	2	levels\a50\bitmaps\c_mothership1
+5b8cd237f225f2f8	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-b burnt
+5bca45e6918f461d	1024	256	bump	bump	2	levels\a50\bitmaps\covenant metal strips wide bump
+5c23a544f6a61b1b	128	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal arrow up 2
+5d63925ef9d9e391	512	512	surface	color	2	characters\elite\elite_special\bitmaps\elite special
+5d8f8cc22194fc25	512	512	surface	color	2	levels\a10\bitmaps\burn panel generic
+5d9f3380153e62b5	512	512	companion	multipurpose	2	levels\a10\bitmaps\door small-multi
+5db8401680af9ea2	512	512	surface	color	2	levels\test\beavercreek\bitmaps\beavercreek ground
+5dc203ed293f3481	512	512	surface	color	2	vehicles\pelican\bitmaps\pelican
+5dd213459b95746f	64	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lg 6
+5e0703c169e92fe0	64	64	graphic	color	4	weapons\sniper rifle\bitmaps\sr subscreen decal
+5e38e7b21d8c8b52	64	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lg 3
+5edc7a9deb0d1bd8	512	512	bump	bump	2	levels\b30\bitmaps\metal panels generic bump
+5f289f55cccf2748	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb green
+5f4c38dadc293357	64	64	graphic	color	4	cinematics\effects\cortana effects\bitmaps\cortana base
+5f84d32123e80427	1024	256	surface	color	2	levels\test\bloodgulch\bitmaps\mp lights small strips
+5ff6f8b35a0e9265	1024	256	surface	color	2	levels\test\sidewinder\bitmaps\sw_ice_cliff
+602d6efa05a638f3	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-c burnt
+6099be2cb69bbf51	256	256	companion	multipurpose	2	powerups\sniper rifle ammo\bitmaps\sr ammo multipurpose
+612a012ef01c20b9	256	256	companion	multipurpose	2	vehicles\pelican\bitmaps\pelican_multi
+61f093ff2cebdb37	512	512	companion	multipurpose	2	vehicles\fighterbomber\bitmaps\fighterbomber-multi
+6232a0dc926804ab	512	512	surface	color	2	characters\cortana\halo_enhanced\bitmaps\cortana_body_he
+62c18c71888a0fe6	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal symbol stairs
+62ec700bd0adadcb	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb orange
+6317a73a51f2849d	128	128	companion	multipurpose	2	scenery\captain_implant\bitmaps\nastyimplant_multi
+632dc9157d73c40c	128	128	companion	multipurpose	2	characters\marine_armored\bitmaps\marine_helmet_multipurpose
+63fbbf75d52c075b	256	256	surface	color	2	scenery\teleporter_base\bitmaps\teleporter_base
+645bb7b23329d403	512	256	surface	color	2	levels\a30\devices\torpedo_bridge\bitmaps\metal strips narrow bridge
+647a288f106218bf	128	128	surface	color	2	characters\jackal\bitmaps\shield noise
+64945f2ce1e05d3a	64	64	surface	color	2	weapons\rocket launcher\bitmaps\rocket launcher ends
+64a7bd6e3c192026	512	512	companion	emissive	2	scenery\vehicles\poa\bitmaps\poa-b glow
+64ad98268ef5438f	256	256	companion	emissive	2	levels\c10\bitmaps\c10_fungal_glow
+64d1a70da2e1cc4f	256	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal lpod
+64d65d7cf67e41b1	1024	256	bump	bump	2	levels\c20\bitmaps\metal strips wide 02 bump
+64df3393460926ef	256	256	surface	color	2	levels\b30\devices\light fixtures\light fixture ceiling1\bitmaps\light fixtures
+65bd65ddcc9e6d30	256	128	graphic	color	4	scenery\c_field_generator\bitmaps\c_field_generator
+66c40f183b31b6c4	256	256	surface	color	2	characters\marine_armored\bitmaps\gutted torso
+673a03c97ecc15f2	512	512	surface	color	2	vehicles\c_dropship\bitmaps\c_dropship
+675561c728bd8756	256	256	companion	multipurpose	2	powerups\shotgun ammo\bitmaps\sg ammo multipurpose
+67cd42187cefdb53	128	128	surface	color	2	characters\marine\bitmaps\face_chris
+67e08d685ec83e44	512	512	surface	color	2	characters\pilot\bitmaps\pilot_body
+67f5e8b0f6cce0f3	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor maint
+68e6afc8a444ac0e	512	512	bump	bump	2	levels\b30\bitmaps\metal strips decorative circle bump
+68e8b454a4744b52	512	512	surface	first-person	8	characters\cyborg\fp\bitmaps\cyborg hands
+692337415142e1b4	512	512	surface	color	2	levels\a50\bitmaps\c_mothership3
+692c36052b50c323	256	256	surface	color	2	scenery\rocks\rock_sharpcurly\bitmaps\rock_sharp
+6a194f6c3a934db0	512	512	surface	color	2	scenery\rocks\a50_rock_large\bitmaps\a50_rock_large
+6a73f34c9bbc59a5	256	256	surface	color	2	levels\b30\bitmaps\waves water detail
+6a85c33a01229438	1024	256	surface	color	2	sky\sky_x10\bitmaps\galaxy
+6abdf7da83deee87	512	32	surface	color	2	scenery\halo_destroyed\bitmaps\halo inner ring destroyed
+6ae64d568ddccafb	256	256	companion	multipurpose	2	levels\a50\devices\mustering_door\bitmaps\mustering door multi
+6b7dea41fd60456f	256	256	surface	color	2	scenery\trees\tree_pine\bitmaps\tree_pine_bough
+6bc021992d688743	128	128	surface	color	2	characters\marine\bitmaps\face_marcus
+6bce4e158dc57873	128	128	surface	color	2	levels\a50\devices\small door\bitmaps\floor level symbols
+6c64f9eac41e5201	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\5_red
+6d567e31802a6a7d	128	128	companion	multipurpose	2	powerups\active camoflage\bitmaps\powerups multi
+6d7b2962b93df321	512	512	surface	color	2	weapons\shotgun\bitmaps\shotgun
+6db22c97334a3c72	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb red
+6e5018a6e4b06471	256	128	companion	multipurpose	2	weapons\shotgun\bitmaps\shotshell multipurpose
+6ec2f7e44cdff46e	128	128	surface	color	2	levels\b40\bitmaps\b40_bridgeglass
+6ed05395b1cf8488	1024	256	bump	bump	2	levels\b30\bitmaps\alpha grate b bump
+6f137e132f4f442a	256	512	surface	color	2	levels\c10\bitmaps\swamp_b
+6f1b5987a1f44d20	128	128	surface	color	2	characters\jackal\bitmaps\shield offset
+6f55d80d8d6e3539	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\2_red
+6fa799fe8a11f21c	64	64	companion	multipurpose	2	scenery\lockpick\bitmaps\lockpick multi
+6fd655f7d9f2a603	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+70a487693f071f15	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_marcus_multipurpose
+70be02d330b8d3d0	1024	256	surface	color	2	levels\b30\bitmaps\glass grimy
+71321551373ec62d	256	256	companion	multipurpose	2	effects\debris objects\forerunner light structure\bitmaps\forerunner light multi
+71350b574e682417	512	512	surface	color	2	weapons\plasma pistol\bitmaps\plasma pistol
+71f62ca394b8e114	512	512	surface	color	2	levels\b40\bitmaps\b40_cliff_cmapb
+72127f755383ecf4	256	256	surface	color	2	characters\hunter\bitmaps\hunter torso
+72634697b4bf5abb	256	256	companion	multipurpose	2	scenery\trees\tree_leafy\bitmaps\tree_leafy_leaves_multi
+727a430ec6ea9cf8	256	256	bump	bump	2	levels\a10\bitmaps\burn panel scuff bump
+729e1b2cbed856a5	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal danger electric
+72b666f0e0cc69f5	512	256	surface	color	2	levels\a50\bitmaps\covenant metal strips narrow
+7354e1d3f68298ad	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+7360d115173cbd40	256	256	companion	multipurpose	2	characters\grunt\bitmaps\grunt arms and legs multi
+7424f117afd1aa76	512	512	companion	multipurpose	2	vehicles\banshee\bitmaps\banshee_burned multi
+74779b588d5d52c0	512	512	companion	multipurpose	2	levels\a50\devices\small door\bitmaps\small door multi
+748bb4f0f830d2b7	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal danger flammable
+74c283d5f362033c	512	512	surface	color	2	scenery\rocks\boulder_snow_large\bitmaps\boulder_snow_large
+762a4e9c4392bdce	256	256	bump	bump	2	levels\b40\bitmaps\b40_bridgeramp_bump
+7688093e46ccca42	128	128	companion	multipurpose	2	powerups\assault rifle ammo\bitmaps\ar ammo multipurpose
+768903fc9428f6e7	512	256	bump	bump	2	levels\a30\bitmaps\treesclump_filler_bump
+76adfb650c5413eb	256	256	companion	multipurpose	2	characters\hunter\bitmaps\hunter legs and arm multi
+76f4807a1e696fb0	512	512	surface	color	2	vehicles\lifepod_entry\bitmaps\lifepod_burn
+7702487f3595f9ad	256	256	bump	bump	2	levels\c10\bitmaps\c10_treeline_bump
+7715d6481d9788e5	64	64	surface	color	2	levels\b40\bitmaps\b40_energyrope2
+77874e9162052b3f	128	128	surface	color	2	levels\b30\devices\interior tech objects\holo control room display\bitmaps\volumetric light
+779edf18664d816e	512	512	surface	color	2	levels\a10\bitmaps\panel generic
+77abd816b81bd0c3	1024	512	companion	multipurpose	2	scenery\halo\bitmaps\halo outer ring multi
+77fe2f79923ff0fa	256	256	bump	bump	2	levels\a10\bitmaps\tech rack plate bump
+78dd5d98e1a99f7d	128	128	surface	color	2	levels\a10\bitmaps\steel-light
+791f2b582b1a9c2a	512	256	bump	bump	2	levels\a10\bitmaps\burn detail strips bump
+79767880c100da76	1024	128	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-registry bump
+79c0344f31b77add	256	256	companion	multipurpose	2	weapons\gravity rifle\bitmaps\gravity rifle multipurpose
+7a02a952397e88e8	512	512	surface	color	2	vehicles\pelican\bitmaps\pelican_bay
+7a308dbbdedd3281	512	512	companion	multipurpose	2	scenery\debris\banshee_crashed\bitmaps\banshee_crashed_multi
+7a31a9019bb9a23b	256	256	companion	emissive	2	levels\a50\bitmaps\covenant circuits glow
+7ad0d6af5ebcf403	512	512	companion	multipurpose	2	weapons\pistol\fp\bitmaps\pistol multipurpose
+7b21a2c77b4e23a5	16	16	surface	color	2	levels\a10\bitmaps\light glow
+7bc0f4f131d7a1f1	256	256	surface	color	2	scenery\plants\plant fern\bitmaps\plant fern
+7c4f69dae972e69e	128	128	surface	color	2	levels\a50\devices\shuttle bay doors\bitmaps\shuttle bay doors
+7cacf98df25ab9b5	256	256	companion	multipurpose	2	vehicles\ghost\bitmaps\ghost multi
+7cbcee2f4a518b96	256	256	surface	color	2	levels\test\bloodgulch\bitmaps\cap_ramp02
+7ce7e79865227764	128	128	companion	multipurpose	2	characters\flood_infection\bitmaps\flood_infection multi
+7d056846b76f961a	64	256	surface	color	2	scenery\plants\plant_broadleaf_tall\bitmaps\plant_broadleaf_trunk
+7dd996db5f1a6325	128	128	surface	color	2	levels\test\prisoner\bitmaps\black light
+7e472e70a4ec769a	256	256	companion	emissive	2	levels\b30\bitmaps\tech dense circuits glow
+7e6b7e4f4e48d031	32	128	surface	color	2	levels\a30\devices\torpedo_bridge\bitmaps\bridge energy pulse
+7ea811efed85f937	64	64	graphic	color	4	cinematics\effects\cortana powerup fx\bitmaps\info contrail
+7f1ec38911b621b9	256	256	graphic	color	4	characters\cortana\bitmaps\scanlines2
+7f8ee54ccf62b3a1	256	64	graphic	color	4	vehicles\warthog\bitmaps\meter speedometer
+7fcf00b451b8307d	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb orange b
+8045cc2eafd799c1	256	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal nav
+809a3f2dcefa33bc	256	256	surface	color	2	levels\b40\bitmaps\b40_unearthed
+80bbde1515afc0dc	128	128	companion	multipurpose	2	weapons\plasma rifle\bitmaps\plasma rifle_card multipurpose
+80d0b141e938dc54	256	256	companion	emissive	2	levels\test\prisoner\bitmaps\prisoner floor indicator glow
+811c7db8e51168ea	512	512	companion	multipurpose	2	vehicles\scorpion\bitmaps\scorpion_multipurpose
+821d7fb0de2e4717	256	256	surface	color	2	levels\c10\bitmaps\swamp_b_water
+827ff30353b3f461	512	256	surface	color	2	characters\captain\bitmaps\captain_body
+8296c606be510787	512	512	surface	color	2	levels\a50\devices\mustering_door\bitmaps\mustering door
+82f395cff8e37f16	512	256	surface	color	2	levels\test\chillout\bitmaps\chillout glass
+83278ccc045cce2e	512	512	surface	first-person	8	weapons\plasma rifle\fp\bitmaps\plasma rifle_fp
+839a3d3848c2148d	128	128	companion	multipurpose	2	powerups\pistol ammo\bitmaps\p ammo multipurpose
+83d21cf067147743	256	256	surface	color	2	levels\b40\scenery\b40_ctorch\bitmaps\ctorch
+845ed9fbe0bc8b25	16	16	surface	color	2	levels\b40\scenery\b40_doorblinker\bitmaps\doorblinker2
+84c118347ca53e18	256	256	surface	color	2	levels\a50\bitmaps\covenant metal generic
+84d8070d71296dde	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+84ed9de3530a4d0b	512	512	companion	multipurpose	2	levels\a10\bitmaps\obj-tech rack multi
+8522356fd30f4cf7	256	256	surface	color	2	characters\elite\bitmaps\elite legs1
+8522b808db2c33e7	256	256	surface	color	2	levels\test\beavercreek\bitmaps\beavercreek boulder
+853d107787f4fc11	512	256	graphic	color	4	levels\a10\bitmaps\decal bulletin board
+85fc4454c8fc98b0	128	64	surface	color	2	characters\marine_armored\bitmaps\marine_helmet_hud_hires
+861c67425244204b	512	512	surface	color	2	characters\floodcarrier\bitmaps\floodcarrier
+8667b083909fa766	512	512	surface	color	2	levels\a50\bitmaps\c_mothership2
+871018930e03c5cf	128	128	companion	multipurpose	2	characters\marine_armored\bitmaps\gutted torso multi
+8736c2a3b11bf214	256	256	surface	color	2	scenery\c_metalwide\bitmaps\c_metaldamaged
+877c61122a233810	128	128	surface	color	2	cinematics\effects\cortana powerup fx\bitmaps\cortana halo powerup
+87c356b935f06a39	512	512	surface	color	2	levels\b40\bitmaps\b40_cliff_cmap
+87f9e93e1d4d97c3	256	256	surface	color	2	characters\marine\bitmaps\marine_hats
+88a4f3c60ef1c6d9	256	256	surface	color	2	characters\hunter\bitmaps\hunter arm huge
+89515a8c3c01911a	64	64	surface	color	2	sky\space\bitmaps\star mask
+89cead1b7ab2335d	256	256	surface	color	2	levels\a50\bitmaps\covenant metal panel
+8a0479f019a1c4a1	512	256	surface	color	2	characters\marine\bitmaps\marine_body johnson
+8b356451dfcdd8d1	128	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal arrow down 1
+8b5ac150c6aa73f1	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+8b6c0cc587d28956	64	64	graphic	color	4	cinematics\effects\lights\covenant blast bolt\bitmaps\covenant blast bolt
+8bc229cce663d751	512	512	companion	multipurpose	2	weapons\assault rifle\fp\bitmaps\assault rifle multipurpose
+8c714d2680818cb9	256	256	companion	multipurpose	2	vehicles\fighterbomber\bitmaps\fb_computers_multi
+8c7206e361519215	256	256	surface	color	2	powerups\shotgun ammo\bitmaps\sg ammo
+8d1cac0fb6f70da7	1024	256	graphic	color	4	levels\a10\bitmaps\monitors
+8e7548eba968cac2	128	256	companion	multipurpose	2	characters\hunter\bitmaps\fuel_gun multipurpose
+8f2bf4845d975a95	512	512	companion	emissive	2	scenery\vehicles\poa\bitmaps\poa-c glow
+8f2db582a570b2d5	1024	256	surface	color	2	levels\b30\bitmaps\glass
+8f33c449e4321795	256	256	surface	color	2	sky\sky_d40\skyofdoom\bitmaps\cloud mask doom
+8f53cbe26943bd89	512	512	surface	color	2	levels\d40\bitmaps\large lt steel
+8f6ebab3d2345329	256	256	surface	color	2	sky\dusk\bitmaps\stars
+8f806c002e2c3692	256	256	surface	color	2	levels\b40\scenery\b40_snowbush\bitmaps\b40_snowbush
+908ab926f854822e	256	256	bump	bump	2	scenery\teleporter_base\bitmaps\teleporter_base bump
+90d08543179acbc2	1024	256	bump	bump	2	levels\a10\bitmaps\alpha test bump
+910341331bbee0d3	256	256	surface	color	2	sky\sky_d40\skyofdoom\bitmaps\clouds doom tiled
+9136cbda617a14f2	512	256	surface	color	2	levels\test\boardingaction\bitmaps\deckdecals
+913c6c3531c7ce47	128	128	surface	color	2	levels\a50\devices\prison door\bitmaps\energy plasma
+926a94e01838e181	512	512	surface	color	2	levels\b30\devices\interior tech objects\holo control\bitmaps\holo control
+92f5c66c1b06d246	128	128	companion	multipurpose	2	scenery\cortana_chip\bitmaps\cortana_chip_multipupose
+931680d136a3702c	128	128	surface	color	2	weapons\pistol\bitmaps\pistol_card
+9335f1313cf31410	32	32	companion	multipurpose	2	characters\floodcombat elite\bitmaps\floodcombat elite_damaged_multi
+93873809b93e413e	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+93aed5842d60ecd7	128	256	surface	color	2	characters\hunter\bitmaps\fuel_gun
+946234a761713d64	256	256	bump	bump	2	levels\b30\bitmaps\metal flat generic bump
+94760facaef1e2f7	512	512	surface	color	2	vehicles\lifepod\bitmaps\lifepod
+94b09850ff5d666e	128	128	graphic	color	4	levels\d40\bitmaps\chrome pipes
+94c6ec934ca8245a	128	64	surface	color	2	sky\sky_a30\skydusk0\bitmaps\water dusk
+94fc35e2a5a50598	128	128	surface	color	2	levels\d40\bitmaps\lg bolted pipe
+95381447fc8148d0	256	256	surface	color	2	scenery\trees\tree_leafy\bitmaps\tree_leafy_leaves
+955fc4b627733083	512	256	surface	color	2	levels\b30\bitmaps\metal strips narrow ext
+9616352b0e0e40a0	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-c
+96ce7289cb546c4e	128	64	surface	color	2	scenery\cutscene_small_rock\bitmaps\smallrock
+96ec1f6c6ac19ba5	256	256	surface	color	2	scenery\index\bitmaps\index
+97185374cc1f7896	256	256	surface	color	2	levels\b30\bitmaps\metal flat generic
+978fd5acfd985016	64	256	graphic	color	4	levels\d40\bitmaps\sd numbers
+97cae14d80178777	128	256	surface	color	2	characters\cortana\bitmaps\cortana_hair
+97e513edd5c88080	512	256	companion	multipurpose	2	characters\elite\bitmaps\elite torso multi
+9852629b21e0bada	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor stair
+993b07aa9c1fed17	512	512	bump	bump	2	levels\a10\bitmaps\c_boarding ship int bump
+99500e6bea1aba72	256	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal tac
+99857ea6f106e5d2	512	512	surface	color	2	sky\sky_d20\sky_exterior\bitmaps\canyons_d20
+99d033623a62a94d	1024	128	graphic	color	4	scenery\vehicles\poa\bitmaps\poa-registry burnt
+99e2181489507fc9	1024	256	surface	color	2	levels\b30\bitmaps\cliffs
+9a9892acf3c5e345	256	256	companion	multipurpose	2	characters\cyborg\fp\bitmaps\cyborg hands multipurpose
+9aafff704765cff1	512	512	bump	bump	2	levels\d40\bitmaps\large lt steel_bump
+9b023020b68ef1f5	16	128	surface	color	2	characters\cortana\bitmaps\cortana_noise_mask
+9c1616d21318b810	512	512	companion	multipurpose	2	weapons\shotgun\bitmaps\shotgun multipurpose
+9c27e91d769596f2	512	256	surface	color	2	characters\marine_armored\bitmaps\marine_torso
+9c5aef16959aae35	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+9c8262d51b18d8dd	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb blue
+9ca63dc9f6fe2b8f	256	256	bump	bump	2	levels\a50\bitmaps\covenant metal panel bump
+9cbc8fee559e1418	1024	256	surface	color	2	levels\a10\bitmaps\burn panels
+9d0d8bdcf9094f34	256	512	companion	multipurpose	2	characters\marine_armored\bitmaps\marine_arms_multipurpose
+9d125ed51b175945	512	512	companion	multipurpose	2	weapons\sniper rifle\bitmaps\sniper rifle multipurpose
+9e1ea5c0466c6245	64	128	companion	multipurpose	2	levels\a50\devices\light_ground\bitmaps\light fixture ground multi
+9e2bfedaec0321ae	128	128	surface	color	2	levels\c20\bitmaps\plasma panel
+9e7f927514da1f37	512	512	bump	bump	2	levels\b30\bitmaps\metal panels generator bump|levels\b40\bitmaps\b40_metal panels generator bump
+9ea282636097bcd4	128	128	surface	color	2	levels\a10\devices\shield charge\bitmaps\shield charge force
+9eb4c833d3742cad	512	256	surface	color	2	characters\marine_armored\bitmaps\marine_helmet_hires
+9f23575ade8f7cd2	256	256	bump	bump	2	levels\test\chillout\bitmaps\chillout metal grate bump
+9f97e8bad0cd00b8	256	256	surface	color	2	levels\a50\devices\light_ceiling\bitmaps\light fixture metal
+9fe5c20740327711	256	256	surface	color	2	sky\clear afternoon\bitmaps\clouds puffy light
+a00906760739cc74	512	512	surface	color	2	scenery\rocks\boulder_moss_large\bitmaps\boulder_moss_large
+a028dc629ffb8413	128	128	companion	multipurpose	2	characters\jackal\bitmaps\jackal_torso multipurpose
+a0cbea22212e57cd	512	512	surface	color	2	vehicles\banshee\bitmaps\banshee
+a12a94016819a8aa	256	256	surface	color	2	levels\b40\bitmaps\b40_bridgeramp
+a1e32ebc007a9ed9	256	256	bump	bump	2	levels\c10\bitmaps\bump swamp bark
+a251abd13e4a6826	128	128	surface	color	2	levels\b30\devices\light fixtures\light fixture ceiling1\bitmaps\light fixtures
+a254c818fb1fee46	256	256	surface	color	2	characters\grunt\bitmaps\grunt torso
+a2b48ad01f04dc6c	512	256	surface	color	2	characters\marine_armored\bitmaps\marine_legs
+a2ccf142f56749c9	64	32	companion	multipurpose	2	scenery\cutscene_small_rock\bitmaps\smallrock multi
+a348b013b6de5d83	32	32	surface	color	2	effects\decals\bullet holes\bitmaps\snow
+a35d4628e104dca7	256	1024	bump	bump	2	levels\a10\bitmaps\vending machines bump
+a374186cab08e1c6	256	256	surface	color	2	levels\a10\bitmaps\volume light hot
+a385b9d1883773c1	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+a3fcfdfabbc69601	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+a4560b9b95063b9d	32	32	companion	multipurpose	2	scenery\rocks\boulder_doublewide\bitmaps\boulder_doublewide_multipurpose
+a4d912ad6d50ab0c	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+a5504fa8338e3f6b	256	256	companion	multipurpose	2	characters\grunt\bitmaps\grunt head and back multi
+a56e78dfe6363d97	512	256	surface	color	2	scenery\c_storage\bitmaps\c_storage
+a5e4e78d8517cb4c	128	256	surface	color	2	vehicles\scorpion\bitmaps\scorpion_treads
+a711cd27c7bb93c9	256	256	bump	bump	2	levels\b30\bitmaps\metal plate floor bump
+a72821808288c5ff	1024	256	surface	color	2	levels\test\bloodgulch\bitmaps\mp lights small strips red
+a73ca1b851bfb66f	512	512	surface	color	2	sky\sky_d40\skyofdoom\bitmaps\d40_land
+a763a3a43f01e6f2	256	256	surface	color	2	characters\grunt\bitmaps\grunt head and back
+a80823a440d7d68b	512	1024	surface	color	2	levels\b40\bitmaps\b40_cliff_wall
+a81daee5a13eef26	256	256	surface	color	2	levels\d40\bitmaps\d40_airlock
+a8430d9bb81dc053	512	512	surface	color	2	characters\engineer\bitmaps\engineer
+a8828d3dc82ec5fd	256	256	bump	bump	2	levels\test\prisoner\bitmaps\prisoner floor indicator bump
+a8c510fbdd5b6e9c	128	128	surface	color	2	scenery\vehicles\lifepod_atmosphere_entry\bitmaps\lifepod reentry flame
+a9285ad43c75f715	256	256	bump	bump	2	levels\b40\bitmaps\b40_icefall_bump
+a940583ea488cdef	256	256	companion	multipurpose	2	vehicles\c gun turret\bitmaps\gun turret weapon multi
+a9e87a7fd08d71b1	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+aa0635977d050ebb	256	256	surface	color	2	levels\c10\bitmaps\swamp_a_water
+aa0f29ab3e184354	256	256	companion	emissive	2	levels\b30\bitmaps\metal panels generator glow
+aa2da21464689ed2	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal grate
+aacd61ec2f78a1a4	128	128	surface	color	2	scenery\captain_implant\bitmaps\nastyimplant
+aadfaf496665a11b	512	512	surface	color	2	vehicles\fighterbomber\bitmaps\fb_bay
+ab122d9619459c65	64	64	surface	color	2	levels\b40\bitmaps\b40_energyrope
+abfed2a224a37cfc	32	32	surface	color	2	sky\sky_a30\skydusk0\bitmaps\star twinkle
+ac0053e93f115dc0	512	256	surface	color	2	sky\sky_a30\skydusk0\bitmaps\horizon land
+ac03644f043d3701	256	128	surface	color	2	levels\a50\devices\prison door\bitmaps\prison energy door off
+ac0e2dc985676cbc	1024	256	bump	bump	2	levels\b30\bitmaps\metal strips wide 1 bump
+ad2160f6bf2fba5a	256	512	surface	color	2	levels\a50\bitmaps\a50 cliff rock
+ad9dbef61de70cbf	256	512	surface	color	2	characters\marine_armored\bitmaps\marine_arms
+adf0462c8c6a244c	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-tile
+ae8a61df31949276	256	256	graphic	color	4	levels\a10\bitmaps\monitor huge
+aec70e6028d5eded	512	512	surface	first-person	8	weapons\pistol\fp\bitmaps\pistol
+aef7cf523b8e1083	512	512	surface	color	2	levels\a10\bitmaps\c_boarding ship int
+af6caa2215d47c53	256	256	companion	multipurpose	2	scenery\vehicles\lifepod_crashed\bitmaps\lifepod_crashed_multi
+b07425baaacc7a83	1024	256	graphic	color	4	levels\d40\bitmaps\sd text
+b080bad128fa205f	128	64	surface	color	4	levels\a10\decals-environment\bitmaps\decal caution current
+b0842c2b69e1487c	256	64	surface	color	2	weapons\shotgun\bitmaps\shotgun bolt
+b08758fb26a6972d	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+b0a1de636f3c98b0	256	256	bump	bump	2	levels\d40\bitmaps\d40_airlock_bump
+b0f1d60d40a945db	512	512	surface	color	2	levels\b30\bitmaps\metal panels ext unearthed
+b1752b33002337e6	512	512	surface	color	2	vehicles\ghost\bitmaps\ghost
+b1e6b4fe48939e17	64	64	graphic	color	4	characters\elite\elite_special\bitmaps\elite special emblem
+b206f32a0efd0d67	1024	32	surface	color	2	scenery\halo\bitmaps\halo ring inner shadow
+b23f0ff3be853f87	128	128	companion	multipurpose	2	characters\jackal\bitmaps\jackal_arms multipurpose
+b27a545204923061	512	512	companion	multipurpose	2	vehicles\warthog\bitmaps\warthog multipurpose
+b2abf71e19b37234	256	256	surface	color	2	levels\c20\devices\door_mainshaft\bitmaps\door_mainshaft
+b3223c6845c0d5a5	512	512	bump	bump	2	levels\c20\bitmaps\metal panels generator-copper bump
+b328e7e486a7d06e	256	256	surface	color	2	scenery\plants\plant_broadleaf_tall\bitmaps\plant_broadleaf_leaf
+b36418d8d5078909	512	512	surface	color	2	levels\a50\devices\small door\bitmaps\small door
+b419ee81fbf1aed4	512	512	surface	color	2	characters\cortana\bitmaps\cortana_body
+b41bc33211795325	128	128	surface	color	2	levels\b40\bitmaps\b40_ctrlglass
+b4f36970c35a8316	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor lifepod
+b52e72ab6729d561	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor engine
+b567ffe07dbcfe70	128	128	surface	color	2	weapons\plasma pistol\bitmaps\plasma pistol_card
+b58f4891e1c9f739	256	256	bump	bump	2	levels\c20\bitmaps\bump generic pattern
+b5b41d8e4b531761	128	512	surface	color	2	levels\a30\bitmaps\waterfallc_mask
+b5cf7347b93cdfb6	128	256	surface	color	2	levels\c10\bitmaps\c10_treetrunk
+b5d00b40e6a28d1a	128	128	surface	color	2	characters\marine\bitmaps\face_matt
+b5d1ce15fe31b688	128	64	surface	color	2	weapons\assault rifle\bitmaps\assault rifle_card
+b6bd221f93246e76	256	256	surface	color	2	levels\a10\bitmaps\obj oxy tank
+b6c4068cfae75a97	128	128	surface	color	2	levels\c10\scenery\c10_lilypad\bitmaps\c10_lilypad
+b71fd6a6a97c883b	256	256	surface	color	2	characters\captain\bitmaps\captain_head
+b72e161f05d88662	256	128	graphic	color	4	levels\a10\decals-environment\bitmaps\decal com
+b77c07089b86572a	512	512	surface	color	2	levels\a50\devices\interior tech objects\holo control\bitmaps\holo control
+b7ffb4a911f3bd84	256	256	companion	multipurpose	2	vehicles\c gun turret\bitmaps\gun turret base multi
+b8040b17a859bd05	128	256	surface	color	2	scenery\trees\tree_leafydense_doublewide\bitmaps\tree_leafydense_bark
+b818f007ab2bdd52	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+b8245bdfa1242cc2	256	256	surface	color	2	levels\a10\bitmaps\chair
+b84045ccead06655	256	256	surface	color	2	levels\b30\bitmaps\metal strips decorative narrow
+b8409fdc7f14e715	512	512	surface	color	2	sky\ring\ring dusk
+b85daf00571c05a7	256	256	surface	color	2	weapons\plasma grenade\bitmaps\plasma grenade
+b888354d2a8f4283	64	64	surface	color	2	sky\sky_a30\skydusk0\bitmaps\star mask
+b909d04743be1f0a	256	256	surface	color	2	levels\b30\bitmaps\tech dense circuits
+ba7eada791af364f	256	256	surface	color	2	levels\d20\bitmaps\grav lift energy broken
+ba99befff69be6d0	512	512	bump	bump	2	levels\a10\bitmaps\panel generic bump
+bb0a49691195e95a	128	512	surface	color	2	levels\d20\bitmaps\d20_coolant_flow
+bb22a1e00a60a42b	256	256	companion	multipurpose	2	characters\hunter\bitmaps\hunter torso multi
+bb5479fd40c86631	128	128	companion	multipurpose	2	effects\debris objects\forerunner dark structure\bitmaps\forerunner dark multi
+bb99ff7df1addddc	128	128	surface	color	2	powerups\needler ammo\bitmaps\needler ammo
+bbc4eeb06d90163d	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+bc0af9992d5cbb5f	512	256	surface	color	2	scenery\halo_destroyed\bitmaps\halo outer ring destroyed
+bc4ce920cc0f3b7f	1024	256	surface	color	2	levels\a50\bitmaps\covenant lights strip
+bc7c2a17228643bb	128	128	surface	color	2	powerups\active camoflage\bitmaps\powerups
+bc80aa8812fdbc76	256	256	companion	multipurpose	2	characters\elite\bitmaps\elite legs1 multi
+bca2dd7c7a8966a0	128	128	companion	multipurpose	2	characters\jackal\bitmaps\jackal_head multipurpose
+bcb859a9fd44b195	128	128	companion	multipurpose	2	characters\jackal\bitmaps\jackal_legs multipurpose
+bcff5ebb927c80b4	128	128	companion	multipurpose	2	weapons\sniper rifle\bitmaps\sr decal multipurpose
+bd52f91043f273f2	512	512	bump	bump	2	levels\a10\bitmaps\burn panel generic bump
+bd68c6409e02ae33	1024	512	surface	color	2	levels\d40\bitmaps\sd background
+bd74248531ac9d32	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+bde0a23d420cb928	128	128	companion	multipurpose	2	weapons\pistol\bitmaps\pistol_card multipurpose
+bde1a1064bec8234	512	256	companion	multipurpose	2	levels\a10\bitmaps\decal bulletin board multi
+be4973744304cf83	256	256	companion	multipurpose	2	vehicles\lifepod\bitmaps\lifepod_multi
+be91679e0863083a	128	128	companion	multipurpose	2	weapons\plasma pistol\bitmaps\plasma pistol_card multipurpose
+bede1cf80c6b5644	512	128	graphic	color	4	levels\a10\bitmaps\hushed casket display
+bf7be3595a95a4ef	512	512	surface	color	2	characters\floodcombat elite\bitmaps\floodcombat elite
+bf902b702914a457	64	256	surface	first-person	8	weapons\flag\fp\bitmaps\flag fp
+bfde164d64b277fd	256	256	surface	color	2	scenery\rocks\boulder\bitmaps\boulder
+bff061d16111102a	256	256	surface	color	2	levels\a50\bitmaps\covenant plasma streams
+c08c7511e39743e3	512	512	surface	color	2	levels\c10\bitmaps\c10_beasttree
+c0c6f3d30ba5d1b2	32	32	companion	multipurpose	2	characters\captain\bitmaps\captain_eyes_multi
+c14a3d477cd46858	128	256	surface	color	2	characters\cortana\halo_enhanced\bitmaps\cortana_hair_he
+c14bf3b6bdec5a33	256	256	surface	color	2	levels\a30\bitmaps\filtrator
+c1e6092406e650fd	256	256	companion	multipurpose	2	characters\grunt\bitmaps\grunt arms and legs multi
+c1f318735b01aa0b	256	256	surface	color	2	levels\a50\bitmaps\ship opening
+c208532651911599	512	512	bump	bump	2	levels\a10\bitmaps\burn tech mount bump
+c2ecb5b05dcd11fa	512	512	graphic	color	4	levels\a10\devices\command display\bitmaps\command display
+c37c8bab198f7b25	256	64	surface	color	2	sky\sky_a50\skynight0\bitmaps\fog band
+c3fc844e84ab350a	512	256	bump	bump	2	levels\a10\bitmaps\detail strips bump
+c436d911096d7a73	256	256	bump	bump	2	levels\c10\bitmaps\mud bump
+c47178d7f132f1aa	64	256	surface	color	2	scenery\trees\tree_leafy\bitmaps\tree_leafy_trunk
+c50815864c0352aa	1024	128	surface	color	2	sky\dusk\bitmaps\clouds dusk
+c52f16d3dfedfc7c	256	256	surface	color	2	vehicles\warthog\bitmaps\warthog tires
+c5702cef0f249575	1024	256	companion	emissive	2	levels\a50\bitmaps\covenant metal strips wide glow
+c597fca1ebc89068	256	256	bump	bump	2	levels\b40\bitmaps\b40_cliff_snow_bump
+c5ed30dc1fdefa34	1024	256	bump	bump	2	levels\a10\bitmaps\panel strip bump
+c6267cb5c561008c	1024	256	surface	color	2	levels\b30\bitmaps\alpha grate
+c64a71f61ea7ae06	512	512	surface	color	2	weapons\rocket launcher\bitmaps\rocket launcher
+c653b570d07c7242	256	256	surface	color	2	sky\dusk\bitmaps\threshold dusk
+c69e799310690e77	512	512	companion	multipurpose	2	vehicles\pelican\bitmaps\pelican_bay_multi
+c7446aa5f17a1a6e	256	256	surface	color	2	levels\a50\bitmaps\covenant rounded caripace
+c7dde583dc7d444f	256	256	surface	color	2	levels\b30\bitmaps\underwater
+c7feb82ff98c6d3a	64	256	companion	emissive	2	levels\a10\bitmaps\vending machines glow
+c821921f3142eac3	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-a
+c861aad665b052f9	256	128	surface	color	4	vehicles\fighterbomber\bitmaps\fb_monitor
+c87a20cce7c65dea	256	256	companion	multipurpose	2	vehicles\wraith\bitmaps\wraith_burned_multi
+c8953f385429a098	256	128	surface	color	2	weapons\flag\bitmaps\flags_blue
+c8f574f1d1d757bf	128	128	graphic	color	4	vehicles\pelican\bitmaps\pelican decals
+c9818f8d4cf2fa92	128	64	companion	multipurpose	2	weapons\assault rifle\bitmaps\assault rifle_card_multipurpose
+c98e48b16fd1a448	64	64	graphic	color	4	levels\c40\devices\index insertion\bitmaps\index readout1
+c9912e928cdf89b7	64	64	surface	color	2	cinematics\effects\cortana effects\bitmaps\cortana vol
+c9d6cb27ac588800	512	512	surface	color	2	levels\b30\bitmaps\metal strips decorative wide
+ca0860022bbb5f8b	128	32	surface	color	2	weapons\assault rifle\bitmaps\bolt
+ca6b74b586c716d3	256	256	surface	color	2	levels\c20\bitmaps\metal flat generic-x
+cb55e3b5fcf25eb3	256	256	bump	bump	2	levels\b30\bitmaps\metal strips decorative narrow bump
+cc0e1edd1f8c7baa	256	256	surface	color	2	sky\dusk\bitmaps\horizon land
+cc491393733fee13	256	256	companion	multipurpose	2	levels\a10\bitmaps\obj-chair multi
+cc95a7c90012cab5	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+ccf2cd16f64ccec2	64	256	surface	color	4	levels\d40\bitmaps\sd numbers
+cdac8541c2c803c9	128	128	surface	color	2	sky\planets\basis clear afternoon
+cdcf791309c1426f	512	512	surface	color	2	levels\a50\bitmaps\a50 cell01_ground
+cdf281ff16d50b16	256	256	surface	color	2	levels\a10\bitmaps\tech rack plate
+ce0044630154687a	256	256	surface	color	2	levels\a30\bitmaps\cliff rock fallen
+ce967f116dfafb83	512	512	surface	color	2	sky\ring\ring night
+cea6ca61bd0fb6d4	256	256	companion	multipurpose	2	characters\engineer\bitmaps\engineer multi
+cf0b597442d90294	128	64	surface	first-person	8	weapons\pistol\fp\bitmaps\bullet
+cf543a3b14adf937	512	256	bump	bump	2	levels\b40\bitmaps\b40_ctrlmirrorb_bump
+cf912a0f06c0da90	256	256	surface	color	2	sky\clear afternoon\bitmaps\fog band
+cffcd6665b62ecc0	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+d013ca0955d797f9	256	256	companion	multipurpose	2	weapons\plasma grenade\bitmaps\plasma grenade multipurpose
+d06f096eb56b9bdd	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor airlock
+d0e03ebb6b472b65	8	8	surface	color	2	levels\c10\bitmaps\c10_inv|levels\d20\bitmaps\d20_inv
+d12910054a201a18	64	64	graphic	color	4	levels\b30\devices\interior tech objects\holo control\bitmaps\holo readout
+d1e3c1c9ab7444d3	512	256	surface	color	2	characters\elite\bitmaps\elite torso
+d1f094a2a6a6d9b7	256	256	bump	bump	2	levels\a50\bitmaps\c_mothership1_bump
+d1f250f9091e0fdc	256	256	bump	bump	2	levels\b40\bitmaps\b40_bridgeramp_mid_bump
+d266cb370b48a7b3	32	128	companion	multipurpose	2	weapons\shotgun\bitmaps\sg loading port multipurpose
+d267db5fdc4a3bf1	64	32	surface	color	2	levels\b30\devices\doors\door small\bitmaps\door lock light
+d2ce91284b3948ab	64	64	surface	color	2	vehicles\warthog\bitmaps\meter sensor
+d30c04d07cb4820f	256	256	bump	bump	2	levels\a50\bitmaps\covenant rounded caripace bump
+d33c3cd7fe02c17e	256	256	surface	color	2	characters\grunt\bitmaps\grunt arms and legs
+d35b92554be1e546	256	256	graphic	color	4	levels\a10\bitmaps\monitor glass
+d377114cc844f15f	256	256	surface	color	2	powerups\rocket launcher ammo\bitmaps\rocket launcher ammo
+d39c55e42320551f	32	32	companion	multipurpose	2	scenery\rocks\boulder_crouch\bitmaps\boulder_crouch_multipurpose
+d3aa036e303588e6	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\5_blue
+d3b96f37d45e7429	64	32	companion	multipurpose	2	levels\b30\devices\doors\door small\bitmaps\door lock light multi
+d45121e7d4b1edc2	512	512	companion	multipurpose	2	vehicles\fighterbomber\bitmaps\fb_bay_multi
+d480f5a811e304d7	256	128	companion	multipurpose	2	characters\crewman\bitmaps\crewman_body_multipurpose
+d574c0d84ee089a6	256	64	companion	emissive	2	levels\b40\bitmaps\b40_pitlights_glow
+d5ac7d556ac73cbd	128	128	graphic	color	4	cinematics\effects\teleportation\bitmaps\teleport ring
+d61e70774d202d3a	512	256	surface	color	2	levels\a30\bitmaps\bluelights small strips
+d6575aa835f60958	256	256	surface	color	2	weapons\flag\bitmaps\flag
+d693fb011bbc7c77	256	256	surface	color	2	scenery\trees\tree_pine_tall\bitmaps\pine_tree
+d6ae02ea7cd95330	128	512	surface	color	2	levels\a10\bitmaps\elevator shaft
+d6e26f3903f40930	256	256	bump	bump	2	levels\b30\bitmaps\tech dense circuits bump
+d6ea4e8431119052	256	256	companion	multipurpose	2	scenery\c_uplink\bitmaps\c_uplink_multi
+d72ab77429cd6c4e	512	512	surface	color	2	levels\b40\devices\holo halo control\bitmaps\holo halo control
+d730d5a5e030a8b5	32	128	surface	color	2	scenery\baton\bitmaps\baton
+d79cca7e7f69b64c	64	64	graphic	color	4	weapons\frag grenade\bitmaps\frag grenade decal
+d7da981e77c9e71d	256	256	bump	bump	2	levels\a50\bitmaps\covenant alpha grate bump
+d81f79cc4bd01c74	256	256	surface	color	2	scenery\flag_base\bitmaps\flag_base
+d820dd86663553d2	512	512	surface	color	4	levels\a10\bitmaps\door small
+d844a8493070476a	256	128	surface	color	2	levels\b40\bitmaps\b40_ctrlmirror
+d856fa3fb7fa018a	128	128	surface	color	2	scenery\blood_pool\bitmaps\blood_pool
+d896a4a73d4ae60d	64	64	graphic	color	4	weapons\plasma pistol\bitmaps\pp display
+d9f621e031924767	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\2_blue
+da9abebb7d7fbe2c	256	256	surface	color	2	weapons\gravity rifle\bitmaps\gravity rifle
+da9e40b408bdca63	128	128	surface	color	2	characters\floodcombat elite\bitmaps\flood tentacles
+db0ef016e4ba1103	256	256	surface	color	2	levels\a10\bitmaps\panel scuff
+db2c279be6623dd8	512	512	surface	color	2	levels\test\bloodgulch\bitmaps\blood ground
+dbf7806746d7652c	64	64	bump	bump	2	levels\c20\bitmaps\plasma panel bump
+dc8a632479eba4d5	256	256	surface	color	2	characters\elite\bitmaps\elite arms
+dc8d266f5bbee2e3	256	256	bump	bump	2	levels\a30\bitmaps\cliff rock bump
+dcad98d87a30cc24	128	128	surface	color	2	scenery\lockpick\bitmaps\lockpick
+dced4c331f0f9398	512	512	surface	color	2	levels\a30\bitmaps\cell01_ground
+dceef16119927b31	128	512	surface	color	2	levels\a30\bitmaps\river_fronta top
+dcfeaa86b764c5ee	64	256	graphic	color	4	levels\test\boardingaction\decals-environment\bitmaps\4_red
+dd366f5e1852ce9f	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal symbol airlock
+dd527588e42dd141	512	256	surface	color	2	levels\a10\bitmaps\burn detail strips
+dd5c42b8ca00aa3d	256	256	surface	color	2	characters\jackal\bitmaps\jackal arms
+ddb4d9edcfef39a6	1024	256	graphic	color	4	levels\a10\bitmaps\burn monitors
+ddcffd265b5b776a	512	512	companion	multipurpose	2	weapons\plasma pistol\bitmaps\plasma pistol multipurpose
+de134369aed61118	128	256	surface	color	2	levels\a30\devices\torpedo_bridge\bitmaps\bridge energy field
+de84ce52186eea5f	128	32	surface	color	2	levels\c20\bitmaps\column_strip
+de9fc664a2d7b928	128	64	surface	color	2	levels\b40\bitmaps\b40_cliff_ladder
+dee08751cecd88bc	256	256	companion	multipurpose	2	weapons\fuel rod gun\bitmaps\fuel rod gun multipurpose
+deeddfbaf5567abb	512	256	companion	multipurpose	2	characters\marine_armored\bitmaps\marine_torso_multipurpose
+df0b97a96d0677b9	32	64	surface	color	2	characters\elite\bitmaps\elite teeth
+df74d162deeef2b2	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal symbol cryo
+dff4d65e6f54eca7	256	128	companion	multipurpose	2	characters\captain\bitmaps\captain_body_multi
+dff7873b2861c4a8	16	16	graphic	color	4	levels\a10\devices\command display\bitmaps\static blue-v
+e099221cec674e45	1024	256	surface	color	2	levels\a10\bitmaps\burn alpha test
+e0abd0104b13ccab	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb red b
+e0b216b4572b03b9	512	512	surface	color	2	vehicles\fighterbomber\bitmaps\fighterbomber
+e0d0ab15fa3c2405	128	64	surface	color	2	weapons\shotgun\bitmaps\shotgun_card
+e0e54e8d0cad29e2	256	256	surface	color	2	levels\a10\bitmaps\cryo glass
+e0e8779f7caa00aa	64	64	surface	color	2	characters\captain\bitmaps\captain_eyes
+e13169e726918e33	512	256	surface	color	2	levels\d40\bitmaps\temp critical
+e164e9aa29f8ef16	256	128	surface	color	2	weapons\shotgun\bitmaps\shotshell
+e1b22189d46cf940	512	512	surface	color	4	levels\a10\bitmaps\door cryo
+e1c6634e1452450d	128	128	surface	color	2	characters\marine_armored\bitmaps\marine_helmet
+e1e514e6bd2e1fe8	256	256	companion	multipurpose	2	characters\sentinel\bitmaps\sentinel_multipurpose
+e27f255b0d3adf58	512	512	companion	multipurpose	2	levels\a10\bitmaps\door cryo-multi
+e2886ba580a539d4	512	512	surface	color	2	vehicles\lifepod\bitmaps\lifepod_interior
+e2e9e3bc62f13f32	256	128	graphic	color	4	weapons\flamethrower\bitmaps\gauge
+e381ca2685310ec6	64	64	surface	color	2	scenery\teleporter_base\bitmaps\base volumetric dust
+e50ead150713bb8f	512	512	surface	color	2	characters\monitor\bitmaps\monitor_base
+e50fab07ed27999f	512	512	companion	multipurpose	2	weapons\plasma rifle\fp\bitmaps\plasma rifle multipurpose
+e53735b7d45982d3	512	512	companion	emissive	2	scenery\vehicles\poa\bitmaps\poa-d glow
+e54103df93542b90	256	256	surface	color	2	levels\a10\bitmaps\burn monitor huge
+e554fe35155ac2ae	512	512	surface	color	2	vehicles\ghost\bitmaps\ghost_destroyed
+e600096376728a64	512	256	bump	bump	2	levels\a30\bitmaps\trees_filler_bump
+e65b91ccef09d693	512	512	surface	color	2	levels\b30\bitmaps\c20 platform
+e6603c3e5f060d2d	512	512	surface	color	2	levels\b40\devices\holo halo solar system\bitmaps\solar system
+e670779029316b6c	256	256	bump	bump	2	levels\a50\bitmaps\c_mothership2_bump
+e6af934a271ee9a1	256	256	surface	color	2	scenery\teleporter_shield\bitmaps\teleporter_shield
+e6bd7a10669596d8	512	256	surface	color	2	levels\d40\bitmaps\d40_water
+e73d04a7ff151c62	128	128	surface	color	2	levels\a50\devices\shuttle bay doors\bitmaps\shuttle bay doors offset
+e76c2e1b65e7eb85	256	256	surface	color	2	levels\b30\bitmaps\metal plate floor ext
+e7d4eeb66ce06de8	128	128	companion	multipurpose	2	scenery\plants\plant_broadleaf_tall\bitmaps\plant_broadleaf_leaf_multi
+e7f60c7d3ee72ae7	256	256	companion	multipurpose	2	levels\b30\devices\light fixtures\light fixture ceiling1\bitmaps\light fixtures multi
+e82c86293228bbbb	1024	256	bump	bump	2	levels\b30\bitmaps\alpha grate bump
+e851b989391de678	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\compass_plate
+e8533f4378d89198	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-d
+e89730ee9cce7ae9	512	512	companion	multipurpose	2	vehicles\wraith\bitmaps\wraith multipurpose
+e8ec26863a0f9b8b	512	512	surface	color	2	sky\planets\threshold clear afternoon
+e9253560f90f68ce	32	32	surface	color	2	levels\b30\devices\light fixtures\light fixture ceiling1\bitmaps\light fixture vol
+e963cae7ce4c6cb4	32	32	companion	multipurpose	2	characters\marine\bitmaps\face_shiek_multipurpose
+e97fc6353e91f8fe	1024	512	graphic	color	4	scenery\halo\bitmaps\halo outer ring
+e9ae37b2bb04f747	512	256	companion	multipurpose	2	characters\marine_armored\bitmaps\marine_legs_multipurpose
+e9f3e5715745e878	128	128	surface	color	2	levels\b40\devices\holo halo ring\bitmaps\holo halo ring markers
+ea6c4a4c47eefc36	128	128	graphic	color	4	scenery\rocks\boulder_crouch\bitmaps\boulder_crouch
+eacaeab909860e0d	256	256	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\display_fp
+eb3374c5244d9e99	512	512	surface	color	2	sky\ring\ring clear afternoon
+eb39b711737d1c1b	512	512	surface	color	2	characters\flood_captain\bitmaps\flood_captain
+eb4e089f78f64896	256	256	surface	color	2	sky\planets\basis space
+ebe666b92cf6c84f	128	128	companion	emissive	2	levels\a10\bitmaps\heated ceramic glow
+ec7415841488b2b2	256	256	companion	multipurpose	2	weapons\flag\bitmaps\flag multipurpose
+ec895f23b41d62dd	256	256	surface	color	2	scenery\vehicles\poa\bitmaps\poa-marathon
+ec91e6c889de4ab5	128	64	companion	multipurpose	2	characters\elite\elite_corpse\bitmaps\gutted elite torso multi
+ed22b0663724eba1	512	512	companion	emissive	2	scenery\vehicles\poa\bitmaps\poa-a glow
+ed599f75c8a4e1e9	512	256	surface	color	2	levels\a30\bitmaps\treesclump_filler
+edc91848f9e89749	128	256	surface	color	2	scenery\trees\tree_desert_dead\bitmaps\tree_desert_dead_trunk
+edf7adcfc3dbdb93	256	256	surface	color	2	vehicles\c gun turret\bitmaps\gun turret base
+ee1f4119aacefc36	128	128	companion	multipurpose	2	cinematics\scenery\pipe\bitmaps\pipe_multi
+ee53f898b751e056	128	128	companion	multipurpose	2	scenery\trees\tree_leafydense_doublewide\bitmaps\tree_leafydense_leaves_multi
+ee7e0b936eed617c	256	256	graphic	color	4	scenery\trees\tree_leafydense_doublewide\bitmaps\tree_leafydense_leaves
+eea1fe7a5bfd02b2	512	512	surface	color	2	sky\sky_a50\skynight0\bitmaps\desert_night
+eef4ba4861a5c308	128	64	surface	color	2	characters\cortana\bitmaps\cortana_teeth
+f0477f356ab44a9f	512	512	surface	color	2	characters\sentinel\bitmaps\sentinel
+f099a7adbe54d4ff	512	512	surface	color	2	levels\test\sidewinder\bitmaps\sidewinder_ground
+f0b62048383c5efa	64	64	surface	color	2	levels\a50\bitmaps\volumetric energy
+f1afeae72c7e83a3	512	512	surface	color	2	vehicles\banshee\bitmaps\banshee_burned
+f20d9b160f7f0f73	256	256	graphic	color	4	levels\b30\decals-environment\bitmaps\decal fore symb green b
+f261270dfff9a3ee	512	512	bump	bump	2	scenery\vehicles\poa\bitmaps\poa-d bump
+f290b7a974de237e	256	1024	surface	color	2	levels\a30\bitmaps\waterfall_color
+f2a35c070905a539	128	128	surface	color	2	characters\flood_infection\bitmaps\infection_tentacles
+f2f099ea70a4a2f0	256	256	surface	color	4	vehicles\fighterbomber\bitmaps\fb_computers
+f31489973bd60f47	512	512	surface	color	2	weapons\ball\bitmaps\gameball_l00
+f33b87de18b1dc49	64	256	graphic	color	4	levels\d40\bitmaps\sd numbers
+f34bfa38edb31b78	1024	256	bump	bump	2	levels\b30\bitmaps\metal strips wide bump
+f3db6c44dd55c877	256	256	surface	color	2	levels\test\chillout\bitmaps\chillout metal flat
+f3fb0ec4d196b81a	256	256	surface	color	2	scenery\trees\tree_pine\bitmaps\tree_pine_trunk
+f4b61cde3e263d6e	256	256	bump	bump	2	levels\test\beavercreek\bitmaps\beaver ladder bump
+f4cd7a864a9cd484	256	256	companion	multipurpose	2	characters\floodcarrier\bitmaps\floodcarrier multi
+f52d6107138e2028	256	256	companion	multipurpose	2	levels\a50\devices\light_ceiling\bitmaps\light fixture metal multi
+f53709fa1f96bb69	128	128	companion	multipurpose	2	powerups\flamethrower ammo\bitmaps\flamethrower ammo multipurpose
+f5408341aed8bf01	64	64	graphic	color	4	levels\a10\decals-environment\bitmaps\decal symbol maintenance
+f6155a814895b334	128	128	surface	color	2	sky\dusk\bitmaps\basis dusk
+f6398887974b9c25	1024	256	bump	bump	2	levels\a10\bitmaps\monitors bump
+f668e10aefbd382b	256	256	bump	bump	2	levels\a50\bitmaps\c_mothership3_bump
+f72c764d2576391e	64	64	graphic	first-person	8	weapons\assault rifle\fp\bitmaps\numbers_plate
+f8a01ec3fd6f0425	16	16	surface	color	2	scenery\tubewire\bitmaps\tubewire black
+f8e5c713930b322e	256	256	companion	multipurpose	2	characters\hunter\bitmaps\hunter arm huge multi
+f9a1fdba4c3bba2d	128	128	surface	color	2	characters\marine\bitmaps\face_fred
+fa0efada30fcbbd6	512	512	graphic	color	4	levels\a10\bitmaps\tech rack mount
+fa10ccaa65903be2	256	256	companion	multipurpose	2	weapons\frag grenade\bitmaps\frag grenade multipurpose
+fa2ca36e56a78159	256	256	surface	color	2	levels\a30\devices\torpedo_bridge\bitmaps\metal flat generic bridge
+fa3b1aead1603c3c	256	512	surface	color	2	levels\b30\bitmaps\waves
+fabd962ca2bf0c5b	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor bridge
+fad4a81f272d4e95	128	128	companion	emissive	2	levels\b40\bitmaps\b40_bridgeramp_glow
+fb18cce99fd2064b	128	128	bump	bump	2	levels\a50\bitmaps\covenant plate floor bump
+fc31a0239c3c4b78	256	64	surface	color	2	sky\sky_d40\skyofdoom\bitmaps\fog band doom
+fc4178a6ff66f6db	256	256	graphic	color	4	scenery\trees\tree_pine_snow\bitmaps\snowpine_leaf
+fc81dde12b669907	256	256	surface	color	2	levels\c20\devices\holo control\bitmaps\holo control
+fc8ea788956ca028	512	512	surface	color	2	levels\b30\bitmaps\beach
+fcd25b12a8819fba	512	256	surface	color	2	levels\a10\bitmaps\detail strips
+fd84988bb55402da	256	512	surface	color	2	levels\c10\bitmaps\c10_fallentree
+fd874f3e7c64c39f	512	512	surface	color	2	scenery\vehicles\poa\bitmaps\poa-d burnt
+fdf78eb1e08963d1	512	512	surface	color	2	levels\b30\bitmaps\metal panels generator
+fead09acc1bef396	256	1024	surface	color	4	levels\a10\bitmaps\vending machines
+fec67723ed5af197	512	256	surface	color	2	levels\a30\bitmaps\trees_filler
+ff0c42b42841195b	256	256	graphic	color	4	levels\a10\decals-environment\bitmaps\decal floor armory
+ff8cab94c7415ed4	256	256	surface	color	4	vehicles\warthog\bitmaps\warthog diplays
+ffdc6fc8e5b26ab4	256	256	surface	color	2	characters\grunt\bitmaps\grunt torso
+fff111c49778c5d5	1024	256	graphic	color	4	levels\a30\bitmaps\lights small strips|levels\b30\bitmaps\lights small strips
+fff415629490727b	128	256	surface	color	2	levels\d20\bitmaps\d20_coolant_drain

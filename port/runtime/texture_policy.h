@@ -26,6 +26,13 @@ struct texture_policy_override
 	enum texture_policy_result result;
 };
 
+/* one texture by its key, "HASH-WIDTHxHEIGHT" in the policy file */
+struct texture_policy_key
+{
+	uint64_t hash;
+	uint32_t width, height;
+};
+
 struct texture_policy_table
 {
 	int schema, policy_version;
@@ -57,6 +64,18 @@ struct texture_policy_table
 	const char *const *material_names;
 	size_t material_name_count;
 	enum texture_policy_result material_result;
+	/* The scale rule ("scales"): an upscaled texture is scale_base times the original's size, scale_first_person
+	for the first-person treatment (its Mac base is already 4x), and twice that when doubled: its kind's bit is in
+	doubled_kinds (1 << enum texture_policy_kind), its treatment's in doubled_treatments (1 << enum
+	texture_policy_treatment), one of its tags is in doubled_tags, or its key is in doubled_textures. The shipping
+	selection (step-tools texture-resolution-set.py compose, sets/policy-game-selective-round3) is locked to it by
+	port/assets/texture-selection-lock.tsv. */
+	uint32_t scale_base, scale_first_person;
+	unsigned doubled_kinds, doubled_treatments;
+	const char *const *doubled_tags;
+	size_t doubled_tag_count;
+	const struct texture_policy_key *doubled_textures;
+	size_t doubled_texture_count;
 };
 /* port/assets/texture-policy.json, by tools/embed_texture_policy.py */
 extern const struct texture_policy_table texture_policy_embedded;
@@ -93,6 +112,7 @@ struct texture_policy_decision
 	enum texture_policy_kind kind;
 	enum texture_policy_result result;
 	enum texture_policy_treatment treatment;
+	uint32_t scale;  /* the replacement's size over the original's: 2, 4 or 8; 1 for an original */
 };
 
 typedef void (*texture_policy_log_proc)(void *context, const char *line);
@@ -111,5 +131,10 @@ int texture_policy_add_map_file(struct texture_policy_catalog *catalog, const ch
 /* the decisions for every keyed bitmap, sorted by hash, width and height; free() *out. log may be NULL */
 size_t texture_policy_classify(struct texture_policy_catalog *catalog, const struct texture_policy_table *table,
 	struct texture_policy_decision **out, texture_policy_log_proc log, void *log_context);
+/* the scale rule (texture_policy_table.scale_base) for one texture: 1 for an original, else 2, 4 or 8. tags are the
+tag paths that reference it */
+uint32_t texture_policy_scale(const struct texture_policy_table *table, enum texture_policy_kind kind,
+	enum texture_policy_result result, enum texture_policy_treatment treatment, uint64_t hash, uint32_t width,
+	uint32_t height, const char *const *tags, size_t tag_count);
 const char *texture_policy_result_name(enum texture_policy_result result);
 const char *texture_policy_kind_name(enum texture_policy_kind kind);

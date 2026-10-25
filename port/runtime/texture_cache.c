@@ -182,10 +182,11 @@ void texture_cache_set_write_fault(long fail_after_bytes)
 
 uint64_t texture_cache_entry_bytes(uint32_t width, uint32_t height, uint32_t scale, uint32_t bits_per_texel)
 {
-	uint64_t texels = (uint64_t)width * height * 4;   /* the 2x level */
+	uint64_t texels = 0;
 
-	if (scale == 4)
-		texels += (uint64_t)width * height * 16;
+	/* the 2x level, then the 4x and 8x ones the scale reaches */
+	for (uint32_t level = 2; level <= scale && level <= 8; level *= 2)
+		texels += (uint64_t)width * height * level * level;
 	return texels * bits_per_texel / 8;
 }
 

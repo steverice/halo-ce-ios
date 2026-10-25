@@ -584,6 +584,11 @@ run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/runtime', '
     'port/ios/tests/texture_policy_probe.c', 'port/runtime/texture_policy.c', BUILD/'texture_policy_table.c',
     '-lz', '-o', BUILD/'texture-policy-probe')
 run(BUILD/'texture-policy-probe')
+# its scale rule against the shipping set's 2x, 4x and 8x textures (port/assets/texture-selection-lock.tsv)
+run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/runtime', '-Iport/linux/src',
+    'port/ios/tests/texture_selection_probe.c', 'port/runtime/texture_policy.c', BUILD/'texture_policy_table.c',
+    '-lz', '-o', BUILD/'texture-selection-probe')
+run(BUILD/'texture-selection-probe', 'port/assets/texture-selection-lock.tsv')
 # the texture upscale cache's recipe key, invalidation, writes and storage rules (port/runtime/texture_cache.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/runtime', '-Iport/linux/src',
     'port/ios/tests/texture_cache_probe.c', 'port/runtime/texture_cache.c', '-o', BUILD/'texture-cache-probe')

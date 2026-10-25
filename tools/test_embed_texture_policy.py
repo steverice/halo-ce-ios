@@ -61,8 +61,31 @@ def test_the_material_names_and_result_end_the_table(tmp_path):
     raw = json.loads((ROOT / "port/assets/texture-policy.json").read_text())
     text = emit(tmp_path, dict(raw, material_names=["rock", "tree"], material_result="s4g"))
     assert 'static const char *const material_names[] = { "rock", "tree" };' in text
-    assert "\tmaterial_names, 2, TEXTURE_POLICY_S4G };" in text
-    assert "\tNULL, 0, TEXTURE_POLICY_BPF };" in emit(tmp_path, dict(raw, material_names=[], material_result="bpf"))
+    assert "\tmaterial_names, 2, TEXTURE_POLICY_S4G,\n" in text
+    assert "\tNULL, 0, TEXTURE_POLICY_BPF,\n" in emit(tmp_path, dict(raw, material_names=[], material_result="bpf"))
+
+
+def test_the_scales_end_the_table(tmp_path):
+    raw = json.loads((ROOT / "port/assets/texture-policy.json").read_text())
+    text = emit(tmp_path, raw)
+    assert "\t2, 4, 0x1, 0x4, doubled_tags, 3, doubled_textures, 38 };" in text
+    assert "{ 0x07edbf0e395b91b9ull, 64, 64 }," in text
+    none = dict(raw["scales"], doubled=dict(raw["scales"]["doubled"], kinds=[], treatments=[], tags=[], textures=[]))
+    assert "\t2, 4, 0x0, 0x0, NULL, 0, NULL, 0 };" in emit(tmp_path, dict(raw, scales=none))
+
+
+@pytest.mark.parametrize("change", [{"base": 8}, {"base": 3}, {"doubled": {}},
+                                    {"doubled": {"kinds": ["poster"], "treatments": [], "tags": [], "textures": [],
+                                                 "reason": ""}},
+                                    {"doubled": {"kinds": [], "treatments": [], "tags": [], "textures": ["00-1x1"],
+                                                 "reason": ""}}])
+def test_a_bad_scales_block_is_refused(tmp_path, change):
+    raw = json.loads((ROOT / "port/assets/texture-policy.json").read_text())
+    source = tmp_path / "policy.json"
+    source.write_text(json.dumps(dict(raw, scales=dict(raw["scales"], **change))))
+    done = subprocess.run([sys.executable, str(ROOT / "tools/embed_texture_policy.py"), str(source),
+                           str(tmp_path / "table.c")], capture_output=True, text=True)
+    assert done.returncode != 0 and "scales" in done.stderr
 
 
 @pytest.mark.parametrize("change", [{"material_result": "sharp"}, {"material_names": "rock"}, {"material_names": None}])
