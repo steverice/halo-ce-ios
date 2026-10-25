@@ -7,19 +7,23 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <math.h>
 
 /* One enumerated shape avoids retaining an ANE program for each combination of texture dimensions.
    The smaller 256-texel core leaves room for the generator's full-resolution output and refine buffers. */
 enum { MODEL_SIDE = 288, MODEL_CONTEXT = 16, MODEL_CORE = MODEL_SIDE - 2 * MODEL_CONTEXT, MODEL_SCALE = 4 };
 
+/* Two sets of tile buffers: the CPU packs and consumes one call's tiles while the Neural Engine runs the other's. */
 @interface TextureUpscaleModel : NSObject
 {
 @public
     MLModel *model;
-    MLMultiArray *input;
-    MLMultiArray *backing;
-    MLDictionaryFeatureProvider *provider;
-    MLPredictionOptions *options;
+    uint32_t planes;    /* channels per call: 3 (S4g on each, as a batch) or 1 */
+    MLMultiArray *input[2];
+    MLMultiArray *backing[2];
+    MLDictionaryFeatureProvider *provider[2];
+    MLPredictionOptions *options[2];
+    dispatch_queue_t consumers;
     struct texture_upscale_model_stats stats;
     texture_upscale_model_observer observer;
     void *observer_context;
@@ -50,44 +54,57 @@ static uint32_t addressed(int64_t index, uint32_t size, int wrap)
     return index < 0 ? 0 : index >= size ? size - 1 : (uint32_t)index;
 }
 
+/* Writes one plane of the model's planar input tile from channel channel of the interleaved source. */
 static void pack_tile(float *tile, const float *source, uint32_t width, uint32_t height,
-    uint32_t channels, uint32_t tx, uint32_t ty, uint32_t core_w, uint32_t core_h, int wrap)
+    uint32_t channels, uint32_t channel, uint32_t tx, uint32_t ty, uint32_t core_w, uint32_t core_h, int wrap)
 {
     uint32_t xs[MODEL_SIDE];
     for (uint32_t x = 0; x < MODEL_SIDE; x++) {
         /* Match coreml._predictor: after the real contextual rectangle, repeat its final texel. */
         uint32_t local = x < core_w + 2 * MODEL_CONTEXT ? x : core_w + 2 * MODEL_CONTEXT - 1;
-        xs[x] = addressed((int64_t)tx + local - MODEL_CONTEXT, width, wrap);
+        xs[x] = addressed((int64_t)tx + local - MODEL_CONTEXT, width, wrap) * channels + channel;
     }
     for (uint32_t y = 0; y < MODEL_SIDE; y++) {
         uint32_t local = y < core_h + 2 * MODEL_CONTEXT ? y : core_h + 2 * MODEL_CONTEXT - 1;
         uint32_t sy = addressed((int64_t)ty + local - MODEL_CONTEXT, height, wrap);
-        for (uint32_t x = 0; x < MODEL_SIDE; x++) {
-            size_t s = ((size_t)sy * width + xs[x]) * channels;
-            for (uint32_t c = 0; c < 3; c++)
-                tile[(size_t)c * MODEL_SIDE * MODEL_SIDE + y * MODEL_SIDE + x] = source[s + (channels == 1 ? 0 : c)];
-        }
+        const float *row = source + (size_t)sy * width * channels;
+        float *out = tile + y * MODEL_SIDE;
+        for (uint32_t x = 0; x < MODEL_SIDE; x++) out[x] = row[xs[x]];
     }
 }
 
-static MLMultiArray *make_array(uint32_t side, MLMultiArrayDataType type, NSError **error)
+static MLMultiArray *make_array(uint32_t planes, uint32_t side, MLMultiArrayDataType type, NSError **error)
 {
-    size_t item_size = type == MLMultiArrayDataTypeFloat16 ? 2 : type == MLMultiArrayDataTypeDouble ? 8 : 4;
-    size_t bytes = 3 * (size_t)side * side * item_size;
+    size_t item_size = type == MLMultiArrayDataTypeFloat16 ? 2 : 4;
+    size_t bytes = (size_t)planes * side * side * item_size;
     void *data = NULL;
     if (posix_memalign(&data, (size_t)getpagesize(), bytes)) return nil;
-    MLMultiArray *array = [[MLMultiArray alloc] initWithDataPointer:data shape:@[@1, @3, @(side), @(side)]
-        dataType:type strides:@[@(3 * side * side), @(side * side), @(side), @1]
+    MLMultiArray *array = [[MLMultiArray alloc] initWithDataPointer:data shape:@[@1, @(planes), @(side), @(side)]
+        dataType:type strides:@[@(planes * side * side), @(side * side), @(side), @1]
         deallocator:^(void *pointer) { free(pointer); } error:error];
     if (!array) free(data);
     return array;
+}
+
+/* Development only: HALO_TEXTURE_UPSCALE_MODEL names a compiled package to use instead of the bundled one. */
+static NSURL *model_url(void)
+{
+    const char *override = getenv("HALO_TEXTURE_UPSCALE_MODEL");
+    if (override && *override) {
+        NSString *path = @(override);
+        if (!path.isAbsolutePath)
+            path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
+                stringByAppendingPathComponent:path];
+        if ([NSFileManager.defaultManager fileExistsAtPath:path]) return [NSURL fileURLWithPath:path];
+    }
+    return [[NSBundle mainBundle] URLForResource:@"S4g" withExtension:@"mlmodelc"];
 }
 
 int texture_upscale_model_available(void)
 {
     @autoreleasepool {
         if (@available(iOS 17.0, tvOS 17.0, macOS 14.0, *)) {
-            if (![[NSBundle mainBundle] URLForResource:@"S4g" withExtension:@"mlmodelc"]) return 0;
+            if (!model_url()) return 0;
             for (id<MLComputeDeviceProtocol> device in MLModel.availableComputeDevices)
                 if ([device isKindOfClass:MLNeuralEngineComputeDevice.class]) return 1;
         }
@@ -111,23 +128,29 @@ struct texture_upscale_model *texture_upscale_model_create(char *error, size_t e
             MLModelConfiguration *configuration = [MLModelConfiguration new];
             configuration.computeUnits = MLComputeUnitsCPUAndNeuralEngine;
             NSError *failure = nil;
-            NSURL *url = [[NSBundle mainBundle] URLForResource:@"S4g" withExtension:@"mlmodelc"];
+            NSURL *url = model_url();
             handle->model = [MLModel modelWithContentsOfURL:url configuration:configuration error:&failure];
             if (!handle->model) { set_error(error, error_size, failure.localizedDescription); return NULL; }
-            handle->input = make_array(MODEL_SIDE, MLMultiArrayDataTypeFloat32, &failure);
+            NSArray<NSNumber *> *shape = handle->model.modelDescription.inputDescriptionsByName[@"image"].multiArrayConstraint.shape;
+            handle->planes = shape.count == 4 ? shape[1].unsignedIntValue : 0;
+            if (handle->planes != 1 && handle->planes != 3) { set_error(error, error_size, @"S4g has an unsupported input shape"); return NULL; }
             MLMultiArrayDataType output_type = handle->model.modelDescription.outputDescriptionsByName[@"upscaled"].multiArrayConstraint.dataType;
-            if (output_type != MLMultiArrayDataTypeFloat16 && output_type != MLMultiArrayDataTypeFloat32 &&
-                output_type != MLMultiArrayDataTypeDouble) {
+            if (output_type != MLMultiArrayDataTypeFloat16 && output_type != MLMultiArrayDataTypeFloat32) {
                 set_error(error, error_size, @"S4g has an unsupported output data type"); return NULL;
             }
-            handle->backing = make_array(MODEL_SIDE * MODEL_SCALE, output_type, &failure);
-            if (!handle->input || !handle->backing) {
-                set_error(error, error_size, failure.localizedDescription ?: @"Could not allocate S4g tile buffers"); return NULL;
+            for (int i = 0; i < 2; i++) {
+                handle->input[i] = make_array(handle->planes, MODEL_SIDE, MLMultiArrayDataTypeFloat32, &failure);
+                handle->backing[i] = make_array(handle->planes, MODEL_SIDE * MODEL_SCALE, output_type, &failure);
+                if (!handle->input[i] || !handle->backing[i]) {
+                    set_error(error, error_size, failure.localizedDescription ?: @"Could not allocate S4g tile buffers"); return NULL;
+                }
+                handle->provider[i] = [[MLDictionaryFeatureProvider alloc] initWithDictionary:@{@"image": handle->input[i]} error:&failure];
+                if (!handle->provider[i]) { set_error(error, error_size, failure.localizedDescription); return NULL; }
+                handle->options[i] = [MLPredictionOptions new];
+                handle->options[i].outputBackings = @{@"upscaled": handle->backing[i]};
             }
-            handle->provider = [[MLDictionaryFeatureProvider alloc] initWithDictionary:@{@"image": handle->input} error:&failure];
-            if (!handle->provider) { set_error(error, error_size, failure.localizedDescription); return NULL; }
-            handle->options = [MLPredictionOptions new];
-            handle->options.outputBackings = @{@"upscaled": handle->backing};
+            handle->consumers = dispatch_queue_create("org.visr.texture-upscale.tiles",
+                dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, qos_class_self(), 0));
             active_model = handle;
             return (__bridge_retained struct texture_upscale_model *)handle;
         }
@@ -164,11 +187,107 @@ void texture_upscale_model_get_stats(struct texture_upscale_model *model, struct
     *stats = model ? ((__bridge TextureUpscaleModel *)model)->stats : (struct texture_upscale_model_stats){0};
 }
 
-static float output_value(const void *data, MLMultiArrayDataType type, size_t index)
+
+struct tile_slot { uint32_t tx, ty, cw, ch, channel; };
+
+/* Work units are (tile, channel) pairs in tile order; each call takes as many as the package has planes, so three
+   channels of one tile go through a three-plane package together, and three tiles' single channel share a call. The
+   previous call's units are handed to the consumer on another thread while the Neural Engine runs this one. */
+int texture_upscale_model_predict_tiles(struct texture_upscale_model *model, const float *input,
+    uint32_t width, uint32_t height, uint32_t channels, int wrap,
+    texture_upscale_tile_consumer consumer, void *context, char *error, size_t error_size)
 {
-    if (type == MLMultiArrayDataTypeFloat16) return ((const _Float16 *)data)[index];
-    if (type == MLMultiArrayDataTypeDouble) return (float)((const double *)data)[index];
-    return ((const float *)data)[index];
+    if (error && error_size) error[0] = 0;
+    if (!model || !input || !consumer || !width || !height || (channels != 1 && channels != 3) ||
+        width > UINT32_MAX / MODEL_SCALE || height > UINT32_MAX / MODEL_SCALE) {
+        set_error(error, error_size, @"Invalid S4g image or output dimensions"); return -1;
+    }
+    TextureUpscaleModel *handle = (__bridge TextureUpscaleModel *)model;
+    uint32_t columns = (width + MODEL_CORE - 1) / MODEL_CORE, rows = (height + MODEL_CORE - 1) / MODEL_CORE;
+    uint64_t units = (uint64_t)columns * rows * channels;
+    __block _Atomic int consumer_failed = 0;
+    int status = 0;
+    dispatch_group_t pending[2] = {dispatch_group_create(), dispatch_group_create()};
+    for (uint64_t first = 0, call = 0; first < units && !status && !consumer_failed; first += handle->planes, call++) {
+        int buffer = (int)(call & 1);
+        /* The consumer of the call before last still reads this buffer's output. */
+        dispatch_group_wait(pending[buffer], DISPATCH_TIME_FOREVER);
+        if (consumer_failed) break;
+        struct tile_slot slots[3];
+        unsigned used = 0;
+        uint64_t pack_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+        float *tile = handle->input[buffer].dataPointer;
+        for (uint64_t u = first; u < units && used < handle->planes; u++, used++) {
+            uint64_t t = u / channels;
+            uint32_t tx = (uint32_t)(t % columns) * MODEL_CORE, ty = (uint32_t)(t / columns) * MODEL_CORE;
+            slots[used] = (struct tile_slot){tx, ty, width - tx < MODEL_CORE ? width - tx : MODEL_CORE,
+                height - ty < MODEL_CORE ? height - ty : MODEL_CORE, (uint32_t)(u % channels)};
+            pack_tile(tile + (size_t)used * MODEL_SIDE * MODEL_SIDE, input, width, height, channels,
+                slots[used].channel, tx, ty, slots[used].cw, slots[used].ch, wrap);
+        }
+        handle->stats.pack_seconds += (double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - pack_start) / 1e9;
+        @autoreleasepool {
+            uint64_t start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+            NSError *failure = nil;
+            id<MLFeatureProvider> prediction = [handle->model predictionFromFeatures:handle->provider[buffer]
+                options:handle->options[buffer] error:&failure];
+            handle->stats.seconds += (double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start) / 1e9;
+            /* Core ML sometimes declines a proposed backing; the block keeps its own output alive until consumed. */
+            MLMultiArray *result = [prediction featureValueForName:@"upscaled"].multiArrayValue;
+            NSArray<NSNumber *> *shape = result.shape;
+            if (!result || shape.count != 4 || shape[0].unsignedIntValue != 1 || shape[1].unsignedIntValue != handle->planes ||
+                shape[2].unsignedIntValue != MODEL_SIDE * MODEL_SCALE || shape[3].unsignedIntValue != MODEL_SIDE * MODEL_SCALE ||
+                (result.dataType != MLMultiArrayDataTypeFloat16 && result.dataType != MLMultiArrayDataTypeFloat32)) {
+                set_error(error, error_size, failure.localizedDescription ?: @"S4g returned an invalid output tile"); status = -1;
+            } else {
+                handle->stats.predictions++;
+                handle->stats.tiles += used;
+                struct { struct tile_slot slot[3]; } batch;
+                memcpy(batch.slot, slots, sizeof(batch.slot));
+                unsigned count = used;
+                dispatch_group_async(pending[buffer], handle->consumers, ^{
+                    uint64_t consume_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+                    ptrdiff_t sc = result.strides[1].longLongValue, sy = result.strides[2].longLongValue,
+                        sx = result.strides[3].longLongValue;
+                    int half = result.dataType == MLMultiArrayDataTypeFloat16;
+                    size_t origin = (size_t)(MODEL_CONTEXT * MODEL_SCALE) * (sy + sx);
+                    for (unsigned slot = 0; slot < count && !consumer_failed; slot++) {
+                        struct texture_upscale_tile view = {batch.slot[slot].tx, batch.slot[slot].ty, batch.slot[slot].cw, batch.slot[slot].ch,
+                            half ? (const void *)((const _Float16 *)result.dataPointer + slot * sc + origin) :
+                                (const void *)((const float *)result.dataPointer + slot * sc + origin), sy, sx, half};
+                        if (consumer(context, &view, batch.slot[slot].channel)) consumer_failed = 1;
+                    }
+                    handle->stats.consume_seconds += (double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - consume_start) / 1e9;
+                });
+            }
+        }
+        handle->stats.footprint_after = footprint(&handle->stats.peak_footprint);
+        if (handle->stats.predictions == 1)
+            NSLog(@"texture-upscale: S4g shape %ux%u x %u before=%llu after=%llu peak=%llu",
+                MODEL_SIDE, MODEL_SIDE, handle->planes, (unsigned long long)handle->stats.footprint_before,
+                (unsigned long long)handle->stats.footprint_after, (unsigned long long)handle->stats.peak_footprint);
+        if (handle->observer) handle->observer(&handle->stats, handle->observer_context);
+    }
+    dispatch_group_wait(pending[0], DISPATCH_TIME_FOREVER);
+    dispatch_group_wait(pending[1], DISPATCH_TIME_FOREVER);
+    if (!status && consumer_failed) { set_error(error, error_size, @"S4g tile consumer failed"); status = -1; }
+    return status;
+}
+
+struct strided_output { float *output; uint32_t width, stride; };
+static int write_strided(void *context, const struct texture_upscale_tile *tile, uint32_t channel)
+{
+    struct strided_output *out = context;
+    size_t ow = (size_t)out->width * MODEL_SCALE;
+    for (uint32_t y = 0; y < tile->height * MODEL_SCALE; y++) {
+        float *row = out->output + (((size_t)tile->y * MODEL_SCALE + y) * ow + (size_t)tile->x * MODEL_SCALE) * out->stride + channel;
+        if (tile->half && tile->column_stride == 1) {
+            const _Float16 *source = (const _Float16 *)tile->data + (ptrdiff_t)y * tile->row_stride;
+            for (uint32_t x = 0; x < tile->width * MODEL_SCALE; x++) row[(size_t)x * out->stride] = source[x];
+        } else for (uint32_t x = 0; x < tile->width * MODEL_SCALE; x++)
+            row[(size_t)x * out->stride] = texture_upscale_tile_at(tile, (int32_t)x, (int32_t)y);
+    }
+    return 0;
 }
 
 int texture_upscale_model_predict4x(struct texture_upscale_model *model, const float *input,
@@ -184,53 +303,12 @@ int texture_upscale_model_predict4x_strided(struct texture_upscale_model *model,
     uint32_t output_pixel_stride, char *error, size_t error_size)
 {
     if (error && error_size) error[0] = 0;
-    if (!model || !input || !output || !width || !height || (channels != 1 && channels != 3) ||
-        output_pixel_stride < channels ||
+    if (!output || output_pixel_stride < channels || (channels != 1 && channels != 3) || !width || !height ||
         width > UINT32_MAX / MODEL_SCALE || height > UINT32_MAX / MODEL_SCALE ||
         (size_t)width > SIZE_MAX / height / output_pixel_stride / (MODEL_SCALE * MODEL_SCALE) / sizeof(float)) {
         set_error(error, error_size, @"Invalid S4g image or output dimensions"); return -1;
     }
-    TextureUpscaleModel *handle = (__bridge TextureUpscaleModel *)model;
-    for (uint32_t ty = 0; ty < height; ty += MODEL_CORE) for (uint32_t tx = 0; tx < width; tx += MODEL_CORE) {
-        uint32_t cw = width - tx < MODEL_CORE ? width - tx : MODEL_CORE;
-        uint32_t ch = height - ty < MODEL_CORE ? height - ty : MODEL_CORE;
-        int status = 0;
-        /* Core ML sometimes declines a proposed backing. Its temporary output must die after this tile. */
-        @autoreleasepool {
-            pack_tile(handle->input.dataPointer, input, width, height, channels, tx, ty, cw, ch, wrap);
-            uint64_t start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-            NSError *failure = nil;
-            id<MLFeatureProvider> prediction = [handle->model predictionFromFeatures:handle->provider options:handle->options error:&failure];
-            handle->stats.seconds += (double)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - start) / 1e9;
-            MLMultiArray *result = [prediction featureValueForName:@"upscaled"].multiArrayValue;
-            NSArray<NSNumber *> *shape = result.shape;
-            if (!result || shape.count != 4 || shape[0].unsignedIntValue != 1 || shape[1].unsignedIntValue != 3 ||
-                shape[2].unsignedIntValue != MODEL_SIDE * MODEL_SCALE || shape[3].unsignedIntValue != MODEL_SIDE * MODEL_SCALE ||
-                (result.dataType != MLMultiArrayDataTypeFloat16 && result.dataType != MLMultiArrayDataTypeFloat32 &&
-                 result.dataType != MLMultiArrayDataTypeDouble)) {
-                set_error(error, error_size, failure.localizedDescription ?: @"S4g returned an invalid output tile"); status = -1;
-            } else {
-                size_t sc = result.strides[1].unsignedLongLongValue;
-                size_t sy = result.strides[2].unsignedLongLongValue, sx = result.strides[3].unsignedLongLongValue;
-                const void *data = result.dataPointer;
-                for (uint32_t y = 0; y < ch * MODEL_SCALE; y++) for (uint32_t x = 0; x < cw * MODEL_SCALE; x++) {
-                    size_t s = (y + MODEL_CONTEXT * MODEL_SCALE) * sy + (x + MODEL_CONTEXT * MODEL_SCALE) * sx;
-                    size_t d = (((size_t)ty * MODEL_SCALE + y) * width * MODEL_SCALE + tx * MODEL_SCALE + x) * output_pixel_stride;
-                    if (channels == 1) {
-                        output[d] = (output_value(data, result.dataType, s) + output_value(data, result.dataType, s + sc) +
-                            output_value(data, result.dataType, s + 2 * sc)) / 3;
-                    } else for (uint32_t c = 0; c < 3; c++) output[d + c] = output_value(data, result.dataType, s + c * sc);
-                }
-                handle->stats.predictions++;
-            }
-        }
-        handle->stats.footprint_after = footprint(&handle->stats.peak_footprint);
-        if (handle->stats.predictions == 1)
-            NSLog(@"texture-upscale: S4g shape %ux%u before=%llu after=%llu peak=%llu",
-                MODEL_SIDE, MODEL_SIDE, (unsigned long long)handle->stats.footprint_before,
-                (unsigned long long)handle->stats.footprint_after, (unsigned long long)handle->stats.peak_footprint);
-        if (handle->observer) handle->observer(&handle->stats, handle->observer_context);
-        if (status) return status;
-    }
-    return 0;
+    struct strided_output out = {output, width, output_pixel_stride};
+    return texture_upscale_model_predict_tiles(model, input, width, height, channels, wrap, write_strided, &out,
+        error, error_size);
 }
