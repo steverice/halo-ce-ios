@@ -356,6 +356,9 @@ void host_texture_upscale_init(const char *root) {
                 host_logf(HOST_LOG_WARN,"Upscale: could not delete the whole texture cache");
             [files removeItemAtPath:[base stringByAppendingPathComponent:@"texture-upscale-export"] error:nil];
             [files removeItemAtPath:[base stringByAppendingPathComponent:@"texture-upscale-generate.json"] error:nil];
+            /* and packages copied in for HALO_TEXTURE_UPSCALE_MODEL */
+            for(NSString *name in [files contentsOfDirectoryAtPath:base error:nil])
+                if([name.pathExtension isEqual:@"mlmodelc"])[files removeItemAtPath:[base stringByAppendingPathComponent:name] error:nil];
             host_logf(HOST_LOG_INFO,"Upscale: removed the texture cache, the export and the generator log");
             return;
         }
