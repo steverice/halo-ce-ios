@@ -17,6 +17,7 @@ Planned releases, which may change. The sections below list every item.
 - [ ] iPhone and iPad: improved touch controls
 - [ ] iPhone Duo support
 - [ ] Vision Pro improvements
+- [ ] Invite QR codes: show a game's invite as a QR code and join by scanning one
 
 ### 0.8.0: maps
 
