@@ -52,6 +52,10 @@ static void usnprintf(wchar_t *text, size_t count, wchar_t const *format, ...)
 	}
 	native[n] = 0; va_start(args, format); vswprintf(text, count, native, args); va_end(args);
 }
+/* (no device limit here: the BIG mark and its ticker text are menu_functions.c's) */
+static long player_capacity(void) { return 0; }
+static int player_capacity_exceeded(long players) { (void)players; return 0; }
+
 /* DECLARATIONS */
 static void render_row(void)
 {
