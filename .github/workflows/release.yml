@@ -84,6 +84,7 @@ jobs:
           path: |
             build/release-probe.json
             build/ios/halo_guest.elf
+            build/ios/embedded/guest-symbols.txt
           if-no-files-found: error
           retention-days: 30
 

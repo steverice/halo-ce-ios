@@ -412,6 +412,11 @@ def main():
             print(f'dSYM: {target}')
         else:
             print(f'no dSYM at {dsym}: the upload will carry no debug symbols', flush=True)
+        # the guest's symbols, which name the guest frames of this build's crash reports
+        # (tools/guest_symbolicate.py); the app carries the same table in __TEXT,__halosyms
+        symbols = ROOT/'build/ios/embedded/guest-symbols.txt'
+        shutil.copy2(symbols, args.app_store_package.resolve()/'guest-symbols.txt')
+        print(f'guest symbols: {args.app_store_package.resolve()/"guest-symbols.txt"}')
         for command in [] if args.archive_only else commands[1:]:
             run(*command)
         print(f'App Store Connect package: {args.app_store_package}' +
