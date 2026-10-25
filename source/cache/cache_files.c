@@ -1096,6 +1096,13 @@ boolean cache_files_map_present(
 		char path[256];
 		HANDLE file;
 
+		/* port: this build's hosts give the game's own maps no version (0),
+		and nothing tells a client whether a host's map of the game's own name
+		has other contents (a modded bloodgulch.map): a version given is
+		logged, so that what other builds send is known */
+		if (version)
+			platform_log("map %s: the host gives it the version %08lx, which the game's own maps do not have",
+				name, version);
 		if (cache_files_precache_map_loaded(map_name))
 			return TRUE;
 		snprintf(path, sizeof(path), "%s%s.map", cache_files_map_directory(), name);
