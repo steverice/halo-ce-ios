@@ -22,3 +22,10 @@ void host_texture_upscale_level_end(int skipped);
 int host_texture_upscale_level_ready(void);
 /* the Settings app's line: empty, "Not used on this device" or "N of M ready" */
 void host_texture_upscale_status(char *text, size_t size);
+/* for the import's continued processing (host_texture_upscale_continued.m): the whole game's work units ready and in
+   all; whether a pump is queued or running; stop (1) or resume (0) the work while the app is in the background */
+void host_texture_upscale_progress_units(unsigned long long *done, unsigned long long *total);
+int host_texture_upscale_busy(void);
+void host_texture_upscale_background_stop(int stop);
+/* host_texture_upscale_continued.m: the import phase began (1) or ended (0); does nothing where the API is missing */
+void host_texture_upscale_continued_phase(int began);

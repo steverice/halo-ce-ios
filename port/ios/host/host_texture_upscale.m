@@ -663,6 +663,8 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
     atomic_fetch_add(&urgent,1);
     unsigned ended=atomic_load(&pumps_ended);
     host_texture_upscale_scan();
+    /* the player is on the import's phase: iOS 26 may carry it on if they switch away */
+    host_texture_upscale_continued_phase(1);
     double start=now();BOOL skipped=NO;
     for(;;) {
         struct texture_cache_progress p={0};
@@ -675,8 +677,25 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
     }
     struct texture_cache_progress p=progress_of(nil);
     host_logf(HOST_LOG_INFO,"Upscale import: %s after %.1f s, %zu of %zu textures ready",skipped?"skipped":"finished",now()-start,p.ready,p.textures);
+    host_texture_upscale_continued_phase(0);
     atomic_fetch_sub(&urgent,1);
     return 1;
+}
+
+void host_texture_upscale_progress_units(unsigned long long *done,unsigned long long *total) {
+    struct texture_cache_progress p={0};
+    if(upscale_enabled&&catalog_ready)p=progress_of(nil);
+    if(done)*done=p.ready_units;
+    if(total)*total=p.units;
+}
+int host_texture_upscale_busy(void) { return upscale_enabled&&(atomic_load(&pump_queued)||atomic_load(&scan_pending)); }
+/* the continued-processing task expired while the app is away: stop at the texture in hand (it is made again later);
+   back in the foreground, resume if nothing else holds the work (a level being played) */
+void host_texture_upscale_background_stop(int stop) {
+    if(!upscale_enabled)return;
+    if(stop){set_stop(YES);long busy=dispatch_group_wait(work_group,dispatch_time(DISPATCH_TIME_NOW,(int64_t)(2*NSEC_PER_SEC)));
+        host_logf(HOST_LOG_INFO,"Upscale: stopped in the background%s",busy?", a texture still running":"");}
+    else resume_if_allowed();
 }
 
 /* ---------- a level's wait and readiness (the loading screen, texture_upscale_map_loaded) */

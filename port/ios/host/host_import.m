@@ -142,6 +142,18 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
     (void)controller;self.statusLabel.text=@"Choose your Halo XISO whenever you're ready.";
 }
+/* Development only (HALO_TEXTURE_UPSCALE_IMPORT_PHASE): the import's upscaling phase alone, over game data already
+   imported, so a device test can reach it, and its continued processing, without importing the disc again. */
+- (void)upscalePhaseOnly {
+    self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
+    self.chooseButton.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
+    [self.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
+    self.statusLabel.text=@"Upscaling textures";[self.spinner startAnimating];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        host_texture_upscale_prepare_import(self.documents.fileSystemRepresentation,upscale_progress,(__bridge void *)self);
+        dispatch_async(dispatch_get_main_queue(),^{[self.spinner stopAnimating];self.importing=NO;self.ready=YES;});
+    });
+}
 - (void)cancelImport {self.cancelled=YES;[self.coordinator cancel];self.cancelButton.enabled=NO;self.statusLabel.text=@"Cancelling import…";}
 - (void)importImage:(NSURL *)url {
     if (self.importing) return;
@@ -232,7 +244,13 @@ void host_ios_prepare_assets(const char *root) {
         [files removeItemAtPath:staging error:nil];
     }
     char reason[1024]={0};
-    if (xiso_maps_ready(maps.fileSystemRepresentation,reason,sizeof(reason))) return;
+    BOOL upscale_phase=NO;
+    if (xiso_maps_ready(maps.fileSystemRepresentation,reason,sizeof(reason))) {
+        if (!getenv("HALO_TEXTURE_UPSCALE_IMPORT_PHASE")) return;
+        host_texture_upscale_init(root);
+        if (!host_texture_upscale_enabled()) return;
+        upscale_phase=YES;
+    }
     UIWindowScene *scene=nil;
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
         if ([candidate isKindOfClass:UIWindowScene.class]) {scene=(UIWindowScene *)candidate;break;}
@@ -247,9 +265,10 @@ void host_ios_prepare_assets(const char *root) {
             if (regular.boolValue && ([extension isEqualToString:@"iso"] || [extension isEqualToString:@"xiso"])) [images addObject:url];
         }
     }
-    if (images.count==1) controller.pendingImage=images.firstObject;
+    if (images.count==1 && !upscale_phase) controller.pendingImage=images.firstObject;
     UIWindow *window=[[UIWindow alloc] initWithWindowScene:scene];window.frame=scene.coordinateSpace.bounds;
     window.windowLevel=UIWindowLevelNormal+2;window.rootViewController=controller;[window makeKeyAndVisible];
+    if (upscale_phase) [controller upscalePhaseOnly];
     while (!controller.ready) {
         @autoreleasepool {
             /* Like SDL's UIKit event pump, service tracking as well as the
