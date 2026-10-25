@@ -1659,7 +1659,8 @@ static void texture_astc_swap_ready(void)
 				memory_watch_generation(entry->address, entry->size) > entry->generation ||
 				*config_string("debug.texture_dump_directory") ||
 				text_hires_atlas_texture(entry->data) ||
-				texture_entry_result_uncached(entry, &type, &description) != entry->texture)
+				texture_entry_result_uncached(entry, &type, &description) != entry->texture ||
+				texture_entry_replaced(entry))
 				continue;
 			bytes = texture_astc_stored(entry);
 			if (!bytes)
