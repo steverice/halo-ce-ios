@@ -650,8 +650,8 @@ default size), follows the window when it's resized, and is letterboxed at 16:9;
 - **Closing the window pauses the game**, sound included, and reopening Halo
   resumes it. If visionOS later reclaims the closed window, the game quits; it
   saves at checkpoints.
-- **Memory.** The game reserves a 4 GB address range for its 32-bit memory at
-  launch, before the import screen, and falls back to a reservation of about 2.2 GB
+- **Memory.** The game reserves a 4 GB address range for its 32-bit memory
+  before `main` runs, ahead of UIKit, Metal and the game's own threads, and falls back to a reservation of about 2.2 GB
   (the guest image ends near 0x8A70B000) if that is refused. If a device (a Vision Pro, an Apple TV HD, a first-generation iPad Pro) refuses both, launching shows "Could not reserve the
   game's memory arena"; rebuild with `--extended-virtual-addressing`
   (needs a paid developer team), which signs with that entitlement. The build

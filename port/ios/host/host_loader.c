@@ -6,6 +6,11 @@
 #include <sys/mman.h>
 struct host_guest_image host_image;
 static void missing_import(void) { host_crash("an unavailable guest import was called"); }
+/* Before main, UIKit, Metal, SDL or any thread of ours maps memory: the arena needs a free range at a multiple
+   of 4 GB, and on a device near its address-space limit what is mapped first decides whether one is left. */
+__attribute__((constructor)) static void reserve_arena_first(void) {
+    host_memory_reserve_early(HALO_GUEST_IMAGE_BASE,IOS_GUEST_IMAGE_END-HALO_GUEST_IMAGE_BASE);
+}
 int host_load_image(const void *unused,size_t ignored) {
     (void)unused;(void)ignored;
     if(host_memory_initialize(HALO_GUEST_IMAGE_BASE,IOS_GUEST_IMAGE_END-HALO_GUEST_IMAGE_BASE))return -1;

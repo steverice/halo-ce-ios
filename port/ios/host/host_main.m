@@ -370,8 +370,9 @@ int main(int argc,char **argv) {
             host_logf(HOST_LOG_INFO,"runner: App Nap held off");
         }
 #endif
-        /* the arena is the step a device can refuse (visionOS: see port/ios/README.md); reserved before the import
-           screen so a refusal shows at once, not after a multi-GB import */
+        /* the arena is the step a device can refuse (visionOS: see port/ios/README.md); reserved before main
+           (host_loader.c) and adopted here, before the import screen, so a refusal shows at once, not after a
+           multi-GB import */
 #if HALO_RENDER_VALIDATION
         if(!host_render_replay_requested())
 #endif

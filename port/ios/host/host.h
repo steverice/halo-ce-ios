@@ -40,6 +40,8 @@ other guest memory from that arena. Native pointers remain 64-bit. */
 
 /* reserves the fixed ranges; returns 0 on success */
 int host_memory_initialize(uint32_t image_base, uint32_t image_size);
+/* Reserves the arena before main, while the address space is emptiest; host_memory_initialize adopts it. */
+void host_memory_reserve_early(uint32_t image_base, uint32_t image_size);
 /* page-granular allocations within the guest arena; NULL on failure */
 void *host_low_map(size_t size, int protection);
 void host_low_unmap(void *address, size_t size);

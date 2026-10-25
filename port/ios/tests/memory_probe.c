@@ -22,7 +22,10 @@ static void *writer(void *arg) {
 }
 int main(int argc,char **argv) {
     int reduced=argc>1&&!strcmp(argv[1],"reduced");
+    int early=argc>1&&!strcmp(argv[1],"early");
     if(reduced)host_arena_try_full=0;
+    /* the app reserves before main (host_loader.c); initialize then adopts that reservation */
+    if(early)host_memory_reserve_early(0,0x8a70b000u);
     if(host_memory_initialize(0,0x8a70b000u))return 1;
     if(reduced?host_arena_size!=0x8b000000ull:host_arena_size!=0x100000000ull)return 30;
     if(!host_low_owns((uintptr_t)host_pointer(0x8a000000u),4))return 31;
