@@ -430,7 +430,7 @@ static void check_shipped(const char *shipped)
 	assert(has(&profile, "display.renderer", "metal") && has(&profile, "display.render_height", "1080"));
 	assert(has(&profile, "display.render_scale", "0.5") && has(&profile, "display.upscaled_textures", "false"));
 	assert(has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.model_lod", "auto") &&
-		has(&profile, "display.shadow_map_size", "256"));
+		has(&profile, "display.shadow_map_size", "256") && has(&profile, "display.frame_rate", "30"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "\tmodel Apple TV HD\tmenu\n") && strstr(encoded, "\tmodel Apple TV HD\tcutscene\n"));
 	/* an Apple TV 4K without memory or display reported, and the tvOS simulator: the class floor, the Apple TV HD's values */

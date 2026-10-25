@@ -27,11 +27,17 @@ models = ["AppleTV5,3"]
 
 # Gameplay. The class profile's render height is 1080; half of it each way is 960x540.
 [display]
+frame_rate = "30"
 texture_idle_seconds = 30
 render_scale = 0.5
 anisotropic_filtering = 4
 model_lod = "auto"
 shadow_map_size = 256
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "Decided for this device: gameplay holds no tier of the ladder at 60. Presented at 540 lines with the cheapest settings, 97.7 to 99.4% of frames came within two refreshes, so uncapped play alternates between 60 and 30. Capped at 30, each frame stays up two refreshes, as cutscenes already do. The menu keeps the display's rate."
+source = "Apple TV HD presented runs of a10 and d40 at 540 lines and minimum settings, settings sweep of 2026-10-24 and 25"
 
 [evidence."display.texture_idle_seconds"]
 basis = "assumed"
@@ -63,6 +69,7 @@ source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13"
 # The main menu at 720 lines.
 [scene.menu.display]
 render_scale = 0.6667
+frame_rate = "display"
 
 [evidence."scene.menu.display.render_scale"]
 basis = "measured"
@@ -73,6 +80,11 @@ source = "Apple TV HD menu runs at 540, 720 and 1080, 60 s each, and the played 
 [scene.cutscene.display]
 render_scale = 0.6
 frame_rate = "30"
+
+[evidence."scene.menu.display.frame_rate"]
+basis = "measured"
+why = "The menu at 720 takes 10 to 11 ms of GPU time and held 60, so it keeps the display's rate under the gameplay cap."
+source = "Apple TV HD menu runs at 720, 2026-10-13"
 
 [evidence."scene.cutscene.display.render_scale"]
 basis = "measured"
