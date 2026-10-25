@@ -23,6 +23,7 @@ Planned releases, which may change. The sections below list every item.
 
 - [ ] Halo Custom Edition maps
 - [ ] MCC maps, if OpenCE supports them by then
+- [ ] Shader data for community maps, downloaded only when that map loads
 
 ## VR
 
