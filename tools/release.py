@@ -49,6 +49,11 @@ PERF_REPORTS_DISCLOSURE = (
     "Performance diagnostics are required in builds with performance reports enabled. "
     "Sharing this data is part of testing; leaving the beta stops it."
 )
+CLOUD_SAVES_NOTE = (
+    "iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves "
+    "under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page "
+    "in the Settings app). It takes effect at the next launch."
+)
 SUMMARY_HEADING = "### Summary"
 CHANGELOG_DETAILS_HEADING = "### Full changelog"
 TESTFLIGHT_NOTES_LIMIT = 4000
@@ -284,6 +289,13 @@ def shader_upload_summary(summary: str, policy: dict[str, str]) -> str:
     """Pin the shader disclosure into the reviewed What to Test text."""
     if policy.get("shader_upload", "off") == "on" and SHADER_UPLOAD_DISCLOSURE not in summary:
         summary = summary.rstrip() + "\n\n" + SHADER_UPLOAD_DISCLOSURE
+    return validate_testflight_summary(summary)
+
+
+def cloud_saves_summary(summary: str, policy: dict[str, str]) -> str:
+    """Pin how testers turn on iCloud Saves into the reviewed What to Test text."""
+    if policy.get("cloud_saves", "off") == "on" and CLOUD_SAVES_NOTE not in summary:
+        summary = summary.rstrip() + "\n\n" + CLOUD_SAVES_NOTE
     return validate_testflight_summary(summary)
 
 
@@ -789,7 +801,7 @@ def prepare(args: argparse.Namespace) -> None:
             catalog_context=catalog_context,
             model=summary_model,
         )
-        summary = perf_reports_summary(shader_upload_summary(summary, policy), policy)
+        summary = perf_reports_summary(shader_upload_summary(cloud_saves_summary(summary, policy), policy), policy)
         changelog = insert_testflight_summary_into_changelog(
             changelog, version, summary
         )

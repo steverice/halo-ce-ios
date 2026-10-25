@@ -88,3 +88,12 @@ def test_shipping_commands_include_independent_perf_policy(target, monkeypatch, 
     assert "--perf-reports" not in disabled
     assert "--shader-upload" not in enabled
     assert "--benchmark-upload" not in enabled
+
+
+def test_cloud_saves_summary_pins_how_to_turn_it_on():
+    summary = "- Try AirPlay."
+    assert release.cloud_saves_summary(summary, {}) == summary
+    assert release.cloud_saves_summary(summary, {"cloud_saves": "off"}) == summary
+    enabled = release.cloud_saves_summary(summary, {"cloud_saves": "on"})
+    assert enabled.startswith(summary) and enabled.endswith(release.CLOUD_SAVES_NOTE)
+    assert release.cloud_saves_summary(enabled, {"cloud_saves": "on"}) == enabled
