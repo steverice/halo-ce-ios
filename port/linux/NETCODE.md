@@ -173,9 +173,15 @@ the host's reliable stream. VISR always renders stock shield effects and
 hosts send the synchronized STOCK selector (0). Selector 6 leaves player
 presentation choices local in other implementations; VISR still draws stock.
 
-Clients retain joins to known host versions 29–32 through an explicit
-legacy settings conversion. Versions 33–37 are refused pending verified
-agreements. Current hosts do not negotiate a downgrade with older clients.
+Clients join hosts of versions 29 to 32 and 34 to 36 as well; no host of 33 or 37
+was released, so those are refused. Hosts of 29 to 34 send the
+13,120-byte settings record with the 28-byte options block, which the client
+widens; hosts of 35 to 37 send the 13,136-byte record. A client takes each
+later rule only from a host whose version has it: the co-op ally switch from
+33, shield-only static damage from 34, the 44-byte options from 35, message 91
+from 36 (selectors 0–5) and selector 6 from 38. A join request carries no
+version, so a client of 38 sends a host of 33 to 37 the same bytes it sends a
+host of 38. Current hosts do not negotiate a downgrade with older clients.
 The internet listing's new kind encoding and Bonjour identity for other
 implementations remain unverified; LAN kind support does not establish
 internet interoperability. These partial additions derive from independently

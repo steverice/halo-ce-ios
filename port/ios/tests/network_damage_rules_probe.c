@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+/* VERSION_HEADER */
 typedef int boolean;
 typedef unsigned char byte;
 typedef struct { float x, y, z; } real_point3d;

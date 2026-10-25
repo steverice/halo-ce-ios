@@ -2542,7 +2542,7 @@ static boolean add_advertised_game(
 			/* port: version 37 assigns this reserved byte to the mode and
 			Hardcore flag. Earlier hosts do not advertise a game kind. */
 			network_game_client_advertised_versions[game_index].kind =
-				network_game_client_advertised_versions[game_index].version >= 37 ?
+				halo_network_version_has_game_kind(network_game_client_advertised_versions[game_index].version) ?
 				advertisement->__unknown5A[HALO_PORT_ADVERTISED_KIND_OFFSET] : 0;
 		}
 

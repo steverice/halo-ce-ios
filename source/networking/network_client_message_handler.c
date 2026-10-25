@@ -200,6 +200,7 @@ symbols in this file:
 #include "networking/network_client_message_handler.h"
 #include "networking/network_game_manager.h"
 #include "networking/network_messages.h"
+#include "halo_network_version.h" /* port: port/linux/include/halo_network_version.h */
 
 /* port/linux/game/network_distributed.c's */
 void network_distributed_handle_message(long machine_index, word const *message, word size);
@@ -954,7 +955,7 @@ static boolean network_game_client_receive_game_settings_piece(
 	struct message_server_game_settings_update const *piece)
 {
 	boolean result = TRUE;
-	boolean legacy = network_game_host_version() <= 32;
+	boolean legacy = !halo_network_version_has_mode_options(network_game_host_version());
 	unsigned expected_size = legacy ? HALO_NETWORK_LEGACY_SETTINGS_SIZE : sizeof(network_game_client_settings_staging);
 
 	if (piece->total_size != expected_size ||

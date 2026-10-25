@@ -46,8 +46,8 @@ def test_lan_kind_is_retained_and_older_reserved_bytes_are_ignored(tmp_path):
     production = function(source, "static boolean add_advertised_game(\n\tstruct network_advertised_game *available_games,\n\tstruct message_server_game_advertise *advertisement)\n{")
     fixture = (ROOT / "port/ios/tests/network_advertisement_probe.c").read_text()
     program = fixture.replace("/* DECLARATIONS */", declarations).replace("/* PRODUCTION */", production)
-    program = program.replace('"halo_port_limits.h"',
-                              '"' + str(ROOT / "port/linux/include/halo_port_limits.h") + '"')
+    program = program.replace('"halo_network_version.h"',
+                              '"' + str(ROOT / "port/linux/include/halo_network_version.h") + '"')
     probe, binary = tmp_path / "advertisement.c", tmp_path / "advertisement"
     probe.write_text(program)
     subprocess.run(["clang", "-std=c11", "-Wall", "-Werror", "-Wno-unused-function",

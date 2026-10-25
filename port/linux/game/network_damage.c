@@ -58,6 +58,7 @@ being hit looks and feels like on the clients).
 #include "scenario/scenario.h"
 #include "units/units.h"
 #include "network_distributed.h"
+#include "halo_network_version.h"
 
 #include <math.h>
 
@@ -507,7 +508,7 @@ static boolean network_damage_static_rules(
 	void)
 {
 	return !input_replay_playing() &&
-		(game_connection() != _game_connection_network_client || network_game_host_version() >= 34);
+		(game_connection() != _game_connection_network_client || halo_network_version_has_static_shields(network_game_host_version()));
 }
 
 /* Static objects share hits when they have either a body or a shield. */

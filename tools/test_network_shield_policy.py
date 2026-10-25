@@ -38,6 +38,7 @@ def test_shield_policy_requires_host_stream_and_sends_stock_on_readiness(tmp_pat
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "VERSION_HEADER"
 typedef unsigned char byte;
 typedef uint16_t word;
 typedef uint16_t message_header;
@@ -146,10 +147,17 @@ int main(void)
     menu = 1;
     assert(!distributed_shield_policy_valid(NONE, message, 12));
     menu = 0;
-    host_version = 35;
-    assert(!distributed_shield_policy_valid(NONE, message, 12));
-    host_version = 36;
-    assert(distributed_shield_policy_valid(NONE, message, 12));
+    /* 29 to 35 send no policy; 36 and 37 send selectors 0 to 5; 38 adds 6 */
+    for (host_version = 29; host_version <= 38; host_version++) {
+        for (int selector = 0; selector <= 7; selector++) {
+            int expected = host_version >= 36 && (selector <= 5 || (selector == 6 && host_version == 38));
+            frame[8] = (byte)selector;
+            memcpy(message, frame, sizeof(frame));
+            assert(distributed_shield_policy_valid(NONE, message, 12) == expected);
+        }
+    }
+    frame[8] = 0;
+    memcpy(message, frame, sizeof(frame));
     host_version = 38;
     for (int count = 0; count < 3; count++) {
         ((struct distributed_message_header *)message)->count = (byte)count;
@@ -182,6 +190,7 @@ int main(void)
     puts("PASS: shield policy host stream, selectors, stamps and reliable STOCK readiness/rejoin sends");
 }
 '''
+    program = program.replace("VERSION_HEADER", str(ROOT / "port/linux/include/halo_network_version.h"))
     (tmp_path / "probe.c").write_text(program)
     executable = tmp_path / "probe"
     subprocess.run(["clang", "-std=c11", "-Wall", "-Werror", "-fsanitize=address,undefined",

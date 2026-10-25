@@ -73,7 +73,8 @@ int main(void)
 			unsigned char old_txt[32];
 			int old_length = host_lan_txt_build(old_txt, sizeof(old_txt), older, 0);
 
-			assert(host_lan_txt_matches(old_txt, old_length, HALO_PORT_NETWORK_VERSION, 0) == (older <= 32));
+			assert(host_lan_txt_matches(old_txt, old_length, HALO_PORT_NETWORK_VERSION, 0) ==
+				halo_network_version_joinable(HALO_PORT_NETWORK_VERSION, older));
 		}
 		length = host_lan_txt_build(txt, sizeof(txt), HALO_PORT_NETWORK_OLDEST_JOINABLE - 1, 0);
 		assert(!host_lan_txt_matches(txt, length, HALO_PORT_NETWORK_VERSION, 0));

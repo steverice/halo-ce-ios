@@ -122,6 +122,7 @@ index and tag, since the map placed them at the same index everywhere.
 #include "coop_spectate.h"
 #include "network_coop.h"
 #include "network_distributed.h"
+#include "halo_network_version.h"
 
 /* ---------- constants */
 
@@ -2079,7 +2080,7 @@ boolean network_coop_protects_ally(
 	struct unit_datum *unit;
 
 	if (input_replay_playing() || !network_coop_active() ||
-		(game_connection() == _game_connection_network_client && network_game_host_version() < 33) ||
+		(game_connection() == _game_connection_network_client && !halo_network_version_has_ally_switch(network_game_host_version())) ||
 		damage->owner_player_index == NONE || TEST_FLAG(damage->flags, _damage_kill_instantly_bit) ||
 		!(game = network_game_get_game()) ||
 		!TEST_FLAG(game->cooperative_flags, _network_game_cooperative_no_ally_friendly_fire_bit))

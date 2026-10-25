@@ -15,13 +15,34 @@ int main(void)
 		int expected = version >= 29 && version <= 32;
 
 		assert(halo_network_version_joinable(32, version) == expected);
-		assert(halo_network_version_joinable(38, version) == (expected || version == 38));
 	}
+	/* a build of 38 joins hosts of 29 to 32, 34 to 36 and 38, and no others
+	   (no host of 33 or 37 was released to join) */
+	for (version = 0; version < 0x10000; version++)
+		assert(halo_network_version_joinable(38, version) ==
+			((version >= 29 && version <= 32) || (version >= 34 && version <= 36) || version == 38));
 	/* a build of 29 (a VISR before the range) joins only its own */
 	assert(halo_network_version_joinable(29, 29) && !halo_network_version_joinable(29, 30));
 	/* message 90 comes from hosts of 32 */
 	assert(!halo_network_version_has_aim_policy(29) && !halo_network_version_has_aim_policy(31));
 	assert(halo_network_version_has_aim_policy(32) && halo_network_version_has_aim_policy(33));
+	/* what each host version sends and takes */
+	for (version = 29; version <= 38; version++)
+	{
+		unsigned long selector;
+
+		assert(halo_network_version_has_ally_switch(version) == (version >= 33));
+		assert(halo_network_version_has_static_shields(version) == (version >= 34));
+		/* 33 and 34 keep the 13,120-byte record with the 28-byte options block */
+		assert(halo_network_version_has_mode_options(version) == (version >= 35));
+		/* 35 sends no message 91; 36 and 37 send it without selector 6 */
+		assert(halo_network_version_has_shield_policy(version) == (version >= 36));
+		for (selector = 0; selector <= 8; selector++)
+			assert(halo_network_version_shield_selector_valid(version, selector) ==
+				(version >= 36 && (selector <= 5 || (selector == 6 && version >= 38))));
+		assert(!halo_network_version_shield_selector_valid(version, 0xFFFFFFFFul));
+		assert(halo_network_version_has_game_kind(version) == (version >= 37));
+	}
 	/* a stamp within 450 ticks of the latest either way is taken */
 	assert(halo_network_stamp_in_window(1000, 1000) && halo_network_stamp_in_window(1000, 1450));
 	assert(halo_network_stamp_in_window(1000, 550));
@@ -33,6 +54,6 @@ int main(void)
 	assert(halo_network_stamp_accepts(-1, 1600, 0));
 	assert(halo_network_stamp_accepts(1000, 1600, 1));
 	assert(halo_network_stamp_accepts(1000, 1400, 0));
-	puts("PASS: version range, gates, stamp window");
+	puts("PASS: version range, per-version capabilities, stamp window");
 	return 0;
 }

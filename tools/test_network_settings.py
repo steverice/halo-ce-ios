@@ -117,6 +117,7 @@ def test_settings_fragments_convert_only_legacy_hosts(tmp_path):
 #include <stdint.h>
 #include <string.h>
 #include "CONTENT_HEADER"
+#include "VERSION_HEADER"
 typedef unsigned char byte;
 typedef unsigned short word;
 typedef int boolean;
@@ -141,10 +142,10 @@ static boolean network_game_client_game_settings_updated(struct network_game_cli
 ''' + receiver + r'''
 int main(void) {
     struct message_server_game_settings_update piece = {0};
+    /* 29 to 34 send the 28-byte options block; 35 to 38 the 44-byte one */
     for (unsigned v = 29; v <= 38; v++) {
-        if (v > 32 && v < 38) continue;
         host_version = v; applied = 0;
-        unsigned total = v == 38 ? 13136 : 13120;
+        unsigned total = v >= 35 ? 13136 : 13120;
         for (unsigned offset = 0; offset < total; offset += 3584) {
             piece.total_size = total; piece.offset = offset;
             piece.length = total - offset < 3584 ? total - offset : 3584;
@@ -153,7 +154,7 @@ int main(void) {
         }
         assert(applied == 1 && result.raw[13088] == 0xA5);
         assert(result.raw[13132] == 0xA5);
-        assert(result.raw[13119] == (v == 38 ? 0xA5 : 150));
+        assert(result.raw[13119] == (v >= 35 ? 0xA5 : 150));
         piece.offset = 0; piece.length = 1; piece.total_size = total == 13136 ? 13120 : 13136;
         assert(!network_game_client_receive_game_settings_piece(0, &piece));
         piece.total_size = total; piece.offset = total - 1; piece.length = 2;
@@ -164,7 +165,8 @@ int main(void) {
     return 0;
 }
 '''
-    compile_run(tmp_path, program.replace("CONTENT_HEADER", str(ROOT / "port/linux/include/halo_network_content.h")))
+    compile_run(tmp_path, program.replace("CONTENT_HEADER", str(ROOT / "port/linux/include/halo_network_content.h")).replace(
+        "VERSION_HEADER", str(ROOT / "port/linux/include/halo_network_version.h")))
 
 
 def test_joined_settings_refuse_unsupported_rules_before_precaching(tmp_path):

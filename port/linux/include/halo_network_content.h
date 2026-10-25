@@ -59,7 +59,7 @@ static inline char const *halo_network_options_reason(unsigned char const *exten
 	return 0;
 }
 
-/* The known 29–32 record has a 28-byte options block and the same four-byte
+/* The 29–34 record has a 28-byte options block and the same four-byte
    local tail. Move that tail before filling the new extension. */
 static inline void halo_network_settings_expand_legacy(unsigned char *settings)
 {

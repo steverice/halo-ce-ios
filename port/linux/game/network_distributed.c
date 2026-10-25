@@ -4090,17 +4090,19 @@ static boolean distributed_shield_policy_valid(
 	/* The client's handler has already matched the host's connection.
 	Reject datagrams and batched messages even when they claim its address. */
 	if (machine_index != NONE || game_connection() != _game_connection_network_client ||
-		!game_in_progress() || main_menu_is_active() || network_game_host_version() < 36 ||
+		!game_in_progress() || main_menu_is_active() || !halo_network_version_has_shield_policy(network_game_host_version()) ||
 		network_connection_last_read_was_unreliable() || distributed_handling_batch || size != sizeof(message))
 	{
 		return FALSE;
 	}
 	csmemcpy(&message, data, sizeof(message));
-	/* Versions 36 and 38 use one selector, not three presentation flags.
-	The normal stream stamp may be nonzero, including on late joins. */
+	/* Versions 36 to 38 use one selector, not three presentation flags; only
+	38 has selector 6. The normal stream stamp may be nonzero, including on
+	late joins. */
 	return GET_MESSAGE_TYPE(message.header.header) == 2 &&
 		message.header.type == _distributed_message_shield_policy &&
-		message.header.count == 1 && message.selector <= 6;
+		message.header.count == 1 &&
+		halo_network_version_shield_selector_valid(network_game_host_version(), message.selector);
 }
 
 /* a message of the distributed kind; machine_index is the sender's on the

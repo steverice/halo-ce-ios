@@ -891,9 +891,9 @@ The Server Browser also shows the games of Delta's public game list
 (`https://halo.milenko.org`, run by others; `network.delta_url`), after the
 games of the brokers. Each game shows its players and, in the column where
 the others show LIVE, CLOSED or FAILED, `V<number>` for a game of a network
-version this build cannot join (this build plays versions 29 to 32; a game of
-another version is shown and Join refuses it). The line below the rows
-names that version. A game with a password or a game of the campaign is
+version this build cannot join (this build plays versions 29 to 32, 34 to 36
+and 38; a game of another version is shown and Join refuses it). The line
+below the rows names that version. A game with a password or a game of the campaign is
 left out. A game that a broker also lists is shown once.
 
 - Browsing (`network.delta_browse`, on): while the Server Browser is open,

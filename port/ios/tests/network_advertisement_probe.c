@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include "halo_port_limits.h"
+#include "halo_network_version.h"
 typedef unsigned char byte;
 typedef unsigned short word;
 typedef int boolean;

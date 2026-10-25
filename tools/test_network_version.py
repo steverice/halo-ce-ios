@@ -63,3 +63,24 @@ def test_documented_options_content_and_legacy_settings_fixtures():
                         str(ROOT / "port/ios/tests/network_content_probe.c")], check=True)
         result = subprocess.run([str(executable)], capture_output=True, text=True)
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_host_version_rules_use_the_capability_helpers():
+    """Each rule a host version turns on is asked of halo_network_version.h, never compared by number."""
+    import re
+    uses = {
+        "port/linux/game/network_coop.c": "halo_network_version_has_ally_switch(network_game_host_version())",
+        "port/linux/game/network_damage.c": "halo_network_version_has_static_shields(network_game_host_version())",
+        "source/networking/network_client_message_handler.c":
+            "halo_network_version_has_mode_options(network_game_host_version())",
+        "port/linux/game/network_distributed.c":
+            "halo_network_version_shield_selector_valid(network_game_host_version(), message.selector)",
+        "source/networking/network_client_manager.c": "halo_network_version_has_game_kind(",
+    }
+    for path, use in uses.items():
+        assert use in read(path), path
+    assert "halo_network_version_has_shield_policy(network_game_host_version())" in read(
+        "port/linux/game/network_distributed.c")
+    numeric = re.compile(r"(network_game_host_version\(\)|\.version)\s*(<|>|<=|>=)\s*\d")
+    for path in list(uses) + ["port/linux/game/network_aim_assist.c"]:
+        assert not numeric.search(read(path)), path

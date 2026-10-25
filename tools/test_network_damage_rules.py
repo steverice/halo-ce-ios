@@ -35,7 +35,8 @@ def test_damage_rules():
     flags = (ROOT / "source/networking/network_game_manager.h").read_text()
     start = flags.index("enum\n{", flags.index("/* port: network_game's cooperative_flags */"))
     flags = flags[start:flags.index("};", start) + 2]
-    template = (ROOT / "port/ios/tests/network_damage_rules_probe.c").read_text().replace("/* COOP_FLAGS */", flags)
+    template = (ROOT / "port/ios/tests/network_damage_rules_probe.c").read_text().replace("/* COOP_FLAGS */", flags).replace(
+        "/* VERSION_HEADER */", '#include "' + str(ROOT / "port/linux/include/halo_network_version.h") + '"')
     body = "\n".join(pieces)
     variants = [("production", body)]
     for label, before, after in (
@@ -44,8 +45,8 @@ def test_damage_rules():
         ("static source authority", "return authorized || game_connection() != _game_connection_network_client;", "return TRUE;"),
         ("nested explosion", "distributed_damage_authorized = FALSE;", "distributed_damage_authorized = authorized;"),
         ("replay gate", "return replay.state_count != 0 || replay.action_count != 0;", "return FALSE;"),
-        ("static version gate", "network_game_host_version() >= 34", "TRUE"),
-        ("ally version gate", "network_game_host_version() < 33", "FALSE"),
+        ("static version gate", "halo_network_version_has_static_shields(network_game_host_version())", "TRUE"),
+        ("ally version gate", "!halo_network_version_has_ally_switch(network_game_host_version())", "FALSE"),
         ("ally flag polarity", "!ally_friendly_fire", "ally_friendly_fire"),
     ):
         assert body.count(before) == 1, label
