@@ -750,6 +750,13 @@ void game_initialize_for_new_map(
 	from now on go elsewhere, port/linux/game/network_objects.c) */
 	network_objects_placed();
 	ui_widgets_safe_to_load(TRUE);
+#ifdef HALO_IOS
+	/* port: background texture preparation pauses while a level is played */
+	{
+		extern void host_astc_game_started(void);
+		host_astc_game_started();
+	}
+#endif
 
 	return;
 }

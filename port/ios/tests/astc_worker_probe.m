@@ -70,8 +70,14 @@ int main(int argc,const char **argv) {@autoreleasepool {
     assert(observations[stable]);assert(!astc_store_map_complete(identity(stable).UTF8String));
     FILE *mutated=fopen(stable.fileSystemRepresentation,"r+b");fseeko(mutated,33,SEEK_SET);fputc(74,mutated);fclose(mutated);pump();
     assert(!astc_store_map_complete(identity(stable).UTF8String));
+    /* Gameplay pauses the worker on every device: no walk, and queued maps stay queued. */
+    atomic_store(&playing,true);assert(!walk_map(fixture(@"xbox.map"),identity(fixture(@"xbox.map")),NULL,NULL));
+    assert([line containsObject:stable]);
+    observations[stable]=@{@"stamp":stamp(stable),@"time":@(NSProcessInfo.processInfo.systemUptime-11)};pump();
+    assert([line containsObject:stable]&&!astc_store_map_complete(identity(stable).UTF8String));
+    atomic_store(&playing,false);
     observations[stable]=@{@"stamp":stamp(stable),@"time":@(NSProcessInfo.processInfo.systemUptime-11)};pump();
     assert(astc_store_map_complete(identity(stable).UTF8String));
-    printf("PASS production worker: Xbox zlib, CE inline/shared, malformed offsets, resume, stable signatures, preemption\n");
+    printf("PASS production worker: Xbox zlib, CE inline/shared, malformed offsets, resume, stable signatures, preemption, gameplay pause\n");
     astc_store_shutdown();return 0;
 }}

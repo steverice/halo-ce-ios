@@ -139,6 +139,7 @@ host_device_profile_applied
 # Background original-texture preparation
 host_astc_map_arrived
 host_astc_map_will_load
+host_astc_game_started
 host_astc_texture_key
 host_astc_texture_read
 host_astc_texture_generation

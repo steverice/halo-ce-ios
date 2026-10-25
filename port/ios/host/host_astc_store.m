@@ -34,7 +34,10 @@ static atomic_uint load_serial;
 static BOOL planning;static uint64_t projected_bytes;
 static host_astc_progress cancellation;static void *cancellation_context;static uint64_t progress_done,progress_total;
 static struct {double read_seconds,encode_seconds,write_seconds;uint64_t direct_blocks,encoded_texels,encoded_textures,excluded;} metrics;
-static atomic_bool playing;
+/* playing: a level (not the menus) is loaded and its game has started. The
+ * worker does no encoding then, on any device; it resumes in the menus and
+ * while a level loads. game_map: the map loading or loaded is a level. */
+static atomic_bool playing,game_map;
 static uint16_t u16(const uint8_t *p) { return p[0]|(uint16_t)p[1]<<8; }
 static uint32_t u32(const uint8_t *p) { return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
 static NSString *stamp(NSString *path) {
@@ -142,7 +145,6 @@ static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,N
         }
     }
     if(output)munmap(output,output_size);if(output_file)fclose(output_file);munmap(mapping,mapping_size);
-    if(two_core&&atomic_load(&playing))usleep(100000);
     return ok;
 }
 static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t translation,FILE *resource,uint64_t resource_size,NSString *fingerprint,BOOL pc,NSString *shared,uint64_t *stored) {
@@ -154,7 +156,7 @@ static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t transl
         BOOL external=(u16(b+14)&(1u<<8))!=0;
         if(external&&(!resource||!shared)){ok=NO;continue;}
         if(!convert_bitmap(external?resource:map,external?resource_size:map_size,b,pc,external?shared:fingerprint,stored))ok=NO;
-        [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:converting_path];[line_lock unlock];if(preempt||(converting_path&&![converting_stamp isEqual:stamp(converting_path)]))return NO;
+        [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:converting_path];[line_lock unlock];if(preempt||atomic_load(&playing)||(converting_path&&![converting_stamp isEqual:stamp(converting_path)]))return NO;
     }}return ok;
 }
 static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress progress,void *context) {
@@ -182,7 +184,7 @@ static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress pro
         }else {if(!u32(instance+20))continue;int64_t group=(int64_t)u32(instance+20)+translation;
             if(group<0){ok=NO;break;}ok=walk_group(map,size,(uint64_t)group,translation,resource,resource_size,fingerprint,version!=5,shared,&stored);}
         [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:path];[line_lock unlock];
-        if(preempt){ok=NO;break;}
+        if(preempt||atomic_load(&playing)){ok=NO;break;}
     }}
     if(resource)fclose(resource);fclose(map);
     host_logf(HOST_LOG_INFO,"ASTC: map preparation %s, %.3f seconds, %llu bytes stored",ok?"finished":"paused",NSProcessInfo.processInfo.systemUptime-start,(unsigned long long)stored);
@@ -222,10 +224,18 @@ static BOOL prepare(NSString *path,host_astc_progress progress,void *context) {
 static void schedule(void);
 static void pump(void) {
     @autoreleasepool {
-        [line_lock lock];NSString *path=priority_path?:line.lastObject;if(path)[line removeObject:path];else atomic_store(&scheduled,false);[line_lock unlock];
+        /* Gameplay pauses the worker entirely; host_astc_game_started and the
+         * next level load reschedule it. Recheck after clearing the flag so a
+         * load that raced with this check is not lost. */
+        if(atomic_load(&playing)){atomic_store(&scheduled,false);if(!atomic_load(&playing))schedule();return;}
+        [line_lock lock];NSString *path=priority_path?:line.lastObject;BOOL priority=path&&[path isEqual:priority_path];if(path)[line removeObject:path];else atomic_store(&scheduled,false);[line_lock unlock];
         if(!path)return;
         NSString *current=stamp(path);NSDictionary *prior=observations[path];double now=NSProcessInfo.processInfo.systemUptime;
         if(!current){[observations removeObjectForKey:path];[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];}
+        /* The game is about to read a priority map itself, so it is not mid-copy:
+         * convert during loading without the arrival stability wait. prepare
+         * still rejects a file whose stamp changes underneath it. */
+        else if(priority){[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];BOOL finished=prepare(path,NULL,NULL);[observations removeObjectForKey:path];if(!finished){[line_lock lock];if(![line containsObject:path])[line insertObject:path atIndex:0];[line_lock unlock];}}
         else if(![prior[@"stamp"] isEqual:current]){observations[path]=@{@"stamp":current,@"time":@(now)};[line_lock lock];[line insertObject:path atIndex:0];[line_lock unlock];}
         else if(now-[prior[@"time"] doubleValue]>=10){[line_lock lock];if([priority_path isEqual:path])priority_path=nil;[line_lock unlock];BOOL finished=prepare(path,NULL,NULL);[observations removeObjectForKey:path];if(!finished){[line_lock lock];if(![line containsObject:path])[line insertObject:path atIndex:0];[line_lock unlock];}}
         else {[line_lock lock];[line insertObject:path atIndex:0];[line_lock unlock];}
@@ -284,6 +294,9 @@ static NSString *resolve_map_name(NSString *name) {
 }
 void astc_store_map_will_load(const char *name) {
     if(!enabled||!name||!*name)return;NSString *requested=@(name);
+    /* Loading is not play: the worker may convert this map until the game starts. */
+    atomic_store(&game_map,![requested.lastPathComponent.stringByDeletingPathExtension.lowercaseString isEqual:@"ui"]);
+    atomic_store(&playing,false);
     unsigned serial=atomic_fetch_add(&load_serial,1)+1;
     /* A sentinel interrupts current conversion at its next texture boundary.
      * Resolution, stat and directory enumeration all stay off the game thread. */
@@ -292,7 +305,6 @@ void astc_store_map_will_load(const char *name) {
         if(serial!=atomic_load(&load_serial))return;
         NSString *path=resolve_map_name(requested);
         if(serial!=atomic_load(&load_serial))return;
-        atomic_store(&playing,![path.lastPathComponent.stringByDeletingPathExtension.lowercaseString isEqual:@"ui"]);
         [line_lock lock];priority_path=path;[line removeObject:path];[line addObject:path];[line_lock unlock];
         NSDictionary *identity=host_map_identity_resolve(path.fileSystemRepresentation);
         if(serial!=atomic_load(&load_serial))return;
@@ -326,3 +338,9 @@ void host_astc_store_prepare_import(const char *root,host_astc_progress progress
 
 void host_astc_map_arrived(const char *path) { astc_store_map_arrived(path); }
 void host_astc_map_will_load(const char *name) { astc_store_map_will_load(name); }
+/* Called by game_initialize_for_new_map: a level's game begins, or the menus open. */
+void host_astc_game_started(void) {
+    if(!enabled)return;
+    atomic_store(&playing,atomic_load(&game_map));
+    if(!atomic_load(&playing))schedule();
+}

@@ -256,6 +256,7 @@ unsigned long long host_astc_texture_generation(void);
 /* Original-texture preparation; paths are copied by the host bridge. */
 void host_astc_map_arrived(const char *path);
 void host_astc_map_will_load(const char *name);
+void host_astc_game_started(void);
 
 #endif
 
