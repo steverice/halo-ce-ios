@@ -3490,7 +3490,6 @@
           "x-environment": "HALO_UPDATE_AUTO",
           "x-environment-style": "value",
           "x-platforms": [
-            "apple",
             "desktop"
           ]
         }

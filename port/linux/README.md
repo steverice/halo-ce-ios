@@ -513,7 +513,7 @@ the setting for one start of the game. It has priority over the file.
 
 | Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |
 | --- | --- | --- | --- | --- | --- |
-| `update.auto` | boolean | `true` | apple, desktop | `HALO_UPDATE_AUTO` | Look for a new version when the game starts, and offer to update to it; false never looks (the game's "Do not ask again" writes false here). |
+| `update.auto` | boolean | `true` | desktop | `HALO_UPDATE_AUTO` | Look for a new version when the game starts, and offer to update to it; false never looks (the game's "Do not ask again" writes false here). |
 ### debug
 
 | Setting | Type and accepted values | Default (Apple) | Platforms | Environment | Description |

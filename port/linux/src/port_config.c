@@ -1104,7 +1104,7 @@ static const struct config_setting config_settings[] =
 		"The Discord application internet play invites go through while the\n"
 		"Discord desktop client runs; empty for none." },
 
-	{ "update.auto", _config_boolean, "true", "HALO_UPDATE_AUTO", _environment_value, _platform_all,
+	{ "update.auto", _config_boolean, "true", "HALO_UPDATE_AUTO", _environment_value, _platform_desktop,
 		"Look for a new version when the game starts, and offer to update to it;\n"
 		"false never looks (the game's \"Do not ask again\" writes false here)." },
 
