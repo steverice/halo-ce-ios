@@ -1,5 +1,27 @@
 # VISR roadmap
 
+## Releases
+
+Planned releases, which may change. The sections below list every item.
+
+### 0.6.0: performance
+
+- [ ] AI-upscaled textures, generated on the device at import
+- [ ] MetalFX temporal upscaling and anti-aliasing
+- [ ] A CPU profiling build, and fixes for the CPU costs it finds in large multiplayer games
+- [ ] Multiplayer player limits in device profiles
+
+### 0.7.0: device experience
+
+- [ ] iPhone and iPad: improved touch controls
+- [ ] iPhone Duo support
+- [ ] Vision Pro improvements
+
+### 0.8.0: maps
+
+- [ ] Halo Custom Edition maps
+- [ ] MCC maps, if OpenCE supports them by then
+
 ## VR
 
 - [x] Stereo with head tracking through Compositor Services (`display.stereo = "head"`)
@@ -78,10 +100,10 @@
 - [x] Custom Edition maps downloaded from a game's players, from OpenCE; off by default (`network.map_download`, DOWNLOAD MAPS in Settings > Network Setup)
 - [x] Helping send a Custom Edition map to other players is off by default (`network.map_seed`, HELP SEND MAPS in Settings > Network Setup)
 - [ ] A question with the map's name and size before a map download starts, then downloads on by default
-- [ ] Network version 36 compatibility for 0.5.0: implement 33 (co-op ally friendly fire) and 34 (scenery shields and tripmines); accept 35's options format while refusing its new gametypes, and accept 36's shield-effect messages while drawing and hosting stock effects
+- [x] Network version 38 compatibility: versions 33 (co-op ally friendly fire), 34 (scenery shields and tripmines) and 37 implemented; the formats of 35, 36 and 38 accepted while their new gametypes are refused and stock shield effects are drawn and hosted
 
 ## App
 
 - [ ] An in-game settings screen for these options
 - [x] Wired external-display play on iPhone and iPad with Metal, keeping touch controls on the device
-- [ ] AirPlay support for 0.5.0
+- [x] AirPlay display and audio routing on iPhone and iPad
