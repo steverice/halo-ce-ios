@@ -82,7 +82,7 @@ int main(void)
         assert(![host_data_updates_menu_state()[@"loading"] boolValue]);
         profileReady = NO; profileLoading = NO; recordingLoading = YES; publishMenuState();
         assert(![host_data_updates_menu_state()[@"loading"] boolValue]);
-        assert([host_data_updates_menu_state()[@"reason"] containsString:@"profile"]);
+        assert([host_data_updates_menu_state()[@"reason"] isEqual:@"Can't reach the profile server. Benchmarking disabled."]);
         // Play can freeze the bundled selection between the worker's two publication locks.
         profiles = pack; menuRequested = YES;
         blockedPath = file; readEntered = dispatch_semaphore_create(0); resumeRead = dispatch_semaphore_create(0);
