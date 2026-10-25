@@ -21,9 +21,9 @@ int texture_upscale_generate_raw4x(struct texture_upscale_generator *g,const str
     float **pixels,unsigned *channels,char *error,size_t size) {(void)g;(void)in;(void)pixels;(void)channels;(void)error;(void)size;return -1;}
 const char *texture_upscale_encoder_name(uint32_t format) {(void)format;return "bc7-v1";}
 enum texture_upscale_encode_result texture_upscale_encode_record(const struct texture_upscale_rgba_level *levels,unsigned count,
-    uint32_t w,uint32_t h,uint64_t hash,uint64_t recipe,uint32_t format,unsigned threads,void **bytes,size_t *size,
+    uint32_t w,uint32_t h,uint64_t hash,uint64_t recipe,uint32_t format,unsigned alpha_mode,unsigned threads,void **bytes,size_t *size,
     struct texture_upscale_encode_metrics *metrics) {
-    (void)levels;(void)count;(void)w;(void)h;(void)hash;(void)recipe;(void)format;(void)threads;(void)bytes;(void)size;(void)metrics;
+    (void)alpha_mode;(void)levels;(void)count;(void)w;(void)h;(void)hash;(void)recipe;(void)format;(void)threads;(void)bytes;(void)size;(void)metrics;
     assert(!"unexpected encoder call");return TEXTURE_UPSCALE_ENCODE_ERROR;
 }
 int host_texture_source_scan(const char *root,host_texture_map_callback callback,void *context) {(void)root;(void)callback;(void)context;return 1;}

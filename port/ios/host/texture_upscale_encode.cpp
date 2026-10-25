@@ -18,8 +18,9 @@
 namespace {
 struct metrics_accumulator
 {
-    double squared_error = 0;
-    uint64_t channels = 0;
+    unsigned alpha_mode = TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY;
+    double squared_error = 0, alpha_squared_error = 0;
+    uint64_t channels = 0, alphas = 0;
     unsigned alpha_error = 0;
     void add(const uint8_t *source, const uint8_t *decoded, size_t texels)
     {
@@ -32,16 +33,28 @@ struct metrics_accumulator
                 squared_error += delta * delta;
                 ++channels;
             }
-            if (alpha == 0 || alpha == 255)
+            if (alpha_mode == TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY && (alpha == 0 || alpha == 255))
                 alpha_error = std::max(alpha_error, unsigned(std::abs(int(alpha) - decoded[i * 4 + 3])));
+            if (alpha_mode == TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED)
+            {
+                int delta = int(alpha) - decoded[i * 4 + 3];
+                alpha_squared_error += delta * delta;
+                ++alphas;
+            }
         }
+    }
+    static double psnr(double squared, uint64_t count)
+    {
+        return !count || !squared ? std::numeric_limits<double>::infinity() : 10 * std::log10(65025.0 * count / squared);
     }
     bool finish(texture_upscale_encode_metrics *metrics) const
     {
-        metrics->rgb_psnr = !channels || !squared_error ? std::numeric_limits<double>::infinity() :
-            10 * std::log10(65025.0 * channels / squared_error);
+        const double limit = 65025.0 / std::pow(10.0, 3.8);
+        metrics->rgb_psnr = psnr(squared_error, channels);
+        metrics->alpha_psnr = psnr(alpha_squared_error, alphas);
         metrics->binary_alpha_max_error = alpha_error;
-        return (!channels || squared_error / channels <= 65025.0 / std::pow(10.0, 3.8)) && alpha_error <= 8;
+        return (!channels || squared_error / channels <= limit) && alpha_error <= 8 &&
+            (!alphas || alpha_squared_error / alphas <= limit);
     }
 };
 
@@ -104,9 +117,10 @@ static bool encode_bc7(const texture_upscale_rgba_level &level, uint8_t *output,
 /* Decode into bounded tiles instead of keeping another uncompressed top level.
    The BC decoder is independent of the compressor, including its mode selection. */
 static int check_encoded(const texture_upscale_rgba_level &level, const uint8_t *blocks, uint32_t format,
-    texture_upscale_encode_metrics *metrics)
+    unsigned alpha_mode, texture_upscale_encode_metrics *metrics)
 {
     metrics_accumulator accumulator;
+    accumulator.alpha_mode = alpha_mode;
     unsigned blocks_x = (level.width + 3) / 4;
     if (format == TEXTURE_RECORD_BC7)
     {
@@ -154,10 +168,52 @@ static bool encode_level(const texture_upscale_rgba_level &level, uint8_t *outpu
 }
 }
 
+static texture_upscale_encode_result raw_record(const texture_upscale_rgba_level *levels, unsigned count,
+    uint32_t source_width, uint32_t source_height, uint64_t hash, uint64_t recipe_key, void **record, size_t *size)
+{
+    uint32_t header_size = TEXTURE_RECORD_FIXED_SIZE + 16 * count;
+    size_t bytes = header_size;
+    for (unsigned i = 0; i < count; ++i)
+        bytes += size_t(texture_record_format_level_bytes(TEXTURE_RECORD_BGRA8, levels[i].width, levels[i].height));
+    uint8_t *data = static_cast<uint8_t *>(calloc(1, bytes));
+    if (!data) return TEXTURE_UPSCALE_ENCODE_ERROR;
+    size_t offset = header_size;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        size_t texels = size_t(levels[i].width) * levels[i].height;
+        uint8_t *out = data + offset;
+        for (size_t t = 0; t < texels; ++t)
+        {
+            const uint8_t *in = levels[i].pixels + t * 4;
+            out[t * 4] = in[2]; out[t * 4 + 1] = in[1]; out[t * 4 + 2] = in[0]; out[t * 4 + 3] = in[3];
+        }
+        size_t length = size_t(texture_record_format_level_bytes(TEXTURE_RECORD_BGRA8, levels[i].width, levels[i].height));
+        put64(data + TEXTURE_RECORD_FIXED_SIZE + i * 16, offset);
+        put64(data + TEXTURE_RECORD_FIXED_SIZE + i * 16 + 8, length);
+        offset += length;
+    }
+    memcpy(data, TEXTURE_RECORD_MAGIC, 4);
+    put32(data + 4, TEXTURE_RECORD_VERSION); put32(data + 8, TEXTURE_RECORD_BGRA8);
+    put32(data + 12, source_width); put32(data + 16, source_height);
+    put32(data + 20, levels[0].width); put32(data + 24, levels[0].height); put32(data + 28, count);
+    put64(data + 32, hash); put64(data + 40, recipe_key);
+    put64(data + 48, texture_record_checksum(data + header_size, bytes - header_size)); put32(data + 56, header_size);
+    *record = data; *size = bytes;
+    return TEXTURE_UPSCALE_ENCODE_OK;
+}
+
 int texture_upscale_encode_gate(const uint8_t *source, const uint8_t *decoded, size_t texels, texture_upscale_encode_metrics *metrics)
 {
-    if (!source || !decoded || !metrics || !texels || texels > size_t(8192) * 8192) return 0;
+    return texture_upscale_encode_gate_alpha(source, decoded, texels, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, metrics);
+}
+
+int texture_upscale_encode_gate_alpha(const uint8_t *source, const uint8_t *decoded, size_t texels, unsigned alpha_mode,
+    texture_upscale_encode_metrics *metrics)
+{
+    if (!source || !decoded || !metrics || !texels || texels > size_t(8192) * 8192 ||
+        alpha_mode > TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED) return 0;
     metrics_accumulator accumulator;
+    accumulator.alpha_mode = alpha_mode;
     accumulator.add(source, decoded, texels);
     return accumulator.finish(metrics);
 }
@@ -171,13 +227,15 @@ const char *texture_upscale_encoder_name(uint32_t format)
 
 texture_upscale_encode_result texture_upscale_encode_record(const texture_upscale_rgba_level *levels, unsigned count,
     uint32_t source_width, uint32_t source_height, uint64_t hash, uint64_t recipe_key,
-    uint32_t format, unsigned threads, void **record, size_t *size, texture_upscale_encode_metrics *metrics)
+    uint32_t format, unsigned alpha_mode, unsigned threads, void **record, size_t *size,
+    texture_upscale_encode_metrics *metrics)
 {
     if (record) *record = nullptr;
     if (size) *size = 0;
     if (metrics) *metrics = {};
     if (!record || !size || !metrics || !levels || !count || count > TEXTURE_RECORD_MAXIMUM_LEVELS ||
-        !source_width || !source_height || !texture_upscale_encoder_name(format)) return TEXTURE_UPSCALE_ENCODE_ERROR;
+        !source_width || !source_height || !texture_upscale_encoder_name(format) ||
+        alpha_mode > TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED) return TEXTURE_UPSCALE_ENCODE_ERROR;
     unsigned factor;
     for (factor = 1; factor <= 8; factor *= 2)
         if (source_width <= TEXTURE_RECORD_MAXIMUM_DIMENSION / factor && source_height <= TEXTURE_RECORD_MAXIMUM_DIMENSION / factor &&
@@ -204,11 +262,21 @@ texture_upscale_encode_result texture_upscale_encode_record(const texture_upscal
         {
             metrics->attempts = preset + 1; metrics->preset = preset;
             if (!encode_level(levels[0], payload, format, preset, threads)) return TEXTURE_UPSCALE_ENCODE_ERROR;
-            int accepted = check_encoded(levels[0], payload, format, metrics);
+            int accepted = check_encoded(levels[0], payload, format, alpha_mode, metrics);
             if (accepted < 0) return TEXTURE_UPSCALE_ENCODE_ERROR;
             if (accepted) break;
         }
-        if (preset == 3) return TEXTURE_UPSCALE_ENCODE_EXCLUDED;
+        if (preset == 3)
+        {
+            /* No block encoding keeps this texture within the gate: store it uncompressed, at four times the bytes,
+               rather than loosen the gate or keep the original. */
+            texture_upscale_encode_metrics missed = *metrics;
+            texture_upscale_encode_result raw = raw_record(levels, count, source_width, source_height, hash, recipe_key,
+                record, size);
+            *metrics = missed;
+            metrics->raw = raw == TEXTURE_UPSCALE_ENCODE_OK;
+            return raw;
+        }
         size_t offset = header_size;
         for (unsigned i = 0; i < count; ++i)
         {

@@ -243,7 +243,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     struct texture_upscale_encode_metrics metrics={0};void *bytes=NULL;size_t size=0;double encode_start=now();
     enum texture_upscale_encode_result encoded=TEXTURE_UPSCALE_ENCODE_OK;
     if(output.result!=TEXTURE_POLICY_ORIGINAL)encoded=texture_upscale_encode_record(output.levels,output.level_count,d->width,d->height,d->hash,
-        desired.recipe_key,record_format,NSProcessInfo.processInfo.thermalState>=NSProcessInfoThermalStateSerious?2:4,&bytes,&size,&metrics);
+        desired.recipe_key,record_format,(unsigned)alpha,NSProcessInfo.processInfo.thermalState>=NSProcessInfoThermalStateSerious?2:4,&bytes,&size,&metrics);
     double encode_seconds=now()-encode_start;BOOL excluded=encoded==TEXTURE_UPSCALE_ENCODE_EXCLUDED;
     if(encoded==TEXTURE_UPSCALE_ENCODE_ERROR){peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"encode","encoder failed",now()-start);context->failed=YES;texture_upscale_generate_free_output(&output);return 0;}
     desired.result=excluded?TEXTURE_POLICY_ORIGINAL:output.result;desired.bytes=size;
@@ -263,10 +263,10 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     struct texture_upscale_model_stats stats={0};texture_upscale_generate_stats(generator,&stats);peak_footprint=MAX(peak_footprint,stats.peak_footprint);
     texture_log[key(d->hash,d->width,d->height)]=@{@"hash":[NSString stringWithFormat:@"%016llx",(unsigned long long)d->hash],@"width":@(d->width),@"height":@(d->height),
         @"kind":@(texture_policy_kind_name(d->kind)),@"result":@(texture_policy_result_name(desired.result)),@"treatment":@(treatment_name(d->treatment)),
-        @"scale":@(desired.result==TEXTURE_POLICY_ORIGINAL?1:output.scale),@"format":record_format==TEXTURE_RECORD_BC7?@"bc7":@"astc4x4",
+        @"scale":@(desired.result==TEXTURE_POLICY_ORIGINAL?1:output.scale),@"format":metrics.raw?@"bgra8":record_format==TEXTURE_RECORD_BC7?@"bc7":@"astc4x4",@"alpha_psnr":@(isfinite(metrics.alpha_psnr)?metrics.alpha_psnr:999),
         @"stage_seconds":@{@"predict":@(output.seconds.predict),@"refine":@(output.seconds.refine),@"damage":@(output.seconds.damage),@"bump":@(output.seconds.bump),@"mips":@(output.seconds.mips),@"encode":@(encode_seconds),@"write":@(now()-write_start),@"total":@(now()-start)},
         @"psnr":@(isfinite(metrics.rgb_psnr)?metrics.rgb_psnr:999),@"binary_alpha_max_error":@(metrics.binary_alpha_max_error),@"psnr_mask":@"alpha>0",
-        @"compression_gate":@(!excluded),@"encoder_attempts":@(metrics.attempts),@"encoder_preset":@(metrics.preset),@"result_status":context->failed?@"write-error":excluded?@"compression-excluded":@"complete",
+        @"compression_gate":@(!excluded),@"encoder_attempts":@(metrics.attempts),@"encoder_preset":@(metrics.preset),@"result_status":context->failed?@"write-error":excluded?@"compression-excluded":metrics.raw?@"complete-raw":@"complete",
         @"damage_share":@(output.damage_share),@"structure_loss":@(output.structure_loss_s4g),
         @"shape":@{@"width":@(stats.input_width),@"height":@(stats.input_height),@"footprint_before":@(stats.footprint_before),@"footprint_after":@(stats.footprint_after)}};
     host_logf(HOST_LOG_INFO,"Upscale %016llx: %s, damage %.4f in %.3fs, compression %.2f dB",(unsigned long long)d->hash,

@@ -14,7 +14,9 @@ little-endian:
 	offset  size
 	0       4    "VUTR"
 	4       4    version, TEXTURE_RECORD_VERSION
-	8       4    format: TEXTURE_RECORD_BC7 or TEXTURE_RECORD_ASTC4X4 (both linear UNORM)
+	8       4    format: TEXTURE_RECORD_BC7 or TEXTURE_RECORD_ASTC4X4 (both linear UNORM), or
+	             TEXTURE_RECORD_BGRA8 for a texture no block encoding kept within the
+	             generator's quality gate (any GPU draws it)
 	12      4    the original's width
 	16      4    the original's height
 	20      4    level 0's width: the original's times 1, 2, 4 or 8
@@ -29,7 +31,9 @@ little-endian:
 
 then the levels, largest first, end to end with no gaps, each in 4x4 blocks of
 16 bytes, rows of blocks top first (a level under 4 texels wide or high is one
-block across or down). The file ends with the last level.
+block across or down); a BGRA8 record's levels are rows of 4-byte texels, top
+first, each level padded with zeros to a multiple of 8 bytes
+(texture_record_format_level_bytes). The file ends with the last level.
 */
 
 #ifndef TEXTURE_RECORD_H
@@ -50,6 +54,7 @@ enum
 {
 	TEXTURE_RECORD_BC7 = 1,
 	TEXTURE_RECORD_ASTC4X4 = 2,
+	TEXTURE_RECORD_BGRA8 = 3,
 };
 
 struct texture_record_layout
@@ -78,6 +83,21 @@ static inline uint64_t texture_record_u64(const unsigned char *bytes)
 static inline uint64_t texture_record_level_bytes(uint32_t width, uint32_t height)
 {
 	return (uint64_t)((width + 3) / 4) * ((height + 3) / 4) * 16;
+}
+
+/* level's size along one axis: size halved level times, never below 1 */
+static inline uint32_t texture_record_half_to(uint32_t size, uint32_t level)
+{
+	while (level--)
+		size = size > 1 ? size / 2 : 1;
+	return size;
+}
+
+/* a level's bytes in a record of this format: blocks, or BGRA8 texels padded to 8 bytes for the checksum's words */
+static inline uint64_t texture_record_format_level_bytes(uint32_t format, uint32_t width, uint32_t height)
+{
+	return format == TEXTURE_RECORD_BGRA8 ? ((uint64_t)width * height * 4 + 7) / 8 * 8 :
+		texture_record_level_bytes(width, height);
 }
 
 static inline uint32_t texture_record_half(uint32_t size)
@@ -136,9 +156,10 @@ static inline const char *texture_record_check(const unsigned char *header, size
 	layout->recipe_key = texture_record_u64(header + 40);
 	layout->checksum = texture_record_u64(header + 48);
 	layout->header_size = texture_record_u32(header + 56);
-	if (layout->format != TEXTURE_RECORD_BC7 && layout->format != TEXTURE_RECORD_ASTC4X4)
+	if (layout->format != TEXTURE_RECORD_BC7 && layout->format != TEXTURE_RECORD_ASTC4X4 &&
+		layout->format != TEXTURE_RECORD_BGRA8)
 		return "in an unknown format";
-	if (layout->format != format)
+	if (layout->format != format && layout->format != TEXTURE_RECORD_BGRA8)
 		return format == TEXTURE_RECORD_BC7 ? "ASTC 4x4, not this GPU's BC7" : "BC7, not this GPU's ASTC 4x4";
 	if (layout->hash != hash || layout->source_width != width || layout->source_height != height)
 		return "for another texture";
@@ -162,7 +183,7 @@ static inline const char *texture_record_check(const unsigned char *header, size
 	{
 		layout->level_offset[level] = texture_record_u64(header + TEXTURE_RECORD_FIXED_SIZE + 16 * level);
 		layout->level_size[level] = texture_record_u64(header + TEXTURE_RECORD_FIXED_SIZE + 16 * level + 8);
-		if (layout->level_offset[level] != offset || layout->level_size[level] != texture_record_level_bytes(w, h))
+		if (layout->level_offset[level] != offset || layout->level_size[level] != texture_record_format_level_bytes(layout->format, w, h))
 			return "of a bad level table";
 		offset += layout->level_size[level];
 		if (w == 1 && h == 1 && level + 1 < layout->levels)

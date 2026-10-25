@@ -79,13 +79,13 @@ static void roundtrip(uint32_t format)
     size_t size = 0;
     texture_upscale_encode_metrics metrics {};
     assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 129, 65, 0x93, 0xabc,
-        format, 4, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
+        format, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, 4, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
     assert(record && size && metrics.rgb_psnr >= 38 && metrics.binary_alpha_max_error <= 8);
     void *serial = nullptr;
     size_t serial_size = 0;
     texture_upscale_encode_metrics serial_metrics {};
     assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 129, 65, 0x93, 0xabc,
-        format, 1, &serial, &serial_size, &serial_metrics) == TEXTURE_UPSCALE_ENCODE_OK);
+        format, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, 1, &serial, &serial_size, &serial_metrics) == TEXTURE_UPSCALE_ENCODE_OK);
     assert(serial_size == size && !memcmp(serial, record, size));
     free(serial);
     texture_record_layout layout {};
@@ -124,13 +124,44 @@ static void exclusions(uint32_t format)
     size_t size = 123;
     texture_upscale_encode_metrics metrics {};
     assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 16, 16, 1, 2, format,
-        2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_EXCLUDED);
-    assert(!record && !size && metrics.attempts == 3 && metrics.rgb_psnr < 38);
+        TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, 2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
+    assert(record && size && metrics.raw && metrics.attempts == 3 && metrics.rgb_psnr < 38);
+    /* the noisy texture is kept uncompressed: a BGRA8 record any GPU's reader takes, its texels swizzled exactly */
+    auto bytes = static_cast<uint8_t *>(record);
+    texture_record_layout layout {};
+    assert(!texture_record_check(bytes, size, size, 1, 16, 16, format, &layout));
+    assert(layout.format == TEXTURE_RECORD_BGRA8 && !texture_record_check_payload(&layout, bytes + layout.header_size));
+    for (unsigned level = 0; level < layout.levels; ++level)
+    {
+        const uint8_t *texels = bytes + layout.level_offset[level], *source = input.levels[level].pixels;
+        for (size_t t = 0; t < size_t(input.levels[level].width) * input.levels[level].height; ++t)
+            assert(texels[t * 4] == source[t * 4 + 2] && texels[t * 4 + 1] == source[t * 4 + 1] &&
+                texels[t * 4 + 2] == source[t * 4] && texels[t * 4 + 3] == source[t * 4 + 3]);
+    }
+    free(record);
+    record = reinterpret_cast<void *>(1); size = 123;
     ++input.levels[1].width;
     assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 16, 16, 1, 2, format,
-        2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_ERROR);
+        TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, 2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_ERROR);
     assert(!record && !size);
-    printf("format %u: noisy texture excluded after all three presets\n", format);
+    printf("format %u: noisy texture stored as BGRA8 after all three presets missed\n", format);
+}
+
+/* graded alpha is held to 38 dB over every texel, not to the binary endpoint test */
+static void graded_alpha()
+{
+    uint8_t source[] = { 40, 60, 80, 255, 40, 60, 80, 0, 40, 60, 80, 128 };
+    uint8_t decoded[] = { 40, 60, 80, 235, 40, 60, 80, 0, 40, 60, 80, 128 };
+    texture_upscale_encode_metrics metrics {};
+    assert(!texture_upscale_encode_gate_alpha(source, decoded, 3, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, &metrics));
+    assert(!texture_upscale_encode_gate_alpha(source, decoded, 3, TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED, &metrics));
+    assert(metrics.alpha_psnr < 38);
+    decoded[3] = 252;
+    assert(texture_upscale_encode_gate_alpha(source, decoded, 3, TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED, &metrics));
+    assert(metrics.alpha_psnr >= 38 && metrics.binary_alpha_max_error == 0);
+    decoded[3] = 0;
+    assert(texture_upscale_encode_gate_alpha(source, decoded, 3, TEXTURE_UPSCALE_ENCODE_ALPHA_NONE, &metrics));
+    printf("graded and absent alpha gates\n");
 }
 
 static void dxt_tail(uint32_t format)
@@ -140,7 +171,7 @@ static void dxt_tail(uint32_t format)
     void *record = nullptr;
     size_t size = 0;
     texture_upscale_encode_metrics metrics {};
-    assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 8, 8, 1, 2, format,
+    assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 8, 8, 1, 2, format, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY,
         2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
     auto bytes = static_cast<uint8_t *>(record);
     texture_record_layout layout {};
@@ -159,7 +190,7 @@ static void binary_alpha(uint32_t format)
     void *record = nullptr;
     size_t size = 0;
     texture_upscale_encode_metrics metrics {};
-    assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 8, 8, 1, 2, format,
+    assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 8, 8, 1, 2, format, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY,
         2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
     assert(metrics.binary_alpha_max_error <= 8 && metrics.rgb_psnr >= 38);
     free(record);
@@ -180,7 +211,7 @@ static void cutout_edge(uint32_t format)
     void *record = nullptr;
     size_t size = 0;
     texture_upscale_encode_metrics metrics {};
-    int result = texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 16, 16, 1, 2, format,
+    int result = texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 16, 16, 1, 2, format, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY,
         2, &record, &size, &metrics);
     printf("cutout edge format %u: result %d, preset %u, PSNR %.2f, alpha error %u\n", format, result, metrics.preset,
         metrics.rgb_psnr, metrics.binary_alpha_max_error);
@@ -201,7 +232,7 @@ static void bc7_retry()
     void *record = nullptr;
     size_t size = 0;
     texture_upscale_encode_metrics metrics {};
-    assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 8, 8, 1, 2, TEXTURE_RECORD_BC7,
+    assert(texture_upscale_encode_record(input.levels.data(), unsigned(input.levels.size()), 8, 8, 1, 2, TEXTURE_RECORD_BC7, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY,
         2, &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
     assert(metrics.rgb_psnr >= 38);
     printf("BC7 four-color blocks accepted at preset %u, PSNR %.2f\n", metrics.preset, metrics.rgb_psnr);
@@ -236,7 +267,7 @@ static void generator_to_reader(uint32_t format)
     void *record = nullptr;
     size_t size = 0;
     texture_upscale_encode_metrics metrics {};
-    assert(texture_upscale_encode_record(output.levels, output.level_count, 4, 4, 0x71, 0x999, format, 2,
+    assert(texture_upscale_encode_record(output.levels, output.level_count, 4, 4, 0x71, 0x999, format, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, 2,
         &record, &size, &metrics) == TEXTURE_UPSCALE_ENCODE_OK);
     auto bytes = static_cast<uint8_t *>(record);
     texture_record_layout layout {};
@@ -259,6 +290,7 @@ int main()
 {
     gate_boundaries();
     bc7_retry();
+    graded_alpha();
     for (auto format : { TEXTURE_RECORD_BC7, TEXTURE_RECORD_ASTC4X4 })
     {
         roundtrip(format);

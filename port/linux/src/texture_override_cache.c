@@ -242,7 +242,8 @@ static void load_record(struct texture_replacement *record)
 	}
 	fclose(file);
 	description.type = GPU_TEXTURE_2D;
-	description.format = layout.format == TEXTURE_RECORD_BC7 ? GPU_FORMAT_BC7 : GPU_FORMAT_ASTC4X4;
+	description.format = layout.format == TEXTURE_RECORD_BC7 ? GPU_FORMAT_BC7 :
+		layout.format == TEXTURE_RECORD_BGRA8 ? GPU_FORMAT_BGRA8 : GPU_FORMAT_ASTC4X4;
 	description.usage = GPU_USAGE_UPLOAD;
 	description.width = layout.width;
 	description.height = layout.height;
@@ -250,13 +251,19 @@ static void load_record(struct texture_replacement *record)
 	description.levels = layout.levels;
 	texture = gpu_texture_create(&description);
 	for (level = 0; texture && level < layout.levels; level++)
+	{
+		uint32_t w = texture_record_half_to(layout.width, level), h = texture_record_half_to(layout.height, level);
+
+		/* a BGRA8 level's padding is not texels */
 		gpu_texture_upload(texture, 0, level, bytes + (layout.level_offset[level] - layout.header_size),
-			(uint32_t)layout.level_size[level]);
+			layout.format == TEXTURE_RECORD_BGRA8 ? w * h * 4 : (uint32_t)layout.level_size[level]);
+	}
 	free(bytes);
 	if (texture)
 		platform_log("texture cache %016llx: %ux%u %s, %u levels, %.2f MB, in place of %lux%lu",
 			(unsigned long long)record->hash, layout.width, layout.height,
-			layout.format == TEXTURE_RECORD_BC7 ? "BC7" : "ASTC 4x4", layout.levels,
+			layout.format == TEXTURE_RECORD_BC7 ? "BC7" : layout.format == TEXTURE_RECORD_BGRA8 ? "BGRA8" : "ASTC 4x4",
+			layout.levels,
 			(double)layout.payload_size / (1024.0 * 1024.0), (unsigned long)record->width,
 			(unsigned long)record->height);
 	else
