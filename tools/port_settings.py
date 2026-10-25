@@ -103,10 +103,13 @@ SCREENS = {
         "screen": "network_settings_screen",
         "header": ("header_profile_network_settings", f"{PE}/network_setup/header_profile_network_settings"),
         # Updates and iCloud saves occupy the same row on different platforms.
-        "spacing": 21,
+        # (thirteen rows, the iCloud status line and two lines of help fit
+        # above the buttons at 414 only this close)
+        "spacing": 20,
         "same_place": ["host.cloud_saves"],
         "row_top": 71,
-        "help_top": 354,
+        "cloud_status_top": 339,
+        "help_top": 360,
         "help_height": 50,
         "cloud_status": True,
         "rows": [
@@ -285,7 +288,7 @@ def _setting_screen(folder: str, spec: dict) -> list:
                          ['<on event="created" run="port setting load"/>'])
     if spec.get("cloud_status"):
         extra += _widget(f"{base}/cloud_saves_status",
-                         [("type", "text"), ("controller", 1), ("left", 68), ("top", 332),
+                         [("type", "text"), ("controller", 1), ("left", 68), ("top", spec.get("cloud_status_top", 332)),
                           ("width", 482), ("height", 20), ("font", "ui\\small_ui"),
                           ("color", "#FFFFFFFF"), ("platform", "cloud_saves")],
                          ['<data input="port cloud saves status"/>'])
