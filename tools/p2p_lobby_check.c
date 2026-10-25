@@ -360,7 +360,8 @@ static void map_checks(void)
 	for (index = 0; index < 3; index++)
 	{
 		strcpy(list[index].invite, invite);
-		list[index].invite[63] = (char)('3' + index);
+		/* (each another host: the identifier is the hash's first bytes) */
+		list[index].invite[2] = (char)('3' + index);
 		list[index].version = HALO_PORT_NETWORK_VERSION;
 	}
 	strcpy(list[0].name, "Stock");
