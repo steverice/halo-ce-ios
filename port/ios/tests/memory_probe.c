@@ -27,6 +27,9 @@ int main(int argc,char **argv) {
     if(reduced?host_arena_size!=0x8b000000ull:host_arena_size!=0x100000000ull)return 30;
     if(!host_low_owns((uintptr_t)host_pointer(0x8a000000u),4))return 31;
     if(reduced&&host_low_owns((uintptr_t)host_pointer(0x8c000000u),4))return 32;
+    /* past the shorter arena's end a guest range is refused, not applied to host memory */
+    if(reduced&&host_guest_mprotect(0x8c000000u,0x4000,PROT_READ)!=-22)return 33;
+    if(reduced&&host_guest_munmap(0x8c000000u,0x4000)!=-22)return 34;
     host_install_signal_handlers();host_memory_watch_initialize();
     /* Reproduce the map inflater's writable 4 KB tail beside a read-only
        buffer. The boundary Apple page must remain writable. */

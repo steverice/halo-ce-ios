@@ -655,7 +655,9 @@ default size), follows the window when it's resized, and is letterboxed at 16:9;
   (the guest image ends near 0x8A70B000) if that is refused. If a device (a Vision Pro, an Apple TV HD, a first-generation iPad Pro) refuses both, launching shows "Could not reserve the
   game's memory arena"; rebuild with `--extended-virtual-addressing`
   (needs a paid developer team), which signs with that entitlement. The build
-  always signs with `increased-memory-limit`.
+  always signs with `increased-memory-limit`. `HALO_ARENA_SHORT=1` in the app's
+  environment (`mac_run.py run --app-env HALO_ARENA_SHORT=1`) skips the 4 GB
+  attempt, to test the shorter reservation on a device that would grant 4 GB.
 
 On a Vision Pro, after installing a `--team` build:
 

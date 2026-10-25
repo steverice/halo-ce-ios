@@ -53,7 +53,8 @@ static void arena_report(void) {
     }
 }
 
-/* Set to 0 by a test to exercise the shorter reservation. */
+/* Set to 0 by a test, or by HALO_ARENA_SHORT=1 in the app's environment, to
+   exercise the shorter reservation. */
 int host_arena_try_full = 1;
 uint64_t host_arena_size;
 
@@ -65,6 +66,8 @@ uint64_t host_arena_size;
 #define ARENA_MINIMUM_END 0x8B000000ull
 
 int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
+    const char *force_short = getenv("HALO_ARENA_SHORT");
+    if (force_short && *force_short && strcmp(force_short, "0")) host_arena_try_full = 0;
     uint64_t short_size = (uint64_t)image_base + image_size;
     short_size = (short_size + 0xffffffull) & ~0xffffffull;
     if (short_size < ARENA_MINIMUM_END) short_size = ARENA_MINIMUM_END;
@@ -139,8 +142,10 @@ int host_low_owns(uintptr_t p,size_t n) {
     return host_arena && p>=host_arena && p-host_arena+n<=host_arena_size;
 }
 
+/* Bounded by the reservation actually made: with the shorter arena, a range
+   above its end would reach host memory past it. */
 static int guest_range_valid(uint64_t address,uint64_t size) {
-    return size && address<0x100000000ull && size<=0x100000000ull-address;
+    return size && address<host_arena_size && size<=host_arena_size-address;
 }
 
 /* Linux mmap constants are deliberately decoded here instead of using Darwin's. */
