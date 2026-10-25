@@ -4,6 +4,7 @@
    the textures at the start of its next frame (xgpu_texture_cache_begin_frame).
    Textures load again when drawn. */
 #include <stdatomic.h>
+#include <TargetConditionals.h>
 #import <Foundation/Foundation.h>
 #include <dispatch/dispatch.h>
 #include <notify.h>
@@ -21,7 +22,9 @@ int host_memory_pressure_poll(void) {
 
 /* -1 where the system does not say */
 int host_memory_available_megabytes(void) {
-#if HALO_NATIVE_MAC
+#if HALO_NATIVE_MAC || TARGET_OS_MACCATALYST
+    /* Desktop processes do not have the iOS dirty-memory limit. Catalyst
+       can report zero here, which must not be mistaken for low headroom. */
     return -1;
 #else
     return (int)(os_proc_available_memory()>>20);

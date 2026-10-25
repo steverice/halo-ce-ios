@@ -228,3 +228,20 @@ int main(void) {
 }
 '''
     compile_run(tmp_path, source)
+
+
+def test_mac_catalyst_reports_unknown_memory_limit(tmp_path):
+    source = (ROOT / 'port/ios/host/host_memory_pressure.m').read_text()
+    start = source.index('int host_memory_available_megabytes(void)')
+    function = source[start:source.index('\n}\n', start) + 3]
+    for native, catalyst, available, expected in ((0, 1, 0, -1), (1, 0, 0, -1), (0, 0, 0, 0), (0, 0, 127, 127), (0, 0, 512, 512)):
+        path = tmp_path / 'headroom.c'
+        path.write_text(f"""#include <assert.h>
+#include <stddef.h>
+#define HALO_NATIVE_MAC {native}
+#define TARGET_OS_MACCATALYST {catalyst}
+static size_t os_proc_available_memory(void) {{ return (size_t){available} << 20; }}
+""" + function + f'\nint main(void) {{ assert(host_memory_available_megabytes()=={expected}); }}\n')
+        binary = tmp_path / 'headroom'
+        subprocess.run(['cc', str(path), '-o', str(binary)], check=True)
+        subprocess.run([str(binary)], check=True)
