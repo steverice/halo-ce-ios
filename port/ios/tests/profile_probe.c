@@ -349,14 +349,13 @@ static void check_unprofiled_models(const char *shipped)
 {
 	struct host_profile profile;
 
-	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): the 16e's profile, which states the 60 Hz it was measured at, so the
-	   120 Hz display inherits it capped at 60. */
+	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): its own measured profile, capped at 60 on the 120 Hz display. */
 	profile = resolve_model(shipped, "ios", "iPhone16,2", 9, 7655, 2796, 1290, 120);
-	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
-	/* iPhone 16 (A18): the iPhone 16e's profile, inside its 60 Hz and pixel envelope. */
+	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "60"));
+	/* iPhone 16 (A18, 5-core GPU): the A17 Pro profile just below it, inside its 60 Hz and pixel envelope. */
 	profile = resolve_model(shipped, "ios", "iPhone17,3", 9, 7600, 2556, 1179, 60);
-	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") &&
-		!strcmp(profile.source_hardware, "iphone-16e") && !strcmp(profile.target_hardware, "iphone-16"));
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") &&
+		!strcmp(profile.source_hardware, "iphone-a17-pro") && !strcmp(profile.target_hardware, "iphone-16"));
 	/* iPhone 17 Pro Max: the same chip as the measured 17 Pro; the profile is inherited, not an and_newer match. */
 	profile = resolve_model(shipped, "ios", "iPhone18,2", 10, 11722, 2868, 1320, 120);
 	assert(profile.inherited && !strcmp(profile.model_file, "iphone-17-pro.toml"));
@@ -369,9 +368,9 @@ static void check_unprofiled_models(const char *shipped)
 	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
 		has(&profile, "display.render_height", "720") &&
 		has(&profile, "display.frame_rate", "60"));
-	/* iPhone 17 (120 Hz): the same capped 16e profile. */
+	/* iPhone 17 (120 Hz): the A17 Pro profile, capped at 60. */
 	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
-	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "60"));
 	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 720 lines; nothing measured is closer. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
