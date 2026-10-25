@@ -107,6 +107,9 @@ size_t texture_override_cache_records(const char *directory, uint32_t format, co
 		if (sscanf(line, "%" SCNx64 "\t%u\t%u\t%u\t%u\t%" SCNx64 "\t%" SCNx64 "\t%" SCNu64, &entry.hash,
 			&entry.width, &entry.height, &result, &treatment, &entry.recipe_key, &global, &bytes) != 8)
 			continue;
+		/* (an entry kept original, TEXTURE_POLICY_ORIGINAL, has no record to draw) */
+		if (result == 2)
+			continue;
 		if (record_entry_count == capacity)
 		{
 			size_t more = capacity ? capacity * 2 : 256;
