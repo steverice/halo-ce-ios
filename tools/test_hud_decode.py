@@ -242,7 +242,7 @@ int main(void) {
     game = (ROOT / 'source/game/game.c').read_text()
     start = game.index('\tnetwork_objects_placed();', game.index('void game_initialize_for_new_map('))
     tail = game[start:game.index('\n}', start)]
-    head = 'static void network_objects_placed(void) {}\nstatic void ui_widgets_safe_to_load(int value) { (void)value; }\n#define TRUE 1\nvoid game_initialize_for_new_map(void) {\n' + tail + '\n}\n'
+    head = 'void host_astc_game_started(void) {}\nstatic void network_objects_placed(void) {}\nstatic void ui_widgets_safe_to_load(int value) { (void)value; }\n#define TRUE 1\nvoid game_initialize_for_new_map(void) {\n' + tail + '\n}\n'
     source = source.replace('/* LOAD_FINISH_HEAD */', head)
     compile_run(tmp_path, source)
 
