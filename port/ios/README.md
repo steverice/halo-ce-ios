@@ -211,10 +211,29 @@ hitch; after that both sets stay in memory and a switch reads nothing, as long
 as the memory limit below has room for both. A texture the second set has no
 usable file for is drawn from the first set, and the readout says so.
 
+### The upscaled textures' cache
+
+The upscaled textures in `Documents/texture-cache` are compressed: each is one
+record, `<hash>-<width>x<height>.bin`, named by the original's level-0 hash
+and size, holding the whole mip chain as BC7 where the GPU has BC formats and
+ASTC 4x4 elsewhere, ready to upload as it is. `manifest.tsv` lists them; at
+each level load the game reads it, and draws a record only if the manifest
+lists it with the recipe the record says it was made by. A record in the
+other format, or one that fails its checksum, is not drawn. The format is in
+`port/linux/src/texture_record.h`. The textures are 2, 4 or 8 times the
+original's size, by the `scales` rule of `port/assets/texture-policy.json`.
+
+`debug.texture_override_directory` still wins over the cache: with it set, the
+game draws that folder's uncompressed `<hash>.rgba` files instead, as before.
+`debug.texture_compare_directory` can name such a folder beside the cache, to
+compare the two with the toggle above. `tools/texture_cache_write.py` fills a
+cache from such a folder, for testing.
+
 ### The upscaled textures' memory
 
-Upscaled textures are uncompressed: one that replaces a 512x512 bitmap at four
-times the size takes about 21 MB. `display.upscaled_textures_memory` in
+A 512x512 bitmap upscaled to four times its size takes about 21 MB
+uncompressed, as in `debug.texture_override_directory`'s files, and about 5 MB
+as a record of the cache. `display.upscaled_textures_memory` in
 `config.toml` is the most they may take together, in MB. The default, `0`, is a
 quarter of the memory the system still lets the app take when the first one
 loads (about 1.9 GB on an Apple Vision Pro, 1.3 GB on an iPad Pro and 850 MB on

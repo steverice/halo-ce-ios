@@ -12,6 +12,7 @@ the first.
 #ifndef TEXTURE_OVERRIDE_CACHE_H
 #define TEXTURE_OVERRIDE_CACHE_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "gpu.h"
 #include "texture_replacement_cache.h"
@@ -30,6 +31,12 @@ void texture_override_cache_start(uint64_t budget);
 struct texture_replacement_cache *texture_override_cache(void);
 /* the two sets' folders ("" for none); kept, not copied */
 void texture_override_cache_directories(const char *first, const char *second);
+/* or the upscaled textures' cache (texture_record.h) as the first set: the
+folder and the record format this GPU draws (TEXTURE_RECORD_*), and the
+second set's folder ("" for none; a folder of <hash>.rgba files), both kept,
+not copied. The cache's manifest is read now, and only the records it lists
+are read. Returns the number it lists */
+size_t texture_override_cache_records(const char *directory, uint32_t format, const char *second);
 /* a map has loaded, with or without upscaled textures for the level */
 void texture_override_cache_map_loaded(int enabled);
 /* draw the second set (or the first again) from now on */

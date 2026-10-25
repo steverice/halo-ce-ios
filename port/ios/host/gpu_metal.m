@@ -222,6 +222,9 @@ static int metal_debug;
 upload as they are, not decoded to BGRA8 (gpu_capabilities.s3tc) */
 static BOOL compressed_textures;
 static BOOL astc_textures;
+/* gpu_capabilities.upscaled_format: the block format of the upscaled
+textures' records (GPU_FORMAT_BC7 or GPU_FORMAT_ASTC4X4), or 0 */
+static uint8_t upscaled_format;
 /* debug.metal_specialize = false: vertex_function returns the unspecialized
 function, its fallback when specializing fails */
 static BOOL specialize_off;
@@ -874,6 +877,8 @@ static BOOL format_supported(const struct gpu_texture_description *description)
 		return YES;
 	if (description->usage != GPU_USAGE_UPLOAD)
 		return NO;
+	if (description->format == upscaled_format && upscaled_format)
+		return description->type == GPU_TEXTURE_2D;
 	if (description->format == GPU_FORMAT_ASTC4X4)
 		return astc_textures && (description->type == GPU_TEXTURE_2D || description->type == GPU_TEXTURE_CUBE);
 	return compressed_textures && (description->format == GPU_FORMAT_BC1 || description->format == GPU_FORMAT_BC2 ||
@@ -886,9 +891,11 @@ static MTLPixelFormat texture_format(const struct gpu_texture_description *descr
 		return MTLPixelFormatDepth32Float_Stencil8;
 	if (description->format == GPU_FORMAT_ASTC4X4)
 		return MTLPixelFormatASTC_4x4_LDR;
-	/* compressed_textures is set only where these exist */
+	/* compressed_textures and upscaled_format's BC7 are set only where these exist */
 	if (@available(iOS 16.4, tvOS 16.4, visionOS 1.0, *))
 	{
+		if (description->format == GPU_FORMAT_BC7)
+			return MTLPixelFormatBC7_RGBAUnorm;
 		if (description->format == GPU_FORMAT_BC1)
 			return MTLPixelFormatBC1_RGBA;
 		if (description->format == GPU_FORMAT_BC2)
@@ -900,13 +907,13 @@ static MTLPixelFormat texture_format(const struct gpu_texture_description *descr
 }
 
 /* a level's bytes per row and per image: 4x4 blocks of 8 bytes (BC1) or 16
-(BC2, BC3, ASTC4X4) for the compressed formats, else 4 bytes
+(BC2, BC3, ASTC4X4, BC7) for the compressed formats, else 4 bytes
 a texel */
 static void level_layout(uint32_t format, unsigned long width, unsigned long height,
 	unsigned long *row, unsigned long *image)
 {
 	if (format == GPU_FORMAT_BC1 || format == GPU_FORMAT_BC2 || format == GPU_FORMAT_BC3 ||
-		format == GPU_FORMAT_ASTC4X4)
+		format == GPU_FORMAT_ASTC4X4 || format == GPU_FORMAT_BC7)
 	{
 		*row = (width + 3) / 4 * (format == GPU_FORMAT_BC1 ? 8 : 16);
 		*image = *row * ((height + 3) / 4);
@@ -6776,6 +6783,23 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 				astc_textures ? "rewrite eligible DXT as ASTC 4x4" : "are decoded to BGRA8");
 		}
 
+		/* the upscaled textures' records: BC7 where the GPU has BC formats
+		(not with debug.texture_astc = "force", which tests the no-BC path on
+		a Mac), else ASTC 4x4 where it has ASTC (Apple2 and later; Macs from
+		Apple silicon) */
+		{
+			char astc[16];
+			BOOL bc = NO;
+
+			host_config_string("debug.texture_astc", "auto", astc, sizeof(astc));
+			if (@available(iOS 16.4, tvOS 16.4, visionOS 1.0, *))
+				bc = device.supportsBCTextureCompression && strcmp(astc, "force");
+			upscaled_format = bc ? GPU_FORMAT_BC7 : [device supportsFamily:MTLGPUFamilyApple2] ?
+				GPU_FORMAT_ASTC4X4 : 0;
+			platform_log("Metal: upscaled textures' records are %s", upscaled_format == GPU_FORMAT_BC7 ? "BC7" :
+				upscaled_format ? "ASTC 4x4" : "not drawable here");
+		}
+
 		/* the vertex shaders fetch their own attributes (nv2a_msl.c's
 		fetch_attribute), BGRA8 as readily as RGBA8, so the front end needn't
 		swizzle colored streams as it uploads them and can draw them from the
@@ -6814,6 +6838,7 @@ static void gpu_metal_initialize(uint32_t flags, struct gpu_capabilities *capabi
 		capabilities->occlusion_mode = visibility_counts ? GPU_OCCLUSION_EXACT : GPU_OCCLUSION_ANY_SAMPLE;
 		capabilities->s3tc = compressed_textures ? 1 : 0;
 		capabilities->astc = astc_textures ? 1 : 0;
+		capabilities->upscaled_format = upscaled_format;
 		/* border colors stay inside the backend: the front end doesn't read
 		border_clamp, and a GL run and a Metal run report the same line */
 		border_colors = [device supportsFamily:MTLGPUFamilyApple7] || [device supportsFamily:MTLGPUFamilyMac2];

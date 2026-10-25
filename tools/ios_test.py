@@ -578,6 +578,11 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined',
     'port/ios/tests/texture_compare_probe.c', 'port/linux/src/texture_override_cache.c',
     '-o', BUILD/'texture-compare-probe')
 run(BUILD/'texture-compare-probe')
+# the upscaled textures' cache records, BC7 and ASTC 4x4, read under the same budget (port/linux/src/texture_record.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/linux/src',
+    'port/ios/tests/texture_record_probe.c', 'port/linux/src/texture_override_cache.c',
+    '-o', BUILD/'texture-record-probe')
+run(BUILD/'texture-record-probe')
 # the texture upscale policy's device classifier (port/runtime/texture_policy.c)
 run('python3', 'tools/embed_texture_policy.py', 'port/assets/texture-policy.json', BUILD/'texture_policy_table.c')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/runtime', '-Iport/linux/src',

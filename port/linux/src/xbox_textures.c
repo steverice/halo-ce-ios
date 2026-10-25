@@ -26,6 +26,7 @@ memory_watch.c detects that by write-protecting the pages.
 #include "../game/cache_file_formats.h"
 #include "texture_override.h"
 #include "texture_override_cache.h"
+#include "texture_record.h"
 #include "texture_upscale_state.h"
 /* render validation's name for a texture this file cannot convert, in a
 build configured with it (gpu_validate.h); nothing otherwise */
@@ -968,6 +969,9 @@ static void texture_replacements_log(const char *when)
 
 /* ---------- upscaled textures, per level (texture_upscale_state.h) */
 static struct texture_upscale_state texture_upscale;
+/* the upscaled textures' cache (texture_record.h) is this level's first set
+when nonzero: the records its manifest lists */
+static size_t texture_records_listed;
 
 /* the two sets' names in the comparison's readout and log lines
 (debug.texture_override_name, debug.texture_compare_name) */
@@ -996,13 +1000,31 @@ static const char *texture_compare_label(void)
    (texture_replacement_cache.h) */
 void texture_upscale_map_loaded(void)
 {
+	const char *override = config_string("debug.texture_override_directory");
+	const char *compare = config_string("debug.texture_compare_directory");
+	uint32_t format = device_capabilities.upscaled_format == GPU_FORMAT_BC7 ? TEXTURE_RECORD_BC7 :
+		device_capabilities.upscaled_format == GPU_FORMAT_ASTC4X4 ? TEXTURE_RECORD_ASTC4X4 : 0;
+	static int source = -1;
+	int now;
+
 	texture_upscale_state_map_loaded(&texture_upscale, config_reload_boolean("display.upscaled_textures"));
-	texture_upscale_state_compare(&texture_upscale, *config_string("debug.texture_override_directory") &&
-		*config_string("debug.texture_compare_directory"));
-	texture_override_cache_directories(config_string("debug.texture_override_directory"),
-		config_string("debug.texture_compare_directory"));
+	/* debug.texture_override_directory wins over the cache, whose manifest is read again at each level load */
+	texture_records_listed = 0;
+	if (*override || !texture_upscale_state_enabled(&texture_upscale) || !format)
+		texture_override_cache_directories(override, compare);
+	else
+		texture_records_listed = texture_override_cache_records(TEXTURE_RECORD_DIRECTORY, format, compare);
+	texture_upscale_state_compare(&texture_upscale, (*override || texture_records_listed) && *compare);
 	texture_replacements_log("at the level's end");
+	/* (a new source of the first set: none of the old one's replacements stay) */
+	now = *override ? 1 : texture_records_listed ? 2 : 0;
+	if (source >= 0 && now != source)
+		texture_override_cache_map_loaded(0);
+	source = now;
 	texture_override_cache_map_loaded(texture_upscale_state_enabled(&texture_upscale));
+	if (texture_records_listed)
+		platform_log("texture cache: %lu upscaled textures listed in %s, %s", (unsigned long)texture_records_listed,
+			TEXTURE_RECORD_DIRECTORY, format == TEXTURE_RECORD_BC7 ? "BC7" : "ASTC 4x4");
 	if (texture_upscale.compare)
 		platform_log("texture comparison: %s; %s is read as it is drawn once selected", texture_compare_label(),
 			texture_set_name(1));
@@ -1102,7 +1124,8 @@ static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *
 {
 	static int logging = -1;
 	static unsigned long vector_palette_hash;
-	const char *directory = config_string("debug.texture_override_directory");
+	const char *directory = *config_string("debug.texture_override_directory") ?
+		config_string("debug.texture_override_directory") : texture_records_listed ? TEXTURE_RECORD_DIRECTORY : "";
 	const struct xgpu_texture_description *description = &entry->description;
 	unsigned long level0_size, levels;
 	uint64_t hash;

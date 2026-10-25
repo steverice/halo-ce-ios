@@ -72,6 +72,12 @@ struct gpu_capabilities
 	uint8_t upscale_anti_alias;
 	/* ASTC 4x4 LDR upload textures (2D and cube). */
 	uint8_t astc;
+	/* the block format the upscaled textures' cache records are in here
+	(texture_record.h): GPU_FORMAT_BC7 where the GPU has BC formats,
+	GPU_FORMAT_ASTC4X4 where it has ASTC, 0 where it has neither (records
+	are not drawn). Upload textures of that format are accepted whatever
+	s3tc and astc say */
+	uint8_t upscaled_format;
 	uint32_t max_texture_size;
 };
 
@@ -81,7 +87,8 @@ struct gpu_capabilities
 enum { GPU_TEXTURE_2D = 1, GPU_TEXTURE_3D, GPU_TEXTURE_CUBE };
 
 /* gpu_texture_description.format: BGRA8 texels are 32-bit ARGB words in
-memory; BC1-3 are DXT1, 3 and 5; ASTC4X4 is ASTC LDR, 16 bytes a block */
+memory; BC1-3 are DXT1, 3 and 5; ASTC4X4 is ASTC LDR, 16 bytes a block; BC7
+is BC7 UNORM, 16 bytes a block (the upscaled textures' records only) */
 enum
 {
 	GPU_FORMAT_BGRA8 = 1,
@@ -90,6 +97,7 @@ enum
 	GPU_FORMAT_BC3,
 	GPU_FORMAT_DEPTH_STENCIL,
 	GPU_FORMAT_ASTC4X4,
+	GPU_FORMAT_BC7,
 };
 
 /* gpu_texture_description.usage */
