@@ -1124,6 +1124,15 @@ void profile_initialize(
 	profile_trace_name_aggregate("render_structure_diffuse_lights_draw");
 	profile_trace_name_aggregate("render_structure_specular_lights");
 	profile_trace_name_aggregate("render_structure_specular_lights_draw");
+	/* port: each object's update, by part (objects.c) */
+	profile_trace_name_aggregate("object_update.type");
+	profile_trace_name_aggregate("object_update.damage");
+	profile_trace_name_aggregate("object_update.export_functions");
+	profile_trace_name_aggregate("object_update.node_matrices");
+	profile_trace_name_aggregate("object_update.functions");
+	profile_trace_name_aggregate("object_update.change_colors");
+	profile_trace_name_aggregate("object_update.lights");
+	profile_trace_name_aggregate("object_update.postprocess");
 #endif
 
 	return;
