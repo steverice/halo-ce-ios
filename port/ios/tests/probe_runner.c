@@ -6,11 +6,14 @@
 #include <sys/mman.h>
 #include "guest_image.h"
 extern unsigned long long host_guest_on_stack(uintptr_t,unsigned,uintptr_t,void *);
-int main(void) {
+/* aligned: a 4 GiB arena at a multiple of 4 GiB; otherwise one 0x7FFFC000 past it (as HALO_ARENA_UNALIGNED
+   places it), whose low 32 bits overlap the guest's addresses, so an OR or a truncation would miss */
+static int probe(int aligned) {
     vm_address_t arena=0;
-    int result=vm_map(mach_task_self(),&arena,0x100000000ull,0xffffffffull,VM_FLAGS_ANYWHERE,
+    int result=vm_map(mach_task_self(),&arena,aligned?0x100000000ull:0x200000000ull,0xffffffffull,VM_FLAGS_ANYWHERE,
         MACH_PORT_NULL,0,FALSE,VM_PROT_NONE,VM_PROT_ALL,VM_INHERIT_NONE);
     if(result){fprintf(stderr,"reserve: %d\n",result);return 1;}
+    if(!aligned)arena+=0x7fffc000;
     vm_address_t code=arena+0x88000000;vm_prot_t current,maximum;
     result=vm_remap(mach_task_self(),&code,IOS_GUEST_CODE_SIZE,0,VM_FLAGS_FIXED|VM_FLAGS_OVERWRITE,
         mach_task_self(),(vm_address_t)halo_guest_code,FALSE,&current,&maximum,VM_INHERIT_COPY);
@@ -28,3 +31,4 @@ int main(void) {
     printf("ILP32 guest probe: %s (failure bits %d, arena %lx)\n",result?"FAIL":"PASS",result,arena);
     return result;
 }
+int main(void) { return probe(1)|probe(0); }

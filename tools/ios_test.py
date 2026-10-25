@@ -123,6 +123,8 @@ run('xcrun','clang','-O2','-Iport/ios/host','-Iport/runtime/include','-Iport/lin
 run(BUILD/'memory-probe')
 run(BUILD/'memory-probe', 'reduced')
 run(BUILD/'memory-probe', 'early')
+run(BUILD/'memory-probe', 'unaligned')
+run(BUILD/'memory-probe', 'unaligned-reduced')
 sdl_flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'sdl3'], text=True))
 run('xcrun', 'clang', '-O2', '-DHALO_IOS=1', '-Iport/ios/host', '-Iport/ios/host',
     '-Iport/runtime/include', 'port/ios/tests/audio_probe.c', '-Wl,-dead_strip',

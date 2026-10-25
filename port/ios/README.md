@@ -504,13 +504,16 @@ host can forward a fixed `network.tunnel_port` (UDP) on its router by hand.
 
 The game relies on 32-bit pointers in its data structures. Apple's current
 ARM64 iOS binaries require their first 4 GB of address space to remain unmapped,
-so the game's 32-bit pointers are represented as offsets into an aligned
-native arena. This is native compiled code, not an Android emulator.
+so the game's 32-bit pointers are represented as offsets into a native
+arena. This is native compiled code, not an Android emulator.
 
 `tools/ios_asm_convert.py` lifts compiled guest memory accesses and indirect
-branches into an aligned 4 GB arena using reserved registers x15 and x27.
-Guest pointer values and structure layouts stay 32-bit. PC-relative addresses
-are normalized back to guest offsets. A small signed assembly entry switches
+branches into the arena using reserved registers x15 and x27: each address is
+x27 plus the zero-extended 32-bit guest pointer, so the arena can start at any
+16 KB boundary, not only at a multiple of 4 GB. Guest pointer values and
+structure layouts stay 32-bit. PC-relative addresses, and pointers made from
+sp or the frame pointer x29 (which hold native addresses), are converted back
+to guest offsets by subtracting x27. A small signed assembly entry switches
 to an arena stack; host bridges translate pointers at the ABI boundary.
 
 Guest code is embedded in the app's signed `__TEXT` and aliased into the arena
@@ -651,13 +654,16 @@ default size), follows the window when it's resized, and is letterboxed at 16:9;
   resumes it. If visionOS later reclaims the closed window, the game quits; it
   saves at checkpoints.
 - **Memory.** The game reserves a 4 GB address range for its 32-bit memory
-  before `main` runs, ahead of UIKit, Metal and the game's own threads, and falls back to a reservation of about 2.2 GB
-  (the guest image ends near 0x8A70B000) if that is refused. If a device (a Vision Pro, an Apple TV HD, a first-generation iPad Pro) refuses both, launching shows "Could not reserve the
+  before `main` runs, ahead of UIKit, Metal and the game's own threads: at a multiple of 4 GB if it can, else at any
+  address, else a reservation of about 2.2 GB (the guest image ends near 0x8A70B000) at any address. If a device
+  refuses all three, launching shows "Could not reserve the
   game's memory arena"; rebuild with `--extended-virtual-addressing`
   (needs a paid developer team), which signs with that entitlement. The build
   always signs with `increased-memory-limit`. `HALO_ARENA_SHORT=1` in the app's
   environment (`mac_run.py run --app-env HALO_ARENA_SHORT=1`) skips the 4 GB
-  attempt, to test the shorter reservation on a device that would grant 4 GB.
+  attempts, to test the shorter reservation on a device that would grant 4 GB, and
+  `HALO_ARENA_UNALIGNED=1` places the arena 0x7FFFC000 past a multiple of 4 GB, to test an unaligned arena
+  on a device that would grant an aligned one.
 
 On a Vision Pro, after installing a `--team` build:
 
