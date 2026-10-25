@@ -1,6 +1,7 @@
 /* UIKit controls feed a standard SDL gamepad. The first hardware controller
    shares player one with touch; additional hardware controllers keep their ports. */
 #import <UIKit/UIKit.h>
+#import <GameController/GameController.h>
 #include <SDL3/SDL.h>
 #include "ios_host.h"
 #import "host_orientation.h"
@@ -151,6 +152,9 @@ void host_touch_replay_active(int active) {
 @property(nonatomic,strong) HaloStick *lookStick;
 @property(nonatomic,strong) NSMutableArray<HaloButton *> *buttons;
 @property(nonatomic,strong) UIButton *toggle;
+/* the player's own Hide controls choice, and the overlay stepping aside for a hardware controller */
+@property(nonatomic) BOOL manuallyHidden;
+@property(nonatomic) BOOL controllerHidden;
 @end
 @implementation HaloControls
 - (HaloButton *)addButton:(NSString *)title label:(NSString *)label button:(int)button axis:(int)axis {
@@ -186,7 +190,31 @@ void host_touch_replay_active(int active) {
     self.toggle.backgroundColor=[UIColor colorWithWhite:0 alpha:.3];self.toggle.layer.cornerRadius=12;
     [self.toggle addTarget:self action:@selector(toggleControls) forControlEvents:UIControlEventTouchUpInside];[self addSubview:self.toggle];
     [[NSNotificationCenter defaultCenter]addObserver:self selector:@selector(reset) name:UIApplicationWillResignActiveNotification object:nil];
+    /* The overlay hides while a game controller is connected, and returns when the last one
+       disconnects or on a touch of the screen. (Approach from CoreCE PR #1 (CC0).) */
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllersChanged) name:GCControllerDidConnectNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(controllerDisconnected:) name:GCControllerDidDisconnectNotification object:nil];
+    [self controllersChanged];
     return self;
+}
+- (void)controllersChanged {
+    self.controllerHidden=GCController.controllers.count>0;[self applyVisibility];
+}
+- (void)controllerDisconnected:(NSNotification *)note {
+    /* a disconnecting controller may still be listed while its notification is delivered */
+    NSUInteger others=0;for(GCController *c in GCController.controllers)if(c!=note.object)others++;
+    self.controllerHidden=others>0;[self applyVisibility];
+}
+- (void)applyVisibility {
+    [self reset];
+    BOOL hidden=self.manuallyHidden||self.controllerHidden;
+    self.moveStick.hidden=self.lookStick.hidden=hidden;for(UIView *b in self.buttons)b.hidden=hidden;
+    self.toggle.hidden=self.controllerHidden;
+    [self.toggle setTitle:self.manuallyHidden?@"Show controls":@"Hide controls" forState:UIControlStateNormal];
+}
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if(self.controllerHidden){self.controllerHidden=NO;self.manuallyHidden=NO;[self applyVisibility];return;}
+    [super touchesBegan:touches withEvent:event];
 }
 - (void)reset {
     host_ios_touch_reset();[self.moveStick cancelTrackingWithEvent:nil];[self.lookStick cancelTrackingWithEvent:nil];
@@ -195,9 +223,7 @@ void host_touch_replay_active(int active) {
 }
 - (void)toggleControls {
     if(host_touch_replay_blocked(&replay_gate))return;
-    [self reset];BOOL hidden=!self.moveStick.hidden;
-    self.moveStick.hidden=self.lookStick.hidden=hidden;for(UIView *b in self.buttons)b.hidden=hidden;
-    [self.toggle setTitle:hidden?@"Show controls":@"Hide controls" forState:UIControlStateNormal];
+    self.manuallyHidden=!self.manuallyHidden;[self applyVisibility];
 }
 - (void)layoutSubviews {
     [super layoutSubviews];CGRect r=UIEdgeInsetsInsetRect(self.bounds,self.safeAreaInsets);
@@ -225,6 +251,7 @@ void host_touch_replay_active(int active) {
 }
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     if(host_touch_replay_blocked(&replay_gate))return NO;
+    if(self.controllerHidden)return YES;   /* a touch brings the overlay back (touchesBegan:) */
     for(UIView *view in self.subviews)if(!view.hidden && [view pointInside:[self convertPoint:point toView:view] withEvent:event])return YES;
     return NO;
 }
