@@ -4,11 +4,11 @@
 #include <string.h>
 
 /* Release policy for "auto", the default: convert only on GPUs that lack BC
- * (MTLDevice.supportsBCTextureCompression). Keep 0 until the conversion has
- * passed device validation; set it to 1 (or build with -DVISR_ASTC_AUTOMATIC=1)
- * to turn automatic conversion on. "force" and "off" ignore it. */
+ * (MTLDevice.supportsBCTextureCompression). The conversion has passed device and
+ * check-metal validation, so this is 1; build with -DVISR_ASTC_AUTOMATIC=0 to
+ * turn automatic conversion off. "force" and "off" ignore it. */
 #ifndef VISR_ASTC_AUTOMATIC
-#define VISR_ASTC_AUTOMATIC 0
+#define VISR_ASTC_AUTOMATIC 1
 #endif
 
 /* "force" emulates a GPU without BC for validation; "off" disables conversion.
