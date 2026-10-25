@@ -1299,3 +1299,15 @@ def test_defaults_reset_the_network_addresses():
     assert mac_run.DEFAULTS["network.address"] == '""'
     assert mac_run.DEFAULTS["network.broadcast"] == '""'
     assert mac_run.DEFAULTS["network.online"] == "false"
+
+
+def test_a_crashed_run_keeps_the_report_of_its_own_pid(tmp_path):
+    reports, out, app = tmp_path / "reports", tmp_path / "out", tmp_path / "VISR.app"
+    reports.mkdir()
+    out.mkdir()
+    (out / "ios-runtime.log").write_text("crash reports: 5505 guest symbols, pid 42\n")
+    for name, pid in (("VISR-2026-10-25-120000.ips", 41), ("VISR-2026-10-25-120001.ips", 42)):
+        (reports / name).write_text('{"app_name": "VISR"}\n{"pid": %d}\n' % pid)
+    copies = mac_run.collect_crash_reports(app, 0, out, reports=reports, wait=0)
+    assert [path.name for path in copies] == ["VISR-2026-10-25-120001.ips"]
+    assert (out / "crash-reports/VISR-2026-10-25-120001.ips").is_file()

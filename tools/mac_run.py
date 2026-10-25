@@ -25,6 +25,7 @@ import argparse
 import datetime
 import difflib
 import hashlib
+import json
 import os
 import plistlib
 import re
@@ -1324,20 +1325,38 @@ def seed_native_movies(args, data):
 DIAGNOSTIC_REPORTS = Path.home() / "Library/Logs/DiagnosticReports"
 
 
-def collect_crash_reports(app, since, out, reports=DIAGNOSTIC_REPORTS):
-    """copy the crash reports of app's executable written since the launch (a time.time()) to out/crash-reports,
-    waiting up to 30 seconds for the crash reporter to write one; the copies, newest last. Their guest frames
-    are named by tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt"""
+# the app's process ID in ios-runtime.log (host_crash.c), which a crash report names too
+CRASH_PID = re.compile(r"crash reports: \d+ guest symbols, pid (\d+)")
+
+
+def report_pid(path):
+    """the process ID an .ips crash report is of, or None"""
+    try:
+        _, _, body = path.read_text(errors="replace").partition("\n")
+        return json.loads(body).get("pid")
+    except (OSError, ValueError):
+        return None
+
+
+def collect_crash_reports(app, since, out, reports=DIAGNOSTIC_REPORTS, wait=30):
+    """copy the crash report of the run whose logs are in out to out/crash-reports: the report of the pid its
+    ios-runtime.log names (else, for a build from before host_crash.c, of app's executable since the launch, a
+    time.time()), waiting up to wait seconds for the crash reporter to write it; the copies. Their guest
+    frames are named by tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt"""
     name = app_executable(app) if (app / "Info.plist").is_file() else Path(NATIVE_EXECUTABLE).name
+    log = out / "ios-runtime.log"
+    match = CRASH_PID.search(log.read_text(errors="replace")) if log.is_file() else None
+    pid = int(match.group(1)) if match else None
     found = []
-    for _ in range(30):
-        found = sorted((path for path in reports.glob(f"{name}-*.ips") if path.stat().st_mtime >= since - 1),
-                       key=lambda path: path.stat().st_mtime) if reports.is_dir() else []
-        if found:
+    for attempt in range(wait + 1):
+        candidates = [path for path in reports.glob(f"{name}-*.ips") if path.stat().st_mtime >= since - 1] \
+            if reports.is_dir() else []
+        found = [path for path in candidates if pid is None or report_pid(path) == pid]
+        if found or attempt == wait:
             break
         time.sleep(1)
     copies = []
-    for path in found:
+    for path in sorted(found, key=lambda path: path.stat().st_mtime):
         (out / "crash-reports").mkdir(parents=True, exist_ok=True)
         copies.append(out / "crash-reports" / path.name)
         shutil.copy2(path, copies[-1])
