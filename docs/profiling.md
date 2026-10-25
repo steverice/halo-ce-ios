@@ -85,6 +85,9 @@ The port adds:
 | `gpu_draw`, `gpu_clear`, `gpu_texture`, `gpu_buffer`, `gpu_shader_create`, `gpu_visibility` (an occlusion query's start and end), `gpu_visibility_result` (reading one back), `gpu_pipeline_warm` (summed a frame) | each call into the GPU backend (`gpu.h`), from the call until the backend returns; on the Apple builds, the Metal backend's encoding in the host |
 | `gpu_frame_start`, `gpu_present`, `gpu_flush`, `gpu_upscale`, `gpu_anti_alias`, `gpu_warm`, `gpu_initialize` | the backend's frame start, presentation and the other whole-frame calls |
 | `d3d8_draw_vertices`, `d3d8_draw_indexed_vertices`, `d3d8_draw_quad_ranges`, `d3d8_end`, `d3d8_clear`, `d3d8_set_vertex_shader_constant`, `d3d8_set_render_target` (summed a frame) | the Direct3D 8 front end's outermost calls (`d3d8_device.c`), translation and backend call together; less the `gpu_*` time inside them, the translation's own |
+| `d3d8_immediate_flush` (summed a frame) | a held immediate-mode draw sent when the next call needs it; inside that call's own row |
+| `object_update.type`, `.damage`, `.export_functions`, `.node_matrices`, `.functions`, `.change_colors`, `.lights`, `.postprocess` (summed a tick) | the parts of each object's update (`objects.c`); `.type` holds the per-type updates (`biped_update` and the rest) |
+| `objects_update.activation`, `objects_update.created_deleted`, `objects_update.garbage` | `objects_update`'s scan for objects to activate and deactivate, its pass over created and deleted objects, and its garbage collection |
 | `benchmark_suite_update` | a benchmark suite's actions in the main loop |
 | `port_network_update` | the network tests, map sharing, away players and aim assist before the network frame |
 | `network_distributed_tick.sync_log` | the network sync log |

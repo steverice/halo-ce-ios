@@ -539,13 +539,14 @@ enum
 	_translation_profile_draw_indexed_vertices,
 	_translation_profile_end,
 	_translation_profile_clear,
+	_translation_profile_immediate_flush,
 	NUMBER_OF_TRANSLATION_PROFILE_NAMES,
 };
 
 static const char *const translation_profile_texts[NUMBER_OF_TRANSLATION_PROFILE_NAMES] =
 {
 	"d3d8_set_render_target", "d3d8_set_vertex_shader_constant", "d3d8_draw_vertices", "d3d8_draw_quad_ranges",
-	"d3d8_draw_indexed_vertices", "d3d8_end", "d3d8_clear",
+	"d3d8_draw_indexed_vertices", "d3d8_end", "d3d8_clear", "d3d8_immediate_flush",
 };
 static int translation_profile_ids[NUMBER_OF_TRANSLATION_PROFILE_NAMES];
 /* (registered once, by whichever thread calls first: the guest's C library has no pthread_once) */
@@ -4935,6 +4936,10 @@ void halo_immediate_flush(void)
 
 	if (!halo_immediate_pending)
 		return;
+#ifdef HALO_PROFILE
+	/* (a held draw made by whichever call comes next: it counts here, inside that call's own time) */
+	TRANSLATION_PROFILED_DECLARATION(immediate_flush);
+#endif
 	/* (the calls below are gpu_ calls: they must not find a draw held) */
 	halo_immediate_pending = 0;
 	if (!immediate_batch.index_count)
