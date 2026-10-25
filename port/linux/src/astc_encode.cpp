@@ -1,4 +1,5 @@
 #include "astc_encode.h"
+#include "astc_quality.h"
 #include "astcenc.h"
 #include <cmath>
 #include <cstdlib>
@@ -82,48 +83,9 @@ static void decode_block(astc_dxt_format format, const uint8_t *source, uint8_t 
 	}
 }
 
-struct quality_metrics
-{
-	double squared_error = 0;
-	size_t rgb_channels = 0;
-	int64_t crossing_deltas[257] = {};
-	bool alpha_valid = true;
-	void add(const uint8_t *original, const uint8_t *decoded, size_t texels, bool binary)
-	{
-		for (size_t i = 0; i < texels; ++i)
-		{
-			unsigned alpha = original[i * 4 + 3], actual = decoded[i * 4 + 3];
-			if (alpha) for (unsigned c = 0; c < 3; ++c)
-			{
-				int difference = int(original[i * 4 + c]) - decoded[i * 4 + c];
-				squared_error += difference * difference;
-				++rgb_channels;
-			}
-			if (binary) alpha_valid &= std::abs(int(alpha) - int(actual)) <= 8;
-			else if (alpha != actual)
-			{
-				unsigned low = alpha < actual ? alpha : actual, high = alpha > actual ? alpha : actual;
-				++crossing_deltas[low + 1]; --crossing_deltas[high + 1];
-			}
-		}
-	}
-	bool valid(size_t texels) const
-	{
-		if (!alpha_valid || (rgb_channels && squared_error / rgb_channels > 65025.0 / std::pow(10.0, 3.8))) return false;
-		/* Check every possible alpha reference until map-specific reference logs
-		   are available. This can exclude more textures, never relax the limit. */
-		int64_t crossings = 0;
-		for (unsigned r = 1; r < 256; ++r)
-		{
-			crossings += crossing_deltas[r];
-			if (uint64_t(crossings) * 1000 > texels) return false;
-		}
-		return true;
-	}
-};
 }
 
-static astc_encode_result encode_level(astc_dxt_format format, const void *source, unsigned width, unsigned height, void *output, bool discardable)
+static astc_encode_result encode_level(astc_dxt_format format, const void *source, unsigned width, unsigned height, void *output, bool discardable, const astc_alpha_policy *policy)
 {
 	/* Xbox texture dimensions are at most 4096. Bound scratch allocations before
 	   touching source bytes; malformed map dimensions must not exhaust memory. */
@@ -162,7 +124,7 @@ static astc_encode_result encode_level(astc_dxt_format format, const void *sourc
 	}
 	astcenc_context *context = encoders.get(binary);
 	if (!context) return ASTC_ENCODE_ERROR;
-	quality_metrics metrics;
+	astc_quality_metrics metrics;
 	for (unsigned top = 0; top < height; top += tile_size)
 	for (unsigned left = 0; left < width; left += tile_size)
 	{
@@ -193,24 +155,30 @@ static astc_encode_result encode_level(astc_dxt_format format, const void *sourc
 		for (unsigned by = 0; by < tby; ++by)
 			memcpy(encoded + ((top / 4 + by) * blocks_x + left / 4) * 16, tile.get() + by * tbx * 16, tbx * 16);
 	}
-	if (!metrics.valid(texels)) return ASTC_ENCODE_EXCLUDED;
+	if (!metrics.valid(texels, policy)) return ASTC_ENCODE_EXCLUDED;
 	if (output != encoded) memcpy(output, encoded, bytes);
 	return ASTC_ENCODE_OK;
 }
 
 astc_encode_result astc_encode_level_result(astc_dxt_format format, const void *source, unsigned width, unsigned height, void *output)
 {
-	try { return encode_level(format, source, width, height, output, false); }
+	try { return encode_level(format, source, width, height, output, false, nullptr); }
 	catch (const std::bad_alloc &) { return ASTC_ENCODE_ERROR; }
 }
 
 astc_encode_result astc_encode_level_discardable(astc_dxt_format format, const void *source, unsigned width, unsigned height, void *output)
 {
-	try { return encode_level(format, source, width, height, output, true); }
+	try { return encode_level(format, source, width, height, output, true, nullptr); }
 	catch (const std::bad_alloc &) { return ASTC_ENCODE_ERROR; }
 }
 
 bool astc_encode_level(astc_dxt_format format, const void *source, unsigned width, unsigned height, void *output)
 {
 	return astc_encode_level_result(format, source, width, height, output) == ASTC_ENCODE_OK;
+}
+
+astc_encode_result astc_encode_level_policy(astc_dxt_format format, const void *source, unsigned width, unsigned height, void *output, const astc_alpha_policy *policy)
+{
+	try { return encode_level(format, source, width, height, output, true, policy); }
+	catch (const std::bad_alloc &) { return ASTC_ENCODE_ERROR; }
 }

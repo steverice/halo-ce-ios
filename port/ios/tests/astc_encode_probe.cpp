@@ -90,6 +90,16 @@ int main()
 	for (unsigned i = 0; i < 16; ++i) alpha_indices |= (unsigned long long)(i & 1) << (i * 3);
 	for (unsigned i = 0; i < 6; ++i) alpha[i + 2] = alpha_indices >> (8 * i);
 	assert(check(ASTC_DXT5, alpha, 4, 4));
+	/* Varying intermediate alpha crosses unused references after compression.
+	 * A model/environment material only tests >0 and >127. */
+	unsigned char intermediate[16] = {0x14,0x23,0x74,0x62,0x66,0x67,0x27,0x43,0xff,0xff,0xdb,0xde,0xdf,0xfe,0xda,0x7f};
+	unsigned char selected_output[16];
+	astc_alpha_policy selected = {};
+	selected.known = true; selected.boundaries[0] = 2; selected.boundaries[16] = 1;
+	assert(astc_encode_level_result(ASTC_DXT3, intermediate, 4, 4, selected_output) == ASTC_ENCODE_EXCLUDED);
+	assert(astc_encode_level_policy(ASTC_DXT3, intermediate, 4, 4, selected_output, &selected) == ASTC_ENCODE_OK);
+	selected.known = false;
+	assert(astc_encode_level_policy(ASTC_DXT3, intermediate, 4, 4, selected_output, &selected) == ASTC_ENCODE_EXCLUDED);
 	unsigned random = 0x329a710d;
 	for (unsigned f = 0; f < 3; ++f) for (unsigned test = 0; test < 200; ++test)
 	{

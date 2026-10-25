@@ -40,6 +40,10 @@ int main(int argc,const char **argv) {@autoreleasepool {
     for(NSString *name in @[@"xbox.map",@"pc.map",@"external.map",@"empty.map"]) {
         assert(prepare(fixture(name),NULL,NULL));assert(astc_store_map_complete(identity(fixture(name)).UTF8String));
     }
+    assert(prepare(fixture(@"material.map"),NULL,NULL));
+    assert(metrics.encoded_textures==1&&metrics.excluded==0);
+    assert(prepare(fixture(@"material-duplicate.map"),NULL,NULL));
+    assert(metrics.encoded_textures==0&&metrics.excluded==1);
     assert(prepare(fixture(@"cube.map"),NULL,NULL));assert(metrics.direct_blocks==30&&metrics.encoded_textures==0);
     for(NSString *name in @[@"pc.map",@"cube-alpha.map",@"pc-cube.map"]) {
         NSString *path=fixture(name);assert(prepare(path,NULL,NULL));

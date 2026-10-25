@@ -9,7 +9,7 @@ extern "C"
 {
 #endif
 /* Bump when the encoder build, preset, alpha policy, or record layout changes. */
-#define ASTC_STORE_VERSION "astcenc-baff485b-fast-4x4-alpha-v1"
+#define ASTC_STORE_VERSION "astcenc-baff485b-fast-4x4-alpha-v2"
 struct astc_store_key
 {
 	uint8_t bytes[16];

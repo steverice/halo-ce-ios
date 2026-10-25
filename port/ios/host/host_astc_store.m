@@ -14,6 +14,7 @@
 #include "astc_store.h"
 #include "astc_encode.h"
 #include "astc_policy.h"
+#include "astc_material.h"
 #include <zlib.h>
 #include <pthread.h>
 #include <sys/stat.h>
@@ -32,6 +33,7 @@ static BOOL enabled,two_core,synchronous;
 static atomic_bool scheduled;
 static atomic_uint load_serial;
 static BOOL planning;static uint64_t projected_bytes;
+static NSMutableDictionary<NSData *, NSData *> *alpha_policies;
 static host_astc_progress cancellation;static void *cancellation_context;static uint64_t progress_done,progress_total;
 static struct {double read_seconds,encode_seconds,write_seconds;uint64_t direct_blocks,encoded_texels,encoded_textures,excluded;} metrics;
 /* playing: a level (not the menus) is loaded and its game has started. The
@@ -103,7 +105,7 @@ static FILE *map_open(NSString *path,uint8_t header[2048],uint64_t *size) {
     if(ok)ok=written==declared&&status==Z_STREAM_END;
     inflateEnd(&z);fclose(f);if(!ok){fclose(out);return NULL;}fflush(out);*size=written;return out;
 }
-static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,NSString *fingerprint,uint64_t *stored) {
+static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,NSString *fingerprint,uint64_t *stored,const struct astc_alpha_policy *policy) {
     unsigned width=u16(b+4),height=u16(b+6),type=u16(b+10),source_format=u16(b+12),flags=u16(b+14),levels=1;
     /* Match rasterizer_xbox_bitmap_get_max_mipmap_count: compressed guest
      * textures stop at a 4x4 block even when tag metadata lists smaller mips. */
@@ -131,11 +133,30 @@ static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,N
         for(unsigned l=0;l<levels;l++){unsigned w=MAX(1u,width>>l),h=MAX(1u,height>>l);size_t bytes=((w+3)/4)*((h+3)/4)*(format==ASTC_DXT1?8:16);
             size_t position=at;if(pc&&faces==6){size_t preceding=0;for(unsigned earlier=0;earlier<l;earlier++)preceding+=((MAX(1u,width>>earlier)+3)/4)*((MAX(1u,height>>earlier)+3)/4)*(format==ASTC_DXT1?8:16);static const unsigned hardware_face[6]={0,2,1,3,4,5};position=preceding*faces+hardware_face[face]*bytes;}
             spans[count++]=(struct astc_store_span){source+position,bytes};direct&=astc_rewrite_level_supported(format,source+position,w,h);at+=bytes;}}
+    struct astc_store_key key;
+    struct astc_alpha_policy merged={0};
+    if(!direct) {
+        /* Merge identical content before publishing any record. Bound policy
+         * bookkeeping; an unusually large map uses the conservative gate. */
+        astc_store_key_compute(&key,format,width,height,levels,faces,spans,count);
+        NSData *policy_key=[NSData dataWithBytes:&key length:sizeof(key)];
+        if(planning) {
+            if(policy)merged=*policy;
+            NSData *prior=alpha_policies[policy_key];
+            if(prior){struct astc_alpha_policy previous;[prior getBytes:&previous length:sizeof(previous)];merged.known&=previous.known;for(unsigned r=0;r<32;r++)merged.boundaries[r]|=previous.boundaries[r];}
+            if(alpha_policies.count>=8192&&!prior)alpha_policies=nil;
+            alpha_policies[policy_key]=[NSData dataWithBytes:&merged length:sizeof(merged)];
+        } else {
+            NSData *combined=alpha_policies[policy_key];
+            if(combined)[combined getBytes:&merged length:sizeof(merged)];
+            policy=&merged;
+        }
+    }
     if(ok&&direct&&!planning)metrics.direct_blocks+=output_size/16;
-    if(ok&&!direct&&planning){struct astc_store_key key;struct astc_store_record existing={0};astc_store_key_compute(&key,format,width,height,levels,faces,spans,count);
+    if(ok&&!direct&&planning){struct astc_store_record existing={0};
         if(!astc_store_is_excluded(fingerprint.UTF8String,&key)){if(astc_store_lookup_map(fingerprint.UTF8String,&key,&existing))astc_store_release(&existing);else projected_bytes+=output_size;}}
 
-    if(ok&&!direct&&!planning){struct astc_store_key key;astc_store_key_compute(&key,format,width,height,levels,faces,spans,count);
+    if(ok&&!direct&&!planning){
         struct astc_store_record record={0};
         if(astc_store_is_excluded(fingerprint.UTF8String,&key)){}
         else if(astc_store_lookup_map(fingerprint.UTF8String,&key,&record))astc_store_release(&record);
@@ -143,7 +164,7 @@ static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,N
             if(ok){output=mmap(NULL,output_size,PROT_READ|PROT_WRITE,MAP_SHARED,fileno(output_file),0);if(output==MAP_FAILED){output=NULL;ok=NO;}}
             madvise(mapping,mapping_size,MADV_DONTNEED);
             size_t at=0,i=0;enum astc_encode_result result=ASTC_ENCODE_ERROR;
-            for(unsigned face=0;ok&&face<faces;face++)for(unsigned l=0;ok&&l<levels;l++,i++){unsigned w=MAX(1u,width>>l),h=MAX(1u,height>>l);double encode_start=NSProcessInfo.processInfo.systemUptime;result=astc_encode_level_discardable(format,spans[i].bytes,w,h,output+at);ok=result==ASTC_ENCODE_OK;metrics.encode_seconds+=NSProcessInfo.processInfo.systemUptime-encode_start;metrics.encoded_texels+=(uint64_t)w*h;at+=((w+3)/4)*((h+3)/4)*16;}
+            for(unsigned face=0;ok&&face<faces;face++)for(unsigned l=0;ok&&l<levels;l++,i++){unsigned w=MAX(1u,width>>l),h=MAX(1u,height>>l);double encode_start=NSProcessInfo.processInfo.systemUptime;result=astc_encode_level_policy(format,spans[i].bytes,w,h,output+at,policy);ok=result==ASTC_ENCODE_OK;metrics.encode_seconds+=NSProcessInfo.processInfo.systemUptime-encode_start;metrics.encoded_texels+=(uint64_t)w*h;at+=((w+3)/4)*((h+3)/4)*16;}
             if(ok){double write_start=NSProcessInfo.processInfo.systemUptime;ok=astc_store_write_encoder(fingerprint.UTF8String,&key,output,output_size);metrics.write_seconds+=NSProcessInfo.processInfo.systemUptime-write_start;if(ok){*stored+=output_size;metrics.encoded_textures++;}}
             else if(result==ASTC_ENCODE_EXCLUDED){metrics.excluded++;host_logf(HOST_LOG_WARN,"ASTC: encoder quality exclusion %ux%u format %u",width,height,(unsigned)format);ok=astc_store_write_exclusion(fingerprint.UTF8String,&key); }
         }
@@ -151,7 +172,7 @@ static BOOL convert_bitmap(FILE *pixels,uint64_t size,const uint8_t *b,BOOL pc,N
     if(output)munmap(output,output_size);if(output_file)fclose(output_file);munmap(mapping,mapping_size);
     return ok;
 }
-static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t translation,FILE *resource,uint64_t resource_size,NSString *fingerprint,BOOL pc,NSString *shared,uint64_t *stored) {
+static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t translation,FILE *resource,uint64_t resource_size,NSString *fingerprint,BOOL pc,NSString *shared,uint64_t *stored,const struct astc_alpha_policy *policy) {
     uint8_t block[12];if(group>map_size||map_size-group<108||!read_at(map,group+96,block,12))return NO;
     uint32_t count=u32(block);if(!count)return YES;int64_t elements=(int64_t)u32(block+4)+translation;
     if(count>65536||elements<0||(uint64_t)elements>map_size||(uint64_t)count*48>map_size-(uint64_t)elements)return NO;
@@ -159,7 +180,7 @@ static BOOL walk_group(FILE *map,uint64_t map_size,uint64_t group,int64_t transl
     for(uint32_t i=0;i<count;i++){@autoreleasepool {if(cancellation&&!cancellation(cancellation_context,progress_done,progress_total)){interrupted=YES;return NO;}uint8_t b[48];if(!read_at(map,(uint64_t)elements+i*48,b,48))return NO;
         BOOL external=(u16(b+14)&(1u<<8))!=0;
         if(external&&(!resource||!shared)){ok=NO;continue;}
-        if(!convert_bitmap(external?resource:map,external?resource_size:map_size,b,pc,external?shared:fingerprint,stored))ok=NO;
+        if(!convert_bitmap(external?resource:map,external?resource_size:map_size,b,pc,external?shared:fingerprint,stored,external?NULL:policy))ok=NO;
         [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:converting_path];[line_lock unlock];if(preempt||atomic_load(&playing)||(converting_path&&![converting_stamp isEqual:stamp(converting_path)])){interrupted=YES;return NO;}
     }}return ok;
 }
@@ -172,6 +193,7 @@ static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress pro
     uint32_t base=version==5?0x803a6000u:0x40440000u;int64_t translation=(int64_t)tag_offset-base;
     int64_t instances=(int64_t)u32(index)+translation;uint32_t count=u32(index+12);
     if(count>65536||instances<0||(uint64_t)instances>size||(uint64_t)count*32>size-(uint64_t)instances){fclose(map);return NO;}
+    struct astc_alpha_policy *policies=version==5?astc_material_collect(map,size,(uint64_t)instances,count,translation):NULL;
     NSString *shared=nil;
     NSString *resource_path=shared_path();
     FILE *resource=resource_open(resource_path);uint64_t resource_size=0;uint8_t resource_header[16]={0};
@@ -184,13 +206,13 @@ static BOOL walk_map(NSString *path,NSString *fingerprint,host_astc_progress pro
         if(version!=5&&u32(instance+24)) {
             uint32_t item=u32(instance+20),items=u32(resource_header+12),offset=u32(resource_header+8);uint8_t entry[12];
             if(!resource||item>=items||(uint64_t)offset+(uint64_t)item*12+12>resource_size||!read_at(resource,(uint64_t)offset+item*12,entry,12)){ok=NO;break;}
-            uint32_t group=u32(entry+8);ok=walk_group(resource,resource_size,group,group,resource,resource_size,shared,YES,shared,&stored);
+            uint32_t group=u32(entry+8);ok=walk_group(resource,resource_size,group,group,resource,resource_size,shared,YES,shared,&stored,NULL);
         }else {if(!u32(instance+20))continue;int64_t group=(int64_t)u32(instance+20)+translation;
-            if(group<0){ok=NO;break;}ok=walk_group(map,size,(uint64_t)group,translation,resource,resource_size,fingerprint,version!=5,shared,&stored);}
+            if(group<0){ok=NO;break;}ok=walk_group(map,size,(uint64_t)group,translation,resource,resource_size,fingerprint,version!=5,shared,&stored,policies?&policies[i]:NULL);}
         [line_lock lock];BOOL preempt=priority_path&&![priority_path isEqual:path];[line_lock unlock];
         if(preempt||atomic_load(&playing)){interrupted=YES;ok=NO;break;}
     }}
-    if(resource)fclose(resource);fclose(map);
+    free(policies);if(resource)fclose(resource);fclose(map);
     host_logf(HOST_LOG_INFO,"ASTC: map preparation %s, %.3f seconds, %llu bytes stored",ok?"finished":"paused",NSProcessInfo.processInfo.systemUptime-start,(unsigned long long)stored);
     return ok;
 }
@@ -203,7 +225,7 @@ static BOOL walk_resource(NSString *path,NSString *fingerprint) {
         for(uint32_t i=0;ok&&i<count;i++){uint8_t item[12];ok=read_at(f,(uint64_t)offset+i*12,item,12);if(!ok)break;
             /* Resource entries alternate raw pixels and tag metadata. Only a tag has a bounded bitmap block. */
             if(u32(item+4)>=108){uint8_t block[12];uint32_t group=u32(item+8);if(read_at(f,(uint64_t)group+96,block,12)&&u32(block)>0&&u32(block)<65536&&(uint64_t)u32(block+4)+(uint64_t)u32(block)*48<=u32(item+4))
-                ok=walk_group(f,st.st_size,group,group,f,st.st_size,fingerprint,YES,fingerprint,&stored);}
+                ok=walk_group(f,st.st_size,group,group,f,st.st_size,fingerprint,YES,fingerprint,&stored,NULL);}
         }if(f)fclose(f);
     }
     return ok;
@@ -215,12 +237,13 @@ static BOOL prepare(NSString *path,host_astc_progress progress,void *context) {
     if(astc_store_map_complete(fingerprint.UTF8String))return YES;
     converting_path=path;converting_stamp=before;cancellation=progress;cancellation_context=context;interrupted=NO;progress_done=0;progress_total=1;memset(&metrics,0,sizeof(metrics));double began=NSProcessInfo.processInfo.systemUptime;
     BOOL ok;
-    planning=YES;projected_bytes=0;
+    planning=YES;projected_bytes=0;alpha_policies=[NSMutableDictionary new];
     BOOL resource=[path.lastPathComponent.lowercaseString isEqual:@"bitmaps.map"];
     ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context);
     planning=NO;
     if(ok&&!astc_store_has_space(projected_bytes)){host_logf(HOST_LOG_WARN,"ASTC: not enough free storage for %llu projected bytes",(unsigned long long)projected_bytes);ok=NO;}
     if(ok)ok=resource?walk_resource(path,fingerprint):walk_map(path,fingerprint,progress,context);
+    alpha_policies=nil;
     if(ok&&![before isEqual:stamp(path)]){interrupted=YES;ok=NO;}
     if(ok)ok=astc_store_mark_complete(fingerprint.UTF8String);
     host_logf(HOST_LOG_INFO,"ASTC map %s: complete=%d seconds=%.6f read=%.6f encode=%.6f write=%.6f rewritten_blocks=%llu encoded_textures=%llu encoded_texels=%llu excluded=%llu thermal=%ld",path.lastPathComponent.UTF8String,ok,NSProcessInfo.processInfo.systemUptime-began,metrics.read_seconds,metrics.encode_seconds,metrics.write_seconds,(unsigned long long)metrics.direct_blocks,(unsigned long long)metrics.encoded_textures,(unsigned long long)metrics.encoded_texels,(unsigned long long)metrics.excluded,(long)NSProcessInfo.processInfo.thermalState);

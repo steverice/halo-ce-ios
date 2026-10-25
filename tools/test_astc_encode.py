@@ -16,6 +16,12 @@ def main():
     flags = ['-O2', '-g', '-fsanitize=address,undefined', '-fno-sanitize-recover=undefined']
     subprocess.run([*cc, *flags, '--include-directory=port/linux/src', '-c',
                     'port/linux/src/astc_rewrite.c', '--output', str(BUILD / 'rewrite.o')], cwd=ROOT, check=True)
+    subprocess.run([*cxx, *flags, '-std=c++14', '--include-directory=port/linux/src',
+                    'port/ios/tests/astc_alpha_probe.cpp', '--output', str(BUILD / 'alpha-probe')], cwd=ROOT, check=True)
+    subprocess.run([str(BUILD / 'alpha-probe')], cwd=ROOT, check=True)
+    subprocess.run([*cc, *flags, '-Wall', '-Wextra', '-Werror',
+                    'port/ios/tests/astc_material_probe.c', '--output', str(BUILD / 'material-probe')], cwd=ROOT, check=True)
+    subprocess.run([str(BUILD / 'material-probe')], cwd=ROOT, check=True)
     source = (ROOT / 'port/linux/src/xbox_textures.c').read_text()
     functions = []
     for name in ('expand5', 'expand6', 'expand4', 'argb', 'color565', 'mix', 'dxt_color_block', 'dxt_decode_level'):

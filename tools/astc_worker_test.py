@@ -107,6 +107,30 @@ def fixtures(root):
     bad = original.copy()
     put32(bad, 2440, 4090)
     (root / 'bad-pixels.map').write_bytes(bad)
+    material = original.copy()
+    put32(material, 2060, 2)
+    material[2120:2124] = b'osos'
+    put32(material, 2132, 1)
+    put32(material, 2140, 0x40440000 + 2700 - 2048)
+    put16(material, 2700 + 0x24, 4)
+    ref = 2700 + 0xA4
+    material[ref:ref + 4] = b'mtib'
+    put32(material, ref + 12, 0)
+    material[3500:3516] = bytes.fromhex('1423746266672743ffffdbdedffeda7f')
+    # The classifier is enabled for stock Xbox maps, including inflated fixtures.
+    put32(material, 4, 5)
+    put32(material, 2048, 0x803a6000 + 40)
+    put32(material, 2108, 0x803a6000 + 256)
+    put32(material, 2404, 0x803a6000 + 368)
+    put32(material, 2140, 0x803a6000 + 2700 - 2048)
+    (root / 'material.map').write_bytes(material)
+    # A second bitmap tag has the same texture identity, but unresolved usage.
+    # Planning must merge it before encoding the first tag's recognized use.
+    put32(material, 2060, 3)
+    material[2152:2156] = b'mtib'
+    put32(material, 2164, 2)
+    put32(material, 2172, 0x803a6000 + 256)
+    (root / 'material-duplicate.map').write_bytes(material)
     stable = original.copy()
     stable[32] = 73
     (root / 'stable.map').write_bytes(stable)
@@ -183,6 +207,8 @@ def main():
         build = Path(temp)
         includes = [f'--include-directory={tree / p}' for p in
                     ('port/linux/src', 'port/ios/host', 'port/runtime', 'port/third_party/astcenc', 'port/runtime/include')]
+        # Keep benchmark timings comparable; synthetic regressions use sanitizers.
+        sanitizers = [] if args.benchmark else ['-fsanitize=address,undefined', '-fno-sanitize-recover=undefined']
         objects = []
         sources = ['port/linux/src/astc_rewrite.c', 'port/runtime/astc_store.c',
                    'port/ios/host/host_map_identity.m', 'port/ios/tests/astc_worker_probe.m',
@@ -191,6 +217,7 @@ def main():
         for i, source in enumerate(sources):
             cxx = source.endswith('.cpp')
             command = ['xcrun', 'clang++' if cxx else 'clang', '-O2', '-g',
+                       *sanitizers,
                        '-DASTCENC_BLOCK_MAX_TEXELS=16', *includes]
             if cxx:
                 command += ['-std=c++14']
@@ -200,7 +227,7 @@ def main():
             subprocess.run([*command, '-c', str(tree / source), '--output', str(obj)], check=True)
             objects.append(str(obj))
         executable = build / 'probe'
-        subprocess.run(['xcrun', 'clang++', *objects, '-framework', 'Foundation', '-framework',
+        subprocess.run(['xcrun', 'clang++', *sanitizers, *objects, '-framework', 'Foundation', '-framework',
                         'Metal', '-framework', 'AppKit', '-lz', '--output', str(executable)], check=True)
         root = build / 'data'
         root.mkdir()
