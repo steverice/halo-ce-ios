@@ -1171,8 +1171,10 @@ def native_command(app, data, out, environment):
     # macOS's TCC denies its helper (xpcproxy) access to removable volumes, so a path on one (a
     # baselines symlink to an external drive) fails the launch with -10810 before the app starts. The
     # data folder is on the internal disk on every host; launch_native copies the logs into out afterward
+    # (-ApplePersistenceIgnoreState: after a run that crashed, AppKit would otherwise ask, before the app
+    # starts, whether to reopen its windows, and the next run would wait on that question until killed)
     return command + ["--stdout", str(data / "open-stdout.log"), "--stderr", str(data / "open-stderr.log"),
-                      str(app)]
+                      str(app), "--args", "-ApplePersistenceIgnoreState", "YES"]
 
 
 def native_pattern(app):

@@ -530,7 +530,9 @@ def test_native_command_pins_the_display_and_passes_the_data_folder(tmp_path):
     # the logs go to the data folder (internal disk), not --out, which may be on a removable volume
     assert command[command.index("--stdout") + 1] == str(data / "open-stdout.log")
     assert command[command.index("--stderr") + 1] == str(data / "open-stderr.log")
-    assert command[-1] == "/b/VISR.app"
+    assert command[command.index("--args") - 1] == "/b/VISR.app"
+    # a run after one that crashed must not stop on AppKit's question about reopening windows
+    assert command[command.index("--args") + 1:] == ["-ApplePersistenceIgnoreState", "YES"]
 
 
 def fake_open(monkeypatch, stdout, stderr, status=0):
