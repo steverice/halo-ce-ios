@@ -118,6 +118,17 @@ int main(void)
         assert([host_data_updates_metadata()[@"profiles"][@"sha256"] length] == 64);
         assert(-started.timeIntervalSinceNow < 0.2);
         dispatch_semaphore_signal(release);
+        // The launch menu still offers verified profiles for gameplay breaks once Play froze the selection.
+        HostDataPackStore *watched = [[HostDataPackStore alloc] initWithRoot:[base stringByAppendingPathComponent:@"watch-cache"] bundled:current kind:@"profiles" channel:@"stable" publicKey:[NSMutableData dataWithLength:32] compatibility:@"profiles-1" validator:^BOOL(NSString *folder, NSError **error) { (void)folder; (void)error; return YES; }];
+        [watched beginLaunch];
+        profiles = watched;
+        dispatch_semaphore_t offered = dispatch_semaphore_create(0);
+        __block NSString *offeredFolder;
+        host_profile_updates_watch([base stringByAppendingPathComponent:@"device-profile.toml"], ^(NSString *folder, NSDictionary *offeredIdentity) {
+            (void)offeredIdentity; offeredFolder = folder; dispatch_semaphore_signal(offered);
+        });
+        assert(dispatch_semaphore_wait(offered, dispatch_time(DISPATCH_TIME_NOW, 3*NSEC_PER_SEC)) == 0);
+        assert(profiles == watched && [offeredFolder isEqual:current]);
         [fm removeItemAtPath:base error:NULL];
         puts("PASS: data update identity and bounded compatibility roots");
     }

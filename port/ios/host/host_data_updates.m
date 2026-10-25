@@ -390,6 +390,7 @@ static void commitMenuSelection(void)
     }
     [profiles selectMenuFolder:profile]; [recordings selectMenuFolder:recording]; [shaders selectMenuFolder:shader];
     if (!profiles) return;
+    ensureProfileRefreshQueue();
     // Play has frozen the launch selection; later verified generations wait for a gameplay break.
     startProfileRefreshTimer(menuProfileURL);
     dispatch_async(profileRefreshQueue, ^{ @autoreleasepool { offerProfileSnapshot(); } });
