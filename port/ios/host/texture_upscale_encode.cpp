@@ -99,7 +99,7 @@ static bool encode_bc7(const texture_upscale_rgba_level &level, uint8_t *output,
     params.m_uber_level = preset == 2 ? BC7ENC_MAX_UBER_LEVEL : preset;
     params.m_mode17_partition_estimation_filterbank = preset != 2;
     unsigned blocks_x = (level.width + 3) / 4, blocks_y = (level.height + 3) / 4;
-    threads = std::min(std::min(threads ? threads : 4, 4u), blocks_y);
+    threads = std::min(std::min(threads ? threads : 4, 8u), blocks_y);
     std::atomic<unsigned> next_row { 0 };
     std::atomic<bool> failed { false };
     auto work = [&]() {

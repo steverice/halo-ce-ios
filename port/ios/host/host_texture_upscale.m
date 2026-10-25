@@ -193,6 +193,11 @@ static void log_texture_error(const struct texture_policy_decision *d,const char
         @"damage_share":@(-1),@"structure_loss":@(-1)};
     save_log();export_table();
 }
+/* Every core, at most eight; half of them from serious thermal state on. */
+static unsigned encoder_threads(void) {
+    unsigned cores=(unsigned)MIN(MAX(NSProcessInfo.processInfo.activeProcessorCount,1),8);
+    return NSProcessInfo.processInfo.thermalState>=NSProcessInfoThermalStateSerious?MAX(cores/2,1):cores;
+}
 struct generation_context { const struct texture_policy_decision *decision; BOOL found,failed; };
 static int generate_source(void *opaque,const struct host_texture_source *source) {
     struct generation_context *context=opaque;const struct texture_policy_decision *d=context->decision;
@@ -245,7 +250,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     struct texture_upscale_encode_metrics metrics={0};void *bytes=NULL;size_t size=0;double encode_start=now();
     enum texture_upscale_encode_result encoded=TEXTURE_UPSCALE_ENCODE_OK;
     if(output.result!=TEXTURE_POLICY_ORIGINAL)encoded=texture_upscale_encode_record(output.levels,output.level_count,d->width,d->height,d->hash,
-        desired.recipe_key,record_format,(unsigned)alpha,NSProcessInfo.processInfo.thermalState>=NSProcessInfoThermalStateSerious?2:4,&bytes,&size,&metrics);
+        desired.recipe_key,record_format,(unsigned)alpha,encoder_threads(),&bytes,&size,&metrics);
     double encode_seconds=now()-encode_start;BOOL excluded=encoded==TEXTURE_UPSCALE_ENCODE_EXCLUDED;
     if(encoded==TEXTURE_UPSCALE_ENCODE_ERROR){peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"encode","encoder failed",now()-start);context->failed=YES;texture_upscale_generate_free_output(&output);return 0;}
     desired.result=excluded?TEXTURE_POLICY_ORIGINAL:output.result;desired.bytes=size;
