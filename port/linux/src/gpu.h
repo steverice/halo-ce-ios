@@ -49,7 +49,7 @@ struct gpu_capabilities
 	uint8_t sampler_lod_bias;
 	/* GPU_OCCLUSION_* */
 	uint8_t occlusion_mode;
-	/* BC1-3 textures; otherwise the front end decodes DXT */
+	/* BC1-3 textures; otherwise the front end tries ASTC or decodes DXT */
 	uint8_t s3tc;
 	/* BORDER addressing; otherwise it becomes CLAMP_TO_EDGE */
 	uint8_t border_clamp;
@@ -70,7 +70,8 @@ struct gpu_capabilities
 	anti_alias) for less than a pass of its own; otherwise the front end runs
 	gpu_anti_alias first */
 	uint8_t upscale_anti_alias;
-	uint8_t pad[1];
+	/* ASTC 4x4 LDR upload textures (2D and cube). */
+	uint8_t astc;
 	uint32_t max_texture_size;
 };
 
@@ -80,7 +81,7 @@ struct gpu_capabilities
 enum { GPU_TEXTURE_2D = 1, GPU_TEXTURE_3D, GPU_TEXTURE_CUBE };
 
 /* gpu_texture_description.format: BGRA8 texels are 32-bit ARGB words in
-memory; BC1-3 are DXT1, 3 and 5 */
+memory; BC1-3 are DXT1, 3 and 5; ASTC4X4 is ASTC LDR, 16 bytes a block */
 enum
 {
 	GPU_FORMAT_BGRA8 = 1,
@@ -88,6 +89,7 @@ enum
 	GPU_FORMAT_BC2,
 	GPU_FORMAT_BC3,
 	GPU_FORMAT_DEPTH_STENCIL,
+	GPU_FORMAT_ASTC4X4,
 };
 
 /* gpu_texture_description.usage */
@@ -647,8 +649,8 @@ enum
 	/* display.frame_pacing = "off": present each frame as soon as it's
 	drawn (Metal) */
 	GPU_INITIALIZE_PACING_OFF = 32,
-	/* display.compressed_textures: DXT textures upload as BC1-3 where the
-	GPU has them (Metal; GL decides from its extensions) */
+	/* display.compressed_textures: DXT textures use BC1-3 or ASTC where enabled
+	and supported (Metal; GL decides from its extensions) */
 	GPU_INITIALIZE_COMPRESSED_TEXTURES = 64,
 	/* display.upscaler = "metalfx": a back buffer smaller than its place on
 	screen is scaled up by MetalFX (Metal), not bilinearly */
@@ -693,13 +695,13 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities);
 that change what the front end does, which a GL run and a Metal run of the
 same build must agree on (tools/mac_run.py compare --across-backends),
 apart from those Metal has and Apple's OpenGL ES lacks (vertex BGRA, base
-vertex) */
+vertex, ASTC) */
 #define GPU_CAPABILITIES_LOG(log, capabilities) \
 	log("GPU capabilities: vertex BGRA %u, base vertex %u, triangle fans %u, line loops %u, sampler LOD bias %u, " \
-		"occlusion %u, S3TC %u, border clamp %u, max texture size %u", (unsigned)(capabilities)->vertex_bgra, \
+		"occlusion %u, S3TC %u, ASTC %u, border clamp %u, max texture size %u", (unsigned)(capabilities)->vertex_bgra, \
 		(unsigned)(capabilities)->base_vertex, (unsigned)(capabilities)->triangle_fans, \
 		(unsigned)(capabilities)->line_loops, (unsigned)(capabilities)->sampler_lod_bias, \
-		(unsigned)(capabilities)->occlusion_mode, (unsigned)(capabilities)->s3tc, \
+		(unsigned)(capabilities)->occlusion_mode, (unsigned)(capabilities)->s3tc, (unsigned)(capabilities)->astc, \
 		(unsigned)(capabilities)->border_clamp, (unsigned)(capabilities)->max_texture_size)
 
 /* ---------- backends

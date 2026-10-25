@@ -309,7 +309,8 @@ static uint64_t level_bytes(const struct gpu_texture_description *description, u
 
 	if (description->format == GPU_FORMAT_BC1)
 		return ((width + 3) / 4) * ((height + 3) / 4) * 8 * depth;
-	if (description->format == GPU_FORMAT_BC2 || description->format == GPU_FORMAT_BC3)
+	if (description->format == GPU_FORMAT_BC2 || description->format == GPU_FORMAT_BC3 ||
+		description->format == GPU_FORMAT_ASTC4X4)
 		return ((width + 3) / 4) * ((height + 3) / 4) * 16 * depth;
 	return width * height * 4 * depth;
 }

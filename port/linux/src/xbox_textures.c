@@ -15,6 +15,7 @@ memory_watch.c detects that by write-protecting the pages.
 */
 
 #include "xgpu.h"
+#include "astc_rewrite.h"
 #include "hud_hires.h"
 #include "menu_files.h"
 #include "text_hires.h"
@@ -820,6 +821,8 @@ struct texture_entry
 	gpu_texture result_texture;
 	uint32_t result_type;
 	struct xgpu_texture_description result_description;
+	uint32_t gpu_format;
+	BOOL runtime_written;
 };
 
 #define TEXTURE_BUCKET_COUNT 4096
@@ -1042,6 +1045,85 @@ static void texture_override_apply(struct texture_entry *entry, const D3DCOLOR *
 			entry->texture_override ? "applied" : "none");
 }
 
+/* A format change replaces the object, because Metal fixes its format at creation. */
+static BOOL texture_entry_format(struct texture_entry *entry, uint32_t format)
+{
+	struct gpu_texture_description description = { 0 };
+	gpu_texture replacement;
+
+	if (entry->gpu_format == format && entry->texture)
+		return TRUE;
+	description.type = (uint8_t)entry->type;
+	description.format = format;
+	description.usage = GPU_USAGE_UPLOAD;
+	description.width = entry->description.width;
+	description.height = entry->description.height;
+	description.depth = entry->description.depth;
+	description.levels = entry->description.levels;
+	replacement = gpu_texture_create(&description);
+	if (!replacement)
+		return FALSE;
+	gpu_texture_destroy(entry->texture);
+	entry->texture = replacement;
+	entry->gpu_format = format;
+	entry->decoded = format == GPU_FORMAT_BGRA8 && entry->description.compressed;
+	return TRUE;
+}
+
+/* Stage every face and mip before changing formats. One unsupported block makes
+ * the entire texture use today's BGRA8 path, including its smallest mips. */
+static unsigned char *texture_astc_prepare(const struct texture_entry *entry)
+{
+	const struct xgpu_texture_description *description = &entry->description;
+	struct format_information information = format_information(description->format);
+	enum astc_dxt_format format = information.kind == _texel_dxt1 ? ASTC_DXT1 :
+		information.kind == _texel_dxt3 ? ASTC_DXT3 : ASTC_DXT5;
+	unsigned long faces = description->cube_map ? 6 : 1;
+	unsigned long source_face = xgpu_texture_face_size(description);
+	unsigned long face_bytes = 0, face, level, offset = 0;
+	unsigned char *bytes;
+
+	for (level = 0; level < description->levels; level++)
+		face_bytes += ((level_dimension(description->width, level) + 3) / 4) *
+			((level_dimension(description->height, level) + 3) / 4) * 16;
+	bytes = malloc(face_bytes * faces);
+	if (!bytes)
+		return NULL;
+	for (face = 0; face < faces; face++)
+	{
+		for (level = 0; level < description->levels; level++)
+		{
+			unsigned long width = level_dimension(description->width, level);
+			unsigned long height = level_dimension(description->height, level);
+			const unsigned char *source = (const unsigned char *)entry->address + face * source_face +
+				xgpu_texture_level_offset(description, level);
+
+			if (!astc_rewrite_level(format, source, width, height, bytes + offset))
+			{
+				free(bytes);
+				return NULL;
+			}
+			offset += ((width + 3) / 4) * ((height + 3) / 4) * 16;
+		}
+	}
+	return bytes;
+}
+
+static void texture_astc_upload(const struct texture_entry *entry, const unsigned char *bytes)
+{
+	unsigned long face, level, offset = 0;
+	for (face = 0; face < (entry->description.cube_map ? 6UL : 1UL); face++)
+	{
+		for (level = 0; level < entry->description.levels; level++)
+		{
+			unsigned long size = ((level_dimension(entry->description.width, level) + 3) / 4) *
+				((level_dimension(entry->description.height, level) + 3) / 4) * 16;
+			gpu_texture_upload(entry->texture, face, level, bytes + offset, size);
+			offset += size;
+		}
+	}
+}
+
 /* an entry's texture, type and description: its high-res HUD texture's, if
 it has one, with the bitmap's own size (which its coordinates are in) */
 static gpu_texture texture_entry_result_uncached(struct texture_entry *entry, uint32_t *type,
@@ -1216,6 +1298,7 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 			texture.height = (uint32_t)entry->description.height;
 			texture.depth = (uint32_t)entry->description.depth;
 			texture.levels = (uint32_t)entry->description.levels;
+			entry->gpu_format = texture.format;
 			entry->texture = gpu_texture_create(&texture);
 		}
 		entry->override = -1;
@@ -1239,6 +1322,10 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 	if (!entry->generation || generation > entry->generation || no_cache)
 	{
 		entry->result_valid = FALSE;
+		/* Once observed changing, runtime-written texels stay on the decode path.
+		 * Memory reused for another bitmap is conservatively treated the same. */
+		if (entry->generation && generation > entry->generation)
+			entry->runtime_written = TRUE;
 		/* protect first, so a write racing with the upload is noticed */
 		memory_watch_protect(entry->address, entry->size);
 		entry->generation = memory_watch_generation(entry->address, entry->size);
@@ -1262,23 +1349,32 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 		{
 			unsigned char channel_order = custom_edition_texels_order(entry->address);
 
-			/* texels in a Custom Edition channel order are decoded and
-			reordered on upload (channels_reorder), so a block-compressed
-			texture is made again as BGRA8 */
-			if (channel_order != _custom_edition_channels_xbox && entry->description.compressed && !entry->decoded)
-			{
-				struct gpu_texture_description texture = { 0 };
+			unsigned char *astc = NULL;
+			uint32_t result_type;
+			struct xgpu_texture_description result_description;
+			BOOL eligible;
 
-				texture.type = (uint8_t)entry->type;
-				texture.format = GPU_FORMAT_BGRA8;
-				texture.usage = GPU_USAGE_UPLOAD;
-				texture.width = (uint32_t)entry->description.width;
-				texture.height = (uint32_t)entry->description.height;
-				texture.depth = (uint32_t)entry->description.depth;
-				texture.levels = (uint32_t)entry->description.levels;
-				gpu_texture_destroy(entry->texture);
-				entry->texture = gpu_texture_create(&texture);
-				entry->decoded = TRUE;
+			texture_override_apply(entry, palette);
+			eligible = device_capabilities.astc && !device_capabilities.s3tc && entry->description.compressed &&
+				entry->type != GPU_TEXTURE_3D && !entry->runtime_written &&
+				!(resource[0] & D3DCOMMON_D3DCREATED) && channel_order == _custom_edition_channels_xbox &&
+				!*config_string("debug.texture_dump_directory") &&
+				texture_entry_result(entry, &result_type, &result_description) == entry->texture;
+			if (eligible)
+				astc = texture_astc_prepare(entry);
+			/* Unsupported alpha, replacements, allocation failure, and runtime writes
+			 * all retain the existing decode. BC devices keep their normal path. */
+			if (astc && !texture_entry_format(entry, GPU_FORMAT_ASTC4X4))
+			{
+				free(astc);
+				astc = NULL;
+			}
+			if (!astc && !texture_entry_format(entry,
+				entry->description.compressed && device_capabilities.s3tc &&
+				channel_order == _custom_edition_channels_xbox ? entry->gpu_format : GPU_FORMAT_BGRA8))
+			{
+				entry->generation = 0; /* retry allocation on the next lookup */
+				return 0;
 			}
 			if (config_boolean("debug.texture_log"))
 			{
@@ -1290,14 +1386,17 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 					ones += bytes[index] == 0xff;
 					zeros += bytes[index] == 0;
 				}
-				platform_log("texture upload %08lx fmt %02lx %lux%lu size %lu gen %lu ff %lu%% 00 %lu%%",
+				platform_log("texture upload %08lx fmt %02lx %lux%lu size %lu gen %lu ff %lu%% 00 %lu%% gpu format %u",
 					(unsigned long)data, (unsigned long)entry->description.format, entry->description.width,
 					entry->description.height, entry->size, entry->generation,
-					ones * 100 / entry->size, zeros * 100 / entry->size);
+					ones * 100 / entry->size, zeros * 100 / entry->size, (unsigned)entry->gpu_format);
 			}
-			upload(entry->texture, entry->type, &entry->description, (const unsigned char *)entry->address, palette,
-				entry->decoded, channel_order);
-			texture_override_apply(entry, palette);
+			if (astc)
+				texture_astc_upload(entry, astc);
+			else
+				upload(entry->texture, entry->type, &entry->description, (const unsigned char *)entry->address, palette,
+					entry->decoded, channel_order);
+			free(astc);
 		}
 	}
 	entry->last_used_frame = texture_frame;
