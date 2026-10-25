@@ -16,12 +16,18 @@ struct texture_upscale_encode_metrics
     double rgb_psnr; /* level 0, RGB over source texels with nonzero alpha */
     unsigned binary_alpha_max_error; /* binary alpha: endpoint alpha (0 or 255) only */
     double alpha_psnr; /* graded alpha: over every texel; infinite otherwise */
+    double mean_angle; /* normal maps: mean degrees between source and decoded normals over nonzero alpha; -1 otherwise */
     int raw; /* no block encoding passed: the record is BGRA8 (TEXTURE_RECORD_BGRA8) */
     unsigned attempts;
     unsigned preset; /* BC7: 0 16 partitions, 1 64 and uber 1, 2 64 and the highest uber level; ASTC: 0 fastest, 1 fast, 2 medium */
 };
 /* which alpha test the gate applies: none, binary (endpoint texels within 8 levels) or graded (38 dB over every texel) */
 enum { TEXTURE_UPSCALE_ENCODE_ALPHA_NONE, TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY, TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED };
+/* Or'd into alpha_mode for a bump map's normals: their RGB gate is the mean angle, at most this many degrees, instead
+   of 38 dB. A small height difference turns into a large RGB one where normals are steep, and the device parity check
+   holds bump maps to the same 2 degrees against the Mac set. */
+enum { TEXTURE_UPSCALE_ENCODE_NORMALS = 4 };
+#define TEXTURE_UPSCALE_ENCODE_NORMAL_ANGLE 2.0
 enum texture_upscale_encode_result
 {
     TEXTURE_UPSCALE_ENCODE_OK,

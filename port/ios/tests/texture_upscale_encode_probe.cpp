@@ -286,8 +286,44 @@ static void generator_to_reader(uint32_t format)
     printf("format %u: real generator -> compressed record -> manifest -> reader upload; damaged record refused\n", format);
 }
 
+/* Normal maps are gated on the mean angle of their normals, not on RGB PSNR, and pass or fail on it alone. */
+static void normal_angle()
+{
+    std::vector<uint8_t> source(64 * 4), decoded(64 * 4);
+    for (unsigned i = 0; i < 64; ++i)
+    {
+        /* steep normals, 80 degrees from +z, turning around it */
+        double around = i * 0.7, x = std::sin(80 * M_PI / 180) * std::cos(around), y = std::sin(80 * M_PI / 180) * std::sin(around);
+        double z = std::cos(80 * M_PI / 180);
+        source[i * 4] = uint8_t(std::lround(127.5 + 127.5 * x)); source[i * 4 + 1] = uint8_t(std::lround(127.5 + 127.5 * y));
+        source[i * 4 + 2] = uint8_t(std::lround(127.5 + 127.5 * z)); source[i * 4 + 3] = 255;
+    }
+    for (double tilt : { 2.5, 4.5 })
+    {
+        for (unsigned i = 0; i < 64; ++i)
+        {
+            double n[3];
+            for (unsigned c = 0; c < 3; ++c) n[c] = source[i * 4 + c] / 127.5 - 1;
+            /* rotate every normal by tilt degrees about the x axis */
+            double t = tilt * M_PI / 180, y = n[1] * std::cos(t) - n[2] * std::sin(t), z = n[1] * std::sin(t) + n[2] * std::cos(t);
+            decoded[i * 4] = source[i * 4]; decoded[i * 4 + 1] = uint8_t(std::lround(127.5 + 127.5 * y));
+            decoded[i * 4 + 2] = uint8_t(std::lround(127.5 + 127.5 * z)); decoded[i * 4 + 3] = 255;
+        }
+        texture_upscale_encode_metrics metrics {};
+        int normals = texture_upscale_encode_gate_alpha(source.data(), decoded.data(), 64,
+            TEXTURE_UPSCALE_ENCODE_ALPHA_NONE | TEXTURE_UPSCALE_ENCODE_NORMALS, &metrics);
+        /* about the x axis, normals along x turn less than tilt */
+        assert(metrics.mean_angle > tilt * 0.5 && metrics.mean_angle < tilt);
+        assert(normals == (tilt < 3) && normals == (metrics.mean_angle <= TEXTURE_UPSCALE_ENCODE_NORMAL_ANGLE));
+        texture_upscale_encode_metrics color {};
+        texture_upscale_encode_gate_alpha(source.data(), decoded.data(), 64, TEXTURE_UPSCALE_ENCODE_ALPHA_NONE, &color);
+        assert(color.mean_angle == -1);
+    }
+}
+
 int main()
 {
+    normal_angle();
     gate_boundaries();
     bc7_retry();
     graded_alpha();

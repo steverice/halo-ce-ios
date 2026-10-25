@@ -16,11 +16,20 @@
 #include <vector>
 
 namespace {
+/* A normal map's biased RGB as a unit vector. */
+static void unit_normal(const uint8_t *rgb, double *n)
+{
+    double length = 0;
+    for (unsigned c = 0; c < 3; ++c) { n[c] = rgb[c] / 127.5 - 1; length += n[c] * n[c]; }
+    length = std::max(std::sqrt(length), 1e-6);
+    for (unsigned c = 0; c < 3; ++c) n[c] /= length;
+}
 struct metrics_accumulator
 {
     unsigned alpha_mode = TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY;
-    double squared_error = 0, alpha_squared_error = 0;
-    uint64_t channels = 0, alphas = 0;
+    bool normals = false;
+    double squared_error = 0, alpha_squared_error = 0, angles = 0;
+    uint64_t channels = 0, alphas = 0, angle_count = 0;
     unsigned alpha_error = 0;
     void add(const uint8_t *source, const uint8_t *decoded, size_t texels)
     {
@@ -32,6 +41,13 @@ struct metrics_accumulator
                 int delta = int(source[i * 4 + c]) - decoded[i * 4 + c];
                 squared_error += delta * delta;
                 ++channels;
+            }
+            if (alpha && normals)
+            {
+                double a[3], b[3];
+                unit_normal(source + i * 4, a); unit_normal(decoded + i * 4, b);
+                angles += std::acos(std::min(1.0, std::max(-1.0, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))) * (180 / M_PI);
+                ++angle_count;
             }
             if (alpha_mode == TEXTURE_UPSCALE_ENCODE_ALPHA_BINARY && (alpha == 0 || alpha == 255))
                 alpha_error = std::max(alpha_error, unsigned(std::abs(int(alpha) - decoded[i * 4 + 3])));
@@ -53,8 +69,11 @@ struct metrics_accumulator
         metrics->rgb_psnr = psnr(squared_error, channels);
         metrics->alpha_psnr = psnr(alpha_squared_error, alphas);
         metrics->binary_alpha_max_error = alpha_error;
-        return (!channels || squared_error / channels <= limit) && alpha_error <= 8 &&
-            (!alphas || alpha_squared_error / alphas <= limit);
+        metrics->mean_angle = normals ? (angle_count ? angles / angle_count : 0) : -1;
+        /* A normal map keeps its directions instead of its RGB levels (TEXTURE_UPSCALE_ENCODE_NORMAL_ANGLE). */
+        bool rgb = normals ? metrics->mean_angle <= TEXTURE_UPSCALE_ENCODE_NORMAL_ANGLE :
+            (!channels || squared_error / channels <= limit);
+        return rgb && alpha_error <= 8 && (!alphas || alpha_squared_error / alphas <= limit);
     }
 };
 
@@ -120,7 +139,8 @@ static int check_encoded(const texture_upscale_rgba_level &level, const uint8_t 
     unsigned alpha_mode, texture_upscale_encode_metrics *metrics)
 {
     metrics_accumulator accumulator;
-    accumulator.alpha_mode = alpha_mode;
+    accumulator.alpha_mode = alpha_mode & ~unsigned(TEXTURE_UPSCALE_ENCODE_NORMALS);
+    accumulator.normals = alpha_mode & TEXTURE_UPSCALE_ENCODE_NORMALS;
     unsigned blocks_x = (level.width + 3) / 4;
     if (format == TEXTURE_RECORD_BC7)
     {
@@ -211,18 +231,20 @@ int texture_upscale_encode_gate_alpha(const uint8_t *source, const uint8_t *deco
     texture_upscale_encode_metrics *metrics)
 {
     if (!source || !decoded || !metrics || !texels || texels > size_t(8192) * 8192 ||
-        alpha_mode > TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED) return 0;
+        (alpha_mode & ~unsigned(TEXTURE_UPSCALE_ENCODE_NORMALS)) > TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED) return 0;
     metrics_accumulator accumulator;
-    accumulator.alpha_mode = alpha_mode;
+    accumulator.alpha_mode = alpha_mode & ~unsigned(TEXTURE_UPSCALE_ENCODE_NORMALS);
+    accumulator.normals = alpha_mode & TEXTURE_UPSCALE_ENCODE_NORMALS;
     accumulator.add(source, decoded, texels);
     return accumulator.finish(metrics);
 }
 
 const char *texture_upscale_encoder_name(uint32_t format)
 {
-    /* v2: bc7enc (modes 1, 5, 6, 7) in place of bc7enc16; v3 and astc v2: the per-alpha gate and BGRA8 exceptions */
-    if (format == TEXTURE_RECORD_BC7) return "bc7-v3";
-    if (format == TEXTURE_RECORD_ASTC4X4) return "astc4x4-fast-gated-v2";
+    /* v2: bc7enc (modes 1, 5, 6, 7) in place of bc7enc16; v3 and astc v2: the per-alpha gate and BGRA8 exceptions;
+       v4 and astc v3: bump maps gated on their normals' mean angle */
+    if (format == TEXTURE_RECORD_BC7) return "bc7-v4";
+    if (format == TEXTURE_RECORD_ASTC4X4) return "astc4x4-fast-gated-v3";
     return nullptr;
 }
 
@@ -236,7 +258,8 @@ texture_upscale_encode_result texture_upscale_encode_record(const texture_upscal
     if (metrics) *metrics = {};
     if (!record || !size || !metrics || !levels || !count || count > TEXTURE_RECORD_MAXIMUM_LEVELS ||
         !source_width || !source_height || !texture_upscale_encoder_name(format) ||
-        alpha_mode > TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED) return TEXTURE_UPSCALE_ENCODE_ERROR;
+        (alpha_mode & ~unsigned(TEXTURE_UPSCALE_ENCODE_NORMALS)) > TEXTURE_UPSCALE_ENCODE_ALPHA_GRADED)
+        return TEXTURE_UPSCALE_ENCODE_ERROR;
     unsigned factor;
     for (factor = 1; factor <= 8; factor *= 2)
         if (source_width <= TEXTURE_RECORD_MAXIMUM_DIMENSION / factor && source_height <= TEXTURE_RECORD_MAXIMUM_DIMENSION / factor &&
