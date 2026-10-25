@@ -5,9 +5,12 @@
 The weights are released under CC0 1.0; the license is in
 [`port/ios/Licenses/PBRify-CC0-1.0.txt`](../../ios/Licenses/PBRify-CC0-1.0.txt).
 
-The package accepts NCHW floats as `image` and returns a 4x `upscaled` tensor.
-Each input channel is replicated to three SPAN channels independently, then its
-three output channels are averaged. Its one input shape is 288 by 288 texels,
+The package accepts one gray channel, NCHW floats of shape 1 by 1 by 288 by 288,
+as `image` and returns its 4x `upscaled` tensor: the channel is replicated to
+SPAN's three input channels and the three output channels are averaged. The
+generator calls it once per texture channel and tile. (A package taking all three
+color channels as a batch of three ran each channel about 10% slower on the
+iPhone 12 Pro's Neural Engine.) Its one input shape is 288 by 288 texels,
 the generator's tiles: a 256 by 256 texture core and 16 texels of real wrap or
 clamp context on each side. (The Mac package enumerates every pair of 160, 288,
 544 and 1056 with the same weights; on the Neural Engine each enumerated shape
