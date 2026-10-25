@@ -11,6 +11,7 @@ void host_config_string(const char *name,const char *fallback,char *out,size_t s
 void host_logf(int level,const char *format,...) {(void)level;(void)format;}
 int texture_upscale_model_available(void) {return 0;}
 void host_texture_upscale_continued_phase(int began) {(void)began;}
+void texture_refine_set_cancel(const volatile int *flag) {(void)flag;}
 int host_device_profile_peek(const char *root,const char *name,char *text,size_t size) {(void)root;(void)name;snprintf(text,size,"true");return 1;}
 struct texture_upscale_generator *texture_upscale_generate_create(char *error,size_t size) {
     snprintf(error,size,"synthetic model failure");return NULL;

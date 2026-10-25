@@ -655,6 +655,9 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
     int result = -1;
     double started;
     trace(generator, "end");
+    /* (a stop for gameplay ends the texture between stages; refinement also between rows) */
+#define STOPPED() (texture_refine_cancelled() && (fail(error, error_size, "stopped for gameplay"), 1))
+    if (STOPPED()) goto done;
     if (is_bump) {
         if (bump_top(generator, input, &bump, &raw_height, base, output->result == TEXTURE_POLICY_BPF, &top, &params,
                 &output->seconds, error, error_size)) goto done;
@@ -668,8 +671,10 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
             ((policy->damage_share >= 0 && (float)output->damage_share >= policy->damage_share) ||
              (policy->damage_structure_loss >= 0 && (float)output->structure_loss_s4g >= policy->damage_structure_loss));
         if (damage_fired) output->result = TEXTURE_POLICY_BPF;
+        if (STOPPED()) goto done;
         if (output->result == TEXTURE_POLICY_BPF) {
             if (refine_color(&top, &reference, base, input->wrap, &params, &output->seconds)) goto done;
+            if (STOPPED()) goto done;
             trace(generator, "refined");
             /* A 4x base's 2x mip is downsampled from the unquantized refinement, so take it before the top is
                quantized for damage.stats, which measures the stored bpf bytes. Quantizing in place changes no stored
@@ -685,6 +690,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
                 int measured = measure(&top, &reference, base, input->wrap, input->alpha != TEXTURE_UPSCALE_ALPHA_NONE,
                     &ignored, &output->structure_loss_bpf, &output->seconds);
                 if (measured) goto done;
+                if (STOPPED()) goto done;
                 if (damage_fired && policy->damage_bpf_structure_loss >= 0) {
                     resized = allocate(reference.width * base, reference.height * base, 3);
                     struct image rgb = select_channels(&reference, 3);
@@ -709,6 +715,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
             }
         }
     }
+    if (STOPPED()) goto done;
     started = seconds();
     if (append_level(output, &top, input->alpha)) goto done;
     sample_footprint(generator);
@@ -725,6 +732,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
     output->seconds.mips += seconds() - started;
     trace(generator, "base");
     if (requested > base) {
+        if (STOPPED()) goto done;
         if (is_bump) {
             if (bump_top(generator, input, &bump, &raw_height, requested, output->result == TEXTURE_POLICY_BPF, &top,
                 &params, &output->seconds, error, error_size)) goto done;
@@ -739,10 +747,12 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
                 quantize_in_place(&top, input->alpha);
             }
             trace(generator, "high");
+            if (STOPPED()) goto done;
             if (output->result == TEXTURE_POLICY_BPF &&
                 refine_color(&top, &reference, requested, input->wrap, &params, &output->seconds)) goto done;
             trace(generator, "high-refined");
         }
+        if (STOPPED()) goto done;
         started = seconds();
         if (prepend_level(output, &top, input->alpha)) goto done;
         sample_footprint(generator);
@@ -774,6 +784,7 @@ done:
     memset(output, 0, sizeof(*output));
     job_release(job);
     return result;
+#undef STOPPED
 }
 
 int texture_upscale_generate(struct texture_upscale_generator *generator,

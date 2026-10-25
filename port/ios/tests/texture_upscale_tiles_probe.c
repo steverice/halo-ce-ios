@@ -2,6 +2,7 @@
    write_x2). With a translation-equivariant stand-in for S4g, that must equal down2 of the whole 4x image exactly,
    wrapped and clamped, and a 4x top kept as half must equal the float prediction rounded once. */
 #include "texture_upscale_generate.h"
+#include "texture_refine.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -102,6 +103,20 @@ int main(void)
     }
     texture_upscale_generate_destroy(g);
     free(rgba); free(unit);
+    /* the stop for gameplay ends a refinement between rows, and only while it is set */
+    {
+        float reference[8 * 8 * 3], top[16 * 16 * 3];
+        struct texture_refine_params params = { 12, 30, 1, 3 };
+        volatile int stop = 1;
+        for (size_t i = 0; i < sizeof(reference) / sizeof(*reference); i++) reference[i] = (float)(i % 7) / 7;
+        for (size_t i = 0; i < sizeof(top) / sizeof(*top); i++) top[i] = (float)(i % 5) / 5;
+        texture_refine_set_cancel(&stop);
+        assert(texture_refine_cancelled());
+        assert(texture_refine_color_bounded(top, reference, 8, 8, 3, 2, 1, &params, 1, NULL) != 0);
+        stop = 0;
+        assert(texture_refine_color_bounded(top, reference, 8, 8, 3, 2, 1, &params, 1, NULL) == 0);
+        texture_refine_set_cancel(NULL);
+    }
     puts("texture_upscale_tiles_probe: ok");
     return 0;
 }

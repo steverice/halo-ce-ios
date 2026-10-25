@@ -19,6 +19,8 @@ waits for it unless the player skips. One texture at a time; the manifest is the
 #include "texture_upscale_generate.h"
 #include "texture_upscale_schedule.h"
 #include "host_profile.h"
+#include "texture_refine.h"
+#include <sys/stat.h>
 #include <stdatomic.h>
 #include <sys/statvfs.h>
 #include <sys/mman.h>
@@ -609,7 +611,7 @@ void host_texture_upscale_init(const char *root) {
         finisher=dispatch_queue_create("org.visr.texture-upscale.finish",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
         state_token=[NSObject new];activity_token=[NSObject new];work_group=dispatch_group_create();
         map_keys=[NSMutableDictionary new];generator_releases=[NSMutableArray new];
-        texture_upscale_model_set_cancel(&stop_flag);
+        texture_upscale_model_set_cancel(&stop_flag);texture_refine_set_cancel(&stop_flag);
         texture_log=[NSMutableDictionary new];thermal_log=[NSMutableArray new];
         [NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil];
         [[NSURL fileURLWithPath:cache_directory()] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
