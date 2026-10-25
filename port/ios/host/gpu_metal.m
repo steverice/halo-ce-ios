@@ -877,8 +877,9 @@ static BOOL format_supported(const struct gpu_texture_description *description)
 		return YES;
 	if (description->usage != GPU_USAGE_UPLOAD)
 		return NO;
-	if (description->format == upscaled_format && upscaled_format)
-		return description->type == GPU_TEXTURE_2D;
+	/* the upscaled textures' records are 2D; the ASTC rewrite also makes cube maps, which only astc_textures allows */
+	if (description->format == upscaled_format && upscaled_format && description->type == GPU_TEXTURE_2D)
+		return YES;
 	if (description->format == GPU_FORMAT_ASTC4X4)
 		return astc_textures && (description->type == GPU_TEXTURE_2D || description->type == GPU_TEXTURE_CUBE);
 	return compressed_textures && (description->format == GPU_FORMAT_BC1 || description->format == GPU_FORMAT_BC2 ||
