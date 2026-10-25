@@ -47,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .ccache
           key: ccache-linux-${{ github.sha }}
@@ -67,14 +67,14 @@ jobs:
       - name: Compile cache
         run: ccache --show-stats
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: halo-linux-debug
           path: dist/halo-linux-debug
           if-no-files-found: error
           retention-days: 3
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: halo-linux-release
           path: dist/halo-linux-release
@@ -105,14 +105,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .ccache
           key: ccache-windows-${{ github.sha }}
           restore-keys: ccache-windows-
 
       # SDL's development package, which configure.py fetches
-      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: build/windows/third_party
           key: windows-third-party-${{ hashFiles('tools/windows_build.py') }}
@@ -129,14 +129,14 @@ jobs:
       - name: Compile cache
         run: ccache --show-stats
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: halo-windows-debug
           path: dist/halo-windows-debug
           if-no-files-found: error
           retention-days: 3
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: halo-windows-release
           path: dist/halo-windows-release
@@ -144,14 +144,14 @@ jobs:
           retention-days: 3
 
       # the PDBs, for crash reports' backtraces (tools/ci_build.py)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: halo-windows-debug-symbols
           path: dist/halo-windows-debug-symbols
           if-no-files-found: error
           retention-days: 3
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: halo-windows-release-symbols
           path: dist/halo-windows-release-symbols
