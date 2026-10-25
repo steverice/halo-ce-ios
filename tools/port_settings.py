@@ -947,6 +947,8 @@ def _server_settings() -> list:
         "Players who join without the map cannot play.",
         "Players can hurt friendly AI and vehicles.",
         "Friendly AI and vehicles are protected from players.\\nPlayer-to-player friendly fire keeps its own rules.",
+        # (MAXIMUM PLAYERS', past the most this device holds at 30 frames a second: network.player_capacity)
+        "More players than this device holds at a steady\\n30 frames a second. It may run slowly.",
     ])
     lines = _screen(base, spec, rows, ["server settings update"],
                     ['<on event="created" run="server settings init"/>'], extra)

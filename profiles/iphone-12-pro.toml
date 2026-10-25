@@ -19,6 +19,9 @@ anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
 
+[network]
+player_capacity = 8
+
 [evidence."display.frame_rate"]
 basis = "measured"
 why = "At 720 lines and maximum quality 71.8% (a10) and 72.7% (d40) of frames were within 16.7 ms (17 rounds each); with every setting at its cheapest 94.0% and 95.7%. At 30, 900 lines held 99.86% and 100% at 1x and 100% at 1.5x enemies, and the presented d40 run at 30 and 720 lines showed all 2,273 frames on time. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
@@ -50,3 +53,8 @@ frame_rate = "60"
 [evidence."scene.menu.display.frame_rate"]
 basis = "assumed"
 why = "Menus run at 60 as before the gameplay cap; the sweep did not measure menus."
+
+[evidence."network.player_capacity"]
+basis = "assumed"
+why = "At 30 frames a second, minimum settings and 540 lines, the 16-player game held 54.7% of frames on time. 8 is the next choice down and was not run on this phone. Provisional until rerun."
+source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

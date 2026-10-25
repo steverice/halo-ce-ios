@@ -15,6 +15,9 @@ anisotropic_filtering = 16
 shadow_map_size = 512
 anti_aliasing = "fxaa"
 
+[network]
+player_capacity = 32
+
 [evidence."display.anisotropic_filtering"]
 basis = "assumed"
 why = "Free on the iPad Pro (M1); this phone's one benchmark ran a10 at 119 frames a second at its native 2622x1206 with 16x on (GPU 5.7 ms)."
@@ -37,3 +40,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "120 frames a second does not hold after the ten minute warm-up soak: at 1080 lines 93.6% (a10) and 98.5% (d40) of frames were within 8.3 ms, at 900 lines 97.1% and 96.1% (12 rounds each). At 60, 1080 lines held 99.96% and 100% at 1x and 99.82 to 99.92% at 2x enemies; the presented d40 run at 60 showed every one of 4,560 frames on time. The iPhone 15 Pro profile caps at 60 for the same reason. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."network.player_capacity"]
+basis = "measured"
+why = "At 30 frames a second, minimum settings and 540 lines, Sidewinder with 128 players held (100% of frames on time) and Blood Gulch with 64 held 59%. 32 is the largest choice below the 64 that failed; 32 itself was not run on this phone. Provisional until rerun on a build with the multiplayer render fixes."
+source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

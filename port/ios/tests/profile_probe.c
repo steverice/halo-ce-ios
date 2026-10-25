@@ -294,6 +294,20 @@ static void check_refusals(void)
 	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
 	assert(profile.count == 0 && strstr(logged, "display.texture_idle_seconds has a value"));
 
+	/* the player capacity is within 2 to 128 players */
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[network]\nplayer_capacity = 16\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 1 && has(&profile, "network.player_capacity", "16"));
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[network]\nplayer_capacity = 1\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 0 && strstr(logged, "network.player_capacity has a value"));
+	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
+		"models = [\"Grace1,1\"]\n[network]\nplayer_capacity = 129\n");
+	profile = resolve(folder, device("visionos", "Grace1,1", "", 8), missing, "");
+	assert(profile.count == 0 && strstr(logged, "network.player_capacity has a value"));
+
 	/* the clutter distance is within 0 to 200 world units */
 	write_file("grace.toml", "schema = 1\nname = \"Grace\"\nkind = \"model\"\n[match]\nplatform = \"visionos\"\n"
 		"models = [\"Grace1,1\"]\n[display]\nclutter_distance = 40\n");

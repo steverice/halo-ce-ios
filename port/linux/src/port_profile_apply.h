@@ -36,6 +36,7 @@ static inline int port_profile_apply_class(const char *name)
 		{"input.aim_loss_grace", PORT_PROFILE_LOCAL_INPUT},
 		{"display.texture_idle_seconds", PORT_PROFILE_HOT},
 		{"display.clutter_distance", PORT_PROFILE_HOT},
+		{"network.player_capacity", PORT_PROFILE_HOT},
 	};
 	for (unsigned i=0; i<sizeof(settings)/sizeof(settings[0]); i++)
 		if (!strcmp(name,settings[i].name)) return settings[i].policy;

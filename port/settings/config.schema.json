@@ -2976,6 +2976,17 @@
             "desktop": true
           }
         },
+        "player_capacity": {
+          "type": "integer",
+          "default": 0,
+          "description": "The most players this device holds at 30 frames a second at the lowest settings, 2 to 128; 0 (default) names no limit. Create Game starts MAXIMUM PLAYERS at the largest choice within it (the player can raise it, and Server Setup says the device may run slowly), and the server browser marks the games with more. Joining a game is never refused. A device profile sets it for the device's speed; it is not a player choice.",
+          "x-environment": "HALO_NET_PLAYER_CAPACITY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "map_share": {
           "type": "boolean",
           "default": true,

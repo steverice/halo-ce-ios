@@ -14,6 +14,9 @@ anisotropic_filtering = 16
 shadow_map_size = 512
 effect_resolution = "half"
 
+[network]
+player_capacity = 32
+
 [evidence."display.anisotropic_filtering"]
 basis = "measured"
 why = "16x against off cost 0.1 ms of GPU time a frame."
@@ -38,3 +41,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "120 frames a second does not hold at 900 or 1080 lines at maximum quality: at 1080 lines 79.3% (a10) and 75.7% (d40) of frames were within 8.3 ms, at 900 lines 86.6% and 83.3% (11 rounds each). At 60, 1080 lines held 99.93% and 100% at 1x, 99.70 to 100% at 1.5x and 99.78 to 99.98% at 2x enemies; the presented d40 run at 60 showed every one of 4,558 frames on time. Tier 4 of the ladder (60, 1080, 1.5x). Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."network.player_capacity"]
+basis = "measured"
+why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held (99.84% of frames on time) and so did Sidewinder with 128 (99.76%); Blood Gulch with 64 held 13%. 32 is the largest choice below Blood Gulch's 64. Provisional until rerun on a build with the multiplayer render fixes."
+source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

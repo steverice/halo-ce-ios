@@ -226,6 +226,19 @@
       },
       "additionalProperties": false
     },
+    "network": {
+      "type": "object",
+      "properties": {
+        "player_capacity": {
+          "type": "integer",
+          "minimum": 2.0,
+          "maximum": 128.0,
+          "default": 0,
+          "description": "The most players this device holds at 30 frames a second at the lowest settings, 2 to 128; 0 (default) names no limit. Create Game starts MAXIMUM PLAYERS at the largest choice within it (the player can raise it, and Server Setup says the device may run slowly), and the server browser marks the games with more. Joining a game is never refused. A device profile sets it for the device's speed; it is not a player choice. Profile values outside the accepted set are refused, not clamped."
+        }
+      },
+      "additionalProperties": false
+    },
     "debug": {
       "type": "object",
       "properties": {
@@ -2344,6 +2357,50 @@
           ]
         },
         "display.clutter_distance": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "network.player_capacity": {
           "type": "object",
           "properties": {
             "basis": {

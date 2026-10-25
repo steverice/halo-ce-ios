@@ -117,6 +117,7 @@ void event_manager_post_button(short controller_index, short button_index);
 int config_text(char const *name, char *text, unsigned int size);
 int config_write(char const *name, char const *value);
 int config_boolean(char const *name);
+long config_integer(char const *name);
 int config_default(char const *name, char *text, unsigned int size);
 char const *config_string(char const *name);
 void platform_display_apply(void);
@@ -2343,6 +2344,20 @@ int platform_text_field_result(char *text, int size);
 int config_boolean(char const *name);
 void ui_widget_port_post_button(short controller_index, short button_index);
 
+/* network.player_capacity: the most players this device holds at 30 frames a second (a device profile's; 0: no
+limit). It sets where a hosted game starts and what the browsers mark; it refuses no one */
+static long player_capacity(void)
+{
+	return config_integer("network.player_capacity");
+}
+
+static boolean player_capacity_exceeded(long players)
+{
+	long capacity = player_capacity();
+
+	return capacity > 0 && players > capacity;
+}
+
 static wchar_t const *const engine_names[] = { L"", L"CTF", L"SLAYER", L"ODDBALL", L"KING OF THE HILL", L"RACE" };
 static short const maximum_players[] = { 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128 };
 
@@ -2358,6 +2373,8 @@ static struct
 	/* the server settings */
 	wchar_t game_name[16];
 	short maximum_players_index;
+	/* (whether it was chosen: until then each game hosted starts within network.player_capacity) */
+	boolean maximum_players_set;
 	/* (co-op's own, so it leaves multiplayer's as it was: each game hosted
 	starts with COOPERATIVE_DEFAULT_PLAYERS players at most) */
 	short cooperative_maximum_players_index;
@@ -2386,7 +2403,7 @@ static struct
 	/* Server Setup's PASSWORD (a public internet game's; empty: none), kept
 	while the game runs, never written down */
 	char game_password[PASSWORD_LENGTH + 1];
-} multiplayer = { .maximum_players_index = NUMBEROF(maximum_players) - 1 };
+} multiplayer = { .maximum_players_index = NUMBEROF(maximum_players) - 1, .maximum_players_set = FALSE };
 
 /* ---- a text field (Direct Link's link, the game's name): the keyboard
 types into it (Ctrl+V pastes), its row's A (enter) is done, B (escape)
@@ -2976,6 +2993,8 @@ help_strings, tools/port_settings.py) */
 #define COOPERATIVE_ENEMIES_MULTIPLIER_HELP 20
 #define COOPERATIVE_PLAYER_COLLISIONS_HELP 21
 #define SERVER_PASSWORD_HELP 23
+/* ... and for MAXIMUM PLAYERS past network.player_capacity */
+#define MAXIMUM_PLAYERS_SLOW_HELP 28
 /* ... and for SHARE MAPS, by its choice (port/linux/game/map_share.c) */
 #define MAP_SHARE_HELP 24
 #define COOPERATIVE_ALLY_FRIENDLY_FIRE_HELP 26
@@ -3000,20 +3019,33 @@ static short const cooperative_friendly_fire_modes[] =
 /* the most players Server Setup shows and sets: the multiplayer game's, or
 the co-op game's (COOPERATIVE_DEFAULT_PLAYERS the first time in each game
 hosted: multiplayer_host) */
+static short maximum_players_start(short most)
+{
+	short index, start = 0;
+	long capacity = player_capacity();
+
+	for (index = 0; index < NUMBEROF(maximum_players); index++)
+	{
+		if (maximum_players[index] <= most && (capacity <= 0 || maximum_players[index] <= capacity))
+			start = index;
+	}
+	return start;
+}
+
 static short *server_settings_maximum_players_index(void)
 {
-	short index;
-
 	if (!hosting_cooperative())
+	{
+		if (!multiplayer.maximum_players_set)
+		{
+			multiplayer.maximum_players_index = maximum_players_start(maximum_players[NUMBEROF(maximum_players) - 1]);
+			multiplayer.maximum_players_set = TRUE;
+		}
 		return &multiplayer.maximum_players_index;
+	}
 	if (!multiplayer.cooperative_maximum_players_set)
 	{
-		multiplayer.cooperative_maximum_players_index = NUMBEROF(maximum_players) - 1;
-		for (index = 0; index < NUMBEROF(maximum_players); index++)
-		{
-			if (maximum_players[index] == COOPERATIVE_DEFAULT_PLAYERS)
-				multiplayer.cooperative_maximum_players_index = index;
-		}
+		multiplayer.cooperative_maximum_players_index = maximum_players_start(COOPERATIVE_DEFAULT_PLAYERS);
 		multiplayer.cooperative_maximum_players_set = TRUE;
 	}
 	return &multiplayer.cooperative_maximum_players_index;
@@ -3111,6 +3143,10 @@ static void server_settings_update(struct widget_instance *list)
 		text_set(named(list, "game_type_value", 0), type);
 	}
 	settings_help(list);
+	/* MAXIMUM PLAYERS past what this device holds at 30 frames a second (network.player_capacity) says so */
+	if (spinner && list->focused_child == named(list, "op_max_players", 0) && list->parameters.list.extended_description &&
+		player_capacity_exceeded(maximum_players[*server_settings_maximum_players_index()]))
+		list->parameters.list.extended_description->parameters.text_box.string_list_index = MAXIMUM_PLAYERS_SLOW_HELP;
 	{
 		boolean cooperative = hosting_cooperative();
 		short row;
@@ -3875,7 +3911,7 @@ static void lobby_browser_update(struct widget_instance *list)
 		else
 		{
 			text_set(named(row, "server_item_ping", 0), game->failed ? L"FAILED" : !game->open ? L"CLOSED" :
-				game->in_progress ? L"LIVE" : L"-");
+				game->in_progress ? L"LIVE" : player_capacity_exceeded(game->maximum_player_count) ? L"BIG" : L"-");
 		}
 		/* (the lock: a game with a password. Its bitmap's first frame is
 		empty, the PC version's for no lock; the next is the lock, in the
@@ -3998,6 +4034,13 @@ static void lobby_browser_update(struct widget_instance *list)
 					game->player_count == 1 ? L"player" : L"players", game->maximum_player_count,
 					!game->open ? L", full or starting" : game->in_progress ? L", under way" : L"",
 					game->locked ? L", password" : L"");
+				if (player_capacity_exceeded(game->maximum_player_count))
+				{
+					unsigned long length = ustrlen(text);
+
+					usnprintf(text + length, NUMBEROF(text) - 1 - length, L", more than this device holds (%d)",
+						(int)player_capacity());
+				}
 			}
 		}
 		else
@@ -4253,7 +4296,8 @@ static void browser_update(struct widget_instance *list)
 			text_set(named(row, "server_item_ping", 0), text);
 		}
 		else
-			text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" : L"");
+			text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" :
+				player_capacity_exceeded(game->maximum_player_count) ? L"BIG" : L"");
 		visible_set(named(row, "server_item_locked", 0), FALSE);
 		visible_set(named(row, "server_item_dedicated", 0), FALSE);
 		visible_set(named(row, "server_item_classic", 0), FALSE);
@@ -4318,6 +4362,13 @@ static void browser_update(struct widget_instance *list)
 			else
 				usnprintf(text, NUMBEROF(text) - 1, L"%d players of %d, on %d machines%s", game->player_count,
 					game->maximum_player_count, game->machine_count, advertised_in_progress(game) ? L": under way" : L"");
+			if (player_capacity_exceeded(game->maximum_player_count))
+			{
+				unsigned long length = ustrlen(text);
+
+				usnprintf(text + length, NUMBEROF(text) - 1 - length, L", more than this device holds (%d)",
+					(int)player_capacity());
+			}
 		}
 		text[NUMBEROF(text) - 1] = 0;
 		text_set(named(list, "ticker_player_info", 0), text);

@@ -295,5 +295,6 @@
 		<string text="Players who join without the map cannot play."/>
 		<string text="Players can hurt friendly AI and vehicles."/>
 		<string text="Friendly AI and vehicles are protected from players.\nPlayer-to-player friendly fire keeps its own rules."/>
+		<string text="More players than this device holds at a steady\n30 frames a second. It may run slowly."/>
 	</strings>
 </menus>

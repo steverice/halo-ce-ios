@@ -18,6 +18,9 @@ anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
 
+[network]
+player_capacity = 16
+
 [evidence."display.frame_rate"]
 basis = "measured"
 why = "At 1080 lines and maximum quality 99.78% (a10) and 99.86% (d40) of frames were within 16.7 ms (seven rounds each), and at 900 lines with 1.5x enemies 99.78 to 99.89%. The presented d40 run at 60 and 900 lines showed all 4,561 frames on time. At 1080 with 1.5x enemies a10 held 99.63% and d40 99.49%, so tier 4 is not claimed. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
@@ -42,3 +45,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "Maximum against automatic model detail cost 0.05 to 0.06 ms a frame at 900 lines."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."network.player_capacity"]
+basis = "assumed"
+why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held 98.6% of frames on time, short of 99.5%. 16 is the next choice down and was not run on this iPad. Provisional until rerun."
+source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

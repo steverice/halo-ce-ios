@@ -34,6 +34,9 @@ anisotropic_filtering = 4
 model_lod = "auto"
 shadow_map_size = 256
 
+[network]
+player_capacity = 8
+
 [evidence."display.frame_rate"]
 basis = "measured"
 why = "Decided for this device: gameplay holds no tier of the ladder at 60. Presented at 540 lines with the cheapest settings, 97.7 to 99.4% of frames came within two refreshes, so uncapped play alternates between 60 and 30. Capped at 30, each frame stays up two refreshes, as cutscenes already do. The menu keeps the display's rate."
@@ -95,3 +98,7 @@ source = "Apple TV HD replays of a played take at 720, 2026-10-13; the hand-play
 basis = "measured"
 why = "Decided for this device: a cutscene's cost is scripted, and at 540 it already uses most of a 60 Hz frame, so the sharper picture is bought with the original's 30 frames a second. Each frame stays up two refreshes: a steady 30.0 with a 95th percentile frame of 33.9 ms in a10's opening."
 source = "Apple TV HD runs of a10 with the 30 cap, and replays of a played take, 2026-10-13"
+
+[evidence."network.player_capacity"]
+basis = "assumed"
+why = "No player count held 30 frames a second at minimum settings on this Apple TV, so 8, the lowest choice that keeps a game playable at all, is a guess. Provisional until a multiplayer run shows what it holds."

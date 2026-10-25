@@ -1009,6 +1009,13 @@ static const struct config_setting config_settings[] =
 		"in everyone's server browser: anyone can see and join it) or, false,\n"
 		"PRIVATE (only players with its invite link can join). Server Setup's\n"
 		"LISTING changes it for each game." },
+	{ "network.player_capacity", _config_integer, "0", "HALO_NET_PLAYER_CAPACITY", _environment_value, _platform_all,
+		"The most players this device holds at 30 frames a second at the lowest\n"
+		"settings, 2 to 128; 0 (default) names no limit. Create Game starts\n"
+		"MAXIMUM PLAYERS at the largest choice within it (the player can raise it,\n"
+		"and Server Setup says the device may run slowly), and the server browser\n"
+		"marks the games with more. Joining a game is never refused. A device\n"
+		"profile sets it for the device's speed; it is not a player choice." },
 	{ "network.map_share", _config_boolean, "true", "HALO_NET_MAP_SHARE", _environment_value, _platform_all,
 		"Hosting: send a player who joins without the game's Custom Edition map\n"
 		"the map (from custom_maps), and the resource maps it needs that the\n"

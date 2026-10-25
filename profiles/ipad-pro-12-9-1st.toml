@@ -19,6 +19,9 @@ shadow_map_size = 256
 anisotropic_filtering = 4
 model_lod = "auto"
 
+[network]
+player_capacity = 8
+
 [evidence."display.frame_rate"]
 basis = "measured"
 why = "At 60 frames a second and maximum quality 53.7% of d40 frames were on time at 540 lines and 34.7% at 720 (19 rounds). At 30, 720 lines held offscreen (99.91%), but the presented a10 and d40 runs at 30 put 90.0% and 88.7% of frames on time. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
@@ -50,3 +53,7 @@ frame_rate = "60"
 [evidence."scene.menu.display.frame_rate"]
 basis = "assumed"
 why = "Menus run at 60 as before the gameplay cap; the sweep did not measure menus."
+
+[evidence."network.player_capacity"]
+basis = "assumed"
+why = "No player count held 30 frames a second at minimum settings on this iPad, so 8, the lowest choice that keeps a game playable at all, is a guess. Provisional until a multiplayer run shows what it holds."
