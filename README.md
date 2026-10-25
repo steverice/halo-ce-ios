@@ -79,9 +79,9 @@ them for 14 days. Sign one with your own Apple account
 have guides), or build from source. Keep the same bundle ID when you update,
 and your saves carry over.
 
-The app reserves a 4 GB address range for the game's 32-bit memory at launch.
-If a Vision Pro refuses it, launching shows "Could not reserve the game's 4 GB
-memory arena". Build with `--extended-virtual-addressing`, which needs a paid
+The app reserves a 4 GB address range for the game's 32-bit memory at launch
+and falls back to about 2.2 GB if that is refused. If a Vision Pro refuses both,
+launching shows "Could not reserve the game's memory arena". Build with `--extended-virtual-addressing`, which needs a paid
 developer team; it works for iPhone, iPad, Apple TV and Vision Pro builds.
 
 ## Game data

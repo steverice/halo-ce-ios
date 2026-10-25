@@ -366,6 +366,22 @@ int main(int argc,char **argv) {
             host_logf(HOST_LOG_INFO,"runner: App Nap held off");
         }
 #endif
+        /* the arena is the step a device can refuse (visionOS: see port/ios/README.md); reserved before the import
+           screen so a refusal shows at once, not after a multi-GB import */
+#if HALO_RENDER_VALIDATION
+        if(!host_render_replay_requested())
+#endif
+#if TARGET_OS_TV
+        /* (no Files app on an Apple TV; and a message box would hold a test run open) */
+        if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image.":
+            "This Apple TV cannot give the game the 2.2 GB of address space it needs.");
+#elif HALO_NATIVE_MAC || TARGET_OS_MACCATALYST
+        if(host_load_image(NULL,0))host_fatal("%s See ios-runtime.log in %s.",
+            host_arena ? "Could not map the signed game image." : "Could not reserve the game's memory arena (about 2.2 GB of address space).", data_root);
+#else
+        if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image. See ios-runtime.log in Files.":
+            "Could not reserve the game's memory arena (about 2.2 GB of address space). See ios-runtime.log in Files.");
+#endif
 #if HALO_RENDER_VALIDATION
         /* a capture replayed with no game (host_render_replay.c): no game data, no game image */
         if(!host_render_replay_requested())
@@ -381,21 +397,6 @@ int main(int argc,char **argv) {
 #if !TARGET_OS_TV && !HALO_NATIVE_MAC
         /* the Settings app's texture pane: acted on now and at every return to the foreground */
         host_texture_settings_observe(data_root);
-#endif
-        /* the arena is the step a device can refuse (visionOS: see port/ios/README.md) */
-#if HALO_RENDER_VALIDATION
-        if(!host_render_replay_requested())
-#endif
-#if TARGET_OS_TV
-        /* (no Files app on an Apple TV; and a message box would hold a test run open) */
-        if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image.":
-            "This Apple TV cannot give the game the 4 GB of address space it needs.");
-#elif HALO_NATIVE_MAC || TARGET_OS_MACCATALYST
-        if(host_load_image(NULL,0))host_fatal("%s See ios-runtime.log in %s.",
-            host_arena ? "Could not map the signed game image." : "Could not reserve the game's 4 GB memory arena.", data_root);
-#else
-        if(host_load_image(NULL,0))host_fatal(host_arena?"Could not map the signed game image. See ios-runtime.log in Files.":
-            "Could not reserve the game's 4 GB memory arena. See ios-runtime.log in Files.");
 #endif
         /* the device benchmark's crash marker goes under the memory watch's handlers, which pass on what is not theirs */
         host_benchmark_install();
