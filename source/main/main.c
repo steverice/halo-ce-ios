@@ -3340,7 +3340,7 @@ void halt_and_catch_fire(
 		extern void benchmark_suite_multiplayer_fault(const char *note);
 		/* port: a native crash, with the game's last error as its reason and
 		its frames in the report, which Apple's crash reporting collects;
-		debug.halt_screen keeps this halt screen (port/ios/host/host_crash.m) */
+		debug.halt_screen keeps this halt screen (port/ios/host/host_crash.c) */
 		extern int host_guest_halt(const char *messages);
 
 		benchmark_suite_multiplayer_fault("guest fatal halt");

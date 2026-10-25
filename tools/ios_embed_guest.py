@@ -2,7 +2,7 @@
 """Embed the guest's immutable code as signed Mach-O text, with separate data and a symbol table.
 
 The symbol table (guest-symbols.bin, in the app's __TEXT,__halosyms) names the guest's functions for
-the host's crash report (port/ios/host/host_crash.m); guest-symbols.txt is the same table as text,
+the host's crash report (port/ios/host/host_crash.c); guest-symbols.txt is the same table as text,
 which tools/guest_symbolicate.py reads to name the guest frames of an Apple crash report."""
 import argparse
 import hashlib

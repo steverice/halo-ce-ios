@@ -2,7 +2,7 @@
 GUEST_CRASH_TEST.C
 
 debug.crash_test: a fatal error made on purpose in guest code, to check what
-a crash report shows (port/ios/host/host_crash.m, tools/guest_symbolicate.py).
+a crash report shows (port/ios/host/host_crash.c, tools/guest_symbolicate.py).
 The game's main loop calls guest_crash_test_update every frame
 (source/main/main.c); at the frame CRASH_TEST_FRAME it fails in the way the
 setting names:
