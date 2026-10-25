@@ -858,6 +858,11 @@ run('xcrun', 'clang', '-O2', '-std=c11', '-Iport/ios/host', '-Iport/runtime',
     'port/ios/tests/texture_upscale_generate_probe.c', '-x', 'c', 'port/ios/host/texture_upscale_generate.m',
     '-o', BUILD/'texture-upscale-generate-probe')
 run(BUILD/'texture-upscale-generate-probe')
+run('xcrun', 'clang', '-O2', '-std=c11', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/texture_upscale_tiles_probe.c', '-x', 'c', 'port/ios/host/texture_upscale_generate.m',
+    '-x', 'c', 'port/ios/host/texture_upscale_pixels.c', 'port/ios/host/texture_refine_bounded.c',
+    '-framework', 'Accelerate', '-o', BUILD/'texture-upscale-tiles-probe')
+run(BUILD/'texture-upscale-tiles-probe')
 
 run('xcrun', 'clang', '-O2', '-fobjc-arc', '-Iport/ios/host', '-Iport/runtime',
     '-Iport/runtime/include', '-Iport/linux/src', 'port/ios/tests/texture_upscale_driver_probe.m',

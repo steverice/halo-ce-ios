@@ -61,6 +61,50 @@ int texture_upscale_model_predict4x_strided(struct texture_upscale_model* m, con
     free(packed);
     return result;
 }
+/* The same fake prediction through the tile interface: one tile per 256 texels, with 64 output pixels of context. */
+int texture_upscale_model_predict_tiles(struct texture_upscale_model* m, const float* s, uint32_t w, uint32_t h,
+    uint32_t c, int wrap, texture_upscale_tile_consumer consumer, void* context, char* e, size_t n)
+{
+    calls++;
+    if (prediction_failure)
+        return -1;
+    if (w == 8)
+        second_pass_input = s[0];
+    if (w > max_width)
+        max_width = w;
+    for (uint32_t ty = 0; ty < h; ty += 256)
+        for (uint32_t tx = 0; tx < w; tx += 256) {
+            uint32_t cw = w - tx < 256 ? w - tx : 256, ch = h - ty < 256 ? h - ty : 256;
+            size_t side_x = cw * 4 + 128, side_y = ch * 4 + 128;
+            float* tile = malloc(side_x * side_y * sizeof(float));
+            assert(tile);
+            for (uint32_t i = 0; i < c; i++) {
+                for (size_t y = 0; y < side_y; y++)
+                    for (size_t x = 0; x < side_x; x++) {
+                        long gx = ((long)tx * 4 + (long)x - 64) / 4 - (((long)tx * 4 + (long)x - 64) < 0),
+                             gy = ((long)ty * 4 + (long)y - 64) / 4 - (((long)ty * 4 + (long)y - 64) < 0);
+                        gx = wrap ? (gx % (long)w + w) % w : gx < 0 ? 0 : gx >= w ? w - 1 : gx;
+                        gy = wrap ? (gy % (long)h + h) % h : gy < 0 ? 0 : gy >= h ? h - 1 : gy;
+                        tile[y * side_x + x] = s[((size_t)gy * w + gx) * c + i] * .91f + .013f;
+                    }
+                struct texture_upscale_tile view = { tx, ty, cw, ch, tile + 64 * side_x + 64, (ptrdiff_t)side_x, 1, 0 };
+                if (consumer(context, &view, i)) {
+                    free(tile);
+                    return -1;
+                }
+            }
+            free(tile);
+        }
+    return 0;
+}
+int texture_refine_color_bounded_half(_Float16* t, const float* o, uint32_t w, uint32_t h, uint32_t c, uint32_t z,
+    int wrap, const struct texture_refine_params* p, int f, float* mask)
+{
+    first_refine = (float)t[0];
+    for (size_t i = 0; i < (size_t)w * h * z * z * c; i++)
+        t[i] = (_Float16)((float)t[i] + .1f);
+    return 0;
+}
 struct texture_refine_context* texture_refine_create(void* d, char* e, size_t n)
 {
     return calloc(1, sizeof(struct texture_refine_context));

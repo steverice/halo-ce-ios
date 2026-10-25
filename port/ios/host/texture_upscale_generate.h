@@ -38,6 +38,17 @@ int texture_upscale_generate(struct texture_upscale_generator *generator,
     const struct texture_upscale_generate_input *input, struct texture_upscale_generate_output *output,
     char *error, size_t error_size);
 void texture_upscale_generate_free_output(struct texture_upscale_generate_output *output);
+/* The same in two steps, so one texture's CPU work can run beside the next one's predictions: begin makes the first
+   predictions, end finishes (and frees the job, success or not). input's levels must outlive end. One begin and one
+   end may run at once on different threads; the generator serializes the model. abandon frees an unfinished job. */
+struct texture_upscale_job;
+/* Development: the footprint in MB at each step of the last texture begun. */
+const char *texture_upscale_generate_trace(struct texture_upscale_generator *generator);
+int texture_upscale_generate_begin(struct texture_upscale_generator *generator,
+    const struct texture_upscale_generate_input *input, struct texture_upscale_job **job, char *error, size_t error_size);
+int texture_upscale_generate_end(struct texture_upscale_generator *generator, struct texture_upscale_job *job,
+    struct texture_upscale_generate_output *output, char *error, size_t error_size);
+void texture_upscale_generate_abandon(struct texture_upscale_job *job);
 /* Model output before quantization or refinement, for half-offset seam checks. RGB + independent alpha,
    except opaque color has RGB only; bump has unit height only. Caller frees *pixels. */
 int texture_upscale_generate_raw4x(struct texture_upscale_generator *generator,
