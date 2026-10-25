@@ -1,4 +1,6 @@
 /* Exercise translated pointer layouts, stack locals, indirect calls and atomics. */
+#define HALO_IOS 1
+#include "../../runtime/include/halo_guest_native.h"
 struct node { struct node *next; unsigned value; };
 _Static_assert(sizeof(struct node)==8,"guest pointers must remain 32-bit");
 static struct node nodes[3];
@@ -25,6 +27,10 @@ static unsigned __attribute__((noinline)) stack_pointers(unsigned n) {
     return error;
 }
 static unsigned (*volatile stack_test)(unsigned)=stack_pointers;
+/* A return address is native: converted, it is a guest address in this image's code. */
+static unsigned __attribute__((noinline)) return_address(void) { return halo_guest_address((unsigned)__builtin_return_address(0)); }
+static unsigned (*volatile return_test)(void)=return_address;
+unsigned guest_probe(void);
 unsigned guest_probe(void) {
     unsigned local[32];unsigned error=0;
     for(unsigned i=0;i<32;i++)local[i]=i*3;
@@ -37,6 +43,8 @@ unsigned guest_probe(void) {
     sum=0;for(unsigned i=0;i<128;i++)sum+=array[i];if(sum!=8256)error|=8;
     atomic_word=4;if(__sync_fetch_and_add(&atomic_word,9)!=4 || atomic_word!=13)error|=16;
     error|=stack_test(40);
+    unsigned caller=return_test();
+    if(caller<(unsigned)guest_probe || caller>=(unsigned)guest_probe+0x10000)error|=512;
     return error;
 }
 __attribute__((section("__TEXT,__guest_header"),used))

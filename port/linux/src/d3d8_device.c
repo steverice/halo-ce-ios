@@ -93,9 +93,15 @@ of these is nothing. */
 #include "gpu_validate.h"
 #if HALO_RENDER_VALIDATION
 static struct gpu_validation_identity validation_draw;
+/* the game code that called: a guest address in the iOS guest */
+#ifdef HALO_ILP32
+#define VALIDATION_CALLER() halo_guest_address((unsigned long long)(unsigned long)__builtin_return_address(0))
+#else
+#define VALIDATION_CALLER() ((uint32_t)(unsigned long)__builtin_return_address(0))
+#endif
 /* at a D3D draw's or clear's entry: its kind and the game code that called it */
 #define VALIDATION_BEGIN(draw_kind) \
-	(validation_draw.kind = (draw_kind), validation_draw.caller = (uint32_t)(unsigned long)__builtin_return_address(0))
+	(validation_draw.kind = (draw_kind), validation_draw.caller = VALIDATION_CALLER())
 #define VALIDATION_VERTEX_SHADER(program, variant) \
 	(validation_draw.vertex_program = (uint32_t)(program)->id, validation_draw.vertex_variant = (uint32_t)(variant))
 #define VALIDATION_PIXEL_SHADER(entry) (validation_draw.pixel_key = (uint32_t)(entry)->hash)
@@ -6076,7 +6082,7 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 #if HALO_RENDER_VALIDATION
 	{
 		struct gpu_validation_identity identity = { GPU_VALIDATION_DRAW_CLEAR, 0, 0, 0,
-			(uint32_t)(unsigned long)__builtin_return_address(0), (uint32_t)device.frame };
+			VALIDATION_CALLER(), (uint32_t)device.frame };
 
 		gpu_validation_identity(&identity);
 	}

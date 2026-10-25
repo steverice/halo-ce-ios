@@ -69,7 +69,9 @@ def lift(assembly: str) -> str:
         if not text or text.startswith(".") or text.endswith(":"):
             output.append(line)
             continue
-        if re.search(r"\b[wx](15|27)\b", text) and not (re.match(r"(?:stp|ldp) .*\[sp", text) and "x15" not in text):
+        # Reading x27 into another register (halo_guest_address) is the one other use allowed.
+        reads_arena = re.fullmatch(r"mov x(\d+), x27", text) and text.split(",")[0] not in ("mov x15", "mov x27")
+        if re.search(r"\b[wx](15|27)\b", text) and not reads_arena and not (re.match(r"(?:stp|ldp) .*\[sp", text) and "x15" not in text):
             raise ConvertError(f"line {number}: reserved register used: {text}")
         op, _, args = text.partition(" ")
         if op in ("adr", "adrp"):

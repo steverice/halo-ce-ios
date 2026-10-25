@@ -31,4 +31,4 @@ static int probe(int aligned) {
     printf("ILP32 guest probe: %s (failure bits %d, arena %lx)\n",result?"FAIL":"PASS",result,arena);
     return result;
 }
-int main(void) { return probe(1)|probe(0); }
+int main(void) { return (probe(1)|probe(0)) ? 1 : 0; }   /* failure bits above 255 would exit 0 */
