@@ -57,7 +57,7 @@
 - [x] Compressed textures, 16x anisotropic filtering and reversed-Z depth
 - [x] Upstream's redrawn high-resolution HUD and text
 - [x] FXAA and SMAA on flat Metal views, and adjustable shadow resolution (`display.anti_aliasing`, `display.shadow_map_size`)
-- [ ] MSAA, SSAA and per-pixel lighting on Metal
+- [ ] MSAA and per-pixel lighting on Metal
 - [x] Mirror reflections and active camouflage at Xbox, half or full resolution (`display.effect_resolution`: `"xbox"`, `"half"` by default, or `"full"`)
 - [ ] Mirror reflections at full resolution by default
 - [ ] AI-upscaled textures
