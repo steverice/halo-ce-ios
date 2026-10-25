@@ -1307,7 +1307,7 @@ def publish(args: argparse.Namespace) -> None:
                 "tag_name": manifest["tag"],
                 "name": manifest["tag"],
                 "draft": True,
-                "prerelease": False,
+                "prerelease": is_prerelease(manifest["version"]),
                 "body": draft_body(notes, {}),
             },
         )
@@ -1432,7 +1432,7 @@ def publish(args: argparse.Namespace) -> None:
             "tag_name": manifest["tag"],
             "body": notes,
             "draft": False,
-            "make_latest": "true",
+            **publish_flags(manifest["version"]),
         },
     )
     published = github.request("GET", f"{path}/{release['id']}")
@@ -1440,12 +1440,25 @@ def publish(args: argparse.Namespace) -> None:
         published.get("tag_name") != manifest["tag"]
         or published.get("body") != notes
         or published.get("draft") is not False
+        or published.get("prerelease") is not is_prerelease(manifest["version"])
         or published.get("assets") != []
     ):
         raise ValueError(
-            "Published GitHub tag, notes, draft state or assets differ from the release manifest"
+            "Published GitHub tag, notes, draft or prerelease state or assets differ from the release manifest"
         )
     print(f"{manifest['tag']}: GitHub release published without assets")
+
+
+def is_prerelease(version: str) -> bool:
+    """Every release before 1.0 is published as a GitHub prerelease."""
+    return int(version.split(".")[0]) < 1
+
+
+def publish_flags(version: str) -> dict:
+    # GitHub never treats a prerelease as the latest release.
+    if is_prerelease(version):
+        return {"prerelease": True, "make_latest": "false"}
+    return {"prerelease": False, "make_latest": "true"}
 
 
 def main() -> None:

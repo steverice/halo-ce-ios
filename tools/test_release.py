@@ -975,7 +975,7 @@ def test_publish_uses_summary_for_testflight_and_full_entry_for_github(
             [draft],
             {},
             {},
-            {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []},
+            {"tag_name": manifest["tag"], "body": notes, "draft": False, "prerelease": True, "assets": []},
         ]
     )
     apple = FakeAPI(
@@ -1741,7 +1741,7 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
             {},
             {},
             {},
-            {"tag_name": manifest["tag"], "body": notes, "draft": False, "assets": []},
+            {"tag_name": manifest["tag"], "body": notes, "draft": False, "prerelease": True, "assets": []},
         ]
     )
     apple = FakeAPI(
@@ -1781,7 +1781,7 @@ def test_partial_release_resume_polls_uploading_platform_without_build_or_upload
         "tag_name": manifest["tag"],
         "body": notes,
         "draft": False,
-        "make_latest": "true",
+        **release.publish_flags(manifest["version"]),
     }
     assert github.calls[-1][:2] == ("GET", "/repos/example/app/releases/release-1")
 
@@ -2066,3 +2066,8 @@ def test_cloud_saves_release_arguments_are_policy_pinned():
     assert release.cloud_saves_arguments({**policy(), "cloud_saves": "on"}) == [
         "--cloud-saves", "--cloud-container", "iCloud.org.steverice.visr"
     ]
+
+
+def test_releases_before_one_are_prereleases_and_never_latest() -> None:
+    assert release.publish_flags("0.5.0") == {"prerelease": True, "make_latest": "false"}
+    assert release.publish_flags("1.0.0") == {"prerelease": False, "make_latest": "true"}
