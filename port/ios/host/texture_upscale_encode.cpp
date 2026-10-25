@@ -220,8 +220,9 @@ int texture_upscale_encode_gate_alpha(const uint8_t *source, const uint8_t *deco
 
 const char *texture_upscale_encoder_name(uint32_t format)
 {
-    if (format == TEXTURE_RECORD_BC7) return "bc7-v2"; /* v2: bc7enc (modes 1, 5, 6, 7) in place of bc7enc16 */
-    if (format == TEXTURE_RECORD_ASTC4X4) return "astc4x4-fast-gated-v1";
+    /* v2: bc7enc (modes 1, 5, 6, 7) in place of bc7enc16; v3 and astc v2: the per-alpha gate and BGRA8 exceptions */
+    if (format == TEXTURE_RECORD_BC7) return "bc7-v3";
+    if (format == TEXTURE_RECORD_ASTC4X4) return "astc4x4-fast-gated-v2";
     return nullptr;
 }
 
