@@ -449,20 +449,27 @@ struct reason_words
 };
 
 /* loads x0 (the magic), x1-x15 and x19-x28 from words and traps. A macro so that the trap is in the
-   named function, the report's top frame */
+   named function, the report's top frame. The pointer is pinned to x16: with every other register
+   clobbered the compiler used to pass it in x30, so the report's lr read as the pointer instead of the
+   return address (the backtrace still followed the saved frame record, but a symbolicator that falls
+   back to lr would have named a wrong frame) */
 #define TRAP_WITH_REASON(reason) \
-	__asm__ volatile( \
-		"mov x16, %0\n" \
-		"ldp x0, x1, [x16, #0]\n" "ldp x2, x3, [x16, #16]\n" "ldp x4, x5, [x16, #32]\n" \
-		"ldp x6, x7, [x16, #48]\n" "ldp x8, x9, [x16, #64]\n" "ldp x10, x11, [x16, #80]\n" \
-		"ldp x12, x13, [x16, #96]\n" "ldp x14, x15, [x16, #112]\n" "ldp x19, x20, [x16, #128]\n" \
-		"ldp x21, x22, [x16, #144]\n" "ldp x23, x24, [x16, #160]\n" "ldp x25, x26, [x16, #176]\n" \
-		"ldp x27, x28, [x16, #192]\n" \
-		"brk #1\n" \
-		:: "r"(reason) \
-		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", \
-		  "x15", "x16", "x17", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "memory"); \
-	__builtin_unreachable()
+	do \
+	{ \
+		register const struct reason_words *table __asm__("x16") = (reason); \
+		\
+		__asm__ volatile( \
+			"ldp x0, x1, [x16, #0]\n" "ldp x2, x3, [x16, #16]\n" "ldp x4, x5, [x16, #32]\n" \
+			"ldp x6, x7, [x16, #48]\n" "ldp x8, x9, [x16, #64]\n" "ldp x10, x11, [x16, #80]\n" \
+			"ldp x12, x13, [x16, #96]\n" "ldp x14, x15, [x16, #112]\n" "ldp x19, x20, [x16, #128]\n" \
+			"ldp x21, x22, [x16, #144]\n" "ldp x23, x24, [x16, #160]\n" "ldp x25, x26, [x16, #176]\n" \
+			"ldp x27, x28, [x16, #192]\n" \
+			"brk #1\n" \
+			:: "r"(table) \
+			: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", \
+			  "x15", "x17", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "memory"); \
+		__builtin_unreachable(); \
+	} while (0)
 
 __attribute__((noinline, noreturn)) void visr_guest_halt(const struct reason_words *reason) { TRAP_WITH_REASON(reason); }
 __attribute__((noinline, noreturn)) void visr_guest_abort(const struct reason_words *reason) { TRAP_WITH_REASON(reason); }
