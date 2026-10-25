@@ -23,6 +23,7 @@
 @property(atomic, strong) NSFileCoordinator *coordinator;
 @property(nonatomic) BOOL importing;
 @property(nonatomic) BOOL ready;
+@property(atomic) BOOL upscaling; /* the upscaling phase is on screen */
 @property(nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 @property(nonatomic) double lastProgressTime; /* extraction thread only */
 @end
@@ -59,6 +60,7 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
 /* the on-device upscaler's import phase (rule 2): the same bar and the same "Start playing" skip */
 static int upscale_progress(void *context,unsigned long long done,unsigned long long total) {
     HaloImportController *controller=(__bridge HaloImportController *)context;
+    controller.upscaling=YES;
     if(controller.cancelled)return 0;
     double now=NSProcessInfo.processInfo.systemUptime;
     if(now-controller.lastProgressTime<0.1)return 1;controller.lastProgressTime=now;
@@ -154,7 +156,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
         dispatch_async(dispatch_get_main_queue(),^{[self.spinner stopAnimating];self.importing=NO;self.ready=YES;});
     });
 }
-- (void)cancelImport {self.cancelled=YES;[self.coordinator cancel];self.cancelButton.enabled=NO;self.statusLabel.text=@"Cancelling import…";}
+- (void)cancelImport {self.cancelled=YES;[self.coordinator cancel];self.cancelButton.enabled=NO;self.statusLabel.text=self.upscaling?@"Starting Halo…":@"Cancelling import…";}
 - (void)importImage:(NSURL *)url {
     if (self.importing) return;
     self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
@@ -162,7 +164,11 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
     self.progress.hidden=YES;self.progress.progress=0;[self.spinner startAnimating];
     self.statusLabel.text=@"Opening disc image… If it's in iCloud, it may need to download first.";
     BOOL scoped=[url startAccessingSecurityScopedResource];
-    self.backgroundTask=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"Import Halo" expirationHandler:^{self.cancelled=YES;[self.coordinator cancel];}];
+    self.backgroundTask=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"Import Halo" expirationHandler:^{
+        /* the disc's extraction stops; the upscaling phase does not (iOS 26's continued processing carries it, where
+           there is one, and otherwise it goes on in the menus): only the extra background time ends */
+        if(!self.upscaling){self.cancelled=YES;[self.coordinator cancel];}
+        if(self.backgroundTask!=UIBackgroundTaskInvalid){[UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];self.backgroundTask=UIBackgroundTaskInvalid;}}];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
         @autoreleasepool {
             NSFileManager *files=NSFileManager.defaultManager;

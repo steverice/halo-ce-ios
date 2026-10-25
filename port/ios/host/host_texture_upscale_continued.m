@@ -28,7 +28,7 @@ static NSObject *continued_lock;
 static id running_task;   /* BGContinuedProcessingTask (iOS 26) */
 static dispatch_source_t progress_timer;
 static BOOL stopped_by_task, in_background;
-static unsigned serial;
+static unsigned serial, idle_reports;
 
 API_AVAILABLE(ios(26.0)) static void finish(BGContinuedProcessingTask *task, BOOL success, const char *why) {
     if (progress_timer) { dispatch_source_cancel(progress_timer); progress_timer = nil; }
@@ -44,7 +44,9 @@ API_AVAILABLE(ios(26.0)) static void report(BGContinuedProcessingTask *task) {
     task.progress.completedUnitCount = (int64_t)MIN(done, total ? total : 1);
     /* a queue that has stopped while the app is away (an error, the Neural Engine refused in the background) makes no
        more progress: end the task rather than let the system expire it as stalled */
-    if (in_background && !host_texture_upscale_busy()) {
+    /* (two readings a second apart: a pump that ends and the next it schedules leave a moment with neither) */
+    idle_reports = in_background && !host_texture_upscale_busy() ? idle_reports + 1 : 0;
+    if (idle_reports >= 3) {
         enum texture_upscale_continued_action action;
         @synchronized (continued_lock) { action = texture_upscale_continued_step(&continued_state, TEXTURE_UPSCALE_CONTINUED_EXPIRED); }
         if (action == TEXTURE_UPSCALE_CONTINUED_STOP_AND_FAIL) { running_task = nil; finish(task, NO, "the queue stopped in the background"); }
