@@ -5618,6 +5618,29 @@ with the scene's depth, motion and jitter, in this one place. */
 static void scene_scaler_encode(id<MTLTexture> color, NSUInteger content_width, NSUInteger content_height,
 	id<MTLTexture> output) API_AVAILABLE(ios(16.0), tvos(16.0), visionos(1.0))
 {
+	/* MetalFX reads a few texels past the content's right and bottom edges
+	(the Mac runner showed the last 4 output columns differing from a
+	whole-texture picture): a band of the edge texels repeated past them
+	gives it what a whole texture's clamp would have */
+	if (content_width < color.width || content_height < color.height)
+	{
+		/* (gpu_metal_upscale has ended the scene's pass; the rows copy the
+		columns' band too, so they go in an encoder after the columns') */
+		id<MTLBlitCommandEncoder> blit = [command_buffer() blitCommandEncoder];
+		NSUInteger band;
+
+		for (band = 0; band < 4 && content_width + band < color.width; band++)
+			[blit copyFromTexture:color sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(content_width - 1, 0, 0)
+				sourceSize:MTLSizeMake(1, content_height, 1) toTexture:color destinationSlice:0 destinationLevel:0
+				destinationOrigin:MTLOriginMake(content_width + band, 0, 0)];
+		[blit endEncoding];
+		blit = [command_buffer() blitCommandEncoder];
+		for (band = 0; band < 4 && content_height + band < color.height; band++)
+			[blit copyFromTexture:color sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, content_height - 1, 0)
+				sourceSize:MTLSizeMake(content_width + 4 < color.width ? content_width + 4 : color.width, 1, 1)
+				toTexture:color destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, content_height + band, 0)];
+		[blit endEncoding];
+	}
 	upscaler.colorTexture = color;
 	upscaler.outputTexture = output;
 	upscaler.inputContentWidth = content_width;
