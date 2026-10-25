@@ -86,7 +86,8 @@ def test_unpresented_pass_moves_the_clock():
     main = (ROOT / "source/main/main.c").read_text()
     start = main.index("void main_loop(")
     body = main[start:main.index("\n}\n", start)]
-    assert re.search(r"main_present_frame\(\);\s*\}\s*else\s*\{[^}]*platform_clock_unpresented_frame\(\);", body)
+    # (a profiling build's scope may wrap the present: profile_scope(section, main_present_frame();))
+    assert re.search(r"main_present_frame\(\);\)?\s*\}\s*else\s*\{[^}]*platform_clock_unpresented_frame\(\);", body)
 
 
 def test_presented_runs_follow_the_host():

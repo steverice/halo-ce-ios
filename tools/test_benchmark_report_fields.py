@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -78,7 +79,8 @@ def test_translation_timed_at_device_entry_points():
                  "D3DDevice_SetVertexShaderConstant", "D3DDevice_SetRenderTarget", "halo_draw_quad_ranges"):
         start = device.index(f" {name}(")
         body = device[device.index("{", start):device.index("{", start) + 200]
-        assert "TRANSLATION_TIMED();" in body, name
+        # (the name is the profiling build's section for the call, docs/profiling.md)
+        assert re.search(r"TRANSLATION_TIMED\(\w+\);", body), name
 
 
 def test_p90_uses_nearest_rank_for_every_timing(tmp_path):

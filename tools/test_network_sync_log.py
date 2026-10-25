@@ -77,7 +77,9 @@ def test_logging_runs_for_host_and_client_without_network_test():
     start = source.index("void network_distributed_tick(")
     end = source.index("\n/*", start)
     tick = source[start:end]
-    assert "if (connection == _game_connection_network_server || connection == _game_connection_network_client)\n\t\tdistributed_sync_log_tick();" in tick
+    # (inside the profiling build's scope, which a normal build reduces to the call)
+    assert ("if (connection == _game_connection_network_server || connection == _game_connection_network_client)\n"
+            "\t\tprofile_scope(distributed_tick_sync_log_section, distributed_sync_log_tick();)") in tick
     assert tick.index("distributed_batches_flush();") < tick.index("distributed_sync_log_tick();")
     start = source.index("void network_distributed_new_game(")
     assert "distributed_sync_log_reset();" in source[start:source.index("\n/*", start)]
