@@ -29,7 +29,7 @@ int host_errno(void);
 should read (no game data, a device that cannot run the game) */
 void host_fatal(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));
 /* a bug: logs the message and the stack, its guest frames named, then crashes
-natively with the message as the crash report's reason (host_crash.m) */
+natively, the message packed into the crash report's registers (host_crash.c) */
 void host_crash(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));
 
 /* ---------- guest memory (host_memory.c)

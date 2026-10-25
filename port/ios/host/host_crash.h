@@ -1,13 +1,14 @@
 /*
 HOST_CRASH.H
 
-Fatal errors as native crashes (host_crash.m). A fatal error, the game's own
+Fatal errors as native crashes (host_crash.c). A fatal error, the game's own
 (an assertion or a halt, which used to stop on the game's blue halt screen),
 a host bug or a fault in guest code, is written to ios-runtime.log with the
 guest's frames named, then ends the app as a native crash, so that Apple's
 crash reporting (TestFlight feedback, Xcode's Organizer, the device's own
-analytics) keeps a report with the reason in it. tools/guest_symbolicate.py
-names the guest frames of such a report from the build's guest-symbols.txt.
+analytics) keeps a report of it, its reason packed into the crashed thread's
+registers. tools/guest_symbolicate.py prints that reason and names the
+report's guest frames from the build's guest-symbols.txt.
 */
 
 #ifndef HALO_HOST_CRASH_H

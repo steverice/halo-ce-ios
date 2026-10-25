@@ -1142,8 +1142,8 @@ static const struct config_setting config_settings[] =
 	{ "debug.halt_screen", _config_boolean, "false", "HALO_HALT_SCREEN", _environment_value, _platform_ios,
 		"On a fatal game error (a failed assertion or a halt), stop on the game's\n"
 		"halt screen, its recent messages on a blue background, instead of crashing.\n"
-		"Off, the app crashes with the error as the crash report's reason, and\n"
-		"ios-runtime.log has the error and the game's frames." },
+		"Off, the app crashes, and ios-runtime.log and the crash report have the error\n"
+		"and the game's frames (tools/guest_symbolicate.py reads the report)." },
 	{ "debug.crash_test", _config_string, "\"\"", "HALO_CRASH_TEST", _environment_value, _platform_ios,
 		"Fail on purpose 150 frames after the game starts, to check crash reports:\n"
 		"\"halt\" (a failed assertion), \"fault\" (a memory fault in game code), \"trap\"\n"

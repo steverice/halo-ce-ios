@@ -64,8 +64,7 @@ void host_fatal(const char *format,...) {
     host_logf(HOST_LOG_ERROR,"FATAL: %s",text);
     if(!getenv("HALO_RUNNER"))SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"VISR",text,NULL);exit(1);
 }
-/* the guest runtime's own fatal errors (guest_misc.c, guest_thread.c): a native crash with the guest's frames */
-void host_abort(const char *reason) { host_crash("guest abort: %s",reason); }
+/* host_abort, the guest runtime's own fatal errors, is host_crash.c's */
 void host_exit(int code) {
     host_logf(HOST_LOG_INFO,"game exit %d",code);
     host_spatial_rumble_hold(1);

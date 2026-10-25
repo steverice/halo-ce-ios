@@ -1,34 +1,36 @@
 /*
-HOST_CRASH.M
+HOST_CRASH.C
 
 Fatal errors as native crashes (host_crash.h).
 
 Guest code runs from an alias of the app's __TEXT,__halocode in the guest
 arena (host_loader.c), so Apple's crash reports show its frames as bare
 addresses outside every image. The arena is 4 GB aligned, so an address's
-low 32 bits are its guest address: the report's reason here names the guest
-frames from the symbol table embedded beside the code (__TEXT,__halosyms,
+low 32 bits are its guest address: the log here names the guest frames from
+the symbol table embedded beside the code (__TEXT,__halosyms,
 tools/ios_embed_guest.py), and tools/guest_symbolicate.py names them in a
 whole report from the build's guest-symbols.txt.
 
-Two ways out, both native crashes:
-- host_crash and host_guest_halt raise an NSException with the message and
-  the top guest frames as its reason. It is never caught (the unwinder stops
-  at the first guest frame, which has no unwind information, and the Mac
-  apps crash on exceptions: NSApplicationCrashOnExceptions), so the system
-  ends the app with SIGABRT and the report carries the reason in its
-  Application Specific Information and the stack as its Last Exception
-  Backtrace.
+A report keeps no text of the app's own: on macOS 27 neither an uncaught
+NSException's reason, nor the Swift runtime's fatalError message, nor an
+app's crash annotation (__DATA,__crash_info) reaches a report's Application
+Specific Information; only the C library's fixed "abort() called" does. What
+a report always keeps is the crashed thread's frames and registers. So:
+
+- host_crash and host_guest_halt end in a function named for what happened
+  (visr_guest_halt, visr_guest_abort, visr_host_error), the report's top
+  frame, which Xcode's Organizer groups crashes by. Its trap instruction
+  runs with the reason packed into the registers as text: x0 holds "VISRCRSH",
+  then x1 to x15 and x19 to x28 hold up to 200 bytes of the guest image's
+  short hash, a "|" and the reason. tools/guest_symbolicate.py prints it.
 - A fault (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP, SIGABRT) the memory
-  watch does not own reaches crash_signal, which logs the registers and the
-  frames with only async-signal-safe calls, puts a one-line summary in this
-  image's crash annotation (__DATA,__crash_info, which the crash reporter
-  copies into Application Specific Information as it does the Swift
-  runtime's and the C library's messages), and lets the fault happen again
-  under the default action, so the report shows the original exception.
+  watch does not own reaches crash_signal, which logs a summary, the
+  registers and the frames with only async-signal-safe calls, then lets the
+  fault happen again under the default action, so the report shows the
+  original exception, registers and frames.
 */
 
-#import <Foundation/Foundation.h>
+#include <TargetConditionals.h>
 #include "ios_host.h"
 #include "host_config.h"
 #include "host_crash.h"
@@ -44,26 +46,9 @@ Two ways out, both native crashes:
 #include <unistd.h>
 
 #define MAXIMUM_FRAMES 64
-/* guest frames named in an exception's reason: TestFlight and the Organizer show the reason in full, but
-   keep it to what reads at a glance; the log and the report's backtrace have every frame */
+/* guest frames named in the log's one-line summary; the lines after it, and the report's backtrace, have
+   every frame */
 #define REASON_FRAMES 8
-
-/* ---------- the crash annotation (the layout's version 5, as the C library's own) */
-
-struct crash_annotation
-{
-	uint64_t version;
-	uint64_t message;
-	uint64_t signature;
-	uint64_t backtrace;
-	uint64_t message2;
-	uint64_t thread;
-	uint64_t dialog_mode;
-	uint64_t abort_cause;
-};
-
-__attribute__((used, section("__DATA,__crash_info")))
-static struct crash_annotation crash_annotation = { 5, 0, 0, 0, 0, 0, 0, 0 };
 
 /* ---------- the guest's symbols */
 
@@ -269,7 +254,7 @@ static void log_write(const char *string, size_t length)
 static const int crash_signals[] = { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP, SIGABRT };
 #define CRASH_SIGNAL_COUNT ((int)(sizeof(crash_signals) / sizeof(crash_signals[0])))
 static atomic_int crashing;
-/* set once host_crash has logged and raised: the SIGABRT that follows is its */
+/* set once host_crash has logged: the trap that follows is its */
 static atomic_int raised;
 
 /* the guest image's sha256, shortened as in a reason: which build's guest-symbols.txt names its frames */
@@ -307,8 +292,8 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 	action.sa_handler = SIG_DFL;
 	sigemptyset(&action.sa_mask);
 	sigaction(number, &action, NULL);
-	/* a second fault while reporting, or the abort that ends host_crash's exception: already reported */
-	if (atomic_exchange(&crashing, 1) || (number == SIGABRT && atomic_load(&raised)))
+	/* a second fault while reporting, or host_crash's own trap: already reported */
+	if (atomic_exchange(&crashing, 1) || atomic_load(&raised))
 	{
 		if (signal_sent(number, info))
 			raise(number);
@@ -351,7 +336,6 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 	text_add(&text, " (guest image ");
 	text_add(&text, guest_image_short);
 	text_add(&text, ")");
-	crash_annotation.message = (uint64_t)(uintptr_t)summary;
 
 	log_write("CRASH: ", 7);
 	log_write(summary, text.length);
@@ -410,26 +394,28 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 
 void host_crash_install(int descriptor)
 {
+#if !TARGET_OS_TV
 	static char alternate[64 * 1024];
 	stack_t stack = { .ss_sp = alternate, .ss_size = sizeof(alternate), .ss_flags = 0 };
+#endif
 	struct sigaction action = { 0 };
 	int index;
 
 	log_descriptor = descriptor;
 	snprintf(guest_image_short, sizeof(guest_image_short), "%s", HALO_GUEST_SHA256);
 	symbols_load();
-	/* the game's thread (the main thread) keeps a stack to report on when its own runs out */
+#if !TARGET_OS_TV
+	/* the game's thread (the main thread) keeps a stack to report on when its own runs out (tvOS has no
+	   sigaltstack: there, overrunning the stack ends the app without the log's lines) */
 	sigaltstack(&stack, NULL);
+#endif
 	action.sa_sigaction = crash_signal;
 	action.sa_flags = SA_SIGINFO | SA_ONSTACK;
 	sigemptyset(&action.sa_mask);
 	for (index = 0; index < CRASH_SIGNAL_COUNT; index++)
 		sigaction(crash_signals[index], &action, NULL);
-#if TARGET_OS_OSX || TARGET_OS_MACCATALYST
-	/* AppKit otherwise logs an exception that reaches its event handling and carries on */
-	[NSUserDefaults.standardUserDefaults registerDefaults:@{ @"NSApplicationCrashOnExceptions": @YES }];
-#endif
-	host_logf(HOST_LOG_INFO, "crash reports: %u guest symbols", symbol_count);
+	/* (tools/mac_run.py finds a run's crash report by its pid) */
+	host_logf(HOST_LOG_INFO, "crash reports: %u guest symbols, pid %d", symbol_count, (int)getpid());
 }
 
 /* ---------- fatal errors */
@@ -452,12 +438,45 @@ static void log_frames(const uintptr_t *frames, int count)
 	}
 }
 
-static void crash_now(NSString *name, const char *message) __attribute__((noreturn));
-static void crash_now(NSString *name, const char *message)
+/* the registers a crash's reason is packed into (x16 and x17 are the trap's scratch, x18 is the
+   platform's, x29 and x30 keep the frame chain the report's backtrace follows) */
+#define REASON_REGISTERS 25
+#define REASON_MAGIC 0x4853524352534956ull /* "VISRCRSH", little-endian */
+
+struct reason_words
 {
+	uint64_t magic, words[REASON_REGISTERS];
+};
+
+/* loads x0 (the magic), x1-x15 and x19-x28 from words and traps. A macro so that the trap is in the
+   named function, the report's top frame */
+#define TRAP_WITH_REASON(reason) \
+	__asm__ volatile( \
+		"mov x16, %0\n" \
+		"ldp x0, x1, [x16, #0]\n" "ldp x2, x3, [x16, #16]\n" "ldp x4, x5, [x16, #32]\n" \
+		"ldp x6, x7, [x16, #48]\n" "ldp x8, x9, [x16, #64]\n" "ldp x10, x11, [x16, #80]\n" \
+		"ldp x12, x13, [x16, #96]\n" "ldp x14, x15, [x16, #112]\n" "ldp x19, x20, [x16, #128]\n" \
+		"ldp x21, x22, [x16, #144]\n" "ldp x23, x24, [x16, #160]\n" "ldp x25, x26, [x16, #176]\n" \
+		"ldp x27, x28, [x16, #192]\n" \
+		"brk #1\n" \
+		:: "r"(reason) \
+		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", \
+		  "x15", "x16", "x17", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "memory"); \
+	__builtin_unreachable()
+
+__attribute__((noinline, noreturn)) void visr_guest_halt(const struct reason_words *reason) { TRAP_WITH_REASON(reason); }
+__attribute__((noinline, noreturn)) void visr_guest_abort(const struct reason_words *reason) { TRAP_WITH_REASON(reason); }
+__attribute__((noinline, noreturn)) void visr_host_error(const struct reason_words *reason) { TRAP_WITH_REASON(reason); }
+
+enum crash_kind { _crash_guest_halt, _crash_guest_abort, _crash_host_error };
+
+static void crash_now(enum crash_kind kind, const char *message) __attribute__((noreturn));
+static void crash_now(enum crash_kind kind, const char *message)
+{
+	static struct reason_words reason;
 	uintptr_t frames[MAXIMUM_FRAMES];
-	char reason[1536];
-	struct text text = { reason, sizeof(reason), 0 };
+	char summary[1536];
+	struct text text = { summary, sizeof(summary), 0 };
 	int count;
 
 	if (atomic_exchange(&crashing, 1))
@@ -477,16 +496,20 @@ static void crash_now(NSString *name, const char *message)
 			text_add(&text, "]");
 		}
 	}
-	host_logf(HOST_LOG_ERROR, "CRASH: %s", reason);
+	host_logf(HOST_LOG_ERROR, "CRASH: %s", summary);
 	host_logf(HOST_LOG_ERROR, "CRASH: guest image sha256 %s, arena 0x%016lx", HALO_GUEST_SHA256,
 		(unsigned long)host_arena);
 	log_frames(frames, count);
-	text_add(&text, " (guest image ");
-	text_add(&text, guest_image_short);
-	text_add(&text, ")");
+	reason.magic = REASON_MAGIC;
+	snprintf((char *)reason.words, sizeof(reason.words), "%s|%s", guest_image_short, message);
 	atomic_store(&raised, 1);
 	atomic_store(&crashing, 0);
-	@throw [NSException exceptionWithName:name reason:@(reason) userInfo:nil];
+	switch (kind)
+	{
+	case _crash_guest_halt: visr_guest_halt(&reason);
+	case _crash_guest_abort: visr_guest_abort(&reason);
+	default: visr_host_error(&reason);
+	}
 }
 
 void host_crash(const char *format, ...)
@@ -497,7 +520,16 @@ void host_crash(const char *format, ...)
 	va_start(arguments, format);
 	vsnprintf(message, sizeof(message), format, arguments);
 	va_end(arguments);
-	crash_now(@"VISRFatalError", message);
+	crash_now(_crash_host_error, message);
+}
+
+/* the guest runtime's own fatal errors (guest_misc.c, guest_thread.c) */
+void host_abort(const char *reason)
+{
+	char message[1024];
+
+	snprintf(message, sizeof(message), "guest abort: %s", reason ? reason : "");
+	crash_now(_crash_guest_abort, message);
 }
 
 /* the last line of the game's messages that names an assertion or an error ("EXCEPTION halt in ..."),
@@ -527,6 +559,21 @@ static void halt_reason(const char *messages, char *reason, size_t size)
 		return;
 	}
 	snprintf(reason, size, "%.*s", (int)strcspn(chosen, "\r\n"), chosen);
+	/* "EXCEPTION halt in c:\halo\SOURCE\units\units.c,#123: ..." keeps the file's name alone, so more of
+	   the reason fits in a report's registers */
+	if (!strncmp(reason, "EXCEPTION", 9))
+	{
+		char *in = strstr(reason, " in "), *comma = in ? strstr(in, ",#") : NULL;
+
+		if (comma)
+		{
+			char *name = comma;
+
+			while (name > in + 4 && name[-1] != '/' && name[-1] != '\\')
+				name--;
+			memmove(in + 4, name, strlen(name) + 1);
+		}
+	}
 }
 
 static int halt_screen_wanted(void)
@@ -552,5 +599,5 @@ int host_guest_halt(const char *messages)
 		return 0;
 	}
 	host_logf(HOST_LOG_ERROR, "the game halted; its recent messages:\n%s", messages ? messages : "");
-	crash_now(@"VISRGuestHalt", reason);
+	crash_now(_crash_guest_halt, reason);
 }

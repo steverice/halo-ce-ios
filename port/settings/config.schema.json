@@ -1549,7 +1549,7 @@
         "halt_screen": {
           "type": "boolean",
           "default": false,
-          "description": "On a fatal game error (a failed assertion or a halt), stop on the game's halt screen, its recent messages on a blue background, instead of crashing. Off, the app crashes with the error as the crash report's reason, and ios-runtime.log has the error and the game's frames.",
+          "description": "On a fatal game error (a failed assertion or a halt), stop on the game's halt screen, its recent messages on a blue background, instead of crashing. Off, the app crashes, and ios-runtime.log and the crash report have the error and the game's frames (tools/guest_symbolicate.py reads the report).",
           "x-environment": "HALO_HALT_SCREEN",
           "x-environment-style": "value",
           "x-platforms": [
