@@ -150,6 +150,14 @@ static const struct config_setting config_settings[] =
 		"world, and in stereo lay one eye's shadows in the other too: the picture's\n"
 		"pass is no longer interrupted for each shadow. False keeps the Xbox's\n"
 		"order, to compare." },
+	{ "display.dynamic_light_limit", _config_integer, "0", "HALO_DYNAMIC_LIGHT_LIMIT", _environment_value, _platform_all,
+		"Device-profile cap on dynamic lights illuminating level surfaces, 0 to 128.\n"
+		"Zero keeps all lights; first-person weapon lights are always retained.\n"
+		"Other lights rank by radius over camera distance. Object lighting is unchanged." },
+	{ "display.specular_light_limit", _config_integer, "0", "HALO_SPECULAR_LIGHT_LIMIT", _environment_value, _platform_all,
+		"Device-profile cap on specular lights among the level's selected dynamic\n"
+		"lights, 0 to 128. Zero keeps all selected lights' highlights. First-person\n"
+		"weapon lights are always retained. Object lighting is unchanged." },
 	{ "display.shadow_map_size", _config_integer, "512", "HALO_SHADOW_MAP_SIZE", _environment_value, _platform_all,
 		"The size of the textures characters' and vehicles' shadows are drawn into,\n"
 		"128 (as on the Xbox) to 2048: larger is smoother." },

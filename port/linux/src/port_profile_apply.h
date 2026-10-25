@@ -14,6 +14,8 @@ static inline int port_profile_apply_class(const char *name)
 		{"display.render_scale", PORT_PROFILE_HOT},
 		{"display.upscaler", PORT_PROFILE_LEVEL},
 		{"display.anisotropic_filtering", PORT_PROFILE_LEVEL},
+		{"display.dynamic_light_limit", PORT_PROFILE_HOT},
+		{"display.specular_light_limit", PORT_PROFILE_HOT},
 		{"display.shadow_map_size", PORT_PROFILE_LEVEL}, /* atlas target recreation */
 		{"display.effect_resolution", PORT_PROFILE_LEVEL},
 		{"display.model_lod", PORT_PROFILE_HOT},

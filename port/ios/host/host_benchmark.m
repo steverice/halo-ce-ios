@@ -721,6 +721,10 @@ static void record_applied_settings(NSMutableDictionary *settings, const struct 
     }
     settings[@"display.anti_aliasing"] = mask & BENCHMARK_KNOB_ANTI_ALIASING ?
         @[@"off", @"fxaa", @"smaa"][knobs->anti_aliasing] : configured_text("display.anti_aliasing", "off");
+    settings[@"display.dynamic_light_limit"] = mask & BENCHMARK_KNOB_DYNAMIC_LIGHTS ?
+        [NSString stringWithFormat:@"%ld", knobs->dynamic_light_limit] : configured_text("display.dynamic_light_limit", "0");
+    settings[@"display.specular_light_limit"] = mask & BENCHMARK_KNOB_SPECULAR_LIGHTS ?
+        [NSString stringWithFormat:@"%ld", knobs->specular_light_limit] : configured_text("display.specular_light_limit", "0");
     settings[@"display.effect_resolution"] = mask & BENCHMARK_KNOB_EFFECT ?
         @[@"xbox", @"half", @"full"][knobs->effect_level] : configured_text("display.effect_resolution", "half");
     settings[@"display.render_scale"] = mask & BENCHMARK_KNOB_RENDER_SCALE ?
@@ -1637,7 +1641,7 @@ int host_benchmark_next(char *text, unsigned int size) {
         "simulation=%s players=%d views=%d game_mode=%s score_limit=%d time_limit_minutes=%d "
         "arena_columns=%d arena_spacing=%.6f arena_distance=%.6f arena_radius=%.6f enemy_multiplier=%.3f "
         "sim_experiments=%u sim_experiments_mask=%u lines=%ld anisotropy=%ld shadow=%ld lod=%d presented=%d offscreen=%d knob_aa=%d "
-        "knob_effect=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
+        "knob_effect=%d knob_scale=%.3f knob_clutter=%.3f knob_clutter_lod=%d knob_dynamic_lights=%ld knob_specular_lights=%ld", scene->id, scene->map, scene->difficulty, scene->recording ? scene->recording : "",
         scene->kind == BENCHMARK_SCENE_MENU ? "menu" : scene->kind == BENCHMARK_SCENE_CUTSCENE ? "cutscene" :
             scene->kind == BENCHMARK_SCENE_MULTIPLAYER ? "multiplayer_synthetic" : "gameplay",
         scene->lead, run.stage == 'P' ? reality_check_seconds(scene) : scene->seconds, scene->simulation ? scene->simulation : "",
@@ -1652,7 +1656,9 @@ int host_benchmark_next(char *text, unsigned int size) {
         knobs.mask & BENCHMARK_KNOB_EFFECT ? knobs.effect_level : -1,
         knobs.mask & BENCHMARK_KNOB_RENDER_SCALE ? knobs.render_scale : 0.0,
         knobs.mask & BENCHMARK_KNOB_CLUTTER_DISTANCE ? knobs.clutter_distance : -1.0,
-        knobs.mask & BENCHMARK_KNOB_CLUTTER_LOD ? knobs.clutter_lowest_lod : -1);
+        knobs.mask & BENCHMARK_KNOB_CLUTTER_LOD ? knobs.clutter_lowest_lod : -1,
+        knobs.mask & BENCHMARK_KNOB_DYNAMIC_LIGHTS ? knobs.dynamic_light_limit : -1L,
+        knobs.mask & BENCHMARK_KNOB_SPECULAR_LIGHTS ? knobs.specular_light_limit : -1L);
     atomic_store(&window_ticks, 0);
     run_started_at = CFAbsoluteTimeGetCurrent();
     window_started_at = 0;

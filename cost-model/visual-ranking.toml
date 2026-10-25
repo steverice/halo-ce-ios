@@ -103,3 +103,21 @@ grade = {"on" = "invisible"}
 [tv."debug.collision_candidates"]
 order = ["off", "on"]
 grade = {"on" = "invisible"}
+
+# Level lighting can visibly disappear or lose highlights during effects; grades are assumed.
+
+[handheld."display.dynamic_light_limit"]
+order = ["0", "8", "4"]
+grade = {"8" = "obvious", "4" = "obvious"}
+
+[handheld."display.specular_light_limit"]
+order = ["0", "2", "1"]
+grade = {"2" = "obvious", "1" = "obvious"}
+
+[tv."display.dynamic_light_limit"]
+order = ["0", "8", "4"]
+grade = {"8" = "obvious", "4" = "obvious"}
+
+[tv."display.specular_light_limit"]
+order = ["0", "2", "1"]
+grade = {"2" = "obvious", "1" = "obvious"}

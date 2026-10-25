@@ -1795,15 +1795,67 @@ static void light_get_bounding_sphere(
 	return;
 }
 
+/* port: these limits are presentation state, never part of a light datum or the scene list. */
+#include "light_render_selection.h"
+long config_integer(const char *name);
+static long light_render_dynamic_override = -1, light_render_specular_override = -1;
+
+void lights_port_benchmark_limits(long dynamic, long specular)
+{
+	light_render_dynamic_override = dynamic;
+	light_render_specular_override = specular;
+}
+
+static boolean lights_select_level(unsigned char *diffuse, unsigned char *specular)
+{
+	struct light_render_candidate candidates[128];
+	short slots[128], count = 0, i;
+	unsigned char selected_diffuse[128], selected_specular[128];
+	long dynamic = light_render_dynamic_override >= 0 ? light_render_dynamic_override : config_integer("display.dynamic_light_limit");
+	long highlights = light_render_specular_override >= 0 ? light_render_specular_override : config_integer("display.specular_light_limit");
+	dynamic = PIN(dynamic, 0, 128);
+	highlights = PIN(highlights, 0, 128);
+	if (!dynamic && !highlights)
+		return FALSE;
+	csmemset(diffuse, 0, 128);
+	csmemset(specular, 0, 128);
+	for (i = 0; i < lights_globals.scene_point_light_count; i++)
+	{
+		struct light_datum *light = light_get(lights_globals.scene_point_lights[i]);
+		if (TEST_FLAG(light->flags, _point_light_dynamic_bit) && light->rasterizer_light_index != NONE)
+		{
+			struct light_render_candidate *candidate = &candidates[count];
+			slots[count++] = i;
+			candidate->id = (unsigned long)lights_globals.scene_point_lights[i];
+			candidate->weapon = TEST_FLAG(light->flags, _point_light_attached_to_first_person_weapon_bit) != 0;
+			candidate->specular = !TEST_FLAG(light_definition_get(light->definition_index)->flags, _light_definition_no_specular_bit);
+			candidate->score = light_render_score(light->radius, light->position.x, light->position.y, light->position.z,
+				render.camera.position.x, render.camera.position.y, render.camera.position.z);
+		}
+	}
+	light_render_select(candidates, count, (int)dynamic, (int)highlights, selected_diffuse, selected_specular);
+	for (i = 0; i < count; i++)
+	{
+		diffuse[slots[i]] = selected_diffuse[i];
+		specular[slots[i]] = selected_specular[i];
+	}
+	return TRUE;
+}
+
 void lights_render_diffuse(
 	void)
 {
 	short cluster_indices[MAXIMUM_CLUSTERS_PER_LIGHT];
 	short light_index;
+	unsigned char diffuse[128], specular[128];
+	boolean limited;
+	static unsigned long views, total, weapons, retained;
+	unsigned long view_total = 0, view_weapons = 0, view_retained = 0;
 
 	rasterizer_environment_diffuse_lights_begin();
 	if (should_render_lights())
 	{
+		limited = lights_select_level(diffuse, specular);
 		for (light_index = 0;
 			light_index < lights_globals.scene_point_light_count;
 			light_index++)
@@ -1814,6 +1866,11 @@ void lights_render_diffuse(
 			if (TEST_FLAG(light->flags, _point_light_dynamic_bit)
 				&& light->rasterizer_light_index != NONE)
 			{
+				view_total++;
+				view_weapons += TEST_FLAG(light->flags, _point_light_attached_to_first_person_weapon_bit) != 0;
+				if (limited && !diffuse[light_index])
+					continue;
+				view_retained++;
 				boolean skip_clusters = TEST_FLAG(light->flags,
 						_point_light_attached_to_first_person_weapon_bit)
 					&& TEST_FLAG(light_definition_get(light->definition_index)->flags,
@@ -1847,6 +1904,17 @@ void lights_render_diffuse(
 	}
 	rasterizer_environment_diffuse_lights_end();
 
+	/* Counts include only this pass's eligible lights, accumulated over 300 views. */
+	total += view_total;
+	weapons += view_weapons;
+	retained += view_retained;
+	if (++views == 300)
+	{
+		platform_log("level lights diffuse: views=%lu candidates=%lu weapon=%lu retained=%lu dropped=%lu",
+			views, total, weapons, retained, total - retained);
+		views = total = weapons = retained = 0;
+	}
+
 	return;
 }
 
@@ -1855,10 +1923,15 @@ void lights_render_specular(
 {
 	short cluster_indices[MAXIMUM_CLUSTERS_PER_LIGHT];
 	short light_index;
+	unsigned char diffuse[128], specular[128];
+	boolean limited;
+	static unsigned long views, total, weapons, retained;
+	unsigned long view_total = 0, view_weapons = 0, view_retained = 0;
 
 	rasterizer_environment_specular_lights_begin();
 	if (should_render_lights())
 	{
+		limited = lights_select_level(diffuse, specular);
 		for (light_index = 0;
 			light_index < lights_globals.scene_point_light_count;
 			light_index++)
@@ -1871,6 +1944,11 @@ void lights_render_specular(
 				&& !TEST_FLAG(light_definition_get(light->definition_index)->flags,
 					_light_definition_no_specular_bit))
 			{
+				view_total++;
+				view_weapons += TEST_FLAG(light->flags, _point_light_attached_to_first_person_weapon_bit) != 0;
+				if (limited && !specular[light_index])
+					continue;
+				view_retained++;
 				boolean skip_clusters = TEST_FLAG(light->flags,
 						_point_light_attached_to_first_person_weapon_bit)
 					&& TEST_FLAG(light_definition_get(light->definition_index)->flags,
@@ -1903,6 +1981,17 @@ void lights_render_specular(
 		}
 	}
 	rasterizer_environment_specular_lights_end();
+
+	/* Counts include only this pass's eligible lights, accumulated over 300 views. */
+	total += view_total;
+	weapons += view_weapons;
+	retained += view_retained;
+	if (++views == 300)
+	{
+		platform_log("level lights specular: views=%lu candidates=%lu weapon=%lu retained=%lu dropped=%lu",
+			views, total, weapons, retained, total - retained);
+		views = total = weapons = retained = 0;
+	}
 
 	return;
 }
