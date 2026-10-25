@@ -1,0 +1,37 @@
+VISR Privacy Policy
+
+Effective October 24, 2026.
+
+VISR is a native port of Halo: Combat Evolved for Apple Vision Pro, iPhone, iPad, Apple TV and Mac. It has no accounts, no ads, no analytics or advertising SDKs, and no tracking. We do not sell or share data with anyone.
+
+What VISR collects
+
+Release builds collect nothing.
+
+Test builds (pre-release builds given to testers) send two kinds of diagnostic data to the developer through Apple's CloudKit service:
+
+- Performance reports: frame timings and related measurements from each game, the map and game settings in use, and the device model, operating system and app version. Benchmarks you start from the launch screen send the same kind of data.
+- Shader data: descriptions of the graphics shaders your device had to compile while playing, so later versions can prepare them in advance and load faster.
+
+These reports contain no names, contacts, messages, location, saved games or other personal content. Apple's CloudKit attaches a random identifier to each upload that is unique to VISR and not your Apple Account; we do not use it to identify anyone, and we remove it when we process the reports. Sharing this data is a condition of testing; leaving the beta stops it.
+
+Data that stays with you
+
+- Game data: the disc image you import and everything the app creates from it, such as converted or upscaled textures, stay on your device.
+- iCloud saves: if you turn on iCloud saves, your saved games are stored in your own private iCloud storage. The developer cannot read them.
+
+Network play
+
+When you play online or on a local network, other players and the host can see your device's network address, as with any online game. Online games are found through public matchmaking servers run by the community, which see the address of a game's host.
+
+Retention
+
+Raw reports are deleted within 30 days of upload. Combined, anonymous statistics derived from them (for example, average frame times for a device model) may be kept to improve device settings.
+
+Children
+
+VISR is not directed at children under 13 and does not knowingly collect their data.
+
+Changes and contact
+
+If this policy changes, the new version will be posted at code.steverice.org/visr/privacy.html with a new effective date. Questions or requests: privacy@steverice.org.
