@@ -44,5 +44,5 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 
 [evidence."network.player_capacity"]
 basis = "measured"
-why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held (99.84% of frames on time) and so did Sidewinder with 128 (99.76%); Blood Gulch with 64 held 13%. 32 is the largest choice below Blood Gulch's 64. Provisional until rerun on a build with the multiplayer render fixes."
+why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held (99.84% of frames on time) and so did Sidewinder with 128 (99.76%); Blood Gulch with 64 held 13%. Blood Gulch's 64 is the choice above 32, and 48 was not run; the games that held are not the one that failed, so 32 is the highest count measured to hold on every map. Provisional until rerun on a build with the multiplayer render fixes."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

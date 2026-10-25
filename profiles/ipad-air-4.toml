@@ -48,5 +48,5 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 
 [evidence."network.player_capacity"]
 basis = "assumed"
-why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held 98.6% of frames on time, short of 99.5%. 16 is the next choice down and was not run on this iPad. Provisional until rerun."
+why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held 98.6% of frames on time, short of 99.5%. 16 is half of that and was not run on this iPad (24 was not run either). Provisional until rerun."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

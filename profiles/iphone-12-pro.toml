@@ -56,5 +56,5 @@ why = "Menus run at 60 as before the gameplay cap; the sweep did not measure men
 
 [evidence."network.player_capacity"]
 basis = "assumed"
-why = "At 30 frames a second, minimum settings and 540 lines, the 16-player game held 54.7% of frames on time. 8 is the next choice down and was not run on this phone. Provisional until rerun."
+why = "At 30 frames a second, minimum settings and 540 lines, the 16-player game held 54.7% of frames on time. 8 is half of that and was not run on this phone (12 was not run either). Provisional until rerun."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"

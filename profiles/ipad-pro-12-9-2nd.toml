@@ -69,5 +69,5 @@ why = "Keep the previous native-size cutscene rendering until a cutscene is meas
 
 [evidence."network.player_capacity"]
 basis = "assumed"
-why = "At 30 frames a second, minimum settings and 540 lines, even the 16-player game held 88.7% of frames on time. 8 is the next choice down and was not run on this iPad. Provisional until rerun."
+why = "At 30 frames a second, minimum settings and 540 lines, even the 16-player game held 88.7% of frames on time. 8 is half of that and was not run on this iPad (12 was not run either). Provisional until rerun."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"
