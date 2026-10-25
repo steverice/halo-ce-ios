@@ -182,7 +182,31 @@ static int infer_color(struct texture_upscale_generator *generator,
     *out = allocate(source->width * target, source->height * target, channels);
     channel = allocate(source->width, source->height, 1);
     if (!out->pixels || !channel.pixels) goto done;
-    for (unsigned c = 0; c < channels; c++) {
+    /* The package runs S4g on each of its three input channels (as a batch of three), so R, G and B go through one
+       prediction; a 2x result keeps that 4x RGB image only while it stays small, and otherwise goes a channel at a time. */
+    unsigned first = 0;
+    if (channels >= 3 && (target == 4 ||
+        (size_t)source->width * source->height * 16 * 3 * sizeof(float) <= (64u << 20))) {
+        struct image rgb = select_channels(&reference, 3);
+        if (!rgb.pixels) goto done;
+        if (target == 4) {
+            int failed = texture_upscale_model_predict4x_strided(generator->model, rgb.pixels, source->width,
+                source->height, 3, input->wrap, out->pixels, channels, error, error_size);
+            release(&rgb);
+            if (failed) goto done;
+        } else {
+            prediction = allocate(source->width * 4, source->height * 4, 3);
+            int failed = !prediction.pixels || texture_upscale_model_predict4x(generator->model, rgb.pixels, source->width,
+                source->height, 3, input->wrap, prediction.pixels, error, error_size) || half(&prediction, input->wrap);
+            release(&rgb);
+            if (failed) goto done;
+            for (size_t i = 0; i < (size_t)out->width * out->height; i++)
+                for (unsigned c = 0; c < 3; c++) out->pixels[i * channels + c] = prediction.pixels[i * 3 + c];
+            release(&prediction);
+        }
+        first = 3;
+    }
+    for (unsigned c = first; c < channels; c++) {
         int constant_opaque = c == 3;
         for (size_t i = 0; i < (size_t)source->width * source->height; i++) {
             channel.pixels[i] = reference.pixels[4 * i + c];
