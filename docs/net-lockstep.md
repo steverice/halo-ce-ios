@@ -9,7 +9,7 @@ python3 tools/net_lockstep.py \
   --duration 120 --events --output /path/to/new-results
 ```
 
-`--build-b` selects another build; omitted, it uses A twice. `--swap` also runs B as host. `--events` enables scripted hits every seven seconds and a host kill every 23 seconds. The duration counts matched gameplay, excluding startup. A separate startup allowance and each game's exit-after setting bound a stalled run. The output directory must be new. Logs may contain local paths; keep them outside version control.
+`--build-b` selects another build; omitted, it uses A twice. `--swap` also runs B as host. `--b-hosts` runs only B as host, for a foreign host of an older version that A joins but does not host. `--events` enables scripted hits every seven seconds and a host kill every 23 seconds. The duration counts matched gameplay, excluding startup. A separate startup allowance and each game's exit-after setting bound a stalled run. The output directory must be new. Logs may contain local paths; keep them outside version control.
 
 The result is PASS (exit 0), FAIL (1), or ERROR (2). Any FAIL takes precedence over ERROR across runs. A crash, missing map, malformed state, incomplete roster, unspawned peer, or insufficient matched gameplay is ERROR. Adapter log files must be fresh and separate for each peer; old evidence is rejected. An observed persistent divergence remains FAIL even if a peer later crashes. Interrupted runs report their signal and exit with 128 plus that number. Both owned process groups receive TERM and then KILL on every normal or exceptional exit. A watchdog also stops a peer if the checker is killed outright; wrappers must keep their children in the launched process group.
 

@@ -321,6 +321,11 @@ def run_match(args, map_name, swapped):
             stream.close()
 
 
+def host_orders(args):
+    """Whether B hosts, for each run of a map: A, then B with --swap; B alone with --b-hosts."""
+    return [True] if args.b_hosts else [False, True] if args.swap else [False]
+
+
 def validate_adapter(spec):
     if spec is None:
         return
@@ -379,11 +384,14 @@ def main():
     parser.add_argument('--host-address', default='127.0.0.2')
     parser.add_argument('--client-address', default='127.0.0.3')
     parser.add_argument('--swap', action='store_true')
+    parser.add_argument('--b-hosts', action='store_true', help='only B hosts (a foreign host of an older version)')
     parser.add_argument('--events', action='store_true')
     parser.add_argument('--output', required=True, type=Path, help='new result directory; never reused')
     args = parser.parse_args()
     if args.rounds_tolerance < 0 or args.persistence < 1:
         parser.error('rounds tolerance must be non-negative; persistence must be positive')
+    if args.b_hosts and not args.build_b:
+        parser.error('--b-hosts needs --build-b')
     args.levels = args.levels or ['bloodgulch']
     if any(not re.fullmatch(r'[a-zA-Z0-9_-]+', level) for level in args.levels) or len(set(args.levels)) != len(args.levels):
         parser.error('map names must be unique simple names')
@@ -411,7 +419,7 @@ def main():
         for number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(number, interrupted)
         for level in args.levels:
-            for swapped in ([False, True] if args.swap else [False]):
+            for swapped in host_orders(args):
                 result = run_match(args, level, swapped)
                 if STOP_SIGNAL:
                     raise Interrupted(STOP_SIGNAL)

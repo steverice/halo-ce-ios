@@ -182,3 +182,18 @@ def test_parent_death_stops_peer(tmp_path):
 def test_unspawned_peers_cannot_pass():
     dead = logs().replace('player 1: (4.000 5.000 6.000) h1.00/1.00 g2/2 w a0/0 f0 l0/0 as0/0 st0 thr0.00 123:60', 'player 1: dead')
     assert net.judge(dead, dead, duration=10).status == 'ERROR'
+
+
+
+@pytest.mark.parametrize('swap, b_hosts, expected', [(False, False, [False]), (True, False, [False, True]),
+                                                     (False, True, [True]), (True, True, [True])])
+def test_host_orders(swap, b_hosts, expected):
+    from types import SimpleNamespace
+    assert net.host_orders(SimpleNamespace(swap=swap, b_hosts=b_hosts)) == expected
+
+
+def test_b_hosts_needs_build_b(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['net_lockstep.py', '--build-a', 'a', '--maps', str(tmp_path),
+                                      '--b-hosts', '--output', str(tmp_path / 'out')])
+    with pytest.raises(SystemExit):
+        net.main()
