@@ -786,8 +786,9 @@ void motion_sensor_draw_screen(
 void motion_sensor_tick(
 	void)
 {
+	/* port: animate the sweep on the same frame clock as the world. */
 	real sweep_time = (real)fmod(
-		(real)game_time_get() * (1.0f / TICKS_PER_SECOND),
+		render_interpolation_game_time_sec(game_time_get()),
 		2.1f);
 
 	if (sweep_time < 2.0375f)
@@ -1108,8 +1109,9 @@ static void render_blip(
 		blip_draw_size = blip_size_get(blip_size_type);
 		if (blip_type == _blip_type_custom)
 		{
+			/* port: only the drawn radius changes between ticks. */
 			pulse_scale = (real)(
-				(sin((real)game_time_get() * 0.104719733f) + 1.0) *
+				(sin(((real)game_time_get() - 1.0f + render_interpolation_fraction()) * 0.104719733f) + 1.0) *
 					(1.0 / 3.0) +
 				1.0);
 		}
