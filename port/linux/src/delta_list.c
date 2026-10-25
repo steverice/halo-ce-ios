@@ -259,20 +259,25 @@ static int read_integer(struct parser *parser, long *value)
 	return 1;
 }
 
-/* a map's short name: after its last path separator, before its "@" family */
-static void short_map_name(char *map)
+/* a map's short name: after its last path separator, before its "@" family
+(the family's name, if any, into family) */
+static void short_map_name(char *map, char *family, int family_size)
 {
 	char *separator = strrchr(map, '\\');
 	char *slash = strrchr(map, '/');
 	char *at;
 
+	family[0] = 0;
 	if (slash && (!separator || slash > separator))
 		separator = slash;
 	if (separator)
 		memmove(map, separator + 1, strlen(separator + 1) + 1);
 	at = strchr(map, '@');
 	if (at)
+	{
+		snprintf(family, (size_t)family_size, "%s", at + 1);
 		*at = 0;
+	}
 }
 
 /* spaces taken from both ends */
@@ -310,9 +315,11 @@ static int read_game(struct parser *parser, struct delta_game *game)
 	int verified = 1, locked = 0, coop = 0;
 	/* (room for one that is too long, which is refused and not cut to fit) */
 	char invite[DELTA_INVITE_DIGITS + 16];
+	char suffix[DELTA_FAMILY_SIZE + 1];
 
 	memset(game, 0, sizeof(*game));
 	invite[0] = 0;
+	suffix[0] = 0;
 	skip_space(parser);
 	if (parser->position >= parser->end || *parser->position++ != '{')
 		return -1;
@@ -355,9 +362,13 @@ static int read_game(struct parser *parser, struct delta_game *game)
 			known = read_string(parser, map, sizeof(map));
 			if (known)
 			{
-				short_map_name(map);
+				short_map_name(map, suffix, sizeof(suffix));
 				strncpy(game->map, map, sizeof(game->map) - 1);
 			}
+		}
+		else if (!strcmp(key, "family"))
+		{
+			known = read_string(parser, game->family, sizeof(game->family));
 		}
 		else if (!strcmp(key, "gametype"))
 		{
@@ -426,6 +437,9 @@ static int read_game(struct parser *parser, struct delta_game *game)
 	}
 	trim(game->name);
 	trim(game->gametype);
+	trim(game->family);
+	if (!game->family[0])
+		strcpy(game->family, suffix);
 	if (!valid_invite(invite) || locked || coop || !verified || !game->name[0])
 		return 0;
 	strcpy(game->invite, invite);

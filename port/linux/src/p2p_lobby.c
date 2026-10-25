@@ -800,6 +800,7 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->network_version = HALO_PORT_NETWORK_VERSION;
 	shown->joinable = halo_network_kind_reason(shown->kind) == NULL;
 	shown->from_delta = 0;
+	shown->map_family = P2P_MAP_FAMILY_XBOX;
 }
 
 /* A retained slot may outlive its host; a live slot can also be republished
@@ -1159,6 +1160,8 @@ void p2p_lobby_delta_games(const struct delta_game *games, int count)
 		shown->network_version = (short)game->version;
 		shown->joinable = (unsigned char)halo_network_joinable(game->version);
 		shown->from_delta = 1;
+		shown->map_family = (unsigned char)(!game->family[0] || !strcmp(game->family, "xbox") ?
+			P2P_MAP_FAMILY_XBOX : !strcmp(game->family, "ce") ? P2P_MAP_FAMILY_CE : P2P_MAP_FAMILY_OTHER);
 		lobby.delta_count++;
 	}
 	lobby.delta_time = p2p_now() ? p2p_now() : 1;
@@ -1205,6 +1208,59 @@ int p2p_listing_unlock(struct p2p_listing *listing, const char *password)
 	memset(key, 0, sizeof(key));
 	memset(bytes, 0, sizeof(bytes));
 	return opened;
+}
+
+/* the game's own maps (every region's are named alike): the multiplayer
+maps, and the campaign levels a co-op game is on */
+static const char *const stock_maps[] =
+{
+	"beavercreek", "bloodgulch", "boardingaction", "carousel", "chillout", "damnation", "hangemhigh",
+	"longest", "prisoner", "putput", "ratrace", "sidewinder", "wizard",
+	"a10", "a30", "a50", "b30", "b40", "c10", "c20", "c40", "d20", "d40",
+};
+
+/* (ASCII, ignoring case: the listing's names are ASCII) */
+static int same_name(const char *a, const char *b)
+{
+	for (; *a && *b; a++, b++)
+	{
+		char x = *a >= 'A' && *a <= 'Z' ? (char)(*a - 'A' + 'a') : *a;
+		char y = *b >= 'A' && *b <= 'Z' ? (char)(*b - 'A' + 'a') : *b;
+
+		if (x != y)
+			return 0;
+	}
+	return !*a && !*b;
+}
+
+int p2p_listing_map_kind(const struct p2p_listing *listing)
+{
+	size_t index;
+
+	if (listing->map_family == P2P_MAP_FAMILY_OTHER)
+		return P2P_MAP_UNSUPPORTED;
+	if (listing->map_family == P2P_MAP_FAMILY_XBOX)
+	{
+		for (index = 0; index < sizeof(stock_maps) / sizeof(stock_maps[0]); index++)
+		{
+			if (same_name(listing->map, stock_maps[index]))
+				return P2P_MAP_STOCK;
+		}
+	}
+	return P2P_MAP_CUSTOM;
+}
+
+int p2p_listing_map_shown(const struct p2p_listing *listing, int installed, int downloads)
+{
+	switch (p2p_listing_map_kind(listing))
+	{
+	case P2P_MAP_STOCK:
+		return 1;
+	case P2P_MAP_CUSTOM:
+		return installed || downloads;
+	default:
+		return 0;
+	}
 }
 
 void p2p_lobby_mark_failed(const unsigned char *identifier)

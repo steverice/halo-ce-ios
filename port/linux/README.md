@@ -351,6 +351,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.aim_loss_grace` | number | `-1.0` | apple | `HALO_AIM_LOSS_GRACE_DEBUG` | Tuning input.aim_loss_grace live: from 0.0 up, the seconds of lost hand tracking that hold the last aim, in place of the device profile's. |
 | `debug.texture_idle_seconds` | number | `-1.0` | apple, desktop | `HALO_TEXTURE_IDLE_SECONDS_DEBUG` | Tuning display.texture_idle_seconds live: from 10 up, the seconds a texture goes undrawn before the cache drops it, in place of the device profile's. |
 | `debug.clutter_distance` | number | `-1.0` | apple, desktop | `HALO_CLUTTER_DISTANCE_DEBUG` | Tuning display.clutter_distance live: from 0 up, the distance in world units in place of the device profile's. |
+| `debug.show_modded_servers` | boolean | `false` | apple, desktop | `HALO_SHOW_MODDED_SERVERS` | The server browser also shows the games it leaves out because their map is not one this machine plays: a Custom Edition map it does not have in custom_maps (with network.map_download off), or a map pack's map. |
 | `debug.clutter_lowest_lod` | boolean | `false` | apple, desktop | `HALO_CLUTTER_LOWEST_LOD` | Draw the clutter display.clutter_distance names (dead bodies, loose weapons and equipment, garbage) at its lowest model detail level, wherever it is. |
 | `debug.offscreen_window_wall_seconds` | number | `60.0` | apple, desktop | `HALO_OFFSCREEN_WINDOW_WALL_SECONDS` | How many seconds of wall time an offscreen benchmark window may run before it is ended where it stands (the report's capped and measured_ticks), from 30 to 1800. |
 | `debug.collision_type_filter` | boolean | `true` | apple, desktop | `HALO_COLLISION_TYPE_FILTER` | Collision rays and sphere queries skip an object whose type the query does not test before looking at it, instead of after: the same answers with less work in a crowded cluster. |
@@ -884,6 +885,20 @@ of the game, as for a link. When it reaches the host, it opens the lobby.
 If it cannot reach the host in 30 seconds, it marks the game FAILED. A game
 that is full or starting shows CLOSED. REFRESH asks the hosts for their
 listings again.
+
+The Server Browser leaves out the games on a map that this machine cannot
+play. A game on one of the game's own maps (its multiplayer maps, and the
+campaign levels of a co-op game) is always shown. A game on any other map
+is a game on a Custom Edition map. It is shown if `custom_maps` has a map
+of that name, or if map downloads are on (`network.map_download`, DOWNLOAD
+MAPS in Settings > Network Setup). A game on the map of a map pack (Delta's
+list says that the family of the map is `pack`, such as CE+'s
+`wizard@cex`) is never shown. On joining, a client takes only a Custom
+Edition map of the version of the host, as for any join. A host's map with
+a name of the game's own maps but other contents cannot be detected: the
+host does not send a version for those maps, and the client plays its own
+copy. If the host sends a version for one, the client logs it.
+`debug.show_modded_servers = true` shows every game.
 
 #### Delta's game list
 

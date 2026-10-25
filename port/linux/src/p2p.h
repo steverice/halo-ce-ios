@@ -243,6 +243,9 @@ struct p2p_listing
 	signalling brokers */
 	short network_version;
 	unsigned char joinable, from_delta;
+	/* the family of its map, as Delta's list says (P2P_MAP_FAMILY_*): a
+	broker's listing does not say, and is P2P_MAP_FAMILY_XBOX */
+	unsigned char map_family;
 	unsigned char key_hash[P2P_LISTING_KEY_HASH_SIZE];
 	unsigned char signing_key[P2P_LISTING_SIGNING_KEY_SIZE];
 	unsigned char sealed_token[P2P_LISTING_SEALED_TOKEN_SIZE];
@@ -256,6 +259,33 @@ their network version is not this build's: those of a newer one, and of an
 older one (their listings' signatures are not checked: a count to tell the
 player with, no more) */
 void p2p_lobby_other_versions(int *newer, int *older);
+/* What a listing's map is, by its name and the family Delta's list gives
+(a broker's listing names the map alone):
+- P2P_MAP_STOCK: one of the game's own multiplayer maps or campaign levels
+  (bloodgulch, a10), of the game's own family;
+- P2P_MAP_CUSTOM: any other name, or a Custom Edition map ("ce"): playable
+  only with that map in custom_maps (or downloaded from the game);
+- P2P_MAP_UNSUPPORTED: a map of another family (a map pack's, "pack", such
+  as CE+'s wizard@cex), which no folder of this build holds.
+A host's map of a stock name with other contents cannot be told from the
+listing. */
+enum
+{
+	P2P_MAP_FAMILY_XBOX,
+	P2P_MAP_FAMILY_CE,
+	P2P_MAP_FAMILY_OTHER,
+};
+enum
+{
+	P2P_MAP_STOCK,
+	P2P_MAP_CUSTOM,
+	P2P_MAP_UNSUPPORTED,
+};
+int p2p_listing_map_kind(const struct p2p_listing *listing);
+/* whether the server browser shows a game: a stock map's always; a Custom
+Edition map's if this machine has a map of its name (installed) or downloads
+maps it lacks (downloads: network.map_download); never another family's */
+int p2p_listing_map_shown(const struct p2p_listing *listing, int installed, int downloads);
 /* a game the browser could not join: kept, marked failed, for this run */
 void p2p_lobby_mark_failed(const unsigned char *identifier);
 /* a locked game's invite (into its invite), if the password is its own:

@@ -14,7 +14,7 @@ static const char answer[] =
 	"{\"invite\":\"" INVITE_A "\",\"name\":\". SWAT pistols\",\"map\":\"hangemhigh\",\"gametype\":\"SWAT\",\"engine\":2,"
 	"\"players\":26,\"maximum_players\":128,\"open\":1,\"in_progress\":1,\"version\":32,\"score_limit\":0,\"teams\":0,"
 	"\"roster\":[],\"verified\":true,\"age\":3,\"region\":\"\",\"mode\":\"multiplayer\",\"counted\":true,"
-	"\"source\":\"broker\",\"platform\":\"\",\"machines\":{},\"locked\":false},\n"
+	"\"source\":\"broker\",\"platform\":\"\",\"machines\":{},\"locked\":false,\"family\":\"xbox\"},\n"
 	"{\"invite\":\"" INVITE_B "\",\"name\":\"Caf\\u00e9 \\\"Slayer\\\"\\n\",\"map\":\"levels\\\\test\\\\bloodgulch\\\\bloodgulch@ce\","
 	"\"engine\":1,\"players\":3,\"maximum_players\":16,\"open\":0,\"version\":29,\"teams\":1,"
 	"\"roster\":[{\"team\":0,\"name\":\"a\"},{\"team\":1,\"name\":\"b\"}],\"verified\":true,\"locked\":false,"
@@ -25,7 +25,9 @@ static const char answer[] =
 	"{\"invite\":\"" INVITE_A "0\",\"name\":\"too long\",\"map\":\"m\",\"version\":29},\n"
 	"{\"invite\":\"short\",\"name\":\"old invite\",\"map\":\"m\",\"version\":22},\n"
 	"{\"invite\":\"" INVITE_A "\",\"name\":\"\",\"map\":\"m\",\"version\":29},\n"
-	"{\"invite\":\"" INVITE_A "\",\"name\":\"odd types\",\"map\":7,\"players\":\"many\",\"version\":29,\"open\":true}\n"
+	"{\"invite\":\"" INVITE_A "\",\"name\":\"odd types\",\"map\":7,\"players\":\"many\",\"version\":29,\"open\":true},\n"
+	"{\"invite\":\"" INVITE_A "\",\"name\":\"[C] CE+\",\"map\":\"wizard@cex\",\"family\":\"pack\",\"map_pack\":\"Halo CE+\","
+	"\"version\":38}\n"
 	"],\"extra\":\"x\"}";
 
 static int parse(const char *text, struct delta_game *games, int maximum)
@@ -50,10 +52,10 @@ int main(void)
 		!halo_network_joinable(39) && !halo_network_joinable(0) &&
 		!halo_network_joinable(-1) && !halo_network_joinable(11));
 
-	/* the answer: the first, second and last games are offered; locked, unverified, co-op, short-invite and nameless
-	ones are not */
+	/* the answer: the first, second and last two games are offered; locked, unverified, co-op, short-invite and
+	nameless ones are not */
 	count = parse(answer, games, DELTA_MAXIMUM_GAMES);
-	assert(count == 3);
+	assert(count == 4);
 	assert(!strcmp(games[0].invite, INVITE_A) && !strcmp(games[0].name, ". SWAT pistols"));
 	assert(!strcmp(games[0].map, "hangemhigh") && !strcmp(games[0].gametype, "SWAT"));
 	assert(games[0].engine == 2 && games[0].players == 26 && games[0].maximum_players == 128);
@@ -67,6 +69,9 @@ int main(void)
 	/* a field of the wrong type is left at its default, and the game kept */
 	assert(!strcmp(games[2].name, "odd types") && games[2].players == 0 && games[2].map[0] == 0 && games[2].open);
 	assert(games[2].maximum_players == 0);
+	/* the map's family: the list's, else its map's @family suffix's, else none */
+	assert(!strcmp(games[0].family, "xbox") && !strcmp(games[1].family, "ce") && games[2].family[0] == 0);
+	assert(!strcmp(games[3].map, "wizard") && !strcmp(games[3].family, "pack"));
 
 	/* no more than asked for */
 	assert(parse(answer, games, 2) == 2);

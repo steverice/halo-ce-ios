@@ -21,6 +21,9 @@ enum
 	DELTA_NAME_SIZE = 32,
 	DELTA_MAP_SIZE = 32,
 	DELTA_GAMETYPE_SIZE = 24,
+	/* the map's family: "xbox" (the game's own maps), "ce" (a Custom Edition
+	map), or another (a map pack's, "pack") */
+	DELTA_FAMILY_SIZE = 15,
 	/* the most games taken from one answer (the whole list was 53 games and
 	31 KB on 2026-10-20) */
 	DELTA_MAXIMUM_GAMES = 256,
@@ -35,6 +38,9 @@ struct delta_game
 	char name[DELTA_NAME_SIZE + 1];
 	/* its short name, without its path and its @family suffix */
 	char map[DELTA_MAP_SIZE + 1];
+	/* its family, as the list says (or as the map's @family suffix says, if
+	the list does not); empty if neither does */
+	char family[DELTA_FAMILY_SIZE + 1];
 	char gametype[DELTA_GAMETYPE_SIZE + 1];
 	int engine;
 	int players, maximum_players;

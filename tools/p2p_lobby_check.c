@@ -14,8 +14,8 @@ listed locked (its token nowhere in the listing), opened by its password
 alone. Then the host of an invite being joined, watched on its slot
 (p2p_lobby_watch): its listing, one of another invite, of another network
 version, a tombstone, and tampered or old ones; and the stages Direct Link
-shows (p2p_join_stage) from what is known of a join. Prints PASS or the
-failures.
+shows (p2p_join_stage) from what is known of a join; and which games' maps
+the server browser shows. Prints PASS or the failures.
 */
 
 #include "p2p_internal.h"
@@ -317,6 +317,79 @@ static void delta_checks(const char *own_invite)
 	check(count == 0, "Delta's games are forgotten with the browser's");
 }
 
+/* which games' maps the server browser shows (p2p_listing_map_kind, p2p_listing_map_shown), and the family
+Delta's list gives a map carried to its listing */
+static void map_checks(void)
+{
+	static const char *const invite = "00112233445566778899aabbccddeeff00000000000000000000000000000003";
+	struct p2p_listing listing;
+	struct delta_game list[3];
+	struct p2p_listing shown[8];
+	int count, index, stock = 0, custom = 0, pack = 0;
+
+	memset(&listing, 0, sizeof(listing));
+	strcpy(listing.map, "bloodgulch");
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_STOCK, "a stock multiplayer map is stock");
+	check(p2p_listing_map_shown(&listing, 0, 0), "a stock map's game is shown");
+	strcpy(listing.map, "BoardingAction");
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_STOCK, "a stock map is told by its name in any case");
+	strcpy(listing.map, "a10");
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_STOCK, "a campaign level (co-op) is stock");
+	strcpy(listing.map, "bigass_open_v1.1");
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "a map of another name is a Custom Edition map");
+	check(!p2p_listing_map_shown(&listing, 0, 0), "a Custom Edition map's game is hidden from a machine without it");
+	check(p2p_listing_map_shown(&listing, 1, 0), "... and shown to one that has a map of its name");
+	check(p2p_listing_map_shown(&listing, 0, 1), "... and to one that downloads maps");
+	strcpy(listing.map, "icefields");
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "Halo PC's own maps are Custom Edition maps here");
+	strcpy(listing.map, "bloodgulch");
+	listing.map_family = P2P_MAP_FAMILY_CE;
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "a Custom Edition map of a stock name is not stock");
+	strcpy(listing.map, "wizard");
+	listing.map_family = P2P_MAP_FAMILY_OTHER;
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_UNSUPPORTED, "a map pack's map is not supported");
+	check(!p2p_listing_map_shown(&listing, 1, 1), "a map pack's game is never shown");
+	strcpy(listing.map, "");
+	listing.map_family = P2P_MAP_FAMILY_XBOX;
+	check(p2p_listing_map_kind(&listing) == P2P_MAP_CUSTOM, "a game naming no map is not stock");
+
+	/* (the browser opened anew: no game of the checks before) */
+	p2p_lobby_browse(0);
+	p2p_lobby_browse(1);
+	memset(list, 0, sizeof(list));
+	for (index = 0; index < 3; index++)
+	{
+		strcpy(list[index].invite, invite);
+		list[index].invite[63] = (char)('3' + index);
+		list[index].version = HALO_PORT_NETWORK_VERSION;
+	}
+	strcpy(list[0].name, "Stock");
+	strcpy(list[0].map, "chillout");
+	strcpy(list[0].family, "xbox");
+	strcpy(list[1].name, "Custom");
+	strcpy(list[1].map, "immure2");
+	strcpy(list[1].family, "ce");
+	strcpy(list[2].name, "Pack");
+	strcpy(list[2].map, "wizard");
+	strcpy(list[2].family, "pack");
+	pthread_mutex_lock(&p2p_lock);
+	p2p_lobby_delta_games(list, 3);
+	pthread_mutex_unlock(&p2p_lock);
+	count = p2p_lobby_games(shown, 8);
+	for (index = 0; index < count; index++)
+	{
+		int kind = p2p_listing_map_kind(&shown[index]);
+
+		stock += !strcmp(shown[index].name, "Stock") && kind == P2P_MAP_STOCK;
+		custom += !strcmp(shown[index].name, "Custom") && kind == P2P_MAP_CUSTOM;
+		pack += !strcmp(shown[index].name, "Pack") && kind == P2P_MAP_UNSUPPORTED;
+	}
+	check(count == 3 && stock == 1 && custom == 1 && pack == 1, "Delta's map families reach the listings");
+	pthread_mutex_lock(&p2p_lock);
+	p2p_lobby_delta_games(list, 0);
+	pthread_mutex_unlock(&p2p_lock);
+}
+
 static void lobby_checks(void)
 {
 	static const unsigned char token[P2P_TOKEN_SIZE] = { 7, 7, 7 };
@@ -591,6 +664,7 @@ int main(void)
 {
 	crypto_checks();
 	lobby_checks();
+	map_checks();
 	watch_checks();
 	stage_checks();
 	printf("%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
