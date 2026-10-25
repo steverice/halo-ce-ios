@@ -38,31 +38,45 @@ static struct up_filter make_filter(uint32_t scale, int smooth)
 }
 
 /* consistency._upsample_axis accumulates a float32 row before filtering columns. This temporary is source-width,
-   so the same rounding is retained without keeping a full-size upsampled residual or fallback image. */
+   so the same rounding is retained without keeping a full-size upsampled residual or fallback image. columns holds
+   each output column's source positions (up_columns), computed once per pass rather than per pixel. */
 static void up_row(const float *src, uint32_t w, uint32_t h, uint32_t channels, uint32_t y,
-    const struct up_filter *f, int wrap, float *vertical, float *out)
+    const struct up_filter *f, int wrap, const uint32_t *columns, float *vertical, float *out)
 {
+    int taps = 2 * f->support + 1;
+    const float *rows[7];
+    const float *weight = f->weight[y % f->scale];
+    for (int k = 0; k < taps; k++)
+        rows[k] = src + (size_t)address((int64_t)(y / f->scale) + k - f->support, h, wrap) * w * channels;
     for (uint32_t x = 0; x < w; x++) for (uint32_t c = 0; c < channels; c++) {
         float value = 0;
-        if (h == 1) value = src[x * channels + c];
-        else for (int k = 0; k < 2 * f->support + 1; k++)
-            value += f->weight[y % f->scale][k] *
-                src[((size_t)address((int64_t)(y / f->scale) + k - f->support, h, wrap) * w + x) * channels + c];
-        vertical[(size_t)x * channels + c] = value;
+        size_t i = (size_t)x * channels + c;
+        if (h == 1) value = src[i];
+        else for (int k = 0; k < taps; k++) value += weight[k] * rows[k][i];
+        vertical[i] = value;
     }
-    for (uint32_t x = 0; x < w * f->scale; x++) for (uint32_t c = 0; c < channels; c++) {
-        float value = 0;
-        if (w == 1) value = vertical[c];
-        else for (int k = 0; k < 2 * f->support + 1; k++)
-            value += f->weight[x % f->scale][k] *
-                vertical[(size_t)address((int64_t)(x / f->scale) + k - f->support, w, wrap) * channels + c];
-        out[(size_t)x * channels + c] = value;
+    for (uint32_t x = 0; x < w * f->scale; x++) {
+        const float *phase = f->weight[x % f->scale];
+        const uint32_t *source = columns + (size_t)x * 7;
+        for (uint32_t c = 0; c < channels; c++) {
+            float value = 0;
+            if (w == 1) value = vertical[c];
+            else for (int k = 0; k < taps; k++) value += phase[k] * vertical[(size_t)source[k] * channels + c];
+            out[(size_t)x * channels + c] = value;
+        }
     }
+}
+static uint32_t *up_columns(uint32_t w, const struct up_filter *f, int wrap)
+{
+    uint32_t *columns = malloc((size_t)w * f->scale * 7 * sizeof(*columns));
+    if (columns) for (uint32_t x = 0; x < w * f->scale; x++) for (int k = 0; k < 2 * f->support + 1; k++)
+        columns[(size_t)x * 7 + k] = address((int64_t)(x / f->scale) + k - f->support, w, wrap);
+    return columns;
 }
 
 /* The first half-size plane is scalar even when top is RGBA. Extracting a whole full-resolution channel would
    take 64 MiB at 4096 squared; strided reads keep this temporary at 16 MiB instead. */
-static float *down(const float *top, uint32_t w, uint32_t h, uint32_t c, uint32_t scale, int wrap)
+static float *down(const float *top, const _Float16 *top16, uint32_t w, uint32_t h, uint32_t c, uint32_t scale, int wrap)
 {
     float *out = malloc((size_t)w * h * c * sizeof(float));
     if (!out) return NULL;
@@ -73,7 +87,8 @@ static float *down(const float *top, uint32_t w, uint32_t h, uint32_t c, uint32_
         while (remaining > 1) {
             uint32_t nw = bw > 1 ? bw / 2 : 1, nh = bh > 1 ? bh / 2 : 1;
             float *next = malloc((size_t)nw * nh * sizeof(float));
-            if (!next || texture_upscale_down2_channel(src, bw, bh, owned ? 1 : c, owned ? 0 : channel, wrap, next)) {
+            if (!next || (owned || !top16 ? texture_upscale_down2_channel(src, bw, bh, owned ? 1 : c, owned ? 0 : channel, wrap, next) :
+                texture_upscale_down2_channel_half(top16, bw, bh, c, channel, wrap, next))) {
                 free(next); free(owned); free(out); return NULL;
             }
             free(owned); owned = next; src = next; bw = nw; bh = nh; remaining /= 2;
@@ -126,6 +141,8 @@ struct band_work
 	int wrap;
 	const struct up_filter *filter, *smooth;
 	_Atomic int failed;
+	const uint32_t *columns, *smooth_columns;
+	_Float16 *top16;    /* a color top kept in half precision, instead of top */
 };
 
 static void band_rows(void *context, size_t band)
@@ -140,34 +157,41 @@ static void band_rows(void *context, size_t band)
 	if (!vertical || !row || !mask_vertical || !mask_row || !up || !below) { work->failed = 1; goto done; }
 	for (uint32_t y = first; y < last; y++) switch (work->pass) {
 	case BAND_ADD_COLOR: {
-		float *out = work->top + (size_t)y * bw * channels;
-		up_row(work->small, w, work->h, channels, y, work->filter, work->wrap, vertical, row);
-		for (size_t i = 0; i < (size_t)bw * channels; i++) out[i] = unit(out[i] + row[i]);
+		up_row(work->small, w, work->h, channels, y, work->filter, work->wrap, work->columns, vertical, row);
+		if (work->top16) {
+			_Float16 *out = work->top16 + (size_t)y * bw * channels;
+			for (size_t i = 0; i < (size_t)bw * channels; i++) out[i] = (_Float16)unit((float)out[i] + row[i]);
+		} else {
+			float *out = work->top + (size_t)y * bw * channels;
+			for (size_t i = 0; i < (size_t)bw * channels; i++) out[i] = unit(out[i] + row[i]);
+		}
 		break;
 	}
 	case BAND_FALLBACK_COLOR: {
-		float *out = work->top + (size_t)y * bw * channels;
-		up_row(work->reference, w, work->h, channels, y, work->filter, work->wrap, vertical, row);
-		up_row(work->mask, w, work->h, 1, y, work->smooth, work->wrap, mask_vertical, mask_row);
+		float *out = work->top ? work->top + (size_t)y * bw * channels : NULL;
+		_Float16 *out16 = work->top16 ? work->top16 + (size_t)y * bw * channels : NULL;
+		up_row(work->reference, w, work->h, channels, y, work->filter, work->wrap, work->columns, vertical, row);
+		up_row(work->mask, w, work->h, 1, y, work->smooth, work->wrap, work->smooth_columns, mask_vertical, mask_row);
 		for (uint32_t x = 0; x < bw; x++) {
 			float s = unit(mask_row[x]);
 			for (uint32_t c = 0; c < channels; c++) {
 				size_t i = (size_t)x * channels + c;
-				out[i] = unit(out[i] * (1 - s) + unit(row[i]) * s);
+				if (out16) out16[i] = (_Float16)unit((float)out16[i] * (1 - s) + unit(row[i]) * s);
+				else out[i] = unit(out[i] * (1 - s) + unit(row[i]) * s);
 			}
 		}
 		break;
 	}
 	case BAND_ADD_HEIGHT:
-		up_row(work->small, w, work->h, 1, y, work->filter, 1, vertical, row);
+		up_row(work->small, w, work->h, 1, y, work->filter, 1, work->columns, vertical, row);
 		for (uint32_t x = 0; x < bw; x++) work->top[(size_t)y * bw + x] += row[x];
 		break;
 	case BAND_FALLBACK_BUMP: {
 		uint32_t scale = work->scale;
-		up_row(work->reference, w, work->h, 1, (y + bh - 1) % bh, work->filter, 1, vertical, up);
-		up_row(work->reference, w, work->h, 1, y, work->filter, 1, vertical, row);
-		up_row(work->reference, w, work->h, 1, (y + 1) % bh, work->filter, 1, vertical, below);
-		up_row(work->mask, w, work->h, 1, y, work->smooth, 1, mask_vertical, mask_row);
+		up_row(work->reference, w, work->h, 1, (y + bh - 1) % bh, work->filter, 1, work->columns, vertical, up);
+		up_row(work->reference, w, work->h, 1, y, work->filter, 1, work->columns, vertical, row);
+		up_row(work->reference, w, work->h, 1, (y + 1) % bh, work->filter, 1, work->columns, vertical, below);
+		up_row(work->mask, w, work->h, 1, y, work->smooth, 1, work->smooth_columns, mask_vertical, mask_row);
 		for (uint32_t x = 0; x < bw; x++) {
 			float target[3], *out = work->normals + ((size_t)y * bw + x) * 3, s = unit(mask_row[x]);
 			normal(row[x] * scale, row[(x + bw - 1) % bw] * scale, row[(x + 1) % bw] * scale,
@@ -186,13 +210,16 @@ done:
 
 static int run_bands(struct band_work *work)
 {
-	work->failed = 0;
-	dispatch_apply_f(REFINE_BANDS, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), work, band_rows);
+	uint32_t *columns = up_columns(work->w, work->filter, work->wrap), *smooth = up_columns(work->w, work->smooth, work->wrap);
+	work->failed = !columns || !smooth;
+	work->columns = columns; work->smooth_columns = smooth;
+	if (!work->failed) dispatch_apply_f(REFINE_BANDS, dispatch_get_global_queue(qos_class_self(), 0), work, band_rows);
+	free(columns); free(smooth);
 	return work->failed ? -1 : 0;
 }
 
 
-int texture_refine_color_bounded(float *top, const float *reference, uint32_t w, uint32_t h,
+static int refine_color(float *top, _Float16 *top16, const float *reference, uint32_t w, uint32_t h,
     uint32_t channels, uint32_t scale, int wrap, const struct texture_refine_params *params, int fallback, float *mask_out)
 {
     float *small = NULL, *mask = NULL, *vertical = NULL, *row = NULL, *mask_vertical = NULL, *mask_row = NULL;
@@ -200,7 +227,7 @@ int texture_refine_color_bounded(float *top, const float *reference, uint32_t w,
     uint32_t bw, bh;
     struct up_filter filter, smooth;
     int result = -1;
-    if (!top || !reference || !params || !w || !h || !channels || channels > 4 ||
+    if ((!top == !top16) || !reference || !params || !w || !h || !channels || channels > 4 ||
         (scale != 2 && scale != 4 && scale != 8) || w > UINT32_MAX / scale || h > UINT32_MAX / scale ||
         !isfinite(params->low) || !isfinite(params->high) || !isfinite(params->sigma) || params->sigma < 0) return -1;
     bw = w * scale; bh = h * scale;
@@ -216,7 +243,7 @@ int texture_refine_color_bounded(float *top, const float *reference, uint32_t w,
     }
     /* Capture the raw mismatch before clipping, as consistency.mismatch requires. Alpha contributes whenever the
        caller includes it among the channels, including the fallback mask on coverage edges. */
-    small = down(top, w, h, channels, scale, wrap);
+    small = down(top, top16, w, h, channels, scale, wrap);
     if (!small) goto done;
     for (size_t i = 0; i < count; i++) {
         float value = 0;
@@ -229,14 +256,16 @@ int texture_refine_color_bounded(float *top, const float *reference, uint32_t w,
         float t = unit((mask[i] - params->low / 255) / fmaxf((params->high - params->low) / 255, 1e-9f));
         mask[i] = t * t * (3 - 2 * t);
     }
-    for (size_t i = 0; i < large_count; i++) top[i] = unit(top[i]);
+    if (top16) for (size_t i = 0; i < large_count; i++) top16[i] = (_Float16)unit((float)top16[i]);
+    else for (size_t i = 0; i < large_count; i++) top[i] = unit(top[i]);
     for (uint32_t iteration = 0; iteration < params->iterations; iteration++) {
-        small = down(top, w, h, channels, scale, wrap);
+        small = down(top, top16, w, h, channels, scale, wrap);
         if (!small) goto done;
         for (size_t i = 0; i < count * channels; i++) small[i] = reference[i] - small[i];
         {
             struct band_work work = { BAND_ADD_COLOR, top, NULL, small, reference, mask, w, h, bw, bh, channels, scale,
                 wrap, &filter, &smooth, 0 };
+            work.top16 = top16;
             if (run_bands(&work)) goto done;
         }
         free(small); small = NULL;
@@ -244,6 +273,7 @@ int texture_refine_color_bounded(float *top, const float *reference, uint32_t w,
     if (fallback) {
         struct band_work work = { BAND_FALLBACK_COLOR, top, NULL, NULL, reference, mask, w, h, bw, bh, channels, scale,
             wrap, &filter, &smooth, 0 };
+        work.top16 = top16;
         if (run_bands(&work)) goto done;
     }
     if (mask_out) memcpy(mask_out, mask, count * sizeof(float));
@@ -251,6 +281,18 @@ int texture_refine_color_bounded(float *top, const float *reference, uint32_t w,
 done:
     free(small); free(mask); free(vertical); free(row); free(mask_vertical); free(mask_row);
     return result;
+}
+
+int texture_refine_color_bounded(float *top, const float *reference, uint32_t w, uint32_t h,
+    uint32_t channels, uint32_t scale, int wrap, const struct texture_refine_params *params, int fallback, float *mask_out)
+{
+    return refine_color(top, NULL, reference, w, h, channels, scale, wrap, params, fallback, mask_out);
+}
+
+int texture_refine_color_bounded_half(_Float16 *top, const float *reference, uint32_t w, uint32_t h,
+    uint32_t channels, uint32_t scale, int wrap, const struct texture_refine_params *params, int fallback, float *mask_out)
+{
+    return refine_color(NULL, top, reference, w, h, channels, scale, wrap, params, fallback, mask_out);
 }
 
 static void normal(float c, float l, float r, float u, float d, float *n)
@@ -293,7 +335,7 @@ int texture_refine_bump_bounded(float *top, const float *reference, uint32_t w, 
         mask_vertical = malloc((size_t)w * sizeof(float)); mask_row = malloc((size_t)bw * sizeof(float));
         if (!up || !below || !mask_vertical || !mask_row) goto done;
     }
-    small = down(top, w, h, 1, scale, 1);
+    small = down(top, NULL, w, h, 1, scale, 1);
     if (!small) goto done;
     for (uint32_t y = 0; y < h; y++) for (uint32_t x = 0; x < w; x++) {
         float a[3], b[3];
@@ -307,7 +349,7 @@ int texture_refine_bump_bounded(float *top, const float *reference, uint32_t w, 
         mask[i] = t * t * (3 - 2 * t);
     }
     for (uint32_t iteration = 0; iteration < params->iterations; iteration++) {
-        small = down(top, w, h, 1, scale, 1);
+        small = down(top, NULL, w, h, 1, scale, 1);
         if (!small) goto done;
         for (size_t i = 0; i < count; i++) small[i] = reference[i] - small[i];
         {

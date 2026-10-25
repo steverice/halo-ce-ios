@@ -21,6 +21,9 @@ int texture_refine_color(struct texture_refine_context *handle, float *top, cons
    intermediates plus original-size work buffers. No Metal context or full-resolution copies are needed. */
 int texture_refine_color_bounded(float *top, const float *reference, uint32_t width, uint32_t height,
 	uint32_t channels, uint32_t scale, int wrap, const struct texture_refine_params *params, int fallback, float *mask);
+/* The same with top kept as _Float16 (a 4096 px top in half the memory); sums and filters stay float. */
+int texture_refine_color_bounded_half(_Float16 *top, const float *reference, uint32_t width, uint32_t height,
+	uint32_t channels, uint32_t scale, int wrap, const struct texture_refine_params *params, int fallback, float *mask);
 /* top_height: scale x (width, height) in original-texel units; original_height: (width, height); normals:
    scale x (width, height) x 3 floats out; mask as above. Always wraps (bump maps tile). */
 int texture_refine_bump(struct texture_refine_context *handle, const float *top_height, const float *original_height,

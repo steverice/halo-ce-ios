@@ -15,6 +15,9 @@ int texture_upscale_down2(const float *src, uint32_t width, uint32_t height, uin
 /* Scalar output from one interleaved input channel; avoids extracting a full-resolution channel. */
 int texture_upscale_down2_channel(const float *src, uint32_t width, uint32_t height, uint32_t channels,
     uint32_t channel, int wrap, float *dst);
+/* The same from half-precision storage (a large top kept as _Float16); the sums are the same doubles. */
+int texture_upscale_down2_channel_half(const _Float16 *src, uint32_t width, uint32_t height, uint32_t channels,
+    uint32_t channel, int wrap, float *dst);
 int texture_upscale_resize(const float *src, uint32_t width, uint32_t height, uint32_t channels, uint32_t scale,
     int wrap, float *dst);
 /* Includes real neighbors beyond a tile, wrapping or clamping against the full source texture. */

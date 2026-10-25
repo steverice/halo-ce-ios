@@ -1,5 +1,6 @@
 #include "texture_upscale_pixels.h"
 #include <Accelerate/Accelerate.h>
+#include <dispatch/dispatch.h>
 #include <limits.h>
 #include <math.h>
 #include <stddef.h>
@@ -25,37 +26,85 @@ static uint32_t address(int64_t i, uint32_t size, int wrap)
 static double sinc(double x) { return x == 0 ? 1 : sin(M_PI * x) / (M_PI * x); }
 static double lanczos(double x) { return fabs(x) < 3 ? sinc(x) * sinc(x / 3) : 0; }
 
-/* NumPy uses double weights in downsample2, then casts the result after both axes. */
-int texture_upscale_down2(const float *src, uint32_t w, uint32_t h, uint32_t c, int wrap, float *dst)
+/* Rows of a filter pass run in bands on every core at the caller's quality of service. Each output value is the
+   same sum in the same order as a single-threaded pass, so the result does not depend on the band count. */
+#define DOWN_BANDS 32u
+static void lanczos2_weights(double weights[12])
 {
-    uint32_t ow = w > 1 ? w / 2 : 1, oh = h > 1 ? h / 2 : 1;
-    double weights[12], sum = 0;
-    double *rows;
-    if (!src || !dst || !dimensions(w, h, c)) return -1;
-    rows = malloc((size_t)w * c * sizeof(double));
-    if (!rows) return -1;
+    double sum = 0;
     for (int k = 0; k < 12; k++) sum += weights[k] = lanczos((k - 5 - 0.5) / 2);
     for (int k = 0; k < 12; k++) weights[k] /= sum;
-    for (uint32_t y = 0; y < oh; y++) {
+}
+/* index[i * 12 + k] is the source position tap k of output i reads: 2i + k - 5, wrapped or clamped. */
+static uint32_t *down_taps(uint32_t size, uint32_t out, int wrap)
+{
+    uint32_t *index = malloc((size_t)out * 12 * sizeof(*index));
+    if (index) for (uint32_t i = 0; i < out; i++) for (int k = 0; k < 12; k++)
+        index[(size_t)i * 12 + k] = address((int64_t)i * 2 + k - 5, size, wrap);
+    return index;
+}
+struct down_work {
+    const float *src;
+    const _Float16 *src16;    /* instead of src */
+    float *dst;
+    uint32_t w, h, ow, oh, stride, first, count;    /* count channels starting at first, of stride */
+    const uint32_t *rows, *cols;
+    double weights[12];
+    _Atomic int failed;
+};
+static void down_band(void *context, size_t band)
+{
+    struct down_work *work = context;
+    uint32_t y0 = (uint32_t)((uint64_t)work->oh * band / DOWN_BANDS), y1 = (uint32_t)((uint64_t)work->oh * (band + 1) / DOWN_BANDS);
+    uint32_t w = work->w, c = work->count, stride = work->stride, first = work->first, ow = work->ow;
+    const double *weights = work->weights;
+    if (y0 == y1) return;
+    double *row = malloc((size_t)w * c * sizeof(double));
+    if (!row) { work->failed = 1; return; }
+    for (uint32_t y = y0; y < y1; y++) {
+        const uint32_t *taps = work->rows + (size_t)y * 12;
         for (uint32_t x = 0; x < w; x++)
             for (uint32_t ch = 0; ch < c; ch++) {
                 double value = 0;
-                if (h == 1) value = src[x * c + ch];
-                else for (int k = 0; k < 12; k++)
-                    value += weights[k] * src[((size_t)address((int64_t)y * 2 + k - 5, h, wrap) * w + x) * c + ch];
-                rows[(size_t)x * c + ch] = value;
+                size_t column = (size_t)x * stride + first + ch;
+                if (work->src16) {
+                    if (work->h == 1) value = work->src16[column];
+                    else for (int k = 0; k < 12; k++) value += weights[k] * (double)work->src16[(size_t)taps[k] * w * stride + column];
+                } else if (work->h == 1) value = work->src[column];
+                else for (int k = 0; k < 12; k++) value += weights[k] * work->src[(size_t)taps[k] * w * stride + column];
+                row[(size_t)x * c + ch] = value;
             }
-        for (uint32_t x = 0; x < ow; x++)
+        float *out = work->dst + (size_t)y * ow * c;
+        for (uint32_t x = 0; x < ow; x++) {
+            const uint32_t *columns = work->cols + (size_t)x * 12;
             for (uint32_t ch = 0; ch < c; ch++) {
                 double value = 0;
-                if (w == 1) value = rows[ch];
-                else for (int k = 0; k < 12; k++)
-                    value += weights[k] * rows[(size_t)address((int64_t)x * 2 + k - 5, w, wrap) * c + ch];
-                dst[((size_t)y * ow + x) * c + ch] = (float)value;
+                if (w == 1) value = row[ch];
+                else for (int k = 0; k < 12; k++) value += weights[k] * row[(size_t)columns[k] * c + ch];
+                out[(size_t)x * c + ch] = (float)value;
             }
+        }
     }
-    free(rows);
-    return 0;
+    free(row);
+}
+static int down2_run(const float *src, const _Float16 *src16, uint32_t w, uint32_t h, uint32_t stride, uint32_t first,
+    uint32_t count, int wrap, float *dst)
+{
+    struct down_work work = { src, src16, dst, w, h, w > 1 ? w / 2 : 1, h > 1 ? h / 2 : 1, stride, first, count, NULL, NULL, {0}, 0 };
+    lanczos2_weights(work.weights);
+    uint32_t *rows = down_taps(h, work.oh, wrap), *cols = down_taps(w, work.ow, wrap);
+    if (!rows || !cols) { free(rows); free(cols); return -1; }
+    work.rows = rows; work.cols = cols;
+    dispatch_apply_f(DOWN_BANDS, dispatch_get_global_queue(qos_class_self(), 0), &work, down_band);
+    free(rows); free(cols);
+    return work.failed ? -1 : 0;
+}
+
+/* NumPy uses double weights in downsample2, then casts the result after both axes. */
+int texture_upscale_down2(const float *src, uint32_t w, uint32_t h, uint32_t c, int wrap, float *dst)
+{
+    if (!src || !dst || !dimensions(w, h, c)) return -1;
+    return down2_run(src, NULL, w, h, c, 0, c, wrap, dst);
 }
 
 int texture_upscale_resize(const float *src, uint32_t w, uint32_t h, uint32_t c, uint32_t scale, int wrap, float *dst)
@@ -96,30 +145,15 @@ int texture_upscale_resize(const float *src, uint32_t w, uint32_t h, uint32_t c,
 
 int texture_upscale_down2_channel(const float *src, uint32_t w, uint32_t h, uint32_t stride, uint32_t channel, int wrap, float *dst)
 {
-    uint32_t ow = w > 1 ? w / 2 : 1, oh = h > 1 ? h / 2 : 1;
-    double weights[12], sum = 0, *row;
     if (!src || !dst || !dimensions(w, h, stride) || channel >= stride) return -1;
-    row = malloc((size_t)w * sizeof(double));
-    if (!row) return -1;
-    for (int k = 0; k < 12; k++) sum += weights[k] = lanczos((k - 5 - 0.5) / 2);
-    for (int k = 0; k < 12; k++) weights[k] /= sum;
-    for (uint32_t y = 0; y < oh; y++) {
-        for (uint32_t x = 0; x < w; x++) {
-            double value = 0;
-            if (h == 1) value = src[(size_t)x * stride + channel];
-            else for (int k = 0; k < 12; k++) value += weights[k] *
-                src[((size_t)address((int64_t)y * 2 + k - 5, h, wrap) * w + x) * stride + channel];
-            row[x] = value;
-        }
-        for (uint32_t x = 0; x < ow; x++) {
-            double value = 0;
-            if (w == 1) value = row[0];
-            else for (int k = 0; k < 12; k++) value += weights[k] * row[address((int64_t)x * 2 + k - 5, w, wrap)];
-            dst[(size_t)y * ow + x] = (float)value;
-        }
-    }
-    free(row);
-    return 0;
+    return down2_run(src, NULL, w, h, stride, channel, 1, wrap, dst);
+}
+
+int texture_upscale_down2_channel_half(const _Float16 *src, uint32_t w, uint32_t h, uint32_t stride, uint32_t channel,
+    int wrap, float *dst)
+{
+    if (!src || !dst || !dimensions(w, h, stride) || channel >= stride) return -1;
+    return down2_run(NULL, src, w, h, stride, channel, 1, wrap, dst);
 }
 
 int texture_upscale_pad_region(const float *src, uint32_t w, uint32_t h, uint32_t c, int32_t x, int32_t y,
