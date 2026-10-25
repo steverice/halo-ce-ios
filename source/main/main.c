@@ -3321,7 +3321,16 @@ void halt_and_catch_fire(
 	#ifdef HALO_IOS
 	{
 		extern void benchmark_suite_multiplayer_fault(const char *note);
+		/* port: a native crash, with the game's last error as its reason and
+		its frames in the report, which Apple's crash reporting collects;
+		debug.halt_screen keeps this halt screen (port/ios/host/host_crash.m) */
+		extern int host_guest_halt(const char *messages);
+
 		benchmark_suite_multiplayer_fault("guest fatal halt");
+		if (!global_screenshot_count.halt_recursion_lock)
+		{
+			host_guest_halt(error_get());
+		}
 	}
 	#endif
 
@@ -3738,6 +3747,9 @@ void main_loop(
 		{
 			extern void benchmark_suite_mainloop_update(void);
 			profile_scope(main_benchmark_suite_section, benchmark_suite_mainloop_update();)
+			/* port: debug.crash_test (port/runtime/guest/runtime/guest_crash_test.c) */
+			extern void guest_crash_test_update(void);
+			guest_crash_test_update();
 		}
 #endif
 		profile_scope_enter(main_platform_events_section)

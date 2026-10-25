@@ -1139,6 +1139,15 @@ static const struct config_setting config_settings[] =
 		"arms tuning as the game runs (laser mode, aim assist, steadying, pitch offset,\n"
 		"origin raise, reticle easing, arms, gun smoothing), and the game sees neither\n"
 		"stick meanwhile. Off, Back with those buttons is ordinary game input." },
+	{ "debug.halt_screen", _config_boolean, "false", "HALO_HALT_SCREEN", _environment_value, _platform_ios,
+		"On a fatal game error (a failed assertion or a halt), stop on the game's\n"
+		"halt screen, its recent messages on a blue background, instead of crashing.\n"
+		"Off, the app crashes with the error as the crash report's reason, and\n"
+		"ios-runtime.log has the error and the game's frames." },
+	{ "debug.crash_test", _config_string, "\"\"", "HALO_CRASH_TEST", _environment_value, _platform_ios,
+		"Fail on purpose 150 frames after the game starts, to check crash reports:\n"
+		"\"halt\" (a failed assertion), \"fault\" (a memory fault in game code), \"trap\"\n"
+		"(a trap instruction) or \"abort\" (the game runtime's fatal error); empty, never." },
 	{ "debug.upscaled_textures_toggle", _config_boolean, "false", "HALO_UPSCALED_TEXTURES_TOGGLE", _environment_value,
 		_platform_ios,
 		"While Back is held, the D-pad's up switches all of the level's textures\n"

@@ -20,6 +20,7 @@
 #include "host_shader_upload.h"
 #include "host_perf_reports.h"
 #include "host_perf_hooks.h"
+#include "host_crash.h"
 #include "renderer_build.h"
 #if !TARGET_OS_TV && !HALO_NATIVE_MAC
 #include "host_texture_settings.h"
@@ -63,7 +64,8 @@ void host_fatal(const char *format,...) {
     host_logf(HOST_LOG_ERROR,"FATAL: %s",text);
     if(!getenv("HALO_RUNNER"))SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,"VISR",text,NULL);exit(1);
 }
-void host_abort(const char *reason) { host_logf(HOST_LOG_ERROR,"guest abort: %s",reason);abort(); }
+/* the guest runtime's own fatal errors (guest_misc.c, guest_thread.c): a native crash with the guest's frames */
+void host_abort(const char *reason) { host_crash("guest abort: %s",reason); }
 void host_exit(int code) {
     host_logf(HOST_LOG_INFO,"game exit %d",code);
     host_spatial_rumble_hold(1);
@@ -129,7 +131,7 @@ static void install_apple_events_timer(void) {
 
 static uint32_t copy_string(const char *text) {
     char *p=host_low_map(strlen(text)+1,PROT_READ|PROT_WRITE);
-    if(!p)host_fatal("out of guest memory");strcpy(p,text);return guest_pointer(p);
+    if(!p)host_crash("out of guest memory");strcpy(p,text);return guest_pointer(p);
 }
 /* SDL's scene delegate (SDL_uikitappdelegate.m) calls main for every window
 scene that connects: a second one (visionOS can connect or restore another
@@ -304,6 +306,9 @@ int main(int argc,char **argv) {
         }
         chdir(data_root);
         log_file=fopen("ios-runtime.log","w");setvbuf(stderr,NULL,_IONBF,0);
+        /* fatal errors as native crashes (host_crash.h): before the benchmark's crash marker and the memory
+           watch install theirs, so each of those passes on to it what is not its own */
+        host_crash_install(log_file?fileno(log_file):-1);
         /* internet play's MQTT brokers (network.brokers_file, p2p_signal.c): the app's
            list, written beside config.toml at each start, as upstream's Android app does */
         {
@@ -592,7 +597,7 @@ int main(int argc,char **argv) {
         *boot=(struct halo_guest_boot){1,guest_pointer(arguments),guest_pointer(environment),0x4000};
         size_t stack_size=16*1024*1024;
         void *stack=host_low_map(stack_size+0x4000,PROT_READ|PROT_WRITE);
-        if(!stack)host_fatal("could not allocate game stack");mprotect(stack,0x4000,PROT_NONE);
+        if(!stack)host_crash("could not allocate game stack");mprotect(stack,0x4000,PROT_NONE);
         /* (machines of different network versions cannot play together: the log of each says which it is) */
         host_logf(HOST_LOG_INFO,"network version %d",HALO_PORT_NETWORK_VERSION);
         /* the saves are compared with iCloud's before the game reads them, and not replaced after */

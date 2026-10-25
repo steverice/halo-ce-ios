@@ -25,8 +25,12 @@ void host_logf(int priority, const char *format, ...) __attribute__((format(prin
 void host_exit(int code) __attribute__((noreturn));
 int host_errno(void);
 
-/* logs, shows the message to the player and terminates */
+/* logs, shows the message to the player and terminates: for a stop the player
+should read (no game data, a device that cannot run the game) */
 void host_fatal(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));
+/* a bug: logs the message and the stack, its guest frames named, then crashes
+natively with the message as the crash report's reason (host_crash.m) */
+void host_crash(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));
 
 /* ---------- guest memory (host_memory.c)
 

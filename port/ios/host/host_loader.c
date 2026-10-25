@@ -5,7 +5,7 @@
 #include <string.h>
 #include <sys/mman.h>
 struct host_guest_image host_image;
-static void missing_import(void) { host_fatal("an unavailable guest import was called"); }
+static void missing_import(void) { host_crash("an unavailable guest import was called"); }
 int host_load_image(const void *unused,size_t ignored) {
     (void)unused;(void)ignored;
     if(host_memory_initialize(HALO_GUEST_IMAGE_BASE,IOS_GUEST_IMAGE_END-HALO_GUEST_IMAGE_BASE))return -1;
