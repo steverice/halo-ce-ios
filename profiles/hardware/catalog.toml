@@ -5,7 +5,7 @@
 # Within a range, a tier orders GPU capability: the design generation, then the GPU core count (each entry's source gives the basis).
 # Hardware whose ordering against its neighbors cannot be defended would have no tier and keep its class profile.
 schema = 1
-version = "2026-10-23"
+version = "2026-10-24"
 
 [[hardware]]
 id = "iphone-a11"
@@ -76,8 +76,8 @@ platform = "ios"
 models = ["iPhone16,1", "iPhone16,2"]
 tier = 170
 gpu_family = 9
-basis = "assumed"
-source = "iPhone 15 Pro and Pro Max (A17 Pro, 6-core GPU). https://en.wikipedia.org/wiki/List_of_iPhone_models. Above A16 and above the iPhone 16e's 4-core A18 GPU: 6 cores of a newer-than-A16 design against 4."
+basis = "measured"
+source = "iphone-15-pro.toml: reports XPBNZMAZ and UYY37PNG, native built-in campaign at 60 fps, 2026-10-24, provisional. iPhone 15 Pro and Pro Max (A17 Pro, 6-core GPU), above A16 and the iPhone 16e's 4-core A18 GPU. Uncapped report LYY9JBRZ does not hold 120 fps at 1.5x enemies."
 
 [[hardware]]
 id = "iphone-16"
@@ -391,6 +391,16 @@ profile = "iphone-16e.toml"
 minimum_memory_mb = 7000
 minimum_gpu_family = 9
 # Native 2532x1170 at 60 Hz was measured. Every iOS envelope is at least 3,888,000 pixels, the class profile's wired-display frame (3600x1080); the 60 Hz limit keeps 120 Hz models out.
+maximum_pixels = [3900000, 3900000, 3900000]
+maximum_refresh_hertz = 60
+
+[[fallback]]
+hardware = "iphone-a17-pro"
+profile = "iphone-15-pro.toml"
+minimum_memory_mb = 7000
+minimum_gpu_family = 9
+# Native up to 2796x1290 was measured at 60 fps; include the class's 3600x1080 wired-display allocation.
+# The profile's numeric cap also limits faster panels to the measured 60 fps target.
 maximum_pixels = [3900000, 3900000, 3900000]
 maximum_refresh_hertz = 60
 

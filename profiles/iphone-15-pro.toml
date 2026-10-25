@@ -1,0 +1,51 @@
+#:schema ../port/settings/profile.schema.json
+# A17 Pro: native 2556x1179 (15 Pro) or 2796x1290 (15 Pro Max), capped at 60.
+# UYY37PNG's 20 campaign windows, including 1.5x and 2x enemies, presented
+# 99.666% to 100% on time at 60 with nominal thermal state throughout.
+# Actual presentation p90 was 16.670 ms, within the 16.7 ms budget at the
+# timing checks' 0.1 ms precision; submission p90 was 17.2 to 17.4 ms.
+# LYY9JBRZ's uncapped a10 1.5x window averaged 102.60 fps, but presentation
+# p90 was 16.670 ms and only 83.220% presented on time at 120. It does not
+# qualify tier 5. XPBNZMAZ has one complete window and a partial 1.5x window;
+# this profile remains provisional, especially for the smaller phone.
+
+schema = 1
+name = "iPhone 15 Pro and Pro Max"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPhone16,1", "iPhone16,2"]
+
+[display]
+frame_rate = "60"
+render_height = 0
+anisotropic_filtering = 16
+shadow_map_size = 512
+model_lod = "max"
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "Keep 60: UYY37PNG's 20 native-resolution campaign windows, including 1.5x and 2x enemies, delivered 99.666% to 100% of actual presentation intervals within the 60 fps budget at 0.1 ms precision, with nominal thermal state throughout. The slowest window averaged 59.84 fps, with presentation median/p90/p99 16.670/16.670/16.670 ms and maximum 66.682 ms (three intervals over 25 ms). XPBNZMAZ's complete a10 window averaged 59.88 fps with 99.833% on time. LYY9JBRZ at native 120 Hz fails the higher tier even before heating: a10 1.5x averaged 102.60 fps, presentation p90 16.670 ms against an 8.3 ms budget, only 83.220% on time. No measured lower-cost configuration establishes 120 fps with 1.5x enemies."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign, 2026-10-24 UTC; LYY9JBRZ, build 20261022.222500, a10-heroic-x1-5, 2026-10-23 UTC"
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "Native 2556x1179 and 2796x1290 are the highest measured built-in sizes. Actual presentation p90 decoded by nearest rank from the retained per-frame traces is 16.670 ms in XPBNZMAZ's complete window and every UYY37PNG window, within the 60 fps budget at 0.1 ms precision. This overrides the class's 720-line floor. The capped submission intervals have p90 17.2 to 17.4 ms; they are not display delivery. No 120 fps resolution is qualified with the required 1.5x workload."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, native built-in output, 2026-10-24 UTC"
+
+[evidence."display.anisotropic_filtering"]
+basis = "measured"
+why = "Retain the measured 16x baseline: all 20 UYY37PNG windows meet the native 60 fps presentation hold rule with it, including the enemy-multiplier windows. XPBNZMAZ's complete window also holds. There is no matched active-gameplay cost comparison showing that reduced filtering would qualify the next tier; older stationary b30 knob trials do not establish that."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign settings and renderer snapshots, 2026-10-24 UTC"
+
+[evidence."display.shadow_map_size"]
+basis = "measured"
+why = "Retain the measured 512 shadow target: all 20 UYY37PNG windows meet the native 60 fps presentation hold rule with it; XPBNZMAZ's complete window also holds. No matched active-gameplay sweep establishes a saving from smaller shadows sufficient for 120 fps at 1.5x enemies."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign settings and renderer snapshots, 2026-10-24 UTC"
+
+[evidence."display.model_lod"]
+basis = "measured"
+why = "Retain max model detail: the complete XPBNZMAZ window and all 20 UYY37PNG windows hold native 60 fps with this setting, anti-aliasing off, half-resolution effects and no texture replacements loaded. No matched active-gameplay measurement justifies lowering detail or enabling extra quality settings. Higher multiplayer player counts are separate workloads and are not qualified by this campaign profile."
+source = "Reports XPBNZMAZ and UYY37PNG, build 20261023.212823, campaign settings and renderer snapshots, 2026-10-24 UTC"
