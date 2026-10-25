@@ -46,7 +46,7 @@ Parts are written to `profiles/` in the game's data folder, as
 | --- | --- |
 | iPhone, iPad | the app's Documents folder |
 | Apple TV | the app's `Library/Caches/Halo` folder |
-| Mac Catalyst | `HALO_DATA_ROOT`, else `~/Library/Application Support/<bundle ID>` |
+| Mac (Catalyst, AppKit) | `HALO_DATA_ROOT`, else `Application Support/<bundle ID>` (inside the app's container when it is sandboxed) |
 | Linux, Windows | the data root (`paths.data`) |
 
 To copy a device's parts to a Mac:

@@ -42,8 +42,8 @@ parser.add_argument(
 parser.add_argument(
     "--profile",
     action="store_true",
-    help="profiling builds (Linux, Windows, Android): CPU scopes recorded on a "
-    "console command or launch setting (README, \"Profiling builds\"); not with --pgo=train",
+    help="profiling builds: CPU scopes recorded on a console command or launch "
+    "setting (docs/profiling.md; the Apple builds take it from tools/ios_build.py --profile); not with --pgo=train",
 )
 parser.add_argument(
     "--lto",
