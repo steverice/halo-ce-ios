@@ -191,9 +191,9 @@ target_sources(VISR PRIVATE "${ROOT}/port/linux/src/astc_encode.cpp"
     "${ROOT}/port/linux/src/astc_rewrite.c" "${ROOT}/port/runtime/astc_store.c"
     host/host_astc_store.m host/host_astc_texture.c)
 target_sources(VISR PRIVATE host/host_texture_upscale.m host/texture_upscale_generate.m host/texture_upscale_pixels.c
-    host/texture_refine_bounded.c host/texture_upscale_encode.cpp "${ROOT}/port/third_party/bc7enc16/bc7enc16.c"
+    host/texture_refine_bounded.c host/texture_upscale_encode.cpp "${ROOT}/port/third_party/bc7enc/bc7enc.cpp"
     "${ROOT}/port/third_party/bc7enc16/bc7decomp.c")
-target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/bc7enc16")
+target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/bc7enc" "${ROOT}/port/third_party/bc7enc16")
 target_link_libraries(VISR PRIVATE "-framework Accelerate")
 if(HALO_TVOS OR HALO_NATIVE_MAC)
     target_sources(VISR PRIVATE host/texture_refine.m)

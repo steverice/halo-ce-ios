@@ -2,7 +2,7 @@
 #include "texture_record.h"
 #include "astc_encode.h"
 #include "astcenc.h"
-#include "bc7enc16.h"
+#include "bc7enc.h"
 #include "bc7decomp.h"
 #include <algorithm>
 #include <atomic>
@@ -57,14 +57,15 @@ static void put64(uint8_t *bytes, uint64_t value)
 static bool encode_bc7(const texture_upscale_rgba_level &level, uint8_t *output, unsigned preset, unsigned threads)
 {
     static std::once_flag once;
-    std::call_once(once, [] { bc7enc16_compress_block_init(); });
-    bc7enc16_compress_block_params params;
-    bc7enc16_compress_block_params_init(&params);
-    bc7enc16_compress_block_params_init_linear_weights(&params);
-    params.m_max_partitions_mode1 = preset == 0 ? 0 : preset == 1 ? 16 : BC7ENC16_MAX_PARTITIONS1;
-    params.m_try_least_squares = preset != 0;
-    params.m_uber_level = preset == 2 ? BC7ENC16_MAX_UBER_LEVEL : 0;
-    params.m_mode1_partition_estimation_filterbank = preset != 2;
+    std::call_once(once, [] { bc7enc_compress_block_init(); });
+    /* Modes 1 and 6 for opaque blocks, 5, 6 and 7 where alpha varies (mode 6 alone shares its indices between color
+       and alpha, which smears a cutout's edge); each preset searches more partitions and endpoints. */
+    bc7enc_compress_block_params params;
+    bc7enc_compress_block_params_init(&params);
+    bc7enc_compress_block_params_init_linear_weights(&params);
+    params.m_max_partitions = preset == 0 ? 16 : BC7ENC_MAX_PARTITIONS;
+    params.m_uber_level = preset == 2 ? BC7ENC_MAX_UBER_LEVEL : preset;
+    params.m_mode17_partition_estimation_filterbank = preset != 2;
     unsigned blocks_x = (level.width + 3) / 4, blocks_y = (level.height + 3) / 4;
     threads = std::min(std::min(threads ? threads : 4, 4u), blocks_y);
     std::atomic<unsigned> next_row { 0 };
@@ -82,7 +83,7 @@ static bool encode_bc7(const texture_upscale_rgba_level &level, uint8_t *output,
                     unsigned sx = std::min(bx * 4 + x, level.width - 1), sy = std::min(by * 4 + y, level.height - 1);
                     memcpy(pixels + (y * 4 + x) * 4, level.pixels + (size_t(sy) * level.width + sx) * 4, 4);
                 }
-                bc7enc16_compress_block(output + (size_t(by) * blocks_x + bx) * 16, pixels, &params);
+                bc7enc_compress_block(output + (size_t(by) * blocks_x + bx) * 16, pixels, &params);
             }
         }
     };
@@ -163,7 +164,7 @@ int texture_upscale_encode_gate(const uint8_t *source, const uint8_t *decoded, s
 
 const char *texture_upscale_encoder_name(uint32_t format)
 {
-    if (format == TEXTURE_RECORD_BC7) return "bc7-v1";
+    if (format == TEXTURE_RECORD_BC7) return "bc7-v2"; /* v2: bc7enc (modes 1, 5, 6, 7) in place of bc7enc16 */
     if (format == TEXTURE_RECORD_ASTC4X4) return "astc4x4-fast-gated-v1";
     return nullptr;
 }

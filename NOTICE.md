@@ -30,7 +30,8 @@ what they link into the app's `Licenses` folder (`tools/ios_build.py`).
 | Component | License | Location | In the Apple apps |
 | --- | --- | --- | --- |
 | [xxHash](https://github.com/Cyan4973/xxHash), texture keys and checksums | BSD 2-Clause | `port/third_party/xxhash/LICENSE` | Yes |
-| [bc7enc16](https://github.com/richgel999/bc7enc16), BC7 compressor and quality-check decoder | MIT and ISC | `port/third_party/bc7enc16/LICENSE` | Yes |
+| [bc7enc_rdo](https://github.com/richgel999/bc7enc_rdo)'s bc7enc, BC7 compressor | MIT | `port/third_party/bc7enc/LICENSE` | Yes |
+| [bc7enc16](https://github.com/richgel999/bc7enc16)'s BC7 decoder, for the quality check | ISC | `port/third_party/bc7enc16/LICENSE` | Yes |
 | [Arm astc-encoder](https://github.com/ARM-software/astc-encoder), compressor and quality-check decoder | Apache-2.0 | `port/third_party/astcenc/LICENSE.txt` | Yes |
 | [Arm astc-encoder](https://github.com/ARM-software/astc-encoder), reference decoder | Apache-2.0 | `port/third_party/astcenc-reference/LICENSE.txt` | No, tests only |
 | [Kim2091/PBRify_Remix](https://github.com/Kim2091/PBRify_Remix), S4g per-channel Core ML conversion of 4x-PBRify_UpscalerSPANV4 | CC0 1.0 | `port/ios/Licenses/PBRify-CC0-1.0.txt` | Yes, iOS and visionOS |

@@ -26,9 +26,10 @@ the repository root. The license is in `Licenses/FFmpeg-LGPL-2.1.txt`. Their com
 directory. Khronos headers retain the notices supplied by their registries.
 Other vendored components retain their original notices in the source tree.
 
-The texture generator uses bc7enc16 by Richard Geldreich, Jr. (MIT) and
-the BC7 decoder by Harm Hanemaaijer (ISC). Their notices are bundled in
-`Licenses/BC7-MIT-ISC.txt` and retained in `port/third_party/bc7enc16/LICENSE`.
+The texture generator uses bc7enc from bc7enc_rdo by Richard Geldreich, Jr.
+(MIT) and the BC7 decoder by Harm Hanemaaijer (ISC). Their notices are bundled
+in `Licenses/BC7-MIT-ISC.txt` and retained in `port/third_party/bc7enc/LICENSE`
+and `port/third_party/bc7enc16/LICENSE`.
 
 The texture upscale model, S4g, contains the CC0 1.0 weights of
 [Kim2091's 4x-PBRify_UpscalerSPANV4](https://github.com/Kim2091/PBRify_Remix),

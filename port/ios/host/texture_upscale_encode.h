@@ -16,7 +16,7 @@ struct texture_upscale_encode_metrics
     double rgb_psnr; /* level 0, RGB over source texels with nonzero alpha */
     unsigned binary_alpha_max_error; /* endpoint alpha (0 or 255) only */
     unsigned attempts;
-    unsigned preset; /* BC7: 0 mode 6, 1/2 mode 1 + 6; ASTC: 0 fastest, 1 fast, 2 medium */
+    unsigned preset; /* BC7: 0 16 partitions, 1 64 and uber 1, 2 64 and the highest uber level; ASTC: 0 fastest, 1 fast, 2 medium */
 };
 enum texture_upscale_encode_result
 {
