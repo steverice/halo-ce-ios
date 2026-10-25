@@ -428,6 +428,17 @@ static void *preload_worker(void *unused)
 	return NULL;
 }
 
+/* The map loader owns this join, before it hands control to gameplay.
+ * Keep prepared pixels and their reservations until render-thread upload. */
+void hud_hires_preload_finish(void)
+{
+	if (preload_started)
+	{
+		pthread_join(preload_thread, NULL);
+		preload_started = 0;
+	}
+}
+
 void hud_hires_preload_reset(void)
 {
 	long asset;

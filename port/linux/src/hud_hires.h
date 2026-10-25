@@ -57,6 +57,8 @@ long hud_hires_override_find(unsigned long address, unsigned long width, unsigne
  * and immutable embedded images are read by the background decoder. */
 void hud_hires_preload(const long *assets, long count);
 void hud_hires_preload_reset(void);
+/* Finish finite startup work before leaving map initialization. */
+void hud_hires_preload_finish(void);
 /* its GL texture (decoded and uploaded, mipmapped, on first use; 0 if it
 could not be), and the number of its mip levels */
 unsigned int hud_hires_override_texture(long asset, unsigned long *levels);

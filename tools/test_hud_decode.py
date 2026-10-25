@@ -74,8 +74,8 @@ def compile_run(tmp_path, source):
     path.write_text(source)
     binary = tmp_path / 'hud'
     subprocess.run(['cc', '-std=c11', '-DHALO_IOS=1', '-Wall', '-Wextra', '-Wno-unused-function', '-Wno-unused-const-variable',
-                    '-fsanitize=address,undefined', '-pthread', '-I' + str(ROOT / 'port/linux/src'),
-                    str(path), '-lz', '-o', str(binary)], check=True)
+                    '-fsanitize=address,undefined', '-pthread', '--include-directory=' + str(ROOT / 'port/linux/src'),
+                    str(path), '-lz', '--output=' + str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
 
@@ -200,6 +200,7 @@ const struct hud_hires_embedded hud_hires_embedded[] = {
 };
 const unsigned int hud_hires_embedded_count = 2;
 static void wait_done(void) { pthread_join(preload_thread,NULL); preload_started=0; }
+/* LOAD_FINISH_HEAD */
 int main(void) {
  long ids[]={0,1}; unsigned long levels; pthread_t release;
  render_thread=pthread_self(); pause_decode=1;
@@ -224,9 +225,25 @@ int main(void) {
   assert(hud_hires_override_texture(0,&levels));
   hud_hires_preload_reset(); assert(live_bytes==0);
  }
+ /* Loading completion must await only finite CPU work, retaining its result. */
+ memset(textures,0,sizeof(textures)); fail_worker=fail_create=fail_allocation=0;
+ pause_decode=1; released=entered=0;
+ hud_hires_preload(ids,1);
+ pthread_mutex_lock(&probe_lock); while(!entered) pthread_cond_wait(&probe_condition,&probe_lock); pthread_mutex_unlock(&probe_lock);
+ pthread_create(&release,NULL,release_worker,NULL);
+ game_initialize_for_new_map();
+ assert(preload[0].state==PRELOAD_READY && preload[0].pixels && !preload_started);
+ { size_t held=preload_bytes; unsigned char *pixels=preload[0].pixels;
+   game_initialize_for_new_map(); assert(preload_bytes==held && preload[0].pixels==pixels); }
+ pthread_join(release,NULL); hud_hires_preload_reset(); assert(live_bytes==0);
  return 0;
 }
 '''
+    game = (ROOT / 'source/game/game.c').read_text()
+    start = game.index('\tnetwork_objects_placed();', game.index('void game_initialize_for_new_map('))
+    tail = game[start:game.index('\n}', start)]
+    head = 'static void network_objects_placed(void) {}\nstatic void ui_widgets_safe_to_load(int value) { (void)value; }\n#define TRUE 1\nvoid game_initialize_for_new_map(void) {\n' + tail + '\n}\n'
+    source = source.replace('/* LOAD_FINISH_HEAD */', head)
     compile_run(tmp_path, source)
 
 
@@ -239,9 +256,10 @@ def test_mac_catalyst_reports_unknown_memory_limit(tmp_path):
         path.write_text(f"""#include <assert.h>
 #include <stddef.h>
 #define HALO_NATIVE_MAC {native}
+#undef TARGET_OS_MACCATALYST
 #define TARGET_OS_MACCATALYST {catalyst}
 static size_t os_proc_available_memory(void) {{ return (size_t){available} << 20; }}
 """ + function + f'\nint main(void) {{ assert(host_memory_available_megabytes()=={expected}); }}\n')
         binary = tmp_path / 'headroom'
-        subprocess.run(['cc', str(path), '-o', str(binary)], check=True)
+        subprocess.run(['cc', str(path), '--output=' + str(binary)], check=True)
         subprocess.run([str(binary)], check=True)

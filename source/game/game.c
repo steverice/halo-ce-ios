@@ -757,6 +757,14 @@ void game_initialize_for_new_map(
 		host_astc_game_started();
 	}
 #endif
+	/* port: finish bounded HUD decoding while the map still owns loading,
+	not at its first draw (port/linux/src/hud_hires.c). */
+	{
+		extern void hud_hires_preload_finish(void);
+
+		hud_hires_preload_finish();
+	}
+
 
 	return;
 }
