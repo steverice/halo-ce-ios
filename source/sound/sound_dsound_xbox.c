@@ -2409,12 +2409,16 @@ static void dsound_channel_set_properties(
 	boolean gain_only)
 {
 	struct sound_channel *channel= channel_get(channel_index);
-	real gain= dsound_globals.pause_gain*properties->gain;
+	/* port: Custom Edition maps can carry sound gains outside 0 to 1 (or not a
+	number); a game halted on one map's sound is worse than that sound at full
+	volume or silent, so clamp to the range this checks */
+	real properties_gain= properties->gain==properties->gain ? PIN(properties->gain, 0.f, 1.f) : 0.f;
+	real gain= dsound_globals.pause_gain*properties_gain;
 
 	match_assert(
 		"c:\\halo\\SOURCE\\sound\\sound_dsound_xbox.c",
 		980,
-		properties->gain>=0.f && properties->gain<=1.f);
+		properties_gain>=0.f && properties_gain<=1.f);
 	match_assert(
 		"c:\\halo\\SOURCE\\sound\\sound_dsound_xbox.c",
 		981,
