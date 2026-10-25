@@ -11,6 +11,8 @@
 #include "host_external.h"
 #include "host_external_mode.h"
 #include "host_external_session.h"
+#include "host_external_splash.h"
+#include "renderer_build.h"
 #include "host_audio_route.h"
 #include "host_config.h"
 #include "host_profile.h"
@@ -58,6 +60,7 @@ static unsigned long test_output_frame;
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
 static UIWindow *external_window;
 static UIWindowScene *waiting_scene;
+static struct host_external_splash splash_state;
 static UIScreen *candidate_screen;
 static NSArray<UIScreenMode *> *offered;
 static struct host_external_mode candidates[64];
@@ -152,11 +155,54 @@ static void begin_modes(void) {
         port_name().UTF8String,candidate_count,candidate_screen.preferredMode.size.width,
         candidate_screen.preferredMode.size.height,candidate_screen.currentMode.size.width,candidate_screen.currentMode.size.height);
 }
+/* The launch menu's artwork (icon over the VISR wordmark on the menu background), scaled to the display. */
+static UIWindow *splash_window(UIWindowScene *scene) {
+    UIWindow *window=[[UIWindow alloc]initWithWindowScene:scene];
+    UIViewController *controller=[UIViewController new];
+    UIView *view=[[UIView alloc]initWithFrame:scene.coordinateSpace.bounds];
+    CGFloat unit=MAX(1.0,MIN(view.bounds.size.width,view.bounds.size.height)/400.0);
+    view.backgroundColor=[UIColor colorWithRed:0x08/255.0 green:0x12/255.0 blue:0x16/255.0 alpha:1];
+    UIImageView *icon=[[UIImageView alloc]initWithImage:[UIImage imageNamed:@"VISRIcon"]];
+    icon.contentMode=UIViewContentModeScaleAspectFit;icon.clipsToBounds=YES;
+    icon.layer.cornerCurve=kCACornerCurveContinuous;icon.layer.cornerRadius=104*unit*0.2237;
+    UILabel *title=[UILabel new];
+    UIFont *font=[UIFont fontWithName:@"Orbitron-Regular" size:36*unit]?:[UIFont systemFontOfSize:36*unit];
+    title.attributedText=[[NSAttributedString alloc]initWithString:@"VISR" attributes:@{
+        NSFontAttributeName:font,NSKernAttributeName:@(2.16*unit),
+        NSForegroundColorAttributeName:[UIColor colorWithRed:0xe8/255.0 green:0xf6/255.0 blue:0xfa/255.0 alpha:1]}];
+    UIStackView *stack=[[UIStackView alloc]initWithArrangedSubviews:@[icon,title]];
+    stack.axis=UILayoutConstraintAxisVertical;stack.alignment=UIStackViewAlignmentCenter;stack.spacing=16*unit;
+    stack.translatesAutoresizingMaskIntoConstraints=NO;
+    [view addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:view.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:view.centerYAnchor],
+        [icon.widthAnchor constraintEqualToConstant:104*unit],[icon.heightAnchor constraintEqualToConstant:104*unit]]];
+    controller.view=view;window.rootViewController=controller;window.hidden=NO;
+    return window;
+}
+static int renderer_is_metal(void) {
+    if(HALO_METAL_ONLY)return 1;
+    char renderer[16]="";
+    const char *launch=getenv("HALO_RENDERER");
+    if(launch&&*launch)snprintf(renderer,sizeof(renderer),"%s",launch);
+    else host_config_string("display.renderer","metal",renderer,sizeof(renderer));
+    return !strcmp(renderer,"metal");
+}
 @implementation VISRExternalSceneDelegate
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     (void)session;(void)options;
     if(![scene isKindOfClass:UIWindowScene.class])return;
-    if(!phone_window) { waiting_scene=(UIWindowScene *)scene;return; }
+    if(!phone_window) {
+        waiting_scene=(UIWindowScene *)scene;
+        if(host_external_splash_connect(&splash_state,(uintptr_t)(__bridge void *)scene)) {
+            self.window=splash_window(waiting_scene);
+            host_logf(HOST_LOG_INFO,"external display: showing the splash until the game starts");
+        }
+        return;
+    }
+    /* the splash window gives way to the game's */
+    if(self.window && external_window!=self.window) { self.window.hidden=YES;self.window=nil; }
     if(!metal_enabled) {
         host_logf(HOST_LOG_INFO,"external display: renderer is OpenGL ES; the system mirrors this device");return;
     }
@@ -173,6 +219,7 @@ static void begin_modes(void) {
 }
 - (void)sceneDidDisconnect:(UIScene *)scene {
     if(waiting_scene==scene)waiting_scene=nil;
+    host_external_splash_disconnect(&splash_state,(uintptr_t)(__bridge void *)scene);
     if(host_external_session_disconnect(&session_state,(uintptr_t)(__bridge void *)scene)) {
         candidate_screen=nil;requested_index=-1;
         pthread_mutex_lock(&snapshot_lock);snapshot.generation++;pthread_mutex_unlock(&snapshot_lock);
@@ -200,6 +247,18 @@ void host_external_install(void) {
         }];
 #endif
 }
+void host_external_menu_splash(void) {
+#if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+    uintptr_t scene=host_external_splash_menu(&splash_state,renderer_is_metal());
+    if(scene && waiting_scene) {
+        VISRExternalSceneDelegate *delegate=(VISRExternalSceneDelegate *)waiting_scene.delegate;
+        if([delegate isKindOfClass:VISRExternalSceneDelegate.class] && !delegate.window) {
+            delegate.window=splash_window(waiting_scene);
+            host_external_splash_shown(&splash_state,scene);
+        }
+    }
+#endif
+}
 static void snapshot_output(int external,int width,int height,const char *reason);
 void host_external_attach(void *window_pointer,int metal) {
     SDL_Window *window=window_pointer;
@@ -221,6 +280,7 @@ void host_external_attach(void *window_pointer,int metal) {
     host_config_string("debug.external_mode","",config,sizeof(config));
     host_external_force(forced&&*forced?forced:config);
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+    host_external_splash_attach(&splash_state);
     if(waiting_scene) {
         UIWindowScene *scene=waiting_scene;waiting_scene=nil;
         [(VISRExternalSceneDelegate *)scene.delegate scene:scene willConnectToSession:scene.session options:nil];
@@ -560,6 +620,7 @@ double host_external_companion_dim(void) {
 
 #else
 void host_external_install(void) {}
+void host_external_menu_splash(void) {}
 void host_external_attach(void *window,int metal) { (void)window;(void)metal; }
 void host_external_poll(void) {}
 void host_external_commit(int allow_pause) { (void)allow_pause; }

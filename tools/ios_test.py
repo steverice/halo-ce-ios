@@ -105,7 +105,7 @@ run(BUILD/'external-mode-probe')
 run('xcrun', 'clang', '-fobjc-arc', '-fsanitize=address,undefined', f'--include-directory={BUILD}',
     'port/ios/tests/external_output_probe.m', '-framework', 'Foundation', '-o', BUILD/'external-output-probe')
 run(BUILD/'external-output-probe')
-for probe in ('external_session', 'audio_route'):
+for probe in ('external_session', 'external_splash', 'audio_route'):
     run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '--include-directory=port/ios/host',
         f'port/ios/tests/{probe}_probe.c', '-o', BUILD/f'{probe}-probe')
     run(BUILD/f'{probe}-probe')

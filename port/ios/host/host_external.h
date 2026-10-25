@@ -10,6 +10,8 @@ struct host_external_snapshot {
     int mode_count;
 };
 void host_external_install(void);
+/* The launch menu is up: show the splash on an external display until the game attaches. */
+void host_external_menu_splash(void);
 void host_external_attach(void *sdl_window, int metal);
 void host_external_poll(void);
 void host_external_commit(int allow_pause);

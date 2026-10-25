@@ -6,6 +6,7 @@
 #import <CoreText/CoreText.h>
 #include "ios_host.h"
 #include "host_benchmark.h"
+#include "host_external.h"
 #include "benchmark_plan.h"
 #import "host_data_updates.h"
 
@@ -479,8 +480,14 @@ static NSInteger ask(NSString *heading, NSString *detail, NSArray<NSString *> *c
     NSInteger chosen;
 
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
-        if ([candidate isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)candidate; break; }
+        if ([candidate isKindOfClass:UIWindowScene.class]
+#if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+            /* an external display's scene is not the phone's */
+            && ![candidate.session.role isEqualToString:UIWindowSceneSessionRoleExternalDisplayNonInteractive]
+#endif
+            ) { scene = (UIWindowScene *)candidate; break; }
     if (!scene) return 0;
+    if (launchMenu) host_external_menu_splash();
     controller.heading = heading;
     controller.detail = detail;
     controller.choices = choices;
