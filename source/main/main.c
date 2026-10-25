@@ -3773,6 +3773,8 @@ void main_loop(
 		shell_idle();
 		event_manager_update();
 		telnet_console_process();
+		/* port: init.txt held by debug.init_after (console.c) */
+		console_startup_update();
 		profile_scope_exit(main_platform_events_section)
 
 		if (!shell_application_is_paused())

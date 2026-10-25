@@ -2055,6 +2055,17 @@
             "desktop"
           ]
         },
+        "init_after": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Run init.txt's commands this many seconds after start-up instead of at once, so a test can wait at the main menu and then start a level ('map_name a10') in the same launch; 0 at once.",
+          "x-environment": "HALO_INIT_AFTER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "benchmark_window_marker": {
           "type": "boolean",
           "default": false,

@@ -1351,6 +1351,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens (of game time under\n"
 		"debug.fixed_timestep); 0 never." },
+	{ "debug.init_after", _config_real, "0.0", "HALO_INIT_AFTER", _environment_value, _platform_all,
+		"Run init.txt's commands this many seconds after start-up instead of at\n"
+		"once, so a test can wait at the main menu and then start a level\n"
+		"('map_name a10') in the same launch; 0 at once." },
 	{ "debug.benchmark_window_marker", _config_boolean, "false", "HALO_BENCHMARK_WINDOW_MARKER", _environment_set_is_true, _platform_all,
 		"Show the measured benchmark window and a five-second countdown onscreen." },
 	{ "debug.benchmark_review_take", _config_boolean, "false", "HALO_BENCHMARK_REVIEW_TAKE", _environment_set_is_true, _platform_all,
