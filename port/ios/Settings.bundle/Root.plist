@@ -9,7 +9,7 @@
 		<dict>
 			<key>Type</key><string>PSGroupSpecifier</string>
 			<key>Title</key><string>Textures</string>
-			<key>FooterText</key><string>Upscaled textures are made on this device from your copy of the game and stay here. Deleting them frees space; they are made again when a level needs them.</string>
+			<key>FooterText</key><string>Upscaled textures are made on this device from your copy of the game and stay here. Deleting them frees space; they are made again when a level needs them. Prepared original textures are listed separately and kept when you delete upscaled textures.</string>
 		</dict>
 		<dict>
 			<key>Type</key><string>PSToggleSwitchSpecifier</string>
@@ -21,6 +21,12 @@
 			<key>Type</key><string>PSTitleValueSpecifier</string>
 			<key>Title</key><string>Upscaled textures</string>
 			<key>Key</key><string>upscaled_textures_size</string>
+			<key>DefaultValue</key><string>None</string>
+		</dict>
+		<dict>
+			<key>Type</key><string>PSTitleValueSpecifier</string>
+			<key>Title</key><string>Prepared original textures</string>
+			<key>Key</key><string>prepared_textures_size</string>
 			<key>DefaultValue</key><string>None</string>
 		</dict>
 		<dict>

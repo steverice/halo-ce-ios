@@ -185,7 +185,9 @@ the upscaled textures on or off (`display.upscaled_textures` in `config.toml`,
 written when the app starts or returns to the foreground after you change the
 switch); it applies at the next level load. "Upscaled textures" shows how much
 storage the upscaled textures take (`Documents/texture-cache`), and the
-"Delete upscaled textures" switch deletes them. iOS's own storage screen can
+"Delete upscaled textures" switch deletes them. "Prepared original textures"
+shows the separate `Documents/astc-cache` store. The delete switch keeps that
+store. iOS's own storage screen can
 only delete the whole app, imported game included. The app acts on the switch
 at launch and whenever it returns to the foreground, deletes only the cache's
 own files, and turns the switch back off. It also refreshes the size whenever

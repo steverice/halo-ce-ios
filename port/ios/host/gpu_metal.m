@@ -1023,6 +1023,7 @@ static void gpu_metal_texture_upload(gpu_texture texture, uint32_t face, uint32_
 			return;
 		}
 		description = &record->description;
+		host_perf_hooks_dynamic_ignore(DYNAMIC_RESOLUTION_TEXTURE);
 		if (!record->texture || busy(record->used))
 		{
 			id<MTLTexture> previous = record->texture;

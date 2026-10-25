@@ -24,6 +24,7 @@
 #if !TARGET_OS_TV && !HALO_NATIVE_MAC
 #include "host_texture_settings.h"
 #endif
+#include "host_astc_store.h"
 #include "../../linux/include/halo_port_limits.h" /* HALO_PORT_NETWORK_VERSION, for the log */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -370,6 +371,7 @@ int main(int argc,char **argv) {
         if(!host_render_replay_requested())
 #endif
         host_ios_prepare_assets(data_root);
+        host_astc_store_init(data_root);
         /* the device benchmark: debug.benchmark_suite's value through the launch's environment, or in a tester
            build the choice made on its first screen */
         const char *benchmark_suite=getenv("HALO_BENCHMARK_SUITE");

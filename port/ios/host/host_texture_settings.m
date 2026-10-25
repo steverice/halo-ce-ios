@@ -15,9 +15,13 @@ static void publish_size(NSString *directory)
 {
 	NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 	uint64_t size = texture_cache_size(directory.fileSystemRepresentation);
+	NSString *prepared = [[directory stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"astc-cache"];
+	uint64_t prepared_size = texture_cache_size(prepared.fileSystemRepresentation);
 
 	[defaults setObject:size ? [NSByteCountFormatter stringFromByteCount:(long long)size
 		countStyle:NSByteCountFormatterCountStyleFile] : @"None" forKey:@"upscaled_textures_size"];
+	[defaults setObject:prepared_size ? [NSByteCountFormatter stringFromByteCount:(long long)prepared_size
+		countStyle:NSByteCountFormatterCountStyleFile] : @"None" forKey:@"prepared_textures_size"];
 	NSLog(@"texture cache: %llu bytes in %@", (unsigned long long)size, directory);
 }
 
@@ -49,7 +53,7 @@ void host_texture_settings_apply(const char *data_root)
 	NSString *directory = cache_directory(data_root);
 
 	[defaults registerDefaults:@{ @"upscaled_textures": @YES, @"delete_upscaled_textures": @NO,
-		@"upscaled_textures_size": @"None" }];
+		@"upscaled_textures_size": @"None", @"prepared_textures_size": @"None" }];
 	apply_switch(defaults);
 	if ([defaults boolForKey:@"delete_upscaled_textures"])
 	{

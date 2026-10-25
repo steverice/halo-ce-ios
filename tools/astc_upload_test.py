@@ -42,7 +42,9 @@ def main():
         'level_dimension', 'level_bytes', 'xgpu_texture_level_offset',
         'xgpu_texture_face_size', 'texture_size_supported'))
     helpers = '\n'.join(function(source, name) for name in (
-        'texture_entry_format', 'texture_astc_prepare', 'texture_astc_upload'))
+        'texture_entry_format', 'texture_astc_prepare', 'texture_astc_key',
+        'texture_astc_bytes', 'texture_astc_stored', 'texture_astc_upload',
+        'texture_gpu_bytes', 'texture_astc_swap_ready'))
     # Preserve the complete production selection block. Only hardware queries
     # require substitution to compile this Objective-C block as portable C.
     start = backend.index('compressed_textures = astc_textures = NO;')

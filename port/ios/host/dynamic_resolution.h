@@ -22,7 +22,8 @@ enum dynamic_resolution_ignore_reason
 	DYNAMIC_RESOLUTION_COMPILE = 1,
 	DYNAMIC_RESOLUTION_SCENE = 2, /* scene-class change or either cutscene edge */
 	DYNAMIC_RESOLUTION_LOAD = 4,
-	DYNAMIC_RESOLUTION_RESUME = 8
+	DYNAMIC_RESOLUTION_RESUME = 8,
+	DYNAMIC_RESOLUTION_TEXTURE = 16
 };
 
 enum dynamic_resolution_thermal
@@ -200,6 +201,8 @@ static inline enum dynamic_resolution_action dynamic_resolution_present(
 	int late = frame->late || frame->deadline_miss, valid, cpu_bound, trigger, target, settling, pressure, i;
 	enum dynamic_resolution_action action = DYNAMIC_RESOLUTION_HOLD;
 	plan->last_frame_id = frame->frame_id;
+	if (frame->ignore & DYNAMIC_RESOLUTION_TEXTURE)
+		dynamic_resolution_ignore(plan, 1, DYNAMIC_RESOLUTION_TEXTURE);
 	if (frame->ignore & DYNAMIC_RESOLUTION_COMPILE)
 		dynamic_resolution_ignore(plan, 4, DYNAMIC_RESOLUTION_COMPILE);
 	if (frame->ignore & DYNAMIC_RESOLUTION_SCENE)

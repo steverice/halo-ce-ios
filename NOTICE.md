@@ -29,6 +29,7 @@ what they link into the app's `Licenses` folder (`tools/ios_build.py`).
 
 | Component | License | Location | In the Apple apps |
 | --- | --- | --- | --- |
+| [xxHash](https://github.com/Cyan4973/xxHash), texture keys and checksums | BSD 2-Clause | `port/third_party/xxhash/LICENSE` | Yes |
 | [Arm astc-encoder](https://github.com/ARM-software/astc-encoder), compressor and quality-check decoder | Apache-2.0 | `port/third_party/astcenc/LICENSE.txt` | Yes |
 | [Arm astc-encoder](https://github.com/ARM-software/astc-encoder), reference decoder | Apache-2.0 | `port/third_party/astcenc-reference/LICENSE.txt` | No, tests only |
 | [FFmpeg](https://ffmpeg.org/) 9.0.2, its Bink demuxer and decoders only | LGPL-2.1-or-later | `port/third_party/ffmpeg-bink/COPYING.LGPLv2.1`, `port/third_party/ffmpeg-bink/` | Yes, unless built with `--bink off` |

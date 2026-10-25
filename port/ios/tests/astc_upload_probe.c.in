@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gpu.h"
+#include "astc_store.h"
+#define HALO_IOS 1
 
 typedef uint32_t DWORD, D3DCOLOR;
 typedef uint64_t Uint64; /* SDL's, in the cache section */
@@ -44,6 +46,32 @@ static const char *fixture_dump = "", *fixture_mode = "off";
 static BOOL compressed_textures, astc_textures;
 static BOOL fixture_bc, fixture_bc_api = TRUE, fixture_astc = TRUE;
 
+static struct astc_store_key fixture_key;
+static unsigned char fixture_stored[4096];
+static size_t fixture_stored_size;
+static uint64_t fixture_store_generation = 1;
+static unsigned fixture_store_ready;
+int host_astc_texture_key(const void *source, unsigned int format,
+	unsigned int width, unsigned int height, unsigned int levels, unsigned int faces,
+	unsigned int source_face_bytes, void *output)
+{
+	struct astc_store_key *key = output;
+	memset(key, 0, sizeof(*key));
+	key->bytes[0] = format; key->bytes[1] = width; key->bytes[2] = height;
+	key->bytes[3] = levels; key->bytes[4] = faces;
+	key->bytes[5] = *(const unsigned char *)source;
+	(void)source_face_bytes;
+	return 1;
+}
+int host_astc_texture_read(const void *key, void *bytes, unsigned int size)
+{
+	if (!fixture_store_ready || memcmp(key, &fixture_key, sizeof(fixture_key)) || size != fixture_stored_size)
+		return 0;
+	memcpy(bytes, fixture_stored, size); return 1;
+}
+unsigned long long host_astc_texture_generation(void) { return fixture_store_generation; }
+
+void benchmark_graphics_texture_replacement_selected(void) {}
 static void platform_log(const char *format, ...) { (void)format; }
 static BOOL platform_is_contiguous(const void *pointer)
 {
@@ -167,6 +195,7 @@ static void reset(unsigned format, unsigned cube)
 	fixture_generation = fixture_serial = 1;
 	fixture_channel_order = fixture_menu = fixture_text = fixture_hud = fixture_override = 0;
 	fallback_calls = rewrite_calls = upload_calls = fail_count = 0;
+	fixture_store_ready = 0; fixture_store_generation++;
 	fixture_dump = ""; fixture_mode = "force"; fixture_bc = TRUE;
 	initialize(GPU_INITIALIZE_COMPRESSED_TEXTURES);
 	/* A distinct marker for each face and mip exposes wrong face padding,
@@ -213,7 +242,8 @@ int main(void)
 		}
 		assert(get() == entry()->texture && upload_calls == 24); /* recent cache hit */
 		fixture_generation++; fixture_serial++;
-		assert(get() && entry()->runtime_written && entry()->decoded);
+		arena[resource[1]] = 0xff; /* changed bytes need a new key and fallback */
+		assert(get() && entry()->decoded);
 		assert(entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1 && last_decode);
 		/* A late unsupported block must discard every staged face and level. */
 		reset(format, TRUE);
@@ -244,9 +274,48 @@ int main(void)
 	assert(get() && entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1 && last_decode);
 	reset(0xc, FALSE); assert(get() && entry()->gpu_format == GPU_FORMAT_ASTC4X4);
 	fixture_generation++; fixture_serial++;
+	arena[resource[1]] = 0xff;
 	fail_format = GPU_FORMAT_BGRA8; fail_count = 1;
 	assert(!get() && !entry()->generation);
 	assert(get() && entry()->gpu_format == GPU_FORMAT_BGRA8 && fallback_calls == 1);
+	/* Completed encoded output replaces a pending BGRA upload at a frame
+	 * boundary, invalidates cached handles, and accounts for actual blocks. */
+	reset(0xe, FALSE); arena[resource[1]] = 0xff;
+	assert(get() && entry()->astc_pending && entry()->decoded);
+	fixture_key = entry()->astc_key;
+	fixture_stored_size = texture_astc_bytes(entry());
+	memset(fixture_stored, 42, fixture_stored_size);
+	fixture_store_ready = 1; fixture_store_generation++;
+	texture_astc_swap_ready();
+	assert(entry()->gpu_format == GPU_FORMAT_ASTC4X4 && !entry()->decoded);
+	assert(!entry()->astc_pending && !entry()->result_valid);
+	assert(get() == entry()->texture && upload_calls == 4);
+	assert(texture_gpu_bytes(entry()) == 112);
+	/* A replaced guest allocation must never receive an old completed key. */
+	reset(0xf, FALSE); arena[resource[1]] = 0xff; assert(get());
+	fixture_key = entry()->astc_key; fixture_stored_size = texture_astc_bytes(entry());
+	fixture_generation++; fixture_serial++; fixture_store_ready = 1; fixture_store_generation++;
+	texture_astc_swap_ready(); assert(entry()->gpu_format == GPU_FORMAT_BGRA8);
+	arena[resource[1]] = 7;
+	assert(get() && entry()->gpu_format == GPU_FORMAT_ASTC4X4);
+	assert(memcmp(&entry()->astc_key, &fixture_key, sizeof(fixture_key)));
+	/* A stale or corrupt size, a replacement, and a failed GPU allocation
+	 * leave the fallback alive. A later publication retries safely. */
+	reset(0xe, FALSE); arena[resource[1]] = 0xff; assert(get());
+	fixture_key = entry()->astc_key; fixture_stored_size = 1;
+	fixture_store_ready = 1; fixture_store_generation++;
+	texture_astc_swap_ready(); assert(entry()->gpu_format == GPU_FORMAT_BGRA8);
+	fixture_stored_size = texture_astc_bytes(entry());
+	fail_format = GPU_FORMAT_ASTC4X4; fail_count = 1; fixture_store_generation++;
+	texture_astc_swap_ready(); assert(entry()->gpu_format == GPU_FORMAT_BGRA8);
+	fixture_store_generation++; texture_astc_swap_ready();
+	assert(entry()->gpu_format == GPU_FORMAT_ASTC4X4);
+	/* A warm store lookup works before the direct-rewrite fallback. */
+	reset(0xe, FALSE); arena[resource[1]] = 0xff;
+	host_astc_texture_key(arena + resource[1], ASTC_DXT3, 8, 8, 4, 1,
+		xgpu_texture_face_size(&input_description), &fixture_key);
+	fixture_stored_size = 112; fixture_store_ready = 1;
+	assert(get() && entry()->gpu_format == GPU_FORMAT_ASTC4X4 && !rewrite_calls);
 	reset(0x6, FALSE); expect_fallback();
 	reset(0xc, FALSE); /* release fixture cache allocations for ASan */
 	puts("PASS: production ASTC upload selection, fallback, mutation, mip and cube integration");

@@ -1196,6 +1196,13 @@ long scenario_tags_load(
 	boolean read_complete;
 
 	stripped_scenario_name = tag_name_strip_path(scenario_name);
+#ifdef HALO_IOS
+	/* port: prioritize the disk worker before cache reads or first texture uploads. */
+	{
+		extern void host_astc_map_will_load(char const *name);
+		host_astc_map_will_load(stripped_scenario_name);
+	}
+#endif
 	result = NONE;
 	texture_cache_open();
 	sound_cache_open();

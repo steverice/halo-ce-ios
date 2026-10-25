@@ -188,7 +188,8 @@ target_compile_features(halo_astcenc PRIVATE cxx_std_14)
 target_compile_definitions(halo_astcenc PRIVATE ASTCENC_BLOCK_MAX_TEXELS=16)
 target_include_directories(halo_astcenc PUBLIC "${ROOT}/port/third_party/astcenc")
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/astc_encode.cpp"
-    "${ROOT}/port/linux/src/astc_rewrite.c")
+    "${ROOT}/port/linux/src/astc_rewrite.c" "${ROOT}/port/runtime/astc_store.c"
+    host/host_astc_store.m host/host_astc_texture.c)
 target_compile_features(VISR PRIVATE cxx_std_14)
 target_link_libraries(VISR PRIVATE halo_astcenc)
 target_include_directories(VISR PRIVATE host "${ROOT}/port/runtime" "${ROOT}/port/runtime/include"

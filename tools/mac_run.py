@@ -130,6 +130,7 @@ DEFAULTS = {
     "display.effect_resolution": '"xbox"',
     "display.compressed_textures": "false",
     "debug.texture_astc": '"off"',
+    "debug.texture_astc_sync": "false",
     "display.frame_pacing": '"off"',
     "display.frame_rate": '"display"',
     # (a runner run sets debug.exit_after, so "auto" compiles at each first draw, as before)

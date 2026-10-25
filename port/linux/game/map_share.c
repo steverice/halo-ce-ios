@@ -1891,6 +1891,14 @@ static void download_finish(
 		download_fail("The map was downloaded, but cannot be played.");
 		return;
 	}
+	#ifdef HALO_IOS
+	/* port: validation above is the publication boundary for the texture worker. */
+	for (index = 0; index < download->file_count; index++)
+	{
+		extern void host_astc_map_arrived(char const *path);
+		host_astc_map_arrived(download->files[index].final_path);
+	}
+#endif
 	error(_error_silent, "map sharing: downloaded %s (%lu bytes)", download->level_name, download->done_bytes);
 	download_report(_progress_done);
 	/* (sent on to the others from here, without hashing them again) */

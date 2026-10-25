@@ -21,6 +21,8 @@ run('python3', 'tools/test_touch_pause.py')
 run('python3', 'tools/test_astc_rewrite.py')
 run('python3', 'tools/test_astc_encode.py')
 run('python3', 'tools/astc_upload_test.py')
+run('python3', 'tools/test_astc_store.py')
+run('python3', 'tools/astc_worker_test.py')
 
 clang = '/opt/homebrew/opt/llvm/bin/clang'
 lld = '/opt/homebrew/opt/lld/bin/ld.lld'
@@ -381,7 +383,7 @@ run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     'port/runtime/game_perf.c', '-lz',
     '-o', BUILD/'perf-reports-probe')
 run(BUILD/'perf-reports-probe')
-# Performance identity remains available independently of shader delivery; plain builds stay inert.
+# Explicit identity initialization serves ASTC even without report collectors; lazy lookup stays inert.
 for perf_reports in (1, 0):
     probe = BUILD/f'map-identity-probe-{perf_reports}'
     run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',

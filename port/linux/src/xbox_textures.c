@@ -16,6 +16,9 @@ memory_watch.c detects that by write-protecting the pages.
 
 #include "xgpu.h"
 #include "astc_rewrite.h"
+#ifdef HALO_IOS
+#include "astc_store.h"
+#endif
 #include "hud_hires.h"
 #include "menu_files.h"
 #include "text_hires.h"
@@ -822,7 +825,10 @@ struct texture_entry
 	uint32_t result_type;
 	struct xgpu_texture_description result_description;
 	uint32_t gpu_format;
-	BOOL runtime_written;
+#ifdef HALO_IOS
+	struct astc_store_key astc_key;
+	BOOL astc_key_valid, astc_pending;
+#endif
 };
 
 #define TEXTURE_BUCKET_COUNT 4096
@@ -1111,6 +1117,54 @@ static unsigned char *texture_astc_prepare(const struct texture_entry *entry)
 	return bytes;
 }
 
+#ifdef HALO_IOS
+/* Only scalars and byte buffers cross the ILP32 guest/LP64 host boundary. */
+extern int host_astc_texture_key(const void *source, unsigned int format,
+	unsigned int width, unsigned int height, unsigned int levels, unsigned int faces,
+	unsigned int source_face_bytes, void *key);
+extern int host_astc_texture_read(const void *key, void *bytes, unsigned int size);
+extern unsigned long long host_astc_texture_generation(void);
+static BOOL texture_astc_key(struct texture_entry *entry)
+{
+	const struct xgpu_texture_description *description = &entry->description;
+	struct format_information information = format_information(description->format);
+	unsigned int format = information.kind == _texel_dxt1 ? ASTC_DXT1 :
+		information.kind == _texel_dxt3 ? ASTC_DXT3 : ASTC_DXT5;
+	if (!entry->astc_key_valid)
+		entry->astc_key_valid = host_astc_texture_key((const void *)entry->address, format,
+			description->width, description->height, description->levels,
+			description->cube_map ? 6 : 1, xgpu_texture_face_size(description), &entry->astc_key);
+	return entry->astc_key_valid;
+}
+
+static size_t texture_astc_bytes(const struct texture_entry *entry)
+{
+	size_t bytes = 0;
+	for (unsigned long level = 0; level < entry->description.levels; level++)
+		bytes += ((level_dimension(entry->description.width, level) + 3) / 4) *
+			((level_dimension(entry->description.height, level) + 3) / 4) * 16;
+	return bytes * (entry->description.cube_map ? 6 : 1);
+}
+
+static unsigned char *texture_astc_stored(struct texture_entry *entry)
+{
+	size_t size = texture_astc_bytes(entry);
+	unsigned char *bytes;
+	if (!texture_astc_key(entry))
+		return NULL;
+	bytes = malloc(size);
+	if (bytes && !host_astc_texture_read(&entry->astc_key, bytes, size))
+	{
+		free(bytes);
+		bytes = NULL;
+	}
+	if (bytes && config_boolean("debug.texture_log"))
+		platform_log("texture ASTC store hit %08lx frame %lu bytes %lu", (unsigned long)entry->data,
+			texture_frame, (unsigned long)size);
+	return bytes;
+}
+#endif
+
 static void texture_astc_upload(const struct texture_entry *entry, const unsigned char *bytes)
 {
 	unsigned long face, level, offset = 0;
@@ -1324,10 +1378,11 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 	if (!entry->generation || generation > entry->generation || no_cache)
 	{
 		entry->result_valid = FALSE;
-		/* Once observed changing, runtime-written texels stay on the decode path.
-		 * Memory reused for another bitmap is conservatively treated the same. */
-		if (entry->generation && generation > entry->generation)
-			entry->runtime_written = TRUE;
+#ifdef HALO_IOS
+		entry->astc_key_valid = entry->astc_pending = FALSE;
+#endif
+		/* A rewritten guest page gets a fresh content key. The old worker result
+		 * cannot match changed bytes, even when the address is reused. */
 		/* protect first, so a write racing with the upload is noticed */
 		memory_watch_protect(entry->address, entry->size);
 		entry->generation = memory_watch_generation(entry->address, entry->size);
@@ -1358,13 +1413,22 @@ gpu_texture xgpu_texture_get(const DWORD *resource, const D3DCOLOR *palette, uin
 
 			texture_override_apply(entry, palette);
 			eligible = device_capabilities.astc && !device_capabilities.s3tc && entry->description.compressed &&
-				entry->type != GPU_TEXTURE_3D && !entry->runtime_written &&
+				entry->type != GPU_TEXTURE_3D &&
 				!(resource[0] & D3DCOMMON_D3DCREATED) && channel_order == _custom_edition_channels_xbox &&
 				!*config_string("debug.texture_dump_directory") &&
 				!text_hires_atlas_texture(entry->data) &&
 				texture_entry_result_uncached(entry, &result_type, &result_description) == entry->texture;
 			if (eligible)
-				astc = texture_astc_prepare(entry);
+			{
+#ifdef HALO_IOS
+				astc = texture_astc_stored(entry);
+#endif
+				if (!astc)
+					astc = texture_astc_prepare(entry);
+#ifdef HALO_IOS
+				entry->astc_pending = !astc && entry->astc_key_valid;
+#endif
+			}
 			/* Unsupported alpha, replacements, allocation failure, and runtime writes
 			 * all retain the existing decode. BC devices keep their normal path. */
 			if (astc && !texture_entry_format(entry, GPU_FORMAT_ASTC4X4))
@@ -1433,20 +1497,65 @@ static unsigned long texture_idle_sweeps(void)
 	return sweeps;
 }
 
-/* the bytes a texture holds on the GPU, about: BGRA8 texels of every face and
-slice, a third more for the mip levels */
+/* Count actual mip block sizes, including partial blocks at tiny mips. */
 static unsigned long texture_gpu_bytes(const struct texture_entry *entry)
 {
-	unsigned long bytes = entry->description.width * entry->description.height * 4;
-
-	if (entry->description.depth > 1)
-		bytes *= entry->description.depth;
-	if (entry->description.cube_map)
-		bytes *= 6;
-	if (entry->description.levels > 1)
-		bytes += bytes / 3;
-	return bytes;
+	unsigned long bytes = 0;
+	for (unsigned long level = 0; level < entry->description.levels; level++)
+	{
+		unsigned long width = level_dimension(entry->description.width, level);
+		unsigned long height = level_dimension(entry->description.height, level);
+		unsigned long depth = level_dimension(entry->description.depth, level);
+		if (entry->gpu_format == GPU_FORMAT_ASTC4X4 || entry->gpu_format == GPU_FORMAT_BC2 ||
+			entry->gpu_format == GPU_FORMAT_BC3)
+			bytes += ((width + 3) / 4) * ((height + 3) / 4) * 16 * depth;
+		else if (entry->gpu_format == GPU_FORMAT_BC1)
+			bytes += ((width + 3) / 4) * ((height + 3) / 4) * 8 * depth;
+		else
+			bytes += width * height * depth * 4;
+	}
+	return bytes * (entry->description.cube_map ? 6 : 1);
 }
+
+#ifdef HALO_IOS
+/* The worker publishes keys, never entry pointers. Search the live buckets again
+ * at a frame boundary, and reject guest data rewritten since its upload. */
+static void texture_astc_swap_ready(void)
+{
+	static uint64_t observed;
+	uint64_t current = host_astc_texture_generation();
+	if (current == observed)
+		return;
+	observed = current;
+	for (unsigned long bucket = 0; bucket < TEXTURE_BUCKET_COUNT; bucket++)
+		for (struct texture_entry *entry = texture_buckets[bucket]; entry; entry = entry->next)
+		{
+			unsigned char *bytes;
+			uint32_t type;
+			struct xgpu_texture_description description;
+			if (!entry->astc_pending || !entry->astc_key_valid ||
+				entry->gpu_format != GPU_FORMAT_BGRA8 ||
+				memory_watch_generation(entry->address, entry->size) > entry->generation ||
+				*config_string("debug.texture_dump_directory") ||
+				text_hires_atlas_texture(entry->data) ||
+				texture_entry_result_uncached(entry, &type, &description) != entry->texture)
+				continue;
+			bytes = texture_astc_stored(entry);
+			if (!bytes)
+				continue;
+			if (texture_entry_format(entry, GPU_FORMAT_ASTC4X4))
+			{
+				texture_astc_upload(entry, bytes);
+				entry->astc_pending = FALSE;
+				if (config_boolean("debug.texture_log"))
+					platform_log("texture ASTC swap %08lx frame %lu", (unsigned long)entry->data, texture_frame);
+				/* A recent hit may bypass the normal upload check. */
+				memset(recent_textures, 0, sizeof(recent_textures));
+			}
+			free(bytes);
+		}
+}
+#endif
 
 /* drops the textures last drawn in a frame before this one, and adds up the
 bytes of the ones dropped to *bytes (when not NULL) */
@@ -1528,6 +1637,9 @@ void xgpu_texture_cache_begin_frame(void)
 		/* Recent hits bypass the generation check. Forget lookups, not textures. */
 		memset(recent_textures, 0, sizeof(recent_textures));
 	}
+#ifdef HALO_IOS
+	texture_astc_swap_ready();
+#endif
 	texture_frame++;
 	now = SDL_GetTicks();
 	if (now >= texture_trim_next)

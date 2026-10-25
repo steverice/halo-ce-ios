@@ -2488,9 +2488,19 @@
         "texture_astc": {
           "type": "string",
           "default": "off",
-          "description": "Direct DXT-to-ASTC uploads: \"off\" (default), \"on\" on GPUs without BC, or \"force\" to emulate a GPU without BC for validation. Requires compressed_textures.",
+          "description": "DXT-to-ASTC texture preparation: \"off\" (default), \"on\" on GPUs without BC, or \"force\" to emulate a GPU without BC for validation. Requires compressed_textures.",
           "x-environment": "HALO_TEXTURE_ASTC",
           "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "texture_astc_sync": {
+          "type": "boolean",
+          "default": false,
+          "description": "Wait for ASTC map preparation before loading, for screenshot validation only.",
+          "x-environment": "HALO_TEXTURE_ASTC_SYNC",
+          "x-environment-style": "set_is_true",
           "x-platforms": [
             "apple"
           ]

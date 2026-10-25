@@ -21,7 +21,6 @@ static NSString *signature(NSString *path) {
     if(stat(path.fileSystemRepresentation,&info) || !S_ISREG(info.st_mode))return nil;
     return [NSString stringWithFormat:@"%llu:%llu:%lld:%lld:%ld:%lld:%ld",(unsigned long long)info.st_dev,(unsigned long long)info.st_ino,(long long)info.st_size,(long long)info.st_mtimespec.tv_sec,info.st_mtimespec.tv_nsec,(long long)info.st_ctimespec.tv_sec,info.st_ctimespec.tv_nsec];
 }
-#if HALO_SHADER_UPLOAD || HALO_PERF_REPORTS
 static BOOL valid_identity(id identity) {
     if(![identity isKindOfClass:NSDictionary.class])return NO;
     NSString *fingerprint=identity[@"fingerprint"],*format=identity[@"format"],*stamp=identity[@"signature"];
@@ -30,11 +29,10 @@ static BOOL valid_identity(id identity) {
         [format isKindOfClass:NSString.class] && format.length<32 && [format hasPrefix:@"cache-"] &&
         [stamp isKindOfClass:NSString.class] && stamp.length<256;
 }
-#endif
 static void persist_locked(void) {
     /* Keep publication and persistence ordered across priority/background hashes. */
     NSData *bytes=[NSJSONSerialization dataWithJSONObject:map_cache options:NSJSONWritingSortedKeys error:nil];
-    if(bytes.length>65536 || ![bytes writeToFile:CACHE_PATH options:NSDataWritingAtomic error:nil])return;
+    if(![bytes writeToFile:CACHE_PATH options:NSDataWritingAtomic error:nil])return;
     int fd=open(CACHE_PATH.fileSystemRepresentation,O_RDONLY);if(fd>=0){fsync(fd);close(fd);}
 }
 static void hash_map(NSString *path) {
@@ -59,14 +57,13 @@ static void hash_map(NSString *path) {
         NSString *prior=existing[@"fingerprint"];
         if([[prior substringToIndex:60] isEqual:[fingerprint substringToIndex:60]] && ![prior isEqual:fingerprint]){[cache_lock unlock];return;}
     }
-    if(map_cache[path] || map_cache.count<128) {
+    {
         map_cache[path]=@{@"fingerprint":fingerprint,@"format":[NSString stringWithFormat:@"cache-%u",version],@"signature":before};
         persist_locked();
     }
     [cache_lock unlock];
 }
 void host_map_identity_init(void) {
-#if HALO_SHADER_UPLOAD || HALO_PERF_REPORTS
     static dispatch_once_t once;dispatch_once(&once,^{
         cache_lock=[NSLock new];map_cache=[NSMutableDictionary dictionary];pending=[NSMutableSet set];
         identity_worker=dispatch_queue_create("org.visr.map-identity",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
@@ -75,9 +72,9 @@ void host_map_identity_init(void) {
         dispatch_queue_set_specific(priority_worker,&priority_key,(void *)&priority_key,NULL);
         [NSFileManager.defaultManager createDirectoryAtPath:CACHE_ROOT withIntermediateDirectories:YES attributes:nil error:nil];
         NSNumber *size=[NSFileManager.defaultManager attributesOfItemAtPath:CACHE_PATH error:nil][NSFileSize];
-        NSData *bytes=size && size.unsignedLongLongValue<=65536 ? [NSData dataWithContentsOfFile:CACHE_PATH] : nil;
+        NSData *bytes=size && size.unsignedLongLongValue<=16777216 ? [NSData dataWithContentsOfFile:CACHE_PATH] : nil;
         id saved=bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
-        if([saved isKindOfClass:NSDictionary.class] && [saved count]<=128)for(id path in saved) {
+        if([saved isKindOfClass:NSDictionary.class])for(id path in saved) {
             id identity=saved[path];
             if([path isKindOfClass:NSString.class] && [path length]<=4096 && valid_identity(identity))
                 map_cache[path]=@{@"fingerprint":[identity[@"fingerprint"] copy],@"format":[identity[@"format"] copy],@"signature":[identity[@"signature"] copy]};
@@ -87,12 +84,11 @@ void host_map_identity_init(void) {
         dispatch_async(identity_worker,^{
             for(NSString *folder in @[@"maps",@"custom_maps"]) {
                 NSDirectoryEnumerator *entries=[NSFileManager.defaultManager enumeratorAtPath:folder];
-                for(NSString *name in entries)if([name.pathExtension isEqual:@"map"] && ![name isEqual:@"ui.map"])
+                for(NSString *name in entries)if([name.pathExtension isEqual:@"map"])
                     @autoreleasepool{hash_map(map_path([folder stringByAppendingPathComponent:name]));}
             }
         });
     });
-#endif
 }
 NSDictionary *host_map_identity_lookup(const char *name) {
     if(!name || !*name || !atomic_load_explicit(&ready,memory_order_acquire))return nil;
@@ -100,7 +96,7 @@ NSDictionary *host_map_identity_lookup(const char *name) {
     NSString *stamp=signature(path);
     [cache_lock lock];NSDictionary *identity=map_cache[path];
     if(!stamp || ![identity[@"signature"] isEqual:stamp])identity=nil;
-    BOOL schedule=stamp && !identity && ![pending containsObject:path] && pending.count<128;
+    BOOL schedule=stamp && !identity && ![pending containsObject:path];
     if(schedule)[pending addObject:path];[cache_lock unlock];
     if(schedule)dispatch_async(identity_worker,^{@autoreleasepool{hash_map(path);[cache_lock lock];[pending removeObject:path];[cache_lock unlock];}});
     return identity;

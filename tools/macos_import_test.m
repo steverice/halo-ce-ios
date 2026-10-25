@@ -6,6 +6,13 @@
 #include "../port/macos/host_macos_import.m"
 
 static int remove_incoming;
+static unsigned prepared_maps;
+void host_astc_store_prepare_import(const char *root,host_astc_progress callback,void *context) {
+    (void)callback;(void)context;
+    NSString *marker=[[@(root) stringByAppendingPathComponent:@"maps"] stringByAppendingPathComponent:@"valid"];
+    assert([NSFileManager.defaultManager fileExistsAtPath:marker]);
+    prepared_maps++;
+}
 int xiso_maps_ready(const char *maps, char *error, size_t size) {
     (void)error; (void)size;
     NSString *path=@(maps);
@@ -49,7 +56,9 @@ int main(void) {
         assert([read_marker(maps)isEqualToString:@"original"]);
         assert(![files fileExistsAtPath:[staging stringByAppendingPathComponent:@"previous-maps"]]);
         put(incoming,@"replacement");
+        assert(prepared_maps==0);
         assert(publish(staging,root,&error));
+        assert(prepared_maps==1);
         assert([read_marker(maps)isEqualToString:@"replacement"]);
         assert([read_marker([staging stringByAppendingPathComponent:@"previous-maps"])isEqualToString:@"original"]);
         /* Recovery restores owned backups and leaves unrelated similarly named directories intact. */

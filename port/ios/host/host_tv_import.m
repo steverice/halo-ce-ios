@@ -8,11 +8,13 @@
 #include <Network/Network.h>
 #include "ios_host.h"
 #include "xiso.h"
+#include "host_astc_store.h"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <unistd.h>
 
 #if !__has_feature(objc_arc)
@@ -51,6 +53,7 @@ static char pairing_code[8];
 static nw_listener_t listener;
 static dispatch_queue_t server_queue;
 static uint16_t server_port;
+static atomic_int preparing_textures, skip_textures;
 
 static void status_set(enum import_state state,uint64_t done,uint64_t total,NSString *message) {
     pthread_mutex_lock(&status_lock);
@@ -68,6 +71,12 @@ static int extract_progress(void *context,const char *file,uint64_t done,uint64_
     return 1;
 }
 
+static int texture_progress(void *context,uint64_t done,uint64_t total) {
+    (void)context;
+    atomic_store(&preparing_textures,1);
+    status_set(import_extracting,done,total,@"Preparing textures for this device");
+    return !atomic_load(&skip_textures);
+}
 /* Called with a complete upload; runs on its own thread. */
 static void import_image(void) {
     @autoreleasepool {
@@ -95,6 +104,9 @@ static void import_image(void) {
                 [files moveItemAtPath:[staging stringByAppendingPathComponent:@"bink"] toPath:movies error:nil];
             }
             host_logf(HOST_LOG_INFO,"XISO import complete");
+            atomic_store(&skip_textures,0);
+            host_astc_store_prepare_import(documents.fileSystemRepresentation,texture_progress,NULL);
+            atomic_store(&preparing_textures,0);
             [files removeItemAtPath:staging error:nil];
             status_set(import_done,1,1,@"Imported. Starting Halo…");
         } else {
@@ -449,6 +461,7 @@ static UIImage *qr_image(NSString *text) {
 @property(nonatomic,strong) UILabel *addressLabel,*codeLabel,*statusLabel;
 @property(nonatomic,strong) UIImageView *qr;
 @property(nonatomic,strong) UIProgressView *progress;
+@property(nonatomic,strong) UIButton *skipTexturesButton;
 @property(nonatomic,copy) NSString *shownURL;
 @property(nonatomic) unsigned shownSerial;
 @end
@@ -478,12 +491,17 @@ static UIImage *qr_image(NSString *text) {
     self.progress=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];self.progress.hidden=YES;
     [self.progress.widthAnchor constraintEqualToConstant:900].active=YES;[stack addArrangedSubview:self.progress];
     self.statusLabel=[self label:UIFontTextStyleCallout color:UIColor.secondaryLabelColor];[stack addArrangedSubview:self.statusLabel];
+    self.skipTexturesButton=[UIButton buttonWithType:UIButtonTypeSystem];
+    [self.skipTexturesButton setTitle:@"Start playing" forState:UIControlStateNormal];
+    [self.skipTexturesButton addTarget:self action:@selector(skipTexturePreparation) forControlEvents:UIControlEventPrimaryActionTriggered];
+    self.skipTexturesButton.hidden=YES;[stack addArrangedSubview:self.skipTexturesButton];
     [NSLayoutConstraint activateConstraints:@[
         [stack.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [stack.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
         [stack.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor multiplier:0.85]]];
     self.shownSerial=~0u;
 }
+- (void)skipTexturePreparation { atomic_store(&skip_textures,1); }
 /* Called from the wait loop; returns YES once the import is done. */
 - (BOOL)refresh {
     NSString *address=local_address();
@@ -499,6 +517,9 @@ static UIImage *qr_image(NSString *text) {
     unsigned serial=status.serial;enum import_state state=status.state;
     uint64_t done=status.done,total=status.total;NSString *message=@(status.message);
     pthread_mutex_unlock(&status_lock);
+    BOOL wasHidden=self.skipTexturesButton.hidden;
+    self.skipTexturesButton.hidden=!atomic_load(&preparing_textures);
+    if(wasHidden&&!self.skipTexturesButton.hidden)[self setNeedsFocusUpdate];
     if(serial!=self.shownSerial) {
         self.shownSerial=serial;
         self.statusLabel.text=message;

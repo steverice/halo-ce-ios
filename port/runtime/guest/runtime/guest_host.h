@@ -249,6 +249,14 @@ int host_sdl_cloud_saves_enabled(void);
 void host_sdl_cloud_saves_set_enabled(int enabled);
 void host_sdl_cloud_saves_status(char *buffer, unsigned int size);
 
+int host_astc_texture_key(const void *source, unsigned int format, unsigned int width, unsigned int height, unsigned int levels, unsigned int faces, unsigned int source_face_bytes, void *key);
+int host_astc_texture_read(const void *key, void *bytes, unsigned int size);
+unsigned long long host_astc_texture_generation(void);
+
+/* Original-texture preparation; paths are copied by the host bridge. */
+void host_astc_map_arrived(const char *path);
+void host_astc_map_will_load(const char *name);
+
 #endif
 
 uint32_t host_shader_observation_activate(const char *map_name, int suppressed, char *map_key, uint32_t map_key_size);

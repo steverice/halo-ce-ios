@@ -502,6 +502,16 @@ static void custom_edition_maps_look_for(
 			{
 				*extension++ = 0;
 				custom_edition_map_add(folders[folder_index], name, extension);
+#ifdef HALO_IOS
+				/* port: the game thread only publishes paths; disk work stays on the host worker. */
+				if (!csstrcasecmp(extension, "map"))
+				{
+					char path[MAXIMUM_FILENAME_LENGTH + 1];
+					extern void host_astc_map_arrived(char const *path);
+					snprintf(path, sizeof(path), "%s%s.map", folders[folder_index], name);
+					host_astc_map_arrived(path);
+				}
+#endif
 			}
 		} while (FindNextFileA(find, &data));
 		CloseHandle(find);

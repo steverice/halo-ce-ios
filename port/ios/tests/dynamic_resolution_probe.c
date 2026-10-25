@@ -148,11 +148,11 @@ static void ignore_windows(void)
 	struct dynamic_resolution p;
 	struct dynamic_resolution_frame f;
 	unsigned reasons[] = {DYNAMIC_RESOLUTION_COMPILE, DYNAMIC_RESOLUTION_SCENE,
-		DYNAMIC_RESOLUTION_LOAD, DYNAMIC_RESOLUTION_RESUME};
+		DYNAMIC_RESOLUTION_LOAD, DYNAMIC_RESOLUTION_RESUME, DYNAMIC_RESOLUTION_TEXTURE};
 	int r, i;
-	for (r = 0; r < 4; r++)
+	for (r = 0; r < 5; r++)
 	{
-		int frames = r == 0 ? 4 : r == 1 ? 30 : 60;
+		int frames = r == 4 ? 1 : r == 0 ? 4 : r == 1 ? 30 : 60;
 		dynamic_resolution_init(&p, 1920, 1080, 540, 0.001, 5e-9);
 		for (i = 0; i < frames; i++)
 		{

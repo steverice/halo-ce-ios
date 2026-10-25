@@ -1462,8 +1462,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.screenshot_every", _config_integer, "0", "HALO_SCREENSHOT_EVERY", _environment_value, _platform_all,
 		"Save every this many frames to screenshot_directory; 0 none." },
 	{ "debug.texture_astc", _config_string, "\"off\"", "HALO_TEXTURE_ASTC", _environment_value, _platform_ios,
-		"Direct DXT-to-ASTC uploads: \"off\" (default), \"on\" on GPUs without BC,\n"
+		"DXT-to-ASTC texture preparation: \"off\" (default), \"on\" on GPUs without BC,\n"
 		"or \"force\" to emulate a GPU without BC for validation. Requires compressed_textures." },
+	{ "debug.texture_astc_sync", _config_boolean, "false", "HALO_TEXTURE_ASTC_SYNC", _environment_set_is_true, _platform_ios,
+		"Wait for ASTC map preparation before loading, for screenshot validation only." },
 	{ "debug.texture_dump_directory", _config_string, "\"\"", "HALO_TEXTURE_DUMP", _environment_value, _platform_all,
 		"A folder to write every texture to as it is uploaded; empty none." },
 	{ "debug.texture_override_directory", _config_string, "\"\"", "HALO_TEXTURE_OVERRIDE", _environment_value, _platform_all,

@@ -9,10 +9,6 @@ int main(void) { @autoreleasepool {
     assert(!host_shader_upload_map_identity("maps/new.map"));
     assert(![NSFileManager.defaultManager fileExistsAtPath:@"shader-upload"]);
     host_map_identity_init();
-#if !HALO_PERF_REPORTS && !HALO_SHADER_UPLOAD
-    assert(!host_map_identity_resolve("maps/new.map"));
-    assert(![NSFileManager.defaultManager fileExistsAtPath:@"shader-upload"]);
-#else
     host_map_identity_wait();
     assert([NSFileManager.defaultManager createDirectoryAtPath:@"maps" withIntermediateDirectories:YES attributes:nil error:nil]);
     NSMutableData *data=[NSMutableData dataWithLength:131072]; uint8_t *bytes=data.mutableBytes;
@@ -32,7 +28,16 @@ int main(void) { @autoreleasepool {
     assert([NSFileManager.defaultManager fileExistsAtPath:@"shader-upload/map-identities.json"]);
     assert([NSFileManager.defaultManager removeItemAtPath:@"maps/new.map" error:nil]);
     assert(!host_shader_upload_map_identity("maps/new.map"));
-#endif
+    /* ASTC uses the same fingerprints in builds without either collector. */
+    NSData *header=[data subdataWithRange:NSMakeRange(0,8)];
+    assert([header writeToFile:@"maps/ui.map" atomically:NO]);
+    host_map_identity_prepare_ui();
+    assert(host_map_identity_lookup("maps/ui.map"));
+    for(unsigned index=0;index<130;index++) {
+        NSString *path=[NSString stringWithFormat:@"maps/cap-%u.map",index];
+        assert([header writeToFile:path atomically:NO]);
+        assert(host_map_identity_resolve(path.fileSystemRepresentation));
+    }
     host_map_identity_wait(); assert(chdir("/")==0);
     assert([NSFileManager.defaultManager removeItemAtPath:root error:nil]); return 0;
 } }

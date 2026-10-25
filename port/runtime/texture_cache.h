@@ -61,7 +61,7 @@ The floor: a level that has entries to make first starts only if free storage co
 #define TEXTURE_CACHE_FLOOR_SLACK (256ull << 20)
 #define TEXTURE_CACHE_LOW_STORAGE_TEXT "There is not enough free storage to upscale this level's textures, so it will " \
 	"play with the original textures. To free space, turn on Delete upscaled textures in this app's page of the " \
-	"Settings app."
+	"Settings app. Prepared original textures are kept."
 /* a level's actions counted (enum texture_cache_action), and the projected bytes of what the blocking screen makes */
 struct texture_cache_level_plan
 {

@@ -3,6 +3,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "ios_host.h"
 #include "xiso.h"
+#include "host_astc_store.h"
 #include <stdatomic.h>
 
 @interface VISRMacImport : NSObject {
@@ -38,6 +39,7 @@ static BOOL publish(NSString *staging, NSString *root, NSError **error) {
     NSString *incoming_movies = [staging stringByAppendingPathComponent:@"bink"];
     if (![files fileExistsAtPath:movies] && [files fileExistsAtPath:incoming_movies])
         [files moveItemAtPath:incoming_movies toPath:movies error:nil];
+    host_astc_store_prepare_import(root.fileSystemRepresentation,NULL,NULL);
     return YES;
 }
 static void recover(NSString *root) {
