@@ -367,23 +367,32 @@ static void check_unprofiled_models(const char *shipped)
 	profile = resolve_model(shipped, "ios", "iPhone10,1", 4, 1950, 1334, 750, 60);
 	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
 		has(&profile, "display.render_height", "720") &&
-		has(&profile, "display.frame_rate", "60"));
+		has(&profile, "display.frame_rate", "30"));
 	/* iPhone 17 (120 Hz): the A17 Pro profile, capped at 60. */
 	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
 	assert(profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "60"));
-	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 720 lines; nothing measured is closer. */
+	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 900 lines at 30; nothing measured is closer. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
-		has(&profile, "display.render_height", "720") && !strcmp(profile.target_hardware, "ipad-a12"));
-	/* iPad Pro 12.9-inch 3rd generation (A12X, 7-core GPU): the A10X profile. */
+		has(&profile, "display.render_height", "900") && has(&profile, "display.frame_rate", "30") &&
+		!strcmp(profile.target_hardware, "ipad-a12"));
+	/* iPad Pro 12.9-inch 3rd generation (A12X, 7-core GPU): the A10X profile; its 2732x2048 menu is outside the Air 4's envelope. */
 	profile = resolve_model(shipped, "ios", "iPad8,5", 5, 3900, 2732, 2048, 120);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml"));
-	/* iPad mini 6 and iPad (A16): the catalog's answer comes before the M1 iPad Pro's and_newer rule, which
-	   would otherwise match their higher identifiers. */
+	/* iPad mini 6 and iPad (A16): the iPad Air 4 (A14) profile below them; the catalog's answer comes before the
+	   M1 iPad Pro's and_newer rule, which would otherwise match their higher identifiers. */
 	profile = resolve_model(shipped, "ios", "iPad14,1", 8, 3900, 2266, 1488, 60);
-	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") && !strstr(logged, "and_newer"));
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-air-4.toml") && !strstr(logged, "and_newer"));
 	profile = resolve_model(shipped, "ios", "iPad15,7", 8, 5800, 2360, 1640, 60);
-	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") && !strstr(logged, "and_newer"));
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-air-4.toml") && !strstr(logged, "and_newer"));
+	/* iPad 10th generation: the same A14 as the measured Air 4. */
+	profile = resolve_model(shipped, "ios", "iPad13,18", 7, 3900, 2360, 1640, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "ipad-air-4.toml") && has(&profile, "display.render_height", "1080"));
+	/* iPhone 12 Pro Max: the measured 12 Pro's chip and memory; the 4 GB iPhone 12 keeps the class floor. */
+	profile = resolve_model(shipped, "ios", "iPhone13,4", 7, 5700, 2778, 1284, 60);
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-12-pro.toml") && has(&profile, "display.frame_rate", "30"));
+	profile = resolve_model(shipped, "ios", "iPhone13,2", 7, 3800, 2532, 1170, 60);
+	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml"));
 	/* iPad 5th generation (A9), the oldest: below every measured iPad profile. */
 	profile = resolve_model(shipped, "ios", "iPad6,11", 3, 1950, 2048, 1536, 60);
 	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
@@ -447,23 +456,32 @@ static void check_shipped(const char *shipped)
 	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
 	class profile's Metal */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(has(&profile, "display.render_height", "0") && has(&profile, "display.anisotropic_filtering", "16") &&
+	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.frame_rate", "60") &&
+		has(&profile, "display.anisotropic_filtering", "16") &&
 		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
 		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(has(&profile, "display.render_height", "0") && has(&profile, "display.effect_resolution", "half") &&
-		has(&profile, "display.renderer", "metal"));
+	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.frame_rate", "60") &&
+		has(&profile, "display.effect_resolution", "half") && has(&profile, "display.renderer", "metal"));
+	/* iPad Air 4 and iPhone 12 Pro: their own measured profiles */
+	profile = resolve(shipped, device("ios", "iPad13,1", "", 7), NULL, "");
+	assert(!strcmp(profile.model_file, "ipad-air-4.toml") && has(&profile, "display.render_height", "1080") &&
+		has(&profile, "display.frame_rate", "60"));
+	profile = resolve(shipped, device("ios", "iPhone13,3", "", 7), NULL, "");
+	assert(!strcmp(profile.model_file, "iphone-12-pro.toml") && has(&profile, "display.render_height", "900") &&
+		has(&profile, "display.frame_rate", "30"));
 	/* The smaller M1 iPad Pro inherits the measured M1 profile, subject to its envelope. */
 	struct host_device sibling = device("ios", "iPad13,4", "", 7);
 	sibling.memory_megabytes = 8192; sibling.pixel_width = 2388; sibling.pixel_height = 1668; sibling.refresh_rate = 120;
 	profile = resolve(shipped, sibling, NULL, "");
 	assert(profile.inherited && has(&profile, "display.effect_resolution", "half"));
 	assert(!strcmp(profile.model_file, "ipad-pro-m1.toml"));
-	/* The measured first-generation 12.9-inch iPad uses its own 720-line model profile. The neighboring
+	/* The measured first-generation 12.9-inch iPad uses its own 720-line, 30 frames a second model profile. The neighboring
 	   cellular identifier is cataloged, but a device reporting no memory or display cannot inherit and keeps the class floor. */
 	profile = resolve(shipped, device("ios", "iPad6,7", "", 3), NULL, "");
 	assert(!strcmp(profile.model_file, "ipad-pro-12-9-1st.toml") &&
-		has(&profile, "display.render_height", "720") && has(&profile, "display.renderer", "metal"));
+		has(&profile, "display.render_height", "720") && has(&profile, "display.frame_rate", "30") &&
+		has(&profile, "display.renderer", "metal"));
 	profile = resolve(shipped, device("ios", "iPad6,8", "", 3), NULL, "");
 	assert(!profile.model_file[0] && !profile.inherited);
 	profile = resolve(shipped, device("mac", "Mac14,5", "Apple M2 Max", 8), NULL, "");

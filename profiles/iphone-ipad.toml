@@ -18,10 +18,11 @@ gpu_family = [1, 0]
 [display]
 renderer = "metal"
 render_height = 720
-frame_rate = "60"
+frame_rate = "30"
 
 [scene.menu.display]
 render_height = 0
+frame_rate = "60"
 
 [scene.cutscene.display]
 render_height = 0
@@ -37,12 +38,16 @@ why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-in
 
 [evidence."display.frame_rate"]
 basis = "inherited"
-why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-inch (1st generation, A9X) was measured on a 60 Hz display. An unlisted 120 Hz device runs capped at the rate the floor was measured at, not at an unmeasured 120."
-source = "iPad6,7 benchmark report 6CYGBCXB, build 20261017.73635, 2026-10-17"
+why = "The floor is the weakest measured devices' rate: in the October 2026 settings sweep neither the iPad Pro 12.9-inch (1st generation, A9X) nor the iPhone 12 Pro (A14) held 60 frames a second at 720 lines (34.7% and 72% of frames on time at maximum quality), and both hold 30. An unlisted device runs at the rate the floor holds, not at an unmeasured 60."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0), a10-heroic and d40-maw-fight, 2026-10-23 to 2026-10-25"
 
 [evidence."scene.menu.display.render_height"]
 basis = "assumed"
 why = "The A9X measurement covered gameplay only; menus stay at the display's own size, as before the floor."
+
+[evidence."scene.menu.display.frame_rate"]
+basis = "assumed"
+why = "Menus run at 60 as before the gameplay floor dropped to 30; the sweep did not measure menus."
 
 [evidence."scene.cutscene.display.render_height"]
 basis = "assumed"

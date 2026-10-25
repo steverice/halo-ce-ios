@@ -1,12 +1,8 @@
-# iPad7,2: provisional gameplay recipe from a thermal-limited, real-time Full suite.
-# The eight active campaign windows at 720 lines, 2x filtering, 128-pixel shadows,
-# and automatic model detail measured 71.17–81.80 submitted frames/s. Their Metal
-# drawable callbacks were complete, with presentation p95 16.67–20.84 ms.
-# The same a10 window also has one-setting comparisons at 720 lines; those
-# comparisons were sequential, thermally limited, and not counterbalanced.
-# The iPad reached Serious thermal state, so cold repeatability is unproven.
-# Menu and cutscene rendering retain their previous native-size behavior until
-# those scene classes are qualified at a lower render size.
+# iPad7,2 (A10X, 120 Hz): 30 frames a second at 900 lines and full quality, from the October 2026 settings sweep.
+# 60 does not hold at 900 lines even with every setting at its cheapest (95.4% of a10 frames on time), and 120 holds
+# nowhere, so the profile takes the ladder's floor rate with the lines and quality that rate affords: at 30, 900 lines
+# held with 1.5x and 2x enemies and every quality setting, and a presented d40 run at 30 showed every frame on time.
+# The earlier recipe (720 lines, reduced quality, the display's 120) ran 71 to 82 frames a second, between refreshes.
 #:schema ../port/settings/profile.schema.json
 schema = 1
 name = "iPad Pro 12.9-inch (2nd generation)"
@@ -18,38 +14,48 @@ platform = "ios"
 models = ["iPad7,2"]
 
 [display]
-frame_rate = "display"
-render_height = 720
-anisotropic_filtering = 2
-shadow_map_size = 128
-model_lod = "auto"
+frame_rate = "30"
+render_height = 900
+anisotropic_filtering = 16
+shadow_map_size = 512
+model_lod = "max"
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "At 900 lines and maximum quality 84.6% (a10) and 83.4% (d40) of frames were within 16.7 ms; with every setting at its cheapest 95.4% and 95.5%. At 1080 lines 64.3% and 67.1%. At 30, 900 lines held 99.89% and 99.95% at 1x and 99.86 to 100% at 1.5x enemies, and the presented d40 run at 30 showed all 2,280 frames on time. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.render_height"]
 basis = "measured"
-why = "Eight active campaign windows with the combined 720-line recipe measured 71.17–81.80 submitted frames/s and complete positive drawable callback populations. At native 2048 lines with the prior high-quality recipe, those same windows measured 19.01–30.54 frames/s. Both sets were thermally limited; this comparison establishes the combined recipe, not the isolated cost of resolution."
-source = "iPad7,2 Full report C3YP3296, stage E indices 17–24 against stage A indices 0–7, build 20261019.193402, 2026-10-19"
+why = "At 30 frames a second 1080 lines held at 1x (99.86% and 99.98%, two rounds) but not at 1.5x (a10 98.06%); 900 lines held at 1.5x and 2x, so 900 keeps headroom for busier scenes."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.anisotropic_filtering"]
 basis = "measured"
-why = "In the same a10 window at 720 lines, 2x filtering reduced GPU mean from 17.67 ms at 16x to 15.78 ms with 512-pixel shadows and maximum model detail. The sequential Serious-thermal comparison was not counterbalanced; the eight-case recipe verifies the combined setting across campaign scenes."
-source = "iPad7,2 Full report C3YP3296, indices 10 and 12 plus stage E indices 17–24, build 20261019.193402, 2026-10-19"
+why = "At 30 frames a second and 900 lines every filtering step held 99.9% or more on time; 16x costs 0.4 to 0.5 ms a frame over 2x out of the 33.3 ms budget."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.shadow_map_size"]
 basis = "measured"
-why = "In the same a10 window at 720 lines, 128-pixel shadows reduced GPU mean from 17.67 ms at 512 to 13.72 ms with 16x filtering and maximum model detail. The sequential Serious-thermal comparison was not counterbalanced; the smaller shadows visibly reduce quality and the eight-case recipe verifies the combined setting."
-source = "iPad7,2 Full report C3YP3296, indices 10 and 14 plus stage E indices 17–24, build 20261019.193402, 2026-10-19"
+why = "At 30 frames a second and 900 lines 512-pixel shadows held 99.9% or more on time; they cost 0.4 to 0.7 ms a frame over 128 out of the 33.3 ms budget."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.model_lod"]
 basis = "measured"
-why = "In the same a10 window at 720 lines, automatic model detail changed GPU mean from 17.67 to 17.22 ms against maximum detail, a small sequential Serious-thermal observation. The eight-case recipe verifies the combined setting, but models may visibly reduce detail with distance."
-source = "iPad7,2 Full report C3YP3296, indices 10 and 15 plus stage E indices 17–24, build 20261019.193402, 2026-10-19"
+why = "Automatic model detail changed the frame by -0.13 to +0.05 ms against maximum detail at 900 lines, nothing a 30 frames a second budget needs."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [scene.menu.display]
 render_height = 0
+frame_rate = "60"
 
 [evidence."scene.menu.display.render_height"]
 basis = "assumed"
-why = "Keep the previous native-size menu; the Full suite did not measure a menu at 720 lines on this model."
+why = "Keep the previous native-size menu; the sweep did not measure menus."
+
+[evidence."scene.menu.display.frame_rate"]
+basis = "assumed"
+why = "Menus run at 60 as before the gameplay cap; the sweep did not measure menus."
 
 [scene.cutscene.display]
 render_height = 0
@@ -57,8 +63,3 @@ render_height = 0
 [evidence."scene.cutscene.display.render_height"]
 basis = "assumed"
 why = "Keep the previous native-size cutscene rendering until a cutscene is measured on this model."
-
-[evidence."display.frame_rate"]
-basis = "measured"
-why = "Measured on a 120 Hz display at its own rate. Stated so the iPhone and iPad class profile's 60 Hz floor cap does not reach this model."
-source = "iPad7,2 Full report C3YP3296, build 20261019.193402, 2026-10-19"

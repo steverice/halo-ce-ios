@@ -9,8 +9,8 @@ models = ["iPhone18,1"]
 and_newer = true
 
 [display]
-frame_rate = "display"
-render_height = 0
+frame_rate = "60"
+render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
 anti_aliasing = "fxaa"
@@ -30,10 +30,10 @@ source = "Reports NMYSEQ6R (off) and 47PS5LC2 (on), iPhone18,1, quick suite, 202
 
 [evidence."display.render_height"]
 basis = "measured"
-why = "Native 2622x1206 (zero: the display's own size) was measured. Stated because the iPhone and iPad class profile's floor is 720 lines."
-source = "Reports NMYSEQ6R (off) and 47PS5LC2 (on), iPhone18,1, quick suite, 2026-10-15."
+why = "1080 lines, the top of the ladder's 60 frames a second tiers, measured warm; the native 1206 lines were not measured in the sweep. At 1080 the a10 frame averaged 4.2 ms against the 16.7 ms budget."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.frame_rate"]
 basis = "measured"
-why = "Measured on a 120 Hz display at its own rate. Stated so the iPhone and iPad class profile's 60 Hz floor cap does not reach this model."
-source = "Reports NMYSEQ6R (off) and 47PS5LC2 (on), iPhone18,1, quick suite, 2026-10-15."
+why = "120 frames a second does not hold after the ten minute warm-up soak: at 1080 lines 93.6% (a10) and 98.5% (d40) of frames were within 8.3 ms, at 900 lines 97.1% and 96.1% (12 rounds each). At 60, 1080 lines held 99.96% and 100% at 1x and 99.82 to 99.92% at 2x enemies; the presented d40 run at 60 showed every one of 4,560 frames on time. The iPhone 15 Pro profile caps at 60 for the same reason. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"

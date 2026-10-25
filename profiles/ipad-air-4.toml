@@ -1,0 +1,44 @@
+# iPad13,1 (iPad Air 4th generation, A14, 60 Hz): 60 frames a second at 1080 lines and full quality, tier 3 of the
+# ladder, from the October 2026 settings sweep. 1.5x enemies at 1080 fell just short (99.49 to 99.83% on time), so tier 4
+# is not claimed. Before this profile the model inherited the A10X iPad's reduced 720-line recipe.
+#:schema ../port/settings/profile.schema.json
+schema = 1
+name = "iPad Air (4th generation)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPad13,1"]
+
+[display]
+frame_rate = "60"
+render_height = 1080
+anisotropic_filtering = 16
+shadow_map_size = 512
+model_lod = "max"
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "At 1080 lines and maximum quality 99.78% (a10) and 99.86% (d40) of frames were within 16.7 ms (seven rounds each), and at 900 lines with 1.5x enemies 99.78 to 99.89%. The presented d40 run at 60 and 900 lines showed all 4,561 frames on time. At 1080 with 1.5x enemies a10 held 99.63% and d40 99.49%, so tier 4 is not claimed. Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "1080 lines, the ladder's target tier, held at 1x; the native 1640 lines were not measured."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.anisotropic_filtering"]
+basis = "measured"
+why = "16x against 2x cost 0.08 to 0.10 ms a frame at 900 lines."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.shadow_map_size"]
+basis = "measured"
+why = "512 against 128 cost 0.05 to 0.06 ms a frame at 900 lines."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.model_lod"]
+basis = "measured"
+why = "Maximum against automatic model detail cost 0.05 to 0.06 ms a frame at 900 lines."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"

@@ -5,7 +5,7 @@
 # Within a range, a tier orders GPU capability: the design generation, then the GPU core count (each entry's source gives the basis).
 # Hardware whose ordering against its neighbors cannot be defended would have no tier and keep its class profile.
 schema = 1
-version = "2026-10-24"
+version = "2026-10-25"
 
 [[hardware]]
 id = "iphone-a11"
@@ -35,13 +35,22 @@ basis = "assumed"
 source = "iPhone 11 family and SE 2nd generation (A13). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
 
 [[hardware]]
+id = "iphone-12-pro"
+platform = "ios"
+models = ["iPhone13,3"]
+tier = 140
+gpu_family = 7
+basis = "measured"
+source = "iphone-12-pro.toml: iPhone 12 Pro (A14), settings sweep, 30 frames a second at 900 lines, 2026-10-25, provisional."
+
+[[hardware]]
 id = "iphone-a14"
 platform = "ios"
-models = ["iPhone13,1", "iPhone13,2", "iPhone13,3", "iPhone13,4"]
+models = ["iPhone13,1", "iPhone13,2", "iPhone13,4"]
 tier = 140
 gpu_family = 7
 basis = "assumed"
-source = "iPhone 12 family (A14). https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+source = "iPhone 12 mini, 12 and 12 Pro Max: the same A14 as the measured 12 Pro. https://en.wikipedia.org/wiki/List_of_iPhone_models. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
 
 [[hardware]]
 id = "iphone-a15"
@@ -149,7 +158,7 @@ models = ["iPad6,7"]
 tier = 1020
 gpu_family = 3
 basis = "measured"
-source = "ipad-pro-12-9-1st.toml: iPad Pro 12.9-inch (A9X), report 6CYGBCXB and isolated c40 reports, 720 lines, 2026-10-17, provisional."
+source = "ipad-pro-12-9-1st.toml: iPad Pro 12.9-inch (A9X), settings sweep, 30 frames a second at 720 lines, 2026-10-25, provisional."
 
 [[hardware]]
 id = "ipad-a9x-siblings"
@@ -176,7 +185,7 @@ models = ["iPad7,2"]
 tier = 1040
 gpu_family = 3
 basis = "measured"
-source = "ipad-pro-12-9-2nd.toml: iPad Pro 12.9-inch (A10X), report C3YP3296, 720 lines, 2026-10-19, provisional."
+source = "ipad-pro-12-9-2nd.toml: iPad Pro 12.9-inch (A10X), settings sweep, 30 frames a second at 900 lines, 2026-10-25, provisional."
 
 [[hardware]]
 id = "ipad-a10x-siblings"
@@ -206,13 +215,22 @@ basis = "assumed"
 source = "iPad 9th generation (A13). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
 
 [[hardware]]
+id = "ipad-air-4"
+platform = "ios"
+models = ["iPad13,1"]
+tier = 1090
+gpu_family = 7
+basis = "measured"
+source = "ipad-air-4.toml: iPad Air 4th generation (A14), settings sweep, 60 frames a second at 1080 lines, 2026-10-25, provisional."
+
+[[hardware]]
 id = "ipad-a14"
 platform = "ios"
-models = ["iPad13,1", "iPad13,2", "iPad13,18", "iPad13,19"]
+models = ["iPad13,2", "iPad13,18", "iPad13,19"]
 tier = 1090
 gpu_family = 7
 basis = "assumed"
-source = "iPad Air 4 and iPad 10th generation (A14). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
+source = "The iPad Air 4's cellular identifier and the iPad 10th generation: the same A14 as the measured Air 4. https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Same GPU lineage as the neighboring tiers, each generation succeeding the last."
 
 [[hardware]]
 id = "ipad-a12x"
@@ -386,6 +404,16 @@ maximum_pixels = [2073600, 8294400, 8294400]
 maximum_refresh_hertz = 60
 
 [[fallback]]
+hardware = "iphone-12-pro"
+profile = "iphone-12-pro.toml"
+# The measured 12 Pro has 6 GB (5,715 MB reported); the 4 GB 12 and 12 mini keep the class profile.
+minimum_memory_mb = 5500
+minimum_gpu_family = 7
+# Play at 900 lines capped at 30; menu native at 2532x1170 (2778x1284 on the Pro Max), under the class's 3,888,000 wired-display floor.
+maximum_pixels = [3900000, 3900000, 3900000]
+maximum_refresh_hertz = 60
+
+[[fallback]]
 hardware = "iphone-16e"
 profile = "iphone-16e.toml"
 minimum_memory_mb = 7000
@@ -409,7 +437,7 @@ hardware = "iphone-17-pro"
 profile = "iphone-17-pro.toml"
 minimum_memory_mb = 10500
 minimum_gpu_family = 10
-# Native 2622x1206 at 120 Hz was measured; 3,900,000 also admits the 2868x1320 Pro Max (3,785,760).
+# Play at 1080 lines capped at 60 (120 did not hold); 3,900,000 also admits the 2868x1320 Pro Max (3,785,760).
 maximum_pixels = [3900000, 3900000, 3900000]
 maximum_refresh_hertz = 120
 
@@ -418,7 +446,7 @@ hardware = "ipad-pro-12-9-1st"
 profile = "ipad-pro-12-9-1st.toml"
 minimum_memory_mb = 2800
 minimum_gpu_family = 3
-# 720-line play (at most 960x720 on a 4:3 iPad; the 3,888,000 floor is the class profile's wired-display frame); menu and cutscenes native up to the 12.9-inch 2732x2048.
+# 720-line play at 30 (at most 960x720 on a 4:3 iPad; the 3,888,000 floor is the class profile's wired-display frame); menu and cutscenes native up to the 12.9-inch 2732x2048.
 maximum_pixels = [3900000, 5600000, 5600000]
 maximum_refresh_hertz = 60
 
@@ -427,9 +455,20 @@ hardware = "ipad-pro-12-9-2nd"
 profile = "ipad-pro-12-9-2nd.toml"
 minimum_memory_mb = 2800
 minimum_gpu_family = 3
-# 720-line play; menu and cutscenes native up to the 12.9-inch 2732x2048; the measured device is 120 Hz.
+# 900-line play at 30; menu and cutscenes native up to the 12.9-inch 2732x2048; the measured device is 120 Hz.
 maximum_pixels = [3900000, 5600000, 5600000]
 maximum_refresh_hertz = 120
+
+[[fallback]]
+hardware = "ipad-air-4"
+profile = "ipad-air-4.toml"
+# The measured Air 4 has 4 GB (3,868 MB reported).
+minimum_memory_mb = 3700
+minimum_gpu_family = 7
+# Play at 1080 lines at 60; menu and cutscenes native up to the measured 2360x1640 (3,870,400). The 12.9-inch
+# A12X and A12Z iPads (2732x2048, 120 Hz) fall outside and keep the A10X profile.
+maximum_pixels = [3900000, 3900000, 3900000]
+maximum_refresh_hertz = 60
 
 [[fallback]]
 hardware = "ipad-pro-m1-12-9"
@@ -437,6 +476,6 @@ profile = "ipad-pro-m1.toml"
 # The measured device has 8 GB physical RAM; tolerate the system's reported usable physical total.
 minimum_memory_mb = 7000
 minimum_gpu_family = 7
-# Measured a10 workload; native 11-inch rendering is below this limit in every scene.
+# Play at 1080 lines capped at 60 (120 did not hold); menu and cutscenes native, below this limit on every M1 iPad.
 maximum_pixels = [7581120, 7581120, 7581120]
 maximum_refresh_hertz = 120

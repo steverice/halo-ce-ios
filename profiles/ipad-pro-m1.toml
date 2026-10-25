@@ -8,8 +8,8 @@ models = ["iPad13,8", "iPad13,9", "iPad13,10", "iPad13,11"]
 and_newer = true
 
 [display]
-frame_rate = "display"
-render_height = 0
+frame_rate = "60"
+render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
 effect_resolution = "half"
@@ -31,10 +31,10 @@ source = "iPad mirror runs, c40, 2026-10-03"
 
 [evidence."display.render_height"]
 basis = "measured"
-why = "The sweep ran at the display's own size (zero: native, a10 at 3180x2384). Stated because the iPhone and iPad class profile's floor is 720 lines."
-source = "M1 settings sweep, a10 at 3180x2384, 2026-10-03"
+why = "1080 lines is the top of the ladder's 60 frames a second tiers; above it a tier needs 120, which this iPad does not hold. At 1080 the a10 frame averaged 7.2 ms against the 16.7 ms budget, so 1080 keeps headroom for busier scenes than the windows measured."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.frame_rate"]
 basis = "measured"
-why = "Measured on a 120 Hz display at its own rate. Stated so the iPhone and iPad class profile's 60 Hz floor cap does not reach this model."
-source = "M1 settings sweep, a10 at 3180x2384, 2026-10-03"
+why = "120 frames a second does not hold at 900 or 1080 lines at maximum quality: at 1080 lines 79.3% (a10) and 75.7% (d40) of frames were within 8.3 ms, at 900 lines 86.6% and 83.3% (11 rounds each). At 60, 1080 lines held 99.93% and 100% at 1x, 99.70 to 100% at 1.5x and 99.78 to 99.98% at 2x enemies; the presented d40 run at 60 showed every one of 4,558 frames on time. Tier 4 of the ladder (60, 1080, 1.5x). Hold: after the first second of the window, at least 99.5% of frames within one frame period and at most 0.5% over 1.5 periods, for the median round of every workload."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
