@@ -11,7 +11,7 @@
 > "The first VISR systems date back to the early 21st century…"\
 > — ["Dynasty" VISR, Halo 5: Guardians](https://www.halopedia.org/Armor_customization_(Halo_5:_Guardians)/Visor)
 
-[Get VISR](https://github.com/steverice/visr#get-the-app) • [Vision Pro](#apple-vision-pro) • [iPhone](#iphone-and-ipad) • [iPad](#iphone-and-ipad) • [Apple TV](#apple-tv) • [Mac](#mac) • [GitHub](https://github.com/steverice/visr)
+[Get VISR](https://github.com/steverice/visr/releases) • [Vision Pro](#apple-vision-pro) • [iPhone](#iphone-and-ipad) • [iPad](#iphone-and-ipad) • [Apple TV](#apple-tv) • [Mac](#mac) • [GitHub](https://github.com/steverice/visr)
 
 ## On every device
 

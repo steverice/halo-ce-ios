@@ -27,5 +27,15 @@ $content
 $legal
   </footer>
 </main>
+<script>
+// GitHub's /releases/latest skips prereleases, and every release before 1.0 is one, so look up the newest release instead.
+fetch("https://api.github.com/repos/steverice/visr/releases?per_page=1")
+  .then((response) => response.ok ? response.json() : [])
+  .then(([release]) => {
+    if (!release) return;
+    for (const link of document.querySelectorAll('a[href="https://github.com/steverice/visr/releases"]')) link.href = release.html_url;
+  })
+  .catch(() => {});
+</script>
 </body>
 </html>
