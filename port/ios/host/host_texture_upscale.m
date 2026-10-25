@@ -341,6 +341,17 @@ static void schedule_pump(void) {
 void host_texture_upscale_scan(void) {if(upscale_enabled){atomic_store(&scan_pending,true);schedule_pump();}}
 void host_texture_upscale_init(const char *root) {
     static dispatch_once_t once;dispatch_once(&once,^{
+        /* Development only: HALO_TEXTURE_UPSCALE_CLEAN removes what the generator and its export left in the data
+           root, since a device's app container cannot be emptied from the Mac. */
+        if(root&&getenv("HALO_TEXTURE_UPSCALE_CLEAN")) {
+            NSString *base=@(root);NSFileManager *files=NSFileManager.defaultManager;
+            if(texture_cache_delete_all([base stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY].fileSystemRepresentation))
+                host_logf(HOST_LOG_WARN,"Upscale: could not delete the whole texture cache");
+            [files removeItemAtPath:[base stringByAppendingPathComponent:@"texture-upscale-export"] error:nil];
+            [files removeItemAtPath:[base stringByAppendingPathComponent:@"texture-upscale-generate.json"] error:nil];
+            host_logf(HOST_LOG_INFO,"Upscale: removed the texture cache, the export and the generator log");
+            return;
+        }
         if(!root||!bool_setting("debug.texture_upscale_generate","HALO_TEXTURE_UPSCALE_GENERATE")||!texture_upscale_model_available())return;
         upscale_enabled=YES;export_enabled=bool_setting("debug.texture_upscale_export","HALO_TEXTURE_UPSCALE_EXPORT");upscale_root=@(root);started=now();
         upscale_worker=dispatch_queue_create("org.visr.texture-upscale",dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,QOS_CLASS_UTILITY,0));
