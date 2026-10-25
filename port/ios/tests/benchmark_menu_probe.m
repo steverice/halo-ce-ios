@@ -59,6 +59,11 @@ static void refresh(HaloBenchmarkMenuController *controller) {
     SEL selector = NSSelectorFromString(@"refreshBenchmark");
     if ([controller respondsToSelector:selector]) [controller refreshBenchmark];
 }
+@interface FocusedMenuProbeButton : UIButton
+@end
+@implementation FocusedMenuProbeButton
+- (BOOL)isFocused { return YES; }
+@end
 @interface ProbeDelegate : UIResponder <UIApplicationDelegate, UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -67,7 +72,7 @@ static void refresh(HaloBenchmarkMenuController *controller) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     feed_state = @{ @"ready": @NO, @"loading": @YES, @"reason": @"" };
     HaloBenchmarkMenuController *controller = [HaloBenchmarkMenuController new];
-    controller.heading = @"VISR"; controller.detail = @"Play while benchmark data downloads.";
+    controller.heading = @"VISR"; controller.detail = benchmark_menu_detail();
     controller.choices = @[ @"Play", @"Benchmark" ];
     if ([controller respondsToSelector:NSSelectorFromString(@"setLaunchMenu:")]) [controller setValue:@YES forKey:@"launchMenu"];
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
@@ -75,8 +80,23 @@ static void refresh(HaloBenchmarkMenuController *controller) {
     [self.window makeKeyAndVisible];
     dispatch_async(dispatch_get_main_queue(), ^{
         UIButton *play = button(controller.view, 0), *benchmark = button(controller.view, 1);
+        check([controller.detailLabel.text isEqual:@"Benchmarking collects performance data about your Mac so we can deliver a more optimized experience."], "Menu uses exact device-specific explanation");
+        check([controller.detailLabel.accessibilityLabel isEqual:controller.detailLabel.text], "VoiceOver reads the device-specific explanation");
         check(play.enabled, "Play is usable during download");
         check(benchmark && !benchmark.enabled, "Benchmark is visible and disabled during download");
+        [benchmark updateConfiguration];
+        check([benchmark.configuration.background.backgroundColor isEqual:disabledMenuColor(0x1d3640)], "Disabled Benchmark fill uses 40% secondary strength");
+        check([benchmark.configuration.baseForegroundColor isEqual:disabledMenuColor(0xe8f6fa)], "Disabled Benchmark label uses 40% secondary strength");
+        check(!benchmark.canBecomeFocused, "Disabled Benchmark cannot receive focus");
+        UIButton *focused = [FocusedMenuProbeButton buttonWithType:UIButtonTypeSystem];
+        focused.tag = 1;
+        focused.configuration = benchmark.configuration;
+        benchmark.configurationUpdateHandler(focused);
+        check([focused.configuration.background.backgroundColor isEqual:brandColor(0x3fd6ff)], "Focused secondary button uses accent blue");
+        check([focused.configuration.baseForegroundColor isEqual:brandColor(0x081216)], "Focused button uses dark label text");
+        focused.enabled = NO;
+        benchmark.configurationUpdateHandler(focused);
+        check([focused.configuration.background.backgroundColor isEqual:disabledMenuColor(0x1d3640)], "Disabled button never receives the focus highlight");
         UIActivityIndicatorView *spinner = [controller valueForKey:@"benchmarkSpinner"];
         check(spinner.isAnimating, "Pending download shows a spinner");
         check((benchmark.accessibilityTraits & UIAccessibilityTraitNotEnabled) != 0, "VoiceOver announces unavailable Benchmark");
@@ -144,6 +164,7 @@ static void refresh(HaloBenchmarkMenuController *controller) {
                 refresh(controller);
             } while (![controller.detailLabel.text containsString:@"Pending upload retried"] && CFAbsoluteTimeGetCurrent() < until);
             check([controller.detailLabel.text containsString:@"Pending upload retried"], "Delivery status repaints after background completion");
+            check([controller.detailLabel.accessibilityLabel isEqual:controller.detailLabel.text], "VoiceOver includes updated delivery status");
             feed_state = @{ @"ready": @NO, @"loading": @YES, @"reason": @"" };
             HaloBenchmarkMenuController *(^fresh)(void) = ^{
                 HaloBenchmarkMenuController *menu = [HaloBenchmarkMenuController new];

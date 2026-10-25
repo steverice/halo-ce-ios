@@ -65,10 +65,72 @@ static void retry_pending_reports(void) {
 #endif
 }
 
+static NSString *benchmark_menu_detail(void) {
+    NSString *name;
+#if TARGET_OS_MACCATALYST
+    name = @"Mac";
+#elif TARGET_OS_VISION
+    name = @"Apple Vision Pro";
+#else
+    name = UIDevice.currentDevice.model;
+#endif
+    return [NSString stringWithFormat:NSLocalizedString(@"Benchmarking collects performance data about your %@ so we can deliver a more optimized experience.",
+        @"Launch menu benchmark explanation; %@ is the device family name"), name];
+}
+
 static UIColor *brandColor(unsigned rgb) {
     return [UIColor colorWithRed:((rgb >> 16) & 255) / 255.0 green:((rgb >> 8) & 255) / 255.0
         blue:(rgb & 255) / 255.0 alpha:1];
 }
+
+/* Composite once over the menu background; explicit colors avoid platform-specific
+   disabled tint multipliers while keeping the secondary style at 40% strength. */
+static UIColor *disabledMenuColor(unsigned rgb) {
+    CGFloat opacity = 0.40;
+    return [UIColor colorWithRed:(0x08 + (((rgb >> 16) & 255) - 8.0) * opacity) / 255.0
+        green:(0x12 + (((rgb >> 8) & 255) - 18.0) * opacity) / 255.0
+        blue:(0x16 + ((rgb & 255) - 22.0) * opacity) / 255.0 alpha:1];
+}
+
+#if TARGET_OS_TV
+/* tvOS system focus effects impose a white plate. Draw the colors directly and
+   coordinate the same scale/lift motion with the system focus animation. */
+@interface HaloTVMenuButton : UIButton
+@end
+@implementation HaloTVMenuButton
+- (void)updateMenuAppearance {
+    BOOL accent = self.enabled && self.focused;
+    self.backgroundColor = !self.enabled ? disabledMenuColor(0x1d3640) :
+        accent ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
+    UIColor *ink = !self.enabled ? disabledMenuColor(0xe8f6fa) :
+        accent ? brandColor(0x081216) : brandColor(0xe8f6fa);
+    [self setTitleColor:ink forState:UIControlStateNormal];
+    [self setTitleColor:ink forState:UIControlStateFocused];
+    [self setTitleColor:ink forState:UIControlStateDisabled];
+    if (!self.enabled) { self.transform = CGAffineTransformIdentity; self.layer.shadowOpacity = 0; }
+}
+- (void)setEnabled:(BOOL)enabled {
+    [super setEnabled:enabled];
+    [self updateMenuAppearance];
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.layer.cornerRadius = self.bounds.size.height / 2;
+    [self updateMenuAppearance];
+}
+- (void)didUpdateFocusInContext:(UIFocusUpdateContext *)context withAnimationCoordinator:(UIFocusAnimationCoordinator *)coordinator {
+    [super didUpdateFocusInContext:context withAnimationCoordinator:coordinator];
+    [coordinator addCoordinatedAnimations:^{
+        [self updateMenuAppearance];
+        BOOL focused = self.enabled && self.focused;
+        self.transform = focused && !UIAccessibilityIsReduceMotionEnabled() ? CGAffineTransformMakeScale(1.05, 1.05) : CGAffineTransformIdentity;
+        self.layer.shadowOpacity = focused ? 0.4 : 0;
+        self.layer.shadowRadius = 12;
+        self.layer.shadowOffset = CGSizeMake(0, 8);
+    } completion:nil];
+}
+@end
+#endif
 
 static CGFloat menuScale(UITraitCollection *traits) {
 #if TARGET_OS_MACCATALYST
@@ -158,6 +220,7 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
     UIStackView *content = self.menuContent ?: stack;
     self.detailLabel = text;
     text.text = self.detail;
+    text.accessibilityLabel = text.text;
     text.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     text.textColor = brandColor(0x93adb6);
     text.adjustsFontForContentSizeCategory = YES;
@@ -169,11 +232,18 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
     buttons.alignment = UIStackViewAlignmentFill;
     [content addArrangedSubview:buttons];
     for (NSString *choice in self.choices) {
+#if TARGET_OS_TV
+        UIButton *button = [HaloTVMenuButton buttonWithType:UIButtonTypeCustom];
+        button.contentEdgeInsets = UIEdgeInsetsMake(14, 32, 14, 32);
+#else
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+#endif
 
         [button setTitle:choice forState:UIControlStateNormal];
+        button.tintColor = brandColor(0x3fd6ff);
         button.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
         button.titleLabel.adjustsFontForContentSizeCategory = YES;
+#if !TARGET_OS_TV
         UIButtonConfiguration *configuration = index == 0 ? UIButtonConfiguration.filledButtonConfiguration : UIButtonConfiguration.borderedButtonConfiguration;
         configuration.baseBackgroundColor = index == 0 ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
         configuration.baseForegroundColor = index == 0 ? brandColor(0x081216) : brandColor(0xe8f6fa);
@@ -182,9 +252,17 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
         BOOL branded = self.launchMenu;
         button.configurationUpdateHandler = ^(UIButton *updated) {
             UIButtonConfiguration *style = updated.configuration;
-            style.baseForegroundColor = !updated.enabled ? brandColor(0x93adb6) :
-                updated.focused ? brandColor(0x081216) : updated.tag == 0 ? brandColor(0x081216) : brandColor(0xe8f6fa);
-            style.baseBackgroundColor = updated.focused || updated.tag == 0 ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
+            BOOL accent = updated.enabled && (updated.focused || updated.tag == 0);
+            style.baseForegroundColor = !updated.enabled ? disabledMenuColor(0xe8f6fa) :
+                accent ? brandColor(0x081216) : brandColor(0xe8f6fa);
+            style.baseBackgroundColor = !updated.enabled ? disabledMenuColor(0x1d3640) :
+                accent ? brandColor(0x3fd6ff) : brandColor(0x1d3640);
+            /* Keep explicit disabled colors from receiving a second system tint. */
+            style.background.backgroundColor = style.baseBackgroundColor;
+            style.background.backgroundColorTransformer = ^UIColor *(UIColor *color) { return color; };
+            style.background.strokeColor = updated.enabled ? brandColor(0x1d3640) : disabledMenuColor(0x1d3640);
+            style.background.strokeWidth = 1;
+            style.background.visualEffect = nil;
             UIColor *ink = style.baseForegroundColor;
 #if TARGET_OS_VISION
             if (branded && updated.tag == 1 && !updated.enabled) ink = UIColor.clearColor;
@@ -192,13 +270,6 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
             CGFloat scale = branded ? menuScale(updated.traitCollection) : 1;
             UIFont *font = menuFont(UIFontTextStyleHeadline, updated.traitCollection, scale);
             style.contentInsets = NSDirectionalEdgeInsetsMake(14 * scale, 32 * scale, 14 * scale, 32 * scale);
-#if TARGET_OS_VISION
-            /* visionOS dims disabled configuration colors again unless their transformers are explicit. */
-            style.background.backgroundColor = style.baseBackgroundColor;
-            style.background.backgroundColorTransformer = ^UIColor *(UIColor *color) { return color; };
-            style.background.strokeColor = brandColor(0x1d3640);
-            style.background.strokeWidth = 1;
-#endif
             style.titleTextAttributesTransformer = ^NSDictionary<NSAttributedStringKey,id> *(NSDictionary<NSAttributedStringKey,id> *attributes) {
                 NSMutableDictionary *result = attributes.mutableCopy;
                 result[NSForegroundColorAttributeName] = ink;
@@ -207,6 +278,7 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
             };
             updated.configuration = style;
         };
+#endif
         button.tag = index++;
         if (button.tag == 0) self.playButton = button;
         if (self.launchMenu && button.tag == 1) {
@@ -216,7 +288,7 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
                Keep the disabled label outside that effect so muted ink stays legible. */
             self.disabledBenchmarkTitle = [UILabel new];
             self.disabledBenchmarkTitle.text = choice;
-            self.disabledBenchmarkTitle.textColor = brandColor(0x93adb6);
+            self.disabledBenchmarkTitle.textColor = disabledMenuColor(0xe8f6fa);
             self.disabledBenchmarkTitle.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
             self.disabledBenchmarkTitle.adjustsFontForContentSizeCategory = YES;
             self.disabledBenchmarkTitle.isAccessibilityElement = NO;
@@ -388,6 +460,7 @@ static UIFont *menuFont(UIFontTextStyle style, UITraitCollection *traits, CGFloa
     if (!ready && loading) [self.benchmarkSpinner startAnimating];
     else [self.benchmarkSpinner stopAnimating];
     self.detailLabel.text = delivery_status.length ? [self.detail stringByAppendingFormat:@"\n\n%@", delivery_status] : self.detail;
+    self.detailLabel.accessibilityLabel = self.detailLabel.text;
     if (wasEnabled && !ready) [self setNeedsFocusUpdate];
 }
 - (void)pressed:(UIButton *)button {
@@ -442,8 +515,7 @@ const char *host_benchmark_menu(void) {
     for (;;) {
         /* Menu setup is memory-only; validation and downloads run on workers. */
         host_data_updates_menu_start();
-        NSString *detail = @"The benchmark plays the game by itself and measures this device. Finish at any time. "
-            "Benchmark data uploads automatically through iCloud.";
+        NSString *detail = benchmark_menu_detail();
         if (ask(@"VISR", detail, @[ @"Play", @"Benchmark" ], YES) == 0) {
             host_data_updates_menu_finish();
             return NULL;
