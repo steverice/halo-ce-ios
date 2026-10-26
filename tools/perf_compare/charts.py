@@ -67,7 +67,7 @@ def entry_key(entry: dict) -> str:
 def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | None, str, str]:
     """Average and 1% low for one suite on the reference box, or None with the reason and its kind
     (`not_measured`, or `not_supported` when the port lacks what the suite needs)."""
-    box = [row for row in group if row["reference_box"] == "true"]
+    box = [row for row in group if row["reference_box"].lower() == "true"]
     unsupported = [row for row in group if row["suite"] == suite and row["status"] == "not_supported"]
     if unsupported:
         return None, unsupported[0]["notes"] or "not supported", "not_supported"
@@ -84,8 +84,8 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
     if not usable:
         return None, query.get("no_data_reason", "no matching measurement"), "not_measured"
     rows = list(usable.values())
-    return {"avg": statistics.fmean(float(r["fps_avg"]) for r in rows),
-            "low": statistics.median(float(r["fps_1pct_low"]) for r in rows),
+    return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
+            "low": statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows),
             "rows": rows}, "", ""
 
 
@@ -107,8 +107,8 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
                 kinds = {part[2] for part in parts if part[0] is None}
                 kind = "not_supported" if kinds == {"not_supported"} else "not_measured"
             else:
-                value = {"avg": statistics.fmean(p[0]["avg"] for p in parts),
-                         "low": statistics.median(p[0]["low"] for p in parts),
+                value = {"avg": statistics.geometric_mean(p[0]["avg"] for p in parts),
+                         "low": statistics.geometric_mean(p[0]["low"] for p in parts),
                          "rows": [r for p in parts for r in p[0]["rows"]]}
                 reason, kind = "", ""
         else:
@@ -123,7 +123,7 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
             newest[entry["port"]] = entry
     for entry in entries:
         entry["default"] = newest.get(entry["port"]) is entry
-    return {"entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"] == "true"), "")}
+    return {"entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"].lower() == "true"), "")}
 
 
 def chart_title(spec: dict, built: dict, suite: str) -> str:

@@ -35,7 +35,7 @@
 <fieldset class="bench-bar"><legend>Suite</legend><label><input type="radio" name="suite" value="campaign" checked> Campaign</label><label><input type="radio" name="suite" value="multiplayer"> Multiplayer</label><label><input type="radio" name="suite" value="co-op"> Co-op</label><label><input type="radio" name="suite" value="overall"> Overall</label></fieldset>
 <section class="bench" data-platform="mac" aria-labelledby="h-mac">
 <h2 id="h-mac">Mac</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-chart"><img src="benchmarks/static-mac.svg" alt="Mac: average and 1% low fps per build, Campaign suite"></div>
 <fieldset class="bench-rows"><legend>Builds</legend><label><input type="checkbox" value="visr@0.5.1@20261026.31927" checked> VISR 0.5.1 (build 20261026.31927, 2026-10-26)</label><label class="off"><input type="checkbox" value="visr@main@20261023.203835" disabled> VISR main (build 20261023.203835, 2026-10-24). Not measured: not measured on the reference box.</label><label><input type="checkbox" value="opence-macos@v1.0.2@2" checked> OpenCE-macOS v1.0.2 (build 2, 2026-10-26)</label><label class="off"><input type="checkbox" value="opence-web@@" disabled> OpenCE web (build unknown, 2026-10-26). Not measured: safari-remote-automation-disabled.</label><label class="off"><input type="checkbox" value="opence-web@build-280@280" disabled> OpenCE web build-280 (build 280, 2026-10-26). Not measured: no uncapped matched-stock measurement.</label><label><input type="checkbox" value="corece@0.3.0@44" checked> CoreCE 0.3.0 (build 44, 2026-10-26)</label><label class="off"><input type="checkbox" value="chupathingy@v0.8.0g@0.8.0g" disabled> Chupathingy v0.8.0g (build 0.8.0g, 2026-10-24). Not measured: console-unavailable.</label><label class="off"><input type="checkbox" value="halo-og@v0.5.1@" disabled> Halo OG v0.5.1 (build unknown, 2026-10-24). Not measured: console-unavailable.</label></fieldset>
@@ -45,7 +45,7 @@
 </section>
 <section class="bench" data-platform="iphone-ipad" aria-labelledby="h-iphone-ipad">
 <h2 id="h-iphone-ipad">iPhone and iPad</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-chart"><p class="bench-empty">No results yet for the M1 iPad Pro.</p></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
@@ -55,7 +55,7 @@
 </section>
 <section class="bench" data-platform="apple-tv" aria-labelledby="h-apple-tv">
 <h2 id="h-apple-tv">Apple TV</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-chart"><p class="bench-empty">No reference box is set for Apple TV yet.</p></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
@@ -65,7 +65,7 @@
 </section>
 <section class="bench" data-platform="vision-pro" aria-labelledby="h-vision-pro">
 <h2 id="h-vision-pro">Vision Pro</h2>
-<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
@@ -75,13 +75,13 @@
 </section>
 <div class="method">
 <h2>Methodology</h2>
-<p>Each bar is the mean over the valid rounds of a window's average presentation rate, drawn beside the median of the windows' 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. The spreadsheet's README tab describes each column.</p>
+<p>Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. The spreadsheet's README tab describes each column.</p>
 <h3>Suites</h3>
 <ul>
 <li><strong>Campaign:</strong> the opening of a10 and the opening of b30, one player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set, with the frame cap and vsync off and the matched-stock settings for the headline charts. A set with fewer than three valid rounds is marked incomplete.</li>
-<li><strong>Multiplayer:</strong> no measurements yet.</li>
-<li><strong>Co-op:</strong> local split-screen campaign co-op, two players at 1x enemies. A port without split screen shows &quot;Does not support split screen&quot; and the status <code>not_supported</code>; that differs from &quot;not measured&quot;, which means the suite has not been run for the build.</li>
-<li><strong>Overall:</strong> per build, the mean of the suites' average rates and the median of their 1% low rates, each suite weighted equally. A build missing a suite has no overall bar.</li>
+<li><strong>Multiplayer:</strong> two maps, Chill Out and Blood Gulch, each a window of the same length; the suite value is the mean over both maps' windows. No measurements yet.</li>
+<li><strong>Co-op:</strong> local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every port that has the option: VISR sets <code>debug.enemy_multiplier = 1</code>, and OpenCE-macOS and CoreCE set their enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes column in the spreadsheet says so. A port without split screen shows &quot;Does not support split screen&quot; and the status <code>not_supported</code>; that differs from &quot;not measured&quot;, which means the suite has not been run for the build.</li>
+<li><strong>Overall:</strong> per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. A build missing a suite has no overall bar.</li>
 </ul>
 <p>A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status <code>rejected</code> and their reason. This snapshot has 0 rejected attempts.</p>
 <p>Suite definitions and the harness are in <a href="https://github.com/steverice/visr/blob/main/tools/perf_compare"><code>tools/perf_compare</code></a> (<a href="https://github.com/steverice/visr/blob/main/tools/perf_compare/adapters.py"><code>adapters.py</code></a>, <a href="https://github.com/steverice/visr/blob/main/tools/perf_compare/refresh.py"><code>refresh.py</code></a>).</p>
@@ -96,7 +96,6 @@
 <p>Pre-release main builds are VISR sources measured before a release was tagged. They are kept for history and are not the released product.</p>
 <p>Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.</p>
 <p>Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.</p>
-<p>The spreadsheet's device-sweep tab lists VISR's offscreen throughput reports from iPhones, iPads and Apple TVs. Offscreen throughput is a different measurement from displayed pacing and does not compare with the charts.</p>
 </div>
 <footer class="foot">
 <p>Halo, Halo: Combat Evolved, Master Chief and the related names and logos are
@@ -113,7 +112,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "mac",
   "heading": "Mac",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
   "empty": "No Mac results yet.",
   "box": "M6 Mac mini",
   "series_labels": [
@@ -161,7 +160,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "iphone-ipad",
   "heading": "iPhone and iPad",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
   "empty": "No results yet for the M1 iPad Pro.",
   "box": "M1 iPad Pro",
   "series_labels": [
@@ -209,7 +208,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "apple-tv",
   "heading": "Apple TV",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
   "empty": "No reference box is set for Apple TV yet.",
   "box": "",
   "series_labels": [
@@ -257,7 +256,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
  {
   "slug": "vision-pro",
   "heading": "Vision Pro",
-  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.",
   "empty": "No results yet for the M2 Vision Pro.",
   "box": "M2 Vision Pro",
   "series_labels": [

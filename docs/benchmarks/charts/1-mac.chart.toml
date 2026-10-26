@@ -1,6 +1,6 @@
 order = 10
 heading = "Mac"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
 empty = "No Mac results yet."
 box = "M6 Mac mini"
 series_labels = ["Average fps", "1% low fps"]

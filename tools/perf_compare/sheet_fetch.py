@@ -26,17 +26,35 @@ def export_url(sheet_id: str, gid: str) -> str:
 
 
 def validate(text: str) -> str:
-    """Return the CSV with LF line ends, or raise when it is not the results tab."""
-    text = text.lstrip("﻿")
+    """Return the CSV in canonical column order with LF line ends, or raise when it is not the results tab.
+
+    Columns are read by header name, so the sheet may reorder or add columns; a missing column is an error.
+    """
+    text = text.lstrip("\ufeff")
     if text.lstrip().lower().startswith("<"):
         raise ValueError("the response is a web page, not CSV: is the sheet public and the gid the results tab?")
-    rows = list(csv.reader(io.StringIO(text)))
-    if not rows or rows[0] != list(COLUMNS):
-        raise ValueError("the first row does not match the results columns: " + ",".join(rows[0] if rows else []))
-    if len(rows) < 2:
+    table = list(csv.reader(io.StringIO(text)))
+    if not table:
+        raise ValueError("the response is empty")
+    missing = [name for name in COLUMNS if name not in table[0]]
+    if missing:
+        raise ValueError("the header lacks results columns: " + ", ".join(missing))
+    position = {name: table[0].index(name) for name in COLUMNS}
+    body = []
+    for row in table[1:]:
+        if not any(cell.strip() for cell in row):
+            continue
+        record = {name: row[index] if index < len(row) else "" for name, index in position.items()}
+        # Sheets writes booleans as TRUE/FALSE; the snapshot keeps the export's lowercase spelling.
+        if record["reference_box"].lower() in ("true", "false"):
+            record["reference_box"] = record["reference_box"].lower()
+        body.append(record)
+    if not body:
         raise ValueError("the results tab has no rows")
     out = io.StringIO()
-    csv.writer(out, lineterminator="\n").writerows(row for row in rows if any(cell.strip() for cell in row))
+    writer = csv.DictWriter(out, fieldnames=list(COLUMNS), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(body)
     return out.getvalue()
 
 

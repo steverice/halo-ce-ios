@@ -74,17 +74,10 @@ def test_every_column_is_documented():
     assert set(sheet_export.DESCRIPTIONS) == set(sheet_export.COLUMNS)
 
 
-def test_sweep_rows_split_the_reported_range():
-    out = sheet_export.sweep_rows(summary(sweep=[{"device": "iPad", "fps": "107.65–109.02", "trials": 3},
-                                                 {"device": "Apple TV HD", "fps": "20.27"}]))
-    assert {row["device"]: (row["fps_min"], row["fps_max"]) for row in out} == {
-        "iPad": ("107.65", "109.02"), "Apple TV HD": ("20.27", "20.27")}
-
-
 def test_layout_filters_each_port_over_the_results_tab():
     layout = sheet_export.layout(summary(record(), record(port="corece", version="0.3.0")))
     tabs = {tab["name"]: tab for tab in layout["tabs"]}
-    assert list(tabs)[:2] == ["README", "results"]
+    assert list(tabs)[:3] == ["README", "charts", "results"]
     assert tabs["visr"]["formula"] .startswith("={results!A1:A")
     assert "corece" in tabs and "device-sweep" not in tabs
     last = sheet_export._column_letter(len(sheet_export.COLUMNS) - 1)
@@ -171,7 +164,7 @@ def test_model_ticks_the_newest_build_of_each_port_and_lists_the_rest_with_reaso
     assert by_key["visr@main@5"]["value"] is not None
     assert by_key["opence-web@@7"]["reason"] == "safari-remote-automation-disabled"
     assert by_key["opence-web@@7"]["kind"] == "not_measured"
-    assert by_key["visr@0.5.1@7"]["value"] == {"avg": 550.0, "low": 200.0, "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
+    assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
 
 
 def test_suites_without_data_show_not_measured_rows_and_overall_needs_every_suite():
@@ -183,13 +176,13 @@ def test_suites_without_data_show_not_measured_rows_and_overall_needs_every_suit
     assert not any(e["default"] for e in overall["entries"])
 
 
-def test_overall_is_the_mean_of_averages_and_median_of_lows_with_equal_suite_weight():
+def test_overall_is_the_geometric_mean_of_each_metric_with_equal_suite_weight():
     extra = [{**box_record(fps=(100.0, 100.0), p99=10.0), "suite": "multiplayer"},
              {**box_record(fps=(300.0, 300.0), p99=20.0), "suite": "co-op"}]
     built = charts.model(snapshot_rows() + csv_rows(sheet_export.rows(summary(*extra))), QUERY, "overall")
     value = [e for e in built["entries"] if e["port"] == "visr" and e["version"] == "0.5.1"][0]["value"]
-    assert value["avg"] == pytest.approx((550 + 100 + 300) / 3)
-    assert value["low"] == pytest.approx(100.0)  # median of 200, 100 and 50
+    assert value["avg"] == pytest.approx((500 ** 0.5 * 600 ** 0.5 * 100 * 300) ** (1 / 3))
+    assert value["low"] == pytest.approx((200 * 100 * 50) ** (1 / 3))
 
 
 def test_not_supported_suite_is_reported_as_not_supported_not_not_measured():
@@ -209,7 +202,7 @@ def test_chart_source_draws_average_then_low_for_the_ticked_builds():
     assert lines[:4] == ["---", "config: {}", "---", "xychart-beta horizontal"]
     assert 'title "Campaign: uncapped fps, M6 Mac mini"' in text
     assert 'x-axis "X" ["VISR 0.5.1", "OpenCE v1.0.2"]' in text
-    assert "    bar [550, 550]" in text and "    bar [200, 200]" in text
+    assert "    bar [547.7, 547.7]" in text and "    bar [200, 200]" in text
     chosen = charts.source(spec(), built, "campaign", {"visr@main@5"})
     assert '["VISR main"]' in chosen
     assert charts.source(spec(), built, "campaign", set()) is None
@@ -306,3 +299,46 @@ console.log(JSON.stringify(out));
             expected = [charts.source(item, built, suite), charts.caption(built),
                         [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]]]
             assert browser[f"{site_page.slug(item)}/{suite}"] == expected
+
+
+def test_fetch_lowercases_sheets_booleans_and_keeps_dropped_zeros_readable():
+    rows = snapshot_rows()
+    for row in rows:
+        row["reference_box"] = row["reference_box"].upper()
+        row["fps_avg"] = row["fps_avg"].rstrip("0").rstrip(".") if row["fps_avg"] else ""
+    text = sheet_export.to_csv(sheet_export.COLUMNS, rows)
+    cleaned = list(csv.DictReader(io.StringIO(sheet_fetch.validate(text))))
+    assert {row["reference_box"] for row in cleaned} <= {"true", "false"}
+    model = charts.model(cleaned, QUERY, "campaign")
+    assert any(e["default"] for e in model["entries"])
+    assert model["box"] == "M6 Mac mini"
+
+
+def test_readme_tab_describes_every_column_in_order():
+    rows = list(csv.DictReader(io.StringIO(sheet_export.readme_csv())))
+    assert [row["column"] for row in rows] == list(sheet_export.COLUMNS) and all(row["meaning"] for row in rows)
+
+
+def test_nothing_from_the_device_sweep_reaches_the_public_outputs():
+    assert not hasattr(sheet_export, "sweep_rows")
+    layout = sheet_export.layout(summary(record(), sweep=[{"device": "iPad"}]))
+    assert "device-sweep" not in {tab["name"] for tab in layout["tabs"]}
+    assert "device-sweep" not in page.render_page(summary(record(), sweep=[{"device": "iPad"}]), [], [])
+
+
+def test_label_is_the_first_column_and_port_filters_sit_on_column_b():
+    assert sheet_export.COLUMNS[:2] == ("label", "port")
+    layout = sheet_export.layout(summary(record()))
+    assert 'results!B2:B="visr"' in {tab["name"]: tab for tab in layout["tabs"]}["visr"]["formula"]
+
+
+def test_fetch_reads_columns_by_name_so_a_reordered_sheet_works():
+    rows = snapshot_rows()[:3]
+    shuffled = list(reversed(sheet_export.COLUMNS)) + ["sheet_only"]
+    text = sheet_export.to_csv(shuffled, [{**row, "sheet_only": "x"} for row in rows])
+    cleaned = list(csv.DictReader(io.StringIO(sheet_fetch.validate(text))))
+    assert list(cleaned[0]) == list(sheet_export.COLUMNS)
+    assert [r["label"] for r in cleaned] == [r["label"] for r in rows]
+    with pytest.raises(ValueError, match="lacks results columns: window"):
+        sheet_fetch.validate(sheet_export.to_csv([c for c in sheet_export.COLUMNS if c != "window"],
+                                                 [{k: v for k, v in rows[0].items() if k != "window"}]))

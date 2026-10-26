@@ -30,10 +30,7 @@ function parseCsv(text) {
 }
 
 const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b), mid = sorted.length >> 1;
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
+const geometricMean = (values) => Math.exp(mean(values.map(Math.log)));
 function matches(row, filters) {
   return Object.entries(filters).every(([column, wanted]) =>
     (Array.isArray(wanted) ? wanted : [wanted]).map(String).includes(row[column] ?? ""));
@@ -48,7 +45,7 @@ const number = (value) => value.toFixed(1).replace(/\.0$/, "");
 const entryKey = (entry) => [entry.port, entry.version, entry.build].join("@");
 
 function suiteValue(group, query, suite) {
-  const box = group.filter((row) => row.reference_box === "true");
+  const box = group.filter((row) => String(row.reference_box).toLowerCase() === "true");
   const unsupported = group.filter((row) => row.suite === suite && row.status === "not_supported");
   if (unsupported.length) return [null, unsupported[0].notes || "not supported", "not_supported"];
   if (!box.length) {
@@ -63,7 +60,7 @@ function suiteValue(group, query, suite) {
   for (const row of candidates) usable.set(row.window, row);
   if (!usable.size) return [null, query.no_data_reason || "no matching measurement", "not_measured"];
   const rows = [...usable.values()];
-  return [{ avg: mean(rows.map((r) => parseFloat(r.fps_avg))), low: median(rows.map((r) => parseFloat(r.fps_1pct_low))), rows }, "", ""];
+  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), low: geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))), rows }, "", ""];
 }
 
 function model(rows, query, suite) {
@@ -88,7 +85,7 @@ function model(rows, query, suite) {
         entry.kind = kinds.size === 1 && kinds.has("not_supported") ? "not_supported" : "not_measured";
       }
       else {
-        entry.value = { avg: mean(parts.map((p) => p[0].avg)), low: median(parts.map((p) => p[0].low)) };
+        entry.value = { avg: geometricMean(parts.map((p) => p[0].avg)), low: geometricMean(parts.map((p) => p[0].low)) };
         entry.reason = ""; entry.kind = "";
       }
     } else [entry.value, entry.reason, entry.kind] = suiteValue(group, query, suite);
@@ -104,7 +101,7 @@ function model(rows, query, suite) {
     if (entry.value !== null && (!newest.has(entry.port) || entry.date > newest.get(entry.port).date)) newest.set(entry.port, entry);
   }
   for (const entry of entries) entry.default = newest.get(entry.port) === entry;
-  const reference = platformRows.find((row) => row.reference_box === "true");
+  const reference = platformRows.find((row) => String(row.reference_box).toLowerCase() === "true");
   return { entries, box: reference ? reference.host : "" };
 }
 

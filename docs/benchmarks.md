@@ -12,7 +12,7 @@ Campaign suite, newest build of each port.
 
 ### Mac
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
 ```mermaid
 ---
@@ -28,8 +28,8 @@ xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
     x-axis "Port and version" ["VISR 0.5.1", "OpenCE v1.0.2", "CoreCE 0.3.0"]
     y-axis "Frames per second" 0 --> 800
-    bar [692.2, 659.9, 408.3]
-    bar [196.5, 228.4, 211.1]
+    bar [690.5, 655.7, 381]
+    bar [196.4, 227.4, 207.5]
 ```
 
 🟦 Average fps 🟧 1% low fps
@@ -40,19 +40,19 @@ Not measured: VISR main (not measured on the reference box); OpenCE web (safari-
 
 ### iPhone and iPad
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
 No results yet for the M1 iPad Pro.
 
 ### Apple TV
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
 No reference box is set for Apple TV yet.
 
 ### Vision Pro
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
 No results yet for the M2 Vision Pro.
 
@@ -60,14 +60,14 @@ No results yet for the M2 Vision Pro.
 
 ## Methodology
 
-Each bar is the mean over the valid rounds of a window's average presentation rate, drawn beside the median of the windows' 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. The spreadsheet's README tab describes each column.
+Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. The spreadsheet's README tab describes each column.
 
 ### Suites
 
 - **Campaign:** the opening of a10 and the opening of b30, one player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set, with the frame cap and vsync off and the matched-stock settings for the headline charts. A set with fewer than three valid rounds is marked incomplete.
-- **Multiplayer:** no measurements yet.
-- **Co-op:** local split-screen campaign co-op, two players at 1x enemies. A port without split screen shows "Does not support split screen" and the status `not_supported`; that differs from "not measured", which means the suite has not been run for the build.
-- **Overall:** per build, the mean of the suites' average rates and the median of their 1% low rates, each suite weighted equally. A build missing a suite has no overall bar.
+- **Multiplayer:** two maps, Chill Out and Blood Gulch, each a window of the same length; the suite value is the mean over both maps' windows. No measurements yet.
+- **Co-op:** local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every port that has the option: VISR sets `debug.enemy_multiplier = 1`, and OpenCE-macOS and CoreCE set their enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes column in the spreadsheet says so. A port without split screen shows "Does not support split screen" and the status `not_supported`; that differs from "not measured", which means the suite has not been run for the build.
+- **Overall:** per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. A build missing a suite has no overall bar.
 
 A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status `rejected` and their reason. This snapshot has 0 rejected attempts.
 
@@ -94,5 +94,3 @@ Pre-release main builds are VISR sources measured before a release was tagged. T
 Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.
 
 Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.
-
-The spreadsheet's device-sweep tab lists VISR's offscreen throughput reports from iPhones, iPads and Apple TVs. Offscreen throughput is a different measurement from displayed pacing and does not compare with the charts.

@@ -1,6 +1,6 @@
 order = 20
 heading = "iPhone and iPad"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
 empty = "No results yet for the M1 iPad Pro."
 box = "M1 iPad Pro"
 series_labels = ["Average fps", "1% low fps"]

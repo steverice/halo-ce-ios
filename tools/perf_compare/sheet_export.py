@@ -17,10 +17,10 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[2]
 SUMMARY = ROOT / "tools/perf_compare/summary.json"
 
-# One row per measured set and scenario window. The order is part of the contract: the spreadsheet's
-# per-port tabs and the README tab refer to columns by position and name.
+# One row per measured set and scenario window. The sheet's frozen first column is `label`; the per-port tabs
+# filter on column B (`port`). Everything that reads the snapshot does so by header name.
 COLUMNS = (
-    "port", "port_name", "version", "label", "build", "source", "release_kind", "artifact", "artifact_sha256",
+    "label", "port", "port_name", "version", "build", "source", "release_kind", "artifact", "artifact_sha256",
     "host", "platform", "reference_box", "machine", "chip", "memory_gb", "os", "browser", "date", "method",
     "suite", "window", "scenario", "delay_s", "frame_mode", "quality_preset", "warmup_s",
     "resolution", "cap_fps", "display_hz", "rounds",
@@ -30,9 +30,6 @@ COLUMNS = (
 
 NUMERIC = ("resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
            "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct", "thermal")
-
-SWEEP_COLUMNS = ("device", "build", "workload", "resolution", "configuration", "settings_hash", "trials",
-                 "fps_min", "fps_max", "timing_basis", "thermal", "report")
 
 DESCRIPTIONS = {
     "port": "Port identifier (visr, opence-macos, opence-web, corece, ...). Per-port tabs filter on it.",
@@ -175,18 +172,6 @@ def rows(summary: dict) -> list[dict[str, str]]:
     return out
 
 
-def sweep_rows(summary: dict) -> list[dict[str, str]]:
-    """Device sweep reports, with the reported rate range split into two numeric columns."""
-    out = []
-    for item in summary.get("sweep", []):
-        low, _, high = str(item.get("fps", "")).replace("-", "–").partition("–")
-        row = {key: str(item.get(key, "")) for key in SWEEP_COLUMNS}
-        row["fps_min"], row["fps_max"] = low, high or low
-        out.append(row)
-    out.sort(key=lambda row: tuple(row[key] for key in SWEEP_COLUMNS))
-    return out
-
-
 def _column_letter(index: int) -> str:
     letters = ""
     index += 1
@@ -200,21 +185,26 @@ def layout(summary: dict) -> dict:
     """The spreadsheet's tabs: the data tabs from CSV files and formula tabs built over `results`."""
     last = _column_letter(len(COLUMNS) - 1)
     ports = list(dict.fromkeys(row["port"] for row in rows(summary)))
-    tabs = [{"name": "README", "kind": "table", "header": ["column", "tab", "meaning"],
-             "rows": [[name, "results", DESCRIPTIONS[name]] for name in COLUMNS]
-             + [[name, "device-sweep", ""] for name in SWEEP_COLUMNS],
+    tabs = [{"name": "README", "kind": "table", "header": ["column", "meaning"],
+             "rows": [[name, DESCRIPTIONS[name]] for name in COLUMNS],
              "note": "results is the only tab to edit. The per-port tabs are read-only views."},
+            {"name": "charts", "kind": "summary",
+             "note": "Per platform, for campaign, uncapped, matched-stock sets on the reference box with status ok and delay_s 0: "
+                     "the geometric mean over windows of fps_avg and fps_1pct_low, by label. The page uses the same rule."},
             {"name": "results", "kind": "csv", "file": "results.csv", "columns": list(COLUMNS)}]
     # Each port tab repeats the header row, then filters the data rows on the port column.
     tabs.extend({"name": port, "kind": "formula",
                  "cell": "A1",
-                 "formula": f'={{results!A1:{last}1; FILTER(results!A2:{last}, results!A2:A="{port}")}}'}
+                 "formula": f'={{results!A1:{last}1; FILTER(results!A2:{last}, results!B2:B="{port}")}}'}
                 for port in ports)
-    if summary.get("sweep"):
-        tabs.append({"name": "device-sweep", "kind": "csv", "file": "sweep.csv", "columns": list(SWEEP_COLUMNS)})
     # Sheets would turn all-digit or exponent-looking values into numbers and drop trailing zeros.
     text_columns = ["version", "build", "source", "artifact_sha256", "window", "os"]
     return {"plain_text_columns": {"results": text_columns}, "sheet_id": "1tuTJpOxUTbqgzOSDSW-nSvWKL8HkZMVucvNRUIee0t4", "tabs": tabs}
+
+
+def readme_csv() -> str:
+    """The README tab: one row per results column with its meaning."""
+    return to_csv(("column", "meaning"), [{"column": name, "meaning": DESCRIPTIONS[name]} for name in COLUMNS])
 
 
 def to_csv(columns, table) -> str:
@@ -239,13 +229,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", type=Path, default=SUMMARY)
     parser.add_argument("--output", type=Path, required=True, help="results.csv to write")
-    parser.add_argument("--sweep-output", type=Path, help="sweep.csv to write")
     parser.add_argument("--layout-output", type=Path, help="layout.json to write")
+    parser.add_argument("--readme-output", type=Path, help="the README tab as CSV")
     args = parser.parse_args()
     summary = json.loads(args.summary.read_text())
     args.output.write_text(to_csv(COLUMNS, rows(summary)))
-    if args.sweep_output:
-        args.sweep_output.write_text(to_csv(SWEEP_COLUMNS, sweep_rows(summary)))
+    if args.readme_output:
+        args.readme_output.write_text(readme_csv())
     if args.layout_output:
         args.layout_output.write_text(json.dumps(layout(summary), indent=2, ensure_ascii=False) + "\n")
     return 0
