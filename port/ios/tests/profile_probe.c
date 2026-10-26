@@ -442,7 +442,7 @@ static void check_unprofiled_models(const char *shipped)
 	/* An Apple TV below every measured profile and outside the catalog: the Apple TV HD's values. */
 	profile = resolve_model(shipped, "tvos", "AppleTV9,9", 3, 2000, 1920, 1080, 60);
 	assert(!profile.model_file[0] && has(&profile, "display.render_scale", "0.5") &&
-		has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.shadow_map_size", "256"));
+		has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.shadow_map_size", "128"));
 	/* A later Apple TV: the 3rd generation's and_newer rule. */
 	profile = resolve_model(shipped, "tvos", "AppleTV15,1", 11, 4000, 3840, 2160, 60);
 	assert(!profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-3rd.toml") &&
@@ -461,7 +461,7 @@ static void check_shipped(const char *shipped)
 	assert(has(&profile, "display.renderer", "metal") && has(&profile, "display.render_height", "1080"));
 	assert(has(&profile, "display.render_scale", "0.5") && has(&profile, "display.upscaled_textures", "false"));
 	assert(has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.model_lod", "auto") &&
-		has(&profile, "display.shadow_map_size", "256") && has(&profile, "display.frame_rate", "30"));
+		has(&profile, "display.shadow_map_size", "128") && has(&profile, "display.frame_rate", "30"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "\tmodel Apple TV HD\tmenu\n") && strstr(encoded, "\tmodel Apple TV HD\tcutscene\n"));
 	/* an Apple TV 4K without memory or display reported, and the tvOS simulator: the class floor, the Apple TV HD's values */

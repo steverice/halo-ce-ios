@@ -17,7 +17,7 @@ models = ["AppleTV6,2"]
 
 [display]
 render_scale = 1.0
-shadow_map_size = 512
+shadow_map_size = 128
 texture_idle_seconds = 30
 render_height = 720
 output_height = 1080
@@ -58,8 +58,9 @@ basis = "assumed"
 why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
 
 [evidence."display.shadow_map_size"]
-basis = "assumed"
-why = "Pinned to the built-in default so the Apple TV class profile's floor (the Apple TV HD's value) does not reach this model; not separately measured."
+basis = "measured"
+why = "The A10X of the iPad Pro 12.9-inch (2nd generation), where only 128-pixel shadows came near holding 30 frames a second at 64 players (GPU 28 to 30 ms a frame against 53 to 54 at 512). On this model at 720 lines 128 shadows with 2x filtering took a10's opening from 12.97 to 12.05 ms of GPU, and it holds 60 with little room (99.56% of frames on time or better at 2x enemies, 99.0% on a 4K TV). Shadow detail is the first setting lowered before a tier (profiles/README.md, Targets): above 128 the game's shadows look little better and cost the most on these GPUs."
+source = "VISR shadow map size runs at 128, 256 and 512, mp-bloodgulch-64 on the batched-blur build, 30 s windows, 2026-10-25 (iPad7,2); Apple TV 4K (1st generation) settings runs, build 20261025.150026, 2026-10-25"
 
 [evidence."scene.menu.display.render_scale"]
 basis = "assumed"

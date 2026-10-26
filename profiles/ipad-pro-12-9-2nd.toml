@@ -1,4 +1,4 @@
-# iPad7,2 (A10X, 120 Hz): 30 frames a second at 900 lines and full quality, from the October 2026 settings sweep.
+# iPad7,2 (A10X, 120 Hz): 30 frames a second at 900 lines and full quality but the game's 128-pixel shadows, from the October 2026 settings sweep.
 # 60 does not hold at 900 lines even with every setting at its cheapest (95.4% of a10 frames on time), and 120 holds
 # nowhere, so the profile takes the ladder's floor rate with the lines and quality that rate affords: at 30, 900 lines
 # held with 1.5x and 2x enemies and every quality setting, and a presented d40 run at 30 showed every frame on time.
@@ -17,7 +17,7 @@ models = ["iPad7,2"]
 frame_rate = "30"
 render_height = 900
 anisotropic_filtering = 16
-shadow_map_size = 512
+shadow_map_size = 128
 model_lod = "max"
 dynamic_resolution = true
 
@@ -41,8 +41,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 
 [evidence."display.shadow_map_size"]
 basis = "measured"
-why = "At 30 frames a second and 900 lines 512-pixel shadows held 99.9% or more on time; they cost 0.4 to 0.7 ms a frame over 128 out of the 33.3 ms budget."
-source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+why = "At 64 players on Blood Gulch the GPU took 28 to 30 ms a frame at 128-pixel shadows, 33 to 37 at 256 and 53 to 54 at 512, and only 128 came near holding 30 frames a second (99.0% and 99.6% of frames on time; 256: 84 to 96%; 512: 31 to 34%). In a10's mess hall 512 to 128 alone took the GPU from 17.67 to 13.72 ms. Shadow detail is the first setting lowered before a tier (profiles/README.md, Targets): above 128 the game's shadows look little better and cost the most on these GPUs."
+source = "VISR shadow map size runs at 128, 256 and 512, mp-bloodgulch-64 on the batched-blur build, 30 s windows, 2026-10-25; settings sweep a10-mess-hall, build 20261024.122832 (0.5.0)"
 
 [evidence."display.model_lod"]
 basis = "measured"

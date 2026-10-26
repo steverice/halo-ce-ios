@@ -32,7 +32,7 @@ texture_idle_seconds = 30
 render_scale = 0.5
 anisotropic_filtering = 4
 model_lod = "auto"
-shadow_map_size = 256
+shadow_map_size = 128
 
 [network]
 player_capacity = 8
@@ -63,8 +63,8 @@ source = "Apple TV HD sweep: a10 and b30, max against auto, 2026-10-13"
 
 [evidence."display.shadow_map_size"]
 basis = "measured"
-why = "256 against 512 gained 2 to 5 frames a second in a10's rooms with characters (53 to 56, 49 to 53, 51 to 54) and 1 to 2 on b30; 128 gained about 1 more. 256 keeps shadow edges smoother than the Xbox's 128 for most of the gain."
-source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13"
+why = "256 against 512 gained 2 to 5 frames a second in a10's rooms with characters (53 to 56, 49 to 53, 51 to 54) and 1 to 2 on b30; 128 gained about 1 more. In later runs 256 to 128 alone took a10's mess hall from 24.80 to 23.82 ms and 24.53 to 23.81 ms of GPU, and b30's beach fight from 19.80 to 19.36. The model plays at 30, below the ladder's ideal, so it takes the cheapest shadows. Shadow detail is the first setting lowered before a tier (profiles/README.md, Targets): above 128 the game's shadows look little better and cost the most on these GPUs."
+source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13; Apple TV HD settings runs, a10-mess-hall and b30-beach-fight, October 2026"
 
 # All three together: b30's beach 31 to 40-53 frames a second (GPU 30.5 to 23 ms, CPU 26 to 22), its Pelican ride
 # 42 to 54-60; a10's rooms 44-53 to 48-58. Peak memory unchanged.

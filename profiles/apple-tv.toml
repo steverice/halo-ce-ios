@@ -18,7 +18,7 @@ texture_idle_seconds = 30
 render_scale = 0.5
 anisotropic_filtering = 4
 model_lod = "auto"
-shadow_map_size = 256
+shadow_map_size = 128
 
 [scene.menu.display]
 render_scale = 0.6667
