@@ -530,6 +530,32 @@ static void check_renderer_default(void)
 	assert(!strcmp(config_string("display.renderer"), "gl") && file_has(path, "\nrenderer = \"gl\"\n"));
 }
 
+/* 0.5.x wrote display.player_names = "all" as the default; the default is now "none" (the Xbox's). A value config.origins
+   marks as written by the game follows it, a value the player chose stays, and one with no origins line is the
+   player's too */
+static void check_player_names_default(void)
+{
+	/* (a new install records the written default, which is what 0.5.x's installs hold) */
+	fresh();
+	launch("");
+	assert(file_has(origins, "display.player_names\tdefault\t\"none\"\n"));
+	fresh();
+	write_text(path, "[display]\nplayer_names = \"all\"\n");
+	write_text(origins, "display.player_names\tdefault\t\"all\"\n");
+	launch("");
+	assert(!strcmp(config_string("display.player_names"), "none") && file_has(path, "\nplayer_names = \"none\"\n"));
+	assert(file_has(origins, "display.player_names\tdefault\t\"none\"\n"));
+	fresh();
+	write_text(path, "[display]\nplayer_names = \"all\"\n");
+	write_text(origins, "display.player_names\tchosen\n");
+	launch("");
+	assert(!strcmp(config_string("display.player_names"), "all") && file_has(path, "\nplayer_names = \"all\"\n"));
+	fresh();
+	write_text(path, "[display]\nplayer_names = \"all\"\n");
+	launch("");
+	assert(!strcmp(config_string("display.player_names"), "all"));
+}
+
 static void check_external(void)
 {
 	const char *profile = TV_MODEL
@@ -722,6 +748,7 @@ int main(void)
 	check_reload();
 	check_old_install();
 	check_renderer_default();
+	check_player_names_default();
 	check_tools();
 	check_menus();
 	check_environment_and_refusals();
