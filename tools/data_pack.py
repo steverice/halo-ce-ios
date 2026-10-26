@@ -364,6 +364,9 @@ def snapshot(folder, kind, compatibility=None):
                 try:
                     names = sorted(os.listdir(hardware))
                     revision = snapshot_name_allowed(REVISION, kind, compatibility)
+                    # The whole-set profiles-1/2 packs predate revisions: sign the profile sources without it, as before.
+                    if not revision and compatibility in ("profiles-1", "profiles-2") and "revision.toml" in names:
+                        names.remove("revision.toml")
                     if names not in (["catalog.toml"], ["catalog.toml", "revision.toml"]) or (
                             "revision.toml" in names and not revision):
                         raise ValueError("hardware must contain only catalog.toml" + (" and revision.toml" if revision else ""))

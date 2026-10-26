@@ -372,3 +372,5 @@ def test_external_profiles_require_new_compatibility(tmp_path):
     envelope = json.loads((tmp_path / "pack.json").read_bytes())
     manifest = json.loads(base64.b64decode(envelope["manifest"]))
     assert manifest["compatibility"] == "profiles-2"
+    # the apps that read whole-set packs refuse hardware/revision.toml, so it stays out of them
+    assert "hardware/revision.toml" not in json.loads(base64.b64decode(envelope["payload"]))["files"]
