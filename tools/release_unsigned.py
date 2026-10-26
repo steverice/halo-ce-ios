@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build and verify the unsigned iPhone/iPad, Apple TV and Apple Vision Pro apps attached to a VISR release.
+"""Build and verify the unsigned iPhone/iPad, Apple TV and Apple Vision Pro apps and the ad hoc signed Mac app
+attached to a VISR release.
 
 `build` runs in a checkout of the exact release tag and builds each app from that tag with the release manifest's
 version, build number, reproducibility epochs, feeds and optimization settings, but unsigned and without the iCloud
@@ -7,6 +8,10 @@ features, which need a signed app. `verify` checks a folder of finished IPAs. Bo
 bundle and Mach-O file must report "not signed at all", no provisioning profile or signature folder may be present,
 and no file may contain the team ID when one is given. Each app must embed the release's guest, whose SHA-256 the
 manifest's build policy pins.
+
+The Mac app is the one exception to "not signed at all": macOS will not run an unsigned arm64 app, so it is signed
+ad hoc (no Developer ID, no team) with only the App Sandbox entitlements. It has no provisioning profile, no
+iCloud entitlements and no team ID, and is zipped with `ditto` as `VISR-macOS-unsigned.zip`.
 """
 
 from __future__ import annotations
@@ -36,6 +41,10 @@ IPA_NAMES = {
     "tvos": "VISR-tvOS-unsigned.ipa",
     "visionos": "VISR-visionOS-unsigned.ipa",
 }
+MAC_ZIP = "VISR-macOS-unsigned.zip"
+MAC_APP = Path("build/macos/app-native/host/Release/VISR.app")
+MAC_ENTITLEMENTS = Path("port/macos/VISR-macOS.entitlements")
+MAC_ENTITLEMENTS_FILE = Path(__file__).resolve().parents[1] / MAC_ENTITLEMENTS
 GUEST_NAME = "halo_guest.elf"
 NOT_SIGNED = "code object is not signed at all"
 MACHO_MAGICS = {
@@ -46,9 +55,49 @@ MACHO_MAGICS = {
 BUNDLE_SUFFIXES = (".app", ".appex", ".framework", ".xctest")
 
 
-def asset_names() -> list[str]:
-    """Every file attached to a release, in upload order."""
-    return [name for platform in PLATFORMS for name in (IPA_NAMES[platform], IPA_NAMES[platform] + ".sha256")]
+def asset_names(only: str | None = None) -> list[str]:
+    """Every file attached to a release, in upload order; only="macos" names just the Mac app's."""
+    files = [IPA_NAMES[platform] for platform in PLATFORMS] if only != "macos" else []
+    files.append(MAC_ZIP)
+    return [name for file in files for name in (file, file + ".sha256")]
+
+
+def mac_build_command(manifest: dict[str, Any], output: Path) -> list[str | Path]:
+    """The AppKit Mac app, built like the TestFlight one (tester feeds, no iCloud features) but signed ad hoc with
+    only the sandbox entitlements. Without --team no profile is embedded and no team ID is written."""
+    policy = manifest["build_policy"]
+    return [
+        sys.executable,
+        "tools/ios_build.py",
+        "--native-mac",
+        "--sandbox",
+        "on",
+        "--data-pack-channel",
+        "tester",
+        "--marketing-version",
+        manifest["version"],
+        "--build-number",
+        manifest["build_number"],
+        "--pgo",
+        "use",
+        "--lto",
+        "full",
+        "--host-pgo",
+        "use",
+        "--bink",
+        "on",
+        "--render-validation",
+        "off",
+        "--data-packs",
+        "on",
+        "--profile-feed-url",
+        policy["profile_feed_url"],
+        "--recording-feed-url",
+        policy["recording_feed_url"],
+        *(["--shader-feed-url", policy["shader_feed_url"]] if "shader_feed_url" in policy else []),
+        "--jobs",
+        "3",
+    ]
 
 
 def build_command(platform: str, manifest: dict[str, Any], output: Path) -> list[str | Path]:
@@ -170,11 +219,106 @@ def verify_ipa(
     return {"name": ipa.name, "size": len(data), "sha256": digest, "guest_sha256": expected}
 
 
+def codesign_text(path: Path, *options: str) -> str:
+    result = subprocess.run(["codesign", "--display", *options, str(path)], capture_output=True, text=True)
+    return result.stdout + result.stderr
+
+
+def require_ad_hoc(app: Path, team_id: str | None, allowed_entitlements: set[str]) -> None:
+    """The Mac app is ad hoc signed: no team, no profile, no entitlement beyond the sandbox ones, no team ID string."""
+    files = sorted(path for path in app.rglob("*") if path.is_file() or path.is_symlink())
+    for path in files:
+        if path.suffix in (".mobileprovision", ".provisionprofile"):
+            raise ValueError(f"Mac app contains a provisioning profile: {path.relative_to(app)}")
+    bundles = [app, *(path for path in app.rglob("*") if path.is_dir() and path.suffix in BUNDLE_SUFFIXES)]
+    machos = [path for path in files if not path.is_symlink() and path.read_bytes()[:4] in MACHO_MAGICS]
+    if not machos:
+        raise ValueError("Mac app contains no Mach-O executable")
+    for path in [*bundles, *machos]:
+        state = codesign_text(path, "--verbose=4")
+        if "Signature=adhoc" not in state:
+            raise ValueError(f"codesign does not report {path.relative_to(app.parent)} as ad hoc signed: {state.strip()}")
+        identifier = [line for line in state.splitlines() if line.startswith("TeamIdentifier=")]
+        if identifier and identifier != ["TeamIdentifier=not set"]:
+            raise ValueError(f"{path.relative_to(app.parent)} reports a team: {identifier[0]}")
+    verified = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], capture_output=True, text=True)
+    if verified.returncode:
+        raise ValueError(f"Mac app signature does not verify: {verified.stderr.strip()}")
+    entitlements = subprocess.run(
+        ["codesign", "--display", "--entitlements", "-", "--xml", str(app)], capture_output=True
+    ).stdout
+    keys = set(plistlib.loads(entitlements[entitlements.index(b"<?xml"):])) if b"<?xml" in entitlements else set()
+    if keys - allowed_entitlements:
+        raise ValueError(f"Mac app has entitlements that need a profile: {', '.join(sorted(keys - allowed_entitlements))}")
+    if team_id:
+        needles = (team_id.encode(), team_id.encode("utf-16-le"))
+        for path in files:
+            if path.is_symlink():
+                continue
+            data = path.read_bytes()
+            if any(needle in data for needle in needles):
+                raise ValueError(f"Mac app contains the team ID: {path.relative_to(app)}")
+        if any(needle in entitlements for needle in needles):
+            raise ValueError("Mac app signature contains the team ID")
+
+
+def zip_mac_app(app: Path, archive: Path) -> None:
+    """Zip the app as Finder does (symbolic links and attributes kept) and write its checksum file."""
+    archive.unlink(missing_ok=True)
+    subprocess.run(["ditto", "-c", "-k", "--keepParent", str(app), str(archive)], check=True)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive.with_name(archive.name + ".sha256").write_text(f"{digest}  {archive.name}\n")
+
+
+def verify_mac_zip(
+    archive: Path, manifest: dict[str, Any], *, guest: bytes | None = None, team_id: str | None = None
+) -> dict[str, Any]:
+    """Check the zipped Mac app and its checksum file; return its name, size and SHA-256."""
+    policy = manifest["build_policy"]
+    data = archive.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    checksum = archive.with_name(archive.name + ".sha256")
+    if checksum.read_text() != f"{digest}  {archive.name}\n":
+        raise ValueError(f"{checksum.name} does not match {archive.name}")
+    with zipfile.ZipFile(archive) as zipped:
+        for name in zipped.namelist():
+            parts = Path(name).parts
+            if name.startswith("/") or ".." in parts or parts[:1] != ("VISR.app",):
+                raise ValueError(f"{archive.name}: unexpected archive entry {name}")
+    allowed = set(plistlib.loads(MAC_ENTITLEMENTS_FILE.read_bytes())) if MAC_ENTITLEMENTS_FILE.is_file() else set()
+    with tempfile.TemporaryDirectory() as folder:
+        subprocess.run(["ditto", "-x", "-k", str(archive), folder], check=True)
+        app = Path(folder) / "VISR.app"
+        require_ad_hoc(app, team_id, allowed)
+        info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
+        if (
+            info.get("CFBundleShortVersionString") != manifest["version"]
+            or info.get("CFBundleVersion") != manifest["build_number"]
+            or info.get("DTPlatformName") != release.PLATFORMS["macos"][1]
+            or info.get("CFBundleExecutable") != "VISR"
+        ):
+            raise ValueError(f"{archive.name}: version, build number or platform differs from the release manifest")
+        executable = (app / "Contents/MacOS/VISR").read_bytes()
+        expected = policy["guest_sha256"]
+        if expected.encode() not in executable:
+            raise ValueError(f"{archive.name}: the app does not carry the release guest {expected}")
+        if guest is not None:
+            if hashlib.sha256(guest).hexdigest() != expected:
+                raise ValueError("The built guest differs from the release guest")
+            release.verify_guest(executable, guest, expected)
+    return {"name": archive.name, "size": len(data), "sha256": digest, "guest_sha256": expected}
+
+
 def verify_directory(
-    folder: Path, manifest: dict[str, Any], *, team_id: str | None = None, require_guest: bool = True
+    folder: Path,
+    manifest: dict[str, Any],
+    *,
+    team_id: str | None = None,
+    require_guest: bool = True,
+    only: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Check every release IPA in a folder. The folder may hold only the release files and the guest ELF."""
-    allowed = set(asset_names()) | {GUEST_NAME}
+    """Check every release app in a folder. The folder may hold only the release files and the guest ELF."""
+    allowed = set(asset_names(only)) | {GUEST_NAME}
     present = {path.name for path in folder.iterdir()}
     if present - allowed:
         raise ValueError(f"Unexpected files beside the unsigned builds: {', '.join(sorted(present - allowed))}")
@@ -183,8 +327,11 @@ def verify_directory(
         raise ValueError(f"{GUEST_NAME} is missing; the archived guest cannot be compared with it")
     guest = guest_path.read_bytes() if guest_path.is_file() else None
     return [
-        verify_ipa(folder / IPA_NAMES[platform], manifest, platform, guest=guest, team_id=team_id)
-        for platform in PLATFORMS
+        *(
+            verify_ipa(folder / IPA_NAMES[platform], manifest, platform, guest=guest, team_id=team_id)
+            for platform in ([] if only == "macos" else PLATFORMS)
+        ),
+        verify_mac_zip(folder / MAC_ZIP, manifest, guest=guest, team_id=team_id),
     ]
 
 
@@ -200,7 +347,7 @@ def checked_tag_source(root: Path) -> dict[str, Any]:
     return manifest
 
 
-def build(root: Path, output: Path, team_id: str | None) -> list[dict[str, Any]]:
+def build(root: Path, output: Path, team_id: str | None, only: str | None = None) -> list[dict[str, Any]]:
     root = root.resolve()
     manifest = checked_tag_source(root)
     env = {**os.environ, "SOURCE_DATE_EPOCH": manifest["source_date_epoch"]}
@@ -208,13 +355,17 @@ def build(root: Path, output: Path, team_id: str | None) -> list[dict[str, Any]]
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise ValueError(f"{output} must start empty")
-    for platform in PLATFORMS:
+    for platform in [] if only == "macos" else PLATFORMS:
         release.run(*build_command(platform, manifest, output.resolve()), root=root, env=env)
         guest = (root / "build/ios" / GUEST_NAME).read_bytes()
         verify_ipa(output / IPA_NAMES[platform], manifest, platform, guest=guest, team_id=team_id)
+    release.run(*mac_build_command(manifest, output.resolve()), root=root, env=env)
+    zip_mac_app(root / MAC_APP, output / MAC_ZIP)
+    guest = (root / "build/ios" / GUEST_NAME).read_bytes()
+    verify_mac_zip(output / MAC_ZIP, manifest, guest=guest, team_id=team_id)
     release.require_clean_checkout(root)
     shutil.copy2(root / "build/ios" / GUEST_NAME, output / GUEST_NAME)
-    return verify_directory(output, manifest, team_id=team_id)
+    return verify_directory(output, manifest, team_id=team_id, only=only)
 
 
 def report(assets: list[dict[str, Any]]) -> None:
@@ -232,14 +383,17 @@ def main() -> None:
     verify_parser.add_argument("folder", type=Path)
     verify_parser.add_argument("--manifest", type=Path, required=True, help="the release tag's .release/current.json")
     for command in (build_parser, verify_parser):
+        command.add_argument("--only", choices=["macos"], help="just the Mac app (to add it to an earlier release)")
         command.add_argument("--team-id", default=os.environ.get("APPLE_TEAM_ID") or None,
                              help="refuse any file that contains this team ID (default: $APPLE_TEAM_ID)")
     args = parser.parse_args()
     try:
         if args.command == "build":
-            assets = build(args.source_root, args.output, args.team_id)
+            assets = build(args.source_root, args.output, args.team_id, args.only)
         else:
-            assets = verify_directory(args.folder, json.loads(args.manifest.read_text()), team_id=args.team_id)
+            assets = verify_directory(
+                args.folder, json.loads(args.manifest.read_text()), team_id=args.team_id, only=args.only
+            )
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, f"Unsigned release builds stopped: {error}\n")
     report(assets)
