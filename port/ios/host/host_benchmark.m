@@ -67,6 +67,10 @@ static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 /* under the lock: the open window's measurements, and what happened during it */
 static struct benchmark_metrics metrics;
 static int window_open, window_interrupted, window_width, window_height;
+/* dynamic resolution's lines over the run's window (host_perf_hooks_dynamic_lines): frames and seconds at each */
+#define DYNAMIC_LINE_SLOTS 64
+static struct { int lines; unsigned frames; double seconds; } dynamic_lines[DYNAMIC_LINE_SLOTS];
+static unsigned dynamic_line_count, dynamic_line_other;
 static double refresh_hertz;
 /* the screen's own rate, for a presenter that reports no refresh period (the Mac's) */
 static double screen_hertz;
@@ -486,6 +490,15 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (ticks > 0 && window_open) atomic_fetch_add(&window_ticks, ticks);
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = run_budget_hertz();
+        int lines = host_perf_hooks_dynamic_lines();
+        if (lines > 0) {
+            unsigned slot;
+            for (slot = 0; slot < dynamic_line_count && dynamic_lines[slot].lines != lines; slot++) {}
+            if (slot == dynamic_line_count && dynamic_line_count < DYNAMIC_LINE_SLOTS)
+                dynamic_lines[dynamic_line_count++].lines = lines;
+            if (slot < dynamic_line_count) { dynamic_lines[slot].frames++; dynamic_lines[slot].seconds += interval; }
+            else dynamic_line_other++;
+        }
         benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
             simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0,
             translation_cpu >= 0.0 ? translation_cpu * 1000.0 : -1.0, ticks);
@@ -766,6 +779,28 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
     NSDictionary *upscaler = upscaler_metadata();
     record[@"upscaler"] = upscaler;
+    /* dynamic resolution: render_size is the ceiling; here the lines the window's frames rendered at */
+    if (dynamic_line_count) {
+        NSMutableArray *levels = [NSMutableArray array];
+        unsigned frames = 0, half, seen = 0;
+        int low = INT32_MAX, high = 0, median = 0;
+        for (unsigned i = 0; i < dynamic_line_count; i++) frames += dynamic_lines[i].frames;
+        half = (frames + 1) / 2;
+        /* (ascending lines, for the median) */
+        for (int pass = 0, last = 0; pass < (int)dynamic_line_count; pass++) {
+            int next = INT32_MAX; unsigned at = 0;
+            for (unsigned i = 0; i < dynamic_line_count; i++)
+                if (dynamic_lines[i].lines > last && dynamic_lines[i].lines < next) { next = dynamic_lines[i].lines; at = i; }
+            last = next;
+            seen += dynamic_lines[at].frames;
+            if (!median && seen >= half) median = next;
+            [levels addObject:@{@"lines": @(next), @"frames": @(dynamic_lines[at].frames),
+                @"seconds": @(round(dynamic_lines[at].seconds * 1000.0) / 1000.0)}];
+        }
+        low = [levels.firstObject[@"lines"] intValue]; high = [levels.lastObject[@"lines"] intValue];
+        record[@"dynamic_resolution"] = @{@"ceiling_lines": @(window_height), @"min_lines": @(low), @"median_lines": @(median),
+            @"max_lines": @(high), @"frames": @(frames), @"frames_unbinned": @(dynamic_line_other), @"levels": levels};
+    }
     record[@"graphics"] = graphics_metadata();
     record[@"catalog_signed"] = @(catalog_signed());
     NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
@@ -1672,6 +1707,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     run_capped = 0;
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
+    dynamic_line_count = dynamic_line_other = 0;
     benchmark_live_reset(&live);
     /* <= 2 GiB devices retain a 4 MiB collector; others allow 16 MiB. */
     host_benchmark_presentation_begin(scene->kind,

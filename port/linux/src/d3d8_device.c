@@ -361,6 +361,7 @@ static double render_scale_now(void)
 #ifdef HALO_ILP32
 static int dynamic_resolution_refused(void);
 #endif
+static void screen_targets_release(int pooled);
 
 /* ceiling: the scale the scene's targets are allocated at (scale itself but
 under dynamic resolution); dynamic: 1 while dynamic resolution renders the
@@ -7291,7 +7292,10 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		knob_targets_release();
 	device.frame++;
 	input_replay_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
-	benchmark_suite_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
+	/* (dynamic resolution: the run's size is its ceiling; the lines per frame are
+	the report's dynamic_resolution, host_benchmark.m) */
+	benchmark_suite_frame(lroundf(screen_width * (screen_dynamic ? screen_scale_ceiling : screen_scale)[0]),
+		lroundf(SCREEN_HEIGHT * (screen_dynamic ? screen_scale_ceiling : screen_scale)[1]));
 	/* debug.fixed_timestep: a frame ends once the workers are idle */
 	platform_quiescence_wait();
 	platform_clock_frame();
