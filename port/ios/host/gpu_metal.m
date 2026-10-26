@@ -5146,8 +5146,16 @@ static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
 	/* how many refreshes the frame before this one stayed up; a quarter
 	second or more is a load or the background, not a frame */
 	up = interval > 0.0 && interval < 0.25 ? lround(interval / period) : 0;
-	frame_log_frame(now, interval, up, context_refreshes > (pacing.off ? 1 : pacing.refreshes) ? context_refreshes :
-		pacing.off ? 1 : pacing.refreshes, period);
+	{
+		/* (a frame is late in the log only past what it was asked to stay up: the pacing's refreshes, the scene
+		class's, or a cap's under the display's rate, Low Power Mode's included) */
+		long asked = context_refreshes > (pacing.off ? 1 : pacing.refreshes) ? context_refreshes :
+			pacing.off ? 1 : pacing.refreshes;
+		double target = host_frame_rate_target();
+		long target_refreshes = target > 0.0 ? lround(1.0 / (period * target)) : 1;
+
+		frame_log_frame(now, interval, up, target_refreshes > asked ? target_refreshes : asked, period);
+	}
 	if (up > 0)
 	{
 		pacing.shown[up > 5 ? 5 : up]++;
