@@ -1250,6 +1250,54 @@ static uint32_t gpu_metal_texture_read(gpu_texture texture, void *pixels, uint32
 
 /* level 0 of source into level of destination (mip composites); the size is
 the destination level's, as gpu_gl.c copies it */
+static void gpu_metal_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
+{
+	@autoreleasepool
+	{
+		MetalTexture *from = texture_record(source);
+		id<MTLBlitCommandEncoder> blit = nil;
+		uint32_t index;
+
+		if (!from || !from->texture)
+		{
+			GPU_VALIDATION_REPORT(GPU_VALIDATION_COPY_IGNORED, 3, "Metal: rectangles of texture %u: a texture without "
+				"storage", source);
+			return;
+		}
+		for (index = 0; index < count; index++)
+		{
+			const struct gpu_texture_copy *copy = &copies[index];
+			MetalTexture *to = texture_record(copy->destination);
+
+			if (!to || !to->texture || (unsigned long)copy->x + copy->width > from->texture.width ||
+				(unsigned long)copy->y + copy->height > from->texture.height || copy->width > to->texture.width ||
+				copy->height > to->texture.height)
+			{
+				GPU_VALIDATION_REPORT(GPU_VALIDATION_COPY_IGNORED, 4, "Metal: %ux%u at %u,%u of texture %u into texture "
+					"%u: a texture without storage, or out of bounds", copy->width, copy->height, copy->x, copy->y,
+					source, copy->destination);
+				continue;
+			}
+			if (!blit)
+			{
+				pass_end();
+				blit = [command_buffer() blitCommandEncoder];
+				if (metal_debug)
+					blit.label = @"copy rectangles";
+				use_texture(from);
+			}
+			if (pass_log)
+				[pass_log appendFormat:@"\n  blit: copy %ux%u at %u,%u of texture %u into texture %u", copy->width,
+					copy->height, copy->x, copy->y, source, copy->destination];
+			[blit copyFromTexture:from->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(copy->x, copy->y, 0)
+				sourceSize:MTLSizeMake(copy->width, copy->height, 1) toTexture:to->texture destinationSlice:0
+				destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+			use_texture(to);
+		}
+		[blit endEncoding];
+	}
+}
+
 static void gpu_metal_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level)
 {
 	@autoreleasepool

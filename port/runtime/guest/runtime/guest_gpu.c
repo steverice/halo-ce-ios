@@ -122,6 +122,13 @@ void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_
 	host_gpu_texture_copy_level(source, destination, level);
 }
 
+void gpu_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
+{
+	IMMEDIATE_FLUSH();
+	GPU_PROFILED(texture)
+	host_gpu_texture_copy_rects(source, copies, count);
+}
+
 void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 {
 	IMMEDIATE_FLUSH();

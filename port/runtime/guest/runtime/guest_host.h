@@ -199,6 +199,7 @@ tools/ios_bridges.py maps the import back to gpu_*) */
 gpu_texture host_gpu_texture_create(const struct gpu_texture_description *description);
 void host_gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size);
 void host_gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level);
+void host_gpu_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count);
 void host_gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
 void host_gpu_texture_destroy(gpu_texture texture);
 uint32_t host_gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size);
