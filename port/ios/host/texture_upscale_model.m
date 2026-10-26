@@ -93,7 +93,11 @@ static MLMultiArray *make_array(uint32_t planes, uint32_t side, MLMultiArrayData
 /* Development only: HALO_TEXTURE_UPSCALE_MODEL names a compiled package to use instead of the bundled one. */
 static NSURL *model_url(void)
 {
+#ifdef HALO_DEVELOPMENT_HOOKS
     const char *override = getenv("HALO_TEXTURE_UPSCALE_MODEL");
+#else
+    const char *override = NULL;   /* (compiled out of App Store packages: HALO_DEVELOPMENT_HOOKS) */
+#endif
     if (override && *override) {
         NSString *path = @(override);
         if (!path.isAbsolutePath)

@@ -622,6 +622,7 @@ void host_texture_upscale_init(const char *root) {
     static dispatch_once_t once;dispatch_once(&once,^{
         /* Development only: HALO_TEXTURE_UPSCALE_CLEAN removes what the generator and its export left in the data
            root, since a device's app container cannot be emptied from the Mac. */
+#ifdef HALO_DEVELOPMENT_HOOKS
         if(root&&getenv("HALO_TEXTURE_UPSCALE_CLEAN")) {
             NSString *base=@(root);NSFileManager *files=NSFileManager.defaultManager;
             if(texture_cache_delete_all([base stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY].fileSystemRepresentation))
@@ -634,6 +635,7 @@ void host_texture_upscale_init(const char *root) {
             host_logf(HOST_LOG_INFO,"Upscale: removed the texture cache, the export and the generator log");
             return;
         }
+#endif
         if(!root)return;
         /* Rule 1, before anything else: the profile, then the player's switch, then a Neural Engine (rule 8). */
         char mode[16]="off",player[16]="";

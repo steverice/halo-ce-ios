@@ -486,19 +486,35 @@ def test_development_hooks_are_compiled_out_of_app_store_packages(tmp_path):
 
 @pytest.mark.parametrize('path, switch', [
     ('port/ios/host/host_texture_upscale.m', 'HALO_TEXTURE_UPSCALE_STOP_TEST'),
+    ('port/ios/host/host_texture_upscale.m', 'HALO_TEXTURE_UPSCALE_CLEAN'),
+    ('port/ios/host/texture_upscale_model.m', 'HALO_TEXTURE_UPSCALE_MODEL'),
     ('port/ios/host/host_import.m', 'HALO_TEXTURE_UPSCALE_IMPORT_PHASE'),
 ])
 def test_development_switches_are_read_only_inside_the_hooks_guard(path, switch):
     lines = (Path(__file__).resolve().parents[1] / path).read_text().splitlines()
-    depth, guarded = 0, []
+    # the stack of open conditionals: True for "#ifdef HALO_DEVELOPMENT_HOOKS" (until its #else), False otherwise
+    stack, guarded = [], []
     for line in lines:
         stripped = line.strip()
         if stripped.startswith('#if'):
-            depth = depth + 1 if depth or stripped != '#ifdef HALO_DEVELOPMENT_HOOKS' else 1
-        elif stripped.startswith('#else') and depth == 1:
-            depth = -1
-        elif stripped.startswith('#endif') and depth:
-            depth = depth - 1 if depth > 1 else 0
+            stack.append(stripped == '#ifdef HALO_DEVELOPMENT_HOOKS')
+        elif stripped.startswith(('#else', '#elif')) and stack:
+            stack[-1] = False
+        elif stripped.startswith('#endif') and stack:
+            stack.pop()
         if f'getenv("{switch}")' in line:
-            guarded.append(depth >= 1)
+            guarded.append(any(stack))
     assert guarded and all(guarded)
+
+
+def test_the_guard_test_refuses_a_switch_under_another_conditional(tmp_path):
+    source = '#if TARGET_OS_IOS\ngetenv("X");\n#endif\n'
+    stack, guarded = [], []
+    for stripped in source.splitlines():
+        if stripped.startswith('#if'):
+            stack.append(stripped == '#ifdef HALO_DEVELOPMENT_HOOKS')
+        elif stripped.startswith('#endif') and stack:
+            stack.pop()
+        if 'getenv("X")' in stripped:
+            guarded.append(any(stack))
+    assert guarded == [False]
