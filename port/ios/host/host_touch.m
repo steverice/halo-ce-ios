@@ -59,12 +59,22 @@ int host_ios_gamepad_type(SDL_Gamepad *pad) {
     /* Keep the shared touch/hardware controller in the first recognized port. */
     return SDL_GetGamepadID(pad)==touch_id?SDL_GAMEPAD_TYPE_XBOX360:SDL_GetGamepadType(pad);
 }
+/* The guest publishes this hint while any in-game menu (the campaign's pause
+   screen, a network game's pause menu, the scores) is up. The network game
+   keeps running behind its menu, so the touch pad must not feed it. */
+static int touch_menu_up(void) { return SDL_GetHintBoolean("VISR_PAUSE_MENU",0); }
+/* What the menus read from the pad: accept, back, the D-pad and Start. */
+static int touch_menu_button(int button) {
+    return button==SDL_GAMEPAD_BUTTON_SOUTH || button==SDL_GAMEPAD_BUTTON_EAST ||
+        button==SDL_GAMEPAD_BUTTON_START || button==SDL_GAMEPAD_BUTTON_DPAD_UP ||
+        button==SDL_GAMEPAD_BUTTON_DPAD_DOWN || button==SDL_GAMEPAD_BUTTON_DPAD_LEFT ||
+        button==SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+}
 int host_ios_gamepad_axis(SDL_Gamepad *pad,int axis) {
     int value=SDL_GetGamepadAxis(pad,axis);
-    /* Keep touch movement/look out of in-game menus; hardware still navigates
-       them through the merge below. The guest publishes this hint with the UI. */
-    if(SDL_GetGamepadID(pad)==touch_id && (host_touch_replay_blocked(&replay_gate) ||
-        (axis<SDL_GAMEPAD_AXIS_LEFT_TRIGGER && SDL_GetHintBoolean("VISR_PAUSE_MENU",0))))
+    /* Keep touch movement, look, fire and grenades out of in-game menus;
+       hardware still navigates them through the merge below. */
+    if(SDL_GetGamepadID(pad)==touch_id && (host_touch_replay_blocked(&replay_gate) || touch_menu_up()))
         value=0;
     if(SDL_GetGamepadID(pad)==touch_id && primary_hardware) {
         int physical=SDL_GetGamepadAxis(SDL_GetGamepadFromID(primary_hardware),axis);
@@ -76,7 +86,8 @@ int host_ios_gamepad_button(SDL_Gamepad *pad,int button) {
     if(button==SDL_GAMEPAD_BUTTON_START && SDL_GetGamepadID(pad)==touch_id && pause_pending && !host_touch_replay_blocked(&replay_gate)) {
         pause_pending=0;return 1;
     }
-    return (!(SDL_GetGamepadID(pad)==touch_id && host_touch_replay_blocked(&replay_gate)) && SDL_GetGamepadButton(pad,button)) ||
+    return (!(SDL_GetGamepadID(pad)==touch_id && (host_touch_replay_blocked(&replay_gate) ||
+                (touch_menu_up() && !touch_menu_button(button)))) && SDL_GetGamepadButton(pad,button)) ||
         (SDL_GetGamepadID(pad)==touch_id && primary_hardware &&
          SDL_GetGamepadButton(SDL_GetGamepadFromID(primary_hardware),button));
 }
