@@ -7,9 +7,9 @@ Planned releases, which may change. The sections below list every item.
 ### 0.6.0: performance
 
 - [ ] AI-upscaled textures, generated on the device at import
-- [ ] MetalFX temporal upscaling and anti-aliasing
+- [ ] MetalFX spatial upscaling on M-series iPads
 - [ ] A CPU profiling build, and fixes for the CPU costs it finds in large multiplayer games
-- [ ] Dynamic resolution, feeding the temporal upscaler
+- [ ] Dynamic resolution
 - [ ] Multiplayer player limits in device profiles
 
 ### 0.7.0: device experience
