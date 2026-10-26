@@ -39,6 +39,7 @@ MARKER = PREFIX + "publication-format.txt"
 MARKER_DATA = b"visr-signed-assets-1\n"
 RECORDING = PREFIX + "recordings.json"
 SHADER = PREFIX + "shaders.json"
+LATEST = PREFIX + "latest.json"
 LEGACY_PROFILE_INDEX = PREFIX + "profiles-2.json"
 # Each device-profile generation's shards live in their own directory: profiles/ holds the frozen
 # device-profiles-1 shards that 0.4.2 to 0.5.1 read, device-profiles-N/ the later generations'.
@@ -55,6 +56,8 @@ def allowed_asset(path: str) -> tuple[str, str | None]:
         return "recording", None
     if path == SHADER:
         return "shader", None
+    if path == LATEST:
+        return "latest", None
     if re.fullmatch(re.escape(PREFIX) + r"shader-maps/[0-9a-f]{64}\.zlib", path):
         return "shader-map", None
     profile = re.fullmatch(re.escape(PREFIX) + r"([a-z0-9-]+)/(.+)\.json", path)
@@ -72,7 +75,7 @@ def limit_for(path: str) -> int:
     if kind == "shader-map":
         return validation.packs.data_pack.SHADER_COMPRESSED_FILE_LIMIT
     return ENVELOPE_LIMITS[
-        {"profile": "profiles", "shader": "shaders", "recording": "recordings"}[kind]
+        {"profile": "profiles", "shader": "shaders", "recording": "recordings", "latest": "latest"}[kind]
     ]
 
 
@@ -93,7 +96,12 @@ def verify_asset(path: str, data: bytes) -> dict:
         if match and match[1] != guest:
             raise ValueError("Recording filename differs from signed guest domain")
         return {"compatibility": domain, "sequence": sequence}
-    if kind == "profile":
+    if kind == "latest":
+        # Not pinned by release policy: the app does not need the record to run. Signature, kind, compatibility and
+        # the record's shape are still checked.
+        validation.verify_feed(data, kind, {"latest_feed_sha256": digest})
+        domain = "latest-release-1"
+    elif kind == "profile":
         assert target is not None
         directory = path.removeprefix(PREFIX).split("/", 1)[0]
         validation.verify_feed(
@@ -275,6 +283,7 @@ def source_assets() -> dict[str, bytes]:
         if (
             name == RECORDING
             or name == SHADER
+            or name == LATEST
             or legacy.FEED_PATH.fullmatch(name)
             or (any(name.startswith(PREFIX + directory + "/") for directory in PROFILE_DIRECTORIES) and path.is_file())
             or (name.startswith(PREFIX + "shader-maps/") and path.is_file())

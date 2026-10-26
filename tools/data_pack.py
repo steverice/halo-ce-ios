@@ -49,7 +49,12 @@ _RECORDING_ENVELOPE_CONTENT_MAX = benchmark_catalog.MAXIMUM_CASES * (3 * RECORDI
 _RECORDING_PAYLOAD_MAX = ((_RECORDING_ENVELOPE_CONTENT_MAX + 2) // 3) * 4 + RECORDING_MAX_FILES * 128 + 65536
 ENVELOPE_LIMITS = {"profiles": 4 * 1024 * 1024,
                    "recordings": ((_RECORDING_PAYLOAD_MAX + 2) // 3) * 4 + 65536,
-                   "shaders": 16 * 1024 * 1024}
+                   "shaders": 16 * 1024 * 1024,
+                   "latest": 16 * 1024}
+LATEST_NAME = "latest-release.json"
+LATEST_MAX_BYTES = 4096
+LATEST_PLATFORMS = ("ios", "tvos", "visionos", "macos")
+LATEST_VERSION = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
 LEGACY_BUILTIN_SCENES = {"menu", "a10-opening", "b30-beach"}
 LEGACY_MAXIMUM_ROUTES = 13
 PROFILE_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\.toml")
@@ -329,7 +334,37 @@ def read_regular(directory, name, maximum):
         os.close(descriptor)
 
 
+def validate_latest_record(data):
+    """The latest-release record (docs/data-packs.md, "Latest release record"): two levels of JSON, platform -> version."""
+    if not isinstance(data, bytes) or not 0 < len(data) <= LATEST_MAX_BYTES:
+        raise ValueError(f"{LATEST_NAME}: not a bounded file")
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{LATEST_NAME}: duplicate key")
+            result[key] = value
+        return result
+
+    try:
+        record = json.loads(data.decode("utf-8"), object_pairs_hook=unique)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{LATEST_NAME}: invalid JSON") from error
+    if not isinstance(record, dict) or set(record) != {"schema", "platforms"} or type(record["schema"]) is not int or record["schema"] != 1:
+        raise ValueError(f"{LATEST_NAME}: invalid fields")
+    platforms = record["platforms"]
+    if not isinstance(platforms, dict) or not platforms or not set(platforms) <= set(LATEST_PLATFORMS):
+        raise ValueError(f"{LATEST_NAME}: platforms must name at least one of {', '.join(LATEST_PLATFORMS)}")
+    for version in platforms.values():
+        if not isinstance(version, str) or not LATEST_VERSION.fullmatch(version):
+            raise ValueError(f"{LATEST_NAME}: versions must look like 0.6.0")
+    return record
+
+
 def snapshot_limits(kind):
+    if kind == "latest":
+        return 1, LATEST_MAX_BYTES, LATEST_MAX_BYTES
     if kind == "shaders":
         return 32, 4 * 1024 * 1024, 16 * 1024 * 1024
     return ((129, 64 * 1024, 2 * 1024 * 1024) if kind == "profiles"
@@ -339,6 +374,8 @@ def snapshot_limits(kind):
 def snapshot_name_allowed(name, kind, compatibility=None):
     if not isinstance(name, str):
         return False
+    if kind == "latest":
+        return name == LATEST_NAME
     if kind == "shaders":
         return re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}\.txt", name) is not None
     if kind == "profiles":
@@ -400,7 +437,9 @@ def snapshot(folder, kind, compatibility=None):
             target = validated / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-        if kind == "shaders":
+        if kind == "latest":
+            validate_latest_record(files[LATEST_NAME])
+        elif kind == "shaders":
             validate_shaders(validated)
         elif kind == "profiles":
             device = device_domain(compatibility)
@@ -435,7 +474,7 @@ def atomic_write(path, contents):
 
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kind", required=True, choices=("profiles", "recordings", "shaders"))
+    parser.add_argument("--kind", required=True, choices=("profiles", "recordings", "shaders", "latest"))
     parser.add_argument("--channel", required=True, choices=("stable", "tester"))
     parser.add_argument("--sequence", required=True, type=int)
     parser.add_argument("--compatibility", required=True)
@@ -454,10 +493,10 @@ def main(arguments=None):
     if args.minimum_engine != 1 or args.maximum_engine != 1:
         raise ValueError("this publisher supports only minimum_engine = maximum_engine = 1")
     expected = (r"device-profiles-[12]:.+|profiles-[12]" if args.kind == "profiles" else
-                "shader-lists-[12]" if args.kind == "shaders" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}")
+                "shader-lists-[12]" if args.kind == "shaders" else "latest-release-1" if args.kind == "latest" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}")
     if not re.fullmatch(expected, args.compatibility):
         raise ValueError("compatibility must be device-profiles-1: or device-profiles-2: plus a target, profiles-1 or profiles-2, "
-                         "or benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256")
+                         "benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256, or latest-release-1")
     if len(args.notes.encode("utf-8")) > 4096:
         raise ValueError("notes must be at most 4096 UTF-8 bytes")
     device = device_domain(args.compatibility) if args.kind == "profiles" else None

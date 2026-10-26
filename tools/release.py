@@ -1554,6 +1554,11 @@ def publish(args: argparse.Namespace) -> None:
             "Published GitHub tag, notes, draft or prerelease state or assets differ from the release manifest"
         )
     print(f"{manifest['tag']}: GitHub release published with {len(unsigned)} unsigned build files")
+    # The signing seed is outside the release environment: the key holder prepares, signs and lands the record.
+    print(
+        f"{manifest['tag']}: record this release as the latest after it is installable: python3 tools/latest_release.py "
+        f"--version {manifest['version']} --platforms {','.join(manifest['platforms'])} --output latest-release-input"
+    )
 
 
 def is_prerelease(version: str) -> bool:
