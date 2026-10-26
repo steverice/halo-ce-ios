@@ -1701,6 +1701,51 @@ static unsigned long render_target_write_serial;
 /* the pixels per unit of the bound targets (render_target_get) */
 static float target_scale[2] = { 1.0f, 1.0f };
 
+/* the shadow blur page's tiles (rasterizer_xbox.c, rasterizer_shadow_blur_copy), each size units square at its
+origin, into the top left of its shadow's own blur target, all in one copy. The rectangles are the pixels the tiles'
+viewports cover at the page's scale (target_pixel), and each must be as large as its destination, which is drawn
+at the same scale: then the copy holds what blurring into the destination itself would have. 0 if one is not (a
+scale that does not divide evenly), and nothing is copied. */
+int halo_shadow_blur_copy(D3DSurface *page, int count, D3DSurface *const *destinations, const long *origins,
+	long size)
+{
+	struct render_target_entry *source, *targets[256];
+	struct gpu_texture_copy copies[256];
+	int index;
+
+	if (!device.gl_ready || count < 1 || count > 256 || !(source = render_target_get(page)) || !source->target.texture ||
+		source->target.depth || source->target.foveated_eye)
+		return 0;
+	for (index = 0; index < count; index++)
+	{
+		struct render_target_entry *target = render_target_get(destinations[index]);
+		int32_t x0 = (int32_t)floorf((float)origins[2 * index] * source->target.scale[0] + 0.5f);
+		int32_t y0 = (int32_t)floorf((float)origins[2 * index + 1] * source->target.scale[1] + 0.5f);
+		int32_t x1 = (int32_t)floorf((float)(origins[2 * index] + size) * source->target.scale[0] + 0.5f);
+		int32_t y1 = (int32_t)floorf((float)(origins[2 * index + 1] + size) * source->target.scale[1] + 0.5f);
+
+		if (!target || !target->target.texture || target->target.depth || target->target.foveated_eye ||
+			x0 < 0 || y0 < 0 || (unsigned long)x1 > source->target.allocated_width ||
+			(unsigned long)y1 > source->target.allocated_height ||
+			(unsigned long)(x1 - x0) != target->target.allocated_width ||
+			(unsigned long)(y1 - y0) != target->target.allocated_height)
+			return 0;
+		targets[index] = target;
+		copies[index].destination = target->target.texture;
+		copies[index].x = (uint32_t)x0;
+		copies[index].y = (uint32_t)y0;
+		copies[index].width = (uint32_t)(x1 - x0);
+		copies[index].height = (uint32_t)(y1 - y0);
+	}
+	gpu_texture_copy_rects(source->target.texture, copies, (uint32_t)count);
+	for (index = 0; index < count; index++)
+	{
+		targets[index]->last_rendered = device.frame + 1;
+		targets[index]->target.written = ++render_target_write_serial;
+	}
+	return 1;
+}
+
 /* tracked-controller aiming's reticle (halo_controller_draw_state), over
 present->reticle (the head-locked direction, halo_stereo_reticle): while a
 hand aims, the drawing sightline in the eyes' frame, the quad at the
