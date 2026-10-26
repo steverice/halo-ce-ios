@@ -151,6 +151,23 @@ int main(int argc, char **argv)
             "without a bundled revision no shard is used");
         writeRevision(bundled, bundledRevision + 1);
 
+        // A shard refused as older does not use up its sequence: in a fresh cache, a build bundling newer profiles
+        // refuses it, then a build sharing that cache with the shard's own revision (a downgrade) still takes it.
+        dataPackCacheOverride = [base stringByAppendingPathComponent:@"Caches-downgrade"];
+        HostDataPackStore *newer = profileStore(bundled, d);
+        CHECK(![newer stageEnvelope:v2 error:&error] && newer.lastFeedSuperseded, "a build with newer bundled profiles refuses the shard");
+        writeRevision(bundled, bundledRevision);
+        [fm removeItemAtPath:[bundled stringByAppendingPathComponent:@"hardware/revision.toml"] error:NULL];
+        assert([fm copyItemAtPath:[@(argv[1]) stringByAppendingPathComponent:@"profiles/hardware/revision.toml"]
+            toPath:[bundled stringByAppendingPathComponent:@"hardware/revision.toml"] error:NULL]);
+        HostDataPackStore *downgraded = profileStore(bundled, d);
+        [downgraded beginLaunch];
+        CHECK([downgraded stageEnvelope:v2 error:&error] && !downgraded.lastFeedSuperseded, "after a downgrade the same shard still stages");
+        NSString *downgradedFolder = [profileStore(bundled, d) beginLaunch];
+        CHECK(![downgradedFolder isEqual:bundled] && [capacity(downgradedFolder) isEqual:@"32"], "and the downgraded build uses it");
+        dataPackCacheOverride = [base stringByAppendingPathComponent:@"Caches"];
+        writeRevision(bundled, bundledRevision + 1);
+
         // The launch menu counts that as ready: the bundled profiles are the best there is, as for a 404.
         Method ephemeral = class_getClassMethod(NSURLSessionConfiguration.class, @selector(ephemeralSessionConfiguration));
         originalEphemeral = method_setImplementation(ephemeral, (IMP)stubbedEphemeral);

@@ -459,9 +459,10 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     }
     NSMutableDictionary *files = [pack[@"files"] mutableCopy];
     if (_supersededCheck && !pack[@"assets"] && _supersededCheck(files)) {
-        // Authenticated but older than the bundled data: use up its sequence as any refusal does.
+        // Authenticated but older than the bundled data. Its sequence stays unused: the check runs before the sequence
+        // check at every download anyway, and an app bundling older data (a downgrade, or a build whose bundle is
+        // fixed) sharing this cache must still be able to take the same envelope.
         self.lastFeedSuperseded = YES;
-        [self rejectManifest:pack[@"manifest"]];
         return PackError(error, @"Pack is older than the bundled data");
     }
     if (pack[@"assets"]) {

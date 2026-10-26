@@ -33,7 +33,8 @@ typedef BOOL (^HostPackValidator)(NSString *folder, NSError **error);
 @property(atomic, readonly) NSInteger lastFeedStatus;
 // Optional, set before the first check: given an authenticated envelope's decoded files, whether they are older than
 // what the store's bundled folder already holds. Such an envelope is refused before its sequence is compared, so a
-// stale shard is recognized even when its sequence was used up by an earlier refusal.
+// stale shard is recognized even when its sequence was used up by an earlier refusal, and its sequence is not used up,
+// so an app sharing this cache that bundles older data can still take it.
 @property(nonatomic, copy, nullable) BOOL (^supersededCheck)(NSDictionary<NSString *, NSData *> *files);
 // Whether the last feed check's envelope was refused by supersededCheck: the feed answered, and the bundled data is
 // newer than what it serves.
