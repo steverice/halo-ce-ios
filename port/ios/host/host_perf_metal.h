@@ -14,6 +14,9 @@ void host_perf_metal_unavailable(unsigned group);
  * handler. A frame whose expected durations have not all arrived has no U. */
 void host_perf_metal_upscale_expected(void);
 void host_perf_metal_upscale_time(uint64_t frame, uint64_t duration_us, int valid);
+/* a completed command buffer's GPU span (seconds, CPU timebase) for the frame and part it held: the timing
+ * fallback's check against stage timing, logged as "DRS timing check" */
+void host_perf_metal_command_span(uint64_t frame, unsigned group, double start, double end);
 enum host_perf_metal_group { HOST_PERF_SCENE, HOST_PERF_UPSCALE, HOST_PERF_HUD };
 #ifdef __OBJC__
 #import <Metal/Metal.h>

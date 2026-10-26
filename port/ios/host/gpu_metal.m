@@ -585,6 +585,8 @@ static BOOL busy(uint64_t used)
 
 static unsigned frame_upscale_paths;
 static unsigned perf_group = HOST_PERF_SCENE;
+/* the frame's command buffers are still the scene's (the timing fallback's check, host_perf_metal_command_span) */
+static int perf_scene_open = 1;
 static unsigned perf_scene_width, perf_scene_height, perf_scene_views;
 /* the scene's lines this frame (its content), under its allocation's height */
 static unsigned perf_scene_lines;
@@ -607,6 +609,7 @@ static void frame_begin(void)
 	transient_reset(&snapshots[frame_slot]);
 	frame_upscale_paths = 0;
 	perf_group = HOST_PERF_SCENE;
+	perf_scene_open = 1;
 	perf_scene_width = perf_scene_height = perf_scene_views = perf_scene_lines = 0;
 	frame_started = 1;
 }
@@ -807,8 +810,16 @@ static void commit(BOOL frame_end)
 	pass_end();
 	committed = command_buffer();
 	visibility.pending = [NSMutableData data];
+	/* which part of the frame this buffer holds: the scene's until the upscale
+	commits it, then MetalFX's own buffer, then the HUD's and the present's */
+	unsigned span_class = perf_scene_open ? HOST_PERF_SCENE : perf_group == HOST_PERF_UPSCALE ? HOST_PERF_UPSCALE : HOST_PERF_HUD;
+	uint64_t span_frame = host_perf_hooks_dynamic_enabled() ? host_perf_hooks_frame_id() : 0;
+	if (perf_scene_open && perf_group == HOST_PERF_UPSCALE)
+		perf_scene_open = 0;
 	[committed addCompletedHandler:^(id<MTLCommandBuffer> completed)
 	{
+		if (span_frame && completed.status == MTLCommandBufferStatusCompleted && completed.GPUStartTime > 0.0)
+			host_perf_metal_command_span(span_frame, span_class, completed.GPUStartTime, completed.GPUEndTime);
 		const struct visibility_pending *tests = pending.bytes;
 		const uint64_t *entries = results.contents;
 		unsigned long test, entry;
