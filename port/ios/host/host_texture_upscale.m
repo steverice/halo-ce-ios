@@ -804,7 +804,7 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
     host_texture_upscale_scan();boost();
     /* the player is on the import's phase: iOS 26 may carry it on if they switch away */
     host_texture_upscale_continued_phase(1);
-    double start=now();BOOL skipped=NO,menu_checked=NO;NSData *menu_keys=nil;
+    double start=now();BOOL skipped=NO,menu_checked=NO,menu_logged=NO;NSData *menu_keys=nil;
     for(;;) {
         struct texture_cache_progress p={0},menu={0};
         BOOL menu_known=NO;
@@ -819,6 +819,8 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
         BOOL idle=atomic_load(&pumps_ended)!=ended&&!atomic_load(&pump_queued);
         /* (a phase that has ended, finished or not, has nothing left to hold back) */
         BOOL menu_phase=!idle&&!texture_upscale_import_skippable(menu_known,(unsigned long)menu.ready,(unsigned long)menu.textures);
+        if(!menu_phase&&!menu_logged&&menu_known){menu_logged=YES;
+            host_logf(HOST_LOG_INFO,"Upscale import: the main menu's textures are ready after %.1f s (%zu of %zu); Start playing is offered",now()-start,menu.ready,menu.textures);}
         if(progress){
             int keep_going=menu_phase?progress(context,menu.ready_units,menu.units,1):progress(context,p.ready_units,p.units,0);
             if(!keep_going&&!menu_phase){skipped=YES;break;}
