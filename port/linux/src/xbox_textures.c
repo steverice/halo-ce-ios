@@ -924,11 +924,13 @@ static double replacement_megabytes(uint64_t bytes)
 or one from the device's memory (texture_replacement_default_budget) */
 static void texture_replacements_start(void)
 {
-	long megabytes = config_integer("display.upscaled_textures_memory");
+	long megabytes;
 	uint64_t available = 0, physical = 0, budget;
 
+	/* (every bind of a texture that has a replacement comes here: the setting is read only to make the cache) */
 	if (texture_override_cache())
 		return;
+	megabytes = config_integer("display.upscaled_textures_memory");
 #ifdef HALO_IOS
 	{
 		int left = host_memory_available_megabytes();
