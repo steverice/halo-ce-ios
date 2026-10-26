@@ -67,8 +67,18 @@ static void order_and_skip(void)
 	assert(texture_upscale_import_skippable(1, 0, 0));
 }
 
+static void level_source(void)
+{
+	/* a launch straight into a level: the catalog is not built yet, the level still reads its own list */
+	assert(texture_upscale_level_source(1, 0) == TEXTURE_UPSCALE_LEVEL_SOURCE_DISK);
+	assert(texture_upscale_level_source(0, 0) == TEXTURE_UPSCALE_LEVEL_SOURCE_DISK);
+	assert(texture_upscale_level_source(0, 1) == TEXTURE_UPSCALE_LEVEL_SOURCE_DISK);
+	assert(texture_upscale_level_source(1, 1) == TEXTURE_UPSCALE_LEVEL_SOURCE_CATALOG);
+}
+
 int main(void)
 {
+	level_source();
 	gate();
 	activity();
 	order_and_skip();

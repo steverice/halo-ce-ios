@@ -225,11 +225,18 @@ static struct texture_recipe_globals recipe_globals(void) {
 /* One map's texture keys, from its own classification: what a level needs ready to play upscaled. Cached per map
    until the next catalog; nil when the map is not installed or cannot be read. Any thread. */
 static NSData *classify_map_keys(NSString *path,NSString *name);
+static int map_path_collect(void *context,const char *path);
 static NSData *keys_for_map(NSString *name) {
     if(!name.length)return nil;
     @synchronized(map_keys){NSData *known=map_keys[name];if(known)return known;}
     NSString *path=nil;
     @synchronized(state_token){for(NSString *candidate in published_paths)if([map_base(candidate) isEqual:name]){path=candidate;break;}}
+    if(!path&&any_root) {
+        /* (a map the catalog does not list yet: one added since, or one the catalog has not reached) */
+        NSMutableArray *paths=[NSMutableArray new];
+        host_texture_source_scan(any_root.fileSystemRepresentation,map_path_collect,(__bridge void *)paths);
+        for(NSString *candidate in paths)if([map_base(candidate) isEqual:name]){path=candidate;break;}
+    }
     if(!path)return nil;
     NSData *keys=classify_map_keys(path,name);
     if(keys)@synchronized(map_keys){map_keys[name]=keys;}
@@ -933,7 +940,7 @@ static int level_ready_without_generator(void) {
     return ready;
 }
 int host_texture_upscale_level_ready(void) {
-    if(!upscale_enabled)return level_ready_without_generator();
+    if(texture_upscale_level_source(upscale_enabled,catalog_ready)==TEXTURE_UPSCALE_LEVEL_SOURCE_DISK)return level_ready_without_generator();
     NSString *name=priority_snapshot();
     if(atomic_exchange(&level_skipped,false)){host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (the wait was skipped)",name.UTF8String);return 0;}
     NSData *keys=keys_for_map(name);

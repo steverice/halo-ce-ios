@@ -120,3 +120,17 @@ enum texture_upscale_level_wait
 	TEXTURE_UPSCALE_LEVEL_WORKING,    /* making them: done of total units (input texels) */
 	TEXTURE_UPSCALE_LEVEL_DONE        /* the worker finished the level, ready or not (an error leaves it original) */
 };
+
+/* Where a level's texture list comes from when the level loads. The whole-game catalog is built by the worker after
+   every launch and takes a while; a level that loads before it is done (a launch straight into a level, a map added
+   since) must not find "its textures are not listed yet" and play original: it reads its own map's list and the
+   decisions and manifest saved beside the cache instead. */
+enum texture_upscale_level_source
+{
+	TEXTURE_UPSCALE_LEVEL_SOURCE_CATALOG,   /* the in-memory catalog lists the level */
+	TEXTURE_UPSCALE_LEVEL_SOURCE_DISK       /* the map file and the saved decisions and manifest */
+};
+static inline enum texture_upscale_level_source texture_upscale_level_source(int generator_on, int catalog_ready)
+{
+	return generator_on && catalog_ready ? TEXTURE_UPSCALE_LEVEL_SOURCE_CATALOG : TEXTURE_UPSCALE_LEVEL_SOURCE_DISK;
+}
