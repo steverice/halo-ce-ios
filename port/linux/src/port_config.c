@@ -2362,14 +2362,60 @@ static int config_set_from_file(struct config_value *value, const struct config_
 keep a setting watch this, to read it again */
 static volatile unsigned long config_change_count;
 
-static long config_setting_index(const char *name)
+/* config_setting_index's table: each setting's index plus one, by the hash of its name (open addressing, linear
+probing; 0 is empty). Built on the first lookup; a name listed twice keeps its first index, as the scan it replaces
+did. Every config_ read comes through here, many of them every frame */
+#define CONFIG_SETTING_HASH_SIZE 2048
+_Static_assert(NUMBER_OF_CONFIG_SETTINGS * 2 <= CONFIG_SETTING_HASH_SIZE, "config_setting_hash is too small");
+static unsigned short config_setting_hash[CONFIG_SETTING_HASH_SIZE];
+static int config_setting_hash_ready;
+static pthread_mutex_t config_setting_hash_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static unsigned long config_name_hash(const char *name)
+{
+	unsigned long hash = 2166136261UL;
+
+	while (*name)
+		hash = ((hash ^ (unsigned char)*name++) * 16777619UL) & 0xffffffffUL;
+	return hash;
+}
+
+static void config_setting_hash_build(void)
 {
 	size_t index;
 
 	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
 	{
-		if (!strcmp(config_settings[index].name, name))
-			return (long)index;
+		unsigned long slot = config_name_hash(config_settings[index].name) & (CONFIG_SETTING_HASH_SIZE - 1);
+
+		while (config_setting_hash[slot] &&
+			strcmp(config_settings[config_setting_hash[slot] - 1].name, config_settings[index].name))
+			slot = (slot + 1) & (CONFIG_SETTING_HASH_SIZE - 1);
+		if (!config_setting_hash[slot])
+			config_setting_hash[slot] = (unsigned short)(index + 1);
+	}
+}
+
+static long config_setting_index(const char *name)
+{
+	unsigned long slot;
+
+	/* (the guest's C library has no pthread_once) */
+	if (!__atomic_load_n(&config_setting_hash_ready, __ATOMIC_ACQUIRE))
+	{
+		pthread_mutex_lock(&config_setting_hash_lock);
+		if (!config_setting_hash_ready)
+		{
+			config_setting_hash_build();
+			__atomic_store_n(&config_setting_hash_ready, 1, __ATOMIC_RELEASE);
+		}
+		pthread_mutex_unlock(&config_setting_hash_lock);
+	}
+	for (slot = config_name_hash(name) & (CONFIG_SETTING_HASH_SIZE - 1); config_setting_hash[slot];
+		slot = (slot + 1) & (CONFIG_SETTING_HASH_SIZE - 1))
+	{
+		if (!strcmp(config_settings[config_setting_hash[slot] - 1].name, name))
+			return (long)config_setting_hash[slot] - 1;
 	}
 	return -1;
 }

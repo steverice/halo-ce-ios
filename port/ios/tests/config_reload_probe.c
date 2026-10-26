@@ -1,5 +1,6 @@
 /* config_reload_boolean: one boolean read again from config.toml after another process changed it (the Settings
-   app's switch, written by the host), the environment still winning; config_boolean alone reads the file once */
+   app's switch, written by the host), the environment still winning; config_boolean alone reads the file once.
+   Also config_setting_index's hash: every setting's name finds the first setting of that name, and others none */
 #define __HALO_LINUX_PLATFORM_H   /* port_config.c needs only platform_log from the platform layer */
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,6 +36,19 @@ int main(void)
 	char directory[] = "/tmp/config-reload-XXXXXX", path[1100];
 	const char *name = "display.upscaled_textures";
 
+	{
+		size_t index, first;
+
+		for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+		{
+			for (first = 0; strcmp(config_settings[first].name, config_settings[index].name); first++)
+				;
+			assert(config_setting_index(config_settings[index].name) == (long)first);
+		}
+		assert(config_setting_index("display.no_such_setting") == -1);
+		assert(config_setting_index("") == -1);
+		assert(config_setting_index("display.upscaled_textures_") == -1);
+	}
 	assert(mkdtemp(directory));
 	snprintf(path, sizeof(path), "%s/config.toml", directory);
 	setenv("HALO_DATA_ROOT", directory, 1);
