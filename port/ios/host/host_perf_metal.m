@@ -342,16 +342,18 @@ void host_perf_metal_complete(id<MTLCommandBuffer> commands) {
         break;
     }
 }
-/* The timing fallback's U+H: the median of the last 0.5 s or so of the rest's spans (32 frames), since a single
- * frame's present buffer may hold a drawable wait; the scene's own buffers never do */
-static double rest_median(double rest) {
+/* The timing fallback's U+H: the least of the last 32 frames' rest spans. The present buffer holds the HUD's
+ * passes and the drawable copy, so its span includes a wait for the drawable whenever the display is behind; on a
+ * CPU-bound A9X iPad even the median read 3-16 ms. The HUD's own work is about the same every frame, so the
+ * least recent span is its cost; a wait only ever adds. An underestimate errs toward not dropping. */
+static double rest_estimate(double rest) {
     static double ring[32];
     static unsigned count, next;
-    double sorted[32];
+    double least;
     ring[next] = rest; next = (next + 1) % 32; if (count < 32) count++;
-    memcpy(sorted, ring, sizeof(double) * count);
-    qsort(sorted, count, sizeof(double), compare_doubles);
-    return sorted[count / 2];
+    least = ring[0];
+    for (unsigned i = 1; i < count; i++) if (ring[i] < least) least = ring[i];
+    return least;
 }
 static void dynamic_join(game_perf_frame *frame) {
     if (host_perf_metal_timing_supported()) frame->drs.available |= 8;
@@ -390,14 +392,14 @@ static void dynamic_join(game_perf_frame *frame) {
                     span_union(entry, 1), span_union(entry, 0), (int)entry->late);
         }
         /* No stage-boundary sampling: the scene's command buffers' GPU spans are S (on a device with both they
-         * matched stage timing in every window), and the rest's median is U+H; marked coarse (16) */
+         * matched stage timing in every window), and the rest's least recent span is U+H; marked coarse (16) */
         else if (!host_perf_metal_stage_supported() && entry->span_count && !(entry->invalid & (1u << HOST_PERF_SCENE)) &&
             !(frame->flags & GAME_PERF_GPU_UNAVAILABLE)) {
             double scene = span_union(entry, 1), rest = span_union(entry, 0);
             if (scene > 0.0) {
                 frame->drs.scene_us = (uint64_t)scene;
                 frame->drs.upscale_us = 0;
-                frame->drs.hud_us = (uint64_t)rest_median(rest);
+                frame->drs.hud_us = (uint64_t)rest_estimate(rest);
                 frame->drs.available |= 1 | 16;
             }
         }

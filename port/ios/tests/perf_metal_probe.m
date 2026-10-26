@@ -107,7 +107,7 @@ int main(void) {
         atomic_store(&buffers[1].commands, 0);
         assert(host_perf_metal_prepare((id)commands[BUFFER_COUNT], nil, 1, HOST_PERF_SCENE));
         /* No stage-boundary sampling: the scene's command-buffer spans (a union, overlap counted once) are S,
-         * the rest's 32-frame median is U+H, and the frame is marked coarse */
+         * the least of the rest's last 32 spans is U+H, and the frame is marked coarse */
         counter_device = nil; mode = 0; metal_seen = 1;
         assert(host_perf_metal_timing_supported() && !host_perf_metal_stage_supported());
         for (unsigned f = 0; f < 3; ++f) {
@@ -120,7 +120,7 @@ int main(void) {
             host_perf_metal_join(&frame);
             assert((frame.drs.available & (1 | 8 | 16)) == (1 | 8 | 16));
             assert(frame.drs.scene_us >= 5999 && frame.drs.scene_us <= 6001);
-            /* (the third frame's 4 ms present span is a drawable wait; the median stays near 1 ms) */
+            /* (the third frame's 4 ms present span is a drawable wait; the estimate stays near 1 ms) */
             assert(frame.drs.upscale_us == 0 && frame.drs.hud_us >= 999 && frame.drs.hud_us <= 1001);
         }
         /* a refused scene (several views) gives no reading */
