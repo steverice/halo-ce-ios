@@ -93,6 +93,8 @@ Handles index tables of these; 0 is none. */
 	allocated at dynamic resolution's ceiling, from the top left; 0 for the
 	whole texture */
 	uint32_t content_width, content_height;
+	/* gpu_texture_set_content was called: dynamic resolution's pooled scene target, whatever its content now */
+	BOOL pooled;
 }
 @end
 @implementation MetalTexture
@@ -1109,6 +1111,7 @@ static void gpu_metal_texture_set_content(gpu_texture texture, uint32_t width, u
 
 	if (!record)
 		return;
+	record->pooled = YES;
 	/* (the whole texture, or nothing larger than it) */
 	if (!width || !height || width > record->description.width || height > record->description.height ||
 		(width == record->description.width && height == record->description.height))
@@ -6156,11 +6159,15 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
             /* the scene's allocation is the ceiling (dynamic resolution's pool
              * is allocated there), its content this frame's lines; the floor
              * is display.dynamic_resolution_floor's */
+            /* at a ceiling the display's own size the pool is presented itself, with no upscale (and the
+             * HUD drawn into it, counted with the scene): still one measured scene */
+            BOOL pool_presented = !perf_scene_views && record && record->pooled;
             host_perf_hooks_dynamic_config(1,
                 (int)(perf_scene_width ?: (record ? record->description.width : 0)),
                 (int)(perf_scene_height ?: (record ? record->description.height : 0)),
-                (int)perf_scene_lines, 0, (int)NSProcessInfo.processInfo.thermalState,
-                perf_scene_height != 0 && perf_scene_views == 1);
+                (int)(perf_scene_lines ?: (pool_presented ? (record->content_height ?: record->description.height) : 0)),
+                0, (int)NSProcessInfo.processInfo.thermalState,
+                (perf_scene_height != 0 && perf_scene_views == 1) || pool_presented);
         }
         if (host_perf_hooks_dynamic_enabled() && !perf_capability_noted) {
             if (!host_perf_metal_stage_supported())

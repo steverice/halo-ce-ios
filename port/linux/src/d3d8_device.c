@@ -965,9 +965,11 @@ static BOOL native_hud_active(void)
 			return FALSE;
 		native_hud_wanted = config_boolean("display.native_hud") && device_capabilities.upscale;
 	}
-	/* (dynamic resolution keeps the layer on at the ceiling too) */
-	if (!companion_active() && (!native_hud_wanted || (!screen_dynamic &&
-		screen_scale_native[0] <= screen_scale[0] && screen_scale_native[1] <= screen_scale[1])))
+	/* (dynamic resolution at a ceiling below the display keeps the layer on at the ceiling too; at the display's
+	own resolution, the scene and HUD share the pool's target while it renders the ceiling, and the layer comes on
+	only while the scene renders below it) */
+	if (!companion_active() && (!native_hud_wanted ||
+		(screen_scale_native[0] <= screen_scale[0] && screen_scale_native[1] <= screen_scale[1])))
 		return FALSE;
 	stereo = halo_stereo_frame();
 	return stereo->mode == HALO_STEREO_OFF && stereo->eye_count == 0 && !rate_map_test();
@@ -2273,9 +2275,15 @@ static void anti_aliasing_pass(struct render_target_entry *scene)
 it draws into the back buffer until halo_render_scene_end is the scene, at
 the scene's size. Only a player's or the menu's own view (the primary
 target); a mirror's has its own target */
+/* the player views the frame drew, and the last presented frame's (dynamic resolution refuses split screen:
+its planner measures one view) */
+static int scene_views_now, scene_views_last;
+
 void halo_render_scene_begin(short rasterizer_target, long x0, long y0, long x1, long y1)
 {
 	native_scene = rasterizer_target == 0;
+	if (native_scene)
+		scene_views_now++;
 	native_scene_bounds[0] = x0;
 	native_scene_bounds[1] = y0;
 	native_scene_bounds[2] = x1;
@@ -2392,6 +2400,8 @@ static int dynamic_resolution_refused(void)
 		why = "a benchmark sets the lines";
 	else if (render_scale_live >= 0.0)
 		why = "the render scale was changed by hand";
+	else if (scene_views_last > 1)
+		why = "split screen";
 	else if (companion_active())
 		why = "an external display's companion picture";
 	/* (in-engine cutscenes are rendered as gameplay is; the menus are not measured) */
@@ -6988,6 +6998,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	host_frame_cpu_phase(19, (int)perf_draws);
 #endif
 	perf_draws = 0;
+	scene_views_last = scene_views_now;
+	scene_views_now = 0;
 #ifdef HALO_ILP32
 	/* Fixed context copies only when settings or output class change. */
 	{
