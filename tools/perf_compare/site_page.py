@@ -57,11 +57,15 @@ STYLE = """
 
 
 FRAMES = {"mac": "device-mac", "iphone-ipad": "device-ipad", "apple-tv": "device-tv", "vision-pro": "device-vision device-glass"}
-# Our own outline of a headset's front glass seen from the front (no strap or details), in a 440 by 260 box.
-GLASS = ('<svg class="glass-shape" viewBox="0 0 440 260" preserveAspectRatio="none" aria-hidden="true">'
-         '<path d="M78 39C160 20.8 280 20.8 362 39C406 49.4 428 70.2 428 104L428 156C428 189.8 406 210.6 362 221'
-         'C280 239.2 160 239.2 78 221C34 210.6 12 189.8 12 156L12 104C12 70.2 34 49.4 78 39Z"/>'
-         '<path class="sheen" d="M96 49.4C170 35 270 35 344 49.4"/></svg>')
+def glass_svg() -> str:
+    """The site's Vision Pro icon outline (docs/site/icons/nav/vision-pro.svg), scaled up as the frame.
+
+    The view box is the icon's shape plus room for its stroke, so the frame's aspect ratio is 216 / 132.
+    """
+    icon = (SITE / "icons/nav/vision-pro.svg").read_text(encoding="utf-8")
+    path = re.search(r'<path d="([^"]+)"', icon).group(1)
+    return ('<svg class="glass-shape" viewBox="1.2 4.9 21.6 13.2" preserveAspectRatio="none" aria-hidden="true">'
+            f'<path d="{path}"/></svg>')
 
 
 def slug(spec: dict) -> str:
@@ -107,7 +111,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 <h2 id="h-{name}">{escape(spec["heading"])}</h2>
 <p>{escape(spec["paragraph"].strip())}</p>
 <div class="bench-grid">
-<div class="bench-media"><figure class="device {FRAMES[name]}">{GLASS if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
+<div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
 <p class="bench-legend">{escape(legend)}</p>
 <p class="bench-caption">{escape(charts.caption(built))}</p></div>
 <fieldset class="bench-rows">{rows_html}</fieldset>
