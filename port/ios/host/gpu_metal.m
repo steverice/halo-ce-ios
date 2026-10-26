@@ -4639,6 +4639,7 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
 		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu_measured ? gpu : -1.0, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0,
 			simulation_cpu, render_cpu, translation_cpu, ticks);
+		host_benchmark_frame_probe();
 	}
 	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 	{

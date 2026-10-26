@@ -2172,6 +2172,16 @@
             "apple"
           ]
         },
+        "frame_cpu_probe": {
+          "type": "boolean",
+          "default": false,
+          "description": "Benchmark reports also carry, for every frame, the drawing thread's own CPU time, the whole app's, and how long a fixed loop took (which falls as the core's clock rises), to tell a slow clock or another thread's work from waiting.",
+          "x-environment": "HALO_FRAME_CPU_PROBE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "visibility_any_sample": {
           "type": "boolean",
           "default": false,

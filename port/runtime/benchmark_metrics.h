@@ -33,6 +33,11 @@ struct benchmark_metrics {
        each ran */
     uint16_t *simulation, *render, *translation;
     size_t split_frames, split_capacity;
+    /* debug.frame_cpu_probe's frames, in step with the frames: the drawing thread's own CPU time and the whole
+       process's (all threads) since the frame before, in tenths of a millisecond, and a fixed loop's time, in tenths
+       of a microsecond, which falls as the core's clock rises */
+    uint16_t *thread_cpu, *process_cpu, *clock_probe;
+    size_t probe_frames, probe_capacity;
     unsigned long ticks;
     /* the recorded time, in ticks, at which the measured window opened (a replay's; -1 where it never did) */
     long window_opened_tick;
@@ -77,6 +82,10 @@ void benchmark_metrics_frame(struct benchmark_metrics *metrics, double interval,
    translating and encoding, and the ticks it ran (simulation negative where the frame did not know them) */
 void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double interval, double cpu, double gpu,
     double simulation, double render, double translation, int ticks);
+/* debug.frame_cpu_probe's readings for the frame just added (benchmark_metrics_frame_split): milliseconds of the
+   drawing thread's CPU time and of the process's, and the probe loop's microseconds */
+void benchmark_metrics_frame_probe(struct benchmark_metrics *metrics, double thread_cpu, double process_cpu,
+    double clock_probe);
 /* a once-a-second sample; megabytes negative where unknown */
 void benchmark_metrics_sample(struct benchmark_metrics *metrics, long footprint, long left, int thermal);
 void benchmark_metrics_compile(struct benchmark_metrics *metrics, double milliseconds);

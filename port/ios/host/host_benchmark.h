@@ -52,6 +52,9 @@ enum { HOST_FRAME_SIMULATION_BEGIN, HOST_FRAME_SIMULATION_END, HOST_FRAME_RENDER
 void host_frame_cpu_phase(int phase, int ticks);
 /* at a present: the seconds spent in ticks, in the render and in translation since the last present, and the
    ticks run, then cleared; negative when the game marked none (translation: when it could not time it) */
+/* debug.frame_cpu_probe: after host_benchmark_frame, on the drawing thread, its readings for that frame (nothing
+   when the setting is off) */
+void host_benchmark_frame_probe(void);
 void host_frame_cpu_split(double *simulation, double *render, double *translation, int *ticks);
 /* the Metal backend, for each frame it could not show (why: 0 no drawable, 1 no picture): counted so a run that
    measured nothing can say whether the display handed out no drawables */

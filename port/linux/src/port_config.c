@@ -1385,6 +1385,11 @@ static const struct config_setting config_settings[] =
 		"Log when each frame reached the display and how long after its work began\n"
 		"(the frame pacer, with the Metal renderer; not a Vision Pro or a\n"
 		"simulator), to see how evenly and how late frames are shown." },
+	{ "debug.frame_cpu_probe", _config_boolean, "false", "HALO_FRAME_CPU_PROBE", _environment_set_is_true, _platform_ios,
+		"Benchmark reports also carry, for every frame, the drawing thread's own\n"
+		"CPU time, the whole app's, and how long a fixed loop took (which falls\n"
+		"as the core's clock rises), to tell a slow clock or another thread's\n"
+		"work from waiting." },
 	{ "debug.visibility_any_sample", _config_boolean, "false", "HALO_VISIBILITY_ANY_SAMPLE", _environment_set_is_true, _platform_ios,
 		"The Metal renderer's visibility tests (lens flares) only say whether\n"
 		"anything was visible, as before they counted how much: a light that is\n"

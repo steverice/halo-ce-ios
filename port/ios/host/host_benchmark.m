@@ -36,9 +36,12 @@
 #include "../../runtime/graphics_capture.h"
 #include <math.h>
 #include <mach/mach.h>
+#include <mach/mach_time.h>
 #include <os/lock.h>
 #include <os/proc.h>
 #include <signal.h>
+#include <sys/resource.h>
+#include <time.h>
 #include <stdatomic.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
@@ -503,6 +506,55 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
             simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0,
             translation_cpu >= 0.0 ? translation_cpu * 1000.0 : -1.0, ticks);
     }
+    os_unfair_lock_unlock(&lock);
+}
+
+/* A fixed chain of dependent multiplies and adds: its time follows the core's clock (and the core it runs on), not the
+   memory or the frame's work. About 16,000 cycles: 7 microseconds at 2.3 GHz. */
+static double clock_probe_microseconds(void) {
+    static mach_timebase_info_data_t timebase;
+    volatile uint32_t sink;
+    uint32_t value = 1;
+    uint64_t began;
+
+    if (!timebase.denom) mach_timebase_info(&timebase);
+    began = mach_absolute_time();
+    for (int index = 0; index < 4096; index++) value = value * 1664525u + 1013904223u;
+    sink = value;
+    (void)sink;
+    return (double)(mach_absolute_time() - began) * (double)timebase.numer / (double)timebase.denom / 1e3;
+}
+
+static double process_cpu_seconds(void) {
+    struct rusage usage;
+
+    if (getrusage(RUSAGE_SELF, &usage)) return -1.0;
+    return (double)usage.ru_utime.tv_sec + (double)usage.ru_utime.tv_usec / 1e6 + (double)usage.ru_stime.tv_sec +
+        (double)usage.ru_stime.tv_usec / 1e6;
+}
+
+void host_benchmark_frame_probe(void) {
+    static int setting = -1;
+    static double thread_before = -1.0, process_before = -1.0;
+
+    if (setting < 0) {
+        char value[8];
+
+        host_config_string("debug.frame_cpu_probe", "false", value, sizeof(value));
+        setting = !strcmp(value, "true");
+        if (setting) host_logf(HOST_LOG_INFO, "benchmark: debug.frame_cpu_probe: thread, process and clock probe per frame");
+    }
+    if (!setting) return;
+    double thread_now = (double)clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) / 1e9, process_now = process_cpu_seconds();
+    double probe = clock_probe_microseconds();
+    double thread_cpu = thread_before >= 0.0 ? thread_now - thread_before : -1.0;
+    double process_cpu = process_before >= 0.0 && process_now >= 0.0 ? process_now - process_before : -1.0;
+
+    thread_before = thread_now;
+    process_before = process_now;
+    if (!atomic_load(&running) || thread_cpu < 0.0) return;
+    os_unfair_lock_lock(&lock);
+    if (window_open) benchmark_metrics_frame_probe(&metrics, thread_cpu * 1000.0, process_cpu * 1000.0, probe);
     os_unfair_lock_unlock(&lock);
 }
 

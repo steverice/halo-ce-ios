@@ -10,6 +10,7 @@
 void benchmark_metrics_free(struct benchmark_metrics *metrics) {
     free(metrics->interval); free(metrics->cpu); free(metrics->gpu); free(metrics->tick_plus);
     free(metrics->simulation); free(metrics->render); free(metrics->translation);
+    free(metrics->thread_cpu); free(metrics->process_cpu); free(metrics->clock_probe);
     memset(metrics, 0, sizeof(*metrics));
 }
 
@@ -17,13 +18,16 @@ void benchmark_metrics_reset(struct benchmark_metrics *metrics, double refresh_h
     uint16_t *interval = metrics->interval, *cpu = metrics->cpu, *gpu = metrics->gpu;
     uint16_t *simulation = metrics->simulation, *render = metrics->render, *translation = metrics->translation;
     uint16_t *tick_plus = metrics->tick_plus;
-    size_t capacity = metrics->capacity, split_capacity = metrics->split_capacity;
+    uint16_t *thread_cpu = metrics->thread_cpu, *process_cpu = metrics->process_cpu, *clock_probe = metrics->clock_probe;
+    size_t capacity = metrics->capacity, split_capacity = metrics->split_capacity, probe_capacity = metrics->probe_capacity;
 
     memset(metrics, 0, sizeof(*metrics));
     metrics->interval = interval; metrics->cpu = cpu; metrics->gpu = gpu; metrics->capacity = capacity;
     metrics->simulation = simulation; metrics->render = render; metrics->translation = translation;
     metrics->split_capacity = split_capacity;
     metrics->tick_plus = tick_plus;
+    metrics->thread_cpu = thread_cpu; metrics->process_cpu = process_cpu; metrics->clock_probe = clock_probe;
+    metrics->probe_capacity = probe_capacity;
     metrics->window_opened_tick = -1;
     metrics->refresh_hertz = refresh_hertz;
     metrics->footprint_first = metrics->footprint_last = metrics->footprint_peak = metrics->left_least = -1;
@@ -87,6 +91,29 @@ void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double int
     if (gpu >= 0.0) metrics->gpu_frames++;
     metrics->frames++;
     if (interval > 0.0) metrics->seconds += interval / 1000.0;
+}
+
+void benchmark_metrics_frame_probe(struct benchmark_metrics *metrics, double thread_cpu, double process_cpu,
+    double clock_probe) {
+    /* (only in step with the frames: a frame the run could not keep has no probe either) */
+    if (metrics->probe_frames + 1 != metrics->frames) return;
+    if (metrics->probe_frames == metrics->probe_capacity) {
+        size_t capacity = metrics->probe_capacity ? metrics->probe_capacity * 2 : 8192;
+        uint16_t *a = realloc(metrics->thread_cpu, capacity * sizeof(*a));
+        uint16_t *b = a ? realloc(metrics->process_cpu, capacity * sizeof(*b)) : NULL;
+        uint16_t *c = b ? realloc(metrics->clock_probe, capacity * sizeof(*c)) : NULL;
+
+        if (a) metrics->thread_cpu = a;
+        if (b) metrics->process_cpu = b;
+        if (!c) return;
+        metrics->clock_probe = c;
+        metrics->probe_capacity = capacity;
+    }
+    metrics->thread_cpu[metrics->probe_frames] = tenths(thread_cpu);
+    metrics->process_cpu[metrics->probe_frames] = tenths(process_cpu);
+    /* (tenths of a microsecond: the milliseconds' tenths of a thousandth) */
+    metrics->clock_probe[metrics->probe_frames] = tenths(clock_probe);
+    metrics->probe_frames++;
 }
 
 void benchmark_metrics_sample(struct benchmark_metrics *metrics, long footprint, long left, int thermal) {
@@ -315,6 +342,15 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
         append_frames(&text, "frame_simulation", metrics->simulation, metrics->split_frames);
         append(&text, ",");
         append_frames(&text, "frame_render", metrics->render, metrics->split_frames);
+    }
+    if (metrics->probe_frames) {
+        append(&text, ",\"frame_probe_encoding\":\"frame_thread_cpu and frame_process_cpu in tenths of a millisecond, "
+            "frame_clock_probe in tenths of a microsecond\",");
+        append_frames(&text, "frame_thread_cpu", metrics->thread_cpu, metrics->probe_frames);
+        append(&text, ",");
+        append_frames(&text, "frame_process_cpu", metrics->process_cpu, metrics->probe_frames);
+        append(&text, ",");
+        append_frames(&text, "frame_clock_probe", metrics->clock_probe, metrics->probe_frames);
     }
     if (text.failed) { free(text.bytes); return NULL; }
     return text.bytes;
