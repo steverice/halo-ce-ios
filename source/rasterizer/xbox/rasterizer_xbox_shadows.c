@@ -202,8 +202,8 @@ rather than drawn again. A frame with more shadows than slots generates
 the rest the game's own way, in the apply stretch. The shadows are drawn
 into tiles of the shadow atlas (rasterizer_xbox.c), one render pass a page
 rather than one a shadow, and blurred out of them once the window's are
-all drawn: into the blur page a page's worth at a time, one render pass and
-one copy into their second targets a batch (rasterizer_xbox.c). */
+all drawn: into tiles of blur pages, one render pass a page, which then
+become their second targets (rasterizer_xbox.c). */
 #define DEFERRED_SHADOW_ENTRIES 256
 
 struct deferred_shadow
@@ -230,7 +230,7 @@ short rasterizer_shadow_atlas_capacity(void);
 boolean rasterizer_shadow_atlas_select(short tile);
 boolean rasterizer_shadow_atlas_mapping(real *u0, real *v0, real *scale);
 short rasterizer_shadow_blur_capacity(void);
-boolean rasterizer_shadow_blur_select(short tile, short place);
+boolean rasterizer_shadow_blur_select(short tile);
 boolean rasterizer_shadow_blur_copy(short first, short count);
 
 /* the window's first deferred shadow (rasterizer_environment_shadows_defer_begin): those from it on are
@@ -1013,30 +1013,25 @@ void rasterizer_environment_shadows_defer_end(
 	void)
 {
 	deferred_shadows_generating = FALSE;
-	/* the window's new shadows, blurred out of their tiles into the blur page's, a batch at a time, and copied into
-	their slots; a batch that cannot be is blurred into its slots one render pass each */
+	/* the window's new shadows, blurred out of their atlas tiles into blur pages' tiles, which then become their
+	slots' second targets; if they cannot, each is blurred into its slot, a render pass each */
 	if (deferred_shadows_drawn && deferred_shadows_in_atlas())
 	{
-		short batch = rasterizer_shadow_blur_capacity();
-		short first, index;
+		short index;
+		boolean blurred = TRUE;
 
-		for (first = deferred_shadow_window_first; first < deferred_shadow_count; first += batch)
+		for (index = deferred_shadow_window_first; index < deferred_shadow_count && blurred; index++)
 		{
-			short count = MIN(batch, deferred_shadow_count - first);
-			boolean blurred = TRUE;
-
-			for (index = 0; index < count && blurred; index++)
+			if ((blurred = rasterizer_shadow_blur_select(index)))
+				rasterizer_shadow_convolve();
+		}
+		if (!blurred ||
+			!rasterizer_shadow_blur_copy(deferred_shadow_window_first, deferred_shadow_count - deferred_shadow_window_first))
+		{
+			for (index = deferred_shadow_window_first; index < deferred_shadow_count; index++)
 			{
-				if ((blurred = rasterizer_shadow_blur_select(first + index, index)))
+				if (rasterizer_shadow_atlas_select(index))
 					rasterizer_shadow_convolve();
-			}
-			if (!blurred || !rasterizer_shadow_blur_copy(first, count))
-			{
-				for (index = first; index < first + count; index++)
-				{
-					if (rasterizer_shadow_atlas_select(index))
-						rasterizer_shadow_convolve();
-				}
 			}
 		}
 	}

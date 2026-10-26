@@ -3999,15 +3999,18 @@ at 128-pixel shadow maps, 9 at 512, one at 1024 or more. Pages are made as a
 frame first needs them and kept, within SHADOW_ATLAS_BUDGET; a frame with more
 shadows than that draws the rest the game's own way, as with too few slots.
 
-The blurs share passes too: each is drawn into a tile of one more page of the
-same layout, the blur page, a page's worth of tiles at a time, and the batch is
-then copied into the shadows' second targets in one copy (halo_shadow_blur_copy,
-d3d8_device.c), from which the shadows are applied as before. Each blur draws
-the same pixels of its tile as it did of its own target, and the texels a blur
-leaves alone (its quad stops half a texel short of the far edges) are black in
-both, the page cleared before each batch and a target black from its creation,
-so the second targets hold what they did when each blur had a pass of its
-own. */
+The blurs share passes too: each is drawn into a tile of a blur page, one
+render pass a page, and the page's tiles then become the shadows' second
+targets (halo_shadow_blur_copy, d3d8_device.c, and gpu_texture_copy_rects:
+under Metal each second target becomes a view of its tile, under GL a copy of
+it), from which the shadows are applied as before, border addressing and all.
+A blur page has no gutters, since nothing samples it past a tile, and is about
+2048 pixels a side: a power of two of tiles a row (16 at 128-pixel shadow maps,
+4 at 512). Each blur draws the same pixels of its tile as it did of its own
+target, and the texels a blur leaves alone (its quad stops half a texel short
+of the far edges) are black in both, a page cleared before its first blur of
+the frame and a target black from its creation, so the second targets hold
+what they did when each blur had a pass of its own. */
 #define SHADOW_ATLAS_GUTTER 2
 #define SHADOW_ATLAS_STRIDE (RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE + 2 * SHADOW_ATLAS_GUTTER)
 #define SHADOW_ATLAS_PIXELS 2048
@@ -4015,6 +4018,7 @@ own. */
 /* the pages' and their shadows' second targets' memory at most, in bytes: the old 95 deferred shadows' pairs
 took up to 95 MB at display.shadow_map_size 512 */
 #define SHADOW_ATLAS_BUDGET (128.0 * 1024.0 * 1024.0)
+#define SHADOW_BLUR_PAGES 64
 
 float halo_shadow_target_scale(void);
 void halo_shadow_atlas_register(D3DSurface *surface);
@@ -4028,9 +4032,11 @@ static struct
 	D3DTexture *texture[SHADOW_ATLAS_PAGES];
 	D3DSurface *surface[SHADOW_ATLAS_PAGES];
 	boolean cleared[SHADOW_ATLAS_PAGES];
-	/* the blur page */
-	D3DTexture *blur_texture;
-	D3DSurface *blur_surface;
+	/* the blur pages: tiles a row (and rows a page) */
+	short blur_columns;
+	D3DTexture *blur_texture[SHADOW_BLUR_PAGES];
+	D3DSurface *blur_surface[SHADOW_BLUR_PAGES];
+	boolean blur_cleared[SHADOW_BLUR_PAGES];
 } shadow_atlas;
 
 /* the layout for the shadow maps' scale in force, the pages of another one let go */
@@ -4059,14 +4065,22 @@ static void shadow_atlas_layout(
 		shadow_atlas.texture[page] = NULL;
 		shadow_atlas.cleared[page] = FALSE;
 	}
-	if (shadow_atlas.blur_surface)
+	for (page = 0; page < SHADOW_BLUR_PAGES; page++)
 	{
-		halo_shadow_atlas_forget(shadow_atlas.blur_surface);
-		IDirect3DSurface8_Release(shadow_atlas.blur_surface);
-		IDirect3DTexture8_Release(shadow_atlas.blur_texture);
+		if (shadow_atlas.blur_surface[page])
+		{
+			halo_shadow_atlas_forget(shadow_atlas.blur_surface[page]);
+			IDirect3DSurface8_Release(shadow_atlas.blur_surface[page]);
+			IDirect3DTexture8_Release(shadow_atlas.blur_texture[page]);
+		}
+		shadow_atlas.blur_surface[page] = NULL;
+		shadow_atlas.blur_texture[page] = NULL;
+		shadow_atlas.blur_cleared[page] = FALSE;
 	}
-	shadow_atlas.blur_surface = NULL;
-	shadow_atlas.blur_texture = NULL;
+	shadow_atlas.blur_columns = 1;
+	while (shadow_atlas.blur_columns < 16 &&
+		(float)(2 * shadow_atlas.blur_columns * RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE) * scale <= (float)SHADOW_ATLAS_PIXELS)
+		shadow_atlas.blur_columns *= 2;
 	columns = (short)(size / SHADOW_ATLAS_STRIDE);
 	shadow_atlas.size = size;
 	shadow_atlas.columns = columns;
@@ -4075,8 +4089,8 @@ static void shadow_atlas_layout(
 		double page_bytes = (double)size * scale * (double)size * scale * 2.0;
 		double second_bytes = (double)RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE * scale *
 			(double)RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE * scale * 2.0;
-		/* (the blur page is the budget's too) */
-		double tiles = (SHADOW_ATLAS_BUDGET - page_bytes) / (page_bytes / (double)(columns * columns) + second_bytes);
+		/* (a blur page's tile stands for a second target: under Metal it becomes one) */
+		double tiles = SHADOW_ATLAS_BUDGET / (page_bytes / (double)(columns * columns) + second_bytes);
 
 		shadow_atlas.tiles = (short)MIN(MIN((double)(columns * columns * SHADOW_ATLAS_PAGES),
 			(double)(RASTERIZER_SHADOW_SLOTS - 1)), tiles);
@@ -4092,6 +4106,8 @@ void rasterizer_shadow_atlas_frame_begin(
 	shadow_atlas_layout();
 	for (page = 0; page < SHADOW_ATLAS_PAGES; page++)
 		shadow_atlas.cleared[page] = FALSE;
+	for (page = 0; page < SHADOW_BLUR_PAGES; page++)
+		shadow_atlas.blur_cleared[page] = FALSE;
 	shadow_atlas_tile = NONE;
 	shadow_blur_tile = NONE;
 }
@@ -4179,75 +4195,113 @@ boolean rasterizer_shadow_atlas_select(
 int halo_shadow_blur_copy(D3DSurface *page, int count, D3DSurface *const *destinations, const long *origins,
 	long size);
 
-/* the blur page's tiles: a page's worth (0 without the atlas) */
+/* the blur pages' tiles a page (0 without the atlas) */
 short rasterizer_shadow_blur_capacity(
 	void)
 {
-	return shadow_atlas.size ? shadow_atlas.columns * shadow_atlas.columns : 0;
+	return shadow_atlas.size ? shadow_atlas.blur_columns * shadow_atlas.blur_columns : 0;
 }
 
-/* points the shadow targets at a deferred shadow to blur: the first at its atlas tile, the second at a tile of the
-blur page (place, below rasterizer_shadow_blur_capacity), and clears the page when place is 0: the clear begins the
-batch's render pass */
-boolean rasterizer_shadow_blur_select(
+/* a deferred shadow's tile in its blur page */
+static void shadow_blur_origin(
 	short tile,
-	short place)
+	long *x,
+	long *y)
 {
-	if (place < 0 || place >= rasterizer_shadow_blur_capacity() || !rasterizer_shadow_atlas_select(tile))
-		return FALSE;
-	if (!shadow_atlas.blur_surface)
+	short place = tile % rasterizer_shadow_blur_capacity();
+
+	*x = (place % shadow_atlas.blur_columns) * RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE;
+	*y = (place / shadow_atlas.blur_columns) * RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE;
+}
+
+/* the blur page that holds the tile, made if need be, and cleared if it has not been this frame: the clear begins
+its render pass */
+static D3DSurface *shadow_blur_page(
+	short tile)
+{
+	short page = tile / rasterizer_shadow_blur_capacity();
+	long size = shadow_atlas.blur_columns * RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE;
+
+	if (page < 0 || page >= SHADOW_BLUR_PAGES)
+		return NULL;
+	if (!shadow_atlas.blur_surface[page])
 	{
-		if (IDirect3DDevice8_CreateTexture(global_d3d_device, shadow_atlas.size, shadow_atlas.size, 1,
-				D3DUSAGE_RENDERTARGET, D3DFMT_R5G6B5, D3DPOOL_DEFAULT, &shadow_atlas.blur_texture) < 0 ||
-			!shadow_atlas.blur_texture ||
-			IDirect3DTexture8_GetSurfaceLevel(shadow_atlas.blur_texture, 0, &shadow_atlas.blur_surface) < 0)
+		if (IDirect3DDevice8_CreateTexture(global_d3d_device, size, size, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R5G6B5,
+				D3DPOOL_DEFAULT, &shadow_atlas.blur_texture[page]) < 0 ||
+			!shadow_atlas.blur_texture[page] ||
+			IDirect3DTexture8_GetSurfaceLevel(shadow_atlas.blur_texture[page], 0, &shadow_atlas.blur_surface[page]) < 0)
 		{
-			shadow_atlas.blur_surface = NULL;
-			return FALSE;
+			shadow_atlas.blur_surface[page] = NULL;
+			return NULL;
 		}
-		halo_shadow_atlas_register(shadow_atlas.blur_surface);
+		halo_shadow_atlas_register(shadow_atlas.blur_surface[page]);
 	}
-	if (place == 0)
+	if (!shadow_atlas.blur_cleared[page])
 	{
 		D3DVIEWPORT8 viewport;
 
 		viewport.X = 0;
 		viewport.Y = 0;
-		viewport.Width = shadow_atlas.size;
-		viewport.Height = shadow_atlas.size;
+		viewport.Width = size;
+		viewport.Height = size;
 		viewport.MinZ = 0.0f;
 		viewport.MaxZ = 1.0f;
-		IDirect3DDevice8_SetRenderTarget(global_d3d_device, shadow_atlas.blur_surface, NULL);
+		IDirect3DDevice8_SetRenderTarget(global_d3d_device, shadow_atlas.blur_surface[page], NULL);
 		IDirect3DDevice8_SetViewport(global_d3d_device, &viewport);
 		IDirect3DDevice8_Clear(global_d3d_device, 0, NULL, D3DCLEAR_TARGET, 0, 1.0f, 0);
+		shadow_atlas.blur_cleared[page] = TRUE;
 	}
-	global_d3d_texture_shadow_secondary = shadow_atlas.blur_texture;
-	global_d3d_surface_shadow_secondary = shadow_atlas.blur_surface;
-	shadow_blur_tile = place;
+	return shadow_atlas.blur_surface[page];
+}
+
+/* points the shadow targets at a deferred shadow to blur: the first at its atlas tile, the second at its tile of a
+blur page */
+boolean rasterizer_shadow_blur_select(
+	short tile)
+{
+	D3DSurface *page;
+
+	if (rasterizer_shadow_blur_capacity() < 1 || !rasterizer_shadow_atlas_select(tile) || !(page = shadow_blur_page(tile)))
+		return FALSE;
+	global_d3d_texture_shadow_secondary = shadow_atlas.blur_texture[tile / rasterizer_shadow_blur_capacity()];
+	global_d3d_surface_shadow_secondary = page;
+	shadow_blur_tile = tile;
 	return TRUE;
 }
 
-/* the blur page's first count tiles into the second targets of the deferred shadows from first on, which they hold
-the blurs of; FALSE if they cannot be copied (nothing is) */
+/* the blur tiles of the deferred shadows from first on, count of them, made their second targets, a blur page at a
+time; FALSE if a page's cannot be (that page's are not) */
 boolean rasterizer_shadow_blur_copy(
 	short first,
 	short count)
 {
 	D3DSurface *destinations[RASTERIZER_SHADOW_SLOTS];
 	long origins[2 * RASTERIZER_SHADOW_SLOTS];
-	short index;
+	short per_page = rasterizer_shadow_blur_capacity();
+	short tile, made = 0;
+	boolean success = TRUE;
 
-	if (!shadow_atlas.blur_surface || count < 1 || count > rasterizer_shadow_blur_capacity() || first < 0 ||
-		first + count + 1 > RASTERIZER_SHADOW_SLOTS)
+	if (per_page < 1 || count < 1 || first < 0 || first + count + 1 > RASTERIZER_SHADOW_SLOTS)
 		return FALSE;
-	for (index = 0; index < count; index++)
+	for (tile = first; tile <= first + count; tile++)
 	{
-		if (!(destinations[index] = rasterizer_shadow_slots[first + index + 1].surface[1]))
+		/* a page's run of tiles ends: its copy */
+		if (made && (tile == first + count || tile % per_page == 0))
+		{
+			D3DSurface *page = shadow_atlas.blur_surface[(tile - 1) / per_page];
+
+			if (!page || !halo_shadow_blur_copy(page, made, destinations, origins, RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE))
+				success = FALSE;
+			made = 0;
+		}
+		if (tile == first + count)
+			break;
+		if (!(destinations[made] = rasterizer_shadow_slots[tile + 1].surface[1]))
 			return FALSE;
-		shadow_atlas_origin(index, &origins[2 * index], &origins[2 * index + 1]);
+		shadow_blur_origin(tile, &origins[2 * made], &origins[2 * made + 1]);
+		made++;
 	}
-	return halo_shadow_blur_copy(shadow_atlas.blur_surface, count, destinations, origins,
-		RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE) != 0;
+	return success;
 }
 
 /* whether the first shadow target is an atlas tile, and where it is in its page's texture coordinates:
@@ -4275,8 +4329,9 @@ static boolean rasterizer_shadow_atlas_viewport(
 {
 	long x, y;
 
-	if (shadow_blur_tile != NONE && surface == shadow_atlas.blur_surface)
-		shadow_atlas_origin(shadow_blur_tile, &x, &y);
+	if (shadow_blur_tile != NONE && surface == global_d3d_surface_shadow_secondary &&
+		surface == shadow_atlas.blur_surface[shadow_blur_tile / rasterizer_shadow_blur_capacity()])
+		shadow_blur_origin(shadow_blur_tile, &x, &y);
 	else if (shadow_atlas_tile == NONE || surface != global_d3d_surface_shadow_primary)
 		return FALSE;
 	else
