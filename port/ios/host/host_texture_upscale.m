@@ -693,6 +693,14 @@ void host_texture_upscale_map_will_load(const char *name) {
 void host_texture_upscale_game_started(int is_game) {
     if(!upscale_enabled)return;
     @synchronized(activity_token){texture_upscale_activity_game_started(&activity,is_game);}
+    /* Development only (HALO_TEXTURE_UPSCALE_STOP_TEST): hold the level's start until a texture is in hand, up to
+       10 s, so a device test can show the stop interrupting one mid-texture and how long that takes. */
+    if(is_game&&getenv("HALO_TEXTURE_UPSCALE_STOP_TEST")){
+        double until=now()+10;
+        while(now()<until&&dispatch_group_wait(work_group,DISPATCH_TIME_NOW)==0)usleep(2000);
+        /* (into the texture's predictions or its CPU stage, not at its first instant) */
+        usleep(30000);
+    }
     if(is_game)stop_for_gameplay("a level's game started");
     else {set_stop(NO);schedule_pump();}
 }
