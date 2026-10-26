@@ -16,7 +16,7 @@
 static atomic_int modal_depth;
 static _Atomic double cached_refresh_rate = 60.0;
 static void require_main(void) {
-    if (!NSThread.isMainThread) host_crash("Native AppKit window access requires the main thread");
+    if (!NSThread.isMainThread) host_fatal("Native AppKit window access requires the main thread");
 }
 static NSWindow *game_window(void) {
     require_main();

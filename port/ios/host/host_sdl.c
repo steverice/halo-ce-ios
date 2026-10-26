@@ -738,7 +738,7 @@ uint32_t host_sdl_open_audio_stream(uint32_t device, const void *spec, uint32_t 
 			}
 	}
 	if (callback && host_native_thread_create(audio_thread, binding, 256 * 1024) != 0)
-		host_crash("cannot start the audio thread");
+		host_fatal("cannot start the audio thread");
 	return binding->handle;
 }
 

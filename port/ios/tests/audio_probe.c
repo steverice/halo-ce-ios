@@ -32,12 +32,6 @@ void host_fatal(const char *format, ...)
     abort();
 }
 
-void host_crash(const char *format, ...)
-{
-    (void)format;
-    abort();
-}
-
 int host_native_thread_create(void *(*function)(void *), void *arg, size_t size)
 {
     (void)size;

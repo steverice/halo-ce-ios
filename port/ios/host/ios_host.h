@@ -1,4 +1,4 @@
-/* iOS host services for the ILP32 guest in a native address arena. */
+/* iOS host services for the ILP32 guest in an aligned native address arena. */
 #ifndef HALO_IOS_HOST_H
 #define HALO_IOS_HOST_H
 #include "host.h"
@@ -6,10 +6,8 @@
 extern uintptr_t host_arena;
 extern uint64_t host_arena_size;   /* 4 GiB, or the shorter reservation used when that is refused */
 extern int host_arena_try_full;    /* tests set 0 to take the shorter reservation */
-extern int host_arena_force_unaligned; /* tests set 1 to place it off every multiple of 4 GiB */
-/* A guest pointer is an offset into the arena, which need not start at a multiple of 4 GiB. */
-static inline void *host_pointer(uint64_t p) { return p ? (void *)(host_arena + (uint32_t)p) : NULL; }
-static inline uint32_t guest_pointer(const void *p) { return p ? (uint32_t)((uintptr_t)p - host_arena) : 0; }
+static inline void *host_pointer(uint64_t p) { return p ? (void *)(host_arena | (uint32_t)p) : NULL; }
+static inline uint32_t guest_pointer(const void *p) { return (uint32_t)(uintptr_t)p; }
 uint32_t host_ios_default_framebuffer(void);
 struct SDL_Window;
 struct SDL_Gamepad;

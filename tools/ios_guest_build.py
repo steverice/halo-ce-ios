@@ -70,9 +70,6 @@ GUEST_ABI_FLAGS = [
     # and its debug assertions (colours within 0..1, unit vectors) trip on
     # the different rounding of fused operations
     "-ffp-contract=off",
-    # x29 always holds a frame address, which tools/ios_asm_convert.py treats
-    # as native: no unit, leaf functions included, may use it for a value
-    "-fno-omit-frame-pointer",
     "-O2",
 ]
 
@@ -311,8 +308,8 @@ def generate_ios_guest_build(n: Writer, sln: Any) -> None:
     # code are the same, and functions that differ simply go without
     profile = pgo_profile(sln, LINUX_PROFILE if pgo_mode(sln) == "train" else None, [LINUX_PROFILE], guest_cc)
     profile_flags = " ".join(profile_use_flags(profile))
-    # The converter turns each memory access and indirect branch into two
-    # instructions, four at most (tools/ios_asm_convert.py), so a conditional branch that
+    # The converter turns each memory access and indirect branch into three
+    # instructions (tools/ios_asm_convert.py), so a conditional branch that
     # LLVM placed within reach can end up out of it in the larger functions
     # that a profile or inlining across units makes ("fixup value out of
     # range"). LLVM then relaxes those branches at a quarter of their reach

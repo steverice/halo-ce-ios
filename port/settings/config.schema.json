@@ -1546,26 +1546,6 @@
             "apple"
           ]
         },
-        "halt_screen": {
-          "type": "boolean",
-          "default": false,
-          "description": "On a fatal game error (a failed assertion or a halt), stop on the game's halt screen, its recent messages on a blue background, instead of crashing. Off, the app crashes, and ios-runtime.log and the crash report have the error and the game's frames (tools/guest_symbolicate.py reads the report).",
-          "x-environment": "HALO_HALT_SCREEN",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple"
-          ]
-        },
-        "crash_test": {
-          "type": "string",
-          "default": "",
-          "description": "Fail on purpose 150 frames after the game starts, to check crash reports: \"halt\" (a failed assertion), \"fault\" (a memory fault in game code), \"trap\" (a trap instruction) or \"abort\" (the game runtime's fatal error); \"map\" fails the first level load instead, which shows a message; empty, never.",
-          "x-environment": "HALO_CRASH_TEST",
-          "x-environment-style": "value",
-          "x-platforms": [
-            "apple"
-          ]
-        },
         "upscaled_textures_toggle": {
           "type": "boolean",
           "default": false,

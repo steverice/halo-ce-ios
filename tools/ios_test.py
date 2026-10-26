@@ -18,7 +18,6 @@ def run(*args):
 run('python3', 'tools/test_touch_mapping.py')
 # Held touch sticks must stop feeding movement while the pause menu is open.
 run('python3', 'tools/test_touch_pause.py')
-run('python3', 'tools/test_ios_asm_convert.py')
 run('python3', 'tools/test_astc_rewrite.py')
 run('python3', 'tools/test_astc_encode.py')
 run('python3', 'tools/astc_upload_test.py')
@@ -27,7 +26,7 @@ run('python3', 'tools/astc_worker_test.py')
 
 clang = '/opt/homebrew/opt/llvm/bin/clang'
 lld = '/opt/homebrew/opt/lld/bin/ld.lld'
-run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27', '-fno-omit-frame-pointer',
+run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
     '-mllvm', '-aarch64-enable-compress-jump-tables=false', '-fno-stack-protector', '-ffreestanding',
     '-O2', '-S', 'port/ios/tests/guest_probe.c', '-o', BUILD/'probe.darwin.s')
 run('python3', 'tools/ios_asm_convert.py', BUILD/'probe.darwin.s', BUILD/'probe.s')
@@ -48,7 +47,7 @@ run(BUILD/'benchmark-page-policy-tester-probe')
 run('xcrun', 'clang', '-O2', '-Iport/linux/src', 'port/ios/tests/gpu_layout_probe.c', '-o', BUILD / 'gpu-layout-probe')
 with open(BUILD / 'gpu_layout_check.h', 'w') as layout_check:
     subprocess.run([str(BUILD / 'gpu-layout-probe')], cwd=ROOT, check=True, stdout=layout_check)
-run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27', '-fno-omit-frame-pointer',
+run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
     '-fno-stack-protector', '-ffreestanding', '-Iport/linux/src', '-fsyntax-only', '-x', 'c', BUILD / 'gpu_layout_check.h')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
     'port/ios/tests/spatial_pose_probe.c', '-o', BUILD / 'spatial-pose-probe')
@@ -123,9 +122,6 @@ run('xcrun','clang','-O2','-Iport/ios/host','-Iport/runtime/include','-Iport/lin
     '-Iport/runtime/guest/runtime','port/ios/tests/memory_probe.c','port/ios/host/host_memory.c','-o',BUILD/'memory-probe')
 run(BUILD/'memory-probe')
 run(BUILD/'memory-probe', 'reduced')
-run(BUILD/'memory-probe', 'early')
-run(BUILD/'memory-probe', 'unaligned')
-run(BUILD/'memory-probe', 'unaligned-reduced')
 sdl_flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'sdl3'], text=True))
 run('xcrun', 'clang', '-O2', '-DHALO_IOS=1', '-Iport/ios/host', '-Iport/ios/host',
     '-Iport/runtime/include', 'port/ios/tests/audio_probe.c', '-Wl,-dead_strip',

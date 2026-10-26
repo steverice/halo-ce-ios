@@ -262,9 +262,6 @@ boolean _rasterizer_environment_shadow_begin(
 	boolean success = TRUE;
 	real inverse_radius;
 	real vsh_constants__screenproj[20];
-	/* port: a new atlas tile is already black: its page was cleared, gutters and all, before the frame's first
-	tile in it (shadow_atlas_page), and a tile holds one shadow a frame, so the shadow's own clear is skipped */
-	boolean cleared_tile = FALSE;
 
 	match_assert(
 		"c:\\halo\\SOURCE\\rasterizer\\xbox\\rasterizer_xbox_shadows.c",
@@ -312,7 +309,6 @@ boolean _rasterizer_environment_shadow_begin(
 			entry->radius = object_bounding_radius;
 			deferred_shadow_current = deferred_shadow_count++;
 			deferred_shadows_drawn = TRUE;
-			cleared_tile = deferred_shadows_in_atlas();
 		}
 		else
 		{
@@ -406,7 +402,7 @@ boolean _rasterizer_environment_shadow_begin(
 			2,
 			0,
 			rasterizer_debug_options.shadow_debug_enabled ? 0x88888888 : 0,
-			!cleared_tile || rasterizer_debug_options.shadow_debug_enabled, /* port */
+			TRUE,
 			FALSE);
 		rasterizer_set_stencil_mode(0);
 

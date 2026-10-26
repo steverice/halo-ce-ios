@@ -769,15 +769,12 @@ static unsigned long walk_up(
 	{
 #ifdef HALO_ILP32
 		/* an AArch64 frame record: the caller's frame pointer, then the
-		return address, both native 64-bit addresses (halo_guest_address) */
-		const unsigned long long *record = (const unsigned long long *)walk_up_current_frame;
-
-		routine_address = halo_guest_address(record[1]);
-		walk_up_current_frame = halo_guest_address(record[0]);
+		return address, 8 bytes each (the upper halves are zero) */
+		routine_address = ((unsigned long *)walk_up_current_frame)[2];
 #else
 		routine_address = ((unsigned long *)walk_up_current_frame)[1];
-		walk_up_current_frame = ((unsigned long *)walk_up_current_frame)[0];
 #endif
+		walk_up_current_frame = ((unsigned long *)walk_up_current_frame)[0];
 		if (!is_valid_ebp())
 		{
 			walk_up_current_frame = 0;
