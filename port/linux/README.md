@@ -889,7 +889,7 @@ listings again.
 The Server Browser shows the games on the game's own maps (its multiplayer
 maps, and the campaign levels of a co-op game). A game on any other map is
 a game on a Custom Edition map, and is shown only with CUSTOM MAPS
-(EXPERIMENTAL) on in Settings > Network Setup (`network.custom_maps`, off
+(experimental) on in Network Setup (`network.custom_maps`, off
 by default), and then if `custom_maps` has a map of that name or map
 downloads are on (`network.map_download`, DOWNLOAD MAPS). A game on the map
 of a map pack (Delta's

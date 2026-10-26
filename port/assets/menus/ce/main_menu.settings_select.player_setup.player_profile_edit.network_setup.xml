@@ -184,7 +184,7 @@
 		<string text="PLAYER NAME SIZE:"/>
 		<string text="SCOREBOARD LAYOUT:"/>
 		<string text="SCOREBOARD PANEL:"/>
-		<string text="CUSTOM MAPS (EXPERIMENTAL):"/>
+		<string text="CUSTOM MAPS:"/>
 		<string text="DOWNLOAD MAPS:"/>
 		<string text="HELP SEND MAPS:"/>
 		<string text="MAP UPLOAD LIMIT:"/>
@@ -201,7 +201,7 @@
 		<string text="How large the players' names are drawn."/>
 		<string text="A team game's scoreboard: a column for each team,\nor every player in order of score."/>
 		<string text="Draw a panel behind the scoreboard, for clearer\ntext."/>
-		<string text="Show games on Custom Edition maps. These are not\nfully supported yet."/>
+		<string text="Experimental: show games on Custom Edition maps.\nThese are not fully supported yet."/>
 		<string text="Joining a game on a Custom Edition map you do not\nhave: download it from the players (if shared)."/>
 		<string text="In another's game, send its map to players who\njoin without it, as a torrent's peers do."/>
 		<string text="The most you send of maps to other players, so\nthat the game keeps the rest of your upload."/>
