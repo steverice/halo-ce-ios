@@ -49,7 +49,7 @@ version. No host of 33 or 37 was released, so neither is joined. */
 static inline int halo_network_version_joinable(unsigned ours, unsigned theirs)
 {
 	/* Version 39 changes discovery metadata, not the version-38 join codec. */
-	if (ours == HALO_PORT_NETWORK_VERSION && theirs == HALO_NETWORK_VERSION_DEDICATED)
+	if (ours == HALO_NETWORK_VERSION_PLAYERS_OWN_SHIELDS && theirs == HALO_NETWORK_VERSION_DEDICATED)
 		return 1;
 	if (theirs == ours)
 		return 1;

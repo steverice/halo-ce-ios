@@ -272,7 +272,8 @@ static void delta_checks(const char *own_invite)
 	strcpy(list[1].name, "Newer");
 	list[1].players = 20;
 	list[1].maximum_players = 32;
-	list[1].version = HALO_PORT_NETWORK_VERSION + 1;
+	/* Version 39 shares the current codec; 40 is still unsupported. */
+	list[1].version = 40;
 	/* this machine's own game, listed there too: not shown twice */
 	strcpy(list[2].invite, own_invite);
 	strcpy(list[2].name, "Mine");
@@ -287,7 +288,7 @@ static void delta_checks(const char *own_invite)
 		shown[0].network_version == HALO_PORT_NETWORK_VERSION && shown[0].open, "Delta's game of this version");
 	check(count == 2 && !strcmp(shown[0].invite + 12, other), "Delta's game is joined by its invite");
 	check(count == 2 && !strcmp(shown[1].name, "Newer") && shown[1].from_delta && !shown[1].joinable &&
-		shown[1].network_version == HALO_PORT_NETWORK_VERSION + 1 && shown[1].player_count == 20,
+		shown[1].network_version == 40 && shown[1].player_count == 20,
 		"a game of another version is shown, not joinable");
 	for (index = 0; index < P2P_KEY_HASH_SIZE; index++)
 	{
