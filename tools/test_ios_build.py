@@ -350,7 +350,7 @@ def configure_with(monkeypatch, tmp_path, *arguments):
 def test_device_builds_download_from_the_projects_feeds_by_default(monkeypatch, tmp_path, arguments, channel):
     configure = configure_with(monkeypatch, tmp_path, *arguments)
     assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
-    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/profiles' in configure
+    assert f'-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/{channel}/device-profiles-2' in configure
     assert f'-DHALO_RECORDING_FEED_URL=https://code.steverice.org/visr/packs/{channel}/recordings.json' in configure
     assert f'-DHALO_SHADER_FEED_URL=https://code.steverice.org/visr/packs/{channel}/shaders.json' in configure
 
@@ -456,7 +456,7 @@ def test_every_apple_app_declares_exempt_encryption(name):
 def test_native_mac_downloads_the_stable_feeds_by_default(monkeypatch, tmp_path):
     configure = configure_with(monkeypatch, tmp_path, '--native-mac')
     assert '-DHALO_DATA_PACK_PUBLIC_KEY=' + ios_build.DATA_PACK_PUBLIC_KEY in configure
-    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/stable/profiles' in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/stable/device-profiles-2' in configure
     assert '-DHALO_SHADER_FEED_URL=https://code.steverice.org/visr/packs/stable/shaders.json' in configure
     assert '-DHALO_DATA_PACK_CHANNEL_NAME=' in configure
     assert '-DHALO_BUNDLE_IDENTIFIER=org.steverice.visr.native' in configure
@@ -466,7 +466,7 @@ def test_native_mac_testflight_build_names_the_tester_channel_and_the_ios_record
     configure = configure_with(monkeypatch, tmp_path, '--native-mac', '--team', 'TEAM', '--signing-profile', 'UUID',
                                '--data-pack-channel', 'tester')
     assert '-DHALO_DATA_PACK_CHANNEL_NAME=tester' in configure
-    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/tester/profiles' in configure
+    assert '-DHALO_PROFILE_FEED_URL=https://code.steverice.org/visr/packs/tester/device-profiles-2' in configure
     assert '-DHALO_BUNDLE_IDENTIFIER=org.steverice.visr' in configure
     assert '-DHALO_TESTER_BUILD=OFF' in configure
 
@@ -474,3 +474,47 @@ def test_native_mac_testflight_build_names_the_tester_channel_and_the_ios_record
 def test_sandbox_is_only_for_the_native_mac(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         configure_with(monkeypatch, tmp_path, '--unsigned', '--sandbox', 'on')
+
+
+def test_development_hooks_are_compiled_out_of_app_store_packages(tmp_path):
+    from types import SimpleNamespace
+
+    assert ios_build.development_hooks(SimpleNamespace(app_store_package=tmp_path)) == '-DHALO_DEVELOPMENT_HOOKS=OFF'
+    assert ios_build.development_hooks(SimpleNamespace(app_store_package=None)) == '-DHALO_DEVELOPMENT_HOOKS=ON'
+    assert ios_build.development_hooks(SimpleNamespace()) == '-DHALO_DEVELOPMENT_HOOKS=ON'
+
+
+@pytest.mark.parametrize('path, switch', [
+    ('port/ios/host/host_texture_upscale.m', 'HALO_TEXTURE_UPSCALE_STOP_TEST'),
+    ('port/ios/host/host_texture_upscale.m', 'HALO_TEXTURE_UPSCALE_CLEAN'),
+    ('port/ios/host/texture_upscale_model.m', 'HALO_TEXTURE_UPSCALE_MODEL'),
+    ('port/ios/host/host_import.m', 'HALO_TEXTURE_UPSCALE_IMPORT_PHASE'),
+])
+def test_development_switches_are_read_only_inside_the_hooks_guard(path, switch):
+    lines = (Path(__file__).resolve().parents[1] / path).read_text().splitlines()
+    # the stack of open conditionals: True for "#ifdef HALO_DEVELOPMENT_HOOKS" (until its #else), False otherwise
+    stack, guarded = [], []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('#if'):
+            stack.append(stripped == '#ifdef HALO_DEVELOPMENT_HOOKS')
+        elif stripped.startswith(('#else', '#elif')) and stack:
+            stack[-1] = False
+        elif stripped.startswith('#endif') and stack:
+            stack.pop()
+        if f'getenv("{switch}")' in line:
+            guarded.append(any(stack))
+    assert guarded and all(guarded)
+
+
+def test_the_guard_test_refuses_a_switch_under_another_conditional(tmp_path):
+    source = '#if TARGET_OS_IOS\ngetenv("X");\n#endif\n'
+    stack, guarded = [], []
+    for stripped in source.splitlines():
+        if stripped.startswith('#if'):
+            stack.append(stripped == '#ifdef HALO_DEVELOPMENT_HOOKS')
+        elif stripped.startswith('#endif') and stack:
+            stack.pop()
+        if 'getenv("X")' in stripped:
+            guarded.append(any(stack))
+    assert guarded == [False]

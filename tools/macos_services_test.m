@@ -41,6 +41,11 @@ void host_fatal(const char *format, ...) {
     (void)format;
     @throw [NSException exceptionWithName:@"MainThreadRequired" reason:@"expected thread guard" userInfo:nil];
 }
+/* the main-thread guard is a bug, so it crashes (host_crash.c); here it throws like host_fatal */
+void host_crash(const char *format, ...) {
+    (void)format;
+    @throw [NSException exceptionWithName:@"MainThreadRequired" reason:@"expected thread guard" userInfo:nil];
+}
 void host_logf(int priority,const char *format,...) { (void)priority;(void)format; }
 SDL_Window *host_sdl_window(void) { window_reads++; return NULL; }
 SDL_PropertiesID SDL_GetWindowProperties(SDL_Window *window) { (void)window;window_reads++;return 0; }

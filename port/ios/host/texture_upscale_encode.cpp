@@ -86,8 +86,11 @@ static void put64(uint8_t *bytes, uint64_t value)
     put32(bytes, uint32_t(value)); put32(bytes + 4, uint32_t(value >> 32));
 }
 
+static thread_local const volatile int *encode_cancel = nullptr;
+
 static bool encode_bc7(const texture_upscale_rgba_level &level, uint8_t *output, unsigned preset, unsigned threads)
 {
+    const volatile int *cancel = encode_cancel;
     static std::once_flag once;
     std::call_once(once, [] { bc7enc_compress_block_init(); });
     /* Modes 1 and 6 for opaque blocks, 5, 6 and 7 where alpha varies (mode 6 alone shares its indices between color
@@ -105,6 +108,7 @@ static bool encode_bc7(const texture_upscale_rgba_level &level, uint8_t *output,
     auto work = [&]() {
         while (!failed)
         {
+            if (cancel && *cancel) { failed = true; break; }
             unsigned by = next_row.fetch_add(1);
             if (by >= blocks_y) break;
             for (unsigned bx = 0; bx < blocks_x; ++bx)
@@ -237,6 +241,12 @@ int texture_upscale_encode_gate_alpha(const uint8_t *source, const uint8_t *deco
     accumulator.normals = alpha_mode & TEXTURE_UPSCALE_ENCODE_NORMALS;
     accumulator.add(source, decoded, texels);
     return accumulator.finish(metrics);
+}
+
+void texture_upscale_encode_set_cancel(const volatile int *flag)
+{
+    encode_cancel = flag;
+    astc_encode_set_cancel(flag);
 }
 
 const char *texture_upscale_encoder_name(uint32_t format)

@@ -78,7 +78,7 @@ static id bounded_json(NSString *path,NSUInteger limit) {
 static BOOL working_metadata_valid(NSDictionary *value) {
     if(![value isKindOfClass:NSDictionary.class] || ![value[@"schema"] isEqual:@1] ||
        ![value[@"journalABI"] isEqual:@1] || ![value[@"journalFrameSize"] isEqual:@(sizeof(game_perf_frame))])return NO;
-    NSArray *allowed=@[@"schema",@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"mapFormat",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"appVersion",@"appBuild",@"guestSHA256",@"profileHash",@"graphics",@"os",@"networkVersion",@"journalABI",@"journalFrameSize",@"timingSemantics",@"resumed",@"_checkpoint",@"_initialContext"];
+    NSArray *allowed=@[@"schema",@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"mapFormat",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"lowPowerMode",@"frameRateTarget",@"appVersion",@"appBuild",@"guestSHA256",@"profileHash",@"graphics",@"os",@"networkVersion",@"journalABI",@"journalFrameSize",@"timingSemantics",@"resumed",@"_checkpoint",@"_initialContext"];
     for(id key in value)if(![allowed containsObject:key])return NO;
     for(NSString *key in @[@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"renderer",@"mode",@"appVersion",@"appBuild",@"guestSHA256"])
         if(![value[key] isKindOfClass:NSString.class] || ![value[key] length] || [value[key] length]>256)return NO;
@@ -157,10 +157,10 @@ static void enrich_frame(void *unused,game_perf_frame *frame) {(void)unused;host
 static void frame_row(void *unused,const game_perf_frame *frame) {(void)unused;if(!rows)first_frame_id=frame->frame_id;if(rows<trace_limit)append_chunk(1,frame,sizeof(*frame));else {truncated=YES;lost_rows++;if(!omitted_begin_us)omitted_begin_us=frame->elapsed_us;omitted_end_us=frame->elapsed_us;}rows++;duration_us=MAX(duration_us,frame->elapsed_us);}
 static void apply_context_event_to(NSMutableDictionary *context,const game_perf_event *event) {
     if(event->type==GAME_PERF_EVENT_CONTEXT){
-        NSArray *keys=@[@"",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output"];
+        NSArray *keys=@[@"",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"lowPowerMode",@"frameRateTarget"];
         if(event->flags<keys.count && event->flags){id value=@(event->value);
             NSArray *labels=event->flags==1?@[@"unknown",@"metal",@"gles"]:event->flags==2?@[@"unknown",@"campaign",@"multiplayer"]:event->flags==3?@[@"unknown",@"local",@"host",@"client"]:event->flags==9?@[@"unknown",@"flat",@"immersive",@"external"]:nil;
-            if(labels)value=event->value<labels.count?labels[event->value]:@"unknown";context[keys[event->flags]]=value;
+            if(labels)value=event->value<labels.count?labels[event->value]:@"unknown";if(event->flags==10)value=@(event->value!=0);context[keys[event->flags]]=value;
         }
     }
 }
@@ -600,6 +600,7 @@ static BOOL graphics_string_allowed(NSString *name,NSString *value) {
 #define PROFILE_REAL(key, minimum, maximum)
 #define PROFILE_STRING(key, accepted) if([name isEqual:@key])choices=@accepted;
 #define PROFILE_SCENE(key)
+#define PROFILE_VARIABLE(key)
 #define PROFILE_EXTERNAL(key)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -607,6 +608,7 @@ static BOOL graphics_string_allowed(NSString *name,NSString *value) {
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
     if(!choices || !value.length || value.length>80)return NO;
     for(NSString *choice in [choices componentsSeparatedByString:@"|"]){
@@ -623,7 +625,7 @@ void host_perf_reports_graphics(const char *json) {
     if(!worker || !json)return;uint64_t captured_frame=dispatch_get_specific(&worker_key)?graphics_frame_override:host_perf_hooks_frame_id();size_t length=strnlen(json,16385);if(length>16384)return;
     NSData *bytes=[NSData dataWithBytes:json length:length];id snapshot=[NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil];
     if(![snapshot isKindOfClass:NSDictionary.class] || ![snapshot[@"values"] isKindOfClass:NSDictionary.class])return;
-    NSMutableDictionary *allowed=[NSMutableDictionary dictionary];NSArray *keys=@[@"display.renderer",@"display.render_height",@"display.output_height",@"display.render_scale",@"display.max_fps",@"display.frame_rate",@"display.frame_pacing",@"display.frames_in_flight",@"display.frame_spacing",@"display.frame_repeat",@"display.anisotropic_filtering",@"display.shadow_map_size",@"display.model_lod",@"display.anti_aliasing",@"display.foveation",@"display.effect_resolution",@"display.render_quality",@"display.resolution",@"display.resolution_scaling",@"display.upscaler",@"display.vsync",@"display.async_shaders",@"display.lod_scale",@"display.clutter_distance",@"display.compressed_textures",@"display.upscaled_textures",@"display.shadow_batching",@"display.decal_batching",@"display.immersive",@"display.stereo",@"display.interpolation",@"display.late_start",@"display.late_look",@"debug.metal_state_cache",@"debug.metal_specialize",@"debug.metal_vertex_bgra",@"debug.metal_base_vertex",@"debug.gpu_flush_draws",@"debug.dynamic_resolution_shadow"];
+    NSMutableDictionary *allowed=[NSMutableDictionary dictionary];NSArray *keys=@[@"display.renderer",@"display.render_height",@"display.output_height",@"display.render_scale",@"display.max_fps",@"display.frame_rate",@"display.frame_pacing",@"display.frames_in_flight",@"display.frame_spacing",@"display.frame_repeat",@"display.anisotropic_filtering",@"display.shadow_map_size",@"display.model_lod",@"display.anti_aliasing",@"display.foveation",@"display.effect_resolution",@"display.render_quality",@"display.resolution",@"display.resolution_scaling",@"display.upscaler",@"display.vsync",@"display.async_shaders",@"display.lod_scale",@"display.clutter_distance",@"display.compressed_textures",@"display.upscaled_textures",@"display.shadow_batching",@"display.decal_batching",@"display.immersive",@"display.stereo",@"display.interpolation",@"display.late_start",@"display.late_look",@"debug.metal_state_cache",@"debug.metal_specialize",@"debug.metal_vertex_bgra",@"debug.metal_base_vertex",@"debug.gpu_flush_draws",@"debug.dynamic_resolution_shadow",@"display.dynamic_resolution",@"display.dynamic_resolution_floor"];
     for(NSString *key in keys){id value=snapshot[@"values"][key];if(([value isKindOfClass:NSNumber.class] && isfinite([value doubleValue])) || ([value isKindOfClass:NSString.class] && graphics_string_allowed(key,value)))allowed[key]=value;}
     dispatch_block_t apply=^{if([graphics isEqual:allowed] && graphics_hash)return;graphics=[allowed copy];
         NSData *canonical=[NSJSONSerialization dataWithJSONObject:graphics options:NSJSONWritingSortedKeys error:nil];uint8_t digest[32];CC_SHA256(canonical.bytes,(CC_LONG)canonical.length,digest);NSMutableString *hash=[NSMutableString string];for(int i=0;i<32;i++)[hash appendFormat:@"%02x",digest[i]];graphics_hash=hash;if(!metadata)return;metadata[@"graphics"]=graphics;metadata[@"profileHash"]=hash;

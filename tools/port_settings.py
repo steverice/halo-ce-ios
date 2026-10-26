@@ -466,7 +466,6 @@ MAP_KIND_CHOOSER = "main_menu/new_select/list_item_0_map_kind"
 # changes to the PC version's widgets (by our names): attributes set, all
 # their handlers replaced, children added, game data inputs added
 WIDGET_PATCHES = {
-    "main_menu/multiplayer_type_select/join_game/server_count_label": {"set": {"width": 265}},
     # (the main menu's Quit, and B and Back's way to its question, only where
     # the app can end itself: the desktop's and the Mac app's. An iPhone, an
     # iPad, an Apple TV and a Vision Pro leave to the system, and the

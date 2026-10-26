@@ -170,6 +170,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
 @property(nonatomic, copy) NSString *mapName;
 @property(nonatomic) NSUInteger transferBytes;
 @property(atomic, readwrite) NSInteger lastFeedStatus;
+@property(atomic, readwrite) BOOL lastFeedSuperseded;
 @property(nonatomic) BOOL statusRefused;
 @end
 
@@ -266,7 +267,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     NSUInteger total = 0;
     for (NSString *name in encoded) {
         BOOL catalogCompatibility = [_compatibility hasPrefix:@"benchmark-catalog-1:"];
-        BOOL allowed = shaders ? (PackMatches(name, @"^[a-z0-9][a-z0-9_-]{0,62}\\.txt\\z")) : profiles ? ([name isEqual:@"hardware/catalog.toml"] || (name.length < 64 && PackMatches(name, @"^[a-z0-9]+(-[a-z0-9]+)*\\.toml\\z") && ![name isEqual:@"device-profile.toml"])) :
+        BOOL allowed = shaders ? (PackMatches(name, @"^[a-z0-9][a-z0-9_-]{0,62}\\.txt\\z")) : profiles ? ([name isEqual:@"hardware/catalog.toml"] || [name isEqual:@"hardware/revision.toml"] || (name.length < 64 && PackMatches(name, @"^[a-z0-9]+(-[a-z0-9]+)*\\.toml\\z") && ![name isEqual:@"device-profile.toml"])) :
             (PackMatches(name, @"^[a-z0-9][a-z0-9-]{0,47}\\.(input|actions|seeds|route|checks)\\z") ||
                 (catalogCompatibility && [name isEqual:@"benchmark-catalog.json"]));
         NSData *file = allowed ? PackBase64(encoded[name], fileLimit) : nil;
@@ -294,7 +295,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
     }
     if (!pack || ![[NSString stringWithFormat:@"%@-%@", manifest[@"sequence"], manifest[@"sha256"]] isEqual:name]) return nil;
     NSMutableSet *expected = [NSMutableSet setWithArray:files.allKeys];
-    if (files[@"hardware/catalog.toml"]) [expected addObject:@"hardware"];
+    if (files[@"hardware/catalog.toml"] || files[@"hardware/revision.toml"]) [expected addObject:@"hardware"];
     NSDirectoryEnumerator *enumerator = [NSFileManager.defaultManager enumeratorAtPath:filesPath];
     NSMutableSet *actual = [NSMutableSet set];
     for (NSString *relative in enumerator) {
@@ -457,6 +458,13 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
         return NO;
     }
     NSMutableDictionary *files = [pack[@"files"] mutableCopy];
+    if (_supersededCheck && !pack[@"assets"] && _supersededCheck(files)) {
+        // Authenticated but older than the bundled data. Its sequence stays unused: the check runs before the sequence
+        // check at every download anyway, and an app bundling older data (a downgrade, or a build whose bundle is
+        // fixed) sharing this cache must still be able to take the same envelope.
+        self.lastFeedSuperseded = YES;
+        return PackError(error, @"Pack is older than the bundled data");
+    }
     if (pack[@"assets"]) {
         files = [NSMutableDictionary dictionary];
         for (NSString *map in pack[@"assets"]) {
@@ -537,7 +545,7 @@ static NSData *PackShaderInflate(NSData *compressed, NSArray *descriptor) {
         if (completion) dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{ completion(NO); });
         return;
     }
-    _updateCompletion = [completion copy]; _notModified = NO; self.lastFeedStatus = 0; _statusRefused = NO;
+    _updateCompletion = [completion copy]; _notModified = NO; self.lastFeedStatus = 0; self.lastFeedSuperseded = NO; _statusRefused = NO;
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
     configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;

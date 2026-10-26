@@ -13,6 +13,8 @@ render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
 effect_resolution = "half"
+dynamic_resolution = true
+upscaler = "metalfx"
 
 [network]
 player_capacity = 32
@@ -46,3 +48,13 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held (99.84% of frames on time) and so did Sidewinder with 128 (99.76%); Blood Gulch with 64 held 13%. Blood Gulch's 64 is the choice above 32, and 48 was not run; the games that held are not the one that failed, so 32 is the highest count measured to hold on every map. Provisional until rerun on a build with the multiplayer render fixes."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"
+
+[evidence."display.dynamic_resolution"]
+basis = "measured"
+why = "Presented d40-maw-fight at 1080 and 1600 lines and 120 frames a second: 99.97% and 99.99% of frames on time off, 99.97% and 99.96% on, with short drops of up to three levels and recovery within a second; no cost where the GPU keeps up."
+source = "VISR presented benchmark runs, build 20261025.132032, 2026-10-25"
+
+[evidence."display.upscaler"]
+basis = "measured"
+why = "MetalFX spatial scaling from 1080 lines to the 3180x2384 panel kept every tier held: on time at 60 was 99.98% (d40), 99.93% (a10) and 99.97% (b30) against 99.98%, 99.83% and 100% with bilinear; at 120 it was 99.90% (a10) and 99.75% (d40, the device at thermal state 2) against 99.73% and 99.96%. The scaler adds about 1.0 ms of GPU time a frame (offscreen medians 6.6 against 5.6 ms on a10 and 6.4 against 5.5 on d40). Edges are smoother and detail sharper than the bilinear stretch in same-frame comparisons."
+source = "Providence a10-heroic, d40-maw-fight and b30 presented runs, build d290f06fe (20261026.002743), 2026-10-26; offscreen costs from the temporal-aa lane, 2026-10-25"

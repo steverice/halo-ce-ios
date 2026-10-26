@@ -18,13 +18,15 @@ and network.player_capacity (the most players the device holds at 30 frames a
 second, which the host's default and the server browser's marks follow; it
 refuses no one).
 
-An X-macro list, included with the four macros defined:
+An X-macro list, included with all seven macros defined:
 
 	PROFILE_BOOLEAN(name)
 	PROFILE_INTEGER(name, minimum, maximum)
 	PROFILE_REAL(name, minimum, maximum)
 	PROFILE_STRING(name, choices)
 	PROFILE_SCENE(name)
+	PROFILE_VARIABLE(name)
+	PROFILE_EXTERNAL(name)
 
 PROFILE_EXTERNAL names a setting that may vary while driving an external output.
 Display output height is profile-only: valid in the external context, and in a
@@ -39,6 +41,17 @@ class, on every device: each frame stays up the whole number of refreshes
 that gives it ("30" at 60 Hz: two). The setting itself caps the Mac app
 at any rate, and an iPhone, an iPad or an Apple TV under the display's
 highest rate ("60" on a 120 Hz screen); a Vision Pro ignores it.
+
+PROFILE_VARIABLE names a setting a profile may also set for the variable
+workload context ([variable.display]): multiplayer maps, campaign co-op
+(networked or split screen) and campaign with more enemies than 1x, decided
+as each map loads (port/linux/game/scene_class.c) and kept for the whole map.
+Single-player campaign at 1x is the predictable context: the profile's own
+values. The scene classes' values lie over either. Because the context only
+changes at a map load, it may hold settings that reallocate targets (shadow
+maps, anti-aliasing), which scene classes may not. display.dynamic_resolution
+and its floor follow it through the host (host_dynamic_resolution_scene);
+display.render_height is dynamic resolution's ceiling in both contexts.
 
 choices is the accepted values separated by '|'; "#" among them accepts a
 whole number from 30 to 1000 (a frame rate: a profile cannot hold the game
@@ -74,6 +87,8 @@ PROFILE_STRING("display.frame_pacing", "off|tick|refresh")
 PROFILE_STRING("display.frame_rate", "display|unlimited|#")
 PROFILE_STRING("display.async_shaders", "auto|on|off")
 PROFILE_BOOLEAN("display.interpolation")
+PROFILE_BOOLEAN("display.dynamic_resolution")
+PROFILE_INTEGER("display.dynamic_resolution_floor", 240, 2160)
 PROFILE_REAL("input.aim_loss_grace", 0.0, 5.0)
 PROFILE_REAL("display.texture_idle_seconds", 10.0, 600.0)
 PROFILE_REAL("display.clutter_distance", 0.0, 200.0)
@@ -82,6 +97,14 @@ PROFILE_INTEGER("network.player_capacity", 2, 128)
 PROFILE_SCENE("display.render_scale")
 PROFILE_SCENE("display.render_height")
 PROFILE_SCENE("display.frame_rate")
+
+PROFILE_VARIABLE("display.frame_rate")
+PROFILE_VARIABLE("display.render_height")
+PROFILE_VARIABLE("display.render_scale")
+PROFILE_VARIABLE("display.anti_aliasing")
+PROFILE_VARIABLE("display.shadow_map_size")
+PROFILE_VARIABLE("display.dynamic_resolution")
+PROFILE_VARIABLE("display.dynamic_resolution_floor")
 
 PROFILE_EXTERNAL("display.output_height")
 PROFILE_EXTERNAL("display.render_height")

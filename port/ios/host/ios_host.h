@@ -1,4 +1,4 @@
-/* iOS host services for the ILP32 guest in an aligned native address arena. */
+/* iOS host services for the ILP32 guest in a native address arena. */
 #ifndef HALO_IOS_HOST_H
 #define HALO_IOS_HOST_H
 #include "host.h"
@@ -6,8 +6,10 @@
 extern uintptr_t host_arena;
 extern uint64_t host_arena_size;   /* 4 GiB, or the shorter reservation used when that is refused */
 extern int host_arena_try_full;    /* tests set 0 to take the shorter reservation */
-static inline void *host_pointer(uint64_t p) { return p ? (void *)(host_arena | (uint32_t)p) : NULL; }
-static inline uint32_t guest_pointer(const void *p) { return (uint32_t)(uintptr_t)p; }
+extern int host_arena_force_unaligned; /* tests set 1 to place it off every multiple of 4 GiB */
+/* A guest pointer is an offset into the arena, which need not start at a multiple of 4 GiB. */
+static inline void *host_pointer(uint64_t p) { return p ? (void *)(host_arena + (uint32_t)p) : NULL; }
+static inline uint32_t guest_pointer(const void *p) { return p ? (uint32_t)((uintptr_t)p - host_arena) : 0; }
 uint32_t host_ios_default_framebuffer(void);
 struct SDL_Window;
 struct SDL_Gamepad;
@@ -48,6 +50,8 @@ app that submits GPU work in the background and a closed visionOS window only
 backgrounds the app */
 void host_lifecycle_install(void);
 void host_lifecycle_hold(void);
+/* gpu_metal.m (display.frame_deadline): the frame's work has ended; nothing on a Vision Pro */
+void gpu_metal_frame_deadline_end(void);
 void host_sdl_audio_pause(int paused);
 /* the runner's pinned display (HALO_HOST_DISPLAY, host_main.m): the drawable size the guest is told */
 void host_sdl_pin_window_pixels(int width, int height);
@@ -85,6 +89,12 @@ void host_frame_rate_profile(int rate);
    (gpu_frame_context, gpu_metal.m) when one is in force, else host_frame_rate_cap's; 0 for none. What the
    frame pacer spaces frames for and judges them against (host_frame_pacer.c) */
 double host_frame_rate_target(void);
+/* whether Low Power Mode's frame rate is in force for the frames from now on (low_power.h, host_gpu_dispatch.c:
+   host_frame_rate_cap and host_frame_rate_target then hold its halved rate) */
+int host_frame_rate_low_power(void);
+/* host_frame_rate_target in frames a second, the display's rate (as Low Power Mode leaves it) where that is 0; 0 when
+   unknown. What performance reports and benchmark runs record as the frame rate target */
+double host_frame_rate_effective(void);
 void host_frame_rate_scene(double rate);
 double host_frame_rate_limit(void);
 /* a benchmark case's display.frame_rate for the runs from now on (frames a second, as the configuration's would be

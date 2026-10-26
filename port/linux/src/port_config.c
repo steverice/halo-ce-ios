@@ -191,6 +191,14 @@ static const struct config_setting config_settings[] =
 		"menus, text and letterbox bars at the display's own resolution over the\n"
 		"scaled-up scene. false scales them up with the scene. No effect, and no\n"
 		"cost, at native resolution or on Apple Vision Pro." },
+	{ "display.dynamic_resolution", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION", _environment_value, _platform_ios,
+		"Metal renderer, in gameplay: lower the 3D view's resolution while the GPU\n"
+		"cannot keep up and raise it again when it can, between frames, from\n"
+		"display.render_height (the ceiling) down to display.dynamic_resolution_floor.\n"
+		"The HUD and menus stay at the display's resolution. Read at launch." },
+	{ "display.dynamic_resolution_floor", _config_integer, "540", "HALO_DYNAMIC_RESOLUTION_FLOOR", _environment_value, _platform_ios,
+		"The fewest lines display.dynamic_resolution draws the 3D view at; never\n"
+		"fewer than half the ceiling's. Read at launch." },
 	{ "display.anti_aliasing", _config_string, "\"off\"", "HALO_ANTI_ALIASING", _environment_value, _platform_all,
 		"Smoothing of jagged edges, which the Xbox did not have: \"off\", or\n"
 		"\"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size\n"
@@ -656,6 +664,12 @@ static const struct config_setting config_settings[] =
 		"What draws the game: \"metal\" (default) Metal, or \"gl\" OpenGL ES, for\n"
 		"debugging only: it lacks the Metal renderer's performance work and\n"
 		"measures no GPU time. Changes apply on relaunch." },
+	{ "display.frame_deadline", _config_boolean, "true", "HALO_FRAME_DEADLINE", _environment_set_is_true, _platform_ios,
+		"Tell the system each frame's deadline (the frame rate's period), so the\n"
+		"CPU keeps the clock that finishes frames in time while frames under a\n"
+		"frame rate cap wait for the display; without it an A9X's clock fell to\n"
+		"its lowest and frames ran late. Not on a Vision Pro, whose frames the\n"
+		"system times. false leaves it off." },
 	{ "display.frame_pacing", _config_string, "\"off\"", "HALO_FRAME_PACING", _environment_value, _platform_ios,
 		"How the Metal renderer times frames: \"off\" (default) shows each frame as\n"
 		"soon as it's drawn; \"tick\" shows every frame for the same whole number\n"
@@ -756,7 +770,8 @@ static const struct config_setting config_settings[] =
 		"from port/assets/titles; false draws the maps' bitmap fonts and titles." },
 	{ "display.upscaled_textures", _config_boolean, "true", "HALO_UPSCALED_TEXTURES", _environment_value, _platform_all,
 		"Draw upscaled textures (made on this device from your copy of the game)\n"
-		"where they exist; false draws the maps' own. Takes effect at the next\n"
+		"where they exist; false draws the maps' own. A device profile that sets\n"
+		"false turns them off whatever this says. Takes effect at the next\n"
 		"level load." },
 	{ "display.upscaled_textures_memory", _config_integer, "0", "HALO_UPSCALED_TEXTURES_MEMORY", _environment_value,
 		_platform_all,
@@ -1139,6 +1154,16 @@ static const struct config_setting config_settings[] =
 		"arms tuning as the game runs (laser mode, aim assist, steadying, pitch offset,\n"
 		"origin raise, reticle easing, arms, gun smoothing), and the game sees neither\n"
 		"stick meanwhile. Off, Back with those buttons is ordinary game input." },
+	{ "debug.halt_screen", _config_boolean, "false", "HALO_HALT_SCREEN", _environment_value, _platform_ios,
+		"On a fatal game error (a failed assertion or a halt), stop on the game's\n"
+		"halt screen, its recent messages on a blue background, instead of crashing.\n"
+		"Off, the app crashes, and ios-runtime.log and the crash report have the error\n"
+		"and the game's frames (tools/guest_symbolicate.py reads the report)." },
+	{ "debug.crash_test", _config_string, "\"\"", "HALO_CRASH_TEST", _environment_value, _platform_ios,
+		"Fail on purpose 150 frames after the game starts, to check crash reports:\n"
+		"\"halt\" (a failed assertion), \"fault\" (a memory fault in game code), \"trap\"\n"
+		"(a trap instruction) or \"abort\" (the game runtime's fatal error); \"map\" fails\n"
+		"the first level load instead, which shows a message; empty, never." },
 	{ "debug.upscaled_textures_toggle", _config_boolean, "false", "HALO_UPSCALED_TEXTURES_TOGGLE", _environment_value,
 		_platform_ios,
 		"While Back is held, the D-pad's up switches all of the level's textures\n"
@@ -1193,6 +1218,22 @@ static const struct config_setting config_settings[] =
 		"first campaign and first multiplayer case, in real time, as a check.\n"
 		"On in tester builds for \"full-unified\". Ignored without a suite and\n"
 		"on Vision Pro." },
+	{ "debug.benchmark_offscreen_mode", _config_string, "\"serialized\"", "HALO_BENCHMARK_OFFSCREEN_MODE", _environment_value,
+		_platform_ios,
+		"With debug.benchmark_offscreen, how the offscreen runs' frames go:\n"
+		"\"serialized\" (default) waits for each lens flare's visibility answer, so\n"
+		"the CPU and the GPU take turns and the CPU time counts the GPU's;\n"
+		"\"pipelined\" takes every answer from three frames before, the same every\n"
+		"run, so frames overlap as they do on screen: frames a second near\n"
+		"1/max(CPU, GPU), for comparing settings' costs, not for frame rate tiers." },
+	{ "debug.benchmark_virtual_display", _config_boolean, "false", "HALO_BENCHMARK_VIRTUAL_DISPLAY", _environment_set_is_true,
+		_platform_ios,
+		"With debug.benchmark_offscreen: every run of the suite is drawn\n"
+		"offscreen in real time against a virtual display: refreshes at the\n"
+		"display's rate (or display.frame_rate's cap), three virtual drawables, each\n"
+		"held on the virtual screen until the next frame replaces it, and the same\n"
+		"frame pacer and frame timing as a shown run. Visibility answers come from\n"
+		"three frames before." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"
@@ -1340,6 +1381,10 @@ static const struct config_setting config_settings[] =
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens (of game time under\n"
 		"debug.fixed_timestep); 0 never." },
+	{ "debug.init_after", _config_real, "0.0", "HALO_INIT_AFTER", _environment_value, _platform_all,
+		"Run init.txt's commands this many seconds after start-up instead of at\n"
+		"once, so a test can wait at the main menu and then start a level\n"
+		"('map_name a10') in the same launch; 0 at once." },
 	{ "debug.benchmark_window_marker", _config_boolean, "false", "HALO_BENCHMARK_WINDOW_MARKER", _environment_set_is_true, _platform_all,
 		"Show the measured benchmark window and a five-second countdown onscreen." },
 	{ "debug.benchmark_review_take", _config_boolean, "false", "HALO_BENCHMARK_REVIEW_TAKE", _environment_set_is_true, _platform_all,
@@ -1362,6 +1407,11 @@ static const struct config_setting config_settings[] =
 		"Log when each frame reached the display and how long after its work began\n"
 		"(the frame pacer, with the Metal renderer; not a Vision Pro or a\n"
 		"simulator), to see how evenly and how late frames are shown." },
+	{ "debug.frame_cpu_probe", _config_boolean, "false", "HALO_FRAME_CPU_PROBE", _environment_set_is_true, _platform_ios,
+		"Benchmark reports also carry, for every frame, the drawing thread's own\n"
+		"CPU time, the whole app's, and how long a fixed loop took (which falls\n"
+		"as the core's clock rises), to tell a slow clock or another thread's\n"
+		"work from waiting." },
 	{ "debug.visibility_any_sample", _config_boolean, "false", "HALO_VISIBILITY_ANY_SAMPLE", _environment_set_is_true, _platform_ios,
 		"The Metal renderer's visibility tests (lens flares) only say whether\n"
 		"anything was visible, as before they counted how much: a light that is\n"
@@ -1373,6 +1423,12 @@ static const struct config_setting config_settings[] =
 	{ "debug.frame_load_every", _config_real, "0.0", "HALO_FRAME_LOAD_EVERY", _environment_value, _platform_ios,
 		"With debug.frame_load_cpu: the made-up work comes and goes, on in every\n"
 		"other span of this many seconds, as a fight would. 0 (default): always." },
+	{ "debug.low_power_frame_rate", _config_string, "\"true\"", "HALO_LOW_POWER_FRAME_RATE", _environment_value, _platform_ios,
+		"In Low Power Mode, gameplay and cutscenes aim for half the frame rate\n"
+		"they aim for otherwise (120 to 60, 60 to 30, never under 30) and menus\n"
+		"keep the display's pace: \"true\" (default); \"false\" keeps the rate in\n"
+		"Low Power Mode; \"always\" acts as if Low Power Mode were on, for testing.\n"
+		"Not on a Vision Pro." },
 	{ "debug.frame_load_gpu", _config_integer, "0", "HALO_FRAME_LOAD_GPU", _environment_value, _platform_ios,
 		"Made-up GPU work added to every frame: that many extra full-size draws\n"
 		"(the Metal renderer), with debug.frame_load_cpu. 0 (default): none." },
@@ -1462,6 +1518,17 @@ static const struct config_setting config_settings[] =
 	{ "debug.dynamic_resolution_shadow", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION_SHADOW", _environment_value, _platform_ios,
 		"With the Metal renderer, log and record the dynamic resolution planner's\n"
 		"choices without changing the rendered resolution." },
+	{ "debug.dynamic_resolution_lines", _config_integer, "0", "HALO_DYNAMIC_RESOLUTION_LINES", _environment_value, _platform_ios,
+		"Turn dynamic resolution on and hold the 3D view at this many lines inside\n"
+		"its ceiling's targets (from its floor to its ceiling), for comparisons; 0\n"
+		"for the planner's choice. Read at launch." },
+	{ "debug.dynamic_resolution_validate", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION_VALIDATE", _environment_value, _platform_ios,
+		"Turn dynamic resolution on, also in benchmark runs, where a case's lines\n"
+		"are the ceiling: the per-model validation run. Read at launch." },
+	{ "debug.dynamic_resolution_sweep", _config_boolean, "false", "HALO_DYNAMIC_RESOLUTION_SWEEP", _environment_value, _platform_ios,
+		"Turn dynamic resolution on and step the 3D view from its ceiling to its\n"
+		"floor and back, a level every 30 frames, in place of the planner. Read at\n"
+		"launch." },
 	{ "debug.gpu_stats", _config_boolean, "false", "HALO_GPU_STATS", _environment_set_is_true, _platform_all,
 		"Log the renderer's draw counts once a second." },
 	{ "debug.gpu_trace_frame", _config_integer, "-1", "HALO_GPU_TRACE", _environment_value, _platform_all,
@@ -1488,6 +1555,10 @@ static const struct config_setting config_settings[] =
 		"Draw the companion HUD without an external display and save it with screenshots." },
 	{ "debug.screenshot_directory", _config_string, "\"\"", "HALO_SCREENSHOT_DIR", _environment_value, _platform_all,
 		"A folder to save frames to (with screenshot_every); empty none." },
+	{ "debug.shadow_blur", _config_string, "\"footprint\"", "HALO_SHADOW_BLUR", _environment_value, _platform_all,
+		"How object shadows larger than 128 texels (display.shadow_map_size) are blurred: \"footprint\" over\n"
+		"the area the game's blur covers at 128, \"xbox\" the game's taps at their fixed offsets (at 512 they\n"
+		"fall 4 texels apart and show as separate copies). 128-texel shadows always get the game's blur." },
 	{ "debug.screenshot_every", _config_integer, "0", "HALO_SCREENSHOT_EVERY", _environment_value, _platform_all,
 		"Save every this many frames to screenshot_directory; 0 none." },
 	{ "debug.texture_astc", _config_string, "\"auto\"", "HALO_TEXTURE_ASTC", _environment_value, _platform_ios,
@@ -1495,8 +1566,11 @@ static const struct config_setting config_settings[] =
 		"once the release enables it, \"force\" emulates a GPU without BC for validation, \"off\" disables it. Requires compressed_textures." },
 	{ "debug.texture_astc_sync", _config_boolean, "false", "HALO_TEXTURE_ASTC_SYNC", _environment_set_is_true, _platform_ios,
 		"Wait for ASTC map preparation before loading, for screenshot validation only." },
-	{ "debug.texture_upscale_generate", _config_boolean, "false", "HALO_TEXTURE_UPSCALE_GENERATE", _environment_set_is_true, _platform_ios,
-		"Generate the on-device upscaled texture cache in menus for development." },
+	{ "debug.texture_upscale_generate", _config_string, "\"auto\"", "HALO_TEXTURE_UPSCALE_GENERATE", _environment_value, _platform_ios,
+		"Make upscaled textures on this device: \"auto\" (default) where the device's profile\n"
+		"and the display.upscaled_textures switch both say so and Core ML has a Neural Engine\n"
+		"(at import, in menus, loading and pauses, never in gameplay), \"force\" whatever the\n"
+		"profile says, \"off\" never." },
 	{ "debug.texture_upscale_export", _config_boolean, "false", "HALO_TEXTURE_UPSCALE_EXPORT", _environment_set_is_true, _platform_ios,
 		"Export the generator's policy table and uncompressed textures for parity checks." },
 	{ "debug.texture_dump_directory", _config_string, "\"\"", "HALO_TEXTURE_DUMP", _environment_value, _platform_all,
@@ -1594,6 +1668,7 @@ static const char *const config_profile_keys[] =
 #define PROFILE_REAL(name, minimum, maximum) name,
 #define PROFILE_STRING(name, choices) name,
 #define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -1601,6 +1676,7 @@ static const char *const config_profile_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -1611,6 +1687,7 @@ static const char *const config_scene_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name) name,
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -1618,6 +1695,7 @@ static const char *const config_scene_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -1628,6 +1706,7 @@ static const char *const config_external_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name) name,
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -1635,6 +1714,27 @@ static const char *const config_external_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
+#undef PROFILE_EXTERNAL
+};
+
+/* those it may set for the variable-workload context ([variable.display]), which changes only at a map load */
+static const char *const config_variable_keys[] =
+{
+#define PROFILE_BOOLEAN(name)
+#define PROFILE_INTEGER(name, minimum, maximum)
+#define PROFILE_REAL(name, minimum, maximum)
+#define PROFILE_STRING(name, choices)
+#define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name) name,
+#define PROFILE_EXTERNAL(name)
+#include "port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -1692,6 +1792,9 @@ static struct config_setting_state
 	/* a scene class's value, from the highest layer that has one (text NULL: none) */
 	struct config_profile_value scene[NUMBER_OF_CONFIG_SCENES];
 	struct config_value scene_value[NUMBER_OF_CONFIG_SCENES];
+	/* the variable-workload context's value ([variable.display]), from the highest layer that has one */
+	struct config_profile_value variable;
+	struct config_value variable_value;
 	/* Index 0 is the external base, then menu and cutscene. */
 	struct config_profile_value external[NUMBER_OF_CONFIG_SCENES];
 	struct config_value external_value[NUMBER_OF_CONFIG_SCENES];
@@ -2456,7 +2559,7 @@ static void config_profile_load_text(const char *line, int point, int networked)
 				for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && strcmp(config_scene_names[scene], fields[3]); scene++)
 					;
 				if (scene == NUMBER_OF_CONFIG_SCENES || !config_name_in(fields[0], config_scene_keys,
-					sizeof(config_scene_keys) / sizeof(config_scene_keys[0])))
+				sizeof(config_scene_keys) / sizeof(config_scene_keys[0])))
 					continue;
 			}
 			free(config_states[index].external[scene].text);
@@ -2464,6 +2567,21 @@ static void config_profile_load_text(const char *line, int point, int networked)
 			config_states[index].external[scene].text = strdup(fields[1]);
 			config_states[index].external[scene].source = strdup(fields[2]);
 			config_set_from_profile_text(&config_states[index].external_value[scene], config_settings[index].type, fields[1]);
+			continue;
+		}
+		if (count == 4 && !strcmp(fields[3], "variable"))
+		{
+			if (!config_name_in(fields[0], config_variable_keys, sizeof(config_variable_keys) / sizeof(config_variable_keys[0])))
+			{
+				platform_log("settings: the device profile sets %s for the variable workload, which this build cannot; ignored",
+					fields[0]);
+				continue;
+			}
+			free(config_states[index].variable.text);
+			free(config_states[index].variable.source);
+			config_states[index].variable.text = strdup(fields[1]);
+			config_states[index].variable.source = strdup(fields[2]);
+			config_set_from_profile_text(&config_states[index].variable_value, config_settings[index].type, fields[1]);
 			continue;
 		}
 		if (count == 4)
@@ -2856,10 +2974,10 @@ static void config_dump(void)
 			continue;
 		if (!dump_all && state->source == _source_default && !state->profile_count)
 		{
-			/* (nothing set it; a scene class's value alone still has its line) */
+			/* (nothing set it; a scene class's or the variable context's value alone still has its line) */
 			for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && !state->scene[scene].text; scene++)
 				;
-			if (scene == NUMBER_OF_CONFIG_SCENES)
+			if (scene == NUMBER_OF_CONFIG_SCENES && !state->variable.text)
 				continue;
 		}
 		config_literal(setting->type, &config_values[index], literal, sizeof(literal));
@@ -2895,6 +3013,13 @@ static void config_dump(void)
 		else
 		{
 			snprintf(piece, sizeof(piece), " over %s [default]", literal);
+			config_append(&line, piece);
+		}
+		if (state->variable.text)
+		{
+			config_literal(setting->type, &state->variable_value, literal, sizeof(literal));
+			snprintf(piece, sizeof(piece), "; variable %s [%s]%s", literal, state->variable.source,
+				state->source == _source_file || state->source == _source_environment ? " (not used: the value is set)" : "");
 			config_append(&line, piece);
 		}
 		for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES; scene++)
@@ -3301,7 +3426,7 @@ unsigned long config_changes(void)
 static void config_profile_signature(size_t index, char *text, size_t size)
 {
 	struct config_setting_state *state = &config_states[index];
-	snprintf(text,size,"%s",state->device_literal ? state->device_literal : "");
+	snprintf(text,size,"%s|%s",state->device_literal ? state->device_literal : "",state->variable.text ? state->variable.text : "");
 	for (int i=0;i<NUMBER_OF_CONFIG_SCENES;i++)
 	{
 		size_t used = strlen(text);
@@ -3336,6 +3461,9 @@ int config_profile_apply_snapshot(const char *snapshot, const char *version, int
 			memset(&state->profile[layer],0,sizeof(state->profile[layer]));
 		}
 		state->profile_count = 0;
+		free(state->variable.text); free(state->variable.source); free(state->variable_value.string);
+		memset(&state->variable,0,sizeof(state->variable));
+		memset(&state->variable_value,0,sizeof(state->variable_value));
 		for (int scene=0;scene<NUMBER_OF_CONFIG_SCENES;scene++)
 		{
 			free(state->scene[scene].text); free(state->scene[scene].source);
@@ -3447,6 +3575,9 @@ stands in for the device's while the scene is that class, and only while
 the setting's value comes from its default or the profile: one the player
 or the environment set is the value in every scene. */
 
+/* the workload context of the map in force (config_workload_set): 1 while it is variable */
+static int config_workload_is_variable;
+
 /* The game-thread sampler shares resolution without config_value's initialization lock. */
 static const struct config_value *config_scene_value_cached(size_t index, int scene, int external)
 {
@@ -3462,6 +3593,8 @@ static const struct config_value *config_scene_value_cached(size_t index, int sc
 		}
 		if (scene > 0 && scene < NUMBER_OF_CONFIG_SCENES && state->scene[scene].text)
 			return &state->scene_value[scene];
+		if (config_workload_is_variable && state->variable.text)
+			return &state->variable_value;
 	}
 	return &config_values[index];
 }
@@ -3507,6 +3640,52 @@ int config_scene_string(const char *name, int scene, char *text, size_t size)
 const char *config_scene_name(int scene)
 {
 	return scene >= 0 && scene < NUMBER_OF_CONFIG_SCENES ? config_scene_names[scene] : "";
+}
+
+/* ---------- the workload context
+
+The map in force is predictable (single-player campaign at standard
+settings: the profile's own values) or variable (multiplayer, co-op beyond a
+small LAN game, more enemies: [variable.display] over them), decided as each
+map loads (port/linux/game/scene_class.c). The scene classes lie over either. */
+
+int config_workload_variable(void)
+{
+	return config_workload_is_variable;
+}
+
+int config_workload_set(int variable, const char *reasons)
+{
+	char changes[512] = "";
+	size_t index, length = 0;
+
+	(void)config_boolean("debug.settings_dump");   /* the first load */
+	variable = variable != 0;
+	if (variable == config_workload_is_variable)
+		return 0;
+	pthread_mutex_lock(&config_lock);
+	config_workload_is_variable = variable;
+	config_change_count++;
+	pthread_mutex_unlock(&config_lock);
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting_state *state = &config_states[index];
+		char literal[600];
+		int written;
+
+		if (!state->variable.text || (state->source != _source_default && state->source != _source_profile))
+			continue;
+		config_literal(config_settings[index].type, variable ? &state->variable_value : &config_values[index], literal,
+			sizeof(literal));
+		written = snprintf(changes + length, sizeof(changes) - length, "%s%s %s [%s]", length ? ", " : "",
+			config_settings[index].name, literal, variable ? state->variable.source : "predictable");
+		if (written < 0 || (size_t)written >= sizeof(changes) - length)
+			break;
+		length += (size_t)written;
+	}
+	platform_log("workload: %s (%s)%s%s", variable ? "variable" : "predictable", reasons && *reasons ? reasons : "",
+		*changes ? ": " : "", changes);
+	return 1;
 }
 
 void config_profile_settings_text(char *text, size_t size)
@@ -3709,11 +3888,13 @@ int config_scene_describe(int scene, char *text, size_t size)
 			source = state->external[scene].source, external = 1;
 		else if (value == &state->external_value[0])
 			source = state->external[0].source, external = 1;
+		else if (value == &state->variable_value)
+			source = state->variable.source, external = 2;
 		if (!source)
 			continue;
 		config_literal(config_settings[index].type, value, literal, sizeof(literal));
 		written = snprintf(text + length, size - length, "%s%s %s [%s%s]", length ? ", " : "", config_settings[index].name,
-			literal, source, external ? ", external" : "");
+			literal, source, external == 1 ? ", external" : external == 2 ? ", variable" : "");
 		if (written < 0 || (size_t)written >= size - length)
 			break;
 		length += (size_t)written;

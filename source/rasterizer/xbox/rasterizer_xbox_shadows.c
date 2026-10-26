@@ -202,7 +202,8 @@ rather than drawn again. A frame with more shadows than slots generates
 the rest the game's own way, in the apply stretch. The shadows are drawn
 into tiles of the shadow atlas (rasterizer_xbox.c), one render pass a page
 rather than one a shadow, and blurred out of them once the window's are
-all drawn. */
+all drawn: into tiles of blur pages, one render pass a page, which then
+become their second targets (rasterizer_xbox.c). */
 #define DEFERRED_SHADOW_ENTRIES 256
 
 struct deferred_shadow
@@ -228,6 +229,59 @@ void rasterizer_shadow_atlas_frame_begin(void);
 short rasterizer_shadow_atlas_capacity(void);
 boolean rasterizer_shadow_atlas_select(short tile);
 boolean rasterizer_shadow_atlas_mapping(real *u0, real *v0, real *scale);
+short rasterizer_shadow_blur_capacity(void);
+boolean rasterizer_shadow_blur_select(short tile);
+boolean rasterizer_shadow_blur_copy(short first, short count);
+short rasterizer_shadow_prepass_begin(short first, short last);
+void rasterizer_shadow_targets_swap(void);
+boolean rasterizer_shadow_prepass_select(short tile);
+boolean rasterizer_shadow_blur_select_prepassed(short tile);
+float halo_shadow_target_scale(void);
+int halo_shadow_blur_footprint(void);
+
+/* port: the footprint blur, for shadow maps larger than the game's 128 texels (display.shadow_map_size;
+halo_shadow_blur_footprint, d3d8_device.c). The game's blur takes four taps half a 128-texel map's texel apart
+diagonally, in texture coordinates, so at 512 texels they fall 4 texels apart on a sharper silhouette and each
+shows as its own shifted copy. The footprint blur first averages a box of about the scale's texels a side (a
+pre-pass, into pre-pass pages laid out as the atlas's), then takes the game's taps from that, so it averages the
+area it did at 128: an 8-texel box at 512, the 2-texel box at 128. To 4 times the game's size the box is exact
+(4 bilinear taps); larger maps get 4 taps spaced evenly over it. 128-texel shadows keep the game's blur. */
+static boolean convolve_taps_set = FALSE;
+static real convolve_taps[4][2];
+
+/* the pre-pass's taps for the next rasterizer_shadow_convolve, in the shadow map's texture coordinates: centered
+half a texel past the game's quad's own shift (half a 128-texel map's texel), the box's taps spread over it */
+static void convolve_taps_footprint(
+	void)
+{
+	real scale = halo_shadow_target_scale();
+	real texels = 128.0f * scale;
+	real center = -(0.5f * scale + 0.5f);
+	real spread = 0.5f * (scale <= 4.0f ? (scale > 2.0f ? scale - 2.0f : 0.0f) : 0.5f * scale);
+	real const low = (center - spread) / texels, high = (center + spread) / texels;
+
+	convolve_taps[0][0] = low;
+	convolve_taps[0][1] = low;
+	convolve_taps[1][0] = high;
+	convolve_taps[1][1] = high;
+	convolve_taps[2][0] = low;
+	convolve_taps[2][1] = high;
+	convolve_taps[3][0] = high;
+	convolve_taps[3][1] = low;
+	convolve_taps_set = TRUE;
+}
+
+/* the footprint blur of the game's own shadow targets (a shadow without a deferred slot): the pre-pass into the
+second target, then the game's taps from it into the first, and the two swapped so the shadow is applied from the
+blurred one (they are alike; the next slot select puts them back) */
+static void rasterizer_shadow_convolve_footprint(
+	void)
+{
+	convolve_taps_footprint();
+	rasterizer_shadow_convolve();
+	rasterizer_shadow_targets_swap();
+	rasterizer_shadow_convolve();
+}
 
 /* the window's first deferred shadow (rasterizer_environment_shadows_defer_begin): those from it on are
 blurred when the window's shadows are all drawn */
@@ -262,6 +316,9 @@ boolean _rasterizer_environment_shadow_begin(
 	boolean success = TRUE;
 	real inverse_radius;
 	real vsh_constants__screenproj[20];
+	/* port: a new atlas tile is already black: its page was cleared, gutters and all, before the frame's first
+	tile in it (shadow_atlas_page), and a tile holds one shadow a frame, so the shadow's own clear is skipped */
+	boolean cleared_tile = FALSE;
 
 	match_assert(
 		"c:\\halo\\SOURCE\\rasterizer\\xbox\\rasterizer_xbox_shadows.c",
@@ -309,6 +366,7 @@ boolean _rasterizer_environment_shadow_begin(
 			entry->radius = object_bounding_radius;
 			deferred_shadow_current = deferred_shadow_count++;
 			deferred_shadows_drawn = TRUE;
+			cleared_tile = deferred_shadows_in_atlas();
 		}
 		else
 		{
@@ -402,7 +460,7 @@ boolean _rasterizer_environment_shadow_begin(
 			2,
 			0,
 			rasterizer_debug_options.shadow_debug_enabled ? 0x88888888 : 0,
-			TRUE,
+			!cleared_tile || rasterizer_debug_options.shadow_debug_enabled, /* port */
 			FALSE);
 		rasterizer_set_stencil_mode(0);
 
@@ -679,7 +737,10 @@ void _rasterizer_environment_shadow_draw(
 			/* port: (a deferred shadow was blurred when it was generated) */
 			if (rasterizer_debug_options.shadow_convolution_enabled && !deferred_shadow_applying)
 			{
-				rasterizer_shadow_convolve();
+				if (halo_shadow_blur_footprint())
+					rasterizer_shadow_convolve_footprint();
+				else
+					rasterizer_shadow_convolve();
 			}
 
 			rasterizer_set_target_as_texture(
@@ -1005,15 +1066,52 @@ void rasterizer_environment_shadows_defer_end(
 	void)
 {
 	deferred_shadows_generating = FALSE;
-	/* the window's new shadows, blurred out of their tiles: one render pass each, into their slots */
+	/* the window's new shadows, blurred out of their atlas tiles into blur pages' tiles, which then become their
+	slots' second targets; if they cannot, each is blurred into its slot, a render pass each, with the game's blur.
+	The footprint blur's pre-pass goes first, a run of as many atlas pages as there are pre-pass pages at a time */
 	if (deferred_shadows_drawn && deferred_shadows_in_atlas())
 	{
-		short index;
+		boolean footprint = halo_shadow_blur_footprint();
+		boolean pages = rasterizer_shadow_blur_capacity() > 0;
+		short count = deferred_shadow_count - deferred_shadow_window_first;
+		short index, run, end;
+		boolean blurred = TRUE;
 
-		for (index = deferred_shadow_window_first; index < deferred_shadow_count; index++)
+		for (run = deferred_shadow_window_first; run < deferred_shadow_count && blurred; run = end)
 		{
-			if (rasterizer_shadow_atlas_select(index))
-				rasterizer_shadow_convolve();
+			end = deferred_shadow_count;
+			if (footprint)
+			{
+				end = rasterizer_shadow_prepass_begin(run, deferred_shadow_count);
+				if (end <= run)
+				{
+					blurred = FALSE;
+					break;
+				}
+				for (index = run; index < end && blurred; index++)
+				{
+					if ((blurred = rasterizer_shadow_prepass_select(index)))
+					{
+						convolve_taps_footprint();
+						rasterizer_shadow_convolve();
+					}
+				}
+			}
+			/* (without blur pages, each into its slot's second target) */
+			for (index = run; index < end && blurred; index++)
+			{
+				if ((blurred = footprint ? rasterizer_shadow_blur_select_prepassed(index) :
+					pages ? rasterizer_shadow_blur_select(index) : rasterizer_shadow_atlas_select(index)))
+					rasterizer_shadow_convolve();
+			}
+		}
+		if (!blurred || (pages && !rasterizer_shadow_blur_copy(deferred_shadow_window_first, count)))
+		{
+			for (index = deferred_shadow_window_first; index < deferred_shadow_count; index++)
+			{
+				if (rasterizer_shadow_atlas_select(index))
+					rasterizer_shadow_convolve();
+			}
 		}
 	}
 	rasterizer_shadow_slot_select(0);
@@ -1170,6 +1268,18 @@ static void rasterizer_shadow_convolve(
 		vertex_constants[7][1] = 1.0f;
 		vertex_constants[7][2] = 0.0f;
 		vertex_constants[7][3] = -0.00390625f;
+		/* port: debug.shadow_blur's taps, in place of the game's (each pair of rows is one tap's u and v) */
+		if (convolve_taps_set)
+		{
+			short tap;
+
+			for (tap = 0; tap < 4; tap++)
+			{
+				vertex_constants[2 * tap][3] = convolve_taps[tap][0];
+				vertex_constants[2 * tap + 1][3] = convolve_taps[tap][1];
+			}
+			convolve_taps_set = FALSE;
+		}
 		/* port: from an atlas tile, the coordinates moved into it (the gutter
 		past its edges is black, as the border the taps there read) */
 		{

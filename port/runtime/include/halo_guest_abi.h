@@ -34,7 +34,7 @@ This header is included by both halves.
 #define HALO_GUEST_WINDOW_SIZE 0x08000000u
 
 #define HALO_GUEST_MAGIC 0x4f4c4148u /* 'HALO' */
-#define HALO_GUEST_ABI_VERSION 2 /* x27 carries the aligned native arena */
+#define HALO_GUEST_ABI_VERSION 3 /* x27 carries the native arena; guest pointers are added to it */
 
 /* at HALO_GUEST_IMAGE_BASE */
 struct halo_guest_header

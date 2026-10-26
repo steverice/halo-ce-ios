@@ -214,6 +214,26 @@
             "apple"
           ]
         },
+        "dynamic_resolution": {
+          "type": "boolean",
+          "default": false,
+          "description": "Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. The HUD and menus stay at the display's resolution. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_floor": {
+          "type": "integer",
+          "default": 540,
+          "description": "The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_FLOOR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "anti_aliasing": {
           "type": "string",
           "default": "off",
@@ -677,6 +697,16 @@
             "apple"
           ]
         },
+        "frame_deadline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Tell the system each frame's deadline (the frame rate's period), so the CPU keeps the clock that finishes frames in time while frames under a frame rate cap wait for the display; without it an A9X's clock fell to its lowest and frames ran late. Not on a Vision Pro, whose frames the system times. false leaves it off.",
+          "x-environment": "HALO_FRAME_DEADLINE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "frame_pacing": {
           "type": "string",
           "default": "off",
@@ -846,7 +876,7 @@
         "upscaled_textures": {
           "type": "boolean",
           "default": true,
-          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. Takes effect at the next level load.",
+          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. A device profile that sets false turns them off whatever this says. Takes effect at the next level load.",
           "x-environment": "HALO_UPSCALED_TEXTURES",
           "x-environment-style": "value",
           "x-platforms": [
@@ -1546,6 +1576,26 @@
             "apple"
           ]
         },
+        "halt_screen": {
+          "type": "boolean",
+          "default": false,
+          "description": "On a fatal game error (a failed assertion or a halt), stop on the game's halt screen, its recent messages on a blue background, instead of crashing. Off, the app crashes, and ios-runtime.log and the crash report have the error and the game's frames (tools/guest_symbolicate.py reads the report).",
+          "x-environment": "HALO_HALT_SCREEN",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "crash_test": {
+          "type": "string",
+          "default": "",
+          "description": "Fail on purpose 150 frames after the game starts, to check crash reports: \"halt\" (a failed assertion), \"fault\" (a memory fault in game code), \"trap\" (a trap instruction) or \"abort\" (the game runtime's fatal error); \"map\" fails the first level load instead, which shows a message; empty, never.",
+          "x-environment": "HALO_CRASH_TEST",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "upscaled_textures_toggle": {
           "type": "boolean",
           "default": false,
@@ -1669,6 +1719,26 @@
           "default": false,
           "description": "With debug.benchmark_suite set at launch: draw each frame of the suite into a texture that is never shown, with no wait for the display, one 1/30 s tick a frame (debug.fixed_timestep), as fast as the device goes. A \"full-unified\" suite then ends with a short presented run of its first campaign and first multiplayer case, in real time, as a check. On in tester builds for \"full-unified\". Ignored without a suite and on Vision Pro.",
           "x-environment": "HALO_BENCHMARK_OFFSCREEN",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "benchmark_offscreen_mode": {
+          "type": "string",
+          "default": "serialized",
+          "description": "With debug.benchmark_offscreen, how the offscreen runs' frames go: \"serialized\" (default) waits for each lens flare's visibility answer, so the CPU and the GPU take turns and the CPU time counts the GPU's; \"pipelined\" takes every answer from three frames before, the same every run, so frames overlap as they do on screen: frames a second near 1/max(CPU, GPU), for comparing settings' costs, not for frame rate tiers.",
+          "x-environment": "HALO_BENCHMARK_OFFSCREEN_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "benchmark_virtual_display": {
+          "type": "boolean",
+          "default": false,
+          "description": "With debug.benchmark_offscreen: every run of the suite is drawn offscreen in real time against a virtual display: refreshes at the display's rate (or display.frame_rate's cap), three virtual drawables, each held on the virtual screen until the next frame replaces it, and the same frame pacer and frame timing as a shown run. Visibility answers come from three frames before.",
+          "x-environment": "HALO_BENCHMARK_VIRTUAL_DISPLAY",
           "x-environment-style": "set_is_true",
           "x-platforms": [
             "apple"
@@ -2035,6 +2105,17 @@
             "desktop"
           ]
         },
+        "init_after": {
+          "type": "number",
+          "default": 0.0,
+          "description": "Run init.txt's commands this many seconds after start-up instead of at once, so a test can wait at the main menu and then start a level ('map_name a10') in the same launch; 0 at once.",
+          "x-environment": "HALO_INIT_AFTER",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "benchmark_window_marker": {
           "type": "boolean",
           "default": false,
@@ -2121,6 +2202,16 @@
             "apple"
           ]
         },
+        "frame_cpu_probe": {
+          "type": "boolean",
+          "default": false,
+          "description": "Benchmark reports also carry, for every frame, the drawing thread's own CPU time, the whole app's, and how long a fixed loop took (which falls as the core's clock rises), to tell a slow clock or another thread's work from waiting.",
+          "x-environment": "HALO_FRAME_CPU_PROBE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "visibility_any_sample": {
           "type": "boolean",
           "default": false,
@@ -2146,6 +2237,16 @@
           "default": 0.0,
           "description": "With debug.frame_load_cpu: the made-up work comes and goes, on in every other span of this many seconds, as a fight would. 0 (default): always.",
           "x-environment": "HALO_FRAME_LOAD_EVERY",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "low_power_frame_rate": {
+          "type": "string",
+          "default": "true",
+          "description": "In Low Power Mode, gameplay and cutscenes aim for half the frame rate they aim for otherwise (120 to 60, 60 to 30, never under 30) and menus keep the display's pace: \"true\" (default); \"false\" keeps the rate in Low Power Mode; \"always\" acts as if Low Power Mode were on, for testing. Not on a Vision Pro.",
+          "x-environment": "HALO_LOW_POWER_FRAME_RATE",
           "x-environment-style": "value",
           "x-platforms": [
             "apple"
@@ -2373,6 +2474,36 @@
             "apple"
           ]
         },
+        "dynamic_resolution_lines": {
+          "type": "integer",
+          "default": 0,
+          "description": "Turn dynamic resolution on and hold the 3D view at this many lines inside its ceiling's targets (from its floor to its ceiling), for comparisons; 0 for the planner's choice. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_LINES",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_validate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Turn dynamic resolution on, also in benchmark runs, where a case's lines are the ceiling: the per-model validation run. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_VALIDATE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "dynamic_resolution_sweep": {
+          "type": "boolean",
+          "default": false,
+          "description": "Turn dynamic resolution on and step the 3D view from its ceiling to its floor and back, a level every 30 frames, in place of the planner. Read at launch.",
+          "x-environment": "HALO_DYNAMIC_RESOLUTION_SWEEP",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "gpu_stats": {
           "type": "boolean",
           "default": false,
@@ -2505,6 +2636,17 @@
             "desktop"
           ]
         },
+        "shadow_blur": {
+          "type": "string",
+          "default": "footprint",
+          "description": "How object shadows larger than 128 texels (display.shadow_map_size) are blurred: \"footprint\" over the area the game's blur covers at 128, \"xbox\" the game's taps at their fixed offsets (at 512 they fall 4 texels apart and show as separate copies). 128-texel shadows always get the game's blur.",
+          "x-environment": "HALO_SHADOW_BLUR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "screenshot_every": {
           "type": "integer",
           "default": 0,
@@ -2537,11 +2679,11 @@
           ]
         },
         "texture_upscale_generate": {
-          "type": "boolean",
-          "default": false,
-          "description": "Generate the on-device upscaled texture cache in menus for development.",
+          "type": "string",
+          "default": "auto",
+          "description": "Make upscaled textures on this device: \"auto\" (default) where the device's profile and the display.upscaled_textures switch both say so and Core ML has a Neural Engine (at import, in menus, loading and pauses, never in gameplay), \"force\" whatever the profile says, \"off\" never.",
           "x-environment": "HALO_TEXTURE_UPSCALE_GENERATE",
-          "x-environment-style": "set_is_true",
+          "x-environment-style": "value",
           "x-platforms": [
             "apple"
           ]

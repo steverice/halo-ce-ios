@@ -173,7 +173,7 @@ the host's reliable stream. VISR always renders stock shield effects and
 hosts send the synchronized STOCK selector (0). Selector 6 leaves player
 presentation choices local in other implementations; VISR still draws stock.
 
-Clients join hosts of versions 29 to 32, 34 to 36, and 39 as well; no host of 33 or 37
+Clients join hosts of versions 29 to 32 and 34 to 36 as well; no host of 33 or 37
 was released, so those are refused. Hosts of 29 to 34 send the
 13,120-byte settings record with the 28-byte options block, which the client
 widens; hosts of 35 to 37 send the 13,136-byte record. A client takes each
@@ -182,14 +182,6 @@ later rule only from a host whose version has it: the co-op ally switch from
 from 36 (selectors 0–5) and selector 6 from 38. A join request carries no
 version, so a client of 38 sends a host of 33 to 37 the same bytes it sends a
 host of 38. Current hosts do not negotiate a downgrade with older clients.
-Version 39 uses the 38 join and game codecs. Hosting stays at 38. The
-client-build message (92) is discarded as an unknown distributed kind.
-Dedicated games advertise no host player; player counts are retained as
-sent. LAN dedicated flags and kinds are ignored when reserved bytes
-97–118 identify a Delta advertisement. Internet flag 0x20 marks dedicated
-hosts from 39 unless the third-party flag 0x80 is also set. The browser
-shows dedicated games first, with a server icon and a separate count.
-
 The internet listing's new kind encoding and Bonjour identity for other
 implementations remain unverified; LAN kind support does not establish
 internet interoperability. These partial additions derive from independently

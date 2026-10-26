@@ -105,6 +105,8 @@ int texture_refine_color_bounded_half(_Float16* t, const float* o, uint32_t w, u
         t[i] = (_Float16)((float)t[i] + .1f);
     return 0;
 }
+int texture_refine_cancelled(void) { return 0; }
+void texture_refine_set_cancel(const volatile int *flag) { (void)flag; }
 struct texture_refine_context* texture_refine_create(void* d, char* e, size_t n)
 {
     return calloc(1, sizeof(struct texture_refine_context));

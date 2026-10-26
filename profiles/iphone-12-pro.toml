@@ -1,4 +1,4 @@
-# iPhone13,3 (iPhone 12 Pro, A14, 60 Hz): 30 frames a second at 900 lines and full quality, from the October 2026
+# iPhone13,3 (iPhone 12 Pro, A14, 60 Hz): 30 frames a second at 900 lines and full quality but the game's 128-pixel shadows, from the October 2026
 # settings sweep. 60 holds at no measured size, even at 720 lines with every setting at its cheapest (94.0% of a10
 # frames on time), so the profile takes the ladder's floor rate with the lines and quality that rate affords. Before
 # this profile the model fell to the iPhone and iPad class, 60 at 720 lines, which put 72% of frames on time.
@@ -16,8 +16,9 @@ models = ["iPhone13,3"]
 frame_rate = "30"
 render_height = 900
 anisotropic_filtering = 16
-shadow_map_size = 512
+shadow_map_size = 128
 model_lod = "max"
+dynamic_resolution = true
 
 [network]
 player_capacity = 8
@@ -39,13 +40,18 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 
 [evidence."display.shadow_map_size"]
 basis = "measured"
-why = "At 30 frames a second and 720 lines 512-pixel shadows held 99.9% or more on time; they cost 0.8 to 1.4 ms a frame over 128 out of the 33.3 ms budget."
-source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+why = "At 64 players on Blood Gulch the GPU took 24.6 ms a frame at 128 and at 256-pixel shadows against 29.8 to 30.2 at 512, where 97.6 to 99.1% of frames were on time at 30, short of the 99.5% hold; 128 put 99.9 to 100% on time. In campaign 512 cost 0.8 to 1.4 ms a frame over 128 at 720 lines. Shadow detail is the first setting lowered before a tier (profiles/README.md, Targets): above 128 the game's shadows look little better and cost the most on these GPUs."
+source = "VISR shadow map size runs at 128, 256 and 512, mp-bloodgulch-64 on the batched-blur build, 30 s windows, 2026-10-25; VISR settings sweep, build 20261024.122832 (0.5.0), a10-heroic and d40-maw-fight, 2026-10-23 to 2026-10-25"
 
 [evidence."display.model_lod"]
 basis = "measured"
 why = "Maximum against automatic model detail cost 0.17 to 0.23 ms a frame at 720 lines."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.dynamic_resolution"]
+basis = "measured"
+why = "Presented d40-maw-fight at this profile's 900 lines and 30 frames a second: 100% of frames on time with dynamic resolution off and on; it rendered all 2,273 frames at the ceiling, so it costs nothing where the GPU keeps up and is there for heavier scenes. The report's lines distribution confirms the A14 has the stage timing the planner needs."
+source = "VISR presented benchmark runs, build 20261025.213708, 2026-10-25"
 
 [scene.menu.display]
 frame_rate = "60"

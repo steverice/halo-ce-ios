@@ -9,6 +9,8 @@
 #ifndef HALO_HOST_BENCHMARK_OFFSCREEN_H
 #define HALO_HOST_BENCHMARK_OFFSCREEN_H
 
+#include <string.h>
+
 enum host_benchmark_offscreen {
     HOST_BENCHMARK_OFFSCREEN_OFF,        /* the setting is off */
     HOST_BENCHMARK_OFFSCREEN_ON,
@@ -27,9 +29,49 @@ static inline int host_benchmark_offscreen_frame(enum host_benchmark_offscreen d
     return decided == HOST_BENCHMARK_OFFSCREEN_ON && suite_running;
 }
 
-/* the run's timing_basis in the report */
-static inline const char *host_benchmark_timing_basis(int offscreen) {
-    return offscreen ? "offscreen_uncapped" : "submission_timing";
+/* how a run's frames were paced (the report's pacing_mode and timing_basis): shown on the display; offscreen with
+   each visibility answer waited for, so the CPU and the GPU take turns (debug.benchmark_offscreen_mode "serialized");
+   offscreen with answers from frames before, so frames overlap ("pipelined"); or offscreen in real time against a
+   virtual display (debug.benchmark_virtual_display) */
+enum host_benchmark_pacing {
+    HOST_BENCHMARK_PACING_PRESENTED,
+    HOST_BENCHMARK_PACING_SERIALIZED,
+    HOST_BENCHMARK_PACING_PIPELINED,
+    HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY,
+};
+
+/* the pacing of a run: offscreen (an uncapped run of an offscreen launch), the launch's mode and whether a presented
+   run of an offscreen launch goes to the virtual display */
+static inline enum host_benchmark_pacing host_benchmark_pacing_of(int offscreen_launch, int offscreen_run, int pipelined,
+    int virtual_display) {
+    if (!offscreen_launch) return HOST_BENCHMARK_PACING_PRESENTED;
+    if (offscreen_run) return pipelined ? HOST_BENCHMARK_PACING_PIPELINED : HOST_BENCHMARK_PACING_SERIALIZED;
+    return virtual_display ? HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY : HOST_BENCHMARK_PACING_PRESENTED;
+}
+
+/* the run's timing_basis in the report (0 and 1 as they were: presented, and offscreen serialized) */
+static inline const char *host_benchmark_timing_basis(int pacing) {
+    switch (pacing) {
+    case HOST_BENCHMARK_PACING_SERIALIZED: return "offscreen_uncapped";
+    case HOST_BENCHMARK_PACING_PIPELINED: return "offscreen_pipelined";
+    case HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY: return "virtual_display";
+    default: return "submission_timing";
+    }
+}
+
+/* the run's pacing_mode in the report */
+static inline const char *host_benchmark_pacing_mode(int pacing) {
+    switch (pacing) {
+    case HOST_BENCHMARK_PACING_SERIALIZED: return "offscreen_serialized";
+    case HOST_BENCHMARK_PACING_PIPELINED: return "offscreen_pipelined";
+    case HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY: return "virtual_display";
+    default: return "presented";
+    }
+}
+
+/* debug.benchmark_offscreen_mode: 1 for "pipelined", 0 for "serialized" (and anything else, which the log names) */
+static inline int host_benchmark_offscreen_mode_pipelined(const char *value) {
+    return value && !strcmp(value, "pipelined");
 }
 
 #endif

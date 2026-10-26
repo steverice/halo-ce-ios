@@ -16,18 +16,18 @@ int main(void)
 
 		assert(halo_network_version_joinable(32, version) == expected);
 	}
-	/* a build of 38 joins hosts of 29 to 32, 34 to 36, 38 and 39, and no others
+	/* a build of 38 joins hosts of 29 to 32, 34 to 36 and 38, and no others
 	   (no host of 33 or 37 was released to join) */
 	for (version = 0; version < 0x10000; version++)
 		assert(halo_network_version_joinable(38, version) ==
-			((version >= 29 && version <= 32) || (version >= 34 && version <= 36) || version == 38 || version == 39));
+			((version >= 29 && version <= 32) || (version >= 34 && version <= 36) || version == 38));
 	/* a build of 29 (a VISR before the range) joins only its own */
 	assert(halo_network_version_joinable(29, 29) && !halo_network_version_joinable(29, 30));
 	/* message 90 comes from hosts of 32 */
 	assert(!halo_network_version_has_aim_policy(29) && !halo_network_version_has_aim_policy(31));
 	assert(halo_network_version_has_aim_policy(32) && halo_network_version_has_aim_policy(33));
 	/* what each host version sends and takes */
-	for (version = 29; version <= 39; version++)
+	for (version = 29; version <= 38; version++)
 	{
 		unsigned long selector;
 
@@ -42,7 +42,6 @@ int main(void)
 				(version >= 36 && (selector <= 5 || (selector == 6 && version >= 38))));
 		assert(!halo_network_version_shield_selector_valid(version, 0xFFFFFFFFul));
 		assert(halo_network_version_has_game_kind(version) == (version >= 37));
-		assert(halo_network_version_has_dedicated(version) == (version >= 39));
 	}
 	/* a stamp within 450 ticks of the latest either way is taken */
 	assert(halo_network_stamp_in_window(1000, 1000) && halo_network_stamp_in_window(1000, 1450));

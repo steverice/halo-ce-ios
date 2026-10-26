@@ -1274,6 +1274,53 @@ static void gpu_gl_texture_copy_level(gpu_texture source, gpu_texture destinatio
 		destination, GL_TEXTURE_2D, (GLint)level, 0, 0, 0, width, height, 1);
 }
 
+/* dynamic resolution is Metal-only (d3d8_device.c refuses it here) */
+static void gpu_gl_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
+{
+	(void)texture;
+	(void)width;
+	(void)height;
+}
+
+#ifdef GPU_GL_ES
+/* copy_level_by_blit for a rectangle of the source */
+static void copy_rect_by_blit(GLuint source, const struct gpu_texture_copy *copy)
+{
+	static GLuint draw_framebuffer;
+
+	if (!draw_framebuffer)
+		glGenFramebuffers(1, &draw_framebuffer);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_get(source, 0));
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, copy->destination, 0);
+	glDisable(GL_SCISSOR_TEST);
+	glBlitFramebuffer((GLint)copy->x, (GLint)copy->y, (GLint)(copy->x + copy->width), (GLint)(copy->y + copy->height),
+		0, 0, (GLint)copy->width, (GLint)copy->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glBindFramebuffer(GL_FRAMEBUFFER, default_framebuffer());
+	state_invalidate();
+}
+#endif
+
+static void gpu_gl_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
+{
+	uint32_t index;
+
+	for (index = 0; index < count; index++)
+	{
+		const struct gpu_texture_copy *copy = &copies[index];
+
+#ifdef GPU_GL_ES
+		if (!xgpu_capabilities.copy_image)
+		{
+			copy_rect_by_blit(source, copy);
+			continue;
+		}
+#endif
+		glCopyImageSubData(source, GL_TEXTURE_2D, 0, (GLint)copy->x, (GLint)copy->y, 0,
+			copy->destination, GL_TEXTURE_2D, 0, 0, 0, 0, (GLsizei)copy->width, (GLsizei)copy->height, 1);
+	}
+}
+
 static uint32_t gpu_gl_texture_read(gpu_texture texture, void *pixels, uint32_t size)
 {
 	const struct gpu_texture_description *description = &texture_record(texture)->description;

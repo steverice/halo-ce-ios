@@ -26,6 +26,14 @@ int host_device_profile_pending(char *values, unsigned long capacity, char *vers
 void host_device_profile_applied(int point, int networked, int changed, int metalfx, int frame_rate);
 int host_external_active(void);
 void host_external_commit(int allow_pause);
+/* dynamic resolution (port/ios/host/host_perf_hooks.c): asked between frames
+(d3d8_device.c's screen_mode_choose) with the lines the scene would render at
+without it, or 0 when this frame cannot scale (refused: d3d8_device.c's
+dynamic_resolution_refused). The lines the next frames' scene renders at, from
+the floor to the ceiling; 0 when dynamic resolution is off, and the targets
+stay as before. -1 asks only whether it is on: 1 or 0 */
+int host_dynamic_resolution_lines(int ceiling_lines);
+void host_dynamic_resolution_scene(int enabled, int floor_lines);
 
 /* Only gameplay touch controls are suppressed; native dialogs remain interactive. */
 void host_touch_replay_active(int active);
@@ -40,6 +48,13 @@ long long host_syscall(long long number, long long a, long long b, long long c,
 /* Stable runtime log priorities; translated by the native host. */
 void host_log(int priority, const char *text);
 void host_abort(const char *reason) __attribute__((noreturn));
+/* the game halted (halt_and_catch_fire, source/main/main.c) with messages, its
+recent errors: a native crash with them as the reason, unless debug.halt_screen
+asks for the game's halt screen, when it returns 0 (port/ios/host/host_crash.h) */
+int host_guest_halt(const char *messages);
+/* a level failed to load (main_new_map, source/main/main.c): a message for the
+player, as host_fatal shows, not a crash; messages are the game's recent errors */
+void host_map_load_failed(const char *map_name, const char *messages) __attribute__((noreturn));
 void host_exit(int code) __attribute__((noreturn));
 /* 1 after main_game_render finishes, 0 before main_pregame_render draws.
    The host waits for the following presentation before accepting trial data. */
@@ -92,6 +107,8 @@ int host_benchmark_offscreen_request(int setting, int suite_named);
 /* a presented run inside an offscreen suite, and the game after it: the frames shown in real time (on) or
 not; 1 when the guest's clock follows (host_benchmark.h) */
 int host_benchmark_presented(int on);
+/* debug.fixed_timestep: the microseconds a frame's end waited for the game's workers to go idle (worker_wait_ms) */
+void host_benchmark_worker_wait(uint32_t microseconds);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 
@@ -185,9 +202,11 @@ tools/ios_bridges.py maps the import back to gpu_*) */
 gpu_texture host_gpu_texture_create(const struct gpu_texture_description *description);
 void host_gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size);
 void host_gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level);
+void host_gpu_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count);
 void host_gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
 void host_gpu_texture_destroy(gpu_texture texture);
 uint32_t host_gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size);
+void host_gpu_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height);
 gpu_buffer host_gpu_buffer_create(uint32_t size);
 void host_gpu_buffer_write(gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags);
 void host_gpu_stream_reserve(uint32_t vertex_bytes, uint32_t index_bytes);
@@ -267,6 +286,14 @@ unsigned long long host_astc_texture_generation(void);
 void host_astc_map_arrived(const char *path);
 void host_astc_map_will_load(const char *name);
 void host_astc_game_started(void);
+/* The on-device upscaler (port/ios/host/host_texture_upscale.h): a pause is not gameplay; the loading screen's wait
+   before a level; whether a level's textures are all ready to play upscaled. */
+void host_texture_upscale_paused(int paused);
+int host_texture_upscale_level_begin(const char *name);
+int host_texture_upscale_level_poll(unsigned long long *done, unsigned long long *total);
+void host_texture_upscale_level_end(int skipped);
+int host_texture_upscale_level_ready(void);
+void host_texture_cache_directory(char *text, unsigned long size);
 
 #endif
 

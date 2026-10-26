@@ -34,6 +34,11 @@ void texture_upscale_model_set_observer(struct texture_upscale_model *model,
     texture_upscale_model_observer observer, void *context);
 void texture_upscale_model_get_stats(struct texture_upscale_model *model, struct texture_upscale_model_stats *stats);
 
+/* The scheduler's stop for gameplay: while *flag reads nonzero, predict_tiles ends with an error before its next
+   Core ML call, so a stop waits for one call at most. NULL (the default) never stops. Process-wide. */
+void texture_upscale_model_set_cancel(const volatile int *flag);
+int texture_upscale_model_cancelled(void);
+
 /* One predicted tile channel. The core is input texels [x, x + width) by [y, y + height); the model's 4x output
    around it is readable from 64 output pixels before the core's first 4x row and column to 64 after its last
    (texture_upscale_tile_at), from real neighbors wrapped or clamped as the input requested. */

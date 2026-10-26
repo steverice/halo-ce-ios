@@ -38,7 +38,8 @@ struct host_profile_value
 	char text[80];
 	/* the layer it came from, for the log: class "Apple TV" */
 	char source[80];
-	/* "" for the profile's own value; "menu" or "cutscene" for a scene class's ([scene.menu.display]) */
+	/* "" for the profile's own value; "menu" or "cutscene" for a scene class's ([scene.menu.display]); "variable" for
+	   the variable-workload context's ([variable.display]) */
 	char scene[12];
 	/* values for an external output never replace the built-in display defaults */
 	int external;
@@ -67,6 +68,10 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 /* the value in force for name (not a scene class's), as text; 0 if no profile sets it */
 int host_profile_value(const struct host_profile *profile, const char *name, char *text, size_t size);
 
+/* a scene class's or the variable context's built-in value for name (scene "variable"), as text; 0 if none */
+int host_profile_scene_value(const struct host_profile *profile, const char *name, const char *scene, char *text,
+	size_t size);
+
 /* The highest non-scene external value, falling back to the built-in profile. */
 int host_profile_external_value(const struct host_profile *profile, const char *name, char *text, size_t size);
 
@@ -81,6 +86,10 @@ void host_device_identify(struct host_device *device);
 const char *host_device_profile_install(const char *data_root);
 /* Caller-owned consistent copy, including while the game applies another profile. */
 void host_device_profile_copy(struct host_profile *profile);
+/* name's profile value (layers 1 to 4 without the game's built-in default) as text, before or after the install:
+   the installed profile once there is one, else this device's resolved now in the same way, without logging or
+   watching for updates; 0 if no profile sets it. For decisions made before the game starts (the texture import) */
+int host_device_profile_peek(const char *data_root, const char *name, char *text, size_t size);
 
 /* Internal catalog selection: resolves a source without drop-ins or recursive fallback. */
 int host_profile_inherit(const struct host_device *device, const char *folder,
@@ -93,7 +102,23 @@ int host_profile_catalog_lists(const struct host_device *device, const char *fol
 
 /* Profile envelopes bind to exactly one canonical platform/model/chip key. */
 int host_profile_device_key(const struct host_device *device, char *key, size_t size);
+/* A generation-1 shard (device-profiles-1, what 0.4.2 to 0.5.1 read), which cannot hold hardware/revision.toml. */
 int host_profile_validate_device_folder(const char *folder, const struct host_device *device, void (*log)(const char *));
+
+/* The profile feed generation this app reads (docs/data-packs.md, "Profile feed generations"): its shards' signed
+   compatibility is HOST_PROFILE_FEED_DOMAIN ":" plus the device key, served from a directory of the same name.
+   Bump both whenever this app accepts a profile that an app of the previous generation rejects
+   (tools/test_profile_feed.py checks port_profile_keys.h against the generation), and in tools/data_pack.py. */
+enum { HOST_PROFILE_FEED_GENERATION = 2, HOST_PROFILE_REVISION_MAXIMUM_BYTES = 1024 };
+#define HOST_PROFILE_FEED_DOMAIN "device-profiles-2"
+/* A shard of the given generation for device: generation 2 requires hardware/revision.toml. */
+int host_profile_validate_feed_folder(const char *folder, const struct host_device *device, int generation,
+	void (*log)(const char *));
+/* The profile set's revision (hardware/revision.toml) and the hash of the sources it was stamped from: parse returns
+   the revision, or 0 for anything malformed; read returns a folder's, 0 if it has none, -1 if its file is unreadable
+   or malformed. sha256 (NULL to skip) receives the 64 hex digits, or "" when there is no revision. */
+long long host_profile_revision_parse(const char *text, size_t size, char sha256[65]);
+long long host_profile_revision_read(const char *folder, char sha256[65]);
 int host_profile_capacity_validate(const char *path);
 
 int host_profile_catalog_device_validate(const char *folder, const struct host_device *device, const char *profile);

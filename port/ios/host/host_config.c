@@ -115,6 +115,11 @@ void host_config_set_profile(int (*value)(const char *name, char *text, size_t s
 	profile_value = value;
 }
 
+int host_config_profile_installed(void)
+{
+	return profile_value != NULL;
+}
+
 double host_config_real(const char *name, double fallback)
 {
 	char value[64];

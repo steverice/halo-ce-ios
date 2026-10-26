@@ -16,6 +16,8 @@ static void put(const char *name, const char *text)
 int main(int argc, char **argv)
 {
 	assert(argc == 2 && host_profile_validate_folder(argv[1], NULL));
+	/* the repository's profiles carry a revision; an invalid one fails the whole folder */
+	assert(host_profile_revision_read(argv[1], NULL) >= 1);
 	snprintf(root, sizeof(root), "/tmp/profile-pack-XXXXXX"); assert(mkdtemp(root));
 	char path[256]; snprintf(path, sizeof(path), "%s/hardware", root); assert(!mkdir(path, 0700));
 	put("hardware/catalog.toml", "schema=1\nversion=\"test\"\nhardware=[]\nfallback=[]\n");
@@ -67,6 +69,24 @@ int main(int argc, char **argv)
 	}
 	snprintf(path, sizeof(path), "%s/ios.toml", root); unlink(path);
 	assert(!host_profile_validate_folder(root, NULL));
+	/* the profile set's revision: a folder may hold one, and it must parse whenever it is there */
+	{
+		static const char sha[] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+		char text[256], hash[65];
+		snprintf(text, sizeof(text), "# comment\nschema = 1\nrevision = 7\nsha256 = \"%s\"\n", sha);
+		assert(host_profile_revision_parse(text, strlen(text), hash) == 7 && !strcmp(hash, sha));
+		assert(host_profile_revision_read(root, hash) == 0 && !*hash);
+		const char *bad[] = { "schema = 1\nrevision = 0\nsha256 = \"%s\"\n", "schema = 2\nrevision = 1\nsha256 = \"%s\"\n",
+			"schema = 1\nrevision = 9007199254740992\nsha256 = \"%s\"\n", "schema = 1\nrevision = 1\nsha256 = \"%.63s\"\n",
+			"schema = 1\nrevision = 1\nsha256 = \"%s\"\nextra = 1\n", "schema = 1\nrevision = \"1\"\nsha256 = \"%s\"\n" };
+		for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+		{
+			snprintf(text, sizeof(text), bad[i], sha);
+			assert(!host_profile_revision_parse(text, strlen(text), hash) && !*hash);
+		}
+		snprintf(text, sizeof(text), "schema = 1\nrevision = 1\nsha256 = \"%s\"\n", "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef");
+		assert(!host_profile_revision_parse(text, strlen(text), NULL));
+	}
 	/* Temporary named fixtures only; do not remove a shared directory. */
 	const char *names[] = { "bad.toml", "tvos.toml", "visionos.toml", "mac.toml", "hardware/catalog.toml" };
 	for (int i = 0; i < 5; i++) { snprintf(path, sizeof(path), "%s/%s", root, names[i]); unlink(path); }

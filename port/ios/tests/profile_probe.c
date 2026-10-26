@@ -414,6 +414,23 @@ static void check_unprofiled_models(const char *shipped)
 	/* iPad Air 5 (M1) shares the measured iPad Pro chip. */
 	profile = resolve_model(shipped, "ios", "iPad13,16", 7, 7600, 2360, 1640, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml"));
+	/* Upscaled textures on Apple TVs (Steve, 2026-10-25): on for the 4K 3rd generation and anything newer, off for
+	   the HD, the 4K 1st generation and the 4K 2nd generation, whose value is the Apple TV class's. */
+	profile = resolve_model(shipped, "tvos", "AppleTV14,1", 8, 4096, 3840, 2160, 60);
+	assert(!profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-3rd.toml") && has(&profile, "display.upscaled_textures", "true"));
+	profile = resolve_model(shipped, "tvos", "AppleTV16,1", 10, 8192, 3840, 2160, 60);
+	assert(!strcmp(profile.model_file, "apple-tv-4k-3rd.toml") && has(&profile, "display.upscaled_textures", "true") &&
+		strstr(logged, "and_newer apple-tv-4k-3rd.toml: AppleTV16,1"));
+	profile = resolve_model(shipped, "tvos", "AppleTV11,1", 5, 3072, 3840, 2160, 60);
+	assert(strcmp(profile.model_file, "apple-tv-4k-3rd.toml") && has(&profile, "display.upscaled_textures", "false"));
+	profile = resolve_model(shipped, "tvos", "AppleTV6,2", 3, 3072, 3840, 2160, 60);
+	assert(!strcmp(profile.model_file, "apple-tv-4k-1st.toml") && has(&profile, "display.upscaled_textures", "false"));
+	profile = resolve_model(shipped, "tvos", "AppleTV5,3", 2, 2048, 1920, 1080, 60);
+	assert(!strcmp(profile.model_file, "apple-tv-hd.toml") && has(&profile, "display.upscaled_textures", "false"));
+	/* iPads that inherit the A10X profile (the A12 iPad Air 3) keep the game's default: the A10X itself is off only
+	   through the Neural Engine check, so no profile turns an A12 off */
+	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
+	assert(!has(&profile, "display.upscaled_textures", "false"));
 	/* A later iPad generation: the M1 iPad Pro's and_newer rule. */
 	profile = resolve_model(shipped, "ios", "iPad19,1", 11, 16000, 2420, 1668, 120);
 	assert(!profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml") &&
@@ -425,7 +442,7 @@ static void check_unprofiled_models(const char *shipped)
 	/* An Apple TV below every measured profile and outside the catalog: the Apple TV HD's values. */
 	profile = resolve_model(shipped, "tvos", "AppleTV9,9", 3, 2000, 1920, 1080, 60);
 	assert(!profile.model_file[0] && has(&profile, "display.render_scale", "0.5") &&
-		has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.shadow_map_size", "256"));
+		has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.shadow_map_size", "128"));
 	/* A later Apple TV: the 3rd generation's and_newer rule. */
 	profile = resolve_model(shipped, "tvos", "AppleTV15,1", 11, 4000, 3840, 2160, 60);
 	assert(!profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-3rd.toml") &&
@@ -444,7 +461,7 @@ static void check_shipped(const char *shipped)
 	assert(has(&profile, "display.renderer", "metal") && has(&profile, "display.render_height", "1080"));
 	assert(has(&profile, "display.render_scale", "0.5") && has(&profile, "display.upscaled_textures", "false"));
 	assert(has(&profile, "display.anisotropic_filtering", "4") && has(&profile, "display.model_lod", "auto") &&
-		has(&profile, "display.shadow_map_size", "256") && has(&profile, "display.frame_rate", "30"));
+		has(&profile, "display.shadow_map_size", "128") && has(&profile, "display.frame_rate", "30"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "\tmodel Apple TV HD\tmenu\n") && strstr(encoded, "\tmodel Apple TV HD\tcutscene\n"));
 	/* an Apple TV 4K without memory or display reported, and the tvOS simulator: the class floor, the Apple TV HD's values */
@@ -452,13 +469,13 @@ static void check_shipped(const char *shipped)
 	assert(has(&profile, "display.render_height", "1080") && !profile.model_file[0] &&
 		has(&profile, "display.render_scale", "0.5") && has(&profile, "display.anisotropic_filtering", "4"));
 	/* the two Apple TV 4K models with estimated profiles: 720 in play on the first, with its built-in output capped
-	at 720 (a tvOS profile's own display.output_height, for the host and never the game), and 1080 on the third */
+	at 1080 (a tvOS profile's own display.output_height, for the host and never the game), and 1080 on the third */
 	profile = resolve(shipped, device("tvos", "AppleTV6,2", "", 3), NULL, "");
 	assert(has(&profile, "display.render_height", "720") && has(&profile, "display.anisotropic_filtering", "4") &&
 		has(&profile, "display.renderer", "metal") && !strcmp(profile.model_file, "apple-tv-4k-1st.toml"));
-	assert(has(&profile, "display.output_height", "720"));
+	assert(has(&profile, "display.output_height", "1080"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
-	assert(strstr(encoded, "display.output_height\t720\tmodel Apple TV 4K (1st generation)\n"));
+	assert(strstr(encoded, "display.output_height\t1080\tmodel Apple TV 4K (1st generation)\n"));
 	profile = resolve(shipped, device("tvos", "AppleTV14,1", "", 8), NULL, "");
 	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.anisotropic_filtering", "16") &&
 		!strcmp(profile.model_file, "apple-tv-4k-3rd.toml"));
@@ -545,6 +562,13 @@ static void check_capability_fallback(void)
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "display.render_scale\t0.5\tmodel A9\tmenu\n"));
 	assert(strstr(logged, "inherited") && strstr(logged, "a11") && strstr(logged, "a9"));
+	/* The variable workload context is play on the source device: its render size must fit the gameplay envelope. */
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[variable.display]\nrender_height=540\n");
+	profile = resolve(folder, target, NULL, "");
+	assert(profile.inherited && has(&profile, "display.anisotropic_filtering", "4"));
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[variable.display]\nrender_height=1080\n");
+	profile = resolve(folder, target, NULL, "");
+	assert(!profile.inherited && !profile.model_file[0]);
 	/* A model's external context is inherited with its baseline. */
 	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[external.display]\noutput_height=720\nrender_height=360\n");
 	profile = resolve(folder, target, NULL, "");
@@ -705,6 +729,40 @@ static void check_external(void)
 	snprintf(path, sizeof(path), "%s/builtin-cap.toml", folder); unlink(path);
 }
 
+/* [variable.display]: the variable workload context's values, carried as the pseudo-class "variable"; only
+PROFILE_VARIABLE settings, only [variable.display], and never the profile's own value */
+static void check_variable(void)
+{
+	struct host_profile profile;
+	char encoded[4096], value[32], path[256];
+
+	write_file("variable.toml", "schema = 1\nname = \"Variable\"\nkind = \"model\"\n[match]\nplatform = \"ios\"\n"
+		"models = [\"Variable1,1\"]\n[display]\nrender_height = 1080\ndynamic_resolution = false\n"
+		"[variable.display]\ndynamic_resolution = true\ndynamic_resolution_floor = 540\nshadow_map_size = 128\n"
+		"anti_aliasing = \"fxaa\"\nframe_rate = \"30\"\nanisotropic_filtering = 4\n"
+		"[variable.network]\nplayer_capacity = 16\n"
+		"[scene.variable.display]\nrender_scale = 0.5\n");
+	logged[0] = 0;
+	profile = resolve(folder, device("ios", "Variable1,1", "", 5), NULL, "");
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(strstr(encoded, "display.dynamic_resolution\ttrue\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.dynamic_resolution_floor\t540\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.shadow_map_size\t128\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.anti_aliasing\tfxaa\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.frame_rate\t30\tmodel Variable\tvariable\n"));
+	/* refused: a setting outside PROFILE_VARIABLE, a section other than display, a scene class named variable */
+	assert(!strstr(encoded, "anisotropic_filtering") && !strstr(encoded, "player_capacity") && !strstr(encoded, "0.5"));
+	assert(strstr(logged, "display.anisotropic_filtering cannot change by workload; ignored"));
+	assert(strstr(logged, "network.player_capacity cannot change by workload; ignored"));
+	assert(strstr(logged, "scene class \"variable\" is not one this build knows; ignored"));
+	/* the profile's own value is not the variable one; the variable lookup finds it */
+	assert(has(&profile, "display.dynamic_resolution", "false"));
+	assert(host_profile_scene_value(&profile, "display.dynamic_resolution", "variable", value, sizeof(value)) &&
+		!strcmp(value, "true"));
+	assert(!host_profile_scene_value(&profile, "display.render_height", "variable", value, sizeof(value)));
+	snprintf(path, sizeof(path), "%s/variable.toml", folder); unlink(path);
+}
+
 static void check_and_newer(void)
 {
 	char previous[64], path[256];
@@ -858,6 +916,7 @@ int main(int argc, char **argv)
 	check_file_read_paths();
 	check_layers();
 	check_external();
+	check_variable();
 	check_refusals();
 	check_capability_fallback();
 	check_minimum_height_envelope();

@@ -31,14 +31,19 @@
 #include "host_profile.h"
 #include "host_config.h"
 #include "host_external.h"
+#include "host_low_power.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
 #include "../../runtime/graphics_capture.h"
 #include <math.h>
 #include <mach/mach.h>
+#include <mach/mach_time.h>
 #include <os/lock.h>
 #include <os/proc.h>
 #include <signal.h>
+#include <pthread.h>
+#include <sys/resource.h>
+#include <time.h>
 #include <stdatomic.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
@@ -67,6 +72,10 @@ static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 /* under the lock: the open window's measurements, and what happened during it */
 static struct benchmark_metrics metrics;
 static int window_open, window_interrupted, window_width, window_height;
+/* dynamic resolution's lines over the run's window (host_perf_hooks_dynamic_lines): frames and seconds at each */
+#define DYNAMIC_LINE_SLOTS 64
+static struct { int lines; unsigned frames; double seconds; } dynamic_lines[DYNAMIC_LINE_SLOTS];
+static unsigned dynamic_line_count, dynamic_line_other;
 static double refresh_hertz;
 /* the screen's own rate, for a presenter that reports no refresh period (the Mac's) */
 static double screen_hertz;
@@ -182,6 +191,16 @@ static NSDictionary *output_now(void) {
         @"output_cap_requested": @(requested), @"output_cap": !requested ? @"none" : capped ? @"capped" : @"unchanged" };
 }
 
+/* Low Power Mode, the system's or debug.low_power_frame_rate's: a run taken in it is not a measurement of the
+   device (its CPU and GPU are slowed, and frames aim for half the rate) */
+static BOOL low_power_now(void) {
+    return NSProcessInfo.processInfo.lowPowerModeEnabled || host_frame_rate_low_power();
+}
+/* whether Low Power Mode was on at any second of the run that is open; and the power-state notices when it began
+   (a change between two samples is seen this way) */
+static _Atomic int run_low_power;
+static unsigned long run_power_notices;
+
 static NSDictionary *environment_now(void) {
     float level = -1;
     NSString *charging = @"unavailable";
@@ -195,8 +214,12 @@ static NSDictionary *environment_now(void) {
         default: charging = @"unknown"; break;
     }
 #endif
+    /* (low_power_mode: the system's; frame_rate_low_power: whether its halved rate held frames, low_power.h;
+       frame_rate_target: what frames aimed for, in frames a second, host_frame_rate_effective's) */
     return @{ @"battery_level": @(level), @"charging": charging,
-        @"thermal_state": @((int)NSProcessInfo.processInfo.thermalState) };
+        @"thermal_state": @((int)NSProcessInfo.processInfo.thermalState),
+        @"low_power_mode": @(low_power_now()), @"frame_rate_low_power": @(host_frame_rate_low_power() != 0),
+        @"frame_rate_target": @(host_frame_rate_effective()) };
 }
 #define JOURNAL_SNAPSHOT FOLDER "/journal-snapshot.sha256"
 
@@ -376,6 +399,10 @@ static NSDictionary *graphics_metadata(void)
 static _Atomic int offscreen_decided = HOST_BENCHMARK_OFFSCREEN_OFF;
 /* host_benchmark_presented: the frames are shown, in real time, for now */
 static _Atomic int presented_now;
+/* the open run's measured window began with them shown (host_benchmark_window) */
+static int window_presented;
+/* debug.benchmark_offscreen_mode = "pipelined" and debug.benchmark_virtual_display, read with the launch's decision */
+static int offscreen_pipelined, virtual_display_setting;
 
 int host_benchmark_offscreen_request(int setting, int suite_named) {
 #ifdef HALO_TESTER_BUILD
@@ -391,6 +418,23 @@ int host_benchmark_offscreen_request(int setting, int suite_named) {
     enum host_benchmark_offscreen decided = host_benchmark_offscreen_decide(setting, suite_named, TARGET_OS_VISION);
 
     atomic_store(&offscreen_decided, decided);
+    if (decided == HOST_BENCHMARK_OFFSCREEN_ON) {
+        char mode[32], virtual_display[8];
+
+        host_config_string("debug.benchmark_offscreen_mode", "serialized", mode, sizeof(mode));
+        host_config_string("debug.benchmark_virtual_display", "false", virtual_display, sizeof(virtual_display));
+        offscreen_pipelined = host_benchmark_offscreen_mode_pipelined(mode);
+        virtual_display_setting = !strcmp(virtual_display, "true");
+        if (!offscreen_pipelined && strcmp(mode, "serialized"))
+            host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen_mode \"%s\" is not serialized or pipelined; "
+                "serialized", mode);
+        if (virtual_display_setting)
+            host_logf(HOST_LOG_INFO, "benchmark: every run offscreen in real time against a virtual display "
+                "(debug.benchmark_virtual_display)");
+        else
+            host_logf(HOST_LOG_INFO, "benchmark: offscreen runs %s", offscreen_pipelined ?
+                "pipelined, visibility answers from three frames before" : "serialized, each visibility answer waited for");
+    }
     if (decided == HOST_BENCHMARK_OFFSCREEN_ON)
         host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen: the suite's frames are drawn offscreen, uncapped, "
             "one tick each");
@@ -403,6 +447,16 @@ int host_benchmark_offscreen_request(int setting, int suite_named) {
 
 int host_benchmark_offscreen_requested(void) {
     return atomic_load(&offscreen_decided) == HOST_BENCHMARK_OFFSCREEN_ON;
+}
+
+int host_benchmark_offscreen_pipelined(void) {
+    return host_benchmark_offscreen_requested() && offscreen_pipelined;
+}
+
+int host_benchmark_virtual_display(void) {
+    /* (while a suite runs: the game after it is shown again) */
+    return host_benchmark_offscreen_requested() && virtual_display_setting && atomic_load(&presented_now) &&
+        atomic_load(&running);
 }
 
 int host_benchmark_offscreen_active(void) {
@@ -486,10 +540,140 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
     if (ticks > 0 && window_open) atomic_fetch_add(&window_ticks, ticks);
     if (window_open && interval > 0.0) {
         if (metrics.refresh_hertz <= 0.0 && refresh_hertz > 0.0) metrics.refresh_hertz = run_budget_hertz();
+        int lines = host_perf_hooks_dynamic_lines();
+        if (lines > 0) {
+            unsigned slot;
+            for (slot = 0; slot < dynamic_line_count && dynamic_lines[slot].lines != lines; slot++) {}
+            if (slot == dynamic_line_count && dynamic_line_count < DYNAMIC_LINE_SLOTS)
+                dynamic_lines[dynamic_line_count++].lines = lines;
+            if (slot < dynamic_line_count) { dynamic_lines[slot].frames++; dynamic_lines[slot].seconds += interval; }
+            else dynamic_line_other++;
+        }
         benchmark_metrics_frame_split(&metrics, interval * 1000.0, cpu * 1000.0, gpu * 1000.0,
             simulation_cpu >= 0.0 ? simulation_cpu * 1000.0 : -1.0, render_cpu >= 0.0 ? render_cpu * 1000.0 : -1.0,
             translation_cpu >= 0.0 ? translation_cpu * 1000.0 : -1.0, ticks);
     }
+    os_unfair_lock_unlock(&lock);
+}
+
+/* A fixed chain of dependent multiplies and adds: its time follows the core's clock (and the core it runs on), not the
+   memory or the frame's work. About 16,000 cycles: 7 microseconds at 2.3 GHz. */
+static double clock_probe_microseconds(void) {
+    static mach_timebase_info_data_t timebase;
+    volatile uint32_t sink, seed = 1;
+    uint32_t value = seed;   /* (read through volatile, so the chain can't be folded at compile time) */
+    uint64_t began;
+
+    if (!timebase.denom) mach_timebase_info(&timebase);
+    began = mach_absolute_time();
+    for (int index = 0; index < 4096; index++) value = value * 1664525u + 1013904223u;
+    sink = value;
+    (void)sink;
+    return (double)(mach_absolute_time() - began) * (double)timebase.numer / (double)timebase.denom / 1e3;
+}
+
+static double process_cpu_seconds(void) {
+    struct rusage usage;
+
+    if (getrusage(RUSAGE_SELF, &usage)) return -1.0;
+    return (double)usage.ru_utime.tv_sec + (double)usage.ru_utime.tv_usec / 1e6 + (double)usage.ru_stime.tv_sec +
+        (double)usage.ru_stime.tv_usec / 1e6;
+}
+
+/* debug.frame_cpu_probe: every 600 frames, the app's busiest threads' CPU time since the last time, in the log */
+static void thread_cpu_log(void) {
+    enum { KEPT = 64 };
+    static struct { uint64_t id; double seconds; } before[KEPT];
+    static int kept;
+    struct { uint64_t id; double seconds, used; char name[32]; } now[KEPT];
+    int count = 0, index, other;
+    thread_act_array_t threads;
+    mach_msg_type_number_t thread_count;
+    char line[512];
+    size_t length;
+
+    if (task_threads(mach_task_self(), &threads, &thread_count) != KERN_SUCCESS) return;
+    for (mach_msg_type_number_t at = 0; at < thread_count; at++) {
+        thread_basic_info_data_t basic;
+        thread_identifier_info_data_t identity;
+        mach_msg_type_number_t size = THREAD_BASIC_INFO_COUNT, id_size = THREAD_IDENTIFIER_INFO_COUNT;
+
+        if (count < KEPT && thread_info(threads[at], THREAD_BASIC_INFO, (thread_info_t)&basic, &size) == KERN_SUCCESS &&
+            thread_info(threads[at], THREAD_IDENTIFIER_INFO, (thread_info_t)&identity, &id_size) == KERN_SUCCESS) {
+            thread_extended_info_data_t extended;
+            mach_msg_type_number_t extended_size = THREAD_EXTENDED_INFO_COUNT;
+
+            now[count].id = identity.thread_id;
+            now[count].seconds = basic.user_time.seconds + basic.user_time.microseconds / 1e6 +
+                basic.system_time.seconds + basic.system_time.microseconds / 1e6;
+            now[count].used = now[count].seconds;
+            for (other = 0; other < kept; other++)
+                if (before[other].id == identity.thread_id) { now[count].used -= before[other].seconds; break; }
+            /* (the kernel's copy of the name: a pthread's own may be freed if the thread has just exited) */
+            now[count].name[0] = 0;
+            if (thread_info(threads[at], THREAD_EXTENDED_INFO, (thread_info_t)&extended, &extended_size) == KERN_SUCCESS)
+                snprintf(now[count].name, sizeof(now[count].name), "%s", extended.pth_name);
+            count++;
+        }
+        mach_port_deallocate(mach_task_self(), threads[at]);
+    }
+    vm_deallocate(mach_task_self(), (vm_address_t)threads, thread_count * sizeof(*threads));
+    for (index = 0; index < count; index++) { before[index].id = now[index].id; before[index].seconds = now[index].seconds; }
+    kept = count;
+    length = (size_t)snprintf(line, sizeof(line), "benchmark: busiest threads, CPU ms since the last line:");
+    for (int shown = 0; shown < 8 && length < sizeof(line) - 64; shown++) {
+        int best = -1;
+        for (index = 0; index < count; index++) if (now[index].used >= 0 && (best < 0 || now[index].used > now[best].used)) best = index;
+        if (best < 0 || now[best].used <= 0.0005) break;
+        length += (size_t)snprintf(line + length, sizeof(line) - length, " %s#%llu %.0f", now[best].name[0] ? now[best].name : "?",
+            (unsigned long long)now[best].id, now[best].used * 1e3);
+        now[best].used = -1.0;
+    }
+    host_logf(HOST_LOG_INFO, "%s", line);
+}
+
+static _Atomic uint64_t worker_waited_microseconds;
+
+void host_benchmark_worker_wait(uint32_t microseconds) {
+    atomic_fetch_add(&worker_waited_microseconds, microseconds);
+}
+
+double host_benchmark_worker_waited_take(void) {
+    return (double)atomic_exchange(&worker_waited_microseconds, 0) / 1e6;
+}
+
+void host_benchmark_frame_waits(double gpu_wait, double worker_wait) {
+    if (!atomic_load(&running)) return;
+    os_unfair_lock_lock(&lock);
+    if (window_open) benchmark_metrics_frame_waits(&metrics, gpu_wait * 1000.0, worker_wait * 1000.0);
+    os_unfair_lock_unlock(&lock);
+}
+
+void host_benchmark_frame_probe(void) {
+    static int setting = -1;
+    static double thread_before = -1.0, process_before = -1.0;
+
+    if (setting < 0) {
+        char value[8];
+
+        host_config_string("debug.frame_cpu_probe", "false", value, sizeof(value));
+        setting = !strcmp(value, "true");
+        if (setting) host_logf(HOST_LOG_INFO, "benchmark: debug.frame_cpu_probe: thread, process and clock probe per frame");
+    }
+    if (!setting) return;
+    static unsigned long probed;
+    double thread_now = (double)clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) / 1e9, process_now = process_cpu_seconds();
+    double probe = clock_probe_microseconds();
+    double thread_cpu = thread_before >= 0.0 ? thread_now - thread_before : -1.0;
+    double process_cpu = process_before >= 0.0 && process_now >= 0.0 ? process_now - process_before : -1.0;
+
+    /* (after this frame's readings, so its own cost falls in the next frame's) */
+    if (++probed % 600 == 0) thread_cpu_log();
+    thread_before = (double)clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) / 1e9;
+    process_before = process_cpu_seconds();
+    if (!atomic_load(&running) || thread_cpu < 0.0) return;
+    os_unfair_lock_lock(&lock);
+    if (window_open) benchmark_metrics_frame_probe(&metrics, thread_cpu * 1000.0, process_cpu * 1000.0, probe);
     os_unfair_lock_unlock(&lock);
 }
 
@@ -520,6 +704,7 @@ static void sample(void) {
     int thermal = (int)NSProcessInfo.processInfo.thermalState, open;
 
     if (!atomic_load(&running)) return;
+    if (run_open && low_power_now()) atomic_store(&run_low_power, 1);
     memory_now(&footprint, &left);
     os_unfair_lock_lock(&lock);
     open = window_open;
@@ -766,6 +951,28 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     NSMutableDictionary *record = [[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
     NSDictionary *upscaler = upscaler_metadata();
     record[@"upscaler"] = upscaler;
+    /* dynamic resolution: render_size is the ceiling; here the lines the window's frames rendered at */
+    if (dynamic_line_count) {
+        NSMutableArray *levels = [NSMutableArray array];
+        unsigned frames = 0, half, seen = 0;
+        int low = INT32_MAX, high = 0, median = 0;
+        for (unsigned i = 0; i < dynamic_line_count; i++) frames += dynamic_lines[i].frames;
+        half = (frames + 1) / 2;
+        /* (ascending lines, for the median) */
+        for (int pass = 0, last = 0; pass < (int)dynamic_line_count; pass++) {
+            int next = INT32_MAX; unsigned at = 0;
+            for (unsigned i = 0; i < dynamic_line_count; i++)
+                if (dynamic_lines[i].lines > last && dynamic_lines[i].lines < next) { next = dynamic_lines[i].lines; at = i; }
+            last = next;
+            seen += dynamic_lines[at].frames;
+            if (!median && seen >= half) median = next;
+            [levels addObject:@{@"lines": @(next), @"frames": @(dynamic_lines[at].frames),
+                @"seconds": @(round(dynamic_lines[at].seconds * 1000.0) / 1000.0)}];
+        }
+        low = [levels.firstObject[@"lines"] intValue]; high = [levels.lastObject[@"lines"] intValue];
+        record[@"dynamic_resolution"] = @{@"ceiling_lines": @(window_height), @"min_lines": @(low), @"median_lines": @(median),
+            @"max_lines": @(high), @"frames": @(frames), @"frames_unbinned": @(dynamic_line_other), @"levels": levels};
+    }
     record[@"graphics"] = graphics_metadata();
     record[@"catalog_signed"] = @(catalog_signed());
     NSMutableDictionary *settings = [record[@"settings"] mutableCopy];
@@ -792,14 +999,19 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
     /* (a presented reality check inside an offscreen suite measures what a player sees) */
-    int offscreen = host_benchmark_offscreen_requested() && finished->stage != 'P';
-    record[@"presented"] = @(!offscreen);
+    /* (a virtual launch's runs are all the virtual display's, a run that never opened its window too) */
+    int offscreen = host_benchmark_offscreen_requested() && finished->stage != 'P' && !window_presented &&
+        !virtual_display_setting;
+    int pacing = host_benchmark_pacing_of(host_benchmark_offscreen_requested(), offscreen, offscreen_pipelined,
+        virtual_display_setting);
+    /* (a virtual display's run is measured as a shown one: pacing_mode tells them apart) */
+    record[@"presented"] = @(pacing == HOST_BENCHMARK_PACING_PRESENTED || pacing == HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY);
     record[@"reality_check"] = @(finished->stage == 'P');
     record[@"measured_ticks"] = @(atomic_load(&window_ticks));
     record[@"capped"] = @(run_capped != 0);
     record[@"window_wall_cap_seconds"] = @(window_wall_cap());
     if (run_started_at > 0) record[@"wall_seconds"] = @(round((CFAbsoluteTimeGetCurrent() - run_started_at) * 10.0) / 10.0);
-    text = json_object(host_benchmark_measurement_record(record, presentation, offscreen));
+    text = json_object(host_benchmark_measurement_record(record, presentation, pacing));
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -1203,8 +1415,9 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
             launch_upscaler = gpu_metal_upscaler();
         }
     }
-    if (process.lowPowerModeEnabled) {
-        host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
+    if (low_power_now()) {
+        host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on%s; the benchmark does not run with it",
+            NSProcessInfo.processInfo.lowPowerModeEnabled ? "" : " (debug.low_power_frame_rate = always)");
         return 0;
     }
     output_failed = 0;
@@ -1656,7 +1869,9 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
         scene->enemy_multiplier, scene->sim_experiments, scene->sim_experiments_mask,
-        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P',
+        /* (presented: a reality check, or with debug.benchmark_virtual_display every run, to the virtual display) */
+        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max,
+        run.stage == 'P' || (host_benchmark_offscreen_requested() && virtual_display_setting),
         host_benchmark_offscreen_requested(),
         /* (-1 for a setting the case leaves to the configuration) */
         knobs.mask & BENCHMARK_KNOB_ANTI_ALIASING ? knobs.anti_aliasing : -1,
@@ -1672,6 +1887,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     run_capped = 0;
     os_unfair_lock_lock(&lock);
     window_open = window_interrupted = window_width = window_height = 0;
+    dynamic_line_count = dynamic_line_other = 0;
     benchmark_live_reset(&live);
     /* <= 2 GiB devices retain a 4 MiB collector; others allow 16 MiB. */
     host_benchmark_presentation_begin(scene->kind,
@@ -1687,6 +1903,8 @@ int host_benchmark_next(char *text, unsigned int size) {
     run_shader_before = host_benchmark_shader_snapshot(run_shader_directory, scene->map[0] ? @(scene->map) : @"ui");
     benchmark_journal_begin(JOURNAL, run.index, run.key);
     run_environment_start = environment_now();
+    atomic_store(&run_low_power, low_power_now());
+    run_power_notices = host_low_power_notices();
     run_output = output_now();
     struct host_external_snapshot output;
     host_external_snapshot(&output);
@@ -1707,6 +1925,8 @@ void host_benchmark_window(int open, int width, int height, int opened_tick) {
         window_height = height;
         /* (the tick of the first frame counted: a window that opens again, as a cutscene gives way to the game, keeps it) */
         if (metrics.frames == 0) metrics.window_opened_tick = opened_tick;
+        /* (how the run's measured frames go: shown, or in an offscreen launch offscreen or to the virtual display) */
+        if (metrics.frames == 0) window_presented = atomic_load(&presented_now);
         if (metrics.refresh_hertz <= 0.0)
             metrics.refresh_hertz = run_budget_hertz();
     }
@@ -1747,6 +1967,11 @@ void host_benchmark_end(const char *status_name, const char *note) {
         interrupted = 1;
         flag(@"output_changed");
         note = "the display connected, disconnected, or changed mode during this run";
+    }
+    if (atomic_load(&run_low_power) || low_power_now() || host_low_power_notices() != run_power_notices) {
+        interrupted = 1;
+        flag(@"low_power_mode");
+        note = "Low Power Mode was on during this run";
     }
     if (external_modes.count) {
         NSString *wanted = external_modes[external_mode_index];

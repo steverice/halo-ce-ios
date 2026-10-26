@@ -15,11 +15,13 @@ from types import SimpleNamespace
 
 if __package__:
     from . import profile_check as check
+    from . import profile_revision as revision
     from . import profile_cost_model as cost
     from . import profile_predict as predict
     from . import profile_propose as propose
 else:
     import profile_check as check
+    import profile_revision as revision
     import profile_cost_model as cost
     import profile_predict as predict
     import profile_propose as propose
@@ -27,6 +29,9 @@ else:
 ROOT = Path(__file__).resolve().parent.parent
 PROFILES = ROOT / "profiles"
 FEED = Path("docs/site/packs/tester")
+# this source's device-profile feed generation (tools/data_pack.py, PROFILE_FEED_DOMAIN)
+PROFILE_DOMAIN = "device-profiles-2"
+SHARDS = FEED / PROFILE_DOMAIN
 RECEIPT = FEED / "publication.json"
 RUN_JOB = Path.home() / "code/halovision/step-tools/run-job.sh"
 REPOSITORY = "steverice/visr"
@@ -209,11 +214,11 @@ def build_feed(targets, profiles, out, signing_key, run, repo=ROOT):
     """Sign a tester shard for each target; returns {target: (shard path, sequence)}."""
     shards = {}
     for target in targets:
-        sequence = manifest_sequence(repo / FEED / "profiles" / f"{target}.json") + 1
+        sequence = manifest_sequence(repo / SHARDS / f"{target}.json") + 1
         output = out / "feed" / f"{target}.json"
         output.parent.mkdir(parents=True, exist_ok=True)
         result = run(sys.executable, repo / "tools/data_pack.py", "--kind", "profiles", "--channel", "tester",
-                     "--sequence", sequence, "--compatibility", f"device-profiles-1:{target}", "--input", profiles,
+                     "--sequence", sequence, "--compatibility", f"{PROFILE_DOMAIN}:{target}", "--input", profiles,
                      "--signing-key", signing_key, "--output", output)
         if result.returncode:
             raise Failure(f"data_pack.py failed for {target} (exit {result.returncode})")
@@ -280,7 +285,7 @@ def build(options, run=None):
         raise Failure(f"{options.model} is not in cost-model/device-facts.csv")
     fits = fits_from(report, report_name)
     if not fits:
-        raise Failure("the report has no usable offscreen_uncapped runs and no fit exists to anchor on")
+        raise Failure("the report has no usable offscreen runs (offscreen_uncapped or offscreen_pipelined) and no fit exists to anchor on")
     fit = predict.predicted_fit(device, fits, devices, workload=options.workload)
     ranking = propose.read_ranking()
     platform = platform_of(device)
@@ -312,6 +317,9 @@ def build(options, run=None):
     result = run(sys.executable, ROOT / "tools/profile_check.py", target)
     if result.returncode:
         raise Failure("tools/profile_check.py rejected the changed profile; no pull request")
+    # the changed set gets the next revision, so apps that bundle the previous one take the new shards
+    if (work / revision.NAME).exists():
+        revision.bump(work)
 
     after_settings = {**current, **proposal.settings}
     shots = out / "screenshots"
@@ -347,11 +355,14 @@ def open_pull_request(options, out, target, evidence, shards, branch, key, devic
     repo = Path(options.worktree)
     paths = [Path("profiles") / target.name]
     shutil.copyfile(target, repo / paths[0])
+    if (target.parent / revision.NAME).exists():
+        paths.append(Path("profiles") / revision.NAME)
+        shutil.copyfile(target.parent / revision.NAME, repo / paths[1])
     if (evidence / "before.png").exists():
         publish_assets(evidence, key, run, out)
     receipt = json.loads((repo / RECEIPT).read_text())
     for shard, (path, _) in shards.items():
-        destination = FEED / "profiles" / f"{shard}.json"
+        destination = SHARDS / f"{shard}.json"
         (repo / destination).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, repo / destination)
         receipt["assets"][str(destination)] = hashlib.sha256(path.read_bytes()).hexdigest()

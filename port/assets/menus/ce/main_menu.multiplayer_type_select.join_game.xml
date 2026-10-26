@@ -171,9 +171,9 @@
 	<widget name="main_menu/multiplayer_type_select/join_game/player_count_label" type="text" controller="1" width="170" height="30" font="ui\small_ui" color="#FFFFFFFF" text_flags="no_focus_test">
 	</widget>
 	<widget name="main_menu/multiplayer_type_select/join_game/screen_stats_container" controller="1" width="640" height="480" color="#FFFFFFFF" align="right">
-		<child widget="main_menu/multiplayer_type_select/join_game/server_count_label" x="355" y="60"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/server_count_label" x="450" y="60"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/player_count_label" x="15" y="60"/>
-		<child widget="main_menu/multiplayer_type_select/join_game/page_count_label" x="220" y="60"/>
+		<child widget="main_menu/multiplayer_type_select/join_game/page_count_label" x="310" y="60"/>
 	</widget>
 	<widget name="main_menu/multiplayer_type_select/join_game/scroll_down_arrow" width="64" height="32" bitmap="bitmaps/arrow_sm_down">
 	</widget>
@@ -191,7 +191,7 @@
 		<on event="left_mouse" run="mouse emit accept event"/>
 		<child widget="main_menu/multiplayer_type_select/join_game/scroll_up_arrow" x="268" y="3"/>
 	</widget>
-	<widget name="main_menu/multiplayer_type_select/join_game/server_count_label" type="text" controller="1" width="265" height="30" font="ui\small_ui" color="#FFFFFFFF" align="right" text_flags="no_focus_test">
+	<widget name="main_menu/multiplayer_type_select/join_game/server_count_label" type="text" controller="1" width="170" height="30" font="ui\small_ui" color="#FFFFFFFF" align="right" text_flags="no_focus_test">
 	</widget>
 	<widget name="main_menu/multiplayer_type_select/join_game/server_item_1" width="620" height="18" bitmap="bitmaps/server_item_bkds">
 		<on event="a" run="gamespy select item"/>

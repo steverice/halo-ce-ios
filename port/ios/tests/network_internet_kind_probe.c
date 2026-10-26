@@ -79,23 +79,6 @@ int main(void)
 		bytes[65 + 8 * field] = 255;
 		assert(!listing_read(bytes, size, &parsed));
 	}
-	/* Captured master listing headers: internet/master-v1-servers.json.
-	   Version/flags are 00 27 23 and 00 27 21; counts are reported players,
-	   not machines, so an empty dedicated game stays at zero players. */
-	unsigned const flags[] = {0x23, 0x21, 0x01, 0xa3};
-	for (unsigned version = 38; version <= 39; version++)
-	for (unsigned f = 0; f < sizeof(flags) / sizeof(flags[0]); f++)
-	{
-		int size = record(bytes, 0, 0, 0);
-		bytes[4] = version; bytes[5] = flags[f]; bytes[62] = 0;
-		assert(listing_read(bytes, size, &parsed));
-		memset(&lobby, 0, sizeof(lobby));
-		memcpy(queued.payload, bytes, size); queued.size = size;
-		listing_take(&queued, &parsed);
-		assert(lobby.games[0].listing.dedicated == (version == 39 && f < 2));
-		assert(lobby.games[0].listing.player_count == 0);
-		assert(lobby.games[0].listing.network_version == version);
-	}
 	puts("PASS: internet kinds, locked records, variable strings, truncation");
 	return 0;
 }

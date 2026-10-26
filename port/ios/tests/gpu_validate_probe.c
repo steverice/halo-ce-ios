@@ -24,9 +24,11 @@ static uint8_t mock_astc = 1;
 static gpu_texture mock_texture_create(const struct gpu_texture_description *description) { (void)description; return ++next_handle; }
 static void mock_texture_upload(gpu_texture t, uint32_t f, uint32_t l, const void *d, uint32_t s) { (void)t; (void)f; (void)l; (void)d; (void)s; }
 static void mock_texture_copy_level(gpu_texture s, gpu_texture d, uint32_t l) { (void)s; (void)d; (void)l; }
+static void mock_texture_copy_rects(gpu_texture s, const struct gpu_texture_copy *c, uint32_t n) { (void)s; (void)c; (void)n; }
 static void mock_texture_generate_mipmaps(gpu_texture t, uint32_t b) { (void)t; (void)b; }
 static void mock_texture_destroy(gpu_texture t) { (void)t; }
 static uint32_t mock_texture_read(gpu_texture t, void *p, uint32_t s) { (void)t; (void)p; (void)s; return 0; }
+static void mock_texture_set_content(gpu_texture t, uint32_t w, uint32_t h) { (void)t; (void)w; (void)h; }
 static gpu_buffer mock_buffer_create(uint32_t size) { (void)size; return ++next_handle; }
 static void mock_buffer_write(gpu_buffer b, uint32_t o, uint32_t s, const void *d, uint32_t f) { (void)b; (void)o; (void)s; (void)d; (void)f; }
 static void mock_stream_reserve(uint32_t v, uint32_t i) { (void)v; (void)i; }

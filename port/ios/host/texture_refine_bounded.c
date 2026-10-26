@@ -5,6 +5,11 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "texture_upscale_big.h"
+/* (every buffer here is this file's own: out of malloc's large-block cache, texture_upscale_big.h) */
+#define malloc(n) texture_upscale_big_alloc(n)
+#define calloc(n, s) texture_upscale_big_calloc(n, s)
+#define free(p) texture_upscale_big_free(p)
 
 static uint32_t address(int64_t i, uint32_t size, int wrap)
 {
@@ -145,6 +150,12 @@ struct band_work
 	_Float16 *top16;    /* a color top kept in half precision, instead of top */
 };
 
+/* the scheduler's stop for gameplay (texture_refine_set_cancel): refinement ends with an error between rows */
+static const volatile int *refine_cancel;
+
+void texture_refine_set_cancel(const volatile int *flag) { refine_cancel = flag; }
+int texture_refine_cancelled(void) { return refine_cancel && *refine_cancel; }
+
 static void band_rows(void *context, size_t band)
 {
 	struct band_work *work = context;
@@ -155,7 +166,9 @@ static void band_rows(void *context, size_t band)
 	float *mask_vertical = malloc((size_t)w * sizeof(float)), *mask_row = malloc((size_t)bw * sizeof(float));
 	float *up = malloc((size_t)bw * sizeof(float)), *below = malloc((size_t)bw * sizeof(float));
 	if (!vertical || !row || !mask_vertical || !mask_row || !up || !below) { work->failed = 1; goto done; }
-	for (uint32_t y = first; y < last; y++) switch (work->pass) {
+	for (uint32_t y = first; y < last; y++) {
+	if (texture_refine_cancelled()) { work->failed = 1; break; }
+	switch (work->pass) {
 	case BAND_ADD_COLOR: {
 		up_row(work->small, w, work->h, channels, y, work->filter, work->wrap, work->columns, vertical, row);
 		if (work->top16) {
@@ -204,6 +217,7 @@ static void band_rows(void *context, size_t band)
 		break;
 	}
 	}
+	}
 done:
 	free(vertical); free(row); free(mask_vertical); free(mask_row); free(up); free(below);
 }
@@ -211,7 +225,7 @@ done:
 static int run_bands(struct band_work *work)
 {
 	uint32_t *columns = up_columns(work->w, work->filter, work->wrap), *smooth = up_columns(work->w, work->smooth, work->wrap);
-	work->failed = !columns || !smooth;
+	work->failed = !columns || !smooth || texture_refine_cancelled();
 	work->columns = columns; work->smooth_columns = smooth;
 	if (!work->failed) dispatch_apply_f(REFINE_BANDS, dispatch_get_global_queue(qos_class_self(), 0), work, band_rows);
 	free(columns); free(smooth);

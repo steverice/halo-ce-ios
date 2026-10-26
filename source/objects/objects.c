@@ -41,6 +41,7 @@ OBJECTS.C
 #include "objects/widgets/widgets.h"
 #include "physics/collision_bsp.h"
 #include "physics/collision_model_definitions.h"
+#include "cseries/profile_sections.h"
 #include "physics/collision_models.h"
 #include "physics/collision_usage.h"
 #include "physics/collisions.h"
@@ -3966,6 +3967,20 @@ boolean object_force_inside_bsp(
 	return result;
 }
 
+/* port: the profiling build's parts of each object's update (configure.py --profile; summed a tick,
+source/cseries/profile.c) and the update's scans of every object */
+PROFILE_SECTION(object_update_type_section, "object_update.type")
+PROFILE_SECTION(object_update_damage_section, "object_update.damage")
+PROFILE_SECTION(object_update_export_functions_section, "object_update.export_functions")
+PROFILE_SECTION(object_update_node_matrices_section, "object_update.node_matrices")
+PROFILE_SECTION(object_update_functions_section, "object_update.functions")
+PROFILE_SECTION(object_update_change_colors_section, "object_update.change_colors")
+PROFILE_SECTION(object_update_lights_section, "object_update.lights")
+PROFILE_SECTION(object_update_postprocess_section, "object_update.postprocess")
+PROFILE_SECTION(objects_update_activation_section, "objects_update.activation")
+PROFILE_SECTION(objects_update_created_deleted_section, "objects_update.created_deleted")
+PROFILE_SECTION(objects_update_garbage_section, "objects_update.garbage")
+
 static boolean object_update(
 	long object_index)
 {
@@ -3998,24 +4013,24 @@ static boolean object_update(
 		elevator = object->object.type == _object_type_machine &&
 			machine_get_elevator_position(object_index, &elevator_position);
 
-		object_type_update(object_index);
+		profile_scope(object_update_type_section, object_type_update(object_index);)
 		if (object_definition->object.collision_model.index!=NONE)
 		{
-			object_damage_update(object_index);
+			profile_scope(object_update_damage_section, object_damage_update(object_index);)
 		}
 
-		object_type_export_function_values(object_index);
+		profile_scope(object_update_export_functions_section, object_type_export_function_values(object_index);)
 
 		if (!TEST_FLAG(object->object.flags, _object_do_not_recompute_node_matrices_bit))
 		{
-			object_compute_node_matrices(object_index);
+			profile_scope(object_update_node_matrices_section, object_compute_node_matrices(object_index);)
 			/* port: carry by this tick's movement, after its collision nodes. */
 			if (elevator)
 				machine_move_elevator_riders(object_index, &elevator_position);
 		}
 
-		object_compute_function_values(object_index);
-		object_compute_change_colors(object_index);
+		profile_scope(object_update_functions_section, object_compute_function_values(object_index);)
+		profile_scope(object_update_change_colors_section, object_compute_change_colors(object_index);)
 
 		if (
 			TEST_FLAG(object->object.flags, _object_dynamic_lighting_recompute_bit) &&
@@ -4025,7 +4040,7 @@ static boolean object_update(
 			)
 		)
 		{
-			object_connect_lights(object_index, TRUE, TRUE);
+			profile_scope(object_update_lights_section, object_connect_lights(object_index, TRUE, TRUE);)
 		}
 
 		// Update children (if we have any)
@@ -4042,7 +4057,7 @@ static boolean object_update(
 			}
 		}
 
-		object_postprocess_node_matrices(object_index);
+		profile_scope(object_update_postprocess_section, object_postprocess_node_matrices(object_index);)
 	}
 
 	return result;
@@ -4613,6 +4628,7 @@ void objects_update(
 	memcpy(last_active_cluster_bits, active_cluster_bits, BIT_VECTOR_SIZE_IN_BYTES(cluster_count));
 	memcpy(active_cluster_bits, players_get_combined_pvs(), BIT_VECTOR_SIZE_IN_BYTES(cluster_count));
 
+	profile_scope_enter(objects_update_activation_section)
 	if (csmemcmp(last_active_cluster_bits, active_cluster_bits, BIT_VECTOR_SIZE_IN_BYTES(cluster_count)))
 	{
 		object_header = (struct object_header_datum *)object_header_data->data;
@@ -4624,8 +4640,27 @@ void objects_update(
 			{
 				if (TEST_FLAG(object_header->flags, _object_header_active_bit))
 				{
-					match_assert("c:\\halo\\SOURCE\\objects\\objects.c", 369, object_header->cluster_index!=NONE);
-					if (!BIT_VECTOR_TEST_FLAG(active_cluster_bits, object_header->cluster_index))
+					/* An object outside the map has no cluster: a weapon that never
+					touched the map, dropped by a unit that died outside it, is
+					reconnected with none and then activated (object_detach). The
+					game asserted here (objects.c #369, halting crowded co-op games)
+					and its release build read the bit before the vector. Such an
+					object is treated as outside the players' view, as
+					object_reconnect_to_map treats it. */
+					if (object_header->cluster_index==NONE)
+					{
+						static long outside_count = 0;
+						extern void platform_log(char const *format, ...);
+
+						/* (the first few noted, for the record of a crowded game) */
+						if (outside_count++ < 8)
+						{
+							platform_log("objects: active object %d (type %d) outside the map, deactivated",
+								(int)i, (int)object_header->type);
+						}
+					}
+					if (object_header->cluster_index==NONE ||
+						!BIT_VECTOR_TEST_FLAG(active_cluster_bits, object_header->cluster_index))
 					{
 						if (TEST_FLAG(object_header->datum->object.flags, _object_deleted_when_deactivated_bit))
 						{
@@ -4655,6 +4690,7 @@ void objects_update(
 			active_cluster_bits,
 			cluster_count);
 	}
+	profile_scope_exit(objects_update_activation_section)
 
 	object_header = (struct object_header_datum *)object_header_data->data;
 	for (i = 0; i<object_header_data->count; ++object_header)
@@ -4679,6 +4715,7 @@ void objects_update(
 		++i;
 	}
 
+	profile_scope_enter(objects_update_created_deleted_section)
 	object_header = (struct object_header_datum *)object_header_data->data;
 	for (i = 0; i<object_header_data->count; ++object_header)
 	{
@@ -4702,8 +4739,9 @@ void objects_update(
 		}
 		++i;
 	}
+	profile_scope_exit(objects_update_created_deleted_section)
 
-	objects_garbage_collection();
+	profile_scope(objects_update_garbage_section, objects_garbage_collection();)
 
 	profile_exit(section);
 

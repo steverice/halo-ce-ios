@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "VISR device profile",
-  "description": "Gameplay values, optional menu/cutscene values and external-output values. Only PROFILE_SCENE keys may vary by scene and PROFILE_EXTERNAL keys by output. Run profile_check.py for evidence and cross-file checks.",
+  "description": "Gameplay values (the predictable workload), optional variable-workload values, menu/cutscene values and external-output values. Only PROFILE_VARIABLE keys may vary by workload, PROFILE_SCENE keys by scene and PROFILE_EXTERNAL keys by output. Run profile_check.py for evidence and cross-file checks.",
   "type": "object",
   "properties": {
     "display": {
@@ -117,7 +117,7 @@
         "upscaled_textures": {
           "type": "boolean",
           "default": true,
-          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. Takes effect at the next level load. Profile values outside the accepted set are refused, not clamped."
+          "description": "Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. A device profile that sets false turns them off whatever this says. Takes effect at the next level load. Profile values outside the accepted set are refused, not clamped."
         },
         "anti_aliasing": {
           "type": "string",
@@ -195,6 +195,18 @@
           "type": "boolean",
           "default": true,
           "description": "Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. Profile values outside the accepted set are refused, not clamped."
+        },
+        "dynamic_resolution": {
+          "type": "boolean",
+          "default": false,
+          "description": "Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. The HUD and menus stay at the display's resolution. Read at launch. Profile values outside the accepted set are refused, not clamped."
+        },
+        "dynamic_resolution_floor": {
+          "type": "integer",
+          "minimum": 240.0,
+          "maximum": 2160.0,
+          "default": 540,
+          "description": "The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. Read at launch. Profile values outside the accepted set are refused, not clamped."
         },
         "texture_idle_seconds": {
           "type": "number",
@@ -517,6 +529,77 @@
       },
       "additionalProperties": false
     },
+    "variable": {
+      "type": "object",
+      "properties": {
+        "display": {
+          "type": "object",
+          "properties": {
+            "render_height": {
+              "type": "integer",
+              "minimum": 0.0,
+              "maximum": 4320.0,
+              "default": 0,
+              "description": "Internal rendering height in physical pixels: 0 (default) uses native display resolution. Try 1080, 720 or 480 for lower GPU/battery use. The selected aspect ratio is preserved; changes apply on relaunch. Profile values outside the accepted set are refused, not clamped."
+            },
+            "render_scale": {
+              "type": "number",
+              "minimum": 0.25,
+              "maximum": 1.0,
+              "default": 1.0,
+              "description": "Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. Profile values outside the accepted set are refused, not clamped."
+            },
+            "shadow_map_size": {
+              "type": "integer",
+              "minimum": 128.0,
+              "maximum": 1024.0,
+              "default": 512,
+              "description": "The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. Profile values outside the accepted set are refused, not clamped."
+            },
+            "anti_aliasing": {
+              "type": "string",
+              "enum": [
+                "off",
+                "fxaa",
+                "smaa"
+              ],
+              "default": "off",
+              "description": "Smoothing of jagged edges, which the Xbox did not have: \"off\", or \"fxaa\" or \"smaa\", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). SMAA is sharper and costs more. Profile values outside the accepted set are refused, not clamped."
+            },
+            "frame_rate": {
+              "type": "string",
+              "oneOf": [
+                {
+                  "enum": [
+                    "display",
+                    "unlimited"
+                  ]
+                },
+                {
+                  "pattern": "^(?:[3-9][0-9]|[1-9][0-9]{2}|1000)$"
+                }
+              ],
+              "default": "display",
+              "description": "The most frames a second: \"display\" (default) draws one frame for each refresh of the display; a number (\"60\", \"240\") holds that rate; \"unlimited\" draws as fast as it can. In the Mac app, above the display's refresh rate and with \"unlimited\", frames no longer wait for the display, so the picture can tear and the Mac uses more power; a frame the display isn't ready for is drawn and not shown. On iPhone, iPad and Apple TV a number under the display's highest rate runs the display at it (\"60\" on a 120 Hz screen); a higher number and \"unlimited\" keep the display's rate. The game still runs at 30 ticks a second whatever is drawn, and with display.interpolation off it draws 30 frames a second at most. A Vision Pro paces frames itself and ignores this. Profile values outside the accepted set are refused, not clamped."
+            },
+            "dynamic_resolution": {
+              "type": "boolean",
+              "default": false,
+              "description": "Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. The HUD and menus stay at the display's resolution. Read at launch. Profile values outside the accepted set are refused, not clamped."
+            },
+            "dynamic_resolution_floor": {
+              "type": "integer",
+              "minimum": 240.0,
+              "maximum": 2160.0,
+              "default": 540,
+              "description": "The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. Read at launch. Profile values outside the accepted set are refused, not clamped."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "evidence": {
       "type": "object",
       "properties": {
@@ -653,6 +736,50 @@
           ]
         },
         "scene.cutscene.display.render_height": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "variable.display.render_height": {
           "type": "object",
           "properties": {
             "basis": {
@@ -1064,6 +1191,50 @@
             }
           ]
         },
+        "variable.display.render_scale": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
         "external.display.render_scale": {
           "type": "object",
           "properties": {
@@ -1428,6 +1599,50 @@
             }
           ]
         },
+        "variable.display.shadow_map_size": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
         "display.effect_resolution": {
           "type": "object",
           "properties": {
@@ -1737,6 +1952,50 @@
           ]
         },
         "display.anti_aliasing": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "variable.display.anti_aliasing": {
           "type": "object",
           "properties": {
             "basis": {
@@ -2180,6 +2439,50 @@
             }
           ]
         },
+        "variable.display.frame_rate": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
         "display.async_shaders": {
           "type": "object",
           "properties": {
@@ -2225,6 +2528,182 @@
           ]
         },
         "display.interpolation": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.dynamic_resolution": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "variable.display.dynamic_resolution": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "display.dynamic_resolution_floor": {
+          "type": "object",
+          "properties": {
+            "basis": {
+              "enum": [
+                "measured",
+                "assumed",
+                "inherited"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 20
+            },
+            "source": {
+              "type": "string",
+              "minLength": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "basis",
+            "why"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "basis": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "basis"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source"
+                ]
+              }
+            }
+          ]
+        },
+        "variable.display.dynamic_resolution_floor": {
           "type": "object",
           "properties": {
             "basis": {

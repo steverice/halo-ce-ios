@@ -1,4 +1,4 @@
-/* Reserve an aligned arena and emulate Xbox pages on Apple's 16 KB pages. */
+/* Reserve the guest arena and emulate Xbox pages on Apple's 16 KB pages. */
 #include "ios_host.h"
 #include <mach/mach.h>
 #include <pthread.h>
@@ -56,6 +56,10 @@ static void arena_report(void) {
 /* Set to 0 by a test, or by HALO_ARENA_SHORT=1 in the app's environment, to
    exercise the shorter reservation. */
 int host_arena_try_full = 1;
+/* Set to 1 by a test, or by HALO_ARENA_UNALIGNED=1 in the app's environment,
+   to place the arena off every multiple of 4 GiB on a host that would grant
+   an aligned one. */
+int host_arena_force_unaligned = 0;
 uint64_t host_arena_size;
 
 /* The guest image ends near 0x8A70B000, so a reservation of about 2.2 GiB covers
@@ -65,32 +69,109 @@ uint64_t host_arena_size;
    faults inside the arena. Approach from CoreCE PR #1 (CC0). */
 #define ARENA_MINIMUM_END 0x8B000000ull
 
-int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
-    const char *force_short = getenv("HALO_ARENA_SHORT");
-    if (force_short && *force_short && strcmp(force_short, "0")) host_arena_try_full = 0;
-    uint64_t short_size = (uint64_t)image_base + image_size;
-    short_size = (short_size + 0xffffffull) & ~0xffffffull;
-    if (short_size < ARENA_MINIMUM_END) short_size = ARENA_MINIMUM_END;
-    vm_address_t arena = 0;
-    uint64_t size = 0x100000000ull;
-    kern_return_t result = host_arena_try_full ? vm_map(mach_task_self(), &arena, size, 0xffffffffull,
-        VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE) : KERN_FAILURE;
-    if (result != KERN_SUCCESS || (arena & 0xffffffffull)) {
-        if (host_arena_try_full) host_logf(HOST_LOG_WARN,"cannot reserve the 4 GB guest arena (%d); trying %llu MB",result,(unsigned long long)(short_size>>20));
-        arena = 0; size = short_size;
-        result = vm_map(mach_task_self(), &arena, size, 0xffffffffull,
-            VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE, VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE);
-        if (result != KERN_SUCCESS || (arena & 0xffffffffull)) {
-            host_logf(HOST_LOG_ERROR,"cannot reserve aligned guest arena: %d",result);
-            arena_report();
-            return -1;
+static uint64_t arena_short_size(uint32_t image_base, uint32_t image_size) {
+    uint64_t size = (uint64_t)image_base + image_size;
+    size = (size + 0xffffffull) & ~0xffffffull;
+    return size < ARENA_MINIMUM_END ? ARENA_MINIMUM_END : size;
+}
+
+static kern_return_t arena_map(vm_address_t *arena, uint64_t size, uint64_t mask) {
+    *arena = 0;
+    return vm_map(mach_task_self(), arena, size, mask, VM_FLAGS_ANYWHERE, MACH_PORT_NULL, 0, FALSE,
+        VM_PROT_NONE, VM_PROT_ALL, VM_INHERIT_NONE);
+}
+
+/* Any free range of the size. Forced unaligned, the arena starts 0x7FFFC000 past
+   a multiple of 4 GiB, so its low 32 bits overlap most guest pointers and any
+   place that still ORs or truncates instead of adding gives a wrong address. */
+#define ARENA_FORCE_OFFSET 0x7FFFC000ull
+static kern_return_t arena_map_anywhere(vm_address_t *arena, uint64_t size) {
+    if (!host_arena_force_unaligned) return arena_map(arena, size, 0);
+    vm_address_t base;
+    kern_return_t result = arena_map(&base, size + 0x100000000ull, 0xffffffffull);
+    if (result != KERN_SUCCESS) return arena_map(arena, size, 0);
+    vm_deallocate(mach_task_self(), base, ARENA_FORCE_OFFSET);
+    vm_deallocate(mach_task_self(), base + ARENA_FORCE_OFFSET + size, 0x100000000ull - ARENA_FORCE_OFFSET);
+    *arena = base + ARENA_FORCE_OFFSET;
+    return KERN_SUCCESS;
+}
+
+static int env_set(const char *name) {
+    const char *value = getenv(name);
+    return value && *value && strcmp(value, "0");
+}
+
+/* Reserve 4 GiB at a multiple of 4 GiB, else 4 GiB anywhere, else the shorter
+   range anywhere: guest pointers are offsets from the arena's start (x27), so
+   any 16 KiB-aligned start works, and a full 4 GiB keeps every stray 32-bit
+   pointer inside the reservation. Logs nothing, so it can run before main.
+   *aligned_result is the aligned attempt's result (KERN_FAILURE when skipped). */
+static kern_return_t arena_reserve(uint64_t short_size, vm_address_t *arena, uint64_t *size, kern_return_t *aligned_result) {
+    if (env_set("HALO_ARENA_SHORT")) host_arena_try_full = 0;
+    if (env_set("HALO_ARENA_UNALIGNED")) host_arena_force_unaligned = 1;
+    kern_return_t result = KERN_FAILURE;
+    *aligned_result = KERN_FAILURE;
+    if (host_arena_try_full) {
+        *size = 0x100000000ull;
+        if (!host_arena_force_unaligned) {
+            result = arena_map(arena, *size, 0xffffffffull);
+            if (result == KERN_SUCCESS && (*arena & 0xffffffffull)) {
+                vm_deallocate(mach_task_self(), *arena, *size);
+                result = KERN_NO_SPACE;
+            }
+            *aligned_result = result;
+            if (result == KERN_SUCCESS) return result;
         }
+        result = arena_map_anywhere(arena, *size);
+        if (result == KERN_SUCCESS) return result;
+    }
+    *size = short_size;
+    result = arena_map_anywhere(arena, *size);
+    if (result != KERN_SUCCESS) *arena = 0;
+    return result;
+}
+
+/* The reservation host_memory_reserve_early made, kept for host_memory_initialize. */
+static vm_address_t early_arena;
+static uint64_t early_size;
+static kern_return_t early_aligned_result, early_result = KERN_FAILURE;
+static int early_attempted;
+
+void host_memory_reserve_early(uint32_t image_base, uint32_t image_size) {
+    early_attempted = 1;
+    early_result = arena_reserve(arena_short_size(image_base, image_size), &early_arena, &early_size, &early_aligned_result);
+}
+
+int host_memory_initialize(uint32_t image_base, uint32_t image_size) {
+    uint64_t short_size = arena_short_size(image_base, image_size);
+    vm_address_t arena;
+    uint64_t size;
+    kern_return_t aligned_result, result;
+    const char *when;
+    if (early_attempted && early_result == KERN_SUCCESS && early_size >= short_size) {
+        arena = early_arena; size = early_size; aligned_result = early_aligned_result; result = KERN_SUCCESS;
+        when = "at launch";
+    } else {
+        if (early_attempted && early_result == KERN_SUCCESS) vm_deallocate(mach_task_self(), early_arena, early_size);
+        if (early_attempted && early_result != KERN_SUCCESS)
+            host_logf(HOST_LOG_WARN,"cannot reserve the guest arena at launch (%d); trying again",early_result);
+        result = arena_reserve(short_size, &arena, &size, &aligned_result);
+        when = "now";
+    }
+    early_attempted = 0;
+    if (aligned_result != KERN_SUCCESS && host_arena_try_full && !host_arena_force_unaligned)
+        host_logf(HOST_LOG_WARN,"cannot reserve the 4 GB guest arena at a multiple of 4 GB (%d); trying any address",aligned_result);
+    if (result != KERN_SUCCESS) {
+        host_logf(HOST_LOG_ERROR,"cannot reserve the guest arena (%llu MB at any address): %d",(unsigned long long)(short_size>>20),result);
+        arena_report();
+        return -1;
     }
     host_arena_size = size;
-    host_logf(HOST_LOG_INFO,"guest arena size %llu MB%s",(unsigned long long)(size>>20),size==0x100000000ull?"":" (reduced)");
+    host_logf(HOST_LOG_INFO,"guest arena size %llu MB%s, reserved %s",(unsigned long long)(size>>20),size==0x100000000ull?"":" (reduced)",when);
     host_arena = arena;
     if (mprotect(host_pointer(HALO_GUEST_WINDOW_BASE),HALO_GUEST_WINDOW_SIZE,PROT_READ|PROT_WRITE)) return -1;
-    host_logf(HOST_LOG_INFO,"guest arena at %llx, native pages %d",(unsigned long long)arena,getpagesize());
+    host_logf(HOST_LOG_INFO,"guest arena at %llx%s, native pages %d",(unsigned long long)arena,
+        arena & 0xffffffffull ? " (not at a multiple of 4 GB)" : "",getpagesize());
     return 0;
 }
 
@@ -224,8 +305,8 @@ static void mark_written(unsigned page) {
 }
 static void fault(int sig,siginfo_t *info,void *context) {
     uintptr_t p=(uintptr_t)info->si_addr;
-    if (host_low_owns(p,1) && in_window((uint32_t)p,1)) {
-        unsigned page=((uint32_t)p-HALO_GUEST_WINDOW_BASE)/PAGE;
+    if (host_low_owns(p,1) && in_window((uint32_t)(p-host_arena),1)) {
+        unsigned page=((uint32_t)(p-host_arena)-HALO_GUEST_WINDOW_BASE)/PAGE;
         page_lock(page);
         /* A second writer may already have repaired this page after our fault
            was queued. Remember that it was tracked even when now writable. */

@@ -210,6 +210,66 @@ static void size_and_delete(void)
 	assert(texture_cache_delete_all("/tmp/no-such-texture-cache") == 0);
 }
 
+/* readiness: a level is ready only when every texture its policy upscales has a current entry */
+static void progress(void)
+{
+	struct texture_recipe_globals g = globals(), newer = g;
+	struct texture_policy_decision d[3] = {
+		{ 0x10, 64, 64, TEXTURE_POLICY_GRAPHIC, TEXTURE_POLICY_S4G, TEXTURE_POLICY_COLOR, 1, 0, 0, 2 },
+		{ 0x20, 32, 32, TEXTURE_POLICY_SURFACE, TEXTURE_POLICY_ORIGINAL, TEXTURE_POLICY_COLOR, 1, 0, 0, 1 },
+		{ 0x30, 16, 16, TEXTURE_POLICY_SURFACE, TEXTURE_POLICY_BPF, TEXTURE_POLICY_COLOR, 1, 0, 0, 8 } };
+	struct texture_cache_record r[2] = {
+		{ 0x30, 16, 16, TEXTURE_POLICY_BPF, TEXTURE_POLICY_COLOR, 1, texture_recipe_global_key(&g, TEXTURE_POLICY_COLOR, TEXTURE_POLICY_BPF), 8 },
+		{ 0x99, 8, 8, TEXTURE_POLICY_S4G, TEXTURE_POLICY_COLOR, 1, 1, 8 } };
+	struct texture_cache_key level[2] = { { 0x30, 16, 16 }, { 0x20, 32, 32 } }, unknown = { 0x40, 4, 4 };
+	struct texture_cache_progress p;
+
+	texture_cache_progress(NULL, 0, d, 3, r, 2, &g, &p);
+	assert(p.textures == 2 && p.ready == 1 && p.units == 64 * 64 + 16 * 16 * 4 && p.ready_units == 16 * 16 * 4);
+	/* a level whose upscaled textures are all made (an original one counts for nothing) */
+	texture_cache_progress(level, 2, d, 3, r, 2, &g, &p);
+	assert(p.textures == 1 && p.ready == 1);
+	/* a key the decisions do not list is ignored; no records at all is nothing ready */
+	texture_cache_progress(&unknown, 1, d, 3, NULL, 0, &g, &p);
+	assert(p.textures == 0 && p.ready == 0);
+	texture_cache_progress(level, 1, d, 3, NULL, 0, &g, &p);
+	assert(p.textures == 1 && p.ready == 0);
+	/* a global recipe change makes the entry stale: not ready until it is redone */
+	newer.iterations = 4;
+	texture_cache_progress(level, 2, d, 3, r, 2, &newer, &p);
+	assert(p.textures == 1 && p.ready == 0);
+	/* an entry the compression gate kept original counts as made */
+	r[0].result = TEXTURE_POLICY_ORIGINAL;
+	texture_cache_progress(level, 2, d, 3, r, 2, &g, &p);
+	assert(p.ready == 1);
+}
+
+/* the decisions beside the manifest: round trip in classify order, refused when damaged, deleted with the cache */
+static void decisions(void)
+{
+	char directory[] = "/tmp/texture-cache-decisions-XXXXXX", path[256];
+	struct texture_policy_decision d[2] = {
+		{ 0x30, 16, 16, TEXTURE_POLICY_SURFACE, TEXTURE_POLICY_BPF, TEXTURE_POLICY_COLOR, 1, 0, 0, 2 },
+		{ 0x10, 64, 64, TEXTURE_POLICY_GRAPHIC, TEXTURE_POLICY_ORIGINAL, TEXTURE_POLICY_BUMP_MAP, 1, 0, 0, 1 } };
+	struct texture_policy_decision *loaded = NULL;
+	size_t count = 0;
+	FILE *file;
+
+	assert(mkdtemp(directory));
+	assert(texture_cache_decisions_load(directory, &loaded, &count) == -1 && !loaded);
+	assert(texture_cache_decisions_save(directory, d, 2) == 0);
+	assert(texture_cache_decisions_load(directory, &loaded, &count) == 0 && count == 2);
+	assert(loaded[0].hash == 0x10 && loaded[0].result == TEXTURE_POLICY_ORIGINAL && loaded[0].treatment == TEXTURE_POLICY_BUMP_MAP);
+	assert(loaded[1].hash == 0x30 && loaded[1].width == 16 && loaded[1].result == TEXTURE_POLICY_BPF);
+	free(loaded);
+	snprintf(path, sizeof(path), "%s/decisions.tsv", directory);
+	file = fopen(path, "a"); fputs("not a decision\n", file); fclose(file);
+	assert(texture_cache_decisions_load(directory, &loaded, &count) == -1 && !loaded && !count);
+	assert(texture_cache_delete_all(directory) == 0);
+	assert(access(path, F_OK) != 0);
+	assert(rmdir(directory) == 0);
+}
+
 int main(void)
 {
 	keys();
@@ -219,6 +279,8 @@ int main(void)
 	storage();
 	write_fails_cleanly();
 	size_and_delete();
+	progress();
+	decisions();
 	puts("texture_cache_probe: ok");
 	return 0;
 }

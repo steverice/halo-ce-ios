@@ -2,6 +2,7 @@
    texture-s4gbp-set.py, and texture-resolution-set.py. */
 #include "texture_upscale_generate.h"
 #include "texture_refine.h"
+#include "texture_upscale_big.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,17 +77,17 @@ static size_t count(uint32_t width, uint32_t height, uint32_t channels)
 static struct image allocate(uint32_t width, uint32_t height, uint32_t channels)
 {
     size_t n = count(width, height, channels);
-    return (struct image){n ? malloc(n * sizeof(float)) : NULL, width, height, channels, NULL};
+    return (struct image){n ? texture_upscale_big_alloc(n * sizeof(float)) : NULL, width, height, channels, NULL};
 }
 static struct image allocate_half(uint32_t width, uint32_t height, uint32_t channels)
 {
     size_t n = count(width, height, channels);
-    return (struct image){NULL, width, height, channels, n ? malloc(n * sizeof(_Float16)) : NULL};
+    return (struct image){NULL, width, height, channels, n ? texture_upscale_big_alloc(n * sizeof(_Float16)) : NULL};
 }
 static int allocated(const struct image *image) { return image->pixels || image->half; }
 static void release(struct image *image)
 {
-    free(image->pixels); free(image->half);
+    texture_upscale_big_free(image->pixels); texture_upscale_big_free(image->half);
     memset(image, 0, sizeof(*image));
 }
 static float value_at(const struct image *image, size_t i) { return image->half ? (float)image->half[i] : image->pixels[i]; }
@@ -160,12 +161,12 @@ static uint8_t *finish(struct image *image, enum texture_upscale_alpha alpha)
                 out[4 * i + c] = (uint8_t)nearbyintf(v * 255);
             }
         }
-        uint8_t *shrunk = realloc(out, n * 4);
+        uint8_t *shrunk = texture_upscale_big_shrink(out, n * 4);
         image->half = NULL;
         release(image);
         return shrunk ? shrunk : out;
     }
-    uint8_t *out = malloc(n * 4);
+    uint8_t *out = texture_upscale_big_alloc(n * 4);
     if (!out) return NULL;
     if (image->channels == 4) texture_upscale_finish(image->pixels, image->width, image->height, alpha, out);
     else for (size_t i = 0; i < n; i++) {
@@ -242,7 +243,7 @@ void texture_upscale_generate_stats(struct texture_upscale_generator *generator,
 void texture_upscale_generate_free_output(struct texture_upscale_generate_output *output)
 {
     if (!output) return;
-    for (unsigned i = 0; i < output->level_count; i++) free((void *)output->levels[i].pixels);
+    for (unsigned i = 0; i < output->level_count; i++) texture_upscale_big_free((void *)output->levels[i].pixels);
     free(output->levels);
     memset(output, 0, sizeof(*output));
 }
@@ -655,6 +656,9 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
     int result = -1;
     double started;
     trace(generator, "end");
+    /* (a stop for gameplay ends the texture between stages; refinement also between rows) */
+#define STOPPED() (texture_refine_cancelled() && (fail(error, error_size, "stopped for gameplay"), 1))
+    if (STOPPED()) goto done;
     if (is_bump) {
         if (bump_top(generator, input, &bump, &raw_height, base, output->result == TEXTURE_POLICY_BPF, &top, &params,
                 &output->seconds, error, error_size)) goto done;
@@ -668,8 +672,10 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
             ((policy->damage_share >= 0 && (float)output->damage_share >= policy->damage_share) ||
              (policy->damage_structure_loss >= 0 && (float)output->structure_loss_s4g >= policy->damage_structure_loss));
         if (damage_fired) output->result = TEXTURE_POLICY_BPF;
+        if (STOPPED()) goto done;
         if (output->result == TEXTURE_POLICY_BPF) {
             if (refine_color(&top, &reference, base, input->wrap, &params, &output->seconds)) goto done;
+            if (STOPPED()) goto done;
             trace(generator, "refined");
             /* A 4x base's 2x mip is downsampled from the unquantized refinement, so take it before the top is
                quantized for damage.stats, which measures the stored bpf bytes. Quantizing in place changes no stored
@@ -685,6 +691,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
                 int measured = measure(&top, &reference, base, input->wrap, input->alpha != TEXTURE_UPSCALE_ALPHA_NONE,
                     &ignored, &output->structure_loss_bpf, &output->seconds);
                 if (measured) goto done;
+                if (STOPPED()) goto done;
                 if (damage_fired && policy->damage_bpf_structure_loss >= 0) {
                     resized = allocate(reference.width * base, reference.height * base, 3);
                     struct image rgb = select_channels(&reference, 3);
@@ -709,6 +716,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
             }
         }
     }
+    if (STOPPED()) goto done;
     started = seconds();
     if (append_level(output, &top, input->alpha)) goto done;
     sample_footprint(generator);
@@ -725,6 +733,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
     output->seconds.mips += seconds() - started;
     trace(generator, "base");
     if (requested > base) {
+        if (STOPPED()) goto done;
         if (is_bump) {
             if (bump_top(generator, input, &bump, &raw_height, requested, output->result == TEXTURE_POLICY_BPF, &top,
                 &params, &output->seconds, error, error_size)) goto done;
@@ -739,10 +748,12 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
                 quantize_in_place(&top, input->alpha);
             }
             trace(generator, "high");
+            if (STOPPED()) goto done;
             if (output->result == TEXTURE_POLICY_BPF &&
                 refine_color(&top, &reference, requested, input->wrap, &params, &output->seconds)) goto done;
             trace(generator, "high-refined");
         }
+        if (STOPPED()) goto done;
         started = seconds();
         if (prepend_level(output, &top, input->alpha)) goto done;
         sample_footprint(generator);
@@ -754,7 +765,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
     for (unsigned i = 0; i < input->level_count; i++) {
         const struct texture_upscale_rgba_level *source = &input->levels[i];
         size_t bytes = (size_t)source->width * source->height * 4;
-        uint8_t *copy = malloc(bytes);
+        uint8_t *copy = texture_upscale_big_alloc(bytes);
         if (!copy) goto done;
         memcpy(copy, source->pixels, bytes);
         output->levels[output->level_count++] = (struct texture_upscale_rgba_level){copy, source->width, source->height};
@@ -767,13 +778,14 @@ done:
         texture_upscale_generate_free_output(output);
         if (!error || !error_size || !error[0]) fail(error, error_size, "texture generation failed");
     } else if (output->result == TEXTURE_POLICY_ORIGINAL) {
-        for (unsigned i = 0; i < output->level_count; i++) free((void *)output->levels[i].pixels);
+        for (unsigned i = 0; i < output->level_count; i++) texture_upscale_big_free((void *)output->levels[i].pixels);
         free(output->levels); output->levels = NULL; output->level_count = 0;
     }
     if (!result) *final = *output;
     memset(output, 0, sizeof(*output));
     job_release(job);
     return result;
+#undef STOPPED
 }
 
 int texture_upscale_generate(struct texture_upscale_generator *generator,
@@ -804,6 +816,13 @@ int texture_upscale_generate_raw4x(struct texture_upscale_generator *generator,
         free(bump.height);
     } else result = infer_color(generator, input, input->levels, &raw, 0, NULL, &times, error, error_size);
     if (result) { release(&raw); return fail(error, error_size, "raw prediction failed"); }
-    *pixels = raw.pixels; *channels = raw.channels;
+    /* (the caller frees it with free(): a debug export's copy, out of the mapped image) */
+    size_t bytes = count(raw.width, raw.height, raw.channels) * sizeof(float);
+    float *copy = malloc(bytes ? bytes : 1);
+    if (!copy) { release(&raw); return fail(error, error_size, "raw prediction: out of memory"); }
+    if (raw.pixels) memcpy(copy, raw.pixels, bytes);
+    else for (size_t i = 0; i < bytes / sizeof(float); i++) copy[i] = (float)raw.half[i];
+    *pixels = copy; *channels = raw.channels;
+    release(&raw);
     return 0;
 }

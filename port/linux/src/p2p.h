@@ -231,8 +231,6 @@ struct p2p_listing
 	char gametype[P2P_LISTING_GAMETYPE_SIZE + 1];
 	unsigned char player_count, maximum_player_count, engine_type, kind;
 	unsigned char open, in_progress, has_teams;
-	/* The advertised host has no player of its own. */
-	unsigned char dedicated;
 	/* joining it failed this run (p2p_lobby_mark_failed) */
 	unsigned char failed;
 	/* milliseconds, -1 if not known */

@@ -89,6 +89,8 @@ symbols in this file:
 #include "main/console.h" /* port: stereo's UI quad (console_is_active) */
 #include "game/players.h" /* port: stereo's zoomed pass (player_control_get_zoom_level) */
 #include "structures/structures.h"
+#include "text/draw_string.h" /* port: the loading screen's upscaling line */
+#include <stdio.h>
 
 /* ---------- constants */
 
@@ -252,6 +254,8 @@ static void render_nonplayer_frame(
 	return;
 }
 
+static void render_loading_upscale_note(real fraction); /* port */
+
 void render_frame_pregame(
 	struct render_window const *window,
 	struct bitmap_data *bitmap)
@@ -288,6 +292,12 @@ void render_frame_pregame(
 		if (halo_loading_screen_progress(&progress) || game_map_loading_in_progress(&progress))
 		{
 			progress_bar_display(progress);
+			/* port: and, while it waits for a level's upscaled textures
+			(port/linux/game/loading_screen.c), their line under it */
+			if (halo_loading_screen_upscale_note(&progress))
+			{
+				render_loading_upscale_note(progress);
+			}
 		}
 	}
 
@@ -295,6 +305,32 @@ void render_frame_pregame(
 	profile_render_window_end();
 	rasterizer_windows_end();
 	rasterizer_frame_end();
+
+	return;
+}
+
+/* port: "Upscaling assets", its progress and how to skip, under the loading
+screen's band */
+static void render_loading_upscale_note(
+	real fraction)
+{
+	real_argb_color color = { 1.0f, 1.0f, 1.0f, 1.0f };
+	rectangle2d bounds;
+	long font_tag_index;
+	char text[96];
+
+	font_tag_index = interface_get_tag_index(_interface_font_terminal);
+	if (font_tag_index == NONE)
+	{
+		return;
+	}
+	snprintf(text, sizeof(text), "Upscaling assets %d%%   Press A to skip", (int)(fraction * 100.0f));
+	bounds = render.camera.window_bounds;
+	offset_rectangle2d(&bounds, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
+	bounds.y0 = bounds.y1 - 40;
+	bounds.y1 = bounds.y1 - 22;
+	draw_string_set_draw_mode(font_tag_index, NONE, 2, 0, &color);
+	rasterizer_draw_string(&bounds, NULL, NULL, 0, text);
 
 	return;
 }

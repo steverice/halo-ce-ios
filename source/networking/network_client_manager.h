@@ -46,10 +46,6 @@ unsigned int network_game_client_advertised_game_version(
 unsigned int network_game_client_advertised_game_kind(
 	struct network_game_client *client,
 	struct network_advertised_game const *game);
-/* port: whether the advertised host has no player of its own */
-boolean network_game_client_advertised_game_dedicated(
-	struct network_game_client *client,
-	struct network_advertised_game const *game);
 /* port: whether the advertised game is under way, not in its lobby */
 boolean network_game_client_advertised_game_in_progress(
 	struct network_game_client *client,

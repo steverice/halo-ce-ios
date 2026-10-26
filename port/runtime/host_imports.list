@@ -3,6 +3,8 @@
 host_syscall
 host_log
 host_abort
+host_guest_halt
+host_map_load_failed
 host_exit
 host_benchmark_start
 host_benchmark_next
@@ -60,9 +62,11 @@ host_sdl_resume_audio_stream_device
 host_gpu_texture_create
 host_gpu_texture_upload
 host_gpu_texture_copy_level
+host_gpu_texture_copy_rects
 host_gpu_texture_generate_mipmaps
 host_gpu_texture_destroy
 host_gpu_texture_read
+host_gpu_texture_set_content
 host_gpu_buffer_create
 host_gpu_buffer_write
 host_gpu_stream_reserve
@@ -111,6 +115,7 @@ host_data_updates_frame_ready
 host_frame_cpu_phase
 host_benchmark_offscreen_request
 host_benchmark_presented
+host_benchmark_worker_wait
 
 # Wired external display lifecycle and test controls
 host_external_active
@@ -118,6 +123,10 @@ host_external_commit
 host_external_cycle
 host_external_force
 host_external_mode_label
+
+# Dynamic resolution's lines for the next frame (host_perf_hooks.c)
+host_dynamic_resolution_lines
+host_dynamic_resolution_scene
 
 host_touch_replay_active
 host_memory_pressure_poll
@@ -142,6 +151,12 @@ host_device_profile_applied
 host_astc_map_arrived
 host_astc_map_will_load
 host_astc_game_started
+host_texture_upscale_paused
+host_texture_upscale_level_begin
+host_texture_upscale_level_poll
+host_texture_upscale_level_end
+host_texture_upscale_level_ready
+host_texture_cache_directory
 host_astc_texture_key
 host_astc_texture_read
 host_astc_texture_generation

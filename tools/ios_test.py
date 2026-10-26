@@ -18,6 +18,7 @@ def run(*args):
 run('python3', 'tools/test_touch_mapping.py')
 # Held touch sticks must stop feeding movement while the pause menu is open.
 run('python3', 'tools/test_touch_pause.py')
+run('python3', 'tools/test_ios_asm_convert.py')
 run('python3', 'tools/test_astc_rewrite.py')
 run('python3', 'tools/test_astc_encode.py')
 run('python3', 'tools/astc_upload_test.py')
@@ -26,7 +27,7 @@ run('python3', 'tools/astc_worker_test.py')
 
 clang = '/opt/homebrew/opt/llvm/bin/clang'
 lld = '/opt/homebrew/opt/lld/bin/ld.lld'
-run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
+run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27', '-fno-omit-frame-pointer',
     '-mllvm', '-aarch64-enable-compress-jump-tables=false', '-fno-stack-protector', '-ffreestanding',
     '-O2', '-S', 'port/ios/tests/guest_probe.c', '-o', BUILD/'probe.darwin.s')
 run('python3', 'tools/ios_asm_convert.py', BUILD/'probe.darwin.s', BUILD/'probe.s')
@@ -47,7 +48,7 @@ run(BUILD/'benchmark-page-policy-tester-probe')
 run('xcrun', 'clang', '-O2', '-Iport/linux/src', 'port/ios/tests/gpu_layout_probe.c', '-o', BUILD / 'gpu-layout-probe')
 with open(BUILD / 'gpu_layout_check.h', 'w') as layout_check:
     subprocess.run([str(BUILD / 'gpu-layout-probe')], cwd=ROOT, check=True, stdout=layout_check)
-run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27',
+run(clang, '--target=arm64_32-apple-watchos', '-mcpu=cortex-a53', '-ffixed-x15', '-ffixed-x27', '-fno-omit-frame-pointer',
     '-fno-stack-protector', '-ffreestanding', '-Iport/linux/src', '-fsyntax-only', '-x', 'c', BUILD / 'gpu_layout_check.h')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src', '-Iport/ios/host',
     'port/ios/tests/spatial_pose_probe.c', '-o', BUILD / 'spatial-pose-probe')
@@ -122,6 +123,9 @@ run('xcrun','clang','-O2','-Iport/ios/host','-Iport/runtime/include','-Iport/lin
     '-Iport/runtime/guest/runtime','port/ios/tests/memory_probe.c','port/ios/host/host_memory.c','-o',BUILD/'memory-probe')
 run(BUILD/'memory-probe')
 run(BUILD/'memory-probe', 'reduced')
+run(BUILD/'memory-probe', 'early')
+run(BUILD/'memory-probe', 'unaligned')
+run(BUILD/'memory-probe', 'unaligned-reduced')
 sdl_flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'sdl3'], text=True))
 run('xcrun', 'clang', '-O2', '-DHALO_IOS=1', '-Iport/ios/host', '-Iport/ios/host',
     '-Iport/runtime/include', 'port/ios/tests/audio_probe.c', '-Wl,-dead_strip',
@@ -164,6 +168,10 @@ for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-d
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
     'port/ios/tests/config_origins_probe.c', *sdl_flags, '-o', BUILD / 'config-origins-probe')
 run(BUILD / 'config-origins-probe')
+# the device profile's workload context: which games are predictable and which variable (workload_context.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/game', 'port/ios/tests/workload_context_probe.c',
+    '-o', BUILD / 'workload-context-probe')
+run(BUILD / 'workload-context-probe')
 # Safe-point profile merges preserve choices, defer resource settings and handle removals.
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
     'port/ios/tests/profile_hot_apply_probe.c', *sdl_flags, '-o', BUILD / 'profile-hot-apply-probe')
@@ -217,6 +225,27 @@ run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="tes
     'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'data-updates-probe')
 run(BUILD / 'data-updates-probe')
+# 0.6.0 profiles keep every bundled key (the iPhone 17 Pro's player capacity, the Apple TV 4K (3rd generation)'s
+# upscaled textures): with 0.5.1's live device-profiles-1 shard still cached, with a
+# device-profiles-2 shard signed here by the publisher, and once an update makes a cached shard older
+seed = BUILD / 'profile-feed-probe-seed'
+seed.write_bytes(bytes(range(32))); seed.chmod(0o600)
+for name, target in (('iphone', 'ios/iPhone18,1/_'), ('apple-tv', 'tvos/AppleTV14,1/_')):
+    run('python3', 'tools/data_pack.py', '--kind', 'profiles', '--channel', 'tester', '--sequence', '1',
+        '--compatibility', 'device-profiles-2:' + target, '--input', 'profiles', '--signing-key', seed,
+        '--output', BUILD / f'profile-feed-probe-{name}.json')
+probe_key = subprocess.run([str(BUILD / 'data-pack-sign'), '--public-key', str(seed)], check=True,
+                           capture_output=True, text=True, cwd=ROOT).stdout.strip()
+run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
+    '-Iport/ios/host', '-Iport/runtime/include', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
+    '-framework', 'Network', '-lz', 'port/ios/tests/profile_feed_probe.m', 'port/ios/host/host_data_pack.m',
+    'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/ios/host/host_profile_delivery.c',
+    'port/ios/host/host_recording_pack.c', 'port/ios/host/host_shader_pack.c', 'port/ios/host/host_benchmark_catalog.m', 'port/runtime/benchmark_plan.c',
+    'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
+    'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'profile-feed-probe')
+run(BUILD / 'profile-feed-probe', ROOT,
+    re.search(r"^DATA_PACK_PUBLIC_KEY = '([0-9a-f]{64})'", (ROOT / 'tools/ios_build.py').read_text(), re.M)[1],
+    probe_key, BUILD / 'profile-feed-probe-iphone.json', BUILD / 'profile-feed-probe-apple-tv.json')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks',
     '-Iport/runtime/include', '-framework', 'Foundation', '-lz', 'port/ios/tests/shader_download_probe.m',
     'port/ios/host/host_data_pack.m', 'port/ios/host/host_shader_pack.c',
@@ -232,6 +261,7 @@ run(BUILD / 'benchmark-snapshot-probe')
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
 run('python3', 'tools/settings_schema.py', '--check')
 run('python3', 'tools/profile_check.py')
+run('python3', 'tools/profile_revision.py')
 run('python3', 'tools/test_profile_check.py')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-Iport/ios/host',
     'port/ios/tests/touch_replay_probe.c', '-o', BUILD / 'touch-replay-probe')
@@ -344,6 +374,19 @@ run(BUILD/'frame-pacer-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/dynamic_resolution_probe.c', '-o', BUILD/'dynamic-resolution-probe')
 run(BUILD/'dynamic-resolution-probe')
+# display.frame_deadline: each frame's deadline, and the workgroup calls the drawing thread makes
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    '-framework', 'AudioToolbox', 'port/ios/tests/frame_deadline_probe.c', '-o', BUILD/'frame-deadline-probe')
+run(BUILD/'frame-deadline-probe')
+# visibility answers by fixed latency (visibility_history.h): from the expected frames, whatever the GPU's timing
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/visibility_history_probe.c', '-o', BUILD/'visibility-history-probe')
+run(BUILD/'visibility-history-probe')
+# Low Power Mode's frame rate: the power-state notice posted as the system posts it, and the rate across transitions
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-fsanitize=address,undefined',
+    '-DHALO_LOW_POWER_TESTING=1', '-Iport/ios/host', '-framework', 'Foundation',
+    'port/ios/tests/low_power_probe.m', 'port/ios/host/host_low_power.m', '-o', BUILD/'low-power-probe')
+run(BUILD/'low-power-probe')
 # the device benchmark's metrics, plan and journal (port/runtime/benchmark_*.c): percentiles of made-up frames,
 # the sweep walked with made-up devices, and the journal cut at every byte and after every write
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
@@ -367,6 +410,14 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     'port/ios/tests/dynamic_resolution_hooks_probe.c', 'port/ios/host/host_perf_hooks.c',
     '-o', BUILD/'dynamic-resolution-hooks-probe')
 run(BUILD/'dynamic-resolution-hooks-probe')
+# Actuation: lines handed to the guest between frames follow the planner, a refusal returns to the ceiling, and the
+# debug pin and sweep hold or step them.
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
+    '-DHALO_PERF_REPORTS=0', '-Iport/ios/host', '-Iport/runtime',
+    'port/ios/tests/dynamic_resolution_actuation_probe.c', 'port/ios/host/host_perf_hooks.c',
+    '-o', BUILD/'dynamic-resolution-actuation-probe')
+for mode in ('plan', 'pin', 'sweep', 'profile', 'notiming', 'variable', 'variable-floor-environment'):
+    run(BUILD/'dynamic-resolution-actuation-probe', mode)
 # Counter metadata remains bounded and refuses stale/partial completion; no GPU submission.
 run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
     '-fobjc-arc', '-fblocks', '-Iport/runtime', '-Iport/ios/host',
@@ -607,6 +658,14 @@ run(BUILD/'texture-cache-probe')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/linux/src',
     'port/ios/tests/texture_upscale_state_probe.c', '-o', BUILD/'texture-upscale-state-probe')
 run(BUILD/'texture-upscale-state-probe')
+# when the on-device upscaler may run: the profile gate, gameplay and pauses (port/runtime/texture_upscale_schedule.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/texture_upscale_schedule_probe.c', '-o', BUILD/'texture-upscale-schedule-probe')
+run(BUILD/'texture-upscale-schedule-probe')
+# the import phase's continued processing (port/runtime/texture_upscale_continued.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',
+    'port/ios/tests/texture_upscale_continued_probe.c', '-o', BUILD/'texture-upscale-continued-probe')
+run(BUILD/'texture-upscale-continued-probe')
 # the host's write of one setting into config.toml, for the Settings app's switch (port/ios/host/host_config.c)
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Iport/ios/host', 'port/ios/tests/host_config_write_probe.c',
     'port/ios/host/host_config.c', '-o', BUILD/'host-config-write-probe')

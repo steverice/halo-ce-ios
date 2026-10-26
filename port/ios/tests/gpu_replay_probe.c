@@ -48,9 +48,11 @@ static void note(const char *name, uint32_t a, uint32_t b)
 static gpu_texture mock_texture_create(const struct gpu_texture_description *d) { note("texture_create", hash_bytes(d, sizeof(*d)), 0); return next_handle += 3; }
 static void mock_texture_upload(gpu_texture t, uint32_t f, uint32_t l, const void *d, uint32_t s) { (void)t; note("texture_upload", f << 8 | l, hash_bytes(d, s)); }
 static void mock_texture_copy_level(gpu_texture s, gpu_texture d, uint32_t l) { (void)s; (void)d; note("copy_level", l, 0); }
+static void mock_texture_copy_rects(gpu_texture s, const struct gpu_texture_copy *c, uint32_t n) { (void)s; note("copy_rects", n, hash_bytes(c, n * sizeof(*c))); }
 static void mock_texture_generate_mipmaps(gpu_texture t, uint32_t b) { (void)t; note("mipmaps", b, 0); }
 static void mock_texture_destroy(gpu_texture t) { (void)t; note("texture_destroy", 0, 0); }
 static uint32_t mock_texture_read(gpu_texture t, void *p, uint32_t s) { (void)t; (void)p; (void)s; return 0; }
+static void mock_texture_set_content(gpu_texture t, uint32_t w, uint32_t h) { (void)t; (void)w; (void)h; }
 static gpu_buffer mock_buffer_create(uint32_t size) { note("buffer_create", size, 0); return next_handle += 3; }
 static void mock_buffer_write(gpu_buffer b, uint32_t o, uint32_t s, const void *d, uint32_t f) { (void)b; (void)f; note("buffer_write", o, hash_bytes(d, s)); }
 static void mock_stream_reserve(uint32_t v, uint32_t i) { note("stream_reserve", v, i); }

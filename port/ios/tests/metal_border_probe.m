@@ -21,6 +21,7 @@ encoder boundaries are stand-ins; no GPU device or command buffer is made. */
     struct gpu_texture_description description;
     id<MTLTexture> texture;
     unsigned long used;
+    id<MTLTexture> view_parent;
 }
 @end
 @implementation MetalTexture
@@ -60,6 +61,7 @@ encoder boundaries are stand-ins; no GPU device or command buffer is made. */
 - (void)setFragmentSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index;
 - (void)setFragmentBytes:(const void *)bytes length:(NSUInteger)length atIndex:(NSUInteger)index;
 - (void)setFragmentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index;
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages;
 @end
 @implementation ProbeEncoder
 - (void)setFragmentTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index
@@ -70,6 +72,8 @@ encoder boundaries are stand-ins; no GPU device or command buffer is made. */
 { assert(index == 3 && length == sizeof(colors)); memcpy(colors, bytes, length); colorCalls++; }
 - (void)setFragmentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index
 { (void)buffer; (void)offset; (void)index; assert(!"unexpected foveation buffer"); }
+- (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage stages:(MTLRenderStages)stages
+{ (void)resource; (void)usage; (void)stages; assert(!"unexpected view of another texture"); }
 @end
 
 static ProbeDevice *device;

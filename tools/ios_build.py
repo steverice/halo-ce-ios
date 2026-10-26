@@ -33,6 +33,8 @@ HEADERS = {
 # feeds on the project's site, one folder per channel
 DATA_PACK_PUBLIC_KEY = 'b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea'
 DATA_PACK_FEED = 'https://code.steverice.org/visr/packs/{channel}/{kind}.json'
+# the device-profile shards' directory for this source's feed generation (tools/data_pack.py, PROFILE_FEED_DOMAIN)
+PROFILE_FEED_DIRECTORY = 'device-profiles-2'
 
 HOST_PROFILE = ROOT / 'pgo/visr_host.profdata'
 HOST_PROFILE_RAW = ROOT / 'build/host-pgo/raw'
@@ -365,6 +367,7 @@ def main():
     if args.frame_pacing:
         command.append(f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}')
     command.append(f'-DHALO_TESTER_BUILD={"ON" if args.tester else "OFF"}')
+    command.append(development_hooks(args))
     routes = args.benchmark_routes or ('off' if args.tester else 'on')
     command.append(f'-DHALO_BENCHMARK_ROUTES={routes.upper()}')
     # a new CFBundleVersion each build, so an install over the app replaces it (on an Apple TV that keeps
@@ -412,6 +415,11 @@ def main():
             print(f'dSYM: {target}')
         else:
             print(f'no dSYM at {dsym}: the upload will carry no debug symbols', flush=True)
+        # the guest's symbols, which name the guest frames of this build's crash reports
+        # (tools/guest_symbolicate.py); the app carries the same table in __TEXT,__halosyms
+        symbols = ROOT/'build/ios/embedded/guest-symbols.txt'
+        shutil.copy2(symbols, args.app_store_package.resolve()/'guest-symbols.txt')
+        print(f'guest symbols: {args.app_store_package.resolve()/"guest-symbols.txt"}')
         for command in [] if args.archive_only else commands[1:]:
             run(*command)
         print(f'App Store Connect package: {args.app_store_package}' +
@@ -549,6 +557,11 @@ def benchmark_upload_aps_environment(
     return profile["Entitlements"]["aps-environment"]
 
 
+def development_hooks(args):
+    """Development-only switches (HALO_TEXTURE_UPSCALE_STOP_TEST and the like) are compiled out of App Store packages."""
+    return f'-DHALO_DEVELOPMENT_HOOKS={"OFF" if getattr(args, "app_store_package", None) else "ON"}'
+
+
 def cloud_definitions(bundle_id, cloud_saves, cloud_container, benchmark_upload=False, shader_upload=False, perf_reports=False):
     """the CMake definitions for --cloud-saves and --benchmark-upload: off unless asked for, and then with a
     container, which only the project's own bundle IDs have a default for (a container belongs to one developer team)"""
@@ -580,7 +593,7 @@ def data_pack_settings(args):
         return '', '', '', ''
     channel = getattr(args, 'data_pack_channel', None) or ('tester' if args.tester else 'stable')
     return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
-            DATA_PACK_FEED.format(channel=channel, kind='profiles').removesuffix('.json') if args.profile_feed_url is None else args.profile_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind=PROFILE_FEED_DIRECTORY).removesuffix('.json') if args.profile_feed_url is None else args.profile_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None
             else args.recording_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='shaders') if args.shader_feed_url is None else args.shader_feed_url)
@@ -637,7 +650,7 @@ def build_mac(args, cloud, data_packs=()):
         f'-DHALO_RENDER_VALIDATION={"ON" if args.render_validation == "on" else "OFF"}',
         f'-DHALO_BUILD_NUMBER={time.strftime("%Y%m%d.%H%M%S")}',
         *([f'-DHALO_MARKETING_VERSION={args.marketing_version}'] if args.marketing_version else []),
-        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,*data_packs,
+        *([f'-DHALO_FRAME_PACING={args.frame_pacing.upper()}'] if args.frame_pacing else []),*cloud,*data_packs,development_hooks(args),
         *host_pgo_flags(args.host_pgo))
     # ad hoc, except with --cloud-saves or --benchmark-upload: iCloud entitlements need a development signature and a
     # Mac profile (and the Mac itself registered with the team, which a Mac profile lists as its device)

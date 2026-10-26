@@ -220,10 +220,12 @@ NSDictionary *host_benchmark_presentation_diagnostics(void) {
     pthread_mutex_unlock(&mutex);
     return result;
 }
-NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictionary *presentation, int offscreen) {
+NSDictionary *host_benchmark_measurement_record(NSDictionary *record, NSDictionary *presentation, int pacing) {
     NSMutableDictionary *result = [record mutableCopy];
-    /* offscreen_uncapped: frames drawn as fast as the device goes, never shown (debug.benchmark_offscreen) */
-    result[@"timing_basis"] = @(host_benchmark_timing_basis(offscreen));
+    /* offscreen_uncapped: frames drawn as fast as the device goes, never shown (debug.benchmark_offscreen);
+       offscreen_pipelined and virtual_display: host_benchmark_offscreen.h */
+    result[@"timing_basis"] = @(host_benchmark_timing_basis(pacing));
+    result[@"pacing_mode"] = @(host_benchmark_pacing_mode(pacing));
     result[@"measurement_semantics_version"] = presentation ? @3 : @1;
     result[@"measurement_semantics"] = @{ @"interval_ms": @"submission_timing", @"frame_interval": @"submission_timing", @"frames_a_second": @"submission_throughput",
         @"shown_refreshes": @"inferred_refresh_bins_from_submission_intervals", @"on_time_full": @"inferred_from_submission_intervals", @"on_time_half": @"inferred_from_submission_intervals",
