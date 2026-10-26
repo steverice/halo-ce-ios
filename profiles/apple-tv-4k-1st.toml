@@ -1,6 +1,8 @@
 # Apple TV 4K, 1st generation (2017, model A1842): A10X Fusion, 3 GB, GPU family Apple3.
-# AN ESTIMATE: nothing here has been measured on this model. Every value is scaled from the Apple TV HD's
-# measurements and meant to make a first run playable; the benchmark report replaces it.
+# Measured in the 0.5.0 build (20261025.150026, 2026-10-25) at render 720: on a 720p TV the model holds
+# 60 frames a second at up to 2x enemies (on-time 0.9956 or better in every window). On a 4K TV with output
+# capped it reaches 59.4 frames a second at 99.0% on time (full-4K drawable in 0.4.1: 55.0 and 90.7%).
+# Settings other than the render and output heights are still estimates scaled from the Apple TV HD.
 # Least sure, so the first things to sweep: the render height (720, 900, 1080), then anisotropic filtering
 # (4, 8, 16), then the model detail.
 
@@ -18,7 +20,7 @@ render_scale = 1.0
 shadow_map_size = 512
 texture_idle_seconds = 30
 render_height = 720
-output_height = 720
+output_height = 1080
 anisotropic_filtering = 4
 model_lod = "auto"
 
@@ -67,5 +69,5 @@ why = "Pinned to the built-in default so the Apple TV class profile's floor (the
 
 [evidence."display.output_height"]
 basis = "measured"
-why = "At render 720 this model held 60 frames a second on a 720p TV at 1x, 1.5x and 2x enemies (on-time 0.998 or better, GPU 12 to 15 ms) but fell to 51 to 59 on a 4K TV, GPU 15 to 19 ms: the cost of drawing and upscaling into a 3840x2160 drawable. A cap equal to the render height draws every TV's frame the way the 720p TV's was drawn, with no upscale pass, and the system scales it to the panel. The menu's 1080 is gone with it, since the render height cannot exceed the output."
-source = "TestFlight 0.4.1 benchmark reports on AppleTV6,2, 720p and 4K TVs, full-unified suite, 2026-10-22"
+why = "On a 4K TV with the scene at 720 lines, handing the Apple TV a 1080 image tied a 720 image when both ran cool (on-time 0.991 in the 8 windows where both were thermally nominal; GPU mean 14.1 against 14.7 ms over all windows), against the full 4K drawable baseline at 55.0 frames a second and 0.907 on time. 1080 gives the HUD and text 1.5 times the lines and gives 1080p TVs a native picture. The cap only lowers output, so 720p TVs are unchanged. Steve's decision."
+source = "TestFlight 0.5.0 benchmark reports X6RJWBVJ, 3LADMGUU, U764MX75 (4K TV) and ZGVMKGQJ (0.4.1 baseline), build 20261025.150026, 2026-10-25"

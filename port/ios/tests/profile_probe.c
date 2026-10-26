@@ -452,13 +452,13 @@ static void check_shipped(const char *shipped)
 	assert(has(&profile, "display.render_height", "1080") && !profile.model_file[0] &&
 		has(&profile, "display.render_scale", "0.5") && has(&profile, "display.anisotropic_filtering", "4"));
 	/* the two Apple TV 4K models with estimated profiles: 720 in play on the first, with its built-in output capped
-	at 720 (a tvOS profile's own display.output_height, for the host and never the game), and 1080 on the third */
+	at 1080 (a tvOS profile's own display.output_height, for the host and never the game), and 1080 on the third */
 	profile = resolve(shipped, device("tvos", "AppleTV6,2", "", 3), NULL, "");
 	assert(has(&profile, "display.render_height", "720") && has(&profile, "display.anisotropic_filtering", "4") &&
 		has(&profile, "display.renderer", "metal") && !strcmp(profile.model_file, "apple-tv-4k-1st.toml"));
-	assert(has(&profile, "display.output_height", "720"));
+	assert(has(&profile, "display.output_height", "1080"));
 	host_profile_encode(&profile, encoded, sizeof(encoded));
-	assert(strstr(encoded, "display.output_height\t720\tmodel Apple TV 4K (1st generation)\n"));
+	assert(strstr(encoded, "display.output_height\t1080\tmodel Apple TV 4K (1st generation)\n"));
 	profile = resolve(shipped, device("tvos", "AppleTV14,1", "", 8), NULL, "");
 	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.anisotropic_filtering", "16") &&
 		!strcmp(profile.model_file, "apple-tv-4k-3rd.toml"));
