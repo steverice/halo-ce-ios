@@ -21,7 +21,7 @@ static struct { game_perf_frame frame; int width; } delayed[16];
 static unsigned delayed_read, delayed_write;
 static pthread_mutex_t dynamic_lock = PTHREAD_MUTEX_INITIALIZER;
 static int dynamic_paused;
-static int dynamic_width, dynamic_eligible;
+static int dynamic_width, dynamic_eligible, dynamic_configured;
 static _Atomic int dynamic_setting = -1;
 /* Actuation: display.dynamic_resolution, or a debug pin or sweep. Each is
  * read once, as the shadow switch is: a profile sets them for the session. */
@@ -39,6 +39,14 @@ static int setting_integer(const char *name, const char *environment_name, const
     return atoi(environment ? environment : text);
 }
 int host_perf_hooks_dynamic_enabled(void) {
+    /* Not settled before the device profile is installed: a profile alone may turn it on. */
+    if (dynamic_setting < 0 && !host_config_profile_installed()) {
+        return setting_true("debug.dynamic_resolution_shadow", "HALO_DYNAMIC_RESOLUTION_SHADOW") ||
+            setting_true("display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
+            setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE") ||
+            setting_integer("debug.dynamic_resolution_lines", "HALO_DYNAMIC_RESOLUTION_LINES", "0") > 0 ||
+            setting_true("debug.dynamic_resolution_sweep", "HALO_DYNAMIC_RESOLUTION_SWEEP");
+    }
     if (dynamic_setting < 0) {
         int shadow_on = setting_true("debug.dynamic_resolution_shadow", "HALO_DYNAMIC_RESOLUTION_SHADOW");
         int floor = setting_integer("display.dynamic_resolution_floor", "HALO_DYNAMIC_RESOLUTION_FLOOR", "540");
@@ -52,7 +60,22 @@ int host_perf_hooks_dynamic_enabled(void) {
     }
     return dynamic_setting;
 }
-int host_perf_hooks_dynamic_actuates(void) { return host_perf_hooks_dynamic_enabled() && dynamic_actuate; }
+int host_perf_hooks_dynamic_actuates(void) { return host_perf_hooks_dynamic_enabled() && dynamic_setting >= 0 && dynamic_actuate; }
+/* the lines the frame being presented rendered at, while dynamic resolution renders them; 0 otherwise */
+int host_perf_hooks_dynamic_lines(void) {
+    return host_perf_hooks_dynamic_actuates() && dynamic_eligible ? (int)pending.drs.actual_lines : 0;
+}
+/* Without stage-boundary GPU timing the planner never has a decision to make,
+ * so dynamic resolution is off rather than silently holding the ceiling. */
+static int dynamic_timing_available(void) {
+    static int said;
+    if (host_perf_metal_stage_supported()) return 1;
+    if (!said && dynamic_configured) {
+        fprintf(stderr, "dynamic resolution: off: this GPU has no stage-boundary timing for the planner\n");
+        said = 1;
+    }
+    return 0;
+}
 void host_perf_hooks_dynamic_ignore(unsigned reason) { atomic_fetch_or(&dynamic_events, reason); }
 /* Between frames, on the game thread. The planner's level was decided from
  * frames presented at least eight frames ago (dynamic_drain_locked); the
@@ -62,16 +85,19 @@ int host_dynamic_resolution_lines(int ceiling_lines) {
     int lines;
     if (!host_perf_hooks_dynamic_actuates()) return 0;
     /* (asked whether it is on at all, with nothing changed) */
-    if (ceiling_lines < 0) return 1;
+    if (ceiling_lines < 0) return dynamic_timing_available();
+    if (!dynamic_timing_available()) return 0;
     pthread_mutex_lock(&dynamic_lock);
     shadow.actuate = 1;
-    if (ceiling_lines <= 0) {
+    /* A frame the planner could not measure (split screen's several views,
+     * a stereo frame) returns to the ceiling too: no decision would follow. */
+    if (ceiling_lines <= 0 || (dynamic_configured && !dynamic_eligible)) {
         if (shadow.plan.levels && shadow.plan.level) {
             shadow.plan.level = 0;
             shadow.plan.settle = DYNAMIC_RESOLUTION_SETTLE;
         }
         pthread_mutex_unlock(&dynamic_lock);
-        return 0;
+        return ceiling_lines > 0 ? ceiling_lines : 0;
     }
     lines = ceiling_lines;
     /* Until the first frame at this ceiling is measured, render the ceiling. */
@@ -88,7 +114,7 @@ int host_dynamic_resolution_lines(int ceiling_lines) {
     return lines;
 }
 void host_perf_hooks_dynamic_config(int enabled, int width, int height, int actual, int floor, int thermal, int eligible) {
-    dynamic_width = width; dynamic_eligible = enabled && eligible;
+    dynamic_width = width; dynamic_eligible = enabled && eligible; dynamic_configured = 1;
     pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
     pending.drs.actual_lines = actual > 0 && actual <= height ? (uint32_t)actual : pending.drs.ceiling_lines;
     if (floor <= 0) floor = dynamic_floor;

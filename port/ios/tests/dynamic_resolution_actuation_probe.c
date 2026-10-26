@@ -3,7 +3,9 @@
  * renders them, and the frames it presents come back tagged with them.
  * A sustained fight lowers the lines; its end raises them back to the
  * ceiling one level at a time; a refusal returns to the ceiling at once.
- * "pin" and "sweep" (argv[1]) check the debug overrides. */
+ * "pin" and "sweep" (argv[1]) check the debug overrides; "profile" turns it on from a
+ * device profile alone, installed after the first question; "notiming" is a GPU
+ * without stage-boundary timing, where it stays off. */
 #include "host_perf_hooks.h"
 #include "host_perf_reports.h"
 #include "dynamic_resolution.h"
@@ -14,8 +16,13 @@
 #include <string.h>
 static double load = 1.0;
 static unsigned rows, drops, recoveries;
+static int profile_installed = 1, profile_on, stage_timing = 1, ineligible;
+int host_config_profile_installed(void) { return profile_installed; }
+int host_perf_metal_stage_supported(void) { return stage_timing; }
 void host_config_string(const char *name, const char *fallback, char *out, size_t size) {
-    (void)name; snprintf(out, size, "%s", fallback);
+    /* the device profile's value, once installed */
+    if (profile_on && profile_installed && !strcmp(name, "display.dynamic_resolution")) { snprintf(out, size, "true"); return; }
+    snprintf(out, size, "%s", fallback);
 }
 void host_perf_reports_frame(const game_perf_frame *frame) {
     rows++;
@@ -39,7 +46,7 @@ static int frame(int ceiling) {
     int rendered = lines > 0 ? lines : ceiling;
     host_perf_hooks_phase_at(7, 0, now);
     host_perf_hooks_present_begin_at(now + 100);
-    host_perf_hooks_dynamic_config(1, 1920, 1080, rendered, 540, 0, ceiling > 0);
+    host_perf_hooks_dynamic_config(1, 1920, 1080, rendered, 540, 0, ceiling > 0 && !ineligible);
     host_perf_hooks_budget(16667);
     host_perf_hooks_cpu(3000);
     host_perf_hooks_present_end_at(now + 200);
@@ -51,8 +58,20 @@ int main(int count, char **arguments) {
     int lines = 0, lowest = 1080, previous, i;
     if (!strcmp(mode, "pin")) assert(!setenv("HALO_DYNAMIC_RESOLUTION_LINES", "700", 1));
     else if (!strcmp(mode, "sweep")) assert(!setenv("HALO_DYNAMIC_RESOLUTION_SWEEP", "true", 1));
-    else assert(!setenv("HALO_DYNAMIC_RESOLUTION", "true", 1));
+    else if (!strcmp(mode, "profile")) {
+        /* asked before the profile is installed: not settled yet, and off */
+        profile_installed = 0; profile_on = 1;
+        assert(!host_perf_hooks_dynamic_actuates() && host_dynamic_resolution_lines(1080) == 0);
+        profile_installed = 1;
+    } else assert(!setenv("HALO_DYNAMIC_RESOLUTION", "true", 1));
     assert(host_perf_hooks_dynamic_actuates());
+    if (!strcmp(mode, "notiming")) {
+        stage_timing = 0;
+        assert(host_dynamic_resolution_lines(-1) == 0);
+        for (i = 0; i < 60; i++) assert(frame(1080) == 0);
+        return 0;
+    }
+    assert(host_dynamic_resolution_lines(-1) == 1);
     /* the first frames at a ceiling render it, until one is measured */
     assert(frame(1080) == 1080);
     for (i = 0; i < 120; i++) lines = frame(1080);
@@ -102,6 +121,14 @@ int main(int count, char **arguments) {
     assert(lines < 1080);
     assert(frame(0) == 0);
     assert(frame(1080) == 1080);
+    /* split screen: frames the planner cannot measure return to the ceiling */
+    for (i = 0; i < 60; i++) lines = frame(1080);
+    assert(lines < 1080);
+    ineligible = 1;
+    frame(1080);
+    assert(frame(1080) == 1080);
+    for (i = 0; i < 30; i++) assert(frame(1080) == 1080);
+    ineligible = 0;
     /* another ceiling (a scene class's): the planner starts over there */
     assert(frame(900) == 900);
     printf("dynamic resolution actuation: %u rows, %u drops, %u recoveries, lowest %d\n", rows, drops, recoveries, lowest);

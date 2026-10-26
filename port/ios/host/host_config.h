@@ -8,6 +8,8 @@ double host_config_real(const char *name, double fallback);
    fallback is used. config.toml itself already holds the profile's values once the game has run
    (port/linux/src/port_config.c writes a setting nobody chose at its device value) */
 void host_config_set_profile(int (*value)(const char *name, char *text, size_t size));
+/* 1 once the device profile is installed: a setting a profile may give is settled from then on */
+int host_config_profile_installed(void);
 /* section.key as a string, unquoted, or fallback */
 void host_config_string(const char *name, const char *fallback, char *out, size_t size);
 /* section.key set to true or false in config.toml, every other line kept (the section added when missing);

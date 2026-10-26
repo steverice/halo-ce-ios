@@ -7,6 +7,8 @@
 #include <stdlib.h>
 static unsigned rows;
 static game_perf_frame last;
+int host_config_profile_installed(void) { return 1; }
+int host_perf_metal_stage_supported(void) { return 1; }
 void host_config_string(const char *name, const char *fallback, char *out, size_t size) {
     (void)name; snprintf(out,size,"%s",fallback);
 }
