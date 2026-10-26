@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Generate Mermaid xychart blocks from the results snapshot and the chart specs."""
+"""Headline benchmark charts: the entry model, Mermaid source, and the page's default view.
+
+The browser page (`docs/site/benchmarks/benchmarks.js`) implements the same model; `test_perf_compare_sheet.py`
+checks that the two produce identical chart text for the committed snapshot.
+"""
 from __future__ import annotations
 
 import argparse
 import csv
 import math
 from pathlib import Path
+import statistics
 import sys
 import tomllib
 
@@ -15,6 +20,11 @@ SPECS = ROOT / "docs/benchmarks/charts"
 PAGE = ROOT / "docs/benchmarks.md"
 BEGIN = "<!-- BEGIN CHARTS -->"
 END = "<!-- END CHARTS -->"
+
+SUITES = ("campaign", "multiplayer", "co-op")
+SUITE_CHOICES = (*SUITES, "overall")
+SUITE_NAMES = {"campaign": "Campaign", "multiplayer": "Multiplayer", "co-op": "Co-op", "overall": "Overall"}
+DEFAULT_SUITE = "campaign"
 
 
 def load_snapshot(path: Path) -> list[dict[str, str]]:
@@ -32,36 +42,8 @@ def load_specs(directory: Path) -> list[dict]:
 
 
 def _matches(row: dict, filters: dict) -> bool:
-    for column, wanted in filters.items():
-        values = wanted if isinstance(wanted, list) else [wanted]
-        if row.get(column, "") not in [str(value) for value in values]:
-            return False
-    return True
-
-
-def select(rows: list[dict], query: dict) -> list[dict]:
-    """Rows that match the query's filters, one per x and series, newest measurement first."""
-    chosen = [row for row in rows if _matches(row, query.get("filter", {}))
-              and not _matches_any(row, query.get("exclude", {}))
-              and row.get(query["metric"], "") != ""]
-    latest: dict[tuple, dict] = {}
-    for row in sorted(chosen, key=lambda row: row.get("date", "")):
-        key = (tuple(row.get(column, "") for column in query["x"]), row.get(query.get("series", ""), ""))
-        latest[key] = row
-    return list(latest.values())
-
-
-def _matches_any(row: dict, excluded: dict) -> bool:
-    return bool(excluded) and any(
-        row.get(column, "") in [str(value) for value in (wanted if isinstance(wanted, list) else [wanted])]
-        for column, wanted in excluded.items())
-
-
-def _ordered(values: list[str], preferred: list[str] | None) -> list[str]:
-    seen = list(dict.fromkeys(values))
-    if not preferred:
-        return sorted(seen)
-    return [value for value in preferred if value in seen] + sorted(value for value in seen if value not in preferred)
+    return all(row.get(column, "") in [str(v) for v in (wanted if isinstance(wanted, list) else [wanted])]
+               for column, wanted in filters.items())
 
 
 def _nice_ceiling(value: float) -> float:
@@ -78,128 +60,134 @@ def _number(value: float) -> str:
     return f"{value:.1f}".removesuffix(".0")
 
 
-def _label(text: str, rename: dict) -> str:
-    return str(rename.get(text, text)).replace('"', "'")
+def entry_key(entry: dict) -> str:
+    return "@".join((entry["port"], entry["version"], entry["build"]))
 
 
-def _rank(value: str, preferred: list[str] | None) -> tuple:
-    return (preferred.index(value), "") if preferred and value in preferred else (len(preferred or []), value)
+def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | None, str, str]:
+    """Average and 1% low for one suite on the reference box, or None with the reason and its kind
+    (`not_measured`, or `not_supported` when the port lacks what the suite needs)."""
+    box = [row for row in group if row["reference_box"] == "true"]
+    unsupported = [row for row in group if row["suite"] == suite and row["status"] == "not_supported"]
+    if unsupported:
+        return None, unsupported[0]["notes"] or "not supported", "not_supported"
+    if not box:
+        gone = [row["notes"] for row in group if row["status"] == "unavailable" and row["notes"]]
+        return None, gone[0] if gone else "not measured on the reference box", "not_measured"
+    mine = [row for row in box if row["suite"] == suite]
+    if not mine:
+        return None, f"no {suite} measurements yet", "not_measured"
+    usable = {}
+    for row in sorted((r for r in mine if _matches(r, query["filter"])
+                       and all(r.get(m, "") != "" for m in query["metrics"])), key=lambda r: r["date"]):
+        usable[row["window"]] = row
+    if not usable:
+        return None, query.get("no_data_reason", "no matching measurement"), "not_measured"
+    rows = list(usable.values())
+    return {"avg": statistics.fmean(float(r["fps_avg"]) for r in rows),
+            "low": statistics.median(float(r["fps_1pct_low"]) for r in rows),
+            "rows": rows}, "", ""
 
 
-def _build_metrics(spec: dict, rows: list[dict]) -> dict:
-    """One category per row (the x columns joined) and one series per metric column, drawn in order."""
-    query, chart = spec["query"], spec["chart"]
-    rename = spec.get("rename", {})
-    chosen = select(rows, {**query, "metric": query["metrics"][0]})
-    chosen = [row for row in chosen if all(row.get(metric, "") != "" for metric in query["metrics"])]
-    if not chosen:
-        raise ValueError(f"chart {spec['name']}: no rows match the query")
-    order = query.get("order", {})
-    chosen.sort(key=lambda row: tuple(_rank(row[column], order.get(column)) for column in query["x"]))
-    labels = [" ".join(_label(row[column], rename) for column in query["x"]) for row in chosen]
-    data = [[float(row[metric]) for row in chosen] for metric in query["metrics"]]
-    y_min = chart.get("y_min", 0)
-    y_max = chart.get("y_max", _nice_ceiling(max(max(line) for line in data) * 1.08))
-    title = chart["title"].replace('"', "'")
-    head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
-    lines = [chart.get("header", "").strip(), head, f'    title "{title}"',
-             f'    x-axis "{chart.get("x_label", "")}" [{", ".join(chr(34) + label + chr(34) for label in labels)}]',
-             f'    y-axis "{chart.get("y_label", "")}" {_number(y_min)} --> {_number(y_max)}']
-    lines.extend(f"    bar [{', '.join(_number(value) for value in line)}]" for line in data)
-    marks = chart.get("marks", [])
-    names = spec["series_labels"]
-    legend = " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(names))
-    seen = {}
-    for row in chosen:
-        seen.setdefault(row["label"], row)
-    builds = "; ".join(f"{label} (build {row['build'] or 'unknown'}"
-                       + (f", source `{row['source']}`" if row["source"] else "") + ")" for label, row in seen.items())
-    host = ", ".join(sorted({row["host"] for row in chosen}))
-    dates = ", ".join(sorted({row["date"] for row in chosen}))
-    return {"source": "\n".join(line for line in lines if line), "legend": legend,
-            "caption": f"{host}. {builds}. Measured {dates}."}
-
-
-def build(spec: dict, rows: list[dict]) -> dict:
-    """The chart's Mermaid source, legend and caption, as plain strings."""
-    if "metrics" in spec["query"]:
-        return _build_metrics(spec, rows)
-    query, chart = spec["query"], spec["chart"]
-    rename = spec.get("rename", {})
-    chosen = select(rows, query)
-    if not chosen:
-        raise ValueError(f"chart {spec['name']}: no rows match the query")
-    xs = _ordered([" ".join(row[column] for column in query["x"]) for row in chosen], query.get("order_x"))
-    series_column = query.get("series")
-    names = _ordered([row[series_column] for row in chosen], query.get("order_series")) if series_column else [""]
-    kind = chart.get("type", "bar")
-    grouped = bool(series_column) and kind == "bar"
-    if grouped:
-        # Mermaid overlaps bar series at one x position, so each series gets its own positions.
-        categories = [(x, name) for x in _ordered([" ".join(row[c] for c in query["x"]) for row in chosen],
-                                                  query.get("order_x")) for name in names]
-        labels = [f"{_label(x, rename)} {_label(name, rename)}" for x, name in categories]
-    else:
-        categories = [(x, "") for x in xs]
-        labels = [_label(x, rename) for x, _ in categories]
-    values: dict[tuple, float] = {}
-    for row in chosen:
-        x = " ".join(row[column] for column in query["x"])
-        values[(x, row[series_column] if series_column else "")] = float(row[query["metric"]])
-    data = []
-    for name in names:
-        if grouped:
-            data.append([values.get((x, n), 0.0) if n == name else 0.0 for x, n in categories])
+def model(rows: list[dict], query: dict, suite: str) -> dict:
+    """Every build of the platform's ports as an entry, with its values for the suite or the reason it has none."""
+    platform_rows = [row for row in rows if row["platform"] == query["platform"]]
+    groups: dict[tuple, list[dict]] = {}
+    for row in platform_rows:
+        groups.setdefault((row["port"], row["version"], row["build"]), []).append(row)
+    entries = []
+    for (port, version, build), group in groups.items():
+        base = {"port": port, "port_name": group[0]["port_name"], "version": version, "build": build,
+                "label": group[0]["label"], "date": max(row["date"] for row in group)}
+        if suite == "overall":
+            parts = [_suite_value(group, query, name) for name in SUITES]
+            missing = [name for name, part in zip(SUITES, parts) if part[0] is None]
+            if missing:
+                value, reason = None, "missing " + ", ".join(missing)
+                kinds = {part[2] for part in parts if part[0] is None}
+                kind = "not_supported" if kinds == {"not_supported"} else "not_measured"
+            else:
+                value = {"avg": statistics.fmean(p[0]["avg"] for p in parts),
+                         "low": statistics.median(p[0]["low"] for p in parts),
+                         "rows": [r for p in parts for r in p[0]["rows"]]}
+                reason, kind = "", ""
         else:
-            line = [values.get((x, name)) for x, _ in categories]
-            if None in line:
-                raise ValueError(f"chart {spec['name']}: series {name!r} is missing an x value")
-            data.append(line)
-    top = max(max(line) for line in data)
-    y_min = chart.get("y_min", 0)
-    y_max = chart.get("y_max", _nice_ceiling(top * 1.08))
-    title = chart["title"].replace('"', "'")
-    lines = [chart.get("header", "").strip(), "xychart-beta", f'    title "{title}"',
-             f'    x-axis "{chart.get("x_label", "")}" [{", ".join(chr(34) + label + chr(34) for label in labels)}]',
-             f'    y-axis "{chart.get("y_label", "")}" {_number(y_min)} --> {_number(y_max)}']
-    lines.extend(f"    {kind} [{', '.join(_number(value) for value in line)}]" for line in data)
-    source = "\n".join(line for line in lines if line)
-    marks = chart.get("marks", [])
-    legend = ""
-    if series_column and marks:
-        legend = " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(names))
-    seen = {}
-    for name in names:
-        for row in chosen:
-            if not series_column or row[series_column] == name:
-                seen.setdefault(row["label"], row)
-    dates = sorted({row["date"] for row in chosen})
-    builds = "; ".join(
-        f"{label} (build {row['build'] or 'unknown'}" + (f", source `{row['source']}`" if row["source"] else "") + ")"
-        for label, row in seen.items())
-    caption = f"{builds}. Measured {', '.join(dates)}." if builds else ""
-    return {"source": source, "legend": legend, "caption": caption}
+            value, reason, kind = _suite_value(group, query, suite)
+        entries.append({**base, "value": value, "reason": reason, "kind": kind})
+    order = query.get("port_order", [])
+    entries.sort(key=lambda e: (order.index(e["port"]) if e["port"] in order else len(order), e["port"],
+                                tuple(-ord(c) for c in e["date"]), e["version"], e["build"]))
+    newest: dict[str, dict] = {}
+    for entry in entries:
+        if entry["value"] is not None and (entry["port"] not in newest or entry["date"] > newest[entry["port"]]["date"]):
+            newest[entry["port"]] = entry
+    for entry in entries:
+        entry["default"] = newest.get(entry["port"]) is entry
+    return {"entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"] == "true"), "")}
 
 
-def render_section(spec: dict, rows: list[dict]) -> str:
+def chart_title(spec: dict, built: dict, suite: str) -> str:
+    box = built["box"] or spec.get("box", "")
+    return f"{SUITE_NAMES[suite]}: uncapped fps, {box}".replace('"', "'")
+
+
+def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None) -> str | None:
+    """Mermaid text for the ticked entries that have values, or None when there is nothing to draw."""
+    drawn = [e for e in built["entries"] if e["value"] is not None
+             and (entry_key(e) in selected if selected is not None else e["default"])]
+    if not drawn:
+        return None
+    chart, rename = spec["chart"], spec.get("rename", {})
+    labels = [f"{rename.get(e['port_name'], e['port_name'])} {e['version']}".replace('"', "'") for e in drawn]
+    averages = [e["value"]["avg"] for e in drawn]
+    lows = [e["value"]["low"] for e in drawn]
+    y_max = chart.get("y_max", _nice_ceiling(max(averages + lows) * 1.08))
+    head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
+    quoted = ", ".join('"' + label + '"' for label in labels)
+    lines = [chart.get("header", "").strip(), head, f'    title "{chart_title(spec, built, suite)}"',
+             f'    x-axis "{chart.get("x_label", "")}" [{quoted}]',
+             f'    y-axis "{chart.get("y_label", "")}" {_number(chart.get("y_min", 0))} --> {_number(y_max)}',
+             f"    bar [{', '.join(_number(v) for v in averages)}]", f"    bar [{', '.join(_number(v) for v in lows)}]"]
+    return "\n".join(line for line in lines if line)
+
+
+def legend(spec: dict) -> str:
+    marks = spec["chart"].get("marks", [])
+    return " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(spec["series_labels"]))
+
+
+def caption(built: dict, selected: set[str] | None = None) -> str:
+    drawn = [e for e in built["entries"] if e["value"] is not None
+             and (entry_key(e) in selected if selected is not None else e["default"])]
+    if not drawn:
+        return ""
+    builds = "; ".join(f"{e['label']} (build {e['build'] or 'unknown'}, measured {e['date']})" for e in drawn)
+    return f"{built['box']}. {builds}."
+
+
+def empty_text(spec: dict, built: dict) -> str:
+    """The explanation for a platform with no builds, or for a selection with nothing to draw."""
+    return spec["empty"].strip() if not built["entries"] else "No build has data for this suite yet."
+
+
+def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE) -> str:
+    """The Markdown for one platform's default view: the chart if any build has data, else why not."""
+    built = model(rows, spec["query"], suite)
     parts = [f"### {spec['heading']}", "", spec["paragraph"].strip(), ""]
-    try:
-        built = build(spec, rows)
-    except ValueError:
-        # A platform without results shows its explanation, never an empty or invented chart.
-        if "empty" not in spec:
-            raise
-        return "\n".join([*parts, spec["empty"].strip(), ""])
-    parts.extend(["```mermaid", built["source"], "```", ""])
-    if built["legend"]:
-        parts.extend([built["legend"], ""])
-    if built["caption"]:
-        parts.extend([built["caption"], ""])
+    text = source(spec, built, suite)
+    if text is None:
+        parts.extend([empty_text(spec, built), ""])
+    else:
+        parts.extend(["```mermaid", text, "```", "", legend(spec), "", caption(built), ""])
+    for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
+        skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
+        if skipped:
+            parts.extend([heading + ": " + "; ".join(f"{e['label']} ({e['reason']})" for e in skipped) + ".", ""])
     return "\n".join(parts)
 
 
-def render_all(rows: list[dict], specs: list[dict]) -> str:
-    return "\n".join(render_section(spec, rows) for spec in specs).rstrip() + "\n"
+def render_all(rows: list[dict], specs: list[dict], suite: str = DEFAULT_SUITE) -> str:
+    return "\n".join(render_section(spec, rows, suite) for spec in specs).rstrip() + "\n"
 
 
 def apply(page: str, block: str) -> str:
@@ -215,10 +203,11 @@ def main() -> int:
     parser.add_argument("--snapshot", type=Path, default=SNAPSHOT)
     parser.add_argument("--specs", type=Path, default=SPECS)
     parser.add_argument("--page", type=Path, default=PAGE, help="page with chart markers to update")
+    parser.add_argument("--suite", default=DEFAULT_SUITE, choices=SUITE_CHOICES)
     parser.add_argument("--check", action="store_true", help="fail when the page's charts are stale")
     parser.add_argument("--stdout", action="store_true", help="print the chart section instead of editing the page")
     args = parser.parse_args()
-    block = render_all(load_snapshot(args.snapshot), load_specs(args.specs))
+    block = render_all(load_snapshot(args.snapshot), load_specs(args.specs), args.suite)
     if args.stdout:
         sys.stdout.write(block)
         return 0

@@ -22,11 +22,14 @@ SUMMARY = ROOT / "tools/perf_compare/summary.json"
 COLUMNS = (
     "port", "port_name", "version", "label", "build", "source", "release_kind", "artifact", "artifact_sha256",
     "host", "platform", "reference_box", "machine", "chip", "memory_gb", "os", "browser", "date", "method",
-    "window", "scenario", "delay_s", "frame_mode", "quality_preset", "warmup_s",
+    "suite", "window", "scenario", "delay_s", "frame_mode", "quality_preset", "warmup_s",
     "resolution", "cap_fps", "display_hz", "rounds",
     "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms", "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct",
     "thermal", "status", "notes",
 )
+
+NUMERIC = ("resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
+           "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct", "thermal")
 
 SWEEP_COLUMNS = ("device", "build", "workload", "resolution", "configuration", "settings_hash", "trials",
                  "fps_min", "fps_max", "timing_basis", "thermal", "report")
@@ -51,6 +54,7 @@ DESCRIPTIONS = {
     "browser": "Browser and version for web builds; empty for native apps.",
     "date": "Date the set was measured (UTC).",
     "method": "Measurement method: metalperftrace on-glass intervals, or Safari requestAnimationFrame callbacks.",
+    "suite": "Workload suite: campaign, multiplayer or co-op. Every row measured so far is campaign.",
     "window": "Sampling window: the scenario, plus the delay after warm-up when it is not zero.",
     "scenario": "Level scenario: a10 or b30.",
     "delay_s": "Seconds added after warm-up before sampling starts.",
@@ -72,7 +76,7 @@ DESCRIPTIONS = {
     "worst_ms_max": "Longest single interval in any round.",
     "on_time_pct": "Mean share of intervals within 5% of the display rate; empty for uncapped rows.",
     "thermal": "System thermal state at the start and end of the runs.",
-    "status": "ok, incomplete (fewer than three rounds) or unavailable.",
+    "status": "ok, incomplete (fewer than three rounds), unavailable (could not run), not_supported (the port lacks the feature the suite needs, for example split screen for co-op), or rejected (one row per rejected attempt, with its reason in notes).",
     "notes": "Why a set is unavailable or incomplete.",
 }
 
@@ -132,7 +136,7 @@ def rows(summary: dict) -> list[dict[str, str]]:
                 reference_box="true" if REFERENCE_BOXES.get(platform) == host else "false", machine=model, chip=chip, memory_gb=memory,
                 os=record.get("os", ""), browser=record.get("browser") or "", date=record.get("date", ""),
                 method=record.get("method", ""), window=scenario if not delay else f"{scenario} +{delay} s",
-                scenario=scenario, delay_s=delay, frame_mode=record.get("frame_mode", "capped"),
+                scenario=scenario, suite=record.get("suite") or "campaign", delay_s=delay, frame_mode=record.get("frame_mode", "capped"),
                 quality_preset=record.get("quality_preset", "defaults"), warmup_s=record.get("warmup_seconds", 15),
                 rounds=len(valid),
             )
@@ -153,13 +157,21 @@ def rows(summary: dict) -> list[dict[str, str]]:
                     thermal=", ".join(sorted({str(run.get("thermal", "")) for run in valid})),
                 )
             status = str(record.get("status", "unknown"))
-            if not valid:
+            if status == "not_supported":
+                pass  # the port cannot run this suite at all; distinct from unavailable and not measured
+            elif not valid:
                 status = "unavailable"
             elif len(valid) < 3:
                 status = "incomplete"
             row["status"] = status
             row["notes"] = str(record.get("reason") or "")
             out.append(row)
+            # Rejected attempts never enter the aggregates; each stays visible as its own row.
+            for attempt in record.get("rejected", []):
+                if str(attempt.get("scenario")) == scenario:
+                    gone = {**row, **dict.fromkeys(NUMERIC, ""), "rounds": 0, "status": "rejected",
+                            "notes": f"round {attempt.get('round', '?')}: {attempt.get('reason', 'unknown')}"}
+                    out.append(gone)
     return out
 
 

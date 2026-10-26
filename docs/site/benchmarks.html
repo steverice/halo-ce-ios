@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VISR performance benchmarks</title>
+<meta name="description" content="Frame-rate comparisons of VISR with other Halo: Combat Evolved ports on Apple devices.">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<style>
+.page { max-width: 1160px; }
+.bench-bar { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; border: 1px solid var(--line); padding: 10px 14px; margin: 0 0 24px; }
+.bench-bar legend { font-weight: 600; padding: 0 6px; }
+.bench-bar label { cursor: pointer; }
+.bench { margin: 0 0 40px; }
+.bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); } }
+.bench-chart { background: #fff; color: #111; border-radius: 8px; padding: 8px; overflow-x: auto; }
+.bench-chart svg, .bench-chart img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+.bench-rows { border: 1px solid var(--line); padding: 8px 14px 12px; margin: 0; }
+.bench-rows legend { font-weight: 600; padding: 0 6px; }
+.bench-rows label { display: block; margin: 6px 0; line-height: 1.35; }
+.bench-rows label.off { color: var(--muted); }
+.bench-legend, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; }
+.bench-empty { color: #333; margin: 0; padding: 24px 12px; }
+.method { max-width: 760px; margin-inline: auto; }
+</style>
+</head>
+<body>
+<main class="page" id="bench-root" data-csv="benchmarks/results.csv">
+<h1>Performance benchmarks</h1>
+<p>We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong or out of date. Corrections are welcome: <a href="https://github.com/steverice/visr/issues">open an issue</a>.</p>
+<p>Last measured: 2026-10-26. The <a href="https://docs.google.com/spreadsheets/d/1tuTJpOxUTbqgzOSDSW-nSvWKL8HkZMVucvNRUIee0t4">results spreadsheet</a> holds every number. The methodology is at the bottom of this page.</p>
+<fieldset class="bench-bar"><legend>Suite</legend><label><input type="radio" name="suite" value="campaign" checked> Campaign</label><label><input type="radio" name="suite" value="multiplayer"> Multiplayer</label><label><input type="radio" name="suite" value="co-op"> Co-op</label><label><input type="radio" name="suite" value="overall"> Overall</label></fieldset>
+<section class="bench" data-platform="mac" aria-labelledby="h-mac">
+<h2 id="h-mac">Mac</h2>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<div class="bench-grid">
+<div class="bench-chart"><img src="benchmarks/static-mac.svg" alt="Mac: average and 1% low fps per build, Campaign suite"></div>
+<fieldset class="bench-rows"><legend>Builds</legend><label><input type="checkbox" value="visr@0.5.1@20261026.31927" checked> VISR 0.5.1 (build 20261026.31927, 2026-10-26)</label><label class="off"><input type="checkbox" value="visr@main@20261023.203835" disabled> VISR main (build 20261023.203835, 2026-10-24). Not measured: not measured on the reference box.</label><label><input type="checkbox" value="opence-macos@v1.0.2@2" checked> OpenCE-macOS v1.0.2 (build 2, 2026-10-26)</label><label class="off"><input type="checkbox" value="opence-web@@" disabled> OpenCE web (build unknown, 2026-10-26). Not measured: safari-remote-automation-disabled.</label><label class="off"><input type="checkbox" value="opence-web@build-280@280" disabled> OpenCE web build-280 (build 280, 2026-10-26). Not measured: no uncapped matched-stock measurement.</label><label><input type="checkbox" value="corece@0.3.0@44" checked> CoreCE 0.3.0 (build 44, 2026-10-26)</label><label class="off"><input type="checkbox" value="chupathingy@v0.8.0g@0.8.0g" disabled> Chupathingy v0.8.0g (build 0.8.0g, 2026-10-24). Not measured: console-unavailable.</label><label class="off"><input type="checkbox" value="halo-og@v0.5.1@" disabled> Halo OG v0.5.1 (build unknown, 2026-10-24). Not measured: console-unavailable.</label></fieldset>
+</div>
+<p class="bench-legend">🟦 Average fps 🟧 1% low fps</p>
+<p class="bench-caption">M6 Mac mini. VISR 0.5.1 (build 20261026.31927, measured 2026-10-26); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).</p>
+</section>
+<section class="bench" data-platform="iphone-ipad" aria-labelledby="h-iphone-ipad">
+<h2 id="h-iphone-ipad">iPhone and iPad</h2>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<div class="bench-grid">
+<div class="bench-chart"><p class="bench-empty">No results yet for the M1 iPad Pro.</p></div>
+<fieldset class="bench-rows"><legend>Builds</legend></fieldset>
+</div>
+<p class="bench-legend"></p>
+<p class="bench-caption"></p>
+</section>
+<section class="bench" data-platform="apple-tv" aria-labelledby="h-apple-tv">
+<h2 id="h-apple-tv">Apple TV</h2>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<div class="bench-grid">
+<div class="bench-chart"><p class="bench-empty">No reference box is set for Apple TV yet.</p></div>
+<fieldset class="bench-rows"><legend>Builds</legend></fieldset>
+</div>
+<p class="bench-legend"></p>
+<p class="bench-caption"></p>
+</section>
+<section class="bench" data-platform="vision-pro" aria-labelledby="h-vision-pro">
+<h2 id="h-vision-pro">Vision Pro</h2>
+<p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite&#x27;s windows.</p>
+<div class="bench-grid">
+<div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div>
+<fieldset class="bench-rows"><legend>Builds</legend></fieldset>
+</div>
+<p class="bench-legend"></p>
+<p class="bench-caption"></p>
+</section>
+<div class="method">
+<h2>Methodology</h2>
+<p>Each bar is the mean over the valid rounds of a window's average presentation rate, drawn beside the median of the windows' 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. The spreadsheet's README tab describes each column.</p>
+<h3>Suites</h3>
+<ul>
+<li><strong>Campaign:</strong> the opening of a10 and the opening of b30, one player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set, with the frame cap and vsync off and the matched-stock settings for the headline charts. A set with fewer than three valid rounds is marked incomplete.</li>
+<li><strong>Multiplayer:</strong> no measurements yet.</li>
+<li><strong>Co-op:</strong> local split-screen campaign co-op, two players at 1x enemies. A port without split screen shows &quot;Does not support split screen&quot; and the status <code>not_supported</code>; that differs from &quot;not measured&quot;, which means the suite has not been run for the build.</li>
+<li><strong>Overall:</strong> per build, the mean of the suites' average rates and the median of their 1% low rates, each suite weighted equally. A build missing a suite has no overall bar.</li>
+</ul>
+<p>A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status <code>rejected</code> and their reason. This snapshot has 0 rejected attempts.</p>
+<p>Suite definitions and the harness are in <a href="https://github.com/steverice/visr/blob/main/tools/perf_compare"><code>tools/perf_compare</code></a> (<a href="https://github.com/steverice/visr/blob/main/tools/perf_compare/adapters.py"><code>adapters.py</code></a>, <a href="https://github.com/steverice/visr/blob/main/tools/perf_compare/refresh.py"><code>refresh.py</code></a>).</p>
+<p>Background CPU is sampled for five seconds immediately before each native sampling window. Runs are rejected when average outside-process CPU rises more than half a core above that baseline. Steady background work remains active and may affect these estimates. Each round allows up to three attempts; rejected attempts do not enter the ranges.</p>
+<p>Opening runs use a10 and b30 with no input: 15 seconds of warm-up after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. Opening cinematics are included. Native apps use 1280×960 drawables on a 60 Hz display with interpolation. Capped rows request a 60 fps cap and keep each app's other graphics defaults. These runs do not establish combat performance or identical image quality. Player readiness does not align cinematic clocks, so opening sequences can have phase offsets between apps.</p>
+<p>Uncapped runs request <code>display.frame_rate = &quot;unlimited&quot;</code> in VISR, <code>display.max_fps = -1</code> in OpenCE-macOS, and <code>display.frame_limit = 0</code> in CoreCE, with <code>display.vsync = false</code> and interpolation enabled in each. The <code>frame_mode</code> and <code>delay_s</code> columns of the spreadsheet identify each mode and extra delay after warm-up (0 s is the opening window). The 60 Hz display still limits visible refreshes; presentation intervals do not establish simulation speed or unique displayed frames. Above-refresh trace rates have unverified physical meaning and are not verified submission throughput. The same elapsed window does not prove identical gameplay. Each launch uses fresh isolated data/save folders; OS and driver caches are not reset or equalized.</p>
+<p>The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in each native app, and each uses direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size effect buffer, 1× anisotropic filtering, no replacement textures, and no first-person body. OpenCE-macOS uses native resolution scaling, stock world/weapon FOV, and disables optional per-pixel lighting, weapon shields, and shield glow. CoreCE uses the same options as OpenCE-macOS and <code>model_detail = &quot;stock&quot;</code>. Other defaults remain unchanged. VISR uses native Metal and compressed GPU textures; OpenCE-macOS uses ANGLE over Metal. These runs could not verify the other ports' internal filtering, LOD, effect-buffer, or texture-storage policy, so identical image quality remains unverified. Weapon framing and texture filtering still differ visibly. Capped rows keep each app's graphics defaults and are not quality-matched to the matched-stock rows.</p>
+<p>Configuration references: <a href="../port/ios/README.md">VISR settings</a>, <a href="https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings">OpenCE-macOS v1.0.2 settings</a>, <a href="https://github.com/mastercheese-dev/CoreCE/blob/cccbf6fcc/README.md#graphics">CoreCE graphics settings</a>.</p>
+<p>The later b30 window adds 90 seconds after warm-up, reaching the beach encounter at about 110 seconds after player readiness once the CPU baseline is included. It samples 60 seconds with a stationary player and no input. Start/end screenshots qualify the camera location, but AI and combat state can vary between apps and rounds; this is not a deterministic combat replay.</p>
+<p>OpenCE web runs import the disc image into each fresh Safari automation session, start the level with the documented <code>?map=&lt;level&gt;&amp;play</code>, wait 6 seconds for loading, then warm up for 15 seconds and sample requestAnimationFrame callbacks for 60 seconds with no input. The page viewport is 640×480 points, so the game canvas is 1280×960 pixels on the same 60 Hz display as the native rows. The page does not report player readiness, so its sampling window can be offset from the native windows within the opening sequences. Browser callbacks are not the same event as native on-glass intervals.</p>
+<p>CoreCE rows come from separate matrices run after the VISR and OpenCE-macOS matrices on the same hosts and dates, so they do not share round rotation with them. CoreCE reads the same maps from a copied folder, because its Mac host does not accept a linked maps folder.</p>
+<p>Pre-release main builds are VISR sources measured before a release was tagged. They are kept for history and are not the released product.</p>
+<p>Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.</p>
+<p>Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.</p>
+<p>The spreadsheet's device-sweep tab lists VISR's offscreen throughput reports from iPhones, iPads and Apple TVs. Offscreen throughput is a different measurement from displayed pacing and does not compare with the charts.</p>
+</div>
+<footer class="foot">
+<p>Halo, Halo: Combat Evolved, Master Chief and the related names and logos are
+trademarks of Microsoft Corporation. Halo: Combat Evolved © Microsoft
+Corporation. VISR is an unofficial fan project. It is not affiliated with,
+sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
+(formerly 343 Industries) or Bungie.</p>
+<p>VISR does not include or distribute the game's maps, sounds, textures, videos or other content, and it does not help you obtain them. You need a disc image of the original Xbox game, made from your own disc. VISR is free and is not sold.</p>
+<p>It builds on the Halo: CE decompilation, <a href="https://github.com/OpenCommunityEdition/OpenCE">OpenCE</a> and the other projects in its <a href="https://github.com/steverice/visr#credits">credits</a>. The code is licensed under <a href="https://github.com/steverice/visr/blob/main/LICENSE">Apache-2.0</a>. It includes code that originated in CC0 1.0 projects, credited in the <a href="https://github.com/steverice/visr/blob/main/NOTICE.md">notices</a>.</p>
+<p>Apple, iPhone, iPad, Apple TV, Mac, Vision Pro and Metal are trademarks of Apple Inc. <a href="https://code.steverice.org/visr/privacy.html">Privacy policy</a>.</p>
+</footer>
+</main>
+<script type="application/json" id="chart-specs">[
+ {
+  "slug": "mac",
+  "heading": "Mac",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "empty": "No Mac results yet.",
+  "box": "M6 Mac mini",
+  "series_labels": [
+   "Average fps",
+   "1% low fps"
+  ],
+  "chart": {
+   "type": "bar",
+   "horizontal": true,
+   "x_label": "Port and version",
+   "y_label": "Frames per second",
+   "y_min": 0,
+   "marks": [
+    "🟦",
+    "🟧"
+   ],
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+  },
+  "query": {
+   "platform": "Mac",
+   "metrics": [
+    "fps_avg",
+    "fps_1pct_low"
+   ],
+   "port_order": [
+    "visr",
+    "opence-macos",
+    "opence-web",
+    "corece",
+    "chupathingy",
+    "halo-og"
+   ],
+   "no_data_reason": "no uncapped matched-stock measurement",
+   "filter": {
+    "frame_mode": "uncapped",
+    "delay_s": "0",
+    "quality_preset": "matched-stock",
+    "status": "ok"
+   }
+  },
+  "rename": {
+   "OpenCE-macOS": "OpenCE"
+  }
+ },
+ {
+  "slug": "iphone-ipad",
+  "heading": "iPhone and iPad",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "empty": "No results yet for the M1 iPad Pro.",
+  "box": "M1 iPad Pro",
+  "series_labels": [
+   "Average fps",
+   "1% low fps"
+  ],
+  "chart": {
+   "type": "bar",
+   "horizontal": true,
+   "x_label": "Port and version",
+   "y_label": "Frames per second",
+   "y_min": 0,
+   "marks": [
+    "🟦",
+    "🟧"
+   ],
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+  },
+  "query": {
+   "platform": "iPhone/iPad",
+   "metrics": [
+    "fps_avg",
+    "fps_1pct_low"
+   ],
+   "port_order": [
+    "visr",
+    "opence-macos",
+    "opence-web",
+    "corece",
+    "chupathingy",
+    "halo-og"
+   ],
+   "no_data_reason": "no uncapped matched-stock measurement",
+   "filter": {
+    "frame_mode": "uncapped",
+    "delay_s": "0",
+    "quality_preset": "matched-stock",
+    "status": "ok"
+   }
+  },
+  "rename": {
+   "OpenCE-macOS": "OpenCE"
+  }
+ },
+ {
+  "slug": "apple-tv",
+  "heading": "Apple TV",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "empty": "No reference box is set for Apple TV yet.",
+  "box": "",
+  "series_labels": [
+   "Average fps",
+   "1% low fps"
+  ],
+  "chart": {
+   "type": "bar",
+   "horizontal": true,
+   "x_label": "Port and version",
+   "y_label": "Frames per second",
+   "y_min": 0,
+   "marks": [
+    "🟦",
+    "🟧"
+   ],
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+  },
+  "query": {
+   "platform": "Apple TV",
+   "metrics": [
+    "fps_avg",
+    "fps_1pct_low"
+   ],
+   "port_order": [
+    "visr",
+    "opence-macos",
+    "opence-web",
+    "corece",
+    "chupathingy",
+    "halo-og"
+   ],
+   "no_data_reason": "no uncapped matched-stock measurement",
+   "filter": {
+    "frame_mode": "uncapped",
+    "delay_s": "0",
+    "quality_preset": "matched-stock",
+    "status": "ok"
+   }
+  },
+  "rename": {
+   "OpenCE-macOS": "OpenCE"
+  }
+ },
+ {
+  "slug": "vision-pro",
+  "heading": "Vision Pro",
+  "paragraph": "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows.",
+  "empty": "No results yet for the M2 Vision Pro.",
+  "box": "M2 Vision Pro",
+  "series_labels": [
+   "Average fps",
+   "1% low fps"
+  ],
+  "chart": {
+   "type": "bar",
+   "horizontal": true,
+   "x_label": "Port and version",
+   "y_label": "Frames per second",
+   "y_min": 0,
+   "marks": [
+    "🟦",
+    "🟧"
+   ],
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+  },
+  "query": {
+   "platform": "Vision Pro",
+   "metrics": [
+    "fps_avg",
+    "fps_1pct_low"
+   ],
+   "port_order": [
+    "visr",
+    "opence-macos",
+    "opence-web",
+    "corece",
+    "chupathingy",
+    "halo-og"
+   ],
+   "no_data_reason": "no uncapped matched-stock measurement",
+   "filter": {
+    "frame_mode": "uncapped",
+    "delay_s": "0",
+    "quality_preset": "matched-stock",
+    "status": "ok"
+   }
+  },
+  "rename": {
+   "OpenCE-macOS": "OpenCE"
+  }
+ }
+]</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.12.0/dist/mermaid.min.js" integrity="sha384-o+g/BxPwhi0C3RK7oQBxQuNimeafQ3GE/ST4iT2BxVI4Wzt60SH4pq9iXVYujjaS" crossorigin="anonymous"></script>
+<script src="benchmarks/benchmarks.js"></script>
+</body>
+</html>

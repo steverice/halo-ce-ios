@@ -1,13 +1,14 @@
 order = 10
 heading = "Mac"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames) with the frame cap and vsync off and the matched-stock settings. The windows are the a10 opening and the b30 opening."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the mean of the average and the median of the 1% low over the suite's windows."
+empty = "No Mac results yet."
+box = "M6 Mac mini"
 series_labels = ["Average fps", "1% low fps"]
 
 [chart]
 type = "bar"
 horizontal = true
-title = "Uncapped fps, M6 Mac mini"
-x_label = "Window and port"
+x_label = "Port and version"
 y_label = "Frames per second"
 y_min = 0
 marks = ["\U0001F7E6", "\U0001F7E7"]
@@ -24,22 +25,16 @@ config:
 '''
 
 [query]
+platform = "Mac"
 metrics = ["fps_avg", "fps_1pct_low"]
-x = ["window", "port_name"]
-
-[query.order]
-window = ["a10", "b30"]
-port_name = ["VISR", "OpenCE-macOS", "CoreCE"]
+port_order = ["visr", "opence-macos", "opence-web", "corece", "chupathingy", "halo-og"]
+no_data_reason = "no uncapped matched-stock measurement"
 
 [query.filter]
-platform = "Mac"
-reference_box = "true"
 frame_mode = "uncapped"
-status = "ok"
 delay_s = "0"
-
-[query.exclude]
-version = ["main"]
+quality_preset = "matched-stock"
+status = "ok"
 
 [rename]
 "OpenCE-macOS" = "OpenCE"

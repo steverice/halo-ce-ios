@@ -21,6 +21,7 @@ import uuid
 import adapters
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tools'))
 SUMMARY = ROOT / 'tools/perf_compare/summary.json'
 PAGE = ROOT / 'docs/benchmarks.md'
 
@@ -269,6 +270,22 @@ def page_text(summary):
     return render_page(summary, charts.load_snapshot(charts.SNAPSHOT), charts.load_specs(charts.SPECS))
 
 
+def write_outputs(page_path, summary, check=False):
+    """The Markdown page and, for the default page, the Pages version with its copy of the results snapshot."""
+    import charts
+    import site_page
+    from build_site import load_facts
+    from markdown_it import MarkdownIt
+    status = write_page(page_path, page_text(summary), check)
+    if Path(page_path) == PAGE:
+        rows, specs = charts.load_snapshot(charts.SNAPSHOT), charts.load_specs(charts.SPECS)
+        legal = MarkdownIt('commonmark', {'html': False}).render(load_facts()['shared']['legal']).rstrip()
+        (ROOT / 'docs/site/benchmarks').mkdir(exist_ok=True)
+        status |= write_page(ROOT / 'docs/site/benchmarks.html', site_page.render_site_page(summary, rows, specs, legal), check)
+        status |= write_page(ROOT / 'docs/site/benchmarks/results.csv', charts.SNAPSHOT.read_text(encoding='utf-8'), check)
+    return status
+
+
 def write_page(path, content, check=False):
     if check:
         if not path.exists() or path.read_text() != content:
@@ -487,7 +504,7 @@ def refresh(config, summary_path, page_path):
             summary.pop('sweep', None)
         merged = merge(retained, summary)
         summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
-        write_page(page_path, page_text(merged))
+        write_outputs(page_path, merged)
         print(f'Refresh: {round(time.monotonic() - start, 1)} seconds; private evidence: {out}')
     if denied:
         print(f'STOP: permission system denied {denied}', file=sys.stderr)
@@ -555,7 +572,7 @@ def _routed_refresh(config, summary_path, page_path):
         retained = json.loads(summary_path.read_text()) if summary_path.exists() else {'schema': 2}
         merged = merge(retained, summary)
         summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
-        write_page(page_path, page_text(merged))
+        write_outputs(page_path, merged)
         print(f'Routed refresh: {round(time.monotonic() - started, 1)} seconds')
     elif result.returncode == 0:
         print('routed refresh failed to transfer a fresh summary', file=sys.stderr)
@@ -573,7 +590,7 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     if args.command == 'render':
-        return write_page(args.output, page_text(json.loads(args.summary.read_text())), args.check)
+        return write_outputs(args.output, json.loads(args.summary.read_text()), args.check)
     if (args.config is None and args.config_json is None) or args.check:
         parser.error('refresh requires --config and does not accept --check')
     config = json.loads(args.config_json) if args.config_json else json.loads(args.config.read_text())
