@@ -36,6 +36,9 @@ static BOOL upscale_enabled, export_enabled;
 /* upscale_playing: the work must stop (a level is played); stop_flag mirrors it for Core ML and the encoders */
 static atomic_bool upscale_playing, scan_pending, pump_queued, thermal_blocked, pump_requested;
 static volatile int stop_flag;
+/* the texture in hand and its stage (a string literal): what a stop for gameplay interrupts */
+static const char *_Atomic work_stage;
+static _Atomic uint64_t work_hash;
 static struct texture_upscale_activity activity;
 static NSObject *activity_token;
 /* textures between the start of their predictions and the end of their encode: the pause handoff waits for them */
@@ -361,6 +364,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     struct texture_upscale_generate_input input={*d,policy,levels,source->level_count,alpha,d->wrap,dilate,d->pinned};
     char error[512]={0};double start=now();
     dispatch_group_enter(work_group);
+    atomic_store(&work_hash,d->hash);atomic_store(&work_stage,"predictions");
     if(!generator){footprint_before_model=footprint();generator=texture_upscale_generate_create(error,sizeof(error));
         host_logf(HOST_LOG_INFO,"Upscale: made the generator at %llu MB",(unsigned long long)(footprint_before_model>>20));}
     /* Two textures overlap only while both float tops fit in OVERLAP_BUDGET together, so the peak is set by the
@@ -384,6 +388,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
       void (^finish)(void)=^{
         const struct texture_policy_decision *d=&decision;
         texture_upscale_encode_set_cancel(&stop_flag);
+        atomic_store(&work_hash,decision.hash);atomic_store(&work_stage,"refinement, measures and compression");
         /* gameplay began while the predictions ran: nothing more, the texture is made later */
         if(stop_flag){texture_upscale_generate_abandon(job);free(owned);free(levels);finisher_estimate=0;return;}
         struct texture_cache_record record=desired;
@@ -578,10 +583,15 @@ static void set_stop(BOOL stop) { stop_flag=stop?1:0;atomic_store(&upscale_playi
    slice; this waits for the texture in hand to let go, so the first gameplay frame never shares the device. */
 static void stop_for_gameplay(const char *why) {
     if(!upscale_enabled)return;
+    /* what the stop interrupts: none, or a texture in its predictions or its CPU stage (for the log, and the proof) */
+    const char *stage=atomic_load(&work_stage);uint64_t hash=atomic_load(&work_hash);
+    BOOL in_flight=dispatch_group_wait(work_group,DISPATCH_TIME_NOW)!=0;
     set_stop(YES);
     double began=now();
     long busy=dispatch_group_wait(work_group,dispatch_time(DISPATCH_TIME_NOW,(int64_t)(3*NSEC_PER_SEC)));
-    host_logf(busy?HOST_LOG_WARN:HOST_LOG_INFO,"Upscale: paused for gameplay (%s) after %.0f ms%s",why,(now()-began)*1000,busy?", a texture still running":"");
+    char held[96]="";
+    if(in_flight)snprintf(held,sizeof(held),", interrupting %016llx in %s",(unsigned long long)hash,stage?stage:"its work");
+    host_logf(busy?HOST_LOG_WARN:HOST_LOG_INFO,"Upscale: paused for gameplay (%s) after %.0f ms%s%s",why,(now()-began)*1000,held,busy?", a texture still running":"");
 }
 /* Re-reads whether the work may run now (activity), and resumes it if so. */
 static void resume_if_allowed(void) {
