@@ -33,6 +33,8 @@ render_scale = 0.5
 anisotropic_filtering = 4
 model_lod = "auto"
 shadow_map_size = 128
+dynamic_resolution = true
+dynamic_resolution_floor = 480
 
 [network]
 player_capacity = 8
@@ -41,6 +43,16 @@ player_capacity = 8
 basis = "measured"
 why = "Decided for this device: gameplay holds no tier of the ladder at 60. Presented at 540 lines with the cheapest settings, 97.7 to 99.4% of frames came within two refreshes, so uncapped play alternates between 60 and 30. Capped at 30, each frame stays up two refreshes, as cutscenes already do. The menu keeps the display's rate."
 source = "Apple TV HD presented runs of a10 and d40 at 540 lines and minimum settings, settings sweep of 2026-10-24 and 25"
+
+[evidence."display.dynamic_resolution"]
+basis = "measured"
+why = "Presented at 30 frames a second, dynamic resolution between 540 and 480 lines took d40 from 89.3% to 92.5% of frames on time and a10 from 93.0% to 95.0%, against fixed 540. A 720 ceiling did no better (92.1% and 94.4%) and spent most frames below 540 anyway. More than 99.9% of frames still come within one and a half frames of their time."
+source = "Apple TV HD presented runs of a10 and d40, fixed 540, 720 to 480 and 540 to 480, build a9dbc1da7, 2026-10-26"
+
+[evidence."display.dynamic_resolution_floor"]
+basis = "measured"
+why = "Below the experiments' usual 540 lines, by decision for this device: at 540 it misses 5 to 11% of frames at 30, and 480 is the lowest the comparison measured."
+source = "Apple TV HD presented runs of a10 and d40, 2026-10-26"
 
 [evidence."display.texture_idle_seconds"]
 basis = "assumed"
