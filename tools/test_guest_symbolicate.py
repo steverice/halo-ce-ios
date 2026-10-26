@@ -132,3 +132,23 @@ def test_an_arena_off_a_multiple_of_4_gb_takes_its_start():
             "threads": [{"triggered": True, "frames": [{"imageIndex": 0, "imageOffset": arena + 0x88002008}]}]}
     report = json.dumps({"app_name": "VISR"}) + "\n" + json.dumps(body)
     assert "guest 0x88002008 halt_and_catch_fire+0x8" in guest_symbolicate.symbolicate(report, table, arena)[1]
+
+
+def test_a_fatal_error_s_log_lines_and_the_launch_line_give_the_arena_s_start():
+    table = symbols()
+    arena = 0x3_2000_0000
+    frame = f"CRASH: frame 2: 0x{arena + 0x88001020:016x}\n"
+    # host_crash's own line, as a halt or abort writes it (no "CRASH: arena" line follows those)
+    log = f"CRASH: guest image sha256 {SHA}, arena 0x{arena:016x}\n" + frame
+    assert guest_symbolicate.symbolicate(log, table)[-1].endswith("[guest 0x88001020 display_assert+0x20]")
+    log = f"guest arena at {arena:x} (not at a multiple of 4 GB), native pages 16384\n" + frame
+    assert guest_symbolicate.symbolicate(log, table)[-1].endswith("[guest 0x88001020 display_assert+0x20]")
+
+
+def test_an_unknown_arena_start_is_noted():
+    lines = guest_symbolicate.symbolicate(f"CRASH: frame 3: 0x{ARENA + 0x88001020:016x}\n", symbols())
+    assert lines[0].endswith("[guest 0x88001020 display_assert+0x20]")
+    assert lines[-1].startswith("note: the arena's start is not known")
+    lines = guest_symbolicate.symbolicate(f"CRASH: arena 0x{ARENA:016x}\n"
+                                          f"CRASH: frame 3: 0x{ARENA + 0x88001020:016x}\n", symbols())
+    assert not lines[-1].startswith("note:")

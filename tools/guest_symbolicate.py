@@ -11,9 +11,10 @@ artifacts) names them.
     python3 tools/guest_symbolicate.py --symbols guest-symbols.txt ios-runtime.log
     python3 tools/guest_symbolicate.py --symbols guest-symbols.txt --arena 0x320000000 VISR.ips
 
-ios-runtime.log's "CRASH: arena" line gives the arena's start. An .ips report does not carry it: pass it
-with --arena (ios-runtime.log's "guest arena at" line) when the arena is not at a multiple of 4 GB; without
-it the address's low 32 bits are taken, which is right for an arena at a multiple of 4 GB.
+ios-runtime.log's "guest arena at" and CRASH lines give the arena's start. An .ips report does not carry it:
+pass it with --arena (ios-runtime.log's "guest arena at" line) when the arena is not at a multiple of 4 GB;
+without it the address's low 32 bits are taken, which is right only for an arena at a multiple of 4 GB, and
+a note at the end of the output says so.
 
 --symbols also takes the app itself (a VISR.app folder, its executable, or an .ipa), which carries the same
 table in its __TEXT,__halosyms section.
@@ -44,7 +45,13 @@ REASON_MAGIC = int.from_bytes(b"VISRCRSH", "little")
 REASON_REGISTERS = list(range(1, 16)) + list(range(19, 29))
 REGISTER = re.compile(r"\bx(\d{1,2}):\s*0x([0-9a-fA-F]+)")
 ADDRESS = re.compile(r"0x([0-9a-fA-F]{9,16})\b")
-ARENA = re.compile(r"CRASH: arena 0x([0-9a-fA-F]+)")
+GUEST_NAMED = re.compile(r"\bguest 0x[0-9a-f]{8}\b")
+# the signal handler's "CRASH: arena 0x…", host_crash's "CRASH: guest image sha256 …, arena 0x…" and the
+# launch's "guest arena at …" (host_memory.c, without the 0x)
+ARENA = re.compile(r"(?:CRASH: (?:.*, )?arena 0x|guest arena at (?:0x)?)([0-9a-fA-F]+)\b")
+NO_ARENA = ("note: the arena's start is not known, so each guest address was read as the low 32 bits, which is "
+            "right only for an arena at a multiple of 4 GB; if ios-runtime.log's \"guest arena at\" line says "
+            "otherwise, pass that address with --arena")
 
 
 class Symbols:
@@ -266,8 +273,6 @@ def ips_report(report, symbols, arena=None):
 
 def text_report(text, symbols, arena=None):
     """text (a .crash report, ios-runtime.log) with a guest name after each address that is one"""
-    if arena is None and (match := ARENA.search(text)):
-        arena = int(match.group(1), 16)
     reason = register_reason(text_registers(text))
     lines = reason_lines(reason) if reason else []
     for line in text.splitlines():
@@ -287,10 +292,15 @@ def image_warning(text, symbols, lines):
 
 
 def symbolicate(text, symbols, arena=None):
+    """the report's lines with its guest frames named; without --arena, the arena's start comes from the
+    text's own lines, and a note at the end says when it was not known"""
+    if arena is None and (match := ARENA.search(text)):
+        arena = int(match.group(1), 16)
     report = read_ips(text)
     lines = ips_report(report, symbols, arena) if report else text_report(text, symbols, arena)
     warning = image_warning(text, symbols, lines)
-    return ([warning] if warning else []) + lines
+    note = [NO_ARENA] if arena is None and any(GUEST_NAMED.search(line) for line in lines) else []
+    return ([warning] if warning else []) + lines + note
 
 
 def main(arguments=None):
