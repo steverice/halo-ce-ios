@@ -95,6 +95,14 @@ Handles index tables of these; 0 is none. */
 	uint32_t content_width, content_height;
 	/* gpu_texture_set_content was called: dynamic resolution's pooled scene target, whatever its content now */
 	BOOL pooled;
+	/* a render target made linear for views of its rectangles (gpu_metal_texture_copy_rects): its buffer and row
+	pitch */
+	id<MTLBuffer> linear_buffer;
+	unsigned long linear_pitch;
+	/* a texture that is a view of another's rectangle: that texture (as it was when the view was made), and the
+	view's offset in its buffer */
+	id<MTLTexture> view_parent;
+	unsigned long view_offset;
 }
 @end
 @implementation MetalTexture
@@ -1250,12 +1258,65 @@ static uint32_t gpu_metal_texture_read(gpu_texture texture, void *pixels, uint32
 
 /* level 0 of source into level of destination (mip composites); the size is
 the destination level's, as gpu_gl.c copies it */
+/* gpu_texture_copy_rects' views: a render target whose rectangles become other textures is moved into a buffer
+once, as a linear texture with its contents, and each destination then becomes a view of its rectangle there, so
+nothing is copied and the destination samples (border addressing included) as its own texture would. A draw that
+samples a view declares the source to its encoder (bind_stages), so Metal orders the draw after the source's
+pass and the source's next pass after the draw. 0 if the source cannot be made linear here. */
+static BOOL texture_make_linear(MetalTexture *record)
+{
+	const struct gpu_texture_description *description = &record->description;
+	MTLTextureDescriptor *linear;
+	id<MTLBuffer> buffer;
+	id<MTLTexture> texture;
+	id<MTLBlitCommandEncoder> blit;
+	NSUInteger alignment, pitch;
+
+	if (record->linear_buffer)
+		return YES;
+	if (!record->texture || description->type != GPU_TEXTURE_2D || description->format != GPU_FORMAT_BGRA8 ||
+		description->usage != GPU_USAGE_RENDER_TARGET || description->foveated_eye || record->levels != 1 ||
+		record->view_parent || getenv("HALO_METAL_NO_TILE_VIEWS"))
+		return NO;
+	alignment = [device minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormatBGRA8Unorm];
+	if (!alignment)
+		return NO;
+	pitch = ((NSUInteger)record->texture.width * 4 + alignment - 1) / alignment * alignment;
+	buffer = [device newBufferWithLength:pitch * record->texture.height options:MTLResourceStorageModePrivate];
+	linear = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+		width:record->texture.width height:record->texture.height mipmapped:NO];
+	linear.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+	linear.storageMode = MTLStorageModePrivate;
+	texture = buffer ? [buffer newTextureWithDescriptor:linear offset:0 bytesPerRow:pitch] : nil;
+	if (!texture)
+	{
+		platform_log("Metal: no linear render target of %lux%lu here; shadow tiles are copied",
+			(unsigned long)record->texture.width, (unsigned long)record->texture.height);
+		return NO;
+	}
+	pass_end();
+	blit = [command_buffer() blitCommandEncoder];
+	if (metal_debug)
+		blit.label = @"linear target";
+	[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
+		sourceSize:MTLSizeMake(record->texture.width, record->texture.height, 1) toTexture:texture destinationSlice:0
+		destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+	[blit endEncoding];
+	use_texture(record);
+	record->texture = texture;
+	record->linear_buffer = buffer;
+	record->linear_pitch = pitch;
+	return YES;
+}
+
 static void gpu_metal_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
 {
 	@autoreleasepool
 	{
 		MetalTexture *from = texture_record(source);
 		id<MTLBlitCommandEncoder> blit = nil;
+		NSUInteger alignment = [device minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormatBGRA8Unorm];
+		BOOL views;
 		uint32_t index;
 
 		if (!from || !from->texture)
@@ -1264,10 +1325,14 @@ static void gpu_metal_texture_copy_rects(gpu_texture source, const struct gpu_te
 				"storage", source);
 			return;
 		}
+		if (source == pass_color)
+			pass_end();
+		views = texture_make_linear(from);
 		for (index = 0; index < count; index++)
 		{
 			const struct gpu_texture_copy *copy = &copies[index];
 			MetalTexture *to = texture_record(copy->destination);
+			unsigned long offset = (unsigned long)copy->y * from->linear_pitch + (unsigned long)copy->x * 4;
 
 			if (!to || !to->texture || (unsigned long)copy->x + copy->width > from->texture.width ||
 				(unsigned long)copy->y + copy->height > from->texture.height || copy->width > to->texture.width ||
@@ -1277,6 +1342,38 @@ static void gpu_metal_texture_copy_rects(gpu_texture source, const struct gpu_te
 					"%u: a texture without storage, or out of bounds", copy->width, copy->height, copy->x, copy->y,
 					source, copy->destination);
 				continue;
+			}
+			/* a view: of a destination the rectangle's size, at an offset the buffer allows */
+			if (views && copy->width == to->description.width && copy->height == to->description.height &&
+				to->description.format == GPU_FORMAT_BGRA8 && to->levels == 1 && !to->description.foveated_eye &&
+				alignment && offset % alignment == 0)
+			{
+				if (to->view_parent != from->texture || to->view_offset != offset)
+				{
+					MTLTextureDescriptor *view = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:
+						MTLPixelFormatBGRA8Unorm width:copy->width height:copy->height mipmapped:NO];
+					id<MTLTexture> texture;
+
+					view.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+					view.storageMode = from->linear_buffer.storageMode;
+					texture = [from->linear_buffer newTextureWithDescriptor:view offset:offset bytesPerRow:from->linear_pitch];
+					if (texture)
+					{
+						if (copy->destination == pass_color || copy->destination == pass_depth)
+							pass_end();
+						to->texture = texture;
+						to->view_parent = from->texture;
+						to->view_offset = offset;
+					}
+				}
+				if (to->view_parent == from->texture && to->view_offset == offset)
+				{
+					if (pass_log)
+						[pass_log appendFormat:@"\n  view: %ux%u at %u,%u of texture %u as texture %u", copy->width,
+							copy->height, copy->x, copy->y, source, copy->destination];
+					use_texture(to);
+					continue;
+				}
 			}
 			if (!blit)
 			{
@@ -3566,6 +3663,10 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 		if (!texture)
 			texture = empty_textures[packet->type <= GPU_TEXTURE_CUBE ? packet->type : 0];
 		use_texture(record);
+		/* a view of another texture's rectangle (gpu_metal_texture_copy_rects): that texture is what passes write,
+		so the encoder declares it, for Metal to order the draw after them */
+		if (record && record->view_parent && record->texture == texture)
+			[encoder useResource:record->view_parent usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
 		if (metal_state_object(&state_cache, METAL_STATE_TEXTURE + stage, (__bridge void *)texture, 0))
 			[encoder setFragmentTexture:texture atIndex:stage];
 		if (!packet->type)
