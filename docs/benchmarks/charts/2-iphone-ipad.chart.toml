@@ -1,0 +1,46 @@
+order = 20
+heading = "iPhone and iPad"
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames) with the frame cap and vsync off and the matched-stock settings. The windows are the a10 opening and the b30 opening."
+empty = "No results yet for the M1 iPad Pro."
+series_labels = ["Average fps", "1% low fps"]
+
+[chart]
+type = "bar"
+horizontal = true
+title = "Uncapped fps, M1 iPad Pro"
+x_label = "Window and port"
+y_label = "Frames per second"
+y_min = 0
+marks = ["\U0001F7E6", "\U0001F7E7"]
+header = '''
+---
+config:
+  xyChart:
+    width: 860
+    height: 420
+  themeVariables:
+    xyChart:
+      plotColorPalette: "#2f6fed, #f28c28"
+---
+'''
+
+[query]
+metrics = ["fps_avg", "fps_1pct_low"]
+x = ["window", "port_name"]
+
+[query.order]
+window = ["a10", "b30"]
+port_name = ["VISR", "OpenCE-macOS", "CoreCE"]
+
+[query.filter]
+platform = "iPhone/iPad"
+reference_box = "true"
+frame_mode = "uncapped"
+status = "ok"
+delay_s = "0"
+
+[query.exclude]
+version = ["main"]
+
+[rename]
+"OpenCE-macOS" = "OpenCE"

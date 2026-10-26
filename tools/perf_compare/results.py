@@ -271,8 +271,8 @@ def _notes(records):
     if any(r.get("frame_mode") == "uncapped" for r in records):
         lines.extend(['Uncapped runs request `display.frame_rate = "unlimited"` in VISR, '
                       '`display.max_fps = -1` in OpenCE-macOS, and `display.frame_limit = 0` in CoreCE, with '
-                      '`display.vsync = false` and interpolation enabled in each. The Conditions column identifies each mode and extra delay after warm-up '
-                      '(+0 s is the opening window). The 60 Hz display still limits visible refreshes; '
+                      '`display.vsync = false` and interpolation enabled in each. The `frame_mode` and `delay_s` columns of the spreadsheet identify each mode and extra delay after warm-up '
+                      '(0 s is the opening window). The 60 Hz display still limits visible refreshes; '
                       'presentation intervals do not establish simulation speed or unique displayed frames. '
                       'Above-refresh trace rates have unverified physical meaning and are not verified submission throughput. '
                       'The same elapsed window does not prove identical gameplay. Each launch uses fresh isolated data/save '

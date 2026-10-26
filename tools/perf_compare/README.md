@@ -36,12 +36,23 @@ For the OpenCE web build, private target keys drive the documented page flow: `i
 
 CoreCE's Mac release (`corece`) uses the same isolated launch with two documented additions: `data_root`, a prepared folder whose `maps` is a real directory (an APFS clone), and `macos_settings`, which writes `macos-settings.json` with that `data_path` into the isolated save folder. Its uncapped mode is `frame_limit = 0` with `vsync = false`, from the settings file it writes. Release tags that are build numbers take the product version from the bundle's `CFBundleShortVersionString`.
 
-Regenerate or check the page without running apps:
+Regenerate or check the page without running apps (Python 3.11 or newer, for `tomllib`):
 
 ```sh
 python3 tools/perf_compare/refresh.py render
 python3 tools/perf_compare/refresh.py render --check
 ```
+
+### Results spreadsheet, snapshot and charts
+
+Results live in a public Google Sheet; `docs/benchmarks.md` holds only headline charts and the methodology. Data and chart definitions change independently:
+
+1. `sheet_export.py --output results.csv --sweep-output sweep.csv --layout-output layout.json` turns `summary.json` into the sheet's data. `results.csv` has one row per measured set and scenario window with these columns, in this order: `port`, `port_name`, `version`, `label`, `build`, `source`, `release_kind`, `artifact`, `artifact_sha256`, `host`, `platform`, `reference_box`, `machine`, `chip`, `memory_gb`, `os`, `browser`, `date`, `method`, `window`, `scenario`, `delay_s`, `frame_mode`, `quality_preset`, `warmup_s`, `resolution`, `cap_fps`, `display_hz`, `rounds`, `fps_avg`, `fps_min`, `fps_max`, `fps_1pct_low`, `p50_ms`, `p95_ms`, `p99_ms`, `p99_ms_max`, `worst_ms_max`, `on_time_pct`, `thermal`, `status`, `notes`. Rates and intervals are means over the valid rounds; `fps_min`, `fps_max` and `p99_ms_max` give the spread. `platform` is Mac, iPhone/iPad, Apple TV or Vision Pro; `reference_box` marks the device each platform's headline chart uses (`REFERENCE_BOXES` in `sheet_export.py`; Apple TV has none yet); `fps_1pct_low` is 1000 divided by the 99th percentile interval. Hosts appear as chip and model (`M4 Mac mini`), never by name. `sweep.csv` is the device sweep. `layout.json` lists the tabs: `results` (the CSV), one `FILTER` tab per port, `device-sweep` and a `README` tab with a description for each column.
+2. `sheet_fetch.py --gid <results tab gid>` downloads the `results` tab's public CSV into `docs/benchmarks/results.csv`, which is committed. It refuses a sign-in page, a different tab or a header that differs from the column list above. The page is rendered from this snapshot, never live from Google.
+3. `docs/benchmarks/charts/<name>.chart.toml` defines one chart. Hand-written parts: `heading`, `paragraph`, and `[chart]` (`type` of `bar` or `line`, `title`, axis labels, `y_min`/`y_max`, legend `marks`, and `header`, the Mermaid frontmatter that carries the theme and plot colors). The query selects data: `metric`, `x` (columns joined into the category label), optional `series`, `filter` and `exclude` (column equals one of the values), `order_x`, `order_series`, and `[rename]` for shorter labels. When several dates match, the newest row per x and series is charted.
+4. `charts.py` fills in `x-axis`, `y-axis` and the data lines, writes the Mermaid blocks between `<!-- BEGIN CHARTS -->` and `<!-- END CHARTS -->`, and adds a legend line and a caption naming each port's exact version, build and source commit. `refresh.py render` runs it as part of the page, and `charts.py --check` verifies the markers alone.
+
+Mermaid's `xychart-beta` draws no legend, and bar series drawn together overlap at one x position. A chart with `metrics` instead of `series` draws one bar series per metric column in order (the later, shorter bar sits over the earlier one in `xychart-beta horizontal`) and takes the legend names from `series_labels`; a spec with `empty` shows that text when no rows match. The generator gives each series of a `series` chart its own x positions (zero elsewhere) and emits a legend line of colored squares in the spec's `marks` order, which must match the `plotColorPalette` in the header. Zero-height bars draw a thin sliver at the baseline.
 
 The public summary is an allowlisted export, with public hardware model names supplied explicitly for sweep aliases. Review it before committing. Valid offscreen sweep records appear separately, without a claim that the device holds a display tier. Invalid/diverged records and unmapped device aliases are excluded; repeated report/case identities are deduplicated. Raw evidence is not committed.
 

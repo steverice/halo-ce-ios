@@ -262,6 +262,13 @@ def failure_code(error):
     return message if message in known else 'adapter-failed'
 
 
+def page_text(summary):
+    """The public page: charts from the committed results snapshot, then the methodology."""
+    import charts
+    from page import render_page
+    return render_page(summary, charts.load_snapshot(charts.SNAPSHOT), charts.load_specs(charts.SPECS))
+
+
 def write_page(path, content, check=False):
     if check:
         if not path.exists() or path.read_text() != content:
@@ -330,7 +337,7 @@ def routed_source(route):
 
 
 def refresh(config, summary_path, page_path):
-    from results import merge, metrics, parse_hud, parse_metal_trace, parse_raf, render
+    from results import merge, metrics, parse_hud, parse_metal_trace, parse_raf
     bind_routed_visr(config)
     validate_config(config)
     start = time.monotonic()
@@ -480,7 +487,7 @@ def refresh(config, summary_path, page_path):
             summary.pop('sweep', None)
         merged = merge(retained, summary)
         summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
-        write_page(page_path, render(merged))
+        write_page(page_path, page_text(merged))
         print(f'Refresh: {round(time.monotonic() - start, 1)} seconds; private evidence: {out}')
     if denied:
         print(f'STOP: permission system denied {denied}', file=sys.stderr)
@@ -503,7 +510,7 @@ def routed_refresh(config, summary_path, page_path):
 
 def _routed_refresh(config, summary_path, page_path):
     """Build verified live-main runtime sources, then measure through the dedicated host lock."""
-    from results import merge, render
+    from results import merge
     started = time.monotonic()
     route = config.pop('route')
     transfer_id = uuid.uuid4().hex
@@ -548,7 +555,7 @@ def _routed_refresh(config, summary_path, page_path):
         retained = json.loads(summary_path.read_text()) if summary_path.exists() else {'schema': 2}
         merged = merge(retained, summary)
         summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
-        write_page(page_path, render(merged))
+        write_page(page_path, page_text(merged))
         print(f'Routed refresh: {round(time.monotonic() - started, 1)} seconds')
     elif result.returncode == 0:
         print('routed refresh failed to transfer a fresh summary', file=sys.stderr)
@@ -566,8 +573,7 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     if args.command == 'render':
-        from results import render
-        return write_page(args.output, render(json.loads(args.summary.read_text())), args.check)
+        return write_page(args.output, page_text(json.loads(args.summary.read_text())), args.check)
     if (args.config is None and args.config_json is None) or args.check:
         parser.error('refresh requires --config and does not accept --check')
     config = json.loads(args.config_json) if args.config_json else json.loads(args.config.read_text())
