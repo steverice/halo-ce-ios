@@ -42,19 +42,19 @@ Not measured: OpenCE web build-280 (Only measured with the frame cap on or with 
 
 Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
-No results yet for the M1 iPad Pro.
+Coming soon with VISR 0.6.0
 
 ### Apple TV
 
 Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
-Coming Soon
+Coming soon with VISR 0.6.0
 
 ### Vision Pro
 
 Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
-No results yet for the M2 Vision Pro.
+Coming soon with VISR 0.6.0
 
 <!-- END CHARTS -->
 

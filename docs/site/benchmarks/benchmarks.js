@@ -206,6 +206,7 @@ async function drawChart(container, spec, built, suite, selected) {
 
 function drawList(list, spec, built, state) {
   const reasons = state.reasons;
+  list.hidden = !built.entries.length;
   list.replaceChildren(el("legend", {}, "Builds"));
   for (const entry of built.entries) {
     const key = entryKey(entry);

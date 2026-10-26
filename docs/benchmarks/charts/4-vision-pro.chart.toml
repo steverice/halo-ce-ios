@@ -1,7 +1,7 @@
 order = 40
 heading = "Vision Pro"
 paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
-empty = "No results yet for the M2 Vision Pro."
+empty = "Coming soon with VISR 0.6.0"
 box = "M2 Vision Pro"
 series_labels = ["Average fps", "1% low fps"]
 
