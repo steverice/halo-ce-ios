@@ -1,7 +1,7 @@
 order = 30
 heading = "Apple TV"
 paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
-empty = "No reference box is set for Apple TV yet."
+empty = "Coming Soon"
 box = ""
 series_labels = ["Average fps", "1% low fps"]
 
