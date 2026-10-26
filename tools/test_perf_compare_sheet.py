@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import csv
+import re
 import io
 import json
 import shutil
@@ -390,3 +391,37 @@ def test_fetch_drops_unreleased_rows_even_if_the_sheet_still_has_them():
     text = sheet_export.to_csv(sheet_export.COLUMNS, [*rows, unreleased])
     cleaned = list(csv.DictReader(io.StringIO(sheet_fetch.validate(text))))
     assert "VISR dev" not in {row["label"] for row in cleaned} and len(cleaned) == len(rows)
+
+
+def test_chart_palette_matches_the_site_tokens_and_the_icon_colors():
+    css = (ROOT / "docs/site/style.css").read_text()
+    light = [re.search(rf"--{name}:\s*(#[0-9a-f]{{6}})", css).group(1) for name in ("chart-avg", "chart-low")]
+    for item in charts.load_specs(ROOT / "docs/benchmarks/charts"):
+        assert item["chart"]["palette"] == light
+        assert "__PALETTE__" in item["chart"]["header"]
+        assert ", ".join(light) in charts.header_text(item["chart"])
+    assert "--visr-blue: #1fa9d4" in css and "--visr-gold: #ffc24d" in css
+
+
+def _luminance(color):
+    channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    r, g, b = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def test_light_mode_bars_keep_three_to_one_contrast_on_white():
+    css = (ROOT / "docs/site/style.css").read_text()
+    for name in ("chart-avg", "chart-low"):
+        color = re.search(rf"--{name}:\s*(#[0-9a-f]{{6}})", css).group(1)
+        assert 1.05 / (_luminance(color) + 0.05) >= 3.0, name
+
+
+def test_home_page_links_to_the_benchmarks_page_and_the_readme_to_its_site_address():
+    assert 'href="benchmarks.html"' in (ROOT / "docs/site/index.html").read_text()
+    readme = (ROOT / "README.md").read_text()
+    assert "(https://code.steverice.org/visr/benchmarks.html)" in readme and "docs/benchmarks.md" not in readme
+
+
+def test_pages_chart_script_fits_an_even_margin_and_draws_no_gridlines():
+    script = (ROOT / "docs/site/benchmarks/benchmarks.js").read_text()
+    assert "function finishChart" in script and "finishChartSvg" in script and "gridline" not in script.replace("no gridline", "")

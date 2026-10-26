@@ -147,6 +147,11 @@ def chart_title(spec: dict, built: dict, suite: str) -> str:
     return f"{SUITE_NAMES[suite]}: uncapped fps, {box}".replace('"', "'")
 
 
+def header_text(chart: dict) -> str:
+    """The hand-written Mermaid frontmatter with the light-mode bar colors filled in."""
+    return chart.get("header", "").strip().replace("__PALETTE__", ", ".join(chart.get("palette", [])))
+
+
 def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None) -> str | None:
     """Mermaid text for the ticked entries that have values, or None when there is nothing to draw."""
     drawn = [e for e in built["entries"] if e["value"] is not None
@@ -160,7 +165,7 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
     y_max = chart.get("y_max", _nice_ceiling(max(averages + lows) * 1.08))
     head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
     quoted = ", ".join('"' + label + '"' for label in labels)
-    lines = [chart.get("header", "").strip(), head, f'    title "{chart_title(spec, built, suite)}"',
+    lines = [header_text(chart), head, f'    title "{chart_title(spec, built, suite)}"',
              f'    x-axis "{chart.get("x_label", "")}" [{quoted}]',
              f'    y-axis "{chart.get("y_label", "")}" {_number(chart.get("y_min", 0))} --> {_number(y_max)}',
              f"    bar [{', '.join(_number(v) for v in averages)}]", f"    bar [{', '.join(_number(v) for v in lows)}]"]

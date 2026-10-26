@@ -24,6 +24,7 @@ def main() -> int:
         page = browser.new_page()
         page.set_content("<!doctype html><body></body>")
         page.add_script_tag(url=MERMAID)
+        page.add_script_tag(path=str(SITE / "benchmarks/benchmarks.js"))
         page.evaluate("mermaid.initialize({startOnLoad:false})")
         for spec in specs:
             text = charts.source(spec, charts.model(rows, spec["query"], charts.DEFAULT_SUITE), charts.DEFAULT_SUITE)
@@ -31,7 +32,8 @@ def main() -> int:
             if text is None:
                 target.unlink(missing_ok=True)
                 continue
-            svg = page.evaluate("async (s) => (await mermaid.render('static', s)).svg", text)
+            # benchmarks.js adds the gridlines and the even margin (finishChartSvg), as the live page does.
+            svg = page.evaluate("async (s) => finishChartSvg((await mermaid.render('static', s)).svg)", text)
             target.write_text(svg + "\n", encoding="utf-8")
             print("wrote", target.relative_to(charts.ROOT))
         browser.close()

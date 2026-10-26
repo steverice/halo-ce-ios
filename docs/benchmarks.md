@@ -22,7 +22,7 @@ config:
     height: 420
   themeVariables:
     xyChart:
-      plotColorPalette: "#2f6fed, #f28c28"
+      plotColorPalette: "#1593bd, #c8870a"
 ---
 xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
@@ -32,7 +32,7 @@ xychart-beta horizontal
     bar [195.7, 249.8, 185.6]
 ```
 
-🟦 Average fps 🟧 1% low fps
+🟦 Average fps 🟨 1% low fps
 
 M6 Mac mini. VISR 0.5.1 (build 20261026.31927, measured 2026-10-26); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).
 

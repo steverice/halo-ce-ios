@@ -36,6 +36,9 @@
 .bench-rows label.off { color: var(--muted); }
 .bench-legend, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
 .bench-legend { color: var(--ink); font-size: 1rem; }
+.swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin-right: 0.15em; vertical-align: -0.1em; }
+.swatch.avg { background: var(--chart-avg); }
+.swatch.low { background: var(--chart-low); }
 .bench-chart:has(img) { background: #fff; }
 @media (prefers-color-scheme: dark) { .device .bench-chart { background: #10232b; color: #e8f6fa; } }
 .bench-empty { color: inherit; margin: 0; padding: 24px 12px; }
@@ -53,7 +56,7 @@
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device device-mac"><div class="bench-chart"><img src="benchmarks/static-mac.svg" alt="Mac: average and 1% low fps per build, Campaign suite"></div></figure>
-<p class="bench-legend">🟦 Average fps 🟧 1% low fps</p>
+<p class="bench-legend"><span class="swatch avg" aria-hidden="true"></span> Average fps  <span class="swatch low" aria-hidden="true"></span> 1% low fps</p>
 <p class="bench-caption">M6 Mac mini. VISR 0.5.1 (build 20261026.31927, measured 2026-10-26); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).</p></div>
 <fieldset class="bench-rows"><legend>Builds</legend><label><input type="checkbox" value="visr@0.5.1@20261026.31927" checked> VISR 0.5.1 (build 20261026.31927, 2026-10-26)</label><label><input type="checkbox" value="opence-macos@v1.0.2@2" checked> OpenCE-macOS v1.0.2 (build 2, 2026-10-26)</label><label class="off"><input type="checkbox" value="opence-web@build-280@280" disabled> OpenCE web build-280 (build 280, 2026-10-26). Not measured: Only measured with the frame cap on or with other settings.</label><label><input type="checkbox" value="corece@0.3.0@44" checked> CoreCE 0.3.0 (build 44, 2026-10-26)</label><label class="off"><input type="checkbox" value="chupathingy@v0.8.0g@0.8.0g" disabled> Chupathingy v0.8.0g (build 0.8.0g, 2026-10-24). Not measured: The app has no frame-time readout we could capture.</label><label class="off"><input type="checkbox" value="halo-og@v0.5.1@" disabled> Halo OG v0.5.1 (build unknown, 2026-10-24). Not measured: The app has no frame-time readout we could capture.</label></fieldset>
 </div>
@@ -139,11 +142,15 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
    "x_label": "Port and version",
    "y_label": "Frames per second",
    "y_min": 0,
+   "palette": [
+    "#1593bd",
+    "#c8870a"
+   ],
    "marks": [
     "🟦",
-    "🟧"
+    "🟨"
    ],
-   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"__PALETTE__\"\n---\n"
   },
   "query": {
    "platform": "Mac",
@@ -186,11 +193,15 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
    "x_label": "Port and version",
    "y_label": "Frames per second",
    "y_min": 0,
+   "palette": [
+    "#1593bd",
+    "#c8870a"
+   ],
    "marks": [
     "🟦",
-    "🟧"
+    "🟨"
    ],
-   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"__PALETTE__\"\n---\n"
   },
   "query": {
    "platform": "iPhone/iPad",
@@ -233,11 +244,15 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
    "x_label": "Port and version",
    "y_label": "Frames per second",
    "y_min": 0,
+   "palette": [
+    "#1593bd",
+    "#c8870a"
+   ],
    "marks": [
     "🟦",
-    "🟧"
+    "🟨"
    ],
-   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+   "header": "---\nconfig:\n  xyChart:\n    width: 860\n    height: 420\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"__PALETTE__\"\n---\n"
   },
   "query": {
    "platform": "Apple TV",
@@ -280,11 +295,15 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
    "x_label": "Port and version",
    "y_label": "Frames per second",
    "y_min": 0,
+   "palette": [
+    "#1593bd",
+    "#c8870a"
+   ],
    "marks": [
     "🟦",
-    "🟧"
+    "🟨"
    ],
-   "header": "---\nconfig:\n  xyChart:\n    width: 520\n    height: 263\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+   "header": "---\nconfig:\n  xyChart:\n    width: 520\n    height: 263\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"__PALETTE__\"\n---\n"
   },
   "query": {
    "platform": "Vision Pro",

@@ -8,10 +8,18 @@
   --accent: #006f96;
   --code-bg: #0e1d23;
   --code-ink: #d8f3fb;
+  /* VISR blue and gold come from the icon artwork. The chart pair is deepened for light backgrounds so the bars
+     keep 3:1 contrast against white (blue 3.5:1, gold 3.0:1); in dark mode the icon colors are used as they are. */
+  --visr-blue: #1fa9d4;
+  --visr-gold: #ffc24d;
+  --chart-avg: #1593bd;
+  --chart-low: #c8870a;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --chart-avg: var(--visr-blue);
+    --chart-low: var(--visr-gold);
     --bg: #081216;
     --ink: #e8f6fa;
     --muted: #93adb6;

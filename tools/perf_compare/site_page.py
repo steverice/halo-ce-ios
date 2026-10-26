@@ -49,6 +49,9 @@ STYLE = """
 .bench-rows label.off { color: var(--muted); }
 .bench-legend, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
 .bench-legend { color: var(--ink); font-size: 1rem; }
+.swatch { display: inline-block; width: 0.9em; height: 0.9em; border-radius: 2px; margin-right: 0.15em; vertical-align: -0.1em; }
+.swatch.avg { background: var(--chart-avg); }
+.swatch.low { background: var(--chart-low); }
 .bench-chart:has(img) { background: #fff; }
 @media (prefers-color-scheme: dark) { .device .bench-chart { background: #10232b; color: #e8f6fa; } }
 .bench-empty { color: inherit; margin: 0; padding: 24px 12px; }
@@ -114,13 +117,16 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
             items.append(f'<label><input type="checkbox" value="{escape(charts.entry_key(entry))}"{checked}> '
                          f'{escape(entry["label"])} ({escape(detail)})</label>')
     rows_html = f'<legend>Builds</legend>{"".join(items)}' if items else "<legend>Builds</legend>"
-    legend = charts.legend(spec) if built["entries"] else ""
+    swatches = ""
+    if built["entries"]:
+        swatches = "  ".join(f'<span class="swatch {kind}" aria-hidden="true"></span> {escape(label)}'
+                             for kind, label in zip(("avg", "low"), spec["series_labels"]))
     return f"""<section class="bench" data-platform="{name}" aria-labelledby="h-{name}">
 <h2 id="h-{name}">{escape(spec["heading"])}</h2>
 <p>{escape(spec["paragraph"].strip())}</p>
 <div class="bench-grid">
 <div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
-<p class="bench-legend">{escape(legend)}</p>
+<p class="bench-legend">{swatches}</p>
 <p class="bench-caption">{escape(charts.caption(built))}</p></div>
 <fieldset class="bench-rows"{"" if items else " hidden"}>{rows_html}</fieldset>
 </div>

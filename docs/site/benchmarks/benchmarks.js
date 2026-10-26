@@ -109,7 +109,11 @@ function drawn(built, selected) {
   return built.entries.filter((e) => e.value !== null && (selected ? selected.has(entryKey(e)) : e.default));
 }
 
-function chartSource(spec, built, suite, selected) {
+function headerText(chart, palette) {
+  return chart.header.trim().replace("__PALETTE__", (palette || chart.palette || []).join(", "));
+}
+
+function chartSource(spec, built, suite, selected, palette) {
   const shown = drawn(built, selected);
   if (!shown.length) return null;
   const chart = spec.chart, rename = spec.rename || {};
@@ -118,7 +122,7 @@ function chartSource(spec, built, suite, selected) {
   const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...lows) * 1.08);
   const head = chart.horizontal ? "xychart-beta horizontal" : "xychart-beta";
   const title = `${SUITE_NAMES[suite]}: uncapped fps, ${built.box || spec.box || ""}`.replaceAll('"', "'");
-  return [chart.header.trim(), head, `    title "${title}"`,
+  return [headerText(chart, palette), head, `    title "${title}"`,
     `    x-axis "${chart.x_label || ""}" [${labels.map((l) => `"${l}"`).join(", ")}]`,
     `    y-axis "${chart.y_label || ""}" ${number(chart.y_min ?? 0)} --> ${number(yMax)}`,
     `    bar [${averages.map(number).join(", ")}]`, `    bar [${lows.map(number).join(", ")}]`].filter(Boolean).join("\n");
@@ -145,7 +149,7 @@ function plainReason(reason, reasons) {
   return reason;
 }
 
-if (typeof module !== "undefined") module.exports = { plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
+if (typeof module !== "undefined") module.exports = { headerText, plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -182,9 +186,52 @@ function mermaidConfig(dark) {
     xAxisLineColor: line, yAxisTitleColor: ink, yAxisLabelColor: ink, yAxisTickColor: line, yAxisLineColor: line } } };
 }
 
+// Bar colors come from the site's tokens (`--chart-avg`, `--chart-low` in style.css), so light and dark both work.
+function themePalette() {
+  const style = getComputedStyle(document.documentElement);
+  return ["--chart-avg", "--chart-low"].map((name) => style.getPropertyValue(name).trim());
+}
+
+// Mermaid's xychart draws its content flush to the edge of its canvas (the last tick label overhangs it). After
+// rendering, this fits the view box to the content plus an even margin on all four sides. `svg` must be in the
+// document so `getBBox` works. (Mermaid 11.12 has no gridline option, so the charts have none.)
+function finishChart(svg, pad = 22) {
+  const main = svg.querySelector("g.main");
+  if (!main) return svg;
+  const background = main.querySelector("rect.background");
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const child of main.children) {
+    if (child === background || !child.getBBox) continue;
+    const box = child.getBBox();
+    if (!box.width && !box.height) continue;
+    x0 = Math.min(x0, box.x); y0 = Math.min(y0, box.y); x1 = Math.max(x1, box.x + box.width); y1 = Math.max(y1, box.y + box.height);
+  }
+  if (Number.isFinite(x0)) {
+    const view = [Math.floor(x0 - pad), Math.floor(y0 - pad), Math.ceil(x1 - x0 + 2 * pad), Math.ceil(y1 - y0 + 2 * pad)];
+    svg.setAttribute("viewBox", view.join(" "));
+    svg.style.maxWidth = view[2] + "px";
+    if (background) for (const [name, value] of [["x", view[0]], ["y", view[1]], ["width", view[2]], ["height", view[3]]]) background.setAttribute(name, value);
+  }
+  return svg;
+}
+
+// For the pre-rendered fallback: mount the SVG text off screen, finish it and give back its markup.
+
+// For the pre-rendered fallback: mount the SVG text off screen, finish it and give back its markup.
+function finishChartSvg(text) {
+  const stage = document.createElement("div");
+  stage.style.cssText = "position:absolute;left:-10000px;top:0;width:900px;visibility:hidden";
+  stage.innerHTML = text;
+  document.body.append(stage);
+  const svg = finishChart(stage.querySelector("svg"));
+  const markup = svg.outerHTML;
+  stage.remove();
+  return markup;
+}
+
 let renderCount = 0;
 async function drawChart(container, spec, built, suite, selected) {
-  const text = chartSource(spec, built, suite, selected);
+  const text = chartSource(spec, built, suite, selected, themePalette());
   container.replaceChildren();
   if (text === null) {
     const anyData = built.entries.some((e) => e.value !== null);
@@ -199,9 +246,19 @@ async function drawChart(container, spec, built, suite, selected) {
     let svg;
     try { ({ svg } = await mermaid.render("bench-chart-" + ++renderCount, text, stage)); } finally { stage.remove(); }
     container.innerHTML = svg;
+    finishChart(container.querySelector("svg"));
   } catch (error) {
     container.append(el("pre", {}, text));
   }
+}
+
+// The legend uses swatches in the chart's own colors (CSS tokens), not emoji.
+function drawLegend(node, spec, show) {
+  node.replaceChildren();
+  if (!show) return;
+  spec.series_labels.forEach((name, i) => {
+    node.append(el("span", { class: "swatch " + (i ? "low" : "avg"), "aria-hidden": "true" }), " " + name + (i < spec.series_labels.length - 1 ? "  " : ""));
+  });
 }
 
 function drawList(list, spec, built, state) {
@@ -256,7 +313,7 @@ async function start() {
     const built = state.models[spec.slug], section = sections[spec.slug];
     await drawChart(section.querySelector(".bench-chart"), spec, built, state.suite, state.selected[spec.slug]);
     drawList(section.querySelector(".bench-rows"), spec, built, state);
-    section.querySelector(".bench-legend").textContent = built.entries.length ? legendText(spec) : "";
+    drawLegend(section.querySelector(".bench-legend"), spec, built.entries.length > 0);
     section.querySelector(".bench-caption").textContent = captionText(built, state.selected[spec.slug]);
     writeHash(state, specs);
   }

@@ -11,7 +11,8 @@ horizontal = true
 x_label = "Port and version"
 y_label = "Frames per second"
 y_min = 0
-marks = ["\U0001F7E6", "\U0001F7E7"]
+palette = ["#1593bd", "#c8870a"]
+marks = ["\U0001F7E6", "\U0001F7E8"]
 header = '''
 ---
 config:
@@ -20,7 +21,7 @@ config:
     height: 420
   themeVariables:
     xyChart:
-      plotColorPalette: "#2f6fed, #f28c28"
+      plotColorPalette: "__PALETTE__"
 ---
 '''
 
