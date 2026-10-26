@@ -137,7 +137,7 @@ def _conditions(runs, key):
 
 
 # Public names, in page order. Unknown ports follow in identifier order.
-PORTS = {"visr": "VISR", "opence-macos": "OpenCE-macOS", "opence-web": "OpenCE web",
+PORTS = {"visr": "VISR", "opence-macos": "OpenCE-macOS", "opence-web": "OpenCE web", "corece": "CoreCE",
          "chupathingy": "Chupathingy", "halo-og": "Halo OG"}
 SCHEMA = 2
 # Everything that distinguishes one measured set from another. Two records with the same key are the
@@ -227,7 +227,7 @@ def _fps_cell(record, valid, key):
 def _port_rows(record):
     for scenario in _scenarios(record):
         valid = _valid_rounds(record, scenario)
-        yield [identity(record), record.get("machine", "unknown"), scenario, _mode(record), _status(record, valid),
+        yield [identity(record), record.get("machine", "unknown"), record.get("date", "unknown"), scenario, _mode(record), _status(record, valid),
                *(_fps_cell(record, valid, key) for key in _METRICS),
                *(_conditions(valid, key) for key in ("thermal", "resolution", "cap", "display_hz", "display_rate_basis"))]
 
@@ -269,31 +269,49 @@ def _notes(records):
                       "or identical image quality. Player readiness does not align cinematic clocks, so opening "
                       "sequences can have phase offsets between apps.", ""])
     if any(r.get("frame_mode") == "uncapped" for r in records):
-        lines.extend(['Uncapped runs request `display.frame_rate = "unlimited"` in VISR and '
-                      '`display.max_fps = -1` in OpenCE-macOS, with `display.vsync = false` and '
-                      'interpolation enabled in both. The Conditions column identifies each mode and extra delay after warm-up '
+        lines.extend(['Uncapped runs request `display.frame_rate = "unlimited"` in VISR, '
+                      '`display.max_fps = -1` in OpenCE-macOS, and `display.frame_limit = 0` in CoreCE, with '
+                      '`display.vsync = false` and interpolation enabled in each. The Conditions column identifies each mode and extra delay after warm-up '
                       '(+0 s is the opening window). The 60 Hz display still limits visible refreshes; '
                       'presentation intervals do not establish simulation speed or unique displayed frames. '
                       'Above-refresh trace rates have unverified physical meaning and are not verified submission throughput. '
                       'The same elapsed window does not prove identical gameplay. Each launch uses fresh isolated data/save '
                       'folders; OS and driver caches are not reset or equalized.', ""])
     if any(r.get("quality_preset") == "matched-stock" for r in records):
-        lines.extend(['The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in both apps; '
-                      'both use direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size '
+        lines.extend(['The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in each native app, '
+                      'and each uses direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size '
                       'effect buffer, 1× anisotropic filtering, no replacement textures, and no first-person body. '
                       'OpenCE-macOS uses native resolution scaling, stock world/weapon FOV, and disables optional per-pixel '
-                      'lighting, weapon shields, and shield glow. Other defaults remain unchanged. '
+                      'lighting, weapon shields, and shield glow. CoreCE uses the same options as OpenCE-macOS and '
+                      '`model_detail = "stock"`. Other defaults remain unchanged. '
                       'VISR uses native Metal and compressed GPU textures; OpenCE-macOS uses ANGLE over Metal. '
-                      'These runs could not verify OpenCE-macOS\'s internal filtering, LOD, effect-buffer, or texture-storage policy, '
+                      'These runs could not verify the other ports\' internal filtering, LOD, effect-buffer, or texture-storage policy, '
                       'so identical image quality remains unverified. Weapon framing and texture filtering still differ visibly. '
                       'Capped rows keep each app\'s graphics defaults and are not quality-matched to the matched-stock rows.', ""])
-        lines.extend(['Configuration references: [VISR settings](../port/ios/README.md), '
-                      '[OpenCE-macOS v1.0.2 settings](https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings).', ""])
+        refs = ['[VISR settings](../port/ios/README.md)',
+                '[OpenCE-macOS v1.0.2 settings](https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings)']
+        corece = sorted({r.get("source") for r in records if r.get("port") == "corece" and r.get("source")})
+        if corece:
+            refs.append(f'[CoreCE graphics settings](https://github.com/mastercheese-dev/CoreCE/blob/{corece[-1]}/README.md#graphics)')
+        lines.extend(['Configuration references: ' + ', '.join(refs) + '.', ""])
     if any(r.get("native_delay_seconds") == 90 for r in records):
         lines.extend(['The later b30 window adds 90 seconds after warm-up, reaching the beach encounter at about '
                       '110 seconds after player readiness once the CPU baseline is included. It samples 60 seconds '
                       'with a stationary player and no input. Start/end screenshots qualify the camera location, '
                       'but AI and combat state can vary between apps and rounds; this is not a deterministic combat replay.', ""])
+    web = [r for r in records if r.get("web_load_seconds") is not None and r.get("runs")]
+    if web:
+        lines.extend([f"OpenCE web runs import the disc image into each fresh Safari automation session, start the level "
+                      f"with the documented `?map=<level>&play`, wait {_cell(web[0]['web_load_seconds'])} seconds for loading, "
+                      "then warm up for 15 seconds and sample requestAnimationFrame callbacks for 60 seconds with no input. "
+                      "The page viewport is 640×480 points, so the game canvas is 1280×960 pixels on the same 60 Hz display "
+                      "as the native rows. The page does not report player readiness, so its sampling window can be offset "
+                      "from the native windows within the opening sequences. Browser callbacks are not the same event as "
+                      "native on-glass intervals.", ""])
+    if any(r.get("port") == "corece" and r.get("runs") for r in records):
+        lines.extend(["CoreCE rows come from separate matrices run after the VISR and OpenCE-macOS matrices on the same "
+                      "hosts and dates, so they do not share round rotation with them. CoreCE reads the same maps from a "
+                      "copied folder, because its Mac host does not accept a linked maps folder.", ""])
     if any(r.get("release_kind") == "pre-release main build" for r in records):
         lines.extend(["Pre-release main builds are VISR sources measured before a release was tagged. "
                       "They are kept for history and are not the released product.", ""])
@@ -329,7 +347,9 @@ def render(summary: dict) -> str:
     measured = [r for r in records if r.get("runs")]
     if measured:
         lines.extend(["## Side by side", "",
-                      "Rows with the same machine, method, scenario and conditions are directly comparable.", ""])
+                      "Rows with the same machine, method, scenario, conditions and date are directly comparable. "
+                      "The same build measured on different dates can differ by several percent as the host's "
+                      "background state changes.", ""])
         rows = []
         for r in measured:
             for scenario in _scenarios(r):
@@ -337,12 +357,12 @@ def render(summary: dict) -> str:
                 if valid:
                     rows.append((r.get("machine", ""), r.get("method", ""), _mode(r), scenario, _record_order(r),
                                  [r.get("machine", "unknown"), r.get("method", "unknown"), scenario, _mode(r), identity(r),
-                                  len(valid), _range(valid, "fps"), _range(valid, "p50_ms"), _range(valid, "p99_ms"),
+                                  r.get("date", "unknown"), len(valid), _range(valid, "fps"), _range(valid, "p50_ms"), _range(valid, "p99_ms"),
                                   _range(valid, "worst_ms")]))
         rows.sort(key=lambda row: [str(value) for value in row[:5]])
-        _table(lines, ["Machine", "Method", "Scenario", "Conditions", "Build", "Rounds", "Avg FPS", "p50 (ms)",
+        _table(lines, ["Machine", "Method", "Scenario", "Conditions", "Build", "Date", "Rounds", "Avg FPS", "p50 (ms)",
                        "p99 (ms)", "Worst (ms)"], [row[-1] for row in rows])
-    headings = ["Build", "Machine", "Scenario", "Conditions", "Status", "Avg FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
+    headings = ["Build", "Machine", "Date", "Scenario", "Conditions", "Status", "Avg FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
                 "On time (%)", "Worst (ms)", "Frames", "Duration (s)", "Thermal", "Resolution", "Cap (fps)",
                 "Display (Hz)", "Display rate basis"]
     ports = sorted({str(r.get("port", "")) for r in records}, key=lambda port: _record_order({"port": port}))

@@ -109,7 +109,7 @@ def summary_fixture():
     }
 
 
-NATIVE = "| native v1 (build 7, source abc1234) | Mac mini (M4, 16 GB) |"
+NATIVE = "| native v1 (build 7, source abc1234) | Mac mini (M4, 16 GB) | 2026-10-23 |"
 
 
 def test_render_groups_rounds_and_reports_ranges_for_all_metrics():
@@ -262,7 +262,7 @@ def test_render_display_rate_and_operator_qualification_for_each_method():
     output = render(summary)
     native_row = [line for line in output.splitlines() if line.startswith(NATIVE + " a10 |")][-1]
     browser_row = [line for line in output.splitlines()
-                   if line.startswith("| browser v1 (build 7, source abc1234) | Mac mini (M4, 16 GB) | a10 |")][-1]
+                   if line.startswith("| browser v1 (build 7, source abc1234) | Mac mini (M4, 16 GB) | 2026-10-23 | a10 |")][-1]
     assert "Display (Hz)" in output
     assert "Display rate basis" in output
     assert "| 60 | operator-qualified |" in native_row

@@ -450,3 +450,20 @@ def test_release_route_builds_the_tag_with_its_build_number(monkeypatch):
     assert build[build.index('--marketing-version') + 1] == '0.5.1'
     assert build[build.index('--build-number') + 1] == '20261026.31927'
     assert '--native-mac' in build and build[build.index('--pgo') + 1] == 'use'
+
+
+def test_web_identity_reads_build_commit_and_network_version_from_page_text():
+    m = engine()
+    text = 'ABOUT\n\nBUILD\n276 (release)\nCOMMIT\nb09a3ea739d6\nNETWORK VERSION\n38\nDISCORD'
+    assert m.adapters.web_identity(text) == {
+        'version': 'build-276', 'build': '276', 'source': 'b09a3ea73',
+        'release_kind': 'hosted web build (release channel)', 'network_version': '38'}
+    assert m.adapters.web_identity('no about panel') == {}
+
+
+def test_corece_uses_its_written_frame_and_stock_settings():
+    m = engine()
+    uncapped = m.adapters.native_display('corece', 'uncapped', 'matched-stock')
+    assert 'frame_limit = 0\nvsync = false\n' in uncapped and 'max_fps = -1' not in uncapped
+    assert 'shadow_resolution = 128' in uncapped and 'model_detail = "stock"' in uncapped
+    assert 'window_scale = 1' in m.adapters.native_display('corece')

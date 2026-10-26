@@ -32,6 +32,10 @@ The public summary (schema 2) holds one record per measured set, keyed by port, 
 
 A routed refresh measures live main by default (labeled as a pre-release main build). Set private `route.ref` to a release tag such as `refs/tags/visr-v0.5.1` and `route.build_number` to that release's build number to build the tag with the release's optimization flags and build number, ad hoc signed. Private `release_cache` keeps downloaded release bundles apart from raw evidence, so the measured apps can load from the same storage.
 
+For the OpenCE web build, private target keys drive the documented page flow: `import_file` (an operator-supplied disc image), `import_selector` and `import_ready_pattern` for the Game data chooser, `viewport` (640×480 points for 1280×960 canvases on a 2× display), `scenario_url` with the documented `?map={scenario}&play`, `ready_selector` and a fixed `load_seconds`. Each WebDriver session starts with empty site storage, so every round imports again; the first visit's cross-origin-isolation reload is awaited before the file is chosen. The build, channel, commit and network version come from the page's own About text and are recorded with each record.
+
+CoreCE's Mac release (`corece`) uses the same isolated launch with two documented additions: `data_root`, a prepared folder whose `maps` is a real directory (an APFS clone), and `macos_settings`, which writes `macos-settings.json` with that `data_path` into the isolated save folder. Its uncapped mode is `frame_limit = 0` with `vsync = false`, from the settings file it writes. Release tags that are build numbers take the product version from the bundle's `CFBundleShortVersionString`.
+
 Regenerate or check the page without running apps:
 
 ```sh

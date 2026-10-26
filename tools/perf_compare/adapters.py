@@ -178,6 +178,9 @@ def native_display(target_id, frame_mode='capped', quality_preset='defaults'):
             display += 'frame_rate = "unlimited"\nvsync = false\n'
         elif target_id == 'opence-macos':
             display += 'max_fps = -1\nvsync = false\n'
+        elif target_id == 'corece':
+            # CoreCE's written config: frame_limit caps only with vsync off, and 0 leaves no cap.
+            display += 'frame_limit = 0\nvsync = false\n'
         else:
             raise ValueError('uncapped settings undocumented for target')
     elif frame_mode == 'capped':
@@ -190,9 +193,12 @@ def native_display(target_id, frame_mode='capped', quality_preset='defaults'):
         if target_id == 'visr':
             display += ('shadow_map_size = 128\neffect_resolution = "xbox"\nmodel_lod = "auto"\n'
                         'anisotropic_filtering = 1\nupscaled_textures = false\nfirst_person_body = false\n')
-        elif target_id == 'opence-macos':
+        elif target_id in ('opence-macos', 'corece'):
             display += ('shadow_resolution = 128\nresolution_scaling = "native"\nfov = 0.0\n'
                         'viewmodel_fov = 0.0\nper_pixel_lighting = false\nviewmodel_shield = false\nshield_glow = false\n')
+            if target_id == 'corece':
+                display += 'model_detail = "stock"\n'
+
         else:
             raise ValueError('stock settings undocumented for target')
     elif quality_preset != 'defaults':
@@ -204,14 +210,26 @@ def _native(target, scenario, out, config):
     """Reuse isolated data/config and console readiness from the earlier Mac experiments."""
     app = Path(target['app'])
     binary = executable(app)
-    data = out / 'data'
-    data.mkdir()
     maps = Path(config['maps'])
+    if target.get('data_root'):
+        # Some hosts accept only a real maps directory: a prepared data root holds a copy (an APFS clone).
+        data = Path(target['data_root'])
+        maps = data / 'maps'
+        if maps.is_symlink():
+            raise FileNotFoundError('maps')
+        saves = out / 'saves'
+    else:
+        data = out / 'data'
+        data.mkdir()
+        (data / 'maps').symlink_to(maps, target_is_directory=True)
+        saves = data / 'saves'
     if not all((maps / name).is_file() for name in ('ui.map', scenario + '.map')):
         raise FileNotFoundError('maps')
-    (data / 'maps').symlink_to(maps, target_is_directory=True)
-    saves = data / 'saves'
     saves.mkdir()
+    if target.get('macos_settings'):
+        # The Mac host's documented data folder setting, in the isolated save folder.
+        (saves / 'macos-settings.json').write_text(json.dumps({'data_path': str(data), 'windowed': True,
+                                                               'community_downloads': False}))
     with socket.socket() as port_socket:
         port_socket.bind(('127.0.0.1', 0))
         port = port_socket.getsockname()[1]
@@ -345,6 +363,65 @@ class WebDriver:
         return self.request(method, '/session/' + self.session + path, value)
 
 
+def fit_viewport(driver, width, height):
+    """Size the window so the page's viewport is width×height CSS pixels."""
+    driver.command('/window/rect', {'x': 0, 'y': 0, 'width': width, 'height': height + 100})
+    inner = driver.command('/execute/sync', {'script': 'return [innerWidth, innerHeight]', 'args': []})
+    rect = driver.command('/window/rect', method='GET')
+    driver.command('/window/rect', {'x': 0, 'y': 0, 'width': rect['width'] + width - inner[0],
+                                    'height': rect['height'] + height - inner[1]})
+
+
+def page_screenshot(driver, path):
+    import base64
+    path.write_bytes(base64.b64decode(driver.command('/screenshot', method='GET')))
+
+
+WEB_IDENTITY = re.compile(r'BUILD\s+([0-9]+)\s*\(([a-z]+)\)\s+COMMIT\s+([0-9a-f]{7,40})\s+NETWORK VERSION\s+([0-9]+)', re.I)
+
+
+def web_identity(text):
+    """The build, channel, commit and network version a web build shows on its own About panel."""
+    match = WEB_IDENTITY.search(text)
+    if not match:
+        return {}
+    return {'version': f'build-{match.group(1)}', 'build': match.group(1), 'source': match.group(3)[:9],
+            'release_kind': f'hosted web build ({match.group(2).lower()} channel)', 'network_version': match.group(4)}
+
+
+def web_import(driver, target, timeout):
+    """Import through the documented chooser. A fresh session's first visit reloads once for cross-origin
+    isolation, so wait for that before choosing the file, and retry when the page drops it."""
+    def page_text():
+        return driver.command('/execute/sync', {'script': "return document.body ? document.body.innerText : ''", 'args': []})
+    for attempt in range(target.get('import_attempts', 3)):
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                isolated = driver.command('/execute/sync', {'script': 'return self.crossOriginIsolated === true', 'args': []})
+                element = driver.command('/element', {'using': 'css selector', 'value': target['import_selector']})
+                if isolated:
+                    break
+            except PermissionDenied:
+                raise
+            except RuntimeError:
+                pass
+            if time.monotonic() >= deadline:
+                raise RuntimeError('scenario-not-ready')
+            time.sleep(0.5)
+        time.sleep(1)
+        identity = web_identity(page_text())
+        element = driver.command('/element', {'using': 'css selector', 'value': target['import_selector']})
+        driver.command('/element/' + element['element-6066-11e4-a52e-4f735466cecf'] + '/value', {'text': target['import_file']})
+        deadline = time.monotonic() + target.get('import_seconds', 60)
+        while time.monotonic() < deadline:
+            if re.search(target['import_ready_pattern'], page_text()):
+                return identity
+            time.sleep(2)
+        driver.command('/refresh', {})
+    raise RuntimeError('scenario-not-ready')
+
+
 def safari(target, scenario, out, config):
     with socket.socket() as port_socket:
         port_socket.bind(('127.0.0.1', 0))
@@ -369,7 +446,23 @@ def safari(target, scenario, out, config):
             raise ValueError('device-slot-required')
         session = driver.request('POST', '/session', {'capabilities': {'alwaysMatch': caps}})
         driver.session = session['sessionId']
+        browser = str(session.get('capabilities', {}).get('browserVersion', ''))
         driver.command('/url', {'url': target['url']})
+        identity = {}
+        if target.get('import_file'):
+            # The documented Game data chooser: an operator-supplied disc image, imported in this session's storage.
+            try:
+                identity = web_import(driver, target, config.get('startup_seconds', 90))
+            except RuntimeError:
+                page_screenshot(driver, out / 'import-failed.png')
+                raise
+        if target.get('viewport'):
+            fit_viewport(driver, *target['viewport'])
+        if target.get('scenario_url'):
+            driver.command('/url', {'url': target['scenario_url'].format(scenario=scenario)})
+            if not target.get('ready_selector'):
+                raise RuntimeError('browser-game-setup-required')
+            time.sleep(target.get('load_seconds', 0))
         # Use only UI selectors/operator-supplied setup. Never inspect downloaded source.
         setup = target.get('setup', {}).get(scenario, [])
         for action in setup:
@@ -402,6 +495,11 @@ def safari(target, scenario, out, config):
                 time.sleep(0.5)
         time.sleep(config.get('warmup_seconds', 15))
         host_state(check_load=False)
+        if config.get('capture_windows'):
+            page_screenshot(driver, out / 'qualification.png')
+        canvas = driver.command('/execute/sync', {'script': (
+            "const c = Array.from(document.querySelectorAll('canvas')).sort((a, b) => b.width * b.height - a.width * a.height)[0];"
+            "return c ? c.width + '×' + c.height : '';"), 'args': []})
         driver.command('/timeouts', {'script': (config.get('seconds', 60) + 10) * 1000})
         script = '''const done = arguments[arguments.length - 1];
 const stamps = []; const start = performance.now(); let hidden = document.hidden;
@@ -414,8 +512,14 @@ const argumentsDuration = arguments[0]; requestAnimationFrame(frame);'''
         if result['hidden']:
             raise RuntimeError('browser-hidden')
         host_state(check_load=False)
-        return {'thermal': thermal()['state'], **qualification(target, scenario, config.get('display_hz', 60),
-                                                              warmup_seconds=config.get('warmup_seconds', 15))}
+        if config.get('capture_windows'):
+            page_screenshot(driver, out / 'qualification-end.png')
+        verified = qualification(target, scenario, config.get('display_hz', 60),
+                                 warmup_seconds=config.get('warmup_seconds', 15))
+        if verified['scene_verified'] and canvas != verified['resolution']:
+            raise RuntimeError('resolution-mismatch')
+        return {'thermal': thermal()['state'], **verified, 'browser': f'Safari {browser}' if browser else '',
+                **identity}
     finally:
         original_error = sys.exc_info()[1]
         cleanup_denied = None

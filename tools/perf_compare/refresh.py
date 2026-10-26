@@ -136,7 +136,11 @@ def fetch(target, cache):
     if len(apps) != 1:
         raise ValueError('release app bundle ambiguous or missing')
     target['app'] = str(apps[0])
-    identity['build'] = bundle_identity(apps[0])['build']
+    bundle = bundle_identity(apps[0])
+    identity['build'] = bundle['build']
+    # Some projects tag releases by build number; the bundle's short version is then the product version.
+    if not re.fullmatch(r'v?[0-9]+(\.[0-9]+)+[a-z]?', tag) and bundle['version']:
+        identity['version'] = bundle['version']
     return identity
 
 
@@ -348,6 +352,8 @@ def refresh(config, summary_path, page_path):
                             else 'Metal HUD present intervals'), 'reason': '', 'runs': []}
             if config.get('native_scenario') == 'opening-sequence':
                 record['native_scenario'] = 'opening-sequence'
+            if target['id'] == 'opence-web' and target.get('scenario_url'):
+                record['web_load_seconds'] = target.get('load_seconds', 0)
             if config.get('cpu_policy') == 'baseline' and target['id'] != 'opence-web':
                 record['cpu_policy'] = 'baseline'
             summary['records'].append(record)
@@ -421,7 +427,7 @@ def refresh(config, summary_path, page_path):
                             raise RuntimeError('short-window')
                         if not run_record.pop('scene_verified'):
                             raise RuntimeError('scene-unverified')
-                        for field in ('browser', 'build', 'network_version'):
+                        for field in ('browser', 'version', 'build', 'source', 'release_kind', 'network_version'):
                             if run_record.get(field):
                                 record[field] = run_record.pop(field)
                             run_record.pop(field, None)
