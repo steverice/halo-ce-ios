@@ -66,8 +66,8 @@ struct texture_cache_progress
 	size_t textures, ready;            /* the textures the policy upscales, and those with a current entry */
 	uint64_t units, ready_units;       /* the same in work units: input texels (four times for an 8x texture) */
 };
-/* keys NULL: every decision (the whole game); else the keys of one map, in any order, those the decisions do not
-   list ignored. decisions are sorted by hash, width and height (texture_policy_classify's order) */
+/* keys NULL: every decision (the whole game); else the keys of one map, in any order; a key the decisions do not list counts
+   as a texture that is not ready (its map is newer than the decisions). decisions are sorted by hash, width and height (texture_policy_classify's order) */
 void texture_cache_progress(const struct texture_cache_key *keys, size_t key_count,
 	const struct texture_policy_decision *decisions, size_t decision_count,
 	const struct texture_cache_record *records, size_t record_count, const struct texture_recipe_globals *globals,

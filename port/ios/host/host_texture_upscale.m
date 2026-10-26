@@ -804,13 +804,13 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
     host_texture_upscale_scan();boost();
     /* the player is on the import's phase: iOS 26 may carry it on if they switch away */
     host_texture_upscale_continued_phase(1);
-    double start=now();BOOL skipped=NO;
+    double start=now();BOOL skipped=NO,menu_checked=NO;NSData *menu_keys=nil;
     for(;;) {
         struct texture_cache_progress p={0},menu={0};
         BOOL menu_known=NO;
         if(catalog_ready){
             /* the main menu's textures first: until they are made the phase shows their progress and Skip is not offered */
-            NSData *menu_keys=keys_for_map(@TEXTURE_UPSCALE_MENU_MAP);
+            if(!menu_checked){menu_keys=keys_for_map(@TEXTURE_UPSCALE_MENU_MAP);menu_checked=YES;}   /* (once: no menu map is not rescanned every poll) */
             menu_known=YES;
             if(menu_keys)menu=progress_of(menu_keys);
             p=progress_of(nil);

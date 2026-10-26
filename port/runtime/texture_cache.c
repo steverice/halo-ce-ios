@@ -166,6 +166,8 @@ void texture_cache_progress(const struct texture_cache_key *keys, size_t key_cou
 
 			if (d)
 				progress_add(d, sorted, sorted ? record_count : 0, globals, progress);
+			else
+				progress->textures++;   /* never classified (a map added since): not known to be original, so not ready */
 		}
 	free(sorted);
 }

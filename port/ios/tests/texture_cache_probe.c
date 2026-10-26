@@ -229,9 +229,16 @@ static void progress(void)
 	/* a level whose upscaled textures are all made (an original one counts for nothing) */
 	texture_cache_progress(level, 2, d, 3, r, 2, &g, &p);
 	assert(p.textures == 1 && p.ready == 1);
-	/* a key the decisions do not list is ignored; no records at all is nothing ready */
+	/* a key the decisions do not list (a map added since) is a texture not ready, so its level is never "ready" on
+	   the shared textures alone; no records at all is nothing ready */
 	texture_cache_progress(&unknown, 1, d, 3, NULL, 0, &g, &p);
-	assert(p.textures == 0 && p.ready == 0);
+	assert(p.textures == 1 && p.ready == 0);
+	{
+		struct texture_cache_key added[2] = { { 0x30, 16, 16 }, { 0x40, 4, 4 } };
+
+		texture_cache_progress(added, 2, d, 3, r, 2, &g, &p);
+		assert(p.textures == 2 && p.ready == 1);
+	}
 	texture_cache_progress(level, 1, d, 3, NULL, 0, &g, &p);
 	assert(p.textures == 1 && p.ready == 0);
 	/* a global recipe change makes the entry stale: not ready until it is redone */
