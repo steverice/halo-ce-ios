@@ -178,13 +178,9 @@ static void export_table(void) {@synchronized(state_token){
 static int collect_map(void *context,const char *path) { (void)context;[map_paths addObject:@(path)];return 1; }
 static NSString *map_base(NSString *path) { return path.lastPathComponent.stringByDeletingPathExtension.lowercaseString; }
 /* The order after the level being loaded (spec "Order"): the main menu's map, the campaign in order, then the
-   multiplayer maps, then community maps by name. */
+   multiplayer maps, then community maps by name (texture_upscale_schedule.h). */
 static NSInteger map_rank(NSString *path) {
-    static NSArray *campaign;static dispatch_once_t once;
-    dispatch_once(&once,^{campaign=@[@"ui",@"a10",@"a30",@"a50",@"b30",@"b40",@"c10",@"c20",@"c40",@"d20",@"d40"];});
-    NSUInteger index=[campaign indexOfObject:map_base(path)];
-    if(index!=NSNotFound)return (NSInteger)index;
-    return [path.stringByDeletingLastPathComponent.lastPathComponent isEqual:@"custom_maps"]?2000:1000;
+    return texture_upscale_map_rank(map_base(path).UTF8String,[path.stringByDeletingLastPathComponent.lastPathComponent isEqual:@"custom_maps"]);
 }
 static void order_maps(NSMutableArray<NSString *> *paths) {
     [paths sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(NSString *a,NSString *b){
@@ -803,11 +799,23 @@ int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_pr
     host_texture_upscale_continued_phase(1);
     double start=now();BOOL skipped=NO;
     for(;;) {
-        struct texture_cache_progress p={0};
-        if(catalog_ready)p=progress_of(nil);
+        struct texture_cache_progress p={0},menu={0};
+        BOOL menu_known=NO;
+        if(catalog_ready){
+            /* the main menu's textures first: until they are made the phase shows their progress and Skip is not offered */
+            NSData *menu_keys=keys_for_map(@TEXTURE_UPSCALE_MENU_MAP);
+            menu_known=YES;
+            if(menu_keys)menu=progress_of(menu_keys);
+            p=progress_of(nil);
+        }
         /* done: a pump has ended since the import's scan with nothing queued after it */
         BOOL idle=atomic_load(&pumps_ended)!=ended&&!atomic_load(&pump_queued);
-        if(progress&&!progress(context,p.ready_units,p.units)){skipped=YES;break;}
+        /* (a phase that has ended, finished or not, has nothing left to hold back) */
+        BOOL menu_phase=!idle&&!texture_upscale_import_skippable(menu_known,(unsigned long)menu.ready,(unsigned long)menu.textures);
+        if(progress){
+            int keep_going=menu_phase?progress(context,menu.ready_units,menu.units,1):progress(context,p.ready_units,p.units,0);
+            if(!keep_going&&!menu_phase){skipped=YES;break;}
+        }
         if(idle)break;
         usleep(100000);
     }

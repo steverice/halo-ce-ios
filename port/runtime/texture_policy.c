@@ -176,12 +176,22 @@ static enum research_class research_class(const struct entry *e)
 	return OTHER;
 }
 
-/* classes.treatment(bitmap, "none") */
+/* a menu bitmap of the shell (ui.map's ui\shell\ folder: the main menu, its lists and dialogs) */
+static int shell_art(const struct entry *e)
+{
+	return e->tag_count && !strncmp(e->tags[0].tag, "ui\\shell\\", 9);
+}
+
+/* classes.treatment(bitmap, "none"), except that the shell's art is in scope */
 static enum texture_policy_treatment treatment(const struct entry *e)
 {
 	static const char *const base3[] = { "env.base", "model.base", "env.self_illumination", 0 };
 	enum research_class kind = research_class(e);
 
+	/* the main menu's art (ui\shell\..., the big HALO logo among it) is what the player sees first, so it is upscaled;
+	   the in-game HUD (ui\hud\...) has its own high-resolution replacements and stays original */
+	if (shell_art(e))
+		return TEXTURE_POLICY_COLOR;
 	if (kind == BUMP)
 		return TEXTURE_POLICY_BUMP_MAP;
 	if (kind == MULTIPURPOSE)
@@ -661,6 +671,8 @@ static int graphic(const struct entry *e, const struct texture_policy_table *t)
 {
 	size_t i, j;
 
+	if (shell_art(e))   /* menu art is text, glyphs and drawn graphics: the graphic treatment */
+		return 1;
 	if (has_group(e, "deca"))
 		for (i = 0; i < e->tag_count; i++)
 		{

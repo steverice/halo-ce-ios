@@ -50,10 +50,28 @@ static void activity(void)
 	assert(texture_upscale_activity_may_run(&a, 100));
 }
 
+static void order_and_skip(void)
+{
+	/* the main menu's map is first, then the campaign in order, then multiplayer maps, then community maps */
+	assert(texture_upscale_map_rank("ui", 0) < texture_upscale_map_rank("a10", 0));
+	assert(texture_upscale_map_rank("a10", 0) < texture_upscale_map_rank("d40", 0));
+	assert(texture_upscale_map_rank("d40", 0) < texture_upscale_map_rank("bloodgulch", 0));
+	assert(texture_upscale_map_rank("bloodgulch", 0) < texture_upscale_map_rank("anything", 1));
+	assert(texture_upscale_map_rank("ui", 0) == 0);
+	/* Skip waits for the menu's textures: not before the catalog lists them, not while any is missing */
+	assert(!texture_upscale_import_skippable(0, 0, 0));
+	assert(!texture_upscale_import_skippable(1, 0, 40));
+	assert(!texture_upscale_import_skippable(1, 39, 40));
+	assert(texture_upscale_import_skippable(1, 40, 40));
+	/* nothing to upscale in the menu map (or no menu map): nothing to wait for */
+	assert(texture_upscale_import_skippable(1, 0, 0));
+}
+
 int main(void)
 {
 	gate();
 	activity();
+	order_and_skip();
 	puts("texture_upscale_schedule_probe: ok");
 	return 0;
 }

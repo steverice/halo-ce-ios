@@ -58,18 +58,25 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
     });return 1;
 }
 /* the on-device upscaler's import phase (rule 2): the same bar and the same "Start playing" skip */
-static int upscale_progress(void *context,unsigned long long done,unsigned long long total) {
+static int upscale_progress(void *context,unsigned long long done,unsigned long long total,int menu_phase) {
     HaloImportController *controller=(__bridge HaloImportController *)context;
     controller.upscaling=YES;
-    if(controller.cancelled)return 0;
+    /* (the main menu's textures come first; Skip is not offered, and a cancel is not honored, until they are made) */
+    if(controller.cancelled&&!menu_phase)return 0;
     double now=NSProcessInfo.processInfo.systemUptime;
     if(now-controller.lastProgressTime<0.1)return 1;controller.lastProgressTime=now;
     float fraction=total?(float)((double)done/total):0;
     dispatch_async(dispatch_get_main_queue(),^{
         controller.progress.hidden=NO;[controller.spinner stopAnimating];
         controller.progress.progress=fraction;
-        controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling textures · %.0f%%\nYou can start playing now; the rest continues in menus.",fraction*100];
-        [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
+        if(menu_phase) {
+            controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling the main menu · %.0f%%",fraction*100];
+            controller.cancelButton.hidden=YES;
+        } else {
+            controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling textures · %.0f%%\nYou can start playing now; the rest continues in menus.",fraction*100];
+            [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
+            controller.cancelButton.hidden=NO;
+        }
     });return 1;
 }
 @implementation HaloImportController
@@ -150,7 +157,8 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
     self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
     self.chooseButton.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
     [self.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
-    self.statusLabel.text=@"Upscaling textures";[self.spinner startAnimating];
+    self.cancelButton.hidden=YES;   // (Skip appears once the main menu's textures are made)
+    self.statusLabel.text=@"Upscaling the main menu";[self.spinner startAnimating];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         host_texture_upscale_prepare_import(self.documents.fileSystemRepresentation,upscale_progress,(__bridge void *)self);
         dispatch_async(dispatch_get_main_queue(),^{[self.spinner stopAnimating];self.importing=NO;self.ready=YES;});

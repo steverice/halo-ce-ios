@@ -4,6 +4,31 @@ probe can check the rules without the app. */
 #pragma once
 #include <string.h>
 
+/* The order the work goes through the maps: the main menu's map first (Steve, 2026-10-26: the main menu's textures
+   are the first thing the player sees, so they are made before anything else), then the campaign in order, then the
+   multiplayer maps, then community maps by name. base is the map's file name without folder or extension, lowercase. */
+#define TEXTURE_UPSCALE_MENU_MAP "ui"
+static inline int texture_upscale_map_rank(const char *base, int in_custom_maps)
+{
+	static const char *const campaign[] = { TEXTURE_UPSCALE_MENU_MAP, "a10", "a30", "a50", "b30", "b40", "c10", "c20",
+		"c40", "d20", "d40" };
+	int i;
+
+	for (i = 0; i < (int)(sizeof(campaign) / sizeof(campaign[0])); i++)
+		if (!strcmp(base, campaign[i]))
+			return i;
+	return in_custom_maps ? 2000 : 1000;
+}
+
+/* The import phase's Skip ("Start playing"): it is not offered until the main menu's textures are made, so the first
+   screen the player reaches is never the original art. menu_known is whether the menu map's textures are listed yet
+   (the catalog is built); menu_total and menu_ready are how many of them need upscaling and how many are done. A menu
+   map that is not installed, or has nothing to upscale, never holds the Skip back once the catalog is known. */
+static inline int texture_upscale_import_skippable(int menu_known, unsigned long menu_ready, unsigned long menu_total)
+{
+	return menu_known && menu_ready >= menu_total;
+}
+
 /* debug.texture_upscale_generate */
 enum texture_upscale_mode
 {

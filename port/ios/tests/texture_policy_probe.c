@@ -60,6 +60,7 @@ static const struct texture_policy_decision *find(const struct texture_policy_de
 }
 
 #define DXT1 14
+#define DXT5 16
 #define P8 17
 
 static void surfaces_companions_bumps_and_signals(void)
@@ -240,8 +241,37 @@ static void hand_built_table_turns_damage_off(void)
 	assert(t.damage_measure_version == 1);
 }
 
+/* Steve, 2026-10-26: the main menu's art (the big HALO logo, ui\\shell\\...) is upscaled; the in-game HUD (ui\\hud\\...,
+   replaced by its own high-resolution art) and bitmaps in formats the upscaler cannot read stay original */
+static void main_menu_art(void)
+{
+	struct texture_policy_catalog *c = texture_policy_catalog_new();
+	struct texture_policy_table t = table(NULL, 0);
+	struct texture_policy_decision *d;
+	const struct texture_policy_decision *logo, *list, *hud, *plain;
+	size_t n;
+
+	add(c, "ui\\shell\\main_menu\\halo_logo", 0, 0x21, 64, DXT5, 1, 0, "DeLa", "DeLa", "");
+	add(c, "ui\\shell\\bitmaps\\list_field", 0, 0x22, 64, DXT5, 1, 0, "DeLa", "DeLa", "");
+	add(c, "ui\\hud\\bitmaps\\hud_sweeper", 0, 0x23, 64, DXT5, 1, 0, "matg", "matg", "");
+	add(c, "ui\\shell\\bitmaps\\gradient", 0, 0x24, 64, 11, 1, 0, "DeLa", "DeLa", "");
+	n = texture_policy_classify(c, &t, &d, NULL, NULL);
+	assert(n == 4);
+	logo = find(d, n, 0x21, 64);
+	list = find(d, n, 0x22, 64);
+	hud = find(d, n, 0x23, 64);
+	plain = find(d, n, 0x24, 64);
+	assert(logo->result == TEXTURE_POLICY_S4G && logo->kind == TEXTURE_POLICY_GRAPHIC && !logo->wrap);
+	assert(list->result == TEXTURE_POLICY_S4G && list->kind == TEXTURE_POLICY_GRAPHIC);
+	assert(hud->result == TEXTURE_POLICY_ORIGINAL);
+	assert(plain->result == TEXTURE_POLICY_ORIGINAL);
+	free(d);
+	texture_policy_catalog_free(c);
+}
+
 int main(void)
 {
+	main_menu_art();
 	embedded_damage_block();
 	hand_built_table_turns_damage_off();
 	surfaces_companions_bumps_and_signals();

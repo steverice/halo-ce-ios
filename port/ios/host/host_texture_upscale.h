@@ -12,8 +12,10 @@ void host_texture_upscale_game_started(int is_game);
 void host_texture_upscale_paused(int paused);
 /* The import phase: runs the whole game's work, calling progress with the work units done and in all (input
    texels) about ten times a second until it is done or progress returns 0 (Skip: the work goes on in the
-   background). 0 when the generator is off on this device, so there is no phase. */
-typedef int (*host_texture_upscale_progress)(void *context, unsigned long long done, unsigned long long total);
+   background). The main menu's textures come first: while menu_phase is 1, done and total are theirs, and a 0 returned
+   is ignored (Skip is not offered until they are made). 0 when the generator is off on this device, so there is no phase. */
+typedef int (*host_texture_upscale_progress)(void *context, unsigned long long done, unsigned long long total,
+	int menu_phase);
 int host_texture_upscale_prepare_import(const char *root, host_texture_upscale_progress progress, void *context);
 /* The loading screen's wait before a level (texture_upscale_schedule.h's enum texture_upscale_level_wait). */
 int host_texture_upscale_level_begin(const char *name);

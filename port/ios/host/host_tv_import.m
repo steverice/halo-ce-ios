@@ -54,7 +54,7 @@ static char pairing_code[8];
 static nw_listener_t listener;
 static dispatch_queue_t server_queue;
 static uint16_t server_port;
-static atomic_int preparing_textures, skip_textures;
+static atomic_int preparing_textures, skip_textures, menu_phase_textures;
 
 static void status_set(enum import_state state,uint64_t done,uint64_t total,NSString *message) {
     pthread_mutex_lock(&status_lock);
@@ -80,10 +80,12 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
 }
 
 /* the on-device upscaler's import phase (rule 2), skipped with the same button */
-static int upscale_progress(void *context,unsigned long long done,unsigned long long total) {
+static int upscale_progress(void *context,unsigned long long done,unsigned long long total,int menu_phase) {
     (void)context;
     atomic_store(&preparing_textures,1);
-    status_set(import_extracting,done,total,@"Upscaling textures. You can start playing now; the rest continues in menus.");
+    /* the main menu's textures come first: Start playing is not offered until they are made */
+    atomic_store(&menu_phase_textures,menu_phase);
+    status_set(import_extracting,done,total,menu_phase?@"Upscaling the main menu":@"Upscaling textures. You can start playing now; the rest continues in menus.");
     return !atomic_load(&skip_textures);
 }
 /* Called with a complete upload; runs on its own thread. */
@@ -116,7 +118,7 @@ static void import_image(void) {
             atomic_store(&skip_textures,0);
             host_astc_store_prepare_import(documents.fileSystemRepresentation,texture_progress,NULL);
             host_texture_upscale_prepare_import(documents.fileSystemRepresentation,upscale_progress,NULL);
-            atomic_store(&preparing_textures,0);
+            atomic_store(&preparing_textures,0);atomic_store(&menu_phase_textures,0);
             [files removeItemAtPath:staging error:nil];
             status_set(import_done,1,1,@"Imported. Starting Halo…");
         } else {
@@ -528,7 +530,7 @@ static UIImage *qr_image(NSString *text) {
     uint64_t done=status.done,total=status.total;NSString *message=@(status.message);
     pthread_mutex_unlock(&status_lock);
     BOOL wasHidden=self.skipTexturesButton.hidden;
-    self.skipTexturesButton.hidden=!atomic_load(&preparing_textures);
+    self.skipTexturesButton.hidden=!atomic_load(&preparing_textures)||atomic_load(&menu_phase_textures);
     if(wasHidden&&!self.skipTexturesButton.hidden)[self setNeedsFocusUpdate];
     if(serial!=self.shownSerial) {
         self.shownSerial=serial;
