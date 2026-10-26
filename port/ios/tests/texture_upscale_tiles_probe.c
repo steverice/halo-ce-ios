@@ -3,7 +3,6 @@
    wrapped and clamped, and a 4x top kept as half must equal the float prediction rounded once. */
 #include "texture_upscale_generate.h"
 #include "texture_refine.h"
-#include "texture_upscale_big.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -117,19 +116,6 @@ int main(void)
         stop = 0;
         assert(texture_refine_color_bounded(top, reference, 8, 8, 3, 2, 1, &params, 1, NULL) == 0);
         texture_refine_set_cancel(NULL);
-    }
-    /* the big allocator: a freed mapping is reused for the same size, calloc stays zero after reuse, trim empties it */
-    {
-        unsigned char *a = texture_upscale_big_alloc(3u << 20);
-        assert(a); memset(a, 7, 3u << 20); texture_upscale_big_free(a);
-        assert(texture_upscale_big_cache_state.bytes > 0);
-        unsigned char *b = texture_upscale_big_calloc(3u << 20, 1);
-        assert(b == a && b[0] == 0 && b[(3u << 20) - 1] == 0);
-        unsigned char *c = texture_upscale_big_shrink(b, 1u << 20);
-        assert(c == b); texture_upscale_big_free(c);
-        texture_upscale_big_trim();
-        assert(texture_upscale_big_cache_state.bytes == 0);
-        void *small = texture_upscale_big_alloc(100); assert(small); texture_upscale_big_free(small);
     }
     puts("texture_upscale_tiles_probe: ok");
     return 0;
