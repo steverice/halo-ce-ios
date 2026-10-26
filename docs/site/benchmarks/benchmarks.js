@@ -135,7 +135,17 @@ function captionText(built, selected) {
   return `${built.box}. ` + shown.map((e) => `${e.label} (build ${e.build || "unknown"}, measured ${e.date})`).join("; ") + ".";
 }
 
-if (typeof module !== "undefined") module.exports = { parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
+// Plain-language text for reason codes (docs/benchmarks/reasons.toml); unknown codes pass through.
+function plainReason(reason, reasons) {
+  if (Object.hasOwn(reasons.exact, reason)) return reasons.exact[reason];
+  let match = /^no (.+) measurements yet$/.exec(reason);
+  if (match) return reasons.patterns.no_suite_data.replace("{suite}", match[1]);
+  match = /^missing (.+)$/.exec(reason);
+  if (match) return reasons.patterns.missing_suites.replace("{suites}", match[1]);
+  return reason;
+}
+
+if (typeof module !== "undefined") module.exports = { plainReason, parseCsv, model, chartSource, legendText, captionText, entryKey, SUITES };
 
 // ---- Page ----
 function readHash() {
@@ -163,6 +173,15 @@ function el(tag, attributes, ...children) {
   return node;
 }
 
+// The site's dark tokens (docs/site/style.css) for the chart screen; the bar colors come from each chart's header.
+function mermaidConfig(dark) {
+  if (!dark) return { startOnLoad: false };
+  const ink = "#e8f6fa", line = "#93adb6";
+  return { startOnLoad: false, theme: "base", themeVariables: { xyChart: {
+    backgroundColor: "#10232b", titleColor: ink, xAxisTitleColor: ink, xAxisLabelColor: ink, xAxisTickColor: line,
+    xAxisLineColor: line, yAxisTitleColor: ink, yAxisLabelColor: ink, yAxisTickColor: line, yAxisLineColor: line } } };
+}
+
 let renderCount = 0;
 async function drawChart(container, spec, built, suite, selected) {
   const text = chartSource(spec, built, suite, selected);
@@ -186,6 +205,7 @@ async function drawChart(container, spec, built, suite, selected) {
 }
 
 function drawList(list, spec, built, state) {
+  const reasons = state.reasons;
   list.replaceChildren(el("legend", {}, "Builds"));
   for (const entry of built.entries) {
     const key = entryKey(entry);
@@ -197,7 +217,7 @@ function drawList(list, spec, built, state) {
       input.checked = false;
     }
     const word = entry.kind === "not_supported" ? "Not supported" : "Not measured";
-    const text = entry.value === null ? `${entry.label} (${detail}). ${word}: ${entry.reason}.` : `${entry.label} (${detail})`;
+    const text = entry.value === null ? `${entry.label} (${detail}). ${word}: ${plainReason(entry.reason, reasons)}` : `${entry.label} (${detail})`;
     const label = el("label", { class: entry.value === null ? "off" : "" }, input, " ", text);
     input.addEventListener("change", () => {
       if (input.checked) state.selected[spec.slug].add(key); else state.selected[spec.slug].delete(key);
@@ -211,12 +231,15 @@ async function start() {
   const root = document.getElementById("bench-root");
   if (!root || typeof mermaid === "undefined") return;
   const specs = JSON.parse(document.getElementById("chart-specs").textContent);
+  const reasons = JSON.parse(document.getElementById("chart-reasons").textContent);
   const text = await (await fetch(root.dataset.csv)).text();
   const rows = parseCsv(text);
   const params = readHash();
   const state = { suite: SUITES.concat("overall").includes(params.get("suite")) ? params.get("suite") : DEFAULT_SUITE,
-    models: {}, selected: {}, refresh: null };
-  mermaid.initialize({ startOnLoad: false });
+    models: {}, selected: {}, refresh: null, reasons };
+  const dark = window.matchMedia("(prefers-color-scheme: dark)");
+  const theme = () => mermaid.initialize(mermaidConfig(dark.matches));
+  theme();
   const sections = Object.fromEntries(specs.map((spec) => [spec.slug, document.querySelector(`[data-platform="${spec.slug}"]`)]));
 
   function recompute(spec, keepSelection) {
@@ -237,6 +260,7 @@ async function start() {
     writeHash(state, specs);
   }
   state.refresh = refresh;
+  dark.addEventListener("change", async () => { theme(); for (const spec of specs) await refresh(spec); });
   const switcher = document.querySelectorAll('input[name="suite"]');
   for (const input of switcher) {
     input.checked = input.value === state.suite;

@@ -342,3 +342,33 @@ def test_fetch_reads_columns_by_name_so_a_reordered_sheet_works():
     with pytest.raises(ValueError, match="lacks results columns: window"):
         sheet_fetch.validate(sheet_export.to_csv([c for c in sheet_export.COLUMNS if c != "window"],
                                                  [{k: v for k, v in rows[0].items() if k != "window"}]))
+
+
+def test_reason_codes_become_plain_sentences_and_unknown_text_passes_through():
+    reasons = charts.load_reasons()
+    assert charts.plain_reason("safari-remote-automation-disabled", reasons) == "Safari could not be automated on this Mac."
+    assert charts.plain_reason("no co-op measurements yet", reasons) == "The co-op suite has not been run for this build."
+    assert charts.plain_reason("missing multiplayer, co-op", reasons) == "No overall result: missing multiplayer, co-op."
+    assert charts.plain_reason("Does not support split screen", reasons) == "Does not support split screen"
+
+
+def test_every_reason_code_in_the_committed_data_has_a_plain_sentence():
+    rows = charts.load_snapshot(ROOT / "docs/benchmarks/results.csv")
+    reasons = charts.load_reasons()
+    for item in charts.load_specs(ROOT / "docs/benchmarks/charts"):
+        for suite in charts.SUITE_CHOICES:
+            for entry in charts.model(rows, item["query"], suite)["entries"]:
+                if entry["value"] is None:
+                    assert charts.plain_reason(entry["reason"], reasons) != entry["reason"], entry["reason"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_browser_plain_reasons_match_python():
+    codes = ["safari-remote-automation-disabled", "console-unavailable", "no multiplayer measurements yet",
+             "missing campaign, co-op", "Does not support split screen", "toString"]
+    reasons = charts.load_reasons()
+    script = ("const m = require(process.argv[1] + '/docs/site/benchmarks/benchmarks.js');"
+              "const r = JSON.parse(process.argv[2]); console.log(JSON.stringify(JSON.parse(process.argv[3]).map((c) => m.plainReason(c, r))));")
+    done = subprocess.run(["node", "-e", script, str(ROOT), json.dumps(reasons), json.dumps(codes)],
+                          capture_output=True, text=True, check=True)
+    assert json.loads(done.stdout) == [charts.plain_reason(code, reasons) for code in codes]

@@ -1,0 +1,13 @@
+# Plain-language text for the codes the sheet keeps. The page shows these; the sheet and CSV keep the codes.
+
+[exact]
+"safari-remote-automation-disabled" = "Safari could not be automated on this Mac."
+"console-unavailable" = "The app has no frame-time readout we could capture."
+"not measured on the reference box" = "Not run on this platform's reference device."
+"no uncapped matched-stock measurement" = "Only measured with the frame cap on or with other settings."
+"permission-denied" = "The system did not allow the measurement."
+
+[patterns]
+# {suite} and {suites} are filled from the code.
+no_suite_data = "The {suite} suite has not been run for this build."
+missing_suites = "No overall result: missing {suites}."

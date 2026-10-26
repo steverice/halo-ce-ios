@@ -43,8 +43,11 @@ STYLE = """
 .bench-rows legend { font-weight: 600; padding: 0 6px; }
 .bench-rows label { display: block; margin: 6px 0; line-height: 1.35; }
 .bench-rows label.off { color: var(--muted); }
-.bench-legend, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; }
-.bench-empty { color: #333; margin: 0; padding: 24px 12px; }
+.bench-legend, .bench-caption { color: var(--muted); font-size: 0.9rem; margin: 10px 0 0; }
+.bench-legend { color: var(--ink); font-size: 1rem; }
+.bench-chart:has(img) { background: #fff; }
+@media (prefers-color-scheme: dark) { .device .bench-chart { background: #10232b; color: #e8f6fa; } }
+.bench-empty { color: inherit; margin: 0; padding: 24px 12px; }
 .method { max-width: 760px; margin-inline: auto; }
 """
 
@@ -62,7 +65,7 @@ def spec_payload(specs: list[dict]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=1).replace("</", "<\\/")
 
 
-def section(spec: dict, rows: list[dict], suite: str) -> str:
+def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
     built = charts.model(rows, spec["query"], suite)
     name = slug(spec)
     text = charts.source(spec, built, suite)
@@ -79,7 +82,7 @@ def section(spec: dict, rows: list[dict], suite: str) -> str:
         if entry["value"] is None:
             word = "Not supported" if entry["kind"] == "not_supported" else "Not measured"
             items.append(f'<label class="off"><input type="checkbox" value="{escape(charts.entry_key(entry))}" disabled> '
-                         f'{escape(entry["label"])} ({escape(detail)}). {word}: {escape(entry["reason"])}.</label>')
+                         f'{escape(entry["label"])} ({escape(detail)}). {word}: {escape(charts.plain_reason(entry["reason"], reasons))}</label>')
         else:
             checked = " checked" if entry["default"] else ""
             items.append(f'<label><input type="checkbox" value="{escape(charts.entry_key(entry))}"{checked}> '
@@ -90,16 +93,17 @@ def section(spec: dict, rows: list[dict], suite: str) -> str:
 <h2 id="h-{name}">{escape(spec["heading"])}</h2>
 <p>{escape(spec["paragraph"].strip())}</p>
 <div class="bench-grid">
-<div class="bench-media"><figure class="device {FRAMES[name]}"><div class="bench-chart">{chart}</div></figure></div>
+<div class="bench-media"><figure class="device {FRAMES[name]}"><div class="bench-chart">{chart}</div></figure>
+<p class="bench-legend">{escape(legend)}</p>
+<p class="bench-caption">{escape(charts.caption(built))}</p></div>
 <fieldset class="bench-rows">{rows_html}</fieldset>
 </div>
-<p class="bench-legend">{escape(legend)}</p>
-<p class="bench-caption">{escape(charts.caption(built))}</p>
 </section>"""
 
 
 def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_html: str) -> str:
     md = MarkdownIt("commonmark", {"html": False})
+    reasons = charts.load_reasons()
     suites = "".join(
         f'<label><input type="radio" name="suite" value="{name}"{" checked" if name == charts.DEFAULT_SUITE else ""}> '
         f"{charts.SUITE_NAMES[name]}</label>" for name in charts.SUITE_CHOICES)
@@ -107,7 +111,7 @@ def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_h
     intro = md.render(f"{CAVEAT}\n\nLast measured: {dates[-1] if dates else 'unknown'}. The "
                       f"[results spreadsheet]({SHEET_URL}) holds every number. The methodology is at the bottom of this page.")
     method = md.render("\n".join(methodology(summary, rows)))
-    body = "\n".join(section(spec, rows, charts.DEFAULT_SUITE) for spec in specs)
+    body = "\n".join(section(spec, rows, charts.DEFAULT_SUITE, reasons) for spec in specs)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -134,6 +138,7 @@ def render_site_page(summary: dict, rows: list[dict], specs: list[dict], legal_h
 </footer>
 </main>
 <script type="application/json" id="chart-specs">{spec_payload(specs)}</script>
+<script type="application/json" id="chart-reasons">{json.dumps(reasons, ensure_ascii=False)}</script>
 <script src="{MERMAID}" integrity="{MERMAID_SRI}" crossorigin="anonymous"></script>
 <script src="benchmarks/benchmarks.js"></script>
 </body>

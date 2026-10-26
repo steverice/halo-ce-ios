@@ -36,7 +36,7 @@ xychart-beta horizontal
 
 M6 Mac mini. VISR 0.5.1 (build 20261026.31927, measured 2026-10-26); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).
 
-Not measured: VISR main (not measured on the reference box); OpenCE web (safari-remote-automation-disabled); OpenCE web build-280 (no uncapped matched-stock measurement); Chupathingy v0.8.0g (console-unavailable); Halo OG v0.5.1 (console-unavailable).
+Not measured: VISR main (Not run on this platform's reference device.); OpenCE web (Safari could not be automated on this Mac.); OpenCE web build-280 (Only measured with the frame cap on or with other settings.); Chupathingy v0.8.0g (The app has no frame-time readout we could capture.); Halo OG v0.5.1 (The app has no frame-time readout we could capture.).
 
 ### iPhone and iPad
 

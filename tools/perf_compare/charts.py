@@ -17,6 +17,7 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "docs/benchmarks/results.csv"
 SPECS = ROOT / "docs/benchmarks/charts"
+REASONS = ROOT / "docs/benchmarks/reasons.toml"
 PAGE = ROOT / "docs/benchmarks.md"
 BEGIN = "<!-- BEGIN CHARTS -->"
 END = "<!-- END CHARTS -->"
@@ -39,6 +40,21 @@ def load_specs(directory: Path) -> list[dict]:
         spec["name"] = path.name.removesuffix(".chart.toml")
         specs.append(spec)
     return sorted(specs, key=lambda spec: (spec.get("order", 1000), spec["name"]))
+
+
+def load_reasons(path: Path = REASONS) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def plain_reason(reason: str, reasons: dict) -> str:
+    """The page's sentence for a reason code; unknown codes and already-plain notes pass through."""
+    if reason in reasons["exact"]:
+        return reasons["exact"][reason]
+    if reason.startswith("no ") and reason.endswith(" measurements yet"):
+        return reasons["patterns"]["no_suite_data"].format(suite=reason[3:-len(" measurements yet")])
+    if reason.startswith("missing "):
+        return reasons["patterns"]["missing_suites"].format(suites=reason[len("missing "):])
+    return reason
 
 
 def _matches(row: dict, filters: dict) -> bool:
@@ -170,8 +186,9 @@ def empty_text(spec: dict, built: dict) -> str:
     return spec["empty"].strip() if not built["entries"] else "No build has data for this suite yet."
 
 
-def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE) -> str:
+def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, reasons: dict | None = None) -> str:
     """The Markdown for one platform's default view: the chart if any build has data, else why not."""
+    reasons = reasons or load_reasons()
     built = model(rows, spec["query"], suite)
     parts = [f"### {spec['heading']}", "", spec["paragraph"].strip(), ""]
     text = source(spec, built, suite)
@@ -182,12 +199,13 @@ def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE) -> 
     for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
         skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
         if skipped:
-            parts.extend([heading + ": " + "; ".join(f"{e['label']} ({e['reason']})" for e in skipped) + ".", ""])
+            parts.extend([heading + ": " + "; ".join(f"{e['label']} ({plain_reason(e['reason'], reasons)})" for e in skipped) + ".", ""])
     return "\n".join(parts)
 
 
-def render_all(rows: list[dict], specs: list[dict], suite: str = DEFAULT_SUITE) -> str:
-    return "\n".join(render_section(spec, rows, suite) for spec in specs).rstrip() + "\n"
+def render_all(rows: list[dict], specs: list[dict], suite: str = DEFAULT_SUITE, reasons: dict | None = None) -> str:
+    reasons = reasons or load_reasons()
+    return "\n".join(render_section(spec, rows, suite, reasons) for spec in specs).rstrip() + "\n"
 
 
 def apply(page: str, block: str) -> str:
