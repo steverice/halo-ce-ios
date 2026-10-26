@@ -5,6 +5,11 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "texture_upscale_big.h"
+/* (every buffer here is this file's own: out of malloc's large-block cache, texture_upscale_big.h) */
+#define malloc(n) texture_upscale_big_alloc(n)
+#define calloc(n, s) texture_upscale_big_calloc(n, s)
+#define free(p) texture_upscale_big_free(p)
 
 static uint32_t address(int64_t i, uint32_t size, int wrap)
 {

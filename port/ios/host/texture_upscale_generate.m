@@ -2,6 +2,7 @@
    texture-s4gbp-set.py, and texture-resolution-set.py. */
 #include "texture_upscale_generate.h"
 #include "texture_refine.h"
+#include "texture_upscale_big.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,17 +77,17 @@ static size_t count(uint32_t width, uint32_t height, uint32_t channels)
 static struct image allocate(uint32_t width, uint32_t height, uint32_t channels)
 {
     size_t n = count(width, height, channels);
-    return (struct image){n ? malloc(n * sizeof(float)) : NULL, width, height, channels, NULL};
+    return (struct image){n ? texture_upscale_big_alloc(n * sizeof(float)) : NULL, width, height, channels, NULL};
 }
 static struct image allocate_half(uint32_t width, uint32_t height, uint32_t channels)
 {
     size_t n = count(width, height, channels);
-    return (struct image){NULL, width, height, channels, n ? malloc(n * sizeof(_Float16)) : NULL};
+    return (struct image){NULL, width, height, channels, n ? texture_upscale_big_alloc(n * sizeof(_Float16)) : NULL};
 }
 static int allocated(const struct image *image) { return image->pixels || image->half; }
 static void release(struct image *image)
 {
-    free(image->pixels); free(image->half);
+    texture_upscale_big_free(image->pixels); texture_upscale_big_free(image->half);
     memset(image, 0, sizeof(*image));
 }
 static float value_at(const struct image *image, size_t i) { return image->half ? (float)image->half[i] : image->pixels[i]; }
@@ -160,12 +161,12 @@ static uint8_t *finish(struct image *image, enum texture_upscale_alpha alpha)
                 out[4 * i + c] = (uint8_t)nearbyintf(v * 255);
             }
         }
-        uint8_t *shrunk = realloc(out, n * 4);
+        uint8_t *shrunk = texture_upscale_big_shrink(out, n * 4);
         image->half = NULL;
         release(image);
         return shrunk ? shrunk : out;
     }
-    uint8_t *out = malloc(n * 4);
+    uint8_t *out = texture_upscale_big_alloc(n * 4);
     if (!out) return NULL;
     if (image->channels == 4) texture_upscale_finish(image->pixels, image->width, image->height, alpha, out);
     else for (size_t i = 0; i < n; i++) {
@@ -242,7 +243,7 @@ void texture_upscale_generate_stats(struct texture_upscale_generator *generator,
 void texture_upscale_generate_free_output(struct texture_upscale_generate_output *output)
 {
     if (!output) return;
-    for (unsigned i = 0; i < output->level_count; i++) free((void *)output->levels[i].pixels);
+    for (unsigned i = 0; i < output->level_count; i++) texture_upscale_big_free((void *)output->levels[i].pixels);
     free(output->levels);
     memset(output, 0, sizeof(*output));
 }
@@ -764,7 +765,7 @@ int texture_upscale_generate_end(struct texture_upscale_generator *generator, st
     for (unsigned i = 0; i < input->level_count; i++) {
         const struct texture_upscale_rgba_level *source = &input->levels[i];
         size_t bytes = (size_t)source->width * source->height * 4;
-        uint8_t *copy = malloc(bytes);
+        uint8_t *copy = texture_upscale_big_alloc(bytes);
         if (!copy) goto done;
         memcpy(copy, source->pixels, bytes);
         output->levels[output->level_count++] = (struct texture_upscale_rgba_level){copy, source->width, source->height};
@@ -777,7 +778,7 @@ done:
         texture_upscale_generate_free_output(output);
         if (!error || !error_size || !error[0]) fail(error, error_size, "texture generation failed");
     } else if (output->result == TEXTURE_POLICY_ORIGINAL) {
-        for (unsigned i = 0; i < output->level_count; i++) free((void *)output->levels[i].pixels);
+        for (unsigned i = 0; i < output->level_count; i++) texture_upscale_big_free((void *)output->levels[i].pixels);
         free(output->levels); output->levels = NULL; output->level_count = 0;
     }
     if (!result) *final = *output;
@@ -815,6 +816,13 @@ int texture_upscale_generate_raw4x(struct texture_upscale_generator *generator,
         free(bump.height);
     } else result = infer_color(generator, input, input->levels, &raw, 0, NULL, &times, error, error_size);
     if (result) { release(&raw); return fail(error, error_size, "raw prediction failed"); }
-    *pixels = raw.pixels; *channels = raw.channels;
+    /* (the caller frees it with free(): a debug export's copy, out of the mapped image) */
+    size_t bytes = count(raw.width, raw.height, raw.channels) * sizeof(float);
+    float *copy = malloc(bytes ? bytes : 1);
+    if (!copy) { release(&raw); return fail(error, error_size, "raw prediction: out of memory"); }
+    if (raw.pixels) memcpy(copy, raw.pixels, bytes);
+    else for (size_t i = 0; i < bytes / sizeof(float); i++) copy[i] = (float)raw.half[i];
+    *pixels = copy; *channels = raw.channels;
+    release(&raw);
     return 0;
 }

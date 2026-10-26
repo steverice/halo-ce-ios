@@ -20,6 +20,7 @@ waits for it unless the player skips. One texture at a time; the manifest is the
 #include "texture_upscale_schedule.h"
 #include "host_profile.h"
 #include "texture_refine.h"
+#include "texture_upscale_big.h"
 #include <sys/stat.h>
 #include <stdatomic.h>
 #include <sys/statvfs.h>
@@ -356,8 +357,8 @@ static int generate_source(void *opaque,const struct host_texture_source *source
     /* The walk's source is valid only during this call; the job keeps its own copy until the finisher is done. */
     size_t source_bytes=0;
     {uint32_t w=d->width,h=d->height;for(unsigned i=0;i<source->level_count;i++){source_bytes+=(size_t)w*h*4;w=MAX(1u,w/2);h=MAX(1u,h/2);}}
-    uint8_t *owned=malloc(source_bytes?source_bytes:1);struct texture_upscale_rgba_level *levels=calloc(source->level_count?source->level_count:1,sizeof(*levels));
-    if(!owned||!levels){free(owned);free(levels);log_texture_error(d,"generate","could not copy the source levels",0);context->failed=YES;return 0;}
+    uint8_t *owned=texture_upscale_big_alloc(source_bytes?source_bytes:1);struct texture_upscale_rgba_level *levels=calloc(source->level_count?source->level_count:1,sizeof(*levels));
+    if(!owned||!levels){texture_upscale_big_free(owned);free(levels);log_texture_error(d,"generate","could not copy the source levels",0);context->failed=YES;return 0;}
     {uint32_t w=d->width,h=d->height;size_t offset=0;
         for(unsigned i=0;i<source->level_count;i++){memcpy(owned+offset,source->rgba+source->level_offsets[i],(size_t)w*h*4);
             levels[i]=(struct texture_upscale_rgba_level){owned+offset,w,h};offset+=(size_t)w*h*4;w=MAX(1u,w/2);h=MAX(1u,h/2);}}
@@ -377,7 +378,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
         if(stop_flag)host_logf(HOST_LOG_INFO,"Upscale %016llx: stopped for gameplay",(unsigned long long)d->hash);
         else {peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
             host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);}
-        context->failed=YES;free(owned);free(levels);dispatch_group_leave(work_group);return 0;
+        context->failed=YES;texture_upscale_big_free(owned);free(levels);dispatch_group_leave(work_group);return 0;
     }
     double begun=now();
     /* One texture's CPU work, encode and publication run on the finisher while the walk goes on to predict the next. */
@@ -390,27 +391,27 @@ static int generate_source(void *opaque,const struct host_texture_source *source
         texture_upscale_encode_set_cancel(&stop_flag);
         atomic_store(&work_hash,decision.hash);atomic_store(&work_stage,"refinement, measures and compression");
         /* gameplay began while the predictions ran: nothing more, the texture is made later */
-        if(stop_flag){texture_upscale_generate_abandon(job);free(owned);free(levels);finisher_estimate=0;return;}
+        if(stop_flag){texture_upscale_generate_abandon(job);texture_upscale_big_free(owned);free(levels);finisher_estimate=0;return;}
         struct texture_cache_record record=desired;
         struct texture_upscale_generate_input job_input=input;
         struct texture_upscale_generate_output output={0};char error[512]={0};
         BOOL failed=NO;
         double end_start=now();
         if(texture_upscale_generate_end(generator,job,&output,error,sizeof(error))){
-            if(stop_flag){free(owned);free(levels);finisher_estimate=0;return;}
+            if(stop_flag){texture_upscale_big_free(owned);free(levels);finisher_estimate=0;return;}
             peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"generate",error,now()-start);
-            host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);atomic_store(&finisher_failed,true);free(owned);free(levels);return;
+            host_logf(HOST_LOG_WARN,"Upscale %016llx: %s",(unsigned long long)d->hash,error);atomic_store(&finisher_failed,true);texture_upscale_big_free(owned);free(levels);return;
         }
         struct texture_upscale_encode_metrics metrics={0};void *bytes=NULL;size_t size=0;double encode_start=now();
         enum texture_upscale_encode_result encoded=TEXTURE_UPSCALE_ENCODE_OK;
         if(output.result!=TEXTURE_POLICY_ORIGINAL)encoded=texture_upscale_encode_record(output.levels,output.level_count,d->width,d->height,d->hash,
             record.recipe_key,record_format,(unsigned)alpha|(d->treatment==TEXTURE_POLICY_BUMP_MAP?TEXTURE_UPSCALE_ENCODE_NORMALS:0),encoder_threads(),&bytes,&size,&metrics);
-        if(stop_flag&&encoded==TEXTURE_UPSCALE_ENCODE_ERROR){free(bytes);texture_upscale_generate_free_output(&output);free(owned);free(levels);finisher_estimate=0;
+        if(stop_flag&&encoded==TEXTURE_UPSCALE_ENCODE_ERROR){free(bytes);texture_upscale_generate_free_output(&output);texture_upscale_big_free(owned);free(levels);finisher_estimate=0;
             host_logf(HOST_LOG_INFO,"Upscale %016llx: stopped for gameplay",(unsigned long long)d->hash);return;}
         uint64_t encoded_footprint=footprint();
         NSString *steps=[NSString stringWithFormat:@"%s encoded %llu",texture_upscale_generate_trace(generator),(unsigned long long)(encoded_footprint>>20)];
         double encode_seconds=now()-encode_start;BOOL excluded=encoded==TEXTURE_UPSCALE_ENCODE_EXCLUDED;
-        if(encoded==TEXTURE_UPSCALE_ENCODE_ERROR){peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"encode","encoder failed",now()-start);atomic_store(&finisher_failed,true);texture_upscale_generate_free_output(&output);free(owned);free(levels);return;}
+        if(encoded==TEXTURE_UPSCALE_ENCODE_ERROR){peak_footprint=MAX(peak_footprint,footprint());log_texture_error(d,"encode","encoder failed",now()-start);atomic_store(&finisher_failed,true);texture_upscale_generate_free_output(&output);texture_upscale_big_free(owned);free(levels);return;}
         record.result=excluded?TEXTURE_POLICY_ORIGINAL:output.result;record.bytes=size;
         double write_start=now();
         if(size&&texture_cache_write_entry(cache_directory().fileSystemRepresentation,&record,bytes,size))failed=YES;
@@ -446,7 +447,7 @@ static int generate_source(void *opaque,const struct host_texture_source *source
             row=seam;
         }
         if(failed)atomic_store(&finisher_failed,true);
-        free(owned);free(levels);
+        texture_upscale_big_free(owned);free(levels);
         if(estimate>=(32ull<<20))malloc_zone_pressure_relief(NULL,0);
         finisher_estimate=0;
         @synchronized(state_token){peak_footprint=MAX(peak_footprint,stats.peak_footprint);generator_peak=MAX(generator_peak,stats.sampled_peak);
