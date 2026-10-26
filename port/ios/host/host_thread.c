@@ -68,7 +68,7 @@ typedef uint32_t (*guest_function)(uint32_t, uint32_t, uint32_t, uint32_t);
 uint32_t host_call_guest(uint32_t function, uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 {
 	if (!on_guest_stack())
-		host_fatal("guest code called on a thread without a guest stack");
+		host_crash("guest code called on a thread without a guest stack");
 	if (!guest_tp)
 		host_guest_invoke((uintptr_t)host_pointer(host_image.header->thread_attach), 0, 0, 0, 0, host_arena);
 	return host_guest_invoke((uintptr_t)host_pointer(function), a, b, c, d, host_arena);
@@ -77,7 +77,7 @@ uint32_t host_call_guest(uint32_t function, uint32_t a, uint32_t b, uint32_t c, 
 void host_run_guest_main(uint32_t boot)
 {
 	host_guest_invoke((uintptr_t)host_pointer(host_image.header->start), boot, 0, 0, 0, host_arena);
-	host_fatal("the guest returned from __guest_start");
+	host_crash("the guest returned from __guest_start");
 }
 
 /* ---------- guest threads */

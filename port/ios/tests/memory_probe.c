@@ -21,10 +21,20 @@ static void *writer(void *arg) {
     return NULL;
 }
 int main(int argc,char **argv) {
-    int reduced=argc>1&&!strcmp(argv[1],"reduced");
+    const char *mode=argc>1?argv[1]:"";
+    int reduced=!strcmp(mode,"reduced")||!strcmp(mode,"unaligned-reduced");
+    int early=!strcmp(mode,"early");
+    int unaligned=!strncmp(mode,"unaligned",9);
     if(reduced)host_arena_try_full=0;
+    /* the arena off every multiple of 4 GiB: guest pointers are offsets from its start */
+    if(unaligned)host_arena_force_unaligned=1;
+    /* the app reserves before main (host_loader.c); initialize then adopts that reservation */
+    if(early)host_memory_reserve_early(0,0x8a70b000u);
     if(host_memory_initialize(0,0x8a70b000u))return 1;
     if(reduced?host_arena_size!=0x8b000000ull:host_arena_size!=0x100000000ull)return 30;
+    if(unaligned!=!!(host_arena&0xffffffffull))return 35;
+    if((uintptr_t)host_pointer(0x80026014u)!=host_arena+0x80026014u||guest_pointer(host_pointer(0x80026014u))!=0x80026014u)return 36;
+    if(host_pointer(0)||guest_pointer(NULL))return 37;
     if(!host_low_owns((uintptr_t)host_pointer(0x8a000000u),4))return 31;
     if(reduced&&host_low_owns((uintptr_t)host_pointer(0x8c000000u),4))return 32;
     /* past the shorter arena's end a guest range is refused, not applied to host memory */

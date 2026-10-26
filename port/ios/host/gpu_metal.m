@@ -533,7 +533,7 @@ static MetalBuffer *transient_room(struct transient *memory, uint32_t size, uint
 			continue;
 		}
 		if (memory->chunk_count == sizeof(memory->chunks) / sizeof(memory->chunks[0]))
-			host_fatal("Metal: a frame streamed more than %lu chunks", memory->chunk_count);
+			host_crash("Metal: a frame streamed more than %lu chunks", memory->chunk_count);
 		record = [MetalBuffer new];
 		record->buffer = [device newBufferWithLength:size > CHUNK_SIZE ? size : CHUNK_SIZE
 			options:MTLResourceStorageModeShared];
@@ -2003,7 +2003,7 @@ static id<MTLRenderPipelineState> clear_pipeline(MTLPixelFormat color, MTLPixelF
 		descriptor.stencilAttachmentPixelFormat = depth;
 		pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
 		if (!pipeline)
-			host_fatal("Metal: cannot create the clear pipeline: %s", error.description.UTF8String);
+			host_crash("Metal: cannot create the clear pipeline: %s", error.description.UTF8String);
 		clear_pipelines[key] = pipeline;
 	}
 	return pipeline;
