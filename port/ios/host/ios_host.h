@@ -92,6 +92,9 @@ double host_frame_rate_target(void);
 /* whether Low Power Mode's frame rate is in force for the frames from now on (low_power.h, host_gpu_dispatch.c:
    host_frame_rate_cap and host_frame_rate_target then hold its halved rate) */
 int host_frame_rate_low_power(void);
+/* host_frame_rate_target in frames a second, the display's rate (as Low Power Mode leaves it) where that is 0; 0 when
+   unknown. What performance reports and benchmark runs record as the frame rate target */
+double host_frame_rate_effective(void);
 void host_frame_rate_scene(double rate);
 double host_frame_rate_limit(void);
 /* a benchmark case's display.frame_rate for the runs from now on (frames a second, as the configuration's would be

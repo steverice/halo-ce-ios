@@ -9,7 +9,7 @@ deadline (display.frame_deadline) and dynamic resolution's budget read the halve
 host_frame_rate_target, so a ProMotion display held at 60 is not taken for missed 120 Hz frames. The rate is
 latched between frames and goes back when Low Power Mode turns off. debug.low_power_frame_rate: "true" (default)
 follows Low Power Mode, "false" ignores it, "always" acts as if it were on. Not on a Vision Pro, whose frames the
-Compositor times. */
+Compositor times, and not held under display.frame_source = "system", whose pacer shows a frame each refresh. */
 #ifndef HALO_LOW_POWER_H
 #define HALO_LOW_POWER_H
 

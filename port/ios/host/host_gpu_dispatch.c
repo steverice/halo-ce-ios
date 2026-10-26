@@ -313,7 +313,9 @@ static struct
 	int ready;
 	struct low_power state;
 	int scene_class;         /* the frame's (port_config.h: 0 gameplay, 1 menu, 2 cutscene) */
-	double display;          /* host_low_power_display_rate's, read again on a notice or a change */
+	double display;          /* host_low_power_display_rate's, read again on a notice or a change; while Low Power
+	                            Mode is on, the highest seen for this output (a screen may report its lowered rate) */
+	unsigned output;         /* host_low_power_display_rate's output then */
 	unsigned long notices;   /* host_low_power_notices' when display was read */
 	unsigned long frames;
 	uint64_t interval;       /* the Mac app's cap's (host_frame_rate_limit), mach_absolute_time's units; 0 none */
@@ -361,8 +363,14 @@ static void low_power_update(int display_changed)
 		return;
 	if (display_changed || host_low_power_notices() != low_power.notices)
 	{
+		unsigned output;
+		double display = host_low_power_display_rate(&output);
+
 		low_power.notices = host_low_power_notices();
-		low_power.display = host_low_power_display_rate();
+		/* (the halving is of the display's own highest rate: in Low Power Mode a ProMotion screen may say 60) */
+		if (output != low_power.output || !host_low_power_enabled() || display > low_power.display)
+			low_power.display = display;
+		low_power.output = output;
 	}
 	configured = frame_rate.unlimited ? 0.0 : frame_rate_configured_target();
 	change = low_power_latch(&low_power.state, host_low_power_enabled(), configured, low_power.display,
@@ -407,10 +415,7 @@ static void low_power_frame(void)
 
 	/* (every 600 frames the display's rate again: an external display may have come or gone) */
 	low_power_update(++low_power.frames % 600 == 0);
-	target = host_frame_rate_target();
-	if (target <= 0.0)
-		target = low_power.state.on ? low_power_display_rate(low_power.display, host_low_power_display_limited()) :
-			low_power.display;
+	target = host_frame_rate_effective();
 	host_perf_hooks_context(10, (uint64_t)low_power.state.on);
 	host_perf_hooks_context(11, target > 0.0 ? (uint64_t)(target + 0.5) : 0);
 #endif
@@ -426,6 +431,18 @@ static void low_power_scene(uint32_t scene_class)
 #else
 	(void)scene_class;
 #endif
+}
+
+double host_frame_rate_effective(void)
+{
+	double target = host_frame_rate_target();
+
+#if !TARGET_OS_VISION
+	if (target <= 0.0)
+		target = low_power.state.on ? low_power_display_rate(low_power.display, host_low_power_display_limited()) :
+			low_power.display;
+#endif
+	return target;
 }
 
 int host_frame_rate_low_power(void)

@@ -28,7 +28,8 @@ static double fake_display = 60.0;
 void host_low_power_install(void) {}
 int host_low_power_enabled(void) { return fake_low_power; }
 unsigned long host_low_power_notices(void) { return fake_notices; }
-double host_low_power_display_rate(void) { return fake_display; }
+static unsigned fake_output;
+double host_low_power_display_rate(unsigned *output) { *output = fake_output; return fake_display; }
 int host_low_power_display_limited(void) { return fake_limited; }
 static void notice(int on) { fake_low_power = on; fake_notices++; }
 /* Presentation timing also runs in shadow-only builds. */
@@ -119,9 +120,30 @@ static void low_power_frame_rate(void) {
     host_frame_rate_scene(0);
     low_power_scene(0);
     assert(host_frame_rate_target() == 60);
+    assert(host_frame_rate_effective() == 60);
+    /* a screen that reports Low Power Mode's 60 as its highest still halves its own 120 */
+    fake_display = 60.0;
+    low_power_update(1);
+    assert(host_frame_rate_target() == 60);
+    /* a benchmark case's 30 for one run, and back: Low Power Mode's 60 again */
+    host_frame_rate_override(30);
+    assert(host_frame_rate_target() == 30);
+    host_frame_rate_override(0);
+    assert(host_frame_rate_target() == 60);
+    fake_display = 120.0;
     notice(0);
     low_power_frame();
     assert(!host_frame_rate_low_power() && host_frame_rate_cap() == 0 && host_frame_rate_target() == 0);
+    assert(host_frame_rate_effective() == 120);
+    /* another output (a 60 Hz external display) while Low Power Mode is on: its own rate */
+    notice(1);
+    fake_display = 60.0; fake_output++;
+    low_power_frame();
+    low_power_update(1);
+    assert(host_frame_rate_target() == 30);
+    notice(0);
+    fake_output--;
+    low_power_frame();
     /* a 60 Hz iPad with a profile's 60 (no cap there): 30 */
     fake_display = 60.0;
     low_power_update(1);

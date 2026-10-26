@@ -57,17 +57,19 @@ unsigned long host_low_power_notices(void)
     return atomic_load(&notices);
 }
 
-double host_low_power_display_rate(void)
+double host_low_power_display_rate(unsigned *output)
 {
+    *output = 0;
 #if HALO_LOW_POWER_TESTING
     return 0.0;
 #elif HALO_NATIVE_MAC
     return host_macos_refresh_rate();
 #else
-    struct host_external_snapshot output;
+    struct host_external_snapshot snapshot;
 
-    host_external_snapshot(&output);
-    return output.refresh_hertz > 0 ? (double)output.refresh_hertz : 0.0;
+    host_external_snapshot(&snapshot);
+    *output = snapshot.generation;
+    return snapshot.refresh_hertz > 0 ? (double)snapshot.refresh_hertz : 0.0;
 #endif
 }
 

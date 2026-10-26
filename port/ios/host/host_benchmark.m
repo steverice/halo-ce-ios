@@ -31,6 +31,7 @@
 #include "host_profile.h"
 #include "host_config.h"
 #include "host_external.h"
+#include "host_low_power.h"
 #include "benchmark_metrics.h"
 #include "benchmark_plan.h"
 #include "../../runtime/graphics_capture.h"
@@ -195,8 +196,10 @@ static NSDictionary *output_now(void) {
 static BOOL low_power_now(void) {
     return NSProcessInfo.processInfo.lowPowerModeEnabled || host_frame_rate_low_power();
 }
-/* whether Low Power Mode was on at any second of the run that is open */
+/* whether Low Power Mode was on at any second of the run that is open; and the power-state notices when it began
+   (a change between two samples is seen this way) */
 static _Atomic int run_low_power;
+static unsigned long run_power_notices;
 
 static NSDictionary *environment_now(void) {
     float level = -1;
@@ -212,11 +215,11 @@ static NSDictionary *environment_now(void) {
     }
 #endif
     /* (low_power_mode: the system's; frame_rate_low_power: whether its halved rate held frames, low_power.h;
-       frame_rate_target: what frames aimed for, 0 for the display's rate) */
+       frame_rate_target: what frames aimed for, in frames a second, host_frame_rate_effective's) */
     return @{ @"battery_level": @(level), @"charging": charging,
         @"thermal_state": @((int)NSProcessInfo.processInfo.thermalState),
         @"low_power_mode": @(low_power_now()), @"frame_rate_low_power": @(host_frame_rate_low_power() != 0),
-        @"frame_rate_target": @(host_frame_rate_target()) };
+        @"frame_rate_target": @(host_frame_rate_effective()) };
 }
 #define JOURNAL_SNAPSHOT FOLDER "/journal-snapshot.sha256"
 
@@ -1413,7 +1416,8 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
         }
     }
     if (low_power_now()) {
-        host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
+        host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on%s; the benchmark does not run with it",
+            NSProcessInfo.processInfo.lowPowerModeEnabled ? "" : " (debug.low_power_frame_rate = always)");
         return 0;
     }
     output_failed = 0;
@@ -1900,6 +1904,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     benchmark_journal_begin(JOURNAL, run.index, run.key);
     run_environment_start = environment_now();
     atomic_store(&run_low_power, low_power_now());
+    run_power_notices = host_low_power_notices();
     run_output = output_now();
     struct host_external_snapshot output;
     host_external_snapshot(&output);
@@ -1963,7 +1968,7 @@ void host_benchmark_end(const char *status_name, const char *note) {
         flag(@"output_changed");
         note = "the display connected, disconnected, or changed mode during this run";
     }
-    if (atomic_load(&run_low_power) || low_power_now()) {
+    if (atomic_load(&run_low_power) || low_power_now() || host_low_power_notices() != run_power_notices) {
         interrupted = 1;
         flag(@"low_power_mode");
         note = "Low Power Mode was on during this run";

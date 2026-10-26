@@ -8,8 +8,9 @@ void host_low_power_install(void);
 int host_low_power_enabled(void);
 /* the notices seen since host_low_power_install */
 unsigned long host_low_power_notices(void);
-/* the output's highest refresh rate (an external display's, else the screen's; the Mac app's display), 0 unknown */
-double host_low_power_display_rate(void);
+/* the output's highest refresh rate (an external display's, else the screen's; the Mac app's display), 0 unknown;
+   through output, a number that changes when the output does (0 where it is not known) */
+double host_low_power_display_rate(unsigned *output);
 /* 1 where Low Power Mode turns a display's faster rates off: an iPhone or an iPad */
 int host_low_power_display_limited(void);
 
