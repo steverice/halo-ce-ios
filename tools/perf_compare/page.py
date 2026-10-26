@@ -23,8 +23,8 @@ def suite_section(rows: list[dict]) -> list[str]:
     rejected = [row for row in rows if row.get("status") == "rejected"]
     reasons = sorted({row["notes"].split(": ", 1)[-1] for row in rejected})
     lines = ["### Suites", "",
-             "- **Campaign:** the opening of a10 and the opening of b30, one player, no input, default enemies. Each window "
-             "warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for "
+             "- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 "
+             "seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for "
              "60 seconds. Three rounds per set, with the frame cap and vsync off and the matched-stock settings for the "
              "headline charts. A set with fewer than three valid rounds is marked incomplete.",
              "- **Multiplayer:** two maps, Chill Out and Blood Gulch, each a window of the same length; the suite value is the "

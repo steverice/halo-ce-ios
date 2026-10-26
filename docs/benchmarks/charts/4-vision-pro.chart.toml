@@ -32,7 +32,6 @@ no_data_reason = "no uncapped matched-stock measurement"
 
 [query.filter]
 frame_mode = "uncapped"
-delay_s = "0"
 quality_preset = "matched-stock"
 status = "ok"
 

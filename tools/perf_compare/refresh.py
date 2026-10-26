@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import fnmatch
 import hashlib
 import json
-import math
 from pathlib import Path
 import platform
 import re
@@ -182,48 +181,6 @@ def host_os():
     return f'macOS {platform.mac_ver()[0]} ({build})' if build else f'macOS {platform.mac_ver()[0]}'
 
 
-def export_sweep(rows, devices, build):
-    exported = {}
-    for row in rows:
-        if not row.get('valid') or row.get('status') != 'ok' or row.get('device') not in devices:
-            continue
-        fps = row.get('fps')
-        if not isinstance(fps, (int, float)) or not math.isfinite(fps) or fps <= 0:
-            continue
-        if not re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,79}', row.get('workload', '')):
-            continue
-        if row.get('timing_basis') not in {'offscreen_uncapped', 'submission_timing'}:
-            continue
-        if not (len(row.get('render_size', [])) == 2 and all(isinstance(n, int) and 0 < n <= 16384 for n in row['render_size'])):
-            continue
-        # Caller supplies the public model map; never export aliases or report paths.
-        record = {'device': devices[row['device']], 'build': build, 'workload': row['workload'],
-                  'resolution': '×'.join(map(str, row['render_size'])), 'fps': fps,
-                  'timing_basis': row['timing_basis'], 'thermal': str(row.get('thermal_worst')) if row.get('thermal_worst') in (0, 1, 2, 3) else 'unknown',
-                  'report': hashlib.sha256(str(row.get('report', '')).encode()).hexdigest()[:12]}
-        phase, tag = row.get('phase', 'unknown'), row.get('tag', 'unknown')
-        if not all(re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,79}', value) for value in (phase, tag)):
-            continue
-        record['configuration'] = phase + '/' + tag
-        # A settings fingerprint prevents merging different experiments with the same tag.
-        record['settings_hash'] = hashlib.sha256(json.dumps(row.get('settings', {}), sort_keys=True).encode()).hexdigest()[:12]
-        key = (record['device'], row.get('id'), record['report'])
-        exported[key] = record
-    groups = {}
-    for record in exported.values():
-        key = tuple(record[key] for key in ('device', 'build', 'workload', 'resolution', 'timing_basis', 'configuration', 'settings_hash'))
-        groups.setdefault(key, []).append(record)
-    result = []
-    for runs in groups.values():
-        record = dict(runs[0])
-        record['fps'] = f"{min(row['fps'] for row in runs):.2f}–{max(row['fps'] for row in runs):.2f}"
-        record['thermal'] = ', '.join(sorted({row['thermal'] for row in runs}))
-        record['trials'] = len(runs)
-        record['report'] = hashlib.sha256('|'.join(sorted(row['report'] for row in runs)).encode()).hexdigest()[:12]
-        result.append(record)
-    return result
-
-
 def validate_config(config):
     if config.get('quality_preset', 'defaults') not in {'defaults', 'matched-stock'}:
         raise ValueError('unknown quality preset')
@@ -361,7 +318,7 @@ def refresh(config, summary_path, page_path):
     out = Path(config['output']).resolve() / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     out.mkdir(parents=True)
     machine, os_name = config['public_machine'], host_os()
-    summary = {'schema': 2, 'records': [], 'sweep': []}
+    summary = {'schema': 2, 'records': []}
     records = {}
     errors = []
     denied = None
@@ -488,20 +445,10 @@ def refresh(config, summary_path, page_path):
         for record in summary['records']:
             record['matrix_seconds'] = round(time.monotonic() - start, 1)
         (out / 'errors.json').write_text(json.dumps(errors, indent=2))
-        if config.get('sweep'):
-            try:
-                sweep = config['sweep']
-                rows = [json.loads(line) for line in Path(sweep['path']).read_text().splitlines() if line.strip()]
-                summary['sweep'] = export_sweep(rows, sweep['devices'], sweep['build'])
-            except Exception as error:
-                errors.append({'stage': 'sweep', 'error': str(error)})
-                summary['sweep_status'] = 'unavailable'
         (out / 'errors.json').write_text(json.dumps(errors, indent=2))
         # The private copy is this matrix alone; the public summary keeps every earlier record.
         (out / 'matrix-summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
         retained = json.loads(summary_path.read_text()) if summary_path.exists() else {'schema': 2}
-        if 'sweep' not in config:
-            summary.pop('sweep', None)
         merged = merge(retained, summary)
         summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
         write_outputs(page_path, merged)
@@ -551,7 +498,6 @@ def _routed_refresh(config, summary_path, page_path):
     if result.returncode:
         raise RuntimeError('routed build failed')
     config['output'] = str(remote / 'raw')
-    local_sweep = config.pop('sweep', None)
     # The router maps each local source path into its remote shim home for fetching.
     command = [*base, '--kind', 'runner', '--fetch', str(local / 'summary.json'),
                '--fetch', str(local / 'benchmarks.md'), 'perf-compare-refresh-matrix', str(ROOT),
@@ -560,15 +506,6 @@ def _routed_refresh(config, summary_path, page_path):
     result = subprocess.run(command, cwd=ROOT)
     if (local / 'summary.json').exists():
         summary = json.loads((local / 'summary.json').read_text())
-        if local_sweep:
-            try:
-                rows = [json.loads(line) for line in Path(local_sweep['path']).read_text().splitlines() if line.strip()]
-                summary['sweep'] = export_sweep(rows, local_sweep['devices'], local_sweep['build'])
-            except Exception as error:
-                summary['sweep_status'] = 'unavailable'
-                print(f'sweep import failed: {error}', file=sys.stderr)
-                if result.returncode == 0:
-                    result.returncode = 1
         retained = json.loads(summary_path.read_text()) if summary_path.exists() else {'schema': 2}
         merged = merge(retained, summary)
         summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')

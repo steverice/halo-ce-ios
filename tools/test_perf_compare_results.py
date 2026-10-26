@@ -103,9 +103,6 @@ def summary_fixture():
                 "metrics": metrics([10.0 * i, 20.0 * i], 60),
                 "thermal": "nominal", "resolution": "1280×720", "cap": 60}
                 for i in [1, 2, 3]]}],
-        "sweep": [{"device": "iPad", "build": "main", "workload": "a10",
-            "resolution": "1280×720", "fps": 210, "timing_basis": "offscreen_uncapped",
-            "thermal": "nominal", "report": "sweep-1"}],
     }
 
 
@@ -203,7 +200,7 @@ def test_render_preserves_unavailable_targets_and_escapes_cells():
     assert "unavailable" in output
 
 
-def test_render_separates_hud_raf_and_offscreen_without_ranking():
+def test_render_separates_hud_and_raf_without_ranking():
     summary = summary_fixture()
     browser = deepcopy(summary["records"][0])
     browser.update(port="browser", method="safari-raf", browser="Safari 27")
@@ -213,10 +210,8 @@ def test_render_separates_hud_raf_and_offscreen_without_ranking():
     raf = output.index("Safari callbacks measure")
     native_section = output.index("## native")
     hud = output.index("Metal HUD per-frame intervals")
-    sweep = output.index("## VISR offscreen sweep")
     assert browser_section < raf < output.rindex("| browser v1 (build 7, source abc1234) |") < native_section
-    assert native_section < hud < output.rindex(NATIVE + " a10 |") < sweep
-    assert sweep < output.index("| iPad |")
+    assert native_section < hud < output.rindex(NATIVE + " a10 |")
     assert "Safari 27" in output
     assert "repeated game images" in output
     assert "unique game frames" in output
@@ -227,7 +222,6 @@ def test_render_separates_hud_raf_and_offscreen_without_ranking():
 def test_render_empty_inputs_keep_missing_evidence_visible():
     output = render({})
     assert "No targets recorded" in output
-    assert "No sweep results recorded" in output
 
 
 def test_render_keeps_markdown_cell_content_literal():
@@ -235,19 +229,6 @@ def test_render_keeps_markdown_cell_content_literal():
     summary["records"][0]["reason"] = "[link](url) *bold* `code` _emphasis_"
     output = render(summary)
     assert "\\[link\\](url) \\*bold\\* \\`code\\` \\_emphasis\\_" in output
-
-
-def test_render_sweep_preserves_configuration_identity_and_trial_count():
-    summary = summary_fixture()
-    summary["sweep"][0].update(configuration="performance", settings_hash="settings-123", trials=3, fps="180–210")
-    output = render(summary)
-    assert "Configuration" in output
-    assert "Settings hash" in output
-    assert "Trials" in output
-    assert "performance" in output
-    assert "settings-123" in output
-    assert "| 3 |" in output
-    assert "180–210" in output
 
 
 def test_render_display_rate_and_operator_qualification_for_each_method():
@@ -267,29 +248,6 @@ def test_render_display_rate_and_operator_qualification_for_each_method():
     assert "Display rate basis" in output
     assert "| 60 | operator-qualified |" in native_row
     assert "| 120 | operator-qualified |" in browser_row
-
-
-def test_render_marks_failed_sweep_import_unavailable():
-    summary = summary_fixture()
-    summary.update(sweep=[], sweep_status="unavailable: invalid export")
-    output = render(summary)
-    assert "unavailable: invalid export" in output[output.index("## VISR offscreen sweep"):]
-
-
-def test_render_separates_offscreen_submission_and_unknown_timing_bases():
-    summary = summary_fixture()
-    submission = dict(summary["sweep"][0], device="iPhone", timing_basis="submission_timing")
-    unknown = dict(summary["sweep"][0], device="Mac", timing_basis="unrecognized")
-    summary["sweep"].extend([submission, unknown])
-    output = render(summary)
-    offscreen = output.index("## VISR offscreen sweep")
-    submission_section = output.index("## VISR submission timing")
-    unknown_section = output.index("## VISR other timing bases")
-    assert offscreen < output.index("| iPad |") < submission_section
-    assert submission_section < output.index("| iPhone |") < unknown_section
-    assert unknown_section < output.index("| Mac |")
-    assert "self-reported" in output[submission_section:unknown_section]
-    assert "not displayed pacing" in output[submission_section:unknown_section]
 
 
 def test_page_opens_with_the_fairness_caveat():

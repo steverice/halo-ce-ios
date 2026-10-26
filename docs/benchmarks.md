@@ -28,8 +28,8 @@ xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
     x-axis "Port and version" ["VISR 0.5.1", "OpenCE v1.0.2", "CoreCE 0.3.0"]
     y-axis "Frames per second" 0 --> 800
-    bar [690.5, 655.7, 381]
-    bar [196.4, 227.4, 207.5]
+    bar [648.8, 620, 309.9]
+    bar [195.7, 249.8, 185.6]
 ```
 
 🟦 Average fps 🟧 1% low fps
@@ -64,7 +64,7 @@ Each window's value is the mean over its valid rounds. A bar is the geometric me
 
 ### Suites
 
-- **Campaign:** the opening of a10 and the opening of b30, one player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set, with the frame cap and vsync off and the matched-stock settings for the headline charts. A set with fewer than three valid rounds is marked incomplete.
+- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set, with the frame cap and vsync off and the matched-stock settings for the headline charts. A set with fewer than three valid rounds is marked incomplete.
 - **Multiplayer:** two maps, Chill Out and Blood Gulch, each a window of the same length; the suite value is the mean over both maps' windows. No measurements yet.
 - **Co-op:** local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every port that has the option: VISR sets `debug.enemy_multiplier = 1`, and OpenCE-macOS and CoreCE set their enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes column in the spreadsheet says so. A port without split screen shows "Does not support split screen" and the status `not_supported`; that differs from "not measured", which means the suite has not been run for the build.
 - **Overall:** per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. A build missing a suite has no overall bar.

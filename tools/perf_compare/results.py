@@ -167,9 +167,6 @@ def merge(existing: dict, new: dict) -> dict:
             merged["records"].remove(keys[key])
         keys[key] = record
         merged["records"].append(record)
-    for field in ("sweep", "sweep_status"):
-        if field in new:
-            merged[field] = new[field]
     merged["records"].sort(key=_record_order)
     return merged
 
@@ -376,32 +373,4 @@ def render(summary: dict) -> str:
             if chosen:
                 lines.extend([METHOD_NOTES[group], ""])
                 _table(lines, headings, [row for r in chosen for row in _port_rows(r)])
-    sweep = summary.get("sweep", [])
-    sweep_groups = [
-        ("VISR offscreen sweep", "offscreen_uncapped",
-         "Offscreen throughput uses the report's timing basis and is separate from displayed native intervals and Safari callbacks."),
-        ("VISR submission timing", "submission_timing",
-         "These self-reported submission timings measure submission throughput, not displayed pacing. They are separate from offscreen throughput, native presentation intervals, and Safari callbacks."),
-        ("VISR other timing bases", "other",
-         "These reports have unrecognized timing bases; their relationship to displayed pacing is unverified."),
-    ]
-    for title, basis, caveat in sweep_groups:
-        if basis == "other":
-            selected = [row for row in sweep if row.get("timing_basis") not in ("offscreen_uncapped", "submission_timing")]
-        else:
-            selected = [row for row in sweep if row.get("timing_basis") == basis]
-        if basis != "offscreen_uncapped" and not selected:
-            continue
-        lines.extend([f"## {title}", "", caveat, ""])
-        if basis == "offscreen_uncapped" and summary.get("sweep_status"):
-            lines.extend([f"Sweep status: {_cell(summary['sweep_status'])}.", ""])
-        if selected:
-            keys = ("device", "build", "workload", "resolution", "configuration", "settings_hash", "trials",
-                    "fps", "timing_basis", "thermal", "report")
-            _table(lines, ["Device", "Build", "Workload", "Resolution", "Configuration", "Settings hash", "Trials",
-                           "FPS", "Timing basis", "Thermal", "Report"],
-                   [[row.get(key, "unknown") for key in keys]
-                    for row in sorted(selected, key=lambda row: tuple(str(row.get(key, "")) for key in keys))])
-        else:
-            lines.extend(["No sweep results recorded.", ""])
     return "\n".join(lines).rstrip() + "\n"

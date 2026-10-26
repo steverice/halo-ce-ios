@@ -189,8 +189,8 @@ def layout(summary: dict) -> dict:
              "rows": [[name, DESCRIPTIONS[name]] for name in COLUMNS],
              "note": "results is the only tab to edit. The per-port tabs are read-only views."},
             {"name": "charts", "kind": "summary",
-             "note": "Per platform, for campaign, uncapped, matched-stock sets on the reference box with status ok and delay_s 0: "
-                     "the geometric mean over windows of fps_avg and fps_1pct_low, by label. The page uses the same rule."},
+             "note": "Per platform, for campaign, uncapped, matched-stock sets on the reference box with status ok: "
+                     "the geometric mean over every window of fps_avg and fps_1pct_low, by label. The page uses the same rule."},
             {"name": "results", "kind": "csv", "file": "results.csv", "columns": list(COLUMNS)}]
     # Each port tab repeats the header row, then filters the data rows on the port column.
     tabs.extend({"name": port, "kind": "formula",

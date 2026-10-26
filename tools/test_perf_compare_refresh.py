@@ -24,20 +24,6 @@ def test_release_selection_includes_prerelease_and_ignores_signatures():
     assert tag == 'v2' and asset['name'] == 'macos.zip'
 
 
-def test_sweep_export_excludes_invalid_and_private_fields():
-    m = engine()
-    source = [dict(valid=True, status='ok', device='alias', workload='a10', fps=60,
-                   render_size=[1280, 720], timing_basis='offscreen_uncapped', report='/private/report.json'),
-              dict(valid=False, status='diverged', device='alias', fps=999)]
-    result = m.export_sweep(source, {'alias': 'iPad Pro (M1)'}, 'abc123')
-    assert len(result) == 1 and result[0]['device'] == 'iPad Pro (M1)'
-    assert '/private' not in str(result) and 'alias' not in str(result)
-
-
-def test_unmapped_devices_do_not_leak():
-    assert engine().export_sweep([dict(valid=True, status='ok', device='secret')], {}, 'build') == []
-
-
 def test_rejects_nonstandard_matrix_before_launch():
     with pytest.raises(ValueError, match='three'):
         engine().validate_config({'rounds': 1, 'targets': []})
@@ -66,20 +52,13 @@ def test_native_qualification_is_bound_to_release_hash():
     assert m.adapters.qualification(target, 'a10')['scene_verified'] is True
 
 
-def test_sweep_export_does_not_copy_arbitrary_report_basename():
-    result = engine().export_sweep([dict(valid=True, status='ok', device='alias', workload='a10',
-        render_size=[1280, 720], fps=60, timing_basis='offscreen_uncapped',
-        report='/private/report-my-personal-name.json')], {'alias': 'iPad Pro (M1)'}, 'abc123')
-    assert 'personal-name' not in str(result)
-
-
-def test_denial_preserved_when_sweep_is_missing(tmp_path, monkeypatch):
+def test_denial_is_preserved(tmp_path, monkeypatch):
     m = engine()
     def denied(*args):
         raise m.adapters.PermissionDenied('specific command: not authorized')
     monkeypatch.setattr(m, 'fetch', denied)
     config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)',
-              'targets': [{'id': 'visr'}], 'sweep': {'path': str(tmp_path / 'absent')}}
+              'targets': [{'id': 'visr'}]}
     summary = tmp_path / 'summary.json'
     assert m.refresh(config, summary, tmp_path / 'page.md') == 3
     assert summary.exists()
@@ -133,19 +112,6 @@ def test_fatal_unavailable_target_is_not_relaunched_six_times(tmp_path, monkeypa
     config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)', 'targets': [{'id': 'visr'}]}
     assert m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md') == 1
     assert calls == ['a10']
-
-
-def test_sweep_export_groups_repetitions_without_mixing_settings():
-    m = engine()
-    common = dict(valid=True, status='ok', device='alias', workload='a10', render_size=[1280,720],
-                  timing_basis='offscreen_uncapped', thermal_worst=0, phase='tiers')
-    rows = [{**common, 'fps': 58, 'id': 'r1', 'tag': 'tier-l720x1', 'report': '/p/r1.json'},
-            {**common, 'fps': 62, 'id': 'r2', 'tag': 'tier-l720x1', 'report': '/p/r2.json'},
-            {**common, 'fps': 90, 'id': 'r1', 'tag': 'tier-l720x1p5', 'report': '/p/r3.json'}]
-    result = m.export_sweep(rows, {'alias': 'iPad Pro (M1)'}, 'abc123')
-    assert len(result) == 2
-    row = next(row for row in result if row['configuration'] == 'tiers/tier-l720x1')
-    assert row['fps'] == '58.00–62.00' and row['trials'] == 2
 
 
 def test_private_qualification_text_cannot_enter_public_conditions():

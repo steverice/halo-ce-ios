@@ -7,15 +7,33 @@
   "warmup_seconds": 15,
   "display_hz": 60,
   "targets": [
-    {"id": "visr", "app": "/path/to/VISR.app", "version": "FULL_MAIN_COMMIT"},
-    {"id": "opence-macos", "repo": "channelramble/OpenCE-macOS", "asset": "Halo.dmg"},
-    {"id": "chupathingy", "repo": "ChupathingyCE/chupathingyce", "asset": "chupathingyce-macos-release.zip"},
-    {"id": "halo-og", "repo": "pfista/halo-og", "asset": "Halo-OG-macos-arm64.dmg"},
-    {"id": "opence-web", "url": "https://halocombatevolved.com/", "setup": {"a10": [], "b30": []}}
-  ],
-  "sweep": {
-    "path": "/path/to/runs.jsonl",
-    "build": "FULL_SWEEP_COMMIT",
-    "devices": {"private-alias": "Public hardware model"}
-  }
+    {
+      "id": "visr",
+      "app": "/path/to/VISR.app",
+      "version": "FULL_MAIN_COMMIT"
+    },
+    {
+      "id": "opence-macos",
+      "repo": "channelramble/OpenCE-macOS",
+      "asset": "Halo.dmg"
+    },
+    {
+      "id": "chupathingy",
+      "repo": "ChupathingyCE/chupathingyce",
+      "asset": "chupathingyce-macos-release.zip"
+    },
+    {
+      "id": "halo-og",
+      "repo": "pfista/halo-og",
+      "asset": "Halo-OG-macos-arm64.dmg"
+    },
+    {
+      "id": "opence-web",
+      "url": "https://halocombatevolved.com/",
+      "setup": {
+        "a10": [],
+        "b30": []
+      }
+    }
+  ]
 }
