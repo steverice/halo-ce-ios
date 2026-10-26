@@ -2586,6 +2586,17 @@
             "desktop"
           ]
         },
+        "shadow_blur": {
+          "type": "string",
+          "default": "footprint",
+          "description": "How object shadows larger than 128 texels (display.shadow_map_size) are blurred: \"footprint\" over the area the game's blur covers at 128, \"xbox\" the game's taps at their fixed offsets (at 512 they fall 4 texels apart and show as separate copies). 128-texel shadows always get the game's blur.",
+          "x-environment": "HALO_SHADOW_BLUR",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple",
+            "desktop"
+          ]
+        },
         "screenshot_every": {
           "type": "integer",
           "default": 0,

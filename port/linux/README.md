@@ -623,6 +623,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.gpu_debug_flat` | boolean | `false` | apple, desktop | `HALO_GPU_DEBUG_FLAT` | Pixel shaders show their vertex colour. |
 | `debug.companion_capture` | boolean | `false` | apple, desktop | `HALO_COMPANION_CAPTURE` | Draw the companion HUD without an external display and save it with screenshots. |
 | `debug.screenshot_directory` | string | `""` | apple, desktop | `HALO_SCREENSHOT_DIR` | A folder to save frames to (with screenshot_every); empty none. |
+| `debug.shadow_blur` | string | `"footprint"` | apple, desktop | `HALO_SHADOW_BLUR` | How object shadows larger than 128 texels (display.shadow_map_size) are blurred: "footprint" over the area the game's blur covers at 128, "xbox" the game's taps at their fixed offsets (at 512 they fall 4 texels apart and show as separate copies). 128-texel shadows always get the game's blur. |
 | `debug.screenshot_every` | integer | `0` | apple, desktop | `HALO_SCREENSHOT_EVERY` | Save every this many frames to screenshot_directory; 0 none. |
 | `debug.texture_astc` | string | `"auto"` | apple | `HALO_TEXTURE_ASTC` | DXT-to-ASTC texture preparation: "auto" (default) converts on GPUs without BC once the release enables it, "force" emulates a GPU without BC for validation, "off" disables it. |
 | `debug.texture_astc_sync` | boolean | `false` | apple | `HALO_TEXTURE_ASTC_SYNC` | Wait for ASTC map preparation before loading, for screenshot validation only. |

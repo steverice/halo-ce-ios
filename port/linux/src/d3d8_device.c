@@ -1269,6 +1269,22 @@ float halo_shadow_target_scale(void)
 	return scale[0];
 }
 
+/* whether object shadows get the footprint blur (rasterizer_xbox_shadows.c): shadow maps larger than the game's 128
+texels, unless debug.shadow_blur is "xbox" (the game's taps at their fixed offsets, for comparison) */
+int halo_shadow_blur_footprint(void)
+{
+	static int game_blur = -1;
+	static unsigned long read_at;
+	unsigned long revision = config_changes();
+
+	if (game_blur < 0 || read_at != revision)
+	{
+		game_blur = !strcmp(config_string("debug.shadow_blur"), "xbox");
+		read_at = revision;
+	}
+	return !game_blur && halo_shadow_target_scale() > 1.0f;
+}
+
 static void recent_render_targets_forget(void);
 
 /* out of its address bucket, and freed (the backend holds the texture until the frames using it are done) */
