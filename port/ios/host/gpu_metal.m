@@ -1760,15 +1760,41 @@ static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *phys
 
 /* the targets' size in the units of their viewports and scissors: a
 foveated target's screen size, else its texture's */
+/* dynamic resolution's pool: a pass whose attachments hold the same content
+(gpu_texture_set_content) renders only that part of them (pass_begin's
+renderTargetWidth and Height), so its loads, stores and clears cost the
+content's tiles, not the allocation's; 0 when the pass is the whole texture */
+static int pass_content(const MetalTexture *color, const MetalTexture *depth, NSUInteger *width, NSUInteger *height)
+{
+	const MetalTexture *part = color && color->content_width ? color : depth && depth->content_width ? depth : NULL;
+
+	if (!part)
+		return 0;
+	if ((color && (color->content_width != part->content_width || color->content_height != part->content_height)) ||
+		(depth && (depth->content_width != part->content_width || depth->content_height != part->content_height)))
+		return 0;
+	*width = part->content_width;
+	*height = part->content_height;
+	return 1;
+}
+
 static void target_size(gpu_texture color, gpu_texture depth, unsigned long *width, unsigned long *height)
 {
 	MetalTexture *record = texture_record(color ? color : depth);
 	MTLSize screen, physical;
+	NSUInteger content_width, content_height;
 
 	if (foveation_sizes(record, &screen, &physical))
 	{
 		*width = screen.width;
 		*height = screen.height;
+		return;
+	}
+	/* (scissors and whole-target clears stay inside a pass limited to the content) */
+	if (pass_content(texture_record(color), texture_record(depth), &content_width, &content_height))
+	{
+		*width = content_width;
+		*height = content_height;
 		return;
 	}
 	*width = record && record->texture ? record->texture.width : 0;
@@ -1919,6 +1945,15 @@ static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_cl
 		pass.stencilAttachment.clearStencil = clear ? clear->stencil & 0xff : 0;
 		pass_depth_texture = depth_record->texture;
 		use_texture(depth_record);
+	}
+	{
+		NSUInteger content_width, content_height;
+
+		if (pass_content(color ? color_record : NULL, depth ? depth_record : NULL, &content_width, &content_height))
+		{
+			pass.renderTargetWidth = content_width;
+			pass.renderTargetHeight = content_height;
+		}
 	}
 	pass_traffic_count(pass);
 	if (pass_log)
