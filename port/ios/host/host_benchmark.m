@@ -40,6 +40,7 @@
 #include <os/lock.h>
 #include <os/proc.h>
 #include <signal.h>
+#include <pthread.h>
 #include <sys/resource.h>
 #include <time.h>
 #include <stdatomic.h>
@@ -513,8 +514,8 @@ void host_benchmark_frame(double interval, double cpu, double gpu, double refres
    memory or the frame's work. About 16,000 cycles: 7 microseconds at 2.3 GHz. */
 static double clock_probe_microseconds(void) {
     static mach_timebase_info_data_t timebase;
-    volatile uint32_t sink;
-    uint32_t value = 1;
+    volatile uint32_t sink, seed = 1;
+    uint32_t value = seed;   /* (read through volatile, so the chain can't be folded at compile time) */
     uint64_t began;
 
     if (!timebase.denom) mach_timebase_info(&timebase);
@@ -533,6 +534,58 @@ static double process_cpu_seconds(void) {
         (double)usage.ru_stime.tv_usec / 1e6;
 }
 
+/* debug.frame_cpu_probe: every 600 frames, the app's busiest threads' CPU time since the last time, in the log */
+static void thread_cpu_log(void) {
+    enum { KEPT = 64 };
+    static struct { uint64_t id; double seconds; } before[KEPT];
+    static int kept;
+    struct { uint64_t id; double seconds, used; char name[32]; } now[KEPT];
+    int count = 0, index, other;
+    thread_act_array_t threads;
+    mach_msg_type_number_t thread_count;
+    char line[512];
+    size_t length;
+
+    if (task_threads(mach_task_self(), &threads, &thread_count) != KERN_SUCCESS) return;
+    for (mach_msg_type_number_t at = 0; at < thread_count; at++) {
+        thread_basic_info_data_t basic;
+        thread_identifier_info_data_t identity;
+        mach_msg_type_number_t size = THREAD_BASIC_INFO_COUNT, id_size = THREAD_IDENTIFIER_INFO_COUNT;
+
+        if (count < KEPT && thread_info(threads[at], THREAD_BASIC_INFO, (thread_info_t)&basic, &size) == KERN_SUCCESS &&
+            thread_info(threads[at], THREAD_IDENTIFIER_INFO, (thread_info_t)&identity, &id_size) == KERN_SUCCESS) {
+            thread_extended_info_data_t extended;
+            mach_msg_type_number_t extended_size = THREAD_EXTENDED_INFO_COUNT;
+
+            now[count].id = identity.thread_id;
+            now[count].seconds = basic.user_time.seconds + basic.user_time.microseconds / 1e6 +
+                basic.system_time.seconds + basic.system_time.microseconds / 1e6;
+            now[count].used = now[count].seconds;
+            for (other = 0; other < kept; other++)
+                if (before[other].id == identity.thread_id) { now[count].used -= before[other].seconds; break; }
+            /* (the kernel's copy of the name: a pthread's own may be freed if the thread has just exited) */
+            now[count].name[0] = 0;
+            if (thread_info(threads[at], THREAD_EXTENDED_INFO, (thread_info_t)&extended, &extended_size) == KERN_SUCCESS)
+                snprintf(now[count].name, sizeof(now[count].name), "%s", extended.pth_name);
+            count++;
+        }
+        mach_port_deallocate(mach_task_self(), threads[at]);
+    }
+    vm_deallocate(mach_task_self(), (vm_address_t)threads, thread_count * sizeof(*threads));
+    for (index = 0; index < count; index++) { before[index].id = now[index].id; before[index].seconds = now[index].seconds; }
+    kept = count;
+    length = (size_t)snprintf(line, sizeof(line), "benchmark: busiest threads, CPU ms since the last line:");
+    for (int shown = 0; shown < 8 && length < sizeof(line) - 64; shown++) {
+        int best = -1;
+        for (index = 0; index < count; index++) if (now[index].used >= 0 && (best < 0 || now[index].used > now[best].used)) best = index;
+        if (best < 0 || now[best].used <= 0.0005) break;
+        length += (size_t)snprintf(line + length, sizeof(line) - length, " %s#%llu %.0f", now[best].name[0] ? now[best].name : "?",
+            (unsigned long long)now[best].id, now[best].used * 1e3);
+        now[best].used = -1.0;
+    }
+    host_logf(HOST_LOG_INFO, "%s", line);
+}
+
 void host_benchmark_frame_probe(void) {
     static int setting = -1;
     static double thread_before = -1.0, process_before = -1.0;
@@ -545,13 +598,16 @@ void host_benchmark_frame_probe(void) {
         if (setting) host_logf(HOST_LOG_INFO, "benchmark: debug.frame_cpu_probe: thread, process and clock probe per frame");
     }
     if (!setting) return;
+    static unsigned long probed;
     double thread_now = (double)clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) / 1e9, process_now = process_cpu_seconds();
     double probe = clock_probe_microseconds();
     double thread_cpu = thread_before >= 0.0 ? thread_now - thread_before : -1.0;
     double process_cpu = process_before >= 0.0 && process_now >= 0.0 ? process_now - process_before : -1.0;
 
-    thread_before = thread_now;
-    process_before = process_now;
+    /* (after this frame's readings, so its own cost falls in the next frame's) */
+    if (++probed % 600 == 0) thread_cpu_log();
+    thread_before = (double)clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) / 1e9;
+    process_before = process_cpu_seconds();
     if (!atomic_load(&running) || thread_cpu < 0.0) return;
     os_unfair_lock_lock(&lock);
     if (window_open) benchmark_metrics_frame_probe(&metrics, thread_cpu * 1000.0, process_cpu * 1000.0, probe);
