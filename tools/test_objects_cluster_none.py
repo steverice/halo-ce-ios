@@ -4,6 +4,9 @@ A weapon that never touched the map, dropped by a unit that died outside it, is 
 cluster and then activated by `object_detach`. The game asserted on it (objects.c #369) the next time
 the players' view changed. This runs `objects_update`, taken from the source, over such objects.
 """
+import shutil
+import subprocess
+
 from test_network_controller_aim import ROOT, run_probe
 from test_mp_synthetic_input import function
 
@@ -28,8 +31,8 @@ typedef float real;
 #define BIT_VECTOR_TEST_FLAG(v,b) (TEST_FLAG((v)[(b)>>LONG_BITS_BITS],((b)&(LONG_BITS-1))))
 #define DATUM_INDEX_NEW(i,salt) ((i)|((salt)<<SHORT_BITS))
 #define csmemcmp memcmp
-static int asserts;
-#define match_assert(file,line,value) do { if (!(value)) asserts++; } while (0)
+/* as in a checked build, a failed assertion stops the game */
+#define match_assert(file,line,value) do { if (!(value)) { fprintf(stderr, "halt: objects.c #%d\n", line); exit(3); } } while (0)
 enum { _object_header_active_bit, _object_header_automatically_deactivate_bit,
        _object_header_connected_to_map_bit, _object_header_child_bit,
        _object_header_being_created_bit, _object_header_being_deleted_bit,
@@ -95,7 +98,6 @@ int main(void)
     object_new_test(4, 35, FALSE, FALSE);  /* inactive, in view: activated */
     object_new_test(5, NONE, FALSE, FALSE);/* inactive, outside the map: left alone */
     objects_update();
-    assert(asserts == 0);
     assert(!TEST_FLAG(headers[0].flags, _object_header_active_bit) && !deleted[0]);
     assert(deleted[1] == 1);
     assert(TEST_FLAG(headers[2].flags, _object_header_active_bit));
@@ -105,7 +107,7 @@ int main(void)
     /* the view unchanged: no activation pass, and no assertion */
     object_new_test(0, NONE, TRUE, FALSE);
     objects_update();
-    assert(asserts == 0 && TEST_FLAG(headers[0].flags, _object_header_active_bit));
+    assert(TEST_FLAG(headers[0].flags, _object_header_active_bit));
     puts("objects_update cluster NONE: PASS");
     return 0;
 }
@@ -128,8 +130,13 @@ def test_negative_control_the_original_assertion_fires(tmp_path):
         "match_assert(\"c:\\\\halo\\\\SOURCE\\\\objects\\\\objects.c\", 369, object_header->cluster_index!=NONE);\n"
         "\t\t\t\t\tif (!BIT_VECTOR_TEST_FLAG(")
     assert original != objects, "the fixed condition was not found"
-    try:
-        run_probe(tmp_path, "objects_cluster_none_original", program(original))
-    except AssertionError:
-        return
-    raise AssertionError("the original objects_update passed the probe")
+    compiler = shutil.which("clang") or shutil.which("cc")
+    source = tmp_path / "objects_cluster_none_original.c"
+    source.write_text(program(original))
+    binary = tmp_path / "objects_cluster_none_original"
+    compiled = subprocess.run([compiler, "-std=gnu11", "-O1", "-g", str(source), "-o", str(binary)],
+                              capture_output=True, text=True)
+    assert compiled.returncode == 0, compiled.stderr
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    # (stopped by the game's assertion itself, before the out-of-range bit is read)
+    assert result.returncode == 3 and "halt: objects.c #369" in result.stderr, result.stderr
