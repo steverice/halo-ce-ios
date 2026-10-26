@@ -190,6 +190,14 @@ static NSDictionary *output_now(void) {
         @"output_cap_requested": @(requested), @"output_cap": !requested ? @"none" : capped ? @"capped" : @"unchanged" };
 }
 
+/* Low Power Mode, the system's or debug.low_power_frame_rate's: a run taken in it is not a measurement of the
+   device (its CPU and GPU are slowed, and frames aim for half the rate) */
+static BOOL low_power_now(void) {
+    return NSProcessInfo.processInfo.lowPowerModeEnabled || host_frame_rate_low_power();
+}
+/* whether Low Power Mode was on at any second of the run that is open */
+static _Atomic int run_low_power;
+
 static NSDictionary *environment_now(void) {
     float level = -1;
     NSString *charging = @"unavailable";
@@ -203,8 +211,12 @@ static NSDictionary *environment_now(void) {
         default: charging = @"unknown"; break;
     }
 #endif
+    /* (low_power_mode: the system's; frame_rate_low_power: whether its halved rate held frames, low_power.h;
+       frame_rate_target: what frames aimed for, 0 for the display's rate) */
     return @{ @"battery_level": @(level), @"charging": charging,
-        @"thermal_state": @((int)NSProcessInfo.processInfo.thermalState) };
+        @"thermal_state": @((int)NSProcessInfo.processInfo.thermalState),
+        @"low_power_mode": @(low_power_now()), @"frame_rate_low_power": @(host_frame_rate_low_power() != 0),
+        @"frame_rate_target": @(host_frame_rate_target()) };
 }
 #define JOURNAL_SNAPSHOT FOLDER "/journal-snapshot.sha256"
 
@@ -689,6 +701,7 @@ static void sample(void) {
     int thermal = (int)NSProcessInfo.processInfo.thermalState, open;
 
     if (!atomic_load(&running)) return;
+    if (run_open && low_power_now()) atomic_store(&run_low_power, 1);
     memory_now(&footprint, &left);
     os_unfair_lock_lock(&lock);
     open = window_open;
@@ -1399,7 +1412,7 @@ int host_benchmark_start(const char *mode, int drawable_lines, int base_lines, i
             launch_upscaler = gpu_metal_upscaler();
         }
     }
-    if (process.lowPowerModeEnabled) {
+    if (low_power_now()) {
         host_logf(HOST_LOG_INFO, "benchmark: Low Power Mode is on; the benchmark does not run with it");
         return 0;
     }
@@ -1886,6 +1899,7 @@ int host_benchmark_next(char *text, unsigned int size) {
     run_shader_before = host_benchmark_shader_snapshot(run_shader_directory, scene->map[0] ? @(scene->map) : @"ui");
     benchmark_journal_begin(JOURNAL, run.index, run.key);
     run_environment_start = environment_now();
+    atomic_store(&run_low_power, low_power_now());
     run_output = output_now();
     struct host_external_snapshot output;
     host_external_snapshot(&output);
@@ -1948,6 +1962,11 @@ void host_benchmark_end(const char *status_name, const char *note) {
         interrupted = 1;
         flag(@"output_changed");
         note = "the display connected, disconnected, or changed mode during this run";
+    }
+    if (atomic_load(&run_low_power) || low_power_now()) {
+        interrupted = 1;
+        flag(@"low_power_mode");
+        note = "Low Power Mode was on during this run";
     }
     if (external_modes.count) {
         NSString *wanted = external_modes[external_mode_index];

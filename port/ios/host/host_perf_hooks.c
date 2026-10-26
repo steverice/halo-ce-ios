@@ -196,7 +196,7 @@ void host_perf_hooks_dynamic_resume(void) {
     host_perf_hooks_dynamic_ignore(DYNAMIC_RESOLUTION_RESUME);
     pthread_mutex_unlock(&dynamic_lock);
 }
-static uint64_t context_values[10];
+static uint64_t context_values[12];
 static unsigned context_seen;
 static uint32_t frame_draws, networked_objects;
 static uint64_t last_network_sample, last_stall_us;
@@ -247,7 +247,7 @@ static uint64_t now_us(void) {
     return (uint64_t)value.tv_sec * 1000000 + (uint64_t)value.tv_nsec / 1000;
 }
 void host_perf_hooks_context(unsigned field, uint64_t value) {
-    if (!field || field >= 10) return;
+    if (!field || field >= 12) return;
     if (!(context_seen & (1u << field)) || context_values[field] != value) {
         game_perf_event event = {.elapsed_us = now_us(), .type = GAME_PERF_EVENT_CONTEXT, .flags = field, .value = value, .denominator = serial};
         host_perf_reports_event(&event);

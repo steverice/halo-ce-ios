@@ -382,6 +382,11 @@ run(BUILD/'frame-deadline-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     'port/ios/tests/visibility_history_probe.c', '-o', BUILD/'visibility-history-probe')
 run(BUILD/'visibility-history-probe')
+# Low Power Mode's frame rate: the power-state notice posted as the system posts it, and the rate across transitions
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks', '-fsanitize=address,undefined',
+    '-DHALO_LOW_POWER_TESTING=1', '-Iport/ios/host', '-framework', 'Foundation',
+    'port/ios/tests/low_power_probe.m', 'port/ios/host/host_low_power.m', '-o', BUILD/'low-power-probe')
+run(BUILD/'low-power-probe')
 # the device benchmark's metrics, plan and journal (port/runtime/benchmark_*.c): percentiles of made-up frames,
 # the sweep walked with made-up devices, and the journal cut at every byte and after every write
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',

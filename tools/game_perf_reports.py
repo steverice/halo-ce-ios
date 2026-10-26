@@ -20,7 +20,8 @@ MAX_DECODED_BYTES = 32 * 1024 * 1024
 COLUMNS = ('intervalUS', 'elapsedMS', 'cpu', 'simulation', 'network', 'render', 'gpu', 'budget', 'ticks', 'flags')
 TIMINGS = ('interval', 'cpu', 'simulation', 'network', 'render', 'gpu', 'budget')
 CONTEXT = ('model', 'platform', 'profileID', 'profileHash', 'mapFingerprint', 'mode', 'playerCount',
-           'localPlayerCount', 'networkPlayerCount', 'appVersion', 'appBuild', 'guestSHA256', 'output', 'role', 'renderer', 'width', 'height', 'refreshMilliHz', 'os', 'osVersion', 'mapFormat')
+           'localPlayerCount', 'networkPlayerCount', 'appVersion', 'appBuild', 'guestSHA256', 'output', 'role', 'renderer', 'width', 'height', 'refreshMilliHz', 'os', 'osVersion', 'mapFormat',
+           'lowPowerMode', 'frameRateTarget')
 
 
 def _unique_object(pairs):

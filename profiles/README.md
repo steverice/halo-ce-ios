@@ -150,6 +150,8 @@ Tier 3 is the ideal. Above it, each tier must also hold at more enemies than rea
 
 **Other scenes.** Cutscenes run at 30 frames a second and menus at the display's rate. Each multiplayer map and player count is qualified separately at the profile's tier, and a multiplayer miss does not lower the campaign tier.
 
+**Low Power Mode.** Low Power Mode slows the CPU and GPU, and on a ProMotion iPhone or iPad it holds the display at 60 Hz. While it is on, gameplay aims for half the profile's frame rate (120 to 60, 60 to 30, never under 30), cutscenes stay at 30 and menus keep the display's rate; the frame budget that frame deadlines and dynamic resolution use follows the lower rate. The Mac app does the same. The benchmark does not start in Low Power Mode, and a run during which it turns on is marked interrupted.
+
 **Vision Pro** has its own ladder. Holding the display's rate comes first there, for comfort, and resolution second.
 
 ## Writing a profile

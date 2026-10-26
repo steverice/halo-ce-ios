@@ -78,7 +78,7 @@ static id bounded_json(NSString *path,NSUInteger limit) {
 static BOOL working_metadata_valid(NSDictionary *value) {
     if(![value isKindOfClass:NSDictionary.class] || ![value[@"schema"] isEqual:@1] ||
        ![value[@"journalABI"] isEqual:@1] || ![value[@"journalFrameSize"] isEqual:@(sizeof(game_perf_frame))])return NO;
-    NSArray *allowed=@[@"schema",@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"mapFormat",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"appVersion",@"appBuild",@"guestSHA256",@"profileHash",@"graphics",@"os",@"networkVersion",@"journalABI",@"journalFrameSize",@"timingSemantics",@"resumed",@"_checkpoint",@"_initialContext"];
+    NSArray *allowed=@[@"schema",@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"mapFormat",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"lowPowerMode",@"frameRateTarget",@"appVersion",@"appBuild",@"guestSHA256",@"profileHash",@"graphics",@"os",@"networkVersion",@"journalABI",@"journalFrameSize",@"timingSemantics",@"resumed",@"_checkpoint",@"_initialContext"];
     for(id key in value)if(![allowed containsObject:key])return NO;
     for(NSString *key in @[@"nonce",@"model",@"platform",@"profileID",@"mapFingerprint",@"renderer",@"mode",@"appVersion",@"appBuild",@"guestSHA256"])
         if(![value[key] isKindOfClass:NSString.class] || ![value[key] length] || [value[key] length]>256)return NO;
@@ -157,10 +157,10 @@ static void enrich_frame(void *unused,game_perf_frame *frame) {(void)unused;host
 static void frame_row(void *unused,const game_perf_frame *frame) {(void)unused;if(!rows)first_frame_id=frame->frame_id;if(rows<trace_limit)append_chunk(1,frame,sizeof(*frame));else {truncated=YES;lost_rows++;if(!omitted_begin_us)omitted_begin_us=frame->elapsed_us;omitted_end_us=frame->elapsed_us;}rows++;duration_us=MAX(duration_us,frame->elapsed_us);}
 static void apply_context_event_to(NSMutableDictionary *context,const game_perf_event *event) {
     if(event->type==GAME_PERF_EVENT_CONTEXT){
-        NSArray *keys=@[@"",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output"];
+        NSArray *keys=@[@"",@"renderer",@"mode",@"role",@"playerCount",@"localPlayerCount",@"width",@"height",@"refreshMilliHz",@"output",@"lowPowerMode",@"frameRateTarget"];
         if(event->flags<keys.count && event->flags){id value=@(event->value);
             NSArray *labels=event->flags==1?@[@"unknown",@"metal",@"gles"]:event->flags==2?@[@"unknown",@"campaign",@"multiplayer"]:event->flags==3?@[@"unknown",@"local",@"host",@"client"]:event->flags==9?@[@"unknown",@"flat",@"immersive",@"external"]:nil;
-            if(labels)value=event->value<labels.count?labels[event->value]:@"unknown";context[keys[event->flags]]=value;
+            if(labels)value=event->value<labels.count?labels[event->value]:@"unknown";if(event->flags==10)value=@(event->value!=0);context[keys[event->flags]]=value;
         }
     }
 }

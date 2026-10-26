@@ -2242,6 +2242,16 @@
             "apple"
           ]
         },
+        "low_power_frame_rate": {
+          "type": "string",
+          "default": "true",
+          "description": "In Low Power Mode, gameplay and cutscenes aim for half the frame rate they aim for otherwise (120 to 60, 60 to 30, never under 30) and menus keep the display's pace: \"true\" (default); \"false\" keeps the rate in Low Power Mode; \"always\" acts as if Low Power Mode were on, for testing. Not on a Vision Pro.",
+          "x-environment": "HALO_LOW_POWER_FRAME_RATE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "frame_load_gpu": {
           "type": "integer",
           "default": 0,

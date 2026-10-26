@@ -1423,6 +1423,12 @@ static const struct config_setting config_settings[] =
 	{ "debug.frame_load_every", _config_real, "0.0", "HALO_FRAME_LOAD_EVERY", _environment_value, _platform_ios,
 		"With debug.frame_load_cpu: the made-up work comes and goes, on in every\n"
 		"other span of this many seconds, as a fight would. 0 (default): always." },
+	{ "debug.low_power_frame_rate", _config_string, "\"true\"", "HALO_LOW_POWER_FRAME_RATE", _environment_value, _platform_ios,
+		"In Low Power Mode, gameplay and cutscenes aim for half the frame rate\n"
+		"they aim for otherwise (120 to 60, 60 to 30, never under 30) and menus\n"
+		"keep the display's pace: \"true\" (default); \"false\" keeps the rate in\n"
+		"Low Power Mode; \"always\" acts as if Low Power Mode were on, for testing.\n"
+		"Not on a Vision Pro." },
 	{ "debug.frame_load_gpu", _config_integer, "0", "HALO_FRAME_LOAD_GPU", _environment_value, _platform_ios,
 		"Made-up GPU work added to every frame: that many extra full-size draws\n"
 		"(the Metal renderer), with debug.frame_load_cpu. 0 (default): none." },
