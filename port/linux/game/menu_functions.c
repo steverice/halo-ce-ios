@@ -2304,6 +2304,7 @@ boolean ui_widget_port_host(struct widget_instance *widget, struct event_record 
 boolean ui_widget_port_browse(struct widget_instance *widget, struct event_record *event, boolean *widget_deleted);
 boolean ui_widget_port_open(struct widget_instance *widget, char const *name, boolean *widget_deleted);
 boolean network_game_client_advertised_game_in_progress(void *client, struct advertised_game *game);
+boolean network_game_client_advertised_game_dedicated(void *client, struct advertised_game *game);
 unsigned int network_game_client_advertised_game_version(void *client, struct advertised_game *game);
 unsigned int network_game_client_advertised_game_kind(void *client, struct advertised_game *game);
 boolean network_game_client_advertised_game_compatible(void *client, struct advertised_game *game, boolean tell);
@@ -3409,6 +3410,34 @@ static boolean advertised_in_progress(struct advertised_game *game)
 	return network_game_client_advertised_game_in_progress(global_network_game_client_get(), game);
 }
 
+/* Keep each group's existing open/in-progress order. */
+static boolean advertised_dedicated(struct advertised_game *game)
+{
+	return network_game_client_advertised_game_dedicated(global_network_game_client_get(), game);
+}
+
+static void browser_dedicated_first(void)
+{
+	short index, first = 0;
+
+	for (index = 0; index < multiplayer.game_count; index++)
+	{
+		struct advertised_game *game = multiplayer.games[index];
+		short move;
+
+		if (!advertised_dedicated(game))
+			continue;
+		for (move = index; move > first; move--)
+			multiplayer.games[move] = multiplayer.games[move - 1];
+		multiplayer.games[first++] = game;
+	}
+}
+
+static void browser_game_count_text(wchar_t *text, wchar_t const *label, int games, int dedicated)
+{
+	usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %d (%d dedicated)", label, games, dedicated);
+}
+
 static void browser_games_read(void)
 {
 	void *client = global_network_game_client_get();
@@ -3432,6 +3461,7 @@ static void browser_games_read(void)
 			}
 		}
 	}
+	browser_dedicated_first();
 	if (multiplayer.game_count && multiplayer.mode == _multiplayer_mode_direct_link)
 		multiplayer.invite_pending = FALSE;
 	if (multiplayer.game_chosen >= multiplayer.game_count)
@@ -3935,7 +3965,7 @@ static void lobby_browser_update(struct widget_instance *list)
 			if (lock)
 				lock->animation.current_frame_index = 1;
 		}
-		visible_set(named(row, "server_item_dedicated", 0), FALSE);
+		visible_set(named(row, "server_item_dedicated", 0), game->dedicated);
 		visible_set(named(row, "server_item_classic", 0), FALSE);
 	}
 	/* joining: once the host is reached, its game joined (by an A press, on
@@ -4065,10 +4095,14 @@ static void lobby_browser_update(struct widget_instance *list)
 	{
 		wchar_t label[ROW_TEXT_LENGTH];
 		long players = 0;
+		int dedicated = 0;
 		short index;
 
 		for (index = 0; index < lobby_browser.count; index++)
+		{
 			players += lobby_browser.games[index].player_count;
+			dedicated += lobby_browser.games[index].dedicated != 0;
+		}
 		string_get(JOIN_GAME_LABELS, _join_game_label_players, label);
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %ld", label, players);
 		text_set(named(stats, "player_count_label", 0), text);
@@ -4077,7 +4111,7 @@ static void lobby_browser_update(struct widget_instance *list)
 			MAX(1, (lobby_browser.count + BROWSER_ROWS - 1) / BROWSER_ROWS));
 		text_set(named(stats, "page_count_label", 0), text);
 		string_get(JOIN_GAME_LABELS, _join_game_label_servers, label);
-		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %d", label, lobby_browser.count);
+		browser_game_count_text(text, label, lobby_browser.count, dedicated);
 		text_set(named(stats, "server_count_label", 0), text);
 	}
 	browser_focus(list);
@@ -4311,7 +4345,7 @@ static void browser_update(struct widget_instance *list)
 			text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" :
 				player_capacity_exceeded(game->maximum_player_count) ? L"BIG" : L"");
 		visible_set(named(row, "server_item_locked", 0), FALSE);
-		visible_set(named(row, "server_item_dedicated", 0), FALSE);
+		visible_set(named(row, "server_item_dedicated", 0), advertised_dedicated(game));
 		visible_set(named(row, "server_item_classic", 0), FALSE);
 	}
 	{
@@ -4390,10 +4424,14 @@ static void browser_update(struct widget_instance *list)
 	{
 		wchar_t label[ROW_TEXT_LENGTH], text[ROW_TEXT_LENGTH];
 		long players = 0;
+		int dedicated = 0;
 		short index;
 
 		for (index = 0; index < multiplayer.game_count; index++)
+		{
 			players += multiplayer.games[index]->player_count;
+			dedicated += advertised_dedicated(multiplayer.games[index]) != 0;
+		}
 		string_get(JOIN_GAME_LABELS, _join_game_label_players, label);
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %ld", label, players);
 		text_set(named(stats, "player_count_label", 0), text);
@@ -4402,7 +4440,7 @@ static void browser_update(struct widget_instance *list)
 		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s 1/1", label);
 		text_set(named(stats, "page_count_label", 0), text);
 		string_get(JOIN_GAME_LABELS, _join_game_label_servers, label);
-		usnprintf(text, ROW_TEXT_LENGTH - 1, L"%s %d", label, multiplayer.game_count);
+		browser_game_count_text(text, label, multiplayer.game_count, dedicated);
 		text_set(named(stats, "server_count_label", 0), text);
 	}
 	browser_focus(list);

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- VISR's two-unit server rack, drawn for the shared engine browser. -->
+  <g fill="none" stroke="#2896ff" stroke-width="1.2">
+    <rect x="2.5" y="3" width="11" height="4" rx="0.6"/>
+    <rect x="2.5" y="9" width="11" height="4" rx="0.6"/>
+    <path d="M7 5h4M7 11h4"/>
+  </g>
+  <g fill="#2896ff"><circle cx="4.5" cy="5" r="0.65"/><circle cx="4.5" cy="11" r="0.65"/></g>
+</svg>

@@ -810,6 +810,7 @@ static struct
 	word version;
 	byte flags;
 	byte kind;
+	boolean dedicated;
 } network_game_client_advertised_versions[MAXIMUM_NETWORK_ADVERTISED_GAMES];
 
 /* port: the network version of the host this client joined (this machine's
@@ -2539,10 +2540,22 @@ static boolean add_advertised_game(
 				(advertisement->__unknown5A[HALO_PORT_ADVERTISED_VERSION_OFFSET + 1] << 8));
 			network_game_client_advertised_versions[game_index].flags =
 				advertisement->__unknown5A[HALO_PORT_ADVERTISED_FLAGS_OFFSET];
-			/* port: version 37 assigns this reserved byte to the mode and
-			Hardcore flag. Earlier hosts do not advertise a game kind. */
+			/* port: Delta uses these reserved bytes for its own metadata.
+			Only the OpenCE layout assigns the flags/kind bytes these meanings. */
+			boolean delta = FALSE;
+			unsigned int reserved;
+
+			for (reserved = HALO_PORT_ADVERTISED_KIND_OFFSET + 1;
+				reserved < sizeof(advertisement->__unknown5A); reserved++)
+			{
+				if (advertisement->__unknown5A[reserved])
+					delta = TRUE;
+			}
+			network_game_client_advertised_versions[game_index].dedicated = !delta &&
+				halo_network_version_has_dedicated(network_game_client_advertised_versions[game_index].version) &&
+				(network_game_client_advertised_versions[game_index].flags & 0x04) != 0;
 			network_game_client_advertised_versions[game_index].kind =
-				halo_network_version_has_game_kind(network_game_client_advertised_versions[game_index].version) ?
+				!delta && halo_network_version_has_game_kind(network_game_client_advertised_versions[game_index].version) ?
 				advertisement->__unknown5A[HALO_PORT_ADVERTISED_KIND_OFFSET] : 0;
 		}
 
@@ -3211,6 +3224,17 @@ unsigned int network_game_client_advertised_game_kind(
 
 	return index >= 0 && index < MAXIMUM_NETWORK_ADVERTISED_GAMES ?
 		network_game_client_advertised_versions[index].kind : 0;
+}
+
+/* port: kept beside the guest record so its fixed layout does not change. */
+boolean network_game_client_advertised_game_dedicated(
+	struct network_game_client *client,
+	struct network_advertised_game const *game)
+{
+	long index = client ? game - client->available_games : NONE;
+
+	return index >= 0 && index < MAXIMUM_NETWORK_ADVERTISED_GAMES &&
+		network_game_client_advertised_versions[index].dedicated;
 }
 
 /* port: whether the advertised game is under way (HALO_PORT_ADVERTISED_IN_PROGRESS_FLAG),
