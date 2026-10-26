@@ -19,7 +19,9 @@ from tools.test_release_assets import asset_policy
 
 
 def policy():
-    return {**asset_policy(), "guest_source_date_epoch": "1792392070"}
+    # a new release reads this source's profile feed generation (release_validation.require_asset_policy)
+    return {**asset_policy(), "profile_feed_url": "https://example.invalid/tester/device-profiles-2",
+            "guest_source_date_epoch": "1792392070"}
 
 
 def recording_summary_context() -> dict[str, Any]:
