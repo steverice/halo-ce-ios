@@ -221,6 +221,27 @@ run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="tes
     'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
     'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'data-updates-probe')
 run(BUILD / 'data-updates-probe')
+# 0.6.0 profiles keep every bundled key (the iPhone 17 Pro's player capacity, the Apple TV 4K (3rd generation)'s
+# upscaled textures): with 0.5.1's live device-profiles-1 shard still cached, with a
+# device-profiles-2 shard signed here by the publisher, and once an update makes a cached shard older
+seed = BUILD / 'profile-feed-probe-seed'
+seed.write_bytes(bytes(range(32))); seed.chmod(0o600)
+for name, target in (('iphone', 'ios/iPhone18,1/_'), ('apple-tv', 'tvos/AppleTV14,1/_')):
+    run('python3', 'tools/data_pack.py', '--kind', 'profiles', '--channel', 'tester', '--sequence', '1',
+        '--compatibility', 'device-profiles-2:' + target, '--input', 'profiles', '--signing-key', seed,
+        '--output', BUILD / f'profile-feed-probe-{name}.json')
+probe_key = subprocess.run([str(BUILD / 'data-pack-sign'), '--public-key', str(seed)], check=True,
+                           capture_output=True, text=True, cwd=ROOT).stdout.strip()
+run('xcrun', 'clang', '-O2', '-fobjc-arc', '-fblocks', '-DHALO_GUEST_SHA256="test-guest"',
+    '-Iport/ios/host', '-Iport/runtime/include', '-Iport/third_party/tomlc17', '-framework', 'Foundation',
+    '-framework', 'Network', '-lz', 'port/ios/tests/profile_feed_probe.m', 'port/ios/host/host_data_pack.m',
+    'port/ios/host/host_profile.c', 'port/ios/host/host_profile_catalog.c', 'port/ios/host/host_profile_delivery.c',
+    'port/ios/host/host_recording_pack.c', 'port/ios/host/host_shader_pack.c', 'port/ios/host/host_benchmark_catalog.m', 'port/runtime/benchmark_plan.c',
+    'port/third_party/tomlc17/tomlc17.c', 'port/third_party/monocypher/monocypher.c',
+    'port/third_party/monocypher/monocypher-ed25519.c', '-o', BUILD / 'profile-feed-probe')
+run(BUILD / 'profile-feed-probe', ROOT,
+    re.search(r"^DATA_PACK_PUBLIC_KEY = '([0-9a-f]{64})'", (ROOT / 'tools/ios_build.py').read_text(), re.M)[1],
+    probe_key, BUILD / 'profile-feed-probe-iphone.json', BUILD / 'profile-feed-probe-apple-tv.json')
 run('xcrun', 'clang', '-O2', '-fsanitize=address,undefined', '-Wall', '-Wextra', '-Werror', '-fobjc-arc', '-fblocks',
     '-Iport/runtime/include', '-framework', 'Foundation', '-lz', 'port/ios/tests/shader_download_probe.m',
     'port/ios/host/host_data_pack.m', 'port/ios/host/host_shader_pack.c',
@@ -236,6 +257,7 @@ run(BUILD / 'benchmark-snapshot-probe')
 # one profile a model, each platform's classes covering every GPU family once; and the checker's refusals
 run('python3', 'tools/settings_schema.py', '--check')
 run('python3', 'tools/profile_check.py')
+run('python3', 'tools/profile_revision.py')
 run('python3', 'tools/test_profile_check.py')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-Iport/ios/host',
     'port/ios/tests/touch_replay_probe.c', '-o', BUILD / 'touch-replay-probe')

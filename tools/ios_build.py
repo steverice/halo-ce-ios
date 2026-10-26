@@ -33,6 +33,8 @@ HEADERS = {
 # feeds on the project's site, one folder per channel
 DATA_PACK_PUBLIC_KEY = 'b57463a3c1b157fdb49a4df5c2041b88cabf07b4ba733d0c7290b90d85e3b5ea'
 DATA_PACK_FEED = 'https://code.steverice.org/visr/packs/{channel}/{kind}.json'
+# the device-profile shards' directory for this source's feed generation (tools/data_pack.py, PROFILE_FEED_DOMAIN)
+PROFILE_FEED_DIRECTORY = 'device-profiles-2'
 
 HOST_PROFILE = ROOT / 'pgo/visr_host.profdata'
 HOST_PROFILE_RAW = ROOT / 'build/host-pgo/raw'
@@ -591,7 +593,7 @@ def data_pack_settings(args):
         return '', '', '', ''
     channel = getattr(args, 'data_pack_channel', None) or ('tester' if args.tester else 'stable')
     return (DATA_PACK_PUBLIC_KEY if args.data_pack_public_key is None else args.data_pack_public_key,
-            DATA_PACK_FEED.format(channel=channel, kind='profiles').removesuffix('.json') if args.profile_feed_url is None else args.profile_feed_url,
+            DATA_PACK_FEED.format(channel=channel, kind=PROFILE_FEED_DIRECTORY).removesuffix('.json') if args.profile_feed_url is None else args.profile_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='recordings') if args.recording_feed_url is None
             else args.recording_feed_url,
             DATA_PACK_FEED.format(channel=channel, kind='shaders') if args.shader_feed_url is None else args.shader_feed_url)
