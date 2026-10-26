@@ -23,6 +23,12 @@ render_height = 720
 output_height = 1080
 anisotropic_filtering = 4
 model_lod = "auto"
+dynamic_resolution = true
+
+[evidence."display.dynamic_resolution"]
+basis = "assumed"
+why = "The same A10X GPU as the iPad Pro 12.9-inch (2nd generation), where dynamic resolution took the Maw fight from 76.1% to 99.8% on time at 60 frames a second. With the 1080 output and 720 render lines the 0.5.0 run on a 4K TV held 4 of 6 1x windows; dynamic resolution lowers the scene to 540 lines in the heavy frames. tvOS stage timing is unmeasured; without timing dynamic resolution stays off and says so in the log."
+source = "VISR presented benchmark runs on the iPad Pro 12.9-inch (2nd generation), 2026-10-25; Apple TV 4K (1st generation) suite reports T5LDF3R7 and U764MX75"
 
 [scene.menu.display]
 render_scale = 1.0

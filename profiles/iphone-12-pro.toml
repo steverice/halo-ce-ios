@@ -18,6 +18,7 @@ render_height = 900
 anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
+dynamic_resolution = true
 
 [network]
 player_capacity = 8
@@ -46,6 +47,11 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "Maximum against automatic model detail cost 0.17 to 0.23 ms a frame at 720 lines."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.dynamic_resolution"]
+basis = "measured"
+why = "Presented d40-maw-fight at this profile's 900 lines and 30 frames a second: 100% of frames on time with dynamic resolution off and on; it rendered all 2,273 frames at the ceiling, so it costs nothing where the GPU keeps up and is there for heavier scenes. The report's lines distribution confirms the A14 has the stage timing the planner needs."
+source = "VISR presented benchmark runs, build 20261025.213708, 2026-10-25"
 
 [scene.menu.display]
 frame_rate = "60"

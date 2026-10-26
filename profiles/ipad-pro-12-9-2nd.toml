@@ -19,6 +19,7 @@ render_height = 900
 anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
+dynamic_resolution = true
 
 [network]
 player_capacity = 8
@@ -47,6 +48,11 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "Automatic model detail changed the frame by -0.13 to +0.05 ms against maximum detail at 900 lines, nothing a 30 frames a second budget needs."
 source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
+
+[evidence."display.dynamic_resolution"]
+basis = "measured"
+why = "Presented d40-maw-fight at 1080 lines and 60 frames a second: 76.1% and 92.5% of frames on time with dynamic resolution off, 99.8% and 99.9% with it on (540 to 1080 lines, median 800); a10-heroic 99.25% against 99.83%. At this profile's 900 lines and 30 frames a second it is a safety net for heavier scenes than the windows measured."
+source = "VISR presented benchmark runs, builds 20261025.132032 and 20261025.183442, 2026-10-25"
 
 [scene.menu.display]
 render_height = 0

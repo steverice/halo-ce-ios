@@ -13,6 +13,7 @@ render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
 effect_resolution = "half"
+dynamic_resolution = true
 
 [network]
 player_capacity = 32
@@ -46,3 +47,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "measured"
 why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held (99.84% of frames on time) and so did Sidewinder with 128 (99.76%); Blood Gulch with 64 held 13%. Blood Gulch's 64 is the choice above 32, and 48 was not run; the games that held are not the one that failed, so 32 is the highest count measured to hold on every map. Provisional until rerun on a build with the multiplayer render fixes."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"
+
+[evidence."display.dynamic_resolution"]
+basis = "measured"
+why = "Presented d40-maw-fight at 1080 and 1600 lines and 120 frames a second: 99.97% and 99.99% of frames on time off, 99.97% and 99.96% on, with short drops of up to three levels and recovery within a second; no cost where the GPU keeps up."
+source = "VISR presented benchmark runs, build 20261025.132032, 2026-10-25"
