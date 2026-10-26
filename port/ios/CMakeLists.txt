@@ -400,6 +400,12 @@ set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION 
 target_sources(VISR PRIVATE Licenses/PBRify-CC0-1.0.txt Licenses/BC7-MIT-ISC.txt)
 set_source_files_properties(Licenses/PBRify-CC0-1.0.txt Licenses/BC7-MIT-ISC.txt PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
 # CloudKit upload capabilities select linked diagnostic disclosure independently of the tester interface.
+# Development-only launch switches (the upscaler's stop test, cache clean and import-phase hooks); tools/ios_build.py
+# turns it off for App Store packages, and it is off unless asked for
+option(HALO_DEVELOPMENT_HOOKS "Compile in development-only launch switches" OFF)
+if(HALO_DEVELOPMENT_HOOKS)
+    target_compile_definitions(VISR PRIVATE HALO_DEVELOPMENT_HOOKS=1)
+endif()
 option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
 if(HALO_TESTER_BUILD)
     target_sources(VISR PRIVATE host/host_benchmark_menu.m)

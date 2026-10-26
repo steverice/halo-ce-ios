@@ -474,3 +474,31 @@ def test_native_mac_testflight_build_names_the_tester_channel_and_the_ios_record
 def test_sandbox_is_only_for_the_native_mac(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         configure_with(monkeypatch, tmp_path, '--unsigned', '--sandbox', 'on')
+
+
+def test_development_hooks_are_compiled_out_of_app_store_packages(tmp_path):
+    from types import SimpleNamespace
+
+    assert ios_build.development_hooks(SimpleNamespace(app_store_package=tmp_path)) == '-DHALO_DEVELOPMENT_HOOKS=OFF'
+    assert ios_build.development_hooks(SimpleNamespace(app_store_package=None)) == '-DHALO_DEVELOPMENT_HOOKS=ON'
+    assert ios_build.development_hooks(SimpleNamespace()) == '-DHALO_DEVELOPMENT_HOOKS=ON'
+
+
+@pytest.mark.parametrize('path, switch', [
+    ('port/ios/host/host_texture_upscale.m', 'HALO_TEXTURE_UPSCALE_STOP_TEST'),
+    ('port/ios/host/host_import.m', 'HALO_TEXTURE_UPSCALE_IMPORT_PHASE'),
+])
+def test_development_switches_are_read_only_inside_the_hooks_guard(path, switch):
+    lines = (Path(__file__).resolve().parents[1] / path).read_text().splitlines()
+    depth, guarded = 0, []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('#if'):
+            depth = depth + 1 if depth or stripped != '#ifdef HALO_DEVELOPMENT_HOOKS' else 1
+        elif stripped.startswith('#else') and depth == 1:
+            depth = -1
+        elif stripped.startswith('#endif') and depth:
+            depth = depth - 1 if depth > 1 else 0
+        if f'getenv("{switch}")' in line:
+            guarded.append(depth >= 1)
+    assert guarded and all(guarded)
