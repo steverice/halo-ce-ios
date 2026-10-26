@@ -77,16 +77,18 @@ static void symbols_load(void)
 	symbol_count = count;
 }
 
-/* the guest function holding address, or NULL; *offset is address's offset into it */
-static const char *guest_symbol(uint32_t address, uint32_t *offset)
+/* the guest function holding address, or NULL; *offset is address's offset into it. A return address
+   (returning, after a call that is a function's last instruction) can be the first byte of the next
+   function: it is looked up one byte back, in the calling function */
+static const char *guest_symbol(uint32_t address, int return_address, uint32_t *offset)
 {
-	uint32_t low = 0, high = symbol_count;
+	uint32_t low = 0, high = symbol_count, looked_up = address - (return_address ? 1 : 0);
 
 	while (low < high)
 	{
 		uint32_t middle = low + (high - low) / 2;
 
-		if (symbols[middle].address <= address)
+		if (symbols[middle].address <= looked_up)
 			low = middle + 1;
 		else
 			high = middle;
@@ -192,7 +194,7 @@ static void text_decimal(struct text *text, long value)
 }
 
 /* "guest 0x88123456 name+0x1c", or nothing for an address outside guest code */
-static void text_guest(struct text *text, uintptr_t address)
+static void text_guest(struct text *text, uintptr_t address, int return_address)
 {
 	uint32_t offset = 0;
 	const char *name;
@@ -201,7 +203,7 @@ static void text_guest(struct text *text, uintptr_t address)
 		return;
 	text_add(text, " guest ");
 	text_hex(text, (uint32_t)address, 8);
-	name = guest_symbol((uint32_t)address, &offset);
+	name = guest_symbol((uint32_t)address, return_address, &offset);
 	if (name)
 	{
 		text_add(text, " ");
@@ -211,8 +213,9 @@ static void text_guest(struct text *text, uintptr_t address)
 	}
 }
 
-/* "name+0x1c < name+0x40 < ..." for the guest frames among frames */
-static void text_guest_frames(struct text *text, const uintptr_t *frames, int count, int limit)
+/* "name+0x1c < name+0x40 < ..." for the guest frames among frames; the first is a pc when first_is_pc,
+   and the rest are return addresses */
+static void text_guest_frames(struct text *text, const uintptr_t *frames, int count, int limit, int first_is_pc)
 {
 	int index, shown = 0;
 
@@ -225,7 +228,7 @@ static void text_guest_frames(struct text *text, const uintptr_t *frames, int co
 			continue;
 		if (shown++)
 			text_add(text, " < ");
-		name = guest_symbol((uint32_t)frames[index], &offset);
+		name = guest_symbol((uint32_t)frames[index], index > 0 || !first_is_pc, &offset);
 		if (name)
 		{
 			text_add(text, name);
@@ -326,11 +329,11 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 		text_add(&text, " ");
 		text_hex(&text, pc, 1);
 	}
-	text_guest(&text, pc);
+	text_guest(&text, pc, 0);
 	if (guest_code_contains(pc) || guest_code_contains(lr))
 	{
 		text_add(&text, " [guest: ");
-		text_guest_frames(&text, frames, count, REASON_FRAMES);
+		text_guest_frames(&text, frames, count, REASON_FRAMES, pc != 0);
 		text_add(&text, "]");
 	}
 	text_add(&text, " (guest image ");
@@ -347,7 +350,7 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 		text_hex(&registers, host_arena, 16);
 		text_add(&registers, ", lr ");
 		text_hex(&registers, lr, 16);
-		text_guest(&registers, lr);
+		text_guest(&registers, lr, 1);
 		text_add(&registers, ", fp ");
 		text_hex(&registers, fp, 16);
 		text_add(&registers, ", sp ");
@@ -382,7 +385,7 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 		text_decimal(&frame, index);
 		text_add(&frame, ": ");
 		text_hex(&frame, frames[index], 16);
-		text_guest(&frame, frames[index]);
+		text_guest(&frame, frames[index], index > 0 || !pc);
 		text_add(&frame, "\n");
 		log_write(line, frame.length);
 	}
@@ -420,6 +423,9 @@ void host_crash_install(int descriptor)
 
 /* ---------- fatal errors */
 
+/* frames are return addresses (crash_now's walk starts at its own frame record), so each is looked up
+   one byte back: after a noreturn call that ends a function, the return address is the next function's
+   first byte */
 static void log_frames(const uintptr_t *frames, int count)
 {
 	int index;
@@ -430,8 +436,8 @@ static void log_frames(const uintptr_t *frames, int count)
 		struct text text = { guest, sizeof(guest), 0 };
 		Dl_info found;
 
-		text_guest(&text, frames[index]);
-		if (!text.length && dladdr((const void *)frames[index], &found) && found.dli_sname)
+		text_guest(&text, frames[index], 1);
+		if (!text.length && dladdr((const void *)(frames[index] - 1), &found) && found.dli_sname)
 			snprintf(guest, sizeof(guest), " %s+0x%lx", found.dli_sname,
 				(unsigned long)(frames[index] - (uintptr_t)found.dli_saddr));
 		host_logf(HOST_LOG_ERROR, "CRASH: frame %d: 0x%016lx%s", index, (unsigned long)frames[index], guest);
@@ -499,7 +505,7 @@ static void crash_now(enum crash_kind kind, const char *message)
 		if (guest)
 		{
 			text_add(&text, " [guest: ");
-			text_guest_frames(&text, frames, count, REASON_FRAMES);
+			text_guest_frames(&text, frames, count, REASON_FRAMES, 0);
 			text_add(&text, "]");
 		}
 	}
