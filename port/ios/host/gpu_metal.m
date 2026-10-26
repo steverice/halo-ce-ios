@@ -5554,6 +5554,23 @@ static void gpu_metal_anti_alias(uint32_t method, gpu_texture target, const stru
 		[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0
 			sourceOrigin:MTLOriginMake(area.x, area.y, 0) sourceSize:MTLSizeMake(area.width, area.height, 1)
 			toTexture:post.color destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(area.x, area.y, 0)];
+		/* dynamic resolution's pool: past the content's right and bottom edges
+		post.color holds an earlier, larger frame, which SMAA's passes would
+		read as edges; repeat the edge texels there, as a whole texture's clamp
+		would (only for a pooled target: a split-screen view's neighbor stays) */
+		if (record->content_width)
+		{
+			NSUInteger right = area.x + area.width, bottom = area.y + area.height, band;
+
+			for (band = 0; band < 4 && right + band < width; band++)
+				[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(right - 1, area.y, 0)
+					sourceSize:MTLSizeMake(1, area.height, 1) toTexture:post.color destinationSlice:0 destinationLevel:0
+					destinationOrigin:MTLOriginMake(right + band, area.y, 0)];
+			for (band = 0; band < 4 && bottom + band < height; band++)
+				[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(area.x, bottom - 1, 0)
+					sourceSize:MTLSizeMake(area.width, 1, 1) toTexture:post.color destinationSlice:0 destinationLevel:0
+					destinationOrigin:MTLOriginMake(area.x, bottom + band, 0)];
+		}
 		[blit endEncoding];
 		use_texture(record);
 		if (!smaa)
