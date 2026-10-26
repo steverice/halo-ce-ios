@@ -486,6 +486,8 @@ static void release_generator(const char *why) {
     dispatch_sync(finisher,^{});
     uint64_t before=footprint();
     texture_upscale_generate_destroy(generator);generator=NULL;
+    /* the mappings kept for the next texture go too (texture_upscale_big.h) */
+    texture_upscale_big_trim();
     malloc_zone_pressure_relief(NULL,0);
     uint64_t after=footprint();
     host_logf(HOST_LOG_INFO,"Upscale: released the generator (%s): footprint %llu MB, then %llu MB; %llu MB before it was made",
