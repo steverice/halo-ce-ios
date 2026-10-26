@@ -114,9 +114,13 @@ static void submit(void) API_AVAILABLE(ios(26.0)) {
             (long)error.code, error.localizedDescription.UTF8String);
         @synchronized (continued_lock) { texture_upscale_continued_step(&continued_state, TEXTURE_UPSCALE_CONTINUED_REFUSED); }
     };
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000
+    /* the completion-handler form exists only in the iOS 27 SDK; older SDKs (the hosted CI image) lack the selector */
     if (@available(iOS 27.0, *)) {
         [scheduler submitTaskRequest:request completionHandler:submitted];
-    } else {
+    } else
+#endif
+    {
         NSError *error = nil;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
