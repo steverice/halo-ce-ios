@@ -195,6 +195,9 @@ def test_publish_reads_archive_after_xcode_consumes_normal_product(
         import release_validation as validation
 
         monkeypatch.setattr(publisher, "ROOT", controller)
+    # the unsigned apps have their own tests (tools/test_release_unsigned.py)
+    monkeypatch.setattr(publisher, "unsigned_release_assets", lambda *_: [])
+    monkeypatch.setattr(publisher, "attach_unsigned_assets", lambda *_: None)
     guest, executable = binaries()
     if benchmark_upload:
         manifest["build_policy"]["benchmark_upload"] = "on"

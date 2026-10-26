@@ -1,6 +1,6 @@
 # Releasing VISR
 
-The **Release** workflow generates `CHANGELOG.md` with Commitizen, summarizes the new entry, commits the changelog and release manifest, creates a version tag, uploads internal TestFlight builds, and publishes a GitHub release without attached assets. The changelog and GitHub release contain the summary followed by the complete generated entry. The manifest records the full-entry hash and the exact summary text, hash, and model. TestFlight **What to Test** uses the pinned summary. No game data is included.
+The **Release** workflow generates `CHANGELOG.md` with Commitizen, summarizes the new entry, commits the changelog and release manifest, creates a version tag, uploads internal TestFlight builds, and publishes a GitHub release with the unsigned iPhone and iPad, Apple TV and Apple Vision Pro apps attached. The changelog and GitHub release contain the summary followed by the complete generated entry. The manifest records the full-entry hash and the exact summary text, hash, and model. TestFlight **What to Test** uses the pinned summary. No game data is included.
 
 Run releases through `workflow_dispatch` on `main`. The default `validate` mode builds unsigned provenance only. It does not create release metadata, tags, uploads, or GitHub releases. The `auth` mode checks Claude workload identity only; it does not build, generate a summary, create tags, or publish. Select `release` only after reviewing provenance and configuring the matching build policy. Do not run `cz bump` locally, edit versions, or edit `CHANGELOG.md`. Commitizen reads the version from `visr-vX.Y.Z` tags. Its parser accepts the repository's existing optional gitmoji prefixes and all documented commit types, including `perf`, `build`, `revert`, and `merge`. Features increment minor, fixes and performance changes increment patch, and breaking changes increment major. Other types appear in the changelog without forcing a version increment. Plain upstream subjects outside the conventional format do not become changelog entries. Existing upstream `v*-ios` tags do not establish a VISR release boundary.
 
@@ -82,11 +82,11 @@ In `release` mode, the workflow repeats the unsigned probe, then validates exist
 
 | Input | Value |
 | --- | --- |
-| `mode` | `validate` (default) produces unsigned provenance only; `auth` checks Claude WIF without building or publishing; `release` enables the protected release stages |
+| `mode` | `validate` (default) produces unsigned provenance only; `auth` checks Claude WIF without building or publishing; `release` enables the protected release stages; `unsigned` builds the unsigned apps of the existing tag named in `resume_tag` as a workflow artifact, without publishing |
 | `source_sha` | Reviewed, full 40-character `main` commit SHA for `validate` and `release`; not needed for `auth`; for recovery, use the original source SHA from `.release/current.json` |
 | `platforms` | Unique comma-separated subset of `ios,tvos,visionos,macos`; defaults to `ios,tvos` |
 | `increment` | `auto`, `patch`, `minor`, or `major`; default `auto` |
-| `resume_tag` | Empty for a new release; the existing `visr-vX.Y.Z` tag for recovery |
+| `resume_tag` | Empty for a new release; the existing `visr-vX.Y.Z` tag for recovery, or the tag to build in `unsigned` mode |
 | `bootstrap_since` | First managed release only: explicitly reviewed full ancestor SHA defining the initial changelog range |
 | `bootstrap_version` | First managed release only: current TestFlight marketing version; defaults to `0.1.2` and cannot be lower |
 
@@ -128,7 +128,15 @@ The application stays checked out at the release tag in `GITHUB_WORKSPACE`. Publ
 
 Before starting an upload, the script persists its `uploading` checkpoint. If the upload times out or the runner disappears, recovery only polls that exact build. It does not repeat an uncertain upload or invent a new build number. If App Store Connect never receives that build, inspect the failed upload and draft journal before an operator decides how to proceed. An unresolved ambiguous upload remains a failure requiring manual reconciliation. Preserve the tag and draft; do not delete them and start another release to conceal the failure.
 
-A release that is already published with identical notes and no attached assets is a successful no-op on recovery. A matching tag with edited notes or mismatched inputs fails.
+A release that is already published with identical notes is a successful no-op on recovery. A matching tag with edited notes or mismatched inputs fails.
+
+## Unsigned apps
+
+Each GitHub release carries `VISR-iOS-unsigned.ipa`, `VISR-tvOS-unsigned.ipa` and `VISR-visionOS-unsigned.ipa`, each with a `.sha256` file, for people who sign and install the app themselves. The `unsigned` job builds them after preparation with `tools/release_unsigned.py build`, in a checkout of the release tag, using the reviewed controller. They use the manifest's version, build number, source and guest epochs, feeds and optimization settings, and they leave out iCloud saves and the CloudKit uploads, which need the signed app's entitlements. None of these options changes the guest, so every app carries the release guest that the build policy pins.
+
+Before anything is attached, the job and then the publish step check every app: `codesign --display` must report each bundle and Mach-O file as not signed at all, no provisioning profile or `_CodeSignature` folder may be present, no file may contain the team ID (the publish step reads it from `APPLE_TEAM_ID`; the build job has no secrets and skips this one check), the version and build number must match the manifest, and the archived guest must equal both the pinned `guest_sha256` and the guest ELF built beside it. The publish step checks the apps before the first signed build, then attaches them to the draft just before publication. Attaching does not change the release body or its recovery journal. On recovery, an asset whose size or SHA-256 digest differs from the verified file is deleted and uploaded again. A release may carry no other assets.
+
+For a release made before this job existed, dispatch `mode=unsigned` with `resume_tag` set to its tag, download the `visr-release-unsigned` artifact, check it with `python3 tools/release_unsigned.py verify FOLDER --manifest MANIFEST --team-id TEAM_ID` against that tag's `.release/current.json`, and attach the six files with `gh release upload`.
 
 ## Runner requirements and limits
 
