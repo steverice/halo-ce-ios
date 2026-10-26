@@ -63,7 +63,9 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
         values = {f"{system}_minimum": version.removesuffix(".0") for system, version in versions.items()}
         return "\n".join("- " + bullet.format(**values) for bullet in facts["platforms"][name]["bullets"])
     if kind == "shared" and name == "every-device":
-        return "\n".join(f"- **{item['title']}:** {item['text']}" for item in facts["every-device"]["items"])
+        # Site-relative links (the site page `benchmarks.html`) need the site's address in the README.
+        return "\n".join(f"- **{item['title']}:** " + item["text"].replace("](benchmarks.html)", f"]({SITE_URL}/benchmarks.html)")
+                         for item in facts["every-device"]["items"])
     if kind == "shared":
         key = name.replace("-", "_")
         if key in facts["shared"]:
@@ -71,6 +73,7 @@ def fact_block(kind: str, name: str, facts: dict) -> str:
     raise ValueError(f"Unknown facts block: {kind}: {name}")
 
 
+SITE_URL = "https://code.steverice.org/visr"
 PAGES = ("index",)
 
 NAV_ICONS = {"Get VISR": "download", "Vision Pro": "vision-pro", "iPhone": "iphone", "iPad": "ipad", "Apple TV": "apple-tv",

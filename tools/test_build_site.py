@@ -167,7 +167,9 @@ def test_every_device_items_are_readme_bullets_and_site_columns():
     facts = load_facts()
     items = facts['every-device']['items']
     text = expand_includes('{{ shared: every-device }}', facts)
-    assert text.splitlines() == [f"- **{item['title']}:** {item['text']}" for item in items]
+    # The README states the site's address for the page-relative benchmarks link.
+    site_link = lambda value: value.replace("](benchmarks.html)", "](https://code.steverice.org/visr/benchmarks.html)")
+    assert text.splitlines() == [f"- **{item['title']}:** {site_link(item['text'])}" for item in items]
     page = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
     columns = page.split('<ul class="pillars">', 1)[1].split('</ul>', 1)[0]
     assert columns.count('<li>') == len(items)
@@ -275,7 +277,7 @@ def test_platform_bullets_name_each_minimum_os_and_columns_render_links():
 
 
 
-def test_home_page_keeps_its_own_url_and_links_benchmarks_on_github():
+def test_home_page_keeps_its_own_url_and_links_the_benchmarks_page():
     home = render_site((ROOT / 'docs/site/index.md').read_text(encoding='utf-8'))
     assert '<meta property="og:url" content="https://code.steverice.org/visr/">' in home
-    assert 'https://github.com/steverice/visr/blob/main/docs/benchmarks.md' in home
+    assert 'href="benchmarks.html"' in home and 'docs/benchmarks.md' not in home
