@@ -75,9 +75,12 @@ static void add(uint64_t frame, unsigned category, uint64_t duration, int valid)
         if (atomic_compare_exchange_weak(value, &seen, next)) break;
     }
 }
+/* a Metal device is in use: command-buffer GPU spans exist, the timing fallback's input */
+static int metal_seen;
 void host_perf_metal_initialize(id<MTLDevice> device) {
     /* Called once before play; never replace buffers while callbacks can run. */
     candidate_device = device;
+    if (device) metal_seen = 1;
     if (counter_device || !device || !(host_perf_reports_enabled() || host_perf_hooks_dynamic_enabled())) return;
     counter_device = device;
     if ([device supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary]) mode = 1;
@@ -146,6 +149,12 @@ uint32_t host_perf_metal_prepare(id<MTLCommandBuffer> commands, MTLRenderPassDes
 int host_perf_metal_needs_split(void) {
     /* Only shadow mode splits encoders; report builds keep the shared encoder. */
     return mode == 2 && host_perf_hooks_dynamic_enabled();
+}
+int host_perf_metal_timing_supported(void) {
+    return host_perf_metal_stage_supported() || metal_seen;
+}
+void host_perf_metal_frame_touch(uint64_t frame) {
+    if (frame && host_perf_hooks_dynamic_enabled()) frame_prepare(frame);
 }
 int host_perf_metal_stage_supported(void) {
     return counter_device && mode && [counter_device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
@@ -333,8 +342,19 @@ void host_perf_metal_complete(id<MTLCommandBuffer> commands) {
         break;
     }
 }
+/* The timing fallback's U+H: the median of the last 0.5 s or so of the rest's spans (32 frames), since a single
+ * frame's present buffer may hold a drawable wait; the scene's own buffers never do */
+static double rest_median(double rest) {
+    static double ring[32];
+    static unsigned count, next;
+    double sorted[32];
+    ring[next] = rest; next = (next + 1) % 32; if (count < 32) count++;
+    memcpy(sorted, ring, sizeof(double) * count);
+    qsort(sorted, count, sizeof(double), compare_doubles);
+    return sorted[count / 2];
+}
 static void dynamic_join(game_perf_frame *frame) {
-    if (host_perf_metal_stage_supported()) frame->drs.available |= 8;
+    if (host_perf_metal_timing_supported()) frame->drs.available |= 8;
     os_unfair_lock_lock(&group_lock);
     typeof(grouped[0]) *entry = &grouped[frame->frame_id % FRAME_COUNT];
     if (entry->frame == frame->frame_id) {
@@ -368,6 +388,18 @@ static void dynamic_join(game_perf_frame *frame) {
             if (entry->span_count)
                 timing_check((double)frame->drs.scene_us, (double)(frame->drs.upscale_us + frame->drs.hud_us),
                     span_union(entry, 1), span_union(entry, 0), (int)entry->late);
+        }
+        /* No stage-boundary sampling: the scene's command buffers' GPU spans are S (on a device with both they
+         * matched stage timing in every window), and the rest's median is U+H; marked coarse (16) */
+        else if (!host_perf_metal_stage_supported() && entry->span_count && !(entry->invalid & (1u << HOST_PERF_SCENE)) &&
+            !(frame->flags & GAME_PERF_GPU_UNAVAILABLE)) {
+            double scene = span_union(entry, 1), rest = span_union(entry, 0);
+            if (scene > 0.0) {
+                frame->drs.scene_us = (uint64_t)scene;
+                frame->drs.upscale_us = 0;
+                frame->drs.hud_us = (uint64_t)rest_median(rest);
+                frame->drs.available |= 1 | 16;
+            }
         }
     }
     os_unfair_lock_unlock(&group_lock);

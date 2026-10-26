@@ -63,16 +63,16 @@ int host_perf_hooks_dynamic_enabled(void) {
 int host_perf_hooks_dynamic_actuates(void) { return host_perf_hooks_dynamic_enabled() && dynamic_setting >= 0 && dynamic_actuate; }
 /* the lines the frame being presented rendered at, while dynamic resolution renders them; 0 otherwise */
 int host_perf_hooks_dynamic_lines(void) {
-    return host_perf_hooks_dynamic_actuates() && dynamic_eligible && host_perf_metal_stage_supported() ?
+    return host_perf_hooks_dynamic_actuates() && dynamic_eligible && host_perf_metal_timing_supported() ?
         (int)pending.drs.actual_lines : 0;
 }
 /* Without stage-boundary GPU timing the planner never has a decision to make,
  * so dynamic resolution is off rather than silently holding the ceiling. */
 static int dynamic_timing_available(void) {
     static int said;
-    if (host_perf_metal_stage_supported()) return 1;
+    if (host_perf_metal_timing_supported()) return 1;
     if (!said && dynamic_configured) {
-        fprintf(stderr, "dynamic resolution: off: this GPU has no stage-boundary timing for the planner\n");
+        fprintf(stderr, "dynamic resolution: off: no GPU timing for the planner\n");
         said = 1;
     }
     return 0;

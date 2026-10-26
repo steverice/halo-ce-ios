@@ -814,6 +814,7 @@ static void commit(BOOL frame_end)
 	commits it, then MetalFX's own buffer, then the HUD's and the present's */
 	unsigned span_class = perf_scene_open ? HOST_PERF_SCENE : perf_group == HOST_PERF_UPSCALE ? HOST_PERF_UPSCALE : HOST_PERF_HUD;
 	uint64_t span_frame = host_perf_hooks_dynamic_enabled() ? host_perf_hooks_frame_id() : 0;
+	host_perf_metal_frame_touch(span_frame);
 	if (perf_scene_open && perf_group == HOST_PERF_UPSCALE)
 		perf_scene_open = 0;
 	[committed addCompletedHandler:^(id<MTLCommandBuffer> completed)
@@ -6332,7 +6333,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
         }
         if (host_perf_hooks_dynamic_enabled() && !perf_capability_noted) {
             if (!host_perf_metal_stage_supported())
-                platform_log("DRS shadow: stage-boundary GPU timing is unavailable");
+                platform_log("DRS: no stage-boundary GPU timing; the planner uses command-buffer GPU spans (coarse)");
             else if (![device supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary])
                 platform_log("DRS shadow: sampling separate upscale and HUD stages");
             perf_capability_noted = YES;

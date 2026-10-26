@@ -5,6 +5,10 @@ struct game_perf_frame;
 void host_perf_metal_join(struct game_perf_frame *frame);
 uint64_t host_perf_metal_dropped(void);
 int host_perf_metal_stage_supported(void);
+/* stage-boundary sampling, or the command-buffer fallback (any Metal device): the planner can decide */
+int host_perf_metal_timing_supported(void);
+/* the frame is the game thread's current one: its record is ready for command-buffer spans */
+void host_perf_metal_frame_touch(uint64_t frame);
 /* Stage-only sampling needs an encoder boundary between semantic groups. */
 int host_perf_metal_needs_split(void);
 void host_perf_metal_presented(uint64_t frame, uint64_t time_us, uint64_t budget_us);

@@ -18,7 +18,7 @@ static double load = 1.0;
 static unsigned rows, drops, recoveries;
 static int profile_installed = 1, profile_on, stage_timing = 1, ineligible;
 int host_config_profile_installed(void) { return profile_installed; }
-int host_perf_metal_stage_supported(void) { return stage_timing; }
+int host_perf_metal_timing_supported(void) { return stage_timing; }
 void host_config_string(const char *name, const char *fallback, char *out, size_t size) {
     /* the device profile's value, once installed */
     if (profile_on && profile_installed && !strcmp(name, "display.dynamic_resolution")) { snprintf(out, size, "true"); return; }
