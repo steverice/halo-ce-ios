@@ -2569,8 +2569,8 @@
         },
         "texture_upscale_generate": {
           "type": "string",
-          "default": "off",
-          "description": "Make upscaled textures on this device: \"auto\" where the device's profile and the display.upscaled_textures switch both say so (at import, in menus, loading and pauses, never in gameplay), \"force\" whatever the profile says, \"off\" (default) never.",
+          "default": "auto",
+          "description": "Make upscaled textures on this device: \"auto\" (default) where the device's profile and the display.upscaled_textures switch both say so and Core ML has a Neural Engine (at import, in menus, loading and pauses, never in gameplay), \"force\" whatever the profile says, \"off\" never.",
           "x-environment": "HALO_TEXTURE_UPSCALE_GENERATE",
           "x-environment-style": "value",
           "x-platforms": [

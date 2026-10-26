@@ -640,10 +640,22 @@ void host_texture_upscale_init(const char *root) {
 #endif
         if(!root)return;
         /* Rule 1, before anything else: the profile, then the player's switch, then a Neural Engine (rule 8). */
-        char mode[16]="off",player[16]="";
+        char mode[16]="auto",player[16]="";
         const char *environment=getenv("HALO_TEXTURE_UPSCALE_GENERATE");
-        if(environment)snprintf(mode,sizeof(mode),"%s",environment);else host_config_string("debug.texture_upscale_generate","off",mode,sizeof(mode));
+        if(environment)snprintf(mode,sizeof(mode),"%s",environment);else host_config_string("debug.texture_upscale_generate","auto",mode,sizeof(mode));
         upscale_mode=texture_upscale_mode_parse(mode);
+        /* "auto" stays out of measured runs (a benchmark suite, a benchmark replay, any input replay): their menus
+           would otherwise heat the device and draw on the Neural Engine between takes. "force" still runs. */
+        if(upscale_mode==TEXTURE_UPSCALE_MODE_AUTO){
+            char suite[32]="",replay[256]="",bench[16]="";const char *e=getenv("HALO_BENCHMARK_SUITE");
+            if(e)snprintf(suite,sizeof(suite),"%s",e);else host_config_string("debug.benchmark_suite","",suite,sizeof(suite));
+            e=getenv("HALO_INPUT_REPLAY");if(e)snprintf(replay,sizeof(replay),"%s",e);else host_config_string("debug.input_replay","",replay,sizeof(replay));
+            e=getenv("HALO_BENCHMARK");if(e)snprintf(bench,sizeof(bench),"%s",e);else host_config_string("debug.benchmark","false",bench,sizeof(bench));
+            if(suite[0]||replay[0]||text_true(bench)){
+                host_logf(HOST_LOG_INFO,"Upscale: off for this measured run (%s)",suite[0]?"benchmark suite":replay[0]?"input replay":"benchmark");
+                upscale_mode=TEXTURE_UPSCALE_MODE_OFF;
+            }
+        }
         host_texture_upscale_resolve_profile(root);
         environment=getenv("HALO_UPSCALED_TEXTURES");
         if(environment)snprintf(player,sizeof(player),"%s",environment);else host_config_string("display.upscaled_textures",profile_upscales?"true":"false",player,sizeof(player));

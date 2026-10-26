@@ -1510,10 +1510,11 @@ static const struct config_setting config_settings[] =
 		"once the release enables it, \"force\" emulates a GPU without BC for validation, \"off\" disables it. Requires compressed_textures." },
 	{ "debug.texture_astc_sync", _config_boolean, "false", "HALO_TEXTURE_ASTC_SYNC", _environment_set_is_true, _platform_ios,
 		"Wait for ASTC map preparation before loading, for screenshot validation only." },
-	{ "debug.texture_upscale_generate", _config_string, "\"off\"", "HALO_TEXTURE_UPSCALE_GENERATE", _environment_value, _platform_ios,
-		"Make upscaled textures on this device: \"auto\" where the device's profile and the\n"
-		"display.upscaled_textures switch both say so (at import, in menus, loading and\n"
-		"pauses, never in gameplay), \"force\" whatever the profile says, \"off\" (default) never." },
+	{ "debug.texture_upscale_generate", _config_string, "\"auto\"", "HALO_TEXTURE_UPSCALE_GENERATE", _environment_value, _platform_ios,
+		"Make upscaled textures on this device: \"auto\" (default) where the device's profile\n"
+		"and the display.upscaled_textures switch both say so and Core ML has a Neural Engine\n"
+		"(at import, in menus, loading and pauses, never in gameplay), \"force\" whatever the\n"
+		"profile says, \"off\" never." },
 	{ "debug.texture_upscale_export", _config_boolean, "false", "HALO_TEXTURE_UPSCALE_EXPORT", _environment_set_is_true, _platform_ios,
 		"Export the generator's policy table and uncompressed textures for parity checks." },
 	{ "debug.texture_dump_directory", _config_string, "\"\"", "HALO_TEXTURE_DUMP", _environment_value, _platform_all,

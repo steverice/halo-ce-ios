@@ -45,7 +45,11 @@ const char *texture_policy_result_name(enum texture_policy_result result) {
 }
 int main(void) {@autoreleasepool {
     char pattern[]="/tmp/visr-upscale-driver-XXXXXX";char *directory=mkdtemp(pattern);assert(directory);
+    /* "auto" (the setting here) stays out of a measured run */
+    setenv("HALO_INPUT_REPLAY","a10-bench",1);
     host_texture_upscale_init(directory);
+    unsetenv("HALO_INPUT_REPLAY");
+    assert(upscale_mode==TEXTURE_UPSCALE_MODE_OFF);
     assert(!upscale_enabled&&!upscale_worker&&!generator);
     upscale_root=@(directory);texture_log=[NSMutableDictionary new];thermal_log=[NSMutableArray new];started=now();
     assert([NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil]);
