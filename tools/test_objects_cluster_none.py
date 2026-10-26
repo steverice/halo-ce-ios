@@ -57,6 +57,10 @@ static struct { struct { short count; } clusters; } bsp = { { CLUSTERS } };
 static int deleted[OBJECTS], updated[OBJECTS];
 static void profile_enter(struct profile_section s) { (void)s; }
 static void profile_exit(struct profile_section s) { (void)s; }
+/* as cseries/profile_sections.h has them outside the profiling build */
+#define profile_scope_enter(variable)
+#define profile_scope_exit(variable)
+#define profile_scope(variable, statement) statement
 static long game_time_get(void) { return 0; }
 static boolean game_players_are_double_speed(void) { return FALSE; }
 #define global_structure_bsp_get() (&bsp)
