@@ -243,6 +243,8 @@ static void check_reading(void)
 	assert(config_real("input.stick_dead_zone") == 0.1);
 	/* (an unset one at its default) */
 	assert(!config_boolean("debug.rate_map_test"));
+	/* (no names over heads by default, as on the Xbox; the target name at the reticle is the game's own) */
+	assert(!strcmp(config_string("display.player_names"), "none"));
 	assert(strstr(logged, "config.toml line 9: [display] is defined again"));
 	assert(strstr(logged, "config.toml line 12: display.stereo is set again"));
 	assert(strstr(logged, "config.toml line 18: [input] is defined again"));

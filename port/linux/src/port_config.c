@@ -781,9 +781,10 @@ static const struct config_setting config_settings[] =
 	{ "display.menus", _config_string, "\"pc\"", "HALO_MENUS", _environment_value, _platform_all,
 		"The menus: \"pc\" for the PC version's main menu (port/assets/menus,\n"
 		"and a menus folder here for your own), \"xbox\" for the Xbox's." },
-	{ "display.player_names", _config_string, "\"all\"", "HALO_PLAYER_NAMES", _environment_value, _platform_all,
-		"In multiplayer, whose names are drawn above their heads: \"all\",\n"
-		"\"allies\", \"enemies\" or \"none\". An enemy's shows only within the\n"
+	{ "display.player_names", _config_string, "\"none\"", "HALO_PLAYER_NAMES", _environment_value, _platform_all,
+		"In multiplayer, whose names are drawn above their heads: \"none\" (the\n"
+		"Xbox's: the name of the player under the reticle shows, and teammates\n"
+		"have the game's marker), \"all\", \"allies\" or \"enemies\". An enemy's shows only within the\n"
 		"motion sensor's reach, in sight and not camouflaged; none show if the\n"
 		"gametype's motion tracker shows no players, only allies' if it shows\n"
 		"only friends." },

@@ -908,8 +908,8 @@
         },
         "player_names": {
           "type": "string",
-          "default": "all",
-          "description": "In multiplayer, whose names are drawn above their heads: \"all\", \"allies\", \"enemies\" or \"none\". An enemy's shows only within the motion sensor's reach, in sight and not camouflaged; none show if the gametype's motion tracker shows no players, only allies' if it shows only friends.",
+          "default": "none",
+          "description": "In multiplayer, whose names are drawn above their heads: \"none\" (the Xbox's: the name of the player under the reticle shows, and teammates have the game's marker), \"all\", \"allies\" or \"enemies\". An enemy's shows only within the motion sensor's reach, in sight and not camouflaged; none show if the gametype's motion tracker shows no players, only allies' if it shows only friends.",
           "x-environment": "HALO_PLAYER_NAMES",
           "x-environment-style": "value",
           "x-platforms": [

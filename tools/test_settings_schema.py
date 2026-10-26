@@ -18,6 +18,8 @@ def test_config_comes_from_every_c_entry():
     display = config['properties']['display']['properties']
     assert display['render_scale']['type'] == 'number'
     assert display['renderer']['default'] == 'metal'
+    # the Xbox draws a name only for the player under the reticle (the game's own target name)
+    assert display['player_names']['default'] == 'none'
     assert 'maximum' not in display['shadow_map_size']
     assert display['shadow_map_size']['type'] == 'integer'
     online = config['properties']['network']['properties']['map_download']
