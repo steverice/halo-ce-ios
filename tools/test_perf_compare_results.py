@@ -95,10 +95,10 @@ def test_metrics_reject_invalid_samples_or_display_rate(intervals, hz):
 
 def summary_fixture():
     return {
-        "date": "2026-10-23", "refresh_seconds": 123.5,
-        "machine": "Mac mini", "os": "macOS 27",
-        "targets": [{"id": "native", "version": "v1", "sha256": "abc",
-            "method": "metal-hud", "status": "ok", "reason": "",
+        "schema": 2,
+        "records": [{"port": "native", "version": "v1", "build": "7", "source": "abc1234", "release_kind": "release",
+            "sha256": "abc", "machine": "Mac mini (M4, 16 GB)", "os": "macOS 27", "date": "2026-10-23",
+            "method": "metal-hud", "status": "ok", "reason": "", "matrix_seconds": 123.5,
             "runs": [{"scenario": "a10", "round": i,
                 "metrics": metrics([10.0 * i, 20.0 * i], 60),
                 "thermal": "nominal", "resolution": "1280×720", "cap": 60}
@@ -109,9 +109,12 @@ def summary_fixture():
     }
 
 
+NATIVE = "| native v1 (build 7, source abc1234) | Mac mini (M4, 16 GB) |"
+
+
 def test_render_groups_rounds_and_reports_ranges_for_all_metrics():
     output = render(summary_fixture())
-    assert output.count("| native | a10 |") == 1
+    assert output.count(NATIVE + " a10 |") == 1
     assert "22.22–66.67" in output
     assert "15.00–45.00" in output
     assert "19.50–58.50" in output
@@ -120,22 +123,79 @@ def test_render_groups_rounds_and_reports_ranges_for_all_metrics():
     assert "20.00–60.00" in output
     assert "2–2" in output
     assert "0.03–0.09" in output
-    for value in ["2026-10-23", "123.5", "Mac mini", "macOS 27", "v1", "abc", "metal-hud"]:
+    for value in ["2026-10-23", "123.5", "Mac mini (M4, 16 GB)", "macOS 27", "v1", "abc", "metal-hud"]:
         assert value in output
+
+
+def test_every_row_names_version_build_source_and_machine():
+    output = render(summary_fixture())
+    rows = [line for line in output.splitlines() if "| a10 |" in line and "Mac mini" in line]
+    assert len(rows) == 2  # side by side and the port's own table
+    assert all("native v1 (build 7, source abc1234)" in row and "Mac mini (M4, 16 GB)" in row for row in rows)
+
+
+def test_versions_of_one_port_coexist_and_group_under_the_port():
+    summary = summary_fixture()
+    newer = deepcopy(summary["records"][0])
+    newer.update(version="v2", build="9", source="def5678", date="2026-10-25")
+    summary["records"].append(newer)
+    output = render(summary)
+    section = output[output.index("## native"):]
+    assert "Measured versions: native v1 (build 7, source abc1234); native v2 (build 9, source def5678)." in section
+    assert "| native v1 (build 7, source abc1234) |" in section
+    assert "| native v2 (build 9, source def5678) |" in section
+    assert "Last measured: 2026-10-25." in output
+
+
+def test_pre_release_builds_are_labeled_in_every_row():
+    summary = summary_fixture()
+    summary["records"][0].update(version="main", release_kind="pre-release main build")
+    output = render(summary)
+    rows = [line for line in output.splitlines() if "| a10 |" in line and "Mac mini" in line]
+    assert len(rows) == 2 and all("native main (pre-release, build 7, source abc1234)" in row for row in rows)
+    assert "not the released product" in output
+
+
+def test_merge_adds_new_versions_and_never_replaces_a_measured_record():
+    from perf_compare.results import merge
+    old = summary_fixture()
+    new = deepcopy(old)
+    new["records"][0].update(version="v2", build="9")
+    merged = merge(old, new)
+    assert [(r["version"], r["build"]) for r in merged["records"]] == [("v1", "7"), ("v2", "9")]
+    assert merge(merged, new) == merged
+    changed = deepcopy(new)
+    changed["records"][0]["runs"] = changed["records"][0]["runs"][:1]
+    with pytest.raises(ValueError, match="already exists"):
+        merge(merged, changed)
+
+
+def test_merge_replaces_only_a_record_without_samples():
+    from perf_compare.results import merge
+    old = summary_fixture()
+    old["records"][0].update(runs=[], status="unavailable", reason="console-unavailable")
+    new = summary_fixture()
+    merged = merge(old, new)
+    assert len(merged["records"]) == 1 and merged["records"][0]["status"] == "ok"
+
+
+def test_render_rejects_an_unversioned_summary():
+    with pytest.raises(ValueError, match="schema"):
+        render({"targets": []})
 
 
 def test_render_marks_missing_scenarios_and_duplicate_rounds_incomplete():
     summary = summary_fixture()
-    summary["targets"][0]["runs"][2]["round"] = 2
+    summary["records"][0]["runs"][2]["round"] = 2
     output = render(summary)
     assert "incomplete (2/3 rounds)" in output
-    assert "| native | b30 |" in output
+    assert NATIVE + " b30 |" in output
     assert "incomplete (0/3 rounds)" in output
 
 
 def test_render_preserves_unavailable_targets_and_escapes_cells():
     summary = summary_fixture()
-    summary["targets"] = [{"id": "missing|port", "version": "unknown", "sha256": "",
+    summary["records"] = [{"port": "missing|port", "version": "unknown", "sha256": "",
         "method": "metal-hud", "status": "unavailable", "reason": "No HUD\nretry <later>", "runs": []}]
     output = render(summary)
     assert "missing\\|port" in output
@@ -145,16 +205,19 @@ def test_render_preserves_unavailable_targets_and_escapes_cells():
 
 def test_render_separates_hud_raf_and_offscreen_without_ranking():
     summary = summary_fixture()
-    browser = deepcopy(summary["targets"][0])
-    browser.update(id="browser", method="safari-raf")
-    summary["targets"].append(browser)
+    browser = deepcopy(summary["records"][0])
+    browser.update(port="browser", method="safari-raf", browser="Safari 27")
+    summary["records"].append(browser)
     output = render(summary)
-    hud = output.index("## Mac native Metal HUD")
-    raf = output.index("## Safari requestAnimationFrame")
+    browser_section = output.index("## browser")
+    raf = output.index("Safari callbacks measure")
+    native_section = output.index("## native")
+    hud = output.index("Metal HUD per-frame intervals")
     sweep = output.index("## VISR offscreen sweep")
-    assert hud < output.index("| native | a10 |") < raf
-    assert raf < output.index("| browser | a10 |") < sweep
+    assert browser_section < raf < output.rindex("| browser v1 (build 7, source abc1234) |") < native_section
+    assert native_section < hud < output.rindex(NATIVE + " a10 |") < sweep
     assert sweep < output.index("| iPad |")
+    assert "Safari 27" in output
     assert "repeated game images" in output
     assert "unique game frames" in output
     assert "not ranked" in output
@@ -169,7 +232,7 @@ def test_render_empty_inputs_keep_missing_evidence_visible():
 
 def test_render_keeps_markdown_cell_content_literal():
     summary = summary_fixture()
-    summary["targets"][0]["reason"] = "[link](url) *bold* `code` _emphasis_"
+    summary["records"][0]["reason"] = "[link](url) *bold* `code` _emphasis_"
     output = render(summary)
     assert "\\[link\\](url) \\*bold\\* \\`code\\` \\_emphasis\\_" in output
 
@@ -189,16 +252,17 @@ def test_render_sweep_preserves_configuration_identity_and_trial_count():
 
 def test_render_display_rate_and_operator_qualification_for_each_method():
     summary = summary_fixture()
-    for run in summary["targets"][0]["runs"]:
+    for run in summary["records"][0]["runs"]:
         run.update(display_hz=60, display_rate_basis="operator-qualified")
-    browser = deepcopy(summary["targets"][0])
-    browser.update(id="browser", method="safari-raf")
+    browser = deepcopy(summary["records"][0])
+    browser.update(port="browser", method="safari-raf")
     for run in browser["runs"]:
         run.update(display_hz=120, display_rate_basis="operator-qualified")
-    summary["targets"].append(browser)
+    summary["records"].append(browser)
     output = render(summary)
-    native_row = next(line for line in output.splitlines() if line.startswith("| native | a10 |"))
-    browser_row = next(line for line in output.splitlines() if line.startswith("| browser | a10 |"))
+    native_row = [line for line in output.splitlines() if line.startswith(NATIVE + " a10 |")][-1]
+    browser_row = [line for line in output.splitlines()
+                   if line.startswith("| browser v1 (build 7, source abc1234) | Mac mini (M4, 16 GB) | a10 |")][-1]
     assert "Display (Hz)" in output
     assert "Display rate basis" in output
     assert "| 60 | operator-qualified |" in native_row
@@ -263,10 +327,10 @@ def test_trace_rejects_ambiguous_layers():
 
 def test_render_keeps_capped_uncapped_and_later_windows_distinct():
     summary = summary_fixture()
-    target = summary['targets'][0]
+    target = summary['records'][0]
     target.update(frame_mode='uncapped', native_delay_seconds=90)
     other = dict(target, frame_mode='capped', native_delay_seconds=0)
-    summary['targets'].append(other)
+    summary['records'].append(other)
     output = render(summary)
     assert 'uncapped; +90 s' in output
     assert 'capped; +0 s' in output
@@ -275,7 +339,7 @@ def test_render_keeps_capped_uncapped_and_later_windows_distinct():
 
 def test_uncapped_rows_disclose_unverified_above_refresh_meaning():
     summary = summary_fixture()
-    summary['targets'][0].update(frame_mode='uncapped', quality_preset='matched-stock')
+    summary['records'][0].update(frame_mode='uncapped', quality_preset='matched-stock')
     output = render(summary)
     assert 'Above-refresh trace rates have unverified physical meaning' in output
     assert 'not verified submission throughput' in output

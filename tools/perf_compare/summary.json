@@ -1,12 +1,894 @@
 {
-  "combined_matrices": true,
-  "cpu_policy": "baseline",
-  "date": "2026-10-24",
-  "machine": "Mac mini (M4)",
-  "mixed_bundle_storage": true,
-  "native_scenario": "opening-sequence",
-  "os": "27.0.1",
-  "refresh_seconds": 3704.5,
+  "records": [
+    {
+      "artifact": "ad hoc Mac build of main",
+      "browser": "",
+      "build": "20261023.203835",
+      "bundle_storage": "internal",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "capped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "matrix_seconds": 1098.4,
+      "method": "metalperftrace on-glass intervals",
+      "native_delay_seconds": 0,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "visr",
+      "quality_preset": "defaults",
+      "reason": "",
+      "release_kind": "pre-release main build",
+      "runs": [
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.01673447713256,
+            "fps": 59.96660816944785,
+            "frames": 3599,
+            "on_time_pct": 88.96915809947208,
+            "p50_ms": 16.655458137392998,
+            "p95_ms": 18.446124531328678,
+            "p99_ms": 19.85942766070366,
+            "worst_ms": 34.090541303157806
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.01984548009932,
+            "fps": 59.88019414664532,
+            "frames": 3594,
+            "on_time_pct": 88.20255982192543,
+            "p50_ms": 16.65566675364971,
+            "p95_ms": 18.303733319044113,
+            "p99_ms": 19.538045972585678,
+            "worst_ms": 119.32691931724548
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.01699945051223,
+            "fps": 59.949681472609704,
+            "frames": 3598,
+            "on_time_pct": 89.96664813785436,
+            "p50_ms": 16.658646054565907,
+            "p95_ms": 18.135929200798273,
+            "p99_ms": 19.639941379427903,
+            "worst_ms": 34.219540655612946
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00152282137424,
+            "fps": 59.865147267902806,
+            "frames": 3592,
+            "on_time_pct": 88.83630289532294,
+            "p50_ms": 16.658145003020763,
+            "p95_ms": 18.113345745950937,
+            "p99_ms": 19.515496101230386,
+            "worst_ms": 119.42528933286667
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 59.99968477152288,
+            "fps": 59.96698172167209,
+            "frames": 3598,
+            "on_time_pct": 88.57698721511952,
+            "p50_ms": 16.655208542943,
+            "p95_ms": 18.302153702825308,
+            "p99_ms": 19.817823115736246,
+            "worst_ms": 39.64304178953171
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00179084856063,
+            "fps": 59.84821368187786,
+            "frames": 3591,
+            "on_time_pct": 87.88638262322473,
+            "p50_ms": 16.66758395731449,
+            "p95_ms": 18.154311925172806,
+            "p99_ms": 19.58440914750099,
+            "worst_ms": 116.3957491517067
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
+      "source": "8d26312dd",
+      "status": "ok",
+      "version": "main",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "release Halo.dmg",
+      "browser": "",
+      "build": "2",
+      "bundle_storage": "internal",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "capped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "matrix_seconds": 1098.4,
+      "method": "metalperftrace on-glass intervals",
+      "native_delay_seconds": 0,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "opence-macos",
+      "quality_preset": "defaults",
+      "reason": "",
+      "release_kind": "release",
+      "runs": [
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.000904268585145,
+            "fps": 59.33243912565364,
+            "frames": 3560,
+            "on_time_pct": 89.97191011235955,
+            "p50_ms": 16.65912475436926,
+            "p95_ms": 18.241656664758917,
+            "p99_ms": 19.406973905861374,
+            "worst_ms": 484.66962575912476
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00095610320568,
+            "fps": 59.015726247915815,
+            "frames": 3541,
+            "on_time_pct": 87.88477831121152,
+            "p50_ms": 16.657250002026558,
+            "p95_ms": 18.311582505702972,
+            "p99_ms": 19.794408231973648,
+            "worst_ms": 165.96129536628723
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 59.99933827202767,
+            "fps": 59.98399488478845,
+            "frames": 3599,
+            "on_time_pct": 85.13475965545985,
+            "p50_ms": 16.657209023833275,
+            "p95_ms": 18.48448682576418,
+            "p99_ms": 19.58898052573204,
+            "worst_ms": 31.516708433628082
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00009854417294,
+            "fps": 59.91656825952226,
+            "frames": 3595,
+            "on_time_pct": 89.56884561891516,
+            "p50_ms": 16.65220782160759,
+            "p95_ms": 18.161883205175396,
+            "p99_ms": 19.236435890197754,
+            "worst_ms": 99.80712831020355
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.0020646173507,
+            "fps": 59.964603267327774,
+            "frames": 3598,
+            "on_time_pct": 89.77209560867148,
+            "p50_ms": 16.649874858558178,
+            "p95_ms": 18.228761851787567,
+            "p99_ms": 19.49592048302292,
+            "worst_ms": 48.425957560539246
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "60",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.01669910363853,
+            "fps": 59.899995396148874,
+            "frames": 3595,
+            "on_time_pct": 89.73574408901251,
+            "p50_ms": 16.662999987602234,
+            "p95_ms": 18.191763013601303,
+            "p99_ms": 19.310937598347664,
+            "worst_ms": 97.09695726633072
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
+      "source": "80a4d0383",
+      "status": "ok",
+      "version": "v1.0.2",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "release chupathingyce-macos-release.zip",
+      "browser": "",
+      "build": "0.8.0g",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "capped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "method": "Metal HUD present intervals",
+      "native_delay_seconds": 0,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "chupathingy",
+      "quality_preset": "defaults",
+      "reason": "console-unavailable",
+      "release_kind": "release",
+      "runs": [],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a",
+      "source": "",
+      "status": "unavailable",
+      "version": "v0.8.0g",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "release Halo-OG-macos-arm64.dmg",
+      "browser": "",
+      "build": "",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "capped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "method": "Metal HUD present intervals",
+      "native_delay_seconds": 0,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "halo-og",
+      "quality_preset": "defaults",
+      "reason": "console-unavailable",
+      "release_kind": "release",
+      "runs": [],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6",
+      "source": "",
+      "status": "unavailable",
+      "version": "v0.5.1",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "hosted entry document",
+      "browser": "",
+      "build": "",
+      "date": "2026-10-24",
+      "frame_mode": "capped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "method": "Safari RAF callbacks (entry-document hash)",
+      "native_delay_seconds": 0,
+      "os": "macOS 27.0.1",
+      "port": "opence-web",
+      "quality_preset": "defaults",
+      "reason": "safari-remote-automation-disabled",
+      "release_kind": "hosted web build",
+      "runs": [],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "",
+      "source": "",
+      "status": "unavailable",
+      "version": "",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "ad hoc Mac build of main",
+      "browser": "",
+      "build": "20261023.203835",
+      "bundle_storage": "internal",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "uncapped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "matrix_seconds": 1297.5,
+      "method": "metalperftrace on-glass intervals",
+      "native_delay_seconds": 0,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "visr",
+      "quality_preset": "matched-stock",
+      "reason": "",
+      "release_kind": "pre-release main build",
+      "runs": [
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 59.99894951458555,
+            "fps": 529.7426081147206,
+            "frames": 31784,
+            "on_time_pct": 99.80493329977347,
+            "p50_ms": 1.3918749755248427,
+            "p95_ms": 4.488464677706358,
+            "p99_ms": 6.041880031116304,
+            "worst_ms": 23.17425049841404
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00987500650808,
+            "fps": 417.7145844293373,
+            "frames": 25067,
+            "on_time_pct": 99.75266286352576,
+            "p50_ms": 2.005999907851219,
+            "p95_ms": 5.016479128971695,
+            "p99_ms": 6.527560912072659,
+            "worst_ms": 297.9543209075928
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00651659167488,
+            "fps": 536.6417154177486,
+            "frames": 32202,
+            "on_time_pct": 99.81988696354264,
+            "p50_ms": 1.3846041983924806,
+            "p95_ms": 4.460314637981354,
+            "p99_ms": 5.771184386685485,
+            "worst_ms": 23.98829162120819
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.005589833890554,
+            "fps": 420.32750731757443,
+            "frames": 25222,
+            "on_time_pct": 99.75021806359527,
+            "p50_ms": 1.976354164071381,
+            "p95_ms": 4.976041847839949,
+            "p99_ms": 6.40923042781651,
+            "worst_ms": 304.3580949306488
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.008500782831106,
+            "fps": 538.8736525351065,
+            "frames": 32337,
+            "on_time_pct": 99.80826916535239,
+            "p50_ms": 1.3749583158642054,
+            "p95_ms": 4.41364999860525,
+            "p99_ms": 5.738724879920481,
+            "worst_ms": 22.98174984753132
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.004031602089526,
+            "fps": 421.77165974158805,
+            "frames": 25308,
+            "on_time_pct": 99.75106685633001,
+            "p50_ms": 1.9667916931211948,
+            "p95_ms": 4.9540605163201645,
+            "p99_ms": 6.441818545572462,
+            "worst_ms": 291.74694418907166
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
+      "source": "8d26312dd",
+      "status": "ok",
+      "version": "main",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "release Halo.dmg",
+      "browser": "",
+      "build": "2",
+      "bundle_storage": "external USB",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "uncapped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "matrix_seconds": 1297.5,
+      "method": "metalperftrace on-glass intervals",
+      "native_delay_seconds": 0,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "opence-macos",
+      "quality_preset": "matched-stock",
+      "reason": "",
+      "release_kind": "release",
+      "runs": [
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.008057804225245,
+            "fps": 487.75116327692797,
+            "frames": 29269,
+            "on_time_pct": 99.85308688373364,
+            "p50_ms": 1.308166654780507,
+            "p95_ms": 4.947241768240929,
+            "p99_ms": 6.462388429790735,
+            "worst_ms": 526.9219875335693
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00861932648695,
+            "fps": 341.61759144076143,
+            "frames": 20500,
+            "on_time_pct": 99.60975609756098,
+            "p50_ms": 2.478083362802863,
+            "p95_ms": 5.747227091342209,
+            "p99_ms": 7.917691804468627,
+            "worst_ms": 298.23699593544006
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.006249432393815,
+            "fps": 490.48224607271334,
+            "frames": 29432,
+            "on_time_pct": 99.85390051644468,
+            "p50_ms": 1.3217291561886668,
+            "p95_ms": 4.981377045623955,
+            "p99_ms": 6.475812317803499,
+            "worst_ms": 44.87466812133789
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.008115553384414,
+            "fps": 349.2694247556309,
+            "frames": 20959,
+            "on_time_pct": 99.6660145999332,
+            "p50_ms": 2.4990832898765802,
+            "p95_ms": 5.681366473436355,
+            "p99_ms": 7.504421733319731,
+            "worst_ms": 294.04425621032715
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00369005801622,
+            "fps": 490.11985715487,
+            "frames": 29409,
+            "on_time_pct": 99.84698561664797,
+            "p50_ms": 1.3528750278055668,
+            "p95_ms": 4.953308496624229,
+            "p99_ms": 6.361751444637773,
+            "worst_ms": 44.611040502786636
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "a10",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.0128591756511,
+            "fps": 349.6750577835192,
+            "frames": 20985,
+            "on_time_pct": 99.6711937097927,
+            "p50_ms": 2.4742083624005318,
+            "p95_ms": 5.701258312910794,
+            "p99_ms": 7.459223456680774,
+            "worst_ms": 302.1557927131653
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
+      "scenarios": [
+        "a10",
+        "b30"
+      ],
+      "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
+      "source": "80a4d0383",
+      "status": "ok",
+      "version": "v1.0.2",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "ad hoc Mac build of main",
+      "browser": "",
+      "build": "20261023.203835",
+      "bundle_storage": "internal",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "uncapped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "matrix_seconds": 1308.6,
+      "method": "metalperftrace on-glass intervals",
+      "native_delay_seconds": 90,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "visr",
+      "quality_preset": "matched-stock",
+      "reason": "",
+      "release_kind": "pre-release main build",
+      "runs": [
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00624383232207,
+            "fps": 421.47280657445725,
+            "frames": 25291,
+            "on_time_pct": 99.75089952947688,
+            "p50_ms": 1.915541710332036,
+            "p95_ms": 4.663750063627958,
+            "p99_ms": 6.341441813856361,
+            "worst_ms": 297.25775122642517
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00712470689905,
+            "fps": 419.3668688995986,
+            "frames": 25165,
+            "on_time_pct": 99.76157361414663,
+            "p50_ms": 1.93875003606081,
+            "p95_ms": 4.601749870926142,
+            "p99_ms": 6.237399950623518,
+            "worst_ms": 596.6968536376953
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00233689302695,
+            "fps": 404.41758198954454,
+            "frames": 24266,
+            "on_time_pct": 99.7197725212231,
+            "p50_ms": 1.9971666624769568,
+            "p95_ms": 4.910458228550851,
+            "p99_ms": 7.019962393678723,
+            "worst_ms": 586.9337320327759
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
+      "scenarios": [
+        "b30"
+      ],
+      "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
+      "source": "8d26312dd",
+      "status": "ok",
+      "version": "main",
+      "warmup_seconds": 15
+    },
+    {
+      "artifact": "release Halo.dmg",
+      "browser": "",
+      "build": "2",
+      "bundle_storage": "external USB",
+      "cpu_policy": "baseline",
+      "date": "2026-10-24",
+      "frame_mode": "uncapped",
+      "machine": "Mac mini (M4, 16 GB)",
+      "matrix_seconds": 1308.6,
+      "method": "metalperftrace on-glass intervals",
+      "native_delay_seconds": 90,
+      "native_scenario": "opening-sequence",
+      "os": "macOS 27.0.1",
+      "port": "opence-macos",
+      "quality_preset": "matched-stock",
+      "reason": "",
+      "release_kind": "release",
+      "runs": [
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 59.99996507470496,
+            "fps": 328.88352477256893,
+            "frames": 19733,
+            "on_time_pct": 99.68073785030153,
+            "p50_ms": 2.8980833012610674,
+            "p95_ms": 4.398708324879398,
+            "p99_ms": 6.787036638706925,
+            "worst_ms": 285.27137637138367
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 1,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.00267680644174,
+            "fps": 335.7516876286622,
+            "frames": 20146,
+            "on_time_pct": 99.71706542241635,
+            "p50_ms": 2.8440208407118917,
+            "p95_ms": 4.0160625940188766,
+            "p99_ms": 6.633250089362253,
+            "worst_ms": 296.0815131664276
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 2,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        },
+        {
+          "cap": "unlimited",
+          "display_hz": 60,
+          "display_rate_basis": "operator-qualified",
+          "machine": "Mac mini (M4, 16 GB)",
+          "metrics": {
+            "duration_s": 60.01082328573102,
+            "fps": 329.5238911461821,
+            "frames": 19775,
+            "on_time_pct": 99.69658659924147,
+            "p50_ms": 2.9068333096802235,
+            "p95_ms": 4.0458917152136555,
+            "p99_ms": 6.997213214635838,
+            "worst_ms": 23.078542202711105
+          },
+          "os": "macOS 27.0.1",
+          "resolution": "1280\u00d7960",
+          "round": 3,
+          "scenario": "b30",
+          "thermal": "nominal \u2192 nominal"
+        }
+      ],
+      "scenarios": [
+        "b30"
+      ],
+      "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
+      "source": "80a4d0383",
+      "status": "ok",
+      "version": "v1.0.2",
+      "warmup_seconds": 15
+    }
+  ],
+  "schema": 2,
   "sweep": [
     {
       "build": "fe18f775b",
@@ -3478,691 +4360,6 @@
       "timing_basis": "offscreen_uncapped",
       "trials": 1,
       "workload": "d40-maw-fight"
-    }
-  ],
-  "targets": [
-    {
-      "id": "visr",
-      "method": "metalperftrace on-glass intervals",
-      "reason": "",
-      "runs": [
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.01673447713256,
-            "fps": 59.96660816944785,
-            "frames": 3599,
-            "on_time_pct": 88.96915809947208,
-            "p50_ms": 16.655458137392998,
-            "p95_ms": 18.446124531328678,
-            "p99_ms": 19.85942766070366,
-            "worst_ms": 34.090541303157806
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.01984548009932,
-            "fps": 59.88019414664532,
-            "frames": 3594,
-            "on_time_pct": 88.20255982192543,
-            "p50_ms": 16.65566675364971,
-            "p95_ms": 18.303733319044113,
-            "p99_ms": 19.538045972585678,
-            "worst_ms": 119.32691931724548
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.01699945051223,
-            "fps": 59.949681472609704,
-            "frames": 3598,
-            "on_time_pct": 89.96664813785436,
-            "p50_ms": 16.658646054565907,
-            "p95_ms": 18.135929200798273,
-            "p99_ms": 19.639941379427903,
-            "worst_ms": 34.219540655612946
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00152282137424,
-            "fps": 59.865147267902806,
-            "frames": 3592,
-            "on_time_pct": 88.83630289532294,
-            "p50_ms": 16.658145003020763,
-            "p95_ms": 18.113345745950937,
-            "p99_ms": 19.515496101230386,
-            "worst_ms": 119.42528933286667
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 59.99968477152288,
-            "fps": 59.96698172167209,
-            "frames": 3598,
-            "on_time_pct": 88.57698721511952,
-            "p50_ms": 16.655208542943,
-            "p95_ms": 18.302153702825308,
-            "p99_ms": 19.817823115736246,
-            "worst_ms": 39.64304178953171
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00179084856063,
-            "fps": 59.84821368187786,
-            "frames": 3591,
-            "on_time_pct": 87.88638262322473,
-            "p50_ms": 16.66758395731449,
-            "p95_ms": 18.154311925172806,
-            "p99_ms": 19.58440914750099,
-            "worst_ms": 116.3957491517067
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        }
-      ],
-      "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
-      "status": "ok",
-      "version": "8d26312ddb4ad2e97074f0c9ba42ce386241d55a"
-    },
-    {
-      "id": "opence-macos",
-      "method": "metalperftrace on-glass intervals",
-      "reason": "",
-      "runs": [
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.000904268585145,
-            "fps": 59.33243912565364,
-            "frames": 3560,
-            "on_time_pct": 89.97191011235955,
-            "p50_ms": 16.65912475436926,
-            "p95_ms": 18.241656664758917,
-            "p99_ms": 19.406973905861374,
-            "worst_ms": 484.66962575912476
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00095610320568,
-            "fps": 59.015726247915815,
-            "frames": 3541,
-            "on_time_pct": 87.88477831121152,
-            "p50_ms": 16.657250002026558,
-            "p95_ms": 18.311582505702972,
-            "p99_ms": 19.794408231973648,
-            "worst_ms": 165.96129536628723
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 59.99933827202767,
-            "fps": 59.98399488478845,
-            "frames": 3599,
-            "on_time_pct": 85.13475965545985,
-            "p50_ms": 16.657209023833275,
-            "p95_ms": 18.48448682576418,
-            "p99_ms": 19.58898052573204,
-            "worst_ms": 31.516708433628082
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00009854417294,
-            "fps": 59.91656825952226,
-            "frames": 3595,
-            "on_time_pct": 89.56884561891516,
-            "p50_ms": 16.65220782160759,
-            "p95_ms": 18.161883205175396,
-            "p99_ms": 19.236435890197754,
-            "worst_ms": 99.80712831020355
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.0020646173507,
-            "fps": 59.964603267327774,
-            "frames": 3598,
-            "on_time_pct": 89.77209560867148,
-            "p50_ms": 16.649874858558178,
-            "p95_ms": 18.228761851787567,
-            "p99_ms": 19.49592048302292,
-            "worst_ms": 48.425957560539246
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "60",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.01669910363853,
-            "fps": 59.899995396148874,
-            "frames": 3595,
-            "on_time_pct": 89.73574408901251,
-            "p50_ms": 16.662999987602234,
-            "p95_ms": 18.191763013601303,
-            "p99_ms": 19.310937598347664,
-            "worst_ms": 97.09695726633072
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        }
-      ],
-      "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
-      "status": "ok",
-      "version": "v1.0.2"
-    },
-    {
-      "id": "chupathingy",
-      "method": "Metal HUD present intervals",
-      "reason": "console-unavailable",
-      "runs": [],
-      "sha256": "0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a",
-      "status": "unavailable",
-      "version": "v0.8.0g"
-    },
-    {
-      "id": "halo-og",
-      "method": "Metal HUD present intervals",
-      "reason": "console-unavailable",
-      "runs": [],
-      "sha256": "28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6",
-      "status": "unavailable",
-      "version": "v0.5.1"
-    },
-    {
-      "id": "opence-web",
-      "method": "Safari RAF callbacks (entry-document hash)",
-      "reason": "safari-remote-automation-disabled",
-      "runs": [],
-      "sha256": "",
-      "status": "unavailable",
-      "version": "unavailable"
-    },
-    {
-      "frame_mode": "uncapped",
-      "id": "visr",
-      "method": "metalperftrace on-glass intervals",
-      "native_delay_seconds": 0,
-      "quality_preset": "matched-stock",
-      "reason": "",
-      "runs": [
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 59.99894951458555,
-            "fps": 529.7426081147206,
-            "frames": 31784,
-            "on_time_pct": 99.80493329977347,
-            "p50_ms": 1.3918749755248427,
-            "p95_ms": 4.488464677706358,
-            "p99_ms": 6.041880031116304,
-            "worst_ms": 23.17425049841404
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00987500650808,
-            "fps": 417.7145844293373,
-            "frames": 25067,
-            "on_time_pct": 99.75266286352576,
-            "p50_ms": 2.005999907851219,
-            "p95_ms": 5.016479128971695,
-            "p99_ms": 6.527560912072659,
-            "worst_ms": 297.9543209075928
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00651659167488,
-            "fps": 536.6417154177486,
-            "frames": 32202,
-            "on_time_pct": 99.81988696354264,
-            "p50_ms": 1.3846041983924806,
-            "p95_ms": 4.460314637981354,
-            "p99_ms": 5.771184386685485,
-            "worst_ms": 23.98829162120819
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.005589833890554,
-            "fps": 420.32750731757443,
-            "frames": 25222,
-            "on_time_pct": 99.75021806359527,
-            "p50_ms": 1.976354164071381,
-            "p95_ms": 4.976041847839949,
-            "p99_ms": 6.40923042781651,
-            "worst_ms": 304.3580949306488
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.008500782831106,
-            "fps": 538.8736525351065,
-            "frames": 32337,
-            "on_time_pct": 99.80826916535239,
-            "p50_ms": 1.3749583158642054,
-            "p95_ms": 4.41364999860525,
-            "p99_ms": 5.738724879920481,
-            "worst_ms": 22.98174984753132
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.004031602089526,
-            "fps": 421.77165974158805,
-            "frames": 25308,
-            "on_time_pct": 99.75106685633001,
-            "p50_ms": 1.9667916931211948,
-            "p95_ms": 4.9540605163201645,
-            "p99_ms": 6.441818545572462,
-            "worst_ms": 291.74694418907166
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        }
-      ],
-      "scenarios": [
-        "a10",
-        "b30"
-      ],
-      "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
-      "status": "ok",
-      "version": "8d26312ddb4ad2e97074f0c9ba42ce386241d55a"
-    },
-    {
-      "frame_mode": "uncapped",
-      "id": "opence-macos",
-      "method": "metalperftrace on-glass intervals",
-      "native_delay_seconds": 0,
-      "quality_preset": "matched-stock",
-      "reason": "",
-      "runs": [
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.008057804225245,
-            "fps": 487.75116327692797,
-            "frames": 29269,
-            "on_time_pct": 99.85308688373364,
-            "p50_ms": 1.308166654780507,
-            "p95_ms": 4.947241768240929,
-            "p99_ms": 6.462388429790735,
-            "worst_ms": 526.9219875335693
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00861932648695,
-            "fps": 341.61759144076143,
-            "frames": 20500,
-            "on_time_pct": 99.60975609756098,
-            "p50_ms": 2.478083362802863,
-            "p95_ms": 5.747227091342209,
-            "p99_ms": 7.917691804468627,
-            "worst_ms": 298.23699593544006
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.006249432393815,
-            "fps": 490.48224607271334,
-            "frames": 29432,
-            "on_time_pct": 99.85390051644468,
-            "p50_ms": 1.3217291561886668,
-            "p95_ms": 4.981377045623955,
-            "p99_ms": 6.475812317803499,
-            "worst_ms": 44.87466812133789
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.008115553384414,
-            "fps": 349.2694247556309,
-            "frames": 20959,
-            "on_time_pct": 99.6660145999332,
-            "p50_ms": 2.4990832898765802,
-            "p95_ms": 5.681366473436355,
-            "p99_ms": 7.504421733319731,
-            "worst_ms": 294.04425621032715
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00369005801622,
-            "fps": 490.11985715487,
-            "frames": 29409,
-            "on_time_pct": 99.84698561664797,
-            "p50_ms": 1.3528750278055668,
-            "p95_ms": 4.953308496624229,
-            "p99_ms": 6.361751444637773,
-            "worst_ms": 44.611040502786636
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "a10",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.0128591756511,
-            "fps": 349.6750577835192,
-            "frames": 20985,
-            "on_time_pct": 99.6711937097927,
-            "p50_ms": 2.4742083624005318,
-            "p95_ms": 5.701258312910794,
-            "p99_ms": 7.459223456680774,
-            "worst_ms": 302.1557927131653
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        }
-      ],
-      "scenarios": [
-        "a10",
-        "b30"
-      ],
-      "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
-      "status": "ok",
-      "version": "v1.0.2"
-    },
-    {
-      "frame_mode": "uncapped",
-      "id": "visr",
-      "method": "metalperftrace on-glass intervals",
-      "native_delay_seconds": 90,
-      "quality_preset": "matched-stock",
-      "reason": "",
-      "runs": [
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00624383232207,
-            "fps": 421.47280657445725,
-            "frames": 25291,
-            "on_time_pct": 99.75089952947688,
-            "p50_ms": 1.915541710332036,
-            "p95_ms": 4.663750063627958,
-            "p99_ms": 6.341441813856361,
-            "worst_ms": 297.25775122642517
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00712470689905,
-            "fps": 419.3668688995986,
-            "frames": 25165,
-            "on_time_pct": 99.76157361414663,
-            "p50_ms": 1.93875003606081,
-            "p95_ms": 4.601749870926142,
-            "p99_ms": 6.237399950623518,
-            "worst_ms": 596.6968536376953
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00233689302695,
-            "fps": 404.41758198954454,
-            "frames": 24266,
-            "on_time_pct": 99.7197725212231,
-            "p50_ms": 1.9971666624769568,
-            "p95_ms": 4.910458228550851,
-            "p99_ms": 7.019962393678723,
-            "worst_ms": 586.9337320327759
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        }
-      ],
-      "scenarios": [
-        "b30"
-      ],
-      "sha256": "72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195",
-      "status": "ok",
-      "version": "8d26312ddb4ad2e97074f0c9ba42ce386241d55a"
-    },
-    {
-      "frame_mode": "uncapped",
-      "id": "opence-macos",
-      "method": "metalperftrace on-glass intervals",
-      "native_delay_seconds": 90,
-      "quality_preset": "matched-stock",
-      "reason": "",
-      "runs": [
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 59.99996507470496,
-            "fps": 328.88352477256893,
-            "frames": 19733,
-            "on_time_pct": 99.68073785030153,
-            "p50_ms": 2.8980833012610674,
-            "p95_ms": 4.398708324879398,
-            "p99_ms": 6.787036638706925,
-            "worst_ms": 285.27137637138367
-          },
-          "resolution": "1280\u00d7960",
-          "round": 1,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.00267680644174,
-            "fps": 335.7516876286622,
-            "frames": 20146,
-            "on_time_pct": 99.71706542241635,
-            "p50_ms": 2.8440208407118917,
-            "p95_ms": 4.0160625940188766,
-            "p99_ms": 6.633250089362253,
-            "worst_ms": 296.0815131664276
-          },
-          "resolution": "1280\u00d7960",
-          "round": 2,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        },
-        {
-          "cap": "unlimited",
-          "display_hz": 60,
-          "display_rate_basis": "operator-qualified",
-          "metrics": {
-            "duration_s": 60.01082328573102,
-            "fps": 329.5238911461821,
-            "frames": 19775,
-            "on_time_pct": 99.69658659924147,
-            "p50_ms": 2.9068333096802235,
-            "p95_ms": 4.0458917152136555,
-            "p99_ms": 6.997213214635838,
-            "worst_ms": 23.078542202711105
-          },
-          "resolution": "1280\u00d7960",
-          "round": 3,
-          "scenario": "b30",
-          "thermal": "nominal \u2192 nominal"
-        }
-      ],
-      "scenarios": [
-        "b30"
-      ],
-      "sha256": "15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80",
-      "status": "ok",
-      "version": "v1.0.2"
     }
   ]
 }

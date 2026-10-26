@@ -136,65 +136,139 @@ def _conditions(runs, key):
     return ", ".join(sorted({str(run.get(key, "unknown")) for run in runs})) or "unknown"
 
 
-def _target_rows(target):
-    runs = target.get("runs", [])
-    scenarios = sorted(set(target.get('scenarios', ['a10', 'b30'])) | {str(run["scenario"]) for run in runs})
-    for scenario in scenarios:
-        rounds = {}
-        for run in runs:
-            if str(run["scenario"]) == scenario and all(key in run.get("metrics", {}) for key in _METRICS):
-                rounds.setdefault(run["round"], run)
-        valid = list(rounds.values())
-        status = target.get("status", "unknown")
-        if len(valid) < 3:
-            status += f"; incomplete ({len(valid)}/3 rounds)"
-        else:
-            status += f"; {len(valid)} rounds"
-        if target.get("reason"):
-            status += "; " + str(target["reason"])
-        conditions = (f"{target.get('frame_mode', 'capped')}; +{target.get('native_delay_seconds', 0)} s; "
-                      f"{target.get('quality_preset', 'defaults')}; warm-up {target.get('warmup_seconds', 15)} s")
-        yield [target.get("id", "unknown"), scenario, status,
-               *("—" if target.get('frame_mode') == 'uncapped' and key == 'on_time_pct' else _range(valid, key)
-                 for key in _METRICS),
-               *(_conditions(valid, key) for key in
-                 ("thermal", "resolution", "cap", "display_hz", "display_rate_basis")), conditions]
+# Public names, in page order. Unknown ports follow in identifier order.
+PORTS = {"visr": "VISR", "opence-macos": "OpenCE-macOS", "opence-web": "OpenCE web",
+         "chupathingy": "Chupathingy", "halo-og": "Halo OG"}
+SCHEMA = 2
+# Everything that distinguishes one measured set from another. Two records with the same key are the
+# same measurement, so a refresh adds records and never replaces one.
+KEY_FIELDS = ("port", "version", "build", "source", "machine", "os", "browser", "method",
+              "frame_mode", "native_delay_seconds", "quality_preset", "warmup_seconds", "date")
+
+
+def record_key(record):
+    return tuple(str(record.get(field, "")) for field in KEY_FIELDS)
+
+
+def merge(existing: dict, new: dict) -> dict:
+    """Add a refresh's records to the retained summary; an identical key never overwrites."""
+    if existing.get("schema", SCHEMA) != SCHEMA or new.get("schema", SCHEMA) != SCHEMA:
+        raise ValueError("summary schema mismatch")
+    merged = {**existing, "schema": SCHEMA, "records": list(existing.get("records", []))}
+    keys = {record_key(record): record for record in merged["records"]}
+    for record in new.get("records", []):
+        key = record_key(record)
+        if key in keys:
+            if keys[key] == record:
+                continue
+            if keys[key].get("runs"):
+                raise ValueError("a measured record with this identity already exists: " + " / ".join(key))
+            # A record without measurements holds no samples; a later attempt on the same day supersedes it.
+            merged["records"].remove(keys[key])
+        keys[key] = record
+        merged["records"].append(record)
+    for field in ("sweep", "sweep_status"):
+        if field in new:
+            merged[field] = new[field]
+    merged["records"].sort(key=_record_order)
+    return merged
+
+
+def _record_order(record):
+    port = str(record.get("port", ""))
+    ports = list(PORTS)
+    return (ports.index(port) if port in ports else len(ports), port, str(record.get("machine", "")),
+            str(record.get("date", "")), str(record.get("version", "")), str(record.get("build", "")),
+            str(record.get("frame_mode", "capped")), record.get("native_delay_seconds", 0))
+
+
+def identity(record):
+    """The exact product version, build and source of one measured set."""
+    name = PORTS.get(str(record.get("port", "")), str(record.get("port", "unknown")))
+    details = [f"build {record['build']}" if record.get("build") else "build unknown"]
+    if record.get("release_kind") == "pre-release main build":
+        details.insert(0, "pre-release")
+    if record.get("source"):
+        details.append(f"source {record['source']}")
+    if record.get("network_version"):
+        details.append(f"network version {record['network_version']}")
+    return f"{name} {record.get('version') or 'unknown version'} ({', '.join(details)})"
+
+
+def _mode(record):
+    return (f"{record.get('frame_mode', 'capped')}; +{record.get('native_delay_seconds', 0)} s; "
+            f"{record.get('quality_preset', 'defaults')}; warm-up {record.get('warmup_seconds', 15)} s")
+
+
+def _valid_rounds(record, scenario):
+    rounds = {}
+    for run in record.get("runs", []):
+        if str(run["scenario"]) == scenario and all(key in run.get("metrics", {}) for key in _METRICS):
+            rounds.setdefault(run["round"], run)
+    return list(rounds.values())
+
+
+def _scenarios(record):
+    return sorted(set(record.get("scenarios", ["a10", "b30"])) | {str(run["scenario"]) for run in record.get("runs", [])})
+
+
+def _status(record, valid):
+    status = record.get("status", "unknown")
+    status += f"; incomplete ({len(valid)}/3 rounds)" if len(valid) < 3 else f"; {len(valid)} rounds"
+    if record.get("reason"):
+        status += "; " + str(record["reason"])
+    return status
+
+
+def _fps_cell(record, valid, key):
+    return "—" if record.get("frame_mode") == "uncapped" and key == "on_time_pct" else _range(valid, key)
+
+
+def _port_rows(record):
+    for scenario in _scenarios(record):
+        valid = _valid_rounds(record, scenario)
+        yield [identity(record), record.get("machine", "unknown"), scenario, _mode(record), _status(record, valid),
+               *(_fps_cell(record, valid, key) for key in _METRICS),
+               *(_conditions(valid, key) for key in ("thermal", "resolution", "cap", "display_hz", "display_rate_basis"))]
+
+
+def method_group(record):
+    method = str(record.get("method", "")).lower()
+    if "raf" in method or "safari" in method:
+        return "raf"
+    if "metalperftrace" in method:
+        return "trace"
+    return "hud" if "hud" in method else "other"
 
 
 CAVEAT = ("We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong "
           "or out of date. Corrections are welcome: [open an issue](https://github.com/steverice/visr/issues).")
 
+METHOD_NOTES = {
+    "trace": "Apple's metalperftrace records per-frame on-glass drawable intervals. "
+             "CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.",
+    "hud": "Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.",
+    "raf": "Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.",
+    "other": "These records use another method; their relationship to displayed pacing is unverified.",
+}
 
-def render(summary: dict) -> str:
-    """Render deterministic Markdown from a public, sanitized summary."""
-    lines = ["# Performance benchmarks", "",
-             CAVEAT, "",
-             f"Date: {_cell(summary.get('date', 'unknown'))}. "
-             f"Refresh wall time: {_cell(summary.get('refresh_seconds', 'unknown'))} seconds.", "",
-             f"Machine: {_cell(summary.get('machine', 'unknown'))}. "
-             f"OS: {_cell(summary.get('os', 'unknown'))}.", "",
-             "Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. "
-             "Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance; "
-             "it is omitted for uncapped rows and does not establish a display tier. "
-             "The methods measure different events and are not ranked against one another.", "",
-             ]
-    if summary.get('combined_matrices'):
-        lines.extend(['Refresh wall time is the sum of collection time across the retained matrices; '
-                      'setup pilots and time waiting between jobs are excluded.', ''])
-    if summary.get("cpu_policy") == "baseline":
+
+def _notes(records):
+    lines = []
+    if any(r.get("cpu_policy") == "baseline" for r in records):
         lines.extend(["Background CPU is sampled for five seconds immediately before each native sampling window. "
-                        "Runs are rejected when average outside-process CPU rises more than half a core above that baseline. "
-                        "Steady background work remains active and may affect these estimates. "
-                        "Each round allows up to three attempts; rejected attempts do not enter the ranges.", ""])
-    if summary.get("native_scenario") == "opening-sequence":
-        lines.extend(["Capped opening runs use a10 and b30 with no input: 15 seconds of warm-up "
-                        "after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. "
-                        "Opening cinematics are included. "
-                        "Both apps use 1280×960 drawables on a 60 Hz display, interpolation and a requested 60 fps cap; "
-                        "other graphics settings retain each app's defaults. These runs do not establish combat performance "
-                        "or identical image quality. Player readiness does not align cinematic clocks, so opening "
-                        "sequences can have phase offsets between apps.", ""])
-    if any(target.get('frame_mode') == 'uncapped' for target in summary.get('targets', [])):
+                      "Runs are rejected when average outside-process CPU rises more than half a core above that baseline. "
+                      "Steady background work remains active and may affect these estimates. "
+                      "Each round allows up to three attempts; rejected attempts do not enter the ranges.", ""])
+    if any(r.get("native_scenario") == "opening-sequence" for r in records):
+        lines.extend(["Opening runs use a10 and b30 with no input: 15 seconds of warm-up "
+                      "after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. "
+                      "Opening cinematics are included. "
+                      "Native apps use 1280×960 drawables on a 60 Hz display with interpolation. Capped rows request a 60 fps cap "
+                      "and keep each app's other graphics defaults. These runs do not establish combat performance "
+                      "or identical image quality. Player readiness does not align cinematic clocks, so opening "
+                      "sequences can have phase offsets between apps.", ""])
+    if any(r.get("frame_mode") == "uncapped" for r in records):
         lines.extend(['Uncapped runs request `display.frame_rate = "unlimited"` in VISR and '
                       '`display.max_fps = -1` in OpenCE-macOS, with `display.vsync = false` and '
                       'interpolation enabled in both. The Conditions column identifies each mode and extra delay after warm-up '
@@ -202,12 +276,8 @@ def render(summary: dict) -> str:
                       'presentation intervals do not establish simulation speed or unique displayed frames. '
                       'Above-refresh trace rates have unverified physical meaning and are not verified submission throughput. '
                       'The same elapsed window does not prove identical gameplay. Each launch uses fresh isolated data/save '
-                      'folders; OS and driver caches are not reset or equalized.', ''])
-    if summary.get('mixed_bundle_storage'):
-        lines.extend(['For these uncapped runs, VISR\'s bundle loads from internal storage and OpenCE-macOS\'s '
-                      'from external USB storage. Both use the same maps and per-run data storage; bundle I/O '
-                      'and caches may still affect stalls.', ''])
-    if any(t.get('quality_preset') == 'matched-stock' for t in summary.get('targets', [])):
+                      'folders; OS and driver caches are not reset or equalized.', ""])
+    if any(r.get("quality_preset") == "matched-stock" for r in records):
         lines.extend(['The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in both apps; '
                       'both use direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size '
                       'effect buffer, 1× anisotropic filtering, no replacement textures, and no first-person body. '
@@ -216,53 +286,76 @@ def render(summary: dict) -> str:
                       'VISR uses native Metal and compressed GPU textures; OpenCE-macOS uses ANGLE over Metal. '
                       'These runs could not verify OpenCE-macOS\'s internal filtering, LOD, effect-buffer, or texture-storage policy, '
                       'so identical image quality remains unverified. Weapon framing and texture filtering still differ visibly. '
-                      'Earlier capped rows retain each app\'s graphics defaults and are not quality-matched to the new rows.', ''])
+                      'Capped rows keep each app\'s graphics defaults and are not quality-matched to the matched-stock rows.', ""])
         lines.extend(['Configuration references: [VISR settings](../port/ios/README.md), '
-                      '[OpenCE-macOS v1.0.2 settings](https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings).', ''])
-    if any(t.get('native_delay_seconds') == 90 for t in summary.get('targets', [])):
+                      '[OpenCE-macOS v1.0.2 settings](https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings).', ""])
+    if any(r.get("native_delay_seconds") == 90 for r in records):
         lines.extend(['The later b30 window adds 90 seconds after warm-up, reaching the beach encounter at about '
                       '110 seconds after player readiness once the CPU baseline is included. It samples 60 seconds '
                       'with a stationary player and no input. Start/end screenshots qualify the camera location, '
-                      'but AI and combat state can vary between apps and rounds; this is not a deterministic combat replay.', ''])
-    lines.extend(["## Builds and availability", ""])
-    targets = sorted(summary.get("targets", []), key=lambda target: str(target.get("id", "")))
-    if targets:
-        _table(lines, ["Target", "Version", "SHA-256", "Method", "Status", "Reason", "Mode", "Delay (s)", "Quality"],
-               [[*[target.get(key, "unknown") for key in ("id", "version", "sha256", "method", "status", "reason")],
-                 target.get('frame_mode', 'capped'), target.get('native_delay_seconds', 0), target.get('quality_preset', 'defaults')]
-                for target in targets])
+                      'but AI and combat state can vary between apps and rounds; this is not a deterministic combat replay.', ""])
+    if any(r.get("release_kind") == "pre-release main build" for r in records):
+        lines.extend(["Pre-release main builds are VISR sources measured before a release was tagged. "
+                      "They are kept for history and are not the released product.", ""])
+    return lines
+
+
+def render(summary: dict) -> str:
+    """Render deterministic Markdown from a public, sanitized summary."""
+    if summary and summary.get("schema") != SCHEMA:
+        raise ValueError("summary schema mismatch")
+    records = sorted(summary.get("records", []), key=_record_order)
+    dates = sorted(str(r["date"]) for r in records if r.get("date"))
+    lines = ["# Performance benchmarks", "", CAVEAT, "",
+             f"Last measured: {_cell(dates[-1] if dates else 'unknown')}.", "",
+             "Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. "
+             "Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance; "
+             "it is omitted for uncapped rows and does not establish a display tier. "
+             "The methods measure different events and are not ranked against one another.", ""]
+    lines.extend(_notes(records))
+    lines.extend(["## Measured builds", ""])
+    if records:
+        _table(lines, ["Port", "Version", "Build", "Source", "Kind", "Artifact", "Artifact SHA-256", "Bundle storage",
+                       "Machine", "OS", "Browser", "Date", "Method", "Conditions", "Status", "Collection (s)"],
+               [[PORTS.get(str(r.get("port", "")), r.get("port", "unknown")), r.get("version") or "unknown",
+                 r.get("build") or "unknown", r.get("source") or "—", r.get("release_kind") or "—",
+                 r.get("artifact") or "—", r.get("sha256") or "—", r.get("bundle_storage") or "—",
+                 r.get("machine", "unknown"), r.get("os", "unknown"), r.get("browser") or "—",
+                 r.get("date", "unknown"), r.get("method", "unknown"), _mode(r),
+                 r.get("status", "unknown") + ("; " + str(r["reason"]) if r.get("reason") else ""),
+                 r.get("matrix_seconds", "—")] for r in records])
     else:
         lines.extend(["No targets recorded.", ""])
-    groups = [("Mac native Metal performance trace", "trace"), ("Mac native Metal HUD", "hud"),
-              ("Safari requestAnimationFrame", "raf"), ("Other methods", "other")]
-    headings = ["Target", "Scenario", "Status", "Avg FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
+    measured = [r for r in records if r.get("runs")]
+    if measured:
+        lines.extend(["## Side by side", "",
+                      "Rows with the same machine, method, scenario and conditions are directly comparable.", ""])
+        rows = []
+        for r in measured:
+            for scenario in _scenarios(r):
+                valid = _valid_rounds(r, scenario)
+                if valid:
+                    rows.append((r.get("machine", ""), r.get("method", ""), _mode(r), scenario, _record_order(r),
+                                 [r.get("machine", "unknown"), r.get("method", "unknown"), scenario, _mode(r), identity(r),
+                                  len(valid), _range(valid, "fps"), _range(valid, "p50_ms"), _range(valid, "p99_ms"),
+                                  _range(valid, "worst_ms")]))
+        rows.sort(key=lambda row: [str(value) for value in row[:5]])
+        _table(lines, ["Machine", "Method", "Scenario", "Conditions", "Build", "Rounds", "Avg FPS", "p50 (ms)",
+                       "p99 (ms)", "Worst (ms)"], [row[-1] for row in rows])
+    headings = ["Build", "Machine", "Scenario", "Conditions", "Status", "Avg FPS", "p50 (ms)", "p95 (ms)", "p99 (ms)",
                 "On time (%)", "Worst (ms)", "Frames", "Duration (s)", "Thermal", "Resolution", "Cap (fps)",
-                "Display (Hz)", "Display rate basis", "Conditions"]
-
-    def method_group(target):
-        method = str(target.get("method", "")).lower()
-        if "raf" in method or "safari" in method:
-            return "raf"
-        if "metalperftrace" in method:
-            return "trace"
-        return "hud" if "hud" in method else "other"
-
-    for title, group in groups:
-        selected = [target for target in targets if method_group(target) == group]
-        if group in {"other", "trace"} and not selected:
-            continue
-        lines.extend([f"## {title}", ""])
-        if group == "trace":
-            lines.extend(["Apple's metalperftrace records per-frame on-glass drawable intervals. "
-                          "CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.", ""])
-        elif group == "hud":
-            lines.extend(["Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.", ""])
-        elif group == "raf":
-            lines.extend(["Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.", ""])
-        if selected:
-            _table(lines, headings, [row for target in selected for row in _target_rows(target)])
-        else:
-            lines.extend(["No measurements recorded.", ""])
+                "Display (Hz)", "Display rate basis"]
+    ports = sorted({str(r.get("port", "")) for r in records}, key=lambda port: _record_order({"port": port}))
+    for port in ports:
+        selected = [r for r in records if str(r.get("port", "")) == port]
+        lines.extend([f"## {PORTS.get(port, port)}", ""])
+        versions = sorted({identity(r) for r in selected})
+        lines.extend(["Measured versions: " + "; ".join(_cell(v) for v in versions) + ".", ""])
+        for group in ("trace", "hud", "raf", "other"):
+            chosen = [r for r in selected if method_group(r) == group]
+            if chosen:
+                lines.extend([METHOD_NOTES[group], ""])
+                _table(lines, headings, [row for r in chosen for row in _port_rows(r)])
     sweep = summary.get("sweep", [])
     sweep_groups = [
         ("VISR offscreen sweep", "offscreen_uncapped",

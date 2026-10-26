@@ -89,13 +89,18 @@ def fetch(target, cache):
     """Fetch binaries only. Include prereleases because some targets publish only those."""
     if target['id'] == 'visr':
         binary = adapters.executable(Path(target['app']))
-        return {'version': target['version'], 'sha256': digest(binary)}
+        bundle = bundle_identity(Path(target['app']))
+        return {'version': target.get('version') or bundle['version'], 'build': bundle['build'],
+                'source': target.get('source', ''), 'release_kind': target.get('release_kind', ''),
+                'artifact': target.get('artifact', ''), 'sha256': digest(binary)}
     if target['id'] == 'opence-web':
         path = cache / 'web.html'
         with urllib.request.urlopen(target['url'], timeout=60) as response:
             path.write_bytes(response.read())
         # Entry-document hash does not pin separately loaded WASM/JS; say so in the method.
-        return {'version': 'hosted entry document', 'sha256': digest(path)}
+        return {'version': target.get('version', 'hosted'), 'build': target.get('build', ''),
+                'network_version': target.get('network_version', ''), 'release_kind': 'hosted web build',
+                'artifact': 'hosted entry document', 'sha256': digest(path)}
     releases = release_metadata(target['repo'])
     tag, asset = select_release(releases, target['asset'])
     folder = cache / target['id'] / tag
@@ -103,7 +108,8 @@ def fetch(target, cache):
     archive = folder / asset['name']
     if not archive.exists():
         release_download(target['repo'], tag, asset, folder)
-    identity = {'version': tag, 'sha256': digest(archive)}
+    identity = {'version': tag, 'sha256': digest(archive), 'release_kind': 'release',
+                'artifact': 'release ' + asset['name'], 'source': release_commit(target['repo'], tag)}
     # Always launch the bundle from the release whose archive was hashed.
     dest = folder / 'unpacked'
     if not dest.exists():
@@ -130,7 +136,45 @@ def fetch(target, cache):
     if len(apps) != 1:
         raise ValueError('release app bundle ambiguous or missing')
     target['app'] = str(apps[0])
+    identity['build'] = bundle_identity(apps[0])['build']
     return identity
+
+
+def bundle_identity(app):
+    """Version and build as the bundle declares them; reading Info.plist does not read the app's code."""
+    import plistlib
+    with (app / 'Contents/Info.plist').open('rb') as stream:
+        info = plistlib.load(stream)
+    return {'version': str(info.get('CFBundleShortVersionString', '')), 'build': str(info.get('CFBundleVersion', ''))}
+
+
+def release_commit(repo, tag):
+    """The commit a release tag names, from public metadata only."""
+    try:
+        ref = json.loads(adapters.run(['gh', 'api', f'repos/{repo}/git/ref/tags/{tag}']))
+    except adapters.PermissionDenied:
+        raise
+    except (RuntimeError, FileNotFoundError):
+        try:
+            ref = public_download(f'https://api.github.com/repos/{repo}/git/ref/tags/{tag}')
+        except Exception:
+            return ''
+    obj = ref.get('object', {})
+    if obj.get('type') == 'tag':
+        try:
+            obj = json.loads(adapters.run(['gh', 'api', f'repos/{repo}/git/tags/{obj["sha"]}']))['object']
+        except Exception:
+            return ''
+    sha = str(obj.get('sha', ''))
+    return sha[:9] if re.fullmatch(r'[0-9a-f]{40}', sha) else ''
+
+
+def host_os():
+    try:
+        build = adapters.run(['sw_vers', '-buildVersion']).strip()
+    except (RuntimeError, FileNotFoundError):
+        build = ''
+    return f'macOS {platform.mac_ver()[0]} ({build})' if build else f'macOS {platform.mac_ver()[0]}'
 
 
 def export_sweep(rows, devices, build):
@@ -245,30 +289,68 @@ def bind_routed_visr(config):
             if target['id'] == 'visr':
                 build_root = Path(version['build_root']) if isinstance(version, dict) else ROOT
                 target['app'] = str(build_root / 'build/macos/app-native/host/Release/VISR.app')
-                target['version'] = version['version'] if isinstance(version, dict) else version
+                if isinstance(version, dict):
+                    for field in ('version', 'source', 'release_kind', 'artifact'):
+                        if version.get(field):
+                            target[field] = version[field]
+                else:
+                    target['version'] = 'main'
+                    target['source'] = version[:9]
+                    target['release_kind'] = 'pre-release main build'
+
+
+def routed_source(route):
+    """Resolve the measured VISR source: a release tag when the route names one, otherwise live main."""
+    ref = route.get('ref', 'refs/heads/main')
+    match = re.fullmatch(r'refs/tags/visr-v([0-9]+\.[0-9]+\.[0-9]+)', ref)
+    if ref != 'refs/heads/main' and not match:
+        raise ValueError('route ref must be refs/heads/main or a refs/tags/visr-vX.Y.Z release tag')
+    if match and not re.fullmatch(r'[0-9]{8}\.[0-9]{1,6}', str(route.get('build_number', ''))):
+        raise ValueError('a release route needs the release build number')
+    lines = adapters.run(['git', 'ls-remote', 'https://github.com/steverice/visr.git', ref, ref + '^{}']).split('\n')
+    fields = [line.split() for line in lines if line.strip()]
+    shas = {item[1]: item[0] for item in fields if len(item) == 2}
+    sha = shas.get(ref + '^{}', shas.get(ref)) or (fields[0][0] if fields and len(fields[0]) == 1 else '')
+    if not sha:
+        raise RuntimeError('route ref not found: ' + ref)
+    if match:
+        build = ['python3', 'tools/ios_build.py', '--native-mac', '--marketing-version', match.group(1),
+                 '--build-number', str(route['build_number']), '--pgo', 'use', '--lto', 'full', '--host-pgo', 'use',
+                 '--bink', 'on', '--render-validation', 'off', '--jobs', '4']
+        identity = {'version': match.group(1), 'release_kind': 'release',
+                    'artifact': f'ad hoc Mac build of tag visr-v{match.group(1)} with the release build number'}
+    else:
+        build = ['python3', 'tools/macos_build.py', '--renderer', 'metal', '--jobs', '4']
+        identity = {'version': 'main', 'release_kind': 'pre-release main build', 'artifact': 'ad hoc Mac build of main'}
+    return ref, sha, build, {**identity, 'source': sha[:9]}
 
 
 def refresh(config, summary_path, page_path):
-    from results import metrics, parse_hud, parse_metal_trace, parse_raf, render
+    from results import merge, metrics, parse_hud, parse_metal_trace, parse_raf, render
     bind_routed_visr(config)
     validate_config(config)
     start = time.monotonic()
     out = Path(config['output']).resolve() / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     out.mkdir(parents=True)
-    summary = {'date': datetime.now(timezone.utc).date().isoformat(), 'machine': config['public_machine'],
-               'os': platform.mac_ver()[0], 'targets': [], 'sweep': [], 'refresh_seconds': 0}
-    if config.get('native_scenario') == 'opening-sequence':
-        summary['native_scenario'] = 'opening-sequence'
+    machine, os_name = config['public_machine'], host_os()
+    summary = {'schema': 2, 'records': [], 'sweep': []}
     records = {}
     errors = []
     denied = None
     try:
         for target in config['targets']:
-            record = {'id': target['id'], 'version': 'unavailable', 'sha256': '', 'status': 'unavailable',
+            record = {'port': target['id'], 'version': target.get('version', ''), 'build': '', 'source': '',
+                      'sha256': '', 'status': 'unavailable', 'machine': machine, 'os': os_name, 'browser': '',
+                      'date': datetime.now(timezone.utc).date().isoformat(),
+                      'bundle_storage': target.get('bundle_storage', ''),
                       'method': 'Safari RAF callbacks (entry-document hash)' if target['id'] == 'opence-web'
                       else ('metalperftrace on-glass intervals' if config.get('native_method') == 'metalperftrace'
                             else 'Metal HUD present intervals'), 'reason': '', 'runs': []}
-            summary['targets'].append(record)
+            if config.get('native_scenario') == 'opening-sequence':
+                record['native_scenario'] = 'opening-sequence'
+            if config.get('cpu_policy') == 'baseline' and target['id'] != 'opence-web':
+                record['cpu_policy'] = 'baseline'
+            summary['records'].append(record)
             record['frame_mode'] = config.get('frame_mode', 'capped')
             record['native_delay_seconds'] = config.get('native_delay_seconds', 0)
             record['scenarios'] = config.get('scenarios', ['a10', 'b30'])
@@ -279,7 +361,10 @@ def refresh(config, summary_path, page_path):
                 record['reason'] = target['unavailable_reason']
                 continue
             try:
-                record.update(fetch(target, out))
+                # Release bundles can live apart from raw evidence, so every app loads from the same kind of storage.
+                cache = Path(config['release_cache']) if config.get('release_cache') else out
+                cache.mkdir(parents=True, exist_ok=True)
+                record.update(fetch(target, cache))
                 target['sha256'] = record['sha256']
                 record['status'] = 'pending'
             except PermissionError as error:
@@ -292,14 +377,13 @@ def refresh(config, summary_path, page_path):
         try:
             if config.get('cpu_policy') == 'baseline':
                 adapters.host_state(check_load=False)
-                summary['cpu_policy'] = 'baseline'
             else:
                 wait_quiet(config.get('quiet_wait_seconds', 180))
         except adapters.PermissionDenied:
             raise
         except Exception as error:
             errors.append({'stage': 'quiet-preflight', 'error': str(error)})
-            for record in summary['targets']:
+            for record in summary['records']:
                 if record['status'] == 'pending':
                     record.update(status='unavailable', reason=failure_code(error))
         targets = config['targets']
@@ -337,7 +421,12 @@ def refresh(config, summary_path, page_path):
                             raise RuntimeError('short-window')
                         if not run_record.pop('scene_verified'):
                             raise RuntimeError('scene-unverified')
+                        for field in ('browser', 'build', 'network_version'):
+                            if run_record.get(field):
+                                record[field] = run_record.pop(field)
+                            run_record.pop(field, None)
                         record['runs'].append({**run_record, 'scenario': scenario, 'round': round_index + 1,
+                                               'machine': machine, 'os': os_name,
                                                'metrics': measured, 'display_hz': config.get('display_hz', 60),
                                                'display_rate_basis': 'operator-qualified'})
                     except PermissionError as error:
@@ -351,7 +440,7 @@ def refresh(config, summary_path, page_path):
                         errors.append({'target': target['id'], 'scenario': scenario, 'round': round_index + 1,
                                        'error': str(error)})
             (out / 'errors.json').write_text(json.dumps(errors, indent=2))
-        for record in summary['targets']:
+        for record in summary['records']:
             if len(record['runs']) == 3 * len(config.get('scenarios', ['a10', 'b30'])):
                 record['status'] = 'ok'
                 record['reason'] = ''
@@ -362,11 +451,12 @@ def refresh(config, summary_path, page_path):
     except adapters.PermissionDenied as error:
         denied = error
         errors.append({'permission_denied': str(error)})
-        for record in summary['targets']:
+        for record in summary['records']:
             if record['status'] == 'pending':
                 record.update(status='unavailable', reason='permission-denied')
     finally:
-        summary['refresh_seconds'] = round(time.monotonic() - start, 1)
+        for record in summary['records']:
+            record['matrix_seconds'] = round(time.monotonic() - start, 1)
         (out / 'errors.json').write_text(json.dumps(errors, indent=2))
         if config.get('sweep'):
             try:
@@ -377,13 +467,19 @@ def refresh(config, summary_path, page_path):
                 errors.append({'stage': 'sweep', 'error': str(error)})
                 summary['sweep_status'] = 'unavailable'
         (out / 'errors.json').write_text(json.dumps(errors, indent=2))
-        summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
-        write_page(page_path, render(summary))
-        print(f'Refresh: {summary["refresh_seconds"]} seconds; private evidence: {out}')
+        # The private copy is this matrix alone; the public summary keeps every earlier record.
+        (out / 'matrix-summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
+        retained = json.loads(summary_path.read_text()) if summary_path.exists() else {'schema': 2}
+        if 'sweep' not in config:
+            summary.pop('sweep', None)
+        merged = merge(retained, summary)
+        summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
+        write_page(page_path, render(merged))
+        print(f'Refresh: {round(time.monotonic() - start, 1)} seconds; private evidence: {out}')
     if denied:
         print(f'STOP: permission system denied {denied}', file=sys.stderr)
         return 3
-    return int(bool(errors) or any(record['status'] != 'ok' for record in summary['targets']))
+    return int(bool(errors) or any(record['status'] != 'ok' for record in summary['records']))
 
 
 def routed_refresh(config, summary_path, page_path):
@@ -401,15 +497,15 @@ def routed_refresh(config, summary_path, page_path):
 
 def _routed_refresh(config, summary_path, page_path):
     """Build verified live-main runtime sources, then measure through the dedicated host lock."""
-    from results import render
+    from results import merge, render
     started = time.monotonic()
     route = config.pop('route')
     transfer_id = uuid.uuid4().hex
     local = Path(route['local_scratch']) / transfer_id
     remote = Path(route['remote_scratch']) / transfer_id
     local.mkdir(parents=True, exist_ok=True)
-    live = adapters.run(['git', 'ls-remote', 'https://github.com/steverice/visr.git', 'refs/heads/main']).split()[0]
-    adapters.run(['git', 'fetch', '--no-tags', 'https://github.com/steverice/visr.git', 'main'], cwd=ROOT)
+    ref, live, build_command, identity = routed_source(route)
+    adapters.run(['git', 'fetch', '--no-tags', 'https://github.com/steverice/visr.git', ref], cwd=ROOT)
     source = Path(route['local_scratch']) / 'build-source'
     if (source / '.git').exists():
         if adapters.run(['git', 'status', '--porcelain'], cwd=source).strip():
@@ -417,11 +513,10 @@ def _routed_refresh(config, summary_path, page_path):
         adapters.run(['git', 'checkout', '--detach', live], cwd=source)
     else:
         adapters.run(['git', 'worktree', 'add', '--detach', str(source), live], cwd=ROOT)
-    config['routed_visr'] = {'version': live, 'build_root': str(Path(route['remote_scratch']) / 'build-source')}
+    config['routed_visr'] = {**identity, 'build_root': str(Path(route['remote_scratch']) / 'build-source')}
     base = [route['router'], '--host', route['host']]
     # No timeout on queued jobs: the router owns queue attendance and keeps its receipt.
-    build = [*base, '--kind', 'build', 'perf-compare-refresh-build', str(source),
-             'python3', 'tools/macos_build.py', '--renderer', 'metal', '--jobs', '4']
+    build = [*base, '--kind', 'build', 'perf-compare-refresh-build', str(source), *build_command]
     result = subprocess.run(build, cwd=ROOT)
     if result.returncode:
         raise RuntimeError('routed build failed')
@@ -435,8 +530,6 @@ def _routed_refresh(config, summary_path, page_path):
     result = subprocess.run(command, cwd=ROOT)
     if (local / 'summary.json').exists():
         summary = json.loads((local / 'summary.json').read_text())
-        summary['matrix_seconds'] = summary['refresh_seconds']
-        summary['refresh_seconds'] = round(time.monotonic() - started, 1)
         if local_sweep:
             try:
                 rows = [json.loads(line) for line in Path(local_sweep['path']).read_text().splitlines() if line.strip()]
@@ -446,8 +539,11 @@ def _routed_refresh(config, summary_path, page_path):
                 print(f'sweep import failed: {error}', file=sys.stderr)
                 if result.returncode == 0:
                     result.returncode = 1
-        summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
-        write_page(page_path, render(summary))
+        retained = json.loads(summary_path.read_text()) if summary_path.exists() else {'schema': 2}
+        merged = merge(retained, summary)
+        summary_path.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
+        write_page(page_path, render(merged))
+        print(f'Routed refresh: {round(time.monotonic() - started, 1)} seconds')
     elif result.returncode == 0:
         print('routed refresh failed to transfer a fresh summary', file=sys.stderr)
         return 1

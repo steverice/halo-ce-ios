@@ -28,6 +28,10 @@ Private `native_delay_seconds = 90` adds 90 seconds after warm-up; `scenarios = 
 
 Apple's on-glass drawable timeline can report intervals above the display rate with vsync off. These results are inverse trace-interval averages, not verified submission throughput or unique displayed FPS; their physical meaning above refresh remains unverified. Preserve each capped, uncapped and later-window target record separately when combining accepted summaries, and retain the prior sweep. The public table identifies each record's conditions.
 
+The public summary (schema 2) holds one record per measured set, keyed by port, version, build, source, machine, OS, browser, method, conditions and date. Each record names the exact product version and bundle build (`CFBundleShortVersionString`/`CFBundleVersion` for Mac apps), the source commit (a release tag's commit for competitors, the measured VISR commit), the artifact and its SHA-256, and each sample carries the machine and OS. A refresh writes its own matrix to private `matrix-summary.json` and merges it into the public summary: new versions are added beside earlier ones, a record that already holds samples is never replaced, and only a same-key record without samples can be superseded. The page groups records by port and lists every measured version.
+
+A routed refresh measures live main by default (labeled as a pre-release main build). Set private `route.ref` to a release tag such as `refs/tags/visr-v0.5.1` and `route.build_number` to that release's build number to build the tag with the release's optimization flags and build number, ad hoc signed. Private `release_cache` keeps downloaded release bundles apart from raw evidence, so the measured apps can load from the same storage.
+
 Regenerate or check the page without running apps:
 
 ```sh

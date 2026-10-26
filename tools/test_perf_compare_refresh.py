@@ -160,7 +160,9 @@ def test_routed_visr_uses_the_bundle_built_in_this_worktree():
     config = {'routed_visr': 'a' * 40, 'targets': [{'id': 'visr', 'app': '/stale/VISR.app', 'version': 'old'}]}
     m.bind_routed_visr(config)
     assert config['targets'][0]['app'] == str(m.ROOT / 'build/macos/app-native/host/Release/VISR.app')
-    assert config['targets'][0]['version'] == 'a' * 40
+    assert config['targets'][0]['version'] == 'main'
+    assert config['targets'][0]['source'] == 'a' * 9
+    assert config['targets'][0]['release_kind'] == 'pre-release main build'
 
 
 def test_routed_runner_failure_cannot_import_previous_summary(tmp_path, monkeypatch):
@@ -304,9 +306,9 @@ def test_disabled_safari_is_never_fetched_or_launched(tmp_path, monkeypatch):
     summary = tmp_path / 'summary.json'
     assert m.refresh(config, summary, tmp_path / 'page.md') == 1
     import json
-    record = json.loads(summary.read_text())['targets'][0]
+    record = json.loads(summary.read_text())['records'][0]
     assert record['reason'] == 'safari-remote-automation-disabled'
-    assert 'half a core' in (tmp_path / 'page.md').read_text()
+    assert record['machine'] == 'Mac mini (M4)' and record['os'].startswith('macOS')
 
 
 def test_readiness_requires_a_complete_output_line_instead_of_console_echo():
@@ -429,5 +431,22 @@ def test_native_matrix_excludes_an_individually_qualified_wrong_size(tmp_path, m
     assert m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md') == 1
     import json
     summary = json.loads((tmp_path / 'summary.json').read_text())
-    assert not summary['targets'][0]['runs']
-    assert summary['targets'][0]['reason'] == 'resolution-mismatch'
+    assert not summary['records'][0]['runs']
+    assert summary['records'][0]['reason'] == 'resolution-mismatch'
+
+
+def test_release_route_builds_the_tag_with_its_build_number(monkeypatch):
+    m = engine()
+    sha = 'b' * 40
+    monkeypatch.setattr(m.adapters, 'run', lambda argv, **kwargs:
+                        f"{'c' * 40}\trefs/tags/visr-v0.5.1\n{sha}\trefs/tags/visr-v0.5.1^{{}}\n")
+    with pytest.raises(ValueError, match='build number'):
+        m.routed_source({'ref': 'refs/tags/visr-v0.5.1'})
+    with pytest.raises(ValueError, match='release tag'):
+        m.routed_source({'ref': 'refs/heads/feature'})
+    ref, live, build, identity = m.routed_source({'ref': 'refs/tags/visr-v0.5.1', 'build_number': '20261026.31927'})
+    assert live == sha and identity['source'] == 'b' * 9
+    assert identity['version'] == '0.5.1' and identity['release_kind'] == 'release'
+    assert build[build.index('--marketing-version') + 1] == '0.5.1'
+    assert build[build.index('--build-number') + 1] == '20261026.31927'
+    assert '--native-mac' in build and build[build.index('--pgo') + 1] == 'use'

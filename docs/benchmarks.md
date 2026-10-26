@@ -2,78 +2,115 @@
 
 We try to make these comparisons fair, but our numbers or our setup for other projects may be wrong or out of date. Corrections are welcome: [open an issue](https://github.com/steverice/visr/issues).
 
-Date: 2026-10-24. Refresh wall time: 3704.5 seconds.
-
-Machine: Mac mini (M4). OS: 27.0.1.
+Last measured: 2026-10-24.
 
 Ranges show the minimum–maximum across unique rounds for each scenario; at least three rounds are required. Incomplete measurements remain visible. On-time share uses the recorded display rate with a 5% interval tolerance; it is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another.
 
-Refresh wall time is the sum of collection time across the retained matrices; setup pilots and time waiting between jobs are excluded.
-
 Background CPU is sampled for five seconds immediately before each native sampling window. Runs are rejected when average outside-process CPU rises more than half a core above that baseline. Steady background work remains active and may affect these estimates. Each round allows up to three attempts; rejected attempts do not enter the ranges.
 
-Capped opening runs use a10 and b30 with no input: 15 seconds of warm-up after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. Opening cinematics are included. Both apps use 1280×960 drawables on a 60 Hz display, interpolation and a requested 60 fps cap; other graphics settings retain each app's defaults. These runs do not establish combat performance or identical image quality. Player readiness does not align cinematic clocks, so opening sequences can have phase offsets between apps.
+Opening runs use a10 and b30 with no input: 15 seconds of warm-up after player readiness, a five-second background CPU baseline, then 60 seconds of sampling. Opening cinematics are included. Native apps use 1280×960 drawables on a 60 Hz display with interpolation. Capped rows request a 60 fps cap and keep each app's other graphics defaults. These runs do not establish combat performance or identical image quality. Player readiness does not align cinematic clocks, so opening sequences can have phase offsets between apps.
 
 Uncapped runs request `display.frame_rate = "unlimited"` in VISR and `display.max_fps = -1` in OpenCE-macOS, with `display.vsync = false` and interpolation enabled in both. The Conditions column identifies each mode and extra delay after warm-up (+0 s is the opening window). The 60 Hz display still limits visible refreshes; presentation intervals do not establish simulation speed or unique displayed frames. Above-refresh trace rates have unverified physical meaning and are not verified submission throughput. The same elapsed window does not prove identical gameplay. Each launch uses fresh isolated data/save folders; OS and driver caches are not reset or equalized.
 
-For these uncapped runs, VISR's bundle loads from internal storage and OpenCE-macOS's from external USB storage. Both use the same maps and per-run data storage; bundle I/O and caches may still affect stalls.
-
-The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in both apps; both use direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size effect buffer, 1× anisotropic filtering, no replacement textures, and no first-person body. OpenCE-macOS uses native resolution scaling, stock world/weapon FOV, and disables optional per-pixel lighting, weapon shields, and shield glow. Other defaults remain unchanged. VISR uses native Metal and compressed GPU textures; OpenCE-macOS uses ANGLE over Metal. These runs could not verify OpenCE-macOS's internal filtering, LOD, effect-buffer, or texture-storage policy, so identical image quality remains unverified. Weapon framing and texture filtering still differ visibly. Earlier capped rows retain each app's graphics defaults and are not quality-matched to the new rows.
+The matched-stock preset disables antialiasing, replacement HUD/text, and first-person legs in both apps; both use direct camera and 128-pixel shadow maps. VISR also uses automatic model LOD, the Xbox-size effect buffer, 1× anisotropic filtering, no replacement textures, and no first-person body. OpenCE-macOS uses native resolution scaling, stock world/weapon FOV, and disables optional per-pixel lighting, weapon shields, and shield glow. Other defaults remain unchanged. VISR uses native Metal and compressed GPU textures; OpenCE-macOS uses ANGLE over Metal. These runs could not verify OpenCE-macOS's internal filtering, LOD, effect-buffer, or texture-storage policy, so identical image quality remains unverified. Weapon framing and texture filtering still differ visibly. Capped rows keep each app's graphics defaults and are not quality-matched to the matched-stock rows.
 
 Configuration references: [VISR settings](../port/ios/README.md), [OpenCE-macOS v1.0.2 settings](https://github.com/channelramble/OpenCE-macOS/blob/v1.0.2/port/linux/README.md#settings).
 
 The later b30 window adds 90 seconds after warm-up, reaching the beach encounter at about 110 seconds after player readiness once the CPU baseline is included. It samples 60 seconds with a stationary player and no input. Start/end screenshots qualify the camera location, but AI and combat state can vary between apps and rounds; this is not a deterministic combat replay.
 
-## Builds and availability
+Pre-release main builds are VISR sources measured before a release was tagged. They are kept for history and are not the released product.
 
-| Target | Version | SHA-256 | Method | Status | Reason | Mode | Delay (s) | Quality |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| chupathingy | v0.8.0g | 0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a | Metal HUD present intervals | unavailable | console-unavailable | capped | 0 | defaults |
-| halo-og | v0.5.1 | 28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6 | Metal HUD present intervals | unavailable | console-unavailable | capped | 0 | defaults |
-| opence-macos | v1.0.2 | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | metalperftrace on-glass intervals | ok |  | capped | 0 | defaults |
-| opence-macos | v1.0.2 | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | metalperftrace on-glass intervals | ok |  | uncapped | 0 | matched-stock |
-| opence-macos | v1.0.2 | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | metalperftrace on-glass intervals | ok |  | uncapped | 90 | matched-stock |
-| opence-web | unavailable |  | Safari RAF callbacks (entry-document hash) | unavailable | safari-remote-automation-disabled | capped | 0 | defaults |
-| visr | 8d26312ddb4ad2e97074f0c9ba42ce386241d55a | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | metalperftrace on-glass intervals | ok |  | capped | 0 | defaults |
-| visr | 8d26312ddb4ad2e97074f0c9ba42ce386241d55a | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | metalperftrace on-glass intervals | ok |  | uncapped | 0 | matched-stock |
-| visr | 8d26312ddb4ad2e97074f0c9ba42ce386241d55a | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | metalperftrace on-glass intervals | ok |  | uncapped | 90 | matched-stock |
+## Measured builds
 
-## Mac native Metal performance trace
+| Port | Version | Build | Source | Kind | Artifact | Artifact SHA-256 | Bundle storage | Machine | OS | Browser | Date | Method | Conditions | Status | Collection (s) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| VISR | main | 20261023.203835 | 8d26312dd | pre-release main build | ad hoc Mac build of main | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | internal | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | metalperftrace on-glass intervals | capped; +0 s; defaults; warm-up 15 s | ok | 1098.4 |
+| VISR | main | 20261023.203835 | 8d26312dd | pre-release main build | ad hoc Mac build of main | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | internal | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | metalperftrace on-glass intervals | uncapped; +0 s; matched-stock; warm-up 15 s | ok | 1297.5 |
+| VISR | main | 20261023.203835 | 8d26312dd | pre-release main build | ad hoc Mac build of main | 72272775f0c12a98603b8f4b574a3c8be64842d8085da4110884fdd49451a195 | internal | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | metalperftrace on-glass intervals | uncapped; +90 s; matched-stock; warm-up 15 s | ok | 1308.6 |
+| OpenCE-macOS | v1.0.2 | 2 | 80a4d0383 | release | release Halo.dmg | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | internal | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | metalperftrace on-glass intervals | capped; +0 s; defaults; warm-up 15 s | ok | 1098.4 |
+| OpenCE-macOS | v1.0.2 | 2 | 80a4d0383 | release | release Halo.dmg | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | external USB | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | metalperftrace on-glass intervals | uncapped; +0 s; matched-stock; warm-up 15 s | ok | 1297.5 |
+| OpenCE-macOS | v1.0.2 | 2 | 80a4d0383 | release | release Halo.dmg | 15b78674d3a80eeb34e3be6140852b5dbff0605669ef74a8de784671cc0cee80 | external USB | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | metalperftrace on-glass intervals | uncapped; +90 s; matched-stock; warm-up 15 s | ok | 1308.6 |
+| OpenCE web | unknown | unknown | — | hosted web build | hosted entry document | — | — | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | Safari RAF callbacks (entry-document hash) | capped; +0 s; defaults; warm-up 15 s | unavailable; safari-remote-automation-disabled | — |
+| Chupathingy | v0.8.0g | 0.8.0g | — | release | release chupathingyce-macos-release.zip | 0370192fbcbf712bf597538086b2ec098988a8eeb3c10fb1e4f85c44a1b7f68a | — | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | Metal HUD present intervals | capped; +0 s; defaults; warm-up 15 s | unavailable; console-unavailable | — |
+| Halo OG | v0.5.1 | unknown | — | release | release Halo-OG-macos-arm64.dmg | 28ee21c12c25d6cc53ecf3c9729b0a61ab155733d4e9a9990193c8b3a48060d6 | — | Mac mini (M4, 16 GB) | macOS 27.0.1 | — | 2026-10-24 | Metal HUD present intervals | capped; +0 s; defaults; warm-up 15 s | unavailable; console-unavailable | — |
+
+## Side by side
+
+Rows with the same machine, method, scenario and conditions are directly comparable.
+
+| Machine | Method | Scenario | Conditions | Build | Rounds | Avg FPS | p50 (ms) | p99 (ms) | Worst (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | a10 | capped; +0 s; defaults; warm-up 15 s | VISR main (pre-release, build 20261023.203835, source 8d26312dd) | 3 | 59.95–59.97 | 16.66–16.66 | 19.64–19.86 | 34.09–39.64 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | a10 | capped; +0 s; defaults; warm-up 15 s | OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | 3 | 59.33–59.98 | 16.65–16.66 | 19.41–19.59 | 31.52–484.67 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | b30 | capped; +0 s; defaults; warm-up 15 s | VISR main (pre-release, build 20261023.203835, source 8d26312dd) | 3 | 59.85–59.88 | 16.66–16.67 | 19.52–19.58 | 116.40–119.43 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | b30 | capped; +0 s; defaults; warm-up 15 s | OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | 3 | 59.02–59.92 | 16.65–16.66 | 19.24–19.79 | 97.10–165.96 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | a10 | uncapped; +0 s; matched-stock; warm-up 15 s | VISR main (pre-release, build 20261023.203835, source 8d26312dd) | 3 | 529.74–538.87 | 1.37–1.39 | 5.74–6.04 | 22.98–23.99 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | a10 | uncapped; +0 s; matched-stock; warm-up 15 s | OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | 3 | 487.75–490.48 | 1.31–1.35 | 6.36–6.48 | 44.61–526.92 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | b30 | uncapped; +0 s; matched-stock; warm-up 15 s | VISR main (pre-release, build 20261023.203835, source 8d26312dd) | 3 | 417.71–421.77 | 1.97–2.01 | 6.41–6.53 | 291.75–304.36 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | b30 | uncapped; +0 s; matched-stock; warm-up 15 s | OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | 3 | 341.62–349.68 | 2.47–2.50 | 7.46–7.92 | 294.04–302.16 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | b30 | uncapped; +90 s; matched-stock; warm-up 15 s | VISR main (pre-release, build 20261023.203835, source 8d26312dd) | 3 | 404.42–421.47 | 1.92–2.00 | 6.24–7.02 | 297.26–596.70 |
+| Mac mini (M4, 16 GB) | metalperftrace on-glass intervals | b30 | uncapped; +90 s; matched-stock; warm-up 15 s | OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | 3 | 328.88–335.75 | 2.84–2.91 | 6.63–7.00 | 23.08–296.08 |
+
+## VISR
+
+Measured versions: VISR main (pre-release, build 20261023.203835, source 8d26312dd).
 
 Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.
 
-| Target | Scenario | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis | Conditions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| opence-macos | a10 | ok; 3 rounds | 59.33–59.98 | 16.65–16.66 | 18.23–18.48 | 19.41–19.59 | 85.13–89.97 | 31.52–484.67 | 3560–3599 | 60.00–60.00 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified | capped; +0 s; defaults; warm-up 15 s |
-| opence-macos | b30 | ok; 3 rounds | 59.02–59.92 | 16.65–16.66 | 18.16–18.31 | 19.24–19.79 | 87.88–89.74 | 97.10–165.96 | 3541–3595 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified | capped; +0 s; defaults; warm-up 15 s |
-| opence-macos | a10 | ok; 3 rounds | 487.75–490.48 | 1.31–1.35 | 4.95–4.98 | 6.36–6.48 | — | 44.61–526.92 | 29269–29432 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified | uncapped; +0 s; matched-stock; warm-up 15 s |
-| opence-macos | b30 | ok; 3 rounds | 341.62–349.68 | 2.47–2.50 | 5.68–5.75 | 7.46–7.92 | — | 294.04–302.16 | 20500–20985 | 60.01–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified | uncapped; +0 s; matched-stock; warm-up 15 s |
-| opence-macos | b30 | ok; 3 rounds | 328.88–335.75 | 2.84–2.91 | 4.02–4.40 | 6.63–7.00 | — | 23.08–296.08 | 19733–20146 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified | uncapped; +90 s; matched-stock; warm-up 15 s |
-| visr | a10 | ok; 3 rounds | 59.95–59.97 | 16.66–16.66 | 18.14–18.45 | 19.64–19.86 | 88.58–89.97 | 34.09–39.64 | 3598–3599 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified | capped; +0 s; defaults; warm-up 15 s |
-| visr | b30 | ok; 3 rounds | 59.85–59.88 | 16.66–16.67 | 18.11–18.30 | 19.52–19.58 | 87.89–88.84 | 116.40–119.43 | 3591–3594 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified | capped; +0 s; defaults; warm-up 15 s |
-| visr | a10 | ok; 3 rounds | 529.74–538.87 | 1.37–1.39 | 4.41–4.49 | 5.74–6.04 | — | 22.98–23.99 | 31784–32337 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified | uncapped; +0 s; matched-stock; warm-up 15 s |
-| visr | b30 | ok; 3 rounds | 417.71–421.77 | 1.97–2.01 | 4.95–5.02 | 6.41–6.53 | — | 291.75–304.36 | 25067–25308 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified | uncapped; +0 s; matched-stock; warm-up 15 s |
-| visr | b30 | ok; 3 rounds | 404.42–421.47 | 1.92–2.00 | 4.60–4.91 | 6.24–7.02 | — | 297.26–596.70 | 24266–25291 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified | uncapped; +90 s; matched-stock; warm-up 15 s |
+| Build | Machine | Scenario | Conditions | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| VISR main (pre-release, build 20261023.203835, source 8d26312dd) | Mac mini (M4, 16 GB) | a10 | capped; +0 s; defaults; warm-up 15 s | ok; 3 rounds | 59.95–59.97 | 16.66–16.66 | 18.14–18.45 | 19.64–19.86 | 88.58–89.97 | 34.09–39.64 | 3598–3599 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| VISR main (pre-release, build 20261023.203835, source 8d26312dd) | Mac mini (M4, 16 GB) | b30 | capped; +0 s; defaults; warm-up 15 s | ok; 3 rounds | 59.85–59.88 | 16.66–16.67 | 18.11–18.30 | 19.52–19.58 | 87.89–88.84 | 116.40–119.43 | 3591–3594 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| VISR main (pre-release, build 20261023.203835, source 8d26312dd) | Mac mini (M4, 16 GB) | a10 | uncapped; +0 s; matched-stock; warm-up 15 s | ok; 3 rounds | 529.74–538.87 | 1.37–1.39 | 4.41–4.49 | 5.74–6.04 | — | 22.98–23.99 | 31784–32337 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified |
+| VISR main (pre-release, build 20261023.203835, source 8d26312dd) | Mac mini (M4, 16 GB) | b30 | uncapped; +0 s; matched-stock; warm-up 15 s | ok; 3 rounds | 417.71–421.77 | 1.97–2.01 | 4.95–5.02 | 6.41–6.53 | — | 291.75–304.36 | 25067–25308 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified |
+| VISR main (pre-release, build 20261023.203835, source 8d26312dd) | Mac mini (M4, 16 GB) | b30 | uncapped; +90 s; matched-stock; warm-up 15 s | ok; 3 rounds | 404.42–421.47 | 1.92–2.00 | 4.60–4.91 | 6.24–7.02 | — | 297.26–596.70 | 24266–25291 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified |
 
-## Mac native Metal HUD
+## OpenCE-macOS
 
-Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.
+Measured versions: OpenCE-macOS v1.0.2 (build 2, source 80a4d0383).
 
-| Target | Scenario | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis | Conditions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| chupathingy | a10 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown | capped; +0 s; defaults; warm-up 15 s |
-| chupathingy | b30 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown | capped; +0 s; defaults; warm-up 15 s |
-| halo-og | a10 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown | capped; +0 s; defaults; warm-up 15 s |
-| halo-og | b30 | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown | capped; +0 s; defaults; warm-up 15 s |
+Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.
 
-## Safari requestAnimationFrame
+| Build | Machine | Scenario | Conditions | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | Mac mini (M4, 16 GB) | a10 | capped; +0 s; defaults; warm-up 15 s | ok; 3 rounds | 59.33–59.98 | 16.65–16.66 | 18.23–18.48 | 19.41–19.59 | 85.13–89.97 | 31.52–484.67 | 3560–3599 | 60.00–60.00 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | Mac mini (M4, 16 GB) | b30 | capped; +0 s; defaults; warm-up 15 s | ok; 3 rounds | 59.02–59.92 | 16.65–16.66 | 18.16–18.31 | 19.24–19.79 | 87.88–89.74 | 97.10–165.96 | 3541–3595 | 60.00–60.02 | nominal → nominal | 1280×960 | 60 | 60 | operator-qualified |
+| OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | Mac mini (M4, 16 GB) | a10 | uncapped; +0 s; matched-stock; warm-up 15 s | ok; 3 rounds | 487.75–490.48 | 1.31–1.35 | 4.95–4.98 | 6.36–6.48 | — | 44.61–526.92 | 29269–29432 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified |
+| OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | Mac mini (M4, 16 GB) | b30 | uncapped; +0 s; matched-stock; warm-up 15 s | ok; 3 rounds | 341.62–349.68 | 2.47–2.50 | 5.68–5.75 | 7.46–7.92 | — | 294.04–302.16 | 20500–20985 | 60.01–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified |
+| OpenCE-macOS v1.0.2 (build 2, source 80a4d0383) | Mac mini (M4, 16 GB) | b30 | uncapped; +90 s; matched-stock; warm-up 15 s | ok; 3 rounds | 328.88–335.75 | 2.84–2.91 | 4.02–4.40 | 6.63–7.00 | — | 23.08–296.08 | 19733–20146 | 60.00–60.01 | nominal → nominal | 1280×960 | unlimited | 60 | operator-qualified |
+
+## OpenCE web
+
+Measured versions: OpenCE web unknown version (build unknown).
 
 Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.
 
-| Target | Scenario | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis | Conditions |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| opence-web | a10 | unavailable; incomplete (0/3 rounds); safari-remote-automation-disabled | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown | capped; +0 s; defaults; warm-up 15 s |
-| opence-web | b30 | unavailable; incomplete (0/3 rounds); safari-remote-automation-disabled | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown | capped; +0 s; defaults; warm-up 15 s |
+| Build | Machine | Scenario | Conditions | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| OpenCE web unknown version (build unknown) | Mac mini (M4, 16 GB) | a10 | capped; +0 s; defaults; warm-up 15 s | unavailable; incomplete (0/3 rounds); safari-remote-automation-disabled | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| OpenCE web unknown version (build unknown) | Mac mini (M4, 16 GB) | b30 | capped; +0 s; defaults; warm-up 15 s | unavailable; incomplete (0/3 rounds); safari-remote-automation-disabled | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+
+## Chupathingy
+
+Measured versions: Chupathingy v0.8.0g (build 0.8.0g).
+
+Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.
+
+| Build | Machine | Scenario | Conditions | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Chupathingy v0.8.0g (build 0.8.0g) | Mac mini (M4, 16 GB) | a10 | capped; +0 s; defaults; warm-up 15 s | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| Chupathingy v0.8.0g (build 0.8.0g) | Mac mini (M4, 16 GB) | b30 | capped; +0 s; defaults; warm-up 15 s | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+
+## Halo OG
+
+Measured versions: Halo OG v0.5.1 (build unknown).
+
+Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.
+
+| Build | Machine | Scenario | Conditions | Status | Avg FPS | p50 (ms) | p95 (ms) | p99 (ms) | On time (%) | Worst (ms) | Frames | Duration (s) | Thermal | Resolution | Cap (fps) | Display (Hz) | Display rate basis |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Halo OG v0.5.1 (build unknown) | Mac mini (M4, 16 GB) | a10 | capped; +0 s; defaults; warm-up 15 s | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
+| Halo OG v0.5.1 (build unknown) | Mac mini (M4, 16 GB) | b30 | capped; +0 s; defaults; warm-up 15 s | unavailable; incomplete (0/3 rounds); console-unavailable | — | — | — | — | — | — | — | — | unknown | unknown | unknown | unknown | unknown |
 
 ## VISR offscreen sweep
 
