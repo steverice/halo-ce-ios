@@ -153,6 +153,7 @@ host_texture_upscale_level_begin
 host_texture_upscale_level_poll
 host_texture_upscale_level_end
 host_texture_upscale_level_ready
+host_texture_cache_directory
 host_astc_texture_key
 host_astc_texture_read
 host_astc_texture_generation

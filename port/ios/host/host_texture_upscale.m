@@ -64,6 +64,8 @@ static NSMutableDictionary<NSString *, NSData *> *map_keys;
 static NSArray<NSString *> *published_paths;
 static atomic_uint level_walked_serial, level_serial;
 static atomic_bool level_skipped;
+/* the last texture stopped for lack of storage: the pump ends "low storage" and retries later */
+static atomic_bool storage_short;
 /* pumps_ended when the level's wait began: a queue that stopped since without finishing the level (an error, a
    catalog that cannot be read, critical thermal state) ends the wait rather than holding the loading screen */
 static atomic_uint level_pumps;
@@ -105,7 +107,32 @@ static uint64_t footprint(void) {
     generator_peak=MAX(generator_peak,(uint64_t)info.phys_footprint);
     return info.phys_footprint;
 }
-static NSString *cache_directory(void) { return [upscale_root stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY]; }
+/* The cache folder. On iPhone, iPad and Vision Pro: Library/Caches/texture-cache, which the system may purge under
+   storage pressure (never while the app runs), is never backed up and is not shown in the Files app; a purged cache is
+   made again, and readiness reads the files, so a partly purged one plays original. On tvOS the data root is already
+   in Library/Caches; Macs keep it under their data folder (the runners'). */
+static NSString *cache_folder_for(NSString *root) {
+#if (TARGET_OS_IOS && !TARGET_OS_MACCATALYST) || TARGET_OS_VISION
+    (void)root;
+    return [NSSearchPathForDirectoriesInDomains(NSCachesDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
+#else
+    return [root stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
+#endif
+}
+static NSString *cache_directory(void) { return cache_folder_for(upscale_root); }
+/* the free space the system would let a purgeable cache use (opportunistic capacity), else the volume's free space */
+static uint64_t storage_available(NSString *folder) {
+#if !TARGET_OS_TV
+    /* (tvOS does not offer opportunistic capacity: its whole app storage is purgeable; the volume's free space) */
+    if(@available(iOS 11.0,macOS 10.13,*)){
+        NSNumber *value=nil;NSError *error=nil;
+        if([[NSURL fileURLWithPath:folder] getResourceValue:&value forKey:NSURLVolumeAvailableCapacityForOpportunisticUsageKey error:&error]&&value)
+            return value.unsignedLongLongValue;
+    }
+#endif
+    struct statvfs disk;
+    return statvfs(folder.fileSystemRepresentation,&disk)?0:(uint64_t)disk.f_bavail*disk.f_frsize;
+}
 static const char *treatment_name(enum texture_policy_treatment value) {
     static const char *names[]={"skip","color","first-person","emissive","multipurpose","bump"};
     return value<=TEXTURE_POLICY_BUMP_MAP?names[value]:"skip";
@@ -358,10 +385,12 @@ static int generate_source(void *opaque,const struct host_texture_source *source
         save_log();export_table();return 0;
     }
     uint64_t projected=(uint64_t)d->width*d->height*d->scale*d->scale*2+4096;
-    struct statvfs disk;
-    if(statvfs(upscale_root.fileSystemRepresentation,&disk)||!texture_cache_background_may_run((uint64_t)disk.f_bavail*disk.f_frsize,projected)){
-        host_logf(HOST_LOG_WARN,"Upscale: insufficient storage for %016llx",(unsigned long long)d->hash);
-        log_texture_error(d,"storage","insufficient free storage",0);context->failed=YES;return 0;
+    uint64_t available=storage_available(cache_directory());
+    if(!texture_cache_background_may_run(available,projected)){
+        /* (the queue stops here and is tried again later; not this texture's error) */
+        host_logf(HOST_LOG_WARN,"Upscale: stopped for storage: %llu MB the system offers, %llu MB needed for %016llx plus the reserve",
+            (unsigned long long)(available>>20),(unsigned long long)(projected>>20),(unsigned long long)d->hash);
+        atomic_store(&storage_short,true);context->failed=YES;return 0;
     }
     /* The walk's source is valid only during this call; the job keeps its own copy until the finisher is done. */
     size_t source_bytes=0;
@@ -528,6 +557,10 @@ static void pump(void) {
         if(atomic_load(&upscale_playing)){why="gameplay";goto done;}
         if(!thermal_may_run()){why="critical thermal state";goto done;}
         if(upscale_mode==TEXTURE_UPSCALE_MODE_AUTO&&!player_switch()){why="the player's switch is off";goto done;}
+        {uint64_t available=storage_available(cache_directory());
+            if(!texture_cache_background_may_run(available,1<<20)){
+                host_logf(HOST_LOG_WARN,"Upscale: not starting: %llu MB of storage the system offers, under the reserve",(unsigned long long)(available>>20));
+                why="low storage";goto done;}}
         if(atomic_exchange(&delete_requested,false))delete_cache();
         atomic_store(&finisher_failed,false);
         if(atomic_exchange(&scan_pending,false)){
@@ -568,14 +601,14 @@ static void pump(void) {
         dispatch_sync(finisher,^{});
         pass_hashes=nil;
         export_table();save_log();
-        if(!complete)why=atomic_load(&upscale_playing)?"gameplay":atomic_load(&finisher_failed)?"error":"interrupted";
+        if(!complete)why=atomic_exchange(&storage_short,false)?"low storage":atomic_load(&upscale_playing)?"gameplay":atomic_load(&finisher_failed)?"error":"interrupted";
     done:
         atomic_store(&pump_queued,false);
         if((atomic_load(&scan_pending)||atomic_load(&pump_requested))&&!atomic_load(&upscale_playing)&&thermal_may_run())schedule_pump();
         else {release_generator(why);save_log();atomic_store(&last_end,why);atomic_fetch_add(&pumps_ended,1);
             /* an error (one texture, the catalog, the manifest) is tried again later rather than left until the next
                map load or foreground */
-            if(!strcmp(why,"error")||!strcmp(why,"catalog")||!strcmp(why,"manifest"))
+            if(!strcmp(why,"error")||!strcmp(why,"catalog")||!strcmp(why,"manifest")||!strcmp(why,"low storage"))
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)RETRY_SECONDS*NSEC_PER_SEC),dispatch_get_main_queue(),^{
                     if(!atomic_load(&upscale_playing))schedule_pump();});}
     }
@@ -637,7 +670,7 @@ void host_texture_upscale_init(const char *root) {
 #ifdef HALO_DEVELOPMENT_HOOKS
         if(root&&getenv("HALO_TEXTURE_UPSCALE_CLEAN")) {
             NSString *base=@(root);NSFileManager *files=NSFileManager.defaultManager;
-            if(texture_cache_delete_all([base stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY].fileSystemRepresentation))
+            if(texture_cache_delete_all(cache_folder_for(base).fileSystemRepresentation))
                 host_logf(HOST_LOG_WARN,"Upscale: could not delete the whole texture cache");
             [files removeItemAtPath:[base stringByAppendingPathComponent:@"texture-upscale-export"] error:nil];
             [files removeItemAtPath:[base stringByAppendingPathComponent:@"texture-upscale-generate.json"] error:nil];
@@ -650,6 +683,14 @@ void host_texture_upscale_init(const char *root) {
 #endif
         if(!root)return;
         any_root=@(root);
+#if (TARGET_OS_IOS && !TARGET_OS_MACCATALYST) || TARGET_OS_VISION
+        /* the cache's old place under the data root (Documents, shown in the Files app and backed up): gone */
+        NSString *old=[any_root stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
+        if([NSFileManager.defaultManager fileExistsAtPath:old])
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+                if(texture_cache_delete_all(old.fileSystemRepresentation)==0)rmdir(old.fileSystemRepresentation);
+                host_logf(HOST_LOG_INFO,"Upscale: removed the cache's old folder under the data root");});
+#endif
         /* Rule 1, before anything else: the profile, then the player's switch, then a Neural Engine (rule 8). */
         char mode[16]="auto",player[16]="";
         const char *environment=getenv("HALO_TEXTURE_UPSCALE_GENERATE");
@@ -851,7 +892,7 @@ static int map_path_collect(void *context,const char *path) { [(__bridge NSMutab
    A cache without its decisions: 0, the level plays original. */
 static int level_ready_without_generator(void) {
     if(!any_root||!loading_name[0])return 1;
-    NSString *directory=[any_root stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
+    NSString *directory=cache_folder_for(any_root);
     struct texture_cache_record *records=NULL;size_t record_count=0;
     if(texture_cache_manifest_load(directory.fileSystemRepresentation,&records,&record_count)){
         host_logf(HOST_LOG_WARN,"Upscale level %s: original textures (the cache's manifest cannot be read)",loading_name);return 0;}
@@ -902,4 +943,18 @@ void host_texture_upscale_status(char *text,size_t size) {
     if(!upscale_enabled||!catalog_ready)return;
     struct texture_cache_progress p=progress_of(nil);
     snprintf(text,size,"%zu of %zu ready",p.ready,p.textures);
+}
+/* the cache folder for the game's reader (guest_host.h) and the Settings app's pane */
+void host_texture_cache_directory(char *text,unsigned long size) {
+    if(!size)return;
+    text[0]=0;
+    if(!any_root)return;
+    NSString *folder=cache_folder_for(any_root);
+    [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
+    [[NSURL fileURLWithPath:folder] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+    snprintf(text,size,"%s",folder.fileSystemRepresentation);
+}
+void host_texture_cache_path(const char *root,char *text,size_t size) {
+    if(!size)return;
+    snprintf(text,size,"%s",root?cache_folder_for(@(root)).fileSystemRepresentation:"");
 }

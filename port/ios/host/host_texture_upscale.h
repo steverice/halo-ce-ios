@@ -32,3 +32,6 @@ void host_texture_upscale_continued_phase(int began);
 /* the Settings app's delete: through the worker when the upscaler runs (between textures, the manifest emptied with
    the files), else at once; 0 on success or when scheduled */
 int host_texture_upscale_delete_cache(const char *directory);
+/* the texture cache's folder for this data root (Library/Caches/texture-cache on iPhone, iPad and Vision Pro) */
+void host_texture_cache_path(const char *root, char *text, size_t size);
+void host_texture_cache_directory(char *text, unsigned long size);

@@ -8,15 +8,22 @@
 
 static NSString *cache_directory(const char *data_root)
 {
-	return [@(data_root) stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
+	char path[1024];
+
+	host_texture_cache_path(data_root, path, sizeof(path));
+	return @(path);
 }
 
 /* publishes the cache's size for the Settings app to show */
+/* the data root, where the prepared original textures (astc-cache) are */
+static NSString *prepared_root;
+
 static void publish_size(NSString *directory)
 {
 	NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 	uint64_t size = texture_cache_size(directory.fileSystemRepresentation);
-	NSString *prepared = [[directory stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"astc-cache"];
+	/* (the prepared original textures stay under the data root) */
+	NSString *prepared = [prepared_root stringByAppendingPathComponent:@"astc-cache"];
 	uint64_t prepared_size = texture_cache_size(prepared.fileSystemRepresentation);
 
 	[defaults setObject:size ? [NSByteCountFormatter stringFromByteCount:(long long)size
@@ -54,6 +61,7 @@ static void apply_switch(NSUserDefaults *defaults)
 
 void host_texture_settings_apply(const char *data_root)
 {
+	prepared_root = @(data_root);
 	NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 	NSString *directory = cache_directory(data_root);
 

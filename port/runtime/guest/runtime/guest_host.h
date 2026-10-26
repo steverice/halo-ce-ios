@@ -289,6 +289,7 @@ int host_texture_upscale_level_begin(const char *name);
 int host_texture_upscale_level_poll(unsigned long long *done, unsigned long long *total);
 void host_texture_upscale_level_end(int skipped);
 int host_texture_upscale_level_ready(void);
+void host_texture_cache_directory(char *text, unsigned long size);
 
 #endif
 
