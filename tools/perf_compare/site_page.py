@@ -38,8 +38,8 @@ STYLE = """
 .device-tv .bench-chart { aspect-ratio: 16 / 9; border-radius: 3px; }
 .device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
 .device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
-.device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 10px; }
-.device-glass .bench-chart { padding: 3% 4%; }
+.device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 0; box-sizing: border-box; }
+.device-glass .bench-chart { padding: 9.3% 12% 13.4%; }
 .device-glass .bench-chart svg { width: 100%; height: 100%; }
 .device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
 .bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
@@ -57,15 +57,23 @@ STYLE = """
 
 
 FRAMES = {"mac": "device-mac", "iphone-ipad": "device-ipad", "apple-tv": "device-tv", "vision-pro": "device-vision device-glass"}
-def glass_svg() -> str:
-    """The site's Vision Pro icon outline (docs/site/icons/nav/vision-pro.svg), scaled up as the frame.
+# The Vision Pro nav icon's outline with a shallower nose notch: the notch's rise above the lobes is halved
+# (the icon's `c-1.6 0-2.7-.9-3.5-2.1`, `c-.6-.8-1.8-.8-2.4 0` and `c-.8 1.2-1.9 2.1-3.5 2.1` become
+# `c-1.6 0-2.7-.45-3.5-1.05`, `c-.6-.4-1.8-.4-2.4 0` and `c-.8.6-1.9 1.05-3.5 1.05`). The nav icon is untouched.
+GLASS_PATH = ("M2.5 10.5c0-2.5 2-4.5 4.5-4.5h10c2.5 0 4.5 2 4.5 4.5v1.2c0 3-2.1 5.3-4.8 5.3-1.6 0-2.7-.45-3.5-1.05"
+              "-.6-.4-1.8-.4-2.4 0-.8.6-1.9 1.05-3.5 1.05-2.7 0-4.8-2.3-4.8-5.3z")
+GLASS_VIEW = (1.2, 4.9, 21.6, 13.2)
+# The chart's screen is clipped to the same path, scaled a little smaller so the outline's stroke stays visible and
+# its curves cut into the screen's corners and edges.
+GLASS_CLIP_SCALE = 0.98
 
-    The view box is the icon's shape plus room for its stroke, so the frame's aspect ratio is 216 / 132.
-    """
-    icon = (SITE / "icons/nav/vision-pro.svg").read_text(encoding="utf-8")
-    path = re.search(r'<path d="([^"]+)"', icon).group(1)
-    return ('<svg class="glass-shape" viewBox="1.2 4.9 21.6 13.2" preserveAspectRatio="none" aria-hidden="true">'
-            f'<path d="{path}"/></svg>')
+
+def glass_svg() -> str:
+    x, y, w, h = GLASS_VIEW
+    inset = f"translate(.5 .5) scale({GLASS_CLIP_SCALE}) translate(-.5 -.5) scale({1 / w:.6f} {1 / h:.6f}) translate({-x} {-y})"
+    return (f'<svg class="glass-shape" viewBox="{x} {y} {w} {h}" preserveAspectRatio="none" aria-hidden="true">'
+            f'<defs><clipPath id="glass-clip" clipPathUnits="objectBoundingBox"><path transform="{inset}" d="{GLASS_PATH}"/></clipPath></defs>'
+            f'<path d="{GLASS_PATH}"/></svg>')
 
 
 def slug(spec: dict) -> str:

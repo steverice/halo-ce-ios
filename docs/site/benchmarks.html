@@ -25,8 +25,8 @@
 .device-tv .bench-chart { aspect-ratio: 16 / 9; border-radius: 3px; }
 .device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
 .device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
-.device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 10px; }
-.device-glass .bench-chart { padding: 3% 4%; }
+.device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 0; box-sizing: border-box; }
+.device-glass .bench-chart { padding: 9.3% 12% 13.4%; }
 .device-glass .bench-chart svg { width: 100%; height: 100%; }
 .device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
 .bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
@@ -82,7 +82,7 @@
 <h2 id="h-vision-pro">Vision Pro</h2>
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
-<div class="bench-media"><figure class="device device-vision device-glass"><svg class="glass-shape" viewBox="1.2 4.9 21.6 13.2" preserveAspectRatio="none" aria-hidden="true"><path d="M2.5 10.5c0-2.5 2-4.5 4.5-4.5h10c2.5 0 4.5 2 4.5 4.5v1.2c0 3-2.1 5.3-4.8 5.3-1.6 0-2.7-.9-3.5-2.1-.6-.8-1.8-.8-2.4 0-.8 1.2-1.9 2.1-3.5 2.1-2.7 0-4.8-2.3-4.8-5.3z"/></svg><div class="glass-screen"><div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div></div></figure>
+<div class="bench-media"><figure class="device device-vision device-glass"><svg class="glass-shape" viewBox="1.2 4.9 21.6 13.2" preserveAspectRatio="none" aria-hidden="true"><defs><clipPath id="glass-clip" clipPathUnits="objectBoundingBox"><path transform="translate(.5 .5) scale(0.98) translate(-.5 -.5) scale(0.046296 0.075758) translate(-1.2 -4.9)" d="M2.5 10.5c0-2.5 2-4.5 4.5-4.5h10c2.5 0 4.5 2 4.5 4.5v1.2c0 3-2.1 5.3-4.8 5.3-1.6 0-2.7-.45-3.5-1.05-.6-.4-1.8-.4-2.4 0-.8.6-1.9 1.05-3.5 1.05-2.7 0-4.8-2.3-4.8-5.3z"/></clipPath></defs><path d="M2.5 10.5c0-2.5 2-4.5 4.5-4.5h10c2.5 0 4.5 2 4.5 4.5v1.2c0 3-2.1 5.3-4.8 5.3-1.6 0-2.7-.45-3.5-1.05-.6-.4-1.8-.4-2.4 0-.8.6-1.9 1.05-3.5 1.05-2.7 0-4.8-2.3-4.8-5.3z"/></svg><div class="glass-screen"><div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div></div></figure>
 <p class="bench-legend"></p>
 <p class="bench-caption"></p></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
@@ -285,7 +285,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
     "🟦",
     "🟧"
    ],
-   "header": "---\nconfig:\n  xyChart:\n    width: 520\n    height: 232\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+   "header": "---\nconfig:\n  xyChart:\n    width: 520\n    height: 263\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
   },
   "query": {
    "platform": "Vision Pro",
