@@ -69,6 +69,8 @@ int main(int count, char **arguments) {
         stage_timing = 0;
         assert(host_dynamic_resolution_lines(-1) == 0);
         for (i = 0; i < 60; i++) assert(frame(1080) == 0);
+        /* (and benchmark reports carry no lines distribution) */
+        assert(host_perf_hooks_dynamic_lines() == 0);
         return 0;
     }
     assert(host_dynamic_resolution_lines(-1) == 1);
