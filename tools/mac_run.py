@@ -25,7 +25,6 @@ import argparse
 import datetime
 import difflib
 import hashlib
-import json
 import os
 import plistlib
 import re
@@ -119,8 +118,6 @@ def chosen_origins(old, keys):
 # the default, not whatever an earlier run's --set left in config.toml
 DEFAULTS = {
     "debug.dynamic_resolution_shadow": "false",
-    "display.dynamic_resolution": "false",
-    "display.dynamic_resolution_floor": "540",
     "display.screen_width": "0",
     "display.render_height": "0",
     "display.vsync": "true",
@@ -1173,10 +1170,8 @@ def native_command(app, data, out, environment):
     # macOS's TCC denies its helper (xpcproxy) access to removable volumes, so a path on one (a
     # baselines symlink to an external drive) fails the launch with -10810 before the app starts. The
     # data folder is on the internal disk on every host; launch_native copies the logs into out afterward
-    # (-ApplePersistenceIgnoreState: after a run that crashed, AppKit would otherwise ask, before the app
-    # starts, whether to reopen its windows, and the next run would wait on that question until killed)
     return command + ["--stdout", str(data / "open-stdout.log"), "--stderr", str(data / "open-stderr.log"),
-                      str(app), "--args", "-ApplePersistenceIgnoreState", "YES"]
+                      str(app)]
 
 
 def native_pattern(app):
@@ -1325,48 +1320,6 @@ def seed_native_movies(args, data):
         run_command("cp", "-c", "-R", movies, data / "bink")
 
 
-# where macOS's crash reporter writes a user's app crash reports
-DIAGNOSTIC_REPORTS = Path.home() / "Library/Logs/DiagnosticReports"
-
-
-# the app's process ID in ios-runtime.log (host_crash.c), which a crash report names too
-CRASH_PID = re.compile(r"crash reports: \d+ guest symbols, pid (\d+)")
-
-
-def report_pid(path):
-    """the process ID an .ips crash report is of, or None"""
-    try:
-        _, _, body = path.read_text(errors="replace").partition("\n")
-        return json.loads(body).get("pid")
-    except (OSError, ValueError):
-        return None
-
-
-def collect_crash_reports(app, since, out, reports=DIAGNOSTIC_REPORTS, wait=30):
-    """copy the crash report of the run whose logs are in out to out/crash-reports: the report of the pid its
-    ios-runtime.log names (else, for a build from before host_crash.c, of app's executable since the launch, a
-    time.time()), waiting up to wait seconds for the crash reporter to write it; the copies. Their guest
-    frames are named by tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt"""
-    name = app_executable(app) if (app / "Info.plist").is_file() else Path(NATIVE_EXECUTABLE).name
-    log = out / "ios-runtime.log"
-    match = CRASH_PID.search(log.read_text(errors="replace")) if log.is_file() else None
-    pid = int(match.group(1)) if match else None
-    found = []
-    for attempt in range(wait + 1):
-        candidates = [path for path in reports.glob(f"{name}-*.ips") if path.stat().st_mtime >= since - 1] \
-            if reports.is_dir() else []
-        found = [path for path in candidates if pid is None or report_pid(path) == pid]
-        if found or attempt == wait:
-            break
-        time.sleep(1)
-    copies = []
-    for path in sorted(found, key=lambda path: path.stat().st_mtime):
-        (out / "crash-reports").mkdir(parents=True, exist_ok=True)
-        copies.append(out / "crash-reports" / path.name)
-        shutil.copy2(path, copies[-1])
-    return copies
-
-
 def run_native(args):
     args.app = args.app or native_app_default()
     if not (args.app / NATIVE_EXECUTABLE).is_file():
@@ -1396,7 +1349,6 @@ def run_native(args):
         # (unused bindings, redundant sets), so ignore them here (Metal's default): any validation line
         # left in the native stderr.log is then an error
         environment["MTL_DEBUG_LAYER_WARNING_MODE"] = "ignore"
-    launched = time.time()
     finished = launch_native(args.app, data, args.out, environment, limit)
     collect(data, args.out)
     if not finished:
@@ -1405,9 +1357,7 @@ def run_native(args):
     log = args.out / "ios-runtime.log"
     status = game_exit(log.read_text(errors="replace")) if log.is_file() else None
     if status != 0:
-        reports = collect_crash_reports(args.app, launched, args.out)
-        crashed = f"; crash report: {', '.join(str(path) for path in reports)}" if reports else ""
-        sys.exit(f"the game did not exit cleanly (game exit {status}); logs are in {args.out}{crashed}")
+        sys.exit(f"the game did not exit cleanly (game exit {status}); logs are in {args.out}")
     print(f"results: {args.out}")
 
 

@@ -72,104 +72,6 @@ enum texture_cache_action texture_cache_action(const struct texture_cache_record
 	return TEXTURE_CACHE_KEEP;
 }
 
-static int key_compare(uint64_t hash_a, uint32_t width_a, uint32_t height_a, uint64_t hash_b, uint32_t width_b,
-	uint32_t height_b)
-{
-	if (hash_a != hash_b)
-		return hash_a < hash_b ? -1 : 1;
-	if (width_a != width_b)
-		return width_a < width_b ? -1 : 1;
-	return height_a < height_b ? -1 : height_a > height_b;
-}
-
-static int decision_order(const void *a, const void *b)
-{
-	const struct texture_policy_decision *x = a, *y = b;
-
-	return key_compare(x->hash, x->width, x->height, y->hash, y->width, y->height);
-}
-
-static int record_order(const void *a, const void *b)
-{
-	const struct texture_cache_record *x = a, *y = b;
-
-	return key_compare(x->hash, x->width, x->height, y->hash, y->width, y->height);
-}
-
-static const struct texture_policy_decision *find_decision(const struct texture_policy_decision *decisions,
-	size_t count, uint64_t hash, uint32_t width, uint32_t height)
-{
-	size_t low = 0, high = count;
-
-	while (low < high)
-	{
-		size_t middle = low + (high - low) / 2;
-		int order = key_compare(decisions[middle].hash, decisions[middle].width, decisions[middle].height, hash,
-			width, height);
-
-		if (!order)
-			return &decisions[middle];
-		if (order < 0)
-			low = middle + 1;
-		else
-			high = middle;
-	}
-	return NULL;
-}
-
-static void progress_add(const struct texture_policy_decision *d, const struct texture_cache_record *sorted,
-	size_t record_count, const struct texture_recipe_globals *globals, struct texture_cache_progress *progress)
-{
-	struct texture_cache_record wanted;
-	const struct texture_cache_record *found;
-	uint64_t units;
-
-	if (d->result == TEXTURE_POLICY_ORIGINAL)
-		return;
-	units = (uint64_t)d->width * d->height * (d->scale == 8 ? 4 : 1);
-	progress->textures++;
-	progress->units += units;
-	memset(&wanted, 0, sizeof(wanted));
-	wanted.hash = d->hash;
-	wanted.width = d->width;
-	wanted.height = d->height;
-	found = sorted ? bsearch(&wanted, sorted, record_count, sizeof(*sorted), record_order) : NULL;
-	if (found && found->global_key == texture_recipe_global_key(globals, d->treatment, d->result))
-	{
-		progress->ready++;
-		progress->ready_units += units;
-	}
-}
-
-void texture_cache_progress(const struct texture_cache_key *keys, size_t key_count,
-	const struct texture_policy_decision *decisions, size_t decision_count,
-	const struct texture_cache_record *records, size_t record_count, const struct texture_recipe_globals *globals,
-	struct texture_cache_progress *progress)
-{
-	struct texture_cache_record *sorted = NULL;
-	size_t i;
-
-	memset(progress, 0, sizeof(*progress));
-	if (record_count && (sorted = malloc(record_count * sizeof(*sorted))))
-	{
-		memcpy(sorted, records, record_count * sizeof(*sorted));
-		qsort(sorted, record_count, sizeof(*sorted), record_order);
-	}
-	if (!keys)
-		for (i = 0; i < decision_count; i++)
-			progress_add(&decisions[i], sorted, sorted ? record_count : 0, globals, progress);
-	else
-		for (i = 0; i < key_count; i++)
-		{
-			const struct texture_policy_decision *d = find_decision(decisions, decision_count, keys[i].hash,
-				keys[i].width, keys[i].height);
-
-			if (d)
-				progress_add(d, sorted, sorted ? record_count : 0, globals, progress);
-		}
-	free(sorted);
-}
-
 int texture_cache_manifest_load(const char *directory, struct texture_cache_record **records, size_t *count_out)
 {
 	char path[1024], line[256];
@@ -270,80 +172,6 @@ int texture_cache_manifest_save(const char *directory, const struct texture_cach
 	return write_atomically(path, fill_manifest, &m);
 }
 
-/* ---------- the whole-game decisions, beside the manifest (decisions.tsv) */
-struct decision_contents { const struct texture_policy_decision *d; size_t count; };
-
-static int fill_decisions(FILE *file, const void *context)
-{
-	const struct decision_contents *c = context;
-	size_t i;
-
-	for (i = 0; i < c->count; i++)
-		if (fprintf(file, "%016" PRIx64 "\t%u\t%u\t%u\t%u\n", c->d[i].hash, c->d[i].width, c->d[i].height,
-			(unsigned)c->d[i].result, (unsigned)c->d[i].treatment) < 0)
-			return -1;
-	return 0;
-}
-
-int texture_cache_decisions_save(const char *directory, const struct texture_policy_decision *decisions, size_t count)
-{
-	char path[1024];
-	struct decision_contents c = { decisions, count };
-
-	snprintf(path, sizeof(path), "%s/decisions.tsv", directory);
-	return write_atomically(path, fill_decisions, &c);
-}
-
-int texture_cache_decisions_load(const char *directory, struct texture_policy_decision **decisions, size_t *count_out)
-{
-	char path[1024], line[128];
-	FILE *file;
-	size_t count = 0, capacity = 0;
-	struct texture_policy_decision *list = NULL;
-
-	*decisions = NULL;
-	*count_out = 0;
-	snprintf(path, sizeof(path), "%s/decisions.tsv", directory);
-	if (!(file = fopen(path, "r")))
-		return -1;
-	while (fgets(line, sizeof(line), file))
-	{
-		struct texture_policy_decision d;
-		unsigned result, treatment;
-
-		memset(&d, 0, sizeof(d));
-		if (sscanf(line, "%" SCNx64 "\t%u\t%u\t%u\t%u", &d.hash, &d.width, &d.height, &result, &treatment) != 5 ||
-			result > TEXTURE_POLICY_ORIGINAL || treatment > TEXTURE_POLICY_BUMP_MAP)
-		{
-			free(list);
-			fclose(file);
-			return -1;
-		}
-		d.result = (enum texture_policy_result)result;
-		d.treatment = (enum texture_policy_treatment)treatment;
-		if (count == capacity)
-		{
-			struct texture_policy_decision *grown;
-
-			capacity = capacity ? capacity * 2 : 256;
-			if (!(grown = realloc(list, capacity * sizeof(*list))))
-			{
-				free(list);
-				fclose(file);
-				return -1;
-			}
-			list = grown;
-		}
-		list[count++] = d;
-	}
-	fclose(file);
-	/* (in texture_policy_classify's order, which texture_cache_progress relies on) */
-	qsort(list, count, sizeof(*list), decision_order);
-	*decisions = list;
-	*count_out = count;
-	return 0;
-}
-
 /* ---------- storage: entry sizes, the low-storage floor, the level-start decision, entry writes */
 static long write_fault = -1;
 
@@ -411,7 +239,6 @@ static int ours(const char *name)
 	size_t length = strlen(name);
 
 	return !strcmp(name, "manifest.tsv") || !strcmp(name, "manifest.tsv.tmp") ||
-		!strcmp(name, "decisions.tsv") || !strcmp(name, "decisions.tsv.tmp") ||
 		(length > 4 && !strcmp(name + length - 4, ".bin")) || (length > 8 && !strcmp(name + length - 8, ".bin.tmp"));
 }
 

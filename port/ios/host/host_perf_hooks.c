@@ -21,115 +21,22 @@ static struct { game_perf_frame frame; int width; } delayed[16];
 static unsigned delayed_read, delayed_write;
 static pthread_mutex_t dynamic_lock = PTHREAD_MUTEX_INITIALIZER;
 static int dynamic_paused;
-static int dynamic_width, dynamic_eligible, dynamic_configured;
+static int dynamic_width, dynamic_eligible;
 static _Atomic int dynamic_setting = -1;
-/* Actuation: display.dynamic_resolution, or a debug pin or sweep. Each is
- * read once, as the shadow switch is: a profile sets them for the session. */
-static int dynamic_actuate, dynamic_pin, dynamic_sweep, dynamic_validate, dynamic_floor = 540;
-/* The context in force (host_dynamic_resolution_scene): whether display.dynamic_resolution is on in it and its
- * floor, as the game resolved them for the workload context and scene class. The session switch is on when either
- * workload context may want it. */
-static int dynamic_scene_on = 1, dynamic_scene_floor;
-static int setting_true(const char *name, const char *environment_name) {
-    char text[16];
-    const char *environment = getenv(environment_name);
-    host_config_string(name, "false", text, sizeof(text));
-    return !strcmp(environment ? environment : text, "true") || !strcmp(environment ? environment : text, "1");
-}
-static int setting_integer(const char *name, const char *environment_name, const char *fallback) {
-    char text[16];
-    const char *environment = getenv(environment_name);
-    host_config_string(name, fallback, text, sizeof(text));
-    return atoi(environment ? environment : text);
-}
 int host_perf_hooks_dynamic_enabled(void) {
-    /* Not settled before the device profile is installed: a profile alone may turn it on. */
-    if (dynamic_setting < 0 && !host_config_profile_installed()) {
-        return setting_true("debug.dynamic_resolution_shadow", "HALO_DYNAMIC_RESOLUTION_SHADOW") ||
-            setting_true("display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
-            setting_true("variable.display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
-            setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE") ||
-            setting_integer("debug.dynamic_resolution_lines", "HALO_DYNAMIC_RESOLUTION_LINES", "0") > 0 ||
-            setting_true("debug.dynamic_resolution_sweep", "HALO_DYNAMIC_RESOLUTION_SWEEP");
-    }
     if (dynamic_setting < 0) {
-        int shadow_on = setting_true("debug.dynamic_resolution_shadow", "HALO_DYNAMIC_RESOLUTION_SHADOW");
-        int floor = setting_integer("display.dynamic_resolution_floor", "HALO_DYNAMIC_RESOLUTION_FLOOR", "540");
-        dynamic_pin = setting_integer("debug.dynamic_resolution_lines", "HALO_DYNAMIC_RESOLUTION_LINES", "0");
-        dynamic_sweep = setting_true("debug.dynamic_resolution_sweep", "HALO_DYNAMIC_RESOLUTION_SWEEP");
-        dynamic_floor = floor > 0 ? floor : 540;
-        dynamic_validate = setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE");
-        /* (the variable context's own value: a profile may turn it on for variable workloads alone) */
-        dynamic_actuate = setting_true("display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
-            setting_true("variable.display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
-            dynamic_validate || dynamic_pin > 0 || dynamic_sweep;
-        dynamic_setting = shadow_on || dynamic_actuate;
+        char text[16];
+        const char *environment = getenv("HALO_DYNAMIC_RESOLUTION_SHADOW");
+        host_config_string("debug.dynamic_resolution_shadow", "false", text, sizeof(text));
+        dynamic_setting = !strcmp(environment ? environment : text, "true") ||
+            !strcmp(environment ? environment : text, "1");
     }
     return dynamic_setting;
 }
-static int dynamic_scene_holds(void) {
-    return !dynamic_scene_on && !dynamic_validate && dynamic_pin <= 0 && !dynamic_sweep;
-}
-int host_perf_hooks_dynamic_actuates(void) { return host_perf_hooks_dynamic_enabled() && dynamic_setting >= 0 && dynamic_actuate; }
-/* the lines the frame being presented rendered at, while dynamic resolution renders them; 0 otherwise */
-int host_perf_hooks_dynamic_lines(void) {
-    return host_perf_hooks_dynamic_actuates() && dynamic_eligible && host_perf_metal_timing_supported() ?
-        (int)pending.drs.actual_lines : 0;
-}
-/* Without stage-boundary GPU timing the planner never has a decision to make,
- * so dynamic resolution is off rather than silently holding the ceiling. */
-static int dynamic_timing_available(void) {
-    static int said;
-    if (host_perf_metal_timing_supported()) return 1;
-    if (!said && dynamic_configured) {
-        fprintf(stderr, "dynamic resolution: off: no GPU timing for the planner\n");
-        said = 1;
-    }
-    return 0;
-}
 void host_perf_hooks_dynamic_ignore(unsigned reason) { atomic_fetch_or(&dynamic_events, reason); }
-/* Between frames, on the game thread. The planner's level was decided from
- * frames presented at least eight frames ago (dynamic_drain_locked); the
- * guest renders the next frames at the returned lines. A refused frame resets
- * the planner to the ceiling, so a refusal never strands a lower picture. */
-int host_dynamic_resolution_lines(int ceiling_lines) {
-    int lines;
-    if (!host_perf_hooks_dynamic_actuates()) return 0;
-    /* (asked whether it is on at all, with nothing changed) */
-    if (ceiling_lines < 0) return dynamic_timing_available();
-    if (!dynamic_timing_available()) return 0;
-    pthread_mutex_lock(&dynamic_lock);
-    shadow.actuate = 1;
-    /* A frame the planner could not measure (split screen's several views,
-     * a stereo frame) returns to the ceiling too: no decision would follow. */
-    if (ceiling_lines <= 0 || (dynamic_configured && !dynamic_eligible) || dynamic_scene_holds()) {
-        if (shadow.plan.levels && shadow.plan.level) {
-            shadow.plan.level = 0;
-            shadow.plan.settle = DYNAMIC_RESOLUTION_SETTLE;
-        }
-        pthread_mutex_unlock(&dynamic_lock);
-        return ceiling_lines > 0 ? ceiling_lines : 0;
-    }
-    lines = ceiling_lines;
-    /* Until the first frame at this ceiling is measured, render the ceiling. */
-    if (shadow.height == ceiling_lines && shadow.plan.levels) {
-        int floor = shadow.plan.lines[shadow.plan.levels - 1];
-        if (dynamic_pin > 0) lines = dynamic_pin < floor ? floor : dynamic_pin > ceiling_lines ? ceiling_lines : dynamic_pin;
-        else if (dynamic_sweep && shadow.plan.levels > 1) {
-            /* floor to ceiling and back, one level each half second at 60 a second */
-            unsigned span = 2u * (unsigned)(shadow.plan.levels - 1), step = (unsigned)((serial / 30) % span);
-            lines = shadow.plan.lines[step < (unsigned)shadow.plan.levels ? step : span - step];
-        } else lines = shadow.plan.lines[shadow.plan.level];
-    }
-    pthread_mutex_unlock(&dynamic_lock);
-    return lines;
-}
-void host_perf_hooks_dynamic_config(int enabled, int width, int height, int actual, int floor, int thermal, int eligible) {
-    dynamic_width = width; dynamic_eligible = enabled && eligible; dynamic_configured = 1;
-    pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
-    pending.drs.actual_lines = actual > 0 && actual <= height ? (uint32_t)actual : pending.drs.ceiling_lines;
-    /* (HALO_DYNAMIC_RESOLUTION_FLOOR is the floor in every class) */
-    if (floor <= 0) floor = dynamic_scene_floor > 0 && !getenv("HALO_DYNAMIC_RESOLUTION_FLOOR") ? dynamic_scene_floor : dynamic_floor;
+void host_perf_hooks_dynamic_config(int enabled, int width, int height, int floor, int thermal, int eligible) {
+    dynamic_width = width; dynamic_eligible = enabled && eligible;
+    pending.drs.actual_lines = pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
     pending.drs.floor_lines = floor > 0 ? (uint32_t)floor : 540;
     if ((height + 1) / 2 > (int)pending.drs.floor_lines) pending.drs.floor_lines = (height + 1) / 2;
     if (height > 0 && pending.drs.floor_lines > (uint32_t)height) pending.drs.floor_lines = height;
@@ -146,37 +53,15 @@ static void dynamic_drain_locked(uint64_t frame_id) {
         host_perf_metal_join(frame);
         dynamic_resolution_shadow_frame(&shadow, frame, delayed[slot].width);
         if (frame->drs.action || frame->frame_id % 600 == 0) {
-            fprintf(stderr, "%s frame=%llu actual=%u chosen=%u decision_available=%u action=%u S/U/H=%llu/%llu/%llu cpu=%llu budget=%llu late=%u ignore=%u available=%u thermal=%u clock=%s\n",
-                shadow.actuate ? "DRS:" : "DRS shadow:",
+            fprintf(stderr, "DRS shadow: frame=%llu actual=%u chosen=%u decision_available=%u action=%u S/U/H=%llu/%llu/%llu cpu=%llu budget=%llu late=%u ignore=%u available=%u thermal=%u clock=unvalidated_fixed_pixels\n",
                 (unsigned long long)frame->frame_id, frame->drs.actual_lines, frame->drs.chosen_lines,
                 (frame->drs.available & 4) != 0, frame->drs.action, (unsigned long long)frame->drs.scene_us, (unsigned long long)frame->drs.upscale_us,
                 (unsigned long long)frame->drs.hud_us, (unsigned long long)frame->cpu_us,
-                (unsigned long long)frame->budget_us, frame->drs.late, frame->drs.ignore, frame->drs.available, frame->drs.thermal,
-                shadow.actuate ? "actuated" : "unvalidated_fixed_pixels");
+                (unsigned long long)frame->budget_us, frame->drs.late, frame->drs.ignore, frame->drs.available, frame->drs.thermal);
         }
         host_perf_reports_frame(frame);
         ++delayed_read;
     }
-}
-/* A guest import, when the workload context, the scene class or the settings change: display.dynamic_resolution
- * and its floor now in force, after the player's and the environment's choices. Off there, the planner holds the
- * ceiling inside the pool, as for a refused frame; the debug pins and the validation run ignore it. */
-void host_dynamic_resolution_scene(int enabled, int floor_lines) {
-    pthread_mutex_lock(&dynamic_lock);
-    floor_lines = floor_lines > 0 ? floor_lines : 0;
-    /* a new context starts at the ceiling: a level the planner chose under the old floor, or while the context
-     * held the ceiling, is no decision for this one */
-    if ((enabled != 0) != dynamic_scene_on || floor_lines != dynamic_scene_floor) {
-        /* (the frames still in flight were the old context's: their decisions are made first) */
-        dynamic_drain_locked(UINT64_MAX);
-        if (shadow.plan.levels && shadow.plan.level) {
-            shadow.plan.level = 0;
-            shadow.plan.settle = DYNAMIC_RESOLUTION_SETTLE;
-        }
-    }
-    dynamic_scene_on = enabled != 0;
-    dynamic_scene_floor = floor_lines;
-    pthread_mutex_unlock(&dynamic_lock);
 }
 static void dynamic_drain(uint64_t frame_id) {
     pthread_mutex_lock(&dynamic_lock);
@@ -196,7 +81,7 @@ void host_perf_hooks_dynamic_resume(void) {
     host_perf_hooks_dynamic_ignore(DYNAMIC_RESOLUTION_RESUME);
     pthread_mutex_unlock(&dynamic_lock);
 }
-static uint64_t context_values[12];
+static uint64_t context_values[10];
 static unsigned context_seen;
 static uint32_t frame_draws, networked_objects;
 static uint64_t last_network_sample, last_stall_us;
@@ -247,7 +132,7 @@ static uint64_t now_us(void) {
     return (uint64_t)value.tv_sec * 1000000 + (uint64_t)value.tv_nsec / 1000;
 }
 void host_perf_hooks_context(unsigned field, uint64_t value) {
-    if (!field || field >= 12) return;
+    if (!field || field >= 10) return;
     if (!(context_seen & (1u << field)) || context_values[field] != value) {
         game_perf_event event = {.elapsed_us = now_us(), .type = GAME_PERF_EVENT_CONTEXT, .flags = field, .value = value, .denominator = serial};
         host_perf_reports_event(&event);

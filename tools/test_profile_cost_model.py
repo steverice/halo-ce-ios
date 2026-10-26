@@ -6,12 +6,12 @@ import profile_cost_model as model
 
 
 def run(height=1080, gpu=10.0, settings=None, sim=5.0, render=4.0, thermal=0, basis=model.BASIS, index=0,
-        report="r1", device="iPad0,0", workload="gameplay", render_basis="waits_removed"):
+        report="r1", device="iPad0,0", workload="gameplay"):
     base = {"display.shadow_map_size": "512", "display.render_lines": str(height)}
     base.update(settings or {})
     return model.Run(report=report, index=index, device=device, chip="A0", workload=workload, settings=base,
                      render_width=height * 2, render_height=height, simulation_cpu_ms=sim, render_cpu_ms=render,
-                     gpu_ms=gpu, thermal=thermal, timing_basis=basis, render_cpu_basis=render_basis)
+                     gpu_ms=gpu, thermal=thermal, timing_basis=basis)
 
 
 def megapixels(height):
@@ -48,35 +48,6 @@ def test_fit_excludes_thermal_and_basis():
     item = model.fit(runs)[0]
     assert item.excluded == {"thermal": 2, "timing_basis": 2}
     assert item.gpu_ms_per_megapixel > 0
-
-
-def test_serialized_wall_render_cpu_is_not_a_cost():
-    # serialized offscreen runs' render CPU counts the visibility waits: only with them taken out, or pipelined
-    wall = [run(index=0, render=9.0, render_basis="wall"),
-            run(index=1, render=12.0, render_basis="wall", settings={"display.shadow_map_size": "256"})]
-    item = model.fit(wall)[0]
-    assert item.excluded["render_cpu_serialized"] == 2 and item.excluded["render_cpu_upper_bound"] == 1
-    assert "display.shadow_map_size" not in item.knobs or item.knobs["display.shadow_map_size"]["256"][0] == 1.0
-    assert item.render_cpu_ms == 9.0
-    piped = [run(index=0, render=4.0, basis="offscreen_pipelined", render_basis="wall"),
-             run(index=1, render=5.0, basis="offscreen_pipelined", render_basis="wall",
-                 settings={"display.shadow_map_size": "256"}),
-             run(index=2, render=7.0, render_basis="wall")]
-    item = model.fit(piped)[0]
-    assert item.excluded == {"render_cpu_serialized": 1}
-    assert abs(item.knobs["display.shadow_map_size"]["256"][0] - 1.25) < 1e-9
-    assert item.render_cpu_ms == 4.0
-
-
-def test_runs_from_report_takes_out_gpu_waits():
-    report = {"code": "W", "device": {"model": "iPad0,0", "chip": "A0"}, "runs": [
-        {"index": 0, "scene": "gameplay", "status": "complete", "settings": {}, "render_size": [960, 540],
-         "render_cpu_ms": {"mean": 9.0}, "gpu_wait_ms": {"mean": 5.5}, "timing_basis": "offscreen_uncapped"},
-        {"index": 1, "scene": "gameplay", "status": "complete", "settings": {}, "render_size": [960, 540],
-         "render_cpu_ms": {"mean": 9.0}, "timing_basis": "offscreen_uncapped"}]}
-    first, second = model.runs_from_report(report)
-    assert first.render_cpu_ms == 3.5 and first.render_cpu_basis == "waits_removed" and first.render_cpu_valid()
-    assert second.render_cpu_ms == 9.0 and second.render_cpu_basis == "wall" and not second.render_cpu_valid()
 
 
 def test_frame_ms_tick_share():

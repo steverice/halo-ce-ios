@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Validate unsigned provenance, check Claude identity, perform an approved release, or build the unsigned apps of an existing release tag'
+        description: 'Validate unsigned provenance, check Claude identity, or perform an approved release'
         type: choice
-        options: [validate, auth, release, unsigned]
+        options: [validate, auth, release]
         default: validate
       source_sha:
         description: 'Reviewed full main commit SHA (not needed for auth check; original source SHA when resuming)'
@@ -25,7 +25,7 @@ on:
         options: [auto, patch, minor, major]
         default: auto
       resume_tag:
-        description: 'Recover an existing visr-vX.Y.Z tag; never bumps again. In unsigned mode, the tag to build'
+        description: 'Recover an existing visr-vX.Y.Z tag; never bumps again'
         type: string
       bootstrap_since:
         description: 'First managed release only: reviewed full ancestor SHA for changelog boundary'
@@ -39,7 +39,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.mode == 'validate' && format('visr-validate-{0}', inputs.source_sha) || inputs.mode == 'unsigned' && format('visr-unsigned-{0}', inputs.resume_tag) || 'visr-release' }}
+  group: ${{ inputs.mode == 'validate' && format('visr-validate-{0}', inputs.source_sha) || 'visr-release' }}
   cancel-in-progress: false
 
 # The xcode-27 runner fleet serves more than one image, and each carries a different 27.2 beta. Each Xcode job
@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   probe:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode != 'auth' && inputs.mode != 'unsigned' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.mode != 'auth' && github.ref == 'refs/heads/main'
     runs-on: xcode-27
     timeout-minutes: 180
     environment: release
@@ -84,7 +84,6 @@ jobs:
           path: |
             build/release-probe.json
             build/ios/halo_guest.elf
-            build/ios/embedded/guest-symbols.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -212,43 +211,8 @@ jobs:
             --source-sha "$SOURCE_SHA" --platforms "$RELEASE_PLATFORMS" --increment "$INCREMENT" \
             --resume-tag "$RESUME_TAG" --bootstrap-since "$BOOTSTRAP_SINCE" --bootstrap-version "$BOOTSTRAP_VERSION"
 
-  # The unsigned iPhone/iPad, Apple TV and Apple Vision Pro apps attached to the GitHub release, built from the
-  # release tag with the reviewed controller. In unsigned mode they are only kept as a workflow artifact. The job has
-  # no environment and no secrets; the publish step checks them again, with the team ID, before attaching them.
-  unsigned:
-    needs: prepare
-    if: >-
-      !cancelled() && github.event_name == 'workflow_dispatch' &&
-      ((inputs.mode == 'release' && needs.prepare.result == 'success') || (inputs.mode == 'unsigned' && inputs.resume_tag != ''))
-    runs-on: xcode-27
-    timeout-minutes: 180
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ inputs.mode == 'unsigned' && format('refs/tags/{0}', inputs.resume_tag) || needs.prepare.outputs.tag }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Select an accepted Xcode build
-        run: python3 tools/xcode_select.py
-      - name: Install build dependencies
-        run: brew install cmake ninja llvm lld sdl3 pkgconf
-      - name: Select the reviewed release controller without changing the application tag
-        env:
-          CONTROLLER_SHA: ${{ github.sha }}
-        run: git worktree add --detach "$RUNNER_TEMP/visr-release-controller" "$CONTROLLER_SHA"
-      - name: Build and check the unsigned apps from the tag
-        run: |
-          python3 "$RUNNER_TEMP/visr-release-controller/tools/release_unsigned.py" build \
-            --source-root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/unsigned"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: visr-release-unsigned
-          path: ${{ runner.temp }}/unsigned
-          if-no-files-found: error
-          retention-days: 30
-
   testflight:
-    needs: [prepare, unsigned]
+    needs: prepare
     runs-on: xcode-27
     timeout-minutes: 180
     environment: release
@@ -290,15 +254,10 @@ jobs:
           APPLE_INSTALLER_P12_PASSWORD: ${{ secrets.APPLE_INSTALLER_P12_PASSWORD }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
         run: python3 tools/release_signing.py install
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: visr-release-unsigned
-          path: ${{ runner.temp }}/unsigned
-      - name: Build, upload, reconcile exact TestFlight builds, attach the unsigned apps, and publish release
+      - name: Build, upload, reconcile exact TestFlight builds, and publish release
         run: |
           uv run --python 3.11 --no-project --with-requirements "$RUNNER_TEMP/visr-release-controller/tools/release-requirements.txt" \
-            python "$RUNNER_TEMP/visr-release-controller/tools/release.py" publish --source-root "$GITHUB_WORKSPACE" \
-            --unsigned-assets "$RUNNER_TEMP/unsigned"
+            python "$RUNNER_TEMP/visr-release-controller/tools/release.py" publish --source-root "$GITHUB_WORKSPACE"
       - name: Remove signing material
         if: always()
         run: python3 tools/release_signing.py cleanup

@@ -33,10 +33,6 @@ enum { MODEL_SIDE = 288, MODEL_CONTEXT = 16, MODEL_CORE = MODEL_SIDE - 2 * MODEL
 @end
 
 static TextureUpscaleModel *active_model;
-static const volatile int *cancel_flag;
-
-void texture_upscale_model_set_cancel(const volatile int *flag) { cancel_flag = flag; }
-int texture_upscale_model_cancelled(void) { return cancel_flag && *cancel_flag; }
 
 static void set_error(char *error, size_t size, NSString *message)
 {
@@ -93,11 +89,7 @@ static MLMultiArray *make_array(uint32_t planes, uint32_t side, MLMultiArrayData
 /* Development only: HALO_TEXTURE_UPSCALE_MODEL names a compiled package to use instead of the bundled one. */
 static NSURL *model_url(void)
 {
-#ifdef HALO_DEVELOPMENT_HOOKS
     const char *override = getenv("HALO_TEXTURE_UPSCALE_MODEL");
-#else
-    const char *override = NULL;   /* (compiled out of App Store packages: HALO_DEVELOPMENT_HOOKS) */
-#endif
     if (override && *override) {
         NSString *path = @(override);
         if (!path.isAbsolutePath)
@@ -221,9 +213,6 @@ int texture_upscale_model_predict_tiles(struct texture_upscale_model *model, con
         /* The consumer of the call before last still reads this buffer's output. */
         dispatch_group_wait(pending[buffer], DISPATCH_TIME_FOREVER);
         if (consumer_failed) break;
-        if (texture_upscale_model_cancelled()) {
-            set_error(error, error_size, @"S4g stopped for gameplay"); status = -1; break;
-        }
         struct tile_slot slots[3];
         unsigned used = 0;
         uint64_t pack_start = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);

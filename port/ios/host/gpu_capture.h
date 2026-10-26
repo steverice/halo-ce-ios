@@ -84,7 +84,6 @@ enum
 	GPU_CAPTURE_FLUSH,
 	GPU_CAPTURE_PRESENT,             /* back buffer */
 	GPU_CAPTURE_PRESENT_STEREO,      /* struct gpu_stereo_present */
-	GPU_CAPTURE_TEXTURE_COPY_RECTS,  /* source, count; count struct gpu_texture_copy */
 	GPU_CAPTURE_OPERATION_COUNT
 };
 

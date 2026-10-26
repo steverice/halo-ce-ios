@@ -34,24 +34,6 @@ static void active_in_suite(void) {
     CHECK(!strcmp(host_benchmark_timing_basis(1), "offscreen_uncapped"));
 }
 
-/* the run's pacing: presented launches, the offscreen modes and the virtual display */
-static void pacing_kinds(void) {
-    CHECK(host_benchmark_pacing_of(0, 0, 1, 1) == HOST_BENCHMARK_PACING_PRESENTED);
-    CHECK(host_benchmark_pacing_of(1, 1, 0, 1) == HOST_BENCHMARK_PACING_SERIALIZED);
-    CHECK(host_benchmark_pacing_of(1, 1, 1, 0) == HOST_BENCHMARK_PACING_PIPELINED);
-    CHECK(host_benchmark_pacing_of(1, 0, 1, 0) == HOST_BENCHMARK_PACING_PRESENTED);
-    CHECK(host_benchmark_pacing_of(1, 0, 0, 1) == HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY);
-    CHECK(!strcmp(host_benchmark_timing_basis(HOST_BENCHMARK_PACING_PIPELINED), "offscreen_pipelined"));
-    CHECK(!strcmp(host_benchmark_timing_basis(HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY), "virtual_display"));
-    CHECK(!strcmp(host_benchmark_pacing_mode(HOST_BENCHMARK_PACING_PRESENTED), "presented"));
-    CHECK(!strcmp(host_benchmark_pacing_mode(HOST_BENCHMARK_PACING_SERIALIZED), "offscreen_serialized"));
-    CHECK(!strcmp(host_benchmark_pacing_mode(HOST_BENCHMARK_PACING_PIPELINED), "offscreen_pipelined"));
-    CHECK(!strcmp(host_benchmark_pacing_mode(HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY), "virtual_display"));
-    CHECK(host_benchmark_offscreen_mode_pipelined("pipelined"));
-    CHECK(!host_benchmark_offscreen_mode_pipelined("serialized") && !host_benchmark_offscreen_mode_pipelined("paced") &&
-        !host_benchmark_offscreen_mode_pipelined(NULL));
-}
-
 /* Vision Pro's stereo path keeps real time */
 static void ignored_on_stereo(void) {
     enum host_benchmark_offscreen decided = host_benchmark_offscreen_decide(1, 1, 1);
@@ -116,7 +98,7 @@ static void progress_visibility(void) {
 int main(int argc, char **argv) {
     static const struct { const char *name; void (*run)(void); } cases[] = {
         { "ignored_outside_suite", ignored_outside_suite }, { "active_in_suite", active_in_suite },
-        { "ignored_on_stereo", ignored_on_stereo }, { "pacing_kinds", pacing_kinds },
+        { "ignored_on_stereo", ignored_on_stereo },
         { "progress_format", progress_format }, { "progress_visibility", progress_visibility },
     };
     size_t index, ran = 0;

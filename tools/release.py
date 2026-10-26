@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI-only, resumable GitHub and internal TestFlight releases; the only release assets are the verified unsigned apps."""
+"""CI-only, resumable GitHub and internal TestFlight releases; no game data or release assets."""
 
 from __future__ import annotations
 
@@ -896,23 +896,6 @@ class API:
             time.sleep(2**attempt)
         raise RuntimeError("HTTP retry budget exhausted")
 
-    def upload(self, url: str, data: bytes) -> Any:
-        """Send one release asset. A mutation, so it is never repeated blindly."""
-        token = self.token() if callable(self.token) else self.token
-        request = urllib.request.Request(
-            url,
-            data=data,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
-                "Content-Type": "application/octet-stream",
-                "User-Agent": "VISR-release",
-            },
-        )
-        with urllib.request.urlopen(request, timeout=600) as response:
-            return json.load(response)
-
     def collection(self, path: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for _ in range(100):
@@ -1100,75 +1083,6 @@ def find_release(api: API, path: str, tag: str) -> dict[str, Any] | None:
         if len(page) < 100:
             return None
     raise ValueError("GitHub release pagination limit exceeded")
-
-
-def unsigned_release_assets(args: argparse.Namespace, manifest: dict[str, Any]) -> list[dict[str, Any]]:
-    """The unsigned apps this run built from the tag, checked again here before anything is uploaded."""
-    if __package__:
-        from . import release_unsigned
-    else:
-        import release_unsigned
-    folder = getattr(args, "unsigned_assets", None)
-    if folder is None:
-        raise ValueError("The unsigned release builds are missing")
-    assets = release_unsigned.verify_directory(Path(folder), manifest, team_id=os.environ["APPLE_TEAM_ID"])
-    return [{**item, "path": Path(folder) / item["name"]} for item in assets] + [
-        {
-            "name": item["name"] + ".sha256",
-            "path": Path(folder) / (item["name"] + ".sha256"),
-            "size": (Path(folder) / (item["name"] + ".sha256")).stat().st_size,
-            "sha256": hashlib.sha256((Path(folder) / (item["name"] + ".sha256")).read_bytes()).hexdigest(),
-        }
-        for item in assets
-    ]
-
-
-def asset_identity(assets: list[dict[str, Any]]) -> list[tuple[str, int, str]]:
-    """Name, size and digest of local files or of uploaded GitHub release assets."""
-    return sorted(
-        (
-            item["name"],
-            item["size"],
-            item["digest"] if "digest" in item else f"sha256:{item['sha256']}",
-        )
-        for item in assets
-    )
-
-
-def remote_asset_identity(assets: list[dict[str, Any]]) -> list[tuple[str, int, str]]:
-    return sorted(
-        (item["name"], item["size"], item.get("digest") or "")
-        for item in assets
-        if item.get("state") == "uploaded"
-    )
-
-
-def attach_unsigned_assets(
-    github: API, path: str, release: dict[str, Any], assets: list[dict[str, Any]]
-) -> None:
-    """Make the draft's assets exactly the verified unsigned apps. Mismatched or partial uploads from an earlier
-    attempt are deleted and sent again; the release body is not touched."""
-    expected = {item["name"]: item for item in assets}
-    current = github.request("GET", f"{path}/{release['id']}")
-    for item in current["assets"]:
-        local = expected.get(item["name"])
-        if (
-            local is None
-            or item.get("state") != "uploaded"
-            or item.get("size") != local["size"]
-            or item.get("digest") != f"sha256:{local['sha256']}"
-        ):
-            github.request("DELETE", f"{path}/assets/{item['id']}")
-        else:
-            expected.pop(item["name"])
-    upload = current["upload_url"].split("{", 1)[0]
-    for name, item in expected.items():
-        github.upload(f"{upload}?name={urllib.parse.quote(name)}", Path(item["path"]).read_bytes())
-    attached = github.request("GET", f"{path}/{release['id']}")
-    if remote_asset_identity(attached["assets"]) != asset_identity(assets) or len(attached["assets"]) != len(assets):
-        raise ValueError("Uploaded release assets differ from the verified unsigned builds")
-    if attached["body"] != current["body"]:
-        raise ValueError("Attaching the unsigned builds changed the draft release body")
 
 
 def verify_encryption_declaration(info: dict[str, Any]) -> None:
@@ -1409,13 +1323,8 @@ def publish(args: argparse.Namespace) -> None:
                 "body": draft_body(notes, {}),
             },
         )
-    if __package__:
-        from . import release_unsigned
-    else:
-        import release_unsigned
-    unexpected = {item["name"] for item in release["assets"]} - set(release_unsigned.asset_names())
-    if unexpected:
-        raise ValueError(f"VISR GitHub releases carry only the unsigned builds, not {', '.join(sorted(unexpected))}")
+    if release["assets"]:
+        raise ValueError("VISR GitHub releases must not have assets")
     if not release["draft"]:
         if release["body"] != notes:
             raise ValueError("Published GitHub notes differ from this release")
@@ -1431,8 +1340,6 @@ def publish(args: argparse.Namespace) -> None:
     validation.toolchain(manifest["platforms"], root=root)
     validation.check_feeds(policy, root=root)
     journal = read_journal(release["body"], notes)
-    # before any signed build or upload: a signed, mismatched or incomplete unsigned build stops the release here
-    unsigned = unsigned_release_assets(args, manifest)
 
     def checkpoint() -> None:
         github.request(
@@ -1530,7 +1437,6 @@ def publish(args: argparse.Namespace) -> None:
         record.update(state="complete", build_id=item["id"])
         checkpoint()
         print(f"{platform}: exact internal build processed, release notes verified")
-    attach_unsigned_assets(github, path, release, unsigned)
     github.request(
         "PATCH",
         f"{path}/{release['id']}",
@@ -1547,13 +1453,12 @@ def publish(args: argparse.Namespace) -> None:
         or published.get("body") != notes
         or published.get("draft") is not False
         or published.get("prerelease") is not is_prerelease(manifest["version"])
-        or remote_asset_identity(published.get("assets", [])) != asset_identity(unsigned)
-        or len(published.get("assets", [])) != len(unsigned)
+        or published.get("assets") != []
     ):
         raise ValueError(
             "Published GitHub tag, notes, draft or prerelease state or assets differ from the release manifest"
         )
-    print(f"{manifest['tag']}: GitHub release published with {len(unsigned)} unsigned build files")
+    print(f"{manifest['tag']}: GitHub release published without assets")
 
 
 def is_prerelease(version: str) -> bool:
@@ -1586,12 +1491,6 @@ def main() -> None:
         type=Path,
         required=True,
         help="Immutable release tag checkout at GITHUB_WORKSPACE; controller remains separate",
-    )
-    publish_parser.add_argument(
-        "--unsigned-assets",
-        type=Path,
-        required=True,
-        help="Folder of unsigned apps built from the tag by tools/release_unsigned.py, outside both checkouts",
     )
     commands.add_parser("identity-check")
     args = parser.parse_args()

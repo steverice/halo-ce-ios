@@ -17,21 +17,6 @@ void host_logf(int priority, const char *format, ...) { (void)priority; (void)fo
 void platform_log(const char *format, ...) { (void)format; }
 const struct gpu_backend gpu_backend_metal = {0}, gpu_backend_gl = {0};
 void host_lifecycle_hold(void) {}
-void gpu_metal_frame_deadline_end(void) {}
-void host_config_string(const char *name, const char *fallback, char *out, size_t size) {
-    (void)name; snprintf(out, size, "%s", fallback);
-}
-/* Low Power Mode as the system would report it: a notice changes fake_low_power and counts */
-static int fake_low_power, fake_limited;
-static unsigned long fake_notices;
-static double fake_display = 60.0;
-void host_low_power_install(void) {}
-int host_low_power_enabled(void) { return fake_low_power; }
-unsigned long host_low_power_notices(void) { return fake_notices; }
-static unsigned fake_output;
-double host_low_power_display_rate(unsigned *output) { *output = fake_output; return fake_display; }
-int host_low_power_display_limited(void) { return fake_limited; }
-static void notice(int on) { fake_low_power = on; fake_notices++; }
 /* Presentation timing also runs in shadow-only builds. */
 void host_perf_hooks_context(unsigned field, uint64_t value) { (void)field; (void)value; }
 void host_perf_hooks_present_begin(void) {}
@@ -95,99 +80,8 @@ static void profile_frame_rate(void) {
     assert(!host_frame_rate_unlimited());
     host_frame_rate_scene(0);
 }
-/* The dispatch's own frame rate under Low Power Mode notices: halved between frames, menus at the display's pace,
-   restored when it turns off. */
-static void low_power_frame_rate(void) {
-    metal_backend = 1;
-    low_power_install();
-    /* a ProMotion iPhone with a profile's "display": 120, then 60 in Low Power Mode, back to 120 */
-    fake_display = 120.0; fake_limited = 1;
-    host_frame_rate_profile(0);
-    low_power_scene(0);
-    assert(host_frame_rate_cap() == 0 && host_frame_rate_target() == 0 && !host_frame_rate_low_power());
-    notice(1);
-    /* (nothing changes inside a frame: only at the latch after a Present) */
-    assert(host_frame_rate_target() == 0);
-    low_power_frame();
-    assert(host_frame_rate_low_power() && host_frame_rate_cap() == 60 && host_frame_rate_target() == 60);
-    /* menus keep the display's pace, which Low Power Mode holds at 60 */
-    low_power_scene(1);
-    assert(host_frame_rate_target() == 60);
-    /* a cutscene's 30 stays 30 */
-    host_frame_rate_scene(30);
-    low_power_scene(2);
-    assert(host_frame_rate_target() == 30);
-    host_frame_rate_scene(0);
-    low_power_scene(0);
-    assert(host_frame_rate_target() == 60);
-    assert(host_frame_rate_effective() == 60);
-    /* a screen that reports Low Power Mode's 60 as its highest still halves its own 120 */
-    fake_display = 60.0;
-    low_power_update(1);
-    assert(host_frame_rate_target() == 60);
-    /* a benchmark case's 30 for one run, and back: Low Power Mode's 60 again */
-    host_frame_rate_override(30);
-    assert(host_frame_rate_target() == 30);
-    host_frame_rate_override(0);
-    assert(host_frame_rate_target() == 60);
-    fake_display = 120.0;
-    notice(0);
-    low_power_frame();
-    assert(!host_frame_rate_low_power() && host_frame_rate_cap() == 0 && host_frame_rate_target() == 0);
-    assert(host_frame_rate_effective() == 120);
-    /* another output (a 60 Hz external display) while Low Power Mode is on: its own rate */
-    notice(1);
-    fake_display = 60.0; fake_output++;
-    low_power_frame();
-    low_power_update(1);
-    assert(host_frame_rate_target() == 30);
-    notice(0);
-    fake_output--;
-    low_power_frame();
-    /* a 60 Hz iPad with a profile's 60 (no cap there): 30 */
-    fake_display = 60.0;
-    low_power_update(1);
-    notice(1);
-    low_power_frame();
-    assert(host_frame_rate_cap() == 30 && host_frame_rate_target() == 30);
-    low_power_scene(1);
-    assert(host_frame_rate_cap() == 0 && host_frame_rate_target() == 0);
-    low_power_scene(0);
-    /* a profile's 30: stays 30, the game's tick rate */
-    host_frame_rate_profile(30);
-    assert(host_frame_rate_target() == 30);
-    host_frame_rate_profile(0);
-    notice(0);
-    low_power_frame();
-    assert(host_frame_rate_target() == 0);
-    /* the Mac app's "unlimited" on a 120 Hz display: 60, held by its sleep, and frames wait for the display */
-    fake_display = 120.0; fake_limited = 0;
-    low_power_update(1);
-    host_frame_rate_profile(-1);
-    notice(1);
-    low_power_frame();
-    assert(!host_frame_rate_unlimited() && host_frame_rate_target() == 60 && low_power.interval);
-    notice(0);
-    low_power_frame();
-    assert(!low_power.interval && host_frame_rate_target() == 0);
-    host_frame_rate_profile(0);
-    /* debug.low_power_frame_rate = "always" acts without the system's Low Power Mode, "false" ignores it */
-    low_power.state.override = LOW_POWER_ALWAYS;
-    low_power_frame();
-    assert(host_frame_rate_target() == 60);
-    low_power.state.override = LOW_POWER_IGNORE;
-    notice(1);
-    low_power_frame();
-    assert(host_frame_rate_target() == 0 && !host_frame_rate_low_power());
-    low_power.state.override = LOW_POWER_FOLLOW;
-    notice(0);
-    low_power_frame();
-    fake_display = 60.0;
-    low_power_update(1);
-}
 int main(void) { @autoreleasepool {
     profile_frame_rate();
-    low_power_frame_rate();
     uint8_t seed[32] = {2}, secret[64], public[32]; // Public fixture, never a release key.
     crypto_ed25519_key_pair(secret, public, seed);
     NSData *key = [NSData dataWithBytes:public length:32], *envelope = Envelope(secret, 1);

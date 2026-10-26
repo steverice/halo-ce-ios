@@ -19,9 +19,7 @@ from tools.test_release_assets import asset_policy
 
 
 def policy():
-    # a new release reads this source's profile feed generation (release_validation.require_asset_policy)
-    return {**asset_policy(), "profile_feed_url": "https://example.invalid/tester/device-profiles-2",
-            "guest_source_date_epoch": "1792392070"}
+    return {**asset_policy(), "guest_source_date_epoch": "1792392070"}
 
 
 def recording_summary_context() -> dict[str, Any]:
@@ -942,9 +940,6 @@ def test_published_release_resume_does_not_rebuild_or_republish(
 def test_publish_uses_summary_for_testflight_and_full_entry_for_github(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # the unsigned apps have their own tests (tools/test_release_unsigned.py)
-    monkeypatch.setattr(release, "unsigned_release_assets", lambda *_: [])
-    monkeypatch.setattr(release, "attach_unsigned_assets", lambda *_: None)
     summary = "Try the new campaign and multiplayer cases."
     details = "### feat\n\n- " + ("Preserve complete release detail. " * 150)
     notes = release.release_notes(
@@ -1715,9 +1710,6 @@ def test_cleanup_removes_secret_files_even_if_search_restore_fails(
 def test_partial_release_resume_polls_uploading_platform_without_build_or_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # the unsigned apps have their own tests (tools/test_release_unsigned.py)
-    monkeypatch.setattr(release, "unsigned_release_assets", lambda *_: [])
-    monkeypatch.setattr(release, "attach_unsigned_assets", lambda *_: None)
     notes = "## 0.1.3\n\n- Fix input"
     manifest = {
         "build_policy": policy(),

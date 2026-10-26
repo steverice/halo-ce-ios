@@ -106,30 +106,6 @@ int main(void) {
         test_frame++; frame_prepare(test_frame);
         atomic_store(&buffers[1].commands, 0);
         assert(host_perf_metal_prepare((id)commands[BUFFER_COUNT], nil, 1, HOST_PERF_SCENE));
-        /* No stage-boundary sampling: the scene's command-buffer spans (a union, overlap counted once) are S,
-         * the least of the rest's last 32 spans is U+H, and the frame is marked coarse */
-        counter_device = nil; mode = 0; metal_seen = 1;
-        assert(host_perf_metal_timing_supported() && !host_perf_metal_stage_supported());
-        for (unsigned f = 0; f < 3; ++f) {
-            test_frame++;
-            host_perf_metal_frame_touch(test_frame);
-            host_perf_metal_command_span(test_frame, HOST_PERF_SCENE, 1.000, 1.004);
-            host_perf_metal_command_span(test_frame, HOST_PERF_SCENE, 1.003, 1.006); /* overlaps by 1 ms */
-            host_perf_metal_command_span(test_frame, HOST_PERF_HUD, 1.006, 1.007 + (f == 2 ? 0.003 : 0.0));
-            frame = (game_perf_frame){.frame_id = test_frame};
-            host_perf_metal_join(&frame);
-            assert((frame.drs.available & (1 | 8 | 16)) == (1 | 8 | 16));
-            assert(frame.drs.scene_us >= 5999 && frame.drs.scene_us <= 6001);
-            /* (the third frame's 4 ms present span is a drawable wait; the estimate stays near 1 ms) */
-            assert(frame.drs.upscale_us == 0 && frame.drs.hud_us >= 999 && frame.drs.hud_us <= 1001);
-        }
-        /* a refused scene (several views) gives no reading */
-        test_frame++; host_perf_metal_frame_touch(test_frame);
-        host_perf_metal_command_span(test_frame, HOST_PERF_SCENE, 2.0, 2.005);
-        host_perf_metal_unavailable(HOST_PERF_SCENE);
-        frame = (game_perf_frame){.frame_id = test_frame};
-        host_perf_metal_join(&frame);
-        assert(!(frame.drs.available & 1));
         assert(sizeof(buffers) + sizeof(sums) + sizeof(grouped) + BUFFER_COUNT * INTERVAL_COUNT * 4 * sizeof(MTLCounterResultTimestamp) < 1024 * 1024);
     }
     return 0;

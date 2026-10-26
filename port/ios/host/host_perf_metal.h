@@ -5,22 +5,10 @@ struct game_perf_frame;
 void host_perf_metal_join(struct game_perf_frame *frame);
 uint64_t host_perf_metal_dropped(void);
 int host_perf_metal_stage_supported(void);
-/* stage-boundary sampling, or the command-buffer fallback (any Metal device): the planner can decide */
-int host_perf_metal_timing_supported(void);
-/* the frame is the game thread's current one: its record is ready for command-buffer spans */
-void host_perf_metal_frame_touch(uint64_t frame);
 /* Stage-only sampling needs an encoder boundary between semantic groups. */
 int host_perf_metal_needs_split(void);
 void host_perf_metal_presented(uint64_t frame, uint64_t time_us, uint64_t budget_us);
 void host_perf_metal_unavailable(unsigned group);
-/* MetalFX's upscale, timed as a command buffer of its own: expected while
- * encoding the current frame, then its GPU duration from the completion
- * handler. A frame whose expected durations have not all arrived has no U. */
-void host_perf_metal_upscale_expected(void);
-void host_perf_metal_upscale_time(uint64_t frame, uint64_t duration_us, int valid);
-/* a completed command buffer's GPU span (seconds, CPU timebase) for the frame and part it held: the timing
- * fallback's check against stage timing, logged as "DRS timing check" */
-void host_perf_metal_command_span(uint64_t frame, unsigned group, double start, double end);
 enum host_perf_metal_group { HOST_PERF_SCENE, HOST_PERF_UPSCALE, HOST_PERF_HUD };
 #ifdef __OBJC__
 #import <Metal/Metal.h>

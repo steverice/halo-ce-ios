@@ -675,8 +675,6 @@ void config_profile_game_safe_point(int point)
 	config_profile_safe_point(point, context);
 }
 
-void halo_workload_decide(void);
-
 boolean game_load(
 	struct game_options *options)
 {
@@ -705,8 +703,6 @@ boolean game_load(
 	if (scenario_load(options->map_name))
 	{
 		game_globals->map_loaded = TRUE;
-		/* port: the device profile's workload context for this map (scene_class.c) */
-		halo_workload_decide();
 	}
 
 	return game_globals->map_loaded;

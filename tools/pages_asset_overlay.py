@@ -24,12 +24,10 @@ if __package__:
     from . import pages_recording_overlay as legacy
     from . import release_validation as validation
     from .data_pack import ENVELOPE_LIMITS, MAXIMUM_SEQUENCE, profile_target_parts
-    from . import profile_revision
 else:
     import pages_recording_overlay as legacy
     import release_validation as validation
     from data_pack import ENVELOPE_LIMITS, MAXIMUM_SEQUENCE, profile_target_parts
-    import profile_revision
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE_URL = "https://code.steverice.org/visr"
@@ -40,9 +38,6 @@ MARKER_DATA = b"visr-signed-assets-1\n"
 RECORDING = PREFIX + "recordings.json"
 SHADER = PREFIX + "shaders.json"
 LEGACY_PROFILE_INDEX = PREFIX + "profiles-2.json"
-# Each device-profile generation's shards live in their own directory: profiles/ holds the frozen
-# device-profiles-1 shards that 0.4.2 to 0.5.1 read, device-profiles-N/ the later generations'.
-PROFILE_DIRECTORIES = {"profiles": "device-profiles-1", "device-profiles-2": "device-profiles-2"}
 MAX_ASSETS = 256
 MAX_RECEIPT = 65536
 MAX_TOTAL = 512 * 1024 * 1024
@@ -57,9 +52,9 @@ def allowed_asset(path: str) -> tuple[str, str | None]:
         return "shader", None
     if re.fullmatch(re.escape(PREFIX) + r"shader-maps/[0-9a-f]{64}\.zlib", path):
         return "shader-map", None
-    profile = re.fullmatch(re.escape(PREFIX) + r"([a-z0-9-]+)/(.+)\.json", path)
-    if profile and profile[1] in PROFILE_DIRECTORIES:
-        target = profile[2]
+    profile = re.fullmatch(re.escape(PREFIX) + r"profiles/(.+)\.json", path)
+    if profile:
+        target = profile[1]
         profile_target_parts(target)
         return "profile", target
     raise ValueError(
@@ -95,14 +90,13 @@ def verify_asset(path: str, data: bytes) -> dict:
         return {"compatibility": domain, "sequence": sequence}
     if kind == "profile":
         assert target is not None
-        directory = path.removeprefix(PREFIX).split("/", 1)[0]
         validation.verify_feed(
             data,
             kind,
-            {"profile_feed_sha256s": {target: digest}, "profile_feed_url": SITE_URL + "/packs/tester/" + directory},
+            {"profile_feed_sha256s": {target: digest}},
             profile_target=target,
         )
-        domain = PROFILE_DIRECTORIES[directory] + ":" + target
+        domain = "device-profiles-1:" + target
     else:
         metadata = validation.verify_feed(data, kind, {"shader_feed_sha256": digest}, shader_index_only=True)
         if metadata:
@@ -112,14 +106,7 @@ def verify_asset(path: str, data: bytes) -> dict:
     manifest = validation.packs.decode_json(
         validation.packs.decode_base64(envelope["manifest"], 65536)
     )
-    result = {"compatibility": domain, "sequence": manifest["sequence"]}
-    if kind == "profile" and not domain.startswith("device-profiles-1:"):
-        payload = validation.packs.decode_json(
-            validation.packs.decode_base64(envelope["payload"], ENVELOPE_LIMITS["profiles"])
-        )
-        revision = validation.packs.decode_base64(payload["files"][profile_revision.NAME], profile_revision.LIMIT)
-        result["revision"] = profile_revision.parse(revision)[0]
-    return result
+    return {"compatibility": domain, "sequence": manifest["sequence"]}
 
 
 def verify_shader_bundle(assets: dict[str, bytes]) -> None:
@@ -276,7 +263,7 @@ def source_assets() -> dict[str, bytes]:
             name == RECORDING
             or name == SHADER
             or legacy.FEED_PATH.fullmatch(name)
-            or (any(name.startswith(PREFIX + directory + "/") for directory in PROFILE_DIRECTORIES) and path.is_file())
+            or (name.startswith(PREFIX + "profiles/") and path.is_file())
             or (name.startswith(PREFIX + "shader-maps/") and path.is_file())
         ):
             result[name] = read_source(path, limit_for(name))
@@ -309,8 +296,8 @@ def checked_in_assets() -> dict[str, bytes]:
             if child.is_symlink():
                 raise ValueError("Tester asset directories cannot be symbolic links")
             relative = child.relative_to(ROOT).as_posix()
-            if relative not in {PREFIX + directory for directory in (*PROFILE_DIRECTORIES, "shader-maps")} and not any(
-                relative.startswith(PREFIX + directory + "/") for directory in PROFILE_DIRECTORIES
+            if relative not in {PREFIX + "profiles", PREFIX + "shader-maps"} and not relative.startswith(
+                PREFIX + "profiles/"
             ):
                 raise ValueError("Unexpected directory under the tester asset root")
         for name in files:
@@ -420,10 +407,6 @@ def advance(path: str, old: bytes, new: bytes) -> None:
         and b["sequence"] <= a["sequence"]
     ):
         raise ValueError("Replacement asset needs a higher signed sequence")
-    # Apps that took the newer profiles refuse older ones: roll back by reverting the profiles, bumping the
-    # revision and signing again.
-    if a["compatibility"] == b["compatibility"] and b.get("revision", 0) < a.get("revision", 0):
-        raise ValueError("Replacement profile shard has a lower profile revision")
 
 
 def stage_site(

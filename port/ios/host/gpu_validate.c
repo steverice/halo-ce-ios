@@ -555,40 +555,6 @@ static void validate_texture_copy_level(gpu_texture source, gpu_texture destinat
 	validation.backend.texture_copy_level(source, destination, level);
 }
 
-static void validate_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
-{
-	struct texture_entry *from = texture_entry(source);
-	unsigned long before = validation.failures;
-	uint32_t index;
-
-	validation.call = "texture_copy_rects";
-	/* each rectangle in the source, into a distinct 2D texture of the same format that holds it */
-	if (!from || from->description.type != GPU_TEXTURE_2D || (count && !copies))
-		REPORT(COPY_INVALID, 3, "rectangles of texture %u", source);
-	else
-		for (index = 0; index < count; index++)
-		{
-			const struct gpu_texture_copy *copy = &copies[index];
-			struct texture_entry *to = texture_entry(copy->destination);
-
-			if (!to || copy->destination == source || to->description.type != GPU_TEXTURE_2D ||
-				to->description.format != from->description.format ||
-				(uint64_t)copy->x + copy->width > from->description.width ||
-				(uint64_t)copy->y + copy->height > from->description.height ||
-				copy->width > to->description.width || copy->height > to->description.height)
-			{
-				REPORT(COPY_INVALID, 4, "%ux%u at %u,%u of texture %u (%ux%u, format %u) into texture %u", copy->width,
-					copy->height, copy->x, copy->y, source, from->description.width, from->description.height,
-					from->description.format, copy->destination);
-				break;
-			}
-			to->uploaded[0] |= 1u;
-		}
-	if (rejected(before))
-		return;
-	validation.backend.texture_copy_rects(source, copies, count);
-}
-
 static void validate_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 {
 	struct texture_entry *entry = texture_entry(texture);
@@ -623,12 +589,6 @@ static uint32_t validate_texture_read(gpu_texture texture, void *pixels, uint32_
 {
 	validation.call = "texture_read";
 	return validation.backend.texture_read(texture, pixels, size);
-}
-
-static void validate_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
-{
-	validation.call = "texture_set_content";
-	validation.backend.texture_set_content(texture, width, height);
 }
 
 /* ---------- buffers and streams */

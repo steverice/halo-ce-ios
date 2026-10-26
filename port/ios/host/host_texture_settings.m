@@ -4,36 +4,24 @@
 #include "host_config.h"
 #include "host_texture_settings.h"
 #include "texture_cache.h"
-#include "host_texture_upscale.h"
 
 static NSString *cache_directory(const char *data_root)
 {
-	char path[1024];
-
-	host_texture_cache_path(data_root, path, sizeof(path));
-	return @(path);
+	return [@(data_root) stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
 }
 
 /* publishes the cache's size for the Settings app to show */
-/* the data root, where the prepared original textures (astc-cache) are */
-static NSString *prepared_root;
-
 static void publish_size(NSString *directory)
 {
 	NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 	uint64_t size = texture_cache_size(directory.fileSystemRepresentation);
-	/* (the prepared original textures stay under the data root) */
-	NSString *prepared = [prepared_root stringByAppendingPathComponent:@"astc-cache"];
+	NSString *prepared = [[directory stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"astc-cache"];
 	uint64_t prepared_size = texture_cache_size(prepared.fileSystemRepresentation);
 
 	[defaults setObject:size ? [NSByteCountFormatter stringFromByteCount:(long long)size
 		countStyle:NSByteCountFormatterCountStyleFile] : @"None" forKey:@"upscaled_textures_size"];
 	[defaults setObject:prepared_size ? [NSByteCountFormatter stringFromByteCount:(long long)prepared_size
 		countStyle:NSByteCountFormatterCountStyleFile] : @"None" forKey:@"prepared_textures_size"];
-	/* how far the on-device upscaler has got, or that this device's profile does not upscale */
-	char status[64];
-	host_texture_upscale_status(status, sizeof(status));
-	[defaults setObject:status[0] ? @(status) : @"Off" forKey:@"upscaled_textures_status"];
 	NSLog(@"texture cache: %llu bytes in %@", (unsigned long long)size, directory);
 }
 
@@ -61,16 +49,15 @@ static void apply_switch(NSUserDefaults *defaults)
 
 void host_texture_settings_apply(const char *data_root)
 {
-	prepared_root = @(data_root);
 	NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
 	NSString *directory = cache_directory(data_root);
 
 	[defaults registerDefaults:@{ @"upscaled_textures": @YES, @"delete_upscaled_textures": @NO,
-		@"upscaled_textures_size": @"None", @"prepared_textures_size": @"None", @"upscaled_textures_status": @"Off" }];
+		@"upscaled_textures_size": @"None", @"prepared_textures_size": @"None" }];
 	apply_switch(defaults);
 	if ([defaults boolForKey:@"delete_upscaled_textures"])
 	{
-		if (host_texture_upscale_delete_cache(directory.fileSystemRepresentation))
+		if (texture_cache_delete_all(directory.fileSystemRepresentation))
 			NSLog(@"texture cache: could not delete everything in %@", directory);
 		[defaults setBool:NO forKey:@"delete_upscaled_textures"];
 	}

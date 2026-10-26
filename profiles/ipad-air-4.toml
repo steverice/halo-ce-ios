@@ -17,7 +17,6 @@ render_height = 1080
 anisotropic_filtering = 16
 shadow_map_size = 512
 model_lod = "max"
-dynamic_resolution = true
 
 [network]
 player_capacity = 16
@@ -51,8 +50,3 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 basis = "assumed"
 why = "At 30 frames a second, minimum settings and 540 lines, a 32-player game held 98.6% of frames on time, short of 99.5%. 16 is half of that and was not run on this iPad (24 was not run either). Provisional until rerun."
 source = "VISR settings sweep capacity runs, build 20261023.144726 (0.4.2), two rounds at minimum settings and 540 lines, 2026-10-24 and 2026-10-25"
-
-[evidence."display.dynamic_resolution"]
-basis = "assumed"
-why = "The same A14 GPU family as the iPhone 12 Pro, where dynamic resolution ran with stage timing and cost nothing at the ceiling; on the A10X and M1 it held 60 frames a second in the Maw fight where the fixed resolution did not."
-source = "VISR presented benchmark runs on the iPhone 12 Pro, iPad Pro 12.9-inch (2nd generation) and iPad Pro M1, 2026-10-25"

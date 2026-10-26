@@ -9,14 +9,12 @@ import pytest
 from tools import pages_asset_overlay as overlay
 
 PROFILE = "docs/site/packs/tester/profiles/ios/iPhone18,1/_.json"
-PROFILE_2 = "docs/site/packs/tester/device-profiles-2/ios/iPhone18,1/_.json"
 SHADER = "docs/site/packs/tester/shaders.json"
 RECORDING = "docs/site/packs/tester/recordings.json"
 
 
 def test_only_signed_asset_paths_are_admitted():
     assert overlay.allowed_asset(PROFILE) == ("profile", "ios/iPhone18,1/_")
-    assert overlay.allowed_asset(PROFILE_2) == ("profile", "ios/iPhone18,1/_")
     assert overlay.allowed_asset(SHADER) == ("shader", None)
     assert overlay.allowed_asset(RECORDING) == ("recording", None)
     for path in [
@@ -25,8 +23,6 @@ def test_only_signed_asset_paths_are_admitted():
         "docs/site/packs/stable/shaders.json",
         PROFILE.replace("iPhone18,1", ".."),
         PROFILE.replace("/_", "/Apple-M4"),
-        PROFILE.replace("/profiles/", "/device-profiles-3/"),
-        PROFILE.replace("/profiles/", "/shader-maps/"),
     ]:
         with pytest.raises(ValueError):
             overlay.allowed_asset(path)
@@ -353,34 +349,3 @@ def test_first_profile_only_update_emits_valid_metadata_and_survives_redeploy(
     responses[overlay.MARKER] = b"wrong"
     with pytest.raises(ValueError, match="marker is missing or invalid"):
         overlay.live_assets()
-
-
-def test_generation_two_shards_bind_their_directory_and_keep_their_revision(monkeypatch):
-    from tools import release_validation as validation
-    from tools.test_release_assets import signed_envelope
-
-    data_pack = validation.packs.data_pack
-    files = data_pack.device_profile_snapshot(data_pack.ROOT / "profiles", "ios", "iPhone18,1", generation=2)
-    profile, _ = signed_envelope(monkeypatch, "profiles", "device-profiles-2:ios/iPhone18,1/_", files)
-    revision = overlay.profile_revision.check()
-    assert overlay.verify_asset(PROFILE_2, profile) == {
-        "compatibility": "device-profiles-2:ios/iPhone18,1/_", "sequence": 1, "revision": revision}
-    # each directory admits only its own generation
-    with pytest.raises(ValueError, match="compatibility"):
-        overlay.verify_asset(PROFILE, profile)
-    old_files = data_pack.device_profile_snapshot(data_pack.ROOT / "profiles", "ios", "iPhone18,1")
-    old, _ = signed_envelope(monkeypatch, "profiles", "device-profiles-1:ios/iPhone18,1/_", old_files)
-    with pytest.raises(ValueError, match="compatibility"):
-        overlay.verify_asset(PROFILE_2, old)
-
-
-def test_a_lower_profile_revision_cannot_replace_a_published_shard(monkeypatch):
-    shards = {
-        b"new": {"compatibility": "device-profiles-2:ios/iPhone18,1/_", "sequence": 2, "revision": 5},
-        b"rollback": {"compatibility": "device-profiles-2:ios/iPhone18,1/_", "sequence": 3, "revision": 4},
-        b"next": {"compatibility": "device-profiles-2:ios/iPhone18,1/_", "sequence": 3, "revision": 6},
-    }
-    monkeypatch.setattr(overlay, "verify_asset", lambda path, data: shards[data])
-    with pytest.raises(ValueError, match="revision"):
-        overlay.advance(PROFILE_2, b"new", b"rollback")
-    overlay.advance(PROFILE_2, b"new", b"next")

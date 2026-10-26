@@ -504,18 +504,13 @@ host can forward a fixed `network.tunnel_port` (UDP) on its router by hand.
 
 The game relies on 32-bit pointers in its data structures. Apple's current
 ARM64 iOS binaries require their first 4 GB of address space to remain unmapped,
-so the game's 32-bit pointers are represented as offsets into a native
-arena. This is native compiled code, not an Android emulator.
+so the game's 32-bit pointers are represented as offsets into an aligned
+native arena. This is native compiled code, not an Android emulator.
 
 `tools/ios_asm_convert.py` lifts compiled guest memory accesses and indirect
-branches into the arena using reserved registers x15 and x27: each address is
-x27 plus the zero-extended 32-bit guest pointer, so the arena can start at any
-16 KB boundary, not only at a multiple of 4 GB. Guest pointer values and
-structure layouts stay 32-bit. PC-relative addresses, and pointers made from
-sp or the frame pointer x29 (which hold native addresses), are converted back
-to guest offsets by subtracting x27. To read a native address in a crash
-report as a guest address, subtract the arena's start, which `ios-runtime.log`
-gives as `guest arena at …`. A small signed assembly entry switches
+branches into an aligned 4 GB arena using reserved registers x15 and x27.
+Guest pointer values and structure layouts stay 32-bit. PC-relative addresses
+are normalized back to guest offsets. A small signed assembly entry switches
 to an arena stack; host bridges translate pointers at the ABI boundary.
 
 Guest code is embedded in the app's signed `__TEXT` and aliased into the arena
@@ -655,17 +650,14 @@ default size), follows the window when it's resized, and is letterboxed at 16:9;
 - **Closing the window pauses the game**, sound included, and reopening Halo
   resumes it. If visionOS later reclaims the closed window, the game quits; it
   saves at checkpoints.
-- **Memory.** The game reserves a 4 GB address range for its 32-bit memory
-  before `main` runs, ahead of UIKit, Metal and the game's own threads: at a multiple of 4 GB if it can, else at any
-  address, else a reservation of about 2.2 GB (the guest image ends near 0x8A70B000) at any address. If a device
-  refuses all three, launching shows "Could not reserve the
+- **Memory.** The game reserves a 4 GB address range for its 32-bit memory at
+  launch, before the import screen, and falls back to a reservation of about 2.2 GB
+  (the guest image ends near 0x8A70B000) if that is refused. If a device (a Vision Pro, an Apple TV HD, a first-generation iPad Pro) refuses both, launching shows "Could not reserve the
   game's memory arena"; rebuild with `--extended-virtual-addressing`
   (needs a paid developer team), which signs with that entitlement. The build
   always signs with `increased-memory-limit`. `HALO_ARENA_SHORT=1` in the app's
   environment (`mac_run.py run --app-env HALO_ARENA_SHORT=1`) skips the 4 GB
-  attempts, to test the shorter reservation on a device that would grant 4 GB, and
-  `HALO_ARENA_UNALIGNED=1` places the arena 0x7FFFC000 past a multiple of 4 GB, to test an unaligned arena
-  on a device that would grant an aligned one.
+  attempt, to test the shorter reservation on a device that would grant 4 GB.
 
 On a Vision Pro, after installing a `--team` build:
 
@@ -692,37 +684,6 @@ On a Vision Pro, after installing a `--team` build:
   Keep the same ID when updating and back up `Documents/save` before uninstalling.
 - **Audio issues:** share device/OS and output route along with the runtime
   log. The regression suite checks PCM handoff; it does not test every route.
-
-### Crash reports
-
-A fatal error ends the app as a native crash, so the system keeps a crash
-report: TestFlight crash feedback, Xcode's Organizer, and Settings > Privacy &
-Security > Analytics Data on the device (`~/Library/Logs/DiagnosticReports` on
-a Mac). The game's own fatal errors (a failed assertion, a halt) crash in
-`visr_guest_halt`, the guest runtime's in `visr_guest_abort` and the host's in
-`visr_host_error`; a fault in game code crashes where it happened. Errors the
-player can act on (no game data, a device that cannot reserve the game's
-memory, a level whose map file does not load) still show a message instead.
-
-`ios-runtime.log` has the error, the registers and every frame, the game's
-named. A report keeps no message text of the app's own, so the error goes into
-the crashed thread's registers (`x0` reads `VISRCRSH`), and the game's frames,
-which run from an alias in the guest arena, show as addresses outside every
-image. `tools/guest_symbolicate.py` prints the error and names those frames:
-
-```sh
-python3 tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt VISR-2026-10-25-120000.ips
-python3 tools/guest_symbolicate.py --symbols VISR.app ios-runtime.log   # or an .ipa: the app carries the table
-```
-
-A report does not carry the arena's start. When `ios-runtime.log`'s `guest arena at` line
-says it is not at a multiple of 4 GB, pass that address with `--arena`; `ios-runtime.log`'s
-own `CRASH` lines carry it.
-
-`debug.halt_screen = true` keeps the game's blue halt screen instead of the
-crash. `debug.crash_test` (`"halt"`, `"fault"`, `"trap"` or `"abort"`) fails on
-purpose 150 frames after the game starts, to check what a report shows; `"map"`
-fails the first level load instead, to check its message.
 
 ### AirPlay and external displays
 

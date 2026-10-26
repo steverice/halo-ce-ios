@@ -19,7 +19,6 @@ gpu_family = [1, 0]
 renderer = "metal"
 render_height = 720
 frame_rate = "30"
-shadow_map_size = 128
 
 [scene.menu.display]
 render_height = 0
@@ -39,10 +38,6 @@ source = "iPhone 17 Pro benchmark reports C23KM6WA (Metal) and LBAE78A5 (OpenGL 
 [evidence."display.render_height"]
 basis = "inherited"
 why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-inch (1st generation, A9X) was measured at 720 lines (6CYGBCXB and isolated c40 reports, 2026-10-17). Models with their own profile, or one inherited through the hardware catalog, set their own value."
-
-[evidence."display.shadow_map_size"]
-basis = "inherited"
-why = "The floor is the weakest measured device's settings: the iPad Pro 12.9-inch (1st generation, A9X) takes 128-pixel shadows (ipad-pro-12-9-1st.toml). Models with their own profile, or one inherited through the hardware catalog, set their own value."
 
 [evidence."display.frame_rate"]
 basis = "inherited"

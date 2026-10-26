@@ -89,11 +89,6 @@ int config_scene_string(const char *name, int scene, char *text, size_t size);
 /* every setting a device profile may set at its value in force, a "section.key = value" line each (what a
 recording notes of the settings it was made under) */
 void config_profile_settings_text(char *text, size_t size);
-/* The workload context of the map in force: 0 predictable (single-player campaign at standard settings, the
-profile's own values), 1 variable ([variable.display] under the scene classes). set, as a map loads
-(port/linux/game/scene_class.c): logged, and config_changes advances, when it changes; 1 then */
-int config_workload_variable(void);
-int config_workload_set(int variable, const char *reasons);
 /* "gameplay", "menu", "cutscene" */
 const char *config_scene_name(int scene);
 /* what the scene class changes, for the log ("display.render_scale 0.667

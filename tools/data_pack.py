@@ -21,22 +21,13 @@ import zlib
 if __package__:
     from . import benchmark_catalog
     from . import profile_check
-    from . import profile_revision
     from .profile_catalog_check import check_catalog
 else:
     import benchmark_catalog
     import profile_check
-    import profile_revision
     from profile_catalog_check import check_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
-# The device profile feed generation this source's apps read (host_profile.h, HOST_PROFILE_FEED_GENERATION):
-# its shards are signed as PROFILE_FEED_DOMAIN:<target> and served from a directory of the same name.
-# device-profiles-1 is what 0.4.2 to 0.5.1 read; its path is frozen.
-PROFILE_FEED_GENERATION = 2
-PROFILE_FEED_DOMAIN = f"device-profiles-{PROFILE_FEED_GENERATION}"
-DEVICE_PROFILE_DOMAINS = ("device-profiles-1", "device-profiles-2")
-REVISION = profile_revision.NAME
 SHADER_INDEX_LIMIT = 65536
 SHADER_COMPRESSED_FILE_LIMIT = 4 * 1024 * 1024
 SHADER_COMPRESSED_TOTAL_LIMIT = 16 * 1024 * 1024
@@ -99,16 +90,6 @@ def profile_delivery_helper():
         ["port/ios/host/host_profile.h", "port/linux/src/port_profile_keys.h", "port/linux/src/halo_display.h"], libraries=["-lm"])
 
 
-def device_domain(compatibility):
-    """(generation, target) for a device-profiles-N:target identifier this source can sign or verify, else None"""
-    if not isinstance(compatibility, str):
-        return None
-    domain, separator, target = compatibility.partition(":")
-    if not separator or domain not in DEVICE_PROFILE_DOMAINS:
-        return None
-    return int(domain.rsplit("-", 1)[1]), target
-
-
 def device_profile_key(platform, model, chip=""):
     if not all(isinstance(value, str) and "\0" not in value for value in (platform, model, chip)):
         raise ValueError("invalid hardware identifier")
@@ -131,69 +112,6 @@ def profile_target_parts(target):
     return platform, model, chip
 
 
-def tag_generation(tag):
-    """The device-profile feed generation a release tag's apps read, or None for one before device shards."""
-    def show(path):
-        result = subprocess.run(["git", "-C", str(ROOT), "show", f"{tag}:{path}"], capture_output=True, text=True)
-        return result.stdout if result.returncode == 0 else ""
-    found = re.search(r"HOST_PROFILE_FEED_GENERATION = (\d+)", show("port/ios/host/host_profile.h"))
-    if found:
-        return int(found[1])
-    return 1 if '"device-profiles-1:"' in show("port/ios/host/host_data_updates.m") else None
-
-
-def released_validators(generation):
-    """[(tag, probe)] for every release whose apps read this generation, each probe built from that tag's own
-    profile validator, so a shard is checked by exactly the code that will admit or refuse it."""
-    listed = subprocess.run(["git", "-C", str(ROOT), "tag", "--list", "visr-v*"], capture_output=True, text=True, check=True)
-    result = []
-    for tag in sorted(listed.stdout.split()):
-        if tag_generation(tag) != generation:
-            continue
-        commit = subprocess.run(["git", "-C", str(ROOT), "rev-parse", f"{tag}^{{commit}}"], capture_output=True,
-                                text=True, check=True).stdout.strip()
-        probe = ROOT / "build/ios/probe/released" / commit / "profile-delivery-probe"
-        if not probe.exists():
-            probe.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(prefix="visr-released-validator-") as temporary:
-                archive = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", commit, "--", "port/ios/host",
-                    "port/ios/tests/profile_delivery_probe.c", "port/linux/src", "port/third_party/tomlc17"],
-                    capture_output=True, check=True).stdout
-                subprocess.run(["tar", "--extract", "--directory", temporary], input=archive, check=True)
-                tree = Path(temporary)
-                sources = [tree / "port/ios/tests/profile_delivery_probe.c", tree / "port/third_party/tomlc17/tomlc17.c",
-                           *sorted((tree / "port/ios/host").glob("host_profile*.c"))]
-                descriptor, output = tempfile.mkstemp(prefix=".profile-delivery-", dir=probe.parent)
-                os.close(descriptor)
-                try:
-                    subprocess.run(["cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-D_DARWIN_C_SOURCE=1", "-O1", "-w",
-                                    f"-I{tree / 'port/ios/host'}", f"-I{tree / 'port/third_party/tomlc17'}",
-                                    *map(str, sources), "-lm", "-o", output], check=True)
-                    os.chmod(output, 0o755)
-                    os.replace(output, probe)
-                finally:
-                    Path(output).unlink(missing_ok=True)
-        result.append((tag, probe))
-    return result
-
-
-def validate_with_released_apps(files, target, generation):
-    """Refuse a device shard that any released app of its generation would refuse."""
-    platform, model, chip = profile_target_parts(target)
-    command = "validate" if generation == 1 else f"validate-{generation}"
-    validators = released_validators(generation)
-    with tempfile.TemporaryDirectory(prefix="visr-released-shard-") as temporary:
-        folder = Path(temporary)
-        for name, content in files.items():
-            path = folder / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
-        for tag, probe in validators:
-            result = subprocess.run([str(probe), command, str(folder), platform, model, chip], capture_output=True, text=True)
-            if result.returncode:
-                raise ValueError(f"{tag} would refuse this device-profiles-{generation} shard: "
-                                 + (result.stderr.strip() or "profile snapshot rejected"))
-    return [tag for tag, _ in validators]
-
-
 def validate_shaders(folder):
     probe = helper("shader-pack-probe", ["port/ios/tests/shader_pack_probe.c", "port/ios/host/host_shader_pack.c"],
                    dependencies=["port/ios/host/host_shader_pack.h"])
@@ -202,24 +120,18 @@ def validate_shaders(folder):
         raise ValueError(result.stderr.strip() or "shader snapshot rejected")
 
 
-def validate_device_profiles(folder, target, generation=1):
+def validate_device_profiles(folder, target):
     platform, model, chip = profile_target_parts(target)
-    command = "validate" if generation == 1 else "validate-2"
-    result = subprocess.run([str(profile_delivery_helper()), command, str(folder), platform, model, chip], capture_output=True, text=True)
+    result = subprocess.run([str(profile_delivery_helper()), "validate", str(folder), platform, model, chip], capture_output=True, text=True)
     if result.returncode:
         raise ValueError(result.stderr.strip() or "device profile snapshot rejected")
 
 
-def device_profile_snapshot(folder, platform, model, chip="", generation=1):
-    """Publish one target's class, selected model, and conservative inheritance source closure; a generation-2
-    shard also carries the sources' revision, which must match them (tools/profile_revision.py)."""
+def device_profile_snapshot(folder, platform, model, chip=""):
+    """Publish one target's class, selected model, and conservative inheritance source closure."""
     target = device_profile_key(platform, model, chip)
     folder = Path(folder)
-    source = snapshot(folder, "profiles")
-    if generation == 2:
-        if REVISION not in source:
-            raise ValueError(f"{REVISION} is missing; run tools/profile_revision.py --bump")
-        profile_revision.check(folder)
+    source = snapshot(folder, "profiles", "profiles-2")
     tables = {name: profile_check.load_toml(folder / name) for name in source if name.endswith(".toml") and "/" not in name}
     # Ask the actual resolver for exact/and_newer precedence; do not recreate it in Python.
     result = subprocess.run([str(profile_delivery_helper()), "select", str(folder), platform, model, chip],
@@ -252,13 +164,11 @@ def device_profile_snapshot(folder, platform, model, chip="", generation=1):
             lines.extend(key + " = " + json.dumps(value, ensure_ascii=True) for key, value in table.items())
     files = {name: source[name] for name in sorted(keep)}
     files["hardware/catalog.toml"] = ("\n".join(lines) + "\n").encode("ascii")
-    if generation == 2:
-        files[REVISION] = source[REVISION]
     with tempfile.TemporaryDirectory(prefix="visr-device-profile-") as temporary:
         root = Path(temporary)
         for name, content in files.items():
             path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
-        validate_device_profiles(root, target, generation)
+        validate_device_profiles(root, target)
     return files
 
 
@@ -304,11 +214,6 @@ def validate_profiles(folder):
             tables[path.name] = table
     problems.extend(profile_check.check_set(tables))
     problems.extend(check_catalog(folder / "hardware/catalog.toml", tables))
-    if (folder / REVISION).exists():
-        try:
-            profile_revision.read(folder)
-        except ValueError as error:
-            problems.append(str(error))
     if problems:
         raise ValueError("profile snapshot rejected: " + "; ".join(problems))
 
@@ -342,12 +247,7 @@ def snapshot_name_allowed(name, kind, compatibility=None):
     if kind == "shaders":
         return re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}\.txt", name) is not None
     if kind == "profiles":
-        device = device_domain(compatibility)
-        if name == REVISION:
-            # a profile source folder (no compatibility) or a generation-2 shard; the apps that read
-            # device-profiles-1 and the whole-set profiles-1/2 packs refuse it
-            return compatibility is None or (device is not None and device[0] >= 2)
-        return name == "hardware/catalog.toml" or (device is not None and name == "capacity.toml") or (len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml")
+        return name == "hardware/catalog.toml" or (compatibility and compatibility.startswith("device-profiles-1:") and name == "capacity.toml") or (len(name) < 64 and PROFILE_NAME.fullmatch(name) and name != "device-profile.toml")
     return ((compatibility and compatibility.startswith("benchmark-catalog-1:") and name == benchmark_catalog.CATALOG_NAME)
         or RECORDING_NAME.fullmatch(name))
 
@@ -362,17 +262,9 @@ def snapshot(folder, kind, compatibility=None):
             if kind == "profiles" and name == "hardware":
                 hardware = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
                 try:
-                    names = sorted(os.listdir(hardware))
-                    revision = snapshot_name_allowed(REVISION, kind, compatibility)
-                    # The whole-set profiles-1/2 packs predate revisions: sign the profile sources without it, as before.
-                    if not revision and compatibility in ("profiles-1", "profiles-2") and "revision.toml" in names:
-                        names.remove("revision.toml")
-                    if names not in (["catalog.toml"], ["catalog.toml", "revision.toml"]) or (
-                            "revision.toml" in names and not revision):
-                        raise ValueError("hardware must contain only catalog.toml" + (" and revision.toml" if revision else ""))
+                    if os.listdir(hardware) != ["catalog.toml"]:
+                        raise ValueError("hardware must contain only catalog.toml")
                     files["hardware/catalog.toml"] = read_regular(hardware, "catalog.toml", maximum_file)
-                    if "revision.toml" in names:
-                        files[REVISION] = read_regular(hardware, "revision.toml", profile_revision.LIMIT)
                 finally:
                     os.close(hardware)
             else:
@@ -403,9 +295,8 @@ def snapshot(folder, kind, compatibility=None):
         if kind == "shaders":
             validate_shaders(validated)
         elif kind == "profiles":
-            device = device_domain(compatibility)
-            if device:
-                validate_device_profiles(validated, device[1], device[0])
+            if compatibility and compatibility.startswith("device-profiles-1:"):
+                validate_device_profiles(validated, compatibility.split(":", 1)[1])
             else:
                 validate_profiles(validated)
         else:
@@ -453,24 +344,20 @@ def main(arguments=None):
         raise ValueError("sequence must be a positive integer at most 2^53 - 1")
     if args.minimum_engine != 1 or args.maximum_engine != 1:
         raise ValueError("this publisher supports only minimum_engine = maximum_engine = 1")
-    expected = (r"device-profiles-[12]:.+|profiles-[12]" if args.kind == "profiles" else
+    expected = (r"device-profiles-1:.+|profiles-[12]" if args.kind == "profiles" else
                 "shader-lists-[12]" if args.kind == "shaders" else r"benchmark-(?:replay-1|catalog-1):[0-9a-f]{64}")
     if not re.fullmatch(expected, args.compatibility):
-        raise ValueError("compatibility must be device-profiles-1: or device-profiles-2: plus a target, profiles-1 or profiles-2, "
-                         "or benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256")
+        raise ValueError("compatibility must be profiles-1 or profiles-2, or benchmark-replay-1:/benchmark-catalog-1: plus the exact lowercase guest SHA-256")
     if len(args.notes.encode("utf-8")) > 4096:
         raise ValueError("notes must be at most 4096 UTF-8 bytes")
-    device = device_domain(args.compatibility) if args.kind == "profiles" else None
-    if device:
-        platform, model, chip = profile_target_parts(device[1])
+    if args.kind == "profiles" and args.compatibility.startswith("device-profiles-1:"):
+        platform, model, chip = profile_target_parts(args.compatibility.split(":", 1)[1])
         if (args.device_platform is not None and args.device_platform != platform) or (args.device_model is not None and args.device_model != model) or (args.device_chip and args.device_chip != chip):
             raise ValueError("device arguments differ from signed compatibility target")
-        files = device_profile_snapshot(args.input, platform, model, chip, device[0])
-        checked = validate_with_released_apps(files, device[1], device[0])
-        print(f"Released apps that admit this shard: {', '.join(checked) or f'none yet read device-profiles-{device[0]}'}")
+        files = device_profile_snapshot(args.input, platform, model, chip)
     else:
         if args.device_platform or args.device_model or args.device_chip:
-            raise ValueError("device arguments require device-profiles-1 or device-profiles-2 compatibility")
+            raise ValueError("device arguments require device-profiles-1 compatibility")
         files = snapshot(args.input, args.kind, args.compatibility)
     assets = {}
     if args.kind == "shaders" and args.compatibility == "shader-lists-2":

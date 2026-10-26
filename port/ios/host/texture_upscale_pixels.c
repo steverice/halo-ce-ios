@@ -6,11 +6,6 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include "texture_upscale_big.h"
-/* (every buffer here is this file's own: out of malloc's large-block cache, texture_upscale_big.h) */
-#define malloc(n) texture_upscale_big_alloc(n)
-#define calloc(n, s) texture_upscale_big_calloc(n, s)
-#define free(p) texture_upscale_big_free(p)
 
 static int dimensions(uint32_t w, uint32_t h, uint32_t c)
 {

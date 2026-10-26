@@ -8,7 +8,7 @@ a target as ``arm64_32-apple-watchos``, which emits Mach-O. The generated
 symbol decoration and relocation operators are Darwin-specific. This script
 rewrites them for the ELF assembler, so the objects can be linked by ld.lld
 into a guest image. The iOS instrumentation pass lifts its memory accesses
-into a native arena before embedding it in the app.
+into an aligned native arena before embedding it in the app.
 
 Usage: guest_asm_convert.py input.s output.s
 """

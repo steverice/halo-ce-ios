@@ -276,14 +276,6 @@ void game_time_set_paused(
 	}
 
 	game_time_globals->paused = paused;
-#ifdef HALO_IOS
-	/* port: the on-device upscaler may run while the game is paused (port/ios/host/host_texture_upscale.m) */
-	{
-		extern void host_texture_upscale_paused(int paused);
-
-		host_texture_upscale_paused(paused);
-	}
-#endif
 
 	return;
 }

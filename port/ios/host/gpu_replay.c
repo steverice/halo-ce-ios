@@ -256,20 +256,6 @@ static int play(struct replay *replay, uint32_t operation, uint32_t *words, uint
 		NEED(12);
 		backend->texture_copy_level(map_get(&replay->textures, words[0]), map_get(&replay->textures, words[1]), words[2]);
 		return 1;
-	case GPU_CAPTURE_TEXTURE_COPY_RECTS:
-	{
-		struct gpu_texture_copy copies[256];
-		uint32_t index;
-
-		NEED(8);
-		if (words[1] > 256 || size - 8 < words[1] * sizeof(copies[0]))
-			return 0;
-		memcpy(copies, bytes + 8, words[1] * sizeof(copies[0]));
-		for (index = 0; index < words[1]; index++)
-			copies[index].destination = map_get(&replay->textures, copies[index].destination);
-		backend->texture_copy_rects(map_get(&replay->textures, words[0]), copies, words[1]);
-		return 1;
-	}
 	case GPU_CAPTURE_TEXTURE_MIPMAPS:
 		NEED(8);
 		backend->texture_generate_mipmaps(map_get(&replay->textures, words[0]), words[1]);

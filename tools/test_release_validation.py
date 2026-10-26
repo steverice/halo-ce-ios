@@ -545,7 +545,7 @@ def test_release_workflow_passes_preflight_catalog_context_to_prepare() -> None:
 
 def test_release_workflow_auth_mode_is_oidc_only_and_cannot_build_or_publish() -> None:
     workflow = (validation.release.ROOT / ".github/workflows/release.yml").read_text()
-    assert "options: [validate, auth, release, unsigned]" in workflow
+    assert "options: [validate, auth, release]" in workflow
     assert "source_sha:\n        description:" in workflow
     source_input = workflow.split("      source_sha:\n", 1)[1].split(
         "      platforms:\n", 1
@@ -555,8 +555,7 @@ def test_release_workflow_auth_mode_is_oidc_only_and_cannot_build_or_publish() -
     auth = jobs.split("\n  identity-check:\n", 1)[1].split("\n  preflight:\n", 1)[0]
     probe = jobs.split("  probe:\n", 1)[1].split("\n  identity-check:\n", 1)[0]
     preflight = jobs.split("\n  preflight:\n", 1)[1].split("\n  prepare:\n", 1)[0]
-    prepare = jobs.split("\n  prepare:\n", 1)[1].split("\n  unsigned:\n", 1)[0]
-    unsigned = jobs.split("\n  unsigned:\n", 1)[1].split("\n  testflight:\n", 1)[0]
+    prepare = jobs.split("\n  prepare:\n", 1)[1].split("\n  testflight:\n", 1)[0]
     testflight = jobs.split("\n  testflight:\n", 1)[1]
     assert "github.event_name == 'workflow_dispatch'" in auth
     assert "inputs.mode == 'auth'" in auth
@@ -572,12 +571,7 @@ def test_release_workflow_auth_mode_is_oidc_only_and_cannot_build_or_publish() -
     assert "needs: preflight" in prepare and "contents: write" in prepare
     assert "id-token: write" in prepare
     assert "ANTHROPIC_API_KEY" not in prepare
-    assert "needs: [prepare, unsigned]" in testflight
-    assert "--unsigned-assets" in testflight
-    # the unsigned apps are built without the release environment or any secret
-    assert "needs: prepare" in unsigned and "release_unsigned.py\" build" in unsigned
-    assert "environment:" not in unsigned and "secrets." not in unsigned and "contents: write" not in unsigned
-    assert "inputs.mode != 'unsigned'" in probe
+    assert "needs: prepare" in testflight
     assert "id-token: write" not in testflight
     for variable in (
         "ANTHROPIC_FEDERATION_RULE_ID",

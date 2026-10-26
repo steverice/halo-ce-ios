@@ -64,10 +64,6 @@ double coop_enemies_solo_multiplier(
 	void);
 /* port/linux/src/input_replay.c: the multiplier a replayed take was recorded
 with, which replaces the setting's; below 1 gives the setting's back */
-/* the network game's players, every machine's (0 outside one), as extra enemies count them: known before a
-level's units are made */
-short coop_enemies_game_players(
-	void);
 void coop_enemies_solo_override(
 	double multiplier);
 

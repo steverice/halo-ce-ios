@@ -8,8 +8,6 @@ static inline int port_profile_apply_class(const char *name)
 {
 	static const struct { const char *name; int policy; } settings[] = {
 		{"debug.dynamic_resolution_shadow", PORT_PROFILE_SESSION}, /* read once when the first frame is observed */
-		{"display.dynamic_resolution", PORT_PROFILE_SESSION}, /* read once with the shadow switch */
-		{"display.dynamic_resolution_floor", PORT_PROFILE_SESSION},
 		{"display.renderer", PORT_PROFILE_SESSION}, /* GPU backend/window selected before guest launch */
 		{"display.render_height", PORT_PROFILE_HOT},
 		{"display.output_height", PORT_PROFILE_SESSION},

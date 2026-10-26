@@ -17,7 +17,6 @@ header included in hcex build.
 /* ---------- prototypes/CONSOLE.C */
 
 void console_initialize(void);
-void console_startup_update(void); /* port: debug.init_after */
 void console_initialize_for_new_map(void);
 void console_open(void);
 void console_close(void);

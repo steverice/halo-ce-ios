@@ -5,7 +5,6 @@
 #include "xiso.h"
 #import "host_orientation.h"
 #include "host_astc_store.h"
-#include "host_texture_upscale.h"
 
 #if !__has_feature(objc_arc)
 #error The asynchronous importer requires Objective-C ARC.
@@ -23,7 +22,6 @@
 @property(atomic, strong) NSFileCoordinator *coordinator;
 @property(nonatomic) BOOL importing;
 @property(nonatomic) BOOL ready;
-@property(atomic) BOOL upscaling; /* the upscaling phase is on screen */
 @property(nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 @property(nonatomic) double lastProgressTime; /* extraction thread only */
 @end
@@ -54,21 +52,6 @@ static int texture_progress(void *context,uint64_t done,uint64_t total) {
         controller.progress.hidden=NO;[controller.spinner stopAnimating];
         controller.progress.progress=total?(float)done/total:0;
         controller.statusLabel.text=@"Preparing textures for this device";
-        [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
-    });return 1;
-}
-/* the on-device upscaler's import phase (rule 2): the same bar and the same "Start playing" skip */
-static int upscale_progress(void *context,unsigned long long done,unsigned long long total) {
-    HaloImportController *controller=(__bridge HaloImportController *)context;
-    controller.upscaling=YES;
-    if(controller.cancelled)return 0;
-    double now=NSProcessInfo.processInfo.systemUptime;
-    if(now-controller.lastProgressTime<0.1)return 1;controller.lastProgressTime=now;
-    float fraction=total?(float)((double)done/total):0;
-    dispatch_async(dispatch_get_main_queue(),^{
-        controller.progress.hidden=NO;[controller.spinner stopAnimating];
-        controller.progress.progress=fraction;
-        controller.statusLabel.text=[NSString stringWithFormat:@"Upscaling textures · %.0f%%\nYou can start playing now; the rest continues in menus.",fraction*100];
         [controller.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
     });return 1;
 }
@@ -144,19 +127,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
     (void)controller;self.statusLabel.text=@"Choose your Halo XISO whenever you're ready.";
 }
-/* Development only (HALO_TEXTURE_UPSCALE_IMPORT_PHASE): the import's upscaling phase alone, over game data already
-   imported, so a device test can reach it, and its continued processing, without importing the disc again. */
-- (void)upscalePhaseOnly {
-    self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
-    self.chooseButton.hidden=YES;self.cancelButton.hidden=NO;self.cancelButton.enabled=YES;
-    [self.cancelButton setTitle:@"Start playing" forState:UIControlStateNormal];
-    self.statusLabel.text=@"Upscaling textures";[self.spinner startAnimating];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
-        host_texture_upscale_prepare_import(self.documents.fileSystemRepresentation,upscale_progress,(__bridge void *)self);
-        dispatch_async(dispatch_get_main_queue(),^{[self.spinner stopAnimating];self.importing=NO;self.ready=YES;});
-    });
-}
-- (void)cancelImport {self.cancelled=YES;[self.coordinator cancel];self.cancelButton.enabled=NO;self.statusLabel.text=self.upscaling?@"Starting Halo…":@"Cancelling import…";}
+- (void)cancelImport {self.cancelled=YES;[self.coordinator cancel];self.cancelButton.enabled=NO;self.statusLabel.text=@"Cancelling import…";}
 - (void)importImage:(NSURL *)url {
     if (self.importing) return;
     self.importing=YES;self.cancelled=NO;self.lastProgressTime=0;
@@ -164,11 +135,7 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
     self.progress.hidden=YES;self.progress.progress=0;[self.spinner startAnimating];
     self.statusLabel.text=@"Opening disc image… If it's in iCloud, it may need to download first.";
     BOOL scoped=[url startAccessingSecurityScopedResource];
-    self.backgroundTask=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"Import Halo" expirationHandler:^{
-        /* the disc's extraction stops; the upscaling phase does not (iOS 26's continued processing carries it, where
-           there is one, and otherwise it goes on in the menus): only the extra background time ends */
-        if(!self.upscaling){self.cancelled=YES;[self.coordinator cancel];}
-        if(self.backgroundTask!=UIBackgroundTaskInvalid){[UIApplication.sharedApplication endBackgroundTask:self.backgroundTask];self.backgroundTask=UIBackgroundTaskInvalid;}}];
+    self.backgroundTask=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"Import Halo" expirationHandler:^{self.cancelled=YES;[self.coordinator cancel];}];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0), ^{
         @autoreleasepool {
             NSFileManager *files=NSFileManager.defaultManager;
@@ -214,7 +181,6 @@ static int upscale_progress(void *context,unsigned long long done,unsigned long 
                     /* Successful completion marker used only for diagnostics; game data stays separate. */
                     host_logf(HOST_LOG_INFO,"XISO import complete; original map bytes preserved");
                     host_astc_store_prepare_import(self.documents.fileSystemRepresentation,texture_progress,(__bridge void *)self);
-                    host_texture_upscale_prepare_import(self.documents.fileSystemRepresentation,upscale_progress,(__bridge void *)self);
                 }
                 /* Preserve the backup if an unexpected restore failure left it here. */
                 if (!imported && [files fileExistsAtPath:backup]) staging=nil;
@@ -250,17 +216,7 @@ void host_ios_prepare_assets(const char *root) {
         [files removeItemAtPath:staging error:nil];
     }
     char reason[1024]={0};
-    BOOL upscale_phase=NO;
-    if (xiso_maps_ready(maps.fileSystemRepresentation,reason,sizeof(reason))) {
-#ifdef HALO_DEVELOPMENT_HOOKS
-        if (!getenv("HALO_TEXTURE_UPSCALE_IMPORT_PHASE")) return;
-#else
-        return;   /* (the development-only switch is compiled out: HALO_DEVELOPMENT_HOOKS) */
-#endif
-        host_texture_upscale_init(root);
-        if (!host_texture_upscale_enabled()) return;
-        upscale_phase=YES;
-    }
+    if (xiso_maps_ready(maps.fileSystemRepresentation,reason,sizeof(reason))) return;
     UIWindowScene *scene=nil;
     for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
         if ([candidate isKindOfClass:UIWindowScene.class]) {scene=(UIWindowScene *)candidate;break;}
@@ -275,10 +231,9 @@ void host_ios_prepare_assets(const char *root) {
             if (regular.boolValue && ([extension isEqualToString:@"iso"] || [extension isEqualToString:@"xiso"])) [images addObject:url];
         }
     }
-    if (images.count==1 && !upscale_phase) controller.pendingImage=images.firstObject;
+    if (images.count==1) controller.pendingImage=images.firstObject;
     UIWindow *window=[[UIWindow alloc] initWithWindowScene:scene];window.frame=scene.coordinateSpace.bounds;
     window.windowLevel=UIWindowLevelNormal+2;window.rootViewController=controller;[window makeKeyAndVisible];
-    if (upscale_phase) [controller upscalePhaseOnly];
     while (!controller.ready) {
         @autoreleasepool {
             /* Like SDL's UIKit event pump, service tracking as well as the

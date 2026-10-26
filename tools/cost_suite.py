@@ -200,7 +200,7 @@ def frame_ms(row, hz):
 
 
 def _usable(row):
-    return row.timing_basis in cost.BASES and row.thermal < cost.THERMAL_SERIOUS
+    return row.timing_basis == cost.BASIS and row.thermal < cost.THERMAL_SERIOUS
 
 
 def classify(runs, device, ladder=None, target_fps=TARGET_FPS, floor_fps=FLOOR_FPS):

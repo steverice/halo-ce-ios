@@ -305,28 +305,13 @@ static BOOL is_presenting_thread(void)
 		pthread_equal(presenting_thread, pthread_self());
 }
 
-#ifdef HALO_IOS
-/* the benchmark's per-frame worker waits (worker_wait_ms; host_benchmark.h) */
-void host_benchmark_worker_wait(unsigned int microseconds);
-#endif
-
-static unsigned long long quiescence_now(void)
-{
-	struct timespec now;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	return (unsigned long long)now.tv_sec * 1000000000ULL + (unsigned long long)now.tv_nsec;
-}
-
 void platform_quiescence_wait(void)
 {
 	static time_t last_report;
 	struct timespec deadline;
-	unsigned long long began;
 
 	if (!platform_fixed_timestep())
 		return;
-	began = quiescence_now();
 	if (!presenting_thread_known)
 	{
 		presenting_thread = pthread_self();
@@ -350,11 +335,6 @@ void platform_quiescence_wait(void)
 		}
 	}
 	pthread_mutex_unlock(&quiescence_lock);
-#ifdef HALO_IOS
-	host_benchmark_worker_wait((unsigned int)((quiescence_now() - began) / 1000ULL));
-#else
-	(void)began;
-#endif
 }
 
 static BOOL handle_try_acquire(struct platform_handle *handle)

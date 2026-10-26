@@ -131,16 +131,6 @@ level in order, starting from face 0, level 0 */
 void gpu_texture_upload(gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size);
 /* level 0 of source into level of destination (mip composites) */
 void gpu_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level);
-/* gpu_texture_copy_rects: a rectangle of level 0 of the source, in texels, into
-the top left of level 0 of destination */
-struct gpu_texture_copy
-{
-	gpu_texture destination;
-	uint32_t x, y, width, height;
-};
-/* every copy at once, in order (the shadow blur page's tiles into their
-shadows' own targets, rasterizer_xbox.c): Metal makes them one blit */
-void gpu_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count);
 /* the levels after base_level from base_level */
 void gpu_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level);
 void gpu_texture_destroy(gpu_texture texture);
@@ -151,12 +141,6 @@ nothing drew), for debugging. Returns 0 and writes nothing if size is short of
 width * height * 4 or the backend cannot read the texture (ES: block-compressed
 textures and depth) */
 uint32_t gpu_texture_read(gpu_texture texture, void *pixels, uint32_t size);
-/* dynamic resolution (d3d8_device.c): a render target allocated at the
-resolution ceiling holds a picture of width x height texels at its top left;
-gpu_upscale reads only that part, and MetalFX takes it as its input content.
-0 x 0 restores the whole texture, as a new target has. A backend that
-cannot draw a part ignores it (GL: dynamic resolution is Metal-only) */
-void gpu_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height);
 
 /* ---------- buffers: the vertex mirror's segments */
 
@@ -743,12 +727,9 @@ its own functions. */
 	P(texture_upload, (gpu_texture texture, uint32_t face, uint32_t level, const void *data, uint32_t size), \
 		(texture, face, level, data, size)) \
 	P(texture_copy_level, (gpu_texture source, gpu_texture destination, uint32_t level), (source, destination, level)) \
-	P(texture_copy_rects, (gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count), \
-		(source, copies, count)) \
 	P(texture_generate_mipmaps, (gpu_texture texture, uint32_t base_level), (texture, base_level)) \
 	P(texture_destroy, (gpu_texture texture), (texture)) \
 	F(uint32_t, texture_read, (gpu_texture texture, void *pixels, uint32_t size), (texture, pixels, size)) \
-	P(texture_set_content, (gpu_texture texture, uint32_t width, uint32_t height), (texture, width, height)) \
 	F(gpu_buffer, buffer_create, (uint32_t size), (size)) \
 	P(buffer_write, (gpu_buffer buffer, uint32_t offset, uint32_t size, const void *data, uint32_t flags), \
 		(buffer, offset, size, data, flags)) \

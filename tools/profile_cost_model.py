@@ -12,17 +12,7 @@ from pathlib import Path
 COST = Path(__file__).resolve().parent.parent / "cost-model"
 RUNS_CSV = COST / "runs.csv"
 MODEL_TOML = COST / "model.toml"
-# The runs a fit may use, by the report's timing_basis (port/ios/host/host_benchmark_offscreen.h). Both are offscreen and
-# uncapped, so GPU ms and simulation ms a tick are costs at full clocks. "offscreen_uncapped" (serialized) waits for
-# every visibility answer inside the render, so its render CPU counts GPU time: it is used only with that wait taken
-# out (the report's gpu_wait_ms), never as measured. "offscreen_pipelined" takes answers from frames before and has no
-# such wait. Neither says whether a frame rate holds: presented and virtual_display runs do, and are never fitted.
 BASIS = "offscreen_uncapped"
-BASES = ("offscreen_uncapped", "offscreen_pipelined")
-# render_cpu_basis: "wall" as measured, "waits_removed" with gpu_wait_ms taken out (the whole frame's GPU waits,
-# readbacks included, so a little more than the render's own: the result is clamped at 0)
-RENDER_CPU_VALID = {("offscreen_uncapped", "waits_removed"), ("offscreen_pipelined", "wall"),
-                    ("offscreen_pipelined", "waits_removed")}
 THERMAL_SERIOUS = 2
 RESOLUTION_KEY = "display.render_lines"
 REPORT_SETTINGS = {"render_lines": RESOLUTION_KEY, "anisotropic_filtering": "display.anisotropic_filtering",
@@ -30,7 +20,7 @@ REPORT_SETTINGS = {"render_lines": RESOLUTION_KEY, "anisotropic_filtering": "dis
 # report settings that name no knob: the simulation changes are in the report under their own names too
 IGNORED_SETTINGS = {"sim_experiments", "sim_experiments_mask"}
 FIELDS = ["report", "index", "device", "chip", "workload", "settings", "render_width", "render_height",
-          "simulation_cpu_ms", "render_cpu_ms", "gpu_ms", "thermal", "timing_basis", "catalog_signed", "render_cpu_basis"]
+          "simulation_cpu_ms", "render_cpu_ms", "gpu_ms", "thermal", "timing_basis", "catalog_signed"]
 
 
 @dataclass
@@ -50,11 +40,6 @@ class Run:
     index: int = 0
     # False for a run from a development build's unsigned local catalog (benchmark/local-routes)
     catalog_signed: bool = True
-    # how render_cpu_ms was taken (RENDER_CPU_VALID); rows from before the column are "wall"
-    render_cpu_basis: str = "wall"
-
-    def render_cpu_valid(self):
-        return (self.timing_basis, self.render_cpu_basis) in RENDER_CPU_VALID
 
 
 @dataclass
@@ -102,16 +87,11 @@ def runs_from_report(report, name=""):
                     if not key.endswith("_requested") and key not in IGNORED_SETTINGS}
         size = run.get("render_size") or [0, 0]
         thermal = run.get("thermal", {}).get("worst", -1) if isinstance(run.get("thermal"), dict) else -1
-        render_cpu = _mean(run.get("render_cpu_ms")) or 0.0
-        gpu_wait = _mean(run.get("gpu_wait_ms"))
-        render_basis = "wall"
-        if gpu_wait is not None:
-            render_cpu, render_basis = max(0.0, render_cpu - gpu_wait), "waits_removed"
         result.append(Run(report=name or str(report.get("code", "")), device=device.get("model", ""),
                           chip=device.get("chip", ""), workload=run.get("workload") or run.get("scene", ""), settings=settings,
                           render_width=int(size[0]), render_height=int(size[1]),
                           simulation_cpu_ms=_mean(run.get("simulation_cpu_ms")) or 0.0,
-                          render_cpu_ms=render_cpu, render_cpu_basis=render_basis,
+                          render_cpu_ms=_mean(run.get("render_cpu_ms")) or 0.0,
                           gpu_ms=_mean(run.get("gpu_ms")) or 0.0, thermal=int(thermal),
                           timing_basis=run.get("timing_basis", ""), index=int(run.get("index", position)),
                           catalog_signed=bool(run.get("catalog_signed", report.get("catalog_signed", True)))))
@@ -127,8 +107,7 @@ def read_runs(path):
                     render_width=int(row["render_width"]), render_height=int(row["render_height"]),
                     simulation_cpu_ms=float(row["simulation_cpu_ms"]), render_cpu_ms=float(row["render_cpu_ms"]),
                     gpu_ms=float(row["gpu_ms"]), thermal=int(row["thermal"]), timing_basis=row["timing_basis"],
-                    catalog_signed=row.get("catalog_signed", "true") != "false",
-                    render_cpu_basis=row.get("render_cpu_basis") or "wall")
+                    catalog_signed=row.get("catalog_signed", "true") != "false")
                 for row in csv.DictReader(handle)]
 
 
@@ -143,7 +122,7 @@ def write_runs(path, runs):
             writer.writerow([run.report, run.index, run.device, run.chip, run.workload,
                              json.dumps(run.settings, sort_keys=True), run.render_width, run.render_height,
                              run.simulation_cpu_ms, run.render_cpu_ms, run.gpu_ms, run.thermal, run.timing_basis,
-                             "true" if run.catalog_signed else "false", run.render_cpu_basis])
+                             "true" if run.catalog_signed else "false"])
 
 
 def _megapixels(run):
@@ -185,7 +164,7 @@ def fit(runs):
         for row in rows:
             if row.thermal >= THERMAL_SERIOUS:
                 excluded["thermal"] += 1
-            elif row.timing_basis not in BASES:
+            elif row.timing_basis != BASIS:
                 excluded["timing_basis"] += 1
             else:
                 kept.append(row)
@@ -200,12 +179,8 @@ def fit(runs):
         fixed, slope = _line_fit([(_megapixels(row), row.gpu_ms) for row in usable]) if usable else (0.0, 0.0)
         gpu_at = {row.render_height: statistics.mean(r.gpu_ms for r in usable if r.render_height == row.render_height)
                   for row in usable}
-        cpu_rows = [row for row in base_rows if row.render_cpu_valid()]
-        excluded["render_cpu_serialized"] += sum(1 for row in kept if not row.render_cpu_valid())
-        if base_rows and not cpu_rows:
-            excluded["render_cpu_upper_bound"] = 1
-        cpu_at = {row.render_height: statistics.mean(r.render_cpu_ms for r in cpu_rows if r.render_height == row.render_height)
-                  for row in cpu_rows}
+        cpu_at = {row.render_height: statistics.mean(r.render_cpu_ms for r in base_rows if r.render_height == row.render_height)
+                  for row in base_rows}
         ratios = defaultdict(lambda: ([], []))
         for row in kept:
             changed = [key for key, value in baseline.items() if row.settings.get(key) != value]
@@ -217,15 +192,14 @@ def fit(runs):
                 gpu.append(row.gpu_ms / gpu_at[row.render_height])
             elif row.gpu_ms <= 0:
                 excluded["gpu_zero"] += 1
-            if row.render_cpu_valid() and cpu_at.get(row.render_height):
+            if cpu_at.get(row.render_height):
                 cpu.append(row.render_cpu_ms / cpu_at[row.render_height])
         knobs = defaultdict(dict)
         for (knob, value), (gpu, cpu) in sorted(ratios.items()):
             knobs[knob][value] = (statistics.median(cpu) if cpu else 1.0, statistics.median(gpu) if gpu else 1.0)
         fits.append(Fit(device=device, workload=workload, baseline=baseline,
                         simulation_ms=statistics.mean(row.simulation_cpu_ms for row in base_rows) if base_rows else 0.0,
-                        # (serialized runs only: their wall render CPU, an upper bound, marked in excluded)
-                        render_cpu_ms=statistics.mean(row.render_cpu_ms for row in (cpu_rows or base_rows)) if base_rows else 0.0,
+                        render_cpu_ms=statistics.mean(row.render_cpu_ms for row in base_rows) if base_rows else 0.0,
                         gpu_fixed_ms=fixed, gpu_ms_per_megapixel=slope, knobs=dict(knobs),
                         excluded={key: count for key, count in excluded.items() if count}, chip=kept[0].chip))
     return fits

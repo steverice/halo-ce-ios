@@ -38,7 +38,6 @@ static const struct profile_key profile_keys[] =
 #define PROFILE_REAL(name, minimum, maximum) { name, _profile_real, minimum, maximum, NULL },
 #define PROFILE_STRING(name, choices) { name, _profile_string, 0.0, 0.0, choices },
 #define PROFILE_SCENE(name)
-#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -46,7 +45,6 @@ static const struct profile_key profile_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
-#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -58,7 +56,6 @@ static const char *const scene_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name) name,
-#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -66,7 +63,6 @@ static const char *const scene_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
-#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -77,7 +73,6 @@ static const char *const external_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name)
-#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name) name,
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -85,27 +80,6 @@ static const char *const external_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
-#undef PROFILE_VARIABLE
-#undef PROFILE_EXTERNAL
-};
-
-/* those it may set for the variable-workload context ([variable.display]: multiplayer, co-op, more enemies) */
-static const char *const variable_keys[] =
-{
-#define PROFILE_BOOLEAN(name)
-#define PROFILE_INTEGER(name, minimum, maximum)
-#define PROFILE_REAL(name, minimum, maximum)
-#define PROFILE_STRING(name, choices)
-#define PROFILE_SCENE(name)
-#define PROFILE_VARIABLE(name) name,
-#define PROFILE_EXTERNAL(name)
-#include "../../linux/src/port_profile_keys.h"
-#undef PROFILE_BOOLEAN
-#undef PROFILE_INTEGER
-#undef PROFILE_REAL
-#undef PROFILE_STRING
-#undef PROFILE_SCENE
-#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -269,16 +243,6 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 			}
 			continue;
 		}
-		/* [variable.display]: the variable-workload context's values, carried as the pseudo-class "variable" (the
-		   game lays them under the scene classes, port_config.c). Not inside [external] or a scene class */
-		if (!scene && !strcmp(section_name, "variable"))
-		{
-			if (external || section.type != TOML_TABLE)
-				profile_logf(log, "device profile: %s: invalid variable table; ignored", label);
-			else
-				profile_add_settings(profile, section, source, label, "variable", 0, builtin_output, log);
-			continue;
-		}
 		if (!scene && !strcmp(section_name, "external"))
 		{
 			if (external || section.type != TOML_TABLE)
@@ -289,7 +253,7 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 		}
 		/* (the file's own fields and tables: tools/profile_check.py checks those) */
 		if (section.type != TOML_TABLE || !strcmp(section_name, "match") || !strcmp(section_name, "evidence") ||
-			!strcmp(section_name, "scene") || !strcmp(section_name, "variable"))
+			!strcmp(section_name, "scene"))
 			continue;
 		for (key_index = 0; key_index < section.u.tab.size; key_index++)
 		{
@@ -316,12 +280,10 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 				profile_logf(log, "device profile: %s: %s cannot be set in this output context; ignored", label, value.name);
 				continue;
 			}
-			if (scene && !(strcmp(scene, "variable") ?
-				name_in(value.name, scene_keys, sizeof(scene_keys) / sizeof(scene_keys[0])) :
-				name_in(value.name, variable_keys, sizeof(variable_keys) / sizeof(variable_keys[0]))))
+			if (scene && !name_in(value.name, scene_keys, sizeof(scene_keys) / sizeof(scene_keys[0])))
 			{
-				profile_logf(log, "device profile: %s line %d: %s cannot change by %s; ignored", label,
-					datum.lineno, value.name, strcmp(scene, "variable") ? "scene class" : "workload");
+				profile_logf(log, "device profile: %s line %d: %s cannot change by scene class; ignored", label,
+					datum.lineno, value.name);
 				continue;
 			}
 			switch (key->type)
@@ -774,19 +736,6 @@ int host_profile_value(const struct host_profile *profile, const char *name, cha
 	return 0;
 }
 
-int host_profile_scene_value(const struct host_profile *profile, const char *name, const char *scene, char *text,
-	size_t size)
-{
-	for (int index = profile->count - 1; index >= 0; index--)
-		if (!profile->values[index].external && scene && *scene && !strcmp(profile->values[index].scene, scene) &&
-			!strcmp(profile->values[index].name, name))
-		{
-			snprintf(text, size, "%s", profile->values[index].text);
-			return 1;
-		}
-	return 0;
-}
-
 int host_profile_external_value(const struct host_profile *profile, const char *name, char *text, size_t size)
 {
 	for (int index = profile->count - 1; index >= 0; index--)
@@ -909,7 +858,7 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 		const char *key = table.u.tab.key[i]; toml_datum_t value = table.u.tab.value[i];
 		if (!strcmp(key, "schema") || !strcmp(key, "name") || !strcmp(key, "kind") || !strcmp(key, "status") || !strcmp(key, "match")) continue;
 		if (value.type != TOML_TABLE) return 0;
-		if (!strcmp(key, "evidence") || !strcmp(key, "scene") || !strcmp(key, "external") || !strcmp(key, "variable")) continue;
+		if (!strcmp(key, "evidence") || !strcmp(key, "scene") || !strcmp(key, "external")) continue;
 		int known = 0;
 		for (size_t j = 0; j < NUMBER_OF_PROFILE_KEYS; j++)
 			if (!strncmp(profile_keys[j].name, key, strlen(key)) && profile_keys[j].name[strlen(key)] == '.') known = 1;
@@ -918,10 +867,7 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 	return 1;
 }
 
-/* revision: 0 refuses hardware/revision.toml (a generation-1 shard), 1 allows it (the repository and bundled
-   folders), 2 requires it (a generation-2 shard); whenever present it must parse. */
-static int profile_validate_folder(const char *folder, const struct host_device *device, int revision,
-	void (*log_line)(const char *))
+static int profile_validate_folder(const char *folder, const struct host_device *device, void (*log_line)(const char *))
 {
 	enum { LIMIT = 128 };
 	toml_result_t *tables = calloc(LIMIT, sizeof(*tables));
@@ -948,19 +894,13 @@ static int profile_validate_folder(const char *folder, const struct host_device 
 			if (!pack_regular(path, 1)) goto done;
 			DIR *hardware = opendir(path); struct dirent *item;
 			if (!hardware) goto done;
-			int only_catalog = 1, catalogs = 0, revisions = 0;
+			int only_catalog = 1, catalogs = 0;
 			while ((item = readdir(hardware)))
 			{
 				if (!strcmp(item->d_name, ".") || !strcmp(item->d_name, "..")) continue;
-				if (revision && !strcmp(item->d_name, "revision.toml")) revisions++;
-				else if (strcmp(item->d_name, "catalog.toml")) only_catalog = 0; else catalogs++;
+				if (strcmp(item->d_name, "catalog.toml")) only_catalog = 0; else catalogs++;
 			}
 			closedir(hardware);
-			if ((revisions || revision == 2) && host_profile_revision_read(folder, NULL) <= 0)
-			{
-				profile_logf(&log, "profile update: hardware/revision.toml is missing or malformed");
-				goto done;
-			}
 			if (!profile_path_join(path, sizeof(path), folder, "hardware/catalog.toml"))
 			{
 				profile_logf(&log, "profile update: path too long for validation buffer");
@@ -1026,16 +966,11 @@ done:
 
 int host_profile_validate_folder(const char *folder, void (*log_line)(const char *))
 {
-    return profile_validate_folder(folder, NULL, 1, log_line);
-}
-int host_profile_validate_feed_folder(const char *folder, const struct host_device *device, int generation,
-	void (*log_line)(const char *))
-{
-    char key[192];
-    if (!device || (generation != 1 && generation != 2) || !host_profile_device_key(device, key, sizeof(key))) return 0;
-    return profile_validate_folder(folder, device, generation == 2 ? 2 : 0, log_line);
+    return profile_validate_folder(folder, NULL, log_line);
 }
 int host_profile_validate_device_folder(const char *folder, const struct host_device *device, void (*log_line)(const char *))
 {
-    return host_profile_validate_feed_folder(folder, device, 1, log_line);
+    char key[192];
+    if (!device || !host_profile_device_key(device, key, sizeof(key))) return 0;
+    return profile_validate_folder(folder, device, log_line);
 }

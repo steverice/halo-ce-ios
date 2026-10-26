@@ -400,51 +400,7 @@ static void console_complete(
 	return;
 }
 
-/* port: debug.init_after holds init.txt's commands for that many seconds
-after start-up (port/linux/src/port_config.c), so a test can let the game sit
-at the main menu, then start a level from there in the same launch */
-double config_real(const char *name);
-unsigned long system_milliseconds(void);
-void platform_log(const char *format, ...);
-static unsigned long console_startup_due;
-
-static void console_startup_run(void);
-
 void console_startup(
-	void)
-{
-	double after = config_real("debug.init_after");
-
-	if (after > 0.0 && !game_in_editor())
-	{
-		console_startup_due = system_milliseconds() + (unsigned long)(after * 1000.0);
-		if (!console_startup_due)
-		{
-			console_startup_due = 1;
-		}
-		platform_log("init.txt: its commands run in %.1f s (debug.init_after)", after);
-		return;
-	}
-	console_startup_run();
-
-	return;
-}
-
-/* port: main_loop, every frame: runs init.txt once debug.init_after has passed */
-void console_startup_update(
-	void)
-{
-	if (console_startup_due && (long)(system_milliseconds() - console_startup_due) >= 0)
-	{
-		console_startup_due = 0;
-		platform_log("init.txt: running its commands (debug.init_after)");
-		console_startup_run();
-	}
-
-	return;
-}
-
-static void console_startup_run(
 	void)
 {
 	char buffer[200];

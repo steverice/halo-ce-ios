@@ -64,7 +64,7 @@ def native_commands(args, data_packs):
         *ios_build.cloud_definitions(args.bundle_id, args.cloud_saves, getattr(args, 'cloud_container', None),
                                      shader_upload=getattr(args, 'shader_upload', False),
                                      perf_reports=getattr(args, 'perf_reports', False)),
-        '-DHALO_TESTER_BUILD=OFF', '-DHALO_BENCHMARK_ROUTES=OFF', ios_build.development_hooks(args),
+        '-DHALO_TESTER_BUILD=OFF', '-DHALO_BENCHMARK_ROUTES=OFF',
         f'-DHALO_BUILD_NUMBER={args.build_number or time.strftime("%Y%m%d.%H%M%S")}',
         f'-DHALO_DATA_PACK_CHANNEL_NAME={getattr(args, "data_pack_channel", None) or ""}',
         *ios_build.host_pgo_flags(args.host_pgo), *data_packs]

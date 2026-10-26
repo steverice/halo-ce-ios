@@ -17,17 +17,12 @@ models = ["AppleTV14,1"]
 and_newer = true
 
 [display]
-upscaled_textures = true
 render_scale = 1.0
 shadow_map_size = 512
 texture_idle_seconds = 60
 model_lod = "max"
 render_height = 1080
 anisotropic_filtering = 16
-
-[evidence."display.upscaled_textures"]
-basis = "assumed"
-why = "Steve's decision (2026-10-25): upscaled textures on the Apple TV 4K (3rd generation) and newer, off on the earlier Apple TVs (the class's value). Its A15 has the Neural Engine the upscaler needs and 4 GB of memory; the whole game's set takes about 655 MB of storage, kept in Library/Caches, which tvOS may purge between launches (it is then made again)."
 
 [evidence."display.render_height"]
 basis = "measured"

@@ -160,18 +160,10 @@ void host_device_profile_applied(int point, int networked, int changed, int meta
     offered_ready = 0;
 }
 
-/* name, or the variable-workload context's value as the profile names it ("variable.display.dynamic_resolution") */
 static int installed_value(const char *name, char *text, size_t size)
 {
-	const char *scene = "";
-	if (!strncmp(name, "variable.", 9))
-	{
-		scene = "variable";
-		name += 9;
-	}
 	pthread_mutex_lock(&installed_lock);
-    int found = *scene ? host_profile_scene_value(&installed_profile, name, scene, text, size) :
-        host_profile_value(&installed_profile, name, text, size);
+    int found = host_profile_value(&installed_profile, name, text, size);
     pthread_mutex_unlock(&installed_lock);
     return found;
 }
@@ -182,34 +174,6 @@ void host_device_profile_copy(struct host_profile *profile)
     pthread_mutex_lock(&installed_lock);
     *profile = installed_profile;
     pthread_mutex_unlock(&installed_lock);
-}
-
-static int profile_installed;
-
-int host_device_profile_peek(const char *data_root, const char *name, char *text, size_t size)
-{
-	if (profile_installed)
-		return installed_value(name, text, size);
-	struct host_device device;
-	struct host_profile *profile = calloc(1, sizeof(*profile));
-	char selector[64], drop_in[1100];
-	const char *environment = getenv("HALO_DEVICE_PROFILE");
-	NSString *folder = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"profiles"];
-
-	if (!profile)
-		return 0;
-	host_device_identify(&device);
-	if (environment)
-		snprintf(selector, sizeof(selector), "%s", environment);
-	else
-		host_config_string("debug.device_profile", "", selector, sizeof(selector));
-	if (!selector[0])
-		folder = host_profile_update_folder(folder);
-	snprintf(drop_in, sizeof(drop_in), "%s/device-profile.toml", data_root);
-	host_profile_resolve(&device, folder.fileSystemRepresentation, drop_in, selector, NULL, profile);
-	int found = host_profile_value(profile, name, text, size);
-	free(profile);
-	return found;
 }
 
 const char *host_device_profile_install(const char *data_root)
@@ -243,7 +207,6 @@ const char *host_device_profile_install(const char *data_root)
     installed_profile = initial;
     pthread_mutex_unlock(&installed_lock);
     host_config_set_profile(installed_value);
-    profile_installed = 1;
     /* A selector is a deliberate frozen profile, including "none". Signed device packs
        always target actual hardware and must not override that choice. */
     if (!selector[0]) {

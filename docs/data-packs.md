@@ -25,47 +25,20 @@ mac/Mac14,5/Apple-M2-Max.json
 
 Platforms are `ios`, `tvos`, `visionos`, and `mac`. Model identifiers preserve their case and contain only bounded ASCII letters, digits, commas, periods, and hyphens. A Mac key includes its Apple M-series chip and optional Pro, Max, or Ultra tier; spaces become hyphens. Other platforms use `_`. Invalid hardware identification and unavailable shards retain bundled profiles.
 
-A shard's signed kind is `profiles`; its compatibility is `device-profiles-N:PLATFORM/MODEL/CHIP-KEY`, where `N` is the app's profile feed generation. The publisher and app construct and validate keys through the same native code. A shard for a different device or generation cannot activate in this device's cache.
+A shard's signed kind is `profiles`; its compatibility is `device-profiles-1:PLATFORM/MODEL/CHIP-KEY`. The publisher and app construct and validate keys through the same native code. A shard for a different device cannot activate in this device's cache.
 
 Create one envelope from the repository profile sources:
 
 ```sh
 python3 tools/data_pack.py --kind profiles --channel tester \
-  --sequence 1 --compatibility device-profiles-2:ios/iPhone18,1/_ \
+  --sequence 1 --compatibility device-profiles-1:ios/iPhone18,1/_ \
   --input profiles --signing-key /private/path/signing-seed \
   --output iphone-profile.json
 ```
 
-Serve that envelope under `device-profiles-2/ios/iPhone18,1/_.json`. Each shard contains the target platform's class partitions, selected model, only the hardware catalog records and source profiles needed for conservative inheritance, and the profile set's revision. Runtime memory, GPU, pixel, and refresh checks still decide whether an inherited profile is suitable. User overrides keep their existing precedence. Debug profile selection uses the bundled profile set.
+Serve that envelope under `profiles/ios/iPhone18,1/_.json`. Each shard contains the target platform's class partitions, selected model, and only the hardware catalog records and source profiles needed for conservative inheritance. Runtime memory, GPU, pixel, and refresh checks still decide whether an inherited profile is suitable. User overrides keep their existing precedence. Debug profile selection uses the bundled profile set.
 
 An optional `capacity.toml` reserves schema 1 with optional `validated_maximum_players` from 2 through 128 and an `evidence` string of at most 2048 bytes. A supplied maximum requires evidence. Omit unknown capacity. This metadata does not change profile matching or display a warning.
-
-### Profile feed generations
-
-A downloaded shard replaces all of the app's bundled profiles for that launch, and each app's validator refuses a whole shard that contains a key, range, choice or file it does not know. Apps that validate differently therefore read separate directories:
-
-| Generation | Directory | Apps |
-| --- | --- | --- |
-| `device-profiles-1` | `profiles/` | 0.2.2 to 0.5.1 |
-| `device-profiles-2` | `device-profiles-2/` | 0.6.0 and later |
-
-The generation is `HOST_PROFILE_FEED_GENERATION` in `port/ios/host/host_profile.h`, and `PROFILE_FEED_GENERATION` in `tools/data_pack.py`. Bump it, and give the new generation its own directory, whenever an app would accept a shard that an earlier app of the same generation refuses: a profile key added or removed, a range or choice changed, a new heading, catalog field or file. `tools/test_profile_feed.py` fails when `port/linux/src/port_profile_keys.h` changes without a bump. Bump it also when a release needs profile updates of its own, separate from earlier releases. A device that has no shard in its generation's directory uses its bundled profiles; it never falls back to an older generation.
-
-Before signing a device shard, `tools/data_pack.py` builds the profile validator of every release tag that reads the shard's generation and refuses the shard if any of them would. The `profiles/` directory is frozen: its shards stay as they were published, and a `device-profiles-1` shard signed from current sources is refused, because 0.5.0 and earlier refuse `network.player_capacity`. To update an older generation, sign from its release tag's sources.
-
-### Profile revisions
-
-`profiles/hardware/revision.toml` holds the profile set's revision and the SHA-256 of the sources it was stamped from: every `profiles/*.toml` except `TEMPLATE.toml`, and `hardware/catalog.toml`. After changing any of them, run:
-
-```sh
-python3 tools/profile_revision.py --bump
-```
-
-`python3 tools/profile_revision.py` checks that the file matches the sources; `tools/ios_test.py`, release validation and the publisher run the check. Two branches that both bump edit the same lines, so merging them conflicts until the revision is bumped again; each revision on `main` names one set of sources. Releases and shards come from `main`, so their revisions are comparable.
-
-The app bundles the file and the publisher copies it into every generation-2 shard. The app uses a shard only when its revision is higher than the bundled one, or equal with the same source hash; otherwise it uses its bundled profiles. This applies to a downloaded shard and to one already cached, so an app update with newer profiles is never masked by a shard signed before them. A served shard older than the bundled profiles counts as published for the launch menu, as an absent shard does, and the benchmark uses the bundled profiles. Such a shard is downloaded again at each check until a newer one is published. A bundle without a valid revision uses no downloaded profiles.
-
-To roll a profile back, revert it on `main`, bump the revision and sign again: an app that took a newer revision refuses a lower one, and Pages staging refuses to replace a shard with one of a lower revision.
 
 ## Additive shader lists
 
@@ -105,7 +78,7 @@ A running benchmark keeps a copied, hashed recording snapshot. Resume uses those
 
 ## Publication
 
-Keep the random 32-byte signing seed outside the repository and distribution artifacts. `tools/data_pack.py` signs locally and does not publish. Serve each envelope directly over HTTPS after review. Publish a higher sequence to restore older shader or recording payload bytes; clients reject repeated and decreasing sequences. Device profiles roll back through a new revision instead ("Profile revisions"). Sign separately for each channel. Changing the pinned public key requires an app update.
+Keep the random 32-byte signing seed outside the repository and distribution artifacts. `tools/data_pack.py` signs locally and does not publish. Serve each envelope directly over HTTPS after review. Publish a higher sequence to restore older payload bytes; clients reject repeated and decreasing sequences. Sign separately for each channel. Changing the pinned public key requires an app update.
 
 Release policy pins every reviewed profile shard's exact envelope hash, plus the shader and recording envelope hashes. The publication map is used by release verification; clients do not download it. The checked-in `docs/site/packs/tester/` tree in `main` is the source of truth for the served signed feeds. Keep its signed envelopes, `publication.json` hash receipt, and `publication-format.txt` marker together in the same commit. The Pages workflow validates every checked-in path, hash, signature, sequence, and size before copying the site into its deployment artifact. It does not fetch live feeds or accept asset commits from another ref. Signed profile and shader data updates do not require an app build while their compatibility identifiers and pinned verification key remain unchanged. Publishing feeds and uploading a build remain separate actions. See [release publication](releasing.md#builds-and-testflight-notes).
 

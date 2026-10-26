@@ -37,9 +37,6 @@ bool astc_encode_level(enum astc_dxt_format format, const void *source,
    Independent 128-row bands bound per-thread scratch; threads is capped at 4. */
 enum astc_encode_result astc_encode_rgba_level(const uint8_t *rgba, unsigned width,
 	unsigned height, void *output, unsigned preset, unsigned threads);
-/* The calling thread's later astc_encode_rgba_level calls end with ASTC_ENCODE_ERROR between 128-texel tiles once
-   *flag reads nonzero (the upscaler's stop for gameplay); NULL (the default) never stops them. */
-void astc_encode_set_cancel(const volatile int *flag);
 #ifdef __cplusplus
 }
 #endif

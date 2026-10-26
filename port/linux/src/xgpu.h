@@ -104,10 +104,6 @@ enum
 	the lookup maps its screen coordinates through the map (nv2a_msl.c; Metal
 	only) */
 	_xgpu_sampler_2d_foveated,
-	/* a 2D screen-sized target of dynamic resolution's pool (xgpu_render_target's
-	pooled): the coordinates are scaled to the content by texture_scale's x and
-	y, and clamped to its outermost texel centers by its z and w */
-	_xgpu_sampler_2d_content,
 };
 
 /* everything a translated pixel shader depends on; the GLSL program cache
@@ -211,10 +207,6 @@ struct xgpu_render_target
 	any other target, allocated at gl_width by gl_height */
 	unsigned char foveated_eye;
 	unsigned long allocated_width, allocated_height;
-	/* dynamic resolution's pool (d3d8_device.c, screen_dynamic): the mono
-	screen's target allocated at the resolution ceiling, allocated_width by
-	allocated_height, with the scene's gl_width by gl_height at its top left */
-	unsigned char pooled;
 };
 
 /* the GL texture holding a render target with this physical address, or 0 */

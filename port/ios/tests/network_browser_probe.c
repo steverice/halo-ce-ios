@@ -20,16 +20,19 @@ struct advertised_game { wchar_t game_name[16]; int engine_type, player_count, m
 struct widget_instance { wchar_t text[96]; char const *name; struct widget_instance *parent; };
 static struct { struct advertised_game *games[1]; int mode, game_count; } multiplayer;
 static struct { int count, first; struct { int joinable; } games[3]; } lobby_browser;
-static struct widget_instance type, ping, other;
+static struct widget_instance type, ping, dedicated_icon, other;
+static int dedicated, dedicated_visible;
 static unsigned kind, version = 38;
+static int advertised_dedicated(struct advertised_game *game) { (void)game; return dedicated; }
 static wchar_t const *engine_names[] = { L"", L"CTF", L"SLAYER", L"ODDBALL", L"KING", L"RACE" };
 static struct widget_instance *named(struct widget_instance *row, char const *name, int index)
 {
 	(void)row; (void)index;
-	return !strcmp(name, "server_item_type") ? &type : !strcmp(name, "server_item_ping") ? &ping : &other;
+	return !strcmp(name, "server_item_type") ? &type : !strcmp(name, "server_item_ping") ? &ping :
+		!strcmp(name, "server_item_dedicated") ? &dedicated_icon : &other;
 }
 static void text_set(struct widget_instance *widget, wchar_t const *text) { wcsncpy(widget->text, text, 95); }
-static void visible_set(struct widget_instance *widget, int visible) { (void)widget; (void)visible; }
+static void visible_set(struct widget_instance *widget, int visible) { if (widget == &dedicated_icon) dedicated_visible = visible; }
 static void game_map_name(struct advertised_game *game, wchar_t *text) { (void)game; wcscpy(text, L"Blood Gulch"); }
 static int advertised_in_progress(struct advertised_game *game) { (void)game; return 0; }
 static unsigned advertised_kind(struct advertised_game *game) { (void)game; return kind; }
@@ -83,6 +86,9 @@ int main(void)
 	multiplayer.mode = _multiplayer_mode_lan;
 	multiplayer.game_count = 1;
 	render_row(); assert(!wcscmp(type.text, L"SLAYER"));
+	assert(!dedicated_visible);
+	dedicated = 1; render_row(); assert(dedicated_visible);
+	dedicated = 0; render_row(); assert(!dedicated_visible);
 	kind = 1; render_row(); assert(!wcscmp(type.text, L"SWAT"));
 	kind = 2; render_row(); assert(!wcscmp(type.text, L"INFECTION"));
 	kind = 3; render_row(); assert(!wcscmp(type.text, L"GUN GAME"));

@@ -67,9 +67,6 @@ build with render validation; nothing otherwise */
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <mach/mach.h>
-#include <mach/mach_time.h>
-#include <os/workgroup.h>
-#include <AudioToolbox/AudioWorkInterval.h>
 
 /* the platform layer's (host_gpu.c) */
 void platform_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -92,20 +89,6 @@ Handles index tables of these; 0 is none. */
 	id<MTLTexture> texture;          /* nil until an upload texture's first upload */
 	unsigned long levels;            /* description.levels, at most what the size allows */
 	uint64_t used;                   /* the last command buffer serial that read or wrote it */
-	/* gpu_texture_set_content: the picture's part of a render target
-	allocated at dynamic resolution's ceiling, from the top left; 0 for the
-	whole texture */
-	uint32_t content_width, content_height;
-	/* gpu_texture_set_content was called: dynamic resolution's pooled scene target, whatever its content now */
-	BOOL pooled;
-	/* a render target made linear for views of its rectangles (gpu_metal_texture_copy_rects): its buffer and row
-	pitch */
-	id<MTLBuffer> linear_buffer;
-	unsigned long linear_pitch;
-	/* a texture that is a view of another's rectangle: that texture (as it was when the view was made), and the
-	view's offset in its buffer */
-	id<MTLTexture> view_parent;
-	unsigned long view_offset;
 }
 @end
 @implementation MetalTexture
@@ -224,8 +207,6 @@ static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *phys
 static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, NSUInteger height);
 #include "host_config.h"
 #include "host_frame_pacer.h"
-#include "frame_deadline.h"
-#include "visibility_history.h"
 #include "host_stereo.h"
 #if TARGET_OS_VISION
 #include "host_theater.h"
@@ -481,13 +462,7 @@ frames later doesn't depend on a ring entry that has since been reused. */
 struct visibility_pending
 {
 	uint32_t slot, first, count;
-	/* the test's entry in its slot's history (visibility_latency), or UINT32_MAX */
-	uint32_t history;
 };
-
-/* answers by fixed latency (gpu_metal_visibility_latency_set; the rules: visibility_history.h) */
-static struct visibility_history *visibility_histories;
-static int visibility_latency;
 
 static id<MTLBuffer> visibility_buffer;
 /* each slot's answer as (serial << 1) | answer, written by completion
@@ -558,7 +533,7 @@ static MetalBuffer *transient_room(struct transient *memory, uint32_t size, uint
 			continue;
 		}
 		if (memory->chunk_count == sizeof(memory->chunks) / sizeof(memory->chunks[0]))
-			host_crash("Metal: a frame streamed more than %lu chunks", memory->chunk_count);
+			host_fatal("Metal: a frame streamed more than %lu chunks", memory->chunk_count);
 		record = [MetalBuffer new];
 		record->buffer = [device newBufferWithLength:size > CHUNK_SIZE ? size : CHUNK_SIZE
 			options:MTLResourceStorageModeShared];
@@ -596,11 +571,7 @@ static BOOL busy(uint64_t used)
 
 static unsigned frame_upscale_paths;
 static unsigned perf_group = HOST_PERF_SCENE;
-/* the frame's command buffers are still the scene's (the timing fallback's check, host_perf_metal_command_span) */
-static int perf_scene_open = 1;
 static unsigned perf_scene_width, perf_scene_height, perf_scene_views;
-/* the scene's lines this frame (its content), under its allocation's height */
-static unsigned perf_scene_lines;
 static CFTimeInterval perf_gpu_waited;
 static uint64_t perf_presentation_budget;
 
@@ -620,8 +591,7 @@ static void frame_begin(void)
 	transient_reset(&snapshots[frame_slot]);
 	frame_upscale_paths = 0;
 	perf_group = HOST_PERF_SCENE;
-	perf_scene_open = 1;
-	perf_scene_width = perf_scene_height = perf_scene_views = perf_scene_lines = 0;
+	perf_scene_width = perf_scene_height = perf_scene_views = 0;
 	frame_started = 1;
 }
 
@@ -821,17 +791,8 @@ static void commit(BOOL frame_end)
 	pass_end();
 	committed = command_buffer();
 	visibility.pending = [NSMutableData data];
-	/* which part of the frame this buffer holds: the scene's until the upscale
-	commits it, then MetalFX's own buffer, then the HUD's and the present's */
-	unsigned span_class = perf_scene_open ? HOST_PERF_SCENE : perf_group == HOST_PERF_UPSCALE ? HOST_PERF_UPSCALE : HOST_PERF_HUD;
-	uint64_t span_frame = host_perf_hooks_dynamic_enabled() ? host_perf_hooks_frame_id() : 0;
-	host_perf_metal_frame_touch(span_frame);
-	if (perf_scene_open && perf_group == HOST_PERF_UPSCALE)
-		perf_scene_open = 0;
 	[committed addCompletedHandler:^(id<MTLCommandBuffer> completed)
 	{
-		if (span_frame && completed.status == MTLCommandBufferStatusCompleted && completed.GPUStartTime > 0.0)
-			host_perf_metal_command_span(span_frame, span_class, completed.GPUStartTime, completed.GPUEndTime);
 		const struct visibility_pending *tests = pending.bytes;
 		const uint64_t *entries = results.contents;
 		unsigned long test, entry;
@@ -864,19 +825,9 @@ static void commit(BOOL frame_end)
 				uint64_t value = (serial << VISIBILITY_COUNT_BITS) | answer;
 				uint64_t seen = atomic_load(&visibility_answers[tests[test].slot]);
 
-				/* (a test with no entries is in the list only for its history: visibility_latency) */
-				while (tests[test].count && seen >> VISIBILITY_COUNT_BITS <= serial &&
+				while (seen >> VISIBILITY_COUNT_BITS <= serial &&
 					!atomic_compare_exchange_weak(&visibility_answers[tests[test].slot], &seen, value))
 					;
-				/* (a later test of the slot in the same frame took the entry over: its own handler answers) */
-				if (tests[test].history != UINT32_MAX && visibility_histories)
-				{
-					struct visibility_history_entry *kept =
-						&visibility_histories[tests[test].slot].entries[tests[test].history];
-
-					if (atomic_load(&kept->serial) == serial)
-						atomic_store(&kept->answer, value);
-				}
 			}
 		}
 		{
@@ -1146,28 +1097,6 @@ static void gpu_metal_texture_destroy(gpu_texture texture)
 	}
 }
 
-static void gpu_metal_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
-{
-	MetalTexture *record = texture_record(texture);
-
-	if (!record)
-		return;
-	record->pooled = YES;
-	/* (the whole texture, or nothing larger than it) */
-	if (!width || !height || width > record->description.width || height > record->description.height ||
-		(width == record->description.width && height == record->description.height))
-		width = height = 0;
-	record->content_width = width;
-	record->content_height = height;
-}
-
-/* the picture's size in a texture: its content's, else the whole texture's */
-static void texture_content(const MetalTexture *record, id<MTLTexture> texture, NSUInteger *width, NSUInteger *height)
-{
-	*width = record && record->content_width ? record->content_width : texture.width;
-	*height = record && record->content_height ? record->content_height : texture.height;
-}
-
 static uint32_t gpu_metal_texture_read(gpu_texture texture, void *pixels, uint32_t size)
 {
 	@autoreleasepool
@@ -1291,144 +1220,6 @@ static uint32_t gpu_metal_texture_read(gpu_texture texture, void *pixels, uint32
 
 /* level 0 of source into level of destination (mip composites); the size is
 the destination level's, as gpu_gl.c copies it */
-/* gpu_texture_copy_rects' views: a render target whose rectangles become other textures is moved into a buffer
-once, as a linear texture with its contents, and each destination then becomes a view of its rectangle there, so
-nothing is copied and the destination samples (border addressing included) as its own texture would. A draw that
-samples a view declares the source to its encoder (bind_stages), so Metal orders the draw after the source's
-pass and the source's next pass after the draw. 0 if the source cannot be made linear here. */
-static BOOL texture_make_linear(MetalTexture *record)
-{
-	const struct gpu_texture_description *description = &record->description;
-	MTLTextureDescriptor *linear;
-	id<MTLBuffer> buffer;
-	id<MTLTexture> texture;
-	id<MTLBlitCommandEncoder> blit;
-	NSUInteger alignment, pitch;
-
-	if (record->linear_buffer)
-		return YES;
-	if (!record->texture || description->type != GPU_TEXTURE_2D || description->format != GPU_FORMAT_BGRA8 ||
-		description->usage != GPU_USAGE_RENDER_TARGET || description->foveated_eye || record->levels != 1 ||
-		record->view_parent || getenv("HALO_METAL_NO_TILE_VIEWS"))
-		return NO;
-	alignment = [device minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormatBGRA8Unorm];
-	if (!alignment)
-		return NO;
-	pitch = ((NSUInteger)record->texture.width * 4 + alignment - 1) / alignment * alignment;
-	buffer = [device newBufferWithLength:pitch * record->texture.height options:MTLResourceStorageModePrivate];
-	linear = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-		width:record->texture.width height:record->texture.height mipmapped:NO];
-	linear.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-	linear.storageMode = MTLStorageModePrivate;
-	texture = buffer ? [buffer newTextureWithDescriptor:linear offset:0 bytesPerRow:pitch] : nil;
-	if (!texture)
-	{
-		platform_log("Metal: no linear render target of %lux%lu here; shadow tiles are copied",
-			(unsigned long)record->texture.width, (unsigned long)record->texture.height);
-		return NO;
-	}
-	pass_end();
-	blit = [command_buffer() blitCommandEncoder];
-	if (metal_debug)
-		blit.label = @"linear target";
-	[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
-		sourceSize:MTLSizeMake(record->texture.width, record->texture.height, 1) toTexture:texture destinationSlice:0
-		destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
-	[blit endEncoding];
-	use_texture(record);
-	record->texture = texture;
-	record->linear_buffer = buffer;
-	record->linear_pitch = pitch;
-	return YES;
-}
-
-static void gpu_metal_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
-{
-	@autoreleasepool
-	{
-		MetalTexture *from = texture_record(source);
-		id<MTLBlitCommandEncoder> blit = nil;
-		NSUInteger alignment = [device minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormatBGRA8Unorm];
-		BOOL views;
-		uint32_t index;
-
-		if (!from || !from->texture)
-		{
-			GPU_VALIDATION_REPORT(GPU_VALIDATION_COPY_IGNORED, 3, "Metal: rectangles of texture %u: a texture without "
-				"storage", source);
-			return;
-		}
-		if (source == pass_color)
-			pass_end();
-		views = texture_make_linear(from);
-		for (index = 0; index < count; index++)
-		{
-			const struct gpu_texture_copy *copy = &copies[index];
-			MetalTexture *to = texture_record(copy->destination);
-			unsigned long offset = (unsigned long)copy->y * from->linear_pitch + (unsigned long)copy->x * 4;
-
-			if (!to || !to->texture || (unsigned long)copy->x + copy->width > from->texture.width ||
-				(unsigned long)copy->y + copy->height > from->texture.height || copy->width > to->texture.width ||
-				copy->height > to->texture.height)
-			{
-				GPU_VALIDATION_REPORT(GPU_VALIDATION_COPY_IGNORED, 4, "Metal: %ux%u at %u,%u of texture %u into texture "
-					"%u: a texture without storage, or out of bounds", copy->width, copy->height, copy->x, copy->y,
-					source, copy->destination);
-				continue;
-			}
-			/* a view: of a destination the rectangle's size, at an offset the buffer allows (not of a texture that is
-			itself the linear source of views) */
-			if (views && copy->width == to->description.width && copy->height == to->description.height &&
-				to->description.format == GPU_FORMAT_BGRA8 && to->levels == 1 && !to->description.foveated_eye &&
-				!to->linear_buffer && alignment && offset % alignment == 0)
-			{
-				if (to->view_parent != from->texture || to->view_offset != offset)
-				{
-					MTLTextureDescriptor *view = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:
-						MTLPixelFormatBGRA8Unorm width:copy->width height:copy->height mipmapped:NO];
-					id<MTLTexture> texture;
-
-					view.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-					view.storageMode = from->linear_buffer.storageMode;
-					texture = [from->linear_buffer newTextureWithDescriptor:view offset:offset bytesPerRow:from->linear_pitch];
-					if (texture)
-					{
-						if (copy->destination == pass_color || copy->destination == pass_depth)
-							pass_end();
-						to->texture = texture;
-						to->view_parent = from->texture;
-						to->view_offset = offset;
-					}
-				}
-				if (to->view_parent == from->texture && to->view_offset == offset)
-				{
-					if (pass_log)
-						[pass_log appendFormat:@"\n  view: %ux%u at %u,%u of texture %u as texture %u", copy->width,
-							copy->height, copy->x, copy->y, source, copy->destination];
-					use_texture(to);
-					continue;
-				}
-			}
-			if (!blit)
-			{
-				pass_end();
-				blit = [command_buffer() blitCommandEncoder];
-				if (metal_debug)
-					blit.label = @"copy rectangles";
-				use_texture(from);
-			}
-			if (pass_log)
-				[pass_log appendFormat:@"\n  blit: copy %ux%u at %u,%u of texture %u into texture %u", copy->width,
-					copy->height, copy->x, copy->y, source, copy->destination];
-			[blit copyFromTexture:from->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(copy->x, copy->y, 0)
-				sourceSize:MTLSizeMake(copy->width, copy->height, 1) toTexture:to->texture destinationSlice:0
-				destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
-			use_texture(to);
-		}
-		[blit endEncoding];
-	}
-}
-
 static void gpu_metal_texture_copy_level(gpu_texture source, gpu_texture destination, uint32_t level)
 {
 	@autoreleasepool
@@ -1942,41 +1733,15 @@ static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *phys
 
 /* the targets' size in the units of their viewports and scissors: a
 foveated target's screen size, else its texture's */
-/* dynamic resolution's pool: a pass whose attachments hold the same content
-(gpu_texture_set_content) renders only that part of them (pass_begin's
-renderTargetWidth and Height), so its loads, stores and clears cost the
-content's tiles, not the allocation's; 0 when the pass is the whole texture */
-static int pass_content(const MetalTexture *color, const MetalTexture *depth, NSUInteger *width, NSUInteger *height)
-{
-	const MetalTexture *part = color && color->content_width ? color : depth && depth->content_width ? depth : NULL;
-
-	if (!part)
-		return 0;
-	if ((color && (color->content_width != part->content_width || color->content_height != part->content_height)) ||
-		(depth && (depth->content_width != part->content_width || depth->content_height != part->content_height)))
-		return 0;
-	*width = part->content_width;
-	*height = part->content_height;
-	return 1;
-}
-
 static void target_size(gpu_texture color, gpu_texture depth, unsigned long *width, unsigned long *height)
 {
 	MetalTexture *record = texture_record(color ? color : depth);
 	MTLSize screen, physical;
-	NSUInteger content_width, content_height;
 
 	if (foveation_sizes(record, &screen, &physical))
 	{
 		*width = screen.width;
 		*height = screen.height;
-		return;
-	}
-	/* (scissors and whole-target clears stay inside a pass limited to the content) */
-	if (pass_content(texture_record(color), texture_record(depth), &content_width, &content_height))
-	{
-		*width = content_width;
-		*height = content_height;
 		return;
 	}
 	*width = record && record->texture ? record->texture.width : 0;
@@ -2128,15 +1893,6 @@ static BOOL pass_begin(gpu_texture color, gpu_texture depth, const struct gpu_cl
 		pass_depth_texture = depth_record->texture;
 		use_texture(depth_record);
 	}
-	{
-		NSUInteger content_width, content_height;
-
-		if (pass_content(color ? color_record : NULL, depth ? depth_record : NULL, &content_width, &content_height))
-		{
-			pass.renderTargetWidth = content_width;
-			pass.renderTargetHeight = content_height;
-		}
-	}
 	pass_traffic_count(pass);
 	if (pass_log)
 	{
@@ -2220,14 +1976,11 @@ static NSString *const utility_source =
 	"fragment float4 companion_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
 	"\tsampler linear [[sampler(0)]], constant float &brightness [[buffer(0)]])\n"
 	"{ return float4(picture.sample(linear, in.coordinates).rgb * brightness, 1.0); }\n"
-	/* gpu_upscale: alpha too, which the game's later draws may read; the
-	picture's part of its texture (gpu_texture_set_content): xy its size as
-	texture coordinates, zw its outermost texel centers (2 for a whole
-	texture, which leaves every coordinate as it was) */
+	/* gpu_upscale: alpha too, which the game's later draws may read */
 	"fragment float4 upscale_fragment(PresentOut in [[stage_in]], texture2d<float> picture [[texture(0)]],\n"
-	"\tsampler linear [[sampler(0)]], constant float4 &content [[buffer(0)]])\n"
+	"\tsampler linear [[sampler(0)]])\n"
 	"{\n"
-	"\treturn picture.sample(linear, min(in.coordinates * content.xy, content.zw));\n"
+	"\treturn picture.sample(linear, in.coordinates);\n"
 	"}\n";
 
 static id<MTLRenderPipelineState> clear_pipeline(MTLPixelFormat color, MTLPixelFormat depth, uint32_t mask)
@@ -2250,7 +2003,7 @@ static id<MTLRenderPipelineState> clear_pipeline(MTLPixelFormat color, MTLPixelF
 		descriptor.stencilAttachmentPixelFormat = depth;
 		pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
 		if (!pipeline)
-			host_crash("Metal: cannot create the clear pipeline: %s", error.description.UTF8String);
+			host_fatal("Metal: cannot create the clear pipeline: %s", error.description.UTF8String);
 		clear_pipelines[key] = pipeline;
 	}
 	return pipeline;
@@ -3697,10 +3450,6 @@ static void bind_stages(const struct gpu_draw *draw, unsigned exact)
 		if (!texture)
 			texture = empty_textures[packet->type <= GPU_TEXTURE_CUBE ? packet->type : 0];
 		use_texture(record);
-		/* a view of another texture's rectangle (gpu_metal_texture_copy_rects): that texture is what passes write,
-		so the encoder declares it, for Metal to order the draw after them */
-		if (record && record->view_parent && record->texture == texture)
-			[encoder useResource:record->view_parent usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
 		if (metal_state_object(&state_cache, METAL_STATE_TEXTURE + stage, (__bridge void *)texture, 0))
 			[encoder setFragmentTexture:texture atIndex:stage];
 		if (!packet->type)
@@ -4070,81 +3819,6 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 
 /* ---------- visibility tests (the state is declared before the transient memory) */
 
-/* the answer an entry's test gave, waiting for the GPU if it hasn't written it yet (committing the open command
-buffer if the test is in it) */
-static uint64_t visibility_history_answer(struct visibility_history_entry *entry)
-{
-	uint64_t serial = atomic_load(&entry->serial);
-
-	if ((atomic_load(&entry->answer) >> VISIBILITY_COUNT_BITS) == serial)
-		return atomic_load(&entry->answer) & VISIBILITY_COUNT_MAXIMUM;
-	CFTimeInterval wait_started = CACurrentMediaTime();
-
-	if (serial == current_serial)
-		commit(NO);
-	while ((atomic_load(&entry->answer) >> VISIBILITY_COUNT_BITS) != serial)
-		[last_committed waitUntilCompleted];
-	perf_gpu_waited += CACurrentMediaTime() - wait_started;
-	return atomic_load(&entry->answer) & VISIBILITY_COUNT_MAXIMUM;
-}
-
-/* this frame's test of slot ends: it takes the slot's entry for this frame (a test earlier in the frame gives it
-up), and the entry it displaces, from VISIBILITY_HISTORY frames back, becomes the settled answer. Returns the entry */
-static uint32_t visibility_history_record(uint32_t slot)
-{
-	struct visibility_history *history = &visibility_histories[slot];
-	int displaced;
-	uint32_t index = visibility_history_slot(history, frames, &displaced);
-	struct visibility_history_entry *entry = &history->entries[index];
-
-	if (displaced)
-	{
-		history->settled_answer = visibility_history_answer(entry);
-		history->settled_frame = entry->frame;
-		history->settled = 1;
-	}
-	entry->frame = frames;
-	atomic_store(&entry->answer, 0);
-	atomic_store(&entry->serial, current_serial);
-	return index;
-}
-
-/* the answer for a read of slot in this frame: its latest test from visibility_latency or more frames before, or 0
-when it had none */
-static uint32_t visibility_history_result(uint32_t slot)
-{
-	struct visibility_history *history = &visibility_histories[slot];
-	int none, index = visibility_history_pick(history, frames, visibility_latency, &none);
-
-	if (index >= 0)
-		return (uint32_t)visibility_history_answer(&history->entries[index]);
-	return none ? 0 : (uint32_t)history->settled_answer;
-}
-
-/* frames: 0 for the fixed timestep's wait or real time's latest answer, or how many frames back answers come from
-(below VISIBILITY_HISTORY). Between frames, on the drawing thread; a change forgets the answers kept */
-static void gpu_metal_visibility_latency_set(int frames_back)
-{
-	if (frames_back < 0)
-		frames_back = 0;
-	if (frames_back >= VISIBILITY_HISTORY)
-		frames_back = VISIBILITY_HISTORY - 1;
-	if (frames_back == visibility_latency)
-		return;
-	/* (no handler may write into what is freed or reset) */
-	if (last_committed)
-		[last_committed waitUntilCompleted];
-	if (frames_back && !visibility_histories)
-		visibility_histories = calloc(GPU_VISIBILITY_SLOTS, sizeof(*visibility_histories));
-	else if (visibility_histories)
-		memset(visibility_histories, 0, GPU_VISIBILITY_SLOTS * sizeof(*visibility_histories));
-	visibility_latency = visibility_histories ? frames_back : 0;
-	platform_log("Metal: visibility answers %s", visibility_latency ? "come a fixed number of frames late" :
-		visibility_wait ? "wait for the GPU" : "are the latest the GPU has");
-	if (visibility_latency)
-		platform_log("Metal: visibility answers from %d frames before", visibility_latency);
-}
-
 static void gpu_metal_visibility_begin(void)
 {
 	visibility.active = 1;
@@ -4161,12 +3835,9 @@ static void gpu_metal_visibility_end(uint32_t slot)
 	visibility.slots[slot].first = visibility.first;
 	visibility.slots[slot].count = visibility.count;
 	visibility.slots[slot].serial = current_serial;
-	/* (with latency, a test that reached no pass is answered 0 by the same handler, in test order, so a later test of
-	the slot in the same command buffer cannot be answered before an earlier one) */
-	if (visibility.count || visibility_latency)
+	if (visibility.count)
 	{
-		struct visibility_pending test = { slot, (uint32_t)visibility.first, (uint32_t)visibility.count,
-			visibility_latency ? visibility_history_record(slot) : UINT32_MAX };
+		struct visibility_pending test = { slot, (uint32_t)visibility.first, (uint32_t)visibility.count };
 
 		[visibility.pending appendBytes:&test length:sizeof(test)];
 	}
@@ -4186,11 +3857,6 @@ static uint32_t gpu_metal_visibility_result(uint32_t slot, uint32_t *samples)
 	@autoreleasepool
 	{
 		*samples = 0;
-		if (visibility_latency)
-		{
-			*samples = visibility_history_result(slot);
-			return 1;
-		}
 		if (!visibility.slots[slot].count)
 			return 1;
 		if (!visibility_wait)
@@ -4257,8 +3923,6 @@ static os_unfair_lock pacing_lock = OS_UNFAIR_LOCK_INIT;
 static CFTimeInterval refresh_period; /* CACurrentMediaTime's clock */
 /* how many refreshes the display link has called for (frame_context_wait counts them) */
 static _Atomic unsigned long refresh_count;
-/* the virtual display counts the refreshes instead while it runs (debug.benchmark_virtual_display) */
-static _Atomic int virtual_display_on;
 #if !TARGET_OS_VISION && !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
 /* the pacing link's screen's highest rate (pacing_start), and the rate the link asks for: display.frame_rate's cap
 under it (host_gpu_dispatch.c), so the display itself runs at the cap. Not under 60, where the game's 60 Hz blank
@@ -4285,9 +3949,6 @@ static float pacing_link_rate(float screen_rate)
     if (pacing_screen_rate > 0.0f && link.preferredFrameRateRange.maximum != rate)
         link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80, rate), rate, rate);
 #endif
-	/* (the virtual display's refreshes count while it runs: debug.benchmark_virtual_display) */
-	if (atomic_load(&virtual_display_on))
-		return;
 	atomic_fetch_add(&refresh_count, 1);
 	os_unfair_lock_lock(&pacing_lock);
 	refresh_period = link.targetTimestamp - link.timestamp;
@@ -4416,265 +4077,6 @@ static void pacing_start(uint32_t flags)
     dispatch_semaphore_wait(started,DISPATCH_TIME_FOREVER);
 }
 
-/* ---------- the virtual display (debug.benchmark_virtual_display)
-
-A presented run of an offscreen launch, drawn offscreen in real time against a
-display that isn't there, so that frames are paced as a shown run's are while
-nothing is shown: a thread of its own refreshes at the rate the display link
-would run at (the display's highest, or display.frame_rate's cap under it, not
-under 60), counting refreshes and telling the frame pacer as the display link
-does. Frames draw into one of VIRTUAL_DRAWABLES textures, waiting for a free
-one as nextDrawable waits for a drawable. A frame goes on the virtual screen
-at the first refresh after its GPU work has finished at which the frame
-before has been up for its hold (presentDrawable:afterMinimumDuration:'s
-rule), and its texture is freed when the next frame replaces it, as the
-display holds a drawable. That refresh is the frame's presented time, for the
-pacer's frames in flight and its log. What it leaves out: the compositor, the
-display's own scan-out and its bandwidth, and CAMetalDisplayLink's jitter. */
-#define VIRTUAL_DRAWABLES 3
-#define VIRTUAL_QUEUE 8
-
-struct virtual_frame
-{
-	int texture;
-	double hold;
-	struct frame_pacer_frame paced;
-	_Atomic int completed;
-	int perf;
-	uint64_t perf_frame, perf_budget;
-};
-
-static struct
-{
-	pthread_t thread;
-	int thread_started;
-	double period;
-	id<MTLTexture> textures[VIRTUAL_DRAWABLES];
-	dispatch_semaphore_t free_count;
-	os_unfair_lock lock;
-	int texture_free[VIRTUAL_DRAWABLES];
-	struct virtual_frame *queue[VIRTUAL_QUEUE];
-	int head, count;
-	int showing;           /* the texture on the virtual screen; -1 none */
-	double shown_at;       /* the refresh it went up at; 0 none */
-	unsigned long shown, refreshes;
-} virtual_display = { .lock = OS_UNFAIR_LOCK_INIT, .showing = -1 };
-
-static void *virtual_display_main(void *unused)
-{
-	mach_timebase_info_data_t timebase;
-	uint64_t period_ticks, next;
-
-	(void)unused;
-	pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-	pthread_setname_np("Metal virtual display");
-	mach_timebase_info(&timebase);
-	period_ticks = (uint64_t)(virtual_display.period * 1e9 * (double)timebase.denom / (double)timebase.numer);
-	next = mach_absolute_time() + period_ticks;
-	while (atomic_load(&virtual_display_on))
-	{
-		struct virtual_frame *shown = NULL;
-		double now;
-
-		mach_wait_until(next);
-		/* (stopped while it waited: the display link counts again) */
-		if (!atomic_load(&virtual_display_on))
-			break;
-		now = CACurrentMediaTime();
-		atomic_fetch_add(&refresh_count, 1);
-		os_unfair_lock_lock(&pacing_lock);
-		refresh_period = virtual_display.period;
-		os_unfair_lock_unlock(&pacing_lock);
-		frame_pacer_refresh(now, virtual_display.period);
-		os_unfair_lock_lock(&virtual_display.lock);
-		virtual_display.refreshes++;
-		if (virtual_display.count)
-		{
-			struct virtual_frame *frame = virtual_display.queue[virtual_display.head];
-
-			/* (a quarter refresh's allowance for the refreshes' timing) */
-			if (atomic_load(&frame->completed) && (virtual_display.shown_at <= 0.0 ||
-				now - virtual_display.shown_at >= frame->hold - 0.25 * virtual_display.period))
-			{
-				virtual_display.head = (virtual_display.head + 1) % VIRTUAL_QUEUE;
-				virtual_display.count--;
-				if (virtual_display.showing >= 0)
-				{
-					virtual_display.texture_free[virtual_display.showing] = 1;
-					dispatch_semaphore_signal(virtual_display.free_count);
-				}
-				virtual_display.showing = frame->texture;
-				virtual_display.shown_at = now;
-				virtual_display.shown++;
-				shown = frame;
-			}
-		}
-		os_unfair_lock_unlock(&virtual_display.lock);
-		if (shown)
-		{
-			if (frame_pacer_watches(&shown->paced))
-				frame_pacer_presented(&shown->paced, now);
-			if (shown->perf)
-				host_perf_metal_presented(shown->perf_frame, (uint64_t)(now * 1e6), shown->perf_budget);
-			free(shown);
-		}
-		next += period_ticks;
-		/* (a refresh missed by more than a period, as when the thread was held: the next from now) */
-		if (mach_absolute_time() > next + period_ticks)
-			next = mach_absolute_time() + period_ticks;
-	}
-	return NULL;
-}
-
-/* starts the virtual display, sized as the layer's drawables, at the display link's rate */
-static void virtual_display_start(void)
-{
-	CGSize size = layer.drawableSize;
-	double rate = 60.0;
-	int index;
-
-	if (atomic_load(&virtual_display_on))
-		return;
-#if !TARGET_OS_VISION && !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
-	{
-		UIScreen *screen = (__bridge UIScreen *)host_external_screen();
-		float screen_rate = (float)screen.maximumFramesPerSecond;
-
-		pacing_screen_rate = screen_rate;
-		frame_pacer_panel_period(screen_rate > 0 ? 1.0 / screen_rate : 0.0);
-		rate = pacing_link_rate(screen_rate > 0 ? screen_rate : 60.0f);
-	}
-#endif
-	virtual_display.period = 1.0 / rate;
-	/* (the first frame's schedule reads it before the first virtual refresh) */
-	os_unfair_lock_lock(&pacing_lock);
-	refresh_period = virtual_display.period;
-	os_unfair_lock_unlock(&pacing_lock);
-	for (index = 0; index < VIRTUAL_DRAWABLES; index++)
-	{
-		id<MTLTexture> texture = virtual_display.textures[index];
-
-		if (!texture || texture.width != (NSUInteger)size.width || texture.height != (NSUInteger)size.height ||
-			texture.pixelFormat != layer.pixelFormat)
-		{
-			MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:layer.pixelFormat
-				width:(NSUInteger)size.width height:(NSUInteger)size.height mipmapped:NO];
-
-			descriptor.usage = MTLTextureUsageRenderTarget;
-			descriptor.storageMode = MTLStorageModePrivate;
-			virtual_display.textures[index] = [device newTextureWithDescriptor:descriptor];
-		}
-		virtual_display.texture_free[index] = 1;
-	}
-	/* (made once: a semaphore released below its starting value aborts; virtual_display_stop gives every texture back) */
-	if (!virtual_display.free_count)
-		virtual_display.free_count = dispatch_semaphore_create(VIRTUAL_DRAWABLES);
-	virtual_display.head = virtual_display.count = 0;
-	virtual_display.showing = -1;
-	virtual_display.shown_at = 0.0;
-	virtual_display.shown = virtual_display.refreshes = 0;
-	atomic_store(&virtual_display_on, 1);
-	virtual_display.thread_started = pthread_create(&virtual_display.thread, NULL, virtual_display_main, NULL) == 0;
-	platform_log("Metal: the virtual display refreshes at %.0f Hz with %d drawables (debug.benchmark_virtual_display)", rate,
-		VIRTUAL_DRAWABLES);
-}
-
-/* stops it once every frame given it has finished on the GPU (the caller has waited); frames not yet up are dropped
-from the pacer's slots */
-static void virtual_display_stop(void)
-{
-	int index;
-
-	if (!atomic_load(&virtual_display_on))
-		return;
-	atomic_store(&virtual_display_on, 0);
-	if (virtual_display.thread_started)
-		pthread_join(virtual_display.thread, NULL);
-	virtual_display.thread_started = 0;
-	for (index = 0; index < virtual_display.count; index++)
-	{
-		struct virtual_frame *frame = virtual_display.queue[(virtual_display.head + index) % VIRTUAL_QUEUE];
-		int waited;
-
-		frame_pacer_frame_dropped(&frame->paced);
-		/* (its completed handler may run after waitUntilCompleted returns: freed only once it has, else kept) */
-		for (waited = 0; waited < 1000 && !atomic_load(&frame->completed); waited++)
-			usleep(1000);
-		if (atomic_load(&frame->completed))
-			free(frame);
-	}
-	virtual_display.count = 0;
-	/* every texture goes back, the one on the virtual screen and the queued frames' */
-	for (index = 0; index < VIRTUAL_DRAWABLES; index++)
-		if (!virtual_display.texture_free[index])
-		{
-			virtual_display.texture_free[index] = 1;
-			dispatch_semaphore_signal(virtual_display.free_count);
-		}
-	virtual_display.showing = -1;
-	platform_log("Metal: the virtual display stops after %lu frames shown in %lu refreshes", virtual_display.shown,
-		virtual_display.refreshes);
-}
-
-/* a free texture for the frame, waiting up to a second for one as nextDrawable would; -1 none */
-static int virtual_display_take(void)
-{
-	int index;
-
-	if (dispatch_semaphore_wait(virtual_display.free_count, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)))
-		return -1;
-	os_unfair_lock_lock(&virtual_display.lock);
-	for (index = 0; index < VIRTUAL_DRAWABLES && !virtual_display.texture_free[index]; index++)
-		;
-	if (index < VIRTUAL_DRAWABLES)
-		virtual_display.texture_free[index] = 0;
-	os_unfair_lock_unlock(&virtual_display.lock);
-	return index < VIRTUAL_DRAWABLES ? index : -1;
-}
-
-/* the frame drawn into texture index goes to the virtual screen once commands has finished on the GPU: held at
-least hold seconds after the frame before. Returns 0 when the queue is full (the texture goes back) */
-__attribute__((unused)) static int virtual_display_present(id<MTLCommandBuffer> commands_of_frame, int index, double hold,
-	const struct frame_pacer_frame *paced, int perf, uint64_t perf_frame, uint64_t perf_budget)
-{
-	struct virtual_frame *frame = calloc(1, sizeof(*frame));
-	int queued = 0;
-
-	if (frame)
-	{
-		frame->texture = index;
-		frame->hold = hold;
-		frame->paced = *paced;
-		frame->perf = perf;
-		frame->perf_frame = perf_frame;
-		frame->perf_budget = perf_budget;
-		[commands_of_frame addCompletedHandler:^(id<MTLCommandBuffer> completed)
-		{
-			(void)completed;
-			atomic_store(&frame->completed, 1);
-		}];
-		os_unfair_lock_lock(&virtual_display.lock);
-		if (virtual_display.count < VIRTUAL_QUEUE)
-		{
-			virtual_display.queue[(virtual_display.head + virtual_display.count) % VIRTUAL_QUEUE] = frame;
-			virtual_display.count++;
-			queued = 1;
-		}
-		os_unfair_lock_unlock(&virtual_display.lock);
-	}
-	/* (VIRTUAL_QUEUE is more than the drawables, so the queue never fills) */
-	_Static_assert(VIRTUAL_QUEUE > VIRTUAL_DRAWABLES, "virtual display queue");
-	if (!queued)
-	{
-		/* (the handler may still run: the frame stays allocated) */
-		os_unfair_lock_lock(&virtual_display.lock);
-		virtual_display.texture_free[index] = 1;
-		os_unfair_lock_unlock(&virtual_display.lock);
-		dispatch_semaphore_signal(virtual_display.free_count);
-	}
-	return queued;
-}
-
 /* host_benchmark_presented: a launch on the fixed timestep (debug.benchmark_offscreen) whose frames are shown in
 real time for a while, paced by the display as a presented launch's are, and then not again. The pacing
 thread starts at the first such frame and stays */
@@ -4684,23 +4086,7 @@ void gpu_metal_benchmark_realtime(int on)
 	if (!fixed_timestep_launch)
 		return;
 	visibility_wait = !on;
-	/* (debug.benchmark_virtual_display: the run's frames go to the virtual display, not the screen) */
-	BOOL virtual_frames = on && host_benchmark_virtual_display();
-
-	if (!virtual_frames && atomic_load(&virtual_display_on))
-	{
-		if (last_committed)
-			[last_committed waitUntilCompleted];
-		virtual_display_stop();
-	}
-	if (virtual_frames)
-	{
-		/* (pacing_start's flags, which the display link's start would have set) */
-		pacing.any_rate = (output_initialize_flags & GPU_INITIALIZE_PACING_ANY_RATE) != 0;
-		pacing.refreshes = 1;
-		virtual_display_start();
-	}
-	else if (on && !pacing_thread)
+	if (on && !pacing_thread)
 	{
 		uint32_t flags = output_initialize_flags;
 
@@ -4979,108 +4365,7 @@ static void frame_context_wait(void)
 	presented_at = atomic_load(&refresh_count);
 }
 
-/* ---------- each frame's deadline for the CPU's clock (display.frame_deadline)
-
-Under a frame rate cap the drawing thread waits a large part of each frame,
-and the system then lowers the CPU's clock as if the work were light: on an
-A9X iPad Pro (d40-maw-fight at 30 frames a second) it fell a step a frame
-to its lowest, about a fifth of its highest, and stayed there while frames ran
-late, so 89% were on time against 98% at 60. The drawing thread joins an
-os_workgroup interval (AudioWorkIntervalCreate) and marks each frame's work,
-from the end of one Present to the start of the next, with its deadline: the
-frame rate's period (display.frame_rate's cap or a scene class's rate, as
-the pacer holds them, else the display's refresh). The system then keeps the
-clock that meets the deadline: there 100% were on time, the frame's CPU time
-fell from 27.9 to 10.3 ms and the app's CPU time a second by more than half.
-Offscreen benchmark frames have no deadline. A Vision Pro's frames are the
-Compositor's to time (host_stereo.m), so none of this is compiled there.
-display.frame_deadline = false leaves it off. (The workgroup API is meant for
-audio's realtime threads; the drawing thread is not one, and the interval's
-deadline is what was measured to work. Keep it unless a device says otherwise.)
-The work ends before the dispatch's background hold too, and a level load
-between Presents stays inside the frame's interval, past its deadline. */
-#if !TARGET_OS_VISION
-static struct
-{
-	int state;               /* 0 not set up, 1 joined, -1 off or unavailable */
-	os_workgroup_interval_t interval;
-	struct os_workgroup_join_token_opaque_s token;
-	int open, start_failed;
-	mach_timebase_info_data_t timebase;
-} frame_deadline;
-
-/* the frame's work begins now (Present has returned) */
-static void frame_deadline_begin(BOOL offscreen)
-{
-	double period;
-
-	if (!frame_deadline.state && !offscreen)
-	{
-		char value[8];
-
-		frame_deadline.state = -1;
-		host_config_string("display.frame_deadline", "true", value, sizeof(value));
-		mach_timebase_info(&frame_deadline.timebase);
-		if (strcmp(value, "false"))
-		{
-			if (@available(iOS 14.0, tvOS 14.0, macOS 11.0, *))
-			{
-				frame_deadline.interval = AudioWorkIntervalCreate("VISR frame", OS_CLOCK_MACH_ABSOLUTE_TIME, NULL);
-				int joined = frame_deadline.interval ? os_workgroup_join(frame_deadline.interval, &frame_deadline.token) : -1;
-
-				if (!joined)
-					frame_deadline.state = 1;
-				host_logf(HOST_LOG_INFO, "Metal: each frame's deadline goes to the system (display.frame_deadline): %s",
-					!joined ? "on" : frame_deadline.interval ? "the drawing thread could not join the workgroup" :
-					"no workgroup interval");
-			}
-		}
-		else
-			host_logf(HOST_LOG_INFO, "Metal: display.frame_deadline is off");
-	}
-	if (frame_deadline.state != 1 || offscreen)
-		return;
-	os_unfair_lock_lock(&pacing_lock);
-	period = refresh_period;
-	os_unfair_lock_unlock(&pacing_lock);
-	/* (what the pacer holds: its own refreshes a frame or the scene class's, as the frame's budget counts them) */
-	if (period > 0.0)
-		period *= fmax(pacing.off ? 1 : pacing.refreshes, frame_context_refreshes(period));
-	period = frame_deadline_period(host_frame_rate_target(), period);
-	if (@available(iOS 14.0, tvOS 14.0, macOS 11.0, *))
-	{
-		uint64_t now = mach_absolute_time();
-
-		if (frame_deadline.open)
-			os_workgroup_interval_finish(frame_deadline.interval, NULL);
-		int started = os_workgroup_interval_start(frame_deadline.interval, now,
-			now + (uint64_t)(period * 1e9 * (double)frame_deadline.timebase.denom / (double)frame_deadline.timebase.numer),
-			NULL);
-
-		frame_deadline.open = started == 0;
-		if (started && !frame_deadline.start_failed++)
-			host_logf(HOST_LOG_ERROR, "Metal: a frame's deadline was refused (os_workgroup_interval_start %d)", started);
-	}
-}
-
-/* the frame's work ends now (Present is about to wait, or the dispatch to hold in the background) */
-void gpu_metal_frame_deadline_end(void)
-{
-	if (frame_deadline.open)
-	{
-		if (@available(iOS 14.0, tvOS 14.0, macOS 11.0, *))
-			os_workgroup_interval_finish(frame_deadline.interval, NULL);
-		frame_deadline.open = 0;
-	}
-}
-#else
-void gpu_metal_frame_deadline_end(void)
-{
-}
-#endif
-
-/* shown: the frame has a drawable, or a texture of the virtual display's */
-static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
+static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *next_frame_due)
 {
 	CFTimeInterval now = CACurrentMediaTime(), period, hold, interval;
 	long context_refreshes;
@@ -5099,8 +4384,6 @@ static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
 		double perf_cpu = cpu - (host_perf_hooks_dynamic_enabled() ? perf_gpu_waited : 0.0);
 		host_perf_hooks_cpu(perf_cpu >= 0.0 ? (uint64_t)(perf_cpu * 1e6) : UINT64_MAX);
 	}
-	/* (the benchmark's per-frame waits: for the GPU in the frame, and for the workers at the end of the one before) */
-	double frame_gpu_waited = perf_gpu_waited, frame_worker_waited = host_benchmark_worker_waited_take();
 	perf_gpu_waited = 0.0;
 	gpu = (double)(gpu_total - pacing.gpu_counted) / 1e9;
 	pacing.gpu_counted = gpu_total;
@@ -5126,10 +4409,8 @@ static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
 		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
 		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu_measured ? gpu : -1.0, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0,
 			simulation_cpu, render_cpu, translation_cpu, ticks);
-		host_benchmark_frame_waits(frame_gpu_waited, frame_worker_waited);
-		host_benchmark_frame_probe();
 	}
-	if (!shown || period < 1.0 / 240.0 || period > 1.0 / 20.0)
+	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 	{
 		/* (the one frame an output change skips is this one: frame_log_frame, below, is not reached to end the
 		skip, and without this an offscreen benchmark, which has no drawable, would skip every frame after one) */
@@ -5146,16 +4427,8 @@ static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
 	/* how many refreshes the frame before this one stayed up; a quarter
 	second or more is a load or the background, not a frame */
 	up = interval > 0.0 && interval < 0.25 ? lround(interval / period) : 0;
-	{
-		/* (a frame is late in the log only past what it was asked to stay up: the pacing's refreshes, the scene
-		class's, or a cap's under the display's rate, Low Power Mode's included) */
-		long asked = context_refreshes > (pacing.off ? 1 : pacing.refreshes) ? context_refreshes :
-			pacing.off ? 1 : pacing.refreshes;
-		double target = host_frame_rate_target();
-		long target_refreshes = target > 0.0 ? lround(1.0 / (period * target)) : 1;
-
-		frame_log_frame(now, interval, up, target_refreshes > asked ? target_refreshes : asked, period);
-	}
+	frame_log_frame(now, interval, up, context_refreshes > (pacing.off ? 1 : pacing.refreshes) ? context_refreshes :
+		pacing.off ? 1 : pacing.refreshes, period);
 	if (up > 0)
 	{
 		pacing.shown[up > 5 ? 5 : up]++;
@@ -5887,15 +5160,13 @@ static NSString *const fxaa_source =
 	"scene into the display-sized target, each of its pixels FXAA's at the\n"
 	"pixel's place in the scene, or the plain bilinear sample where there is no\n"
 	"edge, alpha always the sample's (the game's later draws may read it) */\n"
-	"/* content: the picture's part of its texture as texture coordinates, and\n"
-	"its outermost texel centers (2 for a whole texture) */\n"
-	"struct UpscaleFxaaParameters { FxaaParameters fxaa; float2 target; float2 content; float2 limit; float2 pad; };\n"
+	"struct UpscaleFxaaParameters { FxaaParameters fxaa; float2 target; };\n"
 	"fragment float4 upscale_fxaa_fragment(PostOut in [[stage_in]], texture2d<float> color_texture [[texture(0)]],\n"
 	"\tconstant UpscaleFxaaParameters &u [[buffer(0)]])\n"
 	"{\n"
 	"\tFxaaParameters p = u.fxaa;\n"
-	"\tfloat2 position = in.position.xy / u.target * u.content;\n"
-	"\tfloat4 sampled = color_texture.sample(fxaa_linear, min(position, u.limit), level(0.0));\n"
+	"\tfloat2 position = in.position.xy / u.target;\n"
+	"\tfloat4 sampled = color_texture.sample(fxaa_linear, position, level(0.0));\n"
 	"\tfloat3 blended;\n"
 	"\treturn fxaa_at(color_texture, p, position, blended) ? float4(blended, sampled.a) : sampled;\n"
 	"}\n";
@@ -6216,23 +5487,6 @@ static void gpu_metal_anti_alias(uint32_t method, gpu_texture target, const stru
 		[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0
 			sourceOrigin:MTLOriginMake(area.x, area.y, 0) sourceSize:MTLSizeMake(area.width, area.height, 1)
 			toTexture:post.color destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(area.x, area.y, 0)];
-		/* dynamic resolution's pool: past the content's right and bottom edges
-		post.color holds an earlier, larger frame, which SMAA's passes would
-		read as edges; repeat the edge texels there, as a whole texture's clamp
-		would (only for a pooled target: a split-screen view's neighbor stays) */
-		if (record->content_width)
-		{
-			NSUInteger right = area.x + area.width, bottom = area.y + area.height, band;
-
-			for (band = 0; band < 4 && right + band < width; band++)
-				[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(right - 1, area.y, 0)
-					sourceSize:MTLSizeMake(1, area.height, 1) toTexture:post.color destinationSlice:0 destinationLevel:0
-					destinationOrigin:MTLOriginMake(right + band, area.y, 0)];
-			for (band = 0; band < 4 && bottom + band < height; band++)
-				[blit copyFromTexture:record->texture sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(area.x, bottom - 1, 0)
-					sourceSize:MTLSizeMake(area.width, 1, 1) toTexture:post.color destinationSlice:0 destinationLevel:0
-					destinationOrigin:MTLOriginMake(area.x, bottom + band, 0)];
-		}
 		[blit endEncoding];
 		use_texture(record);
 		if (!smaa)
@@ -6279,8 +5533,7 @@ static void gpu_metal_flush(void)
 
 /* the back buffer scaled to width x height by MetalFX when it's smaller and
 display.upscaler asks for it, else the back buffer itself */
-static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, NSUInteger content_width, NSUInteger content_height,
-	long width, long height, id<MTLTexture> output);
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output);
 
 static unsigned scene_upscale_path(long source_width, long source_height, long output_width, long output_height, int metalfx_encoded)
 {
@@ -6291,91 +5544,17 @@ static unsigned scene_upscale_path(long source_width, long source_height, long o
 
 static id<MTLTexture> upscale(id<MTLTexture> back_buffer, long width, long height)
 {
-	return upscale_into(back_buffer, back_buffer.width, back_buffer.height, width, height, nil);
+	return upscale_into(back_buffer, width, height, nil);
 }
-
-/* MetalFX's upscale as a command buffer of its own while dynamic resolution
-collects its inputs: MetalFX owns its encoders, so no counter sample can
-bracket it (host_perf_metal.h), but a command buffer's GPU span can. The
-scene's work goes ahead in the buffer before it. */
-static void scaler_timing_begin(void)
-{
-	if (!host_perf_hooks_dynamic_enabled())
-		return;
-	commit(NO);
-	command_buffer();
-	host_perf_metal_upscale_expected();
-}
-
-static void scaler_timing_end(void)
-{
-	uint64_t frame = host_perf_hooks_frame_id();
-
-	if (!host_perf_hooks_dynamic_enabled() || !commands || !frame)
-		return;
-	[commands addCompletedHandler:^(id<MTLCommandBuffer> completed)
-	{
-		double seconds = completed.GPUEndTime - completed.GPUStartTime;
-		int valid = completed.status == MTLCommandBufferStatusCompleted && completed.GPUStartTime > 0.0 && seconds > 0.0;
-
-		host_perf_metal_upscale_time(frame, valid ? (uint64_t)(seconds * 1e6) : 0, valid);
-	}];
-}
-
-#ifdef HAVE_METALFX
-/* The scene's scaler: the picture (content_width x content_height at the top
-left of color, which dynamic resolution allocates at its ceiling) into
-output. The spatial scaler is built once per allocation and output size and
-takes the content size on every encode, so a change of dynamic resolution's
-level never rebuilds it. A temporal scaler takes the same content rectangle,
-with the scene's depth, motion and jitter, in this one place. */
-static void scene_scaler_encode(id<MTLTexture> color, NSUInteger content_width, NSUInteger content_height,
-	id<MTLTexture> output) API_AVAILABLE(ios(16.0), tvos(16.0), visionos(1.0))
-{
-	/* MetalFX reads a few texels past the content's right and bottom edges
-	(the Mac runner showed the last 4 output columns differing from a
-	whole-texture picture): a band of the edge texels repeated past them
-	gives it what a whole texture's clamp would have */
-	if (content_width < color.width || content_height < color.height)
-	{
-		/* (gpu_metal_upscale has ended the scene's pass; the rows copy the
-		columns' band too, so they go in an encoder after the columns') */
-		id<MTLBlitCommandEncoder> blit = [command_buffer() blitCommandEncoder];
-		NSUInteger band;
-
-		for (band = 0; band < 4 && content_width + band < color.width; band++)
-			[blit copyFromTexture:color sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(content_width - 1, 0, 0)
-				sourceSize:MTLSizeMake(1, content_height, 1) toTexture:color destinationSlice:0 destinationLevel:0
-				destinationOrigin:MTLOriginMake(content_width + band, 0, 0)];
-		[blit endEncoding];
-		blit = [command_buffer() blitCommandEncoder];
-		for (band = 0; band < 4 && content_height + band < color.height; band++)
-			[blit copyFromTexture:color sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, content_height - 1, 0)
-				sourceSize:MTLSizeMake(content_width + 4 < color.width ? content_width + 4 : color.width, 1, 1)
-				toTexture:color destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, content_height + band, 0)];
-		[blit endEncoding];
-	}
-	upscaler.colorTexture = color;
-	upscaler.outputTexture = output;
-	upscaler.inputContentWidth = content_width;
-	upscaler.inputContentHeight = content_height;
-	scaler_timing_begin();
-	[upscaler encodeToCommandBuffer:command_buffer()];
-	scaler_timing_end();
-}
-#endif
 
 /* (output: a texture of that size to scale into in place of the scaler's
-own, if its usage allows; the result says which was written. The picture is
-content_width x content_height at the back buffer's top left: the whole of
-it but under dynamic resolution) */
-static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, NSUInteger content_width, NSUInteger content_height,
-	long width, long height, id<MTLTexture> output)
+own, if its usage allows; the result says which was written) */
+static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, long width, long height, id<MTLTexture> output)
 {
 #ifdef HAVE_METALFX
 	if (@available(iOS 16.0, tvOS 16.0, visionOS 1.0, *))
 	{
-		if (!metalfx_wanted || (long)content_width >= width || (long)content_height >= height)
+		if (!metalfx_wanted || (long)back_buffer.width >= width || (long)back_buffer.height >= height)
 			return back_buffer;
 		if (!upscaler || upscaler.inputWidth != back_buffer.width || upscaler.inputHeight != back_buffer.height ||
 			upscaler.outputWidth != (NSUInteger)width || upscaler.outputHeight != (NSUInteger)height)
@@ -6411,16 +5590,22 @@ static id<MTLTexture> upscale_into(id<MTLTexture> back_buffer, NSUInteger conten
 		if (!output || (output.usage & upscaler.outputTextureUsage) != upscaler.outputTextureUsage ||
 			output.pixelFormat != upscaled.pixelFormat || (long)output.width != width || (long)output.height != height)
 			output = upscaled;
-		/* With timing, MetalFX runs in its own command buffer and is measured
-		(scaler_timing_begin); otherwise no complete S/U/H reading exists */
-		if (!host_perf_hooks_dynamic_enabled())
-			host_perf_metal_unavailable(HOST_PERF_UPSCALE);
-		scene_scaler_encode(back_buffer, content_width, content_height, output);
+		upscaler.colorTexture = back_buffer;
+		upscaler.outputTexture = output;
+		upscaler.inputContentWidth = back_buffer.width;
+		upscaler.inputContentHeight = back_buffer.height;
+		/* MetalFX owns its encoders; stage samples cannot be attached to them.
+         * Refuse a complete S/U/H reading rather than count CPU encode time. */
+        host_perf_metal_unavailable(HOST_PERF_UPSCALE);
+        static BOOL perf_metalfx_noted;
+        if (host_perf_hooks_dynamic_enabled() && !perf_metalfx_noted) {
+            platform_log("DRS shadow: MetalFX stage timing is unavailable; GPU cost decisions are refused");
+            perf_metalfx_noted = YES;
+        }
+        [upscaler encodeToCommandBuffer:commands];
 		return output;
 	}
 #endif
-	(void)content_width;
-	(void)content_height;
 	(void)width;
 	(void)height;
 	(void)output;
@@ -6653,15 +5838,12 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		struct gpu_clear whole_clear;
 		BOOL whole, scaled = NO, fxaa;
 		struct gpu_rect scene;
-		/* the picture's part of the source (dynamic resolution's content) */
-		NSUInteger content_width, content_height;
 
 		frame_begin();
 		if (!source_record || !source_record->texture || !destination_record || !destination_record->texture)
 			return;
 		picture = source_record->texture;
 		target = destination_record->texture;
-		texture_content(source_record, picture, &content_width, &content_height);
 		if (!clamp_rect(area, target.width, target.height, &scissor))
 			return;
 		whole = scissor.x == 0 && scissor.y == 0 && scissor.width == target.width && scissor.height == target.height;
@@ -6669,12 +5851,12 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		MetalFX scales this picture (it reads the scene itself) or the
 		folded pipeline is missing; then as its own pass first, over the
 		matching rectangle of the scene */
-		scene.x = (int32_t)((unsigned long)scissor.x * content_width / target.width);
-		scene.y = (int32_t)((unsigned long)scissor.y * content_height / target.height);
-		scene.width = (int32_t)((unsigned long)(scissor.x + scissor.width) * content_width / target.width) - scene.x;
-		scene.height = (int32_t)((unsigned long)(scissor.y + scissor.height) * content_height / target.height) - scene.y;
+		scene.x = (int32_t)((unsigned long)scissor.x * picture.width / target.width);
+		scene.y = (int32_t)((unsigned long)scissor.y * picture.height / target.height);
+		scene.width = (int32_t)((unsigned long)(scissor.x + scissor.width) * picture.width / target.width) - scene.x;
+		scene.height = (int32_t)((unsigned long)(scissor.y + scissor.height) * picture.height / target.height) - scene.y;
 		fxaa = anti_alias == GPU_ANTI_ALIAS_FXAA && post.upscale_fxaa_pipeline &&
-			!(whole && metalfx_wanted && (content_width < target.width || content_height < target.height));
+			!(whole && metalfx_wanted && (picture.width < target.width || picture.height < target.height));
 		if (anti_alias == GPU_ANTI_ALIAS_FXAA && !fxaa)
 			gpu_metal_anti_alias(GPU_ANTI_ALIAS_FXAA, source, &scene);
 		command_buffer();
@@ -6686,7 +5868,6 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		use_texture(source_record);
         perf_scene_width = (unsigned)picture.width;
         perf_scene_height = (unsigned)picture.height;
-        perf_scene_lines = (unsigned)content_height;
         if (++perf_scene_views > 1) {
             /* The next view's scene can follow the first view's HUD. Phase 2
              * refuses this mixed ordering until view boundaries are explicit. */
@@ -6705,7 +5886,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		the scaler's own texture, which the quad copies */
 		if (whole)
 		{
-			picture = upscale_into(picture, content_width, content_height, (long)target.width, (long)target.height, target);
+			picture = upscale_into(picture, (long)target.width, (long)target.height, target);
 			if (pass_log && picture != source_record->texture)
 				[pass_log appendFormat:@"\n  upscale: MetalFX, texture %u %lux%lu into %s %lux%lu", source,
 					(unsigned long)source_record->texture.width, (unsigned long)source_record->texture.height,
@@ -6730,7 +5911,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
         if (scaled) perf_group = HOST_PERF_HUD;
 		if (!pass_begin(destination, 0, whole && !scaled ? &whole_clear : NULL))
 			return;
-		unsigned observed_path = picture ? scene_upscale_path((long)content_width, (long)content_height,
+		unsigned observed_path = picture ? scene_upscale_path((long)source_record->texture.width, (long)source_record->texture.height,
 			(long)scissor.width, (long)scissor.height, picture != source_record->texture) : HOST_UPSCALER_UNKNOWN;
 		if (observed_path != HOST_UPSCALER_NONE) frame_upscale_paths |= observed_path;
 		native_pass.color = destination;
@@ -6749,32 +5930,17 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 		[encoder setFragmentSamplerState:present_sampler atIndex:0];
 		if (visibility.entry_open)
 			[encoder setVisibilityResultMode:MTLVisibilityResultModeDisabled offset:0];
-		/* the picture's part of its texture, as texture coordinates, and its
-		outermost texel centers; the whole texture's leave the quad's
-		coordinates exactly as they were (MetalFX's own texture is whole) */
-		BOOL part = picture == source_record->texture &&
-			(content_width != picture.width || content_height != picture.height);
-		float content[4] = { 1.0f, 1.0f, 2.0f, 2.0f };
-		if (part)
-		{
-			content[0] = (float)content_width / (float)picture.width;
-			content[1] = (float)content_height / (float)picture.height;
-			content[2] = ((float)content_width - 0.5f) / (float)picture.width;
-			content[3] = ((float)content_height - 0.5f) / (float)picture.height;
-		}
 		if (fxaa)
 		{
 			float width = (float)picture.width, height = (float)picture.height;
-			/* the scene's texels, the view's outermost texel centers (split
-			screen: no texel of the next view is read), the target's size and
-			the picture's part of its texture */
-			struct { float metrics[4], bounds[4], target[2], content[2], limit[2], pad[2]; } parameters =
+			/* the scene's size, the view's outermost texel centers (split
+			screen: no texel of the next view is read), and the target's size */
+			struct { float metrics[4], bounds[4], target[2], pad[2]; } parameters =
 			{
 				{ 1.0f / width, 1.0f / height, width, height },
 				{ ((float)scene.x + 0.5f) / width, ((float)scene.y + 0.5f) / height,
 					((float)(scene.x + scene.width) - 0.5f) / width, ((float)(scene.y + scene.height) - 0.5f) / height },
-				{ (float)target.width, (float)target.height }, { content[0], content[1] }, { content[2], content[3] },
-				{ 0.0f, 0.0f },
+				{ (float)target.width, (float)target.height }, { 0.0f, 0.0f },
 			};
 
 			[encoder setFragmentBytes:&parameters length:sizeof(parameters) atIndex:0];
@@ -6782,10 +5948,7 @@ static void gpu_metal_upscale(gpu_texture source, gpu_texture destination, const
 			[encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 		}
 		else
-		{
-			[encoder setFragmentBytes:content length:sizeof(content) atIndex:0];
 			[encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
-		}
 		pass_commands++;
 		visibility.entry_open = 0;
         perf_group = HOST_PERF_HUD;
@@ -6815,22 +5978,17 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
         perf_group = HOST_PERF_HUD;
         static BOOL perf_capability_noted;
         if (host_perf_hooks_dynamic_enabled()) {
-            /* the scene's allocation is the ceiling (dynamic resolution's pool
-             * is allocated there), its content this frame's lines; the floor
-             * is display.dynamic_resolution_floor's */
-            /* at a ceiling the display's own size the pool is presented itself, with no upscale (and the
-             * HUD drawn into it, counted with the scene): still one measured scene */
-            BOOL pool_presented = !perf_scene_views && record && record->pooled;
+            /* (the design's 540-line floor; no setting names it until actuation) */
+            enum { perf_floor = 540 };
             host_perf_hooks_dynamic_config(1,
                 (int)(perf_scene_width ?: (record ? record->description.width : 0)),
                 (int)(perf_scene_height ?: (record ? record->description.height : 0)),
-                (int)(perf_scene_lines ?: (pool_presented ? (record->content_height ?: record->description.height) : 0)),
-                0, (int)NSProcessInfo.processInfo.thermalState,
-                (perf_scene_height != 0 && perf_scene_views == 1) || pool_presented);
+                perf_floor, (int)NSProcessInfo.processInfo.thermalState,
+                perf_scene_height != 0 && perf_scene_views == 1);
         }
         if (host_perf_hooks_dynamic_enabled() && !perf_capability_noted) {
             if (!host_perf_metal_stage_supported())
-                platform_log("DRS: no stage-boundary GPU timing; the planner uses command-buffer GPU spans (coarse)");
+                platform_log("DRS shadow: stage-boundary GPU timing is unavailable");
             else if (![device supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary])
                 platform_log("DRS shadow: sampling separate upscale and HUD stages");
             perf_capability_noted = YES;
@@ -6839,13 +5997,6 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		/* debug.benchmark_offscreen: the frame goes into target, with no
 		drawable, Present or display wait (host_benchmark_offscreen.h) */
 		BOOL offscreen = host_benchmark_offscreen_active();
-		/* debug.benchmark_virtual_display: a presented run's frame goes to the virtual display's texture */
-		BOOL virtual_frame = HALO_FRAME_PACING && !offscreen && atomic_load(&virtual_display_on);
-		int virtual_texture = -1;
-		/* the next frame's visibility answers: from frames before in pipelined offscreen runs and on the virtual
-		display; otherwise waited for (the fixed timestep) or the latest (real time) */
-		gpu_metal_visibility_latency_set((offscreen && host_benchmark_offscreen_pipelined()) || virtual_frame ?
-			VISIBILITY_HISTORY - 1 : 0);
 		id<MTLTexture> target = nil;
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
@@ -6913,9 +6064,6 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
 		unsynced = frame_rate_sync();
 		gpu_metal_presentation_configure(layer);
-#if !TARGET_OS_VISION
-		gpu_metal_frame_deadline_end();
-#endif
 		waited = CACurrentMediaTime();
 		/* display.frame_rate's cap; its sleep counts as waiting, not as the
 		frame's CPU time */
@@ -6930,12 +6078,6 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		{
 			drawable = nil;
 			target = frame_held ? nil : offscreen_target();
-		}
-		else if (virtual_frame)
-		{
-			drawable = nil;
-			virtual_texture = frame_held || gave_up ? -1 : virtual_display_take();
-			target = virtual_texture >= 0 ? virtual_display.textures[virtual_texture] : nil;
 		}
 		else
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
@@ -7031,25 +6173,8 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				frame_log.height = (unsigned)picture.height;
 				if (!offscreen)
 					frame_context_wait();
-				hold = pacing_schedule(drawable != nil || virtual_texture >= 0, &next_frame_due);
+				hold = pacing_schedule(drawable, &next_frame_due);
 				/* (offscreen: nothing is shown, so nothing is paced or presented) */
-#if HALO_FRAME_PACING
-				if (!offscreen && virtual_texture >= 0)
-				{
-					/* the virtual display shows it, as presentDrawable:afterMinimumDuration: and the presented
-					handler would */
-					int perf = host_perf_hooks_dynamic_enabled();
-					uint64_t perf_frame = perf ? host_perf_hooks_frame_id() : 0;
-
-					if (hold == 0.0)
-						hold = frame_pacer_present(&paced);
-					if (virtual_display_present(commands, virtual_texture, hold, &paced, perf, perf_frame,
-						perf_presentation_budget))
-						paced.slot = 0;
-					virtual_texture = -1;
-				}
-				else
-#endif
 				if (!offscreen)
 				{
 					gpu_metal_presentation_observe(drawable, CACurrentMediaTime(), frame_context.scene_class == 2,
@@ -7103,16 +6228,7 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			}
 		}
 		else
-			host_benchmark_frame_unshown(drawable || offscreen || virtual_texture >= 0 ? 1 : 0);
-		/* (a virtual display's texture the frame had no picture for goes back) */
-		if (virtual_texture >= 0)
-		{
-			os_unfair_lock_lock(&virtual_display.lock);
-			virtual_display.texture_free[virtual_texture] = 1;
-			os_unfair_lock_unlock(&virtual_display.lock);
-			dispatch_semaphore_signal(virtual_display.free_count);
-			virtual_texture = -1;
-		}
+			host_benchmark_frame_unshown(drawable || offscreen ? 1 : 0);
 		/* (a frame with nothing to show: its slot goes back now) */
 		frame_pacer_frame_dropped(&paced);
 		BOOL main_shown = drawable && record && record->texture && !frame_held;
@@ -7177,9 +6293,6 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					"it, and ended early %.1f times a frame", native_pass.parks / 600.0, native_pass.in_order / 600.0);
 			native_pass.parks = native_pass.in_order = 0;
 		}
-#if !TARGET_OS_VISION
-		frame_deadline_begin(offscreen);
-#endif
 		pacing.work_started = CACurrentMediaTime();
 		perf_gpu_waited = 0.0;
 		return next_frame_due;
@@ -7315,7 +6428,7 @@ static uint32_t gpu_metal_present_stereo(const struct gpu_stereo_present *presen
 {
     /* Vision Pro DRS remains an experiment; clear a preceding mono frame's eligibility. */
     if (host_perf_hooks_dynamic_enabled())
-        host_perf_hooks_dynamic_config(1, 0, 0, 0, 0, (int)NSProcessInfo.processInfo.thermalState, 0);
+        host_perf_hooks_dynamic_config(1, 0, 0, 540, (int)NSProcessInfo.processInfo.thermalState, 0);
 #if TARGET_OS_VISION
 	@autoreleasepool
 	{

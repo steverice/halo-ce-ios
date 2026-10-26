@@ -15,9 +15,6 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 #include "host_benchmark.h"
 #include "host_perf_hooks.h"
 #include "host_external.h"
-#include "host_config.h"
-#include "host_low_power.h"
-#include "low_power.h"
 #if HALO_RENDER_VALIDATION
 #include "gpu_validate.h"
 #include "gpu_capture.h"
@@ -32,7 +29,6 @@ visionOS has no OpenGL ES, and its build leaves the GL backend out.
 
 #include <TargetConditionals.h>
 #include <mach/mach_time.h>
-#include <stdatomic.h>
 #include <time.h>
 
 /* host_gpu.c's, which writes the guest's log */
@@ -86,26 +82,18 @@ static double uptime_seconds(void)
 	return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
 }
 
-static void low_power_frame(void);
-static void low_power_scene(uint32_t scene_class);
-
 static uint32_t present_wrapped(gpu_texture back_buffer)
 {
 	static double last_returned;
 	uint32_t next_frame_due;
 	double called = uptime_seconds();
 
-	/* (the frame's work ends here: a background hold mustn't count against its deadline) */
-	if (metal_backend)
-		gpu_metal_frame_deadline_end();
 	host_lifecycle_hold();
 	host_perf_hooks_context(1, metal_backend ? 1 : 2);
 	host_perf_hooks_present_begin();
 	next_frame_due = wrapped_backend->present(back_buffer);
 	host_perf_hooks_present_end();
 	data_updates_presented();
-	/* (between frames: Low Power Mode's frame rate for the next one) */
-	low_power_frame();
 	if (!metal_backend)
 	{
 		double returned = uptime_seconds();
@@ -135,18 +123,9 @@ static uint32_t present_stereo_wrapped(const struct gpu_stereo_present *present)
 	next_frame_due = wrapped_backend->present_stereo(present);
 	host_perf_hooks_present_end();
 	data_updates_presented();
-	low_power_frame();
 	if (frame_counter)
 		host_frame_counter_show(presented++);
 	return next_frame_due;
-}
-
-/* the scene class's frame rate is the backend's to hold; Low Power Mode's cap follows the class at once (menus keep
-the display's pace) */
-static void frame_context_wrapped(uint32_t scene_class, uint32_t frame_rate, const char *level)
-{
-	wrapped_backend->frame_context(scene_class, frame_rate, level);
-	low_power_scene(scene_class);
 }
 
 /* display.frame_rate (GPU_INITIALIZE_FRAME_RATE_SHIFT). In the Mac app it
@@ -180,7 +159,6 @@ __attribute__((unused)) static void frame_rate_cap_set(uint32_t rate)
 }
 
 static uint32_t frame_rate_requested;
-static void low_power_update(int display_changed);
 
 static void frame_rate_initialize(uint32_t flags)
 {
@@ -236,7 +214,6 @@ void host_frame_rate_profile(int rate)
     memset(&frame_rate, 0, sizeof(frame_rate));
     frame_rate_initialize((requested << GPU_INITIALIZE_FRAME_RATE_SHIFT) |
         (metal_backend ? GPU_INITIALIZE_METAL : 0));
-    low_power_update(0);
 }
 
 /* what the configuration asked for, which a benchmark case's override (host_frame_rate_override) returns to */
@@ -247,7 +224,7 @@ static struct
 	uint64_t interval;
 } frame_rate_configured;
 
-static void frame_rate_override(double rate)
+void host_frame_rate_override(double rate)
 {
 	static int overridden;
 
@@ -297,184 +274,19 @@ static void frame_rate_override(double rate)
 #endif
 }
 
-void host_frame_rate_override(double rate)
-{
-	frame_rate_override(rate);
-	low_power_update(0);
-}
-
-/* ---------- Low Power Mode (low_power.h)
-
-The rate is latched between frames on the game's thread (after each Present, and as a frame's scene class is
-chosen, before its targets are), and the cap goes to the pacing thread's display link through low_power_cap_now. */
-#if !TARGET_OS_VISION
-static struct
-{
-	int ready;
-	struct low_power state;
-	int scene_class;         /* the frame's (port_config.h: 0 gameplay, 1 menu, 2 cutscene) */
-	double display;          /* host_low_power_display_rate's, read again on a notice or a change; while Low Power
-	                            Mode is on, the highest seen for this output (a screen may report its lowered rate) */
-	unsigned output;         /* host_low_power_display_rate's output then */
-	unsigned long notices;   /* host_low_power_notices' when display was read */
-	unsigned long frames;
-	uint64_t interval;       /* the Mac app's cap's (host_frame_rate_limit), mach_absolute_time's units; 0 none */
-} low_power = { .scene_class = 1 };
-/* frames a second, 0 none: read on any thread */
-static _Atomic uint32_t low_power_cap_now;
-#endif
-
-static double scene_frame_rate;
-
-/* the configured rate: display.frame_rate's cap together with the scene class's rate, 0 for the display's */
-static double frame_rate_configured_target(void)
-{
-	return scene_frame_rate > 0.0 && (frame_rate.cap <= 0.0 || scene_frame_rate < frame_rate.cap) ? scene_frame_rate :
-		frame_rate.cap;
-}
-
-static void low_power_install(void)
-{
-#if !TARGET_OS_VISION
-	char value[16];
-
-	if (low_power.ready)
-		return;
-	host_config_string("debug.low_power_frame_rate", "true", value, sizeof(value));
-	low_power.state.override = low_power_override_setting(value);
-	if (low_power.state.override == LOW_POWER_IGNORE)
-		platform_log("Low Power Mode: frames keep their rate in it (debug.low_power_frame_rate = false)");
-	else if (low_power.state.override == LOW_POWER_ALWAYS)
-		platform_log("Low Power Mode: taken as on (debug.low_power_frame_rate = always)");
-	host_low_power_install();
-	low_power.ready = 1;
-	low_power_update(1);
-#endif
-}
-
-/* display_changed: read the display's rate again */
-static void low_power_update(int display_changed)
-{
-#if !TARGET_OS_VISION
-	double configured, target;
-	int change;
-
-	if (!low_power.ready)
-		return;
-	if (display_changed || host_low_power_notices() != low_power.notices)
-	{
-		unsigned output;
-		double display = host_low_power_display_rate(&output);
-
-		low_power.notices = host_low_power_notices();
-		/* (the halving is of the display's own highest rate: in Low Power Mode a ProMotion screen may say 60) */
-		if (output != low_power.output || !host_low_power_enabled() || display > low_power.display)
-			low_power.display = display;
-		low_power.output = output;
-	}
-	configured = frame_rate.unlimited ? 0.0 : frame_rate_configured_target();
-	change = low_power_latch(&low_power.state, host_low_power_enabled(), configured, low_power.display,
-		host_low_power_display_limited(), low_power.scene_class == 1);
-	if (change == LOW_POWER_UNCHANGED)
-		return;
-	atomic_store(&low_power_cap_now, (uint32_t)low_power.state.cap);
-	low_power.interval = 0;
-	if (low_power.state.cap > 0.0)
-	{
-		mach_timebase_info_data_t timebase;
-
-		mach_timebase_info(&timebase);
-		low_power.interval = (uint64_t)(1e9 / low_power.state.cap * (double)timebase.denom / (double)timebase.numer);
-	}
-	target = low_power_target(configured, low_power.state.cap);
-	if (change == LOW_POWER_TURNED_OFF)
-	{
-		if (configured > 0.0)
-			platform_log("Low Power Mode off: at most %.0f frames a second again", configured);
-		else
-			platform_log("Low Power Mode off: frames keep the display's pace again%s",
-				frame_rate.unlimited ? " (display.frame_rate: unlimited)" : "");
-	}
-	else if (target > 0.0)
-		platform_log("Low Power Mode%s: at most %.0f frames a second%s (the display's highest: %.0f)",
-			change == LOW_POWER_TURNED_ON ? " on" : "", target,
-			low_power.scene_class == 1 ? " in the menus" : low_power.scene_class == 2 ? " in cutscenes" : "",
-			low_power_display_rate(low_power.display, host_low_power_display_limited()));
-	else
-		platform_log("Low Power Mode%s: frames keep the display's pace%s", change == LOW_POWER_TURNED_ON ? " on" : "",
-			low_power.scene_class == 1 ? " in the menus" : "");
-#else
-	(void)display_changed;
-#endif
-}
-
-static void low_power_frame(void)
-{
-#if !TARGET_OS_VISION
-	double target;
-
-	/* (every 600 frames the display's rate again: an external display may have come or gone) */
-	low_power_update(++low_power.frames % 600 == 0);
-	target = host_frame_rate_effective();
-	host_perf_hooks_context(10, (uint64_t)low_power.state.on);
-	host_perf_hooks_context(11, target > 0.0 ? (uint64_t)(target + 0.5) : 0);
-#endif
-}
-
-static void low_power_scene(uint32_t scene_class)
-{
-#if !TARGET_OS_VISION
-	if ((int)scene_class == low_power.scene_class)
-		return;
-	low_power.scene_class = (int)scene_class;
-	low_power_update(1);
-#else
-	(void)scene_class;
-#endif
-}
-
-double host_frame_rate_effective(void)
-{
-	double target = host_frame_rate_target();
-
-#if !TARGET_OS_VISION
-	if (target <= 0.0)
-		target = low_power.state.on ? low_power_display_rate(low_power.display, host_low_power_display_limited()) :
-			low_power.display;
-#endif
-	return target;
-}
-
-int host_frame_rate_low_power(void)
-{
-#if !TARGET_OS_VISION
-	return low_power.state.on;
-#else
-	return 0;
-#endif
-}
-
-/* Low Power Mode's cap, 0 for none (any thread) */
-static double low_power_cap_any_thread(void)
-{
-#if !TARGET_OS_VISION
-	return (double)atomic_load(&low_power_cap_now);
-#else
-	return 0.0;
-#endif
-}
-
 int host_frame_rate_unlimited(void)
 {
-	return frame_rate.unlimited && low_power_cap_any_thread() <= 0.0;
+	return frame_rate.unlimited;
 }
 
 double host_frame_rate_cap(void)
 {
-	return low_power_target(frame_rate.cap, low_power_cap_any_thread());
+	return frame_rate.cap;
 }
 
 /* (set and read on the game's thread, which draws and presents) */
+static double scene_frame_rate;
+
 void host_frame_rate_scene(double rate)
 {
 	scene_frame_rate = rate;
@@ -482,12 +294,13 @@ void host_frame_rate_scene(double rate)
 
 double host_frame_rate_target(void)
 {
-	return low_power_target(frame_rate_configured_target(), low_power_cap_any_thread());
+	return scene_frame_rate > 0.0 && (frame_rate.cap <= 0.0 || scene_frame_rate < frame_rate.cap) ? scene_frame_rate :
+		frame_rate.cap;
 }
 
 double host_frame_rate_limit(void)
 {
-	uint64_t now, interval;
+	uint64_t now;
 
 #if !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
 	/* (an iPhone, iPad or Apple TV holds its cap at the display: the display link
@@ -496,13 +309,7 @@ double host_frame_rate_limit(void)
 	the refreshes and makes frames miss one) */
 	return 0.0;
 #endif
-	interval = frame_rate.interval;
-#if !TARGET_OS_VISION
-	/* (Low Power Mode's cap where it is lower) */
-	if (low_power.interval && (!interval || low_power.interval > interval))
-		interval = low_power.interval;
-#endif
-	if (!interval)
+	if (!frame_rate.interval)
 		return 0.0;
 	now = mach_absolute_time();
 	if (frame_rate.next > now)
@@ -511,14 +318,14 @@ double host_frame_rate_limit(void)
 		uint64_t wait = frame_rate.next - now;
 
 		mach_wait_until(frame_rate.next);
-		frame_rate.next += interval;
+		frame_rate.next += frame_rate.interval;
 		mach_timebase_info(&timebase);
 		return (double)wait * (double)timebase.numer / (double)timebase.denom / 1e9;
 	}
 	/* a frame that came late doesn't earn the next ones a shorter wait */
-	if (now - frame_rate.next > interval)
+	if (now - frame_rate.next > frame_rate.interval)
 		frame_rate.next = now;
-	frame_rate.next += interval;
+	frame_rate.next += frame_rate.interval;
 	return 0.0;
 }
 
@@ -625,8 +432,6 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 	wrapped = *backend;
 	wrapped.present = present_wrapped;
 	wrapped.present_stereo = present_stereo_wrapped;
-	if (backend->frame_context)
-		wrapped.frame_context = frame_context_wrapped;
 	backend = &wrapped;
 	host_frame_counter_stop();
 	presented = 0;
@@ -635,9 +440,6 @@ void gpu_initialize(uint32_t flags, struct gpu_capabilities *capabilities)
 		host_frame_counter_start((flags & GPU_INITIALIZE_FIXED_TIMESTEP) != 0, (flags & GPU_INITIALIZE_METAL) != 0);
 	host_lifecycle_install();
 	frame_rate_initialize(flags);
-	/* (before the backend starts its pacing: the display link asks for Low Power Mode's rate from the first frame) */
-	low_power_install();
-	low_power_update(1);
 	backend->initialize(flags, capabilities);
 }
 

@@ -157,8 +157,8 @@ add_executable(VISR MACOSX_BUNDLE
     ${HALO_PLATFORM_SOURCES} "${ROOT}/port/runtime/xiso.c"
     "${ROOT}/port/runtime/texture_policy.c" "${ROOT}/port/runtime/texture_cache.c"
     "${CMAKE_CURRENT_BINARY_DIR}/texture_policy_table.c"
-    host/host_main.m host/host_crash.c host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
-    host/host_thread.c host/host_sdl.c host/host_audio_output.m host/host_gpu.c host/host_external.m host/host_external_mode.c host/host_gpu_dispatch.c host/host_low_power.m host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_frame_counter_stats.c host/host_lifecycle.m
+    host/host_main.m host/host_memory.c host/host_loader.c host/host_syscall.c host/guest_call.S
+    host/host_thread.c host/host_sdl.c host/host_audio_output.m host/host_gpu.c host/host_external.m host/host_external_mode.c host/host_gpu_dispatch.c host/host_frame_pacer.c host/gpu_metal.m host/host_frame_counter.m host/host_frame_counter_stats.c host/host_lifecycle.m
     host/host_join_link.c host/host_config.c host/host_bink.c host/host_bonjour.m host/host_https.m host/host_share.m host/host_lan.c host/host_profile.c host/host_profile_catalog.c host/host_profile_delivery.c host/host_device.m host/host_memory_pressure.m
     "${ROOT}/port/third_party/tomlc17/tomlc17.c"
     host/host_shader_pack.c host/host_data_pack.m host/host_data_updates.m host/host_recording_pack.c host/host_benchmark_snapshot.m host/host_benchmark_catalog.m
@@ -190,7 +190,7 @@ target_include_directories(halo_astcenc PUBLIC "${ROOT}/port/third_party/astcenc
 target_sources(VISR PRIVATE "${ROOT}/port/linux/src/astc_encode.cpp"
     "${ROOT}/port/linux/src/astc_rewrite.c" "${ROOT}/port/runtime/astc_store.c"
     host/host_astc_store.m host/host_astc_texture.c)
-target_sources(VISR PRIVATE host/host_texture_upscale.m host/host_texture_upscale_continued.m host/texture_upscale_generate.m host/texture_upscale_pixels.c
+target_sources(VISR PRIVATE host/host_texture_upscale.m host/texture_upscale_generate.m host/texture_upscale_pixels.c
     host/texture_refine_bounded.c host/texture_upscale_encode.cpp "${ROOT}/port/third_party/bc7enc/bc7enc.cpp"
     "${ROOT}/port/third_party/bc7enc16/bc7decomp.c")
 target_include_directories(VISR PRIVATE "${ROOT}/port/third_party/bc7enc" "${ROOT}/port/third_party/bc7enc16")
@@ -201,11 +201,10 @@ endif()
 target_compile_features(VISR PRIVATE cxx_std_14)
 target_link_libraries(VISR PRIVATE halo_astcenc)
 # Compile the CC0 model on the build host; inference never compiles a package on the device.
-# The native macOS app does not run the generator, but shares its unavailable-service behavior. tvOS bundles the
-# model: Apple TVs whose profile turns upscaled textures on (the 4K 3rd generation and newer) make them.
+# tvOS and native macOS do not run the phase-2 generator, but share its unavailable-service behavior.
 target_sources(VISR PRIVATE host/texture_upscale_model.m)
 target_link_libraries(VISR PRIVATE "-framework CoreML")
-if(NOT HALO_NATIVE_MAC)
+if(NOT HALO_TVOS AND NOT HALO_NATIVE_MAC)
     set(HALO_UPSCALE_MODEL_PACKAGE "${ROOT}/port/assets/models/S4g.mlpackage")
     set(HALO_UPSCALE_MODEL_COMPILED "${CMAKE_CURRENT_BINARY_DIR}/models/S4g.mlmodelc")
     file(GLOB_RECURSE HALO_UPSCALE_MODEL_INPUTS CONFIGURE_DEPENDS "${HALO_UPSCALE_MODEL_PACKAGE}/*")
@@ -310,8 +309,6 @@ if(HALO_NATIVE_MAC)
 else()
     set(HALO_UI_FRAMEWORK "-framework UIKit")
     target_link_libraries(VISR PRIVATE "-framework AVKit")
-    # the import's continued processing (host/host_texture_upscale_continued.m)
-    target_link_libraries(VISR PRIVATE "-weak_framework BackgroundTasks")
 endif()
 target_link_libraries(VISR PRIVATE SDL3::SDL3-static "-framework Foundation" "${HALO_UI_FRAMEWORK}"
     "-framework Metal" "-framework AVFAudio" "-framework QuartzCore" "-framework Network" "-framework CoreImage" z)
@@ -401,12 +398,6 @@ set_source_files_properties(${HALO_LICENSES} PROPERTIES MACOSX_PACKAGE_LOCATION 
 target_sources(VISR PRIVATE Licenses/PBRify-CC0-1.0.txt Licenses/BC7-MIT-ISC.txt)
 set_source_files_properties(Licenses/PBRify-CC0-1.0.txt Licenses/BC7-MIT-ISC.txt PROPERTIES MACOSX_PACKAGE_LOCATION Resources/Licenses)
 # CloudKit upload capabilities select linked diagnostic disclosure independently of the tester interface.
-# Development-only launch switches (the upscaler's stop test, cache clean, model override and import phase); tools/ios_build.py
-# turns it off for App Store packages, and it is off unless asked for
-option(HALO_DEVELOPMENT_HOOKS "Compile in development-only launch switches" OFF)
-if(HALO_DEVELOPMENT_HOOKS)
-    target_compile_definitions(VISR PRIVATE HALO_DEVELOPMENT_HOOKS=1)
-endif()
 option(HALO_TESTER_BUILD "A tester build: the Run benchmark row, and the privacy manifest that declares its report" OFF)
 if(HALO_TESTER_BUILD)
     target_sources(VISR PRIVATE host/host_benchmark_menu.m)
@@ -461,8 +452,7 @@ file(GLOB HALO_DEVICE_PROFILES CONFIGURE_DEPENDS "${ROOT}/profiles/*.toml")
 list(FILTER HALO_DEVICE_PROFILES EXCLUDE REGEX "TEMPLATE\\.toml$")
 target_sources(VISR PRIVATE ${HALO_DEVICE_PROFILES})
 set_source_files_properties(${HALO_DEVICE_PROFILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/profiles)
-# with the profile set's revision, which orders signed profile downloads against these (docs/data-packs.md)
-set(HALO_HARDWARE_CATALOG "${ROOT}/profiles/hardware/catalog.toml" "${ROOT}/profiles/hardware/revision.toml")
+set(HALO_HARDWARE_CATALOG "${ROOT}/profiles/hardware/catalog.toml")
 target_sources(VISR PRIVATE ${HALO_HARDWARE_CATALOG})
 set_source_files_properties(${HALO_HARDWARE_CATALOG} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/profiles/hardware)
 # the maps' shader lists, compiled at map load (d3d8_device.c's halo_shader_list_warm)

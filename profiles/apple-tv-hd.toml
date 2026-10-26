@@ -32,9 +32,7 @@ texture_idle_seconds = 30
 render_scale = 0.5
 anisotropic_filtering = 4
 model_lod = "auto"
-shadow_map_size = 128
-dynamic_resolution = true
-dynamic_resolution_floor = 480
+shadow_map_size = 256
 
 [network]
 player_capacity = 8
@@ -43,16 +41,6 @@ player_capacity = 8
 basis = "measured"
 why = "Decided for this device: gameplay holds no tier of the ladder at 60. Presented at 540 lines with the cheapest settings, 97.7 to 99.4% of frames came within two refreshes, so uncapped play alternates between 60 and 30. Capped at 30, each frame stays up two refreshes, as cutscenes already do. The menu keeps the display's rate."
 source = "Apple TV HD presented runs of a10 and d40 at 540 lines and minimum settings, settings sweep of 2026-10-24 and 25"
-
-[evidence."display.dynamic_resolution"]
-basis = "measured"
-why = "Presented at 30 frames a second, dynamic resolution between 540 and 480 lines took d40 from 89.3% to 92.5% of frames on time and a10 from 93.0% to 95.0%, against fixed 540. A 720 ceiling did no better (92.1% and 94.4%) and spent most frames below 540 anyway. More than 99.9% of frames still come within one and a half frames of their time."
-source = "Apple TV HD presented runs of a10 and d40, fixed 540, 720 to 480 and 540 to 480, build a9dbc1da7, 2026-10-26"
-
-[evidence."display.dynamic_resolution_floor"]
-basis = "measured"
-why = "Below the experiments' usual 540 lines, by decision for this device: at 540 it misses 5 to 11% of frames at 30, and 480 is the lowest the comparison measured."
-source = "Apple TV HD presented runs of a10 and d40, 2026-10-26"
 
 [evidence."display.texture_idle_seconds"]
 basis = "assumed"
@@ -75,8 +63,8 @@ source = "Apple TV HD sweep: a10 and b30, max against auto, 2026-10-13"
 
 [evidence."display.shadow_map_size"]
 basis = "measured"
-why = "256 against 512 gained 2 to 5 frames a second in a10's rooms with characters (53 to 56, 49 to 53, 51 to 54) and 1 to 2 on b30; 128 gained about 1 more. In later runs 256 to 128 alone took a10's mess hall from 24.80 to 23.82 ms and 24.53 to 23.81 ms of GPU, and b30's beach fight from 19.80 to 19.36. The model plays at 30, below the ladder's ideal, so it takes the cheapest shadows. Shadow detail is the first setting lowered before a tier (profiles/README.md, Targets): above 128 the game's shadows look little better and cost the most on these GPUs."
-source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13; Apple TV HD settings runs, a10-mess-hall and b30-beach-fight, October 2026"
+why = "256 against 512 gained 2 to 5 frames a second in a10's rooms with characters (53 to 56, 49 to 53, 51 to 54) and 1 to 2 on b30; 128 gained about 1 more. 256 keeps shadow edges smoother than the Xbox's 128 for most of the gain."
+source = "Apple TV HD sweep: a10 and b30 at 512, 256 and 128, 2026-10-13"
 
 # All three together: b30's beach 31 to 40-53 frames a second (GPU 30.5 to 23 ms, CPU 26 to 22), its Pelican ride
 # 42 to 54-60; a10's rooms 44-53 to 48-58. Peak memory unchanged.

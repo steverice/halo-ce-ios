@@ -219,12 +219,6 @@ static short coop_enemies_player_count(
 	return count;
 }
 
-short coop_enemies_game_players(
-	void)
-{
-	return coop_enemies_player_count();
-}
-
 /* what a spot is tested against: the level, and the objects that block
 the way (crates and other scenery, machines, vehicles) */
 #define SPREAD_COLLISION_FLAGS (FLAG(_collision_test_structure_bit) | FLAG(_collision_test_objects_bit) | \

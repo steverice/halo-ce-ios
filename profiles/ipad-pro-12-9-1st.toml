@@ -15,7 +15,7 @@ models = ["iPad6,7"]
 [display]
 frame_rate = "30"
 render_height = 720
-shadow_map_size = 128
+shadow_map_size = 256
 anisotropic_filtering = 4
 model_lod = "auto"
 
@@ -34,8 +34,8 @@ source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds
 
 [evidence."display.shadow_map_size"]
 basis = "measured"
-why = "The profile misses its tier in presented play (88.7% and 90.0% of frames on time at 30), and at 64 players on Blood Gulch the GPU took 32 ms a frame at 128-pixel shadows, 36 at 256 and 63 at 512. At 720 lines the d40 frame took 17.66 ms at 128 against 17.88 at 256 and 19.08 at 512, 20 rounds each. Shadow detail is the first setting lowered before a tier (profiles/README.md, Targets): above 128 the game's shadows look little better and cost the most on these GPUs."
-source = "VISR shadow map size runs at 128, 256 and 512, mp-bloodgulch-64 on the batched-blur build, 30 s windows, 2026-10-25; VISR settings sweep, build 20261024.122832 (0.5.0), d40-maw-fight, 2026-10-23 to 2026-10-25"
+why = "The largest single saving at 720 lines: 256-pixel shadows took the d40 frame from 19.08 to 17.88 ms (128 pixels: 17.66 ms), 20 rounds each. 256 keeps most of the saving with smoother shadow edges."
+source = "VISR settings sweep, build 20261024.122832 (0.5.0) with earlier rounds on 20261023.144726, a10-heroic and d40-maw-fight offscreen windows plus one presented d40 run, 2026-10-23 to 2026-10-25"
 
 [evidence."display.anisotropic_filtering"]
 basis = "measured"

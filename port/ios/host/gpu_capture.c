@@ -557,20 +557,6 @@ static void capture_texture_copy_level(gpu_texture source, gpu_texture destinati
 	capture.backend.texture_copy_level(source, destination, level);
 }
 
-static void capture_texture_copy_rects(gpu_texture source, const struct gpu_texture_copy *copies, uint32_t count)
-{
-	if (capture.file)
-	{
-		uint32_t words[2] = { source, count }, index;
-
-		ensure_texture(source);
-		for (index = 0; index < count; index++)
-			ensure_texture(copies[index].destination);
-		put(GPU_CAPTURE_TEXTURE_COPY_RECTS, words, 2, NULL, 0, copies, count * (uint32_t)sizeof(*copies));
-	}
-	capture.backend.texture_copy_rects(source, copies, count);
-}
-
 static void capture_texture_generate_mipmaps(gpu_texture texture, uint32_t base_level)
 {
 	struct texture_entry *entry = texture_entry(texture);
@@ -611,15 +597,6 @@ static void capture_texture_destroy(gpu_texture texture)
 static uint32_t capture_texture_read(gpu_texture texture, void *pixels, uint32_t size)
 {
 	return capture.backend.texture_read(texture, pixels, size);
-}
-
-static void capture_unrecorded(const char *call);
-
-static void capture_texture_set_content(gpu_texture texture, uint32_t width, uint32_t height)
-{
-	if (width || height)
-		capture_unrecorded("gpu_texture_set_content");
-	capture.backend.texture_set_content(texture, width, height);
 }
 
 static gpu_buffer capture_buffer_create(uint32_t size)

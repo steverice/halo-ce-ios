@@ -13,7 +13,6 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <os/lock.h>
 #define BUFFER_COUNT 32
 #define INTERVAL_COUNT 64
@@ -38,12 +37,6 @@ static os_unfair_lock group_lock = OS_UNFAIR_LOCK_INIT;
 static struct {
     uint64_t frame, presented, interval, budget;
     unsigned count, invalid, late;
-    /* MetalFX owns its encoders, so counters cannot bracket it; with timing
-     * it runs alone in a command buffer whose GPU span is the upscale. */
-    unsigned upscale_expected, upscale_seen;
-    uint64_t upscale_us;
-    unsigned span_count;
-    struct { double start, end; unsigned group; } spans[16];
     double scale;
     struct { uint64_t start, end; unsigned group; } ranges[GROUP_INTERVALS];
 } grouped[FRAME_COUNT];
@@ -75,12 +68,9 @@ static void add(uint64_t frame, unsigned category, uint64_t duration, int valid)
         if (atomic_compare_exchange_weak(value, &seen, next)) break;
     }
 }
-/* a Metal device is in use: command-buffer GPU spans exist, the timing fallback's input */
-static int metal_seen;
 void host_perf_metal_initialize(id<MTLDevice> device) {
     /* Called once before play; never replace buffers while callbacks can run. */
     candidate_device = device;
-    if (device) metal_seen = 1;
     if (counter_device || !device || !(host_perf_reports_enabled() || host_perf_hooks_dynamic_enabled())) return;
     counter_device = device;
     if ([device supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary]) mode = 1;
@@ -150,12 +140,6 @@ int host_perf_metal_needs_split(void) {
     /* Only shadow mode splits encoders; report builds keep the shared encoder. */
     return mode == 2 && host_perf_hooks_dynamic_enabled();
 }
-int host_perf_metal_timing_supported(void) {
-    return host_perf_metal_stage_supported() || metal_seen;
-}
-void host_perf_metal_frame_touch(uint64_t frame) {
-    if (frame && host_perf_hooks_dynamic_enabled()) frame_prepare(frame);
-}
 int host_perf_metal_stage_supported(void) {
     return counter_device && mode && [counter_device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
 }
@@ -182,73 +166,6 @@ uint32_t host_perf_metal_switch(uint32_t token, id<MTLRenderCommandEncoder> enco
         nil, buffers[slot].categories[interval], group);
     host_perf_metal_begin(next, encoder);
     return next;
-}
-void host_perf_metal_upscale_expected(void) {
-    if (!host_perf_hooks_dynamic_enabled()) return;
-    uint64_t frame = host_perf_hooks_frame_id();
-    if (!frame) return;
-    frame_prepare(frame);
-    os_unfair_lock_lock(&group_lock);
-    grouped[frame % FRAME_COUNT].upscale_expected++;
-    os_unfair_lock_unlock(&group_lock);
-}
-void host_perf_metal_upscale_time(uint64_t frame, uint64_t duration_us, int valid) {
-    if (!frame) return;
-    os_unfair_lock_lock(&group_lock);
-    typeof(grouped[0]) *entry = &grouped[frame % FRAME_COUNT];
-    if (entry->frame == frame) {
-        if (valid) { entry->upscale_seen++; entry->upscale_us += duration_us; }
-        else entry->invalid |= 1u << HOST_PERF_UPSCALE;
-    }
-    os_unfair_lock_unlock(&group_lock);
-}
-void host_perf_metal_command_span(uint64_t frame, unsigned group, double start, double end) {
-    if (!frame || end < start) return;
-    os_unfair_lock_lock(&group_lock);
-    typeof(grouped[0]) *entry = &grouped[frame % FRAME_COUNT];
-    if (entry->frame == frame && entry->span_count < 16) {
-        unsigned n = entry->span_count++;
-        entry->spans[n].start = start; entry->spans[n].end = end; entry->spans[n].group = group;
-    }
-    os_unfair_lock_unlock(&group_lock);
-}
-/* the union of the frame's command-buffer spans in a part (scene, or the rest), microseconds */
-static double span_union(const typeof(grouped[0]) *entry, int scene) {
-    double starts[16], ends[16], total = 0.0, reach = -1.0;
-    unsigned n = 0;
-    for (unsigned i = 0; i < entry->span_count; i++)
-        if ((entry->spans[i].group == HOST_PERF_SCENE) == scene) {
-            unsigned j = n++;
-            while (j && starts[j - 1] > entry->spans[i].start) { starts[j] = starts[j - 1]; ends[j] = ends[j - 1]; j--; }
-            starts[j] = entry->spans[i].start; ends[j] = entry->spans[i].end;
-        }
-    for (unsigned i = 0; i < n; i++) {
-        double from = starts[i] > reach ? starts[i] : reach;
-        if (ends[i] > from) total += ends[i] - from;
-        if (ends[i] > reach) reach = ends[i];
-    }
-    return total * 1e6;
-}
-static int compare_doubles(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return x < y ? -1 : x > y; }
-/* every 600 frames with both: how far the command-buffer union is from stage timing, all frames and late ones */
-static void timing_check(double stage_scene, double stage_rest, double buffer_scene, double buffer_rest, int late) {
-    enum { N = 600 };
-    static double scene_error[N], rest_error[N], late_error[N];
-    static unsigned count, late_count;
-    static unsigned long logged;
-    if (stage_scene <= 0.0) return;
-    scene_error[count] = (buffer_scene - stage_scene) / stage_scene;
-    rest_error[count] = buffer_rest - stage_rest;
-    if (late && late_count < N) late_error[late_count++] = (buffer_scene - stage_scene) / stage_scene;
-    if (++count < N) return;
-    qsort(scene_error, N, sizeof(double), compare_doubles); qsort(rest_error, N, sizeof(double), compare_doubles);
-    if (late_count) qsort(late_error, late_count, sizeof(double), compare_doubles);
-    fprintf(stderr, "DRS timing check %lu: scene buffers vs stage S: median %+.1f%% p5 %+.1f%% p95 %+.1f%%; "
-        "rest buffers minus U+H: median %+.0f us p95 %+.0f us; late frames %u, their scene median %+.1f%% p95 %+.1f%%\n",
-        ++logged, scene_error[N / 2] * 100, scene_error[N / 20] * 100, scene_error[N * 19 / 20] * 100,
-        rest_error[N / 2], rest_error[N * 19 / 20], late_count,
-        late_count ? late_error[late_count / 2] * 100 : 0.0, late_count ? late_error[late_count * 19 / 20] * 100 : 0.0);
-    count = late_count = 0;
 }
 void host_perf_metal_presented(uint64_t frame, uint64_t time_us, uint64_t budget_us) {
     if (!frame) return;
@@ -342,21 +259,8 @@ void host_perf_metal_complete(id<MTLCommandBuffer> commands) {
         break;
     }
 }
-/* The timing fallback's U+H: the least of the last 32 frames' rest spans. The present buffer holds the HUD's
- * passes and the drawable copy, so its span includes a wait for the drawable whenever the display is behind; on a
- * CPU-bound A9X iPad even the median read 3-16 ms. The HUD's own work is about the same every frame, so the
- * least recent span is its cost; a wait only ever adds. An underestimate errs toward not dropping. */
-static double rest_estimate(double rest) {
-    static double ring[32];
-    static unsigned count, next;
-    double least;
-    ring[next] = rest; next = (next + 1) % 32; if (count < 32) count++;
-    least = ring[0];
-    for (unsigned i = 1; i < count; i++) if (ring[i] < least) least = ring[i];
-    return least;
-}
 static void dynamic_join(game_perf_frame *frame) {
-    if (host_perf_metal_timing_supported()) frame->drs.available |= 8;
+    if (host_perf_metal_stage_supported()) frame->drs.available |= 8;
     os_unfair_lock_lock(&group_lock);
     typeof(grouped[0]) *entry = &grouped[frame->frame_id % FRAME_COUNT];
     if (entry->frame == frame->frame_id) {
@@ -381,27 +285,11 @@ static void dynamic_join(game_perf_frame *frame) {
                 totals[entry->ranges[i].group] += entry->ranges[i].end - start;
             if (entry->ranges[i].end > end) end = entry->ranges[i].end;
         }
-        if (!entry->invalid && entry->count && host_perf_metal_stage_supported() && !(frame->flags & GAME_PERF_GPU_UNAVAILABLE) &&
-            entry->upscale_seen == entry->upscale_expected) {
+        if (!entry->invalid && entry->count && host_perf_metal_stage_supported() && !(frame->flags & GAME_PERF_GPU_UNAVAILABLE)) {
             frame->drs.scene_us = (uint64_t)(totals[0] * entry->scale);
-            frame->drs.upscale_us = (uint64_t)(totals[1] * entry->scale) + entry->upscale_us;
+            frame->drs.upscale_us = (uint64_t)(totals[1] * entry->scale);
             frame->drs.hud_us = (uint64_t)(totals[2] * entry->scale);
             frame->drs.available |= 1;
-            if (entry->span_count)
-                timing_check((double)frame->drs.scene_us, (double)(frame->drs.upscale_us + frame->drs.hud_us),
-                    span_union(entry, 1), span_union(entry, 0), (int)entry->late);
-        }
-        /* No stage-boundary sampling: the scene's command buffers' GPU spans are S (on a device with both they
-         * matched stage timing in every window), and the rest's least recent span is U+H; marked coarse (16) */
-        else if (!host_perf_metal_stage_supported() && entry->span_count && !(entry->invalid & (1u << HOST_PERF_SCENE)) &&
-            !(frame->flags & GAME_PERF_GPU_UNAVAILABLE)) {
-            double scene = span_union(entry, 1), rest = span_union(entry, 0);
-            if (scene > 0.0) {
-                frame->drs.scene_us = (uint64_t)scene;
-                frame->drs.upscale_us = 0;
-                frame->drs.hud_us = (uint64_t)rest_estimate(rest);
-                frame->drs.available |= 1 | 16;
-            }
         }
     }
     os_unfair_lock_unlock(&group_lock);

@@ -17,10 +17,6 @@ void texture_refine_destroy(struct texture_refine_context *context);
 int texture_refine_color(struct texture_refine_context *handle, float *top, const float *reference,
 	uint32_t width, uint32_t height, uint32_t channels, uint32_t scale, int wrap,
 	const struct texture_refine_params *params, int fallback, float *mask);
-/* The scheduler's stop for gameplay: while *flag reads nonzero, the bounded (CPU) refinements end with an error
-   between rows, and texture_upscale_generate_end between its stages. NULL (the default) never stops. Process-wide. */
-void texture_refine_set_cancel(const volatile int *flag);
-int texture_refine_cancelled(void);
 /* CPU version with the same result: modifies top in place, streams upsampling rows, and retains only downsampled
    intermediates plus original-size work buffers. No Metal context or full-resolution copies are needed. */
 int texture_refine_color_bounded(float *top, const float *reference, uint32_t width, uint32_t height,

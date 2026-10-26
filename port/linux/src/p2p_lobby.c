@@ -793,11 +793,13 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->maximum_player_count = (unsigned char)listing->maximum_player_count;
 	shown->engine_type = (unsigned char)listing->engine_type;
 	shown->kind = (unsigned char)listing->kind;
+	/* Third-party flag 0x80 makes the dedicated bit ambiguous (Delta). */
+	shown->dedicated = halo_network_version_has_dedicated((unsigned)listing->version) && (listing->flags & 0xa0) == 0x20;
 	shown->open = (listing->flags & _listing_open) != 0;
 	shown->in_progress = (listing->flags & _listing_in_progress) != 0;
 	shown->has_teams = (listing->flags & _listing_has_teams) != 0;
 	shown->ping = -1;
-	shown->network_version = HALO_PORT_NETWORK_VERSION;
+	shown->network_version = (short)listing->version;
 	shown->joinable = halo_network_kind_reason(shown->kind) == NULL;
 	shown->from_delta = 0;
 	shown->map_family = P2P_MAP_FAMILY_XBOX;
@@ -1038,12 +1040,13 @@ int p2p_lobby_browsing(void)
 	return lobby.browsing;
 }
 
-/* the order shown: the most players first; then those joining has not
-failed, the open ones, and by name */
+/* Dedicated games first, then the existing joinability, player and name order. */
 static int listing_order(const void *first, const void *second)
 {
 	const struct p2p_listing *a = first, *b = second;
 
+	if (a->dedicated != b->dedicated)
+		return b->dedicated - a->dedicated;
 	if (a->joinable != b->joinable)
 		return b->joinable - a->joinable;
 	if (a->player_count != b->player_count)

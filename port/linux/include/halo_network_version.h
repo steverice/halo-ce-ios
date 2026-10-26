@@ -2,7 +2,7 @@
 HALO_NETWORK_VERSION.H
 
 The current agreement is 38. A client also joins hosts of 29 to 32 and 34 to
-36 (33 and 37 were never released). Hosts of 29 to 34 send the 13,120-byte
+36, and 39 (33 and 37 were never released). Hosts of 29 to 34 send the 13,120-byte
 settings record with the 28-byte options block, which the receiver widens;
 hosts of 35 to 37 send the 13,136-byte record. Each
 later rule is taken only from a host whose version has it (the helpers below);
@@ -37,6 +37,8 @@ their own destruction */
 #define HALO_NETWORK_VERSION_GAME_KIND 37
 /* shield-effects selector 6 (PLAYERS' OWN) */
 #define HALO_NETWORK_VERSION_PLAYERS_OWN_SHIELDS 38
+/* dedicated-server discovery metadata; the join codec stays at 38 */
+#define HALO_NETWORK_VERSION_DEDICATED 39
 
 /* the older versions a client of this build joins, one bit per version from
 the oldest: 29 to 32, and 34 to 36, each checked by joining a host of that
@@ -46,6 +48,9 @@ version. No host of 33 or 37 was released, so neither is joined. */
 /* whether a client of version `ours` joins a host of version `theirs` */
 static inline int halo_network_version_joinable(unsigned ours, unsigned theirs)
 {
+	/* Version 39 changes discovery metadata, not the version-38 join codec. */
+	if (ours == HALO_NETWORK_VERSION_PLAYERS_OWN_SHIELDS && theirs == HALO_NETWORK_VERSION_DEDICATED)
+		return 1;
 	if (theirs == ours)
 		return 1;
 	if (ours < theirs || theirs < HALO_PORT_NETWORK_OLDEST_JOINABLE ||
@@ -99,6 +104,12 @@ static inline int halo_network_version_shield_selector_valid(unsigned version, u
 static inline int halo_network_version_has_game_kind(unsigned version)
 {
 	return version >= HALO_NETWORK_VERSION_GAME_KIND;
+}
+
+/* whether OpenCE discovery fields can mark a host as dedicated */
+static inline int halo_network_version_has_dedicated(unsigned version)
+{
+	return version >= HALO_NETWORK_VERSION_DEDICATED;
 }
 
 /* how far a datagram's tick may be from the latest the sender's others

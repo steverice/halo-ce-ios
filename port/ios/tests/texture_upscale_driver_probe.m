@@ -10,9 +10,6 @@ void host_config_string(const char *name,const char *fallback,char *out,size_t s
 }
 void host_logf(int level,const char *format,...) {(void)level;(void)format;}
 int texture_upscale_model_available(void) {return 0;}
-void host_texture_upscale_continued_phase(int began) {(void)began;}
-void texture_refine_set_cancel(const volatile int *flag) {(void)flag;}
-int host_device_profile_peek(const char *root,const char *name,char *text,size_t size) {(void)root;(void)name;snprintf(text,size,"true");return 1;}
 struct texture_upscale_generator *texture_upscale_generate_create(char *error,size_t size) {
     snprintf(error,size,"synthetic model failure");return NULL;
 }
@@ -29,36 +26,23 @@ enum texture_upscale_encode_result texture_upscale_encode_record(const struct te
     (void)alpha_mode;(void)levels;(void)count;(void)w;(void)h;(void)hash;(void)recipe;(void)format;(void)threads;(void)bytes;(void)size;(void)metrics;
     assert(!"unexpected encoder call");return TEXTURE_UPSCALE_ENCODE_ERROR;
 }
-/* the fake map b30: one key, 0x77 at 4x4 (fake_maps on) */
-static int fake_maps;
-int host_texture_source_scan(const char *root,host_texture_map_callback callback,void *context) {
-    (void)root;if(fake_maps)callback(context,"/fake/maps/b30.map");return 1;}
+int host_texture_source_scan(const char *root,host_texture_map_callback callback,void *context) {(void)root;(void)callback;(void)context;return 1;}
 int host_texture_source_walk_map(const char *path,host_texture_source_callback callback,void *context) {(void)path;(void)callback;(void)context;return 1;}
-FILE *host_texture_source_open_policy_map(const char *path,uint64_t *size,char *error,size_t capacity) {
-    (void)path;(void)error;(void)capacity;if(!fake_maps)return NULL;FILE *f=tmpfile();fputs("map",f);fflush(f);*size=3;return f;}
-struct texture_policy_catalog *texture_policy_catalog_new(void) {return fake_maps?(struct texture_policy_catalog *)calloc(1,8):NULL;}
-void texture_policy_catalog_free(struct texture_policy_catalog *catalog) {free(catalog);}
+FILE *host_texture_source_open_policy_map(const char *path,uint64_t *size,char *error,size_t capacity) {(void)path;(void)size;(void)error;(void)capacity;return NULL;}
+struct texture_policy_catalog *texture_policy_catalog_new(void) {return NULL;}
+void texture_policy_catalog_free(struct texture_policy_catalog *catalog) {(void)catalog;}
 int texture_policy_add_map(struct texture_policy_catalog *catalog,const unsigned char *data,size_t size,char *error,size_t capacity) {
-    (void)catalog;(void)data;(void)size;(void)error;(void)capacity;return fake_maps?0:-1;
+    (void)catalog;(void)data;(void)size;(void)error;(void)capacity;return -1;
 }
 size_t texture_policy_classify(struct texture_policy_catalog *catalog,const struct texture_policy_table *policy,
-    struct texture_policy_decision **out,texture_policy_log_proc log,void *context) {
-    (void)catalog;(void)policy;(void)log;(void)context;
-    if(!fake_maps)return 0;
-    *out=calloc(1,sizeof(**out));(*out)[0]=(struct texture_policy_decision){.hash=0x77,.width=4,.height=4,.result=TEXTURE_POLICY_S4G,.treatment=TEXTURE_POLICY_COLOR,.scale=2};
-    return 1;
-}
+    struct texture_policy_decision **out,texture_policy_log_proc log,void *context) {(void)catalog;(void)policy;(void)out;(void)log;(void)context;return 0;}
 const char *texture_policy_kind_name(enum texture_policy_kind kind) {(void)kind;return "graphic";}
 const char *texture_policy_result_name(enum texture_policy_result result) {
     static const char *names[]={"s4g","bpf","original"};return names[result];
 }
 int main(void) {@autoreleasepool {
     char pattern[]="/tmp/visr-upscale-driver-XXXXXX";char *directory=mkdtemp(pattern);assert(directory);
-    /* "auto" (the setting here) stays out of a measured run */
-    setenv("HALO_INPUT_REPLAY","a10-bench",1);
     host_texture_upscale_init(directory);
-    unsetenv("HALO_INPUT_REPLAY");
-    assert(upscale_mode==TEXTURE_UPSCALE_MODE_OFF);
     assert(!upscale_enabled&&!upscale_worker&&!generator);
     upscale_root=@(directory);texture_log=[NSMutableDictionary new];thermal_log=[NSMutableArray new];started=now();
     assert([NSFileManager.defaultManager createDirectoryAtPath:cache_directory() withIntermediateDirectories:YES attributes:nil error:nil]);
@@ -85,58 +69,8 @@ int main(void) {@autoreleasepool {
     /* A menu wake arriving while a pump is exiting must survive its queued flag. */
     upscale_enabled=YES;atomic_store(&pump_queued,true);atomic_store(&pump_requested,false);
     host_texture_upscale_game_started(0);assert(atomic_load(&pump_requested));
-    /* Rules 4 and 6: a level's game stops the work at once; a pause lets it run only after two seconds; the game
-       resuming stops it again; the next map's load frees it and makes that map first. */
-    work_group=dispatch_group_create();activity_token=[NSObject new];
-    host_texture_upscale_game_started(1);assert(stop_flag&&atomic_load(&upscale_playing));
-    host_texture_upscale_paused(1);assert(stop_flag);
-    activity.paused_since-=TEXTURE_UPSCALE_PAUSE_SECONDS;host_texture_upscale_paused(1);assert(stop_flag);
-    resume_if_allowed();assert(!stop_flag&&!atomic_load(&upscale_playing));
-    host_texture_upscale_paused(0);assert(stop_flag);
-    unsigned serial=atomic_load(&priority_serial);
-    host_texture_upscale_map_will_load("levels\\b30\\b30");
-    assert(!stop_flag&&[priority_snapshot() isEqual:@"b30"]&&atomic_load(&priority_serial)==serial+1);
-    /* the loading screen's wait: a level whose textures are not listed is checked, then plays original; a skip
-       always does */
-    assert(host_texture_upscale_level_begin("levels\\a10\\a10")&&[level_name isEqual:@"a10"]);
-    assert(host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_CHECKING);
-    /* a queue that stops without listing the level (here: no catalog) ends the wait */
-    atomic_store(&pump_queued,false);atomic_fetch_add(&pumps_ended,1);
-    assert(host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_DONE);
-    host_texture_upscale_level_end(1);assert(atomic_load(&urgent)==0);
-    assert(!host_texture_upscale_level_ready());
-    assert(!host_texture_upscale_level_ready());   /* not listed: original, too */
-    upscale_mode=TEXTURE_UPSCALE_MODE_AUTO;profile_upscales=0;
-    char status[64];host_texture_upscale_status(status,sizeof(status));assert(!strcmp(status,"Not used on this device"));
     upscale_enabled=NO;
-    assert(host_texture_upscale_level_ready()&&host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_NONE);
-    /* the no-mix rule with the generator off: no cache plays (nothing upscaled is drawn); a cache without its decisions,
-       or missing one of the level's textures, or with that texture's file gone, plays original; complete, upscaled */
-    any_root=@(directory);fake_maps=1;
-    host_texture_upscale_map_will_load("levels\\b30\\b30");
-    NSString *cache=[@(directory) stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
-    [NSFileManager.defaultManager removeItemAtPath:cache error:nil];
-    assert(host_texture_upscale_level_ready());
-    assert([NSFileManager.defaultManager createDirectoryAtPath:cache withIntermediateDirectories:YES attributes:nil error:nil]);
-    struct texture_cache_record other={.hash=0x99,.width=4,.height=4,.result=TEXTURE_POLICY_S4G,.treatment=TEXTURE_POLICY_COLOR,.recipe_key=1,.bytes=4};
-    other.global_key=texture_recipe_global_key(&(struct texture_recipe_globals){0},TEXTURE_POLICY_COLOR,TEXTURE_POLICY_S4G);
-    assert(!texture_cache_manifest_save(cache.fileSystemRepresentation,&other,1));
-    assert(!host_texture_upscale_level_ready());                         /* no decisions */
-    struct texture_policy_decision saved[2]={{.hash=0x77,.width=4,.height=4,.result=TEXTURE_POLICY_S4G,.treatment=TEXTURE_POLICY_COLOR},
-        {.hash=0x99,.width=4,.height=4,.result=TEXTURE_POLICY_S4G,.treatment=TEXTURE_POLICY_COLOR}};
-    assert(!texture_cache_decisions_save(cache.fileSystemRepresentation,saved,2));
-    assert(!host_texture_upscale_level_ready());                         /* b30's 0x77 is not made: original */
-    struct texture_recipe_globals globals=recipe_globals();
-    struct texture_cache_record mine={.hash=0x77,.width=4,.height=4,.result=TEXTURE_POLICY_S4G,.treatment=TEXTURE_POLICY_COLOR,.recipe_key=2,
-        .global_key=texture_recipe_global_key(&globals,TEXTURE_POLICY_COLOR,TEXTURE_POLICY_S4G),.bytes=4};
-    struct texture_cache_record both[2]={other,mine};
-    assert(!texture_cache_manifest_save(cache.fileSystemRepresentation,both,2));
-    assert(!host_texture_upscale_level_ready());                         /* listed, but its file is missing */
-    assert([[@"test" dataUsingEncoding:NSUTF8StringEncoding] writeToFile:[cache stringByAppendingPathComponent:@"0000000000000077-4x4.bin"] atomically:YES]);
-    assert(host_texture_upscale_level_ready());                          /* complete */
-    fake_maps=0;
-    assert(!host_texture_upscale_prepare_import(directory,NULL,NULL));
     free(decisions);free(manifest);decisions=NULL;manifest=NULL;
     assert([NSFileManager.defaultManager removeItemAtPath:upscale_root error:nil]);
-    puts("texture upscale driver: publication rollback, original reconciliation, failure JSON, unavailable model, menu wake, gameplay stop, pause, level wait, readiness and the no-mix rule with the generator off PASS");
+    puts("texture upscale driver: publication rollback, original reconciliation, failure JSON, unavailable model and menu wake PASS");
 }}

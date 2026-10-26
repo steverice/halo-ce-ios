@@ -73,6 +73,10 @@ LEFT_OUT = {
 # Credits' place; Multiplayer's Edit Gametypes and divider below Co-op,
 # keeping its 32-unit highlight inside the description panel's bottom curve.
 CHILD_OFFSETS = {
+    ("ui\\shell\\main_menu\\multiplayer_type_select\\join_game\\screen_stats_container",
+     "ui\\shell\\main_menu\\multiplayer_type_select\\join_game\\server_count_label"): (355, 60),
+    ("ui\\shell\\main_menu\\multiplayer_type_select\\join_game\\screen_stats_container",
+     "ui\\shell\\main_menu\\multiplayer_type_select\\join_game\\page_count_label"): (220, 60),
     ("ui\\shell\\main_menu\\main_menu_select_list", "ui\\shell\\main_menu\\main_menu_item_quit_game"): (192, 391),
     ("ui\\shell\\main_menu\\multiplayer_type_select\\multiplayer_type_select_list",
      "ui\\shell\\main_menu\\multiplayer_type_select\\multiplayer_type_gametypes_item"): (0, 358),
@@ -376,6 +380,14 @@ class Art:
     def draw(self, relative: str, index: int, count: int, width: int, height: int, output: Path,
              shown: list) -> None:
         output.parent.mkdir(parents=True, exist_ok=True)
+        # The shared browser uses VISR's rack drawing in every animation frame.
+        if relative == "shell/main_menu/multiplayer_type_select/join_game/dedicated_icon":
+            svg = SVG_COPIES / f"{relative}__{index}.svg"
+            svg.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(MENUS / "originals/dedicated.svg", svg)
+            self.svgs.append(svg)
+            Image.fromarray(bleed(render_svg(svg, SCALE)), "RGBA").save(output, optimize=True)
+            return
         for name in self.frame_sources(relative, index, count):
             svg = self.redraws / f"{name}.svg"
             if svg.is_file():

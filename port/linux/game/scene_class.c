@@ -41,23 +41,12 @@ frame_rate = "30"), which it holds frames for and names in its frame log
 #include "../src/gpu.h"
 #include "../src/halo_stereo.h"
 #include "../src/port_config.h"
-#include "bungie_net/network/transport.h"
-#include "networking/network_client_manager.h"
-#include "networking/network_game_globals.h"
-#include "networking/network_game_manager.h"
-#include "networking/network_server_manager.h"
-#include "coop_enemies.h"
-#include "workload_context.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 /* port/linux/src/sdl_platform.c (the host's on iOS) */
 void platform_log(const char *format, ...);
-#ifdef HALO_ILP32
-/* port/ios/host/host_perf_hooks.c, a guest import */
-void host_dynamic_resolution_scene(int enabled, int floor_lines);
-#endif
 
 /* half a second of game time */
 #define SCENE_CUTSCENE_HOLD_TICKS 15
@@ -76,65 +65,6 @@ static void scene_level(char *level, size_t size)
 			name = cursor + 1;
 	}
 	snprintf(level, size, "%s", name ? name : "");
-}
-
-/* port/linux/game/menu_functions.c */
-unsigned char pc_menu_split_players(void);
-
-/* an internet play peer's stand-in address (p2p.c), as the network game keeps machine addresses
-(network_distributed.c's distributed_address_text): 100.64.0.0/10 */
-static int workload_tunneled(unsigned long address)
-{
-	return (address & 0xFFC00000UL) == 0x64400000UL;
-}
-
-/* whether a machine of this network game is reached through internet play's tunnel: online, not only on the LAN.
-The host has every machine's address, a machine that joined the host's */
-static int workload_online(short connection)
-{
-	if (connection == _game_connection_network_server)
-	{
-		long index;
-
-		for (index = 0; index < HALO_PORT_MAXIMUM_NETWORK_MACHINES; index++)
-			if (workload_tunneled(network_game_server_machine_address(index)))
-				return 1;
-		return 0;
-	}
-	if (connection == _game_connection_network_client && global_network_game_client_get())
-	{
-		struct transport_address address;
-
-		memset(&address, 0, sizeof(address));
-		network_game_client_get_remote_server_address(global_network_game_client_get(), &address);
-		return workload_tunneled(address.address.long_words[0]);
-	}
-	return 0;
-}
-
-/* The map's workload context ([variable.display], workload_context.h), decided once as each map loads: from
-game_load, once the scenario is read and before its loading screen draws, when the connection, the network game's
-players, this device's players and the enemy multiplier are all known. A revert, a checkpoint or a cutscene is no
-new map, so the context holds for the whole map. */
-void halo_workload_decide(void)
-{
-	struct workload_inputs inputs;
-	short connection = game_connection();
-	char reasons[160];
-
-	memset(&inputs, 0, sizeof(inputs));
-	inputs.main_menu = !global_scenario || global_scenario->type == _scenario_type_main_menu;
-	inputs.multiplayer_map = global_scenario && global_scenario->type == _scenario_type_multiplayer;
-	inputs.networked = connection == _game_connection_network_server || connection == _game_connection_network_client;
-	inputs.online = workload_online(connection);
-	inputs.network_players = inputs.networked ? coop_enemies_game_players() : 0;
-	inputs.local_players = pc_menu_split_players() ? 2 : 1;
-	inputs.enemy_multiplier = coop_enemies_solo_multiplier();
-	/* (a co-op host's own choice; a machine that joined is not told the host's, so it counts them as the default's,
-	which adds enemies for each player past the first) */
-	inputs.coop_extra_enemies = connection == _game_connection_network_client ||
-		strcmp(config_string("network.coop_enemies_mode"), "none") != 0;
-	config_workload_set(workload_variable(&inputs, reasons, sizeof(reasons)), reasons);
 }
 
 /* the class's frame rate from the device's profile, 0 for none: only a
@@ -171,9 +101,6 @@ int halo_scene_class(void)
 	{
 		now = CONFIG_SCENE_MENU;
 		cutscene_last_tick = -1;
-		/* (back from a game: the menu is no game's workload) */
-		if (config_workload_variable())
-			config_workload_set(0, "main menu");
 	}
 	else if (!game_time_initialized())
 	{
@@ -231,22 +158,6 @@ int halo_scene_class(void)
 		snprintf(told_level, sizeof(told_level), "%s", level);
 		gpu_frame_context((uint32_t)scene_class, rate, level);
 	}
-#ifdef HALO_ILP32
-	{
-		/* dynamic resolution's switch and floor in the workload context and class now (host_perf_hooks.c) */
-		static int told_drs_class = -1;
-		static unsigned long told_drs_changes;
-		unsigned long changes = config_changes();
-
-		if (scene_class != told_drs_class || changes != told_drs_changes)
-		{
-			told_drs_class = scene_class;
-			told_drs_changes = changes;
-			host_dynamic_resolution_scene(config_scene_boolean("display.dynamic_resolution", scene_class),
-				(int)config_scene_integer("display.dynamic_resolution_floor", scene_class));
-		}
-	}
-#endif
 	return scene_class;
 }
 

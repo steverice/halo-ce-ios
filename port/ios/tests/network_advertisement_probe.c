@@ -68,6 +68,42 @@ int main(void)
 	advertisement.__unknown5A[3] = 131;
 	assert(add_advertised_game(games, &advertisement));
 	assert(network_game_client_advertised_versions[0].kind == 0);
+	/* Captured field bytes only: wire.jsonl from cap-20261026-093019
+	   p268, p282/p289 and d282/d289; no transport addresses or game data. */
+	byte const fields[][4] = {{0x26,0,1,0}, {0x27,0,1,0}, {0x27,0,5,0}};
+	for (i = 0; i < NUMBEROF(fields); i++)
+	{
+		memset(advertisement.__unknown5A, 0, sizeof(advertisement.__unknown5A));
+		memcpy(advertisement.__unknown5A, fields[i], 4);
+		advertisement.player_count = i == 2 ? 0 : 1;
+		assert(add_advertised_game(games, &advertisement));
+		assert(network_game_client_advertised_versions[0].dedicated == (i == 2));
+		assert(games[0].player_count == (i == 2 ? 0 : 1));
+	}
+	/* Captured Delta reserved fields: cap-20261026-095112/chupa-p800-c289.
+	   A Delta signature must suppress OpenCE kind and dedicated bits,
+	   including hosts using a newer network version. */
+	byte const delta[] = {0x20,0,5,1,0x63,0x68,0x75,0x70,0x61,0x2d,0x32,0x39,0x61,
+		0,0,0,0,0,0,0,1,0x26,0x61,0x1c,0x61,0x9e};
+	memcpy(advertisement.__unknown5A, delta, sizeof(delta));
+	for (unsigned version = 32; version <= 39; version++)
+	{
+		advertisement.__unknown5A[0] = version;
+		assert(add_advertised_game(games, &advertisement));
+		assert(!network_game_client_advertised_versions[0].dedicated);
+		assert(network_game_client_advertised_versions[0].kind == 0);
+	}
+	/* Each reserved byte independently identifies a non-OpenCE layout. */
+	for (i = 4; i < 26; i++)
+	{
+		memset(advertisement.__unknown5A, 0, sizeof(advertisement.__unknown5A));
+		memcpy(advertisement.__unknown5A, fields[2], 4);
+		advertisement.__unknown5A[3] = 1;
+		advertisement.__unknown5A[i] = 1;
+		assert(add_advertised_game(games, &advertisement));
+		assert(!network_game_client_advertised_versions[0].dedicated);
+		assert(!network_game_client_advertised_versions[0].kind);
+	}
 	puts("PASS: LAN kind retention, independent engine, legacy fallback");
 	return 0;
 }

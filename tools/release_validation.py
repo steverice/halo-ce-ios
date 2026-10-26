@@ -85,23 +85,6 @@ def require_asset_policy(policy: dict[str, Any]) -> None:
         policy
     ):
         raise ValueError("New releases require device-profile and shader asset pins")
-    if profile_feed_domain(policy) != packs.data_pack.PROFILE_FEED_DOMAIN:
-        raise ValueError(
-            "profile_feed_url must name this source's profile feed directory, "
-            + packs.data_pack.PROFILE_FEED_DOMAIN
-        )
-    # the bundled profiles' revision orders every downloaded shard against them
-    packs.data_pack.profile_revision.check()
-
-
-def profile_feed_domain(policy: dict[str, Any]) -> str:
-    """The device-profile domain a build with this policy's feed URL signs against: its last path segment when
-    that names a generation (device-profiles-2), else the frozen device-profiles-1 directory 0.4.2 to 0.5.1 read."""
-    path = urllib.parse.unquote(urllib.parse.urlsplit(policy.get("profile_feed_url", "")).path)
-    segment = path.rstrip("/").rsplit("/", 1)[-1]
-    if segment in packs.data_pack.DEVICE_PROFILE_DOMAINS:
-        return segment
-    return "device-profiles-1"
 
 
 def require_guest_epoch_policy(policy: dict[str, Any]) -> str:
@@ -674,7 +657,7 @@ def verify_feed(
             **policy,
             "profile_feed_sha256": policy["profile_feed_sha256s"][profile_target],
         }
-        compatibility = profile_feed_domain(policy) + ":" + profile_target
+        compatibility = "device-profiles-1:" + profile_target
     elif kind == "shader":
         compatibility = ("shader-lists-1", "shader-lists-2")
     else:

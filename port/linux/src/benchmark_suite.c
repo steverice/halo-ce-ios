@@ -1119,12 +1119,6 @@ int benchmark_suite_skips_drawing(void)
 	return suite.state == suite_lead && suite.skip_drawing;
 }
 
-/* d3d8_device.c: a suite is running, so dynamic resolution stays off and every run renders its fixed lines */
-int benchmark_suite_running(void)
-{
-	return suite.state != suite_off && suite.state != suite_unasked;
-}
-
 #else
 
 int benchmark_suite_window_marker(char *text, size_t size)
@@ -1140,11 +1134,6 @@ void benchmark_suite_frame(long width, long height)
 }
 
 int benchmark_suite_skips_drawing(void)
-{
-	return 0;
-}
-
-int benchmark_suite_running(void)
 {
 	return 0;
 }

@@ -12,10 +12,6 @@
 	<string>VISR</string>
 	<key>CFBundleExecutable</key>
 	<string>VISR</string>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER).texture-upscale.*</string>
-	</array>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleName</key>

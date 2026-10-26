@@ -81,29 +81,6 @@ why = "The menu's GPU time leaves room for more pixels."
 assert problems(SCENE)[0] == []
 refused(SCENE.replace("render_scale = 0.75", "render_scale = 0.75\nshadow_map_size = 128"), "cannot change by scene class")
 refused(SCENE.replace("[scene.menu.display]", '[scene."cutscene@a10".display]'), 'scene class "cutscene@a10"')
-# the variable workload context: PROFILE_VARIABLE settings in [variable.display] only, with their own evidence
-VARIABLE = GOOD + '''[variable.display]
-dynamic_resolution = true
-dynamic_resolution_floor = 540
-shadow_map_size = 128
-[evidence."variable.display.dynamic_resolution"]
-basis = "assumed"
-why = "Multiplayer load varies with the players; a wide window absorbs it."
-[evidence."variable.display.dynamic_resolution_floor"]
-basis = "assumed"
-why = "Half the ceiling: the planner's lowest, for the busiest games."
-[evidence."variable.display.shadow_map_size"]
-basis = "assumed"
-why = "Shadows cost the most for the least at 16 players and more."
-'''
-assert problems(VARIABLE)[0] == [], problems(VARIABLE)[0]
-refused(VARIABLE.replace("shadow_map_size = 128\n", "shadow_map_size = 128\nanisotropic_filtering = 4\n", 1), "variable.display.anisotropic_filtering: display.anisotropic_filtering cannot change by workload")
-refused(VARIABLE.replace("[variable.display]", "[variable.network]"), "[variable.network]: the variable workload context holds only [variable.display]")
-refused(VARIABLE.replace('[evidence."variable.display.shadow_map_size"]', '[evidence."display.shadow_map_size"]'),
-        'variable.display.shadow_map_size needs an [evidence."variable.display.shadow_map_size"]')
-refused(SCENE.replace("[scene.menu.display]", "[scene.variable.display]"), 'scene class "variable"')
-refused(GOOD + "[split.2.display]\nrender_scale = 0.5\n", "split.2 is not a setting")
-
 refused(SCENE.replace("[scene.menu.display]", "[scene.gameplay.display]"), 'scene class "gameplay"')
 refused(SCENE.replace('[evidence."scene.menu.display.render_scale"]', '[evidence."display.render_scale"]'),
         'scene.menu.display.render_scale needs an [evidence."scene.menu.display.render_scale"]')

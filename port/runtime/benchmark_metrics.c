@@ -10,8 +10,6 @@
 void benchmark_metrics_free(struct benchmark_metrics *metrics) {
     free(metrics->interval); free(metrics->cpu); free(metrics->gpu); free(metrics->tick_plus);
     free(metrics->simulation); free(metrics->render); free(metrics->translation);
-    free(metrics->thread_cpu); free(metrics->process_cpu); free(metrics->clock_probe);
-    free(metrics->gpu_wait); free(metrics->worker_wait); free(metrics->cpu_active);
     memset(metrics, 0, sizeof(*metrics));
 }
 
@@ -19,20 +17,13 @@ void benchmark_metrics_reset(struct benchmark_metrics *metrics, double refresh_h
     uint16_t *interval = metrics->interval, *cpu = metrics->cpu, *gpu = metrics->gpu;
     uint16_t *simulation = metrics->simulation, *render = metrics->render, *translation = metrics->translation;
     uint16_t *tick_plus = metrics->tick_plus;
-    uint16_t *thread_cpu = metrics->thread_cpu, *process_cpu = metrics->process_cpu, *clock_probe = metrics->clock_probe;
-    size_t capacity = metrics->capacity, split_capacity = metrics->split_capacity, probe_capacity = metrics->probe_capacity;
-    uint16_t *gpu_wait = metrics->gpu_wait, *worker_wait = metrics->worker_wait, *cpu_active = metrics->cpu_active;
-    size_t wait_capacity = metrics->wait_capacity;
+    size_t capacity = metrics->capacity, split_capacity = metrics->split_capacity;
 
     memset(metrics, 0, sizeof(*metrics));
     metrics->interval = interval; metrics->cpu = cpu; metrics->gpu = gpu; metrics->capacity = capacity;
     metrics->simulation = simulation; metrics->render = render; metrics->translation = translation;
     metrics->split_capacity = split_capacity;
     metrics->tick_plus = tick_plus;
-    metrics->thread_cpu = thread_cpu; metrics->process_cpu = process_cpu; metrics->clock_probe = clock_probe;
-    metrics->probe_capacity = probe_capacity;
-    metrics->gpu_wait = gpu_wait; metrics->worker_wait = worker_wait; metrics->cpu_active = cpu_active;
-    metrics->wait_capacity = wait_capacity;
     metrics->window_opened_tick = -1;
     metrics->refresh_hertz = refresh_hertz;
     metrics->footprint_first = metrics->footprint_last = metrics->footprint_peak = metrics->left_least = -1;
@@ -96,54 +87,6 @@ void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double int
     if (gpu >= 0.0) metrics->gpu_frames++;
     metrics->frames++;
     if (interval > 0.0) metrics->seconds += interval / 1000.0;
-}
-
-void benchmark_metrics_frame_probe(struct benchmark_metrics *metrics, double thread_cpu, double process_cpu,
-    double clock_probe) {
-    /* (only in step with the frames: a frame the run could not keep has no probe either) */
-    if (metrics->probe_frames + 1 != metrics->frames) return;
-    if (metrics->probe_frames == metrics->probe_capacity) {
-        size_t capacity = metrics->probe_capacity ? metrics->probe_capacity * 2 : 8192;
-        uint16_t *a = realloc(metrics->thread_cpu, capacity * sizeof(*a));
-        uint16_t *b = a ? realloc(metrics->process_cpu, capacity * sizeof(*b)) : NULL;
-        uint16_t *c = b ? realloc(metrics->clock_probe, capacity * sizeof(*c)) : NULL;
-
-        if (a) metrics->thread_cpu = a;
-        if (b) metrics->process_cpu = b;
-        if (!c) return;
-        metrics->clock_probe = c;
-        metrics->probe_capacity = capacity;
-    }
-    metrics->thread_cpu[metrics->probe_frames] = tenths(thread_cpu);
-    metrics->process_cpu[metrics->probe_frames] = tenths(process_cpu);
-    /* (tenths of a microsecond: the milliseconds' tenths of a thousandth) */
-    metrics->clock_probe[metrics->probe_frames] = tenths(clock_probe);
-    metrics->probe_frames++;
-}
-
-void benchmark_metrics_frame_waits(struct benchmark_metrics *metrics, double gpu_wait, double worker_wait) {
-    if (metrics->wait_frames + 1 != metrics->frames) return;
-    if (metrics->wait_frames == metrics->wait_capacity) {
-        size_t capacity = metrics->wait_capacity ? metrics->wait_capacity * 2 : 8192;
-        uint16_t *a = realloc(metrics->gpu_wait, capacity * sizeof(*a));
-        uint16_t *b = a ? realloc(metrics->worker_wait, capacity * sizeof(*b)) : NULL;
-        uint16_t *c = b ? realloc(metrics->cpu_active, capacity * sizeof(*c)) : NULL;
-
-        if (a) metrics->gpu_wait = a;
-        if (b) metrics->worker_wait = b;
-        if (!c) return;
-        metrics->cpu_active = c;
-        metrics->wait_capacity = capacity;
-    }
-    {
-        size_t frame = metrics->wait_frames;
-        int active = (int)metrics->cpu[frame] - (int)tenths(gpu_wait) - (int)tenths(worker_wait);
-
-        metrics->gpu_wait[frame] = tenths(gpu_wait);
-        metrics->worker_wait[frame] = tenths(worker_wait);
-        metrics->cpu_active[frame] = (uint16_t)(active > 0 ? active : 0);
-        metrics->wait_frames++;
-    }
 }
 
 void benchmark_metrics_sample(struct benchmark_metrics *metrics, long footprint, long left, int thermal) {
@@ -237,15 +180,6 @@ void benchmark_metrics_summarize(const struct benchmark_metrics *metrics, struct
     distribution(copy, metrics->frames, &summary->cpu);
     memcpy(copy, metrics->gpu, metrics->frames * sizeof(*copy));
     distribution(copy, metrics->frames, &summary->gpu);
-    if (metrics->wait_frames == metrics->frames) {
-        summary->wait_frames = metrics->wait_frames;
-        memcpy(copy, metrics->cpu_active, metrics->frames * sizeof(*copy));
-        distribution(copy, metrics->frames, &summary->cpu_active);
-        memcpy(copy, metrics->gpu_wait, metrics->frames * sizeof(*copy));
-        distribution(copy, metrics->frames, &summary->gpu_wait);
-        memcpy(copy, metrics->worker_wait, metrics->frames * sizeof(*copy));
-        distribution(copy, metrics->frames, &summary->worker_wait);
-    }
     free(copy);
     summary->split_frames = metrics->split_frames;
     if (!metrics->split_frames) return;
@@ -342,11 +276,6 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
     append_distribution(&text, "cpu_ms", &summary.cpu);
     append_distribution(&text, "gpu_ms", &summary.gpu);
     append(&text, "\"gpu_frames\":%zu,", summary.gpu_frames);
-    if (summary.wait_frames) {
-        append_distribution(&text, "cpu_active_ms", &summary.cpu_active);
-        append_distribution(&text, "gpu_wait_ms", &summary.gpu_wait);
-        append_distribution(&text, "worker_wait_ms", &summary.worker_wait);
-    } else append(&text, "\"cpu_active_ms\":null,\"gpu_wait_ms\":null,\"worker_wait_ms\":null,");
     if (summary.split_frames) {
         append_distribution(&text, "simulation_cpu_ms", &summary.simulation_cpu);
         append_distribution(&text, "render_cpu_ms", &summary.render_cpu);
@@ -386,23 +315,6 @@ char *benchmark_metrics_json(const struct benchmark_metrics *metrics) {
         append_frames(&text, "frame_simulation", metrics->simulation, metrics->split_frames);
         append(&text, ",");
         append_frames(&text, "frame_render", metrics->render, metrics->split_frames);
-    }
-    if (metrics->wait_frames == metrics->frames && metrics->frames) {
-        append(&text, ",");
-        append_frames(&text, "frame_cpu_active", metrics->cpu_active, metrics->wait_frames);
-        append(&text, ",");
-        append_frames(&text, "frame_gpu_wait", metrics->gpu_wait, metrics->wait_frames);
-        append(&text, ",");
-        append_frames(&text, "frame_worker_wait", metrics->worker_wait, metrics->wait_frames);
-    }
-    if (metrics->probe_frames) {
-        append(&text, ",\"frame_probe_encoding\":\"frame_thread_cpu and frame_process_cpu in tenths of a millisecond, "
-            "frame_clock_probe in tenths of a microsecond\",");
-        append_frames(&text, "frame_thread_cpu", metrics->thread_cpu, metrics->probe_frames);
-        append(&text, ",");
-        append_frames(&text, "frame_process_cpu", metrics->process_cpu, metrics->probe_frames);
-        append(&text, ",");
-        append_frames(&text, "frame_clock_probe", metrics->clock_probe, metrics->probe_frames);
     }
     if (text.failed) { free(text.bytes); return NULL; }
     return text.bytes;

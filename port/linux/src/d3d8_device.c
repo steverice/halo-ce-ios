@@ -93,15 +93,9 @@ of these is nothing. */
 #include "gpu_validate.h"
 #if HALO_RENDER_VALIDATION
 static struct gpu_validation_identity validation_draw;
-/* the game code that called: a guest address in the iOS guest */
-#ifdef HALO_ILP32
-#define VALIDATION_CALLER() halo_guest_address((unsigned long long)(unsigned long)__builtin_return_address(0))
-#else
-#define VALIDATION_CALLER() ((uint32_t)(unsigned long)__builtin_return_address(0))
-#endif
 /* at a D3D draw's or clear's entry: its kind and the game code that called it */
 #define VALIDATION_BEGIN(draw_kind) \
-	(validation_draw.kind = (draw_kind), validation_draw.caller = VALIDATION_CALLER())
+	(validation_draw.kind = (draw_kind), validation_draw.caller = (uint32_t)(unsigned long)__builtin_return_address(0))
 #define VALIDATION_VERTEX_SHADER(program, variant) \
 	(validation_draw.vertex_program = (uint32_t)(program)->id, validation_draw.vertex_variant = (uint32_t)(variant))
 #define VALIDATION_PIXEL_SHADER(entry) (validation_draw.pixel_key = (uint32_t)(entry)->hash)
@@ -227,15 +221,6 @@ Compositor's eyes (menus, loads, the mono layer), the last one a frame
 without them took: the theater picture's, which the mono presenter puts on
 the screen; 0 until one is known */
 static float screen_scale_mono[2];
-/* dynamic resolution (host_dynamic_resolution_lines, the design in
-agent-specs' dynamic-resolution design): while screen_dynamic, the mono
-screen's targets are allocated once at screen_scale_ceiling, the profile's
-render size, and the scene renders in their top left at screen_scale, which
-the planner lowers under load and raises again, between frames only. The
-display.native_hud layer stays on throughout, so the HUD and menus keep the
-display's own size and the picture's size never toggles their path. */
-static float screen_scale_ceiling[2] = { 1.0f, 1.0f };
-static int screen_dynamic;
 static long ui_offset;
 static int32_t screen_maximum_texture_size = 8192;
 #define UI_OFFSET ((int32_t)ui_offset)
@@ -358,15 +343,7 @@ static double render_scale_now(void)
 }
 #endif
 
-#ifdef HALO_ILP32
-static int dynamic_resolution_refused(void);
-#endif
-static void screen_targets_release(int pooled);
-
-/* ceiling: the scale the scene's targets are allocated at (scale itself but
-under dynamic resolution); dynamic: 1 while dynamic resolution renders the
-scene inside targets allocated at the ceiling */
-static void screen_mode_choose(long *width, float scale[2], float native[2], float ceiling[2], int *dynamic)
+static void screen_mode_choose(long *width, float scale[2], float native[2])
 {
 #ifdef HALO_ILP32
 	/* display.screen_width, or 0 for the display's shape, which the app
@@ -440,23 +417,6 @@ static void screen_mode_choose(long *width, float scale[2], float native[2], flo
 			native_pixels = pixels;
 		}
 	}
-	ceiling[0] = (float)pixels.width / (float)*width;
-	ceiling[1] = (float)pixels.height / (float)SCREEN_HEIGHT;
-	{
-		/* dynamic resolution: the planner's lines for the next frames, inside
-		targets allocated at these (the ceiling); 0 when it is off or refused */
-		/* A passing refusal (a menu, a benchmark's own lines, the companion
-		picture, a hand-set scale) keeps the pool and renders its ceiling,
-		so the targets are neither freed nor made again; only the renderer,
-		stereo, the native HUD and the rate map test turn it off */
-		int refused = dynamic_resolution_refused();
-		int lines = host_dynamic_resolution_lines(refused ? 0 : (int)pixels.height);
-
-		*dynamic = lines > 0 || refused == 1;
-		if (lines > 0 && lines < pixels.height)
-			pixels = halo_display_render_size(drawable_width, drawable_height, *width, requested_width, lines,
-				screen_maximum_texture_size);
-	}
 	scale[0] = (float)pixels.width / (float)*width;
 	scale[1] = (float)pixels.height / (float)SCREEN_HEIGHT;
 	native[0] = (float)native_pixels.width / (float)*width;
@@ -485,9 +445,6 @@ static void screen_mode_choose(long *width, float scale[2], float native[2], flo
 	}
 	native[0] = scale[0];
 	native[1] = scale[1];
-	ceiling[0] = scale[0];
-	ceiling[1] = scale[1];
-	*dynamic = 0;
 #endif
 }
 
@@ -518,7 +475,7 @@ long halo_screen_width(void)
 {
 	if (!screen_width)
 	{
-		screen_mode_choose(&screen_width, screen_scale, screen_scale_native, screen_scale_ceiling, &screen_dynamic);
+		screen_mode_choose(&screen_width, screen_scale, screen_scale_native);
 		screen_scale_taken();
 		platform_log("screen: %ldx%d drawn at %.0fx%.0f", screen_width, SCREEN_HEIGHT,
 			screen_width * screen_scale[0], SCREEN_HEIGHT * screen_scale[1]);
@@ -540,9 +497,6 @@ of the two ways (the screen effects' convolutions: rasterizer_xbox_screen_effect
 float halo_screen_scale(void)
 {
 	halo_screen_width();
-	/* (dynamic resolution: the ceiling's, so the passes' count never changes with the level) */
-	if (screen_dynamic)
-		return screen_scale_ceiling[0] > screen_scale_ceiling[1] ? screen_scale_ceiling[0] : screen_scale_ceiling[1];
 	return screen_scale[0] > screen_scale[1] ? screen_scale[0] : screen_scale[1];
 }
 
@@ -585,14 +539,13 @@ enum
 	_translation_profile_draw_indexed_vertices,
 	_translation_profile_end,
 	_translation_profile_clear,
-	_translation_profile_immediate_flush,
 	NUMBER_OF_TRANSLATION_PROFILE_NAMES,
 };
 
 static const char *const translation_profile_texts[NUMBER_OF_TRANSLATION_PROFILE_NAMES] =
 {
 	"d3d8_set_render_target", "d3d8_set_vertex_shader_constant", "d3d8_draw_vertices", "d3d8_draw_quad_ranges",
-	"d3d8_draw_indexed_vertices", "d3d8_end", "d3d8_clear", "d3d8_immediate_flush",
+	"d3d8_draw_indexed_vertices", "d3d8_end", "d3d8_clear",
 };
 static int translation_profile_ids[NUMBER_OF_TRANSLATION_PROFILE_NAMES];
 /* (registered once, by whichever thread calls first: the guest's C library has no pthread_once) */
@@ -965,9 +918,6 @@ static BOOL native_hud_active(void)
 			return FALSE;
 		native_hud_wanted = config_boolean("display.native_hud") && device_capabilities.upscale;
 	}
-	/* (dynamic resolution at a ceiling below the display keeps the layer on at the ceiling too; at the display's
-	own resolution, the scene and HUD share the pool's target while it renders the ceiling, and the layer comes on
-	only while the scene renders below it) */
 	if (!companion_active() && (!native_hud_wanted ||
 		(screen_scale_native[0] <= screen_scale[0] && screen_scale_native[1] <= screen_scale[1])))
 		return FALSE;
@@ -1175,9 +1125,8 @@ static void screen_scale_dense(float scale[2])
 	const struct halo_stereo_frame *stereo = halo_stereo_frame();
 	unsigned long width, height;
 
-	/* (dynamic resolution: the effect targets keep the ceiling's size) */
-	scale[0] = screen_dynamic ? screen_scale_ceiling[0] : screen_scale[0];
-	scale[1] = screen_dynamic ? screen_scale_ceiling[1] : screen_scale[1];
+	scale[0] = screen_scale[0];
+	scale[1] = screen_scale[1];
 	if (foveated_eye_allocation(&width, &height))
 	{
 		scale[0] *= (float)width / (float)stereo->eye_width;
@@ -1214,17 +1163,11 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 	static unsigned long read_at;
 	unsigned long revision = config_changes();
 
-	/* port: a level-load profile replaces the defaults before target allocation, and a map's workload context
-	(config_workload_set: [variable.display] in a device profile) is decided as it loads */
+	/* port: a level-load profile replaces the defaults before target allocation. */
 	if (shadow_size < 0 || read_at != revision)
 	{
-		long was = shadow_size;
-
-		shadow_size = config_scene_integer("display.shadow_map_size", CONFIG_SCENE_GAMEPLAY);
+		shadow_size = config_integer("display.shadow_map_size");
 		shadow_size = shadow_size < 128 ? 128 : shadow_size > 2048 ? 2048 : shadow_size;
-		/* (the targets of the size before are freed two seconds on, as the knob cycle's are) */
-		if (was >= 0 && was != shadow_size)
-			knob_release_frame = device.frame + 120;
 		effect_level = effect_resolution_level(config_string("display.effect_resolution"));
 		read_at = revision;
 	}
@@ -1273,22 +1216,6 @@ float halo_shadow_target_scale(void)
 
 	offscreen_target_scale(128, 128, D3DFMT_R5G6B5, scale);
 	return scale[0];
-}
-
-/* whether object shadows get the footprint blur (rasterizer_xbox_shadows.c): shadow maps larger than the game's 128
-texels, unless debug.shadow_blur is "xbox" (the game's taps at their fixed offsets, for comparison) */
-int halo_shadow_blur_footprint(void)
-{
-	static int game_blur = -1;
-	static unsigned long read_at;
-	unsigned long revision = config_changes();
-
-	if (game_blur < 0 || read_at != revision)
-	{
-		game_blur = !strcmp(config_string("debug.shadow_blur"), "xbox");
-		read_at = revision;
-	}
-	return !game_blur && halo_shadow_target_scale() > 1.0f;
 }
 
 static void recent_render_targets_forget(void);
@@ -1379,9 +1306,6 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 	/* a foveated eye's target: its eye (1 or 2) and allocated size */
 	unsigned char foveated_eye = 0;
 	unsigned long allocated_width = 0, allocated_height = 0;
-	/* dynamic resolution's pool: the mono screen's target allocated at the
-	ceiling, keyed on that allocation, with the scene inside it */
-	unsigned char pooled = 0;
 
 	if (!surface || !surface->Data)
 		return NULL;
@@ -1448,12 +1372,6 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 			allocated_width = (unsigned long)(width * scale[0] + 0.5f);
 			allocated_height = (unsigned long)(height * scale[1] + 0.5f);
 		}
-		else if (layer == HALO_STEREO_LAYER_MONO && screen_dynamic && !head_eyes_frame())
-		{
-			pooled = 1;
-			allocated_width = (unsigned long)(width * screen_scale_ceiling[0] + 0.5f);
-			allocated_height = (unsigned long)(height * screen_scale_ceiling[1] + 0.5f);
-		}
 		else if (layer == HALO_STEREO_LAYER_HUD || layer == HALO_STEREO_LAYER_RETICLE ||
 			layer == HALO_STEREO_LAYER_UI || layer >= HALO_STEREO_LAYER_HUD_GROUP)
 		{
@@ -1472,29 +1390,7 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 	{
 		if (entry->target.data != surface->Data || entry->target.width != width ||
 			entry->target.height != height || entry->target.depth != depth || entry->layer != layer ||
-			entry->target.foveated_eye != foveated_eye || entry->target.pooled != pooled)
-			continue;
-		/* dynamic resolution's: the same allocation at any level; the new
-		level's size is the scene's part of it */
-		if (pooled && entry->target.allocated_width == allocated_width &&
-			entry->target.allocated_height == allocated_height)
-		{
-			unsigned long content_width = (unsigned long)(width * scale[0] + 0.5f);
-			unsigned long content_height = (unsigned long)(height * scale[1] + 0.5f);
-
-			content_width = content_width > allocated_width ? allocated_width : content_width;
-			content_height = content_height > allocated_height ? allocated_height : content_height;
-			entry->target.scale[0] = scale[0];
-			entry->target.scale[1] = scale[1];
-			if (entry->target.gl_width != content_width || entry->target.gl_height != content_height)
-			{
-				entry->target.gl_width = content_width;
-				entry->target.gl_height = content_height;
-				gpu_texture_set_content(entry->target.texture, (uint32_t)content_width, (uint32_t)content_height);
-			}
-			return entry;
-		}
-		if (pooled)
+			entry->target.foveated_eye != foveated_eye)
 			continue;
 		/* a foveated eye's target is keyed on its allocation, not its scale:
 		the eased render quality changes the map's sizes from frame to frame,
@@ -1526,16 +1422,8 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 	entry->target.gl_width = (unsigned long)(width * scale[0] + 0.5f);
 	entry->target.gl_height = (unsigned long)(height * scale[1] + 0.5f);
 	entry->target.foveated_eye = foveated_eye;
-	entry->target.pooled = pooled;
-	if (pooled)
-	{
-		if (entry->target.gl_width > allocated_width)
-			entry->target.gl_width = allocated_width;
-		if (entry->target.gl_height > allocated_height)
-			entry->target.gl_height = allocated_height;
-	}
-	entry->target.allocated_width = foveated_eye || pooled ? allocated_width : entry->target.gl_width;
-	entry->target.allocated_height = foveated_eye || pooled ? allocated_height : entry->target.gl_height;
+	entry->target.allocated_width = foveated_eye ? allocated_width : entry->target.gl_width;
+	entry->target.allocated_height = foveated_eye ? allocated_height : entry->target.gl_height;
 	{
 		struct gpu_texture_description texture = { 0 };
 
@@ -1548,13 +1436,6 @@ static struct render_target_entry *render_target_get_layer(const D3DSurface *sur
 		texture.depth = 1;
 		texture.levels = 1;
 		entry->target.texture = gpu_texture_create(&texture);
-		if (pooled)
-		{
-			gpu_texture_set_content(entry->target.texture, (uint32_t)entry->target.gl_width,
-				(uint32_t)entry->target.gl_height);
-			platform_log("dynamic resolution: the screen's %s target allocated at %lux%lu", depth ? "depth" : "color",
-				allocated_width, allocated_height);
-		}
 		benchmark_observe_shadow_target(surface,entry);
 		/* the zoomed picture: its size against an eye's unfoveated one */
 		if (layer == HALO_STEREO_LAYER_ZOOM && !depth)
@@ -1722,51 +1603,6 @@ static unsigned long render_target_write_serial;
 
 /* the pixels per unit of the bound targets (render_target_get) */
 static float target_scale[2] = { 1.0f, 1.0f };
-
-/* the shadow blur page's tiles (rasterizer_xbox.c, rasterizer_shadow_blur_copy), each size units square at its
-origin, into the top left of its shadow's own blur target, all in one copy. The rectangles are the pixels the tiles'
-viewports cover at the page's scale (target_pixel), and each must be as large as its destination, which is drawn
-at the same scale: then the copy holds what blurring into the destination itself would have. 0 if one is not (a
-scale that does not divide evenly), and nothing is copied. */
-int halo_shadow_blur_copy(D3DSurface *page, int count, D3DSurface *const *destinations, const long *origins,
-	long size)
-{
-	struct render_target_entry *source, *targets[256];
-	struct gpu_texture_copy copies[256];
-	int index;
-
-	if (!device.gl_ready || count < 1 || count > 256 || !(source = render_target_get(page)) || !source->target.texture ||
-		source->target.depth || source->target.foveated_eye)
-		return 0;
-	for (index = 0; index < count; index++)
-	{
-		struct render_target_entry *target = render_target_get(destinations[index]);
-		int32_t x0 = (int32_t)floorf((float)origins[2 * index] * source->target.scale[0] + 0.5f);
-		int32_t y0 = (int32_t)floorf((float)origins[2 * index + 1] * source->target.scale[1] + 0.5f);
-		int32_t x1 = (int32_t)floorf((float)(origins[2 * index] + size) * source->target.scale[0] + 0.5f);
-		int32_t y1 = (int32_t)floorf((float)(origins[2 * index + 1] + size) * source->target.scale[1] + 0.5f);
-
-		if (!target || !target->target.texture || target->target.depth || target->target.foveated_eye ||
-			x0 < 0 || y0 < 0 || (unsigned long)x1 > source->target.allocated_width ||
-			(unsigned long)y1 > source->target.allocated_height ||
-			(unsigned long)(x1 - x0) != target->target.allocated_width ||
-			(unsigned long)(y1 - y0) != target->target.allocated_height)
-			return 0;
-		targets[index] = target;
-		copies[index].destination = target->target.texture;
-		copies[index].x = (uint32_t)x0;
-		copies[index].y = (uint32_t)y0;
-		copies[index].width = (uint32_t)(x1 - x0);
-		copies[index].height = (uint32_t)(y1 - y0);
-	}
-	gpu_texture_copy_rects(source->target.texture, copies, (uint32_t)count);
-	for (index = 0; index < count; index++)
-	{
-		targets[index]->last_rendered = device.frame + 1;
-		targets[index]->target.written = ++render_target_write_serial;
-	}
-	return 1;
-}
 
 /* tracked-controller aiming's reticle (halo_controller_draw_state), over
 present->reticle (the head-locked direction, halo_stereo_reticle): while a
@@ -2342,15 +2178,9 @@ static void anti_aliasing_pass(struct render_target_entry *scene)
 it draws into the back buffer until halo_render_scene_end is the scene, at
 the scene's size. Only a player's or the menu's own view (the primary
 target); a mirror's has its own target */
-/* the player views the frame drew, and the last presented frame's (dynamic resolution refuses split screen:
-its planner measures one view) */
-static int scene_views_now, scene_views_last;
-
 void halo_render_scene_begin(short rasterizer_target, long x0, long y0, long x1, long y1)
 {
 	native_scene = rasterizer_target == 0;
-	if (native_scene)
-		scene_views_now++;
 	native_scene_bounds[0] = x0;
 	native_scene_bounds[1] = y0;
 	native_scene_bounds[2] = x1;
@@ -2421,66 +2251,6 @@ static int rate_map_test(void)
 	return wanted && shader_dialect.msl && halo_stereo_frame()->eye_count == 0;
 }
 
-#ifdef HALO_ILP32
-int benchmark_suite_running(void);
-
-/* dynamic resolution's refusals (the design's 2.2): 0 none; 1 when the next
-frames' scene renders at the ceiling inside the pool, which stays; 2 when it
-renders in targets of its own size, as without dynamic resolution (it is off,
-or the frame cannot use the pool). The first refusal of each kind is said in
-the log. */
-static int dynamic_resolution_refused(void)
-{
-	const struct halo_stereo_frame *stereo = halo_stereo_frame();
-	static const char *said;
-	static int on = -1;
-	const char *why = NULL;
-
-	/* (off: nothing to refuse or say; asked once the renderer, and the device's profile, are up) */
-	if (on < 0 && device.gl_ready)
-		on = host_dynamic_resolution_lines(-1) > 0;
-	if (on <= 0)
-		return 2;
-	if (native_hud_wanted < 0 && device.gl_ready)
-		native_hud_wanted = config_boolean("display.native_hud") && device_capabilities.upscale;
-	if (!device.gl_ready)
-		why = "the renderer is not ready";
-	else if (!shader_dialect.msl)
-		why = "the renderer is not Metal";
-	else if (stereo->mode != HALO_STEREO_OFF || stereo->eye_count)
-		why = "a stereo frame";
-	else if (native_hud_wanted <= 0)
-		why = "display.native_hud is off or the renderer cannot upscale";
-	else if (rate_map_test())
-		why = "debug.rate_map_test";
-	if (why)
-	{
-		if (why != said)
-			platform_log("dynamic resolution: off: %s", why);
-		said = why;
-		return 2;
-	}
-	if (knob_render_lines > 0)
-		why = "debug.knob_cycle sets the lines";
-	/* (debug.dynamic_resolution_validate: a benchmark case's lines are the ceiling) */
-	else if ((benchmark_render_lines > 0 || benchmark_suite_running()) && !config_boolean("debug.dynamic_resolution_validate"))
-		why = "a benchmark sets the lines";
-	else if (render_scale_live >= 0.0)
-		why = "the render scale was changed by hand";
-	else if (scene_views_last > 1)
-		why = "split screen";
-	else if (companion_active())
-		why = "an external display's companion picture";
-	/* (in-engine cutscenes are rendered as gameplay is; the menus are not measured) */
-	else if (halo_scene_class() == CONFIG_SCENE_MENU)
-		why = "the menus";
-	if (why && why != said)
-		platform_log("dynamic resolution: the ceiling only: %s", why);
-	said = why;
-	return why != NULL;
-}
-#endif
-
 /* foveated eye passes this frame (halo_stereo_frame's foveated_width, from
 host_stereo_foveated_size): the size the eyes' screen-sized targets are
 allocated at, which their rate maps fill from the top left. Only on Metal,
@@ -2536,13 +2306,6 @@ static void metal_capabilities(struct gpu_capabilities *capabilities)
 static const char *shader_extension(const struct nv2a_dialect *dialect)
 {
 	return dialect->msl ? "metal" : "glsl";
-}
-
-/* whether the shadow blur pages' tiles become the shadows' second targets (Metal's views of them,
-gpu_metal_texture_copy_rects) rather than copies into targets of their own (rasterizer_xbox.c's memory budget) */
-int halo_shadow_blur_views(void)
-{
-	return shader_dialect.msl && !getenv("HALO_METAL_NO_TILE_VIEWS");
 }
 
 /* ---------- shader replay (debug.gpu_shader_replay)
@@ -2673,7 +2436,7 @@ static void gl_initialize(void)
 #ifdef HALO_ILP32
 	/* Select the real Retina drawable before allocating any screen targets. */
 	(void)halo_screen_width();
-	screen_mode_choose(&screen_width, screen_scale, screen_scale_native, screen_scale_ceiling, &screen_dynamic);
+	screen_mode_choose(&screen_width, screen_scale, screen_scale_native);
     /* The window's first drawable may have another aspect than the launch
        environment. Creation already allocated maximum-width surfaces; keep
        their descriptors in step with the newly selected logical width. */
@@ -2924,9 +2687,7 @@ agree for a whole frame. Returns the width the game draws. */
 long halo_screen_commit(void)
 {
 	long width;
-	float scale[2], native[2], ceiling[2];
-	int dynamic;
-	static unsigned long dynamic_changes, dynamic_logged_frame;
+	float scale[2], native[2];
 
 #ifdef HALO_ILP32
     host_external_commit(halo_external_pause_allowed());
@@ -2936,48 +2697,13 @@ long halo_screen_commit(void)
 		anti_aliasing_read();
 	if (!screen_width)
 		return halo_screen_width();
-	screen_mode_choose(&width, scale, native, ceiling, &dynamic);
+	screen_mode_choose(&width, scale, native);
 	if (!head_eyes_frame())
 	{
 		screen_scale_mono[0] = scale[0];
 		screen_scale_mono[1] = scale[1];
 	}
 	native_hud_commit(width, scale, native);
-	/* a level of dynamic resolution's, inside the same targets: counted, and
-	said once in 600 frames, not each time */
-	if (dynamic && screen_dynamic && width == screen_width && ceiling[0] == screen_scale_ceiling[0] &&
-		ceiling[1] == screen_scale_ceiling[1] && (scale[0] != screen_scale[0] || scale[1] != screen_scale[1]))
-	{
-		dynamic_changes++;
-		screen_scale[0] = scale[0];
-		screen_scale[1] = scale[1];
-		if (device.frame >= dynamic_logged_frame + 600)
-		{
-			platform_log("dynamic resolution: %lu changes; drawn at %.0fx%.0f of %.0fx%.0f", dynamic_changes,
-				width * scale[0], SCREEN_HEIGHT * scale[1], width * ceiling[0], SCREEN_HEIGHT * ceiling[1]);
-			dynamic_changes = 0;
-			dynamic_logged_frame = device.frame;
-		}
-		return screen_width;
-	}
-	if (dynamic != screen_dynamic || (dynamic && (ceiling[0] != screen_scale_ceiling[0] ||
-		ceiling[1] != screen_scale_ceiling[1])))
-	{
-		if (dynamic)
-			platform_log("dynamic resolution: on, the scene's targets at %.0fx%.0f, drawn at %.0fx%.0f",
-				width * ceiling[0], SCREEN_HEIGHT * ceiling[1], width * scale[0], SCREEN_HEIGHT * scale[1]);
-		else
-			platform_log("dynamic resolution: off for this scene");
-		/* the screen's targets of the other kind go: the pool replaces the
-		plain pair (made before it was known to be on), and the plain pair the
-		pool, so the two never both stay */
-		if (dynamic != screen_dynamic)
-			screen_targets_release(!dynamic);
-		screen_dynamic = dynamic;
-		screen_scale_ceiling[0] = ceiling[0];
-		screen_scale_ceiling[1] = ceiling[1];
-		recent_render_targets_forget();
-	}
 	if (width != screen_width || scale[0] != screen_scale[0] || scale[1] != screen_scale[1])
 	{
 		platform_log("screen: %ldx%d drawn at %.0fx%.0f", width, SCREEN_HEIGHT,
@@ -3004,8 +2730,7 @@ void halo_screen_commit_stereo_scale(void)
 {
 	const struct halo_stereo_frame *stereo = halo_stereo_frame();
 	long width;
-	float scale[2], native[2], ceiling[2];
-	int dynamic;
+	float scale[2], native[2];
 	/* what the scale depends on, to skip the work while it doesn't change */
 	static int32_t last_mode = -1, last_eye_count, last_width, last_height, last_foveated;
 	static double last_render_scale;
@@ -3021,7 +2746,7 @@ void halo_screen_commit_stereo_scale(void)
 	last_width = stereo->eye_width;
 	last_height = stereo->eye_height;
 	last_render_scale = render_scale_live;
-	screen_mode_choose(&width, scale, native, ceiling, &dynamic);
+	screen_mode_choose(&width, scale, native);
 	if (!head_eyes_frame())
 	{
 		screen_scale_mono[0] = scale[0];
@@ -3031,12 +2756,6 @@ void halo_screen_commit_stereo_scale(void)
 	{
 		screen_scale_native[0] = native[0];
 		screen_scale_native[1] = native[1];
-		/* (dynamic resolution is refused in stereo: its pool is not used) */
-		if (screen_dynamic && !dynamic)
-		{
-			screen_targets_release(1);
-			screen_dynamic = 0;
-		}
 	}
 	if (width == screen_width && (scale[0] != screen_scale[0] || scale[1] != screen_scale[1]))
 	{
@@ -4686,21 +4405,6 @@ static void stages_fill(struct nv2a_pixel_shader_key *key, float texture_scale[4
 			(texture_scale still takes the coordinates to the screen's) */
 			if (target && target->foveated_eye && handle == target->texture)
 				key->sampler_type[stage] = _xgpu_sampler_2d_foveated;
-			/* dynamic resolution's pool: the scene is the top left of the
-			allocation, so the coordinates shrink by content over allocation,
-			and the lookup stops at the content's outermost texel centers
-			(texture_scale's z and w), where the ceiling's target would have
-			clamped to its edge; a convolution reaching past the picture never
-			reads the stale texels beyond it */
-			else if (target && target->pooled && handle == target->texture && target->allocated_width &&
-				target->allocated_height)
-			{
-				texture_scale[stage][0] *= (float)target->gl_width / (float)target->allocated_width;
-				texture_scale[stage][1] *= (float)target->gl_height / (float)target->allocated_height;
-				texture_scale[stage][2] = ((float)target->gl_width - 0.5f) / (float)target->allocated_width;
-				texture_scale[stage][3] = ((float)target->gl_height - 0.5f) / (float)target->allocated_height;
-				key->sampler_type[stage] = _xgpu_sampler_2d_content;
-			}
 			foveation_audit_stage(stage, target, key->sampler_type[stage]);
 		}
 	}
@@ -5231,10 +4935,6 @@ void halo_immediate_flush(void)
 
 	if (!halo_immediate_pending)
 		return;
-#ifdef HALO_PROFILE
-	/* (a held draw made by whichever call comes next: it counts here, inside that call's own time) */
-	TRANSLATION_PROFILED_DECLARATION(immediate_flush);
-#endif
 	/* (the calls below are gpu_ calls: they must not find a draw held) */
 	halo_immediate_pending = 0;
 	if (!immediate_batch.index_count)
@@ -6371,7 +6071,7 @@ void WINAPI D3DDevice_Clear(DWORD count, CONST D3DRECT *rectangles, DWORD flags,
 #if HALO_RENDER_VALIDATION
 	{
 		struct gpu_validation_identity identity = { GPU_VALIDATION_DRAW_CLEAR, 0, 0, 0,
-			VALIDATION_CALLER(), (uint32_t)device.frame };
+			(uint32_t)(unsigned long)__builtin_return_address(0), (uint32_t)device.frame };
 
 		gpu_validation_identity(&identity);
 	}
@@ -6388,28 +6088,6 @@ static void write_screenshot_channel(struct render_target_entry *target, const c
 static void write_screenshot(struct render_target_entry *target, const char *suffix)
 {
 	write_screenshot_channel(target, suffix, 0);
-}
-
-/* a target's picture, gl_width x gl_height texels of 4 bytes, rows from the
-top, into pixels (gpu_texture_read); dynamic resolution's pooled targets are
-read whole and their top left kept */
-static uint32_t target_read(const struct render_target_entry *target, void *pixels, uint32_t size)
-{
-	unsigned long width = target->target.gl_width, height = target->target.gl_height, row;
-	unsigned long allocated = target->target.allocated_width;
-	unsigned char *whole;
-	uint32_t ok;
-
-	if (!target->target.pooled || (allocated == width && target->target.allocated_height == height))
-		return gpu_texture_read(target->target.texture, pixels, size);
-	if (size < width * height * 4)
-		return 0;
-	whole = malloc(allocated * target->target.allocated_height * 4);
-	ok = whole && gpu_texture_read(target->target.texture, whole, (uint32_t)(allocated * target->target.allocated_height * 4));
-	for (row = 0; ok && row < height; row++)
-		memcpy((unsigned char *)pixels + row * width * 4, whole + row * allocated * 4, width * 4);
-	free(whole);
-	return ok;
 }
 
 /* a screenshot's BGRA pixels, rows from the top, as directory/frameNNNNN<suffix>.png */
@@ -6436,7 +6114,7 @@ static void write_screenshot_channel(struct render_target_entry *target, const c
 	if (!directory)
 		return;
 	pixels = malloc(image_size);
-	if (!target_read(target, pixels, (uint32_t)image_size))
+	if (!gpu_texture_read(target->target.texture, pixels, (uint32_t)image_size))
 	{
 		free(pixels);
 		return;
@@ -6472,7 +6150,7 @@ static void write_window_screenshot(struct render_target_entry *target)
 		return;
 	picture = malloc(image_size);
 	pixels = malloc(image_size);
-	if (!picture || !pixels || !target_read(target, picture, (uint32_t)image_size))
+	if (!picture || !pixels || !gpu_texture_read(target->target.texture, picture, (uint32_t)image_size))
 	{
 		free(picture);
 		free(pixels);
@@ -6558,8 +6236,8 @@ static void write_cutscene_screenshot(struct render_target_entry *target, struct
 	if (hud)
 		hud_pixels = malloc(hud_width * hud_height * 4);
 	if (!picture || !pixels || !small || !pass || (hud && !hud_pixels) ||
-		!target_read(target, picture, (uint32_t)(width * height * 4)) ||
-		(hud && !target_read(hud, hud_pixels, (uint32_t)(hud_width * hud_height * 4))))
+		!gpu_texture_read(target->target.texture, picture, (uint32_t)(width * height * 4)) ||
+		(hud && !gpu_texture_read(hud->target.texture, hud_pixels, (uint32_t)(hud_width * hud_height * 4))))
 	{
 		free(picture);
 		free(pixels);
@@ -6686,7 +6364,7 @@ static float *depth_read(struct render_target_entry *target)
 	uint32_t size = (uint32_t)(target->target.gl_width * target->target.gl_height * 4);
 	float *depth = malloc(size);
 
-	if (depth && !target_read(target, depth, size))
+	if (depth && !gpu_texture_read(target->target.texture, depth, size))
 	{
 		free(depth);
 		depth = NULL;
@@ -6782,7 +6460,7 @@ static void hud_target_check(struct render_target_entry *target, const char *nam
 	long margin = (long)ceilf(4.0f * target->target.scale[1]);
 	float scale_x = target->target.scale[0], scale_y = target->target.scale[1];
 
-	if (!pixels || !target_read(target, pixels, size))
+	if (!pixels || !gpu_texture_read(target->target.texture, pixels, size))
 	{
 		free(pixels);
 		return;
@@ -6888,34 +6566,6 @@ static void stereo_targets_release(void)
 	}
 	if (freed)
 		platform_log("stereo: stereo stopped; freed %lu eye and HUD targets (%lu MB)", freed, bytes >> 20);
-}
-
-/* dynamic resolution: the mono screen's color and depth targets of one kind,
-pooled or plain, freed when the pool turns on or off (the backend holds a
-texture until the frames using it are done) */
-static void screen_targets_release(int pooled)
-{
-	struct render_target_entry **link = &render_targets;
-	unsigned long freed = 0;
-
-	recent_render_targets_forget();
-	while (*link)
-	{
-		struct render_target_entry *entry = *link;
-
-		if (entry->layer != HALO_STEREO_LAYER_MONO || entry->target.foveated_eye || entry->target.pooled != pooled ||
-			entry->target.height != SCREEN_HEIGHT ||
-			(entry->target.data != device.back_buffer.Data && entry->target.data != device.depth_buffer.Data))
-		{
-			link = &entry->next;
-			continue;
-		}
-		*link = entry->next;
-		render_target_entry_free(entry);
-		freed++;
-	}
-	if (freed)
-		platform_log("dynamic resolution: freed %lu %s screen targets", freed, pooled ? "pooled" : "plain");
 }
 
 /* debug.knob_cycle: the shadow, effect and mirror targets (128x128 and 320x240) whose size is not the one in force
@@ -7072,8 +6722,6 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 	host_frame_cpu_phase(19, (int)perf_draws);
 #endif
 	perf_draws = 0;
-	scene_views_last = scene_views_now;
-	scene_views_now = 0;
 #ifdef HALO_ILP32
 	/* Fixed context copies only when settings or output class change. */
 	{
@@ -7378,10 +7026,7 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		knob_targets_release();
 	device.frame++;
 	input_replay_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
-	/* (dynamic resolution: the run's size is its ceiling; the lines per frame are
-	the report's dynamic_resolution, host_benchmark.m) */
-	benchmark_suite_frame(lroundf(screen_width * (screen_dynamic ? screen_scale_ceiling : screen_scale)[0]),
-		lroundf(SCREEN_HEIGHT * (screen_dynamic ? screen_scale_ceiling : screen_scale)[1]));
+	benchmark_suite_frame(lroundf(screen_width * screen_scale[0]), lroundf(SCREEN_HEIGHT * screen_scale[1]));
 	/* debug.fixed_timestep: a frame ends once the workers are idle */
 	platform_quiescence_wait();
 	platform_clock_frame();

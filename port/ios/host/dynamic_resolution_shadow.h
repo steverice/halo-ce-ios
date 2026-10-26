@@ -1,25 +1,13 @@
-/* The planner consumes actual levels. In shadow mode suggested levels never
- * become measurements: without actuation, recovery and clock behavior are
- * predictions. With actuation (host_dynamic_resolution_lines) each frame is
- * tagged with the level it was rendered at, which may trail the plan's. */
+/* The shadow planner consumes actual levels. Suggested levels never become
+ * measurements: without actuation, recovery and clock behavior are predictions. */
 #pragma once
 #include "dynamic_resolution.h"
 #include "game_perf.h"
-#include <stdlib.h>
 struct dynamic_resolution_shadow {
     struct dynamic_resolution plan;
     int width, height, floor;
     unsigned pending_ignore;
-    int actuate;
 };
-/* the level whose lines are nearest to the frame's actual lines */
-static inline int dynamic_resolution_shadow_level(const struct dynamic_resolution *plan, int lines)
-{
-    int best = 0;
-    for (int i = 1; i < plan->levels; i++)
-        if (abs(plan->lines[i] - lines) < abs(plan->lines[best] - lines)) best = i;
-    return best;
-}
 static inline void dynamic_resolution_shadow_frame(struct dynamic_resolution_shadow *shadow,
     game_perf_frame *value, int width)
 {
@@ -38,9 +26,8 @@ static inline void dynamic_resolution_shadow_frame(struct dynamic_resolution_sha
     if ((d->available & (2|8)) != (2|8) || (value->flags & GAME_PERF_PRESENT_FAILED)) return;
     struct dynamic_resolution_frame frame = {0};
     frame.frame_id = value->frame_id;
-    /* Shadow mode always renders the ceiling: preserve this tag after virtual
-     * drops. Actuation renders the frame's actual lines. */
-    frame.level = shadow->actuate ? dynamic_resolution_shadow_level(&shadow->plan, (int)d->actual_lines) : 0;
+    /* Phase 2 always renders the ceiling. Preserve this tag after virtual drops. */
+    frame.level = 0;
     frame.elapsed = d->presentation_us / 1e6;
     frame.scene = d->scene_us / 1e6; frame.upscale = d->upscale_us / 1e6; frame.hud = d->hud_us / 1e6;
     frame.cpu = value->cpu_us == GAME_PERF_UNAVAILABLE ? INFINITY : value->cpu_us / 1e6;

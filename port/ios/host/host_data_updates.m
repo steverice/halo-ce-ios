@@ -141,60 +141,16 @@ static void pruneCompatibilityRoots(NSString *root)
     for (NSUInteger i = 1; i < old.count; i++) [NSFileManager.defaultManager removeItemAtPath:old[i][@"path"] error:NULL];
 }
 
-/* Probes point these at a temporary folder and their own key; the app leaves them nil. */
-static NSString *dataPackCacheOverride, *dataPackChannelOverride;
-static NSData *dataPackKeyOverride;
 static HostDataPackStore *store(NSString *kind, NSString *bundled, NSString *compatibility, HostPackValidator validator)
 {
     NSBundle *bundle = NSBundle.mainBundle;
-    NSString *channel = dataPackChannelOverride ?: [bundle objectForInfoDictionaryKey:@"HaloDataPackChannel"];
+    NSString *channel = [bundle objectForInfoDictionaryKey:@"HaloDataPackChannel"];
     if (![channel isEqual:@"tester"] && ![channel isEqual:@"stable"]) channel = @"stable";
-    NSData *key = dataPackKeyOverride ?: publicKey([bundle objectForInfoDictionaryKey:@"HaloDataPackPublicKey"]);
-    NSString *cache = dataPackCacheOverride ?: NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
+    NSData *key = publicKey([bundle objectForInfoDictionaryKey:@"HaloDataPackPublicKey"]);
+    NSString *cache = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
     NSString *root = [[[[cache stringByAppendingPathComponent:@"visr-data-packs"] stringByAppendingPathComponent:kind] stringByAppendingPathComponent:channel] stringByAppendingPathComponent:digest([compatibility dataUsingEncoding:NSUTF8StringEncoding])];
     pruneCompatibilityRoots(root);
     return [[HostDataPackStore alloc] initWithRoot:root bundled:bundled kind:kind channel:channel publicKey:key compatibility:compatibility validator:validator];
-}
-
-/* This generation's profile store for device (docs/data-packs.md, "Profile feed generations"). Its shards bind to
-   HOST_PROFILE_FEED_DOMAIN, so a cached shard of another generation (the device-profiles-1 shards 0.4.2 to 0.5.1
-   read) lives under another root and is never selected. A shard older than the bundled profiles is refused when it
-   arrives and when a cached one is loaded, so older profiles never mask the bundled ones: a lower revision, or the
-   same revision stamped from other sources. Without a bundled revision every shard counts as older. */
-static BOOL profileShardOlder(long long revision, const char *sha256, long long bundled, NSString *bundledSHA256)
-{
-    return bundled <= 0 || revision < bundled || (revision == bundled && ![@(sha256) isEqualToString:bundledSHA256]);
-}
-static HostDataPackStore *profileStore(NSString *bundled, struct host_device device)
-{
-    char key[192];
-    BOOL identified = host_profile_device_key(&device, key, sizeof(key));
-    NSString *compatibility = [@HOST_PROFILE_FEED_DOMAIN ":" stringByAppendingString:identified ? @(key) : @"unidentified"];
-    char bundledText[65];
-    long long bundledRevision = host_profile_revision_read(bundled.fileSystemRepresentation, bundledText);
-    NSString *bundledSHA256 = @(bundledText);
-    if (bundledRevision <= 0)
-        host_logf(HOST_LOG_WARN, "data-packs: the bundled profiles have no valid revision; profile downloads stay off");
-    HostDataPackStore *result = store(@"profiles", bundled, compatibility, ^BOOL(NSString *folder, NSError **error) {
-        char sha256[65];
-        BOOL valid = identified && host_profile_validate_feed_folder(folder.fileSystemRepresentation, &device, HOST_PROFILE_FEED_GENERATION, NULL);
-        long long revision = valid ? host_profile_revision_read(folder.fileSystemRepresentation, sha256) : 0;
-        if (valid && profileShardOlder(revision, sha256, bundledRevision, bundledSHA256)) {
-            host_logf(HOST_LOG_INFO, "data-packs: cached profiles (revision %lld) are older than the bundled ones (revision %lld); using the bundled profiles", revision, bundledRevision);
-            valid = NO;
-        }
-        if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Invalid profile snapshot"}];
-        return valid;
-    });
-    result.supersededCheck = ^BOOL(NSDictionary<NSString *, NSData *> *files) {
-        NSData *file = files[@"hardware/revision.toml"]; char sha256[65];
-        long long revision = file ? host_profile_revision_parse(file.bytes, file.length, sha256) : 0;
-        // A missing or malformed revision is the validator's to refuse, unless nothing can be newer than the bundle.
-        BOOL older = (revision > 0 || bundledRevision <= 0) && profileShardOlder(revision, sha256, bundledRevision, bundledSHA256);
-        if (older) host_logf(HOST_LOG_INFO, "data-packs: the served profiles (revision %lld) are older than the bundled ones (revision %lld); using the bundled profiles", revision, bundledRevision);
-        return older;
-    };
-    return result;
 }
 
 static NSURL *profileFeedURL(NSString *base, const struct host_device *device)
@@ -240,7 +196,12 @@ static void initializeLegacy(void)
         struct host_device device; char deviceKey[192];
         host_device_identify(&device);
         BOOL identified = host_profile_device_key(&device,deviceKey,sizeof(deviceKey));
-        profiles = profileStore(bundledProfiles, device);
+        NSString *profileCompatibility = identified ? [@"device-profiles-1:" stringByAppendingString:@(deviceKey)] : @"device-profiles-1:unidentified";
+        profiles = store(@"profiles", bundledProfiles, profileCompatibility, ^BOOL(NSString *folder, NSError **error) {
+            BOOL valid = identified && host_profile_validate_device_folder(folder.fileSystemRepresentation, &device, NULL);
+            if (!valid && error) *error = [NSError errorWithDomain:@"VISRDataUpdates" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Invalid profile snapshot"}];
+            return valid;
+        });
         recordings = store(@"recordings", bundledRecordings, @"benchmark-catalog-1:" HALO_GUEST_SHA256, ^BOOL(NSString *folder, NSError **error) {
             BOOL valid = host_recording_pack_validate(folder.fileSystemRepresentation, NULL) &&
                 host_benchmark_catalog_validate_folder(folder, error);
@@ -421,12 +382,10 @@ static void refreshMenuKinds(BOOL profile, BOOL recording)
                     // The feed has no profile for this model (the publisher shards by model): its bundled profiles
                     // are the best there is, so they do not hold the benchmark back.
                     BOOL unpublished = profiles.lastFeedStatus == 404;
-                    // The feed's profiles are older than the bundled ones, which are then the best there is too.
-                    BOOL superseded = profiles.lastFeedSuperseded;
                     BOOL bundled;
                     @synchronized(selectionLock()) {
                         bundled = !profileIdentity || [profileIdentity[@"bundled"] boolValue];
-                        profileReady = !bundled || unpublished || superseded;
+                        profileReady = !bundled || unpublished;
                         profileLoading = NO;
                     }
                     if (bundled && unpublished && !profileUnpublishedLogged) {
@@ -499,7 +458,10 @@ static void initializeMenu(struct host_device device)
     menuProfileURL = key.length == 32 && identified ? profileFeedURL([NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloProfileFeedURL"], &device) : nil;
     NSString *recordingURL = [NSBundle.mainBundle objectForInfoDictionaryKey:@"HaloRecordingFeedURL"];
     menuRecordingURL = key.length == 32 && recordingURL.length ? [NSURL URLWithString:recordingURL] : nil;
-    profiles = profileStore(bundledProfiles, device);
+    NSString *compatibility = identified ? [@"device-profiles-1:" stringByAppendingString:@(deviceKey)] : @"device-profiles-1:unidentified";
+    profiles = store(@"profiles", bundledProfiles, compatibility, ^BOOL(NSString *folder, NSError **error) {
+        (void)error; return identified && host_profile_validate_device_folder(folder.fileSystemRepresentation, &device, NULL);
+    });
     observeProfileStaging();
     NSDictionary *profile = [profiles menuSnapshot];
     NSString *selectedProfile = publishMenuSnapshot(YES, profile);

@@ -94,10 +94,4 @@ platform layer includes the XDK headers itself, via platform.h. */
 
 #include <stddef.h>
 
-/* ---------- native addresses in the iOS guest (halo_guest_address) */
-
-#ifdef HALO_ILP32
-#include "../../runtime/include/halo_guest_native.h"
-#endif
-
 #endif /* __HALO_LINUX_PREFIX_H */

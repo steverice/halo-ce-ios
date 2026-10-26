@@ -46,10 +46,10 @@ int main(void)
 
 	/* the joinable versions: this build's, and the older ones back to the oldest joinable */
 	assert(HALO_PORT_NETWORK_VERSION == 38 && HALO_PORT_NETWORK_OLDEST_JOINABLE == 29);
-	assert(halo_network_joinable(38) && halo_network_joinable(36) && halo_network_joinable(34) &&
+	assert(halo_network_joinable(39) && halo_network_joinable(38) && halo_network_joinable(36) && halo_network_joinable(34) &&
 		halo_network_joinable(32) && halo_network_joinable(29));
 	assert(!halo_network_joinable(28) && !halo_network_joinable(33) && !halo_network_joinable(37) &&
-		!halo_network_joinable(39) && !halo_network_joinable(0) &&
+		!halo_network_joinable(40) && !halo_network_joinable(0) &&
 		!halo_network_joinable(-1) && !halo_network_joinable(11));
 
 	/* the answer: the first, second and last two games are offered; locked, unverified, co-op, short-invite and

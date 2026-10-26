@@ -25,12 +25,8 @@ void host_logf(int priority, const char *format, ...) __attribute__((format(prin
 void host_exit(int code) __attribute__((noreturn));
 int host_errno(void);
 
-/* logs, shows the message to the player and terminates: for a stop the player
-should read (no game data, a device that cannot run the game) */
+/* logs, shows the message to the player and terminates */
 void host_fatal(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));
-/* a bug: logs the message and the stack, its guest frames named, then crashes
-natively, the message packed into the crash report's registers (host_crash.c) */
-void host_crash(const char *format, ...) __attribute__((format(printf, 1, 2), noreturn));
 
 /* ---------- guest memory (host_memory.c)
 
@@ -40,8 +36,6 @@ other guest memory from that arena. Native pointers remain 64-bit. */
 
 /* reserves the fixed ranges; returns 0 on success */
 int host_memory_initialize(uint32_t image_base, uint32_t image_size);
-/* Reserves the arena before main, while the address space is emptiest; host_memory_initialize adopts it. */
-void host_memory_reserve_early(uint32_t image_base, uint32_t image_size);
 /* page-granular allocations within the guest arena; NULL on failure */
 void *host_low_map(size_t size, int protection);
 void host_low_unmap(void *address, size_t size);
