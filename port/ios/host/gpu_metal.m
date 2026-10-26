@@ -1343,10 +1343,11 @@ static void gpu_metal_texture_copy_rects(gpu_texture source, const struct gpu_te
 					source, copy->destination);
 				continue;
 			}
-			/* a view: of a destination the rectangle's size, at an offset the buffer allows */
+			/* a view: of a destination the rectangle's size, at an offset the buffer allows (not of a texture that is
+			itself the linear source of views) */
 			if (views && copy->width == to->description.width && copy->height == to->description.height &&
 				to->description.format == GPU_FORMAT_BGRA8 && to->levels == 1 && !to->description.foveated_eye &&
-				alignment && offset % alignment == 0)
+				!to->linear_buffer && alignment && offset % alignment == 0)
 			{
 				if (to->view_parent != from->texture || to->view_offset != offset)
 				{
