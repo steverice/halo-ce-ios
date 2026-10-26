@@ -479,6 +479,13 @@ def preprocess_flags():
                 skip = True
             elif word in ("-MMD", "-S") or word == "-DHALO_PROFILE" or word.startswith(("-flto", "-fprofile-use")):
                 continue
+            # (-march=native names this computer's CPU, such as 'apple-m2', which the game's i686 target cannot have;
+            # preprocessing does not depend on it)
+            elif word == "-march=native":
+                continue
+            # (macOS has no Linux C library: the same 32-bit x86 target, against the macOS SDK, stands in)
+            elif sys.platform == "darwin" and word == "--target=i686-linux-gnu":
+                kept.append("--target=i686-apple-darwin")
             elif word.endswith(".c") and not word.startswith("-"):
                 continue
             elif word.startswith(("build/", "build\\")):
@@ -496,6 +503,12 @@ def preprocess_flags():
     }
     if apple_guest():
         flag_sets["runtime"] = flags(f"{objects}/{APPLE_RUNTIME}guest_gpu.o")
+    # (a forced include may be a generated header that only a link or a compile has made; make the missing ones)
+    generated = sorted({word for words in flag_sets.values() for word in words
+                        if word.startswith(str(ROOT / "build")) and word.endswith(".h") and not Path(word).exists()})
+    if generated:
+        made = subprocess.run(["ninja", *(os.path.relpath(word, ROOT).replace("\\", "/") for word in generated)], cwd=ROOT, capture_output=True, text=True)
+        assert made.returncode == 0, made.stdout[-1000:] + made.stderr[-1000:]
     # (only a missing 32-bit C library is "no build here"; any other error is a wrong command, which must not hide)
     probe = subprocess.run([preprocessor(), *flag_sets["game"], "-E", "-P", "-x", "c", "-"], cwd=ROOT,
                            input="#include <stddef.h>\n#include <stdio.h>\n",
