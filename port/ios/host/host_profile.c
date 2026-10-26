@@ -867,7 +867,10 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 	return 1;
 }
 
-static int profile_validate_folder(const char *folder, const struct host_device *device, void (*log_line)(const char *))
+/* revision: 0 refuses hardware/revision.toml (a generation-1 shard), 1 allows it (the repository and bundled
+   folders), 2 requires it (a generation-2 shard); whenever present it must parse. */
+static int profile_validate_folder(const char *folder, const struct host_device *device, int revision,
+	void (*log_line)(const char *))
 {
 	enum { LIMIT = 128 };
 	toml_result_t *tables = calloc(LIMIT, sizeof(*tables));
@@ -894,13 +897,19 @@ static int profile_validate_folder(const char *folder, const struct host_device 
 			if (!pack_regular(path, 1)) goto done;
 			DIR *hardware = opendir(path); struct dirent *item;
 			if (!hardware) goto done;
-			int only_catalog = 1, catalogs = 0;
+			int only_catalog = 1, catalogs = 0, revisions = 0;
 			while ((item = readdir(hardware)))
 			{
 				if (!strcmp(item->d_name, ".") || !strcmp(item->d_name, "..")) continue;
-				if (strcmp(item->d_name, "catalog.toml")) only_catalog = 0; else catalogs++;
+				if (revision && !strcmp(item->d_name, "revision.toml")) revisions++;
+				else if (strcmp(item->d_name, "catalog.toml")) only_catalog = 0; else catalogs++;
 			}
 			closedir(hardware);
+			if ((revisions || revision == 2) && host_profile_revision_read(folder, NULL) <= 0)
+			{
+				profile_logf(&log, "profile update: hardware/revision.toml is missing or malformed");
+				goto done;
+			}
 			if (!profile_path_join(path, sizeof(path), folder, "hardware/catalog.toml"))
 			{
 				profile_logf(&log, "profile update: path too long for validation buffer");
@@ -966,11 +975,16 @@ done:
 
 int host_profile_validate_folder(const char *folder, void (*log_line)(const char *))
 {
-    return profile_validate_folder(folder, NULL, log_line);
+    return profile_validate_folder(folder, NULL, 1, log_line);
+}
+int host_profile_validate_feed_folder(const char *folder, const struct host_device *device, int generation,
+	void (*log_line)(const char *))
+{
+    char key[192];
+    if (!device || (generation != 1 && generation != 2) || !host_profile_device_key(device, key, sizeof(key))) return 0;
+    return profile_validate_folder(folder, device, generation == 2 ? 2 : 0, log_line);
 }
 int host_profile_validate_device_folder(const char *folder, const struct host_device *device, void (*log_line)(const char *))
 {
-    char key[192];
-    if (!device || !host_profile_device_key(device, key, sizeof(key))) return 0;
-    return profile_validate_folder(folder, device, log_line);
+    return host_profile_validate_feed_folder(folder, device, 1, log_line);
 }

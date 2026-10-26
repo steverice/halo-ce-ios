@@ -222,3 +222,5 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | `debug.dynamic_resolution_shadow` | boolean | `false` | gameplay | With the Metal renderer, log and record the dynamic resolution planner's choices without changing the rendered resolution. |
 
 <!-- END GENERATED SETTINGS profile -->
+
+After changing a profile or `hardware/catalog.toml`, run `python3 tools/profile_revision.py --bump`. The revision orders signed profile downloads against the profiles an app bundles ([profile revisions](../docs/data-packs.md#profile-revisions)).
