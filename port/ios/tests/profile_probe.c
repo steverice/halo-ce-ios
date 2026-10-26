@@ -414,6 +414,23 @@ static void check_unprofiled_models(const char *shipped)
 	/* iPad Air 5 (M1) shares the measured iPad Pro chip. */
 	profile = resolve_model(shipped, "ios", "iPad13,16", 7, 7600, 2360, 1640, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml"));
+	/* Upscaled textures on Apple TVs (Steve, 2026-10-25): on for the 4K 3rd generation and anything newer, off for
+	   the HD, the 4K 1st generation and the 4K 2nd generation, whose value is the Apple TV class's. */
+	profile = resolve_model(shipped, "tvos", "AppleTV14,1", 8, 4096, 3840, 2160, 60);
+	assert(!profile.inherited && !strcmp(profile.model_file, "apple-tv-4k-3rd.toml") && has(&profile, "display.upscaled_textures", "true"));
+	profile = resolve_model(shipped, "tvos", "AppleTV16,1", 10, 8192, 3840, 2160, 60);
+	assert(!strcmp(profile.model_file, "apple-tv-4k-3rd.toml") && has(&profile, "display.upscaled_textures", "true") &&
+		strstr(logged, "and_newer apple-tv-4k-3rd.toml: AppleTV16,1"));
+	profile = resolve_model(shipped, "tvos", "AppleTV11,1", 5, 3072, 3840, 2160, 60);
+	assert(strcmp(profile.model_file, "apple-tv-4k-3rd.toml") && has(&profile, "display.upscaled_textures", "false"));
+	profile = resolve_model(shipped, "tvos", "AppleTV6,2", 3, 3072, 3840, 2160, 60);
+	assert(!strcmp(profile.model_file, "apple-tv-4k-1st.toml") && has(&profile, "display.upscaled_textures", "false"));
+	profile = resolve_model(shipped, "tvos", "AppleTV5,3", 2, 2048, 1920, 1080, 60);
+	assert(!strcmp(profile.model_file, "apple-tv-hd.toml") && has(&profile, "display.upscaled_textures", "false"));
+	/* iPads that inherit the A10X profile (the A12 iPad Air 3) keep the game's default: the A10X itself is off only
+	   through the Neural Engine check, so no profile turns an A12 off */
+	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
+	assert(!has(&profile, "display.upscaled_textures", "false"));
 	/* A later iPad generation: the M1 iPad Pro's and_newer rule. */
 	profile = resolve_model(shipped, "ios", "iPad19,1", 11, 16000, 2420, 1668, 120);
 	assert(!profile.inherited && !strcmp(profile.model_file, "ipad-pro-m1.toml") &&

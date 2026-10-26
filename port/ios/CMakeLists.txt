@@ -201,10 +201,11 @@ endif()
 target_compile_features(VISR PRIVATE cxx_std_14)
 target_link_libraries(VISR PRIVATE halo_astcenc)
 # Compile the CC0 model on the build host; inference never compiles a package on the device.
-# tvOS and native macOS do not run the phase-2 generator, but share its unavailable-service behavior.
+# The native macOS app does not run the generator, but shares its unavailable-service behavior. tvOS bundles the
+# model: Apple TVs whose profile turns upscaled textures on (the 4K 3rd generation and newer) make them.
 target_sources(VISR PRIVATE host/texture_upscale_model.m)
 target_link_libraries(VISR PRIVATE "-framework CoreML")
-if(NOT HALO_TVOS AND NOT HALO_NATIVE_MAC)
+if(NOT HALO_NATIVE_MAC)
     set(HALO_UPSCALE_MODEL_PACKAGE "${ROOT}/port/assets/models/S4g.mlpackage")
     set(HALO_UPSCALE_MODEL_COMPILED "${CMAKE_CURRENT_BINARY_DIR}/models/S4g.mlmodelc")
     file(GLOB_RECURSE HALO_UPSCALE_MODEL_INPUTS CONFIGURE_DEPENDS "${HALO_UPSCALE_MODEL_PACKAGE}/*")

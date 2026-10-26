@@ -13,7 +13,6 @@ platform = "ios"
 models = ["iPad6,7"]
 
 [display]
-upscaled_textures = false
 frame_rate = "30"
 render_height = 720
 shadow_map_size = 256
@@ -22,10 +21,6 @@ model_lod = "auto"
 
 [network]
 player_capacity = 8
-
-[evidence."display.upscaled_textures"]
-basis = "assumed"
-why = "The A9X has no Neural Engine that Core ML can use, and upscaled textures are made only on one (a GPU fallback was ruled out). The switch stays off so the Settings app says so."
 
 [evidence."display.frame_rate"]
 basis = "measured"
