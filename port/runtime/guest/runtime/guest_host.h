@@ -106,6 +106,8 @@ int host_benchmark_offscreen_request(int setting, int suite_named);
 /* a presented run inside an offscreen suite, and the game after it: the frames shown in real time (on) or
 not; 1 when the guest's clock follows (host_benchmark.h) */
 int host_benchmark_presented(int on);
+/* debug.fixed_timestep: the microseconds a frame's end waited for the game's workers to go idle (worker_wait_ms) */
+void host_benchmark_worker_wait(uint32_t microseconds);
 /* the host's errno on this thread, after a call to a host function */
 int host_errno(void);
 

@@ -115,6 +115,7 @@ host_data_updates_frame_ready
 host_frame_cpu_phase
 host_benchmark_offscreen_request
 host_benchmark_presented
+host_benchmark_worker_wait
 
 # Wired external display lifecycle and test controls
 host_external_active

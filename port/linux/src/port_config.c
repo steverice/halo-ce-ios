@@ -1218,6 +1218,22 @@ static const struct config_setting config_settings[] =
 		"first campaign and first multiplayer case, in real time, as a check.\n"
 		"On in tester builds for \"full-unified\". Ignored without a suite and\n"
 		"on Vision Pro." },
+	{ "debug.benchmark_offscreen_mode", _config_string, "\"serialized\"", "HALO_BENCHMARK_OFFSCREEN_MODE", _environment_value,
+		_platform_ios,
+		"With debug.benchmark_offscreen, how the offscreen runs' frames go:\n"
+		"\"serialized\" (default) waits for each lens flare's visibility answer, so\n"
+		"the CPU and the GPU take turns and the CPU time counts the GPU's;\n"
+		"\"pipelined\" takes every answer from three frames before, the same every\n"
+		"run, so frames overlap as they do on screen: frames a second near\n"
+		"1/max(CPU, GPU), for comparing settings' costs, not for frame rate tiers." },
+	{ "debug.benchmark_virtual_display", _config_boolean, "false", "HALO_BENCHMARK_VIRTUAL_DISPLAY", _environment_set_is_true,
+		_platform_ios,
+		"With debug.benchmark_offscreen: every run of the suite is drawn\n"
+		"offscreen in real time against a virtual display: refreshes at the\n"
+		"display's rate (or display.frame_rate's cap), three virtual drawables, each\n"
+		"held on the virtual screen until the next frame replaces it, and the same\n"
+		"frame pacer and frame timing as a shown run. Visibility answers come from\n"
+		"three frames before." },
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"join\" joins the first game found;\n"

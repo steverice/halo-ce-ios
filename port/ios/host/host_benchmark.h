@@ -55,6 +55,8 @@ void host_frame_cpu_phase(int phase, int ticks);
 /* debug.frame_cpu_probe: after host_benchmark_frame, on the drawing thread, its readings for that frame (nothing
    when the setting is off) */
 void host_benchmark_frame_probe(void);
+/* after host_benchmark_frame: the seconds that frame's CPU time spent waiting for the GPU and for the game's workers */
+void host_benchmark_frame_waits(double gpu_wait, double worker_wait);
 void host_frame_cpu_split(double *simulation, double *render, double *translation, int *ticks);
 /* the Metal backend, for each frame it could not show (why: 0 no drawable, 1 no picture): counted so a run that
    measured nothing can say whether the display handed out no drawables */
@@ -73,6 +75,14 @@ int host_benchmark_offscreen_requested(void);
    after it: on, the frames are shown and paced by the display; off, offscreen again. 1 when the launch was honored
    offscreen, and the guest's clock then follows (platform_clock_realtime) */
 int host_benchmark_presented(int on);
+/* the guest's (xbox_kernel.c): a frame end's wait for the game's workers, in microseconds; and the seconds waited
+since the last take, for the frame being scheduled (gpu_metal.m) */
+void host_benchmark_worker_wait(uint32_t microseconds);
+double host_benchmark_worker_waited_take(void);
+/* an offscreen launch's offscreen runs take visibility answers from frames before (debug.benchmark_offscreen_mode) */
+int host_benchmark_offscreen_pipelined(void);
+/* a presented run of an offscreen launch goes to the virtual display now (debug.benchmark_virtual_display) */
+int host_benchmark_virtual_display(void);
 /* gpu_metal.m: the same for the renderer, which a fixed-timestep launch started unpaced */
 void gpu_metal_benchmark_realtime(int on);
 /* gpu_metal.m: the command buffers whose GPU times were used and refused since launch, and the last refused, as text */

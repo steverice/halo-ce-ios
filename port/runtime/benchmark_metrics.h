@@ -38,6 +38,11 @@ struct benchmark_metrics {
        of a microsecond, which falls as the core's clock rises */
     uint16_t *thread_cpu, *process_cpu, *clock_probe;
     size_t probe_frames, probe_capacity;
+    /* in step with the frames, in tenths of a millisecond: what each frame's CPU time spent waiting for the GPU
+       (visibility answers, readbacks) and for the game's workers to go idle (the fixed timestep's frame end), and
+       its CPU time without either (cpu_active) */
+    uint16_t *gpu_wait, *worker_wait, *cpu_active;
+    size_t wait_frames, wait_capacity;
     unsigned long ticks;
     /* the recorded time, in ticks, at which the measured window opened (a replay's; -1 where it never did) */
     long window_opened_tick;
@@ -66,6 +71,9 @@ struct benchmark_summary {
     size_t split_frames;
     struct benchmark_distribution simulation_cpu, render_cpu, translation_cpu;
     double ticks_per_frame;
+    /* over the frames that knew their waits (all of them, or none): the CPU time without waits, and the waits */
+    size_t wait_frames;
+    struct benchmark_distribution cpu_active, gpu_wait, worker_wait;
     /* frames shown for 1, 2, 3, 4 and 5 or more refreshes (index 0 unused) */
     unsigned long shown[6];
     /* the share of frames shown for one refresh, and for one or two */
@@ -86,6 +94,9 @@ void benchmark_metrics_frame_split(struct benchmark_metrics *metrics, double int
    drawing thread's CPU time and of the process's, and the probe loop's microseconds */
 void benchmark_metrics_frame_probe(struct benchmark_metrics *metrics, double thread_cpu, double process_cpu,
     double clock_probe);
+/* the waits inside the CPU time of the frame just added (benchmark_metrics_frame_split), in milliseconds: for the
+   GPU and for the game's workers */
+void benchmark_metrics_frame_waits(struct benchmark_metrics *metrics, double gpu_wait, double worker_wait);
 /* a once-a-second sample; megabytes negative where unknown */
 void benchmark_metrics_sample(struct benchmark_metrics *metrics, long footprint, long left, int thermal);
 void benchmark_metrics_compile(struct benchmark_metrics *metrics, double milliseconds);

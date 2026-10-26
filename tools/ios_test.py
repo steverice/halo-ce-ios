@@ -374,6 +374,10 @@ run(BUILD/'dynamic-resolution-probe')
 run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
     '-framework', 'AudioToolbox', 'port/ios/tests/frame_deadline_probe.c', '-o', BUILD/'frame-deadline-probe')
 run(BUILD/'frame-deadline-probe')
+# visibility answers by fixed latency (visibility_history.h): from the expected frames, whatever the GPU's timing
+run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined', '-Iport/ios/host',
+    'port/ios/tests/visibility_history_probe.c', '-o', BUILD/'visibility-history-probe')
+run(BUILD/'visibility-history-probe')
 # the device benchmark's metrics, plan and journal (port/runtime/benchmark_*.c): percentiles of made-up frames,
 # the sweep walked with made-up devices, and the journal cut at every byte and after every write
 run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-fsanitize=address,undefined', '-Iport/runtime',

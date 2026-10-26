@@ -1724,6 +1724,26 @@
             "apple"
           ]
         },
+        "benchmark_offscreen_mode": {
+          "type": "string",
+          "default": "serialized",
+          "description": "With debug.benchmark_offscreen, how the offscreen runs' frames go: \"serialized\" (default) waits for each lens flare's visibility answer, so the CPU and the GPU take turns and the CPU time counts the GPU's; \"pipelined\" takes every answer from three frames before, the same every run, so frames overlap as they do on screen: frames a second near 1/max(CPU, GPU), for comparing settings' costs, not for frame rate tiers.",
+          "x-environment": "HALO_BENCHMARK_OFFSCREEN_MODE",
+          "x-environment-style": "value",
+          "x-platforms": [
+            "apple"
+          ]
+        },
+        "benchmark_virtual_display": {
+          "type": "boolean",
+          "default": false,
+          "description": "With debug.benchmark_offscreen: every run of the suite is drawn offscreen in real time against a virtual display: refreshes at the display's rate (or display.frame_rate's cap), three virtual drawables, each held on the virtual screen until the next frame replaces it, and the same frame pacer and frame timing as a shown run. Visibility answers come from three frames before.",
+          "x-environment": "HALO_BENCHMARK_VIRTUAL_DISPLAY",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "network_test": {
           "type": "string",
           "default": "",

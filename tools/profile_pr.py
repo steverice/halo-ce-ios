@@ -285,7 +285,7 @@ def build(options, run=None):
         raise Failure(f"{options.model} is not in cost-model/device-facts.csv")
     fits = fits_from(report, report_name)
     if not fits:
-        raise Failure("the report has no usable offscreen_uncapped runs and no fit exists to anchor on")
+        raise Failure("the report has no usable offscreen runs (offscreen_uncapped or offscreen_pipelined) and no fit exists to anchor on")
     fit = predict.predicted_fit(device, fits, devices, workload=options.workload)
     ranking = propose.read_ranking()
     platform = platform_of(device)

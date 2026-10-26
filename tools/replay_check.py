@@ -16,7 +16,7 @@ at a controller.
 
 With --offscreen the second replay of each pair is the benchmark's offscreen mode (debug.benchmark_offscreen: one
 tick a frame, as fast as the Mac draws) in place of an unlimited frame rate, so the check says whether that mode
-replays as real time does.
+replays as real time does; --offscreen-mode pipelined checks debug.benchmark_offscreen_mode = "pipelined".
 
 Exit status 0 when the pair agrees, 1 when it parts, 2 when a step failed.
 
@@ -115,6 +115,8 @@ def main():
     parser.add_argument("--take", type=Path, help="skip the recording: replay this take (its path without an extension)")
     parser.add_argument("--offscreen", action="store_true",
                         help="replay the second of each pair offscreen (debug.benchmark_offscreen), not unlimited")
+    parser.add_argument("--offscreen-mode", choices=("serialized", "pipelined"), default="serialized",
+                        help="with --offscreen: debug.benchmark_offscreen_mode for the offscreen replays")
     args = parser.parse_args()
     rates = (RATES[0], "offscreen") if args.offscreen else RATES
     if args.only_unlimited:
@@ -158,7 +160,8 @@ def main():
             write_local_routes(take, local, "check", args.anchor, args.lead_after, args.window or None)
             for rate in rates:
                 out = args.out / f"{label}-{rate}"
-                mode = (["--set", "debug.benchmark_offscreen=true"] if rate == "offscreen" else
+                mode = (["--set", "debug.benchmark_offscreen=true",
+                         "--set", f'debug.benchmark_offscreen_mode="{args.offscreen_mode}"'] if rate == "offscreen" else
                         ["--set", f'display.frame_rate="{rate}"'])
                 runner(out, "--benchmark-suite", "quick:check", "--time-limit", str(int(args.seconds * 3 + 600)), *mode)
                 results[(label, rate)] = out / "benchmark" / "report.json"

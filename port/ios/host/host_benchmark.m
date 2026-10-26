@@ -384,6 +384,10 @@ static NSDictionary *graphics_metadata(void)
 static _Atomic int offscreen_decided = HOST_BENCHMARK_OFFSCREEN_OFF;
 /* host_benchmark_presented: the frames are shown, in real time, for now */
 static _Atomic int presented_now;
+/* the open run's measured window began with them shown (host_benchmark_window) */
+static int window_presented;
+/* debug.benchmark_offscreen_mode = "pipelined" and debug.benchmark_virtual_display, read with the launch's decision */
+static int offscreen_pipelined, virtual_display_setting;
 
 int host_benchmark_offscreen_request(int setting, int suite_named) {
 #ifdef HALO_TESTER_BUILD
@@ -399,6 +403,23 @@ int host_benchmark_offscreen_request(int setting, int suite_named) {
     enum host_benchmark_offscreen decided = host_benchmark_offscreen_decide(setting, suite_named, TARGET_OS_VISION);
 
     atomic_store(&offscreen_decided, decided);
+    if (decided == HOST_BENCHMARK_OFFSCREEN_ON) {
+        char mode[32], virtual_display[8];
+
+        host_config_string("debug.benchmark_offscreen_mode", "serialized", mode, sizeof(mode));
+        host_config_string("debug.benchmark_virtual_display", "false", virtual_display, sizeof(virtual_display));
+        offscreen_pipelined = host_benchmark_offscreen_mode_pipelined(mode);
+        virtual_display_setting = !strcmp(virtual_display, "true");
+        if (!offscreen_pipelined && strcmp(mode, "serialized"))
+            host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen_mode \"%s\" is not serialized or pipelined; "
+                "serialized", mode);
+        if (virtual_display_setting)
+            host_logf(HOST_LOG_INFO, "benchmark: every run offscreen in real time against a virtual display "
+                "(debug.benchmark_virtual_display)");
+        else
+            host_logf(HOST_LOG_INFO, "benchmark: offscreen runs %s", offscreen_pipelined ?
+                "pipelined, visibility answers from three frames before" : "serialized, each visibility answer waited for");
+    }
     if (decided == HOST_BENCHMARK_OFFSCREEN_ON)
         host_logf(HOST_LOG_INFO, "benchmark: debug.benchmark_offscreen: the suite's frames are drawn offscreen, uncapped, "
             "one tick each");
@@ -411,6 +432,16 @@ int host_benchmark_offscreen_request(int setting, int suite_named) {
 
 int host_benchmark_offscreen_requested(void) {
     return atomic_load(&offscreen_decided) == HOST_BENCHMARK_OFFSCREEN_ON;
+}
+
+int host_benchmark_offscreen_pipelined(void) {
+    return host_benchmark_offscreen_requested() && offscreen_pipelined;
+}
+
+int host_benchmark_virtual_display(void) {
+    /* (while a suite runs: the game after it is shown again) */
+    return host_benchmark_offscreen_requested() && virtual_display_setting && atomic_load(&presented_now) &&
+        atomic_load(&running);
 }
 
 int host_benchmark_offscreen_active(void) {
@@ -584,6 +615,23 @@ static void thread_cpu_log(void) {
         now[best].used = -1.0;
     }
     host_logf(HOST_LOG_INFO, "%s", line);
+}
+
+static _Atomic uint64_t worker_waited_microseconds;
+
+void host_benchmark_worker_wait(uint32_t microseconds) {
+    atomic_fetch_add(&worker_waited_microseconds, microseconds);
+}
+
+double host_benchmark_worker_waited_take(void) {
+    return (double)atomic_exchange(&worker_waited_microseconds, 0) / 1e6;
+}
+
+void host_benchmark_frame_waits(double gpu_wait, double worker_wait) {
+    if (!atomic_load(&running)) return;
+    os_unfair_lock_lock(&lock);
+    if (window_open) benchmark_metrics_frame_waits(&metrics, gpu_wait * 1000.0, worker_wait * 1000.0);
+    os_unfair_lock_unlock(&lock);
 }
 
 void host_benchmark_frame_probe(void) {
@@ -935,14 +983,19 @@ static BOOL write_run(const struct benchmark_run *finished, enum benchmark_statu
     record[@"shader_capture"] = host_benchmark_shader_delta(run_shader_before,
         run_shader_after ?: host_benchmark_shader_snapshot(run_shader_directory, map));
     /* (a presented reality check inside an offscreen suite measures what a player sees) */
-    int offscreen = host_benchmark_offscreen_requested() && finished->stage != 'P';
-    record[@"presented"] = @(!offscreen);
+    /* (a virtual launch's runs are all the virtual display's, a run that never opened its window too) */
+    int offscreen = host_benchmark_offscreen_requested() && finished->stage != 'P' && !window_presented &&
+        !virtual_display_setting;
+    int pacing = host_benchmark_pacing_of(host_benchmark_offscreen_requested(), offscreen, offscreen_pipelined,
+        virtual_display_setting);
+    /* (a virtual display's run is measured as a shown one: pacing_mode tells them apart) */
+    record[@"presented"] = @(pacing == HOST_BENCHMARK_PACING_PRESENTED || pacing == HOST_BENCHMARK_PACING_VIRTUAL_DISPLAY);
     record[@"reality_check"] = @(finished->stage == 'P');
     record[@"measured_ticks"] = @(atomic_load(&window_ticks));
     record[@"capped"] = @(run_capped != 0);
     record[@"window_wall_cap_seconds"] = @(window_wall_cap());
     if (run_started_at > 0) record[@"wall_seconds"] = @(round((CFAbsoluteTimeGetCurrent() - run_started_at) * 10.0) / 10.0);
-    text = json_object(host_benchmark_measurement_record(record, presentation, offscreen));
+    text = json_object(host_benchmark_measurement_record(record, presentation, pacing));
     return [text writeToFile:run_path(finished->index) atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
@@ -1799,7 +1852,9 @@ int host_benchmark_next(char *text, unsigned int size) {
         scene->game_mode ? scene->game_mode : "", scene->score_limit, scene->time_limit_minutes,
         scene->arena_columns, scene->arena_spacing, scene->arena_distance, scene->arena_movement_radius,
         scene->enemy_multiplier, scene->sim_experiments, scene->sim_experiments_mask,
-        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max, run.stage == 'P',
+        /* (presented: a reality check, or with debug.benchmark_virtual_display every run, to the virtual display) */
+        run.lines, run.anisotropy, run.shadow_size, run.model_lod_max,
+        run.stage == 'P' || (host_benchmark_offscreen_requested() && virtual_display_setting),
         host_benchmark_offscreen_requested(),
         /* (-1 for a setting the case leaves to the configuration) */
         knobs.mask & BENCHMARK_KNOB_ANTI_ALIASING ? knobs.anti_aliasing : -1,
@@ -1851,6 +1906,8 @@ void host_benchmark_window(int open, int width, int height, int opened_tick) {
         window_height = height;
         /* (the tick of the first frame counted: a window that opens again, as a cutscene gives way to the game, keeps it) */
         if (metrics.frames == 0) metrics.window_opened_tick = opened_tick;
+        /* (how the run's measured frames go: shown, or in an offscreen launch offscreen or to the virtual display) */
+        if (metrics.frames == 0) window_presented = atomic_load(&presented_now);
         if (metrics.refresh_hertz <= 0.0)
             metrics.refresh_hertz = run_budget_hertz();
     }

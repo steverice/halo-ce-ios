@@ -149,6 +149,27 @@ static void test_metrics_split(void) {
     free(json);
     benchmark_metrics_free(&metrics);
 
+    /* the waits inside each frame's CPU time, and the CPU time without them */
+    benchmark_metrics_reset(&metrics, 60.0);
+    for (index = 0; index < 4; index++) {
+        benchmark_metrics_frame_split(&metrics, 16.7, 12.0, 8.0, 3.0, 8.0, 2.0, 1);
+        benchmark_metrics_frame_waits(&metrics, 4.0, index == 3 ? 9.0 : 1.0);
+        benchmark_metrics_frame_waits(&metrics, 99.0, 99.0);   /* a second for the same frame: dropped */
+    }
+    CHECK(metrics.wait_frames == 4 && metrics.cpu_active[0] == 70 && metrics.cpu_active[3] == 0);
+    benchmark_metrics_summarize(&metrics, &summary);
+    CHECK(summary.wait_frames == 4 && NEAR(summary.gpu_wait.mean, 4.0, 1e-9) && NEAR(summary.worker_wait.worst, 9.0, 1e-9));
+    json = benchmark_metrics_json(&metrics);
+    CHECK(json && strstr(json, "\"cpu_active_ms\":{\"mean\":5.25,") && strstr(json, "\"frame_gpu_wait\":\"") &&
+        strstr(json, "\"frame_worker_wait\":\"") && strstr(json, "\"frame_cpu_active\":\""));
+    free(json);
+    /* a frame without its waits: none are reported */
+    benchmark_metrics_frame_split(&metrics, 16.7, 12.0, 8.0, 3.0, 8.0, 2.0, 1);
+    json = benchmark_metrics_json(&metrics);
+    CHECK(json && strstr(json, "\"cpu_active_ms\":null") && !strstr(json, "\"frame_gpu_wait\""));
+    free(json);
+    benchmark_metrics_free(&metrics);
+
     /* debug.frame_cpu_probe: a reading only for the frame just added, and no fields without readings */
     benchmark_metrics_reset(&metrics, 30.0);
     benchmark_metrics_frame_probe(&metrics, 9.0, 12.0, 7.5);   /* before any frame: dropped */

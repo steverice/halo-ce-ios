@@ -225,6 +225,7 @@ static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, 
 #include "host_config.h"
 #include "host_frame_pacer.h"
 #include "frame_deadline.h"
+#include "visibility_history.h"
 #include "host_stereo.h"
 #if TARGET_OS_VISION
 #include "host_theater.h"
@@ -480,7 +481,13 @@ frames later doesn't depend on a ring entry that has since been reused. */
 struct visibility_pending
 {
 	uint32_t slot, first, count;
+	/* the test's entry in its slot's history (visibility_latency), or UINT32_MAX */
+	uint32_t history;
 };
+
+/* answers by fixed latency (gpu_metal_visibility_latency_set; the rules: visibility_history.h) */
+static struct visibility_history *visibility_histories;
+static int visibility_latency;
 
 static id<MTLBuffer> visibility_buffer;
 /* each slot's answer as (serial << 1) | answer, written by completion
@@ -857,9 +864,19 @@ static void commit(BOOL frame_end)
 				uint64_t value = (serial << VISIBILITY_COUNT_BITS) | answer;
 				uint64_t seen = atomic_load(&visibility_answers[tests[test].slot]);
 
-				while (seen >> VISIBILITY_COUNT_BITS <= serial &&
+				/* (a test with no entries is in the list only for its history: visibility_latency) */
+				while (tests[test].count && seen >> VISIBILITY_COUNT_BITS <= serial &&
 					!atomic_compare_exchange_weak(&visibility_answers[tests[test].slot], &seen, value))
 					;
+				/* (a later test of the slot in the same frame took the entry over: its own handler answers) */
+				if (tests[test].history != UINT32_MAX && visibility_histories)
+				{
+					struct visibility_history_entry *kept =
+						&visibility_histories[tests[test].slot].entries[tests[test].history];
+
+					if (atomic_load(&kept->serial) == serial)
+						atomic_store(&kept->answer, value);
+				}
 			}
 		}
 		{
@@ -4053,6 +4070,81 @@ static uint32_t gpu_metal_draw(const struct gpu_draw *draw, const struct gpu_con
 
 /* ---------- visibility tests (the state is declared before the transient memory) */
 
+/* the answer an entry's test gave, waiting for the GPU if it hasn't written it yet (committing the open command
+buffer if the test is in it) */
+static uint64_t visibility_history_answer(struct visibility_history_entry *entry)
+{
+	uint64_t serial = atomic_load(&entry->serial);
+
+	if ((atomic_load(&entry->answer) >> VISIBILITY_COUNT_BITS) == serial)
+		return atomic_load(&entry->answer) & VISIBILITY_COUNT_MAXIMUM;
+	CFTimeInterval wait_started = CACurrentMediaTime();
+
+	if (serial == current_serial)
+		commit(NO);
+	while ((atomic_load(&entry->answer) >> VISIBILITY_COUNT_BITS) != serial)
+		[last_committed waitUntilCompleted];
+	perf_gpu_waited += CACurrentMediaTime() - wait_started;
+	return atomic_load(&entry->answer) & VISIBILITY_COUNT_MAXIMUM;
+}
+
+/* this frame's test of slot ends: it takes the slot's entry for this frame (a test earlier in the frame gives it
+up), and the entry it displaces, from VISIBILITY_HISTORY frames back, becomes the settled answer. Returns the entry */
+static uint32_t visibility_history_record(uint32_t slot)
+{
+	struct visibility_history *history = &visibility_histories[slot];
+	int displaced;
+	uint32_t index = visibility_history_slot(history, frames, &displaced);
+	struct visibility_history_entry *entry = &history->entries[index];
+
+	if (displaced)
+	{
+		history->settled_answer = visibility_history_answer(entry);
+		history->settled_frame = entry->frame;
+		history->settled = 1;
+	}
+	entry->frame = frames;
+	atomic_store(&entry->answer, 0);
+	atomic_store(&entry->serial, current_serial);
+	return index;
+}
+
+/* the answer for a read of slot in this frame: its latest test from visibility_latency or more frames before, or 0
+when it had none */
+static uint32_t visibility_history_result(uint32_t slot)
+{
+	struct visibility_history *history = &visibility_histories[slot];
+	int none, index = visibility_history_pick(history, frames, visibility_latency, &none);
+
+	if (index >= 0)
+		return (uint32_t)visibility_history_answer(&history->entries[index]);
+	return none ? 0 : (uint32_t)history->settled_answer;
+}
+
+/* frames: 0 for the fixed timestep's wait or real time's latest answer, or how many frames back answers come from
+(below VISIBILITY_HISTORY). Between frames, on the drawing thread; a change forgets the answers kept */
+static void gpu_metal_visibility_latency_set(int frames_back)
+{
+	if (frames_back < 0)
+		frames_back = 0;
+	if (frames_back >= VISIBILITY_HISTORY)
+		frames_back = VISIBILITY_HISTORY - 1;
+	if (frames_back == visibility_latency)
+		return;
+	/* (no handler may write into what is freed or reset) */
+	if (last_committed)
+		[last_committed waitUntilCompleted];
+	if (frames_back && !visibility_histories)
+		visibility_histories = calloc(GPU_VISIBILITY_SLOTS, sizeof(*visibility_histories));
+	else if (visibility_histories)
+		memset(visibility_histories, 0, GPU_VISIBILITY_SLOTS * sizeof(*visibility_histories));
+	visibility_latency = visibility_histories ? frames_back : 0;
+	platform_log("Metal: visibility answers %s", visibility_latency ? "come a fixed number of frames late" :
+		visibility_wait ? "wait for the GPU" : "are the latest the GPU has");
+	if (visibility_latency)
+		platform_log("Metal: visibility answers from %d frames before", visibility_latency);
+}
+
 static void gpu_metal_visibility_begin(void)
 {
 	visibility.active = 1;
@@ -4069,9 +4161,12 @@ static void gpu_metal_visibility_end(uint32_t slot)
 	visibility.slots[slot].first = visibility.first;
 	visibility.slots[slot].count = visibility.count;
 	visibility.slots[slot].serial = current_serial;
-	if (visibility.count)
+	/* (with latency, a test that reached no pass is answered 0 by the same handler, in test order, so a later test of
+	the slot in the same command buffer cannot be answered before an earlier one) */
+	if (visibility.count || visibility_latency)
 	{
-		struct visibility_pending test = { slot, (uint32_t)visibility.first, (uint32_t)visibility.count };
+		struct visibility_pending test = { slot, (uint32_t)visibility.first, (uint32_t)visibility.count,
+			visibility_latency ? visibility_history_record(slot) : UINT32_MAX };
 
 		[visibility.pending appendBytes:&test length:sizeof(test)];
 	}
@@ -4091,6 +4186,11 @@ static uint32_t gpu_metal_visibility_result(uint32_t slot, uint32_t *samples)
 	@autoreleasepool
 	{
 		*samples = 0;
+		if (visibility_latency)
+		{
+			*samples = visibility_history_result(slot);
+			return 1;
+		}
 		if (!visibility.slots[slot].count)
 			return 1;
 		if (!visibility_wait)
@@ -4157,6 +4257,8 @@ static os_unfair_lock pacing_lock = OS_UNFAIR_LOCK_INIT;
 static CFTimeInterval refresh_period; /* CACurrentMediaTime's clock */
 /* how many refreshes the display link has called for (frame_context_wait counts them) */
 static _Atomic unsigned long refresh_count;
+/* the virtual display counts the refreshes instead while it runs (debug.benchmark_virtual_display) */
+static _Atomic int virtual_display_on;
 #if !TARGET_OS_VISION && !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
 /* the pacing link's screen's highest rate (pacing_start), and the rate the link asks for: display.frame_rate's cap
 under it (host_gpu_dispatch.c), so the display itself runs at the cap. Not under 60, where the game's 60 Hz blank
@@ -4183,6 +4285,9 @@ static float pacing_link_rate(float screen_rate)
     if (pacing_screen_rate > 0.0f && link.preferredFrameRateRange.maximum != rate)
         link.preferredFrameRateRange = CAFrameRateRangeMake(MIN(80, rate), rate, rate);
 #endif
+	/* (the virtual display's refreshes count while it runs: debug.benchmark_virtual_display) */
+	if (atomic_load(&virtual_display_on))
+		return;
 	atomic_fetch_add(&refresh_count, 1);
 	os_unfair_lock_lock(&pacing_lock);
 	refresh_period = link.targetTimestamp - link.timestamp;
@@ -4311,6 +4416,265 @@ static void pacing_start(uint32_t flags)
     dispatch_semaphore_wait(started,DISPATCH_TIME_FOREVER);
 }
 
+/* ---------- the virtual display (debug.benchmark_virtual_display)
+
+A presented run of an offscreen launch, drawn offscreen in real time against a
+display that isn't there, so that frames are paced as a shown run's are while
+nothing is shown: a thread of its own refreshes at the rate the display link
+would run at (the display's highest, or display.frame_rate's cap under it, not
+under 60), counting refreshes and telling the frame pacer as the display link
+does. Frames draw into one of VIRTUAL_DRAWABLES textures, waiting for a free
+one as nextDrawable waits for a drawable. A frame goes on the virtual screen
+at the first refresh after its GPU work has finished at which the frame
+before has been up for its hold (presentDrawable:afterMinimumDuration:'s
+rule), and its texture is freed when the next frame replaces it, as the
+display holds a drawable. That refresh is the frame's presented time, for the
+pacer's frames in flight and its log. What it leaves out: the compositor, the
+display's own scan-out and its bandwidth, and CAMetalDisplayLink's jitter. */
+#define VIRTUAL_DRAWABLES 3
+#define VIRTUAL_QUEUE 8
+
+struct virtual_frame
+{
+	int texture;
+	double hold;
+	struct frame_pacer_frame paced;
+	_Atomic int completed;
+	int perf;
+	uint64_t perf_frame, perf_budget;
+};
+
+static struct
+{
+	pthread_t thread;
+	int thread_started;
+	double period;
+	id<MTLTexture> textures[VIRTUAL_DRAWABLES];
+	dispatch_semaphore_t free_count;
+	os_unfair_lock lock;
+	int texture_free[VIRTUAL_DRAWABLES];
+	struct virtual_frame *queue[VIRTUAL_QUEUE];
+	int head, count;
+	int showing;           /* the texture on the virtual screen; -1 none */
+	double shown_at;       /* the refresh it went up at; 0 none */
+	unsigned long shown, refreshes;
+} virtual_display = { .lock = OS_UNFAIR_LOCK_INIT, .showing = -1 };
+
+static void *virtual_display_main(void *unused)
+{
+	mach_timebase_info_data_t timebase;
+	uint64_t period_ticks, next;
+
+	(void)unused;
+	pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+	pthread_setname_np("Metal virtual display");
+	mach_timebase_info(&timebase);
+	period_ticks = (uint64_t)(virtual_display.period * 1e9 * (double)timebase.denom / (double)timebase.numer);
+	next = mach_absolute_time() + period_ticks;
+	while (atomic_load(&virtual_display_on))
+	{
+		struct virtual_frame *shown = NULL;
+		double now;
+
+		mach_wait_until(next);
+		/* (stopped while it waited: the display link counts again) */
+		if (!atomic_load(&virtual_display_on))
+			break;
+		now = CACurrentMediaTime();
+		atomic_fetch_add(&refresh_count, 1);
+		os_unfair_lock_lock(&pacing_lock);
+		refresh_period = virtual_display.period;
+		os_unfair_lock_unlock(&pacing_lock);
+		frame_pacer_refresh(now, virtual_display.period);
+		os_unfair_lock_lock(&virtual_display.lock);
+		virtual_display.refreshes++;
+		if (virtual_display.count)
+		{
+			struct virtual_frame *frame = virtual_display.queue[virtual_display.head];
+
+			/* (a quarter refresh's allowance for the refreshes' timing) */
+			if (atomic_load(&frame->completed) && (virtual_display.shown_at <= 0.0 ||
+				now - virtual_display.shown_at >= frame->hold - 0.25 * virtual_display.period))
+			{
+				virtual_display.head = (virtual_display.head + 1) % VIRTUAL_QUEUE;
+				virtual_display.count--;
+				if (virtual_display.showing >= 0)
+				{
+					virtual_display.texture_free[virtual_display.showing] = 1;
+					dispatch_semaphore_signal(virtual_display.free_count);
+				}
+				virtual_display.showing = frame->texture;
+				virtual_display.shown_at = now;
+				virtual_display.shown++;
+				shown = frame;
+			}
+		}
+		os_unfair_lock_unlock(&virtual_display.lock);
+		if (shown)
+		{
+			if (frame_pacer_watches(&shown->paced))
+				frame_pacer_presented(&shown->paced, now);
+			if (shown->perf)
+				host_perf_metal_presented(shown->perf_frame, (uint64_t)(now * 1e6), shown->perf_budget);
+			free(shown);
+		}
+		next += period_ticks;
+		/* (a refresh missed by more than a period, as when the thread was held: the next from now) */
+		if (mach_absolute_time() > next + period_ticks)
+			next = mach_absolute_time() + period_ticks;
+	}
+	return NULL;
+}
+
+/* starts the virtual display, sized as the layer's drawables, at the display link's rate */
+static void virtual_display_start(void)
+{
+	CGSize size = layer.drawableSize;
+	double rate = 60.0;
+	int index;
+
+	if (atomic_load(&virtual_display_on))
+		return;
+#if !TARGET_OS_VISION && !TARGET_OS_MACCATALYST && !HALO_NATIVE_MAC
+	{
+		UIScreen *screen = (__bridge UIScreen *)host_external_screen();
+		float screen_rate = (float)screen.maximumFramesPerSecond;
+
+		pacing_screen_rate = screen_rate;
+		frame_pacer_panel_period(screen_rate > 0 ? 1.0 / screen_rate : 0.0);
+		rate = pacing_link_rate(screen_rate > 0 ? screen_rate : 60.0f);
+	}
+#endif
+	virtual_display.period = 1.0 / rate;
+	/* (the first frame's schedule reads it before the first virtual refresh) */
+	os_unfair_lock_lock(&pacing_lock);
+	refresh_period = virtual_display.period;
+	os_unfair_lock_unlock(&pacing_lock);
+	for (index = 0; index < VIRTUAL_DRAWABLES; index++)
+	{
+		id<MTLTexture> texture = virtual_display.textures[index];
+
+		if (!texture || texture.width != (NSUInteger)size.width || texture.height != (NSUInteger)size.height ||
+			texture.pixelFormat != layer.pixelFormat)
+		{
+			MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:layer.pixelFormat
+				width:(NSUInteger)size.width height:(NSUInteger)size.height mipmapped:NO];
+
+			descriptor.usage = MTLTextureUsageRenderTarget;
+			descriptor.storageMode = MTLStorageModePrivate;
+			virtual_display.textures[index] = [device newTextureWithDescriptor:descriptor];
+		}
+		virtual_display.texture_free[index] = 1;
+	}
+	/* (made once: a semaphore released below its starting value aborts; virtual_display_stop gives every texture back) */
+	if (!virtual_display.free_count)
+		virtual_display.free_count = dispatch_semaphore_create(VIRTUAL_DRAWABLES);
+	virtual_display.head = virtual_display.count = 0;
+	virtual_display.showing = -1;
+	virtual_display.shown_at = 0.0;
+	virtual_display.shown = virtual_display.refreshes = 0;
+	atomic_store(&virtual_display_on, 1);
+	virtual_display.thread_started = pthread_create(&virtual_display.thread, NULL, virtual_display_main, NULL) == 0;
+	platform_log("Metal: the virtual display refreshes at %.0f Hz with %d drawables (debug.benchmark_virtual_display)", rate,
+		VIRTUAL_DRAWABLES);
+}
+
+/* stops it once every frame given it has finished on the GPU (the caller has waited); frames not yet up are dropped
+from the pacer's slots */
+static void virtual_display_stop(void)
+{
+	int index;
+
+	if (!atomic_load(&virtual_display_on))
+		return;
+	atomic_store(&virtual_display_on, 0);
+	if (virtual_display.thread_started)
+		pthread_join(virtual_display.thread, NULL);
+	virtual_display.thread_started = 0;
+	for (index = 0; index < virtual_display.count; index++)
+	{
+		struct virtual_frame *frame = virtual_display.queue[(virtual_display.head + index) % VIRTUAL_QUEUE];
+		int waited;
+
+		frame_pacer_frame_dropped(&frame->paced);
+		/* (its completed handler may run after waitUntilCompleted returns: freed only once it has, else kept) */
+		for (waited = 0; waited < 1000 && !atomic_load(&frame->completed); waited++)
+			usleep(1000);
+		if (atomic_load(&frame->completed))
+			free(frame);
+	}
+	virtual_display.count = 0;
+	/* every texture goes back, the one on the virtual screen and the queued frames' */
+	for (index = 0; index < VIRTUAL_DRAWABLES; index++)
+		if (!virtual_display.texture_free[index])
+		{
+			virtual_display.texture_free[index] = 1;
+			dispatch_semaphore_signal(virtual_display.free_count);
+		}
+	virtual_display.showing = -1;
+	platform_log("Metal: the virtual display stops after %lu frames shown in %lu refreshes", virtual_display.shown,
+		virtual_display.refreshes);
+}
+
+/* a free texture for the frame, waiting up to a second for one as nextDrawable would; -1 none */
+static int virtual_display_take(void)
+{
+	int index;
+
+	if (dispatch_semaphore_wait(virtual_display.free_count, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)))
+		return -1;
+	os_unfair_lock_lock(&virtual_display.lock);
+	for (index = 0; index < VIRTUAL_DRAWABLES && !virtual_display.texture_free[index]; index++)
+		;
+	if (index < VIRTUAL_DRAWABLES)
+		virtual_display.texture_free[index] = 0;
+	os_unfair_lock_unlock(&virtual_display.lock);
+	return index < VIRTUAL_DRAWABLES ? index : -1;
+}
+
+/* the frame drawn into texture index goes to the virtual screen once commands has finished on the GPU: held at
+least hold seconds after the frame before. Returns 0 when the queue is full (the texture goes back) */
+__attribute__((unused)) static int virtual_display_present(id<MTLCommandBuffer> commands_of_frame, int index, double hold,
+	const struct frame_pacer_frame *paced, int perf, uint64_t perf_frame, uint64_t perf_budget)
+{
+	struct virtual_frame *frame = calloc(1, sizeof(*frame));
+	int queued = 0;
+
+	if (frame)
+	{
+		frame->texture = index;
+		frame->hold = hold;
+		frame->paced = *paced;
+		frame->perf = perf;
+		frame->perf_frame = perf_frame;
+		frame->perf_budget = perf_budget;
+		[commands_of_frame addCompletedHandler:^(id<MTLCommandBuffer> completed)
+		{
+			(void)completed;
+			atomic_store(&frame->completed, 1);
+		}];
+		os_unfair_lock_lock(&virtual_display.lock);
+		if (virtual_display.count < VIRTUAL_QUEUE)
+		{
+			virtual_display.queue[(virtual_display.head + virtual_display.count) % VIRTUAL_QUEUE] = frame;
+			virtual_display.count++;
+			queued = 1;
+		}
+		os_unfair_lock_unlock(&virtual_display.lock);
+	}
+	/* (VIRTUAL_QUEUE is more than the drawables, so the queue never fills) */
+	_Static_assert(VIRTUAL_QUEUE > VIRTUAL_DRAWABLES, "virtual display queue");
+	if (!queued)
+	{
+		/* (the handler may still run: the frame stays allocated) */
+		os_unfair_lock_lock(&virtual_display.lock);
+		virtual_display.texture_free[index] = 1;
+		os_unfair_lock_unlock(&virtual_display.lock);
+		dispatch_semaphore_signal(virtual_display.free_count);
+	}
+	return queued;
+}
+
 /* host_benchmark_presented: a launch on the fixed timestep (debug.benchmark_offscreen) whose frames are shown in
 real time for a while, paced by the display as a presented launch's are, and then not again. The pacing
 thread starts at the first such frame and stays */
@@ -4320,7 +4684,23 @@ void gpu_metal_benchmark_realtime(int on)
 	if (!fixed_timestep_launch)
 		return;
 	visibility_wait = !on;
-	if (on && !pacing_thread)
+	/* (debug.benchmark_virtual_display: the run's frames go to the virtual display, not the screen) */
+	BOOL virtual_frames = on && host_benchmark_virtual_display();
+
+	if (!virtual_frames && atomic_load(&virtual_display_on))
+	{
+		if (last_committed)
+			[last_committed waitUntilCompleted];
+		virtual_display_stop();
+	}
+	if (virtual_frames)
+	{
+		/* (pacing_start's flags, which the display link's start would have set) */
+		pacing.any_rate = (output_initialize_flags & GPU_INITIALIZE_PACING_ANY_RATE) != 0;
+		pacing.refreshes = 1;
+		virtual_display_start();
+	}
+	else if (on && !pacing_thread)
 	{
 		uint32_t flags = output_initialize_flags;
 
@@ -4699,7 +5079,8 @@ void gpu_metal_frame_deadline_end(void)
 }
 #endif
 
-static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *next_frame_due)
+/* shown: the frame has a drawable, or a texture of the virtual display's */
+static CFTimeInterval pacing_schedule(BOOL shown, uint32_t *next_frame_due)
 {
 	CFTimeInterval now = CACurrentMediaTime(), period, hold, interval;
 	long context_refreshes;
@@ -4718,6 +5099,8 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 		double perf_cpu = cpu - (host_perf_hooks_dynamic_enabled() ? perf_gpu_waited : 0.0);
 		host_perf_hooks_cpu(perf_cpu >= 0.0 ? (uint64_t)(perf_cpu * 1e6) : UINT64_MAX);
 	}
+	/* (the benchmark's per-frame waits: for the GPU in the frame, and for the workers at the end of the one before) */
+	double frame_gpu_waited = perf_gpu_waited, frame_worker_waited = host_benchmark_worker_waited_take();
 	perf_gpu_waited = 0.0;
 	gpu = (double)(gpu_total - pacing.gpu_counted) / 1e9;
 	pacing.gpu_counted = gpu_total;
@@ -4743,9 +5126,10 @@ static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *ne
 		host_benchmark_upscaler(metalfx_requested ? "metalfx" : "bilinear", frame_upscale_paths ?: HOST_UPSCALER_NONE);
 		host_benchmark_frame(interval, cpu > 0.0 ? cpu : -1.0, gpu_measured ? gpu : -1.0, period >= 1.0 / 240.0 && period <= 1.0 / 20.0 ? period : 0.0,
 			simulation_cpu, render_cpu, translation_cpu, ticks);
+		host_benchmark_frame_waits(frame_gpu_waited, frame_worker_waited);
 		host_benchmark_frame_probe();
 	}
-	if (!drawable || period < 1.0 / 240.0 || period > 1.0 / 20.0)
+	if (!shown || period < 1.0 / 240.0 || period > 1.0 / 20.0)
 	{
 		/* (the one frame an output change skips is this one: frame_log_frame, below, is not reached to end the
 		skip, and without this an offscreen benchmark, which has no drawable, would skip every frame after one) */
@@ -6447,6 +6831,13 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		/* debug.benchmark_offscreen: the frame goes into target, with no
 		drawable, Present or display wait (host_benchmark_offscreen.h) */
 		BOOL offscreen = host_benchmark_offscreen_active();
+		/* debug.benchmark_virtual_display: a presented run's frame goes to the virtual display's texture */
+		BOOL virtual_frame = HALO_FRAME_PACING && !offscreen && atomic_load(&virtual_display_on);
+		int virtual_texture = -1;
+		/* the next frame's visibility answers: from frames before in pipelined offscreen runs and on the virtual
+		display; otherwise waited for (the fixed timestep) or the latest (real time) */
+		gpu_metal_visibility_latency_set((offscreen && host_benchmark_offscreen_pipelined()) || virtual_frame ?
+			VISIBILITY_HISTORY - 1 : 0);
 		id<MTLTexture> target = nil;
 		CFTimeInterval waited;
 		uint32_t next_frame_due = 0;
@@ -6531,6 +6922,12 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		{
 			drawable = nil;
 			target = frame_held ? nil : offscreen_target();
+		}
+		else if (virtual_frame)
+		{
+			drawable = nil;
+			virtual_texture = frame_held || gave_up ? -1 : virtual_display_take();
+			target = virtual_texture >= 0 ? virtual_display.textures[virtual_texture] : nil;
 		}
 		else
 #if HALO_FRAME_PACING && !TARGET_OS_SIMULATOR
@@ -6626,8 +7023,25 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 				frame_log.height = (unsigned)picture.height;
 				if (!offscreen)
 					frame_context_wait();
-				hold = pacing_schedule(drawable, &next_frame_due);
+				hold = pacing_schedule(drawable != nil || virtual_texture >= 0, &next_frame_due);
 				/* (offscreen: nothing is shown, so nothing is paced or presented) */
+#if HALO_FRAME_PACING
+				if (!offscreen && virtual_texture >= 0)
+				{
+					/* the virtual display shows it, as presentDrawable:afterMinimumDuration: and the presented
+					handler would */
+					int perf = host_perf_hooks_dynamic_enabled();
+					uint64_t perf_frame = perf ? host_perf_hooks_frame_id() : 0;
+
+					if (hold == 0.0)
+						hold = frame_pacer_present(&paced);
+					if (virtual_display_present(commands, virtual_texture, hold, &paced, perf, perf_frame,
+						perf_presentation_budget))
+						paced.slot = 0;
+					virtual_texture = -1;
+				}
+				else
+#endif
 				if (!offscreen)
 				{
 					gpu_metal_presentation_observe(drawable, CACurrentMediaTime(), frame_context.scene_class == 2,
@@ -6681,7 +7095,16 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 			}
 		}
 		else
-			host_benchmark_frame_unshown(drawable || offscreen ? 1 : 0);
+			host_benchmark_frame_unshown(drawable || offscreen || virtual_texture >= 0 ? 1 : 0);
+		/* (a virtual display's texture the frame had no picture for goes back) */
+		if (virtual_texture >= 0)
+		{
+			os_unfair_lock_lock(&virtual_display.lock);
+			virtual_display.texture_free[virtual_texture] = 1;
+			os_unfair_lock_unlock(&virtual_display.lock);
+			dispatch_semaphore_signal(virtual_display.free_count);
+			virtual_texture = -1;
+		}
 		/* (a frame with nothing to show: its slot goes back now) */
 		frame_pacer_frame_dropped(&paced);
 		BOOL main_shown = drawable && record && record->texture && !frame_held;
