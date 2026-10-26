@@ -32,6 +32,9 @@ waits for it unless the player skips. One texture at a time; the manifest is the
 #include <unistd.h>
 
 static dispatch_queue_t upscale_worker;
+/* the level being loaded and the data root, kept with the generator off too (readiness without the generator) */
+static char loading_name[64];
+static NSString *any_root;
 static NSString *upscale_root;
 static BOOL upscale_enabled, export_enabled;
 /* upscale_playing: the work must stop (a level is played); stop_flag mirrors it for Core ML and the encoders */
@@ -198,12 +201,19 @@ static struct texture_recipe_globals recipe_globals(void) {
 }
 /* One map's texture keys, from its own classification: what a level needs ready to play upscaled. Cached per map
    until the next catalog; nil when the map is not installed or cannot be read. Any thread. */
+static NSData *classify_map_keys(NSString *path,NSString *name);
 static NSData *keys_for_map(NSString *name) {
     if(!name.length)return nil;
     @synchronized(map_keys){NSData *known=map_keys[name];if(known)return known;}
     NSString *path=nil;
     @synchronized(state_token){for(NSString *candidate in published_paths)if([map_base(candidate) isEqual:name]){path=candidate;break;}}
     if(!path)return nil;
+    NSData *keys=classify_map_keys(path,name);
+    if(keys)@synchronized(map_keys){map_keys[name]=keys;}
+    return keys;
+}
+/* a map file's texture keys, from its own classification; nil if it cannot be read */
+static NSData *classify_map_keys(NSString *path,NSString *name) {
     char error[256]={0};uint64_t size=0;FILE *map=host_texture_source_open_policy_map(path.fileSystemRepresentation,&size,error,sizeof(error));
     if(!map){host_logf(HOST_LOG_WARN,"Upscale level %s: %s",name.UTF8String,error);return nil;}
     const unsigned char *mapping=mmap(NULL,(size_t)size,PROT_READ,MAP_PRIVATE,fileno(map),0);
@@ -215,7 +225,6 @@ static NSData *keys_for_map(NSString *name) {
     NSMutableData *keys=[NSMutableData dataWithLength:count*sizeof(struct texture_cache_key)];struct texture_cache_key *k=keys.mutableBytes;
     for(size_t i=0;i<count;i++)k[i]=(struct texture_cache_key){found[i].hash,found[i].width,found[i].height};
     free(found);
-    @synchronized(map_keys){map_keys[name]=keys;}
     return keys;
 }
 /* how much of a level (keys) or of the whole game (nil) has current entries */
@@ -529,7 +538,10 @@ static void pump(void) {
                 @synchronized(state_token){free(manifest);manifest=loaded;manifest_count=count;}
         }
         if(!catalog_ready){catalog_ready=build_catalog();if(!catalog_ready){why="catalog";goto done;}
-            BOOL reconciled;@synchronized(state_token){reconciled=reconcile_manifest();}
+            BOOL reconciled;@synchronized(state_token){reconciled=reconcile_manifest();
+                /* (for readiness while the generator is off: texture_cache_decisions_load) */
+                if(texture_cache_decisions_save(cache_directory().fileSystemRepresentation,decisions,decision_count))
+                    host_logf(HOST_LOG_WARN,"Upscale: could not save the decisions");}
             if(!reconciled){catalog_ready=NO;why="manifest";goto done;}}
         serial=atomic_load(&priority_serial);
         sorting_priority=priority_snapshot();
@@ -637,6 +649,7 @@ void host_texture_upscale_init(const char *root) {
         }
 #endif
         if(!root)return;
+        any_root=@(root);
         /* Rule 1, before anything else: the profile, then the player's switch, then a Neural Engine (rule 8). */
         char mode[16]="auto",player[16]="";
         const char *environment=getenv("HALO_TEXTURE_UPSCALE_GENERATE");
@@ -705,6 +718,7 @@ static void set_priority(const char *name) {
     atomic_fetch_add(&priority_serial,1);
 }
 void host_texture_upscale_map_will_load(const char *name) {
+    if(name){NSString *n=map_base([@(name) stringByReplacingOccurrencesOfString:@"\\" withString:@"/"]);snprintf(loading_name,sizeof(loading_name),"%s",n.UTF8String);}
     if(!upscale_enabled)return;
     if(name)set_priority(name);
     @synchronized(activity_token){texture_upscale_activity_map_will_load(&activity);}
@@ -831,8 +845,46 @@ static BOOL level_files_present(NSData *keys) {
 }
 /* the no-mix rule: 1 when every texture the level's policy upscales has a current entry, else the level plays
    original (and a skipped wait always does); 1 when the generator is off, which leaves the reader as it was */
+static int map_path_collect(void *context,const char *path) { [(__bridge NSMutableArray *)context addObject:@(path)];return 1; }
+/* The no-mix rule with the generator off (a player who turned it off after a partial run, a measured run): the
+   decisions the generator saved, the manifest on disk and the level's own keys. No cache: 1, the reader draws none.
+   A cache without its decisions: 0, the level plays original. */
+static int level_ready_without_generator(void) {
+    if(!any_root||!loading_name[0])return 1;
+    NSString *directory=[any_root stringByAppendingPathComponent:@TEXTURE_CACHE_DIRECTORY];
+    struct texture_cache_record *records=NULL;size_t record_count=0;
+    if(texture_cache_manifest_load(directory.fileSystemRepresentation,&records,&record_count)){
+        host_logf(HOST_LOG_WARN,"Upscale level %s: original textures (the cache's manifest cannot be read)",loading_name);return 0;}
+    if(!record_count){free(records);return 1;}
+    struct texture_policy_decision *saved=NULL;size_t saved_count=0;
+    if(texture_cache_decisions_load(directory.fileSystemRepresentation,&saved,&saved_count)){
+        free(records);host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (no decisions beside the cache)",loading_name);return 0;}
+    NSMutableArray *paths=[NSMutableArray new];NSString *path=nil,*name=@(loading_name);
+    host_texture_source_scan(any_root.fileSystemRepresentation,map_path_collect,(__bridge void *)paths);
+    for(NSString *candidate in paths)if([map_base(candidate) isEqual:name]){path=candidate;break;}
+    NSData *keys=path?classify_map_keys(path,name):nil;
+    int ready=0;
+    if(keys){
+        if(!record_format){id<MTLDevice> device=MTLCreateSystemDefaultDevice();record_format=TEXTURE_RECORD_ASTC4X4;
+            if(@available(iOS 16.4,tvOS 16.4,macOS 11.0,*))if(device.supportsBCTextureCompression)record_format=TEXTURE_RECORD_BC7;}
+        struct texture_recipe_globals globals=recipe_globals();struct texture_cache_progress p={0};
+        texture_cache_progress(keys.bytes,keys.length/sizeof(struct texture_cache_key),saved,saved_count,records,record_count,&globals,&p);
+        ready=p.ready==p.textures;
+        const struct texture_cache_key *k=keys.bytes;
+        for(size_t i=0;ready&&i<keys.length/sizeof(*k);i++)for(size_t j=0;j<record_count;j++){
+            const struct texture_cache_record *r=&records[j];
+            if(r->hash!=k[i].hash||r->width!=k[i].width||r->height!=k[i].height)continue;
+            struct stat st;NSString *file=[directory stringByAppendingPathComponent:[key(r->hash,r->width,r->height) stringByAppendingString:@".bin"]];
+            if(r->bytes&&(stat(file.fileSystemRepresentation,&st)||(uint64_t)st.st_size!=r->bytes))ready=0;
+            break;
+        }
+        host_logf(HOST_LOG_INFO,"Upscale level %s (generator off): %s textures (%zu of %zu ready)",loading_name,ready?"upscaled":"original",p.ready,p.textures);
+    } else host_logf(HOST_LOG_INFO,"Upscale level %s (generator off): original textures (its map is not listed)",loading_name);
+    free(records);free(saved);
+    return ready;
+}
 int host_texture_upscale_level_ready(void) {
-    if(!upscale_enabled)return 1;
+    if(!upscale_enabled)return level_ready_without_generator();
     NSString *name=priority_snapshot();
     if(atomic_exchange(&level_skipped,false)){host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (the wait was skipped)",name.UTF8String);return 0;}
     NSData *keys=keys_for_map(name);

@@ -76,6 +76,11 @@ void texture_cache_progress(const struct texture_cache_key *keys, size_t key_cou
 /* the manifest: <directory>/manifest.tsv, one record per line; load returns 0 with *records malloc'd and *count set (a missing manifest: 0 records), or -1 if it exists but cannot be read (no records) */
 int texture_cache_manifest_load(const char *directory, struct texture_cache_record **records, size_t *count);
 int texture_cache_manifest_save(const char *directory, const struct texture_cache_record *records, size_t count);
+/* the whole-game decisions the generator classified (<directory>/decisions.tsv), so readiness can be judged while the
+   generator is off: load returns 0 with *decisions malloc'd and sorted by hash, width and height, or -1 if the file is
+   missing or cannot be read */
+int texture_cache_decisions_save(const char *directory, const struct texture_policy_decision *decisions, size_t count);
+int texture_cache_decisions_load(const char *directory, struct texture_policy_decision **decisions, size_t *count);
 
 /* ---------- storage (spec "Cache and versioning": skips, low storage, the storage floor)
 The floor: a level that has entries to make first starts only if free storage covers them plus this slack. */

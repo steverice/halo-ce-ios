@@ -244,6 +244,32 @@ static void progress(void)
 	assert(p.ready == 1);
 }
 
+/* the decisions beside the manifest: round trip in classify order, refused when damaged, deleted with the cache */
+static void decisions(void)
+{
+	char directory[] = "/tmp/texture-cache-decisions-XXXXXX", path[256];
+	struct texture_policy_decision d[2] = {
+		{ 0x30, 16, 16, TEXTURE_POLICY_SURFACE, TEXTURE_POLICY_BPF, TEXTURE_POLICY_COLOR, 1, 0, 0, 2 },
+		{ 0x10, 64, 64, TEXTURE_POLICY_GRAPHIC, TEXTURE_POLICY_ORIGINAL, TEXTURE_POLICY_BUMP_MAP, 1, 0, 0, 1 } };
+	struct texture_policy_decision *loaded = NULL;
+	size_t count = 0;
+	FILE *file;
+
+	assert(mkdtemp(directory));
+	assert(texture_cache_decisions_load(directory, &loaded, &count) == -1 && !loaded);
+	assert(texture_cache_decisions_save(directory, d, 2) == 0);
+	assert(texture_cache_decisions_load(directory, &loaded, &count) == 0 && count == 2);
+	assert(loaded[0].hash == 0x10 && loaded[0].result == TEXTURE_POLICY_ORIGINAL && loaded[0].treatment == TEXTURE_POLICY_BUMP_MAP);
+	assert(loaded[1].hash == 0x30 && loaded[1].width == 16 && loaded[1].result == TEXTURE_POLICY_BPF);
+	free(loaded);
+	snprintf(path, sizeof(path), "%s/decisions.tsv", directory);
+	file = fopen(path, "a"); fputs("not a decision\n", file); fclose(file);
+	assert(texture_cache_decisions_load(directory, &loaded, &count) == -1 && !loaded && !count);
+	assert(texture_cache_delete_all(directory) == 0);
+	assert(access(path, F_OK) != 0);
+	assert(rmdir(directory) == 0);
+}
+
 int main(void)
 {
 	keys();
@@ -254,6 +280,7 @@ int main(void)
 	write_fails_cleanly();
 	size_and_delete();
 	progress();
+	decisions();
 	puts("texture_cache_probe: ok");
 	return 0;
 }

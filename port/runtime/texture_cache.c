@@ -82,6 +82,13 @@ static int key_compare(uint64_t hash_a, uint32_t width_a, uint32_t height_a, uin
 	return height_a < height_b ? -1 : height_a > height_b;
 }
 
+static int decision_order(const void *a, const void *b)
+{
+	const struct texture_policy_decision *x = a, *y = b;
+
+	return key_compare(x->hash, x->width, x->height, y->hash, y->width, y->height);
+}
+
 static int record_order(const void *a, const void *b)
 {
 	const struct texture_cache_record *x = a, *y = b;
@@ -263,6 +270,80 @@ int texture_cache_manifest_save(const char *directory, const struct texture_cach
 	return write_atomically(path, fill_manifest, &m);
 }
 
+/* ---------- the whole-game decisions, beside the manifest (decisions.tsv) */
+struct decision_contents { const struct texture_policy_decision *d; size_t count; };
+
+static int fill_decisions(FILE *file, const void *context)
+{
+	const struct decision_contents *c = context;
+	size_t i;
+
+	for (i = 0; i < c->count; i++)
+		if (fprintf(file, "%016" PRIx64 "\t%u\t%u\t%u\t%u\n", c->d[i].hash, c->d[i].width, c->d[i].height,
+			(unsigned)c->d[i].result, (unsigned)c->d[i].treatment) < 0)
+			return -1;
+	return 0;
+}
+
+int texture_cache_decisions_save(const char *directory, const struct texture_policy_decision *decisions, size_t count)
+{
+	char path[1024];
+	struct decision_contents c = { decisions, count };
+
+	snprintf(path, sizeof(path), "%s/decisions.tsv", directory);
+	return write_atomically(path, fill_decisions, &c);
+}
+
+int texture_cache_decisions_load(const char *directory, struct texture_policy_decision **decisions, size_t *count_out)
+{
+	char path[1024], line[128];
+	FILE *file;
+	size_t count = 0, capacity = 0;
+	struct texture_policy_decision *list = NULL;
+
+	*decisions = NULL;
+	*count_out = 0;
+	snprintf(path, sizeof(path), "%s/decisions.tsv", directory);
+	if (!(file = fopen(path, "r")))
+		return -1;
+	while (fgets(line, sizeof(line), file))
+	{
+		struct texture_policy_decision d;
+		unsigned result, treatment;
+
+		memset(&d, 0, sizeof(d));
+		if (sscanf(line, "%" SCNx64 "\t%u\t%u\t%u\t%u", &d.hash, &d.width, &d.height, &result, &treatment) != 5 ||
+			result > TEXTURE_POLICY_ORIGINAL || treatment > TEXTURE_POLICY_BUMP_MAP)
+		{
+			free(list);
+			fclose(file);
+			return -1;
+		}
+		d.result = (enum texture_policy_result)result;
+		d.treatment = (enum texture_policy_treatment)treatment;
+		if (count == capacity)
+		{
+			struct texture_policy_decision *grown;
+
+			capacity = capacity ? capacity * 2 : 256;
+			if (!(grown = realloc(list, capacity * sizeof(*list))))
+			{
+				free(list);
+				fclose(file);
+				return -1;
+			}
+			list = grown;
+		}
+		list[count++] = d;
+	}
+	fclose(file);
+	/* (in texture_policy_classify's order, which texture_cache_progress relies on) */
+	qsort(list, count, sizeof(*list), decision_order);
+	*decisions = list;
+	*count_out = count;
+	return 0;
+}
+
 /* ---------- storage: entry sizes, the low-storage floor, the level-start decision, entry writes */
 static long write_fault = -1;
 
@@ -330,6 +411,7 @@ static int ours(const char *name)
 	size_t length = strlen(name);
 
 	return !strcmp(name, "manifest.tsv") || !strcmp(name, "manifest.tsv.tmp") ||
+		!strcmp(name, "decisions.tsv") || !strcmp(name, "decisions.tsv.tmp") ||
 		(length > 4 && !strcmp(name + length - 4, ".bin")) || (length > 8 && !strcmp(name + length - 8, ".bin.tmp"));
 }
 
