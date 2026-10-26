@@ -39,6 +39,8 @@ STYLE = """
 .device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
 .device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
 .device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 10px; }
+.device-glass .bench-chart { padding: 3% 4%; }
+.device-glass .bench-chart svg { width: 100%; height: 100%; }
 .device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
 .bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
 .bench-rows { border: 1px solid var(--line); padding: 8px 14px 12px; margin: 0; }
@@ -55,11 +57,11 @@ STYLE = """
 
 
 FRAMES = {"mac": "device-mac", "iphone-ipad": "device-ipad", "apple-tv": "device-tv", "vision-pro": "device-vision device-glass"}
-# Our own outline of a headset's front glass seen from the front (no strap or details), in a 440 by 230 box.
-GLASS = ('<svg class="glass-shape" viewBox="0 0 440 230" preserveAspectRatio="none" aria-hidden="true">'
-         '<path d="M78 34.5C160 18.4 280 18.4 362 34.5C406 43.7 428 62 428 92L428 138C428 168 406 186 362 195.5'
-         'C280 211.6 160 211.6 78 195.5C34 186 12 168 12 138L12 92C12 62 34 43.7 78 34.5Z"/>'
-         '<path class="sheen" d="M96 43.7C170 31 270 31 344 43.7"/></svg>')
+# Our own outline of a headset's front glass seen from the front (no strap or details), in a 440 by 260 box.
+GLASS = ('<svg class="glass-shape" viewBox="0 0 440 260" preserveAspectRatio="none" aria-hidden="true">'
+         '<path d="M78 39C160 20.8 280 20.8 362 39C406 49.4 428 70.2 428 104L428 156C428 189.8 406 210.6 362 221'
+         'C280 239.2 160 239.2 78 221C34 210.6 12 189.8 12 156L12 104C12 70.2 34 49.4 78 39Z"/>'
+         '<path class="sheen" d="M96 49.4C170 35 270 35 344 49.4"/></svg>')
 
 
 def slug(spec: dict) -> str:

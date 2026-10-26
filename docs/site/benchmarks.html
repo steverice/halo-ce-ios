@@ -26,6 +26,8 @@
 .device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
 .device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
 .device-vision.device-glass .bench-chart { position: absolute; inset: 0; aspect-ratio: auto; border-radius: 10px; }
+.device-glass .bench-chart { padding: 3% 4%; }
+.device-glass .bench-chart svg { width: 100%; height: 100%; }
 .device-glass .bench-empty { padding: 4px 10px; text-align: center; font-size: clamp(0.7rem, 2.6vw, 1rem); line-height: 1.3; }
 .bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
 .bench-rows { border: 1px solid var(--line); padding: 8px 14px 12px; margin: 0; }
@@ -80,7 +82,7 @@
 <h2 id="h-vision-pro">Vision Pro</h2>
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
-<div class="bench-media"><figure class="device device-vision device-glass"><svg class="glass-shape" viewBox="0 0 440 230" preserveAspectRatio="none" aria-hidden="true"><path d="M78 34.5C160 18.4 280 18.4 362 34.5C406 43.7 428 62 428 92L428 138C428 168 406 186 362 195.5C280 211.6 160 211.6 78 195.5C34 186 12 168 12 138L12 92C12 62 34 43.7 78 34.5Z"/><path class="sheen" d="M96 43.7C170 31 270 31 344 43.7"/></svg><div class="glass-screen"><div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div></div></figure>
+<div class="bench-media"><figure class="device device-vision device-glass"><svg class="glass-shape" viewBox="0 0 440 260" preserveAspectRatio="none" aria-hidden="true"><path d="M78 39C160 20.8 280 20.8 362 39C406 49.4 428 70.2 428 104L428 156C428 189.8 406 210.6 362 221C280 239.2 160 239.2 78 221C34 210.6 12 189.8 12 156L12 104C12 70.2 34 49.4 78 39Z"/><path class="sheen" d="M96 49.4C170 35 270 35 344 49.4"/></svg><div class="glass-screen"><div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div></div></figure>
 <p class="bench-legend"></p>
 <p class="bench-caption"></p></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
@@ -283,7 +285,7 @@ sponsored by or endorsed by Microsoft, Xbox Game Studios, Halo Studios
     "🟦",
     "🟧"
    ],
-   "header": "---\nconfig:\n  xyChart:\n    width: 520\n    height: 227\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
+   "header": "---\nconfig:\n  xyChart:\n    width: 520\n    height: 265\n  themeVariables:\n    xyChart:\n      plotColorPalette: \"#2f6fed, #f28c28\"\n---\n"
   },
   "query": {
    "platform": "Vision Pro",
