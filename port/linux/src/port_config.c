@@ -664,6 +664,12 @@ static const struct config_setting config_settings[] =
 		"What draws the game: \"metal\" (default) Metal, or \"gl\" OpenGL ES, for\n"
 		"debugging only: it lacks the Metal renderer's performance work and\n"
 		"measures no GPU time. Changes apply on relaunch." },
+	{ "display.frame_deadline", _config_boolean, "true", "HALO_FRAME_DEADLINE", _environment_set_is_true, _platform_ios,
+		"Tell the system each frame's deadline (the frame rate's period), so the\n"
+		"CPU keeps the clock that finishes frames in time while frames under a\n"
+		"frame rate cap wait for the display; without it an A9X's clock fell to\n"
+		"its lowest and frames ran late. Not on a Vision Pro, whose frames the\n"
+		"system times. false leaves it off." },
 	{ "display.frame_pacing", _config_string, "\"off\"", "HALO_FRAME_PACING", _environment_value, _platform_ios,
 		"How the Metal renderer times frames: \"off\" (default) shows each frame as\n"
 		"soon as it's drawn; \"tick\" shows every frame for the same whole number\n"

@@ -697,6 +697,16 @@
             "apple"
           ]
         },
+        "frame_deadline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Tell the system each frame's deadline (the frame rate's period), so the CPU keeps the clock that finishes frames in time while frames under a frame rate cap wait for the display; without it an A9X's clock fell to its lowest and frames ran late. Not on a Vision Pro, whose frames the system times. false leaves it off.",
+          "x-environment": "HALO_FRAME_DEADLINE",
+          "x-environment-style": "set_is_true",
+          "x-platforms": [
+            "apple"
+          ]
+        },
         "frame_pacing": {
           "type": "string",
           "default": "off",

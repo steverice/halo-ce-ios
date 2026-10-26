@@ -67,6 +67,9 @@ build with render validation; nothing otherwise */
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <os/workgroup.h>
+#include <AudioToolbox/AudioWorkInterval.h>
 
 /* the platform layer's (host_gpu.c) */
 void platform_log(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -221,6 +224,7 @@ static BOOL foveation_sizes(MetalTexture *record, MTLSize *screen, MTLSize *phys
 static id<MTLTexture> foveation_resolve(MetalTexture *record, NSUInteger width, NSUInteger height);
 #include "host_config.h"
 #include "host_frame_pacer.h"
+#include "frame_deadline.h"
 #include "host_stereo.h"
 #if TARGET_OS_VISION
 #include "host_theater.h"
@@ -4595,6 +4599,106 @@ static void frame_context_wait(void)
 	presented_at = atomic_load(&refresh_count);
 }
 
+/* ---------- each frame's deadline for the CPU's clock (display.frame_deadline)
+
+Under a frame rate cap the drawing thread waits a large part of each frame,
+and the system then lowers the CPU's clock as if the work were light: on an
+A9X iPad Pro (d40-maw-fight at 30 frames a second) it fell a step a frame
+to its lowest, about a fifth of its highest, and stayed there while frames ran
+late, so 89% were on time against 98% at 60. The drawing thread joins an
+os_workgroup interval (AudioWorkIntervalCreate) and marks each frame's work,
+from the end of one Present to the start of the next, with its deadline: the
+frame rate's period (display.frame_rate's cap or a scene class's rate, as
+the pacer holds them, else the display's refresh). The system then keeps the
+clock that meets the deadline: there 100% were on time, the frame's CPU time
+fell from 27.9 to 10.3 ms and the app's CPU time a second by more than half.
+Offscreen benchmark frames have no deadline. A Vision Pro's frames are the
+Compositor's to time (host_stereo.m), so none of this is compiled there.
+display.frame_deadline = false leaves it off. (The workgroup API is meant for
+audio's realtime threads; the drawing thread is not one, and the interval's
+deadline is what was measured to work. Keep it unless a device says otherwise.)
+The work ends before the dispatch's background hold too, and a level load
+between Presents stays inside the frame's interval, past its deadline. */
+#if !TARGET_OS_VISION
+static struct
+{
+	int state;               /* 0 not set up, 1 joined, -1 off or unavailable */
+	os_workgroup_interval_t interval;
+	struct os_workgroup_join_token_opaque_s token;
+	int open, start_failed;
+	mach_timebase_info_data_t timebase;
+} frame_deadline;
+
+/* the frame's work begins now (Present has returned) */
+static void frame_deadline_begin(BOOL offscreen)
+{
+	double period;
+
+	if (!frame_deadline.state && !offscreen)
+	{
+		char value[8];
+
+		frame_deadline.state = -1;
+		host_config_string("display.frame_deadline", "true", value, sizeof(value));
+		mach_timebase_info(&frame_deadline.timebase);
+		if (strcmp(value, "false"))
+		{
+			if (@available(iOS 14.0, tvOS 14.0, macOS 11.0, *))
+			{
+				frame_deadline.interval = AudioWorkIntervalCreate("VISR frame", OS_CLOCK_MACH_ABSOLUTE_TIME, NULL);
+				int joined = frame_deadline.interval ? os_workgroup_join(frame_deadline.interval, &frame_deadline.token) : -1;
+
+				if (!joined)
+					frame_deadline.state = 1;
+				host_logf(HOST_LOG_INFO, "Metal: each frame's deadline goes to the system (display.frame_deadline): %s",
+					!joined ? "on" : frame_deadline.interval ? "the drawing thread could not join the workgroup" :
+					"no workgroup interval");
+			}
+		}
+		else
+			host_logf(HOST_LOG_INFO, "Metal: display.frame_deadline is off");
+	}
+	if (frame_deadline.state != 1 || offscreen)
+		return;
+	os_unfair_lock_lock(&pacing_lock);
+	period = refresh_period;
+	os_unfair_lock_unlock(&pacing_lock);
+	/* (what the pacer holds: its own refreshes a frame or the scene class's, as the frame's budget counts them) */
+	if (period > 0.0)
+		period *= fmax(pacing.off ? 1 : pacing.refreshes, frame_context_refreshes(period));
+	period = frame_deadline_period(host_frame_rate_target(), period);
+	if (@available(iOS 14.0, tvOS 14.0, macOS 11.0, *))
+	{
+		uint64_t now = mach_absolute_time();
+
+		if (frame_deadline.open)
+			os_workgroup_interval_finish(frame_deadline.interval, NULL);
+		int started = os_workgroup_interval_start(frame_deadline.interval, now,
+			now + (uint64_t)(period * 1e9 * (double)frame_deadline.timebase.denom / (double)frame_deadline.timebase.numer),
+			NULL);
+
+		frame_deadline.open = started == 0;
+		if (started && !frame_deadline.start_failed++)
+			host_logf(HOST_LOG_ERROR, "Metal: a frame's deadline was refused (os_workgroup_interval_start %d)", started);
+	}
+}
+
+/* the frame's work ends now (Present is about to wait, or the dispatch to hold in the background) */
+void gpu_metal_frame_deadline_end(void)
+{
+	if (frame_deadline.open)
+	{
+		if (@available(iOS 14.0, tvOS 14.0, macOS 11.0, *))
+			os_workgroup_interval_finish(frame_deadline.interval, NULL);
+		frame_deadline.open = 0;
+	}
+}
+#else
+void gpu_metal_frame_deadline_end(void)
+{
+}
+#endif
+
 static CFTimeInterval pacing_schedule(id<CAMetalDrawable> drawable, uint32_t *next_frame_due)
 {
 	CFTimeInterval now = CACurrentMediaTime(), period, hold, interval;
@@ -6410,6 +6514,9 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 		frame_held = async_compiles && metal_hold_frame(&window_hold, metal_skip_frame_broken(&skip_frame), HOLD_LIMIT);
 		unsynced = frame_rate_sync();
 		gpu_metal_presentation_configure(layer);
+#if !TARGET_OS_VISION
+		gpu_metal_frame_deadline_end();
+#endif
 		waited = CACurrentMediaTime();
 		/* display.frame_rate's cap; its sleep counts as waiting, not as the
 		frame's CPU time */
@@ -6639,6 +6746,9 @@ static uint32_t gpu_metal_present(gpu_texture back_buffer)
 					"it, and ended early %.1f times a frame", native_pass.parks / 600.0, native_pass.in_order / 600.0);
 			native_pass.parks = native_pass.in_order = 0;
 		}
+#if !TARGET_OS_VISION
+		frame_deadline_begin(offscreen);
+#endif
 		pacing.work_started = CACurrentMediaTime();
 		perf_gpu_waited = 0.0;
 		return next_frame_due;

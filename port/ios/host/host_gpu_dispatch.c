@@ -88,6 +88,9 @@ static uint32_t present_wrapped(gpu_texture back_buffer)
 	uint32_t next_frame_due;
 	double called = uptime_seconds();
 
+	/* (the frame's work ends here: a background hold mustn't count against its deadline) */
+	if (metal_backend)
+		gpu_metal_frame_deadline_end();
 	host_lifecycle_hold();
 	host_perf_hooks_context(1, metal_backend ? 1 : 2);
 	host_perf_hooks_present_begin();

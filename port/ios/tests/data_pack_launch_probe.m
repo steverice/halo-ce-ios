@@ -17,6 +17,7 @@ void host_logf(int priority, const char *format, ...) { (void)priority; (void)fo
 void platform_log(const char *format, ...) { (void)format; }
 const struct gpu_backend gpu_backend_metal = {0}, gpu_backend_gl = {0};
 void host_lifecycle_hold(void) {}
+void gpu_metal_frame_deadline_end(void) {}
 /* Presentation timing also runs in shadow-only builds. */
 void host_perf_hooks_context(unsigned field, uint64_t value) { (void)field; (void)value; }
 void host_perf_hooks_present_begin(void) {}
