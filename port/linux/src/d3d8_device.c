@@ -444,9 +444,14 @@ static void screen_mode_choose(long *width, float scale[2], float native[2], flo
 	{
 		/* dynamic resolution: the planner's lines for the next frames, inside
 		targets allocated at these (the ceiling); 0 when it is off or refused */
-		int lines = host_dynamic_resolution_lines(dynamic_resolution_refused() ? 0 : (int)pixels.height);
+		/* A passing refusal (a menu, a benchmark's own lines, the companion
+		picture, a hand-set scale) keeps the pool and renders its ceiling,
+		so the targets are neither freed nor made again; only the renderer,
+		stereo, the native HUD and the rate map test turn it off */
+		int refused = dynamic_resolution_refused();
+		int lines = host_dynamic_resolution_lines(refused ? 0 : (int)pixels.height);
 
-		*dynamic = lines > 0;
+		*dynamic = lines > 0 || refused == 1;
 		if (lines > 0 && lines < pixels.height)
 			pixels = halo_display_render_size(drawable_width, drawable_height, *width, requested_width, lines,
 				screen_maximum_texture_size);
@@ -2343,9 +2348,11 @@ static int rate_map_test(void)
 #ifdef HALO_ILP32
 int benchmark_suite_running(void);
 
-/* dynamic resolution's refusals (the design's 2.2): 1 when the next frames'
-scene renders at the ceiling in targets of its own size, as without it. The
-first refusal of each kind is said in the log. */
+/* dynamic resolution's refusals (the design's 2.2): 0 none; 1 when the next
+frames' scene renders at the ceiling inside the pool, which stays; 2 when it
+renders in targets of its own size, as without dynamic resolution (it is off,
+or the frame cannot use the pool). The first refusal of each kind is said in
+the log. */
 static int dynamic_resolution_refused(void)
 {
 	const struct halo_stereo_frame *stereo = halo_stereo_frame();
@@ -2356,8 +2363,8 @@ static int dynamic_resolution_refused(void)
 	/* (off: nothing to refuse or say; asked once the renderer, and the device's profile, are up) */
 	if (on < 0 && device.gl_ready)
 		on = host_dynamic_resolution_lines(-1) > 0;
-	if (on == 0)
-		return 1;
+	if (on <= 0)
+		return 2;
 	if (native_hud_wanted < 0 && device.gl_ready)
 		native_hud_wanted = config_boolean("display.native_hud") && device_capabilities.upscale;
 	if (!device.gl_ready)
@@ -2370,7 +2377,14 @@ static int dynamic_resolution_refused(void)
 		why = "display.native_hud is off or the renderer cannot upscale";
 	else if (rate_map_test())
 		why = "debug.rate_map_test";
-	else if (knob_render_lines > 0)
+	if (why)
+	{
+		if (why != said)
+			platform_log("dynamic resolution: off: %s", why);
+		said = why;
+		return 2;
+	}
+	if (knob_render_lines > 0)
 		why = "debug.knob_cycle sets the lines";
 	/* (debug.dynamic_resolution_validate: a benchmark case's lines are the ceiling) */
 	else if ((benchmark_render_lines > 0 || benchmark_suite_running()) && !config_boolean("debug.dynamic_resolution_validate"))
@@ -2379,9 +2393,10 @@ static int dynamic_resolution_refused(void)
 		why = "the render scale was changed by hand";
 	else if (companion_active())
 		why = "an external display's companion picture";
-	else if (halo_scene_class() != CONFIG_SCENE_GAMEPLAY)
-		why = "not gameplay";
-	if (why && why != said && device.gl_ready)
+	/* (in-engine cutscenes are rendered as gameplay is; the menus are not measured) */
+	else if (halo_scene_class() == CONFIG_SCENE_MENU)
+		why = "the menus";
+	if (why && why != said)
 		platform_log("dynamic resolution: the ceiling only: %s", why);
 	said = why;
 	return why != NULL;
@@ -2868,6 +2883,11 @@ long halo_screen_commit(void)
 				width * ceiling[0], SCREEN_HEIGHT * ceiling[1], width * scale[0], SCREEN_HEIGHT * scale[1]);
 		else
 			platform_log("dynamic resolution: off for this scene");
+		/* the screen's targets of the other kind go: the pool replaces the
+		plain pair (made before it was known to be on), and the plain pair the
+		pool, so the two never both stay */
+		if (dynamic != screen_dynamic)
+			screen_targets_release(!dynamic);
 		screen_dynamic = dynamic;
 		screen_scale_ceiling[0] = ceiling[0];
 		screen_scale_ceiling[1] = ceiling[1];
@@ -2929,8 +2949,8 @@ void halo_screen_commit_stereo_scale(void)
 		/* (dynamic resolution is refused in stereo: its pool is not used) */
 		if (screen_dynamic && !dynamic)
 		{
+			screen_targets_release(1);
 			screen_dynamic = 0;
-			recent_render_targets_forget();
 		}
 	}
 	if (width == screen_width && (scale[0] != screen_scale[0] || scale[1] != screen_scale[1]))
@@ -6783,6 +6803,34 @@ static void stereo_targets_release(void)
 	}
 	if (freed)
 		platform_log("stereo: stereo stopped; freed %lu eye and HUD targets (%lu MB)", freed, bytes >> 20);
+}
+
+/* dynamic resolution: the mono screen's color and depth targets of one kind,
+pooled or plain, freed when the pool turns on or off (the backend holds a
+texture until the frames using it are done) */
+static void screen_targets_release(int pooled)
+{
+	struct render_target_entry **link = &render_targets;
+	unsigned long freed = 0;
+
+	recent_render_targets_forget();
+	while (*link)
+	{
+		struct render_target_entry *entry = *link;
+
+		if (entry->layer != HALO_STEREO_LAYER_MONO || entry->target.foveated_eye || entry->target.pooled != pooled ||
+			entry->target.height != SCREEN_HEIGHT ||
+			(entry->target.data != device.back_buffer.Data && entry->target.data != device.depth_buffer.Data))
+		{
+			link = &entry->next;
+			continue;
+		}
+		*link = entry->next;
+		render_target_entry_free(entry);
+		freed++;
+	}
+	if (freed)
+		platform_log("dynamic resolution: freed %lu %s screen targets", freed, pooled ? "pooled" : "plain");
 }
 
 /* debug.knob_cycle: the shadow, effect and mirror targets (128x128 and 320x240) whose size is not the one in force
