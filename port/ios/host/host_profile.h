@@ -38,7 +38,8 @@ struct host_profile_value
 	char text[80];
 	/* the layer it came from, for the log: class "Apple TV" */
 	char source[80];
-	/* "" for the profile's own value; "menu" or "cutscene" for a scene class's ([scene.menu.display]) */
+	/* "" for the profile's own value; "menu" or "cutscene" for a scene class's ([scene.menu.display]); "variable" for
+	   the variable-workload context's ([variable.display]) */
 	char scene[12];
 	/* values for an external output never replace the built-in display defaults */
 	int external;
@@ -66,6 +67,10 @@ void host_profile_resolve(const struct host_device *device, const char *folder, 
 
 /* the value in force for name (not a scene class's), as text; 0 if no profile sets it */
 int host_profile_value(const struct host_profile *profile, const char *name, char *text, size_t size);
+
+/* a scene class's or the variable context's built-in value for name (scene "variable"), as text; 0 if none */
+int host_profile_scene_value(const struct host_profile *profile, const char *name, const char *scene, char *text,
+	size_t size);
 
 /* The highest non-scene external value, falling back to the built-in profile. */
 int host_profile_external_value(const struct host_profile *profile, const char *name, char *text, size_t size);

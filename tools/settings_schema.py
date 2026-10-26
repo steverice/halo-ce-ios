@@ -136,6 +136,7 @@ def identity_array():
 def profile_schema(settings):
     keys = profile_check.profile_keys()
     scenes, external = profile_check.scene_keys(), profile_check.external_keys()
+    variable = profile_check.variable_keys()
     values = {name: profile_value(name, key, settings) for name, key in keys.items()}
     def context(names):
         return nested({name: values[name] for name in values if name in names})
@@ -153,12 +154,15 @@ def profile_schema(settings):
                 {'type': 'integer', 'minimum': 0, 'maximum': 32}], 'minItems': 2, 'maxItems': 2}}, ['platform']),
         'scene': scene_schema(set(values)),
         'external': object_schema({**context(external)['properties'], 'scene': scene_schema(external)}),
+        'variable': object_schema({'display': context(variable)['properties'].get('display', object_schema({}))}),
     })
     evidence = {}
     for name in values:
         contexts = [name]
         if name in scenes:
             contexts += [f'scene.{scene}.{name}' for scene in profile_check.SCENES]
+        if name in variable:
+            contexts.append(f'variable.{name}')
         if name in external:
             contexts.append(f'external.{name}')
             if name in scenes:
@@ -175,7 +179,7 @@ def profile_schema(settings):
                  'then': {'required': required}}]}
     properties['evidence'] = object_schema(evidence)
     result = {'$schema': DRAFT, 'title': 'VISR device profile',
-              'description': 'Gameplay values, optional menu/cutscene values and external-output values. Only PROFILE_SCENE keys may vary by scene and PROFILE_EXTERNAL keys by output. Run profile_check.py for evidence and cross-file checks.',
+              'description': 'Gameplay values (the predictable workload), optional variable-workload values, menu/cutscene values and external-output values. Only PROFILE_VARIABLE keys may vary by workload, PROFILE_SCENE keys by scene and PROFILE_EXTERNAL keys by output. Run profile_check.py for evidence and cross-file checks.',
               **object_schema(properties, ['schema', 'name', 'kind', 'match'])}
     result['allOf'] = [
         {'if': {'properties': {'kind': {'const': 'class'}}},
@@ -249,6 +253,8 @@ def markdown(kind, settings):
             if choices:
                 accepted += ': ' + ', '.join('quoted 30 to 1000' if c == '#' else f'`{c}`' for c in choices)
             contexts = ['tvOS built-in'] if name == 'display.output_height' else ['gameplay']
+            if name in profile_check.variable_keys():
+                contexts.append('variable')
             if name in profile_check.scene_keys():
                 contexts.append('ⓢ scene')
             if name in profile_check.external_keys():

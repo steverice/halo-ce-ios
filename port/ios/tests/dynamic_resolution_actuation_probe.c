@@ -16,12 +16,18 @@
 #include <string.h>
 static double load = 1.0;
 static unsigned rows, drops, recoveries;
-static int profile_installed = 1, profile_on, stage_timing = 1, ineligible;
+static int profile_installed = 1, profile_on, profile_variable_on, stage_timing = 1, ineligible;
+/* the floor the renderer passes (gpu_metal.m passes 0: the session's, or the context's) */
+static int frame_floor = 540;
 int host_config_profile_installed(void) { return profile_installed; }
 int host_perf_metal_timing_supported(void) { return stage_timing; }
 void host_config_string(const char *name, const char *fallback, char *out, size_t size) {
     /* the device profile's value, once installed */
     if (profile_on && profile_installed && !strcmp(name, "display.dynamic_resolution")) { snprintf(out, size, "true"); return; }
+    /* (a profile that turns it on for the variable workload alone: [variable.display]) */
+    if (profile_variable_on && profile_installed && !strcmp(name, "variable.display.dynamic_resolution")) {
+        snprintf(out, size, "true"); return;
+    }
     snprintf(out, size, "%s", fallback);
 }
 void host_perf_reports_frame(const game_perf_frame *frame) {
@@ -46,7 +52,7 @@ static int frame(int ceiling) {
     int rendered = lines > 0 ? lines : ceiling;
     host_perf_hooks_phase_at(7, 0, now);
     host_perf_hooks_present_begin_at(now + 100);
-    host_perf_hooks_dynamic_config(1, 1920, 1080, rendered, 540, 0, ceiling > 0 && !ineligible);
+    host_perf_hooks_dynamic_config(1, 1920, 1080, rendered, frame_floor, 0, ceiling > 0 && !ineligible);
     host_perf_hooks_budget(16667);
     host_perf_hooks_cpu(3000);
     host_perf_hooks_present_end_at(now + 200);
@@ -58,6 +64,29 @@ int main(int count, char **arguments) {
     int lines = 0, lowest = 1080, previous, i;
     if (!strcmp(mode, "pin")) assert(!setenv("HALO_DYNAMIC_RESOLUTION_LINES", "700", 1));
     else if (!strcmp(mode, "sweep")) assert(!setenv("HALO_DYNAMIC_RESOLUTION_SWEEP", "true", 1));
+    else if (!strcmp(mode, "variable") || !strcmp(mode, "variable-floor-environment")) {
+        /* on for variable games alone: the session's switch is on, and the game gates it by the context */
+        profile_variable_on = 1;
+        frame_floor = 0;
+        if (!strcmp(mode, "variable-floor-environment")) assert(!setenv("HALO_DYNAMIC_RESOLUTION_FLOOR", "700", 1));
+        assert(host_perf_hooks_dynamic_actuates() && host_dynamic_resolution_lines(-1) == 1);
+        /* predictable: off there, so a fight holds the ceiling in the pool */
+        host_dynamic_resolution_scene(0, 0);
+        load = 1.6;
+        for (i = 0; i < 120; i++) assert(frame(1080) == 1080);
+        /* variable, with a floor of 900: lowered, never under it */
+        host_dynamic_resolution_scene(1, 900);
+        for (i = 0; i < 240; i++) { lines = frame(1080); if (lines < lowest) lowest = lines; }
+        assert(drops >= 1 && lowest < 1080);
+        if (!strcmp(mode, "variable")) assert(lowest >= 900);
+        else assert(lowest >= 700 && lowest < 900);
+        /* back to predictable (the main menu, a campaign map): the ceiling at once */
+        host_dynamic_resolution_scene(0, 0);
+        assert(frame(1080) == 1080);
+        for (i = 0; i < 30; i++) assert(frame(1080) == 1080);
+        printf("dynamic resolution by workload: lowest %d\n", lowest);
+        return 0;
+    }
     else if (!strcmp(mode, "profile")) {
         /* asked before the profile is installed: not settled yet, and off */
         profile_installed = 0; profile_on = 1;
@@ -78,6 +107,10 @@ int main(int count, char **arguments) {
     assert(frame(1080) == 1080);
     for (i = 0; i < 120; i++) lines = frame(1080);
     if (!strcmp(mode, "pin")) {
+        assert(lines == 700);
+        /* (the debug pin ignores the context's switch) */
+        host_dynamic_resolution_scene(0, 0);
+        for (i = 0; i < 30; i++) lines = frame(1080);
         assert(lines == 700);
         /* (a new ceiling renders itself until it is measured) */
         assert(host_dynamic_resolution_lines(600) == 600);

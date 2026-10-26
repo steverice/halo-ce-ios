@@ -600,6 +600,7 @@ static BOOL graphics_string_allowed(NSString *name,NSString *value) {
 #define PROFILE_REAL(key, minimum, maximum)
 #define PROFILE_STRING(key, accepted) if([name isEqual:@key])choices=@accepted;
 #define PROFILE_SCENE(key)
+#define PROFILE_VARIABLE(key)
 #define PROFILE_EXTERNAL(key)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -607,6 +608,7 @@ static BOOL graphics_string_allowed(NSString *name,NSString *value) {
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
     if(!choices || !value.length || value.length>80)return NO;
     for(NSString *choice in [choices componentsSeparatedByString:@"|"]){

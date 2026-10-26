@@ -166,13 +166,15 @@ static const char *setting(const struct host_profile *p, const char *name, const
 }
 static int compatible(const struct host_device *d, const struct host_profile *p, toml_datum_t f)
 {
-	static const char *scenes[] = { "", "menu", "cutscene" };
+	/* (the variable workload context is play on the measured device: the gameplay envelope bounds it) */
+	static const char *scenes[] = { "", "menu", "cutscene", "variable" };
+	static const int limits[] = { 0, 1, 2, 0 };
 	int i, short_side = d->pixel_width < d->pixel_height ? d->pixel_width : d->pixel_height;
 	int long_side = d->pixel_width > d->pixel_height ? d->pixel_width : d->pixel_height;
 	if (short_side <= 0 || d->refresh_rate <= 0 || !d->memory_megabytes ||
 		d->memory_megabytes < (unsigned)number(f, "minimum_memory_mb", 0, 1000000) ||
 		d->gpu_family < number(f, "minimum_gpu_family", 1, 32)) return 0;
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < 4; i++)
 	{
 		const char *height = setting(p, "display.render_height", scenes[i], 0, setting(p, "display.render_height", "", 0, "0"));
 		const char *scale = setting(p, "display.render_scale", scenes[i], 0, setting(p, "display.render_scale", "", 0, "1"));
@@ -193,7 +195,7 @@ static int compatible(const struct host_device *d, const struct host_profile *p,
 		else if (strcmp(d->platform, "visionos") && atoi(base_rate) > 0 && atoi(base_rate) < target)
 			target = atoi(base_rate);
 		if (atoi(scene_rate) > 0 && atoi(scene_rate) < target) target = atoi(scene_rate);
-		if (pixels > field(f, "maximum_pixels").u.arr.elem[i].u.int64 ||
+		if (pixels > field(f, "maximum_pixels").u.arr.elem[limits[i]].u.int64 ||
 			target > number(f, "maximum_refresh_hertz", 1, 1000)) return 0;
 		/* External displays have no hardware identity. Bound their allocation at
 		   the renderer's widest frame shape, rather than the built-in panel's shape. */
@@ -209,7 +211,7 @@ static int compatible(const struct host_device *d, const struct host_profile *p,
 			if (!output_height) output_height = 8192;
 			size = halo_display_render_size(lround(output_height * (1600.0 / 480.0) * atof(external_scale)),
 				lround(output_height * atof(external_scale)), 1600, 0, atoi(external_height), 8192);
-			if ((double)size.width * size.height > field(f, "maximum_pixels").u.arr.elem[i].u.int64) return 0;
+			if ((double)size.width * size.height > field(f, "maximum_pixels").u.arr.elem[limits[i]].u.int64) return 0;
 		}
 	}
 	return 1;

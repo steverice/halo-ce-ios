@@ -18,7 +18,9 @@ KEYS = ROOT / "port/linux/src/port_profile_keys.h"
 # refuse shards signed with the new table: bump HOST_PROFILE_FEED_GENERATION (host_profile.h), PROFILE_FEED_GENERATION
 # (data_pack.py) and the directory names in ios_build.py, profile_pr.py and pages_asset_overlay.py, then record the
 # new table here.
-GENERATION_KEYS = {2: "89ca1fbcaa719efbc3b4223bb58feb64c1ad7efdcb95338528bf556868709874"}
+# Generation 2 had not shipped when PROFILE_VARIABLE was added (no release read it, no shard was signed), so its table
+# was re-recorded rather than a generation 3 opened.
+GENERATION_KEYS = {2: "346a4c403ea686861e227523bf863be7a12439e3c32ac3e557f2f0fbbcb68f76"}
 
 
 def key_table_sha256(text):

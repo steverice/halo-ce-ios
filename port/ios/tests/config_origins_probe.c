@@ -98,6 +98,9 @@ static void launch(const char *profile)
 			free(state->external[layer].source);
 			free(state->external_value[layer].string);
 		}
+		free(state->variable.text);
+		free(state->variable.source);
+		free(state->variable_value.string);
 		free(state->device.string);
 		free(state->device_literal);
 		free(state->origin_literal);
@@ -108,6 +111,7 @@ static void launch(const char *profile)
 	else
 		unsetenv("HALO_DEVICE_PROFILE_VALUES");
 	config_loaded = 0;
+	config_workload_is_variable = 0;
 	logged[0] = 0;
 	/* (any question loads) */
 	(void)config_boolean("display.vsync");
@@ -561,6 +565,97 @@ static void check_external(void)
 	external_active = 0;
 }
 
+/* the workload context: [variable.display] under the scene classes while a map is variable, the profile's own
+values while it is predictable; chosen and environment values win in both, external values over it */
+static void check_workload(void)
+{
+	const char *profile = TV_MODEL
+		"display.dynamic_resolution\tfalse\tmodel Apple TV HD\n"
+		"display.dynamic_resolution_floor\t960\tmodel Apple TV HD\n"
+		"display.dynamic_resolution\ttrue\tmodel Apple TV HD\tvariable\n"
+		"display.dynamic_resolution_floor\t540\tmodel Apple TV HD\tvariable\n"
+		"display.render_scale\t0.4\tmodel Apple TV HD\tvariable\n"
+		"display.shadow_map_size\t128\tmodel Apple TV HD\tvariable\n"
+		"display.anti_aliasing\tfxaa\tmodel Apple TV HD\tvariable\n"
+		"display.frame_rate\t30\tmodel Apple TV HD\tvariable\n"
+		/* (not a PROFILE_VARIABLE setting: refused) */
+		"display.anisotropic_filtering\t4\tmodel Apple TV HD\tvariable\n";
+	char text[256];
+	unsigned long changes;
+
+	fresh();
+	launch(profile);
+	assert(strstr(logged, "sets display.anisotropic_filtering for the variable workload, which this build cannot; ignored"));
+	assert(config_integer("display.anisotropic_filtering") == 16);
+	/* predictable: the profile's own values */
+	assert(!config_workload_variable());
+	assert(!config_scene_boolean("display.dynamic_resolution", CONFIG_SCENE_GAMEPLAY));
+	assert(config_scene_integer("display.dynamic_resolution_floor", CONFIG_SCENE_GAMEPLAY) == 960);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.5);
+	assert(config_scene_integer("display.shadow_map_size", CONFIG_SCENE_GAMEPLAY) == 512);
+	assert(!config_scene_string("display.frame_rate", CONFIG_SCENE_GAMEPLAY, text, sizeof(text)));
+	assert(strstr(logged, "settings: display.dynamic_resolution_floor = 960 [model Apple TV HD] over 540 [default]; "
+		"variable 540 [model Apple TV HD]"));
+	assert(strstr(logged, "settings: display.shadow_map_size = 512 [default]; variable 128 [model Apple TV HD]"));
+	/* the map becomes variable: once, logged, config_changes advances */
+	changes = config_changes();
+	logged[0] = 0;
+	assert(config_workload_set(1, "multiplayer map"));
+	assert(config_changes() == changes + 1 && config_workload_variable());
+	assert(strstr(logged, "workload: variable (multiplayer map): ") &&
+		strstr(logged, "display.dynamic_resolution true [model Apple TV HD]") &&
+		strstr(logged, "display.shadow_map_size 128 [model Apple TV HD]"));
+	assert(!config_workload_set(1, "multiplayer map") && config_changes() == changes + 1);
+	assert(config_scene_boolean("display.dynamic_resolution", CONFIG_SCENE_GAMEPLAY));
+	assert(config_scene_integer("display.dynamic_resolution_floor", CONFIG_SCENE_GAMEPLAY) == 540);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.4);
+	assert(config_scene_integer("display.shadow_map_size", CONFIG_SCENE_GAMEPLAY) == 128);
+	assert(config_scene_string("display.anti_aliasing", CONFIG_SCENE_GAMEPLAY, text, sizeof(text)) && !strcmp(text, "fxaa"));
+	/* (a context's frame rate is held, as a scene class's is) */
+	assert(config_scene_string("display.frame_rate", CONFIG_SCENE_GAMEPLAY, text, sizeof(text)) && !strcmp(text, "30"));
+	/* the setting itself and config.toml keep the predictable value */
+	assert(config_real("display.render_scale") == 0.5 && file_has(path, "\nrender_scale = 0.5\n"));
+	assert(file_has(path, "\nshadow_map_size = 512\n"));
+	/* a scene class's own value lies over the variable one; without one, the class takes the variable value */
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_MENU) == 0.667);
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_CUTSCENE) == 0.5);
+	assert(config_scene_integer("display.shadow_map_size", CONFIG_SCENE_CUTSCENE) == 128);
+	assert(config_scene_describe(CONFIG_SCENE_GAMEPLAY, text, sizeof(text)) &&
+		strstr(text, "display.render_scale 0.4 [model Apple TV HD, variable]"));
+	/* an external display's value lies over the variable one */
+	external_active = 1;
+	launch(TV_MODEL "display.render_scale\t0.4\tmodel Apple TV HD\tvariable\n"
+		"display.render_scale\t0.6\tmodel Phone\t\texternal\n");
+	config_workload_set(1, "online co-op");
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.6);
+	external_active = 0;
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.4);
+	/* a value the player chose is the value in every workload */
+	assert(config_write("display.render_scale", "0.9"));
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 0.9);
+	/* and the environment's */
+	setenv("HALO_SHADOW_MAP_SIZE", "256", 1);
+	launch(profile);
+	config_workload_set(1, "split screen");
+	assert(config_scene_integer("display.shadow_map_size", CONFIG_SCENE_GAMEPLAY) == 256);
+	unsetenv("HALO_SHADOW_MAP_SIZE");
+	/* back to predictable (the main menu, a campaign map) */
+	assert(config_workload_set(0, "main menu") && !config_workload_variable());
+	assert(strstr(logged, "workload: predictable (main menu): "));
+	assert(config_scene_integer("display.dynamic_resolution_floor", CONFIG_SCENE_GAMEPLAY) == 960);
+	/* a profile applied at a level load replaces the variable values with its own */
+	fresh();
+	launch(profile);
+	config_workload_set(1, "enemy multiplier");
+	assert(config_profile_apply_snapshot("display.shadow_map_size\t256\tmodel Apple TV HD\tvariable\n", "test",
+		CONFIG_PROFILE_LEVEL_LOAD, 0));
+	assert(config_scene_integer("display.shadow_map_size", CONFIG_SCENE_GAMEPLAY) == 256);
+	/* (a hot setting's variable value the snapshot lacks is gone at a later break) */
+	assert(config_profile_apply_snapshot("display.render_height\t1080\tclass Apple TV\n", "test", CONFIG_PROFILE_LOCAL_DEATH, 0));
+	assert(config_scene_real("display.render_scale", CONFIG_SCENE_GAMEPLAY) == 1.0);
+	config_workload_set(0, "main menu");
+}
+
 /* display.effect_resolution was a boolean beside display.mirror_resolution: the saved choice carries over */
 static void check_effect_resolution_migration(void)
 {
@@ -633,9 +728,10 @@ int main(void)
 	check_scenes();
 	check_changed_default();
 	check_external();
+	check_workload();
 	check_effect_resolution_migration();
 	fresh();
 	rmdir(directory);
-	puts("PASS: settings layers: default, device profile, a chosen value, the environment; config.origins; scene classes");
+	puts("PASS: settings layers: default, device profile, a chosen value, the environment; config.origins; scene classes; workload contexts");
 	return 0;
 }

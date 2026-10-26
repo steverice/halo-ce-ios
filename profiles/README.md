@@ -64,6 +64,43 @@ render_scale = 0.667
 
 A build reads the classes `menu` and `cutscene`, and only the settings the game can change between frames (`PROFILE_SCENE` in `port/linux/src/port_profile_keys.h`; today, `display.render_scale`). A scene value applies only while nobody has set that setting: a render scale the player chose is the render scale everywhere.
 
+## Workload contexts
+
+A profile's own values are for a predictable workload: single-player campaign at standard settings. Games whose load follows the map, the settings and the players are a variable workload, and a profile may give them their own values:
+
+```toml
+[variable.display]
+dynamic_resolution = true
+dynamic_resolution_floor = 540
+shadow_map_size = 128
+```
+
+| Game | Workload |
+|---|---|
+| Campaign, one player on the device, no network, enemies at 1x | predictable |
+| LAN co-op, enemies at 1x, 4 players or fewer | predictable |
+| Campaign with an enemy multiplier above 1x, or co-op with extra enemies | variable |
+| LAN co-op with more than 4 players | variable |
+| Online co-op (a machine of the game reached through internet play) | variable |
+| Split screen, in campaign or co-op | variable |
+| Any multiplayer map | variable |
+
+Co-op's extra enemies are the host's choice (Server Setup's EXTRA ENEMIES, `network.coop_enemies_mode`). A machine that joined is not told it, so it counts the default, which adds enemies for each player past the first: a joined co-op game is variable.
+
+The workload is decided as each map loads and holds for the whole map, through cutscenes, reverts and checkpoints; the main menu is predictable. The log says which and why:
+
+```
+workload: variable (multiplayer map; 12 players, 1 on this device): display.dynamic_resolution true [model iPhone 17 Pro]
+```
+
+A build reads only `[variable.display]`, and only the `PROFILE_VARIABLE` settings in `port/linux/src/port_profile_keys.h`: `display.dynamic_resolution` and its floor, `display.render_height`, `display.render_scale`, `display.frame_rate`, `display.shadow_map_size` and `display.anti_aliasing`. Since the workload only changes as a map loads, it may hold settings that reallocate targets, which a scene class may not.
+
+**Dynamic resolution in both workloads.** The window is `display.render_height` (with `render_scale`), its ceiling, down to `display.dynamic_resolution_floor`, never under half the ceiling. A predictable profile sets a fixed size or a small window (1080 down to 960); `[variable.display]` sets a wider one. Dynamic resolution's targets are made once, when the renderer starts, so a profile that turns it on for variable games alone runs predictable ones in those targets at their ceiling: the same pixels as without it.
+
+**Precedence.** The variable value lies over the profile's own, a scene class's value over either, and an external display's values over all of them (below). A value the player or the environment set is the value in every workload. A frame rate in `[variable.display]` holds on every device, as a scene class's does. A variable value never enters `config.toml`.
+
+Evidence is named `[evidence."variable.display.dynamic_resolution_floor"]`. Split screen is variable for now; tables named `split` are reserved for split-screen values by player count.
+
 ## What the log says
 
 Every launch names the device, the files in force, and where each profile setting's value came from:
@@ -173,14 +210,14 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | Setting | Type and accepted values | Default (Apple) | Contexts | Description |
 | --- | --- | --- | --- | --- |
 | `display.renderer` | string: `gl`, `metal` | `"metal"` | gameplay | What draws the game: "metal" (default) Metal, or "gl" OpenGL ES, for debugging only: it lacks the Metal renderer's performance work and measures no GPU time. |
-| `display.render_height` | integer, 0 to 4320 | `0` | gameplay, ⓢ scene, external | Internal rendering height in physical pixels: 0 (default) uses native display resolution. |
+| `display.render_height` | integer, 0 to 4320 | `0` | gameplay, variable, ⓢ scene, external | Internal rendering height in physical pixels: 0 (default) uses native display resolution. |
 | `display.output_height` | integer, 0 to 4320 | Profile only | tvOS built-in, external | Output height cap in pixels, external or tvOS built-in; zero leaves it uncapped. |
-| `display.render_scale` | real, 0.25 to 1 | `1.0` | gameplay, ⓢ scene, external | Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. |
+| `display.render_scale` | real, 0.25 to 1 | `1.0` | gameplay, variable, ⓢ scene, external | Render at this fraction of the display's pixels each way (0.25 to 1.0; 0.67 draws under half the pixels), scaled back up by display.upscaler. display.render_height, when set, caps the result. |
 | `display.upscaler` | string: `bilinear`, `metalfx` | `"bilinear"` | gameplay | How a picture rendered below the display's size is scaled up: "bilinear" (default), or "metalfx" (Metal renderer, on a device: MetalFX's spatial scaler, sharper edges and text for a fraction of a millisecond). |
 | `display.anisotropic_filtering` | integer, 1 to 16 | `16` | gameplay | Anisotropic filtering of the game's textures, 1 (off, as on the Xbox) to 16: sharper floors and terrain at a distance, for a few percent of GPU time. |
 | `display.dynamic_light_limit` | integer, 0 to 128 | `0` | gameplay | Device-profile cap on dynamic lights illuminating level surfaces, 0 to 128. |
 | `display.specular_light_limit` | integer, 0 to 128 | `0` | gameplay | Device-profile cap on specular lights among the level's selected dynamic lights, 0 to 128. |
-| `display.shadow_map_size` | integer, 128 to 1024 | `512` | gameplay | The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. |
+| `display.shadow_map_size` | integer, 128 to 1024 | `512` | gameplay, variable | The size of the textures characters' and vehicles' shadows are drawn into, 128 (as on the Xbox) to 2048: larger is smoother. |
 | `display.effect_resolution` | string: `xbox`, `half`, `full` | `"half"` | gameplay | The resolution of the 320x240 target the reflections in mirror floors and the active camouflage are drawn into: "xbox" keeps the Xbox's 320x240, "half" is half the screen's resolution each way, and "full" the screen's resolution (sharper; up to a whole second render of the scene's pixels where a mirror shows). |
 | `display.model_lod` | string: `max`, `auto` | `"max"` | gameplay | Which geometry detail level models draw: "max" (default) always the highest they have, so they never pop between levels or drop out with distance; "auto" picks by on-screen size, as the Xbox did. |
 | `display.lod_scale` | real, 0.5 to 4 | `1.0` | gameplay | HEAD mode and the side-by-side view: a multiplier on the pixel size the game picks model detail and particle distance by; 1.0 is the Xbox's (0.5 to 4). |
@@ -188,17 +225,17 @@ Evidence names include the context: `[evidence."external.display.render_height"]
 | `display.high_res_hud` | boolean | `true` | gameplay | Draw the HUD (meters, counters, panels, motion sensor, reticles, waypoints, scopes) from the high-res assets (8x the maps' bitmaps); false draws the maps' own bitmaps. |
 | `display.high_res_text` | boolean | `true` | gameplay | Draw the menus' and HUD's text with the fonts in port/assets/fonts (Overpass) at the resolution the game draws at, and the menus' titles from port/assets/titles; false draws the maps' bitmap fonts and titles. |
 | `display.upscaled_textures` | boolean | `true` | gameplay | Draw upscaled textures (made on this device from your copy of the game) where they exist; false draws the maps' own. |
-| `display.anti_aliasing` | string: `off`, `fxaa`, `smaa` | `"off"` | gameplay, external | Smoothing of jagged edges, which the Xbox did not have: "off", or "fxaa" or "smaa", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). |
+| `display.anti_aliasing` | string: `off`, `fxaa`, `smaa` | `"off"` | gameplay, variable, external | Smoothing of jagged edges, which the Xbox did not have: "off", or "fxaa" or "smaa", a pass over the 3D view once it is drawn, at the size it is drawn at (the HUD and menus are drawn after it and stay sharp). |
 | `display.foveation` | boolean | `true` | gameplay | Apple Vision Pro, display.stereo = "head": render through the Compositor's foveation, sharper at the middle of each view than at its edges, at display.render_quality. |
 | `display.render_quality` | real, 0.1 to 1 | `0.6` | gameplay | With display.foveation: the Compositor's render quality, 0 to 1 (the headset's lowest to its highest): how many pixels the middle of each view gets. |
 | `display.frame_repeat` | integer, 0 to 3 | `0` | gameplay | Apple Vision Pro, display.stereo = "head" or "screen": how many extra display refreshes each frame stays up, 0 to 3: 0 draws a frame every refresh (90 a second), 1 every other (45 a second) for when 90 costs too much. |
 | `display.hud_resolution` | real, 0.5 to 1 | `1.0` | gameplay | HEAD mode and the side-by-side view: the pixels the HUD, the crosshair and the menus are drawn with, as a fraction of the view's along each axis, 0.5 to 1. |
 | `display.frame_pacing` | string: `off`, `tick`, `refresh` | `"off"` | gameplay | How the Metal renderer times frames: "off" (default) shows each frame as soon as it's drawn; "tick" shows every frame for the same whole number of display refreshes, at a rate that is a multiple of the game's 30 ticks a second (90 or 30 at 90 Hz, 60 or 30 at 60 Hz), dropping to the next rate when frames take too long; "refresh" allows any whole number of refreshes (45 at 90 Hz). |
-| `display.frame_rate` | string: `display`, `unlimited`, quoted 30 to 1000 | `"display"` | gameplay, ⓢ scene | The most frames a second: "display" (default) draws one frame for each refresh of the display; a number ("60", "240") holds that rate; "unlimited" draws as fast as it can. |
+| `display.frame_rate` | string: `display`, `unlimited`, quoted 30 to 1000 | `"display"` | gameplay, variable, ⓢ scene | The most frames a second: "display" (default) draws one frame for each refresh of the display; a number ("60", "240") holds that rate; "unlimited" draws as fast as it can. |
 | `display.async_shaders` | string: `auto`, `on`, `off` | `"auto"` | gameplay | How the Metal renderer compiles shaders: "auto" (default) on worker threads, skipping a draw for the frames until its pipeline is ready, so the game never waits on the compiler (on Apple Vision Pro a long wait ends the app); a run that must draw the same frames every time (fixed timestep, an input replay or benchmark, debug.exit_after, screenshots) compiles each at its first draw instead. "on" or "off" forces either. |
 | `display.interpolation` | boolean | `true` | gameplay | Draw a frame for every display refresh, blending between the game's 30 ticks a second; false keeps the original 30 frames a second. |
-| `display.dynamic_resolution` | boolean | `false` | gameplay | Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. |
-| `display.dynamic_resolution_floor` | integer, 240 to 2160 | `540` | gameplay | The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. |
+| `display.dynamic_resolution` | boolean | `false` | gameplay, variable | Metal renderer, in gameplay: lower the 3D view's resolution while the GPU cannot keep up and raise it again when it can, between frames, from display.render_height (the ceiling) down to display.dynamic_resolution_floor. |
+| `display.dynamic_resolution_floor` | integer, 240 to 2160 | `540` | gameplay, variable | The fewest lines display.dynamic_resolution draws the 3D view at; never fewer than half the ceiling's. |
 ### input
 
 | Setting | Type and accepted values | Default (Apple) | Contexts | Description |

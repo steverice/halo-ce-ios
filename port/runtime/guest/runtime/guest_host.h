@@ -33,6 +33,7 @@ dynamic_resolution_refused). The lines the next frames' scene renders at, from
 the floor to the ceiling; 0 when dynamic resolution is off, and the targets
 stay as before. -1 asks only whether it is on: 1 or 0 */
 int host_dynamic_resolution_lines(int ceiling_lines);
+void host_dynamic_resolution_scene(int enabled, int floor_lines);
 
 /* Only gameplay touch controls are suppressed; native dialogs remain interactive. */
 void host_touch_replay_active(int active);

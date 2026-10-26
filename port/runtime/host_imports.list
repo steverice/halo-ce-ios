@@ -126,6 +126,7 @@ host_external_mode_label
 
 # Dynamic resolution's lines for the next frame (host_perf_hooks.c)
 host_dynamic_resolution_lines
+host_dynamic_resolution_scene
 
 host_touch_replay_active
 host_memory_pressure_poll

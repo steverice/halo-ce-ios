@@ -1662,6 +1662,7 @@ static const char *const config_profile_keys[] =
 #define PROFILE_REAL(name, minimum, maximum) name,
 #define PROFILE_STRING(name, choices) name,
 #define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -1669,6 +1670,7 @@ static const char *const config_profile_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -1679,6 +1681,7 @@ static const char *const config_scene_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name) name,
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -1686,6 +1689,7 @@ static const char *const config_scene_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -1696,6 +1700,7 @@ static const char *const config_external_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name) name,
 #include "port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -1703,6 +1708,27 @@ static const char *const config_external_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
+#undef PROFILE_EXTERNAL
+};
+
+/* those it may set for the variable-workload context ([variable.display]), which changes only at a map load */
+static const char *const config_variable_keys[] =
+{
+#define PROFILE_BOOLEAN(name)
+#define PROFILE_INTEGER(name, minimum, maximum)
+#define PROFILE_REAL(name, minimum, maximum)
+#define PROFILE_STRING(name, choices)
+#define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name) name,
+#define PROFILE_EXTERNAL(name)
+#include "port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -1760,6 +1786,9 @@ static struct config_setting_state
 	/* a scene class's value, from the highest layer that has one (text NULL: none) */
 	struct config_profile_value scene[NUMBER_OF_CONFIG_SCENES];
 	struct config_value scene_value[NUMBER_OF_CONFIG_SCENES];
+	/* the variable-workload context's value ([variable.display]), from the highest layer that has one */
+	struct config_profile_value variable;
+	struct config_value variable_value;
 	/* Index 0 is the external base, then menu and cutscene. */
 	struct config_profile_value external[NUMBER_OF_CONFIG_SCENES];
 	struct config_value external_value[NUMBER_OF_CONFIG_SCENES];
@@ -2524,7 +2553,7 @@ static void config_profile_load_text(const char *line, int point, int networked)
 				for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && strcmp(config_scene_names[scene], fields[3]); scene++)
 					;
 				if (scene == NUMBER_OF_CONFIG_SCENES || !config_name_in(fields[0], config_scene_keys,
-					sizeof(config_scene_keys) / sizeof(config_scene_keys[0])))
+				sizeof(config_scene_keys) / sizeof(config_scene_keys[0])))
 					continue;
 			}
 			free(config_states[index].external[scene].text);
@@ -2532,6 +2561,21 @@ static void config_profile_load_text(const char *line, int point, int networked)
 			config_states[index].external[scene].text = strdup(fields[1]);
 			config_states[index].external[scene].source = strdup(fields[2]);
 			config_set_from_profile_text(&config_states[index].external_value[scene], config_settings[index].type, fields[1]);
+			continue;
+		}
+		if (count == 4 && !strcmp(fields[3], "variable"))
+		{
+			if (!config_name_in(fields[0], config_variable_keys, sizeof(config_variable_keys) / sizeof(config_variable_keys[0])))
+			{
+				platform_log("settings: the device profile sets %s for the variable workload, which this build cannot; ignored",
+					fields[0]);
+				continue;
+			}
+			free(config_states[index].variable.text);
+			free(config_states[index].variable.source);
+			config_states[index].variable.text = strdup(fields[1]);
+			config_states[index].variable.source = strdup(fields[2]);
+			config_set_from_profile_text(&config_states[index].variable_value, config_settings[index].type, fields[1]);
 			continue;
 		}
 		if (count == 4)
@@ -2924,10 +2968,10 @@ static void config_dump(void)
 			continue;
 		if (!dump_all && state->source == _source_default && !state->profile_count)
 		{
-			/* (nothing set it; a scene class's value alone still has its line) */
+			/* (nothing set it; a scene class's or the variable context's value alone still has its line) */
 			for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES && !state->scene[scene].text; scene++)
 				;
-			if (scene == NUMBER_OF_CONFIG_SCENES)
+			if (scene == NUMBER_OF_CONFIG_SCENES && !state->variable.text)
 				continue;
 		}
 		config_literal(setting->type, &config_values[index], literal, sizeof(literal));
@@ -2963,6 +3007,13 @@ static void config_dump(void)
 		else
 		{
 			snprintf(piece, sizeof(piece), " over %s [default]", literal);
+			config_append(&line, piece);
+		}
+		if (state->variable.text)
+		{
+			config_literal(setting->type, &state->variable_value, literal, sizeof(literal));
+			snprintf(piece, sizeof(piece), "; variable %s [%s]%s", literal, state->variable.source,
+				state->source == _source_file || state->source == _source_environment ? " (not used: the value is set)" : "");
 			config_append(&line, piece);
 		}
 		for (scene = 1; scene < NUMBER_OF_CONFIG_SCENES; scene++)
@@ -3369,7 +3420,7 @@ unsigned long config_changes(void)
 static void config_profile_signature(size_t index, char *text, size_t size)
 {
 	struct config_setting_state *state = &config_states[index];
-	snprintf(text,size,"%s",state->device_literal ? state->device_literal : "");
+	snprintf(text,size,"%s|%s",state->device_literal ? state->device_literal : "",state->variable.text ? state->variable.text : "");
 	for (int i=0;i<NUMBER_OF_CONFIG_SCENES;i++)
 	{
 		size_t used = strlen(text);
@@ -3404,6 +3455,9 @@ int config_profile_apply_snapshot(const char *snapshot, const char *version, int
 			memset(&state->profile[layer],0,sizeof(state->profile[layer]));
 		}
 		state->profile_count = 0;
+		free(state->variable.text); free(state->variable.source); free(state->variable_value.string);
+		memset(&state->variable,0,sizeof(state->variable));
+		memset(&state->variable_value,0,sizeof(state->variable_value));
 		for (int scene=0;scene<NUMBER_OF_CONFIG_SCENES;scene++)
 		{
 			free(state->scene[scene].text); free(state->scene[scene].source);
@@ -3515,6 +3569,9 @@ stands in for the device's while the scene is that class, and only while
 the setting's value comes from its default or the profile: one the player
 or the environment set is the value in every scene. */
 
+/* the workload context of the map in force (config_workload_set): 1 while it is variable */
+static int config_workload_is_variable;
+
 /* The game-thread sampler shares resolution without config_value's initialization lock. */
 static const struct config_value *config_scene_value_cached(size_t index, int scene, int external)
 {
@@ -3530,6 +3587,8 @@ static const struct config_value *config_scene_value_cached(size_t index, int sc
 		}
 		if (scene > 0 && scene < NUMBER_OF_CONFIG_SCENES && state->scene[scene].text)
 			return &state->scene_value[scene];
+		if (config_workload_is_variable && state->variable.text)
+			return &state->variable_value;
 	}
 	return &config_values[index];
 }
@@ -3575,6 +3634,52 @@ int config_scene_string(const char *name, int scene, char *text, size_t size)
 const char *config_scene_name(int scene)
 {
 	return scene >= 0 && scene < NUMBER_OF_CONFIG_SCENES ? config_scene_names[scene] : "";
+}
+
+/* ---------- the workload context
+
+The map in force is predictable (single-player campaign at standard
+settings: the profile's own values) or variable (multiplayer, co-op beyond a
+small LAN game, more enemies: [variable.display] over them), decided as each
+map loads (port/linux/game/scene_class.c). The scene classes lie over either. */
+
+int config_workload_variable(void)
+{
+	return config_workload_is_variable;
+}
+
+int config_workload_set(int variable, const char *reasons)
+{
+	char changes[512] = "";
+	size_t index, length = 0;
+
+	(void)config_boolean("debug.settings_dump");   /* the first load */
+	variable = variable != 0;
+	if (variable == config_workload_is_variable)
+		return 0;
+	pthread_mutex_lock(&config_lock);
+	config_workload_is_variable = variable;
+	config_change_count++;
+	pthread_mutex_unlock(&config_lock);
+	for (index = 0; index < NUMBER_OF_CONFIG_SETTINGS; index++)
+	{
+		const struct config_setting_state *state = &config_states[index];
+		char literal[600];
+		int written;
+
+		if (!state->variable.text || (state->source != _source_default && state->source != _source_profile))
+			continue;
+		config_literal(config_settings[index].type, variable ? &state->variable_value : &config_values[index], literal,
+			sizeof(literal));
+		written = snprintf(changes + length, sizeof(changes) - length, "%s%s %s [%s]", length ? ", " : "",
+			config_settings[index].name, literal, variable ? state->variable.source : "predictable");
+		if (written < 0 || (size_t)written >= sizeof(changes) - length)
+			break;
+		length += (size_t)written;
+	}
+	platform_log("workload: %s (%s)%s%s", variable ? "variable" : "predictable", reasons && *reasons ? reasons : "",
+		*changes ? ": " : "", changes);
+	return 1;
 }
 
 void config_profile_settings_text(char *text, size_t size)
@@ -3777,11 +3882,13 @@ int config_scene_describe(int scene, char *text, size_t size)
 			source = state->external[scene].source, external = 1;
 		else if (value == &state->external_value[0])
 			source = state->external[0].source, external = 1;
+		else if (value == &state->variable_value)
+			source = state->variable.source, external = 2;
 		if (!source)
 			continue;
 		config_literal(config_settings[index].type, value, literal, sizeof(literal));
 		written = snprintf(text + length, size - length, "%s%s %s [%s%s]", length ? ", " : "", config_settings[index].name,
-			literal, source, external ? ", external" : "");
+			literal, source, external == 1 ? ", external" : external == 2 ? ", variable" : "");
 		if (written < 0 || (size_t)written >= size - length)
 			break;
 		length += (size_t)written;

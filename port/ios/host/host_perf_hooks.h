@@ -26,6 +26,8 @@ int host_perf_hooks_dynamic_enabled(void);
  * planner's lines (host_dynamic_resolution_lines, a guest import). */
 int host_perf_hooks_dynamic_actuates(void);
 int host_dynamic_resolution_lines(int ceiling_lines);
+/* display.dynamic_resolution and its floor (0: the session's) in the workload context and scene class in force. */
+void host_dynamic_resolution_scene(int enabled, int floor_lines);
 /* the lines the frame being presented rendered at under actuation, else 0 (benchmark reports) */
 int host_perf_hooks_dynamic_lines(void);
 /* width x height: the scene target's allocation, the ceiling; actual: the

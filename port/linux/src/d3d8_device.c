@@ -1214,11 +1214,17 @@ static void offscreen_target_scale(unsigned long width, unsigned long height, DW
 	static unsigned long read_at;
 	unsigned long revision = config_changes();
 
-	/* port: a level-load profile replaces the defaults before target allocation. */
+	/* port: a level-load profile replaces the defaults before target allocation, and a map's workload context
+	(config_workload_set: [variable.display] in a device profile) is decided as it loads */
 	if (shadow_size < 0 || read_at != revision)
 	{
-		shadow_size = config_integer("display.shadow_map_size");
+		long was = shadow_size;
+
+		shadow_size = config_scene_integer("display.shadow_map_size", CONFIG_SCENE_GAMEPLAY);
 		shadow_size = shadow_size < 128 ? 128 : shadow_size > 2048 ? 2048 : shadow_size;
+		/* (the targets of the size before are freed two seconds on, as the knob cycle's are) */
+		if (was >= 0 && was != shadow_size)
+			knob_release_frame = device.frame + 120;
 		effect_level = effect_resolution_level(config_string("display.effect_resolution"));
 		read_at = revision;
 	}

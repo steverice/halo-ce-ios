@@ -562,6 +562,13 @@ static void check_capability_fallback(void)
 	host_profile_encode(&profile, encoded, sizeof(encoded));
 	assert(strstr(encoded, "display.render_scale\t0.5\tmodel A9\tmenu\n"));
 	assert(strstr(logged, "inherited") && strstr(logged, "a11") && strstr(logged, "a9"));
+	/* The variable workload context is play on the source device: its render size must fit the gameplay envelope. */
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[variable.display]\nrender_height=540\n");
+	profile = resolve(folder, target, NULL, "");
+	assert(profile.inherited && has(&profile, "display.anisotropic_filtering", "4"));
+	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[variable.display]\nrender_height=1080\n");
+	profile = resolve(folder, target, NULL, "");
+	assert(!profile.inherited && !profile.model_file[0]);
 	/* A model's external context is inherited with its baseline. */
 	write_file("tier-a9.toml", "schema=1\nname=\"A9\"\nkind=\"model\"\n[match]\nplatform=\"ios\"\nmodels=[\"Chip9,1\"]\n[display]\nanisotropic_filtering=4\n[external.display]\noutput_height=720\nrender_height=360\n");
 	profile = resolve(folder, target, NULL, "");
@@ -722,6 +729,40 @@ static void check_external(void)
 	snprintf(path, sizeof(path), "%s/builtin-cap.toml", folder); unlink(path);
 }
 
+/* [variable.display]: the variable workload context's values, carried as the pseudo-class "variable"; only
+PROFILE_VARIABLE settings, only [variable.display], and never the profile's own value */
+static void check_variable(void)
+{
+	struct host_profile profile;
+	char encoded[4096], value[32], path[256];
+
+	write_file("variable.toml", "schema = 1\nname = \"Variable\"\nkind = \"model\"\n[match]\nplatform = \"ios\"\n"
+		"models = [\"Variable1,1\"]\n[display]\nrender_height = 1080\ndynamic_resolution = false\n"
+		"[variable.display]\ndynamic_resolution = true\ndynamic_resolution_floor = 540\nshadow_map_size = 128\n"
+		"anti_aliasing = \"fxaa\"\nframe_rate = \"30\"\nanisotropic_filtering = 4\n"
+		"[variable.network]\nplayer_capacity = 16\n"
+		"[scene.variable.display]\nrender_scale = 0.5\n");
+	logged[0] = 0;
+	profile = resolve(folder, device("ios", "Variable1,1", "", 5), NULL, "");
+	host_profile_encode(&profile, encoded, sizeof(encoded));
+	assert(strstr(encoded, "display.dynamic_resolution\ttrue\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.dynamic_resolution_floor\t540\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.shadow_map_size\t128\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.anti_aliasing\tfxaa\tmodel Variable\tvariable\n"));
+	assert(strstr(encoded, "display.frame_rate\t30\tmodel Variable\tvariable\n"));
+	/* refused: a setting outside PROFILE_VARIABLE, a section other than display, a scene class named variable */
+	assert(!strstr(encoded, "anisotropic_filtering") && !strstr(encoded, "player_capacity") && !strstr(encoded, "0.5"));
+	assert(strstr(logged, "display.anisotropic_filtering cannot change by workload; ignored"));
+	assert(strstr(logged, "network.player_capacity cannot change by workload; ignored"));
+	assert(strstr(logged, "scene class \"variable\" is not one this build knows; ignored"));
+	/* the profile's own value is not the variable one; the variable lookup finds it */
+	assert(has(&profile, "display.dynamic_resolution", "false"));
+	assert(host_profile_scene_value(&profile, "display.dynamic_resolution", "variable", value, sizeof(value)) &&
+		!strcmp(value, "true"));
+	assert(!host_profile_scene_value(&profile, "display.render_height", "variable", value, sizeof(value)));
+	snprintf(path, sizeof(path), "%s/variable.toml", folder); unlink(path);
+}
+
 static void check_and_newer(void)
 {
 	char previous[64], path[256];
@@ -875,6 +916,7 @@ int main(int argc, char **argv)
 	check_file_read_paths();
 	check_layers();
 	check_external();
+	check_variable();
 	check_refusals();
 	check_capability_fallback();
 	check_minimum_height_envelope();

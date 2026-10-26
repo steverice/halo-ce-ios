@@ -25,7 +25,11 @@ static int dynamic_width, dynamic_eligible, dynamic_configured;
 static _Atomic int dynamic_setting = -1;
 /* Actuation: display.dynamic_resolution, or a debug pin or sweep. Each is
  * read once, as the shadow switch is: a profile sets them for the session. */
-static int dynamic_actuate, dynamic_pin, dynamic_sweep, dynamic_floor = 540;
+static int dynamic_actuate, dynamic_pin, dynamic_sweep, dynamic_validate, dynamic_floor = 540;
+/* The context in force (host_dynamic_resolution_scene): whether display.dynamic_resolution is on in it and its
+ * floor, as the game resolved them for the workload context and scene class. The session switch is on when either
+ * workload context may want it. */
+static int dynamic_scene_on = 1, dynamic_scene_floor;
 static int setting_true(const char *name, const char *environment_name) {
     char text[16];
     const char *environment = getenv(environment_name);
@@ -43,6 +47,7 @@ int host_perf_hooks_dynamic_enabled(void) {
     if (dynamic_setting < 0 && !host_config_profile_installed()) {
         return setting_true("debug.dynamic_resolution_shadow", "HALO_DYNAMIC_RESOLUTION_SHADOW") ||
             setting_true("display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
+            setting_true("variable.display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
             setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE") ||
             setting_integer("debug.dynamic_resolution_lines", "HALO_DYNAMIC_RESOLUTION_LINES", "0") > 0 ||
             setting_true("debug.dynamic_resolution_sweep", "HALO_DYNAMIC_RESOLUTION_SWEEP");
@@ -53,12 +58,17 @@ int host_perf_hooks_dynamic_enabled(void) {
         dynamic_pin = setting_integer("debug.dynamic_resolution_lines", "HALO_DYNAMIC_RESOLUTION_LINES", "0");
         dynamic_sweep = setting_true("debug.dynamic_resolution_sweep", "HALO_DYNAMIC_RESOLUTION_SWEEP");
         dynamic_floor = floor > 0 ? floor : 540;
+        dynamic_validate = setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE");
+        /* (the variable context's own value: a profile may turn it on for variable workloads alone) */
         dynamic_actuate = setting_true("display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
-            setting_true("debug.dynamic_resolution_validate", "HALO_DYNAMIC_RESOLUTION_VALIDATE") ||
-            dynamic_pin > 0 || dynamic_sweep;
+            setting_true("variable.display.dynamic_resolution", "HALO_DYNAMIC_RESOLUTION") ||
+            dynamic_validate || dynamic_pin > 0 || dynamic_sweep;
         dynamic_setting = shadow_on || dynamic_actuate;
     }
     return dynamic_setting;
+}
+static int dynamic_scene_holds(void) {
+    return !dynamic_scene_on && !dynamic_validate && dynamic_pin <= 0 && !dynamic_sweep;
 }
 int host_perf_hooks_dynamic_actuates(void) { return host_perf_hooks_dynamic_enabled() && dynamic_setting >= 0 && dynamic_actuate; }
 /* the lines the frame being presented rendered at, while dynamic resolution renders them; 0 otherwise */
@@ -92,7 +102,7 @@ int host_dynamic_resolution_lines(int ceiling_lines) {
     shadow.actuate = 1;
     /* A frame the planner could not measure (split screen's several views,
      * a stereo frame) returns to the ceiling too: no decision would follow. */
-    if (ceiling_lines <= 0 || (dynamic_configured && !dynamic_eligible)) {
+    if (ceiling_lines <= 0 || (dynamic_configured && !dynamic_eligible) || dynamic_scene_holds()) {
         if (shadow.plan.levels && shadow.plan.level) {
             shadow.plan.level = 0;
             shadow.plan.settle = DYNAMIC_RESOLUTION_SETTLE;
@@ -118,7 +128,8 @@ void host_perf_hooks_dynamic_config(int enabled, int width, int height, int actu
     dynamic_width = width; dynamic_eligible = enabled && eligible; dynamic_configured = 1;
     pending.drs.ceiling_lines = height > 0 ? (uint32_t)height : 0;
     pending.drs.actual_lines = actual > 0 && actual <= height ? (uint32_t)actual : pending.drs.ceiling_lines;
-    if (floor <= 0) floor = dynamic_floor;
+    /* (HALO_DYNAMIC_RESOLUTION_FLOOR is the floor in every class) */
+    if (floor <= 0) floor = dynamic_scene_floor > 0 && !getenv("HALO_DYNAMIC_RESOLUTION_FLOOR") ? dynamic_scene_floor : dynamic_floor;
     pending.drs.floor_lines = floor > 0 ? (uint32_t)floor : 540;
     if ((height + 1) / 2 > (int)pending.drs.floor_lines) pending.drs.floor_lines = (height + 1) / 2;
     if (height > 0 && pending.drs.floor_lines > (uint32_t)height) pending.drs.floor_lines = height;
@@ -146,6 +157,26 @@ static void dynamic_drain_locked(uint64_t frame_id) {
         host_perf_reports_frame(frame);
         ++delayed_read;
     }
+}
+/* A guest import, when the workload context, the scene class or the settings change: display.dynamic_resolution
+ * and its floor now in force, after the player's and the environment's choices. Off there, the planner holds the
+ * ceiling inside the pool, as for a refused frame; the debug pins and the validation run ignore it. */
+void host_dynamic_resolution_scene(int enabled, int floor_lines) {
+    pthread_mutex_lock(&dynamic_lock);
+    floor_lines = floor_lines > 0 ? floor_lines : 0;
+    /* a new context starts at the ceiling: a level the planner chose under the old floor, or while the context
+     * held the ceiling, is no decision for this one */
+    if ((enabled != 0) != dynamic_scene_on || floor_lines != dynamic_scene_floor) {
+        /* (the frames still in flight were the old context's: their decisions are made first) */
+        dynamic_drain_locked(UINT64_MAX);
+        if (shadow.plan.levels && shadow.plan.level) {
+            shadow.plan.level = 0;
+            shadow.plan.settle = DYNAMIC_RESOLUTION_SETTLE;
+        }
+    }
+    dynamic_scene_on = enabled != 0;
+    dynamic_scene_floor = floor_lines;
+    pthread_mutex_unlock(&dynamic_lock);
 }
 static void dynamic_drain(uint64_t frame_id) {
     pthread_mutex_lock(&dynamic_lock);

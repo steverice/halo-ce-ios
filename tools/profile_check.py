@@ -20,7 +20,7 @@ PLATFORMS = ("ios", "tvos", "visionos", "mac")
 BASES = ("measured", "assumed", "inherited")
 STATUSES = ("tested", "provisional", "below target")
 # what a profile's top level may hold besides its settings' sections
-FIELDS = {"schema", "name", "kind", "status", "match", "evidence", "scene", "external"}
+FIELDS = {"schema", "name", "kind", "status", "match", "evidence", "scene", "external", "variable"}
 # the scene classes a build reads; "gameplay" is the profile's own values, and a class keyed to a level or a
 # cutscene ("cutscene@a10") is reserved
 SCENES = ("menu", "cutscene")
@@ -72,6 +72,11 @@ def schema_validator(drop_in=False):
 def scene_keys(text=None):
     """the settings a profile may also set for a scene class (PROFILE_SCENE in port_profile_keys.h)"""
     return set(re.findall(r'^PROFILE_SCENE\("([a-z_]+\.[a-z0-9_]+)"\)\s*$', KEYS.read_text() if text is None else text, re.M))
+
+
+def variable_keys(text=None):
+    """the settings a profile may also set for the variable workload context (PROFILE_VARIABLE)"""
+    return set(re.findall(r'^PROFILE_VARIABLE\("([a-z_]+\.[a-z0-9_]+)"\)\s*$', KEYS.read_text() if text is None else text, re.M))
 
 
 def external_keys(text=None):
@@ -217,7 +222,7 @@ def check_profile(path, keys, drop_in=False, scenes=None):
         evidence = {}
     settings = []
 
-    def check_settings(sections, scene, external=False):
+    def check_settings(sections, scene, external=False, variable=False):
         """a profile's own sections (scene None) or one scene class's: evidence is named "display.x" for the
         first and "scene.menu.display.x" for the second"""
         for section, values in sections.items():
@@ -229,6 +234,8 @@ def check_profile(path, keys, drop_in=False, scenes=None):
             for key, value in values.items():
                 name = f"{section}.{key}"
                 shown = name if scene is None else f"scene.{scene}.{name}"
+                if variable:
+                    shown = "variable." + name
                 if external:
                     shown = "external." + shown
                 if name not in keys:
@@ -241,6 +248,9 @@ def check_profile(path, keys, drop_in=False, scenes=None):
                 if not external and name == "display.output_height" and (
                         scene is not None or match.get("platform") != "tvos"):
                     problems.append(f"{shown} is valid only in an external section, or in a tvOS profile's [display]")
+                    continue
+                if variable and name not in variable_keys():
+                    problems.append(f"{shown}: {name} cannot change by workload (PROFILE_VARIABLE in port_profile_keys.h)")
                     continue
                 if scene is not None and name not in scenes:
                     problems.append(f"{shown}: {name} cannot change by scene class (PROFILE_SCENE in port_profile_keys.h)")
@@ -264,6 +274,14 @@ def check_profile(path, keys, drop_in=False, scenes=None):
             check_settings(sections, scene, external)
 
     check_context(table)
+    variable = table.get("variable", {})
+    if not isinstance(variable, dict):
+        problems.append("[variable] must be a table: [variable.display]")
+    else:
+        for section in variable:
+            if section != "display":
+                problems.append(f"[variable.{section}]: the variable workload context holds only [variable.display]")
+        check_settings({key: value for key, value in variable.items() if key == "display"}, None, variable=True)
     external = table.get("external", {})
     if not isinstance(external, dict):
         problems.append("[external] must be a table")

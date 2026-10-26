@@ -168,6 +168,10 @@ for name, defines in (('config-probe-ios', ['-DHALO_ILP32=1']), ('config-probe-d
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
     'port/ios/tests/config_origins_probe.c', *sdl_flags, '-o', BUILD / 'config-origins-probe')
 run(BUILD / 'config-origins-probe')
+# the device profile's workload context: which games are predictable and which variable (workload_context.h)
+run('xcrun', 'clang', '-O2', '-Wall', '-Werror', '-Iport/linux/game', 'port/ios/tests/workload_context_probe.c',
+    '-o', BUILD / 'workload-context-probe')
+run(BUILD / 'workload-context-probe')
 # Safe-point profile merges preserve choices, defer resource settings and handle removals.
 run('xcrun', 'clang', '-O2', '-fsanitize=address', '-DHALO_ILP32=1', '-Iport/linux/src', '-Iport/third_party/tomlc17',
     'port/ios/tests/profile_hot_apply_probe.c', *sdl_flags, '-o', BUILD / 'profile-hot-apply-probe')
@@ -407,7 +411,7 @@ run('xcrun', 'clang', '-O2', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,
     '-DHALO_PERF_REPORTS=0', '-Iport/ios/host', '-Iport/runtime',
     'port/ios/tests/dynamic_resolution_actuation_probe.c', 'port/ios/host/host_perf_hooks.c',
     '-o', BUILD/'dynamic-resolution-actuation-probe')
-for mode in ('plan', 'pin', 'sweep', 'profile', 'notiming'):
+for mode in ('plan', 'pin', 'sweep', 'profile', 'notiming', 'variable', 'variable-floor-environment'):
     run(BUILD/'dynamic-resolution-actuation-probe', mode)
 # Counter metadata remains bounded and refuses stale/partial completion; no GPU submission.
 run('xcrun', 'clang', '-O1', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',

@@ -135,6 +135,11 @@ static long benchmark_anisotropy, knob_anisotropy;
 static int effect=1, knob_effect_level=-1;
 static unsigned long config_changes(void) { return revision; }
 static long config_integer(const char *name) { return !strcmp(name,"display.shadow_map_size") ? shadow : anisotropy; }
+enum { CONFIG_SCENE_GAMEPLAY };
+/* (the workload context's value, when a map is variable: [variable.display]) */
+static long config_scene_integer(const char *name, int scene) { (void)scene; return config_integer(name); }
+static unsigned long knob_release_frame;
+static struct { unsigned long frame; } device = { 1000 };
 static const char *config_string(const char *name) { (void)name; return effect==1 ? "half" : "full"; }
 static int effect_resolution_level(const char *value) { return !strcmp(value,"half") ? 1 : 2; }
 static void screen_scale_dense(float scale[2]) { scale[0]=scale[1]=2; }
@@ -143,9 +148,12 @@ int main(void) {
     float scale[2]={1,1};
     offscreen_target_scale(128,128,D3DFMT_R5G6B5,scale);
     assert(scale[0]==2 && anisotropy_in_force()==2);
+    assert(!knob_release_frame);
     shadow=512; anisotropy=8; effect=2; revision++;
     offscreen_target_scale(128,128,D3DFMT_R5G6B5,scale);
     assert(scale[0]==4 && anisotropy_in_force()==8);
+    /* (the old size's targets are freed two seconds on) */
+    assert(knob_release_frame==1120);
     offscreen_target_scale(320,240,0,scale);
     assert(scale[0]==4);
     benchmark_shadow_size=128; benchmark_anisotropy=1; revision++;

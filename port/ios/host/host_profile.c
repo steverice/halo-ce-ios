@@ -38,6 +38,7 @@ static const struct profile_key profile_keys[] =
 #define PROFILE_REAL(name, minimum, maximum) { name, _profile_real, minimum, maximum, NULL },
 #define PROFILE_STRING(name, choices) { name, _profile_string, 0.0, 0.0, choices },
 #define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -45,6 +46,7 @@ static const struct profile_key profile_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -56,6 +58,7 @@ static const char *const scene_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name) name,
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name)
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -63,6 +66,7 @@ static const char *const scene_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -73,6 +77,7 @@ static const char *const external_keys[] =
 #define PROFILE_REAL(name, minimum, maximum)
 #define PROFILE_STRING(name, choices)
 #define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name)
 #define PROFILE_EXTERNAL(name) name,
 #include "../../linux/src/port_profile_keys.h"
 #undef PROFILE_BOOLEAN
@@ -80,6 +85,27 @@ static const char *const external_keys[] =
 #undef PROFILE_REAL
 #undef PROFILE_STRING
 #undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
+#undef PROFILE_EXTERNAL
+};
+
+/* those it may set for the variable-workload context ([variable.display]: multiplayer, co-op, more enemies) */
+static const char *const variable_keys[] =
+{
+#define PROFILE_BOOLEAN(name)
+#define PROFILE_INTEGER(name, minimum, maximum)
+#define PROFILE_REAL(name, minimum, maximum)
+#define PROFILE_STRING(name, choices)
+#define PROFILE_SCENE(name)
+#define PROFILE_VARIABLE(name) name,
+#define PROFILE_EXTERNAL(name)
+#include "../../linux/src/port_profile_keys.h"
+#undef PROFILE_BOOLEAN
+#undef PROFILE_INTEGER
+#undef PROFILE_REAL
+#undef PROFILE_STRING
+#undef PROFILE_SCENE
+#undef PROFILE_VARIABLE
 #undef PROFILE_EXTERNAL
 };
 
@@ -243,6 +269,16 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 			}
 			continue;
 		}
+		/* [variable.display]: the variable-workload context's values, carried as the pseudo-class "variable" (the
+		   game lays them under the scene classes, port_config.c). Not inside [external] or a scene class */
+		if (!scene && !strcmp(section_name, "variable"))
+		{
+			if (external || section.type != TOML_TABLE)
+				profile_logf(log, "device profile: %s: invalid variable table; ignored", label);
+			else
+				profile_add_settings(profile, section, source, label, "variable", 0, builtin_output, log);
+			continue;
+		}
 		if (!scene && !strcmp(section_name, "external"))
 		{
 			if (external || section.type != TOML_TABLE)
@@ -253,7 +289,7 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 		}
 		/* (the file's own fields and tables: tools/profile_check.py checks those) */
 		if (section.type != TOML_TABLE || !strcmp(section_name, "match") || !strcmp(section_name, "evidence") ||
-			!strcmp(section_name, "scene"))
+			!strcmp(section_name, "scene") || !strcmp(section_name, "variable"))
 			continue;
 		for (key_index = 0; key_index < section.u.tab.size; key_index++)
 		{
@@ -280,10 +316,12 @@ static void profile_add_settings(struct host_profile *profile, toml_datum_t tabl
 				profile_logf(log, "device profile: %s: %s cannot be set in this output context; ignored", label, value.name);
 				continue;
 			}
-			if (scene && !name_in(value.name, scene_keys, sizeof(scene_keys) / sizeof(scene_keys[0])))
+			if (scene && !(strcmp(scene, "variable") ?
+				name_in(value.name, scene_keys, sizeof(scene_keys) / sizeof(scene_keys[0])) :
+				name_in(value.name, variable_keys, sizeof(variable_keys) / sizeof(variable_keys[0]))))
 			{
-				profile_logf(log, "device profile: %s line %d: %s cannot change by scene class; ignored", label,
-					datum.lineno, value.name);
+				profile_logf(log, "device profile: %s line %d: %s cannot change by %s; ignored", label,
+					datum.lineno, value.name, strcmp(scene, "variable") ? "scene class" : "workload");
 				continue;
 			}
 			switch (key->type)
@@ -736,6 +774,19 @@ int host_profile_value(const struct host_profile *profile, const char *name, cha
 	return 0;
 }
 
+int host_profile_scene_value(const struct host_profile *profile, const char *name, const char *scene, char *text,
+	size_t size)
+{
+	for (int index = profile->count - 1; index >= 0; index--)
+		if (!profile->values[index].external && scene && *scene && !strcmp(profile->values[index].scene, scene) &&
+			!strcmp(profile->values[index].name, name))
+		{
+			snprintf(text, size, "%s", profile->values[index].text);
+			return 1;
+		}
+	return 0;
+}
+
 int host_profile_external_value(const struct host_profile *profile, const char *name, char *text, size_t size)
 {
 	for (int index = profile->count - 1; index >= 0; index--)
@@ -858,7 +909,7 @@ static int pack_heading(toml_datum_t table, const char *file, struct profile_fil
 		const char *key = table.u.tab.key[i]; toml_datum_t value = table.u.tab.value[i];
 		if (!strcmp(key, "schema") || !strcmp(key, "name") || !strcmp(key, "kind") || !strcmp(key, "status") || !strcmp(key, "match")) continue;
 		if (value.type != TOML_TABLE) return 0;
-		if (!strcmp(key, "evidence") || !strcmp(key, "scene") || !strcmp(key, "external")) continue;
+		if (!strcmp(key, "evidence") || !strcmp(key, "scene") || !strcmp(key, "external") || !strcmp(key, "variable")) continue;
 		int known = 0;
 		for (size_t j = 0; j < NUMBER_OF_PROFILE_KEYS; j++)
 			if (!strncmp(profile_keys[j].name, key, strlen(key)) && profile_keys[j].name[strlen(key)] == '.') known = 1;

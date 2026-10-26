@@ -160,10 +160,18 @@ void host_device_profile_applied(int point, int networked, int changed, int meta
     offered_ready = 0;
 }
 
+/* name, or the variable-workload context's value as the profile names it ("variable.display.dynamic_resolution") */
 static int installed_value(const char *name, char *text, size_t size)
 {
+	const char *scene = "";
+	if (!strncmp(name, "variable.", 9))
+	{
+		scene = "variable";
+		name += 9;
+	}
 	pthread_mutex_lock(&installed_lock);
-    int found = host_profile_value(&installed_profile, name, text, size);
+    int found = *scene ? host_profile_scene_value(&installed_profile, name, scene, text, size) :
+        host_profile_value(&installed_profile, name, text, size);
     pthread_mutex_unlock(&installed_lock);
     return found;
 }
