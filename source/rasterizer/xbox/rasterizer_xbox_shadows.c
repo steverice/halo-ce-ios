@@ -1072,6 +1072,8 @@ void rasterizer_environment_shadows_defer_end(
 	if (deferred_shadows_drawn && deferred_shadows_in_atlas())
 	{
 		boolean footprint = halo_shadow_blur_footprint();
+		boolean pages = rasterizer_shadow_blur_capacity() > 0;
+		short count = deferred_shadow_count - deferred_shadow_window_first;
 		short index, run, end;
 		boolean blurred = TRUE;
 
@@ -1095,14 +1097,15 @@ void rasterizer_environment_shadows_defer_end(
 					}
 				}
 			}
+			/* (without blur pages, each into its slot's second target) */
 			for (index = run; index < end && blurred; index++)
 			{
-				if ((blurred = footprint ? rasterizer_shadow_blur_select_prepassed(index) : rasterizer_shadow_blur_select(index)))
+				if ((blurred = footprint ? rasterizer_shadow_blur_select_prepassed(index) :
+					pages ? rasterizer_shadow_blur_select(index) : rasterizer_shadow_atlas_select(index)))
 					rasterizer_shadow_convolve();
 			}
 		}
-		if (!blurred ||
-			!rasterizer_shadow_blur_copy(deferred_shadow_window_first, deferred_shadow_count - deferred_shadow_window_first))
+		if (!blurred || (pages && !rasterizer_shadow_blur_copy(deferred_shadow_window_first, count)))
 		{
 			for (index = deferred_shadow_window_first; index < deferred_shadow_count; index++)
 			{

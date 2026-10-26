@@ -4028,10 +4028,13 @@ took up to 95 MB at display.shadow_map_size 512 */
 float halo_shadow_target_scale(void);
 void halo_shadow_atlas_register(D3DSurface *surface);
 void halo_shadow_atlas_forget(D3DSurface *surface);
+int halo_shadow_blur_views(void);
 
 static struct
 {
 	long size;              /* a page's side in texels (0: no layout yet) */
+	float scale;            /* the shadow maps' scale the layout is for */
+	boolean blur_failed;    /* the blur pages' tiles could not become second targets at this layout */
 	short columns;          /* tiles a row (and rows a page) */
 	short tiles;            /* RASTERIZER_SHADOW_SLOTS - 1 at most */
 	D3DTexture *texture[SHADOW_ATLAS_PAGES];
@@ -4063,7 +4066,7 @@ static void shadow_atlas_layout(
 		scale = 1.0f;
 	while (size < 2048 && (float)size * scale < (float)SHADOW_ATLAS_PIXELS)
 		size *= 2;
-	if (size == shadow_atlas.size)
+	if (size == shadow_atlas.size && scale == shadow_atlas.scale)
 		return;
 	for (page = 0; page < SHADOW_ATLAS_PAGES; page++)
 	{
@@ -4104,14 +4107,17 @@ static void shadow_atlas_layout(
 		shadow_atlas.blur_columns *= 2;
 	columns = (short)(size / SHADOW_ATLAS_STRIDE);
 	shadow_atlas.size = size;
+	shadow_atlas.scale = scale;
+	shadow_atlas.blur_failed = FALSE;
 	shadow_atlas.columns = columns;
 	{
 		/* (R5G6B5: two bytes a pixel) */
 		double page_bytes = (double)size * scale * (double)size * scale * 2.0;
 		double second_bytes = (double)RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE * scale *
 			(double)RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE * scale * 2.0;
-		/* (a blur page's tile stands for a second target: under Metal it becomes one) */
-		double tiles = SHADOW_ATLAS_BUDGET / (page_bytes / (double)(columns * columns) + second_bytes);
+		/* a blur page's tile stands for a second target where it becomes one (Metal's views); elsewhere both are kept */
+		double tiles = SHADOW_ATLAS_BUDGET / (page_bytes / (double)(columns * columns) +
+			second_bytes * (halo_shadow_blur_views() ? 1.0 : 2.0));
 
 		shadow_atlas.tiles = (short)MIN(MIN((double)(columns * columns * SHADOW_ATLAS_PAGES),
 			(double)(RASTERIZER_SHADOW_SLOTS - 1)), tiles);
@@ -4321,7 +4327,7 @@ int halo_shadow_blur_copy(D3DSurface *page, int count, D3DSurface *const *destin
 short rasterizer_shadow_blur_capacity(
 	void)
 {
-	return shadow_atlas.size ? shadow_atlas.blur_columns * shadow_atlas.blur_columns : 0;
+	return shadow_atlas.size && !shadow_atlas.blur_failed ? shadow_atlas.blur_columns * shadow_atlas.blur_columns : 0;
 }
 
 /* a deferred shadow's tile in its blur page */
@@ -4391,15 +4397,16 @@ boolean rasterizer_shadow_blur_select(
 	return TRUE;
 }
 
-/* the footprint blur: as rasterizer_shadow_blur_select, the blur's source the pre-pass page's tile (laid out as the
-atlas's, so rasterizer_shadow_atlas_mapping holds for it), in the same run as its pre-pass */
+/* the footprint blur: as rasterizer_shadow_blur_select (or, without blur pages, rasterizer_shadow_atlas_select: into
+the slot's second target), the blur's source the pre-pass page's tile (laid out as the atlas's, so
+rasterizer_shadow_atlas_mapping holds for it), in the same run as its pre-pass */
 boolean rasterizer_shadow_blur_select_prepassed(
 	short tile)
 {
 	short page = shadow_prepass_page_index(tile);
 
 	if (page == NONE || !shadow_atlas.temp_texture[page] || !shadow_atlas.temp_cleared[page] ||
-		!rasterizer_shadow_blur_select(tile))
+		!(rasterizer_shadow_blur_capacity() > 0 ? rasterizer_shadow_blur_select(tile) : rasterizer_shadow_atlas_select(tile)))
 		return FALSE;
 	global_d3d_texture_shadow_primary = shadow_atlas.temp_texture[page];
 	global_d3d_surface_shadow_primary = shadow_atlas.temp_surface[page];
@@ -4428,7 +4435,11 @@ boolean rasterizer_shadow_blur_copy(
 			D3DSurface *page = shadow_atlas.blur_surface[(tile - 1) / per_page];
 
 			if (!page || !halo_shadow_blur_copy(page, made, destinations, origins, RASTERIZER_TARGET_SHADOW_PRIMARY_SIZE))
+			{
+				/* (a scale whose tiles are not the second targets' size: the pages go unused until the layout changes) */
+				shadow_atlas.blur_failed = TRUE;
 				success = FALSE;
+			}
 			made = 0;
 		}
 		if (tile == first + count)

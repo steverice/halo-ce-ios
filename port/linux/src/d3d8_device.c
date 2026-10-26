@@ -2532,6 +2532,13 @@ static const char *shader_extension(const struct nv2a_dialect *dialect)
 	return dialect->msl ? "metal" : "glsl";
 }
 
+/* whether the shadow blur pages' tiles become the shadows' second targets (Metal's views of them,
+gpu_metal_texture_copy_rects) rather than copies into targets of their own (rasterizer_xbox.c's memory budget) */
+int halo_shadow_blur_views(void)
+{
+	return shader_dialect.msl && !getenv("HALO_METAL_NO_TILE_VIEWS");
+}
+
 /* ---------- shader replay (debug.gpu_shader_replay)
 
 Translates every recorded shader input in a folder into its replay folder,
