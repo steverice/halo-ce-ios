@@ -116,3 +116,19 @@ def test_a_crash_report_s_text_registers_give_the_reason():
     lines = guest_symbolicate.symbolicate(text, symbols())
     assert lines[0].startswith("warning: the report names guest image 0123456789ab")
     assert lines[1] == "reason: guest abort: debug.crash_test"
+
+
+def test_an_arena_off_a_multiple_of_4_gb_takes_its_start():
+    table = symbols()
+    arena = 0x3_2000_0000
+    assert guest_symbolicate.describe(arena + 0x88001004, table, arena) == "guest 0x88001004 display_assert+0x4"
+    # below the arena's start, and 4 GB or more past it, are not guest frames
+    assert guest_symbolicate.describe(arena - 0x10, table, arena) is None
+    assert guest_symbolicate.describe(arena + (1 << 32) + 0x88001004, table, arena) is None
+    log = (f"CRASH: arena 0x{arena:016x}, lr 0x0000000100000010\n"
+           f"CRASH: frame 3: 0x{arena + 0x88001020:016x}\n")
+    assert guest_symbolicate.symbolicate(log, table)[1].endswith("[guest 0x88001020 display_assert+0x20]")
+    body = {"usedImages": [{"size": 0, "base": 0}],
+            "threads": [{"triggered": True, "frames": [{"imageIndex": 0, "imageOffset": arena + 0x88002008}]}]}
+    report = json.dumps({"app_name": "VISR"}) + "\n" + json.dumps(body)
+    assert "guest 0x88002008 halt_and_catch_fire+0x8" in guest_symbolicate.symbolicate(report, table, arena)[1]

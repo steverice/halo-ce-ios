@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Name the guest frames of an Apple crash report, or of ios-runtime.log's CRASH lines.
 
-The game's code runs from an alias of the app's __TEXT,__halocode in the 4 GB aligned guest arena
+The game's code runs from an alias of the app's __TEXT,__halocode in the guest arena
 (port/ios/host/host_loader.c), so a crash report shows its frames as addresses outside every image.
-An address's low 32 bits are its guest address; the build's guest-symbols.txt
+An address minus the arena's start is its guest address; the build's guest-symbols.txt
 (tools/ios_embed_guest.py writes it to build/ios/embedded, and release builds keep it with their
 artifacts) names them.
 
     python3 tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.txt VISR-2026-10-25-120000.ips
     python3 tools/guest_symbolicate.py --symbols guest-symbols.txt ios-runtime.log
+    python3 tools/guest_symbolicate.py --symbols guest-symbols.txt --arena 0x320000000 VISR.ips
+
+ios-runtime.log's "CRASH: arena" line gives the arena's start. An .ips report does not carry it: pass it
+with --arena (ios-runtime.log's "guest arena at" line) when the arena is not at a multiple of 4 GB; without
+it the address's low 32 bits are taken, which is right for an arena at a multiple of 4 GB.
 
 --symbols also takes the app itself (a VISR.app folder, its executable, or an .ipa), which carries the same
 table in its __TEXT,__halosyms section.
@@ -39,6 +44,7 @@ REASON_MAGIC = int.from_bytes(b"VISRCRSH", "little")
 REASON_REGISTERS = list(range(1, 16)) + list(range(19, 29))
 REGISTER = re.compile(r"\bx(\d{1,2}):\s*0x([0-9a-fA-F]+)")
 ADDRESS = re.compile(r"0x([0-9a-fA-F]{9,16})\b")
+ARENA = re.compile(r"CRASH: arena 0x([0-9a-fA-F]+)")
 
 
 class Symbols:
@@ -146,18 +152,23 @@ def halosyms(data):
     raise ValueError("the executable has no __TEXT,__halosyms section (a build from before guest crash reports)")
 
 
-def guest_address(address, symbols):
-    """the guest address of a native one in the arena's alias of the guest code, else None: the arena
-    is 4 GB aligned and above the first 4 GB, so a guest frame's native address is the arena's base
-    plus its guest address"""
+def guest_address(address, symbols, arena=None):
+    """the guest address of a native one in the arena's alias of the guest code, else None: a guest
+    frame's native address is the arena's start plus its guest address. The arena is above the first
+    4 GB; without its start, the low 32 bits are taken (right for an arena at a multiple of 4 GB)"""
     if address < 1 << 32:
         return None
-    guest = address & 0xFFFFFFFF
+    if arena is None:
+        guest = address & 0xFFFFFFFF
+    elif arena <= address < arena + (1 << 32):
+        guest = address - arena
+    else:
+        return None
     return guest if symbols.contains(guest) else None
 
 
-def describe(address, symbols):
-    guest = guest_address(address, symbols)
+def describe(address, symbols, arena=None):
+    guest = guest_address(address, symbols, arena)
     if guest is None:
         return None
     return f"guest 0x{guest:08x} {symbols.name(guest) or '?'}"
@@ -205,11 +216,11 @@ def reason_lines(reason):
     return [f"reason: {message}", f"guest image {image}"]
 
 
-def frame_line(frame, images, symbols):
+def frame_line(frame, images, symbols, arena=None):
     image = images[frame["imageIndex"]] if 0 <= frame.get("imageIndex", -1) < len(images) else {}
     address = image.get("base", 0) + frame.get("imageOffset", 0)
     named = image.get("name") or image.get("path")
-    guest = None if named and image.get("size") else describe(address, symbols)
+    guest = None if named and image.get("size") else describe(address, symbols, arena)
     if guest:
         return f"0x{address:016x}  {guest}"
     symbol = frame.get("symbol")
@@ -221,7 +232,7 @@ def threads_of(report):
     return report.get("threads", [])
 
 
-def ips_report(report, symbols):
+def ips_report(report, symbols, arena=None):
     """the lines that describe an .ips report, its guest frames named"""
     images = report.get("usedImages", [])
     lines = []
@@ -238,7 +249,7 @@ def ips_report(report, symbols):
             lines.append(f"reason ({owner}): {message}")
     if report.get("lastExceptionBacktrace"):
         lines.append("last exception backtrace:")
-        lines += [f"  {index:2d}  {frame_line(frame, images, symbols)}"
+        lines += [f"  {index:2d}  {frame_line(frame, images, symbols, arena)}"
                   for index, frame in enumerate(report["lastExceptionBacktrace"])]
     threads = threads_of(report)
     order = sorted(range(len(threads)), key=lambda index: not threads[index].get("triggered"))
@@ -248,17 +259,19 @@ def ips_report(report, symbols):
         if thread.get("name") or thread.get("queue"):
             title += f": {thread.get('name') or thread.get('queue')}"
         lines.append(title)
-        lines += [f"  {number:2d}  {frame_line(frame, images, symbols)}"
+        lines += [f"  {number:2d}  {frame_line(frame, images, symbols, arena)}"
                   for number, frame in enumerate(thread.get("frames", []))]
     return lines
 
 
-def text_report(text, symbols):
+def text_report(text, symbols, arena=None):
     """text (a .crash report, ios-runtime.log) with a guest name after each address that is one"""
+    if arena is None and (match := ARENA.search(text)):
+        arena = int(match.group(1), 16)
     reason = register_reason(text_registers(text))
     lines = reason_lines(reason) if reason else []
     for line in text.splitlines():
-        names = [describe(int(match.group(1), 16), symbols) for match in ADDRESS.finditer(line)]
+        names = [describe(int(match.group(1), 16), symbols, arena) for match in ADDRESS.finditer(line)]
         names = [name for name in names if name and name.split()[1] not in line]
         lines.append(line + (f"    [{'; '.join(names)}]" if names else ""))
     return lines
@@ -273,9 +286,9 @@ def image_warning(text, symbols, lines):
     return None
 
 
-def symbolicate(text, symbols):
+def symbolicate(text, symbols, arena=None):
     report = read_ips(text)
-    lines = ips_report(report, symbols) if report else text_report(text, symbols)
+    lines = ips_report(report, symbols, arena) if report else text_report(text, symbols, arena)
     warning = image_warning(text, symbols, lines)
     return ([warning] if warning else []) + lines
 
@@ -284,13 +297,16 @@ def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--symbols", type=Path, required=True,
                         help="the build's guest-symbols.txt (build/ios/embedded/guest-symbols.txt)")
+    parser.add_argument("--arena", type=lambda text: int(text, 16),
+                        help="the guest arena's start in hex (ios-runtime.log's \"guest arena at\" line); "
+                             "ios-runtime.log's own CRASH lines give it")
     parser.add_argument("reports", type=Path, nargs="+", help=".ips or .crash reports, or ios-runtime.log")
     args = parser.parse_args(arguments)
     symbols = Symbols.load(args.symbols)
     for path in args.reports:
         if len(args.reports) > 1:
             print(f"== {path}")
-        for line in symbolicate(path.read_text(errors="replace"), symbols):
+        for line in symbolicate(path.read_text(errors="replace"), symbols, args.arena):
             print(line)
     return 0
 

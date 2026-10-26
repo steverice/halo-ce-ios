@@ -5,8 +5,8 @@ Fatal errors as native crashes (host_crash.h).
 
 Guest code runs from an alias of the app's __TEXT,__halocode in the guest
 arena (host_loader.c), so Apple's crash reports show its frames as bare
-addresses outside every image. The arena is 4 GB aligned, so an address's
-low 32 bits are its guest address: the log here names the guest frames from
+addresses outside every image. An address minus the arena's start is its
+guest address: the log here names the guest frames from
 the symbol table embedded beside the code (__TEXT,__halosyms,
 tools/ios_embed_guest.py), and tools/guest_symbolicate.py names them in a
 whole report from the build's guest-symbols.txt.
@@ -202,8 +202,8 @@ static void text_guest(struct text *text, uintptr_t address, int return_address)
 	if (!guest_code_contains(address))
 		return;
 	text_add(text, " guest ");
-	text_hex(text, (uint32_t)address, 8);
-	name = guest_symbol((uint32_t)address, return_address, &offset);
+	text_hex(text, (uint32_t)(address - host_arena), 8);
+	name = guest_symbol((uint32_t)(address - host_arena), return_address, &offset);
 	if (name)
 	{
 		text_add(text, " ");
@@ -228,7 +228,7 @@ static void text_guest_frames(struct text *text, const uintptr_t *frames, int co
 			continue;
 		if (shown++)
 			text_add(text, " < ");
-		name = guest_symbol((uint32_t)frames[index], index > 0 || !first_is_pc, &offset);
+		name = guest_symbol((uint32_t)(frames[index] - host_arena), index > 0 || !first_is_pc, &offset);
 		if (name)
 		{
 			text_add(text, name);
@@ -236,7 +236,7 @@ static void text_guest_frames(struct text *text, const uintptr_t *frames, int co
 			text_hex(text, offset, 1);
 		}
 		else
-			text_hex(text, (uint32_t)frames[index], 8);
+			text_hex(text, (uint32_t)(frames[index] - host_arena), 8);
 	}
 }
 
@@ -320,7 +320,7 @@ static void crash_signal(int number, siginfo_t *info, void *context)
 	if (host_low_owns((uintptr_t)info->si_addr, 1))
 	{
 		text_add(&text, " (guest ");
-		text_hex(&text, (uint32_t)(uintptr_t)info->si_addr, 8);
+		text_hex(&text, (uint32_t)((uintptr_t)info->si_addr - host_arena), 8);
 		text_add(&text, ")");
 	}
 	text_add(&text, ", pc");

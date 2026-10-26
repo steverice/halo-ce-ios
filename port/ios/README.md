@@ -715,6 +715,10 @@ python3 tools/guest_symbolicate.py --symbols build/ios/embedded/guest-symbols.tx
 python3 tools/guest_symbolicate.py --symbols VISR.app ios-runtime.log   # or an .ipa: the app carries the table
 ```
 
+A report does not carry the arena's start. When `ios-runtime.log`'s `guest arena at` line
+says it is not at a multiple of 4 GB, pass that address with `--arena`; `ios-runtime.log`'s
+own `CRASH` lines carry it.
+
 `debug.halt_screen = true` keeps the game's blue halt screen instead of the
 crash. `debug.crash_test` (`"halt"`, `"fault"`, `"trap"` or `"abort"`) fails on
 purpose 150 frames after the game starts, to check what a report shows; `"map"`
