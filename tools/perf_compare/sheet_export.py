@@ -108,12 +108,20 @@ def _number(value, places=2):
     return "" if value is None else f"{value:.{places}f}"
 
 
+RELEASE_KINDS = ("release", "hosted web build (release channel)")
+
+
+def is_release(record: dict) -> bool:
+    """Public data holds released builds only: a tagged release, or a hosted build on a release channel."""
+    return str(record.get("release_kind") or "") in RELEASE_KINDS
+
+
 def rows(summary: dict) -> list[dict[str, str]]:
     """One row per measured record and scenario, in the summary's page order."""
     if summary.get("schema", SCHEMA) != SCHEMA:
         raise ValueError("summary schema mismatch")
     out = []
-    for record in sorted(summary.get("records", []), key=_record_order):
+    for record in sorted((r for r in summary.get("records", []) if is_release(r)), key=_record_order):
         port = str(record.get("port", ""))
         name = PORTS.get(port, port)
         version = str(record.get("version") or "")

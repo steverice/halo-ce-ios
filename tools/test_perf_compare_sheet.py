@@ -372,3 +372,21 @@ def test_browser_plain_reasons_match_python():
     done = subprocess.run(["node", "-e", script, str(ROOT), json.dumps(reasons), json.dumps(codes)],
                           capture_output=True, text=True, check=True)
     assert json.loads(done.stdout) == [charts.plain_reason(code, reasons) for code in codes]
+
+
+def test_only_released_builds_reach_the_public_rows():
+    kept = [record(), record(port="opence-web", version="build-280", release_kind="hosted web build (release channel)")]
+    dropped = [record(version="main", release_kind="pre-release main build"),
+               record(port="opence-web", version="", release_kind="hosted web build")]
+    rows = sheet_export.rows(summary(*kept, *dropped))
+    assert {(row["port"], row["version"]) for row in rows} == {("visr", "0.5.1"), ("opence-web", "build-280")}
+    assert not any(row["release_kind"] == "pre-release main build" for row in rows)
+    assert "main" not in {row["version"] for row in rows}
+
+
+def test_fetch_drops_unreleased_rows_even_if_the_sheet_still_has_them():
+    rows = snapshot_rows()
+    unreleased = {**rows[0], "label": "VISR dev", "version": "dev", "release_kind": "pre-release main build"}
+    text = sheet_export.to_csv(sheet_export.COLUMNS, [*rows, unreleased])
+    cleaned = list(csv.DictReader(io.StringIO(sheet_fetch.validate(text))))
+    assert "VISR dev" not in {row["label"] for row in cleaned} and len(cleaned) == len(rows)

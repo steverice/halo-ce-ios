@@ -11,9 +11,9 @@ import urllib.parse
 import urllib.request
 
 try:
-    from .sheet_export import COLUMNS
+    from .sheet_export import COLUMNS, RELEASE_KINDS
 except ImportError:
-    from sheet_export import COLUMNS
+    from sheet_export import COLUMNS, RELEASE_KINDS
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "docs/benchmarks/results.csv"
@@ -45,12 +45,14 @@ def validate(text: str) -> str:
         if not any(cell.strip() for cell in row):
             continue
         record = {name: row[index] if index < len(row) else "" for name, index in position.items()}
+        if record["release_kind"] not in RELEASE_KINDS:
+            continue  # the snapshot holds released builds only, whatever the sheet carries
         # Sheets writes booleans as TRUE/FALSE; the snapshot keeps the export's lowercase spelling.
         if record["reference_box"].lower() in ("true", "false"):
             record["reference_box"] = record["reference_box"].lower()
         body.append(record)
     if not body:
-        raise ValueError("the results tab has no rows")
+        raise ValueError("the results tab has no released-build rows")
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=list(COLUMNS), lineterminator="\n")
     writer.writeheader()

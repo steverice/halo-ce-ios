@@ -36,7 +36,7 @@ xychart-beta horizontal
 
 M6 Mac mini. VISR 0.5.1 (build 20261026.31927, measured 2026-10-26); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).
 
-Not measured: VISR main (Not run on this platform's reference device.); OpenCE web (Safari could not be automated on this Mac.); OpenCE web build-280 (Only measured with the frame cap on or with other settings.); Chupathingy v0.8.0g (The app has no frame-time readout we could capture.); Halo OG v0.5.1 (The app has no frame-time readout we could capture.).
+Not measured: OpenCE web build-280 (Only measured with the frame cap on or with other settings.); Chupathingy v0.8.0g (The app has no frame-time readout we could capture.); Halo OG v0.5.1 (The app has no frame-time readout we could capture.).
 
 ### iPhone and iPad
 
@@ -60,7 +60,7 @@ No results yet for the M2 Vision Pro.
 
 ## Methodology
 
-Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
+Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
 
 ### Suites
 

@@ -56,7 +56,7 @@ def methodology(summary: dict, rows: list[dict]) -> list[str]:
              "dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the "
              "spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is "
              "omitted for uncapped rows and does not establish a display tier. The methods measure different events and are "
-             "not ranked against one another. Web builds run in a browser that always syncs to the display, so they have "
+             "not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have "
              "capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each "
              "column.", ""]
     lines.extend(suite_section(rows))
