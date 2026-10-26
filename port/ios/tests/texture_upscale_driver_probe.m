@@ -105,7 +105,9 @@ int main(void) {@autoreleasepool {
     assert(host_texture_upscale_level_poll(NULL,NULL)==TEXTURE_UPSCALE_LEVEL_DONE);
     host_texture_upscale_level_end(1);assert(atomic_load(&urgent)==0);
     assert(!host_texture_upscale_level_ready());
-    assert(!host_texture_upscale_level_ready());   /* not listed: original, too */
+    /* no catalog yet (a launch straight into the level): the level reads its own list and the saved cache from disk,
+       never "not listed yet"; with no data root there is no cache, so nothing upscaled is drawn */
+    assert(!catalog_ready&&host_texture_upscale_level_ready());
     upscale_mode=TEXTURE_UPSCALE_MODE_AUTO;profile_upscales=0;
     char status[64];host_texture_upscale_status(status,sizeof(status));assert(!strcmp(status,"Not used on this device"));
     upscale_enabled=NO;

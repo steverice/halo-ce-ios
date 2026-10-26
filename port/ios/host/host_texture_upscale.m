@@ -940,9 +940,11 @@ static int level_ready_without_generator(void) {
     return ready;
 }
 int host_texture_upscale_level_ready(void) {
-    if(texture_upscale_level_source(upscale_enabled,catalog_ready)==TEXTURE_UPSCALE_LEVEL_SOURCE_DISK)return level_ready_without_generator();
+    if(!upscale_enabled)return level_ready_without_generator();
     NSString *name=priority_snapshot();
     if(atomic_exchange(&level_skipped,false)){host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (the wait was skipped)",name.UTF8String);return 0;}
+    /* (a level that loads before this launch's catalog is built reads its own list from disk, not "not listed yet") */
+    if(texture_upscale_level_source(upscale_enabled,catalog_ready)==TEXTURE_UPSCALE_LEVEL_SOURCE_DISK)return level_ready_without_generator();
     NSData *keys=keys_for_map(name);
     if(!keys){host_logf(HOST_LOG_INFO,"Upscale level %s: original textures (its textures are not listed yet)",name.UTF8String);return 0;}
     struct texture_cache_progress p=progress_of(keys);
