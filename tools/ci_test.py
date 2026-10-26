@@ -25,6 +25,7 @@ APPLE_PROBES = {
     "test_network_light_state.py",
     "test_network_shader_warmup.py",
     "test_shader_list_warmup.py",
+    "test_shader_list_record.py",
     "test_metal_border.py",
     "test_checkpoint_timing.py",
     "test_dead_spectator_head.py",
