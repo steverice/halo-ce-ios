@@ -174,7 +174,11 @@ async function drawChart(container, spec, built, suite, selected) {
     return;
   }
   try {
-    const { svg } = await mermaid.render("bench-chart-" + ++renderCount, text);
+    // Mermaid measures text where it renders, so use a fixed-width off-screen box rather than the phone-width page.
+    const stage = el("div", { style: "position:absolute;left:-10000px;top:0;width:900px;visibility:hidden" });
+    document.body.append(stage);
+    let svg;
+    try { ({ svg } = await mermaid.render("bench-chart-" + ++renderCount, text, stage)); } finally { stage.remove(); }
     container.innerHTML = svg;
   } catch (error) {
     container.append(el("pre", {}, text));

@@ -29,8 +29,16 @@ STYLE = """
 .bench { margin: 0 0 40px; }
 .bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); } }
-.bench-chart { background: #fff; color: #111; border-radius: 8px; padding: 8px; overflow-x: auto; }
-.bench-chart svg, .bench-chart img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+/* The device frames come from style.css; only the screen's content box is defined here. */
+.bench-media { min-width: 0; }
+.device .bench-chart { display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden;
+  background: #fff; color: #111; border-radius: 18px; }
+.device-iphone .bench-chart { aspect-ratio: 19.5 / 9; border-radius: 24px; }
+.device-ipad .bench-chart { aspect-ratio: 4 / 3; border-radius: 12px; }
+.device-tv .bench-chart { aspect-ratio: 16 / 9; border-radius: 3px; }
+.device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
+.device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
+.bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
 .bench-rows { border: 1px solid var(--line); padding: 8px 14px 12px; margin: 0; }
 .bench-rows legend { font-weight: 600; padding: 0 6px; }
 .bench-rows label { display: block; margin: 6px 0; line-height: 1.35; }
@@ -39,6 +47,9 @@ STYLE = """
 .bench-empty { color: #333; margin: 0; padding: 24px 12px; }
 .method { max-width: 760px; margin-inline: auto; }
 """
+
+
+FRAMES = {"mac": "device-mac", "iphone-ipad": "device-ipad", "apple-tv": "device-tv", "vision-pro": "device-vision"}
 
 
 def slug(spec: dict) -> str:
@@ -79,7 +90,7 @@ def section(spec: dict, rows: list[dict], suite: str) -> str:
 <h2 id="h-{name}">{escape(spec["heading"])}</h2>
 <p>{escape(spec["paragraph"].strip())}</p>
 <div class="bench-grid">
-<div class="bench-chart">{chart}</div>
+<div class="bench-media"><figure class="device {FRAMES[name]}"><div class="bench-chart">{chart}</div></figure></div>
 <fieldset class="bench-rows">{rows_html}</fieldset>
 </div>
 <p class="bench-legend">{escape(legend)}</p>

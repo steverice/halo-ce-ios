@@ -16,8 +16,16 @@
 .bench { margin: 0 0 40px; }
 .bench-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 @media (min-width: 900px) { .bench-grid { grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); } }
-.bench-chart { background: #fff; color: #111; border-radius: 8px; padding: 8px; overflow-x: auto; }
-.bench-chart svg, .bench-chart img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+/* The device frames come from style.css; only the screen's content box is defined here. */
+.bench-media { min-width: 0; }
+.device .bench-chart { display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden;
+  background: #fff; color: #111; border-radius: 18px; }
+.device-iphone .bench-chart { aspect-ratio: 19.5 / 9; border-radius: 24px; }
+.device-ipad .bench-chart { aspect-ratio: 4 / 3; border-radius: 12px; }
+.device-tv .bench-chart { aspect-ratio: 16 / 9; border-radius: 3px; }
+.device-vision .bench-chart { aspect-ratio: 16 / 9; border-radius: 14px; }
+.device-mac .bench-chart { aspect-ratio: 16 / 10; border-radius: 5px; }
+.bench-chart svg, .bench-chart img { display: block; flex: 0 1 auto; min-width: 0; width: 100%; max-width: 100%; height: auto; }
 .bench-rows { border: 1px solid var(--line); padding: 8px 14px 12px; margin: 0; }
 .bench-rows legend { font-weight: 600; padding: 0 6px; }
 .bench-rows label { display: block; margin: 6px 0; line-height: 1.35; }
@@ -37,7 +45,7 @@
 <h2 id="h-mac">Mac</h2>
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
-<div class="bench-chart"><img src="benchmarks/static-mac.svg" alt="Mac: average and 1% low fps per build, Campaign suite"></div>
+<div class="bench-media"><figure class="device device-mac"><div class="bench-chart"><img src="benchmarks/static-mac.svg" alt="Mac: average and 1% low fps per build, Campaign suite"></div></figure></div>
 <fieldset class="bench-rows"><legend>Builds</legend><label><input type="checkbox" value="visr@0.5.1@20261026.31927" checked> VISR 0.5.1 (build 20261026.31927, 2026-10-26)</label><label class="off"><input type="checkbox" value="visr@main@20261023.203835" disabled> VISR main (build 20261023.203835, 2026-10-24). Not measured: not measured on the reference box.</label><label><input type="checkbox" value="opence-macos@v1.0.2@2" checked> OpenCE-macOS v1.0.2 (build 2, 2026-10-26)</label><label class="off"><input type="checkbox" value="opence-web@@" disabled> OpenCE web (build unknown, 2026-10-26). Not measured: safari-remote-automation-disabled.</label><label class="off"><input type="checkbox" value="opence-web@build-280@280" disabled> OpenCE web build-280 (build 280, 2026-10-26). Not measured: no uncapped matched-stock measurement.</label><label><input type="checkbox" value="corece@0.3.0@44" checked> CoreCE 0.3.0 (build 44, 2026-10-26)</label><label class="off"><input type="checkbox" value="chupathingy@v0.8.0g@0.8.0g" disabled> Chupathingy v0.8.0g (build 0.8.0g, 2026-10-24). Not measured: console-unavailable.</label><label class="off"><input type="checkbox" value="halo-og@v0.5.1@" disabled> Halo OG v0.5.1 (build unknown, 2026-10-24). Not measured: console-unavailable.</label></fieldset>
 </div>
 <p class="bench-legend">🟦 Average fps 🟧 1% low fps</p>
@@ -47,7 +55,7 @@
 <h2 id="h-iphone-ipad">iPhone and iPad</h2>
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
-<div class="bench-chart"><p class="bench-empty">No results yet for the M1 iPad Pro.</p></div>
+<div class="bench-media"><figure class="device device-ipad"><div class="bench-chart"><p class="bench-empty">No results yet for the M1 iPad Pro.</p></div></figure></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
 </div>
 <p class="bench-legend"></p>
@@ -57,7 +65,7 @@
 <h2 id="h-apple-tv">Apple TV</h2>
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
-<div class="bench-chart"><p class="bench-empty">No reference box is set for Apple TV yet.</p></div>
+<div class="bench-media"><figure class="device device-tv"><div class="bench-chart"><p class="bench-empty">No reference box is set for Apple TV yet.</p></div></figure></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
 </div>
 <p class="bench-legend"></p>
@@ -67,7 +75,7 @@
 <h2 id="h-vision-pro">Vision Pro</h2>
 <p>Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite&#x27;s windows.</p>
 <div class="bench-grid">
-<div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div>
+<div class="bench-media"><figure class="device device-vision"><div class="bench-chart"><p class="bench-empty">No results yet for the M2 Vision Pro.</p></div></figure></div>
 <fieldset class="bench-rows"><legend>Builds</legend></fieldset>
 </div>
 <p class="bench-legend"></p>
