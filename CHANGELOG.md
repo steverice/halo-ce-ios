@@ -1,26 +1,21 @@
-## visr-v0.5.2 (2026-10-26)
+## Unreleased
 
 ### Summary
 
-- Dynamic resolution now adjusts the scene's render resolution on supported devices, including iPad Pro, iPhone 12 Pro, iPhone 17 Pro, and Apple TV 4K (1st generation). Watch for smoother frame pacing, especially in heavy fights and busy multiplayer.
-- On-device texture upscaling is available where your device supports it. Look for an "Upscaling textures" step during import, with "Start playing" to skip it. Check the Settings pane for how many textures are ready.
-- Texture upscaling pauses during gameplay and resumes in menus and loading. On iPhone and iPad with iOS 26 or later, the import phase can keep going if you switch away. Try this and confirm levels play either fully upscaled or fully original.
-- Upscaled textures are now on for Apple TV 4K (3rd generation) and newer. They stay off for older Apple TVs.
-- Shadows look different: larger shadow map sizes now blur over the same area as the default size, so shadow edges should no longer show shifted copies. Look at shadow edges in busy scenes.
-- Low Power Mode now halves the frame rate target, including on ProMotion screens. A 30 fps cap should no longer cause frames to be flagged as late.
-- iPad Pro M1 and newer now use MetalFX upscaling. Look for smoother edges compared with the previous stretch.
-- The benchmark has 20 gameplay cases across a10, a50, b30, b40, c20, c40, and d40, including the d40 Maw fight and 1.5x and 2x enemy variants. Benchmark reports now include dynamic resolution line ranges.
-
-iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
-
-VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
-
-VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+- VISR no longer needs the extended virtual addressing entitlement: the game's memory can sit anywhere, so devices that refused the 4 GB block (Apple TV HD, A10X iPad Pro) now start.
 
 ### Full changelog
 
 ### feat
 
+- **ios**: let the guest arena start at any 16 KiB boundary — `tools/ios_asm_convert.py` now forms each guest address as `add x15, x27, wN, uxtw` instead of `mov` plus `orr`, turns `adrp` results and values taken from sp or the frame pointer x29 into guest pointers by subtracting x27, leaves x29-based accesses native, re-adds x27 when a guest pointer becomes sp, and rejects any other use of sp or x29; `host_pointer` adds, `guest_pointer` subtracts, and the memory-watch fault handler converts the fault address the same way. `arena_reserve` in `host_memory.c` still takes 4 GiB at a multiple of 4 GiB first, then 4 GiB anywhere, then the shorter range anywhere, so a device that refuses only the aligned range (an Apple TV HD, an A10X iPad Pro) still gets an arena. `HALO_ARENA_UNALIGNED=1` places it 0x7FFFC000 past a multiple of 4 GiB for testing; `memory_probe unaligned` and `unaligned-reduced`, the ILP32 probe at both placements and `tools/test_ios_asm_convert.py` cover it. The guest ABI version goes to 3. The lifted guest is 4.9% fewer instructions.
+- **ios**: reserve the guest arena before `main` — a constructor in `host_loader.c` calls the new `host_memory_reserve_early`, which takes the 4 GiB range at a multiple of 4 GiB, or the shorter one, before UIKit, Metal, SDL or any thread of the game maps memory, so a device near its address-space limit is not refused because of where something else landed first; `host_memory_initialize` adopts that reservation, retries once if it was refused, and logs which it used (`reserved at launch` or `now`). `memory_probe early` checks the adopted path.
+- **profile**: time held immediate-mode draws on their own — `halo_immediate_flush` is summed a frame as `d3d8_immediate_flush`, since the held draw goes out inside whichever call needs it next (a constant, a clear, a target) and counted in that call's row; `docs/profiling.md` lists it and the object update sections.
+- **profile**: time the parts of each object's update — the profiling build's recording sums `object_update.type`, `.damage`, `.export_functions`, `.node_matrices`, `.functions`, `.change_colors`, `.lights` and `.postprocess` a tick, and `objects_update` gains scopes for its activation scan, its created and deleted objects and its garbage collection, so the part of `objects_update` that the per-type updates do not cover is attributed. The sections leave no tokens in a normal build.
+- **tools**: print the reason a crash report's registers carry — `guest_symbolicate.py` decodes `host_crash.c`'s packed x0-x28 from an `.ips` thread state or a `.crash` report's text
+- **mac_run**: copy the crash reports of a native run that did not exit cleanly — into the result folder's `crash-reports`, so a run that crashed keeps its report with its logs
+- **tools**: add `guest_symbolicate.py` to name a crash report's guest frames — it reads an `.ips` report or `ios-runtime.log` and the build's `guest-symbols.txt` (or the app's own `__halosyms`), since the arena's alias of the guest code is outside every image the report lists
+- **ios**: end fatal errors in a native crash instead of the blue halt screen — `halt_and_catch_fire` hands the game's last error to `host_guest_halt`, and host bugs call `host_crash`, which log the guest's named frames to `ios-runtime.log` and raise an uncaught `NSException` whose reason Apple's crash reports keep; faults outside the memory watch's pages are logged with their registers and summarized in `__crash_info`; `debug.halt_screen` keeps the halt screen and `debug.crash_test` fails on purpose to check a report
 - **profiles**: dynamic resolution between 540 and 480 lines on the Apple TV HD — `display.dynamic_resolution` and `display.dynamic_resolution_floor = 480` in `apple-tv-hd.toml`; presented at 30 frames a second it took d40 from 89.3% to 92.5% of frames on time and a10 from 93.0% to 95.0%, and a 720 ceiling did no better
 - **pacing**: halve the frame rate target in Low Power Mode — `debug.low_power_frame_rate`
 - **profiles**: give variable workloads their own device-profile values — `[variable.display]` in a profile lies over its own values while a map is a variable workload (multiplayer maps, online co-op, LAN co-op beyond four players or with extra enemies, split screen, any enemy multiplier above 1x) and the scene classes lie over either; single-player campaign and LAN co-op of four or fewer at standard settings stay predictable
@@ -48,6 +43,17 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 ### fix
 
+- **ios**: take a crash's guest addresses relative to the arena's start — `host_crash.c` and `tools/guest_symbolicate.py` took a native address's low 32 bits as its guest address, which holds only for an arena at a multiple of 4 GB; with the arena free to start at any 16 KiB boundary, `host_crash.c` now subtracts `host_arena`, and `guest_symbolicate.py` subtracts the start from `ios-runtime.log`'s `CRASH: arena` line or from `--arena`, keeping the low-32-bit reading when neither is given.
+- **ios**: match sp and x29 only as whole operands and keep x29 a frame address in every guest unit — `tools/ios_asm_convert.py` took a symbol such as `f.sp` for a register, refusing or rewriting it; it now compares comma-separated operands, and it refuses a load into x29 other than the epilogue's `ldp x29, x30`, so x29 cannot carry a spilled guest value. `GUEST_ABI_FLAGS` gains `-fno-omit-frame-pointer`, so musl, its math units and the probes reserve x29 as the game does. `tools/ios_test.py` now runs `tools/test_ios_asm_convert.py`, which runs with or without pytest; the README says how to turn a crash report's native address into a guest address, and the branch-range comment counts the converter's new instruction sequences.
+- **ios**: read saved return addresses and frame pointers as guest addresses at an unaligned arena — `walk_up` in `stack_walk_windows.c` took the low halves of a frame record and `d3d8_device.c`'s render-validation caller took `__builtin_return_address(0)` as guest addresses, which holds only when the arena starts at a multiple of 4 GiB; both now go through `halo_guest_address` (`port/runtime/include/halo_guest_native.h`), which subtracts the arena's start read from x27, and `tools/ios_asm_convert.py` allows that one read of x27. The ILP32 probe checks a converted return address against its own code at both arena placements, and `probe_runner` no longer exits 0 when only failure bits above 255 are set.
+- **ios**: name a crash log's return addresses by the calling function — `crash_now`'s frames are return addresses, and after a `noreturn` call that ends a function the return address is the next function's first byte, so a halt's log named frame 0 `host_map_load_failed+0x0`; `guest_symbol` and the `dladdr` lookup now look one byte back for a return address, and a fault's `pc` is still looked up as it is
+- **ios**: pin the crash trap's reason pointer to `x16` — with every other register clobbered, the compiler passed it in `x30`, so a report's `lr` read as the pointer instead of the return address; `TRAP_WITH_REASON` now binds it to `x16` with a register variable and leaves the link register alone
+- **ios**: name the map file in the level-load message — `levels\ui\ui` read as an internal path, so the player sees `ui` and `ui.map`
+- **ios**: tell the player when a level fails to load instead of crashing — `main_new_map`'s "game_load() failed." is almost always a damaged or missing map file, which a crash report cannot help with, so `host_map_load_failed` logs the game's messages and shows a `host_fatal` message
+- **mac_run**: launch native runs with `-ApplePersistenceIgnoreState` — after a run that crashed, AppKit asked before the app started whether to reopen its windows, and every later run on that host waited on it until killed
+- **mac_run**: pick a crashed run's report by the pid its log names — the crash reporter writes a report seconds after the crash, so a later run's launch-time window caught the previous run's
+- **ios**: carry a fatal error's reason in the crashed thread's registers — on macOS 27 a crash report keeps neither an uncaught `NSException`'s reason, a Swift `fatalError` message nor an app's `__crash_info`, so `host_crash.c` traps in `visr_guest_halt`, `visr_guest_abort` or `visr_host_error` with "VISRCRSH" and the guest image's short hash and the reason packed into x0-x15 and x19-x28
+- **objects**: deactivate an active object outside the map instead of halting at `objects.c` #369
 - **metal**: count a frame late in the frame log only past its cap's refreshes — under `display.frame_rate = "30"` on a 60 Hz display, or Low Power Mode's 30, every frame was counted late, since the log asked only for the pacing's or a scene class's refreshes
 - **pacing**: halve a ProMotion screen's own 120 in Low Power Mode even if it reports 60, and catch a brief Low Power Mode in a benchmark run
 - **metal**: give the system each frame's deadline, so a frame rate cap no longer drops the CPU's clock — `display.frame_deadline`
@@ -72,6 +78,7 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 ### perf
 
+- **shadows**: skip a new atlas tile's own clear — a deferred shadow's tile is already black: `shadow_atlas_page` clears its whole page, gutters included, before the frame's first tile in it, and a tile holds one shadow a frame, so `_rasterizer_environment_shadow_begin` no longer clears the tile again (the debug color still clears it). Blood Gulch with 64 players on the Mac runner (offscreen, profiling build): clears fall from 143 to 2.8 a frame, `render_object_shadows` from 1.05 to 0.99 ms a tick, the benchmark's translation time from 2.20 to 2.13 ms. On devices (profiling build, presented, alternating runs against the same build with this reverted) the removed tile clears turn out cheap: Providence (M1, 64 players) clears 142 to 64 a frame and `d3d8_clear` 0.57 to 0.53 ms, Bedroom (A10X, 64 players) 137 to 56 and about 1.06 to 0.89 ms, Photo Frame (A9X, 32 players) 90 to 22 and about 1.08 to 0.83 ms; frame rates unchanged, all three GPU-bound there. `check-metal`'s Metal frames are byte-identical to main's; the GL reference's `a10` frames 900 and 1050 change and now match Metal, where main's frame 900 had a 32,913-pixel Metal and GL difference within its accepted bounds, so GL's scissored clear of a tile was reaching pixels already drawn.
 - **profiles**: scale the M1 iPad Pro profile up with MetalFX spatial — `display.upscaler = "metalfx"` in `ipad-pro-m1.toml` (inherited by newer M-series iPads through `and_newer`) costs about 1.0 ms of GPU time a frame and kept every measured tier on time on Providence (60 Hz: 99.93 to 99.98%; 120 Hz: 99.75 to 99.90%), with smoother edges than the bilinear stretch; profile revision bumped to 4
 - **profiles**: 128-pixel shadows on the devices that miss or barely hold their tier — the iPad Pro 12.9-inch (1st and 2nd generation), the iPhone 12 Pro, the Apple TV 4K (1st generation) and the Apple TV HD now take the game's own shadow map size, as do the iPhone and iPad and Apple TV class floors. Shadow detail is the first setting lowered before a tier: at 64 players on Blood Gulch an A10X's GPU took 28 to 30 ms a frame at 128 against 53 to 54 at 512, and an A14's 24.6 against 29.8 to 30.2, with the batched shadow blur. Each profile's evidence gives its device's numbers. Profile set revision 3.
 - **metal**: make copied tiles views of their source — the first `gpu_texture_copy_rects` from a BGRA8 render target moves it into a buffer as a linear texture with its contents, and from then on each destination becomes a view of its rectangle in that buffer instead of a copy, so the shadow blur pages' tiles are sampled in place, each through its own texture with native border addressing. A draw that samples a view declares the source texture to its encoder (`useResource:`), so Metal orders it after the source's pass and the source's next pass after it. Destinations of another size or at an offset the buffer's alignment does not allow are still copied; `HALO_METAL_NO_TILE_VIEWS` turns the views off.
@@ -85,24 +92,24 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 ### build
 
+- **ios**: embed the guest's symbol table beside its code — `tools/ios_embed_guest.py` writes `guest-symbols.bin` into `__TEXT,__halosyms` and the same table as `guest-symbols.txt`, which an App Store package and the `release-provenance` artifact keep, so a crash report's guest frames can be named
 - **benchmark**: bind the 20-case tester catalog to the 0.5.2 guest at its own feed — `docs/site/packs/tester/recordings-a949cfcc94abf93df5bd091bd9d27a6933dbc688b81f52c3ea863fa720ff99eb.json` is the unchanged ship-042 catalog signed as sequence 1793039045 with compatibility `benchmark-catalog-1:a949cfcc94abf93df5bd091bd9d27a6933dbc688b81f52c3ea863fa720ff99eb`, which 0.5.2 builds read; `docs/site/packs/tester/recordings.json`, the 0.5.0 and the 0.5.1 feeds stay byte-identical, and `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
 - **profiles**: re-sign the Apple TV 4K (1st generation) tester shard with the 1080 output cap — `docs/site/packs/tester/profiles/tvos/AppleTV6,2/_.json` is sequence 3, the only shard whose files changed, and `docs/site/packs/tester/publication.json` names its new SHA-256; against sequence 2 only `apple-tv-4k-1st.toml` differs (`display.output_height` 1080 instead of 720, the header and the evidence), with `apple-tv.toml` and `hardware/catalog.toml` byte-identical. The 0.4.2, 0.5.0 and 0.5.1 profile resolvers and delivery validators accept it and resolve `AppleTV6,2` to an output height of 1080 at render 720.
 - **textures**: compile `HALO_TEXTURE_UPSCALE_CLEAN` and `HALO_TEXTURE_UPSCALE_MODEL` out of App Store packages too, under `HALO_DEVELOPMENT_HOOKS`, and make the guard test track nested conditionals so a switch under another `#if` no longer passes as guarded.
 - **textures**: compile the upscaler's development switches out of App Store packages — `HALO_TEXTURE_UPSCALE_STOP_TEST` and `HALO_TEXTURE_UPSCALE_IMPORT_PHASE` are read only under `HALO_DEVELOPMENT_HOOKS`, a CMake option that is off unless asked for; `tools/ios_build.py` and `tools/macos_build.py` turn it on for development builds and off for `--app-store-package`, and `tools/test_ios_build.py` checks both the flag and that the switches are read only inside the guard.
 
-### revert
-
-- hold post-0.5.1 work for the 0.5.2 cut — this commit's tree is `559dc8793`'s, the 0.5.1 tree plus the network version 39 join, with main's `docs/site`, `CHANGELOG.md` and `.release/current.json`, so the release is cut from it; the 66 commits from `24ef34a7e` to `8386a18e4` are held, and the commit after the release restores them unchanged. [skip ci]
-- **textures**: drop the large-mapping reuse — measured on an M1 iPad over the whole game, it did not change the time (the last of 861 textures at 309 s with it, 311 s without) and raised the generator's peak from 730 to 897 MB; the per-texture stage times it was meant to recover differ between runs for other reasons (how much other work overlaps). This reverts commit 422f5591c.
-- restore the work held for the 0.5.1 cut — reverts `211ecf31c`, so main's tree is `ac7fb5fa5`'s again plus the `visr-v0.5.1` release metadata (`CHANGELOG.md`, `.release/current.json`).
-
 ### docs
 
+- **ios**: name `host_crash.c`, not `host_crash.m`, in the crash comments — three comments pointed at a file that does not exist
+- **ios**: describe crash reports and `guest_symbolicate.py` — where a fatal error's report goes, how its reason and guest frames are read, and the release artifact that keeps a build's guest symbols
 - **packs**: describe profile feed generations and revisions — which directory each app reads, when to bump the generation, how revisions order shards against the bundle, and how to roll a profile back
 - **changelog**: list only the tagged work under 0.5.1 and the held work as unreleased — the generated `visr-v0.5.1` section also named the 26 commits from `0cd67af41` to `ac7fb5fa5`, which sit in history before the tag but were held out of its tree; they move to an Unreleased section with a summary line for no longer needing the extended virtual addressing entitlement, and the 0.5.1 summary now says what the tagged build changes.
 
 ### test
 
+- **objects**: define the profile scope macros in the #369 probe — `objects_update` now marks its sections with `profile_scope_enter` and `profile_scope_exit`, which the probe's prologue did not define, so it no longer compiled; the probe defines them as `cseries/profile_sections.h` does outside the profiling build.
+- **ios**: add `debug.crash_test` "map" to fail the first level load — so the message `host_map_load_failed` shows for a damaged map file can be checked without one
+- **objects**: make the #369 negative control fail on the assertion — the probe's `match_assert` only counted, so without the fix the out-of-range bit read that follows it tripped AddressSanitizer first, and the control caught any `AssertionError`, a compile failure included; `match_assert` now stops the probe as a checked build does, and the control requires that stop.
 - **metal**: give the border probe's texture records and encoder what views use — `bind_stages` now reads `view_parent` and may call `useResource:usage:stages:`, so `metal_border_probe.m` declares both (the probe makes no views, so a call fails it).
 - **release**: give the release fixtures this source's profile feed directory — `require_asset_policy` now refuses a new release whose `profile_feed_url` is the frozen `profiles/` directory, so five `test_release.py` cases stopped before the check each one tests.
 - **profile**: preprocess the game's files on Apple Silicon — `test_new_files_are_empty_in_a_normal_build` passed `-march=native` to a `--target=i686-linux-gnu` clang, which resolves it to the host CPU (`apple-m2`) and rejects it; the flags now drop it, use the macOS SDK with an i686 Darwin target where there is no Linux C library, and build the generated forced-include headers that are missing
@@ -112,6 +119,37 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 - **metal**: log command-buffer GPU spans against stage timing — with dynamic resolution's inputs collected, each completed command buffer's `GPUStartTime`/`GPUEndTime` is joined to its frame as the scene's, MetalFX's or the rest, and every 600 frames "DRS timing check" compares the union of the scene buffers' spans with stage-sampled S, and the rest with U+H, on all frames and on late ones: the evidence for a timing fallback on GPUs without stage-boundary sampling
 - **profiles**: cap the Apple TV 4K (1st generation) output at 1080 lines — `profiles/apple-tv-4k-1st.toml` sets `display.output_height` to 1080 (was 720) and keeps `render_height` at 720; on a 4K TV with the scene at 720 lines, a 1080 image tied a 720 image when both ran cool (on-time 0.991 in the 8 windows where both were thermally nominal; GPU mean 14.1 against 14.7 ms over all windows), against the full 4K drawable baseline at 55.0 fps and 0.907 on time, and 1080 gives the HUD and text 1.5 times the lines and 1080p TVs a native picture; the cap only lowers output, so 720p TVs are unchanged. The profile's header now summarizes the 0.5.0 data (720p TV holds 60 fps at 720 lines up to 2x enemies; 4K TV 59.4 fps at 99.0% on time with output capped), and `port/ios/tests/profile_probe.c` expects the new value. Reports X6RJWBVJ, 3LADMGUU, U764MX75 and ZGVMKGQJ, build 20261025.150026; status stays provisional.
+
+### revert
+
+- **textures**: drop the large-mapping reuse — measured on an M1 iPad over the whole game, it did not change the time (the last of 861 textures at 309 s with it, 311 s without) and raised the generator's peak from 730 to 897 MB; the per-texture stage times it was meant to recover differ between runs for other reasons (how much other work overlaps). This reverts commit 422f5591c.
+- restore the work held for the 0.5.1 cut — reverts `211ecf31c`, so main's tree is `ac7fb5fa5`'s again plus the `visr-v0.5.1` release metadata (`CHANGELOG.md`, `.release/current.json`).
+
+## visr-v0.5.2 (2026-10-26)
+
+### Summary
+
+- Multiplayer can now also join hosts on network version 39, the version of current OpenCE builds (build-282 to build-289 were checked), including OpenCE dedicated servers. In the server browser, dedicated games are listed first and marked with a server icon. Hosts on 29 to 32, 34 to 36 and 38 could already be joined.
+
+iCloud Saves starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+
+VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+
+### Full changelog
+
+### feat
+
+- **network**: join version 39 hosts — retain the 38 codec and mark dedicated games in the shared browser
+
+### fix
+
+- **network**: keep the 38-to-39 join gate self-contained — preserve extracted probes and test refusal against version 40
+
+### docs
+
+- **linux**: list version 39 among the versions the Server Browser joins — `port/linux/README.md` still said 29 to 32, 34 to 36 and 38
 
 ## visr-v0.5.1 (2026-10-26)
 
