@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Headline benchmark charts: the entry model, Mermaid source, and the page's default view.
+
+The browser page (`docs/site/benchmarks/benchmarks.js`) implements the same model; `test_perf_compare_sheet.py`
+checks that the two produce identical chart text for the committed snapshot.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import math
+from pathlib import Path
+import statistics
+import sys
+import tomllib
+
+ROOT = Path(__file__).resolve().parents[2]
+SNAPSHOT = ROOT / "docs/benchmarks/results.csv"
+SPECS = ROOT / "docs/benchmarks/charts"
+REASONS = ROOT / "docs/benchmarks/reasons.toml"
+PAGE = ROOT / "docs/benchmarks.md"
+BEGIN = "<!-- BEGIN CHARTS -->"
+END = "<!-- END CHARTS -->"
+
+SUITES = ("campaign", "multiplayer", "co-op")
+SUITE_CHOICES = (*SUITES, "overall")
+SUITE_NAMES = {"campaign": "Campaign", "multiplayer": "Multiplayer", "co-op": "Co-op", "overall": "Overall"}
+DEFAULT_SUITE = "campaign"
+
+
+def load_snapshot(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def load_specs(directory: Path) -> list[dict]:
+    specs = []
+    for path in sorted(directory.glob("*.chart.toml")):
+        spec = tomllib.loads(path.read_text(encoding="utf-8"))
+        spec["name"] = path.name.removesuffix(".chart.toml")
+        specs.append(spec)
+    return sorted(specs, key=lambda spec: (spec.get("order", 1000), spec["name"]))
+
+
+def load_reasons(path: Path = REASONS) -> dict:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def plain_reason(reason: str, reasons: dict) -> str:
+    """The page's sentence for a reason code; unknown codes and already-plain notes pass through."""
+    if reason in reasons["exact"]:
+        return reasons["exact"][reason]
+    if reason.startswith("no ") and reason.endswith(" measurements yet"):
+        return reasons["patterns"]["no_suite_data"].format(suite=reason[3:-len(" measurements yet")])
+    if reason.startswith("missing "):
+        return reasons["patterns"]["missing_suites"].format(suites=reason[len("missing "):])
+    return reason
+
+
+def _matches(row: dict, filters: dict) -> bool:
+    return all(row.get(column, "") in [str(v) for v in (wanted if isinstance(wanted, list) else [wanted])]
+               for column, wanted in filters.items())
+
+
+def _nice_ceiling(value: float) -> float:
+    if value <= 0:
+        return 1
+    magnitude = 10 ** math.floor(math.log10(value))
+    for step in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if step * magnitude >= value:
+            return step * magnitude
+    return 10 * magnitude
+
+
+def _number(value: float) -> str:
+    return f"{value:.1f}".removesuffix(".0")
+
+
+def entry_key(entry: dict) -> str:
+    return "@".join((entry["port"], entry["version"], entry["build"]))
+
+
+def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | None, str, str]:
+    """Average and 1% low for one suite on the reference box, or None with the reason and its kind
+    (`not_measured`, or `not_supported` when the port lacks what the suite needs)."""
+    box = [row for row in group if row["reference_box"].lower() == "true"]
+    unsupported = [row for row in group if row["suite"] == suite and row["status"] == "not_supported"]
+    if unsupported:
+        return None, unsupported[0]["notes"] or "not supported", "not_supported"
+    if not box:
+        gone = [row["notes"] for row in group if row["status"] == "unavailable" and row["notes"]]
+        return None, gone[0] if gone else "not measured on the reference box", "not_measured"
+    mine = [row for row in box if row["suite"] == suite]
+    if not mine:
+        return None, f"no {suite} measurements yet", "not_measured"
+    usable = {}
+    for row in sorted((r for r in mine if _matches(r, query["filter"])
+                       and all(r.get(m, "") != "" for m in query["metrics"])), key=lambda r: r["date"]):
+        usable[row["window"]] = row
+    if not usable:
+        return None, query.get("no_data_reason", "no matching measurement"), "not_measured"
+    rows = list(usable.values())
+    return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
+            "low": statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows),
+            "rows": rows}, "", ""
+
+
+def model(rows: list[dict], query: dict, suite: str) -> dict:
+    """Every build of the platform's ports as an entry, with its values for the suite or the reason it has none."""
+    platform_rows = [row for row in rows if row["platform"] == query["platform"]]
+    groups: dict[tuple, list[dict]] = {}
+    for row in platform_rows:
+        groups.setdefault((row["port"], row["version"], row["build"]), []).append(row)
+    entries = []
+    for (port, version, build), group in groups.items():
+        base = {"port": port, "port_name": group[0]["port_name"], "version": version, "build": build,
+                "label": group[0]["label"], "date": max(row["date"] for row in group)}
+        if suite == "overall":
+            parts = [_suite_value(group, query, name) for name in SUITES]
+            missing = [name for name, part in zip(SUITES, parts) if part[0] is None]
+            if missing:
+                value, reason = None, "missing " + ", ".join(missing)
+                kinds = {part[2] for part in parts if part[0] is None}
+                kind = "not_supported" if kinds == {"not_supported"} else "not_measured"
+            else:
+                value = {"avg": statistics.geometric_mean(p[0]["avg"] for p in parts),
+                         "low": statistics.geometric_mean(p[0]["low"] for p in parts),
+                         "rows": [r for p in parts for r in p[0]["rows"]]}
+                reason, kind = "", ""
+        else:
+            value, reason, kind = _suite_value(group, query, suite)
+        entries.append({**base, "value": value, "reason": reason, "kind": kind})
+    order = query.get("port_order", [])
+    entries.sort(key=lambda e: (order.index(e["port"]) if e["port"] in order else len(order), e["port"],
+                                tuple(-ord(c) for c in e["date"]), e["version"], e["build"]))
+    newest: dict[str, dict] = {}
+    for entry in entries:
+        if entry["value"] is not None and (entry["port"] not in newest or entry["date"] > newest[entry["port"]]["date"]):
+            newest[entry["port"]] = entry
+    for entry in entries:
+        entry["default"] = newest.get(entry["port"]) is entry
+    return {"entries": entries, "box": next((r["host"] for r in platform_rows if r["reference_box"].lower() == "true"), "")}
+
+
+def chart_title(spec: dict, built: dict, suite: str) -> str:
+    box = built["box"] or spec.get("box", "")
+    return f"{SUITE_NAMES[suite]}: uncapped fps, {box}".replace('"', "'")
+
+
+def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None) -> str | None:
+    """Mermaid text for the ticked entries that have values, or None when there is nothing to draw."""
+    drawn = [e for e in built["entries"] if e["value"] is not None
+             and (entry_key(e) in selected if selected is not None else e["default"])]
+    if not drawn:
+        return None
+    chart, rename = spec["chart"], spec.get("rename", {})
+    labels = [f"{rename.get(e['port_name'], e['port_name'])} {e['version']}".replace('"', "'") for e in drawn]
+    averages = [e["value"]["avg"] for e in drawn]
+    lows = [e["value"]["low"] for e in drawn]
+    y_max = chart.get("y_max", _nice_ceiling(max(averages + lows) * 1.08))
+    head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
+    quoted = ", ".join('"' + label + '"' for label in labels)
+    lines = [chart.get("header", "").strip(), head, f'    title "{chart_title(spec, built, suite)}"',
+             f'    x-axis "{chart.get("x_label", "")}" [{quoted}]',
+             f'    y-axis "{chart.get("y_label", "")}" {_number(chart.get("y_min", 0))} --> {_number(y_max)}',
+             f"    bar [{', '.join(_number(v) for v in averages)}]", f"    bar [{', '.join(_number(v) for v in lows)}]"]
+    return "\n".join(line for line in lines if line)
+
+
+def legend(spec: dict) -> str:
+    marks = spec["chart"].get("marks", [])
+    return " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(spec["series_labels"]))
+
+
+def caption(built: dict, selected: set[str] | None = None) -> str:
+    drawn = [e for e in built["entries"] if e["value"] is not None
+             and (entry_key(e) in selected if selected is not None else e["default"])]
+    if not drawn:
+        return ""
+    builds = "; ".join(f"{e['label']} (build {e['build'] or 'unknown'}, measured {e['date']})" for e in drawn)
+    return f"{built['box']}. {builds}."
+
+
+def empty_text(spec: dict, built: dict) -> str:
+    """The explanation for a platform with no builds, or for a selection with nothing to draw."""
+    return spec["empty"].strip() if not built["entries"] else "No build has data for this suite yet."
+
+
+def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, reasons: dict | None = None) -> str:
+    """The Markdown for one platform's default view: the chart if any build has data, else why not."""
+    reasons = reasons or load_reasons()
+    built = model(rows, spec["query"], suite)
+    parts = [f"### {spec['heading']}", "", spec["paragraph"].strip(), ""]
+    text = source(spec, built, suite)
+    if text is None:
+        parts.extend([empty_text(spec, built), ""])
+    else:
+        parts.extend(["```mermaid", text, "```", "", legend(spec), "", caption(built), ""])
+    for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
+        skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
+        if skipped:
+            parts.extend([heading + ": " + "; ".join(f"{e['label']} ({plain_reason(e['reason'], reasons)})" for e in skipped) + ".", ""])
+    return "\n".join(parts)
+
+
+def render_all(rows: list[dict], specs: list[dict], suite: str = DEFAULT_SUITE, reasons: dict | None = None) -> str:
+    reasons = reasons or load_reasons()
+    return "\n".join(render_section(spec, rows, suite, reasons) for spec in specs).rstrip() + "\n"
+
+
+def apply(page: str, block: str) -> str:
+    """Replace the text between the chart markers."""
+    start, end = page.find(BEGIN), page.find(END)
+    if start < 0 or end < start:
+        raise ValueError("the page has no chart markers")
+    return page[:start + len(BEGIN)] + "\n\n" + block.rstrip() + "\n\n" + page[end:]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--snapshot", type=Path, default=SNAPSHOT)
+    parser.add_argument("--specs", type=Path, default=SPECS)
+    parser.add_argument("--page", type=Path, default=PAGE, help="page with chart markers to update")
+    parser.add_argument("--suite", default=DEFAULT_SUITE, choices=SUITE_CHOICES)
+    parser.add_argument("--check", action="store_true", help="fail when the page's charts are stale")
+    parser.add_argument("--stdout", action="store_true", help="print the chart section instead of editing the page")
+    args = parser.parse_args()
+    block = render_all(load_snapshot(args.snapshot), load_specs(args.specs), args.suite)
+    if args.stdout:
+        sys.stdout.write(block)
+        return 0
+    page = args.page.read_text(encoding="utf-8")
+    updated = apply(page, block)
+    if args.check:
+        if updated != page:
+            print(f"stale charts: {args.page.name}", file=sys.stderr)
+            return 1
+        return 0
+    args.page.write_text(updated, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
