@@ -1,21 +1,8 @@
-## visr-v0.5.1 (2026-10-26)
+## Unreleased
 
 ### Summary
 
-- Network Setup has a new CUSTOM MAPS (experimental) option, off by default. Off, the server browser lists only games on stock maps. On, it also lists games on Custom Edition maps that are supported. Map pack games stay hidden either way.
-- Create Game now starts MAXIMUM PLAYERS at the largest size your device is expected to handle well. The server browsers mark larger games BIG, and you can still join them.
-- You can now join hosts running older network versions 34, 35 and 36.
-- Fixed a crash to the halt screen when joining a modded server whose maps had out-of-range sound volume.
-- Fixed touch controls staying on screen after one touch while a game controller was in use. They now hide again when you press a controller button or push a stick or trigger.
-- Fixed a stray number appearing in the top-left corner during cutscenes such as the a10 opening.
-- Fixed the CUSTOM MAPS label being cut off in Network Setup, and fixed the last row overlapping the iCloud status line.
-- The tester benchmark now uses the 20-case gameplay catalog. Local shader miss records are saved again during benchmark runs.
-
-iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
-
-VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
-
-VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+- VISR no longer needs the extended virtual addressing entitlement: the game's memory can sit anywhere, so devices that refused the 4 GB block (Apple TV HD, A10X iPad Pro) now start.
 
 ### Full changelog
 
@@ -29,13 +16,6 @@ VISR automatically sends game performance data to improve the game. Reports excl
 - **mac_run**: copy the crash reports of a native run that did not exit cleanly — into the result folder's `crash-reports`, so a run that crashed keeps its report with its logs
 - **tools**: add `guest_symbolicate.py` to name a crash report's guest frames — it reads an `.ips` report or `ios-runtime.log` and the build's `guest-symbols.txt` (or the app's own `__halosyms`), since the arena's alias of the guest code is outside every image the report lists
 - **ios**: end fatal errors in a native crash instead of the blue halt screen — `halt_and_catch_fire` hands the game's last error to `host_guest_halt`, and host bugs call `host_crash`, which log the guest's named frames to `ios-runtime.log` and raise an uncaught `NSException` whose reason Apple's crash reports keep; faults outside the memory watch's pages are logged with their registers and summarized in `__crash_info`; `debug.halt_screen` keeps the halt screen and `debug.crash_test` fails on purpose to check a report
-- **network**: add CUSTOM MAPS (EXPERIMENTAL) to Network Setup — `network.custom_maps`, off by default, keeps the server browser to stock-map games; on, a Custom Edition map's game shows when `custom_maps` has a map of its name or `network.map_download` is on, as before. Map packs stay hidden either way, and the setting replaces `debug.show_modded_servers`.
-- **network**: show only stock-map games in the server browser — custom and modded map support is planned for a later release, so `p2p_listing_map_shown` now hides every game whose map is not one of the game's own, whatever `custom_maps` holds or `network.map_download` says; `custom_edition_maps_have` is gone. `debug.show_modded_servers` still shows everything.
-- **network**: hide server browser games on maps VISR can't play — a game on a stock multiplayer map or campaign level is always shown, a Custom Edition map's only when `custom_maps` has a map of that name or `network.map_download` is on, and a map pack's (Delta's `family` other than `xbox` or `ce`, such as `wizard@cex`) never; `delta_list.c` now keeps the map's family (from the list, else its `@` suffix), `p2p_listing_map_kind` and `p2p_listing_map_shown` decide, and `lobby_browser_valid_games` filters with `custom_edition_maps_have`. `debug.show_modded_servers` shows every game.
-- **shaders**: add 62 `d40` list entries from a stock-map `ShaderObservation` — 32 pipelines and 30 pixel shaders observed in ordinary 0.5.0 play on `d40`, validated with `tools/shader_observations.py` (stock fingerprint, descriptor admission and dependency checks) and merged with `tools/shader_lists.py merge`; the community-map observations from the same uploads stay staged
-- **net**: join hosts of network versions 34, 35 and 36 — `halo_network_version_joinable` takes the older versions through `HALO_NETWORK_JOINABLE_OLDER_MASK` (29 to 32 and 34 to 36; 33 and 37 were never released, so no host of either could be joined to check them), and each later rule is asked of a per-version helper instead of a numeric comparison: `halo_network_version_has_ally_switch` (33), `halo_network_version_has_static_shields` (34), `halo_network_version_has_mode_options` (35), `halo_network_version_has_shield_policy` (36), `halo_network_version_has_game_kind` (37) and `halo_network_version_shield_selector_valid`, which takes selector 6 only from 38.
-- **profile**: time the GPU backend, the D3D8 translation and the port's own steps
-- **network**: add a device profile player capacity — `network.player_capacity` (2 to 128, 0 off) is the most players a device holds at 30 frames a second at minimum settings; Create Game starts `MAXIMUM PLAYERS` at the largest choice within it (co-op's 16 too) and Server Setup's help says the device may run slowly past it, the browsers mark larger games `BIG` and say so in the ticker, and no join is refused. Provisional values from the 0.4.2 sweep: 32 on the iPad Pro (M1) and iPhone 17 Pro, 16 on the iPad Air (4th generation), 8 elsewhere measured, and 8 for the class floor, the iPad Pro 12.9-inch (1st generation) and the Apple TV HD. `profile_probe.c` covers the accepted range.
 
 ### fix
 
@@ -50,6 +30,57 @@ VISR automatically sends game performance data to improve the game. Reports excl
 - **mac_run**: pick a crashed run's report by the pid its log names — the crash reporter writes a report seconds after the crash, so a later run's launch-time window caught the previous run's
 - **ios**: carry a fatal error's reason in the crashed thread's registers — on macOS 27 a crash report keeps neither an uncaught `NSException`'s reason, a Swift `fatalError` message nor an app's `__crash_info`, so `host_crash.c` traps in `visr_guest_halt`, `visr_guest_abort` or `visr_host_error` with "VISRCRSH" and the guest image's short hash and the reason packed into x0-x15 and x19-x28
 - **objects**: deactivate an active object outside the map instead of halting at `objects.c` #369
+
+### perf
+
+- **shadows**: skip a new atlas tile's own clear — a deferred shadow's tile is already black: `shadow_atlas_page` clears its whole page, gutters included, before the frame's first tile in it, and a tile holds one shadow a frame, so `_rasterizer_environment_shadow_begin` no longer clears the tile again (the debug color still clears it). Blood Gulch with 64 players on the Mac runner (offscreen, profiling build): clears fall from 143 to 2.8 a frame, `render_object_shadows` from 1.05 to 0.99 ms a tick, the benchmark's translation time from 2.20 to 2.13 ms. On devices (profiling build, presented, alternating runs against the same build with this reverted) the removed tile clears turn out cheap: Providence (M1, 64 players) clears 142 to 64 a frame and `d3d8_clear` 0.57 to 0.53 ms, Bedroom (A10X, 64 players) 137 to 56 and about 1.06 to 0.89 ms, Photo Frame (A9X, 32 players) 90 to 22 and about 1.08 to 0.83 ms; frame rates unchanged, all three GPU-bound there. `check-metal`'s Metal frames are byte-identical to main's; the GL reference's `a10` frames 900 and 1050 change and now match Metal, where main's frame 900 had a 32,913-pixel Metal and GL difference within its accepted bounds, so GL's scissored clear of a tile was reaching pixels already drawn.
+
+### build
+
+- **ios**: embed the guest's symbol table beside its code — `tools/ios_embed_guest.py` writes `guest-symbols.bin` into `__TEXT,__halosyms` and the same table as `guest-symbols.txt`, which an App Store package and the `release-provenance` artifact keep, so a crash report's guest frames can be named
+
+### docs
+
+- **ios**: name `host_crash.c`, not `host_crash.m`, in the crash comments — three comments pointed at a file that does not exist
+- **ios**: describe crash reports and `guest_symbolicate.py` — where a fatal error's report goes, how its reason and guest frames are read, and the release artifact that keeps a build's guest symbols
+
+### test
+
+- **objects**: define the profile scope macros in the #369 probe — `objects_update` now marks its sections with `profile_scope_enter` and `profile_scope_exit`, which the probe's prologue did not define, so it no longer compiled; the probe defines them as `cseries/profile_sections.h` does outside the profiling build.
+- **ios**: add `debug.crash_test` "map" to fail the first level load — so the message `host_map_load_failed` shows for a damaged map file can be checked without one
+- **objects**: make the #369 negative control fail on the assertion — the probe's `match_assert` only counted, so without the fix the out-of-range bit read that follows it tripped AddressSanitizer first, and the control caught any `AssertionError`, a compile failure included; `match_assert` now stops the probe as a checked build does, and the control requires that stop.
+
+## visr-v0.5.1 (2026-10-26)
+
+### Summary
+
+- Multiplayer can now also join hosts on network versions 34, 35 and 36, including OpenCE build-266. Hosts on 29 to 32 and 38 could already be joined.
+- The server browser now shows only games on the original maps. To also see games on Custom Edition maps, which are experimental, turn on CUSTOM MAPS under Network Setup in the game's profile settings.
+- Fixed a crash right after joining some modded Custom Edition servers.
+- With a game controller connected, the touch controls now hide again when you use the controller after touching the screen.
+- Removed a stray number that could appear at the top left during the first level's opening.
+- Benchmark runs save local shader miss records again.
+
+iCloud Saves starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+
+VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+
+### Full changelog
+
+### feat
+
+- **network**: add CUSTOM MAPS (EXPERIMENTAL) to Network Setup — `network.custom_maps`, off by default, keeps the server browser to stock-map games; on, a Custom Edition map's game shows when `custom_maps` has a map of its name or `network.map_download` is on, as before. Map packs stay hidden either way, and the setting replaces `debug.show_modded_servers`.
+- **network**: show only stock-map games in the server browser — custom and modded map support is planned for a later release, so `p2p_listing_map_shown` now hides every game whose map is not one of the game's own, whatever `custom_maps` holds or `network.map_download` says; `custom_edition_maps_have` is gone. `debug.show_modded_servers` still shows everything.
+- **network**: hide server browser games on maps VISR can't play — a game on a stock multiplayer map or campaign level is always shown, a Custom Edition map's only when `custom_maps` has a map of that name or `network.map_download` is on, and a map pack's (Delta's `family` other than `xbox` or `ce`, such as `wizard@cex`) never; `delta_list.c` now keeps the map's family (from the list, else its `@` suffix), `p2p_listing_map_kind` and `p2p_listing_map_shown` decide, and `lobby_browser_valid_games` filters with `custom_edition_maps_have`. `debug.show_modded_servers` shows every game.
+- **shaders**: add 62 `d40` list entries from a stock-map `ShaderObservation` — 32 pipelines and 30 pixel shaders observed in ordinary 0.5.0 play on `d40`, validated with `tools/shader_observations.py` (stock fingerprint, descriptor admission and dependency checks) and merged with `tools/shader_lists.py merge`; the community-map observations from the same uploads stay staged
+- **net**: join hosts of network versions 34, 35 and 36 — `halo_network_version_joinable` takes the older versions through `HALO_NETWORK_JOINABLE_OLDER_MASK` (29 to 32 and 34 to 36; 33 and 37 were never released, so no host of either could be joined to check them), and each later rule is asked of a per-version helper instead of a numeric comparison: `halo_network_version_has_ally_switch` (33), `halo_network_version_has_static_shields` (34), `halo_network_version_has_mode_options` (35), `halo_network_version_has_shield_policy` (36), `halo_network_version_has_game_kind` (37) and `halo_network_version_shield_selector_valid`, which takes selector 6 only from 38.
+- **profile**: time the GPU backend, the D3D8 translation and the port's own steps
+- **network**: add a device profile player capacity — `network.player_capacity` (2 to 128, 0 off) is the most players a device holds at 30 frames a second at minimum settings; Create Game starts `MAXIMUM PLAYERS` at the largest choice within it (co-op's 16 too) and Server Setup's help says the device may run slowly past it, the browsers mark larger games `BIG` and say so in the ticker, and no join is refused. Provisional values from the 0.4.2 sweep: 32 on the iPad Pro (M1) and iPhone 17 Pro, 16 on the iPad Air (4th generation), 8 elsewhere measured, and 8 for the class floor, the iPad Pro 12.9-inch (1st generation) and the Apple TV HD. `profile_probe.c` covers the accepted range.
+
+### fix
+
 - **menu**: name the Custom Edition maps row CUSTOM MAPS — "CUSTOM MAPS (EXPERIMENTAL):" ran past the label's 300 units in Network Setup and was cut off before the spinner, so the label is "CUSTOM MAPS:" and its help says "Experimental: show games on Custom Edition maps. These are not fully supported yet."; `tools/port_settings.py` and the generated menu file change together, and `port/linux/README.md` names the row and where Network Setup is.
 - **shaders**: keep the local miss record when no observation generation is active — since 0.5.0, an eligible build skipped `shader-lists-missed/<map>.txt` whenever `observation_capture` was on, even when `host_shader_observation_activate` returned generation 0 for a suppressed run, so tester benchmarks recorded misses nowhere and every run's `shader_capture` came back `missing`; `shader_observation_replaces_record` now requires an active generation, and `tools/test_shader_list_record.py` covers the four cases
 - **menu**: fit Network Setup's thirteenth row — CUSTOM MAPS (EXPERIMENTAL) pushed the last row into the iCloud status line, so rows are 20 apart instead of 21 and the status line and help move down to 339 and 360, ending above the buttons at 414.
@@ -59,27 +90,14 @@ VISR automatically sends game performance data to improve the game. Reports excl
 - **sound**: clamp a sound channel's gain instead of halting — Custom Edition maps can carry sound gains outside 0 to 1, and `dsound_channel_set_properties` halted the game on its gain check (a tester's game stopped on the "EXCEPTION halt" screen one second after joining a modded server); the gain is now pinned to 0 to 1, and a gain that is not a number is silent, before the check and the volume it sets.
 - **settings**: limit `update.auto` to the desktop ports — the self-updater (`updater.c`) is built only for Linux and Windows, and the Network Setup row was already desktop-only through `menu_platform.h`, but the setting was registered for every platform, so Apple builds documented and wrote a switch that does nothing there (iPhone, iPad, Apple TV, Vision Pro and the Mac app update through the system). The generated reference and schema now list it for desktop only.
 
-### perf
-
-- **shadows**: skip a new atlas tile's own clear — a deferred shadow's tile is already black: `shadow_atlas_page` clears its whole page, gutters included, before the frame's first tile in it, and a tile holds one shadow a frame, so `_rasterizer_environment_shadow_begin` no longer clears the tile again (the debug color still clears it). Blood Gulch with 64 players on the Mac runner (offscreen, profiling build): clears fall from 143 to 2.8 a frame, `render_object_shadows` from 1.05 to 0.99 ms a tick, the benchmark's translation time from 2.20 to 2.13 ms. On devices (profiling build, presented, alternating runs against the same build with this reverted) the removed tile clears turn out cheap: Providence (M1, 64 players) clears 142 to 64 a frame and `d3d8_clear` 0.57 to 0.53 ms, Bedroom (A10X, 64 players) 137 to 56 and about 1.06 to 0.89 ms, Photo Frame (A9X, 32 players) 90 to 22 and about 1.08 to 0.83 ms; frame rates unchanged, all three GPU-bound there. `check-metal`'s Metal frames are byte-identical to main's; the GL reference's `a10` frames 900 and 1050 change and now match Metal, where main's frame 900 had a 32,913-pixel Metal and GL difference within its accepted bounds, so GL's scissored clear of a tile was reaching pixels already drawn.
-
 ### build
 
-- **ios**: embed the guest's symbol table beside its code — `tools/ios_embed_guest.py` writes `guest-symbols.bin` into `__TEXT,__halosyms` and the same table as `guest-symbols.txt`, which an App Store package and the `release-provenance` artifact keep, so a crash report's guest frames can be named
 - **benchmark**: bind the 20-case tester catalog to the 0.5.1 guest at its own feed — `docs/site/packs/tester/recordings-d57c1206e07347c174974dac9e6bdfd2df6bea9194a991198e12048b4f239b92.json` is the unchanged ship-042 catalog signed as sequence 1792979067 with compatibility `benchmark-catalog-1:d57c1206e07347c174974dac9e6bdfd2df6bea9194a991198e12048b4f239b92`, which 0.5.1 builds read; `docs/site/packs/tester/recordings.json` and the 0.5.0 feed stay byte-identical, and `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
-- **profiles**: re-sign the 20 tester profile shards with the player capacities — the shards under `docs/site/packs/tester/profiles/` carried the profiles from before `ba0c79423`, and a downloaded shard replaces the bundled profiles, so devices with a shard would have no `network.player_capacity`; each shard is re-signed one sequence higher from the current `profiles/` tree and `docs/site/packs/tester/publication.json` names the new SHA-256s. The 0.4.2 and 0.5.0 profile validators accept the six shards without a capacity and refuse the other 14 for the new key; per `docs/data-packs.md`, those builds keep the shard they already have, or their bundled profiles.
 - **ios**: add a profiling variant of the Apple builds
 - **profiles**: re-sign the Apple TV HD tester shard with the 30 frames a second gameplay cap — `docs/site/packs/tester/profiles/tvos/AppleTV5,3/_.json` is sequence 3 from the current `profiles/` tree, the only shard whose files changed, and `docs/site/packs/tester/publication.json` names its new SHA-256. The 0.4.2 and 0.5.0 profile validators accept it.
 
-### revert
-
-- hold post-0.5.1 work for the 0.5.1 cut — this commit's tree is `33844dd68`'s, the agreed 0.5.1 content, so the release is cut from it; the 27 commits from `0cd67af41` to `ac7fb5fa5` (the `objects_update` #369 fix, the unaligned guest arena, native crash reports and the profiling timers) are held, and the commit after the release restores them unchanged.
-- **profiles**: restore the tester profile shards from before the player capacities — the re-signed shards of `e23d715ad` carry `network.player_capacity`, which the 0.4.2 and 0.5.0 profile validators refuse, so those builds would stop taking feed updates on 14 models (including the Apple TV HD's 30 fps cap, which reaches 0.5.0 only through the feed); `docs/site/packs/tester/profiles/` and `docs/site/packs/tester/publication.json` return to their earlier bytes, and builds of 0.5.1 take the capacities from their bundled profiles.
-
 ### docs
 
-- **ios**: name `host_crash.c`, not `host_crash.m`, in the crash comments — three comments pointed at a file that does not exist
-- **ios**: describe crash reports and `guest_symbolicate.py` — where a fatal error's report goes, how its reason and guest frames are read, and the release artifact that keeps a build's guest symbols
 - **roadmap**: replace temporal upscaling in 0.6.0 with MetalFX spatial upscaling on M-series iPads — temporal costs more than a native frame on every measured device.
 - **roadmap**: add community map shader data to 0.8.0.
 - **profile**: name the AppKit Mac's data folder and the Apple builds' switch — `docs/profiling.md` listed only the Catalyst Mac and a non-container path, and `configure.py --profile`'s help named Android and the README instead of `docs/profiling.md` and `tools/ios_build.py --profile`.
@@ -93,9 +111,6 @@ VISR automatically sends game performance data to improve the game. Reports excl
 
 ### test
 
-- **objects**: define the profile scope macros in the #369 probe — `objects_update` now marks its sections with `profile_scope_enter` and `profile_scope_exit`, which the probe's prologue did not define, so it no longer compiled; the probe defines them as `cseries/profile_sections.h` does outside the profiling build.
-- **ios**: add `debug.crash_test` "map" to fail the first level load — so the message `host_map_load_failed` shows for a damaged map file can be checked without one
-- **objects**: make the #369 negative control fail on the assertion — the probe's `match_assert` only counted, so without the fix the out-of-range bit read that follows it tripped AddressSanitizer first, and the control caught any `AssertionError`, a compile failure included; `match_assert` now stops the probe as a checked build does, and the control requires that stop.
 - **network**: give the map-family check's Delta games different hosts — `map_checks` varied only the invites' last digit, so all three shared one identifier and `p2p_lobby_delta_games` kept one of them.
 - **net**: let the lockstep checker run a foreign build as the only host — `--b-hosts` runs each map with B hosting and A joining, for an older host that A joins but does not host; `host_orders` picks the runs and `test_net_lockstep.py` covers each flag.
 - **profile**: accept the profiling build's sections in three source checks — `test_benchmark_offscreen.py`, `test_benchmark_report_fields.py` and `test_network_sync_log.py` matched the exact text around `main_present_frame`, `TRANSLATION_TIMED()` and `distributed_sync_log_tick`, which the profiling build's `profile_scope` wrappers and `TRANSLATION_TIMED(name)` changed; a normal build's code is the same.
