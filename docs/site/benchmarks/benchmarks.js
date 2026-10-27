@@ -55,12 +55,12 @@ function suiteValue(group, query, suite) {
   const mine = box.filter((row) => row.suite === suite);
   if (!mine.length) return [null, `no ${suite} measurements yet`, "not_measured"];
   const usable = new Map();
-  const candidates = mine.filter((row) => matches(row, query.filter) && query.metrics.every((m) => row[m] !== ""));
+  const candidates = mine.filter((row) => matches(row, query.filter) && row[query.metrics[0]] !== "");
   candidates.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   for (const row of candidates) usable.set(row.window, row);
   if (!usable.size) return [null, query.no_data_reason || "no matching measurement", "not_measured"];
   const rows = [...usable.values()];
-  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), low: geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))), rows }, "", ""];
+  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), low: rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
 }
 
 function model(rows, query, suite) {
@@ -85,7 +85,7 @@ function model(rows, query, suite) {
         entry.kind = kinds.size === 1 && kinds.has("not_supported") ? "not_supported" : "not_measured";
       }
       else {
-        entry.value = { avg: geometricMean(parts.map((p) => p[0].avg)), low: geometricMean(parts.map((p) => p[0].low)) };
+        entry.value = { avg: geometricMean(parts.map((p) => p[0].avg)), low: parts.every((p) => p[0].low !== null) ? geometricMean(parts.map((p) => p[0].low)) : null };
         entry.reason = ""; entry.kind = "";
       }
     } else [entry.value, entry.reason, entry.kind] = suiteValue(group, query, suite);
@@ -119,13 +119,14 @@ function chartSource(spec, built, suite, selected, palette) {
   const chart = spec.chart, rename = spec.rename || {};
   const labels = shown.map((e) => `${rename[e.port_name] || e.port_name} ${e.version}`.replaceAll('"', "'"));
   const averages = shown.map((e) => e.value.avg), lows = shown.map((e) => e.value.low);
-  const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...lows) * 1.08);
+  const withLows = lows.every((low) => low !== null);
+  const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...(withLows ? lows : [])) * 1.08);
   const head = chart.horizontal ? "xychart-beta horizontal" : "xychart-beta";
   const title = `${SUITE_NAMES[suite]}: ${chart.title_unit || "uncapped fps"}, ${built.box || spec.box || ""}`.replaceAll('"', "'");
   return [headerText(chart, palette), head, `    title "${title}"`,
     `    x-axis "${chart.x_label || ""}" [${labels.map((l) => `"${l}"`).join(", ")}]`,
     `    y-axis "${chart.y_label || ""}" ${number(chart.y_min ?? 0)} --> ${number(yMax)}`,
-    `    bar [${averages.map(number).join(", ")}]`, `    bar [${lows.map(number).join(", ")}]`].filter(Boolean).join("\n");
+    `    bar [${averages.map(number).join(", ")}]`, withLows ? `    bar [${lows.map(number).join(", ")}]` : ""].filter(Boolean).join("\n");
 }
 
 function legendText(spec) {
@@ -253,11 +254,11 @@ async function drawChart(container, spec, built, suite, selected) {
 }
 
 // The legend uses swatches in the chart's own colors (CSS tokens), not emoji.
-function drawLegend(node, spec, show) {
+function drawLegend(node, spec, count) {
   node.replaceChildren();
-  if (!show) return;
-  spec.series_labels.forEach((name, i) => {
-    node.append(el("span", { class: "swatch " + (i ? "low" : "avg"), "aria-hidden": "true" }), " " + name + (i < spec.series_labels.length - 1 ? "  " : ""));
+  const names = spec.series_labels.slice(0, count);
+  names.forEach((name, i) => {
+    node.append(el("span", { class: "swatch " + (i ? "low" : "avg"), "aria-hidden": "true" }), " " + name + (i < names.length - 1 ? "  " : ""));
   });
 }
 
@@ -313,7 +314,8 @@ async function start() {
     const built = state.models[spec.slug], section = sections[spec.slug];
     await drawChart(section.querySelector(".bench-chart"), spec, built, state.suite, state.selected[spec.slug]);
     drawList(section.querySelector(".bench-rows"), spec, built, state);
-    drawLegend(section.querySelector(".bench-legend"), spec, built.entries.length > 0);
+    drawLegend(section.querySelector(".bench-legend"), spec,
+      !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).every((e) => e.value.low !== null) ? 2 : 1);
     section.querySelector(".bench-caption").textContent = captionText(built, state.selected[spec.slug]);
     writeHash(state, specs);
   }

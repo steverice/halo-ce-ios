@@ -95,13 +95,14 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
         return None, f"no {suite} measurements yet", "not_measured"
     usable = {}
     for row in sorted((r for r in mine if _matches(r, query["filter"])
-                       and all(r.get(m, "") != "" for m in query["metrics"])), key=lambda r: r["date"]):
+                       and r.get(query["metrics"][0], "") != ""), key=lambda r: r["date"]):
         usable[row["window"]] = row
     if not usable:
         return None, query.get("no_data_reason", "no matching measurement"), "not_measured"
     rows = list(usable.values())
     return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
-            "low": statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows),
+            "low": (statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows)
+                    if all(r.get("fps_1pct_low", "") != "" for r in rows) else None),
             "rows": rows}, "", ""
 
 
@@ -124,7 +125,8 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
                 kind = "not_supported" if kinds == {"not_supported"} else "not_measured"
             else:
                 value = {"avg": statistics.geometric_mean(p[0]["avg"] for p in parts),
-                         "low": statistics.geometric_mean(p[0]["low"] for p in parts),
+                         "low": (statistics.geometric_mean(p[0]["low"] for p in parts)
+                                 if all(p[0]["low"] is not None for p in parts) else None),
                          "rows": [r for p in parts for r in p[0]["rows"]]}
                 reason, kind = "", ""
         else:
@@ -163,19 +165,29 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
     labels = [f"{rename.get(e['port_name'], e['port_name'])} {e['version']}".replace('"', "'") for e in drawn]
     averages = [e["value"]["avg"] for e in drawn]
     lows = [e["value"]["low"] for e in drawn]
-    y_max = chart.get("y_max", _nice_ceiling(max(averages + lows) * 1.08))
+    with_lows = all(low is not None for low in lows)
+    y_max = chart.get("y_max", _nice_ceiling(max(averages + (lows if with_lows else [])) * 1.08))
     head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
     quoted = ", ".join('"' + label + '"' for label in labels)
     lines = [header_text(chart), head, f'    title "{chart_title(spec, built, suite)}"',
              f'    x-axis "{chart.get("x_label", "")}" [{quoted}]',
              f'    y-axis "{chart.get("y_label", "")}" {_number(chart.get("y_min", 0))} --> {_number(y_max)}',
-             f"    bar [{', '.join(_number(v) for v in averages)}]", f"    bar [{', '.join(_number(v) for v in lows)}]"]
+             f"    bar [{', '.join(_number(v) for v in averages)}]",
+             f"    bar [{', '.join(_number(v) for v in lows)}]" if with_lows else ""]
     return "\n".join(line for line in lines if line)
 
 
-def legend(spec: dict) -> str:
+def has_lows(built: dict, selected: set[str] | None = None) -> bool:
+    """Whether every drawn build has a 1% low, so the second bar series is drawn."""
+    drawn = [e for e in built["entries"] if e["value"] is not None
+             and (entry_key(e) in selected if selected is not None else e["default"])]
+    return all(e["value"]["low"] is not None for e in drawn)
+
+
+def legend(spec: dict, built: dict | None = None) -> str:
     marks = spec["chart"].get("marks", [])
-    return " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(spec["series_labels"]))
+    names = spec["series_labels"] if built is None or has_lows(built) else spec["series_labels"][:1]
+    return " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(names))
 
 
 def caption(built: dict, selected: set[str] | None = None) -> str:
@@ -201,7 +213,7 @@ def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, rea
     if text is None:
         parts.extend([empty_text(spec, built), ""])
     else:
-        parts.extend(["```mermaid", text, "```", "", legend(spec), "", caption(built), ""])
+        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built), ""])
     for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
         skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
         if skipped:

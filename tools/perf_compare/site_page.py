@@ -120,7 +120,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
     swatches = ""
     if built["entries"]:
         swatches = "  ".join(f'<span class="swatch {kind}" aria-hidden="true"></span> {escape(label)}'
-                             for kind, label in zip(("avg", "low"), spec["series_labels"]))
+                             for kind, label in zip(("avg", "low"), spec["series_labels"][:(2 if charts.has_lows(built) else 1)]))
     return f"""<section class="bench" data-platform="{name}" aria-labelledby="h-{name}">
 <h2 id="h-{name}">{escape(spec["heading"])}</h2>
 <p>{escape(spec["paragraph"].strip())}</p>

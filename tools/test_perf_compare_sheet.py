@@ -462,3 +462,18 @@ def test_device_chart_titles_name_the_display_rate_not_uncapped():
     spec = {"chart": {"title_unit": "fps at display rate"}}
     assert charts.chart_title(spec, {"box": "M1 iPad Pro"}, "campaign") == "Campaign: fps at display rate, M1 iPad Pro"
     assert charts.chart_title({"chart": {}}, {"box": "M6 Mac mini"}, "campaign") == "Campaign: uncapped fps, M6 Mac mini"
+
+
+def test_a_build_without_a_1pct_low_draws_the_average_only_and_never_a_zero():
+    row = {**_method_row("master-chef", "master-chef", "Vision Pro", "M2 Vision Pro", "app telemetry", "capped", cap="30", hz="90"),
+           "label": "master-chef 1.0.3", "version": "1.0.3", "build": "103", "reference_box": "true", "suite": "campaign",
+           "window": "a10", "date": "2026-10-27", "quality_preset": "defaults", "fps_avg": "29.87", "fps_1pct_low": ""}
+    query = {"platform": "Vision Pro", "metrics": ["fps_avg", "fps_1pct_low"], "port_order": [],
+             "filter": {"frame_mode": "capped", "quality_preset": "defaults", "status": "ok"}}
+    spec = {"chart": {"horizontal": True}, "series_labels": ["Average fps", "1% low fps"], "query": query, "heading": "Vision Pro",
+            "paragraph": "x", "empty": "none"}
+    built = charts.model([row], query, "campaign")
+    assert built["entries"][0]["value"]["low"] is None
+    text = charts.source(spec, built, "campaign")
+    assert text.count("    bar [") == 1 and "bar [29.9]" in text
+    assert "1% low" not in charts.legend({**spec, "chart": {"marks": ["a", "b"]}}, built)

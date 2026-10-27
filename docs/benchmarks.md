@@ -52,24 +52,48 @@ Coming soon with VISR 0.6.0
 
 ### Vision Pro
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.
 
-Coming soon with VISR 0.6.0
+```mermaid
+---
+config:
+  xyChart:
+    width: 520
+    height: 263
+  themeVariables:
+    xyChart:
+      plotColorPalette: "#1593bd, #c8870a"
+---
+xychart-beta horizontal
+    title "Campaign: fps at display rate, M2 Vision Pro"
+    x-axis "Port and version" ["master-chef 1.0.3"]
+    y-axis "Frames per second" 0 --> 40
+    bar [29.8]
+```
+
+🟦 Average fps
+
+M2 Vision Pro. master-chef 1.0.3 (build 103, measured 2026-10-27).
 
 <!-- END CHARTS -->
 
 ## Methodology
 
-The snapshot holds 37 measured windows for 4 ports on 1 platform (Mac). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
+The snapshot holds 39 measured windows for 5 ports on 2 platforms (Mac, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
 
 ### Timing by platform
 
 - **Mac** (M4 Mac mini, M6 Mac mini; frame cap on and uncapped): Metal's per-frame timing: `metalperftrace` on-glass drawable intervals for the app's process. Ports: VISR, OpenCE-macOS, CoreCE.
 - **Mac** (M4 Mac mini, M6 Mac mini; frame cap on): Safari `requestAnimationFrame` callbacks, which measure browser scheduling. Ports: OpenCE web.
+- **Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, counted over the same warm-up and sampling window. Ports: master-chef.
+
+master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display; lifting its cap crashes it, so it has no uncapped rows.
+
+Vision Pro charts use runs presented at the device's display rate with each app's default settings, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.
 
 ### Suites
 
-- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Measured on 4 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE.
+- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. Measured on 5 ports: VISR, OpenCE-macOS, OpenCE web, CoreCE, master-chef.
 - **Multiplayer:** a hosted Slayer match on Chill Out and one on Blood Gulch, each a sampling window; the suite value is the mean over both maps' windows. One local player, driven by the scripted bot input, hosts and starts the match with no other humans. Bot input is paced from the wall clock, so runs on different ports, and repeated runs on one port, play equivalent workloads, not identical replays. No measurements yet.
 - **Co-op:** local split-screen campaign co-op, two players. Enemy scaling is set explicitly to static 1x on every port that has the option: VISR sets `debug.enemy_multiplier = 1`, and OpenCE-macOS and CoreCE set their enemies-per-player scaling to static 1x. A port without the option runs its own fixed behavior, and its notes column in the spreadsheet says so. A port without split screen shows "Does not support split screen" and the status `not_supported`; that differs from "not measured", which means the suite has not been run for the build. No measurements yet.
 - **Overall:** per build, the geometric mean of the suites' average rates and the geometric mean of their 1% low rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. A build missing a suite has no overall bar.
@@ -95,5 +119,7 @@ OpenCE web runs import the disc image into each fresh Safari automation session,
 CoreCE rows come from separate matrices run after the VISR and OpenCE-macOS matrices on the same hosts and dates, so they do not share round rotation with them. CoreCE reads the same maps from a copied folder, because its Mac host does not accept a linked maps folder.
 
 Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.
+
+The app's own benchmark report counts the frames it presents; its intervals are the app's, not the display's.
 
 Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.
