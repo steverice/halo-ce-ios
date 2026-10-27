@@ -127,7 +127,7 @@ def section(spec: dict, rows: list[dict], suite: str, reasons: dict) -> str:
 <div class="bench-grid">
 <div class="bench-media"><figure class="device {FRAMES[name]}">{glass_svg() if "glass" in FRAMES[name] else ""}{screen(chart, FRAMES[name])}</figure>
 <p class="bench-legend">{swatches}</p>
-<p class="bench-caption">{escape(charts.caption(built))}</p></div>
+<p class="bench-caption">{escape(charts.caption(built, None, spec["query"].get("details")))}</p></div>
 <fieldset class="bench-rows"{"" if items else " hidden"}>{rows_html}</fieldset>
 </div>
 </section>"""

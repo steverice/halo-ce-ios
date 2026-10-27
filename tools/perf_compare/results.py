@@ -233,11 +233,11 @@ def method_group(record):
     method = str(record.get("method", "")).lower()
     if "raf" in method or "safari" in method:
         return "raf"
-    if "metalperftrace" in method:
-        return "trace"
     if "system trace" in method or "displayed-surfaces" in method:
         return "mst"
-    if "telemetry" in method or "benchmark report" in method:
+    if "metalperftrace" in method:
+        return "trace"
+    if "telemetry" in method or "benchmark report" in method or "benchmark replay" in method:
         return "app"
     return "hud" if "hud" in method else "other"
 

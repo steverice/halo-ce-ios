@@ -77,8 +77,8 @@ DESCRIPTIONS = {
     "notes": "Why a set is unavailable or incomplete.",
 }
 
-# The device each platform's headline chart is drawn from. Apple TV has none yet.
-REFERENCE_BOXES = {"Mac": "M6 Mac mini", "iPhone/iPad": "M1 iPad Pro", "Apple TV": None, "Vision Pro": "M2 Vision Pro"}
+# The device each platform's headline chart is drawn from.
+REFERENCE_BOXES = {"Mac": "M6 Mac mini", "iPhone/iPad": "M1 iPad Pro", "Apple TV": "Apple TV HD", "Vision Pro": "M2 Vision Pro"}
 
 
 def platform_of(model: str) -> str:

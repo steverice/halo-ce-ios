@@ -80,6 +80,26 @@ def entry_key(entry: dict) -> str:
     return "@".join((entry["port"], entry["version"], entry["build"]))
 
 
+# Extra per-build figures a chart spec can list under `query.details`, shown in the caption beside the fps bars:
+# column -> (unit, description, how the suite's windows combine). Frame times combine as a geometric mean, shares as a mean.
+DETAILS = {"p95_ms": (" ms", "95th-percentile frame time", "geometric"),
+           "on_time_pct": ("%", "of frames on time", "arithmetic")}
+
+
+def _details(rows: list[dict], query: dict) -> dict:
+    """The listed detail columns for the windows, each None unless every window reports it."""
+    found = {}
+    for column in query.get("details", []):
+        values = [row.get(column, "") for row in rows]
+        if any(value == "" for value in values):
+            found[column] = None
+        else:
+            numbers = [float(value) for value in values]
+            found[column] = (statistics.geometric_mean(numbers) if DETAILS[column][2] == "geometric"
+                             else statistics.fmean(numbers))
+    return found
+
+
 def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | None, str, str]:
     """Average and 1% low for one suite on the reference box, or None with the reason and its kind
     (`not_measured`, or `not_supported` when the port lacks what the suite needs)."""
@@ -103,7 +123,7 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
     return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
             "low": (statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows)
                     if all(r.get("fps_1pct_low", "") != "" for r in rows) else None),
-            "rows": rows}, "", ""
+            "details": _details(rows, query), "rows": rows}, "", ""
 
 
 def model(rows: list[dict], query: dict, suite: str) -> dict:
@@ -124,7 +144,7 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
                 kinds = {part[2] for part in parts if part[0] is None}
                 kind = "not_supported" if kinds == {"not_supported"} else "not_measured"
             else:
-                value = {"avg": statistics.geometric_mean(p[0]["avg"] for p in parts),
+                value = {"avg": statistics.geometric_mean(p[0]["avg"] for p in parts), "details": {},
                          "low": (statistics.geometric_mean(p[0]["low"] for p in parts)
                                  if all(p[0]["low"] is not None for p in parts) else None),
                          "rows": [r for p in parts for r in p[0]["rows"]]}
@@ -164,9 +184,11 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
     chart, rename = spec["chart"], spec.get("rename", {})
     labels = [f"{rename.get(e['port_name'], e['port_name'])} {e['version']}".replace('"', "'") for e in drawn]
     averages = [e["value"]["avg"] for e in drawn]
-    lows = [e["value"]["low"] for e in drawn]
-    with_lows = all(low is not None for low in lows)
-    y_max = chart.get("y_max", _nice_ceiling(max(averages + (lows if with_lows else [])) * 1.08))
+    # A build without a 1% low draws no bar in the second series (a zero-length bar) instead of dropping the series.
+    known = [e["value"]["low"] for e in drawn if e["value"]["low"] is not None]
+    lows = [e["value"]["low"] if e["value"]["low"] is not None else 0 for e in drawn]
+    with_lows = bool(known)
+    y_max = chart.get("y_max", _nice_ceiling(max(averages + known) * 1.08))
     head = "xychart-beta horizontal" if chart.get("horizontal") else "xychart-beta"
     quoted = ", ".join('"' + label + '"' for label in labels)
     lines = [header_text(chart), head, f'    title "{chart_title(spec, built, suite)}"',
@@ -178,10 +200,10 @@ def source(spec: dict, built: dict, suite: str, selected: set[str] | None = None
 
 
 def has_lows(built: dict, selected: set[str] | None = None) -> bool:
-    """Whether every drawn build has a 1% low, so the second bar series is drawn."""
+    """Whether any drawn build has a 1% low, so the second bar series is drawn."""
     drawn = [e for e in built["entries"] if e["value"] is not None
              and (entry_key(e) in selected if selected is not None else e["default"])]
-    return all(e["value"]["low"] is not None for e in drawn)
+    return any(e["value"]["low"] is not None for e in drawn)
 
 
 def legend(spec: dict, built: dict | None = None) -> str:
@@ -190,12 +212,24 @@ def legend(spec: dict, built: dict | None = None) -> str:
     return " ".join(f"{marks[i % len(marks)]} {name}" for i, name in enumerate(names))
 
 
-def caption(built: dict, selected: set[str] | None = None) -> str:
+def _detail_text(entry: dict, columns: list[str]) -> str:
+    parts = []
+    for column in columns:
+        value = (entry["value"].get("details") or {}).get(column)
+        if value is not None:
+            unit, description, _ = DETAILS[column]
+            parts.append(f"{_number(value)} ms {description}" if unit == " ms" else f"{_number(value)}% {description}")
+    return ", ".join(parts) if parts else "no frame times reported"
+
+
+def caption(built: dict, selected: set[str] | None = None, columns: list[str] | None = None) -> str:
     drawn = [e for e in built["entries"] if e["value"] is not None
              and (entry_key(e) in selected if selected is not None else e["default"])]
     if not drawn:
         return ""
-    builds = "; ".join(f"{e['label']} (build {e['build'] or 'unknown'}, measured {e['date']})" for e in drawn)
+    columns = columns or []
+    builds = "; ".join(f"{e['label']} (build {e['build'] or 'unknown'}, measured {e['date']}"
+                       + (f"; {_detail_text(e, columns)}" if columns else "") + ")" for e in drawn)
     return f"{built['box']}. {builds}."
 
 
@@ -213,7 +247,7 @@ def render_section(spec: dict, rows: list[dict], suite: str = DEFAULT_SUITE, rea
     if text is None:
         parts.extend([empty_text(spec, built), ""])
     else:
-        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built), ""])
+        parts.extend(["```mermaid", text, "```", "", legend(spec, built), "", caption(built, None, spec["query"].get("details")), ""])
     for kind, heading in (("not_supported", "Not supported"), ("not_measured", "Not measured")):
         skipped = [e for e in built["entries"] if e["value"] is None and e["kind"] == kind]
         if skipped:

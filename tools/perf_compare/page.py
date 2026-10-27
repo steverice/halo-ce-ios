@@ -64,7 +64,7 @@ def timing_section(rows: list[dict]) -> list[str]:
             chosen = [row for row in mine if method_group(row) == group]
             if not chosen:
                 continue
-            modes = sorted({row["frame_mode"] for row in chosen})
+            modes = sorted({"capped" if row["frame_mode"] == "display" else row["frame_mode"] for row in chosen})
             run = ("uncapped, vsync off" if modes == ["uncapped"] else "frame cap on"
                    if modes == ["capped"] else "frame cap on and uncapped")
             lines.append(f"- **{platform}** ({', '.join(hosts)}; {run}): {TIMING[group]} Ports: {_names(chosen)}.")
@@ -83,8 +83,9 @@ def device_section(rows: list[dict]) -> list[str]:
     devices = [platform for platform in PLATFORM_ORDER if platform != "Mac" and any(r["platform"] == platform for r in ok)]
     lines = []
     if devices:
-        lines.extend([f"{', '.join(devices)} charts use runs presented at the device's display rate, "
-                      "not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the "
+        names = " and ".join(devices) if len(devices) < 3 else ", ".join(devices[:-1]) + f", and {devices[-1]}"
+        lines.extend([f"{names} charts use runs presented at the device's display rate or, where its profile sets a lower "
+                      "frame cap, at that cap, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the "
                       "spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart "
                       "uses the uncapped, matched-stock runs described below.", ""])
     og = [row for row in ok if row["port"] == "halo-og"]

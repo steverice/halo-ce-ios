@@ -26,15 +26,15 @@ config:
 ---
 xychart-beta horizontal
     title "Campaign: uncapped fps, M6 Mac mini"
-    x-axis "Port and version" ["VISR 0.5.1", "OpenCE v1.0.2", "CoreCE 0.3.0"]
+    x-axis "Port and version" ["VISR 0.6.0", "OpenCE v1.0.2", "CoreCE 0.3.0"]
     y-axis "Frames per second" 0 --> 800
-    bar [648.8, 620, 309.9]
-    bar [195.7, 249.8, 185.6]
+    bar [705, 620, 309.9]
+    bar [217.5, 249.8, 185.6]
 ```
 
 🟦 Average fps 🟨 1% low fps
 
-M6 Mac mini. VISR 0.5.1 (build 20261026.31927, measured 2026-10-26); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).
+M6 Mac mini. VISR 0.6.0 (build 20261027.111952, measured 2026-10-27); OpenCE-macOS v1.0.2 (build 2, measured 2026-10-26); CoreCE 0.3.0 (build 44, measured 2026-10-26).
 
 Not measured: OpenCE web build-280 (Only measured with the frame cap on or with other settings.); Chupathingy v0.8.0g (The app has no frame-time readout we could capture.); Halo OG v0.5.1 (The app has no frame-time readout we could capture.).
 
@@ -46,13 +46,33 @@ Coming soon with VISR 0.6.0
 
 ### Apple TV
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
 
-Coming soon with VISR 0.6.0
+```mermaid
+---
+config:
+  xyChart:
+    width: 860
+    height: 420
+  themeVariables:
+    xyChart:
+      plotColorPalette: "#1593bd, #c8870a"
+---
+xychart-beta horizontal
+    title "Campaign: fps at the profile's frame cap, Apple TV HD"
+    x-axis "Port and version" ["VISR 0.6.0"]
+    y-axis "Frames per second" 0 --> 40
+    bar [29.8]
+    bar [30]
+```
+
+🟦 Average fps 🟨 1% low fps
+
+Apple TV HD. VISR 0.6.0 (build 20261027.111952, measured 2026-10-27).
 
 ### Vision Pro
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. Under the chart, each build lists its 95th-percentile frame time and the share of frames that arrive on time (within 5% of the display interval) where the app reports them. VISR replays a recorded route; master-chef runs with no input. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster and reports no frame times.
 
 ```mermaid
 ---
@@ -66,30 +86,32 @@ config:
 ---
 xychart-beta horizontal
     title "Campaign: fps at display rate, M2 Vision Pro"
-    x-axis "Port and version" ["master-chef 1.0.3"]
-    y-axis "Frames per second" 0 --> 40
-    bar [29.8]
+    x-axis "Port and version" ["VISR 0.6.0", "master-chef 1.0.3"]
+    y-axis "Frames per second" 0 --> 100
+    bar [89.4, 29.8]
+    bar [76.8, 0]
 ```
 
-🟦 Average fps
+🟦 Average fps 🟨 1% low fps
 
-M2 Vision Pro. master-chef 1.0.3 (build 103, measured 2026-10-27).
+M2 Vision Pro. VISR 0.6.0 (build 20261027.111952, measured 2026-10-27; 11.8 ms 95th-percentile frame time, 94.1% of frames on time); master-chef 1.0.3 (build 103, measured 2026-10-27; no frame times reported).
 
 <!-- END CHARTS -->
 
 ## Methodology
 
-The snapshot holds 39 measured windows for 5 ports on 2 platforms (Mac, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
+The snapshot holds 53 measured windows for 5 ports on 3 platforms (Mac, Apple TV, Vision Pro). Each window's value is the mean over its valid rounds. A bar is the geometric mean of the windows' average presentation rates, drawn beside the geometric mean of their 1% low rates (1000 divided by the 99th percentile interval). When a build was measured on several dates, the newest set is charted. Sets with fewer than three rounds, and targets that could not run, stay in the spreadsheet with their status. On-time share uses the recorded display rate with a 5% interval tolerance, is omitted for uncapped rows and does not establish a display tier. The methods measure different events and are not ranked against one another. Only released builds are shown. Web builds run in a browser that always syncs to the display, so they have capped numbers only and do not appear in the uncapped charts. The spreadsheet's README tab describes each column.
 
 ### Timing by platform
 
 - **Mac** (M4 Mac mini, M6 Mac mini; frame cap on and uncapped): Metal's per-frame timing: `metalperftrace` on-glass drawable intervals for the app's process. Ports: VISR, OpenCE-macOS, CoreCE.
 - **Mac** (M4 Mac mini, M6 Mac mini; frame cap on): Safari `requestAnimationFrame` callbacks, which measure browser scheduling. Ports: OpenCE web.
-- **Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, counted over the same warm-up and sampling window. Ports: master-chef.
+- **Apple TV** (Apple TV HD; frame cap on): Instruments Metal System Trace recorded over the network; each frame's time is a row of the `displayed-surfaces-interval` table. Against VISR's own frame log over the same window, average rate and p95/p99 agree within 1%. Ports: VISR.
+- **Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report: VISR's report, or the telemetry of a port that has no timing tool, counted over the same warm-up and sampling window. Ports: master-chef, VISR.
 
 master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display, so it has no uncapped rows.
 
-Vision Pro charts use runs presented at the device's display rate, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.
+Apple TV and Vision Pro charts use runs presented at the device's display rate or, where its profile sets a lower frame cap, at that cap, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.
 
 ### Suites
 
@@ -119,6 +141,8 @@ OpenCE web runs import the disc image into each fresh Safari automation session,
 CoreCE rows come from separate matrices run after the VISR and OpenCE-macOS matrices on the same hosts and dates, so they do not share round rotation with them. CoreCE reads the same maps from a copied folder, because its Mac host does not accept a linked maps folder.
 
 Apple's metalperftrace records per-frame on-glass drawable intervals. CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.
+
+Instruments Metal System Trace records the displayed-surfaces-interval table over the network: the time each frame is swapped onto the display. Repeated image content is not detected.
 
 The app's own benchmark report counts the frames it presents; its intervals are the app's, not the display's.
 

@@ -44,6 +44,10 @@ function niceCeiling(value) {
 const number = (value) => value.toFixed(1).replace(/\.0$/, "");
 const entryKey = (entry) => [entry.port, entry.version, entry.build].join("@");
 
+// Extra per-build figures a chart spec lists under `query.details`; mirrors DETAILS in charts.py.
+const DETAILS = { p95_ms: { unit: " ms", text: "95th-percentile frame time", geometric: true },
+  on_time_pct: { unit: "%", text: "of frames on time", geometric: false } };
+
 function suiteValue(group, query, suite) {
   const box = group.filter((row) => String(row.reference_box).toLowerCase() === "true");
   const unsupported = group.filter((row) => row.suite === suite && row.status === "not_supported");
@@ -60,7 +64,13 @@ function suiteValue(group, query, suite) {
   for (const row of candidates) usable.set(row.window, row);
   if (!usable.size) return [null, query.no_data_reason || "no matching measurement", "not_measured"];
   const rows = [...usable.values()];
-  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), low: rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
+  const details = {};
+  for (const column of query.details || []) {
+    const values = rows.map((r) => r[column] ?? "");
+    details[column] = values.some((v) => v === "") ? null
+      : (DETAILS[column].geometric ? geometricMean : mean)(values.map(parseFloat));
+  }
+  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), details, low: rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
 }
 
 function model(rows, query, suite) {
@@ -85,7 +95,7 @@ function model(rows, query, suite) {
         entry.kind = kinds.size === 1 && kinds.has("not_supported") ? "not_supported" : "not_measured";
       }
       else {
-        entry.value = { avg: geometricMean(parts.map((p) => p[0].avg)), low: parts.every((p) => p[0].low !== null) ? geometricMean(parts.map((p) => p[0].low)) : null };
+        entry.value = { avg: geometricMean(parts.map((p) => p[0].avg)), details: {}, low: parts.every((p) => p[0].low !== null) ? geometricMean(parts.map((p) => p[0].low)) : null };
         entry.reason = ""; entry.kind = "";
       }
     } else [entry.value, entry.reason, entry.kind] = suiteValue(group, query, suite);
@@ -118,9 +128,12 @@ function chartSource(spec, built, suite, selected, palette) {
   if (!shown.length) return null;
   const chart = spec.chart, rename = spec.rename || {};
   const labels = shown.map((e) => `${rename[e.port_name] || e.port_name} ${e.version}`.replaceAll('"', "'"));
-  const averages = shown.map((e) => e.value.avg), lows = shown.map((e) => e.value.low);
-  const withLows = lows.every((low) => low !== null);
-  const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...(withLows ? lows : [])) * 1.08);
+  const averages = shown.map((e) => e.value.avg);
+  // A build without a 1% low draws no bar in the second series (a zero-length bar) instead of dropping the series.
+  const known = shown.map((e) => e.value.low).filter((low) => low !== null);
+  const lows = shown.map((e) => e.value.low ?? 0);
+  const withLows = known.length > 0;
+  const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...known) * 1.08);
   const head = chart.horizontal ? "xychart-beta horizontal" : "xychart-beta";
   const title = `${SUITE_NAMES[suite]}: ${chart.title_unit || "uncapped fps"}, ${built.box || spec.box || ""}`.replaceAll('"', "'");
   return [headerText(chart, palette), head, `    title "${title}"`,
@@ -134,10 +147,21 @@ function legendText(spec) {
   return spec.series_labels.map((name, i) => `${marks[i % marks.length]} ${name}`).join(" ");
 }
 
-function captionText(built, selected) {
+function detailText(entry, columns) {
+  const parts = [];
+  for (const column of columns) {
+    const value = (entry.value.details || {})[column];
+    if (value !== null && value !== undefined) parts.push(`${number(value)}${DETAILS[column].unit === "%" ? "%" : " ms"} ${DETAILS[column].text}`);
+  }
+  return parts.length ? parts.join(", ") : "no frame times reported";
+}
+
+function captionText(built, selected, columns) {
   const shown = drawn(built, selected);
   if (!shown.length) return "";
-  return `${built.box}. ` + shown.map((e) => `${e.label} (build ${e.build || "unknown"}, measured ${e.date})`).join("; ") + ".";
+  columns = columns || [];
+  return `${built.box}. ` + shown.map((e) => `${e.label} (build ${e.build || "unknown"}, measured ${e.date}`
+    + (columns.length ? `; ${detailText(e, columns)}` : "") + ")").join("; ") + ".";
 }
 
 // Plain-language text for reason codes (docs/benchmarks/reasons.toml); unknown codes pass through.
@@ -315,8 +339,8 @@ async function start() {
     await drawChart(section.querySelector(".bench-chart"), spec, built, state.suite, state.selected[spec.slug]);
     drawList(section.querySelector(".bench-rows"), spec, built, state);
     drawLegend(section.querySelector(".bench-legend"), spec,
-      !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).every((e) => e.value.low !== null) ? 2 : 1);
-    section.querySelector(".bench-caption").textContent = captionText(built, state.selected[spec.slug]);
+      !built.entries.length ? 0 : drawn(built, state.selected[spec.slug]).some((e) => e.value.low !== null) ? 2 : 1);
+    section.querySelector(".bench-caption").textContent = captionText(built, state.selected[spec.slug], spec.query.details);
     writeHash(state, specs);
   }
   state.refresh = refresh;

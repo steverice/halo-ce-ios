@@ -1,6 +1,6 @@
 order = 40
 heading = "Vision Pro"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar is the geometric mean of the average over the suite's windows, drawn beside the 1% low where the app reports one. Under the chart, each build lists its 95th-percentile frame time and the share of frames that arrive on time (within 5% of the display interval) where the app reports them. VISR replays a recorded route; master-chef runs with no input. master-chef: Fixed at 30 fps as shipped; it has no setting to run faster and reports no frame times."
 empty = "No Vision Pro results yet."
 box = "M2 Vision Pro"
 series_labels = ["Average fps", "1% low fps"]
@@ -29,11 +29,12 @@ config:
 [query]
 platform = "Vision Pro"
 metrics = ["fps_avg", "fps_1pct_low"]
+details = ["p95_ms", "on_time_pct"]
 port_order = ["visr", "opence-macos", "opence-web", "corece", "chupathingy", "halo-og"]
 no_data_reason = "no measurement at the display rate"
 
 [query.filter]
-frame_mode = "capped"
+frame_mode = ["capped", "display"]
 quality_preset = "defaults"
 status = "ok"
 

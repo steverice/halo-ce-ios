@@ -1,14 +1,14 @@
 order = 30
 heading = "Apple TV"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
-empty = "Coming soon with VISR 0.6.0"
-box = ""
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
+empty = "No Apple TV results yet."
+box = "Apple TV HD"
 series_labels = ["Average fps", "1% low fps"]
 
 [chart]
 type = "bar"
 horizontal = true
-title_unit = "fps at display rate"
+title_unit = "fps at the profile's frame cap"
 x_label = "Port and version"
 y_label = "Frames per second"
 y_min = 0

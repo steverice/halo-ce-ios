@@ -165,7 +165,7 @@ def test_model_ticks_the_newest_build_of_each_port_and_lists_the_rest_with_reaso
     assert by_key["visr@main@5"]["value"] is not None
     assert by_key["opence-web@@7"]["reason"] == "safari-remote-automation-disabled"
     assert by_key["opence-web@@7"]["kind"] == "not_measured"
-    assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
+    assert by_key["visr@0.5.1@7"]["value"] == {"avg": pytest.approx(547.7226, abs=1e-3), "low": pytest.approx(200.0), "details": {}, "rows": by_key["visr@0.5.1@7"]["value"]["rows"]}
 
 
 def test_suites_without_data_show_not_measured_rows_and_overall_needs_every_suite():
@@ -287,7 +287,7 @@ const rows = m.parseCsv(fs.readFileSync(process.argv[1] + '/docs/benchmarks/resu
 const out = {};
 for (const spec of JSON.parse(fs.readFileSync(0, 'utf8'))) for (const suite of ['campaign', 'multiplayer', 'co-op', 'overall']) {
   const built = m.model(rows, spec.query, suite);
-  out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason])];
+  out[spec.slug + '/' + suite] = [m.chartSource(spec, built, suite), m.captionText(built, null, spec.query.details), built.entries.map((e) => [m.entryKey(e), e.default, e.kind, e.reason])];
 }
 console.log(JSON.stringify(out));
 """
@@ -297,7 +297,7 @@ console.log(JSON.stringify(out));
     for item in specs:
         for suite in charts.SUITE_CHOICES:
             built = charts.model(rows, item["query"], suite)
-            expected = [charts.source(item, built, suite), charts.caption(built),
+            expected = [charts.source(item, built, suite), charts.caption(built, None, item["query"].get("details")),
                         [[charts.entry_key(e), e["default"], e["kind"], e["reason"]] for e in built["entries"]]]
             assert browser[f"{site_page.slug(item)}/{suite}"] == expected
 
@@ -446,7 +446,7 @@ def test_methodology_states_each_platforms_timing_method_from_the_rows():
     assert "within 1%" in text
     assert "**Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report" in text
     assert "master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display" in text
-    assert "iPhone/iPad, Vision Pro charts use runs presented at the device's display rate" in text
+    assert "iPhone/iPad and Vision Pro charts use runs presented at the device's display rate" in text
     assert "3200×2400 drawable" in text and "shadow size, model LOD and field of view" in text
     assert "Multiplayer:** a hosted Slayer match on Chill Out and one on Blood Gulch" in text
     assert "No measurements yet" in text.split("**Multiplayer:**")[1].split("**Co-op:**")[0]
@@ -464,16 +464,25 @@ def test_device_chart_titles_name_the_display_rate_not_uncapped():
     assert charts.chart_title({"chart": {}}, {"box": "M6 Mac mini"}, "campaign") == "Campaign: uncapped fps, M6 Mac mini"
 
 
-def test_a_build_without_a_1pct_low_draws_the_average_only_and_never_a_zero():
-    row = {**_method_row("master-chef", "master-chef", "Vision Pro", "M2 Vision Pro", "app telemetry", "capped", cap="30", hz="90"),
-           "label": "master-chef 1.0.3", "version": "1.0.3", "build": "103", "reference_box": "true", "suite": "campaign",
-           "window": "a10", "date": "2026-10-27", "quality_preset": "defaults", "fps_avg": "29.87", "fps_1pct_low": ""}
-    query = {"platform": "Vision Pro", "metrics": ["fps_avg", "fps_1pct_low"], "port_order": [],
-             "filter": {"frame_mode": "capped", "quality_preset": "defaults", "status": "ok"}}
+def test_a_build_without_a_1pct_low_keeps_the_series_for_the_builds_that_have_one():
+    base = {**_method_row("master-chef", "master-chef", "Vision Pro", "M2 Vision Pro", "app telemetry", "capped", cap="30", hz="90"),
+            "reference_box": "true", "suite": "campaign", "window": "a10", "date": "2026-10-27", "quality_preset": "defaults"}
+    chef = {**base, "label": "master-chef 1.0.3", "version": "1.0.3", "build": "103", "fps_avg": "29.87", "fps_1pct_low": ""}
+    visr = {**base, "port": "visr", "port_name": "VISR", "label": "VISR 0.6.0", "version": "0.6.0", "build": "7",
+            "frame_mode": "display", "fps_avg": "89.18", "fps_1pct_low": "72.77", "p95_ms": "12.01", "on_time_pct": "91.98"}
+    query = {"platform": "Vision Pro", "metrics": ["fps_avg", "fps_1pct_low"], "port_order": ["visr", "master-chef"],
+             "details": ["p95_ms", "on_time_pct"],
+             "filter": {"frame_mode": ["capped", "display"], "quality_preset": "defaults", "status": "ok"}}
     spec = {"chart": {"horizontal": True}, "series_labels": ["Average fps", "1% low fps"], "query": query, "heading": "Vision Pro",
             "paragraph": "x", "empty": "none"}
-    built = charts.model([row], query, "campaign")
-    assert built["entries"][0]["value"]["low"] is None
+    built = charts.model([chef, visr], query, "campaign")
+    by_port = {e["port"]: e["value"] for e in built["entries"]}
+    assert by_port["master-chef"]["low"] is None and by_port["visr"]["low"] == pytest.approx(72.77)
     text = charts.source(spec, built, "campaign")
-    assert text.count("    bar [") == 1 and "bar [29.9]" in text
-    assert "1% low" not in charts.legend({**spec, "chart": {"marks": ["a", "b"]}}, built)
+    assert "bar [89.2, 29.9]" in text and "bar [72.8, 0]" in text
+    assert "1% low" in charts.legend({**spec, "chart": {"marks": ["a", "b"]}}, built)
+    note = charts.caption(built, None, query["details"])
+    assert "12 ms 95th-percentile frame time, 92% of frames on time" in note and "no frame times reported" in note
+    assert "bar [29.9]" in charts.source(spec, built, "campaign", {"master-chef@1.0.3@103"})
+    only_chef = charts.model([chef], query, "campaign")
+    assert "1% low" not in charts.legend({**spec, "chart": {"marks": ["a", "b"]}}, only_chef)
