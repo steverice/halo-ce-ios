@@ -107,6 +107,27 @@ void host_touch_replay_active(int active) {
 @property(nonatomic) int gameButton;
 @property(nonatomic) int gameAxis;
 @end
+/* HALO_TOUCH_LATENCY=1: how long UIKit took to hand each press and lift to the controls (the touch's own timestamp against now),
+   and the longest stall of the main run loop every 5 s, so touch lag can be told apart from slow frames. */
+static int touch_latency_enabled(void) {static int on=-1;if(on<0)on=getenv("HALO_TOUCH_LATENCY")!=NULL;return on;}
+static void touch_latency_log(const char *what,UITouch *touch) {
+    if(!touch_latency_enabled())return;
+    host_logf(HOST_LOG_INFO,"touch latency: %s delivered %.1f ms after the touch",what,(NSProcessInfo.processInfo.systemUptime-touch.timestamp)*1000);
+}
+static void touch_latency_watch(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once,^{
+        if(!touch_latency_enabled())return;
+        __block double last=0,worst=0,since=0;
+        CFRunLoopObserverRef observer=CFRunLoopObserverCreateWithHandler(NULL,kCFRunLoopBeforeSources|kCFRunLoopAfterWaiting,true,0,^(CFRunLoopObserverRef o,CFRunLoopActivity a){
+            (void)o;double now=NSProcessInfo.processInfo.systemUptime;
+            if(a==kCFRunLoopBeforeSources&&last>0)worst=MAX(worst,now-last);   /* (a pass of the sources and timers, handler time included) */
+            if(a==kCFRunLoopAfterWaiting)last=now;
+            if(now-since>=5){host_logf(HOST_LOG_INFO,"touch latency: longest main run loop pass in 5 s %.1f ms",worst*1000);worst=0;since=now;}
+        });
+        CFRunLoopAddObserver(CFRunLoopGetMain(),observer,kCFRunLoopCommonModes);
+    });
+}
 @implementation HaloButton
 - (void)sendDown:(BOOL)down {
     if(host_touch_replay_blocked(&replay_gate))down=NO;
@@ -115,10 +136,10 @@ void host_touch_replay_active(int active) {
     else button_state(self.gameButton,down);
 }
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    [super beginTrackingWithTouch:touch withEvent:event];[self sendDown:YES];return YES;
+    touch_latency_log("press",touch);[super beginTrackingWithTouch:touch withEvent:event];[self sendDown:YES];return YES;
 }
 - (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    [super endTrackingWithTouch:touch withEvent:event];[self sendDown:NO];
+    touch_latency_log("lift",touch);[super endTrackingWithTouch:touch withEvent:event];[self sendDown:NO];
 }
 - (void)cancelTrackingWithEvent:(UIEvent *)event {
     [super cancelTrackingWithEvent:event];[self sendDown:NO];
@@ -318,6 +339,7 @@ void host_ios_touch_attach(SDL_Window *window) {
     host_ios_require_landscape(native);
     /* Keep the shared controller bridge active while Mac input uses no touch overlay. */
     if(NSProcessInfo.processInfo.isMacCatalystApp || NSProcessInfo.processInfo.isiOSAppOnMac)return;
+    touch_latency_watch();
     UIView *root=native.rootViewController.view;
     HaloControls *controls=[[HaloControls alloc]initWithFrame:root.bounds];
     [root addSubview:controls];
