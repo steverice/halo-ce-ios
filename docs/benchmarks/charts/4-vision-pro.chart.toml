@@ -1,6 +1,6 @@
 order = 40
 heading = "Vision Pro"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate with each app's default settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
 empty = "Coming soon with VISR 0.6.0"
 box = "M2 Vision Pro"
 series_labels = ["Average fps", "1% low fps"]
@@ -8,6 +8,7 @@ series_labels = ["Average fps", "1% low fps"]
 [chart]
 type = "bar"
 horizontal = true
+title_unit = "fps at display rate"
 x_label = "Port and version"
 y_label = "Frames per second"
 y_min = 0
@@ -29,11 +30,11 @@ config:
 platform = "Vision Pro"
 metrics = ["fps_avg", "fps_1pct_low"]
 port_order = ["visr", "opence-macos", "opence-web", "corece", "chupathingy", "halo-og"]
-no_data_reason = "no uncapped matched-stock measurement"
+no_data_reason = "no measurement at the display rate"
 
 [query.filter]
-frame_mode = "uncapped"
-quality_preset = "matched-stock"
+frame_mode = "capped"
+quality_preset = "defaults"
 status = "ok"
 
 [rename]

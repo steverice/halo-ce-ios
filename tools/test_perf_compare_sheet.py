@@ -425,3 +425,40 @@ def test_home_page_links_to_the_benchmarks_page_and_the_readme_to_its_site_addre
 def test_pages_chart_script_fits_an_even_margin_and_draws_no_gridlines():
     script = (ROOT / "docs/site/benchmarks/benchmarks.js").read_text()
     assert "function finishChart" in script and "finishChartSvg" in script and "gridline" not in script.replace("no gridline", "")
+
+
+def _method_row(port, port_name, platform, host, method, mode, suite="campaign", cap="60", hz="60", resolution="1280×960"):
+    row = dict.fromkeys(sheet_export.COLUMNS, "")
+    row.update(port=port, port_name=port_name, platform=platform, host=host, method=method, frame_mode=mode, suite=suite,
+               cap_fps=cap, display_hz=hz, resolution=resolution, status="ok", fps_avg="60", fps_1pct_low="50")
+    return row
+
+
+def test_methodology_states_each_platforms_timing_method_from_the_rows():
+    rows = [_method_row("visr", "VISR", "Mac", "M6 Mac mini", "metalperftrace on-glass intervals", "uncapped"),
+            _method_row("visr", "VISR", "iPhone/iPad", "M1 iPad Pro", "Instruments Metal System Trace displayed-surfaces-interval", "capped"),
+            _method_row("master-chef", "master-chef", "Vision Pro", "M2 Vision Pro", "app telemetry, engine frames per second",
+                        "capped", cap="30", hz="90"),
+            _method_row("halo-og", "Halo OG", "Mac", "M6 Mac mini", "metalperftrace on-glass intervals", "capped",
+                        resolution="3200×2400")]
+    text = "\n".join(page.methodology({"records": []}, rows))
+    assert "**iPhone/iPad** (M1 iPad Pro; frame cap on): Instruments Metal System Trace" in text
+    assert "within 1%" in text
+    assert "**Vision Pro** (M2 Vision Pro; frame cap on): The app's own benchmark report" in text
+    assert "master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display" in text
+    assert "iPhone/iPad, Vision Pro charts use runs presented at the device's display rate" in text
+    assert "3200×2400 drawable" in text and "shadow size, model LOD and field of view" in text
+    assert "Multiplayer:** a hosted Slayer match on Chill Out and one on Blood Gulch" in text
+    assert "No measurements yet" in text.split("**Multiplayer:**")[1].split("**Co-op:**")[0]
+
+
+def test_multiplayer_line_reports_measured_ports_when_the_data_has_rows():
+    rows = [_method_row("visr", "VISR", "Mac", "M6 Mac mini", "metalperftrace on-glass intervals", "uncapped", suite="multiplayer")]
+    text = "\n".join(page.methodology({"records": []}, rows))
+    assert "Measured on 1 port: VISR." in text.split("**Multiplayer:**")[1].split("**Co-op:**")[0]
+
+
+def test_device_chart_titles_name_the_display_rate_not_uncapped():
+    spec = {"chart": {"title_unit": "fps at display rate"}}
+    assert charts.chart_title(spec, {"box": "M1 iPad Pro"}, "campaign") == "Campaign: fps at display rate, M1 iPad Pro"
+    assert charts.chart_title({"chart": {}}, {"box": "M6 Mac mini"}, "campaign") == "Campaign: uncapped fps, M6 Mac mini"

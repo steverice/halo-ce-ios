@@ -5,6 +5,7 @@
 "console-unavailable" = "The app has no frame-time readout we could capture."
 "not measured on the reference box" = "Not run on this platform's reference device."
 "no uncapped matched-stock measurement" = "Only measured with the frame cap on or with other settings."
+"no measurement at the display rate" = "Only measured with other frame-rate or quality settings."
 "permission-denied" = "The system did not allow the measurement."
 
 [patterns]

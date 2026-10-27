@@ -144,7 +144,8 @@ def model(rows: list[dict], query: dict, suite: str) -> dict:
 
 def chart_title(spec: dict, built: dict, suite: str) -> str:
     box = built["box"] or spec.get("box", "")
-    return f"{SUITE_NAMES[suite]}: uncapped fps, {box}".replace('"', "'")
+    unit = spec.get("chart", {}).get("title_unit", "uncapped fps")
+    return f"{SUITE_NAMES[suite]}: {unit}, {box}".replace('"', "'")
 
 
 def header_text(chart: dict) -> str:

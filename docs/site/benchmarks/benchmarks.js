@@ -121,7 +121,7 @@ function chartSource(spec, built, suite, selected, palette) {
   const averages = shown.map((e) => e.value.avg), lows = shown.map((e) => e.value.low);
   const yMax = chart.y_max ?? niceCeiling(Math.max(...averages, ...lows) * 1.08);
   const head = chart.horizontal ? "xychart-beta horizontal" : "xychart-beta";
-  const title = `${SUITE_NAMES[suite]}: uncapped fps, ${built.box || spec.box || ""}`.replaceAll('"', "'");
+  const title = `${SUITE_NAMES[suite]}: ${chart.title_unit || "uncapped fps"}, ${built.box || spec.box || ""}`.replaceAll('"', "'");
   return [headerText(chart, palette), head, `    title "${title}"`,
     `    x-axis "${chart.x_label || ""}" [${labels.map((l) => `"${l}"`).join(", ")}]`,
     `    y-axis "${chart.y_label || ""}" ${number(chart.y_min ?? 0)} --> ${number(yMax)}`,

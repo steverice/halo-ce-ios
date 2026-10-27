@@ -235,6 +235,10 @@ def method_group(record):
         return "raf"
     if "metalperftrace" in method:
         return "trace"
+    if "system trace" in method or "displayed-surfaces" in method:
+        return "mst"
+    if "telemetry" in method or "benchmark report" in method:
+        return "app"
     return "hud" if "hud" in method else "other"
 
 
@@ -245,6 +249,9 @@ CAVEAT = ("We try to make these comparisons fair, but our numbers or our setup f
 METHOD_NOTES = {
     "trace": "Apple's metalperftrace records per-frame on-glass drawable intervals. "
              "CPU/GPU durations and aggregate FPS are excluded. Repeated image content is not detected.",
+    "mst": "Instruments Metal System Trace records the displayed-surfaces-interval table over the network: the time each frame is "
+           "swapped onto the display. Repeated image content is not detected.",
+    "app": "The app's own benchmark report counts the frames it presents; its intervals are the app's, not the display's.",
     "hud": "Metal HUD per-frame intervals describe native presentation pacing. GPU duration and aggregate HUD FPS are excluded.",
     "raf": "Safari callbacks measure browser scheduling and may include repeated game images; they do not prove unique game frames.",
     "other": "These records use another method; their relationship to displayed pacing is unverified.",
@@ -369,7 +376,7 @@ def render(summary: dict) -> str:
         lines.extend([f"## {PORTS.get(port, port)}", ""])
         versions = sorted({identity(r) for r in selected})
         lines.extend(["Measured versions: " + "; ".join(_cell(v) for v in versions) + ".", ""])
-        for group in ("trace", "hud", "raf", "other"):
+        for group in ("trace", "mst", "app", "hud", "raf", "other"):
             chosen = [r for r in selected if method_group(r) == group]
             if chosen:
                 lines.extend([METHOD_NOTES[group], ""])
