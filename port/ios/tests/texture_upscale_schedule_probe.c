@@ -7,7 +7,11 @@ static void gate(void)
 {
 	assert(texture_upscale_mode_parse(NULL) == TEXTURE_UPSCALE_MODE_OFF);
 	assert(texture_upscale_mode_parse("off") == TEXTURE_UPSCALE_MODE_OFF);
-	assert(texture_upscale_mode_parse("nonsense") == TEXTURE_UPSCALE_MODE_OFF);
+	/* what 0.5.x left in config.toml (the old boolean) and anything unrecognized is auto, as the guest's reader has it */
+	assert(texture_upscale_mode_parse("false") == TEXTURE_UPSCALE_MODE_AUTO);
+	assert(texture_upscale_mode_parse("0") == TEXTURE_UPSCALE_MODE_AUTO);
+	assert(texture_upscale_mode_parse("") == TEXTURE_UPSCALE_MODE_AUTO);
+	assert(texture_upscale_mode_parse("nonsense") == TEXTURE_UPSCALE_MODE_AUTO);
 	assert(texture_upscale_mode_parse("auto") == TEXTURE_UPSCALE_MODE_AUTO);
 	assert(texture_upscale_mode_parse("true") == TEXTURE_UPSCALE_MODE_AUTO);
 	assert(texture_upscale_mode_parse("force") == TEXTURE_UPSCALE_MODE_FORCE);

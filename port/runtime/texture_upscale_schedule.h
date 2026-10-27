@@ -32,21 +32,20 @@ static inline int texture_upscale_import_skippable(int menu_known, unsigned long
 /* debug.texture_upscale_generate */
 enum texture_upscale_mode
 {
-	TEXTURE_UPSCALE_MODE_OFF,     /* "off" (default): never */
+	TEXTURE_UPSCALE_MODE_OFF,     /* "off": never */
 	TEXTURE_UPSCALE_MODE_AUTO,    /* "auto": where the profile and the player's switch both say so */
 	TEXTURE_UPSCALE_MODE_FORCE    /* "force": whatever the profile says, for development */
 };
 
+/* Only "off" and "force" are read as such; anything else is "auto", as the guest's config reader treats a value that is
+   not a quoted string (0.5.x wrote the old boolean `false` into every config.toml, and the host reads the raw text). */
 static inline enum texture_upscale_mode texture_upscale_mode_parse(const char *text)
 {
-	if (!text)
+	if (!text || !strcmp(text, "off"))
 		return TEXTURE_UPSCALE_MODE_OFF;
-	/* (true and 1: what the development switch was before it had a mode) */
-	if (!strcmp(text, "auto") || !strcmp(text, "true") || !strcmp(text, "1"))
-		return TEXTURE_UPSCALE_MODE_AUTO;
 	if (!strcmp(text, "force"))
 		return TEXTURE_UPSCALE_MODE_FORCE;
-	return TEXTURE_UPSCALE_MODE_OFF;
+	return TEXTURE_UPSCALE_MODE_AUTO;
 }
 
 /* Rule 1: whether this device upscales at all. profile_on is display.upscaled_textures from the device's profile

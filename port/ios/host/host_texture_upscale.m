@@ -721,7 +721,7 @@ void host_texture_upscale_init(const char *root) {
         environment=getenv("HALO_UPSCALED_TEXTURES");
         if(environment)snprintf(player,sizeof(player),"%s",environment);else host_config_string("display.upscaled_textures",profile_upscales?"true":"false",player,sizeof(player));
         player_upscales=text_true(player);
-        if(upscale_mode==TEXTURE_UPSCALE_MODE_OFF)return;
+        if(upscale_mode==TEXTURE_UPSCALE_MODE_OFF){host_logf(HOST_LOG_INFO,"Upscale: off (debug.texture_upscale_generate is \"off\")");return;}
         int model=texture_upscale_model_available();
         if(!texture_upscale_gate(upscale_mode,profile_upscales,player_upscales,model)){
             host_logf(HOST_LOG_INFO,"Upscale: off on this device (profile %s, switch %s, Neural Engine %s)",profile_upscales?"on":"off",
