@@ -179,6 +179,7 @@ def native(target, scenario, out, config):
 
 # Drawable size in pixels -> window size in points. The Macs run the window at 2x, so the drawable is twice the window.
 TRACE_SETUP_WAIT_S = 3
+ENV_CONSOLE_PORTS = ('chupathingy', 'halo-og')
 DRAWABLES = {'1280x960': (640, 480), '2560x1920': (1280, 960)}
 
 
@@ -271,8 +272,17 @@ def _native(target, scenario, out, config):
             '[timer_audio]\nauto_download = false\n[discord]\napplication_id = \"\"\n'
             '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
             + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' and target['id'] == 'visr' else ''))
-    (data / 'config.toml').write_text(text)
-    (saves / 'config.toml').write_text(text)
+    # Chupathingy and Halo OG take the telnet console and window mode from the environment (strings in their release
+    # binaries, proven by the console lane); Chupathingy has no config.toml, and both get a minimal one without the
+    # keys their settings do not document.
+    environment_port = target['id'] in ENV_CONSOLE_PORTS
+    if environment_port:
+        text = ('[display]\nfullscreen = false\n[audio]\nenabled = false\n[network]\nonline = false\n[update]\nauto = false\n'
+                '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n'
+                + (f'test_input = "{window["test_input"]}"\n' if window['kind'] == 'bot' else ''))
+    if target['id'] != 'chupathingy':
+        (data / 'config.toml').write_text(text)
+        (saves / 'config.toml').write_text(text)
     level = level_map if target['id'] == 'visr' else 'levels\\' + level_map + '\\' + level_map
     (data / 'init.txt').write_text('game_difficulty_set normal\nmap_name ' + level + '\n')
     env = {**os.environ, 'HALO_DATA_ROOT': str(data), 'HALO_SAVE_ROOT': str(saves),
@@ -280,6 +290,10 @@ def _native(target, scenario, out, config):
            'MTL_HUD_LOG_ENABLED': '1'}
     if window['kind'] == 'bot' and target['id'] != 'visr':
         env['HALO_TEST_INPUT'] = window['test_input']
+    if environment_port:
+        (out / 'home').mkdir(exist_ok=True)
+        env.update({'HOME': str(out / 'home'), 'HALO_TELNET_CONSOLE': '1', 'HALO_TELNET_CONSOLE_PORT': str(port),
+                    'HALO_DISPLAY_MODE': 'windowed', 'HALO_WINDOW_SCALE': '1', 'HALO_UPDATE_AUTO': '0'})
     # Execute only the published bundle's declared host. Never read its code.
     stderr = (out / 'app.log').open('w')
     process = subprocess.Popen([str(binary), *target.get('args', [])], cwd=app.parent, env=env,
