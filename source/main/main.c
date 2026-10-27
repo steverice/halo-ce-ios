@@ -3617,6 +3617,77 @@ tests, map sharing, away players and aim assist before the network frame */
 PROFILE_SECTION(main_benchmark_suite_section, "benchmark_suite_update")
 PROFILE_SECTION(main_port_network_section, "port_network_update")
 
+/* port: a multiplayer game draws nothing before its third tick (main_loop,
+the original's guard). A network game (a client, in practice) also draws nothing, for at
+most VIEW_WAIT_TICKS after its map's load, while its local player's view
+would show the sky alone: a player with neither a unit nor a body to watch
+(its first person camera has no unit to stand in and stays at the world's
+origin, outside the level), or a camera outside the level's structure. A
+client's clock takes the host's time from its first update, so joining a
+game already going (a host that starts without waiting for its clients, a
+rejoin, the server's next map) starts it far past the third tick, while the
+host spawns its player some ticks later: the sky and the HUD's text showed
+until then, on every map. The window keeps the loading screen's last picture
+meanwhile, as the Xbox's clients, which started with the host, never drew
+such a frame. network_game_create_game_objects arms it for each map; the
+map's first drawn frame is logged with what it waited for */
+#define VIEW_WAIT_TICKS 150
+
+void platform_log(const char *format, ...);
+
+static struct
+{
+	boolean armed;
+	long first_time;  /* the game time at the first frame it decided, NONE before */
+} main_view_wait;
+
+void main_network_view_wait_arm(
+	void)
+{
+	main_view_wait.armed = TRUE;
+	main_view_wait.first_time = NONE;
+}
+
+static boolean main_network_view_waiting(
+	void)
+{
+	long time = game_time_get();
+	short local_player_index;
+	long unit_index = NONE;
+	short cluster_index = NONE;
+	boolean waiting = FALSE;
+
+	if (!main_view_wait.armed)
+		return FALSE;
+	if (main_view_wait.first_time == NONE)
+		main_view_wait.first_time = time;
+	for (local_player_index = local_player_get_next(NONE); local_player_index != NONE;
+		local_player_index = local_player_get_next(local_player_index))
+	{
+		long player_index = local_player_get_player_index(local_player_index);
+		struct player_datum *player;
+
+		if (player_index == NONE)
+			continue;
+		player = player_get(player_index);
+		unit_index = player->unit_index;
+		cluster_index = observer_get_camera(local_player_index)->location.cluster_index;
+		if ((player->unit_index == NONE && player->statistics.deaths == 0 &&
+			!players_coop_waiting_to_start(player_index)) || cluster_index == NONE)
+		{
+			waiting = TRUE;
+			break;
+		}
+	}
+	if (waiting && time - main_view_wait.first_time < VIEW_WAIT_TICKS)
+		return TRUE;
+	platform_log("game: the map's first drawn frame at tick %ld, after waiting %ld ticks (unit %s, camera %s the "
+		"structure%s)", time, time - main_view_wait.first_time, unit_index != NONE ? "present" : "none yet",
+		cluster_index != NONE ? "in" : "outside", waiting ? "; waited as long as it may" : "");
+	main_view_wait.armed = FALSE;
+	return FALSE;
+}
+
 void main_loop(
 	void)
 {
@@ -3885,7 +3956,7 @@ void main_loop(
 					/* frames between ticks too (render_interpolation.c) */
 					if (halo_interpolation_enabled())
 						render_frame = main_globals.main_menu_scenario_loaded || main_globals.halt_time_scale;
-					render_frame &= !game_engine_running() || game_time_get()>=3;
+					render_frame &= !game_engine_running() || (game_time_get()>=3 && !main_network_view_waiting()); /* port: and the player's view */
 
 					profile_scope_enter(main_non_deterministic_update_section)
 					collision_log_continue_period(1);

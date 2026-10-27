@@ -83,6 +83,8 @@ void halo_render_scene_end(void);
 and pipelines its list names are compiled now, under the loading screen
 (port/linux/src/d3d8_device.c) */
 void halo_shader_list_warm(char const *map_name);
+/* port: a network map's first frame waits for the local player's view (main.c) */
+void main_network_view_wait_arm(void);
 /* the loading screen, held over a campaign level's load and the compiles
 after it (port/linux/game/loading_screen.c): begun as the map changes,
 finished at the end of main_new_map; its progress for render_frame_pregame,

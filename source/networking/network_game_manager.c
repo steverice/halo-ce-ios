@@ -837,6 +837,9 @@ boolean network_game_create_game_objects(
 		warmup and the map name used to record misses. */
 		if (game->local_data.game_objects_loaded)
 			halo_shader_list_warm(options.map_name);
+		/* port: and its first frame waits for the local player's view (main.c) */
+		if (game->local_data.game_objects_loaded)
+			main_network_view_wait_arm();
 	}
 	else
 	{
