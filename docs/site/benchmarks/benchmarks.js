@@ -47,8 +47,8 @@ const entryKey = (entry) => [entry.port, entry.version, entry.build].join("@");
 // Extra per-build figures a chart spec lists under `query.details`; mirrors DETAILS in charts.py.
 const DETAILS = { p95_ms: { unit: " ms", text: "95th-percentile frame time", geometric: true, places: 1 },
   on_time_pct: { unit: "%", text: "of frames on time", geometric: false, places: 1 },
-  gpu_p50_ms: { unit: " ms", text: "median GPU frame time", geometric: true, places: 2 },
-  gpu_p90_ms: { unit: " ms", text: "90th-percentile GPU frame time", geometric: true, places: 2 } };
+  gpu_p50_ms: { unit: " ms", text: "median GPU time per rendered frame", geometric: true, places: 2 },
+  gpu_p90_ms: { unit: " ms", text: "90th-percentile GPU time per rendered frame", geometric: true, places: 2 } };
 
 function suiteValue(group, query, suite) {
   const box = group.filter((row) => String(row.reference_box).toLowerCase() === "true");
@@ -162,7 +162,7 @@ function detailText(entry, columns) {
   }
   if (parts.length) return parts.join(", ");
   const what = columns.length === 1 && columns[0] === "on_time_pct" ? "on-time share"
-    : columns.every((c) => c.startsWith("gpu_")) ? "GPU frame times" : "frame times";
+    : columns.every((c) => c.startsWith("gpu_")) ? "GPU times" : "frame times";
   return `no ${what} reported`;
 }
 

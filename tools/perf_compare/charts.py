@@ -84,8 +84,8 @@ def entry_key(entry: dict) -> str:
 # column -> (unit, description, how the suite's windows combine). Frame times combine as a geometric mean, shares as a mean.
 DETAILS = {"p95_ms": (" ms", "95th-percentile frame time", "geometric", 1),
            "on_time_pct": ("%", "of frames on time", "arithmetic", 1),
-           "gpu_p50_ms": (" ms", "median GPU frame time", "geometric", 2),
-           "gpu_p90_ms": (" ms", "90th-percentile GPU frame time", "geometric", 2)}
+           "gpu_p50_ms": (" ms", "median GPU time per rendered frame", "geometric", 2),
+           "gpu_p90_ms": (" ms", "90th-percentile GPU time per rendered frame", "geometric", 2)}
 
 
 def _details(rows: list[dict], query: dict) -> dict:
@@ -226,7 +226,7 @@ def _detail_text(entry: dict, columns: list[str]) -> str:
             parts.append(f"{text} ms {description}" if unit == " ms" else f"{text}% {description}")
     if parts:
         return ", ".join(parts)
-    what = ("on-time share" if columns == ["on_time_pct"] else "GPU frame times"
+    what = ("on-time share" if columns == ["on_time_pct"] else "GPU times"
             if all(column.startswith("gpu_") for column in columns) else "frame times")
     return f"no {what} reported"
 

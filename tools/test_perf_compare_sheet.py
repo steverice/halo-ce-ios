@@ -535,9 +535,9 @@ def test_uncapped_charts_draw_the_average_alone_and_list_gpu_frame_time_under_th
     visr = next(e for e in built["entries"] if e["port"] == "visr" and e["version"] == "0.5.1")
     assert visr["value"]["low"] is None
     note = charts.caption(built, {charts.entry_key(visr)}, query["details"])
-    assert "0.45 ms median GPU frame time, 1.2 ms 90th-percentile GPU frame time" in note
+    assert "0.45 ms median GPU time per rendered frame, 1.2 ms 90th-percentile GPU time per rendered frame" in note
     other = next(e for e in built["entries"] if e["port"] == "opence-macos")
-    assert "no GPU frame times reported" in charts.caption(built, {charts.entry_key(other)}, query["details"])
+    assert "no GPU times reported" in charts.caption(built, {charts.entry_key(other)}, query["details"])
     spec = {**QUERY_SPEC, "query": query} if "QUERY_SPEC" in globals() else None
 
 

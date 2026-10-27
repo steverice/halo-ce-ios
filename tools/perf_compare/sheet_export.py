@@ -103,8 +103,8 @@ DESCRIPTIONS = {
     "thermal": "System thermal state at the start and end of the runs.",
     "status": "ok, incomplete (fewer than three rounds), unavailable (could not run), not_supported (the port lacks the feature the suite needs, for example split screen for co-op), or rejected (one row per rejected attempt, with its reason in notes).",
     "release_url": "The build's release page on the port's own site, or the hosted page for a web build. Never a download link.",
-    "gpu_p50_ms": "Median GPU time of a presented frame (metalperftrace On-GPU Time), mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
-    "gpu_p90_ms": "90th-percentile GPU time of a presented frame, mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
+    "gpu_p50_ms": "Median GPU time per rendered frame (metalperftrace On-GPU Time, split by command buffers across the frames a shown interval holds), mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
+    "gpu_p90_ms": "90th-percentile GPU time per rendered frame, mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
     "notes": "Why a set is unavailable or incomplete.",
 }
 

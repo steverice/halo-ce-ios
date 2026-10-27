@@ -304,15 +304,28 @@ def test_uncapped_rows_disclose_unverified_above_refresh_meaning():
     assert '128-pixel shadow maps' in output
 
 
-def test_gpu_times_come_from_each_presented_frame_and_leave_traces_without_them_empty():
+def test_gpu_time_is_split_across_the_frames_rendered_for_each_shown_frame():
     from perf_compare.results import gpu_metrics, parse_metal_trace_gpu
-    frames = [{'Start Mach Continuous Time': start, 'Duration MCT Seconds': 0.016,
-               'In-Flight Drawable Info': {'On-GPU Time (seconds)': gpu}}
-              for start, gpu in ((10, 0.001), (20, 0.002), (30, 0.003), (40, 0.004), (50, 0.010))]
+
+    def frame(start, gpu, buffers):
+        return {'Start Mach Continuous Time': start, 'Duration MCT Seconds': 0.001,
+                'In-Flight Drawable Info': {'On-GPU Time (seconds)': gpu, 'Command Buffer Count': buffers}}
+    # Three shown frames hold 1, 1 and 4 rendered frames of 0.5 ms each; the third shows all four.
+    frames = [frame(10, 0.0005, 1), frame(20, 0.0005, 1), frame(30, 0.0020, 4)]
     trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': frames}]}, {'PID': 2, 'Layers': []}]
     record = {'pid': 1, 'traces': [trace, trace]}
-    assert parse_metal_trace_gpu(record) == pytest.approx([1, 2, 3, 4, 10])
-    assert gpu_metrics(parse_metal_trace_gpu(record)) == pytest.approx({'gpu_p50_ms': 3, 'gpu_p90_ms': 4 + 0.6 * 6})
+    assert parse_metal_trace_gpu(record) == pytest.approx([(0.5, 1), (0.5, 1), (0.5, 4)])
+    assert gpu_metrics(parse_metal_trace_gpu(record)) == pytest.approx({'gpu_p50_ms': 0.5, 'gpu_p90_ms': 0.5})
+    # Base is the usual count: a port with two buffers per frame is not counted as rendering twice.
+    pairs = [frame(10, 0.002, 2), frame(20, 0.002, 2), frame(30, 0.004, 4)]
+    trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': pairs}]}]
+    assert parse_metal_trace_gpu({'pid': 1, 'traces': [trace]}) == pytest.approx([(2, 1), (2, 1), (2, 2)])
+    # Expensive frames still show in the percentile.
+    mixed = [frame(i, 0.001, 1) for i in range(9)] + [frame(100, 0.010, 1)]
+    trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': mixed}]}]
+    result = gpu_metrics(parse_metal_trace_gpu({'pid': 1, 'traces': [trace]}))
+    assert result['gpu_p50_ms'] == pytest.approx(1) and result['gpu_p90_ms'] == pytest.approx(1)
+    assert gpu_metrics([(1, 1)] * 8 + [(10, 2)])['gpu_p90_ms'] == pytest.approx(10)
     bare = {'pid': 1, 'traces': [[{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': [
         {'Start Mach Continuous Time': 1, 'Duration MCT Seconds': 0.016}]}]}]]}
     assert parse_metal_trace_gpu(bare) == [] and gpu_metrics([]) == {}

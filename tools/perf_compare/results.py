@@ -72,10 +72,15 @@ def parse_metal_trace(record: dict, resolution=None) -> list[float]:
     return [frames[start] for start in sorted(frames)]
 
 
-def parse_metal_trace_gpu(record: dict) -> list[float]:
-    """The GPU time of each presented frame in milliseconds (`On-GPU Time`), in the order of the on-glass timeline.
+def parse_metal_trace_gpu(record: dict) -> list[tuple[float, float]]:
+    """GPU time per rendered frame as (milliseconds, weight) samples.
 
-    Frames whose entry lacks a GPU time are skipped; an empty list means the trace has none.
+    A game that renders several frames for each frame it shows has all their GPU time added to the next shown frame.
+    Each shown interval's `On-GPU Time` is therefore split by its command buffers: the usual count per interval in
+    the trace (one per rendered frame) is the base, an interval with `n` command buffers holds `n / base` rendered
+    frames, and each of them costs the interval's GPU time divided by that number. The weight is the number of
+    rendered frames. An interval with no command-buffer count counts as one frame. Frames without a GPU time are
+    skipped; an empty list means the trace has none.
     """
     frames = {}
     for trace in record['traces']:
@@ -84,22 +89,36 @@ def parse_metal_trace_gpu(record: dict) -> list[float]:
                 continue
             for layer in process['Layers']:
                 for frame in layer.get('On-Glass Drawable Timeline', []):
-                    gpu = (frame.get('In-Flight Drawable Info') or {}).get('On-GPU Time (seconds)')
+                    info = frame.get('In-Flight Drawable Info') or {}
+                    gpu = info.get('On-GPU Time (seconds)')
                     if gpu is not None and math.isfinite(gpu) and gpu >= 0:
-                        frames[frame['Start Mach Continuous Time']] = gpu * 1000
-    return [frames[start] for start in sorted(frames)]
+                        frames[frame['Start Mach Continuous Time']] = (gpu * 1000, info.get('Command Buffer Count') or 0)
+    counts = [count for _, count in frames.values() if count]
+    base = max(set(counts), key=counts.count) if counts else 1
+    samples = []
+    for start in sorted(frames):
+        gpu, count = frames[start]
+        rendered = count / base if count else 1.0
+        if rendered > 0:
+            samples.append((gpu / rendered, rendered))
+    return samples
 
 
-def gpu_metrics(values: list[float]) -> dict:
-    """Median and 90th-percentile GPU frame time, or nothing when no frame has one."""
-    if not values:
+def gpu_metrics(samples: list[tuple[float, float]]) -> dict:
+    """Median and 90th-percentile GPU time per rendered frame, each rendered frame counted once."""
+    if not samples:
         return {}
-    ordered = sorted(values)
+    ordered = sorted(samples)
+    total = math.fsum(weight for _, weight in ordered)
 
     def percentile(fraction):
-        index = (len(ordered) - 1) * fraction
-        lower, upper = math.floor(index), math.ceil(index)
-        return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
+        target = total * fraction
+        seen = 0.0
+        for value, weight in ordered:
+            seen += weight
+            if seen >= target:
+                return value
+        return ordered[-1][0]
 
     return {"gpu_p50_ms": percentile(0.5), "gpu_p90_ms": percentile(0.9)}
 

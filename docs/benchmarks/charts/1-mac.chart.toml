@@ -1,6 +1,6 @@
 order = 10
 heading = "Mac"
-paragraph = "Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time of a frame."
+paragraph = "Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame."
 empty = "No Mac results yet."
 box = "M6 Mac mini"
 series_labels = ["Average fps"]

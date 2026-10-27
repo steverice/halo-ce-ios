@@ -12,7 +12,7 @@ Campaign suite, newest build of each port.
 
 ### Mac
 
-Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time of a frame.
+Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time per rendered frame.
 
 ```mermaid
 ---
@@ -33,7 +33,7 @@ xychart-beta horizontal
 
 🟦 Average fps
 
-M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 0.73 ms median GPU frame time, 1.78 ms 90th-percentile GPU frame time); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26; 0.55 ms median GPU frame time, 0.81 ms 90th-percentile GPU frame time); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26; 0.81 ms median GPU frame time, 1.12 ms 90th-percentile GPU frame time).
+M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 0.48 ms median GPU time per rendered frame, 0.73 ms 90th-percentile GPU time per rendered frame); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26; 0.55 ms median GPU time per rendered frame, 0.75 ms 90th-percentile GPU time per rendered frame); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26; 0.81 ms median GPU time per rendered frame, 1.11 ms 90th-percentile GPU time per rendered frame).
 
 Not measured: [OpenCE web build-280](https://halocombatevolved.com/) (Only measured with the frame cap on or with other settings.); [Chupathingy v0.8.0g](https://github.com/ChupathingyCE/chupathingyce/releases/tag/v0.8.0g) (The app has no frame-time readout we could capture.); [Halo OG v0.5.1](https://github.com/pfista/halo-og/releases/tag/v0.5.1) (The app has no frame-time readout we could capture.).
 
@@ -114,7 +114,7 @@ Apple TV and Vision Pro charts use runs presented at the device's display rate o
 
 ### Uncapped charts
 
-Uncapped charts show average fps and GPU frame time, not 1% low rates. When a game renders faster than the display refreshes, macOS hands drawables to the window server in bursts, so the on-glass intervals record when the window server latches drawables rather than the frames a player sees; VISR's intervals alternate between about 0 ms and about 5 ms. Percentiles of those intervals, the 1% low included, describe that latching. The average counts frames shown per second and is not affected. GPU frame time is the GPU duration of each presented frame from the same Metal trace, reported as the median and the 90th percentile. Capped and device charts keep the 1% low and add the share of frames that arrive on time. The spreadsheet keeps every column.
+Uncapped charts show average fps and GPU time per rendered frame, not 1% low rates. When a game renders faster than the display refreshes, macOS hands drawables to the window server in bursts, so the on-glass intervals record when the window server latches drawables rather than the frames a player sees; VISR's intervals alternate between about 0 ms and about 5 ms. Percentiles of those intervals, the 1% low included, describe that latching. The average counts frames shown per second and is not affected. GPU time per rendered frame comes from the same Metal trace. A game that renders several frames for each frame it shows has all of their GPU time added to the next shown frame, so each shown interval's GPU time is split by its command buffers, one per rendered frame, and reported as the median and the 90th percentile over rendered frames. Capped and device charts keep the 1% low and add the share of frames that arrive on time. The spreadsheet keeps every column.
 
 ### Suites
 
