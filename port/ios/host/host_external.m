@@ -68,6 +68,7 @@ static int candidate_count, preferred_index, requested_index = -1;
 static struct host_external_session session_state;
 static int drawable_cap;
 static CFTimeInterval deadline, accessory_available_since;
+static int mode_refusals;
 static CGSize mode_accepted;
 static int mode_reissued, mode_reasserts;
 static int first_low=-1, accepting_low;
@@ -100,6 +101,23 @@ static void external_log_geometry(const char *when) {
         external_metal_view.frame.size.width,external_metal_view.frame.size.height,
         external_metal_view.frame.origin.x,external_metal_view.frame.origin.y,
         external_drawable.width,external_drawable.height);
+}
+/* What is actually on screen, read back from UIKit, not what VISR asked for: the window's visibility and scene, the
+   scene's activation state, whether the system still mirrors the main screen onto this one, and whether the Metal
+   view is in that window. */
+static CFTimeInterval verify_at;
+static int verify_left;
+static void external_log_verified(const char *when) {
+    UIWindow *window=external_window;
+    UIWindowScene *scene=window.windowScene;
+    const char *state=!scene?"none":scene.activationState==UISceneActivationStateForegroundActive?"foreground-active":
+        scene.activationState==UISceneActivationStateForegroundInactive?"foreground-inactive":
+        scene.activationState==UISceneActivationStateBackground?"background":"unattached";
+    id mirrored=[UIScreen.mainScreen valueForKey:@"mirroredScreen"];
+    host_logf(HOST_LOG_INFO,"external display: verified %s: window %s (hidden %d, key %d, level %.0f), scene screen is the connected display %d, scene %s, metal view in the window %d (hidden %d, alpha %.2f), the main screen is mirrored to a screen %d, %lu screens",
+        when,window?"present":"missing",window.hidden,window.keyWindow,window.windowLevel,
+        scene.screen==candidate_screen,state,external_metal_view.window==window,external_metal_view.hidden,
+        external_metal_view.alpha,mirrored!=nil,(unsigned long)UIScreen.screens.count);
 }
 @interface VISRExternalRoot : UIView
 @end
@@ -182,7 +200,7 @@ static void begin_modes(void) {
         host_logf(HOST_LOG_INFO,"external display: offered %dx%d, pixel aspect %.4f",
             candidates[i].width,candidates[i].height,candidates[i].pixel_aspect);
     }
-    first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_reasserts=0;
+    first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_reasserts=0;mode_refusals=0;
     requested_index=-1;
     host_external_session_connect(&session_state,(uintptr_t)(__bridge void *)external_window.windowScene);
     pthread_mutex_lock(&snapshot_lock);
@@ -528,6 +546,10 @@ void host_external_poll(void) {
     }
 #endif
     label_layout();
+    if(verify_left>0 && companion_on && CACurrentMediaTime()>=verify_at) {
+        external_log_verified(verify_left==2?"2 s after the move":"6 s after the move");
+        verify_at=CACurrentMediaTime()+4;verify_left--;
+    }
     /* The system can put the display back in its preferred mode just after the scene connects, after the
        policy has already accepted the mode it found: choose again, at most twice per connection. */
     if(candidate_screen && !session_state.negotiating && mode_accepted.width>0 &&
@@ -597,6 +619,14 @@ void host_external_poll(void) {
     host_logf(HOST_LOG_WARN,"external display: refused %dx%d; current %.0fx%.0f",candidates[requested_index].width,
         candidates[requested_index].height,current.width,current.height);
     candidates[requested_index].refused=1;requested_index=-1;
+    /* A display that ignores mode changes (an EDID-fixed monitor) refuses every candidate, a second each: after two
+       refusals with the display still in the mode it connected in, keep that mode with a bounded drawable. */
+    if(++mode_refusals>=2 && !forced_width && !CGSizeEqualToSize(current,CGSizeZero) &&
+        fabs(candidate_screen.currentMode.pixelAspectRatio-1.0)<=0.001) {
+        host_logf(HOST_LOG_INFO,"external display: %d modes refused; keeping the display's own %.0fx%.0f",mode_refusals,
+            current.width,current.height);
+        mode_accept();
+    }
 #endif
 }
 void host_external_commit(int allow_pause) {
@@ -645,8 +675,10 @@ void host_external_commit(int allow_pause) {
             playing_label.text=[NSString stringWithFormat:@"Playing on %@",port_name()];
             playing_label.hidden=NO;last_touch=CACurrentMediaTime();label_layout();
             external_fit(external_window.rootViewController.view);
-            external_log_geometry("the game moved to the display");
-            host_logf(HOST_LOG_INFO,"external display: the game moved to the display (drawable %dx%d)",output_width,output_height);
+            external_log_geometry("the renderer was moved to the display");
+            external_log_verified("at the move");
+            verify_at=CACurrentMediaTime()+2;verify_left=2;
+            host_logf(HOST_LOG_INFO,"external display: the renderer presents to the display's layer (drawable %dx%d); the verified lines say what is on screen",output_width,output_height);
         } else if(!companion_on) {
             /* the display went away before the game moved to it: the renderer never left this device */
             external_window.hidden=YES;
