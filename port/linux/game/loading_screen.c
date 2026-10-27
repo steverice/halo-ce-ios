@@ -130,8 +130,8 @@ enum
 /* the screen is dark at the bar's start (the picture and the light band follow sin(pi t)): while the level's textures
    are upscaled first, the bar stands from UPSCALE_FIRST to UPSCALE_SHARE, so the blue picture is up, and the read and
    the compiles then fill the rest of the way */
-#define UPSCALE_FIRST 0.25f
-#define UPSCALE_SHARE 0.5f
+#define UPSCALE_FIRST 0.12f
+#define UPSCALE_SHARE 0.8f
 /* the displayed progress eases toward its target with this time constant */
 #define EASE_SECONDS 0.15f
 /* ... and toward the end, over the tail, with this one */

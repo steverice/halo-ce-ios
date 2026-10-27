@@ -2482,9 +2482,57 @@ static void progress_bar_make_stuff_ready(
 	return;
 }
 
+/* port: the loading screen's picture when the player's data has none (game data imported before the importers took it
+from the disc, port/runtime/loading_picture.h): dark grain with "LOADING" across it, as the original's gray picture is,
+so the screen still lights blue and reads as the loading screen. 320 by 240, one gray level per pixel, rows from the top. */
+static void progress_bar_fallback_picture(
+	unsigned long *pixels)
+{
+	/* 5 by 7 letters: L O A D I N G */
+	static const unsigned char glyphs[7][7]=
+	{
+		{0x10,0x10,0x10,0x10,0x10,0x10,0x1f},
+		{0x0e,0x11,0x11,0x11,0x11,0x11,0x0e},
+		{0x0e,0x11,0x11,0x1f,0x11,0x11,0x11},
+		{0x1e,0x11,0x11,0x11,0x11,0x11,0x1e},
+		{0x0e,0x04,0x04,0x04,0x04,0x04,0x0e},
+		{0x11,0x19,0x15,0x13,0x11,0x11,0x11},
+		{0x0e,0x11,0x10,0x17,0x11,0x11,0x0e}
+	};
+	unsigned long seed= 12345;
+	long x, y;
+
+	for (y= 0; y<240; y++)
+	{
+		for (x= 0; x<320; x++)
+		{
+			unsigned long gray;
+			long letter= (x - 37)/36;
+			long column= ((x - 37)%36)/6;
+			long row= (y - 99)/6;
+
+			seed= seed*1664525UL + 1013904223UL;
+			gray= 12 + ((seed>>24)&31);
+			if (((seed>>16)&255)>238)
+			{
+				gray+= 90;
+			}
+			if (x>=37 && x<37 + 7*36 - 6 && y>=99 && y<99 + 42 && ((x - 37)%36)<30 &&
+				(glyphs[letter][row]>>(4 - column))&1)
+			{
+				gray= 255;
+			}
+			pixels[y*320 + x]= ((gray<<9) | (gray & ~1UL))<<7 | gray>>2;
+		}
+	}
+
+	return;
+}
+
 static void progress_bar_load_loading_texture(
 	IDirect3DTexture8 **texture)
 {
+	boolean picture_loaded= FALSE;
 	D3DSURFACE_DESC surface_description;
 	char map_directory[40];
 	char source_path[40];
@@ -2513,8 +2561,13 @@ static void progress_bar_load_loading_texture(
 		{
 			image.pixels= pixels;
 			tgaLoadImageData(file, &image);
+			picture_loaded= TRUE;
 		}
 		fclose(file);
+	}
+	if (!picture_loaded)
+	{
+		progress_bar_fallback_picture(pixels);
 	}
 	IDirect3DTexture8_UnlockRect(*texture, 0);
 
