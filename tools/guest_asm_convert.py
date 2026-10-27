@@ -16,7 +16,12 @@ Usage: guest_asm_convert.py input.s output.s
 import re
 import sys
 
-IDENT = re.compile(r'"[^"]*"|[A-Za-z_.$][\w.$]*')
+# a quoted name may hold escaped quotes (\"), which must not end it
+IDENT = re.compile(r'"(?:[^"\\]|\\.)*"|[A-Za-z_.$][\w.$]*')
+# directives whose operands are string data, never symbols: renaming in them
+# rewrote the data (an underscore after an escaped quote was taken for a
+# symbol's Darwin prefix and dropped, shifting every later byte)
+STRING_DIRECTIVES = {".ascii", ".asciz", ".string"}
 
 DROP_DIRECTIVES = {
     ".subsections_via_symbols", ".build_version", ".watchos_version_min",
@@ -217,6 +222,9 @@ class Converter:
             return
         if op == ".align":
             self.emit(f"\t.p2align {args}")
+            return
+        if op in STRING_DIRECTIVES:
+            self.emit(f"\t{op} {args}")
             return
         if op.startswith("."):
             self.emit(f"\t{op} {self.operands(args)}" if args else f"\t{op}")

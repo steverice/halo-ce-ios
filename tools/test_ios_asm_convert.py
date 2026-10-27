@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from guest_asm_convert import ConvertError  # noqa: E402
+from guest_asm_convert import Converter, ConvertError  # noqa: E402
 from ios_asm_convert import lift  # noqa: E402
 
 
@@ -57,6 +57,24 @@ def test_symbols_named_like_native_registers_pass_through():
 def test_frame_record_and_arena_reads_are_allowed():
     assert lifted("ldp x29, x30, [sp], #16") == ["ldp x29, x30, [sp], #16"]
     assert lifted("mov x8, x27") == ["mov x8, x27"]
+
+
+def converted(*lines):
+    return [line.strip() for line in Converter(list(lines)).run().splitlines() if line.strip()]
+
+
+def test_string_data_is_never_renamed():
+    # the loading screen's tone: an escaped quote, then an underscore the old
+    # renaming took for a symbol's Darwin prefix and dropped
+    data = r'.ascii "\"DC\004_\370\"_x"'
+    assert converted(data) == [data]
+    assert converted('.asciz "_leading"') == ['.asciz "_leading"']
+    assert converted(".string \"a_b\"") == [".string \"a_b\""]
+
+
+def test_quoted_names_with_escaped_quotes_stay_whole():
+    assert converted('.quad "_a\\"b"') == ['.quad "a\\"b"']
+    assert converted(".quad _symbol") == [".quad symbol"]
 
 
 if __name__ == "__main__":
