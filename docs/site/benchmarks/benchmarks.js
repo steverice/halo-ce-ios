@@ -45,8 +45,10 @@ const number = (value) => value.toFixed(1).replace(/\.0$/, "");
 const entryKey = (entry) => [entry.port, entry.version, entry.build].join("@");
 
 // Extra per-build figures a chart spec lists under `query.details`; mirrors DETAILS in charts.py.
-const DETAILS = { p95_ms: { unit: " ms", text: "95th-percentile frame time", geometric: true },
-  on_time_pct: { unit: "%", text: "of frames on time", geometric: false } };
+const DETAILS = { p95_ms: { unit: " ms", text: "95th-percentile frame time", geometric: true, places: 1 },
+  on_time_pct: { unit: "%", text: "of frames on time", geometric: false, places: 1 },
+  gpu_p50_ms: { unit: " ms", text: "median GPU frame time", geometric: true, places: 2 },
+  gpu_p90_ms: { unit: " ms", text: "90th-percentile GPU frame time", geometric: true, places: 2 } };
 
 function suiteValue(group, query, suite) {
   const box = group.filter((row) => String(row.reference_box).toLowerCase() === "true");
@@ -70,7 +72,7 @@ function suiteValue(group, query, suite) {
     details[column] = values.some((v) => v === "") ? null
       : (DETAILS[column].geometric ? geometricMean : mean)(values.map(parseFloat));
   }
-  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), details, low: rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
+  return [{ avg: geometricMean(rows.map((r) => parseFloat(r.fps_avg))), details, low: query.metrics.includes("fps_1pct_low") && rows.every((r) => r.fps_1pct_low !== "") ? geometricMean(rows.map((r) => parseFloat(r.fps_1pct_low))) : null, rows }, "", ""];
 }
 
 function model(rows, query, suite) {
@@ -152,9 +154,16 @@ function detailText(entry, columns) {
   const parts = [];
   for (const column of columns) {
     const value = (entry.value.details || {})[column];
-    if (value !== null && value !== undefined) parts.push(`${number(value)}${DETAILS[column].unit === "%" ? "%" : " ms"} ${DETAILS[column].text}`);
+    if (value !== null && value !== undefined) {
+      let text = value.toFixed(DETAILS[column].places);
+      if (text.includes(".")) text = text.replace(/\.?0+$/, "");
+      parts.push(`${text}${DETAILS[column].unit === "%" ? "%" : " ms"} ${DETAILS[column].text}`);
+    }
   }
-  return parts.length ? parts.join(", ") : "no frame times reported";
+  if (parts.length) return parts.join(", ");
+  const what = columns.length === 1 && columns[0] === "on_time_pct" ? "on-time share"
+    : columns.every((c) => c.startsWith("gpu_")) ? "GPU frame times" : "frame times";
+  return `no ${what} reported`;
 }
 
 // The caption as [text, url] pieces; a piece with a url is a build's label, linked to its release page.

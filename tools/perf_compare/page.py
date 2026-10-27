@@ -97,6 +97,21 @@ def device_section(rows: list[dict]) -> list[str]:
     return lines
 
 
+def uncapped_section(rows: list[dict]) -> list[str]:
+    """Why uncapped charts show average fps and GPU frame time, shown when the data has uncapped rows."""
+    if not any(row["frame_mode"] == "uncapped" for row in _ok(rows)):
+        return []
+    return ["### Uncapped charts", "",
+            "Uncapped charts show average fps and GPU frame time, not 1% low rates. When a game renders faster than the "
+            "display refreshes, macOS hands drawables to the window server in bursts, so the on-glass intervals record when "
+            "the window server latches drawables rather than the frames a player sees; VISR's intervals alternate between "
+            "about 0 ms and about 5 ms. Percentiles of those intervals, the 1% low included, describe that latching. "
+            "The average counts frames shown per second and is not affected. GPU frame "
+            "time is the GPU duration of each presented frame from the same Metal trace, reported as the median and the 90th "
+            "percentile. Capped and device charts keep the 1% low and add the share of frames that arrive on time. "
+            "The spreadsheet keeps every column.", ""]
+
+
 def suite_section(rows: list[dict]) -> list[str]:
     """Per-suite definitions, the overall rule and the rejected-attempt count, with counts from the data."""
     rejected = [row for row in rows if row.get("status") == "rejected"]
@@ -157,6 +172,7 @@ def methodology(summary: dict, rows: list[dict]) -> list[str]:
              "column.", ""]
     lines.extend(timing_section(rows))
     lines.extend(device_section(rows))
+    lines.extend(uncapped_section(rows))
     lines.extend(suite_section(rows))
     lines.extend(_notes(records))
     groups = [group for group in ("trace", "mst", "app", "hud", "raf", "other")

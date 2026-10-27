@@ -512,3 +512,41 @@ def test_a_builds_label_links_to_its_release_in_the_caption_and_the_builds_list(
     assert charts.caption(built) == "".join(text for text, _ in charts.caption_parts(built))
     html = site_page.section(spec, rows, "campaign", charts.load_reasons())
     assert 'href="https://github.com/steverice/visr/releases/tag/visr-v0.6.0"' in html
+
+
+def test_gpu_columns_average_the_rounds_and_stay_empty_unless_every_round_has_them():
+    rec = box_record()
+    for index, item in enumerate(rec["runs"]):
+        item["metrics"].update(gpu_p50_ms=0.4 + 0.1 * (index % 3), gpu_p90_ms=1.0)
+    [first, *_] = [r for r in sheet_export.rows(summary(rec)) if r["window"] == "a10"]
+    assert (first["gpu_p50_ms"], first["gpu_p90_ms"]) == ("0.50", "1.00")
+    del rec["runs"][0]["metrics"]["gpu_p50_ms"]
+    [first, *_] = [r for r in sheet_export.rows(summary(rec)) if r["window"] == "a10"]
+    assert first["gpu_p50_ms"] == "" and first["gpu_p90_ms"] == "1.00"
+
+
+def test_uncapped_charts_draw_the_average_alone_and_list_gpu_frame_time_under_the_chart():
+    rows = snapshot_rows()
+    for row in rows:
+        if row["port"] == "visr" and row["version"] == "0.5.1":
+            row.update(gpu_p50_ms="0.45", gpu_p90_ms="1.2")
+    query = {**QUERY, "metrics": ["fps_avg"], "details": ["gpu_p50_ms", "gpu_p90_ms"]}
+    built = charts.model(rows, query, "campaign")
+    visr = next(e for e in built["entries"] if e["port"] == "visr" and e["version"] == "0.5.1")
+    assert visr["value"]["low"] is None
+    note = charts.caption(built, {charts.entry_key(visr)}, query["details"])
+    assert "0.45 ms median GPU frame time, 1.2 ms 90th-percentile GPU frame time" in note
+    other = next(e for e in built["entries"] if e["port"] == "opence-macos")
+    assert "no GPU frame times reported" in charts.caption(built, {charts.entry_key(other)}, query["details"])
+    spec = {**QUERY_SPEC, "query": query} if "QUERY_SPEC" in globals() else None
+
+
+def test_capped_charts_keep_the_one_percent_low_and_list_on_time_share():
+    query = {**QUERY, "details": ["on_time_pct"]}
+    rows = snapshot_rows()
+    for row in rows:
+        row.update(on_time_pct="93.26")
+    built = charts.model(rows, query, "campaign")
+    entry = built["entries"][0]
+    assert entry["value"]["low"] is not None
+    assert "93.3% of frames on time" in charts.caption(built, {charts.entry_key(entry)}, ["on_time_pct"])

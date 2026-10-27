@@ -82,8 +82,10 @@ def entry_key(entry: dict) -> str:
 
 # Extra per-build figures a chart spec can list under `query.details`, shown in the caption beside the fps bars:
 # column -> (unit, description, how the suite's windows combine). Frame times combine as a geometric mean, shares as a mean.
-DETAILS = {"p95_ms": (" ms", "95th-percentile frame time", "geometric"),
-           "on_time_pct": ("%", "of frames on time", "arithmetic")}
+DETAILS = {"p95_ms": (" ms", "95th-percentile frame time", "geometric", 1),
+           "on_time_pct": ("%", "of frames on time", "arithmetic", 1),
+           "gpu_p50_ms": (" ms", "median GPU frame time", "geometric", 2),
+           "gpu_p90_ms": (" ms", "90th-percentile GPU frame time", "geometric", 2)}
 
 
 def _details(rows: list[dict], query: dict) -> dict:
@@ -122,7 +124,7 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
     rows = list(usable.values())
     return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),
             "low": (statistics.geometric_mean(float(r["fps_1pct_low"]) for r in rows)
-                    if all(r.get("fps_1pct_low", "") != "" for r in rows) else None),
+                    if "fps_1pct_low" in query["metrics"] and all(r.get("fps_1pct_low", "") != "" for r in rows) else None),
             "details": _details(rows, query), "rows": rows}, "", ""
 
 
@@ -218,9 +220,15 @@ def _detail_text(entry: dict, columns: list[str]) -> str:
     for column in columns:
         value = (entry["value"].get("details") or {}).get(column)
         if value is not None:
-            unit, description, _ = DETAILS[column]
-            parts.append(f"{_number(value)} ms {description}" if unit == " ms" else f"{_number(value)}% {description}")
-    return ", ".join(parts) if parts else "no frame times reported"
+            unit, description, _, places = DETAILS[column]
+            text = f"{value:.{places}f}"
+            text = text.rstrip("0").rstrip(".") if "." in text else text
+            parts.append(f"{text} ms {description}" if unit == " ms" else f"{text}% {description}")
+    if parts:
+        return ", ".join(parts)
+    what = ("on-time share" if columns == ["on_time_pct"] else "GPU frame times"
+            if all(column.startswith("gpu_") for column in columns) else "frame times")
+    return f"no {what} reported"
 
 
 def caption_parts(built: dict, selected: set[str] | None = None, columns: list[str] | None = None) -> list[tuple[str, str]]:

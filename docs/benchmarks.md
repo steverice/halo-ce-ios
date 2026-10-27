@@ -12,7 +12,7 @@ Campaign suite, newest build of each port.
 
 ### Mac
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time of a frame.
 
 ```mermaid
 ---
@@ -29,24 +29,23 @@ xychart-beta horizontal
     x-axis "Port and version" ["VISR 0.6.0", "OpenCE v1.0.2", "CoreCE 0.3.0"]
     y-axis "Frames per second" 0 --> 800
     bar [705, 620, 309.9]
-    bar [217.5, 249.8, 185.6]
 ```
 
-🟦 Average fps 🟨 1% low fps
+🟦 Average fps
 
-M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26).
+M6 Mac mini. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; 0.73 ms median GPU frame time, 1.78 ms 90th-percentile GPU frame time); [OpenCE-macOS v1.0.2](https://github.com/channelramble/OpenCE-macOS/releases/tag/v1.0.2) (build 2, measured 2026-10-26; 0.55 ms median GPU frame time, 0.81 ms 90th-percentile GPU frame time); [CoreCE 0.3.0](https://github.com/mastercheese-dev/CoreCE/releases/tag/build-44) (build 44, measured 2026-10-26; 0.81 ms median GPU frame time, 1.12 ms 90th-percentile GPU frame time).
 
 Not measured: [OpenCE web build-280](https://halocombatevolved.com/) (Only measured with the frame cap on or with other settings.); [Chupathingy v0.8.0g](https://github.com/ChupathingyCE/chupathingyce/releases/tag/v0.8.0g) (The app has no frame-time readout we could capture.); [Halo OG v0.5.1](https://github.com/pfista/halo-og/releases/tag/v0.5.1) (The app has no frame-time readout we could capture.).
 
 ### iPhone and iPad
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the device's display rate. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it.
 
 Coming soon with VISR 0.6.0
 
 ### Apple TV
 
-Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows.
+Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it.
 
 ```mermaid
 ---
@@ -68,7 +67,7 @@ xychart-beta horizontal
 
 🟦 Average fps 🟨 1% low fps
 
-Apple TV HD. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27).
+Apple TV HD. [VISR 0.6.0](https://github.com/steverice/visr/releases/tag/visr-v0.6.0) (build 20261027.111952, measured 2026-10-27; no on-time share reported).
 
 ### Vision Pro
 
@@ -112,6 +111,10 @@ The snapshot holds 53 measured windows for 5 ports on 3 platforms (Mac, Apple TV
 master-chef runs at a fixed 30 fps as shipped, below the 90 Hz display, so it has no uncapped rows.
 
 Apple TV and Vision Pro charts use runs presented at the device's display rate or, where its profile sets a lower frame cap, at that cap, not an uncapped mode. Their on-time share (frames within 5% of the display interval) is in the spreadsheet, and a device that holds its display rate shows an average near that rate. The Mac chart uses the uncapped, matched-stock runs described below.
+
+### Uncapped charts
+
+Uncapped charts show average fps and GPU frame time, not 1% low rates. When a game renders faster than the display refreshes, macOS hands drawables to the window server in bursts, so the on-glass intervals record when the window server latches drawables rather than the frames a player sees; VISR's intervals alternate between about 0 ms and about 5 ms. Percentiles of those intervals, the 1% low included, describe that latching. The average counts frames shown per second and is not affected. GPU frame time is the GPU duration of each presented frame from the same Metal trace, reported as the median and the 90th percentile. Capped and device charts keep the 1% low and add the share of frames that arrive on time. The spreadsheet keeps every column.
 
 ### Suites
 

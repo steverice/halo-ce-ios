@@ -72,6 +72,38 @@ def parse_metal_trace(record: dict, resolution=None) -> list[float]:
     return [frames[start] for start in sorted(frames)]
 
 
+def parse_metal_trace_gpu(record: dict) -> list[float]:
+    """The GPU time of each presented frame in milliseconds (`On-GPU Time`), in the order of the on-glass timeline.
+
+    Frames whose entry lacks a GPU time are skipped; an empty list means the trace has none.
+    """
+    frames = {}
+    for trace in record['traces']:
+        for process in trace:
+            if process['PID'] != record['pid']:
+                continue
+            for layer in process['Layers']:
+                for frame in layer.get('On-Glass Drawable Timeline', []):
+                    gpu = (frame.get('In-Flight Drawable Info') or {}).get('On-GPU Time (seconds)')
+                    if gpu is not None and math.isfinite(gpu) and gpu >= 0:
+                        frames[frame['Start Mach Continuous Time']] = gpu * 1000
+    return [frames[start] for start in sorted(frames)]
+
+
+def gpu_metrics(values: list[float]) -> dict:
+    """Median and 90th-percentile GPU frame time, or nothing when no frame has one."""
+    if not values:
+        return {}
+    ordered = sorted(values)
+
+    def percentile(fraction):
+        index = (len(ordered) - 1) * fraction
+        lower, upper = math.floor(index), math.ceil(index)
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * (index - lower)
+
+    return {"gpu_p50_ms": percentile(0.5), "gpu_p90_ms": percentile(0.9)}
+
+
 def parse_raf(timestamps: list[float]) -> list[float]:
     """Convert strictly increasing browser millisecond timestamps to intervals."""
     if not all(math.isfinite(value) for value in timestamps):

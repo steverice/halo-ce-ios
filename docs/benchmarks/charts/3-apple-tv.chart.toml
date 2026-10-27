@@ -1,6 +1,6 @@
 order = 30
 heading = "Apple TV"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
+paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), from runs presented at the frame cap of the device's profile, 30 fps on the Apple TV HD. Only VISR has Apple TV builds. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows. Under the chart, each build lists the share of frames that arrive on time (within 5% of the display interval) where the app reports it."
 empty = "No Apple TV results yet."
 box = "Apple TV HD"
 series_labels = ["Average fps", "1% low fps"]
@@ -29,6 +29,7 @@ config:
 [query]
 platform = "Apple TV"
 metrics = ["fps_avg", "fps_1pct_low"]
+details = ["on_time_pct"]
 port_order = ["visr", "opence-macos", "opence-web", "corece", "chupathingy", "halo-og"]
 no_data_reason = "no measurement at the display rate"
 

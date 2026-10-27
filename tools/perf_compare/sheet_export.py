@@ -25,10 +25,10 @@ COLUMNS = (
     "suite", "window", "scenario", "delay_s", "frame_mode", "quality_preset", "warmup_s",
     "resolution", "cap_fps", "display_hz", "rounds",
     "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms", "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct",
-    "thermal", "status", "notes", "release_url",
+    "thermal", "status", "notes", "release_url", "gpu_p50_ms", "gpu_p90_ms",
 )
 
-NUMERIC = ("resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
+NUMERIC = ("gpu_p50_ms", "gpu_p90_ms", "resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
            "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct", "thermal")
 
 # Where each port publishes a build: its release page (never a download), or the hosted page for a web build.
@@ -103,6 +103,8 @@ DESCRIPTIONS = {
     "thermal": "System thermal state at the start and end of the runs.",
     "status": "ok, incomplete (fewer than three rounds), unavailable (could not run), not_supported (the port lacks the feature the suite needs, for example split screen for co-op), or rejected (one row per rejected attempt, with its reason in notes).",
     "release_url": "The build's release page on the port's own site, or the hosted page for a web build. Never a download link.",
+    "gpu_p50_ms": "Median GPU time of a presented frame (metalperftrace On-GPU Time), mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
+    "gpu_p90_ms": "90th-percentile GPU time of a presented frame, mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
     "notes": "Why a set is unavailable or incomplete.",
 }
 
@@ -188,6 +190,7 @@ def rows(summary: dict) -> list[dict[str, str]]:
                     p99_ms_max=_number(max(run["metrics"]["p99_ms"] for run in valid)),
                     worst_ms_max=_number(max(run["metrics"]["worst_ms"] for run in valid)),
                     on_time_pct="" if record.get("frame_mode") == "uncapped" else _number(_mean(valid, "on_time_pct"), 1),
+                    gpu_p50_ms=_gpu(valid, "gpu_p50_ms"), gpu_p90_ms=_gpu(valid, "gpu_p90_ms"),
                     thermal=", ".join(sorted({str(run.get("thermal", "")) for run in valid})),
                 )
             status = str(record.get("status", "unknown"))
@@ -207,6 +210,13 @@ def rows(summary: dict) -> list[dict[str, str]]:
                             "notes": f"round {attempt.get('round', '?')}: {attempt.get('reason', 'unknown')}"}
                     out.append(gone)
     return out
+
+
+def _gpu(valid: list[dict], key: str) -> str:
+    """Mean of a GPU frame-time metric over the valid rounds, empty unless every round has it."""
+    if not all(key in run["metrics"] for run in valid):
+        return ""
+    return _number(statistics.fmean(run["metrics"][key] for run in valid), 2)
 
 
 def _column_letter(index: int) -> str:

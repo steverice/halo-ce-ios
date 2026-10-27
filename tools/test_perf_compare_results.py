@@ -302,3 +302,17 @@ def test_uncapped_rows_disclose_unverified_above_refresh_meaning():
     assert 'Above-refresh trace rates have unverified physical meaning' in output
     assert 'not verified submission throughput' in output
     assert '128-pixel shadow maps' in output
+
+
+def test_gpu_times_come_from_each_presented_frame_and_leave_traces_without_them_empty():
+    from perf_compare.results import gpu_metrics, parse_metal_trace_gpu
+    frames = [{'Start Mach Continuous Time': start, 'Duration MCT Seconds': 0.016,
+               'In-Flight Drawable Info': {'On-GPU Time (seconds)': gpu}}
+              for start, gpu in ((10, 0.001), (20, 0.002), (30, 0.003), (40, 0.004), (50, 0.010))]
+    trace = [{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': frames}]}, {'PID': 2, 'Layers': []}]
+    record = {'pid': 1, 'traces': [trace, trace]}
+    assert parse_metal_trace_gpu(record) == pytest.approx([1, 2, 3, 4, 10])
+    assert gpu_metrics(parse_metal_trace_gpu(record)) == pytest.approx({'gpu_p50_ms': 3, 'gpu_p90_ms': 4 + 0.6 * 6})
+    bare = {'pid': 1, 'traces': [[{'PID': 1, 'Layers': [{'Layer ID': 1, 'On-Glass Drawable Timeline': [
+        {'Start Mach Continuous Time': 1, 'Duration MCT Seconds': 0.016}]}]}]]}
+    assert parse_metal_trace_gpu(bare) == [] and gpu_metrics([]) == {}

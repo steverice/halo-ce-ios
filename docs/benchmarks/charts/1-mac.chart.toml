@@ -1,9 +1,9 @@
 order = 10
 heading = "Mac"
-paragraph = "Average presentation rate and 1% low rate (the slowest 1% of frames), with the frame cap and vsync off and the matched-stock settings. Each bar pair is the geometric mean of the average and of the 1% low over the suite's windows."
+paragraph = "Average presentation rate, with the frame cap and vsync off and the matched-stock settings. Each bar is the geometric mean of the average over the suite's windows. Under the chart, each build lists the median and 90th-percentile GPU time of a frame."
 empty = "No Mac results yet."
 box = "M6 Mac mini"
-series_labels = ["Average fps", "1% low fps"]
+series_labels = ["Average fps"]
 
 [chart]
 type = "bar"
@@ -27,7 +27,8 @@ config:
 
 [query]
 platform = "Mac"
-metrics = ["fps_avg", "fps_1pct_low"]
+metrics = ["fps_avg"]
+details = ["gpu_p50_ms", "gpu_p90_ms"]
 port_order = ["visr", "opence-macos", "opence-web", "corece", "chupathingy", "halo-og"]
 no_data_reason = "no uncapped matched-stock measurement"
 

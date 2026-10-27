@@ -311,7 +311,7 @@ def routed_source(route):
 
 
 def refresh(config, summary_path, page_path):
-    from results import merge, metrics, parse_hud, parse_metal_trace, parse_raf
+    from results import gpu_metrics, merge, metrics, parse_hud, parse_metal_trace, parse_metal_trace_gpu, parse_raf
     bind_routed_visr(config)
     validate_config(config)
     start = time.monotonic()
@@ -404,6 +404,8 @@ def refresh(config, summary_path, page_path):
                         if not intervals:
                             raise RuntimeError('no-intervals')
                         measured = metrics(intervals, config.get('display_hz', 60))
+                        if config.get('native_method') == 'metalperftrace' and target['id'] != 'opence-web':
+                            measured.update(gpu_metrics(parse_metal_trace_gpu(json.loads((folder / 'timeline.json').read_text()))))
                         if measured['duration_s'] < 58:
                             raise RuntimeError('short-window')
                         if not run_record.pop('scene_verified'):
