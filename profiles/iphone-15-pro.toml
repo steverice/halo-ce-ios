@@ -10,13 +10,13 @@
 # this profile remains provisional, especially for the smaller phone.
 
 schema = 1
-name = "iPhone 15 Pro and 16 Pro"
+name = "iPhone 15 Pro, 16 Pro, 17 and Air"
 kind = "model"
 status = "provisional"
 
 [match]
 platform = "ios"
-models = ["iPhone16,1", "iPhone16,2", "iPhone17,1", "iPhone17,2"]
+models = ["iPhone16,1", "iPhone16,2", "iPhone17,1", "iPhone17,2", "iPhone18,3", "iPhone18,4"]
 
 [display]
 frame_rate = "120"
@@ -36,7 +36,7 @@ player_capacity = 32
 
 [evidence."display.frame_rate"]
 basis = "assumed"
-why = "Steve 2026-10-27: Pro iPhones target 120 in campaign; validate with benchmarks. The earlier settings sweep did not hold 120 at maximum quality (variable games keep 60, below)."
+why = "Steve 2026-10-27: Pro iPhones target 120 in campaign; validate with benchmarks. Steve chose the same 120 for the iPhone 17 and iPhone Air the same day (\"17 and air should get 120 for campaign\"). The earlier settings sweep did not hold 120 at maximum quality (variable games keep 60, below)."
 source = "Steve, 2026-10-27"
 
 [evidence."variable.display.frame_rate"]

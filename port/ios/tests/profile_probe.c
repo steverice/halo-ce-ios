@@ -382,10 +382,9 @@ static void check_unprofiled_models(const char *shipped)
 	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
 		has(&profile, "display.render_height", "720") &&
 		has(&profile, "display.frame_rate", "30"));
-	/* iPhone 17 (120 Hz): the Pro profile's 120 is outside the A17 Pro source's 60 Hz envelope, so it takes the
-	   16e's, at 60. */
+	/* iPhone 17 (120 Hz): matched by the 15 Pro's profile, 120 in a predictable workload (Steve, 2026-10-27). */
 	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
-	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
+	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "120"));
 	/* iPhone 16 Pro (A18 Pro, 120 Hz): matched by the 15 Pro's profile itself, 120 in a predictable workload. */
 	profile = resolve_model(shipped, "ios", "iPhone17,1", 9, 7600, 2622, 1206, 120);
 	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "120"));
