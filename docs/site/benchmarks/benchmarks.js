@@ -64,7 +64,11 @@ function suiteValue(group, query, suite) {
   const candidates = mine.filter((row) => matches(row, query.filter) && row[query.metrics[0]] !== "");
   candidates.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   for (const row of candidates) usable.set(row.window, row);
-  if (!usable.size) return [null, query.no_data_reason || "no matching measurement", "not_measured"];
+  if (!usable.size) {
+    const skipped = mine.filter((row) => row.status === "not_measured" && row.notes);
+    if (skipped.length) return [null, skipped[0].notes, "not_measured"];
+    return [null, query.no_data_reason || "no matching measurement", "not_measured"];
+  }
   const rows = [...usable.values()];
   const details = {};
   for (const column of query.details || []) {

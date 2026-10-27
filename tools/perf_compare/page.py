@@ -118,7 +118,7 @@ def suite_section(rows: list[dict]) -> list[str]:
     rejected = [row for row in rows if row.get("status") == "rejected"]
     reasons = sorted({row["notes"].split(": ", 1)[-1] for row in rejected})
     ok = _ok(rows)
-    measured = {name: [r for r in ok if r["suite"] == name] for name in ("campaign", "multiplayer", "co-op")}
+    measured = {name: [r for r in ok if r["suite"] == name] for name in charts.SUITES}
 
     def state(name: str) -> str:
         mine = measured[name]
@@ -126,11 +126,47 @@ def suite_section(rows: list[dict]) -> list[str]:
             return "No measurements yet."
         return f"Measured on {_count(len({r['port'] for r in mine}), 'port')}: {_names(mine)}."
 
+    new_windows = any(row["window"] == "c10" or row["suite"] in ("combat", "cutscenes") for row in rows)
+    if new_windows:
+        campaign = ("- **Campaign:** the openings of c10 (343 Guilty Spark) and b30 (The Silent Cartographer). One player, no "
+                    "input, default enemies. Each window warms up for 15 seconds after player readiness, takes a "
+                    "five-second background CPU baseline, then samples for 60 seconds. Three rounds per set. A set with "
+                    "fewer than three valid rounds is marked incomplete. "
+                    + ("Earlier sets used the a10 opening and a b30 window 90 seconds later (`b30 +90 s`); those rows stay "
+                       "in the spreadsheet. " if any(r["window"] in ("a10", "b30 +90 s") for r in rows) else ""))
+    else:
+        campaign = ("- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach "
+                    "encounter 90 seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up "
+                    "for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for "
+                    "60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. ")
+    console_suites = []
+    if new_windows:
+        console_suites = [
+            "- **Combat:** the player is made deathless and placed in a battle from the game console: the a50 hangar "
+            "(`switch_bsp`, `object_teleport`, `ai_place` for the Covenant floors and the Marines, "
+            "`ai_magically_see_encounter` and `ai_magically_see_players` so the sides engage at once) and Exterior A of "
+            "b40 (the same commands), each sampled for 60 seconds after a 15-second warm-up, plus the b30 bot window: "
+            "the scripted bot player for 1,800 game ticks (60 seconds of game time) from tick 900. Battles and the bot "
+            "window are equivalent workloads, not replays: the AI's outcome differs by a few actors between runs, so "
+            "each round's end counts (`ai_living_count`, player health, ticks) are kept in the `fingerprint` column and "
+            "a round outside the other rounds' range is flagged in `notes`. A round is rejected when an encounter was "
+            "not placed, the game reloaded a checkpoint, or the bot did not cover its ticks or throw a grenade. A port "
+            f"with no unattended console shows the status `not_measured`. {state('combat')}",
+            "- **Cutscenes:** two whole in-engine cutscenes called from the console, `x70_bridge` on d40 and "
+            "`cutscene_rescue` on a50, sampled from the call to the script's `print`. Their length is set by the game's "
+            "ticks, so it is the same on every port. A round is rejected when the print does not arrive within 1.5 times "
+            f"the expected length or the sample covers less than 95% of it. {state('cutscenes')}"]
+    notes = []
+    if new_windows:
+        notes = [("Mac charts use a 2560×1920 drawable (a 1280×960-point window at 2×), where the ports' frame times "
+                  "separate; 1280×960 rows stay in the spreadsheet. "
+                  if any(r.get("drawable") == "2560×1920" for r in rows) else "")
+                 + "Device sets run the same windows through a hosted one-player game, with the console commands held "
+                 "until the level runs. Their `cpu_ms_p50` and `gpu_ms_p50` columns are VISR's own frame CPU and GPU "
+                 "medians, which show the work a window adds on a device where the CPU matters.", ""]
     lines = ["### Suites", "",
-             "- **Campaign:** every measured window: the opening of a10, the opening of b30, and the b30 beach encounter 90 "
-             "seconds later (`b30 +90 s`). One player, no input, default enemies. Each window warms up for 15 seconds after player readiness, takes a five-second background CPU baseline, then samples for "
-             "60 seconds. Three rounds per set. A set with fewer than three valid rounds is marked incomplete. "
-             f"{state('campaign')}",
+             campaign + f"{state('campaign')}",
+             *console_suites,
              "- **Multiplayer:** a hosted Slayer match on Chill Out and one on Blood Gulch, each a sampling window; the suite "
              "value is the mean over both maps' windows. One local player, driven by the scripted bot input, hosts and starts "
              "the match with no other humans. Bot input is paced from the wall clock, so runs on different ports, and "
@@ -146,6 +182,7 @@ def suite_section(rows: list[dict]) -> list[str]:
              "rates, each suite weighted equally, so every suite counts the same whatever its frame-rate scale. Each chart "
              "uses the suites that every build drawn in it has measured, so its bars stay comparable; the caption names "
              "them. Ticking or unticking a build can change which suites a chart covers.", "",
+             *notes,
              "A round is rejected when the outside-process CPU average rises more than half a core above the baseline taken "
              "before the window. Each round allows three attempts. Rejected attempts appear in the spreadsheet with the status "
              f"`rejected` and their reason. This snapshot has {len(rejected)} rejected attempts"

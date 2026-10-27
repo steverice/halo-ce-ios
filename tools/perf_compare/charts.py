@@ -121,6 +121,9 @@ def _suite_value(group: list[dict], query: dict, suite: str) -> tuple[dict | Non
                        and r.get(query["metrics"][0], "") != ""), key=lambda r: r["date"]):
         usable[row["window"]] = row
     if not usable:
+        skipped = [row for row in mine if row["status"] == "not_measured" and row["notes"]]
+        if skipped:
+            return None, skipped[0]["notes"], "not_measured"
         return None, query.get("no_data_reason", "no matching measurement"), "not_measured"
     rows = list(usable.values())
     return {"avg": statistics.geometric_mean(float(r["fps_avg"]) for r in rows),

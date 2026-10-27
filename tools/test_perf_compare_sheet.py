@@ -654,3 +654,64 @@ console.log(JSON.stringify(input.selections.map((keys) => {
     assert json.loads(done.stdout) == expected
     assert "Overall covers Campaign and Combat." in expected[0][1]
     assert "Overall covers Campaign, Combat and Multiplayer." in expected[1][1]
+
+
+def window_record(key, runs_extra=None, **extra):
+    rec = box_record(**extra)
+    rec["scenarios"] = [key]
+    rec["runs"] = [{**run(n, key, 200.0 + n, 5.0, "Mac mini (M6, 24 GB)"), "drawable": "2560×1920", **(runs_extra or {})}
+                   for n in (1, 2, 3)]
+    return rec
+
+
+def test_new_windows_get_their_suite_kind_drawable_and_fingerprint_columns():
+    fingerprint = {"kind": "battle", "end": {"(ai_living_count ext_a_area_a_cov)": "27"}}
+    rec = window_record("b40-exta", {"fingerprint": fingerprint, "cpu_ms_p50": 6.1, "gpu_ms_p50": 8.7})
+    [row] = sheet_export.rows(summary(rec))
+    assert (row["suite"], row["window"], row["window_kind"], row["drawable"]) == ("combat", "b40-exta", "battle", "2560×1920")
+    assert (row["cpu_ms_p50"], row["gpu_ms_p50"]) == ("6.10", "8.70")
+    assert json.loads(row["fingerprint"]) == {"(ai_living_count ext_a_area_a_cov)": ["27", "27", "27"]}
+    [cut] = sheet_export.rows(summary(window_record("x70-bridge")))
+    assert (cut["suite"], cut["window_kind"]) == ("cutscenes", "cutscene")
+    [old] = sheet_export.rows(summary(record()))
+    assert (old["suite"], old["window_kind"], old["drawable"], old["cpu_ms_p50"]) == ("campaign", "opening", "", "")
+
+
+def test_a_window_without_a_console_is_a_not_measured_row_with_its_reason():
+    rec = window_record("x70-bridge", port="corece", version="0.3.0", window_status={
+        "x70-bridge": {"status": "not_measured", "reason": "no unattended console"}})
+    rec["runs"], rec["status"] = [], "unavailable"
+    [row] = sheet_export.rows(summary(rec))
+    assert (row["status"], row["notes"], row["suite"]) == ("not_measured", "no unattended console", "cutscenes")
+    built = charts.model(snapshot_rows() + csv_rows([row]), QUERY, "cutscenes")
+    [entry] = [e for e in built["entries"] if e["port"] == "corece"]
+    assert (entry["kind"], entry["reason"]) == ("not_measured", "no unattended console")
+    assert charts.plain_reason(entry["reason"], charts.load_reasons()) != entry["reason"]
+
+
+def test_outlier_flags_reach_the_notes_column():
+    rec = window_record("a50-hangar")
+    rec["runs"][2]["flags"] = ["(ai_living_count hangar_marines) ended at 0, outside the other rounds (3 to 4)"]
+    [row] = sheet_export.rows(summary(rec))
+    assert row["notes"].startswith("round 3: (ai_living_count hangar_marines)")
+
+
+def test_fetch_accepts_a_sheet_from_before_the_new_columns():
+    old = [c for c in sheet_export.COLUMNS if c not in sheet_export.OPTIONAL]
+    text = sheet_export.to_csv(old, [{k: v for k, v in r.items() if k in old} for r in snapshot_rows()])
+    cleaned = list(csv.DictReader(io.StringIO(sheet_fetch.validate(text))))
+    assert list(cleaned[0]) == list(sheet_export.COLUMNS) and cleaned[0]["drawable"] == ""
+    with pytest.raises(ValueError, match="lacks results columns: window"):
+        sheet_fetch.validate(sheet_export.to_csv([c for c in old if c != "window"], [{k: "" for k in old if k != "window"}]))
+
+
+def test_methodology_describes_combat_and_cutscenes_only_once_they_have_rows():
+    from perf_compare import page
+    plain = "\n".join(page.suite_section(snapshot_rows()))
+    assert "**Combat:**" not in plain and "the opening of a10" in plain
+    rows = snapshot_rows() + csv_rows(sheet_export.rows(summary(window_record("a50-hangar"), window_record("c10"))))
+    text = "\n".join(page.suite_section(rows))
+    assert "**Combat:**" in text and "**Cutscenes:**" in text and "the openings of c10" in text
+    assert "2560×1920 drawable" in text and "equivalent workloads, not replays" in text
+    assert "Overall:" in text and "every build drawn in it has measured" in text
+    assert "TestFlight" not in text

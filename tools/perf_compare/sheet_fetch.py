@@ -11,9 +11,9 @@ import urllib.parse
 import urllib.request
 
 try:
-    from .sheet_export import COLUMNS, RELEASE_KINDS
+    from .sheet_export import COLUMNS, OPTIONAL, RELEASE_KINDS
 except ImportError:
-    from sheet_export import COLUMNS, RELEASE_KINDS
+    from sheet_export import COLUMNS, OPTIONAL, RELEASE_KINDS
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "docs/benchmarks/results.csv"
@@ -28,7 +28,8 @@ def export_url(sheet_id: str, gid: str) -> str:
 def validate(text: str) -> str:
     """Return the CSV in canonical column order with LF line ends, or raise when it is not the results tab.
 
-    Columns are read by header name, so the sheet may reorder or add columns; a missing column is an error.
+    Columns are read by header name, so the sheet may reorder or add columns; a missing column is an error, except the
+    optional ones an older sheet lacks (read as empty).
     """
     text = text.lstrip("\ufeff")
     if text.lstrip().lower().startswith("<"):
@@ -36,15 +37,15 @@ def validate(text: str) -> str:
     table = list(csv.reader(io.StringIO(text)))
     if not table:
         raise ValueError("the response is empty")
-    missing = [name for name in COLUMNS if name not in table[0]]
+    missing = [name for name in COLUMNS if name not in table[0] and name not in OPTIONAL]
     if missing:
         raise ValueError("the header lacks results columns: " + ", ".join(missing))
-    position = {name: table[0].index(name) for name in COLUMNS}
+    position = {name: table[0].index(name) for name in COLUMNS if name in table[0]}
     body = []
     for row in table[1:]:
         if not any(cell.strip() for cell in row):
             continue
-        record = {name: row[index] if index < len(row) else "" for name, index in position.items()}
+        record = {name: row[position[name]] if name in position and position[name] < len(row) else "" for name in COLUMNS}
         if record["release_kind"] not in RELEASE_KINDS:
             continue  # the snapshot holds released builds only, whatever the sheet carries
         # Sheets writes booleans as TRUE/FALSE; the snapshot keeps the export's lowercase spelling.

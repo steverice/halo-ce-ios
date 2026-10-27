@@ -9,9 +9,13 @@ import re
 import statistics
 import sys
 
+import json
+
 try:
+    from . import windows
     from .results import PORTS, SCHEMA, _record_order, _scenarios, _valid_rounds
 except ImportError:
+    import windows
     from results import PORTS, SCHEMA, _record_order, _scenarios, _valid_rounds
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,9 +30,13 @@ COLUMNS = (
     "resolution", "cap_fps", "display_hz", "rounds",
     "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms", "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct",
     "thermal", "status", "notes", "release_url", "gpu_p50_ms", "gpu_p90_ms",
+    "drawable", "window_kind", "cpu_ms_p50", "gpu_ms_p50", "fingerprint",
 )
 
-NUMERIC = ("gpu_p50_ms", "gpu_p90_ms", "resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
+# Columns an older sheet or snapshot may lack; they read as empty.
+OPTIONAL = ("gpu_p50_ms", "gpu_p90_ms", "drawable", "window_kind", "cpu_ms_p50", "gpu_ms_p50", "fingerprint")
+
+NUMERIC = ("gpu_p50_ms", "gpu_p90_ms", "cpu_ms_p50", "gpu_ms_p50", "fingerprint", "resolution", "cap_fps", "display_hz", "fps_avg", "fps_min", "fps_max", "fps_1pct_low", "p50_ms", "p95_ms",
            "p99_ms", "p99_ms_max", "worst_ms_max", "on_time_pct", "thermal")
 
 # Where each port publishes a build: its release page (never a download), or the hosted page for a web build.
@@ -79,9 +87,9 @@ DESCRIPTIONS = {
     "browser": "Browser and version for web builds; empty for native apps.",
     "date": "Date the set was measured (UTC).",
     "method": "Measurement method: metalperftrace on-glass intervals (Mac), Instruments Metal System Trace displayed-surfaces intervals (iPhone/iPad), the app's own benchmark report or telemetry (Vision Pro), or Safari requestAnimationFrame callbacks (web).",
-    "suite": "Workload suite: campaign, multiplayer (hosted Slayer on Chill Out and Blood Gulch, one scripted-bot player) or co-op (two-player split screen). Multiplayer and co-op windows are equivalent workloads across ports, not identical replays.",
-    "window": "Sampling window: the scenario, plus the delay after warm-up when it is not zero.",
-    "scenario": "Level scenario: a10 or b30.",
+    "suite": "Workload suite: campaign (level openings), combat (console-placed battles and the scripted-bot window), cutscenes (whole in-engine cutscenes), multiplayer (hosted Slayer on Chill Out and Blood Gulch, one scripted-bot player) or co-op (two-player split screen). Combat, multiplayer and co-op windows are equivalent workloads across ports, not identical replays.",
+    "window": "Sampling window: its key from windows.toml (c10, b30, a50-hangar, b40-exta, b30-bot, x70-bridge, cutscene-rescue; a10 in earlier rows), plus the delay after warm-up when it is not zero.",
+    "scenario": "The window key as measured. Rows from before the window list use the level name (a10 or b30).",
     "delay_s": "Seconds added after warm-up before sampling starts.",
     "frame_mode": "capped (the frame cap on, as on iPhone, iPad, Apple TV and Vision Pro, which are presented runs at the device's display rate, or the 60 fps cap on a Mac) or uncapped (unlimited, vsync off, Mac only).",
     "quality_preset": "defaults (each app's own) or matched-stock (the documented stock options).",
@@ -101,11 +109,16 @@ DESCRIPTIONS = {
     "worst_ms_max": "Longest single interval in any round.",
     "on_time_pct": "Mean share of intervals within 5% of the display rate; empty for uncapped rows.",
     "thermal": "System thermal state at the start and end of the runs.",
-    "status": "ok, incomplete (fewer than three rounds), unavailable (could not run), not_supported (the port lacks the feature the suite needs, for example split screen for co-op), or rejected (one row per rejected attempt, with its reason in notes).",
+    "status": "ok, incomplete (fewer than three rounds), unavailable (could not run), not_measured (the window needs a console and the port has no unattended one), not_supported (the port lacks the feature the suite needs, for example split screen for co-op), or rejected (one row per rejected attempt, with its reason in notes).",
     "release_url": "The build's release page on the port's own site, or the hosted page for a web build. Never a download link.",
     "gpu_p50_ms": "Median GPU time per rendered frame (metalperftrace On-GPU Time, split by command buffers across the frames a shown interval holds), mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
     "gpu_p90_ms": "90th-percentile GPU time per rendered frame, mean over the valid rounds. Empty when the trace has no per-frame GPU times.",
-    "notes": "Why a set is unavailable or incomplete.",
+    "notes": "Why a set is unavailable or incomplete, and any round whose end counts fall outside the other rounds' range.",
+    "drawable": "Drawable size in pixels the Mac run was qualified at (1280×960, or 2560×1920 for the headline charts). Empty for devices and for rows from before this column.",
+    "window_kind": "opening, battle, cutscene or bot: how the window is started and ended.",
+    "cpu_ms_p50": "Median frame CPU time in milliseconds, from VISR's own renderer line on devices; empty elsewhere.",
+    "gpu_ms_p50": "Median frame GPU time in milliseconds, from VISR's own renderer line on devices; empty elsewhere.",
+    "fingerprint": "JSON of the window's end reads per round (for example living enemy counts and game ticks); evidence that the workload was equivalent.",
 }
 
 # The device each platform's headline chart is drawn from.
@@ -160,6 +173,7 @@ def rows(summary: dict) -> list[dict[str, str]]:
         platform = platform_of(model)
         host = f"{chip} {model}".strip()
         delay = int(record.get("native_delay_seconds") or 0)
+        table = windows.load()
         for scenario in _scenarios(record):
             valid = _valid_rounds(record, scenario)
             row = dict.fromkeys(COLUMNS, "")
@@ -172,7 +186,8 @@ def rows(summary: dict) -> list[dict[str, str]]:
                 reference_box="true" if REFERENCE_BOXES.get(platform) == host else "false", machine=model, chip=chip, memory_gb=memory,
                 os=record.get("os", ""), browser=record.get("browser") or "", date=record.get("date", ""),
                 method=record.get("method", ""), window=scenario if not delay else f"{scenario} +{delay} s",
-                scenario=scenario, suite=record.get("suite") or "campaign", delay_s=delay, frame_mode=record.get("frame_mode", "capped"),
+                scenario=scenario, suite=record.get("suite") or windows.suite_for(scenario, "campaign", table),
+                window_kind=table[scenario]["kind"] if scenario in table else "opening", delay_s=delay, frame_mode=record.get("frame_mode", "capped"),
                 quality_preset=record.get("quality_preset", "defaults"), warmup_s=record.get("warmup_seconds", 15),
                 rounds=len(valid), release_url=release_url(port, version, record.get("build") or ""),
             )
@@ -192,7 +207,16 @@ def rows(summary: dict) -> list[dict[str, str]]:
                     on_time_pct="" if record.get("frame_mode") == "uncapped" else _number(_mean(valid, "on_time_pct"), 1),
                     gpu_p50_ms=_gpu(valid, "gpu_p50_ms"), gpu_p90_ms=_gpu(valid, "gpu_p90_ms"),
                     thermal=", ".join(sorted({str(run.get("thermal", "")) for run in valid})),
+                    drawable=", ".join(sorted({str(run.get("drawable", "")) for run in valid} - {""})),
                 )
+                for column in ("cpu_ms_p50", "gpu_ms_p50"):
+                    values = [float(run[column]) for run in valid if run.get(column) not in (None, "")]
+                    if len(values) == len(valid):
+                        row[column] = _number(statistics.fmean(values))
+                prints = [run["fingerprint"].get("end", {}) for run in valid if isinstance(run.get("fingerprint"), dict)]
+                if prints:
+                    row["fingerprint"] = json.dumps(
+                        {key: [item.get(key) for item in prints] for key in prints[0]}, separators=(",", ":"), sort_keys=True)
             status = str(record.get("status", "unknown"))
             if status == "not_supported":
                 pass  # the port cannot run this suite at all; distinct from unavailable and not measured
@@ -200,9 +224,12 @@ def rows(summary: dict) -> list[dict[str, str]]:
                 status = "unavailable"
             elif len(valid) < 3:
                 status = "incomplete"
+            skipped = (record.get("window_status") or {}).get(scenario)
+            if skipped and not valid:
+                status = str(skipped.get("status", "not_measured"))
             row["status"] = status
             row["notes"] = "; ".join(
-                [str(record.get("reason") or "")]
+                [str(skipped["reason"]) if skipped and not valid else str(record.get("reason") or "")]
                 + [f"round {run['round']}: {flag}" for run in valid for flag in run.get("flags", [])]).strip("; ")
             out.append(row)
             # Rejected attempts never enter the aggregates; each stays visible as its own row.
