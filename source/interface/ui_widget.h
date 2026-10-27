@@ -96,6 +96,9 @@ void widget_free(
 	void *ptr);
 boolean ui_widgets_active(
 	void);
+boolean ui_widgets_hold_player_input(
+	short local_player_index);
+
 boolean ui_widgets_active_for_local_player(
 	short local_player_index);
 void ui_widgets_inhibit_processing(

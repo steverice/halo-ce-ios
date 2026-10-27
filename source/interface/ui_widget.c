@@ -4362,6 +4362,33 @@ void display_errors_deferred_until_cinematic_stop(
 	return;
 }
 
+/* port: whether an open menu holds this local player's input: a menu opened
+for them, or one that belongs to no player (a dialog). Another player's pause
+menu in split screen does not stop them. */
+boolean ui_widgets_hold_player_input(
+	short local_player_index)
+{
+	boolean result = FALSE;
+
+	if (widget_globals.initialized)
+	{
+		long widget_index;
+
+		for (widget_index = 0; widget_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; widget_index++)
+		{
+			struct widget_instance *widget = widget_globals.active_widgets[widget_index];
+
+			if (widget && (widget->local_player_index == NONE || widget->local_player_index == local_player_index))
+			{
+				result = TRUE;
+				break;
+			}
+		}
+	}
+
+	return result;
+}
+
 boolean ui_widgets_active_for_local_player(
 	short local_player_index)
 {

@@ -696,7 +696,7 @@ void input_abstraction_update(
 			(the pause menus, the scores): a network game keeps running behind
 			its menu, and the sticks and D-pad that navigate the menu would
 			otherwise also walk the player */
-			if (ui_widgets_active())
+			if (ui_widgets_hold_player_input((short)controller_index))
 			{
 				csmemset(state, 0, sizeof(*state));
 			}
