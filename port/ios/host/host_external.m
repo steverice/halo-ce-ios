@@ -70,7 +70,7 @@ static int drawable_cap;
 static CFTimeInterval deadline, accessory_available_since;
 static int mode_refusals;
 static CGSize mode_accepted;
-static int mode_reissued, mode_reasserts;
+static int mode_reissued;
 static int first_low=-1, accepting_low;
 static id accessory_registration;
 static int accessory_available_logged=-1;
@@ -200,7 +200,7 @@ static void begin_modes(void) {
         host_logf(HOST_LOG_INFO,"external display: offered %dx%d, pixel aspect %.4f",
             candidates[i].width,candidates[i].height,candidates[i].pixel_aspect);
     }
-    first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_reasserts=0;mode_refusals=0;
+    first_low=-1;accepting_low=0;mode_accepted=CGSizeZero;mode_refusals=0;
     requested_index=-1;
     host_external_session_connect(&session_state,(uintptr_t)(__bridge void *)external_window.windowScene);
     pthread_mutex_lock(&snapshot_lock);
@@ -550,18 +550,13 @@ void host_external_poll(void) {
         external_log_verified(verify_left==2?"2 s after the move":"6 s after the move");
         verify_at=CACurrentMediaTime()+4;verify_left--;
     }
-    /* The system can put the display back in its preferred mode just after the scene connects, after the
-       policy has already accepted the mode it found: choose again, at most twice per connection. */
+    /* The display can change its own mode (a slow monitor finishing a switch, a receiver re-syncing): follow it.
+       VISR never asks for another mode in answer, so a late change cannot start a chain of requests. */
     if(candidate_screen && !session_state.negotiating && mode_accepted.width>0 &&
         !CGSizeEqualToSize(candidate_screen.currentMode.size,mode_accepted)) {
-        host_logf(HOST_LOG_INFO,"external display: the display changed itself to %.0fx%.0f; choosing the mode again",
+        host_logf(HOST_LOG_INFO,"external display: the display changed itself to %.0fx%.0f; keeping it",
             candidate_screen.currentMode.size.width,candidate_screen.currentMode.size.height);
-        if(mode_reasserts<2) {
-            mode_reasserts++;mode_accepted=CGSizeZero;session_state.negotiating=1;requested_index=-1;
-        } else {
-            /* Stop fighting the receiver, but update drawable size and diagnostics. */
-            mode_accept();
-        }
+        mode_accept();
     }
     if(!candidate_screen || !session_state.negotiating)return;
     if(requested_index<0) {
@@ -571,7 +566,9 @@ void host_external_poll(void) {
         int cap=host_profile_external_value(&profile,"display.output_height",cap_text,sizeof(cap_text))?
             atoi(cap_text):1080;
         drawable_cap=forced_width?0:cap;
-        int chosen=host_external_mode_choose(candidates,(size_t)candidate_count,preferred_index,cap,forced_width,forced_height);
+        /* The display stays in its own preferred (native) mode: the profile's output height bounds the drawable
+           only (host_external_mode_drawable), and the layer scales the picture to the screen (host_external_fit). */
+        int chosen=host_external_mode_choose(candidates,(size_t)candidate_count,preferred_index,0,forced_width,forced_height);
         if(chosen<0) {
             if(!forced_width && first_low>=0 && !accepting_low) {chosen=first_low;accepting_low=1;}
             else if(forced_width) {
@@ -600,7 +597,7 @@ void host_external_poll(void) {
     }
     CGSize current=candidate_screen.currentMode.size;
     if(CGSizeEqualToSize(current,offered[requested_index].size)) {
-        if(candidate_screen.maximumFramesPerSecond<60 && !forced_width && !accepting_low) {
+        if(candidate_screen.maximumFramesPerSecond<60 && !forced_width && !accepting_low && requested_index!=preferred_index) {
             host_logf(HOST_LOG_WARN,"external display: mode %.0fx%.0f below 60 Hz (%ld)",current.width,current.height,
                 (long)candidate_screen.maximumFramesPerSecond);
             if(first_low<0)first_low=requested_index;

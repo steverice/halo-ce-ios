@@ -35,6 +35,12 @@ int main(void) {
     assert(host_external_mode_drawable(3840,2160,0,&width,&height));
     assert(width==3840 && height==2160);
     assert(!host_external_mode_drawable(0,2160,1080,&width,&height));
+    /* native policy: the host passes cap 0, so a 2560x1600 preferred mode stays even under a 1080-line profile */
+    struct host_external_mode native[] = {{1680,1050,1,0},{1920,1080,1,0},{2560,1600,1,0}};
+    assert(host_external_mode_choose(native,3,2,0,0,0)==2);
+    assert(host_external_mode_drawable(2560,1600,1080,&width,&height) && width==1728 && height==1080);
+    native[2].refused=1;
+    assert(host_external_mode_choose(native,3,2,0,0,0)==0); /* next best keeps the 16:10 shape */
     puts("PASS: preferred, caps, forced modes, refusals, and PAL fallback");
     /* the drawable fills the screen, scaled up: 1728x1080 on a 2560x1600 display is the same 16:10 shape */
     double rect[4];
