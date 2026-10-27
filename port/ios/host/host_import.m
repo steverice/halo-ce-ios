@@ -261,11 +261,12 @@ void host_ios_prepare_assets(const char *root) {
     char reason[1024]={0};
     BOOL upscale_phase=NO;
     if (xiso_maps_ready(maps.fileSystemRepresentation,reason,sizeof(reason))) {
+        BOOL forced=NO;
 #ifdef HALO_DEVELOPMENT_HOOKS
-        if (!getenv("HALO_TEXTURE_UPSCALE_IMPORT_PHASE")) return;
-#else
-        return;   /* (the development-only switch is compiled out: HALO_DEVELOPMENT_HOOKS) */
+        forced=getenv("HALO_TEXTURE_UPSCALE_IMPORT_PHASE")!=NULL;   /* (the development switch is compiled out otherwise) */
 #endif
+        /* a game imported before the upscaling bar existed shows it once, where upscaling is on */
+        if (!forced && !host_texture_upscale_first_run_phase(root)) return;
         host_texture_upscale_init(root);
         if (!host_texture_upscale_enabled()) return;
         upscale_phase=YES;

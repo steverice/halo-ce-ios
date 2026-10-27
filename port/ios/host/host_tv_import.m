@@ -590,6 +590,28 @@ void host_tv_import(const char *root) {
     window.hidden=YES;window.rootViewController=nil;
 }
 
+/* an already-imported game's one-time upscaling bar (host_texture_upscale_first_run_phase): the import screen with
+   only the progress, no upload server */
+static void host_tv_upscale_only(const char *root) {
+    documents=[NSString stringWithUTF8String:root];
+    atomic_store(&skip_textures,0);atomic_store(&preparing_textures,1);atomic_store(&menu_phase_textures,1);
+    status_set(import_extracting,0,0,@"Upscaling textures");
+    UIWindowScene *scene=nil;
+    for(UIScene *candidate in UIApplication.sharedApplication.connectedScenes)
+        if([candidate isKindOfClass:UIWindowScene.class]) {scene=(UIWindowScene *)candidate;break;}
+    if(!scene)return;
+    HaloTVImportController *controller=[HaloTVImportController new];
+    UIWindow *window=[[UIWindow alloc] initWithWindowScene:scene];window.frame=scene.coordinateSpace.bounds;
+    window.windowLevel=UIWindowLevelNormal+2;window.rootViewController=controller;[window makeKeyAndVisible];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        host_texture_upscale_prepare_import(documents.fileSystemRepresentation,upscale_progress,NULL);
+        atomic_store(&preparing_textures,0);atomic_store(&menu_phase_textures,0);
+        status_set(import_done,1,1,@"Done");
+    });
+    while(![controller refresh]) @autoreleasepool {CFRunLoopRunInMode(kCFRunLoopDefaultMode,0.1,true);}
+    window.hidden=YES;window.rootViewController=nil;
+}
+
 /* tvOS: the player's XISO is imported into root/maps over the local network
    (host_tv_import, above). */
 void host_ios_prepare_assets(const char *root) {
@@ -597,6 +619,7 @@ void host_ios_prepare_assets(const char *root) {
     char reason[1024]={0};
     /* Caches is purgeable, so the import runs again if tvOS evicted the maps. */
     if(!xiso_maps_ready(imported.fileSystemRepresentation,NULL,0))host_tv_import(root);
+    else if(host_texture_upscale_first_run_phase(root))host_tv_upscale_only(root);
     if(!xiso_maps_ready(imported.fileSystemRepresentation,reason,sizeof(reason)))
         host_fatal("The imported maps are not usable (%s).",reason);
     host_logf(HOST_LOG_INFO,"maps: %s",imported.fileSystemRepresentation);

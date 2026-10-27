@@ -803,9 +803,18 @@ void host_texture_upscale_paused(int paused) {
 }
 
 /* ---------- the import phase (rule 2) */
+#define IMPORT_SHOWN_KEY @"VISRUpscaleImportShown"
+int host_texture_upscale_first_run_phase(const char *root) {
+    host_texture_upscale_init(root);
+    int shown=(int)[NSUserDefaults.standardUserDefaults boolForKey:IMPORT_SHOWN_KEY];
+    int phase=texture_upscale_first_run_phase(upscale_enabled?1:0,shown,0);
+    if(phase)[NSUserDefaults.standardUserDefaults setBool:YES forKey:IMPORT_SHOWN_KEY];
+    return phase;
+}
 int host_texture_upscale_prepare_import(const char *root,host_texture_upscale_progress progress,void *context) {
     host_texture_upscale_init(root);
     if(!upscale_enabled)return 0;
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:IMPORT_SHOWN_KEY];
     atomic_fetch_add(&urgent,1);
     unsigned ended=atomic_load(&pumps_ended);
     host_texture_upscale_scan();

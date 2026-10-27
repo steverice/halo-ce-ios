@@ -85,6 +85,11 @@ static void level_source(void)
 	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_WORKING, 0));
 	assert(!texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_DONE, 5000));
 	assert(texture_upscale_level_note_visible(TEXTURE_UPSCALE_LEVEL_WORKING, 5000));
+	/* the import screen's one-time bar for an already-imported game */
+	assert(texture_upscale_first_run_phase(1, 0, 0));
+	assert(!texture_upscale_first_run_phase(0, 0, 0));   /* the profile or switch has upscaling off */
+	assert(!texture_upscale_first_run_phase(1, 1, 0));   /* shown once already */
+	assert(!texture_upscale_first_run_phase(1, 0, 1));   /* nothing left to make */
 }
 
 int main(void)

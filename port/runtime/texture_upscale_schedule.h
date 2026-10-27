@@ -128,6 +128,14 @@ static inline int texture_upscale_level_note_visible(enum texture_upscale_level_
 	return state == TEXTURE_UPSCALE_LEVEL_WORKING && total_units > 0;
 }
 
+/* Whether the import screen's "Upscaling textures" bar shows on this launch for a game imported before it existed: only
+   where upscaling is on (profile and switch), the set is not complete, and the bar has never been shown for this install
+   (a fresh import's own phase counts as shown). Nothing shows twice. */
+static inline int texture_upscale_first_run_phase(int enabled, int already_shown, int set_complete)
+{
+	return enabled && !already_shown && !set_complete;
+}
+
 /* Where a level's texture list comes from when the level loads. The whole-game catalog is built by the worker after
    every launch and takes a while; a level that loads before it is done (a launch straight into a level, a map added
    since) must not find "its textures are not listed yet" and play original: it reads its own map's list and the

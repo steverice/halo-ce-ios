@@ -16,6 +16,9 @@ void host_texture_upscale_paused(int paused);
    is ignored (Skip is not offered until they are made). 0 when the generator is off on this device, so there is no phase. */
 typedef int (*host_texture_upscale_progress)(void *context, unsigned long long done, unsigned long long total,
 	int menu_phase);
+/* 1 once, on the first launch where an already-imported game should show the import screen's upscaling bar (see
+   texture_upscale_first_run_phase); the flag is persisted when it answers 1, and by any import phase */
+int host_texture_upscale_first_run_phase(const char *root);
 int host_texture_upscale_prepare_import(const char *root, host_texture_upscale_progress progress, void *context);
 /* The loading screen's wait before a level (texture_upscale_schedule.h's enum texture_upscale_level_wait). */
 int host_texture_upscale_level_begin(const char *name);
