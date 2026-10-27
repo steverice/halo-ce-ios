@@ -103,7 +103,7 @@ static short main_get_solo_level_from_name(const char *name) { (void)name; retur
 static void progress_bar_begin(int loaded) { (void)loaded; bar_active = 1; }
 static void progress_bar_end(void) { bar_active = 0; }
 static int progress_bar_is_active(void) { return bar_active; }
-static int game_map_loading_in_progress(real *progress) {
+__attribute__((unused)) static int game_map_loading_in_progress(real *progress) {
     *progress = copy_fraction; return copying;
 }
 static void halo_main_time_restart(void) {}
