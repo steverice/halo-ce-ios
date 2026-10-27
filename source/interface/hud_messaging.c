@@ -1255,6 +1255,20 @@ long halo_hud_message_font_index(
 	return hud_get_font_index();
 }
 
+/* port: the color of the HUD's help messages (hud_globals->messaging.color), for text drawn outside the HUD */
+boolean halo_hud_message_color(
+	real_argb_color *color)
+{
+	if (!hud_msg_def || !hud_globals)
+	{
+		return FALSE;
+	}
+	pixel32_to_real_argb_color(hud_globals->messaging.color.color, color);
+	color->alpha = 1.0f;
+
+	return TRUE;
+}
+
 real_argb_color *hud_get_text_color(
 	real_argb_color *result)
 {

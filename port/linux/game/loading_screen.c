@@ -127,6 +127,11 @@ enum
 #define READ_SHARE 0.15f
 /* the work and the minimum time end here; the tail fills the rest */
 #define COMPILE_END 0.9f
+/* the screen is dark at the bar's start (the picture and the light band follow sin(pi t)): while the level's textures
+   are upscaled first, the bar stands from UPSCALE_FIRST to UPSCALE_SHARE, so the blue picture is up, and the read and
+   the compiles then fill the rest of the way */
+#define UPSCALE_FIRST 0.25f
+#define UPSCALE_SHARE 0.5f
 /* the displayed progress eases toward its target with this time constant */
 #define EASE_SECONDS 0.15f
 /* ... and toward the end, over the tail, with this one */
@@ -158,6 +163,7 @@ static struct
 	unsigned long logged;
 	boolean upscale_waiting; /* the wait for the level's upscaled textures */
 	real upscale_fraction;   /* 0 to 1: how much of that wait's work is done */
+	real upscale_base;       /* where the bar stands when the wait is over (0 if there was none): the rest fills from here */
 } loading_screen;
 
 static boolean loading_screen_wanted(void)
@@ -268,6 +274,8 @@ static void loading_screen_upscale_wait(char const *map_name)
 		showed 0% for an instant), and never when they are all ready (the poll says NONE at once) */
 		loading_screen.upscale_waiting = texture_upscale_level_note_visible((enum texture_upscale_level_wait)state, total);
 		loading_screen.upscale_fraction = total ? (real)((double)done / (double)total) : 0.0f;
+		if (loading_screen.upscale_waiting)
+			loading_screen.upscale_base = UPSCALE_SHARE;
 		loading_screen_frame();
 	}
 	loading_screen.upscale_waiting = FALSE;
@@ -379,10 +387,12 @@ boolean halo_loading_screen_progress(real *progress)
 			target = game_map_loading_in_progress(&copy) ? 0.5f * READ_SHARE * copy : 0.0f;
 			/* while the level's textures are upscaled first, the bar tracks that work in the read's first half */
 			if (loading_screen.upscale_waiting)
-				target = 0.5f * READ_SHARE * loading_screen.upscale_fraction;
+				target = UPSCALE_FIRST + (UPSCALE_SHARE - UPSCALE_FIRST) * loading_screen.upscale_fraction;
 		}
 		else
 			target = READ_SHARE + (COMPILE_END - READ_SHARE) * loading_screen.work;
+		if (!loading_screen.upscale_waiting)
+			target = loading_screen.upscale_base + (1.0f - loading_screen.upscale_base) * target;
 	}
 	loading_screen.shown = halo_loading_progress_advance(loading_screen.shown, target, dt, ease);
 	*progress = loading_screen.shown;

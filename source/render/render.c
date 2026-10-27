@@ -91,6 +91,7 @@ symbols in this file:
 #include "structures/structures.h"
 #include "text/draw_string.h" /* port: the loading screen's upscaling line */
 #include <stdio.h>
+#include <math.h>
 
 /* ---------- constants */
 
@@ -309,17 +310,60 @@ void render_frame_pregame(
 	return;
 }
 
-/* port: while the loading screen waits for the level's textures to be upscaled (and only that is left), a spinner
-and "Upscaling textures ..." at the lower left and "Press A to Skip" at the lower right, in the HUD message font */
+/* port: while the loading screen waits for the level's textures to be upscaled (and only that is left), a drawn
+spinner and "Upscaling textures ..." at the lower left and "Press A to Skip" at the lower right, in the HUD message
+font and color */
 long halo_hud_message_font_index(void); /* port: hud_messaging.c; NONE before the HUD's globals are loaded */
+boolean halo_hud_message_color(real_argb_color *color); /* port: hud_messaging.c */
+
+#define UPSCALE_SPINNER_SEGMENTS 28
+#define UPSCALE_SPINNER_RADIUS 11
+static void render_loading_upscale_spinner(
+	short center_x,
+	short center_y,
+	real_argb_color const *color)
+{
+	/* an arc of three quarters of a turn that turns once a second, brightest at its head and fading to nothing at its tail */
+	real phase = (real)((system_milliseconds() % 1000) / 1000.0) * 6.2831853f;
+	short ring;
+	short segment;
+
+	for (ring = 0; ring < 3; ring++)
+	{
+		real radius = (real)(UPSCALE_SPINNER_RADIUS - 1 + ring);
+
+		for (segment = 0; segment < UPSCALE_SPINNER_SEGMENTS; segment++)
+		{
+			real age0 = (real)segment / UPSCALE_SPINNER_SEGMENTS;
+			real age1 = (real)(segment + 1) / UPSCALE_SPINNER_SEGMENTS;
+			real angle0 = phase - age0 * 4.712389f;
+			real angle1 = phase - age1 * 4.712389f;
+			real_rgb_color color0, color1;
+			point2d p0, p1;
+
+			color0.red = color->red * (1.0f - age0);
+			color0.green = color->green * (1.0f - age0);
+			color0.blue = color->blue * (1.0f - age0);
+			color1.red = color->red * (1.0f - age1);
+			color1.green = color->green * (1.0f - age1);
+			color1.blue = color->blue * (1.0f - age1);
+			p0.x = center_x + (short)(cosf(angle0) * radius + (cosf(angle0) < 0 ? -0.5f : 0.5f));
+			p0.y = center_y + (short)(sinf(angle0) * radius + (sinf(angle0) < 0 ? -0.5f : 0.5f));
+			p1.x = center_x + (short)(cosf(angle1) * radius + (cosf(angle1) < 0 ? -0.5f : 0.5f));
+			p1.y = center_y + (short)(sinf(angle1) * radius + (sinf(angle1) < 0 ? -0.5f : 0.5f));
+			rasterizer_debug_immediate_line_screenspace(&p0, &p1, &color0, &color1);
+		}
+	}
+
+	return;
+}
+
 static void render_loading_upscale_note(
 	real fraction)
 {
-	static char const spinner[] = { '|', '/', '-', '\\' };
-	real_argb_color color = { 1.0f, 1.0f, 1.0f, 1.0f };
+	real_argb_color color = { 1.0f, 0.5f, 0.75f, 1.0f };
 	rectangle2d bounds;
 	long font_tag_index;
-	char text[96];
 
 	(void)fraction;
 	font_tag_index = halo_hud_message_font_index();
@@ -331,15 +375,18 @@ static void render_loading_upscale_note(
 	{
 		return;
 	}
+	halo_hud_message_color(&color);
 	bounds = render.camera.window_bounds;
 	offset_rectangle2d(&bounds, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
 	bounds.y0 = bounds.y1 - 48;
 	bounds.y1 = bounds.y1 - 24;
 	bounds.x0 += 40;
 	bounds.x1 -= 40;
-	snprintf(text, sizeof(text), "%c Upscaling textures ...", spinner[(system_milliseconds() / 125) % 4]);
+	render_loading_upscale_spinner(bounds.x0 + UPSCALE_SPINNER_RADIUS + 2, (bounds.y0 + bounds.y1) / 2, &color);
+	bounds.x0 += 2 * UPSCALE_SPINNER_RADIUS + 14;
 	draw_string_set_draw_mode(font_tag_index, NONE, 0, 0, &color);
-	rasterizer_draw_string(&bounds, NULL, NULL, 0, text);
+	rasterizer_draw_string(&bounds, NULL, NULL, 0, "Upscaling textures ...");
+	bounds.x0 -= 2 * UPSCALE_SPINNER_RADIUS + 14;
 	draw_string_set_draw_mode(font_tag_index, NONE, 1, 0, &color);
 	rasterizer_draw_string(&bounds, NULL, NULL, 0, "Press A to Skip");
 
