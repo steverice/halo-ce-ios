@@ -73,6 +73,7 @@ static int screens_begun, screens_finished, screens_cancelled;
 static void halo_loading_screen_begin_network(const char *name) { (void)name; screens_begun++; }
 static void halo_loading_screen_finish(void) { screens_finished++; }
 static void halo_loading_screen_cancel(void) { screens_cancelled++; }
+static void main_network_view_wait_arm(void) {}
 ''' + warm + loader + r'''
 int main(void) {
     struct network_game game = {0};
