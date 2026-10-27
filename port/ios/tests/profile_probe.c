@@ -363,9 +363,9 @@ static void check_unprofiled_models(const char *shipped)
 {
 	struct host_profile profile;
 
-	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): its own measured profile, capped at 60 on the 120 Hz display. */
+	/* iPhone 15 Pro Max (A17 Pro, 120 Hz): its own profile, 120 in a predictable workload (Steve, 2026-10-27). */
 	profile = resolve_model(shipped, "ios", "iPhone16,2", 9, 7655, 2796, 1290, 120);
-	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "60"));
+	assert(!profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "120"));
 	/* iPhone 16 (A18, 5-core GPU): the A17 Pro profile just below it, inside its 60 Hz and pixel envelope. */
 	profile = resolve_model(shipped, "ios", "iPhone17,3", 9, 7600, 2556, 1179, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") &&
@@ -382,9 +382,10 @@ static void check_unprofiled_models(const char *shipped)
 	assert(!profile.model_file[0] && !strcmp(profile.class_file, "iphone-ipad.toml") &&
 		has(&profile, "display.render_height", "720") &&
 		has(&profile, "display.frame_rate", "30"));
-	/* iPhone 17 (120 Hz): the A17 Pro profile, capped at 60. */
+	/* iPhone 17 (120 Hz): the Pro profile's 120 is outside the A17 Pro source's 60 Hz envelope, so it takes the
+	   16e's, at 60. */
 	profile = resolve_model(shipped, "ios", "iPhone18,3", 10, 7600, 2622, 1206, 120);
-	assert(profile.inherited && !strcmp(profile.model_file, "iphone-15-pro.toml") && has(&profile, "display.frame_rate", "60"));
+	assert(profile.inherited && !strcmp(profile.model_file, "iphone-16e.toml") && has(&profile, "display.frame_rate", "60"));
 	/* iPad Air 3 (A12): the iPad Pro (A10X) profile, 900 lines at 30; nothing measured is closer. */
 	profile = resolve_model(shipped, "ios", "iPad11,3", 5, 2906, 2224, 1668, 60);
 	assert(profile.inherited && !strcmp(profile.model_file, "ipad-pro-12-9-2nd.toml") &&
@@ -485,14 +486,14 @@ static void check_shipped(const char *shipped)
 	assert(!strcmp(profile.model_file, "vision-pro-m2.toml") && profile.count == 5 &&
 		has(&profile, "display.renderer", "metal"));
 	/* iPhone 17 Pro, iPad Pro (M1) and the Macs: values equal to the built-in defaults, and the iPhone and iPad
-	class profile's Metal */
+	class profile's Metal; the 17 Pro and the M1 iPad Pro target 120 frames a second in a predictable workload */
 	profile = resolve(shipped, device("ios", "iPhone18,1", "", 10), NULL, "");
-	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.frame_rate", "60") &&
+	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.frame_rate", "120") &&
 		has(&profile, "display.anisotropic_filtering", "16") &&
 		has(&profile, "display.shadow_map_size", "512") && has(&profile, "display.renderer", "metal") &&
 		has(&profile, "display.anti_aliasing", "fxaa"));
 	profile = resolve(shipped, device("ios", "iPad13,9", "", 7), NULL, "");
-	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.frame_rate", "60") &&
+	assert(has(&profile, "display.render_height", "1080") && has(&profile, "display.frame_rate", "120") &&
 		has(&profile, "display.effect_resolution", "half") && has(&profile, "display.renderer", "metal"));
 	/* iPad Air 4 and iPhone 12 Pro: their own measured profiles */
 	profile = resolve(shipped, device("ios", "iPad13,1", "", 7), NULL, "");
