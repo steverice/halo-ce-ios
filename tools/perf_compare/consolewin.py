@@ -61,17 +61,19 @@ class Console:
         with self.lock:
             return len(self.buf)
 
-    def lines_since(self, mark=0):
-        """Complete lines after the mark, stripped. A line still being written is left out."""
+    def lines_since(self, mark=0, partial=False):
+        """Lines after the mark, stripped. A line still being written is left out unless `partial`: a print
+        arrives without a trailing newline (the game prints `\\r\\nxpdone`)."""
         with self.lock:
             text = self.buf[mark:]
-        return [line.strip() for line in text.replace('\r', '').split('\n')[:-1]]
+        lines = text.replace('\r', '').split('\n')
+        return [line.strip() for line in (lines if partial else lines[:-1])]
 
     def seen(self, token, since=0):
         """True once the console printed `token` on a line of its own. Output is lowercase; the echo of the
         expression that prints it (which contains the token inside quotes) never matches."""
         want = token.lower()
-        return any(line.strip('"') == want for line in self.lines_since(since))
+        return any(line.strip('"') == want for line in self.lines_since(since, partial=True))
 
     def query(self, expression, clock, timeout=3.0):
         """Send an expression and return the value line, or None when the console printed nothing back."""

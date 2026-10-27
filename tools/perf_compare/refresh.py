@@ -18,6 +18,7 @@ import urllib.error
 import uuid
 
 import adapters
+import rejects
 import windows
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -218,7 +219,7 @@ def failure_code(error):
     message = str(error)
     known = {'host-not-quiet', 'display-locked', 'console-unavailable', 'scenario-not-ready',
              'browser-game-setup-required', 'app-exited', 'browser-hidden', 'no-intervals',
-             'scene-unverified', 'short-window', 'app-not-frontmost', 'app-window-unavailable', 'resolution-mismatch'}
+             'scene-unverified', 'short-window', *rejects.CODES, 'app-not-frontmost', 'app-window-unavailable', 'resolution-mismatch'}
     return message if message in known else 'adapter-failed'
 
 
@@ -421,6 +422,13 @@ def refresh(config, summary_path, page_path):
                             raise RuntimeError('short-window')
                         if not run_record.pop('scene_verified'):
                             raise RuntimeError('scene-unverified')
+                        if win and win['kind'] != 'opening':
+                            try:
+                                run_record['notes'] = rejects.check(win, run_record['fingerprint'])
+                            except ValueError as reject:
+                                record.setdefault('rejected', []).append(
+                                    {'scenario': scenario, 'round': round_index + 1, 'reason': str(reject)})
+                                raise RuntimeError(str(reject)) from reject
                         for field in ('browser', 'version', 'build', 'source', 'release_kind', 'network_version'):
                             if run_record.get(field):
                                 record[field] = run_record.pop(field)
@@ -441,6 +449,12 @@ def refresh(config, summary_path, page_path):
                                        'error': str(error)})
             (out / 'errors.json').write_text(json.dumps(errors, indent=2))
         for record in summary['records']:
+            for key in window_keys:
+                win = window_table.get(key)
+                if win and win['kind'] == 'battle':
+                    mine = sorted((r for r in record['runs'] if r['scenario'] == key), key=lambda r: r['round'])
+                    for index, found in rejects.outliers(win, [r['fingerprint'] for r in mine]).items():
+                        mine[index]['flags'] = found
             if record['runs'] and len(record['runs']) == 3 * (len(window_keys) - len(record.get('window_status', {}))):
                 record['status'] = 'ok'
                 record['reason'] = ''

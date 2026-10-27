@@ -201,7 +201,9 @@ def rows(summary: dict) -> list[dict[str, str]]:
             elif len(valid) < 3:
                 status = "incomplete"
             row["status"] = status
-            row["notes"] = str(record.get("reason") or "")
+            row["notes"] = "; ".join(
+                [str(record.get("reason") or "")]
+                + [f"round {run['round']}: {flag}" for run in valid for flag in run.get("flags", [])]).strip("; ")
             out.append(row)
             # Rejected attempts never enter the aggregates; each stays visible as its own row.
             for attempt in record.get("rejected", []):
