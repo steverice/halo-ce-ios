@@ -18,6 +18,7 @@ import urllib.error
 import uuid
 
 import adapters
+import windows
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -196,9 +197,9 @@ def validate_config(config):
         raise ValueError('three rounds are required')
     if config.get('seconds', 60) != 60 or config.get('warmup_seconds', 15) < 15:
         raise ValueError('60 seconds and at least 15 seconds warm-up are required')
-    scenarios = config.get('scenarios', ['a10', 'b30'])
-    if scenarios != ['a10', 'b30'] and not (scenarios == ['b30'] and config.get('native_delay_seconds', 0) > 0):
-        raise ValueError('a10 and b30 scenarios are required')
+    keys = windows.resolve(config)
+    if config.get('native_delay_seconds', 0) and keys not in (['a10', 'b30'], ['b30'], ['c10', 'b30']):
+        raise ValueError('a delay applies to the opening windows only')
     if config.get('cpu_policy') == 'baseline' and any(
             target['id'] == 'opence-web' and
             target.get('unavailable_reason') != 'safari-remote-automation-disabled'
@@ -314,6 +315,7 @@ def refresh(config, summary_path, page_path):
     from results import gpu_metrics, merge, metrics, parse_hud, parse_metal_trace, parse_metal_trace_gpu, parse_raf
     bind_routed_visr(config)
     validate_config(config)
+    window_keys = windows.resolve(config)
     start = time.monotonic()
     out = Path(config['output']).resolve() / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     out.mkdir(parents=True)
@@ -340,7 +342,7 @@ def refresh(config, summary_path, page_path):
             summary['records'].append(record)
             record['frame_mode'] = config.get('frame_mode', 'capped')
             record['native_delay_seconds'] = config.get('native_delay_seconds', 0)
-            record['scenarios'] = config.get('scenarios', ['a10', 'b30'])
+            record['scenarios'] = window_keys
             record['quality_preset'] = config.get('quality_preset', 'defaults')
             record['warmup_seconds'] = config.get('warmup_seconds', 15)
             records[target['id']] = record
@@ -380,7 +382,7 @@ def refresh(config, summary_path, page_path):
                 record = records[target['id']]
                 if record['status'] == 'unavailable':
                     continue
-                for scenario in config.get('scenarios', ['a10', 'b30']):
+                for scenario in window_keys:
                     if record['status'] == 'unavailable':
                         break
                     folder = out / f'{target["id"]}-{scenario}-{round_index + 1}'
@@ -430,7 +432,7 @@ def refresh(config, summary_path, page_path):
                                        'error': str(error)})
             (out / 'errors.json').write_text(json.dumps(errors, indent=2))
         for record in summary['records']:
-            if len(record['runs']) == 3 * len(config.get('scenarios', ['a10', 'b30'])):
+            if len(record['runs']) == 3 * len(window_keys):
                 record['status'] = 'ok'
                 record['reason'] = ''
             elif record['runs']:

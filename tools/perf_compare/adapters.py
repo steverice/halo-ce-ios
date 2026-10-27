@@ -14,6 +14,8 @@ import time
 import urllib.error
 import urllib.request
 
+import windows
+
 
 class PermissionDenied(RuntimeError):
     """A security setting requires the operator; never repair it automatically."""
@@ -210,6 +212,7 @@ def _native(target, scenario, out, config):
     """Reuse isolated data/config and console readiness from the earlier Mac experiments."""
     app = Path(target['app'])
     binary = executable(app)
+    level_map = windows.map_for(scenario)
     maps = Path(config['maps'])
     if target.get('data_root'):
         # Some hosts accept only a real maps directory: a prepared data root holds a copy (an APFS clone).
@@ -223,7 +226,7 @@ def _native(target, scenario, out, config):
         data.mkdir()
         (data / 'maps').symlink_to(maps, target_is_directory=True)
         saves = data / 'saves'
-    if not all((maps / name).is_file() for name in ('ui.map', scenario + '.map')):
+    if not all((maps / name).is_file() for name in ('ui.map', level_map + '.map')):
         raise FileNotFoundError('maps')
     saves.mkdir()
     if target.get('macos_settings'):
@@ -240,7 +243,7 @@ def _native(target, scenario, out, config):
             '[debug]\ntelnet_console = true\ntelnet_console_port = ' + str(port) + '\n')
     (data / 'config.toml').write_text(text)
     (saves / 'config.toml').write_text(text)
-    level = scenario if target['id'] == 'visr' else 'levels\\' + scenario + '\\' + scenario
+    level = level_map if target['id'] == 'visr' else 'levels\\' + level_map + '\\' + level_map
     (data / 'init.txt').write_text('game_difficulty_set normal\nmap_name ' + level + '\n')
     env = {**os.environ, 'HALO_DATA_ROOT': str(data), 'HALO_SAVE_ROOT': str(saves),
            'HALO_HOST_DISPLAY': '640x480@2', 'HALO_RUNNER': '1', 'MTL_HUD_ENABLED': '1',
@@ -459,7 +462,7 @@ def safari(target, scenario, out, config):
         if target.get('viewport'):
             fit_viewport(driver, *target['viewport'])
         if target.get('scenario_url'):
-            driver.command('/url', {'url': target['scenario_url'].format(scenario=scenario)})
+            driver.command('/url', {'url': target['scenario_url'].format(scenario=windows.map_for(scenario))})
             if not target.get('ready_selector'):
                 raise RuntimeError('browser-game-setup-required')
             time.sleep(target.get('load_seconds', 0))

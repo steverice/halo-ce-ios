@@ -111,7 +111,7 @@ def test_fatal_unavailable_target_is_not_relaunched_six_times(tmp_path, monkeypa
     monkeypatch.setattr(m.adapters, 'native', unavailable)
     config = {'output': str(tmp_path / 'raw'), 'public_machine': 'Mac mini (M4)', 'targets': [{'id': 'visr'}]}
     assert m.refresh(config, tmp_path / 'summary.json', tmp_path / 'page.md') == 1
-    assert calls == ['a10']
+    assert calls == ['c10']
 
 
 def test_private_qualification_text_cannot_enter_public_conditions():
@@ -433,3 +433,13 @@ def test_corece_uses_its_written_frame_and_stock_settings():
     assert 'frame_limit = 0\nvsync = false\n' in uncapped and 'max_fps = -1' not in uncapped
     assert 'shadow_resolution = 128' in uncapped and 'model_detail = "stock"' in uncapped
     assert 'window_scale = 1' in m.adapters.native_display('corece')
+
+
+def test_validate_config_accepts_window_keys_and_rejects_unknown_ones():
+    m = engine()
+    m.validate_config({'windows': ['c10', 'b30']})
+    m.validate_config({'windows': ['x70-bridge', 'a50-hangar']})
+    for bad in ({'windows': ['c40']}, {'windows': []}, {'windows': ['c10'], 'scenarios': ['b30']},
+                {'windows': ['a50-hangar'], 'native_delay_seconds': 90}):
+        with pytest.raises(ValueError):
+            m.validate_config(bad)

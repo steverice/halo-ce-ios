@@ -5,6 +5,7 @@
   "rounds": 3,
   "seconds": 60,
   "warmup_seconds": 15,
+  "windows": ["c10", "b30"],
   "display_hz": 60,
   "targets": [
     {
@@ -31,7 +32,7 @@
       "id": "opence-web",
       "url": "https://halocombatevolved.com/",
       "setup": {
-        "a10": [],
+        "c10": [],
         "b30": []
       }
     }

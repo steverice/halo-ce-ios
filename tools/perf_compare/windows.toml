@@ -1,0 +1,108 @@
+# Sampling windows of the cross-port suite. A window key names one measured stretch of a level; the harness
+# starts the level, runs the window's kind, and records the key as the run's `scenario`.
+#
+# kind = "opening":  the level's first minutes, no input. Warm up, then sample `sample_s`.
+# kind = "battle":   console commands place the player and the encounters; warm up `warmup_s` after the
+#                    commands, then sample `sample_s`. `fingerprints` are read at the end.
+# kind = "cutscene": call `script` from the console; the sample runs from the call to its print (or to the
+#                    start tick plus `expected_ticks` on ports whose console prints nothing).
+# kind = "bot":      a scripted player (`test_input`) for `ticks` game ticks from `start_tick`.
+#
+# `reference_shot` names the qualification image kept beside the mid-window screenshot.
+
+[c10]
+suite = "campaign"
+map = "c10"
+kind = "opening"
+warmup_s = 15
+sample_s = 60
+reference_shot = "c10-opening"
+
+[b30]
+suite = "campaign"
+map = "b30"
+kind = "opening"
+warmup_s = 15
+sample_s = 60
+reference_shot = "b30-opening"
+
+[a50-hangar]
+suite = "combat"
+map = "a50"
+kind = "battle"
+commands = [
+  "(switch_bsp 2)",
+  "(object_teleport (unit (list_get (players) 0)) extraction_dropship_base)",
+  "(ai_place hangar_cov_first_floor)",
+  "(ai_place hangar_cov_second_floor)",
+  "(ai_place hangar_cov_third_floor)",
+  "(ai_place hangar_marines)",
+  "(ai_place hangar_marines)",
+  "(ai_magically_see_encounter hangar_cov_first_floor hangar_marines)",
+  "(ai_magically_see_encounter hangar_marines hangar_cov_first_floor)",
+  "(ai_magically_see_players hangar_cov_second_floor)",
+  "(ai_magically_see_players hangar_cov_third_floor)",
+]
+encounters = ["hangar_cov_first_floor", "hangar_cov_second_floor", "hangar_cov_third_floor", "hangar_marines"]
+warmup_s = 15
+sample_s = 60
+fingerprints = [
+  "(ai_living_count hangar_cov_first_floor)",
+  "(ai_living_count hangar_cov_second_floor)",
+  "(ai_living_count hangar_cov_third_floor)",
+  "(ai_living_count hangar_marines)",
+  "(unit_get_health (unit (list_get (players) 0)))",
+]
+reference_shot = "a50-hangar"
+
+[b40-exta]
+suite = "combat"
+map = "b40"
+kind = "battle"
+commands = [
+  "(switch_bsp 0)",
+  "(object_teleport (unit (list_get (players) 0)) ext_a_dropship_a_flag)",
+  "(ai_place ext_a_area_a_cov)",
+  "(ai_place ext_a_area_a_marines)",
+  "(ai_magically_see_encounter ext_a_area_a_cov ext_a_area_a_marines)",
+  "(ai_magically_see_encounter ext_a_area_a_marines ext_a_area_a_cov)",
+]
+encounters = ["ext_a_area_a_cov", "ext_a_area_a_marines"]
+warmup_s = 15
+sample_s = 60
+fingerprints = [
+  "(ai_living_count ext_a_area_a_cov)",
+  "(ai_living_count ext_a_area_a_marines)",
+  "(unit_get_health (unit (list_get (players) 0)))",
+]
+reference_shot = "b40-exta"
+
+[b30-bot]
+suite = "combat"
+map = "b30"
+kind = "bot"
+test_input = "bot:1"
+start_tick = 900
+ticks = 1800
+fingerprints = [
+  "(game_time)",
+  "(unit_get_health (unit (list_get (players) 0)))",
+  "(unit_get_total_grenade_count (unit (list_get (players) 0)))",
+]
+reference_shot = "b30-bot"
+
+[x70-bridge]
+suite = "cutscenes"
+map = "d40"
+kind = "cutscene"
+script = "x70_bridge"
+expected_ticks = 3790
+reference_shot = "x70-bridge"
+
+[cutscene-rescue]
+suite = "cutscenes"
+map = "a50"
+kind = "cutscene"
+script = "cutscene_rescue"
+expected_ticks = 3180
+reference_shot = "cutscene-rescue"
