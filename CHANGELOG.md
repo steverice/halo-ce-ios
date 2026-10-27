@@ -1,3 +1,62 @@
+## visr-v0.6.1 (2026-10-27)
+
+### Summary
+
+- Campaign now targets 120 frames per second on Pro iPhones (15 Pro, 16 Pro, 17 Pro) and on the iPhone 17 and iPhone Air. Multiplayer, co-op, and enemy-multiplier games stay at 60. Tell us how it feels.
+- M1 and newer M-series iPads also target 120 frames per second in campaign. Check play at higher enemy multipliers.
+- The iPhone 15 Pro and iPhone 16e now support 32-player games.
+- The benchmark recordings download now has more time to finish on slow connections. The Benchmark menu shows "Downloading benchmark recordings…" with a percentage instead of "unavailable" while it retries.
+- The benchmark catalog offers 20 gameplay recordings across maps a10, a50, b30, b40, c20, c40, and d40, including 1.5x and 2x enemy variants. Run a few and let us know how they replay.
+- The loading bar now fills at a steadier pace. It no longer races ahead at the start and stalls later, and the time estimate settles in gradually.
+- The loading screen's tone now keeps playing until the level's first frame, instead of fading out just before the level appears.
+- Benchmark results page: each build name now links to its release page.
+
+iCloud Saves is new and starts off. To try it, sign in to iCloud on each device, then turn on iCloud Saves under Network Setup in the game's profile settings (on iPhone, iPad and Apple Vision Pro also on VISR's page in the Settings app). It takes effect at the next launch.
+
+VISR automatically sends missing shader descriptions and device model information to improve loading. Reports exclude gameplay and personal file names. Apple's upload service attaches an account-specific identifier. Shader diagnostics are required in builds with shader uploads enabled.
+
+VISR automatically sends game performance data to improve the game. Reports exclude names, chat, and personal file names. Apple's upload service attaches an account-specific identifier. Performance diagnostics are required in builds with performance reports enabled. Sharing this data is part of testing; leaving the beta stops it.
+
+### Full changelog
+
+### feat
+
+- **benchmarks**: link each build in the page's lists and captions to its release — the results sheet gains a `release_url` column (GitHub release pages by tag, the hosted page for the OpenCE web build, never a download), `sheet_export.release_url` fills it from `RELEASE_PAGES` for VISR, OpenCE-macOS, OpenCE web, CoreCE, Chupathingy, Halo OG, master-chef, Beeman, ChupathingyCE iOS, HaloPad and SnailBBQ, `charts.py` and `benchmarks.js` carry it as each entry's `url`, and the Builds checkbox labels, the captions and the not-measured lists link the build name
+- **profiles**: 120 frames a second in campaign on the iPhone 17 and iPhone Air too — `iphone-15-pro.toml` (now "iPhone 15 Pro, 16 Pro, 17 and Air") lists `iPhone18,3` and `iPhone18,4`, which had fallen past it to the 16e's 60 because their 120 Hz panels leave the A17 Pro source's envelope; Steve chose 120 for them on 2026-10-27, assumed until benchmarked, and variable games keep 60. `profile_probe.c` checks the iPhone 17. Profile set revision 11.
+- **profiles**: Pro iPhones target 120 frames a second in campaign — `iphone-17-pro.toml` (and the 17 Pro Max through `and_newer`) and `iphone-15-pro.toml` (which the iPhone 16 Pro and Pro Max inherit through the hardware catalog) set `display.frame_rate = "120"` for the predictable workload and keep 60 in `[variable.display]` for multiplayer, co-op and enemy multipliers; the 120 is assumed, Steve's decision on 2026-10-27, to be validated with benchmarks, and the earlier sweep measurements move to the variable value's evidence. Profile set revision 9.
+- **benchmark**: trim a catalog's recordings to the ticks its windows replay — `tools/trim_recordings.py` drops the `.actions`, `.seeds` and `.input` tail past each case's anchor plus `lead` plus `window` (with a 20 s and 10% margin) and leaves the catalog and routes byte-identical, and `tools/replay_trim_check.py` replays full and trimmed cases through the benchmark suite on the Mac runner and compares their routes
+- **profiles**: 32-player capacity on the iPhone 15 Pro and 16e, and 120 frames a second on the M1 iPad Pro — `iphone-15-pro.toml` and `iphone-16e.toml` set `network.player_capacity = 32` to match the iPhone 17 Pro (assumed: the same GPU class, not measured separately); `ipad-pro-m1.toml`, which newer M-series iPads inherit, sets `display.frame_rate = "120"` from the MetalFX runs that held 99.90% (a10) and 99.75% (d40) of frames on time at 120, and is marked provisional until 120 is checked at 1.5x enemies. Profile set revision 8.
+
+### fix
+
+- **profiles**: match the iPhone 16 Pro and Pro Max by the Pro profile so they get its 120 in campaign — they inherited `iphone-15-pro.toml` through the hardware catalog, whose A17 Pro envelope stops at 60 Hz, so with the profile at 120 their 120 Hz panels put them outside it and they fell to the 16e's 60; `iphone-15-pro.toml` (now "iPhone 15 Pro and 16 Pro") lists `iPhone17,1` and `iPhone17,2`, and `profile_probe.c` checks the 16 Pro. The iPhone 17 and Air stay on the 16e's profile at 60. Profile set revision 10.
+- **data-packs**: give the benchmark recordings download minutes and show its progress — `host_data_pack.m` cut every feed off at `timeoutIntervalForResource = 30`, so the 16 MB recordings catalog failed below about 4.4 Mbit/s and each retry restarted from zero; `recordings` feeds now get 900 s, `HostDataPackStore` reports `downloadReceived`/`downloadExpected`, and the Benchmark menu shows "Downloading benchmark recordings…" with a percentage during every attempt instead of "unavailable" while the retry runs
+- **loading**: keep the loading screen's tone sounding until the level's first frame stops it — it faded out for most of a second just before the level appeared
+- **loading**: trust the textures' measured rate gradually — the first textures made are small and fast, which dropped the remaining-time estimate and raced the bar to a third in the first 1.3 s; the estimate blends from the 8 s guess to the measured rate over 5 s
+- **loading**: the loading bar spends its time evenly — it is COMPILE_END times elapsed over elapsed plus what is left, estimated from the textures' units at the rate so far, the level's read and the compiles, so a wait raced to half the bar at its start and sat between 60 and 90 percent while the chant's layers (which come in at 0.4, 0.5 and 0.55) were skipped; the shares given to phases are gone
+
+### build
+
+- **benchmark**: bind the 20-case tester catalog to the 0.6.1 guest at its own feed — `docs/site/packs/tester/recordings-c7fe63a3433bb5ef215fbd498679caf5688f56663b65879d496d39981f482b91.json` is the 0.6.0 catalog with its trimmed recordings, signed as sequence 1793123149 with compatibility `benchmark-catalog-1:c7fe63a3433bb5ef215fbd498679caf5688f56663b65879d496d39981f482b91`, which 0.6.1 builds read; the older feeds stay byte-identical, and `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
+- **profiles**: re-sign the generation 2 tester shards at profile revision 11 and add the iPhone 17 and iPhone Air — every `docs/site/packs/tester/device-profiles-2/` shard is sequence 1793123003 from the revision 11 `profiles/` tree, which matches the iPhone 16 Pro, 17 and Air by `iphone-15-pro.toml` (120 frames a second in campaign, 60 in variable games); `ios/iPhone18,3/_` and `ios/iPhone18,4/_` are new. `docs/site/packs/tester/publication.json` names the 53 SHA-256s and `tools/test_pages_main_assets.py` counts them.
+- **profiles**: re-sign the generation 2 tester shards at profile revision 9 and add the iPhone 16 Pro and Pro Max — every `docs/site/packs/tester/device-profiles-2/` shard is sequence 1793118609 from the revision 9 `profiles/` tree, so 0.6.0 builds on the iPhone 15 Pro, 16 Pro and 17 Pro families take 120 frames a second in campaign; `ios/iPhone17,1/_` and `ios/iPhone17,2/_` are new (they inherit `iphone-15-pro.toml`). `docs/site/packs/tester/publication.json` names the 51 SHA-256s and `tools/test_pages_main_assets.py` counts them.
+- **benchmark**: republish the 0.6.0 tester catalog with trimmed recordings — `docs/site/packs/tester/recordings-28b14010a886a159afff1bec13ec7f516b5235f270934906f15ff59ff10b0fd1.json` is the same 20 cases with each recording cut after its window, signed as sequence 1793115186 with the same compatibility string, 62.76 MB down to 49.31 MB (15.9 MB down to 12.4 MB gzipped); `docs/site/packs/tester/publication.json` and `tools/test_pages_main_assets.py` name the new envelope's SHA-256
+- **profiles**: publish revision 8 shards for the M-series iPads and the iPhone 17 Pro Max — the hardware catalog's `ipad-air-m1`, `ipad-m2`, `ipad-m3`, `ipad-m4` and `ipad-m5` models (`iPad13,16`, `iPad13,17`, `iPad14,3` to `iPad14,6`, `iPad14,8` to `iPad14,11`, `iPad15,3` to `iPad15,6`, `iPad16,3` to `iPad16,6`, `iPad16,8` to `iPad16,11`, `iPad17,1` to `iPad17,4`) inherit `ipad-pro-m1.toml`, and `iphone-17-pro-max` (`iPhone18,2`) inherits `iphone-17-pro.toml`, but had no shard and so kept their bundled revision 7 profiles; each shard is signed from the revision 8 `profiles/` tree, and every `docs/site/packs/tester/device-profiles-2/` shard is re-signed as sequence 1793116245. `docs/site/packs/tester/publication.json` names the 49 SHA-256s and `tools/test_pages_main_assets.py` counts them.
+- **profiles**: re-sign the generation 2 tester shards at profile revision 8 and add the iPhone 15 Pro and Pro Max — every `docs/site/packs/tester/device-profiles-2/` shard is sequence 1793114296 from the revision 8 `profiles/` tree, so 0.6.0 builds take the 32-player capacity on the iPhone 15 Pro and 16e and 120 frames a second on the M1 iPad Pro over their bundled revision 7; `ios/iPhone16,1/_` and `ios/iPhone16,2/_` are new, since a model without a shard keeps its bundled profiles. `docs/site/packs/tester/publication.json` names the 22 SHA-256s and `tools/test_pages_main_assets.py` counts them; generation 1 `profiles/` is unchanged.
+- **release**: name 0.6.0 for visionOS in the latest-release record — `docs/site/packs/tester/latest.json` is re-signed as sequence 1793108456 with visionOS added beside iOS, tvOS and macOS, so a Vision Pro build whose benchmark catalog is retired names the version to install; `docs/site/packs/tester/publication.json` names its SHA-256
+- **release**: publish the signed latest-release record for 0.6.0 — `docs/site/packs/tester/latest.json` is sequence 1793108184 under `latest-release-1` and names 0.6.0 for iOS, tvOS and macOS, so a build whose benchmark catalog is no longer published can name the version to install; `docs/site/packs/tester/publication.json` names its SHA-256
+
+### docs
+
+- **benchmarks**: add the VISR 0.6.0 Mac, Apple TV HD and Vision Pro rows, chart the Apple TV HD at its profile's frame cap, and list Vision Pro frame time and on-time share — the snapshot gains 14 VISR 0.6.0 rows from the results sheet, `REFERENCE_BOXES` names the Apple TV HD, the Apple TV caption says only VISR has Apple TV builds, the Vision Pro caption says VISR replays a recorded route while master-chef runs with no input, `query.details` puts 95th-percentile frame time and on-time share under a chart, and a build without a 1% low (master-chef) draws a zero-length bar so VISR keeps its 1% low series in `charts.py` and `benchmarks.js`; `method_group` reads Metal System Trace and benchmark replay methods as such
+- **changelog**: fold the Unreleased entries into 0.6.0 — commitizen replaced the `## Unreleased` section with the generated `visr-v0.6.0` section and dropped its 92 entries, all of which are in the tag; the 0.6.0 section now lists both, and its Summary is the What to Test text the builds carry
+
+### test
+
+- **profile**: expect 120 frames a second from the Pro iPhone and M1 iPad Pro profiles — `profile_probe.c` still asserted 60 for `iPhone18,1`, `iPad13,9` and `iPhone16,2`, which revisions 8 and 9 raised to 120 in a predictable workload, and the iPhone 17 now falls past the A17 Pro source, whose 60 Hz envelope its 120 Hz target leaves, to the 16e's profile at 60
+- **loading**: the progress probe expects the bar to be paced by time, within the compiles' range
+- **loading**: the progress probe's stub for the copy's progress is unused now that the bar is paced by time
+
 ## visr-v0.6.0 (2026-10-27)
 
 ### Summary
