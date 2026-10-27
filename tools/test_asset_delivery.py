@@ -73,7 +73,7 @@ def test_inherited_device_shard_keeps_its_source_envelope():
     files = data_pack.device_profile_snapshot(ROOT / "profiles", "ios", "iPad13,4")
     # Every source at or below the target's tier ships, so the device can fall back when the nearer one's envelope rejects it.
     assert set(files) == {"iphone-ipad.toml", "ipad-pro-m1.toml", "ipad-pro-12-9-1st.toml", "ipad-pro-12-9-2nd.toml",
-                          "ipad-air-4.toml", "iphone-12-pro.toml", "iphone-15-pro.toml", "iphone-16e.toml",
+                          "ipad-a12.toml", "ipad-air-4.toml", "iphone-12-pro.toml", "iphone-15-pro.toml", "iphone-16e.toml",
                           "iphone-17-pro.toml", "hardware/catalog.toml"}
     catalog = files["hardware/catalog.toml"]
     assert b"ipad-pro-m1-11" in catalog and b"ipad-pro-m1-12-9" in catalog

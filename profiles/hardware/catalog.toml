@@ -202,8 +202,8 @@ platform = "ios"
 models = ["iPad11,1", "iPad11,2", "iPad11,3", "iPad11,4", "iPad11,6", "iPad11,7"]
 tier = 1060
 gpu_family = 5
-basis = "assumed"
-source = "iPad mini 5, iPad Air 3, iPad 8th generation (A12, 3 GB). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Placed just above A10X. Apple credits A12 with a faster GPU than A10X; independent reviews found them comparable (https://www.macrumors.com/2021/04/20/apple-new-apple-tv-4k/, https://appleinsider.com/articles/21/05/25/2021-apple-tv-4k-review-seeking-a-blockbuster-given-a-band-aid), so the A10X profile is the right neighbor either way."
+basis = "measured"
+source = "iPad mini 5, iPad Air 3, iPad 8th generation (A12, 3 GB). https://en.wikipedia.org/wiki/List_of_iPad_models and https://en.wikipedia.org/wiki/IPad_Pro. Placed just above A10X. Apple credits A12 with a faster GPU than A10X; independent reviews found them comparable (https://www.macrumors.com/2021/04/20/apple-new-apple-tv-4k/, https://appleinsider.com/articles/21/05/25/2021-apple-tv-4k-review-seeking-a-blockbuster-given-a-band-aid), so the A10X profile is the right neighbor either way. Measured on the Air 3 (iPad11,3): ipad-a12.toml, tester Full-suite report, 30 frames a second at 900 lines, 2026-10-27, provisional."
 
 [[hardware]]
 id = "ipad-a13"
@@ -458,6 +458,15 @@ minimum_gpu_family = 3
 # 900-line play at 30; menu and cutscenes native up to the 12.9-inch 2732x2048; the measured device is 120 Hz.
 maximum_pixels = [3900000, 5600000, 5600000]
 maximum_refresh_hertz = 120
+
+[[fallback]]
+hardware = "ipad-a12"
+profile = "ipad-a12.toml"
+minimum_memory_mb = 2800
+minimum_gpu_family = 5
+# 900-line play at 30 (at most 1200x900); menu and cutscenes native up to the Air 3's 2224x1668 (3,709,632).
+maximum_pixels = [3900000, 3900000, 3900000]
+maximum_refresh_hertz = 60
 
 [[fallback]]
 hardware = "ipad-air-4"

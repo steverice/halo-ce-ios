@@ -1,0 +1,80 @@
+# iPad11,3 and iPad11,4 (iPad Air 3rd generation, A12, 3 GB, 60 Hz): 30 frames a second at 900 lines and full quality
+# but the game's 128-pixel shadows, from a tester's Full-suite report. Until now the model inherited the A10X iPad's
+# profile; the report confirms the same values hold on the A12, so only the evidence changes. All 20 presented runs
+# (a10, a50, b30, b40, c20, c40 and d40, up to 2x enemies and the Maw fight) were 99.8 to 100% on time at 30.
+# 60 is not claimed: render GPU time reached a 90th percentile of 28 ms against a 16.7 ms budget at 900 lines and
+# CPU p95 was about 20 ms. The mini 5 and iPad 8th generation (the same A12 and memory) inherit this profile.
+#:schema ../port/settings/profile.schema.json
+schema = 1
+name = "iPad Air (3rd generation)"
+kind = "model"
+status = "provisional"
+
+[match]
+platform = "ios"
+models = ["iPad11,3", "iPad11,4"]
+
+[display]
+frame_rate = "30"
+render_height = 900
+anisotropic_filtering = 16
+shadow_map_size = 128
+model_lod = "max"
+dynamic_resolution = true
+
+[network]
+player_capacity = 8
+
+[evidence."display.frame_rate"]
+basis = "measured"
+why = "Presented at 30 frames a second and 900 lines, the 20 runs were 99.8 to 100% on time (lowest a10-heroic, 99.8%), mean 29.56 to 29.99 frames a second, at most 3 stalls a run, thermal state 0 to 3. The 1.5x and 2x enemy runs held as well. GPU 90th percentile was 15 to 28 ms and CPU 95th percentile about 20 ms, so 60 does not hold at 900 lines."
+source = "VISR tester Full-suite report 5KWC86NS, build 20261027.174748 (0.6.1), presented runs, 2026-10-27"
+
+[evidence."display.render_height"]
+basis = "measured"
+why = "900 lines held at 30 with 1.5x and 2x enemies on a10, a50, b30, b40, c20, c40 and d40 (99.8 to 100% on time). 1080 was not run on this model."
+source = "VISR tester Full-suite report 5KWC86NS, build 20261027.174748 (0.6.1), presented runs, 2026-10-27"
+
+[evidence."display.anisotropic_filtering"]
+basis = "inherited"
+why = "16x ran in every report run at 30 frames a second without a miss; the sweep's A10X cost of 0.4 to 0.5 ms a frame over 2x applies."
+source = "VISR tester Full-suite report 5KWC86NS, build 20261027.174748 (0.6.1), presented runs, 2026-10-27; ipad-pro-12-9-2nd.toml"
+
+[evidence."display.shadow_map_size"]
+basis = "inherited"
+why = "128-pixel shadows ran in every report run. Larger sizes were not run on this model; the A10X's 64-player data (128 near holding 30, 256 and 512 not) is the neighbor evidence."
+source = "VISR tester Full-suite report 5KWC86NS, build 20261027.174748 (0.6.1), presented runs, 2026-10-27; ipad-pro-12-9-2nd.toml"
+
+[evidence."display.model_lod"]
+basis = "inherited"
+why = "Maximum model detail ran in every report run; automatic detail changed the A10X frame by under 0.15 ms."
+source = "VISR tester Full-suite report 5KWC86NS, build 20261027.174748 (0.6.1), presented runs, 2026-10-27; ipad-pro-12-9-2nd.toml"
+
+[evidence."display.dynamic_resolution"]
+basis = "inherited"
+why = "Every run stayed at 900 lines (the planner's minimum, median and maximum were all 900). It remains a safety net for heavier scenes than the report's windows."
+source = "VISR tester Full-suite report 5KWC86NS, build 20261027.174748 (0.6.1), presented runs, 2026-10-27"
+
+[scene.menu.display]
+render_height = 0
+frame_rate = "60"
+
+[evidence."scene.menu.display.render_height"]
+basis = "assumed"
+why = "Keep the native-size menu; the report did not measure menus."
+
+[evidence."scene.menu.display.frame_rate"]
+basis = "assumed"
+why = "Menus run at 60 as before the gameplay cap; the report did not measure menus."
+
+[scene.cutscene.display]
+render_height = 0
+
+[evidence."scene.cutscene.display.render_height"]
+basis = "assumed"
+why = "Keep the native-size cutscene rendering until a cutscene is measured on this model."
+
+[evidence."network.player_capacity"]
+basis = "inherited"
+why = "Taken from the A10X iPad's measured capacity run (16 players held 88.7% of frames at 30 and minimum settings; 8 is half of that). Not run on this A12; the report had no multiplayer window."
+source = "ipad-pro-12-9-2nd.toml"
