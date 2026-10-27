@@ -2359,6 +2359,13 @@ static boolean player_capacity_exceeded(long players)
 	return capacity > 0 && players > capacity;
 }
 
+/* a browsed game is marked BIG when it allows more players than this device holds and is already at least half
+ * that full, so an empty lobby with a large limit is not flagged */
+static boolean player_capacity_marked(long players, long maximum_players)
+{
+	return player_capacity_exceeded(maximum_players) && players * 2 >= player_capacity();
+}
+
 static wchar_t const *const engine_names[] = { L"", L"CTF", L"SLAYER", L"ODDBALL", L"KING OF THE HILL", L"RACE" };
 static short const maximum_players[] = { 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128 };
 
@@ -3956,7 +3963,7 @@ static void lobby_browser_update(struct widget_instance *list)
 		else
 		{
 			text_set(named(row, "server_item_ping", 0), game->failed ? L"FAILED" : !game->open ? L"CLOSED" :
-				game->in_progress ? L"LIVE" : player_capacity_exceeded(game->maximum_player_count) ? L"BIG" : L"-");
+				game->in_progress ? L"LIVE" : player_capacity_marked(game->player_count, game->maximum_player_count) ? L"BIG" : L"-");
 		}
 		/* (the lock: a game with a password. Its bitmap's first frame is
 		empty, the PC version's for no lock; the next is the lock, in the
@@ -4079,13 +4086,6 @@ static void lobby_browser_update(struct widget_instance *list)
 					game->player_count == 1 ? L"player" : L"players", game->maximum_player_count,
 					!game->open ? L", full or starting" : game->in_progress ? L", under way" : L"",
 					game->locked ? L", password" : L"");
-				if (player_capacity_exceeded(game->maximum_player_count))
-				{
-					unsigned long length = ustrlen(text);
-
-					usnprintf(text + length, NUMBEROF(text) - 1 - length, L", more than this device holds (%d)",
-						(int)player_capacity());
-				}
 			}
 		}
 		else
@@ -4346,7 +4346,7 @@ static void browser_update(struct widget_instance *list)
 		}
 		else
 			text_set(named(row, "server_item_ping", 0), advertised_in_progress(game) ? L"LIVE" :
-				player_capacity_exceeded(game->maximum_player_count) ? L"BIG" : L"");
+				player_capacity_marked(game->player_count, game->maximum_player_count) ? L"BIG" : L"");
 		visible_set(named(row, "server_item_locked", 0), FALSE);
 		visible_set(named(row, "server_item_dedicated", 0), advertised_dedicated(game));
 		visible_set(named(row, "server_item_classic", 0), FALSE);
@@ -4411,13 +4411,6 @@ static void browser_update(struct widget_instance *list)
 			else
 				usnprintf(text, NUMBEROF(text) - 1, L"%d players of %d, on %d machines%s", game->player_count,
 					game->maximum_player_count, game->machine_count, advertised_in_progress(game) ? L": under way" : L"");
-			if (player_capacity_exceeded(game->maximum_player_count))
-			{
-				unsigned long length = ustrlen(text);
-
-				usnprintf(text + length, NUMBEROF(text) - 1 - length, L", more than this device holds (%d)",
-					(int)player_capacity());
-			}
 		}
 		text[NUMBEROF(text) - 1] = 0;
 		text_set(named(list, "ticker_player_info", 0), text);

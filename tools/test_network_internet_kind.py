@@ -47,6 +47,7 @@ def test_internet_browser_shows_kind_reason(tmp_path):
 #define NUMBEROF(a) (sizeof(a) / sizeof((a)[0]))
 static long player_capacity(void) { return 0; }
 static int player_capacity_exceeded(long players) { (void)players; return 0; }
+static int player_capacity_marked(long players, long maximum_players) { (void)players; (void)maximum_players; return 0; }
 static unsigned long ustrlen(wchar_t const *text) { return wcslen(text); }
 static void usnprintf(wchar_t *out, int count, wchar_t const *format, ...)
 {

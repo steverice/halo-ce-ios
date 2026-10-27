@@ -58,6 +58,7 @@ static void usnprintf(wchar_t *text, size_t count, wchar_t const *format, ...)
 /* (no device limit here: the BIG mark and its ticker text are menu_functions.c's) */
 static long player_capacity(void) { return 0; }
 static int player_capacity_exceeded(long players) { (void)players; return 0; }
+static int player_capacity_marked(long players, long maximum_players) { (void)players; (void)maximum_players; return 0; }
 
 /* DECLARATIONS */
 static void render_row(void)
